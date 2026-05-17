@@ -1,0 +1,63 @@
+{
+  "name": "pi-browser-tools",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Native Pi browser automation tools backed by the Pi Browser Bridge.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "browser-automation"
+  ],
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "sync:protocol": "node scripts/sync-native-protocol.mjs",
+    "sync:config": "node scripts/sync-bridge-config.mjs",
+    "check:bridge:files": "node tests/contracts/check-bridge-files.mjs",
+    "check:protocol": "node tests/contracts/check-protocol-contract.mjs",
+    "check:tools": "node tests/contracts/check-tools-contract.mjs",
+    "check:pi-browser-bridge": "node tests/contracts/check-pi-browser-bridge.mjs",
+    "check:tool-docs": "node tests/contracts/check-tool-doc-drift.mjs",
+    "check:bridge": "npm run check:bridge:files && npm run check:protocol && npm run check:tools",
+    "check:scan": "node --no-warnings --experimental-strip-types tests/contracts/check-scan-script.mjs",
+    "check:content-pick": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-content-pick.mjs",
+    "check:element-actions": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-element-actions.mjs",
+    "check:semantic-dom": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-semantic-dom.mjs",
+    "check:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-tools.mjs && node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-runtime.mjs",
+    "check:page-scripts": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-page-scripts.mjs",
+    "check:fake-ws": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-fake-ws.mjs",
+    "check:paths": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-paths.mjs",
+    "check:token": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-token-contract.mjs",
+    "check:summaries": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-summaries.mjs",
+    "check:artifact": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-artifact-reader.mjs",
+    "check:errors": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-errors.mjs",
+    "smoke:browser": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs",
+    "smoke:browser:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs --transfer",
+    "check": "npm run check:bridge && npm run check:pi-browser-bridge && npm run check:tool-docs && npm run check:boundaries && npm run check:scan && npm run check:content-pick && npm run check:element-actions && npm run check:semantic-dom && npm run check:transfer && npm run check:page-scripts && npm run check:fake-ws && npm run check:paths && npm run check:token && npm run check:summaries && npm run check:artifact && npm run check:errors",
+    "check:boundaries": "node tests/contracts/check-boundaries.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

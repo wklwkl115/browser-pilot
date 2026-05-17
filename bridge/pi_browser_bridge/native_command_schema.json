@@ -1,0 +1,389 @@
+{
+  "name": "pi-browser-native-commands",
+  "version": "0.2.0",
+  "transport": "Pi Browser Bridge WebSocket command envelope",
+  "envelope": {
+    "type": "object",
+    "required": [
+      "cmd"
+    ],
+    "properties": {
+      "cmd": {
+        "type": "string"
+      },
+      "tabId": {
+        "type": "integer"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "integer"
+      }
+    },
+    "additionalProperties": true
+  },
+  "aliases": {
+    "hook.clear": "hook.clear_buffer",
+    "hook.ping": "hook.status"
+  },
+  "domains": {
+    "core": [
+      "bridge_wake",
+      "tabs",
+      "management",
+      "cookies",
+      "cdp",
+      "persistent_cdp",
+      "batch",
+      "contentSettings"
+    ],
+    "wait": [
+      "wait.navigate",
+      "wait.navigateAndWait",
+      "wait.navigation",
+      "wait.loadState",
+      "wait.networkIdle",
+      "wait.selector",
+      "wait.any",
+      "wait.all",
+      "wait.cancel",
+      "wait.diagnose"
+    ],
+    "network": [
+      "network.start",
+      "network.stop",
+      "network.status",
+      "network.clear",
+      "network.list",
+      "network.get",
+      "network.body",
+      "network.exportHar",
+      "network.wait"
+    ],
+    "hook": [
+      "hook.list_sessions",
+      "hook.install",
+      "hook.status",
+      "hook.collect",
+      "hook.clear",
+      "hook.clear_buffer",
+      "hook.pause",
+      "hook.resume",
+      "hook.uninstall",
+      "hook.evaluate",
+      "hook.addEventListener",
+      "hook.removeEventListener",
+      "hook.getPerformanceEntries"
+    ],
+    "frame": [
+      "frame.list",
+      "frame.evaluate",
+      "frame.addNewDocumentScript",
+      "frame.removeNewDocumentScript"
+    ],
+    "transfer": [
+      "transfer.download",
+      "transfer.upload"
+    ],
+    "html": [
+      "html.get"
+    ],
+    "screenshot": [
+      "screenshot.capture"
+    ],
+    "evidence": [
+      "evidence.collect"
+    ]
+  },
+  "commands": {
+    "bridge_wake": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "tabs": {
+      "domain": "core",
+      "tabScoped": false,
+      "methods": [
+        "list",
+        "switch",
+        "create",
+        "close"
+      ],
+      "defaultMethod": "list",
+      "methodSpecs": {
+        "switch": {
+          "required": [
+            "tabId"
+          ]
+        },
+        "close": {
+          "requiredAny": [
+            [
+              "targetTabId"
+            ],
+            [
+              "closeTabId"
+            ],
+            [
+              "tabId"
+            ]
+          ]
+        }
+      }
+    },
+    "management": {
+      "domain": "core",
+      "tabScoped": false,
+      "methods": [
+        "list",
+        "reload",
+        "disable",
+        "enable"
+      ],
+      "methodSpecs": {
+        "disable": {
+          "required": [
+            "extId"
+          ]
+        },
+        "enable": {
+          "required": [
+            "extId"
+          ]
+        }
+      }
+    },
+    "cookies": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "cdp": {
+      "domain": "core",
+      "tabScoped": true,
+      "required": [
+        "method"
+      ]
+    },
+    "persistent_cdp": {
+      "domain": "core",
+      "tabScoped": true
+    },
+    "batch": {
+      "domain": "core",
+      "tabScoped": false,
+      "required": [
+        "commands"
+      ]
+    },
+    "contentSettings": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "wait.navigate": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "url"
+      ]
+    },
+    "wait.navigateAndWait": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "url"
+      ]
+    },
+    "wait.navigation": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.loadState": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.networkIdle": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.selector": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "selector"
+      ]
+    },
+    "wait.any": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.all": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.cancel": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.diagnose": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "network.start": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.stop": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.status": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.clear": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.list": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.get": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.body": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.exportHar": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.wait": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "hook.list_sessions": {
+      "domain": "hook",
+      "tabScoped": false
+    },
+    "hook.install": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.status": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.collect": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.clear": {
+      "domain": "hook",
+      "tabScoped": true,
+      "canonical": "hook.clear_buffer"
+    },
+    "hook.clear_buffer": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.pause": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.resume": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.uninstall": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.evaluate": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "expression"
+      ]
+    },
+    "hook.addEventListener": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "eventType"
+      ]
+    },
+    "hook.removeEventListener": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "listenerId"
+      ]
+    },
+    "hook.getPerformanceEntries": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "frame.list": {
+      "domain": "frame",
+      "tabScoped": true
+    },
+    "frame.evaluate": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "frameId",
+        "expression"
+      ]
+    },
+    "frame.addNewDocumentScript": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "source"
+      ]
+    },
+    "frame.removeNewDocumentScript": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "identifier"
+      ]
+    },
+    "html.get": {
+      "domain": "html",
+      "tabScoped": true
+    },
+    "screenshot.capture": {
+      "domain": "screenshot",
+      "tabScoped": true
+    },
+    "evidence.collect": {
+      "domain": "evidence",
+      "tabScoped": true
+    },
+    "transfer.download": {
+      "domain": "transfer",
+      "tabScoped": true,
+      "requiredAny": [
+        [
+          "selector"
+        ],
+        [
+          "url"
+        ]
+      ]
+    },
+    "transfer.upload": {
+      "domain": "transfer",
+      "tabScoped": true,
+      "required": [
+        "selector",
+        "files"
+      ]
+    }
+  }
+}
