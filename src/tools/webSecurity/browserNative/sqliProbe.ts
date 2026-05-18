@@ -45,6 +45,7 @@ type NormalizedSqliProbeOptions = ReturnType<typeof normalizeReplayOptions> & {
 	delayMs: number;
 	timeThresholdMs: number;
 	baselineRepeats: number;
+	stopOnFirstMatch: boolean;
 };
 
 function parseBooleanPayloadPairs(value: unknown): Array<{ name: string; truePayload: string; falsePayload: string }> {
@@ -223,6 +224,7 @@ async function normalizeSqliProbeOptions(options: SqliProbeOptions): Promise<Nor
 	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);
 	const timeThresholdMs = positiveInt(options.timeThresholdMs, 2_000);
 	const baselineRepeats = Math.min(10, positiveInt(options.baselineRepeats, 1));
+	const stopOnFirstMatch = options.stopOnFirstMatch === true;
 	return {
 		...normalizeReplayOptions(options),
 		locations,
@@ -239,6 +241,7 @@ async function normalizeSqliProbeOptions(options: SqliProbeOptions): Promise<Nor
 		delayMs: rateLimitPerSecond > 0 ? Math.ceil(1000 / rateLimitPerSecond) : 0,
 		timeThresholdMs,
 		baselineRepeats,
+		stopOnFirstMatch,
 	};
 }
 
@@ -275,7 +278,10 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 	const extractions: Array<Record<string, unknown>> = [];
 	let requestCount = 0;
 	let extraCaseCount = 0;
+	const shortCircuitedTargets = new Set<string>();
 	for (const item of limitedCases) {
+		const targetKey = `${item.location}:${item.paramName}`;
+		if (normalized.stopOnFirstMatch && shortCircuitedTargets.has(targetKey)) continue;
 		try {
 			if (item.kind === "boolean") {
 				const trueValue = sqliPayloadValue(baseRequest, item.location, item.paramName, item.truePayload || "", normalized.payloadMode);
@@ -293,7 +299,10 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 				const baselineAffinity = { trueDistance: responseDistance(baselineFingerprint, trueFp), falseDistance: responseDistance(baselineFingerprint, falseFp) };
 				const evidence = { type: "boolean", matched: oracle, location: item.location, paramName: item.paramName, payloads: { truePayload: item.truePayload, falsePayload: item.falsePayload }, baselineAffinity, trueResponse: sqliResponseRecord(trueReplay.exchange.final, trueReplay.exchange), falseResponse: sqliResponseRecord(falseReplay.exchange.final, falseReplay.exchange) };
 				results.push(evidence);
-				if (oracle) matched.push(evidence);
+				if (oracle) {
+					matched.push(evidence);
+					if (normalized.stopOnFirstMatch) shortCircuitedTargets.add(targetKey);
+				}
 			} else {
 				const value = sqliPayloadValue(baseRequest, item.location, item.paramName, item.payload || "", normalized.payloadMode);
 				const request = mutateParamRequest(baseRequest, item.location, item.paramName, value);
@@ -307,7 +316,10 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 				const matchedCase = item.kind === "error" ? bodyHasSqlError && !baselineError : item.kind === "time" ? elapsedDeltaMs >= normalized.timeThresholdMs : responsesDiffer(baselineFingerprint, fp);
 				const evidence = { type: item.kind, matched: matchedCase, location: item.location, paramName: item.paramName, payload: item.payload, ...sqliUnionMeta(item.payload || ""), elapsedDeltaMs, sqlError: bodyHasSqlError, dbms, baselineDistance: responseDistance(baselineFingerprint, fp), response: sqliResponseRecord(final, replay.exchange) };
 				results.push(evidence);
-				if (matchedCase) matched.push(evidence);
+				if (matchedCase) {
+					matched.push(evidence);
+					if (normalized.stopOnFirstMatch) shortCircuitedTargets.add(targetKey);
+				}
 			}
 		} catch (error) {
 			failures.push({ type: item.kind, location: item.location, paramName: item.paramName, payload: item.payload, truePayload: item.truePayload, falsePayload: item.falsePayload, error: error instanceof Error ? error.message : String(error) });
@@ -315,7 +327,7 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 		if (normalized.delayMs > 0 && requestCount > 0) await sleep(normalized.delayMs);
 	}
 	let columnHints = inferSqliColumnHints(results);
-	if (normalized.probeTypes.includes("union") && options.unionEcho !== false) {
+	if (normalized.probeTypes.includes("union") && options.unionEcho !== false && !normalized.stopOnFirstMatch) {
 		for (const hint of columnHints) {
 			const columnCount = positiveInt(hint.unionSelectColumns ?? hint.orderByMaxValid, 0);
 			if (!columnCount) continue;

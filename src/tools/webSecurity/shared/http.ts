@@ -256,6 +256,7 @@ function shodanFaviconMmh3(buffer: Buffer): number {
 }
 
 function simHash64(buffer: Buffer): string {
+	if (!buffer.length) return "0000000000000000";
 	const weights = new Array<number>(64).fill(0);
 	for (let offset = 0; offset < buffer.length; offset += 16) {
 		const chunk = buffer.subarray(offset, Math.min(buffer.length, offset + 16));
@@ -401,7 +402,7 @@ export async function fetchFaviconHash(url: string, headers: HeaderMap, options:
 	try {
 		const icon = await fetchSingle({ url: faviconUrl, method: "GET", headers: sanitized.headers }, { timeoutMs: positiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS), maxBodyBytes: Math.min(256_000, positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES)) });
 		const buffer = icon.bodyBase64 ? Buffer.from(icon.bodyBase64, "base64") : Buffer.from(icon.bodyText || "", "utf8");
-		return { url: faviconUrl, status: icon.status, contentType: contentTypeOf(icon.headers), bodyBytes: icon.bodyBytes, sha256: responseBodyHash(icon), mmh3: buffer.length ? shodanFaviconMmh3(buffer) : 0, simHash64: buffer.length ? simHash64(buffer) : undefined, bodyTruncated: icon.bodyTruncated };
+		return { url: faviconUrl, status: icon.status, contentType: contentTypeOf(icon.headers), bodyBytes: icon.bodyBytes, sha256: responseBodyHash(icon), mmh3: buffer.length ? shodanFaviconMmh3(buffer) : 0, simHash64: simHash64(buffer), bodyTruncated: icon.bodyTruncated };
 	} catch (error) {
 		return { url: faviconUrl, error: error instanceof Error ? error.message : String(error) };
 	}

@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createCipheriv, createDecipheriv, createHash, createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, pbkdf2, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 import { deflateRawSync, inflateRawSync, inflateSync } from "node:zlib";
 import { asString, base64UrlDecode, base64UrlEncode, isRecord, printableText, sha256Hex, tryJson } from "./normalize";
 
@@ -22,6 +22,7 @@ const JWE_DIRECT_ALGS: Record<string, { cipher: string; keyBytes: number }> = {
 	A256GCM: { cipher: "aes-256-gcm", keyBytes: 32 },
 };
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const RAILS_PBKDF2_CACHE = new Map<string, Promise<Buffer>>();
 
 function base64UrlNoPad(value: Buffer): string {
 	return base64UrlEncode(value).replace(/=+$/g, "");
@@ -371,16 +372,29 @@ function encodeRailsPayload(value: Record<string, unknown>, encoding: string, ur
 	return raw;
 }
 
-function railsSignatureVariants(secret: string): SignatureVariant[] {
+function deriveRailsPbkdf2Key(secret: string, salt: string, digest: SignatureVariant["digest"]): Promise<Buffer> {
+	const key = `${digest}:${salt}:${secret}`;
+	const cached = RAILS_PBKDF2_CACHE.get(key);
+	if (cached) return cached;
+	const created = new Promise<Buffer>((resolve, reject) => {
+		pbkdf2(secret, salt, 1000, 64, digest, (error, derived) => error ? reject(error) : resolve(derived));
+	});
+	RAILS_PBKDF2_CACHE.set(key, created);
+	return created;
+}
+
+async function railsSignatureVariants(secret: string): Promise<SignatureVariant[]> {
 	const variants: SignatureVariant[] = [];
 	for (const digest of ["sha1", "sha256"] as const) {
 		variants.push({ digest, keySource: "utf8", keyBytes: Buffer.from(secret, "utf8"), derivation: "direct" });
-		for (const salt of ["signed cookie", "action_dispatch.signed_cookie_salt"]) variants.push({ digest, keySource: "utf8", keyBytes: pbkdf2Sync(secret, salt, 1000, 64, digest), salt, derivation: "pbkdf2" });
+		for (const salt of ["signed cookie", "action_dispatch.signed_cookie_salt"]) {
+			variants.push({ digest, keySource: "utf8", keyBytes: await deriveRailsPbkdf2Key(secret, salt, digest), salt, derivation: "pbkdf2" });
+		}
 	}
 	return variants;
 }
 
-function verifyRailsToken(token: string, secrets: string[]) {
+async function verifyRailsToken(token: string, secrets: string[]) {
 	const splitAt = token.lastIndexOf("--");
 	if (splitAt <= 0) return undefined;
 	const payloadPart = token.slice(0, splitAt);
@@ -388,7 +402,7 @@ function verifyRailsToken(token: string, secrets: string[]) {
 	if (!/^[a-f0-9]+$/i.test(signaturePart)) return undefined;
 	const matches: SecretMatch[] = [];
 	for (let i = 0; i < secrets.length; i += 1) {
-		for (const variant of railsSignatureVariants(secrets[i])) {
+		for (const variant of await railsSignatureVariants(secrets[i])) {
 			const expected = createHmac(variant.digest, variant.keyBytes).update(payloadPart, "utf8").digest("hex");
 			if (expected === signaturePart) {
 				matches.push({ index: i, secret: secrets[i], secretSha256: sha256Hex(secrets[i]), digest: variant.digest, salt: variant.salt, derivation: variant.derivation });
@@ -435,7 +449,7 @@ function tokenVerified(token: Record<string, unknown>): boolean {
 	return (isRecord(token.signature) && token.signature.verified === true) || (isRecord(token.decryption) && token.decryption.verified === true);
 }
 
-export function analyzeCookieSample(sample: CookieSample, secrets: string[], claimMutations: unknown): Record<string, unknown> {
+export async function analyzeCookieSample(sample: CookieSample, secrets: string[], claimMutations: unknown): Promise<Record<string, unknown>> {
 	const result: Record<string, unknown> = {
 		source: sample.source,
 		name: sample.name,
@@ -536,7 +550,7 @@ export function analyzeCookieSample(sample: CookieSample, secrets: string[], cla
 		return result;
 	}
 
-	const rails = verifyRailsToken(sample.value, secrets);
+	const rails = await verifyRailsToken(sample.value, secrets);
 	if (rails) {
 		const token: Record<string, unknown> = {
 			format: "rails",

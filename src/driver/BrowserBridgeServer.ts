@@ -271,7 +271,7 @@ export class BrowserBridgeServer {
 				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
 				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, ...this.timeoutDiagnostics(tabId, timeoutMs, pending.acked) }));
 			}, timeoutMs);
-			const pending: PendingRequest = { id, tabId, createdAt: Date.now(), acked: false, timer, resolve, reject };
+			const pending: PendingRequest = { id, tabId, client: socket, createdAt: Date.now(), acked: false, timer, resolve, reject };
 			this.pending.set(id, pending);
 			try {
 				socket.send(JSON.stringify(payload));
@@ -293,6 +293,12 @@ export class BrowserBridgeServer {
 	}
 
 	private unregisterClient(ws: WebSocket): void {
+		for (const pending of Array.from(this.pending.values())) {
+			if (pending.client !== ws) continue;
+			clearTimeout(pending.timer);
+			this.pending.delete(pending.id);
+			pending.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: pending.id, tabId: pending.tabId, acked: pending.acked }));
+		}
 		this.clients.delete(ws);
 		this.clientInfo.delete(ws);
 		if (this.extensionClient === ws) this.extensionClient = undefined;

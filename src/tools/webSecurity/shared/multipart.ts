@@ -115,33 +115,82 @@ function multipartBodyBuffer(body: string | Buffer | undefined): Buffer {
 	return Buffer.from(body || "", "utf8");
 }
 
+type MultipartDelimiter = { markerStart: number; bodyEnd: number; nextPartStart: number; closing: boolean };
+
+function delimiterEndsAtLineBoundary(buffer: Buffer, index: number): boolean {
+	return index >= buffer.length || buffer[index] === 13 || buffer[index] === 10 || buffer[index] === 32 || buffer[index] === 9;
+}
+
+function findMultipartDelimiters(buffer: Buffer, boundary: string): MultipartDelimiter[] {
+	const marker = Buffer.from(`--${boundary}`, "latin1");
+	const delimiters: MultipartDelimiter[] = [];
+	let searchFrom = 0;
+	while (searchFrom < buffer.length) {
+		const markerStart = buffer.indexOf(marker, searchFrom);
+		if (markerStart < 0) break;
+		const lineStart = markerStart >= 2 && buffer[markerStart - 2] === 13 && buffer[markerStart - 1] === 10;
+		if (markerStart !== 0 && !lineStart) {
+			searchFrom = markerStart + 1;
+			continue;
+		}
+		let afterMarker = markerStart + marker.length;
+		let closing = false;
+		if (buffer[afterMarker] === 45 && buffer[afterMarker + 1] === 45 && delimiterEndsAtLineBoundary(buffer, afterMarker + 2)) {
+			closing = true;
+			afterMarker += 2;
+			while (buffer[afterMarker] === 32 || buffer[afterMarker] === 9) afterMarker += 1;
+			if (buffer[afterMarker] === 13 && buffer[afterMarker + 1] === 10) afterMarker += 2;
+			else if (buffer[afterMarker] === 10) afterMarker += 1;
+		} else if (delimiterEndsAtLineBoundary(buffer, afterMarker)) {
+			while (buffer[afterMarker] === 32 || buffer[afterMarker] === 9) afterMarker += 1;
+			if (buffer[afterMarker] === 13 && buffer[afterMarker + 1] === 10) afterMarker += 2;
+			else if (buffer[afterMarker] === 10) afterMarker += 1;
+			else {
+				searchFrom = markerStart + 1;
+				continue;
+			}
+		} else {
+			searchFrom = markerStart + 1;
+			continue;
+		}
+		delimiters.push({ markerStart, bodyEnd: markerStart === 0 ? markerStart : markerStart - 2, nextPartStart: afterMarker, closing });
+		searchFrom = afterMarker;
+	}
+	return delimiters;
+}
+
+function getHeaderCaseInsensitive(headers: HeaderMap, name: string): string | undefined {
+	const normalized = name.toLowerCase();
+	for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === normalized) return value;
+	return undefined;
+}
+
 export function parseMultipartBody(body: string | Buffer | undefined, contentType: string): { boundary: string; parts: MultipartPart[] } {
 	const boundary = multipartBoundaryFromContentType(contentType);
 	if (!boundary) throw new Error("multipart/form-data request is missing boundary");
-	const raw = multipartBodyBuffer(body).toString("latin1");
-	const segments = raw.split(`--${boundary}`);
+	const buffer = multipartBodyBuffer(body);
+	const delimiters = findMultipartDelimiters(buffer, boundary);
 	const parts: MultipartPart[] = [];
-	for (const segment of segments) {
-		let item = segment;
-		if (!item || item === "--\r\n" || item === "--" || item === "\r\n") continue;
-		if (item.startsWith("\r\n")) item = item.slice(2);
-		if (item.endsWith("\r\n")) item = item.slice(0, -2);
-		if (item.endsWith("--")) item = item.slice(0, -2);
-		const splitAt = item.indexOf("\r\n\r\n");
+	for (let i = 0; i < delimiters.length - 1; i += 1) {
+		const current = delimiters[i];
+		if (current.closing) break;
+		const next = delimiters[i + 1];
+		const item = buffer.subarray(current.nextPartStart, next.bodyEnd);
+		const splitAt = item.indexOf(Buffer.from("\r\n\r\n", "latin1"));
 		if (splitAt < 0) continue;
-		const head = item.slice(0, splitAt);
-		const bodyText = item.slice(splitAt + 4);
+		const head = item.subarray(0, splitAt).toString("latin1");
+		const bodyBuffer = item.subarray(splitAt + 4);
 		const headers: HeaderMap = {};
 		for (const line of head.split("\r\n")) {
 			const idx = line.indexOf(":");
 			if (idx > 0) headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
 		}
-		const disposition = headers["Content-Disposition"] || headers["content-disposition"] || "";
+		const disposition = getHeaderCaseInsensitive(headers, "Content-Disposition") || "";
 		const name = disposition.match(/\bname="([^"]+)"/)?.[1];
 		if (!name) continue;
 		const filename = disposition.match(/\bfilename="([^"]*)"/)?.[1] || undefined;
-		const partContentType = headers["Content-Type"] || headers["content-type"] || undefined;
-		parts.push({ name, filename, contentType: partContentType, body: Buffer.from(bodyText, "latin1") });
+		const partContentType = getHeaderCaseInsensitive(headers, "Content-Type");
+		parts.push({ name, filename, contentType: partContentType, body: Buffer.from(bodyBuffer) });
 	}
 	return { boundary, parts };
 }

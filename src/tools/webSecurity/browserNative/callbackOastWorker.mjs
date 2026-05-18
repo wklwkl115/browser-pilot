@@ -1,6 +1,6 @@
 import { randomUUID, X509Certificate } from "node:crypto";
 import dgram from "node:dgram";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -8,6 +8,9 @@ import path from "node:path";
 const statePath = process.argv[2];
 if (!statePath) throw new Error("callbackOastWorker requires statePath");
 
+const STATE_LOCK_TIMEOUT_MS = 10_000;
+const STATE_LOCK_RETRY_MS = 25;
+const STATE_LOCK_STALE_MS = 30_000;
 const TEXTUAL_CONTENT_TYPE = /(?:^|[\s;/+.-])(text|json|xml|html|javascript|ecmascript|x-www-form-urlencoded|svg|graphql)(?:[\s;/+.-]|$)/i;
 const HTTPS_KEY_PEM = `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC/TY4EGbXxmmzk
@@ -68,6 +71,66 @@ function positiveInt(value, fallback) {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProcessAlive(pid) {
+  const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isStaleStateLock(lockPath) {
+  try {
+    const parsed = JSON.parse(await readFile(lockPath, "utf8"));
+    const acquiredAt = Date.parse(String(parsed.acquiredAt || ""));
+    const ageMs = Number.isFinite(acquiredAt) ? Date.now() - acquiredAt : Number.POSITIVE_INFINITY;
+    const pid = Number(parsed.pid);
+    if (Number.isInteger(pid)) return !isProcessAlive(pid) || ageMs > STATE_LOCK_STALE_MS * 20;
+    return ageMs > STATE_LOCK_STALE_MS;
+  } catch {
+    try {
+      const info = await stat(lockPath);
+      return Date.now() - info.mtimeMs > STATE_LOCK_STALE_MS;
+    } catch {
+      return true;
+    }
+  }
+}
+
+async function withStateLock(fn) {
+  const dir = path.dirname(statePath);
+  const lockPath = `${statePath}.lock`;
+  const started = Date.now();
+  await mkdir(dir, { recursive: true });
+  while (true) {
+    let acquired = false;
+    let handle;
+    try {
+      handle = await open(lockPath, "wx");
+      acquired = true;
+      await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }), "utf8");
+      await handle.close();
+      handle = undefined;
+      return await fn();
+    } catch (error) {
+      await handle?.close().catch(() => {});
+      if (error?.code !== "EEXIST") throw error;
+      if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+      else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`);
+      await sleep(STATE_LOCK_RETRY_MS);
+    } finally {
+      if (acquired) await rm(lockPath, { force: true }).catch(() => {});
+    }
+  }
+}
+
 function normalizeHeaders(value) {
   const out = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return out;
@@ -82,12 +145,21 @@ async function loadState() {
   return JSON.parse(await readFile(statePath, "utf8"));
 }
 
-async function saveState(state) {
+async function saveStateUnlocked(state) {
   const dir = path.dirname(statePath);
-  const tmp = path.join(dir, `.${path.basename(statePath)}.${process.pid}.${Date.now()}.tmp`);
+  const tmp = path.join(dir, `.${path.basename(statePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
   await mkdir(dir, { recursive: true });
   await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
   await rename(tmp, statePath);
+}
+
+async function updateState(update) {
+  return await withStateLock(async () => {
+    const current = await loadState();
+    const next = await update(current);
+    await saveStateUnlocked(next || current);
+    return next || current;
+  });
 }
 
 function callbackPath(basePath, correlationId) {
@@ -113,18 +185,19 @@ function correlationMatched(correlationId, fields) {
 }
 
 async function appendEvent(event) {
-  const state = await loadState();
-  const events = Array.isArray(state.events) ? state.events : [];
-  const nextSeq = positiveInt(state.nextSeq, 1);
-  const persisted = { ...event, seq: nextSeq, timestamp: new Date().toISOString(), correlationId: state.correlationId };
-  events.push(persisted);
-  const maxEvents = Math.min(100_000, positiveInt(state.maxEvents, 1000));
-  while (events.length > maxEvents) events.shift();
-  state.events = events;
-  state.eventCount = events.length;
-  state.nextSeq = nextSeq + 1;
-  state.lastEventAt = persisted.timestamp;
-  await saveState(state);
+  await updateState((state) => {
+    const events = Array.isArray(state.events) ? [...state.events] : [];
+    const nextSeq = positiveInt(state.nextSeq, 1);
+    const persisted = { ...event, seq: nextSeq, timestamp: new Date().toISOString(), correlationId: state.correlationId };
+    events.push(persisted);
+    const maxEvents = Math.min(100_000, positiveInt(state.maxEvents, 1000));
+    while (events.length > maxEvents) events.shift();
+    state.events = events;
+    state.eventCount = events.length;
+    state.nextSeq = nextSeq + 1;
+    state.lastEventAt = persisted.timestamp;
+    return state;
+  });
 }
 
 function collectRequestBody(req, maxBodyBytes) {
@@ -217,7 +290,10 @@ function buildDnsResponse(query, responseAddress) {
   const firstQuestion = query.questions[0];
   const hasAAnswer = firstQuestion && firstQuestion.type === 1 && responseAddress;
   header.writeUInt16BE(hasAAnswer ? 1 : 0, 6);
-  const question = Buffer.concat([encodeDnsName(firstQuestion?.name || ""), Buffer.from([0, firstQuestion?.type || 1, 0, firstQuestion?.class || 1])]);
+  const typeAndClass = Buffer.alloc(4);
+  typeAndClass.writeUInt16BE(firstQuestion?.type || 1, 0);
+  typeAndClass.writeUInt16BE(firstQuestion?.class || 1, 2);
+  const question = Buffer.concat([encodeDnsName(firstQuestion?.name || ""), typeAndClass]);
   if (!hasAAnswer) return Buffer.concat([header, question]);
   const ip = responseAddress.split(".").map((item) => Math.max(0, Math.min(255, Number(item) || 0)));
   const answer = Buffer.concat([
@@ -345,7 +421,15 @@ async function start() {
   state.recovered = false;
   state.ready = true;
   state.startedAt = state.startedAt || new Date().toISOString();
-  await saveState(state);
+  await updateState((current) => ({
+    ...current,
+    ...state,
+    events: Array.isArray(current.events) ? current.events : [],
+    eventCount: Array.isArray(current.events) ? current.events.length : 0,
+    nextSeq: positiveInt(current.nextSeq, positiveInt(state.nextSeq, 1)),
+    lastEventAt: current.lastEventAt,
+    lastClearedAt: current.lastClearedAt,
+  }));
 }
 
 async function shutdown(reason) {
@@ -357,12 +441,13 @@ async function shutdown(reason) {
   };
   await Promise.all([close(runtime.httpServer), close(runtime.httpsServer), close(runtime.dnsServer)]).catch(() => {});
   try {
-    const state = await loadState();
-    state.listenerActive = false;
-    state.ready = false;
-    state.stoppedAt = new Date().toISOString();
-    state.stopReason = reason;
-    await saveState(state);
+    await updateState((state) => {
+      state.listenerActive = false;
+      state.ready = false;
+      state.stoppedAt = new Date().toISOString();
+      state.stopReason = reason;
+      return state;
+    });
   } catch {}
   process.exit(0);
 }
@@ -371,12 +456,13 @@ process.on("SIGTERM", () => shutdown("sigterm"));
 process.on("SIGINT", () => shutdown("sigint"));
 process.on("uncaughtException", async (error) => {
   try {
-    const state = await loadState();
-    state.error = error instanceof Error ? error.message : String(error);
-    state.listenerActive = false;
-    state.ready = false;
-    state.stoppedAt = new Date().toISOString();
-    await saveState(state);
+    await updateState((state) => {
+      state.error = error instanceof Error ? error.message : String(error);
+      state.listenerActive = false;
+      state.ready = false;
+      state.stoppedAt = new Date().toISOString();
+      return state;
+    });
   } catch {}
   process.exit(1);
 });

@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { openSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import dgram from "node:dgram";
@@ -59,6 +59,9 @@ type NormalizedCallbackOastOptions = {
 
 const SESSION_ROOT = path.resolve(process.cwd(), ".pi", "browser-artifacts", "callback-oast-sessions");
 const WORKER_PATH = fileURLToPath(new URL("./callbackOastWorker.mjs", import.meta.url));
+const STATE_LOCK_TIMEOUT_MS = 10_000;
+const STATE_LOCK_RETRY_MS = 25;
+const STATE_LOCK_STALE_MS = 30_000;
 
 function normalizeCallbackAction(value: unknown): CallbackAction {
 	const action = String(value || "start").trim().toLowerCase();
@@ -135,12 +138,86 @@ function normalizeCallbackOastOptions(options: RawCallbackOastOptions): Normaliz
 	};
 }
 
-async function saveJson(filePath: string, value: unknown) {
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProcessAlive(pid: unknown): boolean {
+	const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
+	if (!Number.isInteger(n) || n <= 0) return false;
+	try {
+		process.kill(n, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function isStaleStateLock(lockPath: string): Promise<boolean> {
+	try {
+		const parsed = JSON.parse(await readFile(lockPath, "utf8")) as Record<string, unknown>;
+		const acquiredAt = Date.parse(String(parsed.acquiredAt || ""));
+		const ageMs = Number.isFinite(acquiredAt) ? Date.now() - acquiredAt : Number.POSITIVE_INFINITY;
+		const pid = Number(parsed.pid);
+		if (Number.isInteger(pid)) return !isProcessAlive(pid) || ageMs > STATE_LOCK_STALE_MS * 20;
+		return ageMs > STATE_LOCK_STALE_MS;
+	} catch {
+		try {
+			const info = await stat(lockPath);
+			return Date.now() - info.mtimeMs > STATE_LOCK_STALE_MS;
+		} catch {
+			return true;
+		}
+	}
+}
+
+async function withStateLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
 	const dir = path.dirname(filePath);
-	const temp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+	const lockPath = `${filePath}.lock`;
+	const started = Date.now();
+	await mkdir(dir, { recursive: true });
+	while (true) {
+		let acquired = false;
+		let handle: Awaited<ReturnType<typeof open>> | undefined;
+		try {
+			handle = await open(lockPath, "wx");
+			acquired = true;
+			await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }), "utf8");
+			await handle.close();
+			handle = undefined;
+			return await fn();
+		} catch (error) {
+			await handle?.close().catch(() => {});
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+			else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`);
+			await sleep(STATE_LOCK_RETRY_MS);
+		} finally {
+			if (acquired) await rm(lockPath, { force: true }).catch(() => {});
+		}
+	}
+}
+
+async function saveJsonUnlocked(filePath: string, value: unknown) {
+	const dir = path.dirname(filePath);
+	const temp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
 	await mkdir(dir, { recursive: true });
 	await writeFile(temp, JSON.stringify(value, null, 2), "utf8");
 	await rename(temp, filePath);
+}
+
+async function saveJson(filePath: string, value: unknown) {
+	await withStateLock(filePath, () => saveJsonUnlocked(filePath, value));
+}
+
+async function updateSessionStateByPath(statePath: string, update: (state: CallbackSessionState) => CallbackSessionState | Promise<CallbackSessionState>): Promise<CallbackSessionState | undefined> {
+	return await withStateLock(statePath, async () => {
+		const current = await loadSessionStateByPath(statePath);
+		if (!current) return undefined;
+		const next = await update(current);
+		await saveJsonUnlocked(statePath, next);
+		return next;
+	});
 }
 
 async function loadSessionStateByPath(statePath: string): Promise<CallbackSessionState | undefined> {
@@ -171,9 +248,9 @@ function isPidAlive(pid: unknown): boolean {
 async function refreshSessionState(state: CallbackSessionState | undefined): Promise<CallbackSessionState | undefined> {
 	if (!state) return undefined;
 	if (state.listenerActive === true && !isPidAlive(state.workerPid)) {
-		const next = { ...state, listenerActive: false, ready: false, recovered: true, stoppedAt: state.stoppedAt || new Date().toISOString(), stopReason: state.stopReason || "worker-exited" };
-		await saveJson(state.statePath, next);
-		return next as CallbackSessionState;
+		return await updateSessionStateByPath(state.statePath, (current) => current.listenerActive === true && !isPidAlive(current.workerPid)
+			? { ...current, listenerActive: false, ready: false, recovered: true, stoppedAt: current.stoppedAt || new Date().toISOString(), stopReason: current.stopReason || "worker-exited" } as CallbackSessionState
+			: current) ?? state;
 	}
 	return state;
 }
@@ -284,16 +361,16 @@ async function createCallbackSession(options: NormalizedCallbackOastOptions) {
 	const stderrPath = path.join(artifactRoot, "worker.stderr.log");
 	const stdoutFd = openSync(stdoutPath, "a");
 	const stderrFd = openSync(stderrPath, "a");
-	const child = spawn(process.execPath, [WORKER_PATH, statePath], { detached: true, stdio: ["ignore", stdoutFd, stderrFd], windowsHide: true });
-	child.unref();
+	try {
+		const child = spawn(process.execPath, [WORKER_PATH, statePath], { detached: true, stdio: ["ignore", stdoutFd, stderrFd], windowsHide: true });
+		child.unref();
+	} finally {
+		closeSync(stdoutFd);
+		closeSync(stderrFd);
+	}
 	const ready = await waitForState(sessionId, (current) => current.ready === true || typeof current.error === "string", 10_000);
 	if (typeof ready.error === "string") throw new Error(`browser_callback_oast worker failed: ${ready.error}`);
 	return ready;
-}
-
-async function persistSessionState(state: CallbackSessionState) {
-	await saveJson(state.statePath, state);
-	return state;
 }
 
 async function stopSession(state: CallbackSessionState) {
@@ -306,8 +383,8 @@ async function stopSession(state: CallbackSessionState) {
 	try {
 		return await waitForState(state.sessionId, (current) => current.listenerActive !== true, 10_000);
 	} catch {
-		const stopped = { ...state, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: state.stopReason || "stop-timeout" };
-		return await persistSessionState(stopped);
+		return await updateSessionStateByPath(state.statePath, (current) => ({ ...current, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: current.stopReason || state.stopReason || "stop-timeout" } as CallbackSessionState))
+			?? { ...state, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: state.stopReason || "stop-timeout" } as CallbackSessionState;
 	}
 }
 
@@ -406,12 +483,12 @@ export async function runCallbackOast(options: RawCallbackOastOptions) {
 		return { ok: true, action: normalized.action, ...sessionInfo(session), afterSeq: normalized.afterSeq, count: events.length, events };
 	}
 	if (normalized.action === "clear") {
-		const cleared = Array.isArray(session.events) ? session.events.length : 0;
-		session.events = [];
-		session.eventCount = 0;
-		session.lastClearedAt = new Date().toISOString();
-		await persistSessionState(session);
-		return { ok: true, action: normalized.action, ...sessionInfo(session), cleared };
+		let cleared = 0;
+		const clearedState = await updateSessionStateByPath(session.statePath, (current) => {
+			cleared = Array.isArray(current.events) ? current.events.length : 0;
+			return { ...current, events: [], eventCount: 0, lastClearedAt: new Date().toISOString() } as CallbackSessionState;
+		}) ?? session;
+		return { ok: true, action: normalized.action, ...sessionInfo(clearedState), cleared };
 	}
 	if (normalized.action === "trigger") return await triggerSession(session, normalized);
 	if (normalized.action === "stop") {

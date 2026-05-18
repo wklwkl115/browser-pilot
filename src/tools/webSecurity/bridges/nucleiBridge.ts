@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http";
 import { asString, isRecord, positiveInt, stringList } from "../shared/normalize";
+import { describeTextArtifact } from "../shared/artifacts";
 import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay";
 import type { NucleiBridgeOptions, ReplayRequest } from "../shared/types";
 
@@ -290,6 +291,9 @@ async function executeNucleiRun(launcher: NucleiLauncher, normalized: Normalized
 	const stderrPath = path.join(runDir, "stderr.txt");
 	await writeFile(stdoutPath, stdout, "utf8");
 	await writeFile(stderrPath, stderr, "utf8");
+	const requestArtifact = await describeTextArtifact(requestFile, { artifactRoot: normalized.artifactRoot, kind: "request", label: "nuclei raw request", mediaType: "message/http" });
+	const stdoutArtifact = await describeTextArtifact(stdoutPath, { artifactRoot: normalized.artifactRoot, kind: "stdout", label: "nuclei stdout" });
+	const stderrArtifact = await describeTextArtifact(stderrPath, { artifactRoot: normalized.artifactRoot, kind: "stderr", label: "nuclei stderr" });
 	const parsed = parseNucleiOutput(stdout);
 	const outputFiles = await listArtifactFiles(runDir);
 	if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`browser_nuclei_bridge failed to launch ${launcher.command}; executable was not found`);
@@ -304,6 +308,10 @@ async function executeNucleiRun(launcher: NucleiLauncher, normalized: Normalized
 		targetUrl: request.url,
 		requestMethod: request.method,
 		requestFile,
+		requestArtifact,
+		stdoutArtifact,
+		stderrArtifact,
+		artifacts: [requestArtifact, stdoutArtifact, stderrArtifact],
 		outputDir,
 		outputFiles,
 		launcher: { command: launcher.command, preArgs: launcher.preArgs, source: launcher.source },
@@ -371,6 +379,7 @@ export async function runNucleiBridge(options: NucleiBridgeOptions) {
 	const matchedSeverities = Array.from(new Set(matches.map((item) => asString(isRecord(item) ? item.severity : undefined)).filter(Boolean) as string[]));
 	const matchedRunCount = runs.filter((run) => run.matched === true).length;
 	const parseErrorCount = runs.reduce((sum, run) => sum + positiveInt(run.parseErrorCount, 0), 0);
+	const artifacts = runs.flatMap((run) => Array.isArray(run.artifacts) ? run.artifacts.filter(isRecord) : []);
 	return {
 		ok: failures.length === 0 && runs.every((run) => run.ok !== false),
 		generatedAt: new Date().toISOString(),
@@ -390,6 +399,7 @@ export async function runNucleiBridge(options: NucleiBridgeOptions) {
 		selectedAuthors: normalized.authors,
 		matchedTemplateIds,
 		matchedSeverities,
+		artifacts,
 		runs,
 		matches,
 		failures,

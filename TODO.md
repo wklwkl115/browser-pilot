@@ -110,6 +110,63 @@
 - [x] 为 `src/tools/webSecurity/browserNative/fuzzPaths.ts`、`fuzzVhosts.ts`、`cookieAnalyze.ts`、`callbackOast.ts` 补 `Normalized*Options`，并让 runner 在 normalize 后只消费规范化字段。
 - [x] 补 contract，防止上述 4 个 runner 重新直接消费 raw `unknown`。
 
+## 80. Bridge artifact 与 multipart 后续收口
+
+- [x] `browser_sqlmap_bridge` / `browser_nuclei_bridge`：将 request/stdout/stderr 日志补成 `browser_artifact` 兼容 Artifact 描述符，包含 path、bytes、chars、lineCount、sha256，并在 summary 中暴露可直接读取的 artifact 表。
+- [ ] `browser_http_replay` multipart：当前 builder 覆盖常规、同名多文件、嵌套 multipart 与 Content-Type 边界变体；后续仅在真实 CTF 样本暴露边界不兼容时，再按 fixture 补 raw multipart passthrough、固定嵌套 boundary、per-part header 保留、captured raw body 反解析后 mutation。
+
+## 81. JSON path 原型链污染修复
+
+- [x] `mutateParamRequest` / JSON path mutation：改为只读写 own property，`__proto__`、`constructor`、`prototype` 作为普通 JSON 数据键序列化，不再触达继承原型链。
+- [x] `deleteJsonPath`：删除操作只遍历 own property，避免通过继承属性访问或删除原型对象字段。
+- [x] 补契约：覆盖 `__proto__.polluted`、`constructor.prototype.polluted` set/delete，断言 `Object.prototype` 不被污染。
+
+## 82. Callback OAST state 写入竞态修复
+
+- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：为共享 `state.json` 的读-改-写路径补跨进程 lock file，避免主进程 clear/stop 与 Worker append/shutdown 互相覆盖。
+- [x] Worker 事件追加改为 locked fresh-state update，保留并发事件、单调 `nextSeq`、stop/ready 控制字段，不再用旧内存快照整体覆盖。
+- [x] 补契约：并发 HTTP 回调 burst 后收集数量与 seq 唯一性稳定，clear 后状态保持为空。
+
+## 83. JSON fuzz 畸形 body 静默重写修复
+
+- [x] `mutateParamRequest` JSON 分支：非空 body 的 `JSON.parse` 失败时抛出明确错误，不再静默初始化 `{}` 并丢失原始 payload。
+- [x] 有效但非 object/array 的 JSON body 直接失败，避免把 primitive JSON 静默替换为新对象。
+- [x] 补契约：直接 JSON mutation 与 `browser_fuzz_params` malformed JSON case 均记录失败，不返回破坏性重写后的请求体。
+
+## 84. Raw HTTP 重复 Header 解析覆盖修复
+
+- [x] `parseRawHttpRequest`：重复 header 改为 case-insensitive 合并，不再由后一个同名 header 静默覆盖前值。
+- [x] `Cookie` 使用 `; ` 合并，通用 header 使用 `, ` 合并，保留 folded continuation 到当前活动 header。
+- [x] 补契约：覆盖重复 `Cookie`、大小写不同的重复 `X-Forwarded-For` 与 folded header continuation。
+
+## 85. WebSocket 断连 pending Promise 快速失败修复
+
+- [x] `PendingRequest` 记录承载请求的 WebSocket client，避免仅靠 `tabId` 推断连接归属。
+- [x] `BrowserBridgeServer.unregisterClient` 断连时立即清理并 reject 该 client 上所有 pending 请求，不再等待 10~15 秒 timeout。
+- [x] 补 fake WebSocket 契约：发送命令后断开连接，pending 立即以 `BRIDGE_CLIENT_DISCONNECTED` 失败且 `pending` 表清空。
+
+## 86. Multipart 边界解析数据损坏修复
+
+- [x] `parseMultipartBody`：移除全局 `raw.split("--boundary")`，改为仅识别行首 multipart delimiter / closing delimiter。
+- [x] 删除对每个 segment 的无差别 `endsWith("--")` 裁剪，保留 part payload 中真实尾部横杠。
+- [x] 补契约：覆盖 payload 以 `--` 结尾、payload 内包含 `--boundary` 文本时不损坏内容。
+- [x] 补 raw request 边界：`parseRawHttpRequest` 只规范化 header 区，不再把 multipart body 的 CRLF 改写成 LF，避免新 parser 无法识别标准 delimiter。
+
+## 87. 现代 Rails 加密 Cookie 支持补齐（能力缺口）
+
+- [ ] `cookieTokens.ts`：为不带 `--` 拖尾的现代 Rails 加密 Cookie 增加 `MessageEncryptor` / AES-GCM 解密验证路径。
+- [ ] 保持现有 signed-cookie 兼容，同时补充 encrypted-cookie 的密钥派生与结构化输出，不把未来能力文档写成当前已支持。
+- [ ] 补 fixture / contract：覆盖至少一个现代 Rails AES-GCM cookie 样本及失败/成功解密路径。
+
+## 88. 质量评审剩余确认缺陷修复
+
+- [x] `http.ts`：收敛空 Buffer `simHash64` 固定碰撞。
+- [x] `callbackOastWorker.mjs`：修复 DNS QTYPE/QCLASS 16-bit 序列化截断。
+- [x] `callbackOast.ts`：关闭派生 worker 后父进程持有的 stdout/stderr log FDs。
+- [x] `cookieTokens.ts` / `cookieAnalyze.ts`：消除 Rails PBKDF2 同步阻塞主事件循环的路径。
+- [x] `sqliProbe.ts`：为确认命中的 probe 增加可控短路终止，减少无意义后续发包。
+
 ## 下一步建议顺序
 
-1. 当前批次 Web 安全增强与 actual callable-tool runtime verification 已闭环；等待下一轮明确范围。
+1. 完成 88 的剩余确认缺陷修复，并补契约/实际验证。
+2. 后续再做 87 的现代 Rails 加密 Cookie 能力补齐。

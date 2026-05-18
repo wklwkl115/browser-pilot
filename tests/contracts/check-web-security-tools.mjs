@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { createCipheriv, createHash, createHmac, pbkdf2Sync } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import dgram from "node:dgram";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { createSecureContext } from "node:tls";
+import { readBrowserArtifact } from "../../src/tools/artifactReader.ts";
 import { buildReplayRequest, parseRawHttpRequest, runBrowserCrawl, runCallbackOast, runCookieAnalyze, runFuzzParams, runFuzzPaths, runFuzzVhosts, runHttpReplay, runNucleiBridge, runReconProbe, runSqlmapBridge, runSqliProbe, runTemplateCheck } from "../../src/tools/webSecurityCore.ts";
+import { buildMultipartBodyFromParts, parseMultipartBody } from "../../src/tools/webSecurity/shared/multipart.ts";
+import { mutateParamRequest } from "../../src/tools/webSecurity/shared/replay.ts";
 import { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWebReconProbeData } from "../../src/tools/summaries/index.ts";
 import { ALT_HTTPS_CERT_PEM, ALT_HTTPS_KEY_PEM, DEFAULT_HTTPS_CERT_PEM, DEFAULT_HTTPS_KEY_PEM } from "../fixtures/https-sni-certs.mjs";
 
@@ -63,6 +67,54 @@ function jwtPayload(token) {
 	} catch {
 		return undefined;
 	}
+}
+
+function postCallbackFixture(url, body) {
+	return new Promise((resolve, reject) => {
+		const target = new URL(url);
+		const lib = target.protocol === "https:" ? https : http;
+		const request = lib.request(target, { method: "POST", headers: { "Content-Type": "text/plain; charset=utf-8", "Content-Length": Buffer.byteLength(body) } }, (response) => {
+			response.resume();
+			response.on("end", () => resolve({ status: response.statusCode }));
+		});
+		request.on("error", reject);
+		request.end(body);
+	});
+}
+
+function rawDnsQuestion(name, type, qclass = 1) {
+	const header = Buffer.alloc(12);
+	header.writeUInt16BE(0x2222, 0);
+	header.writeUInt16BE(0x0100, 2);
+	header.writeUInt16BE(1, 4);
+	const labels = String(name).replace(/\.+$/g, "").split(".").filter(Boolean).map((part) => Buffer.from(part, "utf8"));
+	const question = Buffer.concat([
+		...labels.flatMap((label) => [Buffer.from([label.length]), label]),
+		Buffer.from([0]),
+		Buffer.from([type >> 8, type & 0xff, qclass >> 8, qclass & 0xff]),
+	]);
+	return Buffer.concat([header, question]);
+}
+
+function sendDnsQuestion(port, name, type, qclass = 1) {
+	return new Promise((resolve, reject) => {
+		const socket = dgram.createSocket("udp4");
+		const timer = setTimeout(() => {
+			socket.close();
+			reject(new Error(`dns fixture timed out for type ${type}`));
+		}, 2_000);
+		socket.once("message", (message) => {
+			clearTimeout(timer);
+			socket.close();
+			resolve(message);
+		});
+		socket.once("error", (error) => {
+			clearTimeout(timer);
+			socket.close();
+			reject(error);
+		});
+		socket.send(rawDnsQuestion(name, type, qclass), port, "127.0.0.1");
+	});
 }
 
 function parseMultipartFixture(body, contentType) {
@@ -650,6 +702,13 @@ try {
 	assert.equal(analyzedRails.signature.verified, true, "cookie analyze should verify Rails signed sessions");
 	assert.equal(analyzedRails.payload.role, "user");
 	assert.match(analyzedRails.mutation.token, /--/, "cookie analyze should mutate Rails signed sessions");
+	const railsLagSecrets = Array.from({ length: 300 }, (_, index) => `lag-secret-${index}`);
+	const railsLagStartedAt = Date.now();
+	const railsLagPromise = runCookieAnalyze({ values: [fixtureRails], secretCandidates: railsLagSecrets });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.ok(Date.now() - railsLagStartedAt < 500, "cookie analyze should not block the event loop while deriving Rails PBKDF2 candidates");
+	const railsLagResult = await railsLagPromise;
+	assert.equal(railsLagResult.testedSecretCandidateCount, railsLagSecrets.length, "cookie analyze should still test every bounded Rails secret candidate asynchronously");
 	const analyzedPrefs = cookieAnalysis.results.find((item) => item.name === "prefs");
 	assert.equal(analyzedPrefs.kind, "encoded-json");
 	const claimReplayAnalysis = await runCookieAnalyze({
@@ -677,6 +736,9 @@ try {
 	assert.ok(sqli.matched.some((item) => item.type === "error"), "sqli probe should classify error oracle");
 	assert.ok(sqli.matched.some((item) => item.type === "time"), "sqli probe should classify time oracle");
 	assert.ok(sqli.dbmsFingerprints.includes("mysql"), "sqli probe should infer DBMS fingerprints from errors");
+	const sqliShortCircuit = await runSqliProbe({ url: `${base}/sqli?id=1`, locations: ["query"], paramNames: ["id"], probeTypes: ["error", "time"], errorPayloads: ["'"], timePayloads: ["' AND SLEEP(5)--"], stopOnFirstMatch: true, maxCases: 10, timeoutMs: 2_000, maxBodyBytes: 64_000 });
+	assert.equal(sqliShortCircuit.matchedCount, 1, "sqli short-circuit mode should stop after the first confirmed oracle match");
+	assert.equal(sqliShortCircuit.requestCount, 1, "sqli short-circuit mode should avoid later probes after the first confirmed oracle match");
 	const sqliUnion = await runSqliProbe({ url: `${base}/sqli?id=1`, locations: ["query"], paramNames: ["id"], probeTypes: ["union"], orderByMax: 3, unionColumnMax: 3, maxCases: 20, timeoutMs: 2_000, maxBodyBytes: 64_000 });
 	assert.ok(sqliUnion.columnHints.some((hint) => hint.paramName === "id" && hint.orderByMaxValid === 2), "sqli probe should infer ORDER BY column count hints");
 	assert.ok(sqliUnion.columnHints.some((hint) => hint.paramName === "id" && hint.unionSelectColumns === 2), "sqli probe should infer UNION SELECT column count hints");
@@ -727,8 +789,17 @@ console.log(requestText.includes("Cookie:") ? "request cookie observed" : "reque
 	assert.equal(sqlmapBridge.findings[0].parameter, "id", "sqlmap bridge should parse finding parameter names");
 	const sqlmapRequestText = await readFile(sqlmapBridge.runs[0].requestFile, "utf8");
 	assert.match(sqlmapRequestText, /Cookie: stale=1; sid=abc|Cookie: sid=abc; stale=1/, "sqlmap bridge should merge browser-session cookies into the request file");
+	assert.equal(sqlmapBridge.artifacts.length, 3, "sqlmap bridge should expose request/stdout/stderr artifact descriptors");
+	assert.equal(sqlmapBridge.runs[0].stdoutArtifact.read.tool, "browser_artifact", "sqlmap stdout artifact should be browser_artifact-readable");
+	assert.match(sqlmapBridge.runs[0].stdoutArtifact.sha256, /^[a-f0-9]{64}$/, "sqlmap stdout artifact should expose sha256");
+	assert.equal(sqlmapBridge.runs[0].requestArtifact.mediaType, "message/http", "sqlmap request artifact should expose HTTP media type");
+	const sqlmapStdoutArtifact = await readBrowserArtifact({ path: sqlmapBridge.runs[0].stdoutArtifact.path, mode: "text", limit: 5, maxChars: 2_000 });
+	assert.equal(sqlmapStdoutArtifact.mode, "text", "sqlmap stdout artifact should be readable through browser_artifact reader");
+	assert.ok(sqlmapStdoutArtifact.snippets[0].text.includes("Parameter: id"), "sqlmap stdout artifact reader should expose log text");
 	const sqlmapSummary = summarizeSqlmapBridgeData(sqlmapBridge);
 	assert.equal(sqlmapSummary.findingCount, 1, "sqlmap bridge summary should expose finding count");
+	assert.equal(sqlmapSummary.artifactCount, 3, "sqlmap bridge summary should expose artifact count");
+	assert.equal(JSON.stringify(sqlmapSummary).includes("stdout.txt"), true, "sqlmap bridge summary should expose artifact paths");
 	assert.equal(JSON.stringify(sqlmapSummary).includes("session=secret"), false, "sqlmap bridge summary must redact sensitive preview text");
 
 	const fakeNucleiPath = ".pi/browser-artifacts/fake-nuclei-fixture.mjs";
@@ -774,8 +845,17 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(nucleiBridge.matches[0].extractedResults[0], "APP_KEY=fixture", "nuclei bridge should parse extracted results");
 	const nucleiRequestText = await readFile(nucleiBridge.runs[0].requestFile, "utf8");
 	assert.match(nucleiRequestText, /Cookie: stale=1; sid=abc|Cookie: sid=abc; stale=1/, "nuclei bridge should merge browser-session cookies into the request file");
+	assert.equal(nucleiBridge.artifacts.length, 3, "nuclei bridge should expose request/stdout/stderr artifact descriptors");
+	assert.equal(nucleiBridge.runs[0].stderrArtifact.read.tool, "browser_artifact", "nuclei stderr artifact should be browser_artifact-readable");
+	assert.match(nucleiBridge.runs[0].stderrArtifact.sha256, /^[a-f0-9]{64}$/, "nuclei stderr artifact should expose sha256");
+	assert.equal(nucleiBridge.runs[0].requestArtifact.mediaType, "message/http", "nuclei request artifact should expose HTTP media type");
+	const nucleiStderrArtifact = await readBrowserArtifact({ path: nucleiBridge.runs[0].stderrArtifact.path, mode: "text", limit: 5, maxChars: 2_000 });
+	assert.equal(nucleiStderrArtifact.mode, "text", "nuclei stderr artifact should be readable through browser_artifact reader");
+	assert.ok(nucleiStderrArtifact.snippets[0].text.includes("browser cookie observed"), "nuclei stderr artifact reader should expose log text");
 	const nucleiSummary = summarizeNucleiBridgeData(nucleiBridge);
 	assert.equal(nucleiSummary.matchCount, 1, "nuclei bridge summary should expose match count");
+	assert.equal(nucleiSummary.artifactCount, 3, "nuclei bridge summary should expose artifact count");
+	assert.equal(JSON.stringify(nucleiSummary).includes("stderr.txt"), true, "nuclei bridge summary should expose artifact paths");
 	assert.equal(JSON.stringify(nucleiSummary).includes("session=secret"), false, "nuclei bridge summary must redact sensitive preview text");
 
 	const templateCheck = await runTemplateCheck({ url: base, templateIds: ["exposure", "openapi"], maxTemplates: 10, maxBodyBytes: 64_000 });
@@ -801,7 +881,7 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(templateSummary.matchedCount, dslTemplateCheck.matched.length, "template summary should expose matched count");
 	assert.equal(templateSummary.deduplicatedResults, 1, "template summary should expose dedup count");
 
-	const callbackStart = await runCallbackOast({ action: "start", sessionId: "contract-callback", correlationId: "corr-contract", maxBodyBytes: 1024, maxEvents: 10, enableHttps: true, enableDns: true, dnsBaseDomain: "oast.local", publicBaseUrl: "https://public.example.test", publicHttpsBaseUrl: "https://secure.example.test", publicDnsBaseDomain: "oast.public", externalMetadata: { provider: "fixture-tunnel", region: "lab" } });
+	const callbackStart = await runCallbackOast({ action: "start", sessionId: "contract-callback", correlationId: "corr-contract", maxBodyBytes: 1024, maxEvents: 50, enableHttps: true, enableDns: true, dnsBaseDomain: "oast.local", publicBaseUrl: "https://public.example.test", publicHttpsBaseUrl: "https://secure.example.test", publicDnsBaseDomain: "oast.public", externalMetadata: { provider: "fixture-tunnel", region: "lab" } });
 	assert.equal(callbackStart.ok, true, "callback listener should start");
 	assert.match(callbackStart.callbackUrl, /^http:\/\//, "callback listener should expose an HTTP callback URL");
 	assert.match(callbackStart.httpsCallbackUrl, /^https:\/\//, "callback listener should expose an HTTPS callback URL when enabled");
@@ -821,19 +901,34 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(dnsTrigger.count, 1, "callback trigger helper should persist one DNS callback event");
 	assert.equal(dnsTrigger.events[0].protocol, "dns", "callback DNS trigger should mark the DNS protocol");
 	assert.equal(dnsTrigger.events[0].queryName, "corr-contract.oast.local", "callback DNS trigger should query the generated callback host");
+	const dnsCaaResponse = await sendDnsQuestion(callbackStart.dnsPort, callbackStart.dnsCallbackHost, 257, 1);
+	const dnsQuestionTail = dnsCaaResponse.subarray(-4);
+	assert.deepEqual(Array.from(dnsQuestionTail), [0x01, 0x01, 0x00, 0x01], "callback DNS response should preserve 16-bit QTYPE/QCLASS values like CAA");
+	await new Promise((resolve) => setTimeout(resolve, 50));
 	const callbackCollected = await runCallbackOast({ action: "collect", sessionId: "contract-callback" });
-	assert.equal(callbackCollected.count, 3, "callback listener should collect the persisted HTTP/HTTPS/DNS events");
+	assert.equal(callbackCollected.count, 4, "callback listener should collect the persisted HTTP/HTTPS/DNS events plus the raw CAA DNS query");
 	assert.ok(callbackCollected.events.every((event) => event.matchedCorrelation === true), "callback listener should mark correlation hits across all trigger modes");
 	const callbackSummary = summarizeCallbackOastData(callbackCollected);
-	assert.equal(callbackSummary.eventCount, 3, "callback summary should expose event count");
+	assert.equal(callbackSummary.eventCount, 4, "callback summary should expose event count");
 	assert.ok(callbackSummary.protocolCounts.some((item) => item.key === "http"), "callback summary should expose HTTP protocol counts");
 	assert.ok(callbackSummary.protocolCounts.some((item) => item.key === "https"), "callback summary should expose HTTPS protocol counts");
 	assert.ok(callbackSummary.protocolCounts.some((item) => item.key === "dns"), "callback summary should expose DNS protocol counts");
 	const callbackClear = await runCallbackOast({ action: "clear", sessionId: "contract-callback" });
-	assert.equal(callbackClear.cleared, 3, "callback clear should reset persisted events");
+	assert.equal(callbackClear.cleared, 4, "callback clear should reset persisted events");
 	const callbackStatus = await runCallbackOast({ action: "status", sessionId: "contract-callback" });
 	assert.equal(callbackStatus.eventCount, 0, "callback status should reflect persisted clears");
 	assert.equal(callbackStatus.listenerActive, true, "callback status should retain active worker-backed listeners");
+	const callbackBurstCount = 16;
+	const callbackBurstResponses = await Promise.all(Array.from({ length: callbackBurstCount }, (_, index) => postCallbackFixture(callbackStart.callbackUrl, `corr-contract burst-${index}`)));
+	assert.ok(callbackBurstResponses.every((item) => item.status === 200), "callback burst fixture should complete every HTTP request");
+	const callbackBurstCollected = await runCallbackOast({ action: "collect", sessionId: "contract-callback" });
+	assert.equal(callbackBurstCollected.count, callbackBurstCount, "callback listener should preserve concurrent callback events without lost updates");
+	assert.equal(new Set(callbackBurstCollected.events.map((event) => event.seq)).size, callbackBurstCount, "callback listener should assign unique seq values under concurrent callbacks");
+	assert.ok(callbackBurstCollected.events.every((event) => event.matchedCorrelation === true), "callback burst events should preserve correlation matches");
+	const callbackClearAfterBurst = await runCallbackOast({ action: "clear", sessionId: "contract-callback" });
+	assert.equal(callbackClearAfterBurst.cleared, callbackBurstCount, "callback clear should remove concurrent burst events");
+	const callbackStatusAfterBurstClear = await runCallbackOast({ action: "status", sessionId: "contract-callback" });
+	assert.equal(callbackStatusAfterBurstClear.eventCount, 0, "callback status should remain clear after concurrent burst cleanup");
 	const callbackStopped = await runCallbackOast({ action: "stop", sessionId: "contract-callback" });
 	assert.equal(callbackStopped.listenerActive, false, "callback stop should close persisted listeners");
 	assert.equal(callbackStopped.count, 0, "callback stop should return the current persisted event buffer");
@@ -858,6 +953,13 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.ok(nestedJson.matched.some((item) => item.paramName === "meta" && item.value === "{\"enabled\":true}"), "json param fuzz should support object jsonValues");
 	const deleteJson = await runFuzzParams({ rawRequest: nestedJsonRaw, defaultScheme: "http", locations: ["json"], paramNames: ["user.role"], operations: ["delete"], matchStatus: [403], maxBodyBytes: 64_000 });
 	assert.equal(deleteJson.matchedCount, 1, "json param fuzz should support delete operation");
+	const malformedJsonRaw = `POST /echo HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nContent-Type: application/json\r\n\r\n{"role":"user",`;
+	assert.throws(() => mutateParamRequest({ url: `${base}/echo`, method: "POST", headers: { "Content-Type": "application/json" }, body: '{"role":"user",' }, "json", "role", "admin"), /Invalid JSON request body/, "json mutation should not silently rewrite malformed JSON bodies");
+	assert.throws(() => mutateParamRequest({ url: `${base}/echo`, method: "POST", headers: { "Content-Type": "application/json" }, body: '"literal"' }, "json", "role", "admin"), /must be an object or array/, "json mutation should not silently replace primitive JSON bodies");
+	const malformedJson = await runFuzzParams({ rawRequest: malformedJsonRaw, defaultScheme: "http", locations: ["json"], paramNames: ["role"], values: ["admin"], maxBodyBytes: 64_000 });
+	assert.equal(malformedJson.ok, false, "json param fuzz should report malformed JSON mutation failures");
+	assert.equal(malformedJson.failures.length, 1, "json param fuzz should retain malformed JSON as a per-case failure");
+	assert.match(malformedJson.failures[0].error, /Invalid JSON request body/, "json param fuzz failure should expose malformed JSON parse errors without rewriting body");
 
 	const formRaw = `POST /form HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 9\r\n\r\nrole=user`;
 	const paramForm = await runFuzzParams({ rawRequest: formRaw, defaultScheme: "http", locations: ["form"], paramNames: ["role"], values: ["user", "admin"], matchStatus: [202], filterStatus: [403], maxBodyBytes: 64_000 });
@@ -865,8 +967,26 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 
 	const paramHeader = await runFuzzParams({ url: `${base}/header`, locations: ["header"], paramNames: ["X-Debug"], values: ["no", "yes"], matchStatus: [204], filterStatus: [403], maxBodyBytes: 64_000 });
 	assert.equal(paramHeader.matchedCount, 1, "header param fuzz should find yes value");
+	assert.equal({}.polluted, undefined, "prototype pollution sentinel should start clean");
+	const pollutionBase = { url: `${base}/json`, method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" };
+	const pollutedRequest = mutateParamRequest(pollutionBase, "json", "__proto__.polluted", "yes");
+	assert.equal({}.polluted, undefined, "json path mutation must not pollute Object.prototype");
+	assert.equal(pollutedRequest.body, '{"__proto__":{"polluted":"yes"}}', "json path mutation should keep prototype keys as own JSON data");
+	const constructorRequest = mutateParamRequest(pollutionBase, "json", "constructor.prototype.polluted", "yes");
+	assert.equal({}.polluted, undefined, "constructor.prototype JSON path mutation must not pollute Object.prototype");
+	assert.equal(constructorRequest.body, JSON.stringify({ constructor: { prototype: { polluted: "yes" } } }), "constructor/prototype path should remain serialized JSON data");
+	const deletePrototypeRequest = mutateParamRequest({ ...pollutionBase, body: '{"__proto__":{"polluted":"owned"},"safe":true}' }, "json", "__proto__.polluted", undefined, "delete");
+	assert.equal({}.polluted, undefined, "json path delete must not traverse inherited prototype objects");
+	assert.equal(deletePrototypeRequest.body, '{"__proto__":{},"safe":true}', "json path delete should only remove own JSON data");
 	const multipartBoundary = "----fixture-boundary";
 	const multipartRaw = `POST /multipart HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nContent-Type: multipart/form-data; boundary=${multipartBoundary}\r\n\r\n--${multipartBoundary}\r\nContent-Disposition: form-data; name="role"\r\n\r\nuser\r\n--${multipartBoundary}\r\nContent-Disposition: form-data; name="upload"; filename="old.txt"\r\nContent-Type: text/plain\r\n\r\nold\r\n--${multipartBoundary}--\r\n`;
+	const parsedMultipartRaw = parseRawHttpRequest(multipartRaw, { defaultScheme: "http" });
+	assert.ok(String(parsedMultipartRaw.body).includes("\r\nContent-Disposition"), "raw request parser must preserve multipart body CRLF delimiters");
+	assert.equal(parseMultipartBody(parsedMultipartRaw.body, parsedMultipartRaw.headers["Content-Type"]).parts.length, 2, "multipart parser should parse CRLF-preserved raw request bodies");
+	const multipartTail = buildMultipartBodyFromParts([{ name: "payload", body: Buffer.from("abc--") }], multipartBoundary);
+	assert.equal(parseMultipartBody(multipartTail.body, multipartTail.contentType).parts[0].body.toString(), "abc--", "multipart parser must preserve payload trailing dashes");
+	const multipartBoundaryCollision = buildMultipartBodyFromParts([{ name: "payload", body: Buffer.from(`before--${multipartBoundary}-after`) }], multipartBoundary);
+	assert.equal(parseMultipartBody(multipartBoundaryCollision.body, multipartBoundaryCollision.contentType).parts[0].body.toString(), `before--${multipartBoundary}-after`, "multipart parser must not split on boundary-like text inside payload");
 	const multipartField = await runFuzzParams({ rawRequest: multipartRaw, defaultScheme: "http", locations: ["multipart"], paramNames: ["role"], values: ["admin"], matchStatus: [200], filterStatus: [403], maxBodyBytes: 64_000 });
 	assert.equal(multipartField.matchedCount, 1, "multipart param fuzz should mutate text fields");
 	const multipartFile = await runFuzzParams({ rawRequest: multipartRaw, defaultScheme: "http", locations: ["multipart"], paramNames: ["upload"], jsonValues: [{ filename: "a.txt", contentType: "text/plain", content: "hello" }], matchStatus: [201], filterStatus: [403], maxBodyBytes: 64_000 });
@@ -896,6 +1016,11 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(parsed.method, "POST");
 	assert.equal(parsed.url, `${base}/echo`);
 	assert.equal(parsed.headers.Host, `127.0.0.1:${address.port}`);
+	const duplicateHeaderRaw = `GET /echo HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nCookie: a=1\r\nCookie: b=2\r\nX-Forwarded-For: 1.1.1.1\r\nx-forwarded-for: 2.2.2.2\r\nX-Trace: one\r\n\ttwo\r\n\r\n`;
+	const duplicateHeaders = parseRawHttpRequest(duplicateHeaderRaw, { defaultScheme: "http" }).headers;
+	assert.equal(duplicateHeaders.Cookie, "a=1; b=2", "raw request parser should merge repeated Cookie headers instead of overwriting");
+	assert.equal(duplicateHeaders["X-Forwarded-For"], "1.1.1.1, 2.2.2.2", "raw request parser should merge repeated generic headers case-insensitively");
+	assert.equal(duplicateHeaders["X-Trace"], "one two", "raw request parser should preserve folded header continuations on the active header");
 
 	const built = buildReplayRequest({ request: { url: `${base}/echo`, method: "POST", headers: [{ name: "X-Captured", value: "yes" }], postData: "captured" }, mutations: { body: "mutated" } });
 	assert.equal(built.headers["X-Captured"], "yes");

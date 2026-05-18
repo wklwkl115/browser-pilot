@@ -98,7 +98,8 @@ assert(webSecurityFuzzPaths.includes("NormalizedFuzzPathsOptions") && webSecurit
 assert(webSecurityFuzzVhosts.includes("NormalizedFuzzVhostsOptions") && webSecurityFuzzVhosts.includes("RawFuzzVhostsOptions"), "fuzz-vhosts implementation must normalize raw inputs before execution");
 assert(webSecurityCookieAnalyze.includes("NormalizedCookieAnalyzeOptions") && webSecurityCookieAnalyze.includes("RawCookieAnalyzeOptions"), "cookie-analyze implementation must normalize raw inputs before execution");
 assert(webSecurityCallbackOast.includes("NormalizedCallbackOastOptions") && webSecurityCallbackOast.includes("RawCallbackOastOptions"), "callback-oast implementation must normalize raw inputs before execution");
-assert(webSecuritySqli.includes("NormalizedSqliProbeOptions"), "sqli implementation must normalize inputs before execution");
+assert(webSecurityCallbackOast.includes("closeSync(stdoutFd)") && webSecurityCallbackOast.includes("closeSync(stderrFd)"), "callback-oast parent must close inherited worker log file descriptors");
+assert(webSecuritySqli.includes("NormalizedSqliProbeOptions") && webSecuritySqli.includes("stopOnFirstMatch"), "sqli implementation must normalize inputs before execution and support stop-on-first-match short-circuiting");
 assert(webSecuritySqlmap.includes("NormalizedSqlmapBridgeOptions"), "sqlmap bridge implementation must normalize inputs before execution");
 assert(webSecurityNuclei.includes("NormalizedNucleiBridgeOptions"), "nuclei bridge implementation must normalize inputs before execution");
 assert(webSecurityTemplateCheck.includes("NormalizedTemplateCheckOptions"), "template-check implementation must normalize inputs before execution");
@@ -110,12 +111,13 @@ assert((webSecurityTools.match(/executeWebSecurityToolShell\(ensureStarted, para
 assert((webSecurityTools.match(/distilledJsonResult\(/g) || []).length === 1, "web security tool distillation must flow through one shared shell");
 assert((webSecurityTools.match(/errorResult\(/g) || []).length === 1, "web security tool error mapping must flow through one shared shell");
 assert((webSecurityTools.match(/cmd: "cookies"/g) || []).length === 1, "web security tool cookie binding must be centralized in one shared shell");
-assert(webSecurityTools.includes("for SQLi oracle evidence"), "browser_sqli_probe tool docs must describe SQLi oracle evidence scope");
+assert(webSecurityTools.includes("for SQLi oracle evidence") && webSecurityTools.includes("stopOnFirstMatch"), "browser_sqli_probe tool docs must describe SQLi oracle evidence scope and expose stop-on-first-match short-circuiting");
 assert(webSecurityTools.includes("with explicit templateIds or templates"), "browser_template_check tool docs must require explicit template selection without weakening capability wording");
 for (const forbiddenPhrase of ["risk-tier", "风险分级闸门", "安全收缩文案", "能力弱化默认值"]) {
 	assert(!webSecurityTools.includes(forbiddenPhrase), `web security tool docs must not introduce tool-layer boundary shrink wording: ${forbiddenPhrase}`);
 }
 assert(read("src/tools/budgets.ts").includes("TOOL_RESULT_BUDGETS"), "tool result budgets must be table-driven");
+assert(read("src/tools/webSecurity/shared/http.ts").includes('if (!buffer.length) return "0000000000000000"'), "simHash64 must special-case empty buffers to avoid fixed all-ones collisions");
 const readme = read("README.md");
 assert(readme.includes("src/tools/webSecurity/browserNative") && readme.includes("src/tools/webSecurity/bridges") && readme.includes("src/tools/webSecurity/shared"), "README must document the fixed single-package webSecurity layering");
 assert(readme.includes("不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案"), "README must document the tool-layer boundary wording for webSecurity");

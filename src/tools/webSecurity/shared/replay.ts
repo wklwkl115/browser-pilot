@@ -22,13 +22,28 @@ export type NormalizedReplayOptions = {
 	cookieProvider?: CookieProvider;
 };
 
+function appendRawHeader(headers: HeaderMap, rawName: string, rawValue: string): string {
+	const name = rawName.trim();
+	const value = rawValue.trim();
+	const normalized = normalizeHeaderName(name);
+	const existingName = Object.keys(headers).find((key) => normalizeHeaderName(key) === normalized);
+	if (!existingName) {
+		headers[name] = value;
+		return name;
+	}
+	const separator = normalized === "cookie" ? "; " : ", ";
+	headers[existingName] = headers[existingName] ? `${headers[existingName]}${separator}${value}` : value;
+	return existingName;
+}
+
 export function parseRawHttpRequest(rawValue: unknown, options: { baseUrl?: unknown; defaultScheme?: unknown } = {}) {
 	const raw = asString(rawValue);
 	if (!raw) throw new Error("rawRequest must be a non-empty string");
-	const normalized = raw.replace(/\r\n/g, "\n");
-	const splitAt = normalized.indexOf("\n\n");
-	const head = splitAt >= 0 ? normalized.slice(0, splitAt) : normalized;
-	const body = splitAt >= 0 ? normalized.slice(splitAt + 2) : undefined;
+	const split = raw.match(/\r?\n\r?\n/);
+	const splitAt = split?.index ?? -1;
+	const separatorLength = split?.[0]?.length ?? 0;
+	const head = (splitAt >= 0 ? raw.slice(0, splitAt) : raw).replace(/\r\n/g, "\n");
+	const body = splitAt >= 0 ? raw.slice(splitAt + separatorLength) : undefined;
 	const lines = head.split("\n").filter(Boolean);
 	const requestLine = lines.shift() || "";
 	const match = requestLine.match(/^(\S+)\s+(\S+)(?:\s+HTTP\/\d(?:\.\d)?)?$/i);
@@ -42,8 +57,7 @@ export function parseRawHttpRequest(rawValue: unknown, options: { baseUrl?: unkn
 		}
 		const idx = line.indexOf(":");
 		if (idx <= 0) continue;
-		lastName = line.slice(0, idx).trim();
-		headers[lastName] = line.slice(idx + 1).trim();
+		lastName = appendRawHeader(headers, line.slice(0, idx), line.slice(idx + 1));
 	}
 	const host = headers.Host || headers.host;
 	const target = match[2];
@@ -117,6 +131,26 @@ export function inferFuzzParamLocations(request: ReplayRequest, explicit: unknow
 	return Array.from(out);
 }
 
+function hasOwnJsonProperty(value: unknown, key: string | number): boolean {
+	return value !== undefined && value !== null && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function getOwnJsonProperty(value: unknown, key: string | number): unknown {
+	return hasOwnJsonProperty(value, key) ? (value as any)[key as any] : undefined;
+}
+
+function setOwnJsonProperty(target: unknown, key: string | number, value: unknown) {
+	if (typeof key === "number" || hasOwnJsonProperty(target, key)) {
+		(target as any)[key as any] = value;
+		return;
+	}
+	Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+function createJsonContainer(next: string | number): Record<string, unknown> | unknown[] {
+	return typeof next === "number" ? [] : Object.create(null);
+}
+
 function collectJsonParamPaths(value: unknown, prefix = "", out = new Set<string>()): Set<string> {
 	if (Array.isArray(value)) {
 		value.slice(0, 20).forEach((item, index) => collectJsonParamPaths(item, `${prefix}[${index}]`, out));
@@ -170,31 +204,36 @@ function setJsonPath(root: unknown, path: string, value: unknown) {
 		const next = parts[i + 1];
 		if (typeof part === "number") {
 			if (!Array.isArray(current)) throw new Error(`JSON path expects array at ${String(part)}`);
-			if (current[part] === undefined || current[part] === null) current[part] = typeof next === "number" ? [] : {};
-			current = current[part];
-		} else {
-			if (!isRecord(current) && !Array.isArray(current)) throw new Error(`JSON path expects object at ${part}`);
-			if (current[part] === undefined || current[part] === null) current[part] = typeof next === "number" ? [] : {};
-			current = current[part];
+		} else if (!isRecord(current) && !Array.isArray(current)) {
+			throw new Error(`JSON path expects object at ${part}`);
 		}
+		let child = getOwnJsonProperty(current, part);
+		if (child === undefined || child === null) {
+			child = createJsonContainer(next);
+			setOwnJsonProperty(current, part, child);
+		}
+		current = child;
 	}
 	const last = parts[parts.length - 1];
 	if (typeof last === "number") {
 		if (!Array.isArray(current)) throw new Error(`JSON path expects array at ${String(last)}`);
-		current[last] = value;
-	} else {
-		current[last] = value;
+	} else if (!isRecord(current) && !Array.isArray(current)) {
+		throw new Error(`JSON path expects object at ${last}`);
 	}
+	setOwnJsonProperty(current, last, value);
 }
 
 function deleteJsonPath(root: unknown, path: string) {
 	const parts = jsonPathParts(path);
 	let current: any = root;
 	for (let i = 0; i < parts.length - 1; i += 1) {
-		current = current?.[parts[i] as any];
+		const part = parts[i];
+		if (!hasOwnJsonProperty(current, part)) return;
+		current = getOwnJsonProperty(current, part);
 		if (current === undefined || current === null) return;
 	}
 	const last = parts[parts.length - 1];
+	if (!hasOwnJsonProperty(current, last)) return;
 	if (Array.isArray(current) && typeof last === "number") current.splice(last, 1);
 	else if (current && typeof current === "object") delete current[last as any];
 }
@@ -248,12 +287,14 @@ export function mutateParamRequest(base: ReplayRequest, location: string, paramN
 	if (location === "json") {
 		let parsed: unknown = {};
 		const body = typeof request.body === "string" || Buffer.isBuffer(request.body) ? request.body.toString() : "";
-		try {
-			parsed = body.trim() ? JSON.parse(body) : {};
-		} catch {
-			parsed = {};
+		if (body.trim()) {
+			try {
+				parsed = JSON.parse(body);
+			} catch (error) {
+				throw new Error(`Invalid JSON request body; cannot mutate JSON parameter ${paramName}: ${error instanceof Error ? error.message : String(error)}`);
+			}
 		}
-		if (!isRecord(parsed) && !Array.isArray(parsed)) parsed = {};
+		if (!isRecord(parsed) && !Array.isArray(parsed)) throw new Error(`JSON request body must be an object or array to mutate JSON parameter ${paramName}`);
 		if (operation === "delete") deleteJsonPath(parsed, paramName);
 		else setJsonPath(parsed, paramName, parseFuzzParamValue(value));
 		request.body = JSON.stringify(parsed);

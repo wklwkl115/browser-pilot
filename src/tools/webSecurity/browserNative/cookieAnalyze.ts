@@ -189,7 +189,7 @@ async function runClaimReplayChecks(samples: CookieSample[], results: Record<str
 export async function runCookieAnalyze(options: RawCookieAnalyzeOptions) {
 	const normalized = await normalizeCookieAnalyzeOptions(options);
 	if (!normalized.samples.length) throw new Error("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url");
-	const results = normalized.samples.map((sample, index) => ({ index, ...analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations) }));
+	const results = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
 	const tokenResults = results.filter((item) => tokenCountOf(item) > 0);
 	const jwtResults = results.filter((item) => item.kind === "jwt");
 	const jweCount = results.filter((item) => item.kind === "jwe").length;

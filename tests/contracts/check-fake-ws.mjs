@@ -160,6 +160,25 @@ try {
 	await rejection;
 	assert.equal(server.snapshot().pending.length, 0);
 
+	const disconnectPromise = server.executeJavaScript("return 2", { tabId: 101, timeoutMs: 5_000 });
+	const disconnectOutbound = await nextJson(ws, "disconnect command outbound");
+	sendJson(ws, { type: "ack", id: disconnectOutbound.id });
+	const disconnectStarted = Date.now();
+	const disconnectRejection = assert.rejects(disconnectPromise, (error) => {
+		assert.equal(error.code, "BRIDGE_CLIENT_DISCONNECTED");
+		assert.equal(error.details.id, disconnectOutbound.id);
+		assert.equal(error.details.tabId, 101);
+		assert.equal(error.details.acked, true);
+		assert.ok(Date.now() - disconnectStarted < 1_000, "pending request should reject immediately on websocket disconnect");
+		return true;
+	});
+	ws.close();
+	await disconnectRejection;
+	await waitUntil(() => !server.snapshot().extensionConnected && server.snapshot().pending.length === 0, "pending cleanup after websocket disconnect");
+	ws = await openFakeClient(port);
+	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }]));
+	await waitUntil(() => server.snapshot().extensionConnected && server.getTabs().some((tab) => tab.tabId === 101 && !tab.disconnectedAt), "reconnect after pending cleanup");
+
 	sendJson(ws, {
 		type: "tabs_update",
 		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test-2" },

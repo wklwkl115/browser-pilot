@@ -294,6 +294,7 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 			payloads: Type.Optional(Type.Array(Type.String(), { description: "Additional payloads appended to error probes." })),
 			timeThresholdMs: Type.Optional(Type.Number({ description: "Elapsed-time delta threshold for time oracle matches; default 2000." })),
 			baselineRepeats: Type.Optional(Type.Number({ description: "Baseline request repetitions; default 1, hard-capped at 10." })),
+			stopOnFirstMatch: Type.Optional(Type.Boolean({ description: "Stop probing a confirmed vulnerable parameter after the first oracle match; default false." })),
 			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false." })),
 			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
 			maxCases: Type.Optional(Type.Number({ description: "Maximum probe cases; default 100, hard-capped at 5000." })),

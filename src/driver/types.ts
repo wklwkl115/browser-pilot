@@ -53,6 +53,7 @@ export type ExecuteOptions = {
 export type PendingRequest = {
 	id: string;
 	tabId?: number;
+	client: WebSocket;
 	createdAt: number;
 	acked: boolean;
 	ackAt?: number;

@@ -176,6 +176,7 @@ export type RawSqliProbeOptions = RawFuzzParamsOptions & {
 	payloads?: unknown;
 	timeThresholdMs?: unknown;
 	baselineRepeats?: unknown;
+	stopOnFirstMatch?: unknown;
 };
 
 export type RawTemplateCheckOptions = RawReplayOptions & {

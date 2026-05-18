@@ -29,9 +29,9 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `browser_crawl`：有界同源 crawl，提取 links/forms/known files/JS endpoint hints，展开 OpenAPI endpoints 与 schema 参数摘要，主动/被动结构化 GraphQL introspection，解析 service worker cache routes 与版本摘要、source map 内容与反向源文件归档，并归档结构化结果。
 - `browser_fuzz_paths`：有界 path/file/route/extension fuzzing，支持 matcher/filter/rate、multi-FUZZ tuple、递归目录深度、auto/exact/cluster baseline、响应聚类和 artifact 归档。
 - `browser_fuzz_vhosts`：有界 Host header / virtual-host fuzzing，支持 Host/SNI 模式、多 baseline host、HTTPS 证书摘要、baseline cluster 过滤和响应聚类。
-- `browser_sqli_probe`：从 URL/raw/captured request 模板执行 SQLi boolean/error/time/union oracle 探测，输出 DBMS 指纹、ORDER BY/UNION 列数 hint、UNION 回显位和布尔盲注抽取证据。
-- `browser_sqlmap_bridge`：通过 Pi-native bridge 调用 `sqlmap`，支持 URL/raw/captured/HAR 请求输入、浏览器态 cookie 绑定、显式 launcher 或 PATH/module auto-detect、结构化 findings 与 artifact 归档。
-- `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，支持 scoped URL/raw/captured/HAR 请求输入、模板/工作流/ID/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher 或 PATH auto-detect、结构化 matches 与 artifact 归档。
+- `browser_sqli_probe`：从 URL/raw/captured request 模板执行 SQLi boolean/error/time/union oracle 探测，输出 DBMS 指纹、ORDER BY/UNION 列数 hint、UNION 回显位和布尔盲注抽取证据，并支持在确认命中后按参数短路后续 probe。
+- `browser_sqlmap_bridge`：通过 Pi-native bridge 调用 `sqlmap`，支持 URL/raw/captured/HAR 请求输入、浏览器态 cookie 绑定、显式 launcher 或 PATH/module auto-detect、结构化 findings，并将 request/stdout/stderr 注册为可由 `browser_artifact` 直接读取的 artifact 描述符。
+- `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，支持 scoped URL/raw/captured/HAR 请求输入、模板/工作流/ID/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher 或 PATH auto-detect、结构化 matches，并将 request/stdout/stderr 注册为可由 `browser_artifact` 直接读取的 artifact 描述符。
 - `browser_template_check`：对 scoped target 或 captured request 执行内置/自定义 HTTP 模板、YAML/JSON 模板文件、DSL matcher/extractor、变量替换、结果去重和证据归档。
 - `browser_callback_oast`：启动/触发/收集/停止本地 HTTP/HTTPS/DNS callback listener，生成 correlation ID、外部 metadata，并持久化请求日志与事件状态。
 - `browser_cookie_analyze`：Cookie/Set-Cookie/JWT/JWE/PASETO/签名 session 解析、secret candidate 验证、claim mutation token 生成与有界 claim replay 校验。

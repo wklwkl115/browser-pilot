@@ -6,6 +6,17 @@
 - 收敛 Web 实现方向：保留原生工具能力优先，`browser_sqli_probe` 与 `browser_template_check` 作为原生能力继续演进，同时明确深度 SQLi / 深度模板扫描将通过成熟引擎 bridge 深适配接入；不再把原生工具表述成 `sqlmap` / `nuclei` 等成熟引擎平替。
 - 新增 `browser_sqlmap_bridge`：通过 Pi-native bridge 调用 `sqlmap`，统一复用 raw/captured/HAR 请求输入链路、浏览器态 cookie 绑定、显式 launcher / PATH/module auto-detect、结构化 findings 与 artifact 归档，并补契约与 runtime 验证路径。
 - 新增 `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，统一复用 scoped URL/raw/captured/HAR 请求输入链路、template/workflow/id/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher / PATH auto-detect、结构化 matches 与 artifact 归档，并补契约与 runtime 验证路径。
+- 增强 bridge artifact 输出：`browser_sqlmap_bridge` / `browser_nuclei_bridge` 现在为 request/stdout/stderr 生成 `browser_artifact` 可读描述符，包含 path、bytes、chars、lineCount、sha256 与 summary artifact 表，便于深度排障直接读取日志。
+- 修复 `browser_callback_oast` 状态竞态：主进程 clear/stop 与 Worker append/shutdown 共享 `state.json` 的写入改为 lock file + fresh-state update，避免高并发回调丢事件、重复 seq 或控制字段被旧快照覆盖。
+- 修复 JSON 参数 fuzz 的破坏性重写：畸形 JSON 或 primitive JSON body 现在作为明确 mutation failure 记录，不再静默替换为 `{}` 并丢失原始 payload。
+- 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
+- 修复 WebSocket 断连 pending Promise 挂起：`BrowserBridgeServer` 现在记录 pending 请求所属 client，并在 client unregister 时立即 reject/清理对应 pending 请求。
+- 修复 multipart 解析数据损坏：`parseMultipartBody` 改为识别行首 boundary delimiter，不再用全局 split 误切 payload 内 boundary 文本，也不再裁剪真实 payload 尾部 `--`；`parseRawHttpRequest` 同步保留 body 原始 CRLF，避免 multipart delimiter 被 header 解析步骤改写。
+- 修复空 favicon/空响应相似度哈希碰撞：`simHash64` 现在对空 Buffer 返回固定零值，不再落成全 1 的 `ffffffffffffffff`。
+- 修复 DNS OAST 16-bit 问题类型序列化：DNS 响应问答区改用 `writeUInt16BE` 写入 QTYPE/QCLASS，避免 CAA/URI 等高位字节被截断。
+- 修复 OAST worker 日志句柄泄露：派生 detached worker 后父进程立即关闭继承前打开的 stdout/stderr log 文件描述符。
+- 优化 Rails Cookie 验证：Rails PBKDF2 派生切到异步缓存路径，避免 `browser_cookie_analyze` 在大量 secret candidates 下同步卡死事件循环。
+- 增强 `browser_sqli_probe`：新增 `stopOnFirstMatch`，可在同一参数确认命中后短路后续 probe，减少无意义发包。
 - 增强 `browser_crawl`：补 source map 反向源文件归档与 service worker cache 版本摘要，结果增加归档路径/计数与版本聚合字段，并补契约回归。
 - 固化 Web 安全单包分层：原生执行模块归入 `src/tools/webSecurity/browserNative`，成熟引擎适配固定在 `src/tools/webSecurity/bridges`，共享解析保持在 `src/tools/webSecurity/shared`，并补边界契约防回流。
 - 增强 `browser_http_replay`：补 `multipart.fileFieldMatrix`，支持基于单模板文件的 focused multipart 文件字段变体矩阵、重复同名文件部件、嵌套 multipart case、基线 diff 与结果聚类，并补契约回归。

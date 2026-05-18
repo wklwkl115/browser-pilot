@@ -29,6 +29,16 @@ function bodyPreview(body: unknown): string {
 	return isRecord(body) && typeof body.text === "string" ? textPreview(redactSensitiveText(body.text), 220) : "";
 }
 
+function bridgeArtifacts(value: unknown, runs: Record<string, unknown>[]): Record<string, unknown>[] {
+	const topLevel = isRecord(value) ? asArray(value.artifacts).filter(isRecord) : [];
+	if (topLevel.length) return topLevel;
+	return runs.flatMap((run) => asArray(run.artifacts).filter(isRecord));
+}
+
+function artifactPath(value: unknown): unknown {
+	return isRecord(value) ? value.path : undefined;
+}
+
 export function summarizeWebReconProbeData(value: unknown): Summary {
 	const items = resultItems(value);
 	const statusCounts: Record<string, number> = {};
@@ -470,6 +480,7 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 	const runs = isRecord(value) ? asArray(value.runs).filter(isRecord) : [];
 	const findings = isRecord(value) ? asArray(value.findings).filter(isRecord) : [];
 	const failures = isRecord(value) ? asArray(value.failures).filter(isRecord) : [];
+	const artifacts = bridgeArtifacts(value, runs);
 	const dbmsCounts: Record<string, number> = {};
 	const parameterCounts: Record<string, number> = {};
 	for (const item of findings) {
@@ -488,11 +499,20 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 		failureCount: failures.length,
 		launcher: isRecord(value) ? value.launcher : undefined,
 		artifactRoot: isRecord(value) ? value.artifactRoot : undefined,
+		artifactCount: artifacts.length,
 		dbmsFingerprints: isRecord(value) ? value.dbmsFingerprints : undefined,
 		currentUsers: isRecord(value) ? value.currentUsers : undefined,
 		currentDatabases: isRecord(value) ? value.currentDatabases : undefined,
 		dbmsCounts: topCounts(dbmsCounts),
 		parameterCounts: topCounts(parameterCounts),
+		artifacts: summaryTable(artifacts, [
+			{ key: "kind", value: (item) => item.kind },
+			{ key: "label", value: (item) => item.label },
+			{ key: "path", value: (item) => item.path },
+			{ key: "bytes", value: (item) => item.bytes },
+			{ key: "lines", value: (item) => item.lineCount },
+			{ key: "sha256", value: (item) => item.sha256 },
+		], 30),
 		runs: summaryTable(runs, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
@@ -505,7 +525,8 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 			{ key: "currentDb", value: (item) => item.currentDatabase },
 			{ key: "currentUser", value: (item) => item.currentUser },
 			{ key: "isDba", value: (item) => item.isDba },
-			{ key: "stdoutPreview", value: (item) => item.stdoutPreview },
+			{ key: "stdoutArtifact", value: (item) => artifactPath(item.stdoutArtifact) },
+			{ key: "stderrArtifact", value: (item) => artifactPath(item.stderrArtifact) },
 			{ key: "outputDir", value: (item) => item.outputDir },
 		], 20),
 		findings: summaryTable(findings, [
@@ -529,6 +550,7 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 	const runs = isRecord(value) ? asArray(value.runs).filter(isRecord) : [];
 	const matches = isRecord(value) ? asArray(value.matches).filter(isRecord) : [];
 	const failures = isRecord(value) ? asArray(value.failures).filter(isRecord) : [];
+	const artifacts = bridgeArtifacts(value, runs);
 	const severityCounts: Record<string, number> = {};
 	const templateCounts: Record<string, number> = {};
 	const hostCounts: Record<string, number> = {};
@@ -547,6 +569,7 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 		parseErrorCount: isRecord(value) ? value.parseErrorCount : undefined,
 		launcher: isRecord(value) ? value.launcher : undefined,
 		artifactRoot: isRecord(value) ? value.artifactRoot : undefined,
+		artifactCount: artifacts.length,
 		matchedTemplateIds: isRecord(value) ? value.matchedTemplateIds : undefined,
 		matchedSeverities: isRecord(value) ? value.matchedSeverities : undefined,
 		selectedTemplatePaths: isRecord(value) ? value.selectedTemplatePaths : undefined,
@@ -559,6 +582,14 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 		severityCounts: topCounts(severityCounts),
 		templateCounts: topCounts(templateCounts),
 		hostCounts: topCounts(hostCounts),
+		artifacts: summaryTable(artifacts, [
+			{ key: "kind", value: (item) => item.kind },
+			{ key: "label", value: (item) => item.label },
+			{ key: "path", value: (item) => item.path },
+			{ key: "bytes", value: (item) => item.bytes },
+			{ key: "lines", value: (item) => item.lineCount },
+			{ key: "sha256", value: (item) => item.sha256 },
+		], 30),
 		runs: summaryTable(runs, [
 			{ key: "index", value: (item) => item.index },
 			{ key: "source", value: (item) => item.source },
@@ -569,7 +600,8 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 			{ key: "matches", value: (item) => item.matchCount },
 			{ key: "severities", value: (item) => item.matchSeverities },
 			{ key: "templateIds", value: (item) => item.matchTemplateIds },
-			{ key: "stdoutPreview", value: (item) => item.stdoutPreview },
+			{ key: "stdoutArtifact", value: (item) => artifactPath(item.stdoutArtifact) },
+			{ key: "stderrArtifact", value: (item) => artifactPath(item.stderrArtifact) },
 			{ key: "outputDir", value: (item) => item.outputDir },
 		], 20),
 		matches: summaryTable(matches, [
