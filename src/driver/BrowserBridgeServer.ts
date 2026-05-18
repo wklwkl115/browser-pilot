@@ -223,9 +223,18 @@ export class BrowserBridgeServer {
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		const requestedTabId = toTabId(options.tabId ?? command.tabId);
+		const hasOptionTabId = options.tabId !== undefined;
+		const hasCommandTabId = command.tabId !== undefined;
+		const optionTabId = toTabId(options.tabId);
+		const commandTabId = toTabId(command.tabId);
+		if (hasOptionTabId && optionTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { cmd: command.cmd, tabId: options.tabId, source: "options" });
+		if (hasCommandTabId && commandTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid command tabId is required", { cmd: command.cmd, tabId: command.tabId, source: "command" });
+		if (optionTabId !== undefined && commandTabId !== undefined && optionTabId !== commandTabId) {
+			throw new BrowserBridgeError("TAB_ID_CONFLICT", "Top-level tabId conflicts with command tabId", { cmd: command.cmd, tabId: optionTabId, commandTabId });
+		}
+		const requestedTabId = optionTabId ?? commandTabId;
 		const tabId = requestedTabId ?? this.optionalExecutionTabId(command);
-		const payload: BridgeCommand = tabId !== undefined && command.tabId === undefined ? { ...command, tabId } : command;
+		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
 		const validation = validateBridgeCommand(payload, { allowMissingTabId: false });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
 		return this.sendPayload(validation.command, { tabId, timeoutMs: options.timeoutMs });
@@ -395,8 +404,11 @@ export class BrowserBridgeServer {
 	}
 
 	private requireExecutionTabId(value: unknown): number {
-		const tabId = toTabId(value) ?? toTabId(this.defaultSessionId) ?? toTabId(this.latestSessionId);
-		if (tabId) return tabId;
+		const requested = toTabId(value);
+		if (requested) return requested;
+		if (value !== undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value, source: "options" });
+		const fallback = toTabId(this.defaultSessionId) ?? toTabId(this.latestSessionId);
+		if (fallback) return fallback;
 		throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { tabs: this.getTabs() });
 	}
 

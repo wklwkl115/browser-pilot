@@ -124,9 +124,7 @@ async function piPersistentCdpAttach(tabId, options) {
   }
 }
 
-async function piPersistentCdpDetach(tabId, options) {
-  const name = options?.name || 'default';
-  const key = piCdpSessionKey(tabId, name);
+async function piPersistentCdpDetachEntry(key) {
   const rec = piPersistentCdpSessions.get(key);
   if (!rec) return piCdpOk({ sessionKey: key, detached: false });
   piPersistentCdpSessions.delete(key);
@@ -143,6 +141,11 @@ async function piPersistentCdpDetach(tabId, options) {
   try { await chrome.debugger.detach({ tabId: rec.tabId }); }
   catch (e) { return piCdpError('DETACH_FAILED', e.message || String(e), { sessionKey: key, raw: piCdpRawError(e) }); }
   return piCdpOk({ sessionKey: key, detached: true, lifetimeMs: piCdpNow() - rec.attachedAt, commands: rec.commands });
+}
+
+async function piPersistentCdpDetach(tabId, options) {
+  const name = options?.name || 'default';
+  return await piPersistentCdpDetachEntry(piCdpSessionKey(tabId, name));
 }
 
 async function piPersistentCdpSend(tabId, method, params, options) {
@@ -250,13 +253,16 @@ async function piPersistentCdpRemoveNewDocumentScript(tabId, identifier, options
 
 async function piPersistentCdpReleaseIdle(maxIdleMs) {
   const now = piCdpNow();
+  const rawIdleMs = maxIdleMs === undefined || maxIdleMs === null ? 60000 : Number(maxIdleMs);
+  const idleMs = Number.isFinite(rawIdleMs) ? rawIdleMs : 60000;
   const released = [];
   const skipped = [];
-  for (const rec of Array.from(piPersistentCdpSessions.values())) {
-    if ((rec.pending || 0) > 0 || (rec.lockedUntil || 0) > now) { skipped.push({ sessionKey: rec.key, pending: rec.pending || 0, reason: 'idle busy' }); continue; }
-    if (now - rec.lastUsed >= Number(maxIdleMs || 60000)) {
-      const res = await piPersistentCdpDetach(rec.tabId, { name: rec.name });
-      released.push({ sessionKey: rec.key, ok: res.ok });
+  for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
+    if (!piPersistentCdpSessions.has(key)) continue;
+    if ((rec.pending || 0) > 0 || (rec.lockedUntil || 0) > now) { skipped.push({ sessionKey: key, pending: rec.pending || 0, reason: 'idle busy' }); continue; }
+    if (now - rec.lastUsed >= idleMs) {
+      const res = await piPersistentCdpDetachEntry(key);
+      released.push({ sessionKey: key, ok: res.ok, detached: res.data && res.data.detached === true });
     }
   }
   return piCdpOk({ released, skipped, remaining: piPersistentCdpSessions.size });

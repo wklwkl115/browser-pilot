@@ -5,16 +5,14 @@ import { registerExecuteTool } from "./registerExecuteTool";
 import { registerScanTool } from "./registerScanTool";
 import { registerPickTool } from "./registerPickTool";
 import { registerContentTool } from "./registerContentTool";
-import { registerQueryTool, registerClickTool, registerTypeTool } from "./registerElementActionTools";
-import { registerSemanticDomTools } from "./registerSemanticDomTools";
 import { registerDownloadTool, registerUploadTool } from "./registerTransferTools";
 import { registerWaitTool, registerNetworkTool, registerHookTool, registerFrameTool } from "./registerNativeActionTools";
 import { registerEvidenceTool } from "./registerEvidenceTool";
 import { registerHtmlTool } from "./registerHtmlTool";
 import { registerScreenshotTool } from "./registerScreenshotTool";
 import { registerArtifactTool } from "./registerArtifactTool";
+import { registerCallbackOastTool, registerCookieAnalyzeTool, registerCrawlTool, registerFuzzParamsTool, registerFuzzPathsTool, registerFuzzVhostsTool, registerHttpReplayTool, registerNucleiBridgeTool, registerReconProbeTool, registerSqlmapBridgeTool, registerSqliProbeTool, registerTemplateCheckTool } from "./registerWebSecurityTools";
 import type { EnsureStarted, ToolRegistrarContext } from "./toolShared";
-
 export function registerBrowserTools(_pi: ExtensionAPI, _server: BrowserBridgeServer, ensureStarted: EnsureStarted) {
 	const context: ToolRegistrarContext = { pi: _pi, ensureStarted };
 	registerTabsTool(context);
@@ -22,10 +20,6 @@ export function registerBrowserTools(_pi: ExtensionAPI, _server: BrowserBridgeSe
 	registerScanTool(context);
 	registerPickTool(context);
 	registerContentTool(context);
-	registerQueryTool(context);
-	registerClickTool(context);
-	registerTypeTool(context);
-	registerSemanticDomTools(context);
 	registerDownloadTool(context);
 	registerUploadTool(context);
 	registerWaitTool(context);
@@ -36,4 +30,10 @@ export function registerBrowserTools(_pi: ExtensionAPI, _server: BrowserBridgeSe
 	registerHtmlTool(context);
 	registerScreenshotTool(context);
 	registerArtifactTool(context);
+	registerReconProbeTool(context);
+	registerCrawlTool(context);
+	registerFuzzPathsTool(context);
+	registerFuzzVhostsTool(context);
+	registerSqliProbeTool(context); registerSqlmapBridgeTool(context); registerNucleiBridgeTool(context); registerTemplateCheckTool(context); registerCallbackOastTool(context); registerCookieAnalyzeTool(context); registerFuzzParamsTool(context);
+	registerHttpReplayTool(context);
 }

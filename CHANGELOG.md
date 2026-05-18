@@ -2,12 +2,26 @@
 
 ## Unreleased
 
+- 当前工具面：`browser_scan` + `browser_execute` + `browser_wait` 为 GA-style 主链路；下方 `browser_query` / `browser_click` / `browser_type` / `browser_dom_*` 记录均为历史阶段，已被“回归 GA 简化工具面”取代，不代表当前注册工具。
+- 收敛 Web 实现方向：保留原生工具能力优先，`browser_sqli_probe` 与 `browser_template_check` 作为原生能力继续演进，同时明确深度 SQLi / 深度模板扫描将通过成熟引擎 bridge 深适配接入；不再把原生工具表述成 `sqlmap` / `nuclei` 等成熟引擎平替。
+- 新增 `browser_sqlmap_bridge`：通过 Pi-native bridge 调用 `sqlmap`，统一复用 raw/captured/HAR 请求输入链路、浏览器态 cookie 绑定、显式 launcher / PATH/module auto-detect、结构化 findings 与 artifact 归档，并补契约与 runtime 验证路径。
+- 新增 `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，统一复用 scoped URL/raw/captured/HAR 请求输入链路、template/workflow/id/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher / PATH auto-detect、结构化 matches 与 artifact 归档，并补契约与 runtime 验证路径。
+- 增强 `browser_crawl`：补 source map 反向源文件归档与 service worker cache 版本摘要，结果增加归档路径/计数与版本聚合字段，并补契约回归。
+- 固化 Web 安全单包分层：原生执行模块归入 `src/tools/webSecurity/browserNative`，成熟引擎适配固定在 `src/tools/webSecurity/bridges`，共享解析保持在 `src/tools/webSecurity/shared`，并补边界契约防回流。
+- 增强 `browser_http_replay`：补 `multipart.fileFieldMatrix`，支持基于单模板文件的 focused multipart 文件字段变体矩阵、重复同名文件部件、嵌套 multipart case、基线 diff 与结果聚类，并补契约回归。
+- 增强 `browser_cookie_analyze`：补 JWE compact 解析与 `dir` + `A128/A192/A256GCM` 直接解密、PASETO 元数据/footers、Django/Flask/Rails 签名 session 格式、跨格式 claim mutation token 生成，以及基于浏览器 session cookie 的 bounded claim replay 验证。
+- 增强 `browser_callback_oast`：补 detached worker 持续化、reload 后状态/事件恢复、HTTP/HTTPS/DNS 多 listener、self-signed HTTPS 元数据、external metadata、trigger helper 与持久化事件收集。
+- 增强 `browser_recon_probe`：补结构化 tech hints / fingerprint 字段，以及 favicon mmh3 与 simHash 结果字段。
+- 增强 `browser_fuzz_paths`：补递归目录 fuzz、最大目录深度控制、baseline cluster 过滤策略与基线聚类摘要字段。
+- 增强 `browser_fuzz_vhosts`：补 HTTPS fixture 支撑、SNI 证书差异摘要、baselineStrategy 与 baseline cluster 过滤结果字段。
+- 替换 template YAML 手写 parser：改为依赖 `js-yaml`，保留现有 YAML template contract 与 artifact 行为。
 - 优化工具结果 token 路径：默认 summary 蒸馏、artifact 可追溯、`details` 紧凑化。
 - 新增 artifact 局部读取内部约束：相对路径限定 `.pi/browser-artifacts/`，其他文件需绝对路径。
 - 拆分 summary 逻辑并新增 `check:summaries` / `check:artifact` 契约验证。
 - 收敛错误归一化与诊断契约，新增 `check:errors`。
 - 完成真实浏览器 smoke：tabs/create/loadState/scan artifact/network/screenshot/close 通过；截图写入 `.pi/browser-artifacts/smoke-screenshot.png`。
 - 收敛性能维护项：artifact 文本读取流式化、network 摘要增强、scan 噪声规则外置、预算表驱动、check:bridge 拆分。
+- 去重 Web 工具注册执行壳：`registerWebSecurityTools.ts` 统一 budget、lazy `ensureStarted` cookieProvider、artifact/distill 与 errorResult；保留每个工具显式 schema、summary 与 command，并补回归契约防止重复外壳回流。
 - 补齐原始数据蒸馏覆盖：execute/wait/hook/frame/html fallback 统一经过 `resultMiddleware`，默认保留 preview 并支持 artifact。
 - 新增 `browser_pick` 与 `browser_content`：参考 `badlogic/pi-skills/browser-tools` 的交互点选和正文提取能力，复用现有 bridge/CDP/蒸馏/artifact 体系。
 - 借鉴 Curio 补齐 `browser_query` / `browser_click` / `browser_type` 一等 DOM 工具，并增强 `browser_execute` 对 Map/Set/Error/BigInt/DOM/循环引用的结果序列化。
@@ -33,6 +47,22 @@
 - 修复工具参数与契约漂移：native/evidence/transfer/screenshot 将 `timeoutMs` 写入 bridge command，`browser_scan` textOnly 遵守 `maxNodes` 且截断时保留已收集文本，`browser_html` 支持 `fragment` / `raw` mode 别名。
 - 修复 `exec.js` 序列化对 scan/content 大文本字段的 1000 字符嵌套截断：`content` / `markdown` / `html` 使用全局字符预算，确保 artifact 能保存完整抽取结果。
 - 修复 CDP/download/port 配置复审问题：`frame.evaluate` 使用正确 `grantUniversalAccess`，click 下载不再用全局下载 fallback 误配其它 tab，bridge 默认 host/port 改为生成配置并加入漂移检查。
+- 修复 tabId 与 CDP alias 复审问题：server 顶层 `tabId` 与 command payload 冲突时报 `TAB_ID_CONFLICT`，CDP `releaseIdle` 按 Map entry 释放 logical alias，补 fake WS / Chrome mock / exec 行为契约。
+- 修复 `persistent_cdp.releaseIdle` 默认值处理：`maxIdleMs:0` 现在表示立即释放；补充 scan/content/pick/action 的 DOM mock 行为契约，降低 substring-only 测试脆弱性。
+- 优化默认 summary token 消耗：数组摘要改为 `columns` + `rows` 表格格式，加入确定性摘要预算裁剪；`preview/full` 与 artifact 保留原始数据。
+- 优化 semantic DOM 摘要：默认只回 nodeId/role/label/state 等操作字段，selector/path/bbox 留给 `preview/full`；新增 `browser_dom_snapshot.diffSince` 增量快照，默认不传时保持完整快照行为。
+- 修复复审发现的 tab/diff 正确性问题：非法显式 `tabId` 不再 fallback 默认 tab，semantic DOM diff 使用稳定结构键识别 changed，`diffSince` 禁止跨 tab snapshot。
+- 补齐 `executeJavaScript` 路径显式非法 `tabId` 防护：`browser_execute`/scan/content/query/dom snapshot 等脚本执行路径不会把非法目标 fallback 到默认 tab。
+- GA-style 浏览器操作内核升级（不新增工具）：`browser_dom_snapshot` 优先保留交互/图标/命中目标节点，`browser_click`/`browser_dom_click` 内部改为 CDP 真实鼠标点击优先并保留 DOM fallback，`browser_query/click/type` 支持 `text=`/`role=`/`label=`/`placeholder=` smart selector 前缀。
+- 对齐 GenericAgent `simphtml.py` 的可操作观察层：`browser_scan`/`browser_dom_snapshot` 识别 top-layer/modal 并压制 covered 背景内容，限制 icon 语义向巨大祖先冒泡，`browser_query` 摘要暴露 hit-target 状态。
+- 回归 GA 简化工具面：移除 `browser_query` / `browser_click` / `browser_type` 与 semantic DOM nodeId 工具注册和契约，默认心智改回 `browser_scan` 观察 + `browser_execute` 执行 JS/CDP + `browser_wait` 验证。
+- 修复 `wait.selector visible` 在复杂布局中被 IntersectionObserver 误判不可见的问题：可见性以 CSS + viewport rect 为准，IO 与 hit-target 作为诊断。
+- GA 简化后补强 `browser_scan` 主观察层：默认返回 actionables 候选表（selector/label/role/rect/hitOk），并将 smoke 改为 `browser_execute` 完成 input/contenteditable/click 状态链路。
+- 提升真实站点 actionables 质量：识别框架 delegated handlers、`data-e2e`、卡片/视频点击目标，summary 暴露 action 与 CDP-ready 中心点；收紧 top-layer，避免普通播放器被误当 modal root。
+- 抖音 Draft.js 评论链路回归：`browser_execute` + CDP 鼠标打开 `#comment-input-container`，`Input.insertText` 可更新 editor 状态；未提交评论并清空草稿。补充 id/class comment input container 的 actionables 契约。
+- 收敛 GA 回归后的维护债：actionables 规则抽到 `src/scan/actionableRules.ts`，补 scroll container / Draft-like editor / data-e2e / delegated card / 普通播放器非 modal 契约，真实浏览器 smoke 增加 CDP mouse / insertText / key clear 闭环。
+- 完整对齐 GenericAgent 浏览器内部体验：`browser_execute monitor:true` 可选返回执行前后 scan diff；`browser_scan` 增加 `list_hints` 重复列表提示与 `:-webkit-autofill` 保护态标注。对照记录见 `docs/ga-browser-parity.md`。
+- 新增 CTF Web 下一阶段基础执行面：`browser_recon_probe` 提供小范围 URL/路径/端口/scheme 指纹探测、响应 sha256、favicon sha256 与 TLS 证书元数据，`browser_crawl` 提供有界同源 crawl / known files / JS endpoint hints / OpenAPI endpoint 展开 / OpenAPI schema 参数摘要 / active+passive GraphQL introspection 结构化 / manifest / service worker cache route / source map 内容解析，`browser_fuzz_paths` 提供有界 path/extension fuzz matcher/filter/rate 控制、multi-FUZZ tuple、auto baseline 与响应聚类，`browser_fuzz_vhosts` 提供 Host header vhost fuzz、Host/SNI 模式、多 baseline host、响应 hash、聚类与 baseline filtering，`browser_sqli_probe` 提供 SQLi boolean/error/time/union oracle 探测、DBMS payload pack/指纹、ORDER BY/UNION 列数 hint、UNION 回显位枚举、布尔盲注抽取循环与证据归档，`browser_template_check` 提供内置/自定义 HTTP 模板、JSON/YAML 模板文件、DSL matcher/extractor、变量替换、结果去重与证据归档，`browser_callback_oast` 提供本地 HTTP callback listener、correlation ID 与请求日志归档，`browser_cookie_analyze` 提供 Cookie/JWT/session 解析、HMAC secret candidate 验证与 claim mutation token 生成，`browser_fuzz_params` 提供 query/JSON/form/multipart/header 参数 fuzz、nested JSON path、set/add/delete、JSON values、multipart 文件字段矩阵、同名多文件字段、嵌套 multipart、Content-Type boundary variants、parser 差异聚类与 delta classifier，`browser_http_replay` 提供 raw/captured/HAR request 重放、method/header/body mutation、multipart/binary body、请求序列变量提取/注入、更多 extractor 类型、变量作用域控制、HAR 依赖图、响应 diff 聚类、baseline diff 与浏览器 cookie 绑定；新增 `check:web-security` 契约。
 
 ## 0.3.0 - 2026-05-16
 

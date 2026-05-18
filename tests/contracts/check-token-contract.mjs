@@ -43,9 +43,28 @@ try {
 	await rm(tmp, { recursive: true, force: true });
 }
 
+const compactSummary = await distilledJsonResult({ data: { ok: true } }, {
+	toolName: "browser_execute",
+	command: "dom.snapshot",
+	detailLevel: "summary",
+	maxChars: 4_000,
+	ctx: { cwd: tmp },
+	fallbackName: "summary-budget.json",
+	distill: () => ({
+		snapshotId: "s",
+		textPreview: "z".repeat(5_000),
+		rows: { columns: ["id", "label"], rows: Array.from({ length: 80 }, (_, i) => [`r${i}`, "row label ".repeat(20)]), count: 80 },
+	}),
+});
+const compactEnvelope = JSON.parse(compactSummary.content[0].text);
+assert.ok(compactSummary.content[0].text.length < 4_500, "check-token summaryBudget.length: summary must fit the requested response budget");
+assert.equal(compactSummary.content[0].text.includes("z".repeat(1_000)), false, "check-token summaryBudget.text: low-value long previews must be trimmed or omitted");
+assert.ok(!compactEnvelope.summary.rows || compactEnvelope.summary.rows.rows.length < 80, "check-token summaryBudget.table: compact tables must not return all rows under summary budget");
+
 const toolResultSource = read("src/utils/toolResult.ts");
 assert.equal(toolResultSource.includes("result: value"), false, "toolResult must not add full result into details");
-assert.ok(read("src/tools/resultMiddleware.ts").includes("distillValue"), "result middleware must expose deterministic distillation");
+assert.ok(read("src/tools/resultMiddleware.ts").includes("fitSummaryBudget"), "result middleware must apply deterministic summary budget allocation");
+assert.ok(read("src/tools/summaries/common.ts").includes("summaryTable"), "summary modules must support columns+rows compact tables");
 assert.ok(read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md").includes("detailLevel"), "pi-browser-tools skill must document detailLevel behavior");
 
 console.log("token contract ok");

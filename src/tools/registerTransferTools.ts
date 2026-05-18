@@ -23,7 +23,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 		label: "Browser Download",
 		description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads.",
 		promptSnippet: "Download via selector click, media selector extraction, or direct HTTP(S) URL; returns download id/path/state.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_download instead of browser_click when the task needs a stable downloaded file path."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_download when the task needs a stable downloaded file path instead of scripting a click manually."],
 		parameters: Type.Object({
 			...sharedTransferParams(),
 			selector: Type.Optional(Type.String({ description: "CSS selector to click or inspect for media download." })),

@@ -113,7 +113,40 @@ try {
 		assert.deepEqual(error.details.missing, ["selector"]);
 		return true;
 	});
+	await assert.rejects(server.sendCommand({ cmd: "wait.selector", tabId: 101, selector: "body" }, { tabId: 202, timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "TAB_ID_CONFLICT");
+		assert.equal(error.details.tabId, 202);
+		assert.equal(error.details.commandTabId, 101);
+		return true;
+	});
+	await assert.rejects(server.sendCommand({ cmd: "wait.selector", tabId: "abc", selector: "body" }, { timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "INVALID_TAB_ID");
+		assert.equal(error.details.source, "command");
+		assert.equal(error.details.tabId, "abc");
+		return true;
+	});
+	await assert.rejects(server.sendCommand({ cmd: "wait.selector", selector: "body" }, { tabId: "abc", timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "INVALID_TAB_ID");
+		assert.equal(error.details.source, "options");
+		assert.equal(error.details.tabId, "abc");
+		return true;
+	});
+	const normalizedCommandPromise = server.sendCommand({ cmd: "wait.selector", tabId: "101", selector: "body", timeoutMs: 100 }, { tabId: 101, timeoutMs: 1_000 });
+	const normalizedOutbound = await nextJson(ws, "normalized tab command outbound");
+	assert.equal(normalizedOutbound.tabId, 101);
+	assert.equal(normalizedOutbound.code.tabId, 101);
+	assert.equal(normalizedOutbound.code.selector, "body");
+	sendJson(ws, { type: "ack", id: normalizedOutbound.id });
+	sendJson(ws, { type: "result", id: normalizedOutbound.id, result: { ok: true, tabId: 101 } });
+	const normalizedResult = await normalizedCommandPromise;
+	assert.equal(normalizedResult.data.tabId, 101);
 
+	await assert.rejects(server.executeJavaScript("return 1", { tabId: "abc", timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "INVALID_TAB_ID");
+		assert.equal(error.details.source, "options");
+		assert.equal(error.details.tabId, "abc");
+		return true;
+	});
 	const timeoutPromise = server.executeJavaScript("return 1", { tabId: 101, timeoutMs: 120 });
 	const rejection = assert.rejects(timeoutPromise, (error) => {
 		assert.equal(error.code, "BRIDGE_TIMEOUT");

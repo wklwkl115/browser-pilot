@@ -677,8 +677,26 @@ const PI_BROWSER_SELECTOR_PROBE_SOURCE = String.raw`(() => {
     } catch (e) { out.intersectionObserverError = e.message || String(e); }
   }
   const ioState = ioStore[ioKey] || null;
+  const rectVisible = cssVisible && intersectsViewport;
   const ioVisible = cfg.visible === true ? !!(ioState ? ioState.isIntersecting : intersectsViewport) : true;
-  const visible = cssVisible && ioVisible;
+  let hitOk = null;
+  let hitTarget = null;
+  if (rectVisible && document.elementFromPoint) {
+    const samplePoints = [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]];
+    for (const pair of samplePoints) {
+      const x = Math.round(Math.max(0, Math.min(viewportW - 1, r.left + r.width * pair[0])));
+      const y = Math.round(Math.max(0, Math.min(viewportH - 1, r.top + r.height * pair[1])));
+      const hit = document.elementFromPoint(x, y);
+      const ok = !hit || hit === el || el.contains(hit) || (hit.contains && hit.contains(el));
+      if (!hitTarget && hit) hitTarget = { tagName: hit.tagName ? hit.tagName.toLowerCase() : '', id: hit.id || null, role: hit.getAttribute && hit.getAttribute('role'), text: cleanText(textWithoutNoise(hit), 160) };
+      if (ok) { hitOk = true; if (hit) hitTarget = { tagName: hit.tagName ? hit.tagName.toLowerCase() : '', id: hit.id || null, role: hit.getAttribute && hit.getAttribute('role'), text: cleanText(textWithoutNoise(hit), 160) }; break; }
+      hitOk = false;
+    }
+  }
+  // Visibility is geometry/CSS based.  IntersectionObserver can lag or report 0
+  // for transformed/sticky app layouts, so keep it as diagnostics instead of the
+  // decisive visible gate.
+  const visible = rectVisible;
   const sig = [Math.round(r.x*10)/10,Math.round(r.y*10)/10,Math.round(r.width*10)/10,Math.round(r.height*10)/10,visible].join('|');
   const store = (window.__piBrowserSelectorStable = window.__piBrowserSelectorStable || {});
   const prev = store[selector];
@@ -688,7 +706,7 @@ const PI_BROWSER_SELECTOR_PROBE_SOURCE = String.raw`(() => {
   store[selector] = {sig, t:stableOrigin, mutationEpoch};
   const stableTimedOut = stableMs > 0 && stableFor >= maxStableWaitMs;
   const stable = stableMs === 0 || stableFor >= stableMs || stableTimedOut;
-  Object.assign(out, {visible, cssVisible, ioVisible, intersectionRatio:ioState ? ioState.intersectionRatio : (intersectsViewport ? 1 : 0), attached:true, stableFor, stable, stableTimedOut, text:cleanText(textWithoutNoise(el),500), html:sanitizedOuterHtml(el,2000), rect:{x:r.x,y:r.y,width:r.width,height:r.height}});
+  Object.assign(out, {visible, cssVisible, rectVisible, ioVisible, intersectionRatio:ioState ? ioState.intersectionRatio : (intersectsViewport ? 1 : 0), hitOk, hitTarget, attached:true, stableFor, stable, stableTimedOut, text:cleanText(textWithoutNoise(el),500), html:sanitizedOuterHtml(el,2000), rect:{x:r.x,y:r.y,width:r.width,height:r.height}});
   out.matched = (state === 'attached') || (state === 'visible' && visible) || (state === 'hidden' && !visible) || (state === 'stable' && visible && stable) || (state === 'detached' && false);
   return out;
 })()`;

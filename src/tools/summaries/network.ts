@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, topCounts, type Summary } from "./common";
+import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common";
 
 function safeUrlHost(url: unknown): string {
 	try { return new URL(String(url || "")).host; }
@@ -13,6 +13,20 @@ function normalizeEntries(data: Record<string, unknown>): unknown[] {
 	if (asArray(log?.entries).length) return asArray(log?.entries);
 	if (request) return [request];
 	return [];
+}
+
+function networkRows(items: unknown[]) {
+	const records = items.filter(isRecord);
+	return summaryTable(records, [
+		{ key: "requestId", value: (item) => item.requestId },
+		{ key: "method", value: (item) => item.method },
+		{ key: "status", value: (item) => item.status },
+		{ key: "type", value: (item) => item.type },
+		{ key: "host", value: (item) => safeUrlHost(item.url) },
+		{ key: "url", value: (item) => item.url },
+		{ key: "bodyRef", value: (item) => item.bodyRef },
+		{ key: "error", value: (item) => item.errorText },
+	], 20);
 }
 
 export function summarizeNetworkData(data: unknown): Summary {
@@ -50,8 +64,8 @@ export function summarizeNetworkData(data: unknown): Summary {
 		methodCounts: topCounts(methodCounts),
 		typeCounts: topCounts(typeCounts),
 		hostCounts: topCounts(hostCounts),
-		failed: failed.slice(0, 20),
-		samples,
+		failed: networkRows(failed),
+		samples: networkRows(samples),
 		condition: data.condition,
 		event: data.event,
 		waitId: data.waitId ?? data.wait_id,

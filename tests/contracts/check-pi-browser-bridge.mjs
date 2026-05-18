@@ -146,8 +146,11 @@ const toolSource = readToolSources();
 assert(registerToolsSource.split(/\r?\n/).length <= 45, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
-for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact"]) {
+for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact"]) {
 	assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
+}
+for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
+	assert(!toolSource.includes(`name: "${removed}"`), `removed split action tool must not be registered: ${removed}`);
 }
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
@@ -156,8 +159,6 @@ assert(read("src/tools/registerScanTool.ts").includes("distilledTextResult"), "b
 assert(read("src/tools/registerHtmlTool.ts").includes("distilledTextResult"), "browser_html must use result distillation middleware");
 assert(read("src/tools/registerContentTool.ts").includes("distilledTextResult"), "browser_content must use result distillation middleware");
 assert(read("src/tools/registerPickTool.ts").includes("distilledJsonResult"), "browser_pick must use result distillation middleware");
-assert(read("src/tools/registerElementActionTools.ts").includes("distilledJsonResult"), "browser_query/click/type must use result distillation middleware");
-assert(read("src/tools/registerElementActionTools.ts").includes("summarizeElementActionData"), "browser_query/click/type must use compact element summaries");
 assert(read("src/tools/registerEvidenceTool.ts").includes("distilledJsonResult"), "browser_evidence must use result distillation middleware");
 assert(read("src/tools/registerNativeActionTools.ts").includes("distilledJsonResult"), "browser_network must use result distillation middleware through native action tools");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
@@ -168,7 +169,9 @@ assert((toolSource.match(/optionalTargetTabId\(/g) || []).length >= 6, "tab-scop
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");
 assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "pi-browser-tools skill must document explicit tabId automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_content"), "pi-browser-tools skill must document pick/content flows");
-assert(skill.includes("browser_query") && skill.includes("browser_click") && skill.includes("browser_type"), "pi-browser-tools skill must document query/click/type flows");
+for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
+	assert(!skill.includes(removed), `pi-browser-tools skill must not document removed split action tool: ${removed}`);
+}
 assert(!skill.includes("npm run check") && !skill.includes("smoke:browser"), "pi-browser-tools skill must not contain project development validation flow");
 assert(toolSource.includes("NativeCommandParamsSchema"), "native tools must use one generic params schema and protocol validation");
 assert((toolSource.match(/params: Type.Optional\(NativeCommandParamsSchema\)/g) || []).length >= 3, "native tool params must use generic protocol-backed schema");
@@ -189,5 +192,54 @@ for (const forbidden of [
 	assert(!toolSource.includes(forbidden), `registerTools.ts must not duplicate native command params schema: ${forbidden}`);
 }
 assert(toolSource.includes("outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION }))"), "scan output path option missing");
+
+async function testCdpAliasReleaseAndFrameOptions() {
+	const attachedTabs = new Set();
+	const sendCalls = [];
+	let detachCount = 0;
+	const sandbox = {
+		self: {},
+		console,
+		setTimeout,
+		clearTimeout,
+		chrome: {
+			tabs: { async update() {} },
+			debugger: {
+				async attach({ tabId }) {
+					if (attachedTabs.has(Number(tabId))) throw new Error("Another debugger is already attached");
+					attachedTabs.add(Number(tabId));
+				},
+				async detach({ tabId }) { detachCount += 1; attachedTabs.delete(Number(tabId)); },
+				async sendCommand({ tabId }, method, params) {
+					sendCalls.push({ tabId, method, params });
+					if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main", url: "http://example.test/", name: "", mimeType: "text/html", securityOrigin: "http://example.test" } } };
+					if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+					if (method === "Runtime.evaluate") return { result: { type: "string", value: "ok" } };
+					return {};
+				},
+				onDetach: { addListener() {} },
+			},
+		},
+	};
+	vm.runInNewContext(read("bridge/pi_browser_bridge/cdp.js"), sandbox, { filename: "cdp.js" });
+	const cdp = sandbox.self.PiPersistentCdp;
+	assert((await cdp.attach(77, { name: "default" })).ok === true, "CDP default attach must succeed");
+	assert((await cdp.attach(77, { name: "alias" })).ok === true, "CDP alias attach must reuse an existing physical debugger");
+	assert(cdp.sessions.has("77:default"), "CDP default session missing");
+	assert(cdp.sessions.has("77:alias"), "CDP alias session missing");
+	for (const rec of cdp.sessions.values()) rec.lastUsed = Date.now();
+	const release = await cdp.releaseIdle(0);
+	assert(release.ok === true, "CDP releaseIdle must accept maxIdleMs:0 as immediate release");
+	assert(cdp.sessions.size === 0, "releaseIdle must remove every logical alias entry for the tab");
+	assert(detachCount === 1, "releaseIdle must detach the physical debugger after the final alias is removed");
+
+	const evaluated = await cdp.evaluateInFrame(78, "'ok'", { frameId: "main", grantUniversalAccess: true, returnByValue: true });
+	assert(evaluated.ok === true, "CDP evaluateInFrame must succeed in Chrome mock");
+	const createWorld = sendCalls.find((call) => call.method === "Page.createIsolatedWorld" && call.tabId === 78);
+	assert(createWorld?.params.grantUniversalAccess === true, "frame.evaluate must pass grantUniversalAccess to Page.createIsolatedWorld");
+	assert(Object.hasOwn(createWorld?.params || {}, "grantUniveralAccess") === false, "frame.evaluate must not send misspelled grantUniveralAccess");
+}
+
+await testCdpAliasReleaseAndFrameOptions();
 
 console.log("pi browser bridge contract ok");

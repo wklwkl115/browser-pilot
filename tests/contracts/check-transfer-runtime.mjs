@@ -28,6 +28,7 @@ async function testPiToolLayer() {
 			return true;
 		}, "browser_execute must not bypass browser_upload validation");
 		rejectUnsafeExecuteCommand({ cmd: "transfer.download" });
+		rejectUnsafeExecuteCommand({ cmd: "persistent_cdp", action: "send", cdpMethod: "Input.insertText" });
 		await assert.rejects(checkedUploadFiles(["relative.txt"]), (error) => assertErrorCode(error, "UPLOAD_PATH_NOT_ABSOLUTE"), "upload must reject relative paths");
 		await assert.rejects(checkedUploadFiles([path.join(temp, "missing.txt")]), (error) => assertErrorCode(error, "UPLOAD_FILE_NOT_FOUND"), "upload must reject missing files before browser command");
 		await assert.rejects(checkedUploadFiles([temp]), (error) => assertErrorCode(error, "UPLOAD_PATH_NOT_FILE"), "upload must reject directories");

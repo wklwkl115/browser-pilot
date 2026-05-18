@@ -1,7 +1,6 @@
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { buildElementActionScript } from "../../src/actions/buildElementActionScript.ts";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { buildPickScript } from "../../src/pick/buildPickScript.ts";
@@ -25,7 +24,7 @@ function startFixture() {
 			res.end(body);
 			return;
 		}
-		const body = "<!doctype html><html><head><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><form onsubmit='event.preventDefault();document.querySelector(\"#result\").textContent=\"submitted\"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector(\"#result\").textContent=document.querySelector(\"input[name=q]\").value'>Go</button><input id='upload' type='file' onchange='document.querySelector(\"#result\").textContent=this.files[0]?.name||\"no-file\"'></form><button id='download' type='button' onclick='const blob=new Blob([\"pi smoke download\"],{type:\"text/plain\"});const a=document.createElement(\"a\");a.href=URL.createObjectURL(blob);a.download=\"pi-browser-smoke-download.txt\";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>";
+		const body = "<!doctype html><html><head><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><form onsubmit='event.preventDefault();document.querySelector(\"#result\").textContent=\"submitted\"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector(\"#result\").textContent=document.querySelector(\"input[name=q]\").value'>Go</button><input id='upload' type='file' onchange='document.querySelector(\"#result\").textContent=this.files[0]?.name||\"no-file\"'></form><div id='comment' role='textbox' contenteditable='true' style='border:1px solid #999;padding:4px' oninput='document.querySelector(\"#send\").disabled=!this.textContent.trim()'></div><button id='send' type='button' disabled onclick='document.querySelector(\"#comment-result\").textContent=document.querySelector(\"#comment\").textContent'>Send</button><div id='comment-result'></div><button id='download' type='button' onclick='const blob=new Blob([\"pi smoke download\"],{type:\"text/plain\"});const a=document.createElement(\"a\");a.href=URL.createObjectURL(blob);a.download=\"pi-browser-smoke-download.txt\";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>";
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(body) });
 		res.end(body);
 	});
@@ -43,6 +42,14 @@ async function waitForExtension(timeoutMs = 15_000) {
 		await delay(250);
 	}
 	throw new Error(`Browser extension did not connect to bridge port ${bridge.port}; close other bridge servers or reload extension`);
+}
+
+async function cdpSend(tabId, cdpMethod, params) {
+	return await bridge.sendCommand({ cmd: "persistent_cdp", action: "send", tabId, cdpMethod, params, timeoutMs: 8_000, persistent: false }, { tabId, timeoutMs: 10_000 });
+}
+
+async function cdpKey(tabId, type, key, code, windowsVirtualKeyCode, modifiers = 0) {
+	return await cdpSend(tabId, "Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, modifiers });
 }
 
 let fixture;
@@ -63,20 +70,30 @@ try {
 	const scan = await bridge.executeJavaScript(buildScanScript({ maxChars: 20_000 }), { tabId, timeoutMs: 10_000 });
 	const scanContent = String(scan.data?.content || "");
 	await writeFile(path.join(outDir, "smoke-script-scan.txt"), scanContent, "utf8");
-	record("scan", scanContent.includes("Smoke Page"), { chars: scanContent.length });
+	record("scan", scanContent.includes("Smoke Page") && Array.isArray(scan.data?.actionables) && scan.data.actionables.length >= 2, { chars: scanContent.length, actionables: scan.data?.actionables?.length });
 
 	const content = await bridge.executeJavaScript(buildContentScript({ selector: "main", maxChars: 20_000 }), { tabId, timeoutMs: 10_000 });
 	const markdown = String(content.data?.markdown || "");
 	await writeFile(path.join(outDir, "smoke-script-content.md"), markdown, "utf8");
 	record("content", markdown.includes("Readable smoke article body"), { chars: markdown.length });
 
-	const query = await bridge.executeJavaScript(buildElementActionScript({ action: "query", selector: "button", limit: 5, visibleOnly: true }), { tabId, timeoutMs: 10_000 });
-	record("query", Number(query.data?.returnedMatches || 0) >= 1, { returnedMatches: query.data?.returnedMatches });
-	const typed = await bridge.executeJavaScript(buildElementActionScript({ action: "type", selector: "input[name=q]", text: "typed-smoke", clear: true }), { tabId, timeoutMs: 10_000 });
-	record("type", typed.data?.finalValue === "typed-smoke", { valueLength: typed.data?.valueLength });
-	const clicked = await bridge.executeJavaScript(buildElementActionScript({ action: "click", selector: "#go" }), { tabId, timeoutMs: 10_000 });
-	const resultText = await bridge.executeJavaScript("return document.querySelector('#result')?.textContent", { tabId, timeoutMs: 10_000 });
-	record("click", clicked.data?.clicked === true && resultText.data === "typed-smoke", { resultText: resultText.data });
+	const interaction = await bridge.executeJavaScript("const input = document.querySelector('input[name=q]'); input.value = 'typed-smoke'; input.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#go').click(); const comment = document.querySelector('#comment'); comment.focus(); comment.textContent = '666'; comment.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '666' })); document.querySelector('#send').click(); return { result: document.querySelector('#result')?.textContent, comment: document.querySelector('#comment-result')?.textContent, sendDisabled: document.querySelector('#send')?.disabled };", { tabId, timeoutMs: 10_000 });
+	record("execute.interaction", interaction.data?.result === "typed-smoke" && interaction.data?.comment === "666" && interaction.data?.sendDisabled === false, { resultText: interaction.data?.result, commentText: interaction.data?.comment, sendDisabled: interaction.data?.sendDisabled });
+
+	const cdpTarget = await bridge.executeJavaScript("const comment = document.querySelector('#comment'); comment.textContent = ''; comment.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' })); const r = comment.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };", { tabId, timeoutMs: 10_000 });
+	await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x: cdpTarget.data.x, y: cdpTarget.data.y, button: "left", clickCount: 1 });
+	await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x: cdpTarget.data.x, y: cdpTarget.data.y, button: "left", clickCount: 1 });
+	await cdpSend(tabId, "Input.insertText", { text: "cdp-smoke" });
+	const cdpTyped = await bridge.executeJavaScript("return { text: document.querySelector('#comment')?.textContent, sendDisabled: document.querySelector('#send')?.disabled, active: document.activeElement === document.querySelector('#comment') };", { tabId, timeoutMs: 10_000 });
+	await cdpKey(tabId, "keyDown", "Control", "ControlLeft", 17, 2);
+	await cdpKey(tabId, "keyDown", "a", "KeyA", 65, 2);
+	await cdpKey(tabId, "keyUp", "a", "KeyA", 65, 2);
+	await cdpKey(tabId, "keyUp", "Control", "ControlLeft", 17, 0);
+	await cdpKey(tabId, "keyDown", "Backspace", "Backspace", 8, 0);
+	await cdpKey(tabId, "keyUp", "Backspace", "Backspace", 8, 0);
+	const cdpCleared = await bridge.executeJavaScript("return { text: document.querySelector('#comment')?.textContent, sendDisabled: document.querySelector('#send')?.disabled };", { tabId, timeoutMs: 10_000 });
+	record("execute.cdpInput", cdpTyped.data?.text === "cdp-smoke" && cdpTyped.data?.sendDisabled === false && cdpCleared.data?.text === "" && cdpCleared.data?.sendDisabled === true, { typed: cdpTyped.data, cleared: cdpCleared.data });
+
 	const pickLite = await bridge.executeJavaScript(buildPickScript({ message: "Smoke picker timeout", multiple: false, timeoutMs: 1_200 }), { tabId, timeoutMs: 4_000 });
 	record("pick-lite", pickLite.data?.cancelled === true && pickLite.data?.reason === "timeout", { reason: pickLite.data?.reason });
 

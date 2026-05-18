@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { summarizeElementActionData, summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "../../src/tools/summaries/index.ts";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "../../src/tools/summaries/index.ts";
 
 const scan = summarizeScanData({
 	url: "https://example.test",
@@ -9,10 +9,12 @@ const scan = summarizeScanData({
 	node_count: 4,
 	iframe_notes: [{ src: "about:blank", accessible: true }],
 }, [{ id: 1 }, { id: 2 }]);
-assert.deepEqual(Object.keys(scan).sort(), ["contentChars", "headings", "iframe_notes", "interactive", "lineCount", "node_count", "readyState", "tabs_count", "textPreview", "text_only", "title", "truncated", "url"].sort(), "check-summaries scan.keys: summary fields must stay stable");
+assert.deepEqual(Object.keys(scan).sort(), ["actionables", "contentChars", "headings", "iframe_notes", "interactive", "lineCount", "list_hints", "node_count", "readyState", "tabs_count", "textPreview", "text_only", "title", "top_layer", "truncated", "url"].sort(), "check-summaries scan.keys: summary fields must stay stable");
 assert.equal(scan.tabs_count, 2);
 assert.equal(scan.interactive.length, 2);
 assert.equal(scan.headings.length, 1);
+assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: GA-style actionables table must be exposed");
+assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 
 const html = summarizeHtmlSnapshot("<html><head><title>T</title></head><body><form><input><button>Go</button></form><a href='/'>Home</a></body></html>", { selector: "body", mode: "outer" });
 assert.deepEqual(Object.keys(html).sort(), ["chars", "counts", "mode", "original_length", "selector", "textChars", "textPreview", "titles", "truncated"].sort(), "check-summaries html.keys: summary fields must stay stable");
@@ -35,18 +37,13 @@ const network = summarizeNetworkData({ tabId: 7, sessionId: "s", items: [
 ] });
 assert.deepEqual(Object.keys(network).sort(), ["active", "bodyBytes", "bodyRef", "bodyTruncated", "condition", "entryCount", "event", "failed", "hostCounts", "methodCounts", "recorder", "samples", "sessionId", "statusCounts", "tabId", "total", "typeCounts", "waitId"].sort(), "check-summaries network.keys: summary fields must stay stable");
 assert.equal(network.entryCount, 2);
-assert.equal(network.failed.length, 1);
+assert.equal(network.failed.count, 1);
+assert.deepEqual(network.failed.columns.slice(0, 4), ["requestId", "method", "status", "type"]);
 assert.equal(network.hostCounts[0].key, "api.example.test");
 const networkWait = summarizeNetworkData({ condition: "response", event: "response", waitId: "w1", request: { requestId: "3", url: "https://api.example.test/wait", method: "GET", status: 201, type: "Fetch", bodyRef: "b1" }, recorder: { recorderId: "r1", active: true, entries: 1, bodyCount: 1, activeWaitCount: 0 } });
 assert.equal(networkWait.entryCount, 1, "check-summaries network.wait.entryCount: request object must be counted");
 assert.equal(networkWait.waitId, "w1", "check-summaries network.wait.waitId: wait id must be surfaced");
 assert.equal(networkWait.recorder.recorderId, "r1", "check-summaries network.wait.recorder: recorder summary must be compact");
-
-const elementAction = summarizeElementActionData({ action: "query", selector: "button", totalMatches: 1, returnedMatches: 1, matches: [{ index: 0, selector: "#go", tagName: "button", id: "go", classes: ["primary"], role: "button", text: "Go", visible: true, disabled: false, rect: { x: 1, y: 2, width: 3, height: 4 }, outerHtmlSnippet: "<button>Go</button>" }] });
-assert.deepEqual(Object.keys(elementAction).sort(), ["action", "clicked", "filteredMatches", "finalValuePreview", "index", "matches", "redacted", "returnedMatches", "selector", "submitted", "target", "title", "totalMatches", "url", "valueLength", "visibleOnly"].sort(), "check-summaries elementAction.keys: summary fields must stay stable");
-assert.equal(elementAction.matches[0].selector, "#go", "check-summaries elementAction.selector: selector must be surfaced");
-assert.equal(elementAction.matches[0].htmlSnippet, "<button>Go</button>", "check-summaries elementAction.html: compact HTML snippet must be surfaced");
-assert.equal(JSON.stringify(elementAction).includes("outerHtmlSnippet"), false, "check-summaries elementAction.html: raw HTML snippet field must be renamed");
 
 const generic = summarizeGenericValue({ ok: true, data: { html: "x".repeat(2000), rows: Array.from({ length: 20 }, (_, id) => ({ id, value: "v".repeat(500) })) } });
 assert.equal(generic.type, "bridgeResult", "check-summaries generic.bridge: bridge envelopes must be recognized");

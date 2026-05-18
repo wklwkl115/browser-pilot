@@ -8,7 +8,7 @@ const read = (relOrAbs) => readFileSync(path.isAbsolute(relOrAbs) ? relOrAbs : p
 const toolDir = path.join(root, "src", "tools");
 const toolSource = readdirSync(toolDir).filter((file) => file.endsWith(".ts")).map((file) => read(path.join(toolDir, file))).join("\n");
 const registered = Array.from(new Set(Array.from(toolSource.matchAll(/name:\s*"(browser_[^"]+)"/g)).map((match) => match[1]))).sort();
-assert(registered.length >= 16, "tool drift: expected registered browser tools");
+assert(registered.length >= 15, "tool drift: expected registered browser tools");
 
 const readme = read("README.md");
 const sop = read("AI_INSTALL.md");

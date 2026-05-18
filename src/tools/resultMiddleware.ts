@@ -3,9 +3,9 @@ import { normalizeDetailLevel, type DetailLevel } from "../utils/params";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult";
 import { saveTextArtifact } from "./artifacts";
 import { isRecord } from "./summaries/common";
-import { summarizeElementActionData, summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
 
-export { summarizeElementActionData, summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {
@@ -17,6 +17,8 @@ export type DistilledEnvelope = {
 };
 
 const SUMMARY_MAX_CHARS = 12_000;
+const SUMMARY_BUDGET_CHARS = 8_000;
+const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
 
 type DistillBaseOptions = {
 	toolName: string;
@@ -43,7 +45,6 @@ type DistilledTextOptions = DistillBaseOptions & {
 export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
 	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
 	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
-	if (toolName === "browser_query" || toolName === "browser_click" || toolName === "browser_type") return summarizeElementActionData(isRecord(value) && value.data !== undefined ? value.data : value);
 	return summarizeGenericValue(value);
 }
 
@@ -51,8 +52,55 @@ async function saveRawArtifact(options: DistillBaseOptions, raw: string): Promis
 	return await saveTextArtifact(options.ctx, options.outputPath, options.fallbackName, raw);
 }
 
+function compactSummaryValue(value: unknown, limits: { stringChars: number; arrayItems: number; tableRows: number }, depth = 0): unknown {
+	if (value === null || value === undefined) return value;
+	if (typeof value === "string") return value.length > limits.stringChars ? `${value.slice(0, limits.stringChars)}…` : value;
+	if (typeof value === "number" || typeof value === "boolean") return value;
+	if (typeof value !== "object") return String(value);
+	if (Array.isArray(value)) return value.slice(0, limits.arrayItems).map((item) => compactSummaryValue(item, limits, depth + 1));
+	if (depth >= 5) return { type: "object", keyCount: Object.keys(value as Record<string, unknown>).length };
+	const record = value as Record<string, unknown>;
+	if (Array.isArray(record.columns) && Array.isArray(record.rows)) {
+		const rows = record.rows.slice(0, limits.tableRows).map((row) => Array.isArray(row) ? row.map((cell) => compactSummaryValue(cell, limits, depth + 1)) : row);
+		return { ...record, rows, truncated: Number(record.count || rows.length) > rows.length ? Number(record.count || rows.length) - rows.length : record.truncated };
+	}
+	const out: Record<string, unknown> = {};
+	for (const [key, item] of Object.entries(record)) out[key] = compactSummaryValue(item, limits, depth + 1);
+	return out;
+}
+
+function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number): DistilledSummary {
+	const out: DistilledSummary = { ...summary };
+	const dropped: string[] = [];
+	for (const key of SUMMARY_LOW_PRIORITY_KEYS) {
+		if (stableJson(out).length <= budget) break;
+		if (Object.hasOwn(out, key)) {
+			delete out[key];
+			dropped.push(key);
+		}
+	}
+	if (dropped.length) out.summaryOmitted = dropped;
+	return out;
+}
+
+function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
+	if (stableJson(summary).length <= budget) return summary;
+	for (const limits of [
+		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
+		{ stringChars: 480, arrayItems: 12, tableRows: 12 },
+		{ stringChars: 240, arrayItems: 8, tableRows: 8 },
+		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
+	]) {
+		const compacted = compactSummaryValue(summary, limits) as DistilledSummary;
+		if (stableJson(compacted).length <= budget) return compacted;
+	}
+	return dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
+}
+
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): DistilledEnvelope {
-	return { tool: options.toolName, command: options.command, detailLevel: normalizeDetailLevel(options.detailLevel), summary, saved };
+	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
+	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
+	return { tool: options.toolName, command: options.command, detailLevel: normalizeDetailLevel(options.detailLevel), summary: fitSummaryBudget(summary, budget), saved };
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {

@@ -33,7 +33,7 @@ assert.equal(contentSummary.markdownChars, 8, "content summary must surface mark
 
 const pickSummary = summarizePickData({ message: "Pick", selectedCount: 1, selectors: ["#go"], selections: [{ selector: "#go", tag: "button", text: "Go", rect: { x: 1 } }] });
 assert.deepEqual(pickSummary.selectors, ["#go"], "pick summary must surface selectors");
-assert.equal(pickSummary.selections[0].tag, "button", "pick summary must include compact element info");
+assert.equal(pickSummary.selections.rows[0][pickSummary.selections.columns.indexOf("tag")], "button", "pick summary must include compact element info");
 
 const pkg = JSON.parse(read("package.json"));
 assert(!Object.keys(pkg.dependencies || {}).some((name) => /puppeteer|readability|turndown|jsdom/i.test(name)), "browser_pick/content must not add Puppeteer/Readability/Turndown/JSDOM runtime deps");
