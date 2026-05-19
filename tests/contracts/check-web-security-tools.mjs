@@ -1030,6 +1030,7 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	const callbackStopped = await runCallbackOast({ action: "stop", sessionId: "contract-callback" });
 	assert.equal(callbackStopped.listenerActive, false, "callback stop should close persisted listeners");
 	assert.equal(callbackStopped.count, 0, "callback stop should return the current persisted event buffer");
+	await assert.rejects(() => runCallbackOast({ action: "start", sessionId: "contract-callback-ipv6", correlationId: "corr-ipv6", enableDns: true, dnsBaseDomain: "oast.local", dnsResponseAddress: "::1" }), /dnsResponseAddress must be a valid IPv4 address/i, "callback listener should reject IPv6 dnsResponseAddress values while only supporting A-record responses");
 
 	const paramQuery = await runFuzzParams({ url: `${base}/param`, locations: ["query"], paramNames: ["debug"], values: ["0", "1"], matchStatus: [200], filterStatus: [403], maxBodyBytes: 64_000 });
 	assert.equal(paramQuery.matchedCount, 1, "query param fuzz should find one matching value");

@@ -199,6 +199,12 @@
 - [x] contracts：已补超长单 label 与超长总 QNAME 的失败回归，并保留合法 63-byte label 的 DNS trigger 行为。
 - [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；已补本地 smoke 与 actual callable-tool runtime artifact。
 
+## 94. Callback OAST IPv4-only DNS response 地址校验修复
+
+- [x] `src/tools/webSecurity/browserNative/callbackOast.ts` / `callbackOastWorker.mjs`：已对 `dnsResponseAddress` 做 IPv4 合法性校验；当前 A 记录响应不接受 IPv6/非 IPv4 输入，不再静默回落到错误的 `0.0.0.0` 类响应。
+- [x] contracts：已补 `dnsResponseAddress="::1"` 等非法输入失败回归，并保留合法 IPv4 DNS trigger / listener 行为。
+- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；reload 后 local smoke 与 actual callable-tool runtime artifact 已完成。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

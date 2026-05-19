@@ -81,6 +81,17 @@ function callbackPath(basePath: string, correlationId: string): string {
 	return withSlash.endsWith("/") ? `${withSlash}${encodeURIComponent(correlationId)}` : `${withSlash}/${encodeURIComponent(correlationId)}`;
 }
 
+function parseIpv4Address(value: string): [number, number, number, number] | undefined {
+	const parts = String(value || "").trim().split(".");
+	if (parts.length !== 4) return undefined;
+	const octets = parts.map((part) => {
+		if (!/^\d+$/.test(part)) return undefined;
+		const value = Number(part);
+		return Number.isInteger(value) && value >= 0 && value <= 255 ? value : undefined;
+	});
+	return octets.every((part) => part !== undefined) ? octets as [number, number, number, number] : undefined;
+}
+
 function sessionArtifactRoot(sessionId: string): string {
 	return path.join(SESSION_ROOT, sessionId);
 }
@@ -319,6 +330,7 @@ async function waitForState(sessionId: string, predicate: (state: CallbackSessio
 
 async function createCallbackSession(options: NormalizedCallbackOastOptions) {
 	const sessionId = options.sessionId || `oast-${randomUUID()}`;
+	if (options.enableDns === true && !parseIpv4Address(options.dnsResponseAddress)) throw new Error(`browser_callback_oast dnsResponseAddress must be a valid IPv4 address for DNS A-record responses: ${options.dnsResponseAddress}`);
 	const existing = await refreshSessionState(await loadSessionState(sessionId));
 	if (existing?.listenerActive) throw new Error(`browser_callback_oast session already exists: ${sessionId}`);
 	if (existing && !existing.listenerActive) await rm(existing.artifactRoot, { recursive: true, force: true }).catch(() => {});

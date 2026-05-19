@@ -16,6 +16,7 @@
 - 修复空 favicon/空响应相似度哈希碰撞：`simHash64` 现在对空 Buffer 返回固定零值，不再落成全 1 的 `ffffffffffffffff`。
 - 修复 DNS OAST 16-bit 问题类型序列化：DNS 响应问答区改用 `writeUInt16BE` 写入 QTYPE/QCLASS，避免 CAA/URI 等高位字节被截断。
 - 修复 `browser_callback_oast` DNS trigger 超长名称兼容性：`buildDnsQuery` 现在显式校验单 label <= 63 bytes、整条 QNAME 线长 <= 255 bytes，避免超长 label 长度字节截断后生成畸形 DNS 报文。
+- 修复 `browser_callback_oast` DNS A 响应地址校验缺口：`dnsResponseAddress` 现在要求合法 IPv4；当前 A-record 响应不再接受 IPv6/非 IPv4 输入并静默构造错误 `0.0.0.0` 类结果。
 - 修复 OAST worker 日志句柄泄露：派生 detached worker 后父进程立即关闭继承前打开的 stdout/stderr log 文件描述符。
 - 优化 Rails Cookie 验证：Rails PBKDF2 派生切到异步缓存路径，避免 `browser_cookie_analyze` 在大量 secret candidates 下同步卡死事件循环。
 - 增强 `browser_sqli_probe`：新增 `stopOnFirstMatch`，可在同一参数确认命中后短路后续 probe，减少无意义发包。

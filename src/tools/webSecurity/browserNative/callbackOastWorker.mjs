@@ -282,20 +282,31 @@ function encodeDnsName(name) {
   return Buffer.concat(chunks);
 }
 
+function parseIpv4Address(value) {
+  const parts = String(value || "").trim().split(".");
+  if (parts.length !== 4) return undefined;
+  const octets = parts.map((part) => {
+    if (!/^\d+$/.test(part)) return undefined;
+    const current = Number(part);
+    return Number.isInteger(current) && current >= 0 && current <= 255 ? current : undefined;
+  });
+  return octets.every((part) => part !== undefined) ? octets : undefined;
+}
+
 function buildDnsResponse(query, responseAddress) {
   const header = Buffer.alloc(12);
   header.writeUInt16BE(query.id, 0);
   header.writeUInt16BE(0x8180, 2);
   header.writeUInt16BE(query.qdcount, 4);
   const firstQuestion = query.questions[0];
-  const hasAAnswer = firstQuestion && firstQuestion.type === 1 && responseAddress;
+  const ip = firstQuestion && firstQuestion.type === 1 ? parseIpv4Address(responseAddress) : undefined;
+  const hasAAnswer = firstQuestion && firstQuestion.type === 1 && ip;
   header.writeUInt16BE(hasAAnswer ? 1 : 0, 6);
   const typeAndClass = Buffer.alloc(4);
   typeAndClass.writeUInt16BE(firstQuestion?.type || 1, 0);
   typeAndClass.writeUInt16BE(firstQuestion?.class || 1, 2);
   const question = Buffer.concat([encodeDnsName(firstQuestion?.name || ""), typeAndClass]);
   if (!hasAAnswer) return Buffer.concat([header, question]);
-  const ip = responseAddress.split(".").map((item) => Math.max(0, Math.min(255, Number(item) || 0)));
   const answer = Buffer.concat([
     Buffer.from([0xc0, 0x0c]),
     Buffer.from([0x00, 0x01, 0x00, 0x01]),
@@ -400,6 +411,7 @@ async function start() {
   }
 
   if (state.enableDns === true) {
+    if (!parseIpv4Address(state.dnsResponseAddress)) throw new Error(`callbackOastWorker dnsResponseAddress must be a valid IPv4 address for DNS A-record responses: ${state.dnsResponseAddress}`);
     const dnsServer = dgram.createSocket("udp4");
     runtime.dnsServer = dnsServer;
     dnsServer.on("message", (msg, remote) => handleDnsMessage(msg, remote, dnsServer).catch(() => {}));
