@@ -70,6 +70,7 @@ assert(manifest.permissions?.includes("webNavigation"), "manifest must include w
 
 const background = read("bridge/pi_browser_bridge/background.js");
 const transport = read("bridge/pi_browser_bridge/transport.js");
+const tabSync = read("bridge/pi_browser_bridge/tab_sync.js");
 const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
 const router = read("bridge/pi_browser_bridge/router.js");
 const htmlBridge = read("bridge/pi_browser_bridge/html.js");
@@ -134,9 +135,121 @@ assert(runtime.includes("PI_BROWSER_PROTOCOL.nativeCommandMap"), "runtime native
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs instead of hardcoding the port");
 assert(transport.split(/\r?\n/).length <= 150, "transport.js must stay focused on WebSocket lifecycle");
+assert(transport.includes("cleanupTransportSocket") && transport.includes("if (ws !== socket) return false"), "transport.js must use identity-guarded socket cleanup");
+assert(transport.includes("const socket = ws;") && transport.includes("handlePiBridgeWsMessage(JSON.parse(event.data), socket)"), "transport.js handlers must capture the current socket instead of reading global ws");
+assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTask"), "tab_sync.js must wrap async lifecycle tasks with rejection handling");
+assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) {
 	assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 }
+
+async function testTransportSocketCleanupIdentity() {
+	const alarms = [];
+	const sockets = [];
+	class FakeWebSocket {
+		static CONNECTING = 0;
+		static OPEN = 1;
+		static CLOSING = 2;
+		static CLOSED = 3;
+		constructor(url) {
+			this.url = url;
+			this.readyState = FakeWebSocket.CONNECTING;
+			this.sent = [];
+			sockets.push(this);
+		}
+		send(data) { this.sent.push(data); }
+	}
+	const sandbox = {
+		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test",
+		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test",
+		WebSocket: FakeWebSocket,
+		AbortController,
+		setTimeout,
+		console: { log() {}, warn() {}, debug() {}, error() {} },
+		fetch: async () => ({}),
+		isScriptable: () => true,
+		piBridgeInfo: () => ({ id: "bridge-test" }),
+		installCspBypassRule() {},
+		installPiBrowserTabSync() {},
+		handlePiBridgeWsMessage: async () => {},
+		chrome: {
+			runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, reload() {} },
+			alarms: { create(name, options) { alarms.push({ name, options }); }, onAlarm: { addListener(fn) { sandbox.onAlarm = fn; } } },
+			tabs: { async query() { return [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }]; } },
+		},
+	};
+	vm.runInNewContext(transport, sandbox, { filename: "transport.js" });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sockets.length === 1, "transport must create an initial socket after successful health probe");
+	const first = sockets[0];
+	first.readyState = FakeWebSocket.OPEN;
+	await first.onopen();
+	assert(first.sent.length === 1, "first socket should send ext_ready after open");
+	first.readyState = FakeWebSocket.CLOSED;
+	first.onerror({ type: "error" });
+	assert(sandbox.getPiBrowserTransportSocket() === null, "non-open socket error must clear the current socket");
+	assert(alarms.some((alarm) => alarm.name === "pi-browser-ws-probe"), "socket error cleanup must schedule reconnect probe");
+	sandbox.connectWS();
+	const second = sockets[1];
+	assert(second, "transport should create a second socket after cleanup");
+	second.readyState = FakeWebSocket.CONNECTING;
+	first.onclose();
+	assert(sandbox.getPiBrowserTransportSocket() === second, "late close from old socket must not clear the new socket");
+	first.onerror({ type: "error" });
+	assert(sandbox.getPiBrowserTransportSocket() === second, "late error from old socket must not clear the new socket");
+	second.readyState = FakeWebSocket.OPEN;
+	await second.onopen();
+	assert(second.sent.length === 1, "second socket should send its own ext_ready");
+}
+
+await testTransportSocketCleanupIdentity();
+
+async function testTabSyncAsyncErrorsAreCaught() {
+	const listeners = {};
+	const debugLogs = [];
+	let cleanupTabId;
+	let queryImpl = async () => [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }];
+	let socket = { readyState: 1, send() {} };
+	let probeImpl = async () => {};
+	const sandbox = {
+		WebSocket: { OPEN: 1 },
+		console: { debug(...args) { debugLogs.push(args); } },
+		isScriptable: () => true,
+		piBridgeInfo: () => ({ id: "bridge-test" }),
+		getPiBrowserTransportSocket: () => socket,
+		probeAndConnectWS: (...args) => probeImpl(...args),
+		cleanupPiBrowserTab(tabId) { cleanupTabId = tabId; },
+		chrome: {
+			tabs: {
+				query: (...args) => queryImpl(...args),
+				onUpdated: { addListener(fn) { listeners.updated = fn; } },
+				onRemoved: { addListener(fn) { listeners.removed = fn; } },
+				onCreated: { addListener(fn) { listeners.created = fn; } },
+			},
+		},
+	};
+	vm.runInNewContext(tabSync, sandbox, { filename: "tab_sync.js" });
+	sandbox.installPiBrowserTabSync();
+	queryImpl = async () => { throw new Error("query boom"); };
+	listeners.updated(1, { status: "complete" });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onUpdated" && entry[1]?.error === "query boom"), "tab_sync must catch tabs.query rejection");
+	debugLogs.length = 0;
+	queryImpl = async () => [{ id: 2, url: "https://example.test/ok", title: "OK", active: true, windowId: 1 }];
+	socket = { readyState: 1, send() { throw new Error("send boom"); } };
+	listeners.removed(22);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(cleanupTabId === 22, "tab_sync must still clean removed tabs");
+	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onRemoved" && entry[1]?.error === "send boom"), "tab_sync must catch ws.send exceptions");
+	debugLogs.length = 0;
+	probeImpl = async () => { throw new Error("probe boom"); };
+	socket = { readyState: 1, send() {} };
+	listeners.created();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onCreated.probe" && entry[1]?.error === "probe boom"), "tab_sync must catch probe rejection from lifecycle hooks");
+}
+
+await testTabSyncAsyncErrorsAreCaught();
 
 function testDialogSuppressionPromptSemantics() {
 	const timers = [];

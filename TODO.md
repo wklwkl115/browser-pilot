@@ -235,6 +235,18 @@
 - [x] `callbackOast.ts` / `callbackOastWorker.mjs`：stale lock 回收改为先获取单独 breaker lock，再重新确认 main lock 仍 stale 后删除，避免多进程同时 `check -> rm -> create`。
 - [x] contracts/runtime：补 callback OAST stale lock 并发恢复回归，保留 burst callback 事件数与 seq 唯一性；已跑 `check:web-security` 与 Windows shell 下 `npm run check`；reload 后 local smoke 与 actual runtime artifact 已完成。
 
+## 100. Browser transport WebSocket error/close 鲁棒性加固
+
+- [x] `bridge/pi_browser_bridge/transport.js`：抽取 identity-guarded socket cleanup，`onclose` / 非 OPEN error / keepalive 非 OPEN 清理时不得误清后续新 socket。
+- [x] `bridge/pi_browser_bridge/transport.js`：`onopen` / `onmessage` 捕获当前 socket，避免异步闭包读取全局 `ws` 后误向新连接发 ready 或处理旧消息。
+- [x] contracts/runtime：补 transport socket 事件序列回归，覆盖旧 socket close/error 晚到不清新 socket、error 后非 OPEN socket 会清理并调度 probe；已跑 Windows shell 下 `npm run check`；reload 后 local smoke 与真实浏览器 create/list/close/execute artifact 已完成。
+
+## 101. Tab sync async rejection 与 stableJson 循环引用修复
+
+- [x] `bridge/pi_browser_bridge/tab_sync.js`：tab lifecycle listener 中所有 fire-and-forget async 路径统一捕获并记录错误，避免 MV3 service worker 出现未处理 Promise rejection。
+- [x] `src/utils/json.ts`：`stableJson` 增加循环引用检测，同时保留非循环共享引用的正常序列化、BigInt 与 Error 兼容行为。
+- [x] contracts/runtime：补 tab sync async error 与 JSON 循环引用回归，并跑 `check:pi-browser-bridge`、`check:errors` 与 Windows shell 下 `npm run check`；reload 后 tab create/remove 实际链路与 `stableJson` local smoke artifact 已完成。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

@@ -11,6 +11,15 @@ function getPiBrowserTransportSocket() {
   return ws;
 }
 
+function cleanupTransportSocket(socket, reason) {
+  if (ws !== socket) return false;
+  ws = null;
+  console.log('[PI-BROWSER-WS] Disconnected', reason || '');
+  bumpProbeBackoff();
+  scheduleProbe();
+  return true;
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Pi Browser Bridge installed');
   installCspBypassRule();
@@ -61,12 +70,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
   if (alarm.name === 'pi-browser-ws-keepalive') {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send('{"type":"ping"}'); } catch (_) {}
+    const socket = ws;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      try { socket.send('{"type":"ping"}'); } catch (_) {}
       scheduleKeepalive();
     } else {
-      ws = null;
-      scheduleProbe();
+      cleanupTransportSocket(socket, 'keepalive');
     }
   }
   if (alarm.name === 'pi-browser-ws-probe') {
@@ -87,36 +96,38 @@ function connectWS() {
     scheduleProbe();
     return;
   }
-  ws.onopen = async () => {
+  const socket = ws;
+  socket.onopen = async () => {
+    if (ws !== socket) return;
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
     console.log('[PI-BROWSER-WS] Connected!');
     scheduleKeepalive();
     const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
-    ws.send(JSON.stringify({
+    if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
       type: 'ext_ready',
       bridge: piBridgeInfo(),
       tabs: tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
     }));
     console.log('[PI-BROWSER-WS] Sent ext_ready with', tabs.length, 'tabs');
   };
-  ws.onmessage = async (event) => {
+  socket.onmessage = async (event) => {
+    if (ws !== socket) return;
     try {
-      await handlePiBridgeWsMessage(JSON.parse(event.data), ws);
+      await handlePiBridgeWsMessage(JSON.parse(event.data), socket);
     } catch (e) {
       console.error('[PI-BROWSER-WS] message parse error', e);
     }
   };
-  ws.onclose = () => {
-    console.log('[PI-BROWSER-WS] Disconnected');
-    ws = null;
-    bumpProbeBackoff();
-    scheduleProbe();
+  socket.onclose = () => {
+    cleanupTransportSocket(socket, 'close');
   };
-  ws.onerror = (e) => {
+  socket.onerror = (e) => {
     console.debug('[PI-BROWSER-WS] Connection error; waiting for local server', {
-      readyState: ws ? ws.readyState : null,
+      readyState: socket ? socket.readyState : null,
       type: e && e.type ? e.type : 'error'
     });
+    if (socket.readyState !== WebSocket.OPEN && socket.readyState !== WebSocket.CONNECTING) cleanupTransportSocket(socket, 'error');
   };
 }
 

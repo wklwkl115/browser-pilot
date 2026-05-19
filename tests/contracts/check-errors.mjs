@@ -3,6 +3,7 @@ import { BrowserBridgeError, errorToPlain } from "../../src/driver/errors.ts";
 import { validateBridgeCommand } from "../../src/protocol/nativeProtocol.ts";
 import { ArtifactReaderError } from "../../src/tools/artifactReader.ts";
 import { normalizeError } from "../../src/utils/errors.ts";
+import { jsonPreview, stableJson } from "../../src/utils/json.ts";
 import { errorResult } from "../../src/utils/toolResult.ts";
 
 function assertNormalized(value, label) {
@@ -50,5 +51,21 @@ assert.equal(nestedStack.details.error.details.selector, "#go", "normalizeError 
 const nestedResult = errorResult(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "script failed", { error: { code: "DOM_NODE_NOT_FOUND", message: "stale", stack: "nested stack" } }));
 assert.equal(nestedResult.content[0].text.includes("stack"), false, "errorResult content must strip nested stack traces");
 assert.equal(JSON.stringify(nestedResult.details).includes("stack"), false, "errorResult details must strip nested stack traces");
+
+const circular = { name: "root" };
+circular.self = circular;
+const circularJson = stableJson(circular);
+assert.ok(circularJson.includes('"self": "[Circular]"'), "stableJson must serialize circular references without throwing");
+assert.ok(jsonPreview(circular, 120).text.includes("[Circular]"), "jsonPreview must tolerate circular references");
+const shared = { value: 1 };
+const sharedJson = stableJson({ left: shared, right: shared, big: 1n });
+assert.equal((sharedJson.match(/"value": 1/g) || []).length, 2, "stableJson must not label non-cyclic shared references as circular");
+assert.ok(sharedJson.includes('"big": "1"'), "stableJson must keep bigint stringification");
+assert.equal(sharedJson.includes("[Circular]"), false, "stableJson must only mark actual ancestor cycles");
+const circularDetails = { selector: "#go" };
+circularDetails.self = circularDetails;
+const circularErrorResult = errorResult(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "loop", circularDetails));
+assert.ok(circularErrorResult.content[0].text.includes("[Circular]"), "errorResult content must tolerate circular error details");
+assert.ok(JSON.stringify(circularErrorResult.details).includes("[Circular]"), "errorResult details must tolerate circular error details");
 
 console.log("error contract ok");

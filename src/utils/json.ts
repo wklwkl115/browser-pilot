@@ -1,9 +1,14 @@
 const DEFAULT_MAX_CHARS = 50_000;
 
 export function stableJson(value: unknown, spaces = 2): string {
-	return JSON.stringify(value, (_key, item) => {
+	const ancestors: unknown[] = [];
+	return JSON.stringify(value, function (this: unknown, _key, item) {
 		if (typeof item === "bigint") return item.toString();
 		if (item instanceof Error) return { name: item.name, message: item.message, stack: item.stack };
+		if (item === null || typeof item !== "object") return item;
+		while (ancestors.length && ancestors[ancestors.length - 1] !== this) ancestors.pop();
+		if (ancestors.includes(item)) return "[Circular]";
+		ancestors.push(item);
 		return item;
 	}, spaces);
 }

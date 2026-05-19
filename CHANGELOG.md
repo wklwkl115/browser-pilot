@@ -13,6 +13,9 @@
 - 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
 - 修复 `browser_http_replay` HAR 依赖图相对 URL 崩溃：`buildHarDependencyGraph` 与 HAR redirect/referer 解析现在支持相对 request/referer/location 与 `baseUrl` 归一化，不再因 `new URL(relative)` 中断整次 replay。
 - 修复 native bridge WebSocket 错误帧语义：`router.js` 的 native command 失败现在发送 `type:"error"`，不再把 `{ ok:false }` 错误对象伪装成 `type:"result"` 导致服务端 Promise 误 resolve。
+- 加固浏览器扩展 WebSocket transport：onclose/onerror/keepalive 清理改为 identity-guarded，onopen/onmessage 捕获当前 socket，避免旧 socket 晚到事件误清新连接或异步 ready 发错连接。
+- 修复浏览器扩展 tab sync 未处理 Promise rejection：tab lifecycle listener 中的 tab 更新发送与 WS 探测现在统一捕获并记录异步错误，避免 MV3 service worker 因 `tabs.query` / `ws.send` 失败出现未处理 rejection。
+- 修复 `stableJson` 循环引用崩溃：JSON 输出路径现在把真实祖先循环标记为 `[Circular]`，同时保留非循环共享引用、BigInt 与 Error 序列化行为。
 - 修复 `BrowserBridgeServer.closeTab` 会话引用残留：关闭最后一个活动 tab 时同步清理 `latestSessionId`，避免后续无显式 `tabId` 的命令 fallback 到已关闭 tab。
 - 修复 `BrowserBridgeServer` 断连会话引用残留：WebSocket client 断开或 `tabs_update` 标记 tab 缺失后同步清理 stale `defaultSessionId` / `latestSessionId`，避免省略 `tabId` 的命令落到断开的旧 tab。
 - 修复 `disable_dialogs.js` 的 `prompt` 抑制返回语义：自动确认时保留空字符串 default，并按原生返回类型把 falsy default 转为字符串，不再用 `def || null` 混淆确认空输入与取消。
