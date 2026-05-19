@@ -213,8 +213,7 @@ export class BrowserBridgeServer {
 		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId: id });
 		const session = this.sessions.get(String(id));
 		if (session && !session.disconnectedAt) session.disconnectedAt = Date.now();
-		if (this.defaultSessionId === String(id)) this.defaultSessionId = this.firstActiveSessionId();
-		if (this.latestSessionId === String(id)) this.latestSessionId = this.firstActiveSessionId();
+		this.refreshSelectedSessionRefs();
 		return result;
 	}
 
@@ -306,6 +305,7 @@ export class BrowserBridgeServer {
 		for (const session of this.sessions.values()) {
 			if (session.client === ws && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		}
+		this.refreshSelectedSessionRefs();
 	}
 
 	private async handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
@@ -386,11 +386,18 @@ export class BrowserBridgeServer {
 		for (const [id, session] of this.sessions) {
 			if (!current.has(id) && session.client === ws && !session.disconnectedAt) session.disconnectedAt = now;
 		}
-		if (!this.defaultSessionId || this.sessions.get(this.defaultSessionId)?.disconnectedAt) this.defaultSessionId = this.firstActiveSessionId();
+		this.refreshSelectedSessionRefs();
 	}
 
 	private firstActiveSessionId(): string | undefined {
 		return Array.from(this.sessions.values()).find((session) => !session.disconnectedAt)?.id;
+	}
+
+	private refreshSelectedSessionRefs(): void {
+		const defaultSession = this.defaultSessionId ? this.sessions.get(this.defaultSessionId) : undefined;
+		if (!this.defaultSessionId || !defaultSession || defaultSession.disconnectedAt) this.defaultSessionId = this.firstActiveSessionId();
+		const latestSession = this.latestSessionId ? this.sessions.get(this.latestSessionId) : undefined;
+		if (!this.latestSessionId || !latestSession || latestSession.disconnectedAt) this.latestSessionId = this.firstActiveSessionId();
 	}
 
 	private firstActiveSessionIdForClient(client: WebSocket): string | undefined {

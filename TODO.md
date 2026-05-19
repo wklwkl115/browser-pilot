@@ -215,7 +215,13 @@
 
 - [x] `src/driver/BrowserBridgeServer.ts`：`closeTab` 在关闭目标 tab 后已同步清理 `latestSessionId`，避免无活动 tab 时继续把后续命令 fallback 到已关闭 tab。
 - [x] contracts：已补 `closeTab` 后 `latestSessionId` 清理与 `NO_TAB` 回归，确保无显式 `tabId` 的执行路径不再向已关闭 tab 发包。
-- [ ] docs/runtime：已在 `CHANGELOG.md` 记录该会话引用修复；如用户后续 reload，再补 runtime 验证。
+- [x] docs/runtime：已在 `CHANGELOG.md` 记录该会话引用修复；reload 后 runtime 验证已完成。
+
+## 97. BrowserBridgeServer 断连后选中 Tab 引用清理修复
+
+- [x] `src/driver/BrowserBridgeServer.ts`：`unregisterClient` 在 WebSocket client 断开并标记 sessions disconnected 后，同步清理 stale `defaultSessionId` / `latestSessionId`，避免省略 `tabId` 的后续命令复用断开 tab。
+- [x] `src/driver/BrowserBridgeServer.ts`：`updateTabs` 在同源 tabs_update 标记缺失 tab disconnected 后，同步清理 `latestSessionId`，保持 default/latest 选中引用一致。
+- [x] contracts：补 fake WebSocket 多客户端断连回归，断开旧默认 tab 后省略 `tabId` 的执行必须落到仍连接的 tab；已跑 `check:fake-ws` 与 Windows shell 下 `npm run check`。
 
 ## 下一步建议顺序
 

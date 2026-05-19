@@ -189,6 +189,37 @@ try {
 	assert.equal(allTabs.find((tab) => tab.tabId === 202)?.active, true);
 	assert.ok(allTabs.find((tab) => tab.tabId === 101)?.disconnectedAt, "missing tab should be marked disconnected");
 
+	sendJson(ws, {
+		type: "tabs_update",
+		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test-2" },
+		tabs: [
+			{ id: 202, url: "https://example.test/two", title: "Two", active: true, windowId: 1 },
+			{ id: 505, url: "https://example.test/five", title: "Five", active: false, windowId: 1 },
+		],
+	});
+	await waitUntil(() => server.snapshot().defaultTabId === 202 && server.snapshot().latestTabId === 505, "latest tab tracks newest same-client tab");
+	sendJson(ws, {
+		type: "tabs_update",
+		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test-2" },
+		tabs: [{ id: 202, url: "https://example.test/two", title: "Two", active: true, windowId: 1 }],
+	});
+	await waitUntil(() => server.snapshot().latestTabId === 202, "tabs_update clears stale latest tab reference");
+	assert.ok(server.getTabs({ includeDisconnected: true }).find((tab) => tab.tabId === 505)?.disconnectedAt, "missing latest tab should be marked disconnected");
+
+	ws2 = await openFakeClient(port);
+	sendJson(ws2, readyMessage([{ id: 606, url: "https://example.test/six", title: "Six", active: false, windowId: 2 }]));
+	await waitUntil(() => server.snapshot().latestTabId === 606, "secondary inactive tab registration");
+	ws.close();
+	await waitUntil(() => server.snapshot().defaultTabId === 606 && server.snapshot().latestTabId === 606, "disconnect clears stale selected tab references");
+	const fallbackPromise = server.executeJavaScript("return 606", { timeoutMs: 1_000 });
+	const fallbackOutbound = await nextJson(ws2, "fallback after default disconnect outbound");
+	assert.equal(fallbackOutbound.tabId, 606);
+	sendJson(ws2, { type: "ack", id: fallbackOutbound.id });
+	sendJson(ws2, { type: "result", id: fallbackOutbound.id, result: 606 });
+	assert.equal((await fallbackPromise).data, 606);
+	ws = ws2;
+	ws2 = undefined;
+
 	const firstBrowserId = server.snapshot().extension?.id;
 	ws2 = await openFakeClient(port);
 	sendJson(ws2, readyMessage([{ id: 404, url: "https://example.test/four", title: "Four", active: true, windowId: 2 }]));
