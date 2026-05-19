@@ -104,29 +104,82 @@ async function isStaleStateLock(lockPath) {
   }
 }
 
+async function stateLockExists(lockPath) {
+  try {
+    await stat(lockPath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function releaseStateLock(lockPath, token) {
+  try {
+    const parsed = JSON.parse(await readFile(lockPath, "utf8"));
+    if (parsed.token !== token) return;
+    await rm(lockPath, { force: true });
+  } catch {}
+}
+
+async function waitForStateLockBreaker(breakerPath, started) {
+  while (await stateLockExists(breakerPath)) {
+    if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`);
+    await sleep(STATE_LOCK_RETRY_MS);
+  }
+}
+
+async function breakStaleStateLock(lockPath, breakerPath, started) {
+  const token = randomUUID();
+  let handle;
+  let created = false;
+  try {
+    handle = await open(breakerPath, "wx");
+    created = true;
+    await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token }), "utf8");
+    await handle.close();
+    handle = undefined;
+    if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    if (created) await rm(breakerPath, { force: true }).catch(() => {});
+    if (error?.code !== "EEXIST") throw error;
+    if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`);
+  } finally {
+    if (created) await releaseStateLock(breakerPath, token);
+  }
+}
+
 async function withStateLock(fn) {
   const dir = path.dirname(statePath);
   const lockPath = `${statePath}.lock`;
+  const breakerPath = `${lockPath}.breaker`;
   const started = Date.now();
   await mkdir(dir, { recursive: true });
   while (true) {
-    let acquired = false;
+    await waitForStateLockBreaker(breakerPath, started);
+    const token = randomUUID();
+    let created = false;
     let handle;
     try {
       handle = await open(lockPath, "wx");
-      acquired = true;
-      await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }), "utf8");
+      created = true;
+      await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token }), "utf8");
       await handle.close();
       handle = undefined;
-      return await fn();
     } catch (error) {
       await handle?.close().catch(() => {});
+      if (created) await rm(lockPath, { force: true }).catch(() => {});
       if (error?.code !== "EEXIST") throw error;
-      if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+      if (await isStaleStateLock(lockPath)) await breakStaleStateLock(lockPath, breakerPath, started);
       else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`);
       await sleep(STATE_LOCK_RETRY_MS);
+      continue;
+    }
+    try {
+      return await fn();
     } finally {
-      if (acquired) await rm(lockPath, { force: true }).catch(() => {});
+      await releaseStateLock(lockPath, token);
     }
   }
 }

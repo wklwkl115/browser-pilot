@@ -138,6 +138,28 @@ for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTab
 	assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 }
 
+function testDialogSuppressionPromptSemantics() {
+	const timers = [];
+	const sandbox = {
+		window: {},
+		console: { log() {} },
+		setTimeout(fn) { timers.push(fn); return timers.length; },
+		document: {
+			createElement() { return { style: {}, remove() {} }; },
+			body: { appendChild() {} },
+			documentElement: { appendChild() {} },
+		},
+	};
+	vm.runInNewContext(read("bridge/pi_browser_bridge/disable_dialogs.js"), sandbox, { filename: "disable_dialogs.js" });
+	assert(sandbox.window.confirm("continue?") === true, "suppressed confirm must auto-accept");
+	assert(sandbox.window.prompt("empty default", "") === "", "suppressed prompt must preserve empty-string default as accepted empty input");
+	assert(sandbox.window.prompt("numeric default", 0) === "0", "suppressed prompt must stringify numeric default instead of returning null");
+	assert(sandbox.window.prompt("boolean default", false) === "false", "suppressed prompt must stringify boolean default instead of returning null");
+	assert(sandbox.window.prompt("missing default") === "", "suppressed prompt without default must return accepted empty input");
+}
+
+testDialogSuppressionPromptSemantics();
+
 async function testRouterNativeWsErrorFrames() {
 	const sent = [];
 	const routerSandbox = {

@@ -223,6 +223,18 @@
 - [x] `src/driver/BrowserBridgeServer.ts`：`updateTabs` 在同源 tabs_update 标记缺失 tab disconnected 后，同步清理 `latestSessionId`，保持 default/latest 选中引用一致。
 - [x] contracts：补 fake WebSocket 多客户端断连回归，断开旧默认 tab 后省略 `tabId` 的执行必须落到仍连接的 tab；已跑 `check:fake-ws` 与 Windows shell 下 `npm run check`。
 
+## 98. Dialog suppression prompt 返回语义修复
+
+- [x] `bridge/pi_browser_bridge/disable_dialogs.js`：`prompt` 抑制策略明确为“自动确认当前输入框内容”，返回缺省输入字符串；无 defaultValue 时返回 `""`，传入 falsy defaultValue 时按字符串保留，不再把空字符串误当取消。
+- [x] contracts：补 bridge runtime contract，覆盖 `prompt()`、`prompt("", "")`、`prompt("", 0)`、`prompt("", false)` 的返回值，防止 `def || null` 回流。
+- [x] docs/runtime：已在 `CHANGELOG.md` 记录该行为兼容性修复；`tmwd_cdp_bridge` 仅为迁移参考资产，不同步运行时修复；reload 后 local smoke 与 actual runtime artifact 已完成。
+
+## 99. Callback OAST state lock stale recovery TOCTOU 修复
+
+- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：锁文件写入唯一 owner token；释放锁时只删除 token 匹配的本进程锁，避免误删其他 owner 的新锁。
+- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：stale lock 回收改为先获取单独 breaker lock，再重新确认 main lock 仍 stale 后删除，避免多进程同时 `check -> rm -> create`。
+- [x] contracts/runtime：补 callback OAST stale lock 并发恢复回归，保留 burst callback 事件数与 seq 唯一性；已跑 `check:web-security` 与 Windows shell 下 `npm run check`；reload 后 local smoke 与 actual runtime artifact 已完成。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

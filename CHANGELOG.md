@@ -8,12 +8,14 @@
 - 新增 `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，统一复用 scoped URL/raw/captured/HAR 请求输入链路、template/workflow/id/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher / PATH auto-detect、结构化 matches 与 artifact 归档，并补契约与 runtime 验证路径。
 - 增强 bridge artifact 输出：`browser_sqlmap_bridge` / `browser_nuclei_bridge` 现在为 request/stdout/stderr 生成 `browser_artifact` 可读描述符，包含 path、bytes、chars、lineCount、sha256 与 summary artifact 表，便于深度排障直接读取日志。
 - 修复 `browser_callback_oast` 状态竞态：主进程 clear/stop 与 Worker append/shutdown 共享 `state.json` 的写入改为 lock file + fresh-state update，避免高并发回调丢事件、重复 seq 或控制字段被旧快照覆盖。
+- 修复 `browser_callback_oast` stale lock 回收 TOCTOU：state lock 增加 owner token、owner 校验释放和 breaker lock 串行化 stale 删除，避免 stale recovery 误删新锁后并发写 `state.json`。
 - 修复 JSON 参数 fuzz 的破坏性重写：畸形 JSON 或 primitive JSON body 现在作为明确 mutation failure 记录，不再静默替换为 `{}` 并丢失原始 payload。
 - 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
 - 修复 `browser_http_replay` HAR 依赖图相对 URL 崩溃：`buildHarDependencyGraph` 与 HAR redirect/referer 解析现在支持相对 request/referer/location 与 `baseUrl` 归一化，不再因 `new URL(relative)` 中断整次 replay。
 - 修复 native bridge WebSocket 错误帧语义：`router.js` 的 native command 失败现在发送 `type:"error"`，不再把 `{ ok:false }` 错误对象伪装成 `type:"result"` 导致服务端 Promise 误 resolve。
 - 修复 `BrowserBridgeServer.closeTab` 会话引用残留：关闭最后一个活动 tab 时同步清理 `latestSessionId`，避免后续无显式 `tabId` 的命令 fallback 到已关闭 tab。
 - 修复 `BrowserBridgeServer` 断连会话引用残留：WebSocket client 断开或 `tabs_update` 标记 tab 缺失后同步清理 stale `defaultSessionId` / `latestSessionId`，避免省略 `tabId` 的命令落到断开的旧 tab。
+- 修复 `disable_dialogs.js` 的 `prompt` 抑制返回语义：自动确认时保留空字符串 default，并按原生返回类型把 falsy default 转为字符串，不再用 `def || null` 混淆确认空输入与取消。
 - 修复 WebSocket 断连 pending Promise 挂起：`BrowserBridgeServer` 现在记录 pending 请求所属 client，并在 client unregister 时立即 reject/清理对应 pending 请求。
 - 修复 multipart 解析数据损坏：`parseMultipartBody` 改为识别行首 boundary delimiter，不再用全局 split 误切 payload 内 boundary 文本，也不再裁剪真实 payload 尾部 `--`；`parseRawHttpRequest` 同步保留 body 原始 CRLF，避免 multipart delimiter 被 header 解析步骤改写。
 - 修复空 favicon/空响应相似度哈希碰撞：`simHash64` 现在对空 Buffer 返回固定零值，不再落成全 1 的 `ffffffffffffffff`。

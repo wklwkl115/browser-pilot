@@ -1017,8 +1017,10 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(callbackStatus.eventCount, 0, "callback status should reflect persisted clears");
 	assert.equal(callbackStatus.listenerActive, true, "callback status should retain active worker-backed listeners");
 	const callbackBurstCount = 16;
+	await writeFile(`${callbackStart.statePath}.lock`, JSON.stringify({ pid: -1, acquiredAt: "1970-01-01T00:00:00.000Z", token: "stale-contract-lock" }), "utf8");
 	const callbackBurstResponses = await Promise.all(Array.from({ length: callbackBurstCount }, (_, index) => postCallbackFixture(callbackStart.callbackUrl, `corr-contract burst-${index}`)));
 	assert.ok(callbackBurstResponses.every((item) => item.status === 200), "callback burst fixture should complete every HTTP request");
+	await assert.rejects(() => readFile(`${callbackStart.statePath}.lock`, "utf8"), /ENOENT/, "callback stale lock recovery should remove stale main lock without leaving ownerless locks");
 	const callbackBurstCollected = await runCallbackOast({ action: "collect", sessionId: "contract-callback" });
 	assert.equal(callbackBurstCollected.count, callbackBurstCount, "callback listener should preserve concurrent callback events without lost updates");
 	assert.equal(new Set(callbackBurstCollected.events.map((event) => event.seq)).size, callbackBurstCount, "callback listener should assign unique seq values under concurrent callbacks");

@@ -18,7 +18,10 @@
       setTimeout(() => { d.remove(); }, 3600);
     } catch(e) {}
   }
+  function promptAcceptedValue(args) {
+    return args.length > 1 ? String(args[1]) : '';
+  }
   window.alert = function(msg) { toast('alert', msg); };
   window.confirm = function(msg) { toast('confirm', msg); return true; };
-  window.prompt = function(msg, def) { toast('prompt', msg); return def || null; };
+  window.prompt = function(msg, def) { toast('prompt', msg); return promptAcceptedValue(arguments); };
 })();
