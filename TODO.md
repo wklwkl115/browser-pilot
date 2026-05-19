@@ -211,6 +211,12 @@
 - [x] contracts：已补 router/native command WebSocket 失败帧回归，确保 `BrowserBridgeServer` 对 native 失败走 reject 分支而非 resolve 成功分支。
 - [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议语义修复；reload 后本地/actual runtime 验证已完成。
 
+## 96. BrowserBridgeServer closeTab 最新会话引用清理修复
+
+- [x] `src/driver/BrowserBridgeServer.ts`：`closeTab` 在关闭目标 tab 后已同步清理 `latestSessionId`，避免无活动 tab 时继续把后续命令 fallback 到已关闭 tab。
+- [x] contracts：已补 `closeTab` 后 `latestSessionId` 清理与 `NO_TAB` 回归，确保无显式 `tabId` 的执行路径不再向已关闭 tab 发包。
+- [ ] docs/runtime：已在 `CHANGELOG.md` 记录该会话引用修复；如用户后续 reload，再补 runtime 验证。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

@@ -12,6 +12,7 @@
 - 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
 - 修复 `browser_http_replay` HAR 依赖图相对 URL 崩溃：`buildHarDependencyGraph` 与 HAR redirect/referer 解析现在支持相对 request/referer/location 与 `baseUrl` 归一化，不再因 `new URL(relative)` 中断整次 replay。
 - 修复 native bridge WebSocket 错误帧语义：`router.js` 的 native command 失败现在发送 `type:"error"`，不再把 `{ ok:false }` 错误对象伪装成 `type:"result"` 导致服务端 Promise 误 resolve。
+- 修复 `BrowserBridgeServer.closeTab` 会话引用残留：关闭最后一个活动 tab 时同步清理 `latestSessionId`，避免后续无显式 `tabId` 的命令 fallback 到已关闭 tab。
 - 修复 WebSocket 断连 pending Promise 挂起：`BrowserBridgeServer` 现在记录 pending 请求所属 client，并在 client unregister 时立即 reject/清理对应 pending 请求。
 - 修复 multipart 解析数据损坏：`parseMultipartBody` 改为识别行首 boundary delimiter，不再用全局 split 误切 payload 内 boundary 文本，也不再裁剪真实 payload 尾部 `--`；`parseRawHttpRequest` 同步保留 body 原始 CRLF，避免 multipart delimiter 被 header 解析步骤改写。
 - 修复空 favicon/空响应相似度哈希碰撞：`simHash64` 现在对空 Buffer 返回固定零值，不再落成全 1 的 `ffffffffffffffff`。

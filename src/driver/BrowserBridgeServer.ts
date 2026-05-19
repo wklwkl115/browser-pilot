@@ -214,6 +214,7 @@ export class BrowserBridgeServer {
 		const session = this.sessions.get(String(id));
 		if (session && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		if (this.defaultSessionId === String(id)) this.defaultSessionId = this.firstActiveSessionId();
+		if (this.latestSessionId === String(id)) this.latestSessionId = this.firstActiveSessionId();
 		return result;
 	}
 

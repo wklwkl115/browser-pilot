@@ -208,6 +208,22 @@ try {
 	const reconnect = await reconnectPromise;
 	assert.notEqual(reconnect.extension?.id, previousClientId);
 	assert.equal(reconnect.defaultTabId, 303);
+
+	sendJson(ws, readyMessage([{ id: 909, url: "https://example.test/nine", title: "Nine", active: true, windowId: 1 }]));
+	await waitUntil(() => server.snapshot().defaultTabId === 909 && server.snapshot().latestTabId === 909, "single-tab registration before close fallback test");
+	const closeLastTabPromise = server.closeTab(909, 1_000);
+	const closeLastTabOutbound = await nextJson(ws, "close last tab outbound");
+	assert.equal(closeLastTabOutbound.code.cmd, "tabs");
+	assert.equal(closeLastTabOutbound.code.method, "close");
+	sendJson(ws, { type: "ack", id: closeLastTabOutbound.id });
+	sendJson(ws, { type: "result", id: closeLastTabOutbound.id, result: { id: 909, closed: true } });
+	await closeLastTabPromise;
+	assert.equal(server.snapshot().defaultTabId, undefined, "closeTab should clear default tab when the last active tab closes");
+	assert.equal(server.snapshot().latestTabId, undefined, "closeTab should clear latest tab when the last active tab closes");
+	await assert.rejects(server.executeJavaScript("return 3", { timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "NO_TAB");
+		return true;
+	});
 } finally {
 	try { ws?.close(); } catch {}
 	try { ws2?.close(); } catch {}
