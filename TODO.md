@@ -187,7 +187,13 @@
 - [x] contracts：更新模块边界检查，确保 Rails 专属实现不再回流 `cookieTokens.ts`，并保持 callable 行为不变。
 - [x] verification：已跑 `npm run check`、`pi-ctf-protocol npm run check`、skill validate；本次仅内部重构，无额外 runtime reload 需求。
 
+## 92. HAR 依赖图相对 URL 崩溃修复
+
+- [x] `src/tools/webSecurity/shared/replay.ts`：`buildHarDependencyGraph` / `harDependencyResponseInfo` 对 HAR 相对 URL、相对 Referer、相对 Location 做安全规范化，不再对 `new URL(relative)` 直接抛异常。
+- [x] `browser_http_replay` / contracts：已补相对 HAR URL + `baseUrl` 回放与 dependencyGraph 回归，redirect/referer/cookie 边保持可用。
+- [x] docs：已在 `CHANGELOG.md` 记录本次 HAR 相对 URL 兼容性修复。
+
 ## 下一步建议顺序
 
-1. 确认 89 的 `.aceignore` / `AI_INSTALL.md` / `AGENTS.md` 非本轮文件是否纳入或拆分。
-2. 如用户需要，整理本轮提交。
+1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。
+2. 如后续出现真实 HAR 样本，再补无 `baseUrl` 场景下 hostless/相对 URL 依赖图的针对性 fixture。

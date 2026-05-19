@@ -163,7 +163,7 @@ function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 async function executeReplaySequence(sequence: Array<{ input: unknown; source: string; label?: string }>, options: ReplayOptions, normalized: ReturnType<typeof normalizeReplayOptions>, extra: { mode?: string; multipartMatrix?: Record<string, unknown> } = {}) {
 	const steps: Array<Record<string, unknown>> = [];
 	const failures: Array<Record<string, unknown>> = [];
-	const dependencyGraph = buildHarDependencyGraph(sequence);
+	const dependencyGraph = buildHarDependencyGraph(sequence, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme });
 	let sequenceCookieHeader: string | undefined;
 	let sequenceVariables = { ...normalized.variables };
 	for (let i = 0; i < sequence.length; i += 1) {

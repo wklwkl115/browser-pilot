@@ -1232,6 +1232,16 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.ok(harDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "redirect" && edge.fromIndex === 0 && edge.toIndex === 1), "replay should map HAR redirect dependencies");
 	assert.ok(harDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "cookie" && edge.fromIndex === 1 && edge.toIndex === 2), "replay should map HAR cookie dependencies");
 	assert.ok(harDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "referer" && edge.fromIndex === 1 && edge.toIndex === 2), "replay should map HAR referer dependencies");
+	const relativeHarDependencyReplay = await runHttpReplay({ har: { log: { entries: [
+		{ startedDateTime: "2026-05-18T00:01:00.000Z", request: { method: "GET", url: "/redirect#start", headers: [] }, response: { status: 302, headers: [{ name: "Location", value: "/final#landing" }] } },
+		{ startedDateTime: "2026-05-18T00:01:01.000Z", request: { method: "GET", url: "/final", headers: [{ name: "Referer", value: "/redirect#start" }] }, response: { status: 200, headers: [{ name: "Set-Cookie", value: "flow=ok; Path=/" }] } },
+		{ startedDateTime: "2026-05-18T00:01:02.000Z", request: { method: "GET", url: "/cookie-check", headers: [{ name: "Referer", value: "/final#section" }, { name: "Cookie", value: "flow=ok" }] }, response: { status: 200, headers: [] } },
+	] } }, baseUrl: base, defaultScheme: "http", maxBodyBytes: 64_000 });
+	assert.equal(relativeHarDependencyReplay.mode, "sequence", "replay should keep HAR relative-URL replays in sequence mode");
+	assert.equal(relativeHarDependencyReplay.dependencyGraph.nodeCount, 3, "replay should build HAR dependency graph nodes for relative HAR URLs");
+	assert.ok(relativeHarDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "redirect" && edge.fromIndex === 0 && edge.toIndex === 1), "replay should map HAR redirect dependencies for relative URLs without crashing");
+	assert.ok(relativeHarDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "cookie" && edge.fromIndex === 1 && edge.toIndex === 2), "replay should map HAR cookie dependencies for relative URLs");
+	assert.ok(relativeHarDependencyReplay.dependencyGraph.edges.some((edge) => edge.type === "referer" && edge.fromIndex === 1 && edge.toIndex === 2), "replay should map HAR referer dependencies for relative URLs");
 	const harReplay = await runHttpReplay({ har: { log: { entries: [{ request: { method: "GET", url: `${base}/missing-har`, headers: [] } }, { request: { method: "POST", url: `${base}/echo`, headers: [{ name: "Content-Type", value: "text/plain" }], postData: { text: Buffer.from("har-body").toString("base64"), encoding: "base64" } } }] } }, harUrlPattern: "/echo", maxBodyBytes: 64_000 });
 	assert.equal(harReplay.mode, "sequence");
 	assert.equal(harReplay.stepCount, 1, "replay should import filtered HAR entries");

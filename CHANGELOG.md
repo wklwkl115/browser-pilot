@@ -10,6 +10,7 @@
 - 修复 `browser_callback_oast` 状态竞态：主进程 clear/stop 与 Worker append/shutdown 共享 `state.json` 的写入改为 lock file + fresh-state update，避免高并发回调丢事件、重复 seq 或控制字段被旧快照覆盖。
 - 修复 JSON 参数 fuzz 的破坏性重写：畸形 JSON 或 primitive JSON body 现在作为明确 mutation failure 记录，不再静默替换为 `{}` 并丢失原始 payload。
 - 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
+- 修复 `browser_http_replay` HAR 依赖图相对 URL 崩溃：`buildHarDependencyGraph` 与 HAR redirect/referer 解析现在支持相对 request/referer/location 与 `baseUrl` 归一化，不再因 `new URL(relative)` 中断整次 replay。
 - 修复 WebSocket 断连 pending Promise 挂起：`BrowserBridgeServer` 现在记录 pending 请求所属 client，并在 client unregister 时立即 reject/清理对应 pending 请求。
 - 修复 multipart 解析数据损坏：`parseMultipartBody` 改为识别行首 boundary delimiter，不再用全局 split 误切 payload 内 boundary 文本，也不再裁剪真实 payload 尾部 `--`；`parseRawHttpRequest` 同步保留 body 原始 CRLF，避免 multipart delimiter 被 header 解析步骤改写。
 - 修复空 favicon/空响应相似度哈希碰撞：`simHash64` 现在对空 Buffer 返回固定零值，不再落成全 1 的 `ffffffffffffffff`。

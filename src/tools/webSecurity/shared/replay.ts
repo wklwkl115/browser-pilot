@@ -442,6 +442,40 @@ export function harHeaderValues(value: unknown, headerName: string): string[] {
 	return [];
 }
 
+type HarDependencyUrlOptions = Pick<ReplayOptions, "baseUrl" | "defaultScheme">;
+
+const HAR_DEPENDENCY_FALLBACK_BASE = "http://har-relative.invalid/";
+
+function normalizeHarDependencyUrl(value: unknown, options: HarDependencyUrlOptions = {}) {
+	const raw = asString(value)?.trim();
+	if (!raw) return undefined;
+	try {
+		const parsed = new URL(absoluteUrl(raw, { baseUrl: options.baseUrl, scheme: options.defaultScheme }));
+		parsed.hash = "";
+		return parsed.toString();
+	} catch {}
+	try {
+		const parsed = new URL(raw, HAR_DEPENDENCY_FALLBACK_BASE);
+		parsed.hash = "";
+		return parsed.toString();
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveHarDependencyUrl(value: unknown, requestUrl?: string, options: HarDependencyUrlOptions = {}) {
+	const raw = asString(value)?.trim();
+	if (!raw) return undefined;
+	if (requestUrl) {
+		try {
+			const parsed = new URL(raw, requestUrl);
+			parsed.hash = "";
+			return parsed.toString();
+		} catch {}
+	}
+	return normalizeHarDependencyUrl(raw, options);
+}
+
 export function harDependencyRequestInfo(entry: unknown) {
 	const request = isRecord(entry) && isRecord(entry.request) ? entry.request : {};
 	const url = asString(request.url);
@@ -449,27 +483,22 @@ export function harDependencyRequestInfo(entry: unknown) {
 	return { url, method: asString(request.method), headers, referer: headers["Referer"] || headers.referer, cookieHeader: headers.Cookie || headers.cookie };
 }
 
-export function harDependencyResponseInfo(entry: unknown, requestUrl?: string) {
+export function harDependencyResponseInfo(entry: unknown, requestUrl?: string, options: HarDependencyUrlOptions = {}) {
 	const response = isRecord(entry) && isRecord(entry.response) ? entry.response : {};
 	const headers = headersArrayToMap(response.headers);
 	const rawLocation = asString(response.redirectURL) || harHeaderValues(response.headers, "location")[0];
-	const location = rawLocation && requestUrl ? (() => {
-		try {
-			return new URL(rawLocation, requestUrl).toString();
-		} catch {
-			return undefined;
-		}
-	})() : undefined;
+	const normalizedRequestUrl = normalizeHarDependencyUrl(requestUrl, options);
+	const locationKey = rawLocation ? resolveHarDependencyUrl(rawLocation, normalizedRequestUrl, options) : undefined;
 	const cookies = harHeaderValues(response.headers, "set-cookie").map((line) => parseSetCookieLine(line, "set-cookie")).filter((item) => !!item && typeof item.name === "string");
-	return { status: typeof response.status === "number" ? response.status : Number(response.status), headers, location, cookies };
+	return { status: typeof response.status === "number" ? response.status : Number(response.status), headers, location: rawLocation, locationKey, cookies };
 }
 
-export function buildHarDependencyGraph(sequence: Array<{ input: unknown; source: string; label?: string }>) {
+export function buildHarDependencyGraph(sequence: Array<{ input: unknown; source: string; label?: string }>, options: HarDependencyUrlOptions = {}) {
 	const items = sequence.filter((item) => item.source === "har");
 	if (!items.length) return undefined;
 	const nodes = items.map((item, index) => {
 		const request = harDependencyRequestInfo(item.input);
-		const response = harDependencyResponseInfo(item.input, request.url);
+		const response = harDependencyResponseInfo(item.input, request.url, options);
 		return {
 			id: `har-${index}`,
 			index,
@@ -490,34 +519,15 @@ export function buildHarDependencyGraph(sequence: Array<{ input: unknown; source
 	};
 	for (let toIndex = 0; toIndex < items.length; toIndex += 1) {
 		const currentRequest = harDependencyRequestInfo(items[toIndex].input);
-		const currentUrl = currentRequest.url ? (() => {
-			const parsed = new URL(currentRequest.url);
-			parsed.hash = "";
-			return parsed.toString();
-		})() : undefined;
-		const currentReferer = currentRequest.referer && currentRequest.url ? (() => {
-			try {
-				const parsed = new URL(currentRequest.referer, currentRequest.url);
-				parsed.hash = "";
-				return parsed.toString();
-			} catch {
-				return undefined;
-			}
-		})() : undefined;
+		const currentUrl = normalizeHarDependencyUrl(currentRequest.url, options);
+		const currentReferer = resolveHarDependencyUrl(currentRequest.referer, currentUrl, options);
 		const currentCookies = parseCookieHeader(currentRequest.cookieHeader);
 		for (let fromIndex = 0; fromIndex < toIndex; fromIndex += 1) {
 			const previousRequest = harDependencyRequestInfo(items[fromIndex].input);
-			const previousResponse = harDependencyResponseInfo(items[fromIndex].input, previousRequest.url);
-			if (previousResponse.location && currentUrl && (() => {
-				const parsed = new URL(previousResponse.location);
-				parsed.hash = "";
-				return parsed.toString();
-			})() === currentUrl) addEdge(fromIndex, toIndex, "redirect", { location: previousResponse.location });
-			if (currentReferer && previousRequest.url && (() => {
-				const parsed = new URL(previousRequest.url);
-				parsed.hash = "";
-				return parsed.toString();
-			})() === currentReferer) addEdge(fromIndex, toIndex, "referer", { referer: currentReferer });
+			const previousUrl = normalizeHarDependencyUrl(previousRequest.url, options);
+			const previousResponse = harDependencyResponseInfo(items[fromIndex].input, previousRequest.url, options);
+			if (previousResponse.locationKey && currentUrl && previousResponse.locationKey === currentUrl) addEdge(fromIndex, toIndex, "redirect", { location: previousResponse.location });
+			if (currentReferer && previousUrl && previousUrl === currentReferer) addEdge(fromIndex, toIndex, "referer", { referer: currentRequest.referer || currentReferer });
 			const sharedCookies = previousResponse.cookies.filter((cookie) => cookie.name && currentCookies.has(String(cookie.name)) && (cookie.value === "" || currentCookies.get(String(cookie.name)) === cookie.value || currentCookies.get(String(cookie.name)) !== undefined));
 			if (sharedCookies.length) addEdge(fromIndex, toIndex, "cookie", { cookies: sharedCookies.map((cookie) => cookie.name).filter(Boolean) });
 		}
