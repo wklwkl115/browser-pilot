@@ -193,6 +193,12 @@
 - [x] `browser_http_replay` / contracts：已补相对 HAR URL + `baseUrl` 回放与 dependencyGraph 回归，redirect/referer/cookie 边保持可用。
 - [x] docs：已在 `CHANGELOG.md` 记录本次 HAR 相对 URL 兼容性修复。
 
+## 93. Callback OAST DNS query 名称长度校验修复
+
+- [x] `src/tools/webSecurity/browserNative/callbackOast.ts`：`buildDnsQuery` 对 DNS label 字节长度（<=63）与整条 QNAME 线长（<=255）做显式校验，避免超长 label 生成畸形报文或单字节长度截断。
+- [x] contracts：已补超长单 label 与超长总 QNAME 的失败回归，并保留合法 63-byte label 的 DNS trigger 行为。
+- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；已补本地 smoke 与 actual callable-tool runtime artifact。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

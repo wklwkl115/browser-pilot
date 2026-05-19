@@ -388,13 +388,23 @@ async function stopSession(state: CallbackSessionState) {
 	}
 }
 
+function dnsQuestionLabels(name: string) {
+	const labels = String(name || "").trim().replace(/\.+$/, "").split(".").filter(Boolean).map((part, index) => ({ index, bytes: Buffer.from(part, "utf8") }));
+	for (const label of labels) {
+		if (label.bytes.length > 63) throw new Error(`browser_callback_oast dns query label ${label.index + 1} exceeds 63 bytes (${label.bytes.length})`);
+	}
+	const wireLength = labels.reduce((sum, label) => sum + 1 + label.bytes.length, 1);
+	if (wireLength > 255) throw new Error(`browser_callback_oast dns query name exceeds 255 bytes (${wireLength})`);
+	return labels.map((label) => label.bytes);
+}
+
 function buildDnsQuery(name: string, type = "A") {
 	const id = Math.floor(Math.random() * 65535);
 	const header = Buffer.alloc(12);
 	header.writeUInt16BE(id, 0);
 	header.writeUInt16BE(0x0100, 2);
 	header.writeUInt16BE(1, 4);
-	const labels = String(name || "").replace(/\.+$/, "").split(".").filter(Boolean).map((part) => Buffer.from(part, "utf8"));
+	const labels = dnsQuestionLabels(name);
 	const question = Buffer.concat([
 		...labels.flatMap((label) => [Buffer.from([label.length]), label]),
 		Buffer.from([0]),
