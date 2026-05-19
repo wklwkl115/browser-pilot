@@ -34,7 +34,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `browser_nuclei_bridge`：通过 Pi-native bridge 调用 `nuclei`，支持 scoped URL/raw/captured/HAR 请求输入、模板/工作流/ID/tag/severity 选择器、浏览器态 cookie 绑定、显式 launcher 或 PATH auto-detect、结构化 matches，并将 request/stdout/stderr 注册为可由 `browser_artifact` 直接读取的 artifact 描述符。
 - `browser_template_check`：对 scoped target 或 captured request 执行内置/自定义 HTTP 模板、YAML/JSON 模板文件、DSL matcher/extractor、变量替换、结果去重和证据归档。
 - `browser_callback_oast`：启动/触发/收集/停止本地 HTTP/HTTPS/DNS callback listener，生成 correlation ID、外部 metadata，并持久化请求日志与事件状态。
-- `browser_cookie_analyze`：Cookie/Set-Cookie/JWT/JWE/PASETO/签名 session 解析、secret candidate 验证、claim mutation token 生成与有界 claim replay 校验。
+- `browser_cookie_analyze`：Cookie/Set-Cookie/JWT/JWE/PASETO/签名或加密 session 解析、secret candidate 验证、claim mutation token 生成与有界 claim replay 校验；覆盖现代 Rails AES-GCM encrypted cookie、legacy Rails AES-CBC signed wrapper、Marshal/binary 明文证据保留、direct key signed cookie 的解密/验证、metadata 暴露与 mutation 重加密。
 - `browser_fuzz_params`：从 URL/raw/captured request 模板做 query/JSON/form/multipart/header 参数 fuzzing，支持 nested JSON path、set/add/delete、JSON values、multipart 文件字段矩阵、同名多文件字段、嵌套 multipart、Content-Type boundary variants、parser 差异聚类和 diff classifier。
 - `browser_http_replay`：从 raw/captured/HAR request 重放 HTTP 请求，支持 method/header/body mutation、multipart/binary body、multipart 文件字段变体矩阵、请求序列变量提取/注入、更多 extractor 类型、变量作用域控制、HAR 依赖图、响应 diff 聚类、baseline diff 与浏览器 cookie 绑定。
 

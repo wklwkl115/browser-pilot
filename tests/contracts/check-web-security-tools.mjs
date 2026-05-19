@@ -57,6 +57,41 @@ function railsSigned(payload, secret) {
 	return `${payloadPart}--${signature}`;
 }
 
+function railsEncrypted(payload, secret, options = {}) {
+	const wrapper = {
+		_rails: {
+			message: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
+			exp: options.expiresAt || null,
+			pur: options.purpose || null,
+		},
+	};
+	const key = pbkdf2Sync(secret, options.salt || "authenticated encrypted cookie", 1000, 32, options.digest || "sha1");
+	const iv = Buffer.alloc(12, 2);
+	const cipher = createCipheriv("aes-256-gcm", key, iv);
+	const ciphertext = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(wrapper), "utf8")), cipher.final()]);
+	const tag = cipher.getAuthTag();
+	const encode = (buffer) => options.urlEncoded === false ? buffer.toString("base64") : encodeURIComponent(buffer.toString("base64"));
+	return `${encode(ciphertext)}--${encode(iv)}--${encode(tag)}`;
+}
+
+function railsLegacyCbc(payload, secret, options = {}) {
+	const plaintext = Buffer.isBuffer(payload) ? payload : Buffer.from(JSON.stringify(payload), "utf8");
+	const key = options.keyBytes || pbkdf2Sync(secret, options.salt || "encrypted cookie", 1000, 32, options.digest || "sha1");
+	const signatureKey = options.signatureKeyBytes || pbkdf2Sync(secret, options.signSalt || "signed encrypted cookie", 1000, 64, options.signDigest || "sha1");
+	const iv = Buffer.alloc(16, options.ivByte || 3);
+	const cipher = createCipheriv("aes-256-cbc", key, iv);
+	const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+	const inner = `${ciphertext.toString("base64")}--${iv.toString("base64")}`;
+	const signature = createHmac(options.signDigest || "sha1", signatureKey).update(inner, "utf8").digest("hex");
+	return `${inner}--${signature}`;
+}
+
+function railsSignedDirect(payload, keyBytes, digest = "sha1") {
+	const payloadPart = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+	const signature = createHmac(digest, keyBytes).update(payloadPart, "utf8").digest("hex");
+	return `${payloadPart}--${signature}`;
+}
+
 function pasetoFixture(footer = { kid: "fixture-paseto" }) {
 	return `v4.local.${b64u("opaque-payload")}.${b64u(footer)}`;
 }
@@ -655,6 +690,12 @@ try {
 	const fixtureDjango = djangoSigned({ sub: "alice", role: "user" }, "secret");
 	const fixtureFlask = flaskSigned({ sub: "alice", role: "user" }, "secret");
 	const fixtureRails = railsSigned({ sub: "alice", role: "user" }, "secret");
+	const fixtureRailsEncrypted = railsEncrypted({ sub: "alice", role: "user" }, "secret", { purpose: "cookie.session", expiresAt: "2030-01-01T00:00:00.000Z" });
+	const fixtureRailsLegacyCbc = railsLegacyCbc({ sub: "alice", role: "user" }, "secret");
+	const fixtureRailsMarshal = railsLegacyCbc(Buffer.from([0x04, 0x08, 0x7b, 0x06, 0x49, 0x22, 0x09, 0x72, 0x6f, 0x6c, 0x65, 0x06, 0x3a, 0x06, 0x45, 0x54]), "secret", { ivByte: 4 });
+	const fixtureRailsDirectKey = Buffer.from(Array.from({ length: 32 }, (_, index) => index + 1));
+	const fixtureRailsDirectSecret = fixtureRailsDirectKey.toString("hex");
+	const fixtureRailsDirect = railsSignedDirect({ sub: "alice", role: "user" }, fixtureRailsDirectKey);
 	const cookieAnalysis = await runCookieAnalyze({
 		cookies: [
 			`session=${fixtureJwt}; HttpOnly; Path=/`,
@@ -664,20 +705,24 @@ try {
 			`django=${fixtureDjango}`,
 			`flask=${fixtureFlask}`,
 			`rails=${fixtureRails}`,
+			`rails_enc=${fixtureRailsEncrypted}`,
+			`rails_cbc=${fixtureRailsLegacyCbc}`,
+			`rails_marshal=${fixtureRailsMarshal}`,
+			`rails_direct=${fixtureRailsDirect}`,
 		],
-		secretCandidates: ["wrong", "secret", fixtureJweSecret],
+		secretCandidates: ["wrong", "secret", fixtureJweSecret, fixtureRailsDirectSecret],
 		claimMutations: { role: "admin" },
 	});
 	assert.equal(cookieAnalysis.ok, true, "cookie analyze should complete fixture");
-	assert.equal(cookieAnalysis.cookieCount, 7, "cookie analyze should parse cookie pairs");
-	assert.equal(cookieAnalysis.tokenCount, 6, "cookie analyze should count structured token formats");
+	assert.equal(cookieAnalysis.cookieCount, 11, "cookie analyze should parse cookie pairs");
+	assert.equal(cookieAnalysis.tokenCount, 10, "cookie analyze should count structured token formats");
 	assert.equal(cookieAnalysis.jwtCount, 1, "cookie analyze should detect JWT");
 	assert.equal(cookieAnalysis.jweCount, 1, "cookie analyze should detect JWE");
 	assert.equal(cookieAnalysis.pasetoCount, 1, "cookie analyze should detect PASETO");
-	assert.equal(cookieAnalysis.sessionFormatCount, 3, "cookie analyze should detect Django/Flask/Rails session formats");
+	assert.equal(cookieAnalysis.sessionFormatCount, 7, "cookie analyze should detect Django/Flask/Rails signed, encrypted, legacy, and direct-key session formats");
 	assert.equal(cookieAnalysis.verifiedJwtCount, 1, "cookie analyze should verify HS256 candidate");
-	assert.equal(cookieAnalysis.verifiedTokenCount, 5, "cookie analyze should verify every supported signed token fixture");
-	assert.equal(cookieAnalysis.mutationCount, 5, "cookie analyze should generate mutations for replayable structured payloads");
+	assert.equal(cookieAnalysis.verifiedTokenCount, 9, "cookie analyze should verify every supported signed or encrypted token fixture");
+	assert.equal(cookieAnalysis.mutationCount, 8, "cookie analyze should generate mutations for replayable structured payloads");
 	const analyzedJwt = cookieAnalysis.results.find((item) => item.name === "session")?.jwt;
 	assert.equal(analyzedJwt.payload.role, "user");
 	assert.equal(analyzedJwt.signature.matches[0].secret, "secret");
@@ -702,13 +747,60 @@ try {
 	assert.equal(analyzedRails.signature.verified, true, "cookie analyze should verify Rails signed sessions");
 	assert.equal(analyzedRails.payload.role, "user");
 	assert.match(analyzedRails.mutation.token, /--/, "cookie analyze should mutate Rails signed sessions");
+	const analyzedRailsEncrypted = cookieAnalysis.results.find((item) => item.name === "rails_enc")?.sessionToken;
+	assert.equal(analyzedRailsEncrypted.decryption.verified, true, "cookie analyze should decrypt Rails encrypted sessions");
+	assert.equal(analyzedRailsEncrypted.payload.role, "user", "cookie analyze should expose decrypted Rails encrypted payloads");
+	assert.equal(analyzedRailsEncrypted.enc, "A256GCM", "cookie analyze should expose Rails encrypted session cipher metadata");
+	assert.equal(analyzedRailsEncrypted.purpose, "cookie.session", "cookie analyze should expose Rails encrypted session purpose metadata");
+	assert.equal(analyzedRailsEncrypted.expired, false, "cookie analyze should evaluate Rails encrypted session expiry metadata");
+	assert.equal(analyzedRailsEncrypted.metadata.messageEncoding, "base64", "cookie analyze should preserve Rails metadata message standard-base64 encoding");
+	assert.equal(analyzedRailsEncrypted.decryption.testedKeyVariantCount, 15, "cookie analyze should expose Rails encrypted key variant budget evidence across all candidate secrets, including direct-key candidates");
+	assert.equal(analyzedRailsEncrypted.decryption.truncatedKeyVariantCount, 0, "cookie analyze should expose Rails encrypted key variant truncation evidence");
+	assert.match(analyzedRailsEncrypted.mutation.token, /--/, "cookie analyze should mutate Rails encrypted sessions");
+	const mutatedRailsEncrypted = await runCookieAnalyze({ values: [analyzedRailsEncrypted.mutation.token], secretCandidates: ["secret"] });
+	const analyzedMutatedRailsEncrypted = mutatedRailsEncrypted.results[0]?.sessionToken;
+	assert.equal(analyzedMutatedRailsEncrypted.payload.role, "admin", "cookie analyze should re-decrypt mutated Rails encrypted sessions");
+	assert.equal(analyzedMutatedRailsEncrypted.metadata.messageEncoding, "base64", "Rails encrypted mutation should keep metadata message standard-base64 encoding");
+	assert.equal(analyzedMutatedRailsEncrypted.purpose, "cookie.session", "Rails encrypted mutation should preserve purpose metadata");
+	const analyzedRailsLegacyCbc = cookieAnalysis.results.find((item) => item.name === "rails_cbc")?.sessionToken;
+	assert.equal(analyzedRailsLegacyCbc.mode, "encrypted", "cookie analyze should promote legacy Rails signed CBC wrappers to encrypted sessions");
+	assert.equal(analyzedRailsLegacyCbc.cipher, "aes-256-cbc", "cookie analyze should expose legacy Rails CBC cipher metadata");
+	assert.equal(analyzedRailsLegacyCbc.decryption.verified, true, "cookie analyze should decrypt legacy Rails CBC sessions after signed wrapper verification");
+	assert.equal(analyzedRailsLegacyCbc.payload.role, "user", "cookie analyze should expose legacy Rails CBC payloads");
+	assert.match(analyzedRailsLegacyCbc.mutation.token, /--/, "cookie analyze should mutate legacy Rails CBC sessions");
+	const mutatedRailsLegacyCbc = await runCookieAnalyze({ values: [analyzedRailsLegacyCbc.mutation.token], secretCandidates: ["secret"] });
+	assert.equal(mutatedRailsLegacyCbc.results[0]?.sessionToken?.payload?.role, "admin", "cookie analyze should re-decrypt mutated legacy Rails CBC sessions");
+	const analyzedRailsMarshal = cookieAnalysis.results.find((item) => item.name === "rails_marshal")?.sessionToken;
+	assert.equal(analyzedRailsMarshal.decryption.verified, true, "cookie analyze should verify Rails CBC cookies with Marshal payloads");
+	assert.equal(analyzedRailsMarshal.serializer, "marshal", "cookie analyze should mark Marshal plaintext payloads");
+	assert.equal(analyzedRailsMarshal.unsupportedSerializer, true, "cookie analyze should flag unsupported binary serializers");
+	assert.match(analyzedRailsMarshal.binary.hex, /^0408/, "cookie analyze should retain Marshal payload hex evidence");
+	assert.match(analyzedRailsMarshal.binary.base64, /^[A-Za-z0-9+/=]+$/, "cookie analyze should retain Marshal payload base64 evidence");
+	assert.equal(analyzedRailsMarshal.mutation.error, "Structured payload is unavailable for claim mutation", "cookie analyze should avoid mutating unsupported Marshal payloads");
+	const analyzedRailsDirect = cookieAnalysis.results.find((item) => item.name === "rails_direct")?.sessionToken;
+	assert.equal(analyzedRailsDirect.signature.verified, true, "cookie analyze should verify Rails signed sessions with direct hex key candidates");
+	assert.equal(analyzedRailsDirect.signature.matches[0].keySource, "hex", "cookie analyze should preserve Rails signed direct key source");
+	assert.equal(analyzedRailsDirect.payload.role, "user", "cookie analyze should expose direct-key Rails signed payloads");
+	assert.match(analyzedRailsDirect.mutation.token, /--/, "cookie analyze should mutate Rails signed direct-key sessions");
+	const mutatedRailsDirect = await runCookieAnalyze({ values: [analyzedRailsDirect.mutation.token], secretCandidates: [fixtureRailsDirectSecret] });
+	assert.equal(mutatedRailsDirect.results[0]?.sessionToken?.payload?.role, "admin", "cookie analyze should re-verify mutated Rails direct-key signed sessions");
+	assert.equal(mutatedRailsDirect.results[0]?.sessionToken?.signature?.matches?.[0]?.keySource, "hex", "Rails direct-key mutation should keep key source alignment");
+	const railsEncryptedNoMatch = await runCookieAnalyze({ values: [fixtureRailsEncrypted], secretCandidates: ["wrong"], claimMutations: { role: "admin" } });
+	const analyzedRailsEncryptedNoMatch = railsEncryptedNoMatch.results[0]?.sessionToken;
+	assert.equal(railsEncryptedNoMatch.tokenCount, 0, "cookie analyze should not count unverified Rails encrypted candidates as verified token formats");
+	assert.equal(railsEncryptedNoMatch.sessionFormatCount, 0, "cookie analyze should not count unverified Rails encrypted candidates as session formats");
+	assert.equal(railsEncryptedNoMatch.results[0]?.kind, "possible-rails-encrypted", "cookie analyze should keep unverified Rails encrypted candidates as possible evidence");
+	assert.equal(analyzedRailsEncryptedNoMatch.decryption.verified, false, "cookie analyze should retain Rails encrypted format evidence when no secret matches");
+	assert.match(String(analyzedRailsEncryptedNoMatch.mutation.error || ""), /no matching secret/i, "cookie analyze should explain Rails encrypted mutation failures without a matching secret");
 	const railsLagSecrets = Array.from({ length: 300 }, (_, index) => `lag-secret-${index}`);
 	const railsLagStartedAt = Date.now();
-	const railsLagPromise = runCookieAnalyze({ values: [fixtureRails], secretCandidates: railsLagSecrets });
+	const railsLagPromise = runCookieAnalyze({ values: [fixtureRailsEncrypted], secretCandidates: railsLagSecrets });
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.ok(Date.now() - railsLagStartedAt < 500, "cookie analyze should not block the event loop while deriving Rails PBKDF2 candidates");
 	const railsLagResult = await railsLagPromise;
 	assert.equal(railsLagResult.testedSecretCandidateCount, railsLagSecrets.length, "cookie analyze should still test every bounded Rails secret candidate asynchronously");
+	assert.equal(railsLagResult.results[0]?.sessionToken?.decryption?.testedKeyVariantCount, railsLagSecrets.length * 4, "cookie analyze should expose Rails encrypted key variant work for large wordlists");
+	assert.equal(railsLagResult.results[0]?.sessionToken?.decryption?.truncatedKeyVariantCount, 0, "cookie analyze should expose Rails encrypted key variant truncation state");
 	const analyzedPrefs = cookieAnalysis.results.find((item) => item.name === "prefs");
 	assert.equal(analyzedPrefs.kind, "encoded-json");
 	const claimReplayAnalysis = await runCookieAnalyze({

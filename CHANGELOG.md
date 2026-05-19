@@ -20,7 +20,7 @@
 - 增强 `browser_crawl`：补 source map 反向源文件归档与 service worker cache 版本摘要，结果增加归档路径/计数与版本聚合字段，并补契约回归。
 - 固化 Web 安全单包分层：原生执行模块归入 `src/tools/webSecurity/browserNative`，成熟引擎适配固定在 `src/tools/webSecurity/bridges`，共享解析保持在 `src/tools/webSecurity/shared`，并补边界契约防回流。
 - 增强 `browser_http_replay`：补 `multipart.fileFieldMatrix`，支持基于单模板文件的 focused multipart 文件字段变体矩阵、重复同名文件部件、嵌套 multipart case、基线 diff 与结果聚类，并补契约回归。
-- 增强 `browser_cookie_analyze`：补 JWE compact 解析与 `dir` + `A128/A192/A256GCM` 直接解密、PASETO 元数据/footers、Django/Flask/Rails 签名 session 格式、跨格式 claim mutation token 生成，以及基于浏览器 session cookie 的 bounded claim replay 验证。
+- 增强 `browser_cookie_analyze`：补 JWE compact 解析与 `dir` + `A128/A192/A256GCM` 直接解密、PASETO 元数据/footers、Django/Flask/Rails 签名 session 格式、现代 Rails AES-GCM encrypted cookie、legacy Rails AES-CBC signed wrapper、Marshal/binary 明文证据、Rails direct-key signed cookie 的原生解密/验证/metadata 暴露/mutation 重加密、跨格式 claim mutation token 生成，以及基于浏览器 session cookie 的 bounded claim replay 验证。
 - 增强 `browser_callback_oast`：补 detached worker 持续化、reload 后状态/事件恢复、HTTP/HTTPS/DNS 多 listener、self-signed HTTPS 元数据、external metadata、trigger helper 与持久化事件收集。
 - 增强 `browser_recon_probe`：补结构化 tech hints / fingerprint 字段，以及 favicon mmh3 与 simHash 结果字段。
 - 增强 `browser_fuzz_paths`：补递归目录 fuzz、最大目录深度控制、baseline cluster 过滤策略与基线聚类摘要字段。

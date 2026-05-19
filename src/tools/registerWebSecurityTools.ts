@@ -567,9 +567,9 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 	pi.registerTool({
 		name: "browser_cookie_analyze",
 		label: "Browser Cookie Analyze",
-		description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed session values with decoding, signature checks, claim mutation generation, claim replay validation, and browser-session cookie binding.",
-		promptSnippet: "Analyze cookies/JWT/session values, verify signing candidates, generate claim-mutation tokens, validate claim replays, and store structured evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature candidate checks, claim mutation generation, browser-session cookie collection, and bounded claim replay validation."],
+		description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed or encrypted session values with decoding, signature/decryption checks, claim mutation generation, claim replay validation, browser-session cookie binding, and Rails AES-GCM/AES-CBC/direct-key evidence.",
+		promptSnippet: "Analyze cookies/JWT/session values, verify signing or decryption candidates, generate claim-mutation tokens, validate claim replays, and store structured evidence.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, and bounded claim replay validation."],
 		parameters: Type.Object({
 			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
 			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),

@@ -152,11 +152,11 @@
 - [x] 补契约：覆盖 payload 以 `--` 结尾、payload 内包含 `--boundary` 文本时不损坏内容。
 - [x] 补 raw request 边界：`parseRawHttpRequest` 只规范化 header 区，不再把 multipart body 的 CRLF 改写成 LF，避免新 parser 无法识别标准 delimiter。
 
-## 87. 现代 Rails 加密 Cookie 支持补齐（能力缺口）
+## 87. 现代 Rails 加密 Cookie 支持补齐（原生完整实现）
 
-- [ ] `cookieTokens.ts`：为不带 `--` 拖尾的现代 Rails 加密 Cookie 增加 `MessageEncryptor` / AES-GCM 解密验证路径。
-- [ ] 保持现有 signed-cookie 兼容，同时补充 encrypted-cookie 的密钥派生与结构化输出，不把未来能力文档写成当前已支持。
-- [ ] 补 fixture / contract：覆盖至少一个现代 Rails AES-GCM cookie 样本及失败/成功解密路径。
+- [x] `cookieTokens.ts`：原生补齐现代 Rails `MessageEncryptor` encrypted-cookie 识别、AES-GCM 解密/校验、metadata 解析、purpose/expiry 暴露与结构化结果输出。
+- [x] 保持现有 signed-cookie 兼容，同时补齐 encrypted-cookie 的 key derivation 变体、claim mutation 重新加密、失败路径与无匹配 secret 证据输出。
+- [x] 补 fixture / contract / docs / runtime verification：已完成现代 Rails AES-GCM cookie 成功/失败解密、mutation token、summary、docs/contract 与 actual callable-tool runtime artifact。
 
 ## 88. 质量评审剩余确认缺陷修复
 
@@ -166,7 +166,28 @@
 - [x] `cookieTokens.ts` / `cookieAnalyze.ts`：消除 Rails PBKDF2 同步阻塞主事件循环的路径。
 - [x] `sqliProbe.ts`：为确认命中的 probe 增加可控短路终止，减少无意义后续发包。
 
+## 89. Rails encrypted cookie 后续质量评审修复
+
+- [x] `cookieTokens.ts`：严格区分 Rails metadata 内层 message 的 standard base64 与 base64url，mutation 不改写原编码族。
+- [x] `cookieTokens.ts`：encrypted token 外层三段做 canonical round-trip 校验，未解密命中的三段值只作为 possible evidence，不计入已验证 token。
+- [x] `cookieTokens.ts` / contracts：暴露 Rails encrypted key variant 测试计数，补大 wordlist 异步预算回归。
+- [ ] 清理或确认 `.aceignore` / `AI_INSTALL.md` / `AGENTS.md` 等非本轮功能项是否纳入提交。
+
+## 90. Rails legacy CBC / binary serializer / direct key 质量评审修复
+
+- [x] `cookieTokens.ts`：补 Rails legacy AES-256-CBC encrypted cookie（外层 signed wrapper + 内层 `ciphertext--iv`）自动识别、解密、metadata/payload 输出与 mutation 重新加密重签。
+- [x] `cookieTokens.ts`：解密成功但 plaintext 为 Marshal/二进制时保留 serializer、hex/base64/sha256/bytes 证据，不静默丢失 payload。
+- [x] `cookieTokens.ts` / contracts：Rails signed direct hex/base64/base64url key candidate 与 mutation 重签使用同一 key source / key bytes。
+- [x] contracts / docs / skill / CTF 方法层：已同步 legacy CBC、binary serializer 与 direct key 能力，并补本地验证和 reload 后 callable runtime 验证。
+
+## 91. Rails cookie 逻辑按模块收敛
+
+- [x] `src/tools/webSecurity/shared/cookieTokens.ts`：移除 Rails 专属解码/验签/加解密实现，仅保留 orchestrator、跨格式通用 helper 与结果聚合。
+- [x] 新增 `src/tools/webSecurity/shared/railsCookieTokens.ts`：承接 Rails signed / AES-GCM / legacy AES-CBC / Marshal-binary / direct-key 相关实现，复用注入的通用 helper，避免逻辑重复与循环依赖。
+- [x] contracts：更新模块边界检查，确保 Rails 专属实现不再回流 `cookieTokens.ts`，并保持 callable 行为不变。
+- [x] verification：已跑 `npm run check`、`pi-ctf-protocol npm run check`、skill validate；本次仅内部重构，无额外 runtime reload 需求。
+
 ## 下一步建议顺序
 
-1. 完成 88 的剩余确认缺陷修复，并补契约/实际验证。
-2. 后续再做 87 的现代 Rails 加密 Cookie 能力补齐。
+1. 确认 89 的 `.aceignore` / `AI_INSTALL.md` / `AGENTS.md` 非本轮文件是否纳入或拆分。
+2. 如用户需要，整理本轮提交。

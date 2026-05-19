@@ -81,6 +81,7 @@ const webSecuritySqli = read("src/tools/webSecurity/browserNative/sqliProbe.ts")
 const webSecuritySqlmap = read("src/tools/webSecurity/bridges/sqlmapBridge.ts");
 const webSecurityNuclei = read("src/tools/webSecurity/bridges/nucleiBridge.ts");
 const webSecurityTemplateCheck = read("src/tools/webSecurity/browserNative/templateCheck.ts");
+const webSecurityRails = read("src/tools/webSecurity/shared/railsCookieTokens.ts");
 assert(JSON.stringify(webSecurityTopLevelDirs) === JSON.stringify(["bridges", "browserNative", "shared"]), "webSecurity/ must be layered as shared, browserNative, and bridges only");
 assert(JSON.stringify(webSecurityTopLevelFiles) === JSON.stringify([]), "webSecurity/ must not keep mixed top-level runtime files");
 assert(browserNativeFiles.includes("recon.ts") && browserNativeFiles.includes("crawl.ts") && browserNativeFiles.includes("fuzzPaths.ts") && browserNativeFiles.includes("fuzzParams.ts") && browserNativeFiles.includes("fuzzVhosts.ts") && browserNativeFiles.includes("httpReplay.ts") && browserNativeFiles.includes("callbackOast.ts"), "browserNative layer must own the Pi-native web execution modules");
@@ -97,6 +98,12 @@ assert(webSecurityReplay.includes("NormalizedReplayOptions"), "replay implementa
 assert(webSecurityFuzzPaths.includes("NormalizedFuzzPathsOptions") && webSecurityFuzzPaths.includes("RawFuzzPathsOptions"), "fuzz-paths implementation must normalize raw inputs before execution");
 assert(webSecurityFuzzVhosts.includes("NormalizedFuzzVhostsOptions") && webSecurityFuzzVhosts.includes("RawFuzzVhostsOptions"), "fuzz-vhosts implementation must normalize raw inputs before execution");
 assert(webSecurityCookieAnalyze.includes("NormalizedCookieAnalyzeOptions") && webSecurityCookieAnalyze.includes("RawCookieAnalyzeOptions"), "cookie-analyze implementation must normalize raw inputs before execution");
+assert(read("src/tools/webSecurity/shared/cookieTokens.ts").includes("createRailsCookieTokenFns") && read("src/tools/webSecurity/shared/cookieTokens.ts").includes("const { verifyRailsEncryptedToken, verifyRailsSignedToken"), "cookie analyzer must delegate Rails flows through a dedicated shared module factory");
+for (const helperName of ["function decodedTextCandidates", "function strictBase64Decode", "function parseRailsEncryptedToken", "function parseRailsLegacyCbcPayload", "function deriveRailsPbkdf2Key"]) assert(!read("src/tools/webSecurity/shared/cookieTokens.ts").includes(helperName), `cookieTokens.ts must not retain Rails-only helper: ${helperName}`);
+assert(webSecurityRails.includes("createRailsCookieTokenFns") && webSecurityRails.includes("verifyRailsSignedToken") && webSecurityRails.includes("signRailsSignedToken"), "rails cookie module must keep Rails signed-cookie responsibilities explicit");
+assert(webSecurityRails.includes("verifyRailsEncryptedToken") && webSecurityRails.includes("encryptRailsToken"), "rails cookie module must implement native Rails AES-GCM encrypted-cookie decrypt and mutation flows");
+assert(webSecurityRails.includes("verifyRailsLegacyCbcPayload") && webSecurityRails.includes("encryptRailsLegacyCbcToken"), "rails cookie module must implement native Rails legacy AES-CBC decrypt and mutation flows");
+assert(webSecurityRails.includes("binaryPayloadEvidence") && webSecurityRails.includes("unsupportedSerializer"), "rails cookie module must retain binary or Marshal plaintext evidence after successful decrypt");
 assert(webSecurityCallbackOast.includes("NormalizedCallbackOastOptions") && webSecurityCallbackOast.includes("RawCallbackOastOptions"), "callback-oast implementation must normalize raw inputs before execution");
 assert(webSecurityCallbackOast.includes("closeSync(stdoutFd)") && webSecurityCallbackOast.includes("closeSync(stderrFd)"), "callback-oast parent must close inherited worker log file descriptors");
 assert(webSecuritySqli.includes("NormalizedSqliProbeOptions") && webSecuritySqli.includes("stopOnFirstMatch"), "sqli implementation must normalize inputs before execution and support stop-on-first-match short-circuiting");
@@ -128,5 +135,6 @@ for (const removed of ["browser_query", "browser_click", "browser_type", "browse
 assert(skill.includes("browser_download") && skill.includes("browser_upload"), "skill must document upload/download flows");
 assert(skill.includes("browser_execute") && skill.includes("browser_hook") && skill.includes("browser_frame"), "skill must document raw-data and advanced browser tools");
 assert(skill.includes("summary") && skill.includes("browser_artifact"), "skill must document summary/artifact flow");
+assert(skill.includes("Rails AES-GCM encrypted cookies") && skill.includes("legacy Rails AES-CBC signed wrappers") && skill.includes("Rails direct-key signed cookies"), "skill must document Rails encrypted, legacy, and direct-key cookie support");
 assert(!skill.includes("npm run check") && !skill.includes("smoke:browser"), "skill must not contain project development validation flow");
 console.log("tools contract ok");
