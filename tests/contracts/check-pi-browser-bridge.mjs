@@ -137,6 +137,37 @@ assert(transport.split(/\r?\n/).length <= 150, "transport.js must stay focused o
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) {
 	assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 }
+
+async function testRouterNativeWsErrorFrames() {
+	const sent = [];
+	const routerSandbox = {
+		self: { PiNativeProtocol: { validateCommand: (msg) => ({ ok: true, command: msg }) } },
+		chrome: { runtime: { onMessage: { addListener() {} } } },
+		bridgeError: (_code, error, details) => ({ ok: false, error, details }),
+		handleBridgeWake: async () => ({ ok: true, data: {} }),
+		handleCookies: async () => ({ ok: true, data: {} }),
+		handleCDP: async () => ({ ok: true, data: {} }),
+		handlePersistentCDP: async () => ({ ok: true, data: {} }),
+		handleBatch: async () => ({ ok: true, data: {} }),
+		handleTabsCommand: async () => ({ ok: true, data: {} }),
+		handleManagementCommand: async () => ({ ok: true, data: {} }),
+		handleContentSettingsCommand: async () => ({ ok: true, data: {} }),
+		handlePiNativeBrowserCommand: async () => ({ ok: false, error: "native boom", details: { cmd: "wait.selector" } }),
+		isPiNativeBrowserCommand: (cmd) => cmd === "wait.selector",
+		handleWsExec: async () => {},
+		socket: { send(text) { sent.push(JSON.parse(text)); } },
+		console,
+	};
+	vm.runInNewContext(router, routerSandbox, { filename: "router.js" });
+	await routerSandbox.handlePiBridgeWsMessage({ id: "native-error", code: { cmd: "wait.selector", selector: "body", tabId: 1 } }, routerSandbox.socket);
+	assert(sent.length === 1, "router native websocket path must send one frame");
+	assert(sent[0].type === "error", "router native websocket path must emit error frames for failed native commands");
+	assert(sent[0].error === "native boom", "router native websocket error frame must preserve native error text");
+	assert(sent[0].result?.ok === false, "router native websocket error frame must keep the failed native result payload");
+}
+
+await testRouterNativeWsErrorFrames();
+
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
 assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "server sendCommand must not accept free-form Record commands");

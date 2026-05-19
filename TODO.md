@@ -205,6 +205,12 @@
 - [x] contracts：已补 `dnsResponseAddress="::1"` 等非法输入失败回归，并保留合法 IPv4 DNS trigger / listener 行为。
 - [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；reload 后 local smoke 与 actual callable-tool runtime artifact 已完成。
 
+## 95. Native bridge WebSocket 错误帧语义修复
+
+- [x] `bridge/pi_browser_bridge/router.js`：native command 失败时已改发 `type:"error"`，不再把 `{ ok:false }` 错误对象包装进 `type:"result"`。
+- [x] contracts：已补 router/native command WebSocket 失败帧回归，确保 `BrowserBridgeServer` 对 native 失败走 reject 分支而非 resolve 成功分支。
+- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议语义修复；reload 后本地/actual runtime 验证已完成。
+
 ## 下一步建议顺序
 
 1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。

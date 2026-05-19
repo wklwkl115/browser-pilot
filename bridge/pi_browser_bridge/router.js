@@ -38,14 +38,14 @@ async function handlePiBridgeWsMessage(data, socket) {
   if (typeof code === 'object' && code !== null && code.cmd) {
     if (code.tabId === undefined && data.tabId !== undefined) code.tabId = data.tabId;
     const res = await handlePiBridgeMessage(code, {});
-    if (isPiNativeBrowserCommand(code.cmd)) socket.send(JSON.stringify({ type: 'result', id: data.id, result: res.ok ? (res.data ?? res.results ?? res) : res }));
+    if (isPiNativeBrowserCommand(code.cmd)) socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id: data.id, result: res.data ?? res.results ?? res, error: res.error ?? res }));
     else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id: data.id, result: res.data ?? res.results ?? res, error: res.error }));
   } else if (typeof code === 'string') {
     await handleWsExec(data, socket);
   } else if (typeof code === 'object' && code !== null) {
     const msg = code.tabId === undefined && data.tabId !== undefined ? { ...code, tabId: data.tabId } : code;
     const res = await handlePiBridgeMessage(msg, {});
-    if (isPiNativeBrowserCommand(msg.cmd)) socket.send(JSON.stringify({ type: 'result', id: data.id, result: res.ok ? (res.data ?? res.results ?? res) : res }));
+    if (isPiNativeBrowserCommand(msg.cmd)) socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id: data.id, result: res.data ?? res.results ?? res, error: res.error ?? res }));
     else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id: data.id, result: res.data ?? res.results ?? res, error: res.error }));
   }
 }
