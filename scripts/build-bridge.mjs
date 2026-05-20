@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const quiet = process.argv.includes("--quiet");
 const distDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
+const serviceWorkerBuildMode = "ordered-concat-compat";
+const targetServiceWorkerBuildMode = "esm-import-graph";
 const serviceWorkerModules = [
 	"config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport",
 ];
@@ -103,6 +105,9 @@ await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	generatedBy: "scripts/build-bridge.mjs",
 	runtimeSwitched: true,
 	manifestTarget: "dist/service-worker.js",
+	serviceWorkerBuildMode,
+	targetServiceWorkerBuildMode,
+	orderedConcatenation: true,
 	entries,
 	serviceWorkerModules,
 	pageScriptEntries,

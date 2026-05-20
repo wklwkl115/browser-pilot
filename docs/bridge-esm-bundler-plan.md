@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for TODO 187-193. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
+This document freezes the target architecture and gates for the Bridge ESM migration. TODO 188-193 completed the first-phase dist runtime migration; TODO 196-202 are the remaining final-state work. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
 
 ## Decision
 
@@ -8,7 +8,15 @@ Adopt an ESM TypeScript source graph for the Chrome Bridge and generate MV3-comp
 
 Do not use tree-shaking or “lower resident memory” as the justification. The benefits that matter here are explicit imports, type-checked cross-file calls, deterministic generated files, and a clean path to delete the current ambient global graph.
 
-## Final state
+## Current phase vs target final state
+
+Current service worker build mode is `ordered-concat-compat`: `scripts/build-bridge.mjs` reads `bridge_src/service_worker/*.ts` in the old bootstrap order and builds that generated source as an ESM service worker bundle. This is a compatibility bridge, not the final ESM topology.
+
+Target service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, esbuild follows the dependency graph, and `scripts/build-bridge.mjs` no longer reads service worker source text or carries a `serviceWorkerModules` ordered-concat list.
+
+The generated `dist/build-manifest.json` records both `serviceWorkerBuildMode:"ordered-concat-compat"` and `targetServiceWorkerBuildMode:"esm-import-graph"` until TODO 199 removes ordered concatenation.
+
+## Target final state
 
 - Source lives under `bridge_src/` unless TODO 188 chooses an equivalent name before code migration.
 - Service worker source is TypeScript ESM with explicit `import/export`.
@@ -17,6 +25,17 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 - `bridge/pi_browser_bridge/manifest.json` points to dist output after TODO 191.
 - Old hand-written `background.js importScripts(...)` and unused global bridge files were deleted in TODO 192, not kept as a second production path.
 - `bridge-globals.d.ts` was removed after the ESM graph took ownership of internal bridge boundaries.
+
+## Service worker dependency layers
+
+The final import direction is:
+
+1. `shared/types`, `config`, `protocol`, `patterns`
+2. `runtime`, `cdp`, wait/network state modules
+3. command handlers: network, hook, evidence, frame, html, screenshot, transfer, core commands, exec
+4. startup and routing: router, transport, tab_sync, `service-worker.ts`
+
+Business modules must not depend on router, transport, popup UI, or startup side effects. Loose external inputs must be normalized at module boundaries before entering typed internal structures.
 
 ## Bundle entries
 

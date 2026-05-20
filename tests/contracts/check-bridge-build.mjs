@@ -40,6 +40,9 @@ const buildManifest = readJson("bridge/pi_browser_bridge/dist/build-manifest.jso
 assert.equal(buildManifest.generated, true, "build manifest must mark dist as generated");
 assert.equal(buildManifest.runtimeSwitched, true, "build manifest must record that manifest/runtime has switched to dist");
 assert.equal(buildManifest.manifestTarget, "dist/service-worker.js", "build manifest must record current manifest target");
+assert.equal(buildManifest.serviceWorkerBuildMode, "ordered-concat-compat", "build manifest must record the current first-phase service worker build mode");
+assert.equal(buildManifest.targetServiceWorkerBuildMode, "esm-import-graph", "build manifest must record the target service worker build mode");
+assert.equal(buildManifest.orderedConcatenation, true, "first-phase build manifest must make ordered source concatenation explicit until TODO 199 removes it");
 assert.deepEqual(buildManifest.entries.map((entry) => entry.name), ["service-worker", "content", "hook-dispatcher", "disable-dialogs"], "build manifest must record independent service-worker and page-script bundle entries");
 assert.deepEqual(buildManifest.pageScriptEntries.map((entry) => entry.name), ["content", "hook-dispatcher", "disable-dialogs"], "build manifest must keep page scripts separate from the service-worker bundle");
 for (const moduleName of ["config", "protocol", "patterns", "runtime", "cdp", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport"]) {
@@ -174,5 +177,9 @@ for (const file of ["README.md", "AI_INSTALL.md", "docs/bridge-esm-bundler-plan.
 	assert(text.includes("build:bridge"), `${file} must document the bridge build pipeline`);
 	assert(text.includes("dist") && (text.includes("manifest") || text.includes("Manifest")), `${file} must document the dist manifest/runtime boundary`);
 }
+const esmPlan = read("docs/bridge-esm-bundler-plan.md");
+assert(esmPlan.includes("ordered-concat-compat") && esmPlan.includes("esm-import-graph"), "bridge ESM plan must distinguish current ordered-concat mode from the target import graph mode");
+assert(esmPlan.includes("TODO 188-193") && esmPlan.includes("TODO 196-202"), "bridge ESM plan must separate first-phase runtime migration from final-state work");
+assert(read("README.md").includes("ordered-concat-compat"), "README must expose the current service worker build mode instead of calling it final ESM");
 
 console.log("bridge build contract ok");

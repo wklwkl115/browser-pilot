@@ -166,11 +166,12 @@
 
 ## 196. 支柱二终态设计修正：从“拼接兼容 bundle”转为真实 ESM 依赖图
 
-- [ ] 性质判定：architecture correction；当前 `build:bridge` 对 service worker 仍按旧 `importScripts` 顺序拼接源码，不能满足“跨文件依赖拓扑由 import/export 表达”的终态。
-- [ ] 设计修正：更新 `docs/bridge-esm-bundler-plan.md`，把 TODO 188-193 明确标为一期 runtime 迁移，把 TODO 196-202 标为终态迁移；写清禁止长期保留 ordered concatenation 作为 service worker 构建主路径。
-- [ ] 分层边界：确定 `bridge_src/service_worker/` 的模块依赖方向：shared/types/config/protocol/patterns -> runtime/cdp/wait/network state -> command handlers -> router -> transport/tab_sync；禁止业务模块反向依赖 router/transport。
-- [ ] 迁移策略：按模块组逐步导出真实函数/类型并显式 import；每组迁移后 build 不再从拼接文本读取该组源码；不得恢复 global registry 或双生产入口。
-- [ ] 验收：TODO/README/CHANGELOG 中不得再使用“支柱二最终完成”描述一期状态；完成后 contract 能区分 `build:bridge` 是否仍依赖 `serviceWorkerModules` 拼接。
+- [x] 性质判定：architecture correction；当前 `build:bridge` 对 service worker 仍按旧 `importScripts` 顺序拼接源码，不能满足“跨文件依赖拓扑由 import/export 表达”的终态。
+- [x] 设计修正：已更新 `docs/bridge-esm-bundler-plan.md`，把 TODO 188-193 明确标为一期 runtime 迁移，把 TODO 196-202 标为终态迁移；写清当前 `ordered-concat-compat` 只是兼容桥，目标 `esm-import-graph` 禁止长期保留 ordered concatenation 作为 service worker 构建主路径。
+- [x] 分层边界：文档确定 `bridge_src/service_worker/` 的最终模块依赖方向：shared/types/config/protocol/patterns -> runtime/cdp/wait/network state -> command handlers -> router/transport/tab_sync/service-worker；禁止业务模块反向依赖 router/transport/popup UI/startup side effects。
+- [x] 迁移策略：按 TODO 197-199 模块组逐步导出真实函数/类型并显式 import；每组迁移后 build 不再从拼接文本读取该组源码；不得恢复 global registry 或双生产入口。
+- [x] 验收：TODO/README/CHANGELOG 已把一期状态与支柱二终态拆开；`build:bridge` 写入 `dist/build-manifest.json` 的 `serviceWorkerBuildMode:"ordered-concat-compat"` / `targetServiceWorkerBuildMode:"esm-import-graph"`，`check-bridge-build.mjs` 契约能区分当前是否仍依赖 `serviceWorkerModules` 拼接。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 通过。
 
 ## 197. Service worker 真实 ESM 迁移第一阶段：shared/runtime/CDP/wait 基础层
 

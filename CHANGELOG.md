@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 完成 TODO 196 支柱二终态设计修正：`docs/bridge-esm-bundler-plan.md` 明确 TODO 188-193 只是一期 `ordered-concat-compat` dist runtime 迁移，TODO 196-202 才是 `esm-import-graph` 终态；`dist/build-manifest.json` 记录当前与目标 service worker build mode，契约可区分 ordered source concatenation 是否仍存在。
 - 完成 TODO 195 发布包 dist runtime 完整性修复：`prepack` quiet build、`package.json.files` 与 generated `dist/.npmignore` 共同保证 `npm pack --dry-run --json` 包含 manifest 指向的 service worker/content/hook/disable-dialogs dist runtime、source maps 与 build manifest；新增 `check:package` 并接入 `npm run check`，防止干净安装只得到 `dist/.gitignore`。
 - 修正 TODO 193 口径为支柱二一期收口 gate：ESM TS source、dist build、manifest dist runtime、页面独立 bundle、旧 importScripts 删除和 ambient globals 删除均由 contracts 锁定；`npm run check` 与 `npm run smoke:browser:isolated` 通过，runtime artifact 为 `.pi/browser-artifacts/smoke-browser-isolated-results.json`。真实 ESM 依赖图、strict TS 与 `@ts-nocheck` 清理继续归入 TODO 196-202。
 - 完成 TODO 194 独占 Chrome profile smoke：新增 `smoke:browser:isolated`，自动复制临时扩展目录、patch dist service worker bridge 端口、启动独立 Chrome `--user-data-dir` / `--load-extension`，运行后清理临时 profile/extension，并将结果写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json`；未引入 puppeteer/playwright。

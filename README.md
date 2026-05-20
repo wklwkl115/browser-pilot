@@ -48,7 +48,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Bridge JS 内部边界
 
-- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 生成 dist 时仍按旧顺序拼接 service worker 源：共享 pattern/runtime 先加载，wait 子系统顺序为 `wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js`，`network_model.js` 必须在 `network.js` 前加载；真实 ESM 依赖图迁移继续按 TODO 196-202 推进。
+- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 当前 service worker build mode 是 `ordered-concat-compat`：生成 dist 时仍按旧顺序拼接 service worker 源；目标 build mode 是 `esm-import-graph`，真实 ESM 依赖图迁移继续按 TODO 196-202 推进。
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
