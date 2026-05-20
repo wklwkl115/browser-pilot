@@ -1,4 +1,4 @@
-export const BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-skeleton-v1";
+export const BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-dist-v1";
 
 export type BridgeBuildRuntimeMode = "experimental" | "production";
 

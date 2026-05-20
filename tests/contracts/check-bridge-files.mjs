@@ -30,6 +30,7 @@ assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "
 assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsc -p tsconfig.bridge.json"), "package must expose bridge checkJs typecheck script");
 assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge-src.json"), "bridge type checks must include the ESM TypeScript source graph");
 assert(String(pkg.scripts?.["check:bridge"] || "").includes("check:bridge:types"), "bridge checks must include bridge checkJs/typecheck");
+assert(String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:build") < String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:files"), "bridge checks must build dist before file contracts read manifest/dist output");
 assert(pkg.devDependencies?.typescript, "package must depend on TypeScript for bridge checkJs typecheck");
 const bridgeTsconfig = JSON.parse(read("tsconfig.bridge.json"));
 assert(bridgeTsconfig.compilerOptions?.allowJs === true && bridgeTsconfig.compilerOptions?.checkJs === true && bridgeTsconfig.compilerOptions?.noEmit === true, "bridge tsconfig must enable allowJs/checkJs/noEmit");
@@ -48,7 +49,9 @@ for (const required of ["type PiChromeApi", "type PiChromeDebuggerApi", "type Pi
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
 assert(manifest.version === "0.3.0", "manifest version must be 0.3.0");
-assert(manifest.background?.service_worker === "background.js", "manifest must use background.js service worker");
+assert(manifest.background?.service_worker === "dist/service-worker.js" && manifest.background?.type === "module", "manifest must use the generated dist module service worker");
+assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["dist/disable_dialogs.js"]), "manifest document_start script must use dist disable-dialogs bundle");
+assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must declare downloads permission for browser_download path return");
 
 const background = read("bridge/pi_browser_bridge/background.js");
@@ -77,12 +80,12 @@ assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "bac
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
 assert(background.indexOf("tab_sync.js") < background.indexOf("transport.js"), "background.js must load tab_sync.js before transport.js");
 assert(!background.includes("hook_dispatcher.js"), "hook_dispatcher.js must stay out of the service worker importScripts graph");
-assert(runtimeBridge.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';"), "runtime.js must own the stable hook dispatcher filename");
+assert(runtimeBridge.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';"), "runtime.js must own the generated hook dispatcher filename during dist runtime");
 assert(runtimeBridge.includes("window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch"), "runtime page calls must dispatch through the stable hook page global");
 assert(hookBridge.includes("chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: [PI_BROWSER_HOOK_DISPATCHER_FILE] })"), "hook.js must inject the dispatcher through the stable file constant");
 assert(hookBridge.includes("fetch(chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))"), "hook.js CDP fallback must fetch the same dispatcher file constant");
 assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDispatcher.includes("window.__PI_BROWSER_HOOKS__ = {"), "hook_dispatcher.js must remain a self-contained page IIFE exposing window.__PI_BROWSER_HOOKS__");
-assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "hook_dispatcher.js must not depend on page-side imports before TODO 190 bundle migration");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook_dispatcher.js must remain self-contained until TODO 192 removes old runtime files");
 assert(!/chrome\./.test(hookDispatcher), "hook_dispatcher.js must not call Chrome extension APIs from the page MAIN world");
 assert(waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait bridge runtime bundle must keep wait.js as the final facade/dispatch script");
 assert(waitBridgeRuntimeFiles[0] === "wait_cdp.js" && waitBridgeRuntimeFiles[1] === "wait_coordinator.js" && waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait helper modules must load before final wait.js facade");

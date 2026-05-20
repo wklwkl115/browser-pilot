@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for TODO 187-193. It is a migration design, not a runtime switch. TODO 188 adds `npm run build:bridge` as an experimental build pipeline only; the active MV3 runtime remains `background.js` until TODO 191.
+This document freezes the target architecture and gates for TODO 187-193. TODO 191 has switched the active MV3 runtime to generated dist output; TODO 192 must remove the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
 
 ## Decision
 
@@ -29,13 +29,14 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 ## Generated-file and package boundary
 
 - `dist/` is generated. It must not be edited by hand.
+- `npm run build:bridge` regenerates all dist entries used by `manifest.json`.
 - Source maps are allowed for development artifacts; release packaging must decide whether to include or exclude maps explicitly.
-- `npm run check` must fail when dist is missing or stale after TODO 191.
+- `npm run check` regenerates dist before manifest/file contracts validate it after TODO 191.
 - Package/include rules must keep source, generated runtime files, manifest, native schema, docs, and contracts portable; no private absolute paths.
 
 ## Runtime and verification boundary
 
-- TODO 188 adds the build pipeline without changing manifest runtime.
+- TODO 188 added the build pipeline without changing manifest runtime.
 - TODO 189 migrates service-worker code while preserving command names, schemas, error codes, artifact behavior, summaries, network body/postData capture, and wait supervisor metadata.
 - TODO 190 migrates page/content scripts as independent bundles and keeps `chrome.scripting.executeScript({ files })` plus CDP fallback semantics stable.
 - TODO 191 switches manifest/package/check/smoke to dist and requires runtime callable verification.

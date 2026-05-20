@@ -75,7 +75,9 @@ assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
 assert(manifest.version === "0.3.0", "manifest version must be 0.3.0");
-assert(manifest.background?.service_worker === "background.js", "manifest must use background.js service worker");
+assert(manifest.background?.service_worker === "dist/service-worker.js" && manifest.background?.type === "module", "manifest must use generated dist module service worker");
+assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["dist/disable_dialogs.js"]), "manifest document_start script must use dist disable-dialogs bundle");
+assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
 
@@ -162,11 +164,11 @@ const runtime = read("bridge/pi_browser_bridge/runtime.js");
 assert(runtime.includes("PI_BROWSER_PROTOCOL.nativeCommandMap"), "runtime native command map must come from protocol schema");
 assert(runtime.includes("TAB_NOT_FOUND: 'TAB_NOT_FOUND'"), "runtime must expose a dedicated missing-tab error code for tab-scoped native commands");
 assert(runtime.includes("SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND'") && runtime.includes("INVALID_SELECTOR: 'INVALID_SELECTOR'"), "runtime must expose stable selector error codes for non-wait selector commands");
-assert(runtime.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';") && runtime.includes("window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch"), "runtime must keep the hook dispatcher filename and page global dispatch boundary stable");
-assert(hookBridge.includes("chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: [PI_BROWSER_HOOK_DISPATCHER_FILE] })"), "hook bridge must inject hook_dispatcher.js through the stable file constant");
-assert(hookBridge.includes("fetch(chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))"), "hook bridge CDP fallback must fetch the same hook_dispatcher.js file constant");
+assert(runtime.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';") && runtime.includes("window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch"), "runtime must keep the generated hook dispatcher filename and page global dispatch boundary stable");
+assert(hookBridge.includes("chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: [PI_BROWSER_HOOK_DISPATCHER_FILE] })"), "hook bridge must inject the dispatcher through the stable file constant");
+assert(hookBridge.includes("fetch(chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))"), "hook bridge CDP fallback must fetch the same dispatcher file constant");
 assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDispatcher.includes("window.__PI_BROWSER_HOOKS__ = {"), "hook dispatcher must remain a self-contained page IIFE exposing window.__PI_BROWSER_HOOKS__");
-assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "hook dispatcher must not use page-side imports before TODO 190 independent bundle migration");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook dispatcher must remain self-contained until TODO 192 removes old runtime files");
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs instead of hardcoding the port");

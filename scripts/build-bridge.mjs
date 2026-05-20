@@ -35,7 +35,7 @@ const pageScriptEntries = entries.filter((entry) => entry.name !== "service-work
 async function serviceWorkerSource() {
 	const parts = [
 		"// Generated from bridge_src/service_worker/*.ts by scripts/build-bridge.mjs.",
-		"// Runtime source order must match background.js until TODO 191 switches manifest to dist.",
+		"// Runtime source order follows the legacy background.js bootstrap until TODO 192 deletes the old entry.",
 	];
 	for (const name of serviceWorkerModules) {
 		const rel = `bridge_src/service_worker/${name}.ts`;
@@ -45,8 +45,8 @@ async function serviceWorkerSource() {
 	}
 	parts.push(`
 // ---- bridge_src/shared/buildInfo.ts marker ----
-const BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-skeleton-v1";
-const buildInfo = Object.freeze({ version: BRIDGE_BUILD_PIPELINE_VERSION, mode: "experimental", runtimeSwitched: false });
+const BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-dist-v1";
+const buildInfo = Object.freeze({ version: BRIDGE_BUILD_PIPELINE_VERSION, mode: "production", runtimeSwitched: true });
 Object.defineProperty(globalThis, "__PI_BROWSER_EXPERIMENTAL_BUILD__", {
   value: buildInfo,
   configurable: false,
@@ -99,8 +99,8 @@ for (const entry of pageScriptEntries) {
 await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	generated: true,
 	generatedBy: "scripts/build-bridge.mjs",
-	runtimeSwitched: false,
-	manifestTarget: "background.js",
+	runtimeSwitched: true,
+	manifestTarget: "dist/service-worker.js",
 	entries,
 	serviceWorkerModules,
 	pageScriptEntries,

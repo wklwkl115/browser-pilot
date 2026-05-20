@@ -55,8 +55,8 @@ export const serviceWorkerModuleGraph = [
 
 const buildInfo: BridgeBuildInfo = {
 	version: BRIDGE_BUILD_PIPELINE_VERSION,
-	mode: "experimental",
-	runtimeSwitched: false,
+	mode: "production",
+	runtimeSwitched: true,
 };
 
 Object.defineProperty(globalThis, "__PI_BROWSER_EXPERIMENTAL_BUILD__", {

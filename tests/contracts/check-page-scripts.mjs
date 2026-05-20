@@ -18,7 +18,7 @@ const hookServiceWorkerScript = read("bridge/pi_browser_bridge/hook.js");
 for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 	assert(existsSync(new URL(`bridge_src/page_scripts/${pageScript}.ts`, root)), `page-scripts bundle source must exist: ${pageScript}`);
 }
-assert(hookRuntimeScript.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';"), "page-scripts hook boundary: dispatcher filename must stay stable");
+assert(hookRuntimeScript.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';"), "page-scripts hook boundary: generated dispatcher filename must stay stable");
 assert(hookServiceWorkerScript.includes("files: [PI_BROWSER_HOOK_DISPATCHER_FILE]"), "page-scripts hook boundary: scripting injection must use the stable dispatcher file");
 assert(hookServiceWorkerScript.includes("chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE)"), "page-scripts hook boundary: CDP fallback must fetch the stable dispatcher file");
 assert(hookDispatcherPageScript.includes(";(function PiBrowserHookDispatcher()") && hookDispatcherPageScript.includes("window.__PI_BROWSER_HOOKS__ = {"), "page-scripts hook boundary: dispatcher must stay a self-contained IIFE with one public page global");

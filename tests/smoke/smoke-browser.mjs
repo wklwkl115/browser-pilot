@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
@@ -17,6 +18,18 @@ const results = [];
 function record(step, ok, data = {}) { results.push({ step, ok, ...data, t: Date.now() }); }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
+async function buildRuntimeMetadata() {
+	const manifestPath = path.join(root, "bridge", "pi_browser_bridge", "dist", "build-manifest.json");
+	const serviceWorkerPath = path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js");
+	const [manifestText, serviceWorker] = await Promise.all([readFile(manifestPath, "utf8"), readFile(serviceWorkerPath)]);
+	const manifest = JSON.parse(manifestText);
+	return {
+		runtimeSwitched: manifest.runtimeSwitched,
+		manifestTarget: manifest.manifestTarget,
+		entries: Array.isArray(manifest.entries) ? manifest.entries.map((entry) => entry.name) : [],
+		serviceWorkerSha256: createHash("sha256").update(serviceWorker).digest("hex"),
+	};
+}
 function isBridgePortStartFailure(error) {
 	const details = error && typeof error === "object" && error.details && typeof error.details === "object" ? error.details : {};
 	return error && typeof error === "object"
@@ -65,6 +78,7 @@ let fixture;
 let tabId;
 try {
 	await mkdir(outDir, { recursive: true });
+	record("build.runtime", true, await buildRuntimeMetadata());
 	fixture = await startFixture();
 	await bridge.start();
 	const connected = await waitForExtension();

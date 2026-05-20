@@ -129,10 +129,10 @@
 
 ## 191. Manifest/package/check/smoke 切到构建产物
 
-- [ ] 切换：`manifest.json` 指向构建产物；旧手工 `importScripts` 入口不再作为生产入口；AI_INSTALL reload 路径和 package 文件列表同步。
-- [ ] 检查：`npm run check` 必须包含 build、typecheck、contract、page script、tool doc drift；构建产物缺失或过期时 check 失败。
-- [ ] Smoke：当前会话 runtime validation 与 `npm run smoke:browser` 都能定位到构建产物；失败 artifact 保留构建版本/hash。
-- [ ] 回滚：若 runtime 切换失败，只允许在同一 TODO 内回滚，不保留双生产入口。
+- [x] 切换：`manifest.json` 已指向 `dist/service-worker.js` module service worker，content scripts 已指向 `dist/disable_dialogs.js` / `dist/content.js`，hook 注入常量已切到 `dist/hook_dispatcher.js`；旧手工 `importScripts` 入口不再作为生产入口，只保留到 TODO 192 删除。
+- [x] 检查：`check:bridge` 顺序改为 typecheck -> build -> files/contracts；`npm run check` 覆盖 build、typecheck、manifest/dist/page script/tool doc drift，`check-bridge-build.mjs` 动态 import dist service worker 并验证 build metadata。
+- [x] Smoke 定位：`smoke:browser` 在启动 bridge 前写入 `build.runtime`，包含 `runtimeSwitched:true`、`manifestTarget:"dist/service-worker.js"`、entries 和 service worker sha256；本分支运行时被现有 Pi agent 占用 127.0.0.1:18765 阻断，artifact `.pi/browser-artifacts/smoke-browser-results.json` 已记录 `bridge.port.reason:"agent_occupies"`，未关闭用户进程。
+- [x] 回滚：未保留双生产入口；若后续真实 reload 失败，必须在 TODO 193 gate 内修复或整项回滚，不能恢复旧 `background.js` 为备用生产路径。
 
 ## 192. 删除旧 `importScripts` 多文件入口与冗余 globals
 
@@ -168,5 +168,6 @@
 8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
 9. 已完成 TODO 189：service worker bridge ESM TypeScript bundle 兼容源码、显式 boundary symbol imports 与 dist import 契约。
 10. 已完成 TODO 190：页面/内容脚本独立 dist bundle 迁移与契约。
-11. TODO 191-193：切 manifest/check/smoke 到 dist，删除旧入口并做最终 gate。
-12. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+11. 已完成 TODO 191：manifest/package/check/smoke 定位切到 dist；真实 callable 通过证据仍归 TODO 193 gate。
+12. TODO 192-193：删除旧入口并做最终行为/真实 runtime gate。
+13. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
