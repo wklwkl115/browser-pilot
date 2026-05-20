@@ -16,7 +16,7 @@
     "build:bridge": "node scripts/build-bridge.mjs",
     "check:bridge:files": "node tests/contracts/check-bridge-files.mjs",
     "check:bridge:build": "npm run build:bridge && node tests/contracts/check-bridge-build.mjs",
-    "check:bridge:types": "tsc -p tsconfig.bridge.json",
+    "check:bridge:types": "tsc -p tsconfig.bridge.json && tsc -p tsconfig.bridge-src.json",
     "check:protocol": "node tests/contracts/check-protocol-contract.mjs",
     "check:tools": "node tests/contracts/check-tools-contract.mjs && node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-execute-tool.mjs",
     "check:pi-browser-bridge": "node tests/contracts/check-pi-browser-bridge.mjs",

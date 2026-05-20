@@ -104,7 +104,7 @@ npm run smoke:browser
 npm run smoke:browser:transfer
 ```
 
-`build:bridge` 仅验证 TODO 188 的 ESM TypeScript 构建骨架，产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成；当前 manifest 仍指向 `background.js`，dist 未启用为 runtime。
+`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker 兼容 bundle，产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成；当前 manifest 仍指向 `background.js`，dist 未启用为 runtime。TODO 189 后续继续把兼容脚本作用域收口为显式 symbol import/export，再由 TODO 191 切换 manifest。
 
 `npm run smoke:browser` 与常驻 Pi agent/bridge 共用 MV3 固定端口 `127.0.0.1:18765`，本地并行时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本只诊断 PID/命令行，不自动关闭用户进程。
 

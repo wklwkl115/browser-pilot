@@ -27,12 +27,15 @@ assert(pkg.keywords?.includes("pi-package"), "package must declare pi-package ke
 assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must expose index.ts");
 assert(pkg.scripts?.["sync:protocol"] === "node scripts/sync-native-protocol.mjs", "package must expose protocol sync script");
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
-assert(pkg.scripts?.["check:bridge:types"] === "tsc -p tsconfig.bridge.json", "package must expose bridge checkJs typecheck script");
-assert(String(pkg.scripts?.["check:bridge"] || "").includes("check:bridge:types"), "bridge checks must include bridge checkJs typecheck");
+assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsc -p tsconfig.bridge.json"), "package must expose bridge checkJs typecheck script");
+assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge-src.json"), "bridge type checks must include the ESM TypeScript source graph");
+assert(String(pkg.scripts?.["check:bridge"] || "").includes("check:bridge:types"), "bridge checks must include bridge checkJs/typecheck");
 assert(pkg.devDependencies?.typescript, "package must depend on TypeScript for bridge checkJs typecheck");
 const bridgeTsconfig = JSON.parse(read("tsconfig.bridge.json"));
 assert(bridgeTsconfig.compilerOptions?.allowJs === true && bridgeTsconfig.compilerOptions?.checkJs === true && bridgeTsconfig.compilerOptions?.noEmit === true, "bridge tsconfig must enable allowJs/checkJs/noEmit");
 assert(bridgeTsconfig.include?.includes("bridge/pi_browser_bridge/*.js") && bridgeTsconfig.include?.includes("bridge/pi_browser_bridge/bridge-globals.d.ts"), "bridge tsconfig must cover bridge JS and ambient globals");
+const bridgeSrcTsconfig = JSON.parse(read("tsconfig.bridge-src.json"));
+assert(bridgeSrcTsconfig.include?.includes("bridge_src/**/*.ts"), "bridge source tsconfig must cover bridge_src TypeScript modules");
 assert(existsSync(path.join(bridge, "bridge-globals.d.ts")), "bridge ambient globals file must exist");
 const bridgeGlobals = read("bridge/pi_browser_bridge/bridge-globals.d.ts");
 for (const forbidden of ["Record<string, any>", "[key: string]: any", "declare const chrome: any", "validateCommand?: (msg: any", "onmessage?: ((event: { data: any })"]) {

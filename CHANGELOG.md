@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 推进 TODO 189 service worker ESM 迁移：新增 `bridge_src/service_worker/` 按当前 service worker 文件顺序承载完整兼容源码，`build:bridge` 生成包含 runtime/CDP/wait/network/hook/frame/html/screenshot/transfer/router/tab_sync/transport 的 `dist/service-worker.js`，`check:bridge:types` 同时覆盖旧 bridge JS 与 `bridge_src` TS 源；manifest 仍未切换。
 - 新增实验性 Bridge build pipeline 骨架：`npm run build:bridge` 使用 esbuild 从 `bridge_src/service-worker.ts` 生成 `bridge/pi_browser_bridge/dist/service-worker.js`、source map 和 build manifest；`npm run check` 接入 dist/generated-file/manifest-not-switched 契约，当前 runtime 仍未启用 dist。
 - 冻结 Bridge ESM + TypeScript bundler 迁移设计：新增 `docs/bridge-esm-bundler-plan.md`，明确优先 esbuild、`bridge_src/` 源图、`bridge/pi_browser_bridge/dist/` 产物、service worker/content/hook-dispatcher/disable-dialogs 独立入口、manifest 切换和旧 `importScripts` 删除 gate；本项仅设计冻结，不切 runtime。
 - 收紧 Bridge ambient/global 类型：`bridge-globals.d.ts` 从 broad `any` 黑盒改为具体 Chrome/runtime/debugger/downloads、persistent CDP、wait record、network recorder、hook command、WS envelope 类型；`router.js` 与 `runtime.js` 接入收窄后的 JSDoc，契约禁止 `declare const chrome:any` / `[key:string]:any` 回流。

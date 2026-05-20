@@ -113,10 +113,10 @@
 
 ## 189. Service worker bridge 迁移到 ESM TypeScript bundle
 
-- [ ] 迁移范围：按模块迁移 background/service worker 侧 runtime、cdp、wait 子系统、network、hook/frame/html/screenshot/transfer/router/tab_sync/transport；每次迁移保持 callable command 名、错误码、artifact、summary 不变。
-- [ ] 类型要求：跨文件依赖必须显式 import/export；不得用新的 global registry 替代模块依赖；命令 handler 使用具体 command/response 类型。
-- [ ] 兼容期：保留旧 JS runtime 作为 fallback 仅限本 TODO 内；同一命令不得存在两套长期实现。
-- [ ] 契约：旧 VM fixture 改为加载构建产物或源模块测试；`check:bridge:types` 改为 TS 源类型检查 + bundle 语法检查。
+- [x] 迁移范围阶段 1：`bridge_src/service_worker/` 已按当前 service worker 侧 `importScripts` 顺序承载 config/protocol/patterns/CDP/runtime/wait/network/hook/evidence/frame/html/screenshot/transfer/bridge_info/core/exec/router/tab_sync/transport 兼容源码；`build:bridge` 生成完整 `dist/service-worker.js`，保持 callable command 名、错误码、artifact、summary 不变。
+- [ ] 类型要求：当前为兼容脚本作用域 bundle；下一步必须把跨文件依赖从隐式脚本作用域收口为显式 symbol `import/export`，不得用新的 global registry 替代模块依赖；命令 handler 使用具体 command/response 类型。
+- [x] 兼容期：旧 JS runtime 仍是 manifest 生产入口；dist service worker 为实验产物，不产生双生产入口；同一命令没有两个 runtime 同时注册。
+- [ ] 契约：旧 VM fixture 改为加载构建产物或源模块测试；`check:bridge:types` 已改为旧 JS check + `bridge_src` TS check，bundle 语法/内容由 `check-bridge-build.mjs` 覆盖。
 - [ ] Runtime：真实扩展 reload 后跑 bridge/tabs/wait/network/hook/html/screenshot/transfer 子集，artifact 回填 TODO。
 
 ## 190. 页面注入脚本独立 bundle 迁移
@@ -165,6 +165,6 @@
 6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
 7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
 8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
-9. 已完成 TODO 188：建立 build pipeline 骨架但不切 runtime；下一项 TODO 189 迁移 service worker bridge 到 ESM TypeScript bundle。
+9. 当前 TODO 189：service worker bridge ESM TypeScript bundle 已完成兼容源码与 dist 生成阶段；下一步收口显式 symbol imports、bundle/source VM 契约和 runtime reload 验证。
 10. TODO 190-193：迁移页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
 11. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
