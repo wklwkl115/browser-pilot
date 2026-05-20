@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 完成 WebSecurity/Bridge 重构收口 gate：确认 `registerWebSecurityTools.ts` 与 `summaries/webSecurity.ts` 保持 thin facade，Bridge Network split 有加载顺序、职责边界、文件体量契约和真实扩展 runtime 子集验证；本轮无用户可见 schema/summary/runtime 能力变化。
+- 拆分 Bridge Network recorder 单体：新增 `bridge/pi_browser_bridge/network_model.js` 承载 recorder 状态、配置、过滤、record/body 存储与 summary helper，`network.js` 收敛为 CDP 事件、生命周期和命令分发；同步锁定 MV3 `importScripts` 加载顺序与 VM 契约组合。
 - 强化 WebSecurity register shell 类型边界：外部 TypeBox 参数在各 register 模块内归一为具名 ToolParams，shared shell 以泛型约束 `augmentParams/run/details/distill`，cookie provider 显式使用 `CookieProvider`，并用契约禁止 `[key:string]:unknown` 和 loose `Record` run 参数回流。
 - 重构 WebSecurity summary 层：`src/tools/summaries/webSecurity.ts` 现在仅作为 facade，recon/crawl/fuzz/sqli/bridge/template/OAST/cookie/replay 摘要拆入 `src/tools/summaries/webSecurity/`，共享脱敏、artifact 和表格裁剪 helper，并补 summary 契约覆盖关键证据字段。
 - 重构 WebSecurity TS 注册层：`registerWebSecurityTools.ts` 现在仅作为 facade，12 个安全工具的 schema/注册逻辑拆入 `src/tools/webSecurity/register/`，共享 shell/cookieProvider/distillation 保持单点实现，并补注册 facade 契约。

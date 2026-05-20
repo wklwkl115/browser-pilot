@@ -8,7 +8,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
 const requiredBridgeFiles = [
-	"manifest.json", "background.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js", "hook_dispatcher.js", "content.js", "config.js", "disable_dialogs.js", "popup.html", "popup.js", "native_command_schema.json",
+	"manifest.json", "background.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js", "hook_dispatcher.js", "content.js", "config.js", "disable_dialogs.js", "popup.html", "popup.js", "native_command_schema.json",
 ];
 for (const file of requiredBridgeFiles) assert(existsSync(path.join(bridge, file)), `missing bridge file: ${file}`);
 
@@ -36,16 +36,23 @@ const background = read("bridge/pi_browser_bridge/background.js");
 const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
 const transport = read("bridge/pi_browser_bridge/transport.js");
 const router = read("bridge/pi_browser_bridge/router.js");
+const networkModel = read("bridge/pi_browser_bridge/network_model.js");
+const networkRuntime = read("bridge/pi_browser_bridge/network.js");
 assert(background.includes("@ts-check") && bridgeInfo.includes("@ts-check") && router.includes("@ts-check"), "bridge bootstrap/core entrypoints must opt into JS type checking documentation");
 assert(router.includes("@param {PiBridgeCommand}") && router.includes("@param {PiBridgeWebSocketLike}"), "router must document bridge envelope/socket JSDoc types");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) assert(background.includes(file), `background.js must import ${file}`);
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) assert(background.includes(file), `background.js must import ${file}`);
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
-assert(background.indexOf("patterns.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait.js and network.js");
+assert(background.indexOf("patterns.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait.js, then network_model.js before network.js");
 assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "background.js must load protocol.js before runtime.js");
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
 assert(background.indexOf("tab_sync.js") < background.indexOf("transport.js"), "background.js must load tab_sync.js before transport.js");
+assert(networkModel.includes("function normalizeNetworkRecorderConfig") && networkModel.includes("function storeNetworkBody") && networkModel.includes("const piBrowserNetworkRecorders = new Map()"), "network_model.js must own recorder state/config/body storage helpers");
+assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networkRuntime.includes("function handleNetworkRecorderCdpEvent") && networkRuntime.includes("async function handleNetworkRecorderCommand"), "network.js must own CDP events, lifecycle, and command dispatch");
+for (const forbidden of ["const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES", "function normalizeNetworkRecorderConfig", "function storeNetworkBody", "function truncateBase64Body"]) assert(!networkRuntime.includes(forbidden), `network.js must not re-absorb model helper: ${forbidden}`);
+for (const forbidden of ["chrome.debugger.sendCommand", "function handleNetworkRecorderCdpEvent", "function handleNetworkRecorderCommand"]) assert(!networkModel.includes(forbidden), `network_model.js must not own runtime command logic: ${forbidden}`);
+assert(networkModel.split(/\r?\n/).length <= 450 && networkRuntime.split(/\r?\n/).length <= 550, "network recorder bridge files must stay below the split-file health threshold");
 
 const forbiddenNaming = [/TMWD/i, /TMWebDriver/i, /GABrowser/i, /GA_BROWSER/, /__GA/, /__ga/, /gaBrowser/, /gaPersistent/, /BrowserPro/, /browserPro/, /native_hook_dispatcher/, /tmwd_cdp_bridge/];
 for (const file of requiredBridgeFiles.filter((item) => item.endsWith(".js"))) {

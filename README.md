@@ -46,6 +46,12 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - WebSecurity 响应摘要按能力族拆入 `src/tools/summaries/webSecurity`，共享脱敏、artifact 与表格裁剪 helper，summary 只做压缩展示，完整证据继续走 artifact
 - 这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案
 
+## Bridge JS 内部边界
+
+- `background.js` 仍使用 MV3 `importScripts` 顺序加载；共享 pattern/runtime/wait 先加载，`network_model.js` 必须在 `network.js` 前加载。
+- `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
+- `wait.js` 继续承载 Service Worker wait coordinator / lease 语义；`hook_dispatcher.js` 仍是页面注入脚本，拆分前必须先有 bundling 或注入加载设计，不能直接按 SW 脚本方式拆。
+
 ## Pi 命令
 
 - `/browser-status`：查看 bridge server、扩展连接、tabs、pending 请求。

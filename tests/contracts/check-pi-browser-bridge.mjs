@@ -29,6 +29,7 @@ const requiredBridgeFiles = [
 	"cdp.js",
 	"runtime.js",
 	"wait.js",
+	"network_model.js",
 	"network.js",
 	"hook.js",
 	"evidence.js",
@@ -81,7 +82,8 @@ const frameBridge = read("bridge/pi_browser_bridge/frame.js");
 const waitBridge = read("bridge/pi_browser_bridge/wait.js");
 const hookBridge = read("bridge/pi_browser_bridge/hook.js");
 const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
-const networkBridge = read("bridge/pi_browser_bridge/network.js");
+const networkModelBridge = read("bridge/pi_browser_bridge/network_model.js");
+const networkBridge = [networkModelBridge, read("bridge/pi_browser_bridge/network.js")].join("\n");
 const patternsBridge = read("bridge/pi_browser_bridge/patterns.js");
 const hookDispatcher = read("bridge/pi_browser_bridge/hook_dispatcher.js");
 const coreCommands = read("bridge/pi_browser_bridge/core_commands.js");
@@ -93,11 +95,11 @@ assert(htmlBridge.includes("error_code: 'SELECTOR_NOT_FOUND'") && htmlBridge.inc
 assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversalAccess)") && !cdpBridge.includes("grantUniveralAccess"), "frame.evaluate must pass correctly-spelled CDP grantUniversalAccess option");
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
 assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
-assert(background.indexOf("patterns.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait.js and network.js");
+assert(background.indexOf("patterns.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait.js, then network_model.js before network.js");
 assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "background.js must load protocol.js before runtime.js");
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");

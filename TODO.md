@@ -160,23 +160,26 @@
 
 ## 178. Bridge JS 超大文件拆分评估与第二阶段执行
 
-- [ ] 性质判定：`bridge/wait.js`、`hook_dispatcher.js`、`network.js` 已超过健康阈值，但它们处在 MV3 service worker / 页面注入高风险边界；不得与 TODO 175-177 的 TS 层重构混在同一 diff。
-- [ ] 拆分顺序：先做只读依赖图和全局符号图，确认 checkJs 覆盖、加载顺序、MV3 全局作用域、页面注入字符串边界；再按 `state/coordinator/actions/serialization` 或 `recorder/body/artifact/export` 等稳定边界拆分。
-- [ ] 行为边界：拆分不得改变 service worker 生命周期、长等待租约、hook session/listener cleanup、network body/postData 捕获、错误码和 artifact 注册语义。
-- [ ] 契约：每拆一个 bridge 文件，必须补/复跑对应 `check-pi-browser-bridge.mjs`、bridge checkJs、相关 runtime smoke 子集；真实浏览器 reload 后写入 artifact。
-- [ ] 文档：本项只记录内部可维护性；除非用户可见行为变化，不更新 skill 当前能力描述。
+- [x] 性质判定：`bridge/wait.js`、`hook_dispatcher.js`、`network.js` 已超过健康阈值，但它们处在 MV3 service worker / 页面注入高风险边界；本项作为 Bridge JS 子阶段，不与 TODO 175-177 的 TS 层重构混在同一 diff。
+- [x] 拆分顺序：已做只读依赖图和全局符号图：`background.js` 通过 MV3 `importScripts` 顺序加载；`tsconfig.bridge.json` 覆盖同目录 `*.js`；`check-pi-browser-bridge.mjs` 对 `wait.js/network.js` 使用 VM 组合执行；`hook_dispatcher.js` 是页面注入文件，不按 SW 全局脚本方式拆。
+- [x] 执行边界：本阶段先拆低风险 `network.js`，新增 `bridge/pi_browser_bridge/network_model.js` 承载 recorder 状态、配置归一、过滤、record/body 存储与 summary clone helper；`network.js` 收敛为 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
+- [x] 行为边界：未改变 service worker 生命周期、长等待租约、hook session/listener cleanup、network body/postData 捕获、错误码和 artifact 注册语义；`background.js` 明确保持 `patterns.js -> wait.js -> network_model.js -> network.js` 加载顺序。
+- [x] 契约：`check-bridge-files.mjs` 与 `check-pi-browser-bridge.mjs` 已纳入 `network_model.js` 必备文件、加载顺序和 VM 组合源码；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过。
+- [x] 真实浏览器 runtime：`npm run smoke:browser` 未运行，因为会抢占现有 `127.0.0.1:18765` bridge；已由当前会话内真实扩展 runtime 子集补测覆盖，结果写入 `.pi/browser-artifacts/runtime-bridge-validation-results.json`，截图证据为 `.pi/browser-artifacts/screenshot-1779252971729.png`。
+- [x] 文档：README/CHANGELOG/TODO 只记录内部可维护性；无用户可见 schema/summary/runtime 能力变化，未更新 skill 当前能力描述。
 
 ## 179. WebSecurity/Bridge 重构收口 gate
 
-- [ ] 完成 TODO 175-177 后，确认 `registerWebSecurityTools.ts` 与 `summaries/webSecurity.ts` 只承担 facade/兼容导出，不再混合 12 个工具的 schema、执行、摘要细节。
-- [ ] 完成 TODO 178 任一子阶段后，记录拆分文件、保留的全局加载顺序、reload runtime artifact 路径和未拆剩余风险。
-- [ ] 全量验证：运行 `npm run check`；触及全局 skill 时运行 `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`。
-- [ ] 收口更新：TODO 勾选、CHANGELOG 记录架构维护项；如 schema/summary/runtime 能力发生可见变化，同步 README、skill 和对应契约文档。
+- [x] 完成 TODO 175-177 后，确认 `registerWebSecurityTools.ts` 与 `summaries/webSecurity.ts` 只承担 facade/兼容导出：当前分别为 14 行和 1 行；`check-web-security-tools.mjs`、`check-summaries.mjs`、`check-tools-contract.mjs` 已锁定 thin facade、按工具/能力族拆分、共享 shell/脱敏 helper 不回流。
+- [x] 完成 TODO 178 任一子阶段后，记录拆分文件、保留的全局加载顺序、reload runtime artifact 路径和未拆剩余风险：`network_model.js` + `network.js` 已拆；加载顺序为 `patterns.js -> wait.js -> network_model.js -> network.js`；真实扩展 runtime 子集通过，artifact 为 `.pi/browser-artifacts/runtime-bridge-validation-results.json`，覆盖 bridge/tabs/wait/scan/content/html/frame/hook/network/screenshot/close，其中 network 返回 `bodyAvailability:"captured"`；未拆风险保留在 `wait.js` 和页面注入 `hook_dispatcher.js`，后续需单独 TODO 与 bundling/注入设计。
+- [x] 契约收口：`check-bridge-files.mjs` 新增 Network split 边界，锁定 `network_model.js` 不承载 CDP/命令逻辑、`network.js` 不回吸 recorder model helper，并限制拆分后文件体量。
+- [x] 全量验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过；本轮未触及全局 skill，未运行 skill quick validate。
+- [x] 收口更新：TODO 勾选、README/CHANGELOG 记录架构维护项；本轮无 schema/summary/runtime 用户可见能力变化，未更新 skill 当前能力描述。
 
 ## 下一步建议顺序
 
 1. 已完成 TODO 175：WebSecurity 注册层 facade 拆分，并修复 `registerTools.ts` 一行多调用风格。
 2. 已完成 TODO 176：summary 按能力族拆分，并保留脱敏/证据字段契约。
 3. 已完成 TODO 177：在拆分后的较小模块内收口参数类型，避免一次性强类型化大单体。
-4. 下一项 TODO 178：bridge JS 大文件拆分评估与分阶段执行，不与 TS 工具层 refactor 混提交。
-5. 每阶段按 TODO 179 收口验证；没有用户可见行为变化时，不扩大 README/skill 能力叙述。
+4. 已完成 TODO 178：Bridge JS 先拆 Network recorder 子阶段，保留 MV3/importScripts 与 VM 契约边界。
+5. 已完成 TODO 179：重构收口 gate、契约和文档维护完成；当前 TODO 队列无未完成项，新增工作需先按 TODO Workflow 写清范围、决策、契约和验证。
