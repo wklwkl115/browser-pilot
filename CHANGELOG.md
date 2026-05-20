@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- 完成 TODO 193 支柱二最终收口 gate：ESM TS source、dist build、manifest dist runtime、页面独立 bundle、旧 importScripts 删除和 ambient globals 删除均由 contracts 锁定；`npm run check` 与 `npm run smoke:browser:isolated` 通过，runtime artifact 为 `.pi/browser-artifacts/smoke-browser-isolated-results.json`。
+- 完成 TODO 195 发布包 dist runtime 完整性修复：`prepack` quiet build、`package.json.files` 与 generated `dist/.npmignore` 共同保证 `npm pack --dry-run --json` 包含 manifest 指向的 service worker/content/hook/disable-dialogs dist runtime、source maps 与 build manifest；新增 `check:package` 并接入 `npm run check`，防止干净安装只得到 `dist/.gitignore`。
+- 修正 TODO 193 口径为支柱二一期收口 gate：ESM TS source、dist build、manifest dist runtime、页面独立 bundle、旧 importScripts 删除和 ambient globals 删除均由 contracts 锁定；`npm run check` 与 `npm run smoke:browser:isolated` 通过，runtime artifact 为 `.pi/browser-artifacts/smoke-browser-isolated-results.json`。真实 ESM 依赖图、strict TS 与 `@ts-nocheck` 清理继续归入 TODO 196-202。
 - 完成 TODO 194 独占 Chrome profile smoke：新增 `smoke:browser:isolated`，自动复制临时扩展目录、patch dist service worker bridge 端口、启动独立 Chrome `--user-data-dir` / `--load-extension`，运行后清理临时 profile/extension，并将结果写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json`；未引入 puppeteer/playwright。
 - 完成 TODO 192 旧入口删除：移除 `background.js`、旧 service worker/page 多文件 `.js`、`bridge-globals.d.ts` 与 `tsconfig.bridge.json`；生产 manifest 只指向 generated dist runtime，contracts 改读 `bridge_src` 源模块和 dist bundle，禁止旧 importScripts 入口作为备用路径。
 - 完成 TODO 191 manifest/check/smoke 切到构建产物：`manifest.json` 现在使用 `dist/service-worker.js` module service worker、`dist/content.js`、`dist/disable_dialogs.js`，hook 注入常量切到 `dist/hook_dispatcher.js`；`check:bridge` 先 build 再做文件/manifest 契约；`smoke:browser` artifact 增加 dist runtime metadata 与 service worker sha256，并保留端口占用诊断。

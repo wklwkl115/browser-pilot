@@ -36,9 +36,11 @@
     "check:errors": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-errors.mjs",
     "smoke:browser": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs",
     "smoke:browser:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs --transfer",
-    "check": "npm run check:bridge && npm run check:pi-browser-bridge && npm run check:tool-docs && npm run check:boundaries && npm run check:scan && npm run check:content-pick && npm run check:transfer && npm run check:web-security && npm run check:page-scripts && npm run check:fake-ws && npm run check:smoke-diagnostics && npm run check:paths && npm run check:token && npm run check:summaries && npm run check:artifact && npm run check:errors",
+    "check": "npm run check:bridge && npm run check:package && npm run check:pi-browser-bridge && npm run check:tool-docs && npm run check:boundaries && npm run check:scan && npm run check:content-pick && npm run check:transfer && npm run check:web-security && npm run check:page-scripts && npm run check:fake-ws && npm run check:smoke-diagnostics && npm run check:paths && npm run check:token && npm run check:summaries && npm run check:artifact && npm run check:errors",
     "check:boundaries": "node tests/contracts/check-boundaries.mjs",
-    "smoke:browser:isolated": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser-isolated.mjs"
+    "smoke:browser:isolated": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser-isolated.mjs",
+    "prepack": "node scripts/build-bridge.mjs --quiet",
+    "check:package": "node tests/contracts/check-package-files.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
@@ -68,5 +70,20 @@
   "devDependencies": {
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
-  }
+  },
+  "files": [
+    "AGENTS.md",
+    "AI_INSTALL.md",
+    "CHANGELOG.md",
+    "README.md",
+    "TODO.md",
+    "bridge/",
+    "bridge_src/",
+    "docs/",
+    "scripts/",
+    "src/",
+    "tests/",
+    "tsconfig.json",
+    "tsconfig.bridge-src.json"
+  ]
 }

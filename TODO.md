@@ -158,11 +158,11 @@
 
 ## 195. 支柱二阻断修复：发布/安装包必须包含可运行 dist runtime
 
-- [ ] 性质判定：package-portability blocker；manifest 已指向 `bridge/pi_browser_bridge/dist/**`，因此 npm package、干净 checkout 的安装路径必须有可运行 dist runtime，不能只依赖本地已有 build 产物。
-- [ ] 事实复核：用 `npm pack --dry-run --json` 证明当前包内是否包含 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`、source map/build manifest；记录缺失原因是 `.gitignore/.npmignore/files/prepack` 哪一层。
-- [ ] 实现决策：优先采用 package-portable 方案：`prepack`/`prepare` 明确运行 `npm run build:bridge`，并用根 `.npmignore` 或 `package.json.files` 明确包含 manifest、schema、icons、popup、dist runtime、bridge source、contracts/docs；不得引入私有绝对路径或要求用户手动 build 才能加载扩展。
-- [ ] 契约：新增或扩展 pack contract，解析 `npm pack --dry-run --json` 输出，强制包内包含 manifest 指向的所有 dist 文件，且禁止只包含 `dist/.gitignore` 的坏状态。
-- [ ] 验证：`npm run build:bridge`、`npm pack --dry-run --json`、`npm run check` 通过；如 dist source map 不进发布包，必须在契约和文档中明确 release/debug 取舍。
+- [x] 性质判定：package-portability blocker；manifest 已指向 `bridge/pi_browser_bridge/dist/**`，因此 npm package、干净 checkout 的安装路径必须有可运行 dist runtime，不能只依赖本地已有 build 产物。
+- [x] 事实复核：`npm pack --dry-run --json` 修复前只包含 `bridge/pi_browser_bridge/dist/.gitignore`，缺少 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`、source map 与 `build-manifest.json`；根因是 generated dist 目录内 `.gitignore` 被 npm 继承且无 package include/prepack 边界。
+- [x] 实现决策：采用 package-portable 方案：`prepack` 运行 `node scripts/build-bridge.mjs --quiet`，`package.json.files` 明确包含 `bridge/`、`bridge_src/`、`scripts/`、`tests/`、`src/`、`docs/` 等发布边界，`build:bridge` 生成 dist `.npmignore` 覆盖 dist `.gitignore` 的 npm 打包语义；无私有绝对路径，不要求用户手动 build 才能加载扩展。
+- [x] 契约：新增 `tests/contracts/check-package-files.mjs` 并接入 `check:package` / `npm run check`；契约解析 `npm pack --dry-run --json`，强制包内包含 manifest 指向的 service worker/content/disable-dialogs dist、hook dispatcher、source maps、build manifest、manifest、native schema、bridge source 和 build script，禁止只包含 `dist/.gitignore` 的坏状态。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run build:bridge"` 通过；`npm pack --dry-run --json` 修复后包内包含 207 个文件与完整 dist runtime；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check:package"` 通过；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 通过。
 
 ## 196. 支柱二终态设计修正：从“拼接兼容 bundle”转为真实 ESM 依赖图
 

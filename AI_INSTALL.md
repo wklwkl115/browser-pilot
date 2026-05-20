@@ -72,6 +72,14 @@ Bridge ESM TypeScript 构建管线（生成当前 manifest 使用的 service wor
 npm run build:bridge
 ```
 
+发布/安装包边界验证（会触发 `prepack` quiet build，并确认 manifest 指向的 dist runtime 进入 npm 包）：
+
+```bash
+npm pack --dry-run --json
+```
+
+`npm run check` 已包含 `check:package`，会用同一 dry-run 验证 `dist/service-worker.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内；干净安装不应依赖手工提前 build。
+
 全局 skill 变更后按 skill-creator 要求验证：
 
 ```bash

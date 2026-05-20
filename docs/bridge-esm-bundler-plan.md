@@ -33,6 +33,7 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 - Source maps are allowed for development artifacts; release packaging must decide whether to include or exclude maps explicitly.
 - `npm run check` regenerates dist before manifest/file contracts validate it after TODO 191.
 - Package/include rules must keep source, generated runtime files, manifest, native schema, docs, and contracts portable; no private absolute paths.
+- `prepack` regenerates dist in quiet mode. `package.json.files` and generated `bridge/pi_browser_bridge/dist/.npmignore` make `npm pack --dry-run --json` include the generated runtime files even though dist remains git-ignored.
 
 ## Runtime and verification boundary
 
@@ -41,7 +42,9 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 - TODO 190 migrates page/content scripts as independent bundles and keeps `chrome.scripting.executeScript({ files })` plus CDP fallback semantics stable.
 - TODO 191 switches manifest/package/check/smoke to dist and requires runtime callable verification.
 - TODO 192 removes old importScripts/global entrypoints; no long-term fallback path remains.
-- TODO 193 proves the final state with `npm run check`, runtime callable artifacts, and behavior drift audit.
+- TODO 193 proves the first-phase dist runtime state with `npm run check`, runtime callable artifacts, and behavior drift audit.
+- TODO 195 closes the package portability gate by proving `npm pack --dry-run --json` includes every dist file referenced by `manifest.json`.
+- TODO 196-202 remain the true final-state work: remove ordered source concatenation, migrate to real import/export dependencies, clear `@ts-nocheck`, and enable strict bridge TypeScript.
 
 ## Gate
 

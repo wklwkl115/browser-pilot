@@ -48,13 +48,13 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Bridge JS 内部边界
 
-- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；`background.js` / 多文件 `importScripts` 只作为 TODO 192 前的 legacy fixture 保留。`build:bridge` 生成 dist 时仍按旧顺序拼接 service worker 源：共享 pattern/runtime 先加载，wait 子系统顺序为 `wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js`，`network_model.js` 必须在 `network.js` 前加载。
+- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 生成 dist 时仍按旧顺序拼接 service worker 源：共享 pattern/runtime 先加载，wait 子系统顺序为 `wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js`，`network_model.js` 必须在 `network.js` 前加载；真实 ESM 依赖图迁移继续按 TODO 196-202 推进。
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
-- `manifest.json` content scripts 使用 `dist/disable_dialogs.js` 与 `dist/content.js`；hook 注入使用 `PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js'`，`chrome.scripting.executeScript({ files })` 与 CDP fallback 仍加载同一个生成文件。旧 `hook_dispatcher.js` 只作为 TODO 192 前的 legacy fixture 保留。边界见 `docs/hook-dispatcher-boundary.md`。
+- `manifest.json` content scripts 使用 `dist/disable_dialogs.js` 与 `dist/content.js`；hook 注入使用 `PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js'`，`chrome.scripting.executeScript({ files })` 与 CDP fallback 仍加载同一个生成文件。边界见 `docs/hook-dispatcher-boundary.md`。
 - 旧 `bridge-globals.d.ts` / `tsconfig.bridge.json` 已删除；`check:bridge:types` 只检查 `bridge_src/**/*.ts`，内部边界由 ESM source graph 和契约锁定，不再依赖 importScripts ambient 黑盒声明。
-- Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；runtime 已切到 dist，TODO 192-193 继续删除旧入口并完成最终行为审计。
+- Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；当前是 dist runtime 一期可用状态，不是 strict/真实 ESM 终态。
 
 ## Pi 命令
 
@@ -100,12 +100,15 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 ```bash
 npm run check
 npm run build:bridge   # 生成 manifest 当前使用的 dist runtime
+npm pack --dry-run --json   # 验证发布包包含 manifest 指向的 dist runtime
 npm run smoke:browser
 npm run smoke:browser:isolated
 npm run smoke:browser:transfer
 ```
 
 `build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
+
+`prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 通过 `check:package` 执行 `npm pack --dry-run --json`，防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行。
 
 `npm run smoke:browser` 与常驻 Pi agent/bridge 共用 MV3 固定端口 `127.0.0.1:18765`，本地并行时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本会先写入 `build.runtime`（dist target、entries、service worker sha256），只诊断 PID/命令行，不自动关闭用户进程。
 

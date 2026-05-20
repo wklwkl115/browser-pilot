@@ -33,6 +33,8 @@ for (const moduleName of ["runtime", "cdp", "wait_cdp", "wait_coordinator", "wai
 }
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", ".gitignore")), "dist must declare generated-file boundary");
 assert(read("bridge/pi_browser_bridge/dist/.gitignore").includes("!.gitignore"), "dist .gitignore must keep only the generated-file marker tracked");
+assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", ".npmignore")), "dist must declare npm package boundary");
+assert(read("bridge/pi_browser_bridge/dist/.npmignore").includes("include the generated dist runtime"), "dist .npmignore must override dist .gitignore for npm packages");
 
 const buildManifest = readJson("bridge/pi_browser_bridge/dist/build-manifest.json");
 assert.equal(buildManifest.generated, true, "build manifest must mark dist as generated");
