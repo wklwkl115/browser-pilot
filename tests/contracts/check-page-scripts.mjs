@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { buildPickCleanupScript, buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
@@ -9,15 +9,25 @@ const root = new URL("../..", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, root), "utf8");
 
 const hookDispatcherPageScript = read("bridge/pi_browser_bridge/hook_dispatcher.js");
+const hookDispatcherBundleScript = read("bridge/pi_browser_bridge/dist/hook_dispatcher.js");
+const contentBundleScript = read("bridge/pi_browser_bridge/dist/content.js");
+const disableDialogsBundleScript = read("bridge/pi_browser_bridge/dist/disable_dialogs.js");
 const hookRuntimeScript = read("bridge/pi_browser_bridge/runtime.js");
 const hookServiceWorkerScript = read("bridge/pi_browser_bridge/hook.js");
 
+for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
+	assert(existsSync(new URL(`bridge_src/page_scripts/${pageScript}.ts`, root)), `page-scripts bundle source must exist: ${pageScript}`);
+}
 assert(hookRuntimeScript.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';"), "page-scripts hook boundary: dispatcher filename must stay stable");
 assert(hookServiceWorkerScript.includes("files: [PI_BROWSER_HOOK_DISPATCHER_FILE]"), "page-scripts hook boundary: scripting injection must use the stable dispatcher file");
 assert(hookServiceWorkerScript.includes("chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE)"), "page-scripts hook boundary: CDP fallback must fetch the stable dispatcher file");
 assert(hookDispatcherPageScript.includes(";(function PiBrowserHookDispatcher()") && hookDispatcherPageScript.includes("window.__PI_BROWSER_HOOKS__ = {"), "page-scripts hook boundary: dispatcher must stay a self-contained IIFE with one public page global");
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not require page-side imports before TODO 190");
 assert(!/chrome\./.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not call background-only Chrome APIs from MAIN world");
+assert(hookDispatcherBundleScript.includes("PiBrowserHookDispatcher") && hookDispatcherBundleScript.includes("window.__PI_BROWSER_HOOKS__"), "page-scripts dist hook bundle: dispatcher public page global must survive bundling");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(|\bchrome\./.test(hookDispatcherBundleScript), "page-scripts dist hook bundle: must remain a self-contained MAIN-world file without background APIs");
+assert(contentBundleScript.includes("__pi_browser_bridge_request__") && contentBundleScript.includes("bridge_wake") && contentBundleScript.includes("MutationObserver"), "page-scripts dist content bundle: must include content bridge behavior and explicit TID");
+assert(disableDialogsBundleScript.includes("window.prompt") && disableDialogsBundleScript.includes("promptAcceptedValue") && !/chrome\./.test(disableDialogsBundleScript), "page-scripts dist disable-dialogs bundle: must preserve dialog overrides without Chrome APIs");
 
 const NODE = { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 };
 

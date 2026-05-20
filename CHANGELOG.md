@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 完成 TODO 190 页面注入脚本独立 bundle 迁移：新增 `bridge_src/page_scripts/`，`build:bridge` 现在生成独立 `dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`，并用契约锁定 page bundle 自包含、hook dispatcher 不含 background-only API、service worker 不内联 MAIN-world dispatcher；manifest/runtime 仍未切换，真实 reload 验证归入 TODO 191。
 - 完成 TODO 189 service worker ESM 兼容 bundle 迁移：`bridge_src/service_worker/` 按当前 service worker 文件顺序承载完整兼容源码，`bridge_src/service-worker.ts` 显式导入每个 source module boundary symbol 并导出 `serviceWorkerModuleGraph`，`build:bridge` 生成包含 runtime/CDP/wait/network/hook/frame/html/screenshot/transfer/router/tab_sync/transport 的 `dist/service-worker.js`；`check:bridge:types` 同时覆盖旧 bridge JS 与 `bridge_src` TS 源，`check-bridge-build` 动态 import dist fixture 验证 listener 注册；manifest 仍未切换。
 - 修复 `browser_callback_oast` Windows 状态文件保存偶发失败：state JSON 原子替换遇到短暂 `EPERM/EBUSY/EACCES` 时主进程与 worker 现在执行有界 retry，避免 callback 事件写入 tmp 文件后未进入 `state.json` 导致 contract trigger 等待超时。
 - 新增实验性 Bridge build pipeline 骨架：`npm run build:bridge` 使用 esbuild 从 `bridge_src/service-worker.ts` 生成 `bridge/pi_browser_bridge/dist/service-worker.js`、source map 和 build manifest；`npm run check` 接入 dist/generated-file/manifest-not-switched 契约，当前 runtime 仍未启用 dist。

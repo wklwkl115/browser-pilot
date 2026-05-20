@@ -52,7 +52,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
-- `hook_dispatcher.js` 仍是页面注入脚本，当前冻结为单文件自包含页面 bundle；`chrome.scripting.executeScript({ files })` 与 CDP fallback 都加载同一个 `PI_BROWSER_HOOK_DISPATCHER_FILE`，拆分前必须先完成 TODO 190 独立页面 bundle 迁移，不能直接按 SW 脚本方式拆。边界见 `docs/hook-dispatcher-boundary.md`。
+- `hook_dispatcher.js` 当前仍是 manifest/runtime 使用的页面注入脚本；`build:bridge` 已生成独立 dist 页面 bundle：`dist/hook_dispatcher.js`、`dist/content.js`、`dist/disable_dialogs.js`。`chrome.scripting.executeScript({ files })` 与 CDP fallback 仍加载同一个 `PI_BROWSER_HOOK_DISPATCHER_FILE`，TODO 191 才一步切到 dist 注入文件。边界见 `docs/hook-dispatcher-boundary.md`。
 - `bridge-globals.d.ts` 只保留具体 ambient 边界：Chrome tabs/debugger/downloads/runtime、persistent CDP、wait record、network recorder、hook command、WS envelope 等接口；禁止用 `declare const chrome:any` 或 `[key:string]:any` 重新建立黑盒全局。
 - Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；当前 runtime 尚未切到 dist，TODO 188-193 会按 build skeleton、service worker bundle、页面 bundle、manifest 切换、旧入口删除、最终 gate 的顺序推进。
 
@@ -104,7 +104,7 @@ npm run smoke:browser
 npm run smoke:browser:transfer
 ```
 
-`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker 兼容 bundle，产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成；`bridge_src/service-worker.ts` 显式导入每个 source module 的 boundary symbol 并导出 `serviceWorkerModuleGraph`。当前 manifest 仍指向 `background.js`，dist 未启用为 runtime；TODO 191 才切换 manifest 并做真实扩展 reload/callable 验证。
+`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker 兼容 bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。当前 manifest 仍指向旧 runtime 文件，dist 未启用为 runtime；TODO 191 才切换 manifest 并做真实扩展 reload/callable 验证。
 
 `npm run smoke:browser` 与常驻 Pi agent/bridge 共用 MV3 固定端口 `127.0.0.1:18765`，本地并行时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本只诊断 PID/命令行，不自动关闭用户进程。
 

@@ -66,7 +66,7 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 npm run check
 ```
 
-Bridge ESM TypeScript 构建管线（实验性，生成 `bridge/pi_browser_bridge/dist/`，当前 manifest/runtime 未启用）：
+Bridge ESM TypeScript 构建管线（实验性，生成 service worker 与 content/hook/disable-dialogs dist bundles；当前 manifest/runtime 未启用）：
 
 ```bash
 npm run build:bridge

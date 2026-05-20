@@ -122,10 +122,10 @@
 
 ## 190. 页面注入脚本独立 bundle 迁移
 
-- [ ] 迁移范围：`hook_dispatcher`、`content`、`disable_dialogs` 等页面/内容脚本按独立 entry bundle；不得与 background bundle 混合。
-- [ ] 注入契约：`chrome.scripting.executeScript({ files })`、CDP fallback fetch、uninstall cleanup 和页面全局状态名保持稳定或提供显式迁移。
-- [ ] 安全/证据边界：redact budgets、listener cleanup、session strict-match、collect no self-noise、seq monotonic、content extraction/pick 脚本自包含性全部不变。
-- [ ] 契约：`check-page-scripts.mjs` 锁 bundle entry、注入文件名、页面脚本无 background-only API；runtime artifact 覆盖 hook install/collect/uninstall 与 content/pick。
+- [x] 迁移范围：`bridge_src/page_scripts/` 已承载 `hook_dispatcher`、`content`、`disable_dialogs` 独立 TypeScript entry；`build:bridge` 生成 `dist/hook_dispatcher.js`、`dist/content.js`、`dist/disable_dialogs.js`，不得与 service worker bundle 混合。
+- [x] 注入契约：当前 manifest/runtime 仍使用旧 `hook_dispatcher.js`、`content.js`、`disable_dialogs.js`；dist 文件名为 TODO 191 切换目标，`chrome.scripting.executeScript({ files })` 与 CDP fallback 将在同一 gate 一步切到 `dist/hook_dispatcher.js`，不保留双生产入口。
+- [x] 安全/证据边界：dist hook bundle 保留 `window.__PI_BROWSER_HOOKS__`、session strict-match、listener cleanup、collect no self-noise、seq monotonic、redact budget；dist content bundle 显式内联共享 `TID`；disable-dialogs prompt 返回语义不变。
+- [x] 契约：`check-bridge-build.mjs` 与 `check-page-scripts.mjs` 锁 page script entries、dist 自包含、hook 无 background-only API、service worker 不内联 dispatcher；真实 hook/content/pick runtime artifact 归入 TODO 191 manifest 切换 gate。
 
 ## 191. Manifest/package/check/smoke 切到构建产物
 
@@ -167,5 +167,6 @@
 7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
 8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
 9. 已完成 TODO 189：service worker bridge ESM TypeScript bundle 兼容源码、显式 boundary symbol imports 与 dist import 契约。
-10. TODO 190-193：迁移页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
-11. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+10. 已完成 TODO 190：页面/内容脚本独立 dist bundle 迁移与契约。
+11. TODO 191-193：切 manifest/check/smoke 到 dist，删除旧入口并做最终 gate。
+12. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
