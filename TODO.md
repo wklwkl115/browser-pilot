@@ -18,7 +18,7 @@
 - 127-129：默认 tab 竞态可观测化、MV3 长等待短租约 supervisor、Bridge JS `checkJs` 类型栅栏已完成。
 - 130-156：桌面审计报告 Bug 1-26 已完成；覆盖 wait deadline、BrowserBridge/tab 路由、native 命令、内容/下载/截图、ReDoS/安全预算、契约与 README/CHANGELOG/skill 同步。
 - 157-162：Bug 28+ 当前基线复核完成；已覆盖项与 callable 子集证据已归档，剩余未覆盖/部分覆盖项全部转入 TODO 163-174。
-- 历史归档不再作为执行队列；Bug 审计队列已收口，当前从未完成 TODO 180 起推进，必要时回看 git diff、桌面报告与对应契约文件。
+- 历史归档不再作为执行队列；Bug 审计队列已收口，当前从未完成 TODO 195 起推进，必要时回看 git diff、桌面报告与对应契约文件。
 
 
 ## 近期完成归档（163-179 已完成）
@@ -31,10 +31,10 @@
 
 ## 当前架构债决策（支柱二/三/四）
 
-- 支柱三（`wait.js` 解耦）已完成：wait 子系统拆为 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js` 与 299 行 `wait.js` facade；当前从 TODO 184 继续处理页面注入边界。
-- 支柱二（ESM + TS bundler）是真实架构债，不因工作量大而搁置；但必须先完成 wait/hook 页面注入边界、smoke 诊断和 bridge 类型收口，再按构建产物切换路径迁移，避免一次性改动破坏 MV3 runtime。
-- 支柱四（smoke 端口冲突）诊断成立但原“动态端口自动协商”方案不直接适配固定 `config.js` 的 MV3 扩展；先做显式失败分类和文档，再做无 puppeteer/playwright 强依赖的独占 Chrome profile smoke。
-- `network.js` 已完成拆分，不再列为待拆债务；`hook_dispatcher.js` 是页面注入脚本，不能照搬 service worker `importScripts` 拆法，必须先冻结注入/打包边界。
+- 支柱三（`wait.js` 解耦）已完成：wait 子系统拆为 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js` 与 299 行 `wait.js` facade。
+- 支柱二（ESM + TS bundler）仅完成一期 runtime 迁移：`bridge_src/**`、`build:bridge`、manifest 指向 dist、旧入口删除和 isolated smoke 已落地；但强类型 ESM 依赖拓扑、`@ts-nocheck` 清理、strict tsconfig、发布包 dist 完整性尚未完成，不能再称为完整收口。
+- 支柱四（smoke 端口冲突）已完成当前阶段：默认 smoke 显式诊断端口占用，isolated smoke 可用独占 Chrome profile 验证 runtime；不引入 puppeteer/playwright。
+- `network.js` 已完成拆分，不再列为待拆债务；`hook_dispatcher` 已作为独立 page bundle 进入 dist，但源码仍是大文件，后续只在真实收益明确时继续拆，不阻塞支柱二终态。
 
 ## 180. Bridge `wait.js` 职责拆分：只读依赖图与边界冻结
 
@@ -141,12 +141,12 @@
 - [x] 契约：`check-bridge-files.mjs` 锁定生产入口只有 dist module service worker、manifest content scripts 指向 dist、legacy ambient globals 不存在；`check:bridge:types` 只检查 `tsconfig.bridge-src.json`。
 - [x] 文档：README/AI_INSTALL/CHANGELOG/TODO 同步最终工程边界；能力描述未变化，未修改全局 skill。
 
-## 193. 支柱二最终收口 gate
+## 193. 支柱二一期收口 gate：dist runtime 切换可用
 
-- [x] 证明：ESM TS source 在 `bridge_src/service_worker/` 与 `bridge_src/page_scripts/`；`build:bridge` 生成 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`；`manifest.json` 指向 dist；旧 `importScripts` 多文件入口、`bridge-globals.d.ts`、`tsconfig.bridge.json` 已删除；`check-bridge-build.mjs` / `check-bridge-files.mjs` / `check-page-scripts.mjs` 锁定这些边界。
+- [x] 证明：`bridge_src/service_worker/` 与 `bridge_src/page_scripts/` 已承载当前 runtime 源；`build:bridge` 生成 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`；`manifest.json` 指向 dist；旧 `importScripts` 多文件入口、`bridge-globals.d.ts`、`tsconfig.bridge.json` 已删除；`check-bridge-build.mjs` / `check-bridge-files.mjs` / `check-page-scripts.mjs` 锁定这些一期边界。
 - [x] 全量验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；`npm run smoke:browser:isolated` 已通过，artifact `.pi/browser-artifacts/smoke-browser-isolated-results.json`，覆盖 build.runtime、bridge、tabs.reuse、wait.loadState、scan/content/html/frame/hook、execute/CDP input、pick、network、screenshot、tabs.close。普通 `npm run smoke:browser` 保留端口占用诊断，不关闭用户进程。
 - [x] 行为审计：契约继续覆盖 tool names、protocol/native schema、error codes、summary/artifact distillation、network body/postData、wait supervisor metadata、transfer/page script 行为；runtime isolated smoke 证明 dist service worker 实际执行并连接 `ws://127.0.0.1:18766`。
-- [x] 文档收口：README/AI_INSTALL/CHANGELOG/TODO 已记录完整支柱二迁移、dist runtime、旧入口删除和 isolated smoke；未修改全局 skill 文本，因此未运行 skill quick validate。
+- [x] 口径修正：本项不是支柱二终态；当前仍存在 `@ts-nocheck`、非 strict tsconfig、service worker 构建按旧顺序拼接和 npm package 漏 dist runtime 风险。终态工作转入 TODO 195-202。
 
 ## 194. 独占 Chrome profile smoke（支柱四中期闭环）
 
@@ -156,19 +156,74 @@
 - [x] 契约与文档：`check-smoke-diagnostics.mjs` 锁 `smoke:browser:isolated`、临时 profile/load-extension/端口 patch/artifact；失败时输出 Chrome path/profile/port 到 `.pi/browser-artifacts/smoke-browser-isolated-results.json`。
 - [x] Gate：本项提前执行以解除本地常驻 agent 端口互斥；TODO 193 仍负责最终真实 runtime callable 通过证据。
 
+## 195. 支柱二阻断修复：发布/安装包必须包含可运行 dist runtime
+
+- [ ] 性质判定：package-portability blocker；manifest 已指向 `bridge/pi_browser_bridge/dist/**`，因此 npm package、干净 checkout 的安装路径必须有可运行 dist runtime，不能只依赖本地已有 build 产物。
+- [ ] 事实复核：用 `npm pack --dry-run --json` 证明当前包内是否包含 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`、source map/build manifest；记录缺失原因是 `.gitignore/.npmignore/files/prepack` 哪一层。
+- [ ] 实现决策：优先采用 package-portable 方案：`prepack`/`prepare` 明确运行 `npm run build:bridge`，并用根 `.npmignore` 或 `package.json.files` 明确包含 manifest、schema、icons、popup、dist runtime、bridge source、contracts/docs；不得引入私有绝对路径或要求用户手动 build 才能加载扩展。
+- [ ] 契约：新增或扩展 pack contract，解析 `npm pack --dry-run --json` 输出，强制包内包含 manifest 指向的所有 dist 文件，且禁止只包含 `dist/.gitignore` 的坏状态。
+- [ ] 验证：`npm run build:bridge`、`npm pack --dry-run --json`、`npm run check` 通过；如 dist source map 不进发布包，必须在契约和文档中明确 release/debug 取舍。
+
+## 196. 支柱二终态设计修正：从“拼接兼容 bundle”转为真实 ESM 依赖图
+
+- [ ] 性质判定：architecture correction；当前 `build:bridge` 对 service worker 仍按旧 `importScripts` 顺序拼接源码，不能满足“跨文件依赖拓扑由 import/export 表达”的终态。
+- [ ] 设计修正：更新 `docs/bridge-esm-bundler-plan.md`，把 TODO 188-193 明确标为一期 runtime 迁移，把 TODO 196-202 标为终态迁移；写清禁止长期保留 ordered concatenation 作为 service worker 构建主路径。
+- [ ] 分层边界：确定 `bridge_src/service_worker/` 的模块依赖方向：shared/types/config/protocol/patterns -> runtime/cdp/wait/network state -> command handlers -> router -> transport/tab_sync；禁止业务模块反向依赖 router/transport。
+- [ ] 迁移策略：按模块组逐步导出真实函数/类型并显式 import；每组迁移后 build 不再从拼接文本读取该组源码；不得恢复 global registry 或双生产入口。
+- [ ] 验收：TODO/README/CHANGELOG 中不得再使用“支柱二最终完成”描述一期状态；完成后 contract 能区分 `build:bridge` 是否仍依赖 `serviceWorkerModules` 拼接。
+
+## 197. Service worker 真实 ESM 迁移第一阶段：shared/runtime/CDP/wait 基础层
+
+- [ ] 范围：迁移 `config`、`protocol`、`patterns`、`runtime`、`cdp`、`wait_cdp`、`wait_coordinator`、`wait_navigation`、`wait_network_idle`、`wait_selector`、`wait` 到真实 import/export；保留命令名、错误码、diagnostics、wait supervisor metadata 不变。
+- [ ] 类型：为 Chrome fixture、CDP target、bridge response、wait record、domain refs、subscriber cleanup 建立最小强类型；本阶段移除这些文件的 `// @ts-nocheck`。
+- [ ] 构建：`bridge_src/service-worker.ts` 直接 import 基础层真实导出；`scripts/build-bridge.mjs` 不再把这些基础层文件文本拼入 generated service worker。
+- [ ] 契约：扩展 `check-bridge-build.mjs`/`check-bridge-files.mjs`，锁定基础层无 ambient global 函数回流，wait 子系统仍 ≤450 行，VM/fake CDP wait 契约继续通过。
+- [ ] 验证：`npm run build:bridge`、`npm run check:bridge`；如触及 wait runtime，再跑 isolated smoke 的 wait/navigation/networkIdle 子集。
+
+## 198. Service worker 真实 ESM 迁移第二阶段：network/hook/frame/html/transfer command 层
+
+- [ ] 范围：迁移 `network_model`、`network`、`hook`、`evidence`、`frame`、`html`、`screenshot`、`transfer`、`bridge_info`、`core_commands`、`exec` 到真实 import/export；保持 native schema、tool response、artifact/body/postData 行为不变。
+- [ ] 类型：移除本组 `// @ts-nocheck`；将 network recorder/body store、hook command/page response、transfer download/upload、cookie merge、native command response 改为具名类型，禁止新增 `[key:string]:any`。
+- [ ] 构建：`build:bridge` 不再文本拼接本组文件；page script bundles 仍独立，不把 hook dispatcher 内联进 service worker。
+- [ ] 契约：fake-ws、network body availability、hook session/listener cleanup、transfer runtime、page-script boundary 全部继续覆盖；新增静态断言禁止 service worker command 层依赖 popup/UI。
+- [ ] 验证：`npm run check`；必要时运行 isolated smoke 覆盖 network/hook/frame/html/screenshot/transfer 子集并记录 artifact。
+
+## 199. Service worker 真实 ESM 迁移第三阶段：router/transport/tab_sync 启动层
+
+- [ ] 范围：迁移 `router`、`tab_sync`、`transport` 为真实 ESM 入口依赖；`service-worker.ts` 成为唯一启动入口，负责显式安装 listeners；禁止模块顶层靠隐式全局顺序完成关键初始化。
+- [ ] 状态边界：transport socket、probe backoff、tab sync、router dispatch、active command/status API 必须有明确 owner；不得让 popup/status UI 改动重新污染 command dispatch 主路径。
+- [ ] 构建：删除 service worker ordered-concat fallback；`scripts/build-bridge.mjs` 只调用 esbuild entryPoints，不再生成 `bridge_src/.generated/service-worker.generated.ts`。
+- [ ] 契约：动态 import dist fixture 必须证明 runtime/onMessage/debugger/alarms/tabs/webNavigation listeners 注册；静态契约禁止 `serviceWorkerModules` 拼接数组和源文本 `readFile` 组装 service worker。
+- [ ] 验证：`npm run build:bridge`、`npm run check`、`npm run smoke:browser:isolated`。
+
+## 200. Bridge TypeScript strict 收口
+
+- [ ] 性质判定：支柱二类型终态；当前 `tsconfig.bridge-src.json` 的 `strict:false`、`noImplicitAny:false` 只是一期兼容，不能作为最终状态。
+- [ ] 类型配置：将 `tsconfig.bridge-src.json` 收紧到 `strict:true`、`noImplicitAny:true`，保留必要 DOM/WebWorker lib；只允许极少数经过注释说明的外部 Chrome API narrow cast。
+- [ ] 清理范围：移除 `bridge_src/**/*.ts` 的 `// @ts-nocheck`；禁止新增 `any` 泛滥、`Record<string, any>`、裸 `globalThis` 业务访问；需要 loose 外部输入时先 normalize 再进入强类型内部结构。
+- [ ] 契约：新增 strict/type hygiene contract，统计 `@ts-nocheck` 为 0，禁止 broad ambient 类型回归，禁止 service worker/page script 互相引用不合法 API。
+- [ ] 验证：`npm run check:bridge:types` 必须在 strict 下通过；随后跑 `npm run check`。
+
+## 201. 浏览器插件 UI/HUD 分支迁移决策与实现
+
+- [ ] 性质判定：用户可见 extension UI 变更，不得把旧 `feature/pi-bridge-simple-ui` dirty patch 直接套到新 dist runtime；必须按当前 `bridge_src` 架构移植。
+- [ ] 决策：确认 popup 是继续保留 cookie 调试面板，还是改为“小Pi/Performance HUD”；若改 HUD，需要写入 TODO/README/CHANGELOG，说明丢弃或迁移 cookie 显示功能的兼容决策。
+- [ ] 实现边界：UI 状态 API 进入 `bridge_src/service_worker/router.ts` 或独立 status 模块；transport badge 更新进入 `bridge_src/service_worker/transport.ts`；content badge 变更进入 `bridge_src/page_scripts/content.ts`；popup 不直接依赖旧 `bridge/pi_browser_bridge/*.js`。
+- [ ] 可移植性：禁止 Google Fonts/远程资源；避免 `innerHTML` 注入外链；所有样式、图标、文案在扩展包内离线可用。
+- [ ] 契约与验证：补 popup/status contract 覆盖 `get_popup_status`、badge connected/disconnected/running/picking 状态；`npm run build:bridge`、`npm run check`、isolated smoke 通过。
+
+## 202. 支柱二终态收口 gate
+
+- [ ] 证明条件：发布包包含 manifest 指向的 dist runtime；service worker 构建不再按旧顺序文本拼接；`bridge_src` 为真实 import/export 依赖图；`@ts-nocheck` 清零；`tsconfig.bridge-src.json` strict；旧 runtime/globals 无回归。
+- [ ] 行为验证：`npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`、`npm run smoke:browser:isolated` 全部通过；artifact 记录 build.runtime、bridge、tabs、wait、scan/content/html、execute/pick、network body、hook/evidence/frame、screenshot、close。
+- [ ] 文档同步：README、AI_INSTALL、CHANGELOG、TODO、`docs/bridge-esm-bundler-plan.md` 同步“支柱二终态完成”描述；如修改全局 skill，再运行 skill quick validate。
+- [ ] 合并准备：确认 `feature/pi-browser-tools-bridge-refactor-todos` 工作树干净；用 `git merge-base --is-ancestor` 和 `git merge-tree` 复核与目标分支可快进或冲突范围；不合并未提交 dirty UI patch。
+
 ## 下一步建议顺序
 
-1. 已完成 TODO 180：`wait.js` 只读依赖图和拆分契约准备。
-2. 已完成 TODO 181：`wait_cdp.js` 拆出 CDP refs/subscription，契约与 `npm run check` 通过。
-3. 已完成 TODO 182：`wait_coordinator.js` 拆出 WaitCoordinator、orphan GC 与 event subscription registry，契约与 `npm run check` 通过。
-4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
-5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
-6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
-7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
-8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
-9. 已完成 TODO 189：service worker bridge ESM TypeScript bundle 兼容源码、显式 boundary symbol imports 与 dist import 契约。
-10. 已完成 TODO 190：页面/内容脚本独立 dist bundle 迁移与契约。
-11. 已完成 TODO 191：manifest/package/check/smoke 定位切到 dist；真实 callable 通过证据仍归 TODO 193 gate。
-12. 已完成 TODO 192：删除旧 importScripts 多文件入口与冗余 globals。
-13. 已完成 TODO 193：支柱二最终收口 gate。
-14. 已完成 TODO 194：独占 Chrome profile smoke 脚本与契约。
+1. 先做 TODO 195：修发布/安装包 dist runtime 完整性，这是当前合并阻断项。
+2. 再做 TODO 196：修正文档和构建目标，明确一期 runtime 迁移与支柱二终态的差距。
+3. 按 TODO 197-199 分三层把 service worker 从 ordered concatenation 迁到真实 ESM import/export。
+4. 做 TODO 200：strict TypeScript 收口并清零 `@ts-nocheck`。
+5. 做 TODO 201：如果仍需要“小Pi/Performance HUD”，按新 `bridge_src` 架构移植，不套旧 JS dirty patch。
+6. 最后做 TODO 202：支柱二终态验证、文档同步和合并前检查。
