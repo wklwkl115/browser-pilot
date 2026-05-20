@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for TODO 187-193. TODO 191 has switched the active MV3 runtime to generated dist output; TODO 192 must remove the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
+This document freezes the target architecture and gates for TODO 187-193. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
 
 ## Decision
 
@@ -15,8 +15,8 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 - Page/content entries are separate bundles, not mixed into the service worker bundle.
 - Generated output lives under `bridge/pi_browser_bridge/dist/`.
 - `bridge/pi_browser_bridge/manifest.json` points to dist output after TODO 191.
-- Old hand-written `background.js importScripts(...)` and unused global bridge files are deleted in TODO 192, not kept as a second production path.
-- `bridge-globals.d.ts` is removed or reduced to third-party ambient shims after the ESM graph owns all internal types.
+- Old hand-written `background.js importScripts(...)` and unused global bridge files were deleted in TODO 192, not kept as a second production path.
+- `bridge-globals.d.ts` was removed after the ESM graph took ownership of internal bridge boundaries.
 
 ## Bundle entries
 

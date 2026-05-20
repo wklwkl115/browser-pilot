@@ -110,9 +110,13 @@ assert(waitSupervisor.includes("waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TI
 assert(waitSupervisor.includes("WAIT_LEASE_MAX_MS = 25_000") && waitSupervisor.includes("WAIT_STATE_LOST") && waitSupervisor.includes("workerRestarts") && waitSupervisor.includes("historyLost"), "wait supervisor must use short leases and expose worker restart/state-loss evidence");
 assert(waitSupervisor.includes("WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS = 50") && waitSupervisor.includes("await sleep(retryDelayMs)") && waitSupervisor.includes("retryDelayMs"), "wait supervisor must throttle instant lease timeouts instead of tight-loop retrying");
 assert(waitSupervisor.includes('cmd: "wait.navigate"') && waitSupervisor.includes("waitCommandForNavigateAndWait"), "wait.navigateAndWait must navigate once and supervise only the follow-up wait");
-const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
+const stripBridgeSource = (text) => text
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
+const bridgeInfo = readServiceWorkerSource("bridge_info");
 assert(bridgeInfo.includes("PI_BROWSER_WORKER_BOOT_ID") && bridgeInfo.includes("workerBootId") && bridgeInfo.includes("workerStartedAt"), "bridge metadata must expose service-worker boot identity for wait recovery diagnostics");
-assert(read("bridge/pi_browser_bridge/runtime.js").includes("resp.details.bridge") && read("bridge/pi_browser_bridge/runtime.js").includes("resp.data.bridge"), "native wait results/errors must carry bridge boot metadata");
+assert(readServiceWorkerSource("runtime").includes("resp.details.bridge") && readServiceWorkerSource("runtime").includes("resp.data.bridge"), "native wait results/errors must carry bridge boot metadata");
 for (const prefix of ["wait-result", "network-result", "hook-result", "frame-result"]) assert(nativeActionTools.includes(`artifactPrefix: "${prefix}"`), `native action tool missing artifact prefix: ${prefix}`);
 assert(!nativeActionTools.includes("return jsonResult(result"), "native action tools must not return raw command result directly");
 assert(!executeTool.includes("return jsonResult(await server"), "browser_execute must not return raw bridge result directly");

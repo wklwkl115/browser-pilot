@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
+const stripBridgeSource = (text) => text
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
 const rootSchemaText = read("bridge/native_command_schema.json");
@@ -17,14 +21,14 @@ assert(schema.commands && typeof schema.commands === "object", "schema must defi
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
 
 const protocolSandbox = { self: {} };
-vm.runInNewContext(read("bridge/pi_browser_bridge/protocol.js"), protocolSandbox, { filename: "protocol.js" });
+vm.runInNewContext(readServiceWorkerSource("protocol"), protocolSandbox, { filename: "protocol.js" });
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "transfer.download", tabId: 1, selector: "a[download]" })?.ok === true, "protocol validator must accept transfer commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "missing.command" })?.ok === false, "protocol validator must reject unknown commands");
 
-const runtime = read("bridge/pi_browser_bridge/runtime.js");
-const router = read("bridge/pi_browser_bridge/router.js");
+const runtime = readServiceWorkerSource("runtime");
+const router = readServiceWorkerSource("router");
 assert(runtime.includes("PI_BROWSER_PROTOCOL.nativeCommandMap"), "runtime native command map must come from protocol schema");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 const serverSource = read("src/driver/BrowserBridgeServer.ts");

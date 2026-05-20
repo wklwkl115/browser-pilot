@@ -8,10 +8,13 @@
     "noEmit": true,
     "allowJs": false,
     "skipLibCheck": true,
-    "lib": ["ES2022", "DOM", "WebWorker"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "WebWorker"
+    ]
   },
   "include": [
-    "bridge_src/**/*.ts",
-    "bridge/pi_browser_bridge/bridge-globals.d.ts"
+    "bridge_src/**/*.ts"
   ]
 }

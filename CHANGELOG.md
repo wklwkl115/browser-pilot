@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 完成 TODO 192 旧入口删除：移除 `background.js`、旧 service worker/page 多文件 `.js`、`bridge-globals.d.ts` 与 `tsconfig.bridge.json`；生产 manifest 只指向 generated dist runtime，contracts 改读 `bridge_src` 源模块和 dist bundle，禁止旧 importScripts 入口作为备用路径。
 - 完成 TODO 191 manifest/check/smoke 切到构建产物：`manifest.json` 现在使用 `dist/service-worker.js` module service worker、`dist/content.js`、`dist/disable_dialogs.js`，hook 注入常量切到 `dist/hook_dispatcher.js`；`check:bridge` 先 build 再做文件/manifest 契约；`smoke:browser` artifact 增加 dist runtime metadata 与 service worker sha256。本次本地 smoke 被现有 Pi agent 占用 18765 阻断，已记录 `agent_occupies`，未关闭用户进程。
 - 完成 TODO 190 页面注入脚本独立 bundle 迁移：新增 `bridge_src/page_scripts/`，`build:bridge` 现在生成独立 `dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`，并用契约锁定 page bundle 自包含、hook dispatcher 不含 background-only API、service worker 不内联 MAIN-world dispatcher。
 - 完成 TODO 189 service worker ESM 兼容 bundle 迁移：`bridge_src/service_worker/` 按当前 service worker 文件顺序承载完整兼容源码，`bridge_src/service-worker.ts` 显式导入每个 source module boundary symbol 并导出 `serviceWorkerModuleGraph`，`build:bridge` 生成包含 runtime/CDP/wait/network/hook/frame/html/screenshot/transfer/router/tab_sync/transport 的 `dist/service-worker.js`；`check:bridge:types` 同时覆盖旧 bridge JS 与 `bridge_src` TS 源，`check-bridge-build` 动态 import dist fixture 验证 listener 注册。

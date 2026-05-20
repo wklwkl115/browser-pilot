@@ -7,12 +7,16 @@ import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const bridge = path.join(root, "bridge", "pi_browser_bridge");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
+const stripBridgeSource = (text) => text
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 assert.equal(existsSync(path.join(bridge, "manifest.json")), true, "native bridge manifest must exist");
 assert.equal(path.win32.isAbsolute("D:\\Pi\\agent\\extensions\\pi-browser-tools\\bridge\\pi_browser_bridge"), true, "Windows bridge path must be absolute");
 assert.equal(path.posix.normalize("/opt/pi-browser-tools/bridge/pi_browser_bridge"), "/opt/pi-browser-tools/bridge/pi_browser_bridge", "Linux bridge path must normalize");
 
 const sourceConfig = JSON.parse(read("bridge/browser_bridge_config.json"));
-const bridgeConfig = read("bridge/pi_browser_bridge/config.js");
+const bridgeConfig = readServiceWorkerSource("config");
 const tsConfig = read("src/driver/browserBridgeConfig.ts");
 assert.equal(sourceConfig.host, "127.0.0.1", "source bridge config host drifted");
 assert.equal(sourceConfig.port, 18765, "source bridge config port drifted");
@@ -22,7 +26,7 @@ assert.equal(bridgeConfig.includes(`ws://${sourceConfig.host}:${sourceConfig.por
 assert.equal(bridgeConfig.includes(`http://${sourceConfig.host}:${sourceConfig.port}`), true, "bridge config.js http URL must be generated from source config");
 assert.equal(tsConfig.includes(`DEFAULT_BROWSER_BRIDGE_HOST = ${JSON.stringify(sourceConfig.host)}`), true, "TypeScript bridge config host must be generated from source config");
 assert.equal(tsConfig.includes(`DEFAULT_BROWSER_BRIDGE_PORT = ${JSON.stringify(sourceConfig.port)}`), true, "TypeScript bridge config port must be generated from source config");
-assert.equal(read("bridge/pi_browser_bridge/transport.js").includes("127.0.0.1:18765"), false, "transport.js must not hardcode bridge port");
+assert.equal(readServiceWorkerSource("transport").includes("127.0.0.1:18765"), false, "transport source must not hardcode bridge port");
 assert.equal(read("src/driver/BrowserBridgeServer.ts").includes("const DEFAULT_PORT = 18765"), false, "BrowserBridgeServer must not hardcode bridge port");
 
 const oldHost = process.env.PI_BROWSER_BRIDGE_HOST;

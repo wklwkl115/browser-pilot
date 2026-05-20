@@ -53,7 +53,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
 - `manifest.json` content scripts 使用 `dist/disable_dialogs.js` 与 `dist/content.js`；hook 注入使用 `PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js'`，`chrome.scripting.executeScript({ files })` 与 CDP fallback 仍加载同一个生成文件。旧 `hook_dispatcher.js` 只作为 TODO 192 前的 legacy fixture 保留。边界见 `docs/hook-dispatcher-boundary.md`。
-- `bridge-globals.d.ts` 只保留具体 ambient 边界：Chrome tabs/debugger/downloads/runtime、persistent CDP、wait record、network recorder、hook command、WS envelope 等接口；禁止用 `declare const chrome:any` 或 `[key:string]:any` 重新建立黑盒全局。
+- 旧 `bridge-globals.d.ts` / `tsconfig.bridge.json` 已删除；`check:bridge:types` 只检查 `bridge_src/**/*.ts`，内部边界由 ESM source graph 和契约锁定，不再依赖 importScripts ambient 黑盒声明。
 - Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；runtime 已切到 dist，TODO 192-193 继续删除旧入口并完成最终行为审计。
 
 ## Pi 命令

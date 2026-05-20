@@ -9,7 +9,9 @@ import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUpload
 import { summarizeTransferData } from "../../src/tools/summaries/transfer.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const transferSource = readFileSync(path.join(root, "bridge", "pi_browser_bridge", "transfer.js"), "utf8");
+const transferSource = readFileSync(path.join(root, "bridge_src", "service_worker", "transfer.ts"), "utf8")
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_transfer[\s\S]*?;\s*$/, "");
 
 function assertErrorCode(error, code) {
 	assert.equal(error?.code, code);

@@ -5,8 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
+const stripBridgeSource = (text) => text
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
 
-const transfer = read("bridge/pi_browser_bridge/transfer.js");
+const transfer = stripBridgeSource(read("bridge_src/service_worker/transfer.ts"));
 new Function(transfer);
 assert(transfer.includes("chrome.downloads.download"), "transfer.download must use Chrome downloads API for direct URLs");
 assert(transfer.includes("chrome.downloads.onCreated"), "transfer.download must listen for started downloads");

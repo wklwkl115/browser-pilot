@@ -35,7 +35,7 @@ const pageScriptEntries = entries.filter((entry) => entry.name !== "service-work
 async function serviceWorkerSource() {
 	const parts = [
 		"// Generated from bridge_src/service_worker/*.ts by scripts/build-bridge.mjs.",
-		"// Runtime source order follows the legacy background.js bootstrap until TODO 192 deletes the old entry.",
+		"// Runtime source order follows the pre-ESM bootstrap order recorded in serviceWorkerModules.",
 	];
 	for (const name of serviceWorkerModules) {
 		const rel = `bridge_src/service_worker/${name}.ts`;

@@ -7,13 +7,19 @@ import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 
 const root = new URL("../..", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, root), "utf8");
+const stripBridgeSource = (text) => text
+	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+	.replace(/\r?\nexport \{\};\s*$/, "");
+const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
+const readPageSource = (name) => stripBridgeSource(read(`bridge_src/page_scripts/${name}.ts`));
 
-const hookDispatcherPageScript = read("bridge/pi_browser_bridge/hook_dispatcher.js");
+const hookDispatcherPageScript = readPageSource("hook_dispatcher");
 const hookDispatcherBundleScript = read("bridge/pi_browser_bridge/dist/hook_dispatcher.js");
 const contentBundleScript = read("bridge/pi_browser_bridge/dist/content.js");
 const disableDialogsBundleScript = read("bridge/pi_browser_bridge/dist/disable_dialogs.js");
-const hookRuntimeScript = read("bridge/pi_browser_bridge/runtime.js");
-const hookServiceWorkerScript = read("bridge/pi_browser_bridge/hook.js");
+const hookRuntimeScript = readServiceWorkerSource("runtime");
+const hookServiceWorkerScript = readServiceWorkerSource("hook");
 
 for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 	assert(existsSync(new URL(`bridge_src/page_scripts/${pageScript}.ts`, root)), `page-scripts bundle source must exist: ${pageScript}`);
@@ -428,9 +434,9 @@ assert.equal(pickBehavior.cancelled, false, "pick behavior: click must finish se
 assert.equal(JSON.stringify(pickBehavior.selectors), JSON.stringify(["#real"]), "pick behavior: translated wrapper hit must normalize to a stable real parent selector");
 assert(!String(pickBehavior.selections[0]?.text || "").includes("Translated noise"), "pick behavior: selection text must exclude translation wrapper noise");
 
-const wait = read("bridge/pi_browser_bridge/wait.js");
-const waitSelector = read("bridge/pi_browser_bridge/wait_selector.js");
-const waitNavigation = read("bridge/pi_browser_bridge/wait_navigation.js");
+const wait = readServiceWorkerSource("wait");
+const waitSelector = readServiceWorkerSource("wait_selector");
+const waitNavigation = readServiceWorkerSource("wait_navigation");
 assert(waitSelector.includes("textWithoutNoise") && waitSelector.includes("sanitizedOuterHtml") && waitSelector.includes("read-frog-translated"), "page-scripts wait.selector: element snapshots must filter translation plugin noise");
 assert(waitSelector.includes("const visible = rectVisible") && waitSelector.includes("hitTarget") && waitSelector.includes("IntersectionObserver can lag"), "page-scripts wait.selector: visible must be CSS/rect based with IO kept as diagnostics");
 assert(!waitSelector.includes("text:(el.innerText||el.textContent||'').slice"), "page-scripts wait.selector: must not return raw innerText snapshots");
@@ -441,7 +447,7 @@ assert(waitNavigation.includes("chrome.webNavigation.onErrorOccurred") && waitNa
 assert(wait.includes("target.addEventListener(eventType, handler, true)") && wait.includes("removeEventListener(rec.eventType, rec.handler"), "hook add/removeEventListener must store handlers and remove the real page listener");
 assert(wait.includes("const entries = Array.isArray(result?.result?.value) ? result.result.value : []") && wait.includes("data: { entries, entryType, nameContains, count"), "hook.getPerformanceEntries must unwrap Runtime.evaluate result.value into entries");
 
-const exec = read("bridge/pi_browser_bridge/exec.js");
+const exec = readServiceWorkerSource("exec");
 assert(exec.includes("MAX_NODES") && exec.includes("MAX_CHARS") && exec.includes("MAX_DEPTH") && exec.includes("nodesUsed") && exec.includes("charsUsed"), "page-scripts exec: serializer must have traversal budgets");
 assert(exec.includes("LARGE_TEXT_KEYS") && exec.includes("['content', 'markdown', 'html']") && exec.includes("trim(child, MAX_CHARS)"), "page-scripts exec: serializer must not truncate scan/content/html payload fields at nested string defaults");
 assert(exec.includes("value instanceof Map") && exec.includes("value instanceof Set") && exec.includes("[Circular]"), "page-scripts exec: serializer must handle rich JS values");

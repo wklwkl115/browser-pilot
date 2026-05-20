@@ -90,7 +90,7 @@
 - [x] 性质判定：内部类型强化；目标是减少 `bridge-globals.d.ts` 黑盒 `any`，为 ESM TS 迁移提供真实边界，不改变 runtime。
 - [x] 类型范围：已定义 `PiBridgeCommand`、`PiBridgeResponse/PiBridgeData`、CDP send/subscription、wait record、network recorder、hook command、Chrome tab/download/runtime/debugger/scripting/alarms/webNavigation 最小接口；移除 ambient `Record<string, any>`、`[key:string]:any`、`declare const chrome:any`。
 - [x] 迁移方式：用 JSDoc + `checkJs` 收紧现有 JS；`runtime.js` 改用 `PiBridgeGlobalThis`，`router.js` 改用 `PiBridgeWsEnvelope`，popup cookie 响应显式 array normalize，hook/wait 对 page response 做显式 response/data cast。
-- [x] 契约：`check-bridge-files.mjs` 禁止关键 ambient broad `any` 回流并锁定 Chrome/CDP/wait/network/hook/WS 具体类型；`tsc -p tsconfig.bridge.json` 随 `npm run check` 继续执行。
+- [x] 契约：`check-bridge-files.mjs` 禁止关键 ambient broad `any` 回流并锁定 Chrome/CDP/wait/network/hook/WS 具体类型；TODO 186 阶段 `tsc -p tsconfig.bridge.json` 随 `npm run check` 执行，TODO 192 已删除旧 ambient globals 并改为只检查 `tsconfig.bridge-src.json`。
 - [x] 文档：README/CHANGELOG/TODO 记录这是支柱二前置；不声称已完成 ESM/bundler。
 - [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过。
 
@@ -107,8 +107,8 @@
 
 - [x] 新增构建脚本：添加 `build:bridge`，通过 esbuild 生成实验产物，不修改当前 `manifest.json` runtime 指向；构建脚本无私有绝对路径。
 - [x] 源目录：建立 `bridge_src/`，新增最小 `service-worker.ts` spike 和 `shared/buildInfo.ts` 类型，验证 ESM TS -> MV3 service worker bundle。
-- [x] 产物边界：`bridge/pi_browser_bridge/dist/` 由脚本生成，`.gitignore` 只保留 marker；build manifest 标记 `generated:true/runtimeSwitched:false/manifestTarget:"background.js"`；契约禁止把 dist 误认为当前 runtime。
-- [x] 验证：`npm run check` 增加 `check:bridge:build` 静态验证，但不要求真实扩展切换；README/AI_INSTALL 说明这是未启用构建管线。
+- [x] 产物边界：`bridge/pi_browser_bridge/dist/` 由脚本生成，`.gitignore` 只保留 marker；TODO 188 当时 build manifest 标记为未切 runtime，TODO 191 已切为 `runtimeSwitched:true/manifestTarget:"dist/service-worker.js"`。
+- [x] 验证：`npm run check` 增加 `check:bridge:build` 静态验证；TODO 188 阶段未切 runtime，TODO 191 已更新 README/AI_INSTALL 为 dist runtime。
 - [x] 验证命令：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过。
 
 ## 189. Service worker bridge 迁移到 ESM TypeScript bundle
@@ -136,10 +136,10 @@
 
 ## 192. 删除旧 `importScripts` 多文件入口与冗余 globals
 
-- [ ] 删除范围：移除不再被 manifest/runtime 使用的旧 bridge JS 文件或降级为生成源/测试 fixture；删除不再需要的 `bridge-globals.d.ts` 跨文件黑盒声明。
-- [ ] 禁止债务：不得保留“旧路径备用”“临时兼容入口”“双写 command handler”；需要兼容必须有迁移期和删除点。
-- [ ] 契约：contract 锁定生产入口只有构建产物；源模块 import graph 无循环死依赖；dist 由 build 生成。
-- [ ] 文档：README/AI_INSTALL/CHANGELOG/TODO/skill（如能力描述受影响）同步最终工程边界。
+- [x] 删除范围：已移除 `background.js`、旧 service worker/page 多文件 `.js`、`bridge-globals.d.ts` 与 `tsconfig.bridge.json`；生产目录只保留 manifest、popup、native schema、icons 和 generated dist marker。
+- [x] 禁止债务：未保留“旧路径备用”“临时兼容入口”“双写 command handler”；测试改读 `bridge_src/service_worker/*.ts` / `bridge_src/page_scripts/*.ts` 源模块和 dist bundle，不再依赖生产目录旧 JS。
+- [x] 契约：`check-bridge-files.mjs` 锁定生产入口只有 dist module service worker、manifest content scripts 指向 dist、legacy ambient globals 不存在；`check:bridge:types` 只检查 `tsconfig.bridge-src.json`。
+- [x] 文档：README/AI_INSTALL/CHANGELOG/TODO 同步最终工程边界；能力描述未变化，未修改全局 skill。
 
 ## 193. 支柱二最终收口 gate
 
@@ -169,5 +169,6 @@
 9. 已完成 TODO 189：service worker bridge ESM TypeScript bundle 兼容源码、显式 boundary symbol imports 与 dist import 契约。
 10. 已完成 TODO 190：页面/内容脚本独立 dist bundle 迁移与契约。
 11. 已完成 TODO 191：manifest/package/check/smoke 定位切到 dist；真实 callable 通过证据仍归 TODO 193 gate。
-12. TODO 192-193：删除旧入口并做最终行为/真实 runtime gate。
-13. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+12. 已完成 TODO 192：删除旧 importScripts 多文件入口与冗余 globals。
+13. TODO 193：最终行为/真实 runtime gate。
+14. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

@@ -21,44 +21,31 @@ function readToolSources() {
 		.join("\n");
 }
 
+function stripBridgeSource(text) {
+	return text
+		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\nexport \{\};\s*$/, "");
+}
+
+function readBridgeRuntimeFile(file) {
+	const name = file.replace(/\.js$/, "");
+	if (file === "hook_dispatcher.js" || file === "disable_dialogs.js" || file === "content.js") {
+		return stripBridgeSource(read(`bridge_src/page_scripts/${name}.ts`).replace(/^import \{ TID \} from "\.\.\/shared\/protocol";\r?\n\r?\n/, 'const TID = "__pi_browser_bridge_request__";\n'));
+	}
+	return stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
+}
+
 function readBridgeBundle(files) {
-	return files.map((file) => read(`bridge/pi_browser_bridge/${file}`)).join("\n");
+	return files.map((file) => readBridgeRuntimeFile(file)).join("\n");
 }
 
 const requiredBridgeFiles = [
 	"manifest.json",
-	"background.js",
-	"protocol.js",
-	"patterns.js",
-	"cdp.js",
-	"runtime.js",
-	"wait_cdp.js",
-	"wait_coordinator.js",
-	"wait_navigation.js",
-	"wait_network_idle.js",
-	"wait_selector.js",
-	"wait.js",
-	"network_model.js",
-	"network.js",
-	"hook.js",
-	"evidence.js",
-	"frame.js",
-	"html.js",
-	"screenshot.js",
-	"transfer.js",
-	"bridge_info.js",
-	"core_commands.js",
-	"exec.js",
-	"router.js",
-	"tab_sync.js",
-	"transport.js",
-	"hook_dispatcher.js",
-	"content.js",
-	"config.js",
-	"disable_dialogs.js",
 	"popup.html",
 	"popup.js",
 	"native_command_schema.json",
+	"dist/.gitignore",
 ];
 
 for (const file of requiredBridgeFiles) {
@@ -81,23 +68,24 @@ assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["di
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
 
-const background = read("bridge/pi_browser_bridge/background.js");
-const transport = read("bridge/pi_browser_bridge/transport.js");
-const tabSync = read("bridge/pi_browser_bridge/tab_sync.js");
-const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
-const router = read("bridge/pi_browser_bridge/router.js");
-const htmlBridge = read("bridge/pi_browser_bridge/html.js");
-const screenshotBridge = read("bridge/pi_browser_bridge/screenshot.js");
-const cdpBridge = read("bridge/pi_browser_bridge/cdp.js");
-const frameBridge = read("bridge/pi_browser_bridge/frame.js");
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"];
+const background = serviceWorkerBridgeFiles.join(" ");
+const transport = readBridgeRuntimeFile("transport.js");
+const tabSync = readBridgeRuntimeFile("tab_sync.js");
+const bridgeInfo = readBridgeRuntimeFile("bridge_info.js");
+const router = readBridgeRuntimeFile("router.js");
+const htmlBridge = readBridgeRuntimeFile("html.js");
+const screenshotBridge = readBridgeRuntimeFile("screenshot.js");
+const cdpBridge = readBridgeRuntimeFile("cdp.js");
+const frameBridge = readBridgeRuntimeFile("frame.js");
 const waitBridgeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
 const waitBridge = readBridgeBundle(waitBridgeFiles);
-const hookBridge = read("bridge/pi_browser_bridge/hook.js");
-const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
+const hookBridge = readBridgeRuntimeFile("hook.js");
+const evidenceBridge = readBridgeRuntimeFile("evidence.js");
 const networkBridge = readBridgeBundle(["network_model.js", "network.js"]);
-const patternsBridge = read("bridge/pi_browser_bridge/patterns.js");
-const hookDispatcher = read("bridge/pi_browser_bridge/hook_dispatcher.js");
-const coreCommands = read("bridge/pi_browser_bridge/core_commands.js");
+const patternsBridge = readBridgeRuntimeFile("patterns.js");
+const hookDispatcher = readBridgeRuntimeFile("hook_dispatcher.js");
+const coreCommands = readBridgeRuntimeFile("core_commands.js");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
 assert(bridgeInfo.includes("url === 'about:blank'"), "bridge tab tracking must include about:blank tabs created before navigation");
 assert(htmlBridge.includes("raw: 'outer'") && htmlBridge.includes("fragment: 'inner'"), "html.get must implement documented raw/fragment mode aliases");
@@ -134,8 +122,8 @@ const forbiddenNaming = [
 	/tmwd_cdp_bridge/,
 ];
 
-for (const file of requiredBridgeFiles.filter((item) => item.endsWith(".js"))) {
-	const text = read(`bridge/pi_browser_bridge/${file}`);
+for (const file of [...serviceWorkerBridgeFiles, "hook_dispatcher.js", "disable_dialogs.js"]) {
+	const text = readBridgeRuntimeFile(file);
 	new Function(text);
 	for (const pattern of forbiddenNaming) {
 		assert(!pattern.test(text), `${file} contains legacy naming: ${pattern}`);
@@ -156,11 +144,11 @@ for (const command of Object.values(schema.domains).flat()) {
 	assert(schema.commands[command], `schema domains command missing spec: ${command}`);
 }
 const protocolSandbox = { self: {} };
-vm.runInNewContext(read("bridge/pi_browser_bridge/protocol.js"), protocolSandbox, { filename: "protocol.js" });
+vm.runInNewContext(readBridgeRuntimeFile("protocol.js"), protocolSandbox, { filename: "protocol.js" });
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "missing.command" })?.ok === false, "protocol validator must reject unknown commands");
-const runtime = read("bridge/pi_browser_bridge/runtime.js");
+const runtime = readBridgeRuntimeFile("runtime.js");
 assert(runtime.includes("PI_BROWSER_PROTOCOL.nativeCommandMap"), "runtime native command map must come from protocol schema");
 assert(runtime.includes("TAB_NOT_FOUND: 'TAB_NOT_FOUND'"), "runtime must expose a dedicated missing-tab error code for tab-scoped native commands");
 assert(runtime.includes("SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND'") && runtime.includes("INVALID_SELECTOR: 'INVALID_SELECTOR'"), "runtime must expose stable selector error codes for non-wait selector commands");
@@ -517,7 +505,7 @@ function testDialogSuppressionPromptSemantics() {
 			documentElement: { appendChild() {} },
 		},
 	};
-	vm.runInNewContext(read("bridge/pi_browser_bridge/disable_dialogs.js"), sandbox, { filename: "disable_dialogs.js" });
+	vm.runInNewContext(readBridgeRuntimeFile("disable_dialogs.js"), sandbox, { filename: "disable_dialogs.js" });
 	assert(sandbox.window.confirm("continue?") === true, "suppressed confirm must auto-accept");
 	assert(sandbox.window.prompt("empty default", "") === "", "suppressed prompt must preserve empty-string default as accepted empty input");
 	assert(sandbox.window.prompt("numeric default", 0) === "0", "suppressed prompt must stringify numeric default instead of returning null");
@@ -1080,7 +1068,7 @@ async function testCdpAliasReleaseAndFrameOptions() {
 			},
 		},
 	};
-	vm.runInNewContext(read("bridge/pi_browser_bridge/cdp.js"), sandbox, { filename: "cdp.js" });
+	vm.runInNewContext(readBridgeRuntimeFile("cdp.js"), sandbox, { filename: "cdp.js" });
 	const cdp = sandbox.self.PiPersistentCdp;
 	assert((await cdp.attach(77, { name: "default" })).ok === true, "CDP default attach must succeed");
 	assert((await cdp.attach(77, { name: "alias" })).ok === true, "CDP alias attach must reuse an existing physical debugger");
@@ -1128,7 +1116,7 @@ async function testCdpNewDocumentScriptLifecycleContract() {
 			},
 		},
 	};
-	vm.runInNewContext(read("bridge/pi_browser_bridge/cdp.js"), sandbox, { filename: "cdp-new-document.js" });
+	vm.runInNewContext(readBridgeRuntimeFile("cdp.js"), sandbox, { filename: "cdp-new-document.js" });
 	const cdp = sandbox.self.PiPersistentCdp;
 	const added = await cdp.addNewDocumentScript(66, "window.__piNds = 1;", { persistent: true, name: "new_document", runImmediately: true, worldName: "pi_world", includeCommandLineAPI: true });
 	assert(added.ok === true && added.data?.identifier === "script-1", "addNewDocumentScript must return the Chrome identifier");

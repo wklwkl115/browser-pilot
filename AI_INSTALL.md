@@ -25,7 +25,7 @@ npm install
 如需改端口：
 
 1. 设置 Pi 进程环境变量 `PI_BROWSER_BRIDGE_PORT`。
-2. 确认浏览器扩展 `bridge/pi_browser_bridge/transport.js` 的 WebSocket 地址与端口一致。
+2. 同步 `bridge/browser_bridge_config.json` 后运行 `npm run build:bridge`，确认 dist runtime 内的 WebSocket 地址与端口一致。
 3. 重新加载 Pi 会话和浏览器扩展。
 
 ## 安装浏览器扩展
