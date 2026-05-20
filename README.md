@@ -48,9 +48,10 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Bridge JS 内部边界
 
-- `background.js` 仍使用 MV3 `importScripts` 顺序加载；共享 pattern/runtime/wait 先加载，`network_model.js` 必须在 `network.js` 前加载。
+- `background.js` 仍使用 MV3 `importScripts` 顺序加载；共享 pattern/runtime 先加载，`wait_cdp.js` 必须在 `wait.js` 前加载，`network_model.js` 必须在 `network.js` 前加载。
+- `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait.js` 不再直接持有 CDP refcount 状态，继续作为 wait facade/dispatch。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
-- `wait.js` 拆分按 `docs/bridge-wait-split.md` 的图谱推进；`hook_dispatcher.js` 仍是页面注入脚本，拆分前必须先有 bundling 或注入加载设计，不能直接按 SW 脚本方式拆。
+- `wait.js` 后续拆分继续按 `docs/bridge-wait-split.md` 的图谱推进；`hook_dispatcher.js` 仍是页面注入脚本，拆分前必须先有 bundling 或注入加载设计，不能直接按 SW 脚本方式拆。
 
 ## Pi 命令
 

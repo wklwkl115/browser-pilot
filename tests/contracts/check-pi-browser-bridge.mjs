@@ -32,6 +32,7 @@ const requiredBridgeFiles = [
 	"patterns.js",
 	"cdp.js",
 	"runtime.js",
+	"wait_cdp.js",
 	"wait.js",
 	"network_model.js",
 	"network.js",
@@ -83,7 +84,7 @@ const htmlBridge = read("bridge/pi_browser_bridge/html.js");
 const screenshotBridge = read("bridge/pi_browser_bridge/screenshot.js");
 const cdpBridge = read("bridge/pi_browser_bridge/cdp.js");
 const frameBridge = read("bridge/pi_browser_bridge/frame.js");
-const waitBridgeFiles = ["wait.js"];
+const waitBridgeFiles = ["wait_cdp.js", "wait.js"];
 const waitBridge = readBridgeBundle(waitBridgeFiles);
 const hookBridge = read("bridge/pi_browser_bridge/hook.js");
 const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
@@ -100,11 +101,13 @@ assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversal
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
 assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
 assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
+assert(waitBridgeFiles[0] === "wait_cdp.js", "wait CDP helper must load before wait.js in VM fixtures");
+assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait.js"), "background.js must load runtime.js before wait_cdp.js before wait.js");
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
-assert(background.indexOf("patterns.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait.js, then network_model.js before network.js");
+assert(background.indexOf("patterns.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait_cdp.js/wait.js, then network_model.js before network.js");
 assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "background.js must load protocol.js before runtime.js");
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
@@ -1551,6 +1554,7 @@ await testWaitAllRejectsEmptyConditions();
 
 async function testWaitCdpDisableFailureKeepsDomainRef() {
 	const sendCalls = [];
+	const debugListeners = new Set();
 	let failDisable = true;
 	const sandbox = {
 		self: {},
@@ -1566,14 +1570,17 @@ async function testWaitCdpDisableFailureKeepsDomainRef() {
 					if (method === "Network.disable" && failDisable) throw new Error("disable boom");
 					return {};
 				},
-				onEvent: { addListener() {}, removeListener() {} },
+				onEvent: {
+					addListener(listener) { debugListeners.add(listener); },
+					removeListener(listener) { debugListeners.delete(listener); },
+				},
 			},
 		},
 		piBrowserPersistentCdp: () => null,
 		normalizePersistentPiBrowserResponse: (value) => value,
 	};
 	vm.runInNewContext(`${waitBridge}
-self.__waitCdpTest = { acquirePiBrowserCdpDomain, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, diagnosePiBrowserCdpDomainRefs };`, sandbox, { filename: "wait.js" });
+self.__waitCdpTest = { acquirePiBrowserCdpDomain, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, subscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs };`, sandbox, { filename: "wait.js" });
 	const first = { tabId: 88, waitId: "first", kind: "contract", cdpDomains: new Set(), cdpSubscriptions: [] };
 	await sandbox.self.__waitCdpTest.acquirePiBrowserCdpDomain(first, "Network");
 	sandbox.self.__waitCdpTest.releasePiBrowserCdpDomains(first, ["Network"], "contract_release");
@@ -1601,6 +1608,17 @@ self.__waitCdpTest = { acquirePiBrowserCdpDomain, releasePiBrowserCdpDomains, fo
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	refs = sandbox.self.__waitCdpTest.diagnosePiBrowserCdpDomainRefs(89);
 	assert(refs.length === 0, "tab_removed force cleanup must not retain stale CDP refs when the tab is already gone");
+
+	let delivered = 0;
+	const subRecord = { tabId: 90, waitId: "subscriber", kind: "contract", cdpDomains: new Set(), cdpSubscriptions: [] };
+	const subId = sandbox.self.__waitCdpTest.subscribePiBrowserCdp(90, ["Network.responseReceived"], () => { delivered += 1; }, subRecord);
+	assert(subId && subRecord.cdpSubscriptions.includes(subId), "CDP subscriber id must be registered on the wait record");
+	assert(sandbox.self.__waitCdpTest.diagnosePiBrowserCdpSubscriptions(90).length === 1, "CDP subscriber diagnostics must show active subscription");
+	for (const listener of Array.from(debugListeners)) listener({ tabId: 90 }, "Network.responseReceived", {});
+	assert(delivered === 1, "CDP subscriber must dispatch matching events before cleanup");
+	const cleanup = sandbox.self.__waitCdpTest.cleanupPiBrowserCdpTab(90, "subscriber_cleanup");
+	assert(cleanup.subscriptions_removed === 1 && debugListeners.size === 0, "CDP tab cleanup must remove subscriber listener handles");
+	assert(sandbox.self.__waitCdpTest.diagnosePiBrowserCdpSubscriptions(90).length === 0, "CDP subscriber diagnostics must be empty after tab cleanup");
 }
 
 await testWaitCdpDisableFailureKeepsDomainRef();

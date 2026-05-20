@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 拆分 Bridge `wait.js` 的 CDP refs/subscription 子系统：新增 `bridge/pi_browser_bridge/wait_cdp.js` 承载 CDP domain refcount、subscriber registry、tab cleanup 与 diagnostics；`background.js`、VM 契约和文件边界检查锁定 `runtime.js -> wait_cdp.js -> wait.js` 顺序，保持 disable failure retry、tab cleanup 和 diagnostics 结构不变。
 - 冻结 Bridge `wait.js` 拆分设计：新增 `docs/bridge-wait-split.md`，记录 wait 顶层状态/函数图谱、外部全局消费者、行为不变式，并让 bridge 契约测试改用可扩展的 wait bundle/helper，为后续 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js` 拆分做准备。
 - 完成 WebSecurity/Bridge 重构收口 gate：确认 `registerWebSecurityTools.ts` 与 `summaries/webSecurity.ts` 保持 thin facade，Bridge Network split 有加载顺序、职责边界、文件体量契约和真实扩展 runtime 子集验证；本轮无用户可见 schema/summary/runtime 能力变化。
 - 拆分 Bridge Network recorder 单体：新增 `bridge/pi_browser_bridge/network_model.js` 承载 recorder 状态、配置、过滤、record/body 存储与 summary helper，`network.js` 收敛为 CDP 事件、生命周期和命令分发；同步锁定 MV3 `importScripts` 加载顺序与 VM 契约组合。

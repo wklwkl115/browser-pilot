@@ -31,7 +31,7 @@
 
 ## 当前架构债决策（支柱二/三/四）
 
-- 支柱三（`wait.js` 解耦）是当前最高 ROI：`bridge/pi_browser_bridge/wait.js` 仍 1239 行，混合 CDP domain refs、WaitCoordinator、event subscription、orphan cleanup、navigation/selector/networkIdle/diagnose；立即进入执行队列。
+- 支柱三（`wait.js` 解耦）是当前最高 ROI：`wait_cdp.js` 已迁出 CDP refs/subscription，`bridge/pi_browser_bridge/wait.js` 仍约 1039 行，继续混合 WaitCoordinator、event subscription、orphan cleanup、navigation/selector/networkIdle/diagnose；当前从 TODO 182 继续。
 - 支柱二（ESM + TS bundler）是真实架构债，不因工作量大而搁置；但必须先完成 wait/hook 页面注入边界、smoke 诊断和 bridge 类型收口，再按构建产物切换路径迁移，避免一次性改动破坏 MV3 runtime。
 - 支柱四（smoke 端口冲突）诊断成立但原“动态端口自动协商”方案不直接适配固定 `config.js` 的 MV3 扩展；先做显式失败分类和文档，再做无 puppeteer/playwright 强依赖的独占 Chrome profile smoke。
 - `network.js` 已完成拆分，不再列为待拆债务；`hook_dispatcher.js` 是页面注入脚本，不能照搬 service worker `importScripts` 拆法，必须先冻结注入/打包边界。
@@ -47,11 +47,11 @@
 
 ## 181. Bridge `wait.js` 拆分第一刀：CDP refs/subscription 子系统
 
-- [ ] 执行边界：新增 `bridge/pi_browser_bridge/wait_cdp.js`，迁出 `piBrowserCdpSubscriptions`、`piBrowserCdpTabRefs`、`piBrowserCdpDomainRefs`、cleanup history、domain acquire/release/diagnose/subscriber helper；`wait.js` 不再直接持有 CDP refcount 状态。
-- [ ] 加载顺序：`background.js` 中 `wait_cdp.js` 必须在 `wait.js` 前，且在依赖 `PI_BROWSER_ERROR_CODES/redactSensitive/piWithTimeout` 的 runtime 之后；契约锁定顺序。
-- [ ] 不变式：`Network.disable/Page.disable` 失败时 ref 保留、retry release 行为、tab cleanup 和 `diagnosePiBrowserCdpDomainRefs` 返回结构不变。
-- [ ] 契约：扩展 fake CDP 测试，覆盖 acquire/release、disable failure、tab cleanup、subscriber cleanup；`check-bridge-files.mjs` 锁定 `wait_cdp.js` 不包含 selector/navigation/networkIdle 业务。
-- [ ] 验证：运行 `npm run check`；如可 reload，补真实 runtime wait/network 子集 artifact。
+- [x] 执行边界：新增 `bridge/pi_browser_bridge/wait_cdp.js`，迁出 `piBrowserCdpSubscriptions`、`piBrowserCdpTabRefs`、`piBrowserCdpDomainRefs`、cleanup history、domain acquire/release/diagnose/subscriber helper；`wait.js` 不再直接持有 CDP refcount 状态，当前约 1039 行。
+- [x] 加载顺序：`background.js` 已按 `runtime.js -> wait_cdp.js -> wait.js -> network_model.js` 加载；`check-bridge-files.mjs` 与 `check-pi-browser-bridge.mjs` 锁定 wait bundle 顺序和 `wait.js` facade 位置。
+- [x] 不变式：保留 `Network.disable/Page.disable` 失败时 ref 保留、retry release、tab removed 不留 stale ref、subscriber cleanup 和 `diagnosePiBrowserCdpDomainRefs/Subscriptions/CleanupHistory` 结构。
+- [x] 契约：fake CDP 测试覆盖 acquire/release、disable failure、retry release、tab cleanup、subscriber cleanup；`check-bridge-files.mjs` 锁定 `wait_cdp.js` 不包含 selector/navigation/networkIdle 业务，且 `wait.js` 不回吸 CDP maps/helper。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-refactor-execution && npm run check"` 已通过；本项为内部 service worker 拆分，未执行真实 reload，后续 TODO 183 runtime gate 统一补 wait/navigation/networkIdle 子集 artifact。
 
 ## 182. Bridge `wait.js` 拆分第二刀：WaitCoordinator / orphan GC / event subscription
 
@@ -154,8 +154,9 @@
 ## 下一步建议顺序
 
 1. 已完成 TODO 180：`wait.js` 只读依赖图和拆分契约准备。
-2. 下一项 TODO 181：拆出 `wait_cdp.js`，保持行为不变并跑 `npm run check`。
-3. TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界。
-4. TODO 185-186：先补 smoke 诊断和 bridge 类型收口，为大迁移降低失败率。
-5. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
-6. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+2. 已完成 TODO 181：`wait_cdp.js` 拆出 CDP refs/subscription，契约与 `npm run check` 通过。
+3. 下一项 TODO 182：拆出 `wait_coordinator.js`，迁移 WaitCoordinator、orphan GC 与 event subscription registry。
+4. TODO 183：拆 navigation/networkIdle/selector 并做 wait runtime gate。
+5. TODO 184-186：冻结页面注入边界、补 smoke 诊断、收紧 bridge ambient/global 类型。
+6. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
+7. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
