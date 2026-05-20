@@ -54,6 +54,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
 - `hook_dispatcher.js` 仍是页面注入脚本，当前冻结为单文件自包含页面 bundle；`chrome.scripting.executeScript({ files })` 与 CDP fallback 都加载同一个 `PI_BROWSER_HOOK_DISPATCHER_FILE`，拆分前必须先完成 TODO 190 独立页面 bundle 迁移，不能直接按 SW 脚本方式拆。边界见 `docs/hook-dispatcher-boundary.md`。
 - `bridge-globals.d.ts` 只保留具体 ambient 边界：Chrome tabs/debugger/downloads/runtime、persistent CDP、wait record、network recorder、hook command、WS envelope 等接口；禁止用 `declare const chrome:any` 或 `[key:string]:any` 重新建立黑盒全局。
+- Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；当前 runtime 尚未切到 dist，TODO 188-193 会按 build skeleton、service worker bundle、页面 bundle、manifest 切换、旧入口删除、最终 gate 的顺序推进。
 
 ## Pi 命令
 

@@ -118,6 +118,11 @@ assert(existsSync(path.join(root, "docs", "browser-usage.md")), "docs/browser-us
 assert(existsSync(path.join(root, "docs", "hook-dispatcher-boundary.md")), "docs/hook-dispatcher-boundary.md must freeze the page-injection boundary before bundler migration");
 const hookBoundaryDoc = read("docs/hook-dispatcher-boundary.md");
 assert(hookBoundaryDoc.includes("PI_BROWSER_HOOK_DISPATCHER_FILE") && hookBoundaryDoc.includes("chrome.scripting.executeScript") && hookBoundaryDoc.includes("CDP fallback") && hookBoundaryDoc.includes("TODO 190"), "hook dispatcher boundary doc must cover injection paths and the deferred page bundle migration");
+assert(existsSync(path.join(root, "docs", "bridge-esm-bundler-plan.md")), "docs/bridge-esm-bundler-plan.md must freeze the ESM/bundler migration design before code migration");
+const bridgeBundlerPlan = read("docs/bridge-esm-bundler-plan.md");
+for (const required of ["bridge_src", "bridge/pi_browser_bridge/dist", "esbuild", "service-worker", "hook-dispatcher", "disable-dialogs", "TODO 188", "TODO 193", "Old hand-written `background.js importScripts"]) {
+	assert(bridgeBundlerPlan.includes(required), `bridge ESM/bundler plan missing required boundary: ${required}`);
+}
 assert(read("AI_INSTALL.md").includes("PI_BROWSER_BRIDGE_PORT") && read("AI_INSTALL.md").includes("/browser-status"), "AI_INSTALL.md must own environment and diagnostics instructions");
 assert(readdirSync(path.join(root, "src", "tools", "summaries")).length >= 5, "summary modules must stay split");
 console.log("bridge files contract ok");

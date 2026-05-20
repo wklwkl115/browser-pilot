@@ -96,11 +96,12 @@
 
 ## 187. 支柱二 ESM + TS Bundler 迁移设计冻结
 
-- [ ] 性质判定：重大架构迁移设计；目标是写清完整终态和阶段 gate，不再把 ESM/bundler 作为模糊“以后做”。
-- [ ] 终态：Bridge service worker 源码进入 ESM TypeScript 源目录，显式 `import/export`；构建产物进入 `bridge/pi_browser_bridge/dist/` 或等价目录；`manifest.json` 指向构建产物；页面注入脚本独立 bundle；旧 `importScripts` 多文件入口删除。
-- [ ] 工具决策：评估 esbuild/Rollup，优先 esbuild；禁止把 tree-shaking/常驻内存作为主要收益，主收益限定为显式依赖、类型安全、构建产物可复现。
-- [ ] 边界：`content.js`、`hook_dispatcher.js`、`disable_dialogs.js`、background service worker 分别有独立入口；source map、构建产物、发布包边界、reload/smoke 流程必须写清。
-- [ ] Gate：只有 TODO 180-186 完成后才能开始代码迁移；设计完成后更新 TODO、README 维护入口、CHANGELOG。
+- [x] 性质判定：重大架构迁移设计；`docs/bridge-esm-bundler-plan.md` 已写清完整终态和阶段 gate，不再把 ESM/bundler 作为模糊“以后做”。
+- [x] 终态：Bridge service worker 源码进入 `bridge_src/` ESM TypeScript 源目录，显式 `import/export`；构建产物进入 `bridge/pi_browser_bridge/dist/`；`manifest.json` 在 TODO 191 指向构建产物；页面注入脚本独立 bundle；旧 `importScripts` 多文件入口在 TODO 192 删除。
+- [x] 工具决策：优先 esbuild，Rollup 仅作为 MV3/page-script 行为无法保留时的 fallback；禁止把 tree-shaking/常驻内存作为主要收益，主收益限定为显式依赖、类型安全、构建产物可复现。
+- [x] 边界：`content`、`hook-dispatcher`、`disable-dialogs`、background service worker 分别为独立入口；source map、构建产物、发布包边界、reload/smoke 流程写入设计文档。
+- [x] Gate：TODO 180-186 已完成后才能开始代码迁移；README/CHANGELOG/TODO 与 `check-bridge-files.mjs` 文档契约已同步。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；本项未切 runtime。
 
 ## 188. Bridge build pipeline 骨架（不切 runtime）
 
@@ -161,6 +162,7 @@
 4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
 5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
 6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
-7. 已完成 TODO 186：收紧 bridge ambient/global 类型；下一项 TODO 187 冻结 ESM + TS bundler 迁移设计。
-8. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
-9. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
+8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计；下一项 TODO 188 建立 build pipeline 骨架但不切 runtime。
+9. TODO 189-193：迁移 service worker、页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
+10. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
