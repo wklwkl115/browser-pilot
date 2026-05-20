@@ -141,7 +141,7 @@ function isPiBrowserSessionMissing(res) {
   return res && res.ok === false && (res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || res.error?.code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error?.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
 }
 function piSleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0)))); }
-function piBrowserPersistentCdp() { const g = /** @type {any} */ (globalThis); return g.piPersistentCdpBridge || g.PiPersistentCdp; }
+function piBrowserPersistentCdp() { const g = /** @type {PiBridgeGlobalThis} */ (globalThis); return g.piPersistentCdpBridge || g.PiPersistentCdp; }
 function normalizePersistentPiBrowserResponse(resp) {
   if (resp && resp.ok === false && resp.error && !resp.error_code) return piBrowserError(resp.error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp.error.message || 'persistent CDP command failed', resp.error.details || {});
   return resp;
@@ -176,12 +176,14 @@ async function piBrowserEval(tabId, expression, awaitPromise = true, options = {
     return { ok: true, data: result.result?.value };
   } catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (_) {} throw e; }
 }
+/** @returns {Promise<PiBridgeResponse>} */
 async function callPagePiBrowser(tabId, command, args, options = {}) {
   const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Pi browser dispatcher is not installed'}`;
   const res = await piBrowserEval(tabId, expr, true, options);
-  return res.ok ? res.data : res;
+  return /** @type {PiBridgeResponse} */ (res.ok ? res.data : res);
 }
 
+/** @returns {Promise<PiBridgeResponse|null>} */
 async function reinstallPiBrowserSession(tabId) {
   const attempted_recovery = true;
 
@@ -196,6 +198,7 @@ async function reinstallPiBrowserSession(tabId) {
   }
   return res;
 }
+/** @returns {Promise<PiBridgeResponse>} */
 async function callPagePiBrowserWithAutoReinstall(tabId, command, args) {
   let res = await callPagePiBrowser(tabId, command, args);
   if (isPiBrowserSessionMissing(res) && piBrowserSessions.has(tabId) && command !== 'hook.uninstall') {

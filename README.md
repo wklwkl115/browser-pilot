@@ -53,6 +53,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
 - `hook_dispatcher.js` 仍是页面注入脚本，当前冻结为单文件自包含页面 bundle；`chrome.scripting.executeScript({ files })` 与 CDP fallback 都加载同一个 `PI_BROWSER_HOOK_DISPATCHER_FILE`，拆分前必须先完成 TODO 190 独立页面 bundle 迁移，不能直接按 SW 脚本方式拆。边界见 `docs/hook-dispatcher-boundary.md`。
+- `bridge-globals.d.ts` 只保留具体 ambient 边界：Chrome tabs/debugger/downloads/runtime、persistent CDP、wait record、network recorder、hook command、WS envelope 等接口；禁止用 `declare const chrome:any` 或 `[key:string]:any` 重新建立黑盒全局。
 
 ## Pi 命令
 

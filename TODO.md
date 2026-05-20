@@ -87,11 +87,12 @@
 
 ## 186. Bridge ambient/global 类型收紧（支柱二前置）
 
-- [ ] 性质判定：内部类型强化；目标是减少 `bridge-globals.d.ts` 黑盒 `any`，为 ESM TS 迁移提供真实边界，不改变 runtime。
-- [ ] 类型范围：定义 `PiBridgeCommand`、`PiBridgeResponse`、CDP send/subscribe/release、wait record、network recorder、hook command、Chrome tab/download/debugger 最小接口；禁止为省事扩大 `[key:string]: any`。
-- [ ] 迁移方式：先 JSDoc typedef + `checkJs` 收紧现有 JS，再逐步把核心 helper 的参数/返回接上具体接口；发现不匹配时修实现或补显式 normalize。
-- [ ] 契约：`tsc -p tsconfig.bridge.json` 必须能捕获错拼字段；补 contract 禁止关键 bridge 文件重新引入大范围 ambient `any`。
-- [ ] 文档：TODO/CHANGELOG 记录这是支柱二前置，不声称已完成 ESM/bundler。
+- [x] 性质判定：内部类型强化；目标是减少 `bridge-globals.d.ts` 黑盒 `any`，为 ESM TS 迁移提供真实边界，不改变 runtime。
+- [x] 类型范围：已定义 `PiBridgeCommand`、`PiBridgeResponse/PiBridgeData`、CDP send/subscription、wait record、network recorder、hook command、Chrome tab/download/runtime/debugger/scripting/alarms/webNavigation 最小接口；移除 ambient `Record<string, any>`、`[key:string]:any`、`declare const chrome:any`。
+- [x] 迁移方式：用 JSDoc + `checkJs` 收紧现有 JS；`runtime.js` 改用 `PiBridgeGlobalThis`，`router.js` 改用 `PiBridgeWsEnvelope`，popup cookie 响应显式 array normalize，hook/wait 对 page response 做显式 response/data cast。
+- [x] 契约：`check-bridge-files.mjs` 禁止关键 ambient broad `any` 回流并锁定 Chrome/CDP/wait/network/hook/WS 具体类型；`tsc -p tsconfig.bridge.json` 随 `npm run check` 继续执行。
+- [x] 文档：README/CHANGELOG/TODO 记录这是支柱二前置；不声称已完成 ESM/bundler。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过。
 
 ## 187. 支柱二 ESM + TS Bundler 迁移设计冻结
 
@@ -159,6 +160,7 @@
 3. 已完成 TODO 182：`wait_coordinator.js` 拆出 WaitCoordinator、orphan GC 与 event subscription registry，契约与 `npm run check` 通过。
 4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
 5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
-6. 已完成 TODO 185：补 smoke 端口冲突显式诊断；下一项 TODO 186 收紧 bridge ambient/global 类型。
-7. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
-8. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
+7. 已完成 TODO 186：收紧 bridge ambient/global 类型；下一项 TODO 187 冻结 ESM + TS bundler 迁移设计。
+8. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
+9. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

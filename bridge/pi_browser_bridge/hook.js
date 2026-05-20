@@ -35,7 +35,7 @@ async function ensurePiBrowserDispatcher(tabId) {
     );
     const confirmed = await confirmPiBrowserDispatcher(tabId, 'scripting');
     if (confirmed.ok) return confirmed;
-    scriptingErr = new Error(confirmed.message || 'readiness check failed');
+    scriptingErr = new Error('readiness check failed');
   } catch (injectErr) {
     scriptingErr = injectErr;
   }
@@ -113,9 +113,10 @@ async function handlePiBrowserHookCommand(cmd, tabId, msg) {
       } catch (e) {
         listenerCleanup = piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, 'hook.uninstall page listener cleanup failed', { tabId, reason:e && e.message ? e.message : String(e) });
       }
-      if (res && typeof res === 'object') {
-        if (res.ok && res.data && typeof res.data === 'object') res.data.listener_cleanup = listenerCleanup?.data || listenerCleanup;
-        else if (res.ok === false) res.details = { ...(res.details || {}), listener_cleanup: listenerCleanup?.data || listenerCleanup };
+      const hookResponse = /** @type {PiBridgeResponse} */ (res);
+      if (hookResponse && typeof hookResponse === 'object') {
+        if (hookResponse.ok && hookResponse.data && typeof hookResponse.data === 'object') hookResponse.data.listener_cleanup = listenerCleanup?.data || listenerCleanup;
+        else if (hookResponse.ok === false) hookResponse.details = { ...(hookResponse.details || {}), listener_cleanup: listenerCleanup?.data || listenerCleanup };
       }
       cleanupWaitsForUninstall(tabId);
       cleanupPiBrowserTab(tabId, 'hook_uninstall');

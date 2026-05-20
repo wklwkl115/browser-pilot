@@ -228,7 +228,7 @@ async function diagnosePiBrowser(tabId, msg) {
   let inflight = 0;
   let readyState = null;
   let last_errors = [];
-  const statusData = (status && status.data && typeof status.data === 'object') ? status.data : ((status && status.result && typeof status.result === 'object') ? status.result : {});
+  const statusData = /** @type {PiBridgeData} */ ((status && status.data && typeof status.data === 'object') ? status.data : ((status && status.result && typeof status.result === 'object') ? status.result : {}));
   // installed_marker is an active-session marker, not a dispatcher-loaded marker.
   // hook.status can still return ok after hook.uninstall because the page dispatcher
   // remains loaded in a CLOSED/NO_SESSION state for explicit post-uninstall diagnostics.
@@ -246,7 +246,7 @@ async function diagnosePiBrowser(tabId, msg) {
   const diagnostics = piBrowserWaits.diagnostics(tabId);
   try { if (chrome.debugger?.getTargets) debuggerTargets = (await chrome.debugger.getTargets()).filter(t => Number(t.tabId) === Number(tabId)); } catch (e) { last_errors.push(e.message || String(e)); }
   try {
-    const probe = await callPagePiBrowser(tabId, 'hook.evaluate', { expression: `(() => {
+    const probe = /** @type {PiBridgeResponse} */ (await callPagePiBrowser(tabId, 'hook.evaluate', { expression: `(() => {
       const nodes = Array.from(document.querySelectorAll ? document.querySelectorAll('iframe') : []);
       const frameCount = window.frames ? Number(window.frames.length || 0) : nodes.length;
       const frames = nodes.map((node, index) => {
@@ -274,8 +274,8 @@ async function diagnosePiBrowser(tabId, msg) {
         };
       });
       return { readyState: document.readyState, frameCount, iframeCount: frames.length, frames, inflight: (window.__piBrowserInflight || 0), last_errors: window.__piBrowserLastErrors || [] };
-    })()` }).catch(e => ({ ok:false, error:e.message || String(e) }));
-    const data = probe?.data?.result || probe?.data || probe?.result || {};
+    })()` }).catch(e => ({ ok:false, error:e.message || String(e) })));
+    const data = /** @type {PiBridgeData} */ (probe?.data?.result || probe?.data || probe?.result || {});
     readyState = data.readyState || readyState;
     frames = Array.isArray(data.frames) ? data.frames : frames;
     frameCount = Number(data.frameCount || frames.length || 0);

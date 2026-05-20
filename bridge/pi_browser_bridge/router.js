@@ -13,7 +13,7 @@ function validatePiBridgeProtocolMessage(msg) {
   return protocol.validateCommand(msg, { allowMissingTabId: true });
 }
 
-/** @param {PiBridgeCommand} msg @param {any} sender */
+/** @param {PiBridgeCommand} msg @param {PiChromeMessageSender} sender */
 async function handlePiBridgeMessage(msg, sender) {
   const validation = validatePiBridgeProtocolMessage(msg);
   if (!validation.ok) return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, validation.error, validation.details);
@@ -47,7 +47,7 @@ function sendPiBridgeWsInputError(socket, id, error, details) {
   socket.send(JSON.stringify({ type: 'error', id, error, details: details || {} }));
 }
 
-/** @param {any} data @param {PiBridgeWebSocketLike} socket */
+/** @param {PiBridgeWsEnvelope} data @param {PiBridgeWebSocketLike} socket */
 async function handlePiBridgeWsMessage(data, socket) {
   if (data.id === undefined || data.id === null || data.code === undefined || data.code === null) return;
   let code = data.code;
@@ -62,7 +62,7 @@ async function handlePiBridgeWsMessage(data, socket) {
       sendPiBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: 'object' });
       return;
     }
-    const msg = code.tabId === undefined && data.tabId !== undefined ? { ...code, tabId: data.tabId } : code;
+    const msg = /** @type {PiBridgeCommand} */ (code.tabId === undefined && data.tabId !== undefined ? { ...code, tabId: data.tabId } : code);
     const res = await handlePiBridgeMessage(msg, {});
     sendPiBridgeWsCommandResult(socket, data.id, msg, res);
   } else if (typeof code === 'string') {

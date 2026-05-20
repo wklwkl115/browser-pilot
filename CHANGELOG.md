@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 收紧 Bridge ambient/global 类型：`bridge-globals.d.ts` 从 broad `any` 黑盒改为具体 Chrome/runtime/debugger/downloads、persistent CDP、wait record、network recorder、hook command、WS envelope 类型；`router.js` 与 `runtime.js` 接入收窄后的 JSDoc，契约禁止 `declare const chrome:any` / `[key:string]:any` 回流。
 - 增强 `npm run smoke:browser` 端口冲突诊断：Bridge 端口 `127.0.0.1:18765` 被占用时，smoke artifact 会写入 `bridge.port` 记录并区分 `agent_occupies`、`orphan_socket`、`unknown_owner`，尽量附带 PID/进程名/命令行/health 探测；文档明确脚本不会自动 kill 用户进程。
 - 冻结 `hook_dispatcher.js` 页面注入边界：新增 `docs/hook-dispatcher-boundary.md`，明确 dispatcher 在 bundler 迁移前保持单文件自包含页面 bundle，`chrome.scripting.executeScript({ files })` 与 CDP fallback 共用 `PI_BROWSER_HOOK_DISPATCHER_FILE`；契约锁定无页面 import、无 `chrome.*`、公开全局 `window.__PI_BROWSER_HOOKS__`、session strict-match/seq/redact/listener cleanup 不变。
 - 完成 Bridge `wait.js` 分阶段拆分收口：新增 `wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js`，分别承载 navigation/loadState、networkIdle 和 selector 等待子系统；`wait.js` 收敛到约 299 行 facade/dispatch/diagnose glue，所有 wait 子文件行数均低于 450，并用契约锁定职责边界和加载顺序。

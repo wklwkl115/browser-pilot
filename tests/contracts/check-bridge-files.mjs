@@ -34,6 +34,13 @@ const bridgeTsconfig = JSON.parse(read("tsconfig.bridge.json"));
 assert(bridgeTsconfig.compilerOptions?.allowJs === true && bridgeTsconfig.compilerOptions?.checkJs === true && bridgeTsconfig.compilerOptions?.noEmit === true, "bridge tsconfig must enable allowJs/checkJs/noEmit");
 assert(bridgeTsconfig.include?.includes("bridge/pi_browser_bridge/*.js") && bridgeTsconfig.include?.includes("bridge/pi_browser_bridge/bridge-globals.d.ts"), "bridge tsconfig must cover bridge JS and ambient globals");
 assert(existsSync(path.join(bridge, "bridge-globals.d.ts")), "bridge ambient globals file must exist");
+const bridgeGlobals = read("bridge/pi_browser_bridge/bridge-globals.d.ts");
+for (const forbidden of ["Record<string, any>", "[key: string]: any", "declare const chrome: any", "validateCommand?: (msg: any", "onmessage?: ((event: { data: any })"]) {
+	assert(!bridgeGlobals.includes(forbidden), `bridge ambient globals must not reintroduce broad any typing: ${forbidden}`);
+}
+for (const required of ["type PiChromeApi", "type PiChromeDebuggerApi", "type PiPersistentCdpBridge", "type PiBridgeWsEnvelope", "type PiBrowserNetworkRecorder", "type PiBrowserHookCommand", "type PiBrowserCdpSubscriptionRecord"]) {
+	assert(bridgeGlobals.includes(required), `bridge ambient globals must define concrete boundary type: ${required}`);
+}
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
@@ -58,6 +65,7 @@ const networkModel = read("bridge/pi_browser_bridge/network_model.js");
 const networkRuntime = read("bridge/pi_browser_bridge/network.js");
 assert(background.includes("@ts-check") && bridgeInfo.includes("@ts-check") && router.includes("@ts-check"), "bridge bootstrap/core entrypoints must opt into JS type checking documentation");
 assert(router.includes("@param {PiBridgeCommand}") && router.includes("@param {PiBridgeWebSocketLike}"), "router must document bridge envelope/socket JSDoc types");
+assert(router.includes("@param {PiBridgeWsEnvelope}") && runtimeBridge.includes("PiBridgeGlobalThis"), "bridge runtime/router must consume tightened ambient boundary types");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
 for (const file of serviceWorkerBridgeFiles) assert(background.includes(file), `background.js must import ${file}`);
 assertBackgroundOrder(background, serviceWorkerBridgeFiles, "background service worker script order");
