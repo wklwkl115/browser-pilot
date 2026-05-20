@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createCipheriv, createHash, createHmac, pbkdf2Sync } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import dgram from "node:dgram";
 import http from "node:http";
 import https from "node:https";
@@ -13,6 +13,51 @@ import { harEntriesFromOptions, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MA
 import { evaluateTemplateMatcher, MAX_TEMPLATE_REGEX_TEXT_CHARS } from "../../src/tools/webSecurity/shared/template.ts";
 import { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWebReconProbeData } from "../../src/tools/summaries/index.ts";
 import { ALT_HTTPS_CERT_PEM, ALT_HTTPS_KEY_PEM, DEFAULT_HTTPS_CERT_PEM, DEFAULT_HTTPS_KEY_PEM } from "../fixtures/https-sni-certs.mjs";
+
+const expectedWebSecurityRegisterExports = [
+	"registerCallbackOastTool",
+	"registerCookieAnalyzeTool",
+	"registerCrawlTool",
+	"registerFuzzParamsTool",
+	"registerFuzzPathsTool",
+	"registerFuzzVhostsTool",
+	"registerHttpReplayTool",
+	"registerNucleiBridgeTool",
+	"registerReconProbeTool",
+	"registerSqlmapBridgeTool",
+	"registerSqliProbeTool",
+	"registerTemplateCheckTool",
+];
+
+async function checkWebSecurityRegisterFacadeFiles() {
+	const registerDir = new URL("../../src/tools/webSecurity/register/", import.meta.url);
+	const files = (await readdir(registerDir)).filter((file) => file.endsWith(".ts")).sort();
+	assert.deepEqual(files, [
+		"index.ts",
+		"registerCallbackOast.ts",
+		"registerCookieAnalyze.ts",
+		"registerCrawl.ts",
+		"registerFuzzParams.ts",
+		"registerFuzzPaths.ts",
+		"registerFuzzVhosts.ts",
+		"registerHttpReplay.ts",
+		"registerNucleiBridge.ts",
+		"registerReconProbe.ts",
+		"registerSqliProbe.ts",
+		"registerSqlmapBridge.ts",
+		"registerTemplateCheck.ts",
+		"shared.ts",
+	], "webSecurity register layer must keep one module per callable tool plus shared/index");
+	const facade = await readFile(new URL("../../src/tools/registerWebSecurityTools.ts", import.meta.url), "utf8");
+	assert.ok(facade.includes('from "./webSecurity/register/index"'), "registerWebSecurityTools.ts must be a facade over webSecurity/register/index");
+	assert.ok(facade.split(/\r?\n/).length <= 20, "registerWebSecurityTools.ts facade must stay thin");
+	const index = await readFile(new URL("../../src/tools/webSecurity/register/index.ts", import.meta.url), "utf8");
+	for (const exportName of expectedWebSecurityRegisterExports) assert.ok(index.includes(`export { ${exportName} }`), `register index must export ${exportName}`);
+	const shared = await readFile(new URL("../../src/tools/webSecurity/register/shared.ts", import.meta.url), "utf8");
+	assert.ok(shared.includes("executeWebSecurityToolShell") && shared.includes("distilledJsonResult") && shared.includes('cmd: "cookies"'), "webSecurity register shared shell must centralize execution, distillation, and cookie binding");
+}
+
+await checkWebSecurityRegisterFacadeFiles();
 
 function b64u(value) {
 	return Buffer.from(Buffer.isBuffer(value) ? value : typeof value === "string" ? value : JSON.stringify(value)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");

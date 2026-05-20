@@ -1,5 +1,44 @@
 import assert from "node:assert/strict";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "../../src/tools/summaries/index.ts";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+	summarizeBrowserCrawlData,
+	summarizeCallbackOastData,
+	summarizeCookieAnalyzeData,
+	summarizeEvidenceData,
+	summarizeFuzzParamsData,
+	summarizeFuzzPathsData,
+	summarizeFuzzVhostsData,
+	summarizeGenericValue,
+	summarizeHtmlSnapshot,
+	summarizeHttpReplayData,
+	summarizeNetworkData,
+	summarizeNucleiBridgeData,
+	summarizeScanData,
+	summarizeSqlmapBridgeData,
+	summarizeSqliProbeData,
+	summarizeTemplateCheckData,
+	summarizeWebReconProbeData,
+} from "../../src/tools/summaries/index.ts";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const read = (rel) => readFileSync(path.join(root, rel), "utf8");
+const tableCell = (table, key, row = 0) => table.rows[row][table.columns.indexOf(key)];
+
+function assertWebSecuritySummarySplit() {
+	const files = readdirSync(path.join(root, "src/tools/summaries/webSecurity")).filter((file) => file.endsWith(".ts")).sort();
+	assert.deepEqual(files, ["bridges.ts", "cookie.ts", "crawl.ts", "fuzz.ts", "index.ts", "oast.ts", "recon.ts", "replay.ts", "shared.ts", "sqli.ts", "template.ts"], "check-summaries webSecurity.split.files: summary layer must be split by capability family");
+	const facade = read("src/tools/summaries/webSecurity.ts");
+	assert.ok(facade.includes('from "./webSecurity/index"'), "check-summaries webSecurity.facade: legacy webSecurity.ts must re-export the split index");
+	assert.ok(facade.split(/\r?\n/).length <= 5, "check-summaries webSecurity.facade.size: legacy webSecurity.ts must stay thin");
+	const shared = read("src/tools/summaries/webSecurity/shared.ts");
+	assert.ok(shared.includes("redactSensitiveText") && shared.includes("bridgeArtifacts") && shared.includes("bodyPreview"), "check-summaries webSecurity.shared: redact/artifact/body helpers must remain shared");
+	const moduleText = files.filter((file) => !["shared.ts", "index.ts"].includes(file)).map((file) => read(`src/tools/summaries/webSecurity/${file}`)).join("\n");
+	assert.equal(moduleText.includes("function redactSensitiveText"), false, "check-summaries webSecurity.shared.noDuplicateRedact: capability modules must not duplicate sensitive redact helper");
+}
+
+assertWebSecuritySummarySplit();
 
 const scan = summarizeScanData({
 	url: "https://example.test",
@@ -101,5 +140,57 @@ assert.equal(evidence.sources.hook_events.events, 3);
 assert.equal(evidence.sources.hook_events.eventTypes[0].key, "console.log");
 assert.equal(evidence.sources.network_entries.items, 2);
 assert.equal(evidence.sources.network_entries.total, 2);
+
+
+const reconSummary = summarizeWebReconProbeData({ ok: true, results: [{ inputUrl: "https://api.example.test/start", finalUrl: "https://api.example.test/final", status: 200, title: "API", tech: ["nginx", "rails"], fingerprints: [{ label: "rails-session" }], redirects: [{ status: 302 }], body: { bytes: 42, sha256: "body-hash", text: "Cookie: sid=secret\n{\"ok\":true}" }, favicon: { mmh3: "123", simHash64: "sim" }, tlsCertificate: { fingerprint256: "tls-fp" } }] });
+assert.equal(reconSummary.hostCounts[0].key, "api.example.test", "check-summaries webSecurity.recon.host: recon summary must keep host evidence");
+assert.equal(tableCell(reconSummary.results, "bodySha256"), "body-hash", "check-summaries webSecurity.recon.bodyHash: recon summary must keep body hash");
+assert.equal(tableCell(reconSummary.results, "faviconSimHash"), "sim", "check-summaries webSecurity.recon.faviconSimHash: recon summary must keep favicon simHash evidence");
+assert.equal(JSON.stringify(reconSummary).includes("sid=secret"), false, "check-summaries webSecurity.recon.redact: recon previews must redact cookies");
+assert.ok(JSON.stringify(reconSummary).includes("[redacted]"), "check-summaries webSecurity.recon.redact.marker: redaction marker must stay visible");
+
+const crawlSummary = summarizeBrowserCrawlData({ ok: true, maxDepth: 2, activeGraphqlIntrospection: true, artifactRoot: ".pi/crawl", sourceArchiveCount: 1, pages: [{ url: "https://app.example.test/", status: 200, title: "Home", depth: 0, links: ["/a"], forms: [{}], endpoints: [{}], manifests: ["/manifest.json"], serviceWorkers: ["/sw.js"], sourceMaps: ["/app.js.map"], sourceMapDetails: { sourceCount: 2, archivedSourceCount: 1 }, apiSpec: { kind: "openapi", endpointCount: 3, parameterSummary: { totalParameters: 4, requestBodyFieldCount: 1 } }, graphqlSchema: { typeCount: 5, source: "active" }, serviceWorkerDetails: { cacheRouteCount: 2, versionSummary: { versionTokens: ["v1"] } } }], endpoints: [{ url: "https://app.example.test/api", kind: "openapi", method: "POST", source: "openapi", parameterCount: 4, parameterSummary: { requestBodyFieldCount: 1 }, sourceUrl: "/openapi.json" }] });
+assert.equal(crawlSummary.activeGraphqlIntrospection, true, "check-summaries webSecurity.crawl.graphqlActive: active GraphQL behavior flag must stay visible");
+assert.equal(crawlSummary.sourceArchiveCount, 1, "check-summaries webSecurity.crawl.sourceArchive: source map archive count must stay visible");
+assert.equal(tableCell(crawlSummary.pages, "graphqlSource"), "active", "check-summaries webSecurity.crawl.graphqlSource: GraphQL source must stay visible");
+assert.deepEqual(tableCell(crawlSummary.pages, "swVersions"), ["v1"], "check-summaries webSecurity.crawl.swVersions: service worker version tokens must stay visible");
+assert.equal(tableCell(crawlSummary.endpoints, "requestBodyFields"), 1, "check-summaries webSecurity.crawl.apiBodyFields: API body field count must stay visible");
+
+const fuzzPathsSummary = summarizeFuzzPathsData({ ok: true, requestCount: 1, results: [{ url: "https://app.example.test/admin", status: 200 }], matched: [{ url: "https://app.example.test/admin", depth: 1, status: 200, title: "Admin", bodyBytes: 10, bodySha256: "hp", differentFromBaseline: true, baselineClusterMatched: false, delta: "status" }], clusters: [{ status: 200, title: "Admin", bodyBytes: 10, count: 1, matchedCount: 1, sampleUrls: ["/admin"] }] });
+assert.equal(fuzzPathsSummary.matchedCount, 1, "check-summaries webSecurity.fuzzPaths.matched: matched count must stay visible");
+assert.equal(tableCell(fuzzPathsSummary.matched, "delta"), "status", "check-summaries webSecurity.fuzzPaths.delta: delta evidence must stay visible");
+const fuzzVhostsSummary = summarizeFuzzVhostsData({ ok: true, results: [{ host: "admin.example.test", status: 200 }], matched: [{ host: "admin.example.test", status: 200, title: "Admin", tlsFingerprint256: "tls", bodySha256: "hv", sniName: "admin.example.test", nearestBaseline: "wildcard", delta: "tls" }] });
+assert.equal(tableCell(fuzzVhostsSummary.matched, "tls"), "tls", "check-summaries webSecurity.fuzzVhosts.tls: TLS fingerprint must stay visible");
+assert.equal(tableCell(fuzzVhostsSummary.matched, "nearestBaseline"), "wildcard", "check-summaries webSecurity.fuzzVhosts.baseline: nearest baseline must stay visible");
+const fuzzParamsSummary = summarizeFuzzParamsData({ ok: true, results: [{ location: "multipart", operation: "set", status: 200, contentTypeVariant: "missing-boundary" }], matched: [{ location: "multipart", paramName: "file", operation: "set", contentTypeVariant: "missing-boundary", value: "x", status: 500, bodySha256: "hf", multipart: { partCount: 2, fileCount: 1, nestedMultipartPartCount: 1 }, delta: "parser", url: "https://app.example.test/upload" }], parserClusters: [{ status: 500, title: "err", bodyBytes: 9, count: 1, matchedCount: 1, contentTypeVariants: ["missing-boundary"], params: ["file"], multipartShapes: ["2/1/1"], repeatedNames: ["file"], nestedMultipartPartCount: 1 }] });
+assert.equal(fuzzParamsSummary.parserClusterCount, 1, "check-summaries webSecurity.fuzzParams.parserCluster: parser clusters must stay visible");
+assert.equal(tableCell(fuzzParamsSummary.matched, "multipart"), "2/1/1", "check-summaries webSecurity.fuzzParams.multipart: multipart shape must stay visible");
+
+const sqliSummary = summarizeSqliProbeData({ ok: true, requestCount: 2, oracleTypes: ["boolean", "union"], dbmsFingerprints: ["mysql"], results: [{ type: "boolean", paramName: "id", status: 200 }], matched: [{ type: "union", location: "query", paramName: "id", payload: "UNION SELECT", response: { status: 200, bodyBytes: 123 }, dbms: "mysql", columnCount: 3, echoPosition: 2, baselineDistance: 0.9 }], columnHints: [{ location: "query", paramName: "id", orderByMaxValid: 3, unionSelectColumns: 3, confidence: "high" }], echoPositions: [{ location: "query", paramName: "id", columnCount: 3, position: 2 }], extractions: [{ location: "query", paramName: "id", expression: "database()", value: "app", length: 3, attempts: 12, complete: true }] });
+assert.deepEqual(sqliSummary.dbmsFingerprints, ["mysql"], "check-summaries webSecurity.sqli.dbms: DBMS fingerprints must stay visible");
+assert.equal(tableCell(sqliSummary.columnHints, "unionSelectColumns"), 3, "check-summaries webSecurity.sqli.columnHints: UNION column hints must stay visible");
+assert.equal(tableCell(sqliSummary.echoPositions, "position"), 2, "check-summaries webSecurity.sqli.echo: UNION echo position must stay visible");
+
+const sqlmapSummary = summarizeSqlmapBridgeData({ ok: true, launcher: "sqlmap", artifactRoot: ".pi/sqlmap", artifacts: [{ kind: "stdout", label: "stdout", path: ".pi/sqlmap/stdout.log", bytes: 10, lineCount: 1, sha256: "sha" }], runs: [{ index: 0, source: "raw", targetUrl: "https://app.example.test/item?id=1", exitCode: 0, durationMs: 5, vulnerable: true, findingCount: 1, dbmsFingerprints: ["MySQL"], stdoutArtifact: { path: ".pi/sqlmap/stdout.log" }, stderrArtifact: { path: ".pi/sqlmap/stderr.log" } }], findings: [{ runIndex: 0, targetUrl: "https://app.example.test/item?id=1", parameter: "id", place: "GET", type: "boolean", title: "Boolean", payload: "id=1 AND 1=1", dbmsFingerprints: ["MySQL"] }] });
+assert.equal(sqlmapSummary.artifactCount, 1, "check-summaries webSecurity.sqlmap.artifacts: bridge artifact count must stay visible");
+assert.equal(tableCell(sqlmapSummary.runs, "stdoutArtifact"), ".pi/sqlmap/stdout.log", "check-summaries webSecurity.sqlmap.stdoutArtifact: stdout artifact path must stay visible");
+const nucleiSummary = summarizeNucleiBridgeData({ ok: true, launcher: "nuclei", artifacts: [{ kind: "jsonl", label: "matches", path: ".pi/nuclei/matches.jsonl", bytes: 5, lineCount: 1, sha256: "hn" }], runs: [{ index: 0, source: "url", targetUrl: "https://app.example.test", exitCode: 0, matched: true, matchCount: 1, matchSeverities: ["high"], matchTemplateIds: ["exposure/test"], stdoutArtifact: { path: ".pi/nuclei/stdout.log" } }], matches: [{ runIndex: 0, targetUrl: "https://app.example.test", templateId: "exposure/test", templateName: "Exposure", severity: "high", matchedAt: "https://app.example.test/.env", matcherName: "word", extractorName: "token", extractedResults: ["APP_KEY"], requestPreview: "GET /.env" }] });
+assert.equal(nucleiSummary.artifactCount, 1, "check-summaries webSecurity.nuclei.artifacts: bridge artifact count must stay visible");
+assert.equal(tableCell(nucleiSummary.matches, "extracts")[0], "APP_KEY", "check-summaries webSecurity.nuclei.extracts: extracted evidence must stay visible");
+
+const oastSummary = summarizeCallbackOastData({ ok: true, action: "collect", sessionId: "o1", callbackUrl: "http://127.0.0.1/cb", events: [{ seq: 1, protocol: "http", method: "POST", url: "/cb", matchedCorrelation: true, body: { bytes: 12 }, remoteAddress: "127.0.0.1" }, { seq: 2, protocol: "dns", queryName: "x.oast.test", matchedCorrelation: true, queryBytes: 20 }] });
+assert.equal(oastSummary.eventCount, 2, "check-summaries webSecurity.oast.eventCount: callback event count must stay visible");
+assert.equal(tableCell(oastSummary.events, "bodyBytes"), 12, "check-summaries webSecurity.oast.bodyBytes: callback body bytes must stay visible");
+const templateSummary = summarizeTemplateCheckData({ ok: true, results: [{ templateId: "exposure-env", status: 200 }], matched: [{ templateId: "exposure-env", name: "Env", url: "https://app.example.test/.env", status: 200, title: "", bodyBytes: 20, bodySha256: "ht", checks: [{ matched: true }], extracts: [{ name: "key", value: "APP_KEY" }] }] });
+assert.equal(templateSummary.templateCounts[0].key, "exposure-env", "check-summaries webSecurity.template.templateCounts: template counts must stay visible");
+assert.equal(tableCell(templateSummary.matched, "extractValues")[0], "APP_KEY", "check-summaries webSecurity.template.extractValues: extractor values must stay visible");
+
+const cookieSummary = summarizeCookieAnalyzeData({ ok: true, inputCount: 1, tokenCount: 1, verifiedTokenCount: 1, claimReplayCount: 1, results: [{ source: "cookie", name: "session", kind: "jwt", valueLength: 120, token: { format: "jwt", alg: "HS256", kid: "kid1", signature: { verified: true }, payload: { role: "user" }, mutation: { token: "mutated" } }, claimReplay: { mutated: { status: 200 } } }], claimReplays: [{ name: "session", format: "jwt", cookieName: "session", mutated: { status: 200 }, baseline: { status: 403 }, delta: "status" }] });
+assert.equal(tableCell(cookieSummary.results, "verified"), true, "check-summaries webSecurity.cookie.verified: token verification must stay visible");
+assert.deepEqual(tableCell(cookieSummary.results, "claimKeys"), ["role"], "check-summaries webSecurity.cookie.claimKeys: claim keys must stay visible without raw values");
+const replaySummary = summarizeHttpReplayData({ ok: true, mode: "sequence", stepCount: 1, variableScope: "sequence", variableNames: ["csrf"], request: { method: "POST", url: "https://app.example.test/api", headerNames: ["Cookie"], bodyBytes: 9, cookiesBound: true, multipart: { partCount: 2, fileCount: 1, fieldCount: 1, nestedMultipartPartCount: 1 } }, response: { status: 200, url: "https://app.example.test/api", headerNames: ["Content-Type"], body: { bytes: 31, sha256: "hr", truncated: false, text: "{\"cookie\":\"sid=secret\"}" }, elapsedMs: 10 }, dependencyGraph: { nodeCount: 1, edgeCount: 1, edgeTypes: [{ key: "cookie", count: 1 }] }, multipartMatrix: { caseCount: 2, truncatedCases: false, fieldNames: ["file"], fileValueCount: 1 }, clusters: [{ status: 200, title: "OK", bodyBytes: 31, count: 1, okCount: 1, sampleSteps: [0] }], steps: [{ index: 0, source: "raw", request: { method: "POST", url: "https://app.example.test/api", multipart: { fileCount: 1 } }, response: { status: 200, body: { bytes: 31 } }, variableScope: "sequence", capturedVariableNames: ["csrf"], persistedVariableNames: ["csrf"], delta: "baseline" }] });
+assert.equal(replaySummary.request.cookiesBound, true, "check-summaries webSecurity.replay.cookiesBound: browser cookie binding flag must stay visible");
+assert.equal(replaySummary.dependencyGraph.edgeTypes[0].key, "cookie", "check-summaries webSecurity.replay.dependencyGraph: dependency graph edge types must stay visible");
+assert.equal(JSON.stringify(replaySummary).includes("sid=secret"), false, "check-summaries webSecurity.replay.redact: replay response previews must redact cookies");
 
 console.log("summary contract ok");

@@ -41,8 +41,9 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Web 安全层内部边界
 
-- 单包内固定分层：`src/tools/webSecurity/browserNative`、`src/tools/webSecurity/bridges`、`src/tools/webSecurity/shared`
-- Pi-native 核心执行层保留在 `browserNative`；成熟引擎适配只放进 `bridges`
+- 单包内固定分层：`src/tools/webSecurity/register`、`src/tools/webSecurity/browserNative`、`src/tools/webSecurity/bridges`、`src/tools/webSecurity/shared`
+- Tool 注册/schema/shell 放在 `register`；外部 TypeBox 参数先收口到具名 ToolParams，shell 以泛型约束 run/augment 参数；Pi-native 核心执行层保留在 `browserNative`；成熟引擎适配只放进 `bridges`
+- WebSecurity 响应摘要按能力族拆入 `src/tools/summaries/webSecurity`，共享脱敏、artifact 与表格裁剪 helper，summary 只做压缩展示，完整证据继续走 artifact
 - 这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案
 
 ## Pi 命令

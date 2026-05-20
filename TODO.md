@@ -18,7 +18,7 @@
 - 127-129：默认 tab 竞态可观测化、MV3 长等待短租约 supervisor、Bridge JS `checkJs` 类型栅栏已完成。
 - 130-156：桌面审计报告 Bug 1-26 已完成；覆盖 wait deadline、BrowserBridge/tab 路由、native 命令、内容/下载/截图、ReDoS/安全预算、契约与 README/CHANGELOG/skill 同步。
 - 157-162：Bug 28+ 当前基线复核完成；已覆盖项与 callable 子集证据已归档，剩余未覆盖/部分覆盖项全部转入 TODO 163-174。
-- 历史归档不再作为执行队列；后续只从 TODO 163 起推进，必要时回看 git diff、桌面报告与对应契约文件。
+- 历史归档不再作为执行队列；Bug 审计队列已收口，后续只从未完成 TODO 175 起推进，必要时回看 git diff、桌面报告与对应契约文件。
 
 ## 163. 当前代码缺陷审计报告剩余项执行索引（清晰基线）
 
@@ -131,17 +131,52 @@
 - [x] Callable 子集：reload 后真实 runtime callable 子集已通过，覆盖 download invalid mode、hook session/listener cleanup、evidence/performance、frame add/remove、html artifact、artifact missing/sample、content/scan >200k artifact；汇总证据写入 `.pi/browser-artifacts/todo174-runtime-callable-summary-reload.json`。
 - [x] 文档收口：桌面审计报告当前总览已更新为 Bug 1-89 全部覆盖；TODO 中 164-173 全部勾选；runtime smoke 阻塞原因已记录。
 
+## 175. WebSecurity TS 注册层门面化拆分（支柱一 / 第一阶段）
+
+- [x] 性质判定：这是 prerequisite refactor debt，不是功能新增；目标是降低 `src/tools/registerWebSecurityTools.ts` 单体风险，保持 12 个 `browser_*` 安全工具的 tool name、schema、预算、artifact、summary 和错误语义不漂移。
+- [x] 拆分边界：新增 `src/tools/webSecurity/register/`；每个复杂工具拥有独立 `register*.ts`，共享 shell/helper/schema 片段进入 `register/shared.ts`；原 `src/tools/registerWebSecurityTools.ts` 只保留 facade re-export/聚合注册兼容层。
+- [x] 风格修复：同步展开 `src/tools/registerTools.ts` 中 webSecurity import/call，恢复一行一注册；不要把多个注册调用堆在一行制造 diff 噪声。
+- [x] 表驱动决策：不为了“看起来短”改表驱动；仅当能减少重复、保留类型推断、降低漏注册风险时，在拆分后引入 `{ name, schema, run, summarize }` 级别的局部表驱动。
+- [x] 契约：扩展/复跑 `tests/contracts/check-web-security-tools.mjs` 与 `check-tools-contract.mjs`，锁定全部 12 个工具仍注册、schema 必填字段/默认值不变、`ensureStarted`/cookie provider/outputPath/detailLevel 行为不变。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过；本项为内部注册重排，README 仅更新内部边界，CHANGELOG/TODO 记录架构收口，skill 不新增能力叙述。
+
+## 176. WebSecurity 摘要层按能力拆分（支柱一 / 第二阶段）
+
+- [x] 性质判定：这是 behavior-preserving refactor；目标是拆解 `src/tools/summaries/webSecurity.ts` 单体，同时保持 `src/tools/summaries/index.ts` 对外导出不变。
+- [x] 拆分边界：新增 `src/tools/summaries/webSecurity/`；按能力族拆分 `recon/crawl/fuzz/sqli/bridges/template/oast/cookie/replay` 等 summary 模块；原 `webSecurity.ts` 降级为兼容 facade。
+- [x] 共享逻辑：Cookie/Auth/header 脱敏、表格裁剪、数组摘要、artifact hint 等通用函数只保留一份共享实现，禁止各子模块复制后分叉。
+- [x] 证据原则：summary 继续“压缩展示，不替代证据”；不得丢失 artifact 路径、body/postData availability、fingerprint、oracle、match/extractor 等现场判断字段。
+- [x] 契约：扩展/复跑 `tests/contracts/check-summaries.mjs`，用代表性 fixture 锁定每个安全工具 summary 关键字段、脱敏规则和大结果裁剪语义。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过；本项为 behavior-preserving summary 拆分，README/CHANGELOG 更新内部边界，skill 不新增能力叙述。
+
+## 177. WebSecurity 参数与 shell 类型收口
+
+- [x] 性质判定：这是内部类型强化；解决 `WebSecurityToolParams` 依赖 `[key: string]: unknown` 的扩散问题，不能改变外部 JSON schema 兼容性。
+- [x] 收口路径：保留外部 TypeBox schema 的宽入口，在每个 register 模块内 normalize 到强类型 params；shell helper 使用泛型约束每个工具的 `augmentParams/run/details/distill`，避免核心实现层继续接收松散 `Record<string, unknown>`。
+- [x] Cookie/browser-state 绑定：`tabId/detailLevel/outputPath/timeoutMs/maxChars/maxBodyBytes/bindBrowserSession` 等共享参数保留统一解析函数；浏览器 cookie provider 的输入输出类型显式化。
+- [x] Core 边界：`webSecurityCore.ts` 的纯再导出命名问题不单独大改；如拆分后仍混淆，随本项改为目录 `webSecurity/index.ts` 或更明确 facade 名，保持 import 兼容迁移。
+- [x] 契约：TypeScript 编译必须捕获错拼字段/签名漂移；补静态 contract 检查注册模块和 run* 参数映射，不依赖运行时才发现。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过；本项未改变工具 schema/summary/runtime 能力，README/CHANGELOG 更新内部类型边界，skill 不新增能力叙述。
+
+## 178. Bridge JS 超大文件拆分评估与第二阶段执行
+
+- [ ] 性质判定：`bridge/wait.js`、`hook_dispatcher.js`、`network.js` 已超过健康阈值，但它们处在 MV3 service worker / 页面注入高风险边界；不得与 TODO 175-177 的 TS 层重构混在同一 diff。
+- [ ] 拆分顺序：先做只读依赖图和全局符号图，确认 checkJs 覆盖、加载顺序、MV3 全局作用域、页面注入字符串边界；再按 `state/coordinator/actions/serialization` 或 `recorder/body/artifact/export` 等稳定边界拆分。
+- [ ] 行为边界：拆分不得改变 service worker 生命周期、长等待租约、hook session/listener cleanup、network body/postData 捕获、错误码和 artifact 注册语义。
+- [ ] 契约：每拆一个 bridge 文件，必须补/复跑对应 `check-pi-browser-bridge.mjs`、bridge checkJs、相关 runtime smoke 子集；真实浏览器 reload 后写入 artifact。
+- [ ] 文档：本项只记录内部可维护性；除非用户可见行为变化，不更新 skill 当前能力描述。
+
+## 179. WebSecurity/Bridge 重构收口 gate
+
+- [ ] 完成 TODO 175-177 后，确认 `registerWebSecurityTools.ts` 与 `summaries/webSecurity.ts` 只承担 facade/兼容导出，不再混合 12 个工具的 schema、执行、摘要细节。
+- [ ] 完成 TODO 178 任一子阶段后，记录拆分文件、保留的全局加载顺序、reload runtime artifact 路径和未拆剩余风险。
+- [ ] 全量验证：运行 `npm run check`；触及全局 skill 时运行 `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`。
+- [ ] 收口更新：TODO 勾选、CHANGELOG 记录架构维护项；如 schema/summary/runtime 能力发生可见变化，同步 README、skill 和对应契约文档。
+
 ## 下一步建议顺序
 
-1. 已完成 163A：`browser_network` 原始响应 body/postData 证据保真与缺失诊断已补齐。
-2. 已完成 164：Bug 27 `browser_download` mode 枚举校验已补齐。
-3. 已完成 165：hook 显式 session 严格匹配、collect no self-noise、clear_buffer seq 单调已补齐。
-4. 已完成 166：hook listener tab scope 与 uninstall/tab cleanup 页面监听清理已补齐。
-5. 已完成 167：browser_pick focus:false 后台 tab deadline 与主动 cleanup 已补齐。
-6. 已完成 168：performance entryType 空结果不再 fallback，全链路透传 evidence/hook timeout。
-7. 已完成 169：frame new-document script option 透传、identifier registry 与稳定 remove 结构已补齐。
-8. 已完成 170：wait.diagnose iframe 探测与 evidence hook_status summary 字段已补齐。
-9. 已完成 171：browser_html 采集预算/返回预算分离、artifact 保真与结构元数据 summary 已补齐。
-10. 已完成 172：browser_artifact sample 去重与 JSON 缺失路径显式信号。
-11. 已完成 173：content/scan 超大结果绕过 exec.js MAX_CHARS。
-12. TODO 174 已完成静态/契约/skill/文档/runtime callable 收口；`npm run smoke:browser` 因现有 Pi agent bridge（PID 26612）占用 `127.0.0.1:18765` 未关闭用户 bridge，但 reload 后等价 callable 子集已通过并归档。
+1. 已完成 TODO 175：WebSecurity 注册层 facade 拆分，并修复 `registerTools.ts` 一行多调用风格。
+2. 已完成 TODO 176：summary 按能力族拆分，并保留脱敏/证据字段契约。
+3. 已完成 TODO 177：在拆分后的较小模块内收口参数类型，避免一次性强类型化大单体。
+4. 下一项 TODO 178：bridge JS 大文件拆分评估与分阶段执行，不与 TS 工具层 refactor 混提交。
+5. 每阶段按 TODO 179 收口验证；没有用户可见行为变化时，不扩大 README/skill 能力叙述。

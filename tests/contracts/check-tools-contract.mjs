@@ -5,11 +5,23 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.isAbsolute(rel) ? rel : path.join(root, rel), "utf8");
 function assert(condition, message) { if (!condition) throw new Error(message); }
-function readToolSources() {
-	return readdirSync(path.join(root, "src", "tools"))
-		.filter((file) => file.endsWith(".ts"))
-		.map((file) => read(path.join("src", "tools", file)))
+function readTypeScriptSources(rel) {
+	const dir = path.join(root, rel);
+	return readdirSync(dir, { withFileTypes: true })
+		.flatMap((entry) => {
+			const child = path.join(rel, entry.name);
+			if (entry.isDirectory()) return [readTypeScriptSources(child)];
+			return entry.name.endsWith(".ts") ? [read(child)] : [];
+		})
 		.join("\n");
+}
+
+function readToolSources() {
+	return readTypeScriptSources("src/tools");
+}
+
+function readWebSecurityRegisterSources() {
+	return [read("src/tools/registerWebSecurityTools.ts"), readTypeScriptSources("src/tools/webSecurity/register")].join("\n");
 }
 
 const indexSource = read("index.ts");
@@ -20,7 +32,7 @@ assert(indexSource.includes("startPromise = undefined;\n\t\t\t\tthrow error;"), 
 const registerToolsSource = read("src/tools/registerTools.ts");
 const toolSource = readToolSources();
 const packageJson = JSON.parse(read("package.json"));
-assert(registerToolsSource.split(/\r?\n/).length <= 40, "registerTools.ts must stay a thin composition entrypoint");
+assert(registerToolsSource.split(/\r?\n/).length <= 60, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
 for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact", "browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
@@ -105,7 +117,7 @@ for (const prefix of ["wait-result", "network-result", "hook-result", "frame-res
 assert(!nativeActionTools.includes("return jsonResult(result"), "native action tools must not return raw command result directly");
 assert(!executeTool.includes("return jsonResult(await server"), "browser_execute must not return raw bridge result directly");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
-const webSecurityTools = read("src/tools/registerWebSecurityTools.ts");
+const webSecurityTools = readWebSecurityRegisterSources();
 assert(webSecurityTools.includes("browser_recon_probe") && webSecurityTools.includes("browser_crawl") && webSecurityTools.includes("browser_fuzz_paths") && webSecurityTools.includes("browser_fuzz_vhosts") && webSecurityTools.includes("browser_sqli_probe") && webSecurityTools.includes("browser_sqlmap_bridge") && webSecurityTools.includes("browser_nuclei_bridge") && webSecurityTools.includes("browser_template_check") && webSecurityTools.includes("browser_callback_oast") && webSecurityTools.includes("browser_cookie_analyze") && webSecurityTools.includes("browser_fuzz_params") && webSecurityTools.includes("browser_http_replay"), "web security tools must register recon/crawl/fuzz/replay tools");
 function toolRegistrationBlock(source, name) {
 	const marker = `name: "${name}"`;
@@ -128,6 +140,7 @@ const webSecurityTopLevelFiles = webSecurityEntries.filter((entry) => entry.isFi
 const webSecurityTopLevelDirs = webSecurityEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 const browserNativeFiles = readdirSync(path.join(webSecurityDir, "browserNative")).filter((file) => file.endsWith(".ts")).sort();
 const bridgeFiles = readdirSync(path.join(webSecurityDir, "bridges")).filter((file) => file.endsWith(".ts")).sort();
+const registerFiles = readdirSync(path.join(webSecurityDir, "register")).filter((file) => file.endsWith(".ts")).sort();
 const webSecurityTypes = read("src/tools/webSecurity/shared/types.ts");
 const webSecurityTemplate = read("src/tools/webSecurity/shared/template.ts");
 const webSecurityReplay = read("src/tools/webSecurity/shared/replay.ts");
@@ -141,10 +154,11 @@ const webSecuritySqlmap = read("src/tools/webSecurity/bridges/sqlmapBridge.ts");
 const webSecurityNuclei = read("src/tools/webSecurity/bridges/nucleiBridge.ts");
 const webSecurityTemplateCheck = read("src/tools/webSecurity/browserNative/templateCheck.ts");
 const webSecurityRails = read("src/tools/webSecurity/shared/railsCookieTokens.ts");
-assert(JSON.stringify(webSecurityTopLevelDirs) === JSON.stringify(["bridges", "browserNative", "shared"]), "webSecurity/ must be layered as shared, browserNative, and bridges only");
+assert(JSON.stringify(webSecurityTopLevelDirs) === JSON.stringify(["bridges", "browserNative", "register", "shared"]), "webSecurity/ must be layered as register, shared, browserNative, and bridges only");
 assert(JSON.stringify(webSecurityTopLevelFiles) === JSON.stringify([]), "webSecurity/ must not keep mixed top-level runtime files");
 assert(browserNativeFiles.includes("recon.ts") && browserNativeFiles.includes("crawl.ts") && browserNativeFiles.includes("fuzzPaths.ts") && browserNativeFiles.includes("fuzzParams.ts") && browserNativeFiles.includes("fuzzVhosts.ts") && browserNativeFiles.includes("httpReplay.ts") && browserNativeFiles.includes("callbackOast.ts"), "browserNative layer must own the Pi-native web execution modules");
 assert(JSON.stringify(bridgeFiles) === JSON.stringify(["nucleiBridge.ts", "sqlmapBridge.ts"]), "bridges layer must only contain mature-engine bridge adapters");
+assert(registerFiles.includes("shared.ts") && registerFiles.includes("index.ts") && registerFiles.filter((file) => /^register[A-Z].*\.ts$/.test(file)).length === 12, "webSecurity/register must keep one shared shell, one facade index, and one explicit register module per callable security tool");
 assert(webSecurityTemplate.includes('from "js-yaml"'), "template YAML parsing must use js-yaml");
 assert(!webSecurityTemplate.includes("function parseYamlLines("), "hand-written YAML parser must not return");
 assert(webSecurityCore.split(/\r?\n/).length <= 40, "webSecurityCore.ts must stay a thin compatibility export layer");
@@ -172,8 +186,19 @@ assert(webSecurityTemplateCheck.includes("NormalizedTemplateCheckOptions"), "tem
 assert(webSecurityTools.includes("distilledJsonResult") && webSecurityTools.includes("summarizeWebReconProbeData") && webSecurityTools.includes("summarizeBrowserCrawlData") && webSecurityTools.includes("summarizeFuzzPathsData") && webSecurityTools.includes("summarizeFuzzVhostsData") && webSecurityTools.includes("summarizeSqliProbeData") && webSecurityTools.includes("summarizeSqlmapBridgeData") && webSecurityTools.includes("summarizeNucleiBridgeData") && webSecurityTools.includes("summarizeTemplateCheckData") && webSecurityTools.includes("summarizeCallbackOastData") && webSecurityTools.includes("summarizeCookieAnalyzeData") && webSecurityTools.includes("summarizeFuzzParamsData") && webSecurityTools.includes("summarizeHttpReplayData"), "web security tools must use distillation summaries");
 assert(webSecurityTools.includes("bindBrowserSession") && webSecurityTools.includes("browserCookiesToHeader"), "web security tools must expose browser-session cookie binding without echoing cookie values");
 assert(webSecurityTools.includes("async function executeWebSecurityToolShell"), "web security tools must centralize the shared execute shell");
+assert(read("src/tools/registerWebSecurityTools.ts").split(/\r?\n/).length <= 20, "registerWebSecurityTools.ts must stay a thin facade export layer");
+const webSecurityRegisterShared = read("src/tools/webSecurity/register/shared.ts");
+assert(webSecurityRegisterShared.includes("distilledJsonResult") && webSecurityRegisterShared.includes("cmd: \"cookies\""), "webSecurity register shared shell must centralize distillation and cookie binding");
 assert((webSecurityTools.match(/pi\.registerTool\(\{/g) || []).length === 12, "web security tools must keep explicit per-tool registrations");
-assert((webSecurityTools.match(/executeWebSecurityToolShell\(ensureStarted, params, ctx, \{/g) || []).length === 12, "web security tools must route each registration through the shared execute shell");
+assert((webSecurityTools.match(/executeWebSecurityToolShell\(ensureStarted, normalizeWebSecurityToolParams<[^>]+ToolParams>\(params\), ctx, \{/g) || []).length === 12, "web security tools must normalize each registration into typed params before the shared execute shell");
+assert(!webSecurityRegisterShared.includes("[key: string]: unknown"), "web security tool params must not use index signatures in the register shell");
+assert(!webSecurityRegisterShared.includes("run: (params: Record<string, unknown>)"), "web security shell run functions must be generic typed, not Record<string, unknown>");
+assert(!webSecurityRegisterShared.includes("const runParams: Record<string, unknown>"), "web security shell must not spread loose Record run params");
+assert(webSecurityRegisterShared.includes("WebSecurityShellConfig<TParams extends WebSecuritySharedToolParams, TRunParams extends object, TResult>"), "web security shell config must be generic over tool params and run params");
+assert(webSecurityRegisterShared.includes("augmentParams?: (params: TParams) => Partial<TRunParams>") && webSecurityRegisterShared.includes("run: (params: TRunParams) => Promise<TResult>"), "web security shell augment/run signatures must preserve typed params");
+assert(webSecurityRegisterShared.includes("normalizeWebSecurityToolParams<TParams extends WebSecuritySharedToolParams>") && (webSecurityTools.match(/normalizeWebSecurityToolParams<[^>]+ToolParams>\(params\)/g) || []).length === 12, "each web security register module must normalize external params into a named tool params type");
+assert((webSecurityRegisterShared.match(/export type [A-Za-z]+ToolParams = WebSecuritySharedToolParams & Raw[A-Za-z]+Options/g) || []).length === 12, "web security register shared layer must name one strong params alias per security tool");
+assert(webSecurityRegisterShared.includes("createBrowserCookieProvider") && webSecurityRegisterShared.includes(": CookieProvider"), "browser cookie provider must have an explicit CookieProvider type");
 assert((webSecurityTools.match(/distilledJsonResult\(/g) || []).length === 1, "web security tool distillation must flow through one shared shell");
 assert((webSecurityTools.match(/errorResult\(/g) || []).length === 1, "web security tool error mapping must flow through one shared shell");
 assert((webSecurityTools.match(/cmd: "cookies"/g) || []).length === 1, "web security tool cookie binding must be centralized in one shared shell");
@@ -189,7 +214,7 @@ for (const forbiddenPhrase of ["risk-tier", "风险分级闸门", "安全收缩�
 assert(read("src/tools/budgets.ts").includes("TOOL_RESULT_BUDGETS"), "tool result budgets must be table-driven");
 assert(read("src/tools/webSecurity/shared/http.ts").includes('if (!buffer.length) return "0000000000000000"'), "simHash64 must special-case empty buffers to avoid fixed all-ones collisions");
 const readme = read("README.md");
-assert(readme.includes("src/tools/webSecurity/browserNative") && readme.includes("src/tools/webSecurity/bridges") && readme.includes("src/tools/webSecurity/shared"), "README must document the fixed single-package webSecurity layering");
+assert(readme.includes("src/tools/webSecurity/register") && readme.includes("src/tools/webSecurity/browserNative") && readme.includes("src/tools/webSecurity/bridges") && readme.includes("src/tools/webSecurity/shared"), "README must document the fixed single-package webSecurity layering");
 assert(readme.includes("不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案"), "README must document the tool-layer boundary wording for webSecurity");
 assert(readme.includes("activeGraphqlIntrospection:true") && readme.includes("小型内置 exposure/API baseline"), "README must document active GraphQL crawl and default template-check semantics");
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");

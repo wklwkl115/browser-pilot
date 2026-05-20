@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 强化 WebSecurity register shell 类型边界：外部 TypeBox 参数在各 register 模块内归一为具名 ToolParams，shared shell 以泛型约束 `augmentParams/run/details/distill`，cookie provider 显式使用 `CookieProvider`，并用契约禁止 `[key:string]:unknown` 和 loose `Record` run 参数回流。
+- 重构 WebSecurity summary 层：`src/tools/summaries/webSecurity.ts` 现在仅作为 facade，recon/crawl/fuzz/sqli/bridge/template/OAST/cookie/replay 摘要拆入 `src/tools/summaries/webSecurity/`，共享脱敏、artifact 和表格裁剪 helper，并补 summary 契约覆盖关键证据字段。
+- 重构 WebSecurity TS 注册层：`registerWebSecurityTools.ts` 现在仅作为 facade，12 个安全工具的 schema/注册逻辑拆入 `src/tools/webSecurity/register/`，共享 shell/cookieProvider/distillation 保持单点实现，并补注册 facade 契约。
 - 修复 `browser_content` / `browser_scan` 大结果 artifact 通道：正文/扫描抽取现在走 direct CDP `Runtime.evaluate returnByValue`，`outputPath` 保存脚本声明预算内的完整 extraction/scan envelope；超过 20 万字符的 Markdown/content 不再先被 `exec.js` smart serializer 截成带 `…` 的伪结果。
 - 修复 `browser_artifact` sample/JSON 缺失信号：`mode=sample` 现在去重小文件或重叠 head/middle/tail 区段，并在 summary 暴露 deduped sections；`mode=json jsonPath` 未命中时返回稳定 `{exists:false, notFound:true, value:null}`，`pick` 对每个请求路径返回 `{exists,value}` 或 notFound 占位，避免 `undefined` 序列化后静默丢 key。
 - 修复 `browser_html` 采集预算与 summary 失真：顶层 `maxChars` 现在只作为返回预算，不再自动写入 bridge `html.get maxChars`；显式 `params.maxChars/max_bytes` 才限制采集。`detailLevel:"full"`/`outputPath` 会先抓原始 HTML/text 再由 resultMiddleware 保存 artifact；bridge 在截断前返回 links/buttons/inputs/forms/images/text/original bytes 元数据，summary 优先使用这些结构计数。
