@@ -21,6 +21,10 @@ function readToolSources() {
 		.join("\n");
 }
 
+function readBridgeBundle(files) {
+	return files.map((file) => read(`bridge/pi_browser_bridge/${file}`)).join("\n");
+}
+
 const requiredBridgeFiles = [
 	"manifest.json",
 	"background.js",
@@ -79,11 +83,11 @@ const htmlBridge = read("bridge/pi_browser_bridge/html.js");
 const screenshotBridge = read("bridge/pi_browser_bridge/screenshot.js");
 const cdpBridge = read("bridge/pi_browser_bridge/cdp.js");
 const frameBridge = read("bridge/pi_browser_bridge/frame.js");
-const waitBridge = read("bridge/pi_browser_bridge/wait.js");
+const waitBridgeFiles = ["wait.js"];
+const waitBridge = readBridgeBundle(waitBridgeFiles);
 const hookBridge = read("bridge/pi_browser_bridge/hook.js");
 const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
-const networkModelBridge = read("bridge/pi_browser_bridge/network_model.js");
-const networkBridge = [networkModelBridge, read("bridge/pi_browser_bridge/network.js")].join("\n");
+const networkBridge = readBridgeBundle(["network_model.js", "network.js"]);
 const patternsBridge = read("bridge/pi_browser_bridge/patterns.js");
 const hookDispatcher = read("bridge/pi_browser_bridge/hook_dispatcher.js");
 const coreCommands = read("bridge/pi_browser_bridge/core_commands.js");
@@ -95,6 +99,7 @@ assert(htmlBridge.includes("error_code: 'SELECTOR_NOT_FOUND'") && htmlBridge.inc
 assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversalAccess)") && !cdpBridge.includes("grantUniveralAccess"), "frame.evaluate must pass correctly-spelled CDP grantUniversalAccess option");
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
 assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
+assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
 for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }

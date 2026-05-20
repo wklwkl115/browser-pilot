@@ -38,12 +38,12 @@
 
 ## 180. Bridge `wait.js` 职责拆分：只读依赖图与边界冻结
 
-- [ ] 性质判定：prerequisite refactor debt；目标是拆解 1239 行 `wait.js`，保持 `browser_wait`、TS `BrowserWaitSupervisor.ts`、MV3 service worker 短租约语义完全不变。
-- [ ] 只读图谱：列出 `wait.js` 全部顶层状态、函数、Chrome/CDP 事件依赖、被 `runtime.js/evidence.js/hook.js/tests` 调用的全局符号；标注哪些代码片段被 `vm.runInNewContext(waitBridge, ...)` 契约直接加载。
-- [ ] 拆分方案：冻结现有 `importScripts` 拓扑下的文件顺序和职责：`wait_cdp.js`（CDP refs/subscription/domain cleanup）、`wait_coordinator.js`（WaitCoordinator/wait id/event subscription/orphan GC）、`wait_navigation.js`（navigation/loadState/frame lifecycle）、`wait_network_idle.js`（networkIdle filter/calculator）、`wait.js`（facade/command dispatch/diagnose glue）。
-- [ ] 不变式：不得改变 `timeoutMs:0` immediate probe、长等待 lease/supervisor metadata、orphan cleanup、CDP domain release retry、event listener tab scope、`wait.any/all` 空条件拒绝、错误码和 summary/artifact 字段。
-- [ ] 契约准备：先更新 `check-bridge-files.mjs` / `check-pi-browser-bridge.mjs` 的组合加载 helper，使后续 wait 子文件拆分后 VM fixture 仍按真实加载顺序执行。
-- [ ] 文档：TODO 记录图谱和拆分边界；本项只做设计/契约准备，不做行为改动，不更新 skill 能力描述。
+- [x] 性质判定：prerequisite refactor debt；目标是拆解 1239 行 `wait.js`，保持 `browser_wait`、TS `BrowserWaitSupervisor.ts`、MV3 service worker 短租约语义完全不变。
+- [x] 只读图谱：已在 `docs/bridge-wait-split.md` 列出 `wait.js` 顶层状态、函数、Chrome/CDP 事件依赖、外部全局消费者和直接 VM fixture 暴露符号。
+- [x] 拆分方案：冻结现有 `importScripts` 拓扑下的文件顺序和职责：`wait_cdp.js`（CDP refs/subscription/domain cleanup）、`wait_coordinator.js`（WaitCoordinator/wait id/event subscription/orphan GC）、`wait_navigation.js`（navigation/loadState/frame lifecycle）、`wait_network_idle.js`（networkIdle filter/calculator）、可选 `wait_selector.js`、`wait.js`（facade/command dispatch/diagnose glue）。
+- [x] 不变式：`docs/bridge-wait-split.md` 记录并锁定 `timeoutMs:0` immediate probe、长等待 lease/supervisor metadata、orphan cleanup、CDP domain release retry、event listener tab scope、`wait.any/all` 空条件拒绝、错误码和 summary/artifact 字段不变。
+- [x] 契约准备：`check-pi-browser-bridge.mjs` 改为 `readBridgeBundle()` + `waitBridgeFiles` 组合加载；`check-bridge-files.mjs` 改为 `waitBridgeRuntimeFiles/serviceWorkerBridgeFiles/assertBackgroundOrder()`，为后续 wait 子文件按真实顺序进入 VM fixture 做准备。
+- [x] 文档：README 指向 `docs/bridge-wait-split.md`；CHANGELOG/TODO 记录本项为设计/契约准备，无行为改动，未更新 skill 能力描述。
 
 ## 181. Bridge `wait.js` 拆分第一刀：CDP refs/subscription 子系统
 
@@ -153,8 +153,8 @@
 
 ## 下一步建议顺序
 
-1. TODO 180：先做 `wait.js` 只读依赖图和拆分契约准备。
-2. TODO 181-183：分三刀拆 `wait.js`，每刀保持行为不变并跑 `npm run check`。
+1. 已完成 TODO 180：`wait.js` 只读依赖图和拆分契约准备。
+2. 下一项 TODO 181：拆出 `wait_cdp.js`，保持行为不变并跑 `npm run check`。
 3. TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界。
 4. TODO 185-186：先补 smoke 诊断和 bridge 类型收口，为大迁移降低失败率。
 5. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
