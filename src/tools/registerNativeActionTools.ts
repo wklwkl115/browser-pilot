@@ -1,10 +1,14 @@
 import { Type } from "typebox";
+import { BrowserBridgeError } from "../driver/errors";
 import { errorResult } from "../utils/toolResult";
+import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
 import type { DetailLevel } from "../utils/params";
+import type { BrowserBridgeExecutionResult } from "../driver/types";
+import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
 import { distilledJsonResult } from "./resultMiddleware";
-import { asPositiveInt, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { asPositiveInt, DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 type ActionToolConfig = {
@@ -17,10 +21,31 @@ type ActionToolConfig = {
 	sessionIdDescription?: string;
 	commandForAction: (action: string) => string;
 	timeoutForCommand?: (commandName: string) => number;
+	allowZeroTimeout?: boolean;
+	commandExecutor?: (server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { tabId?: unknown; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
 	artifactPrefix: string;
 	budgetName: ToolResultBudgetName;
 	defaultDetailLevel?: DetailLevel;
 };
+
+function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): number {
+	const n = Number(value);
+	if (allowZero && Number.isFinite(n) && n === 0) return 0;
+	return asPositiveInt(value, fallback);
+}
+
+function nativeActionErrorResult(error: unknown) {
+	const details = error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
+	const result = details && typeof details === "object" && !Array.isArray(details) ? (details as Record<string, unknown>).result : undefined;
+	if (result && typeof result === "object" && !Array.isArray(result)) {
+		const record = result as Record<string, unknown>;
+		if (typeof record.error_code === "string" && record.error_code) {
+			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
+			return errorResult(new BrowserBridgeError(record.error_code, typeof record.error === "string" ? record.error : "browser native action failed", resultDetails));
+		}
+	}
+	return errorResult(error);
+}
 
 function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, config: ActionToolConfig) {
 	const parameterProperties = {
@@ -47,10 +72,13 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 				const commandName = config.commandForAction(params.action);
 				const tabId = params.tabId ?? body.tabId;
 				if (params.sessionId && body.sessionId === undefined && body.session_id === undefined) body.sessionId = params.sessionId;
-				const timeoutMs = asPositiveInt(params.timeoutMs, config.timeoutForCommand?.(commandName) ?? DEFAULT_TOOL_TIMEOUT_MS);
+				const timeoutMs = actionTimeoutMs(params.timeoutMs, config.timeoutForCommand?.(commandName) ?? DEFAULT_TOOL_TIMEOUT_MS, config.allowZeroTimeout === true);
 				if (body.timeoutMs === undefined && body.timeout_ms === undefined) body.timeoutMs = timeoutMs;
 				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget(config.budgetName));
-				const result = await server.sendCommand({ ...body, cmd: commandName }, { tabId, timeoutMs });
+				const command = { ...body, cmd: commandName };
+				const result = config.commandExecutor
+					? await config.commandExecutor(server, command, { tabId, timeoutMs })
+					: await server.sendCommand(command, { tabId, timeoutMs });
 				return await distilledJsonResult(result, {
 					toolName: config.name,
 					command: commandName,
@@ -60,10 +88,10 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 					outputPath: params.outputPath,
 					fallbackName: `${config.artifactPrefix}-${Date.now()}.json`,
 					details: { command: commandName, action: params.action },
-					artifactValue: result.data ?? result,
+					artifactValue: result,
 				});
 			} catch (error) {
-				return errorResult(error);
+				return nativeActionErrorResult(error);
 			}
 		},
 	});
@@ -73,16 +101,18 @@ export function registerWaitTool(context: ToolRegistrarContext) {
 	registerNativeActionTool(context, {
 		name: "browser_wait",
 		label: "Browser Wait",
-		description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose.",
+		description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions.",
 		promptSnippet: "Run browser wait/navigation commands with typed action names.",
 		promptGuideline: "Use browser_wait instead of manual sleep loops when waiting for page navigation, selectors, load state, or network idle.",
-		actionDescription: "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all | cancel | diagnose",
+		actionDescription: "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all (non-empty waits/conditions) | cancel | diagnose",
 		sessionIdDescription: "Logical wait session id",
 		commandForAction: waitCommandForAction,
+		commandExecutor: executeBrowserWaitWithSupervisor,
+		allowZeroTimeout: true,
 		budgetName: "browser_wait",
 		artifactPrefix: "wait-result",
 		defaultDetailLevel: "preview",
-		timeoutForCommand: (commandName) => commandName.includes("wait") || commandName.includes("navigateAndWait") ? 35_000 : DEFAULT_TOOL_TIMEOUT_MS,
+		timeoutForCommand: (commandName) => commandName.includes("wait") || commandName.includes("navigateAndWait") ? DEFAULT_OBSERVATION_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS,
 	});
 }
 
@@ -97,7 +127,8 @@ export function registerNetworkTool(context: ToolRegistrarContext) {
 		sessionIdDescription: "Recorder session id",
 		commandForAction: networkCommandForAction,
 		budgetName: "browser_network",
-		timeoutForCommand: (commandName) => commandName.endsWith(".wait") ? 35_000 : DEFAULT_TOOL_TIMEOUT_MS,
+		allowZeroTimeout: true,
+		timeoutForCommand: (commandName) => commandName.endsWith(".wait") || commandName.endsWith(".list") || commandName.endsWith(".body") || commandName.endsWith(".exportHar") ? DEFAULT_OBSERVATION_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS,
 		artifactPrefix: "network-result",
 	});
 }

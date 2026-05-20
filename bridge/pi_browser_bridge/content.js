@@ -18,8 +18,10 @@ void chrome.runtime.sendMessage({ cmd: 'bridge_wake', url: location.href, title:
 
 new MutationObserver(muts => {
   for (const m of muts) for (const n of m.addedNodes) {
-    if (n.id === TID || (n.querySelector && n.querySelector('#' + TID))) {
-      const el = n.id === TID ? n : n.querySelector('#' + TID);
+    if (n.nodeType !== 1) continue;
+    const node = /** @type {Element} */ (n);
+    if (node.id === TID || node.querySelector('#' + TID)) {
+      const el = node.id === TID ? node : node.querySelector('#' + TID);
       handle(el);
     }
   }

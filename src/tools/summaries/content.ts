@@ -13,6 +13,7 @@ export function summarizeContentData(data: unknown): Summary {
 		rootTag: data.rootTag,
 		rootId: data.rootId,
 		rootClass: data.rootClass,
+		empty: data.empty === true,
 		markdownChars: stats.markdownChars ?? markdown.length,
 		originalMarkdownChars: stats.originalMarkdownChars,
 		textChars: stats.textChars,

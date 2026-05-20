@@ -43,25 +43,46 @@ function stripHtml(html: string): string {
 		.trim();
 }
 
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+	return !!value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function numberValue(...values: unknown[]): number | undefined {
+	for (const value of values) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+		if (typeof value === "string" && value.trim() !== "") {
+			const n = Number(value);
+			if (Number.isFinite(n)) return n;
+		}
+	}
+	return undefined;
+}
+
 export function summarizeHtmlSnapshot(html: string, meta: Record<string, unknown> = {}): Summary {
 	const cleanedHtml = removeKnownNoiseHtml(html);
 	const text = stripHtml(cleanedHtml);
 	const tagCount = (name: string) => (cleanedHtml.match(new RegExp(`<${name}\\b`, "gi")) || []).length;
-	const titles = Array.from(cleanedHtml.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)).map((match) => stripHtml(match[1]).slice(0, 200)).filter(Boolean).slice(0, 3);
+	const structure = recordValue(meta.structure);
+	const metaCounts = recordValue(meta.counts) || recordValue(structure?.counts);
+	const countValue = (key: string, fallbackTag: string) => numberValue(metaCounts?.[key]) ?? tagCount(fallbackTag);
+	const metaTitles = Array.isArray(meta.titles) ? meta.titles : Array.isArray(structure?.titles) ? structure.titles : undefined;
+	const titles = (metaTitles ? metaTitles.map((item) => String(item).slice(0, 200)) : Array.from(cleanedHtml.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)).map((match) => stripHtml(match[1]).slice(0, 200))).filter(Boolean).slice(0, 3);
+	const textChars = numberValue(meta.text_length, meta.textLength, structure?.text_length, structure?.textLength) ?? text.length;
 	return {
 		selector: meta.selector,
 		mode: meta.mode,
 		chars: html.length,
-		textChars: text.length,
+		textChars,
 		truncated: meta.truncated,
 		original_length: meta.original_length,
+		original_bytes: meta.original_bytes,
 		titles,
 		counts: {
-			links: tagCount("a"),
-			buttons: tagCount("button"),
-			inputs: tagCount("input"),
-			forms: tagCount("form"),
-			images: tagCount("img"),
+			links: countValue("links", "a"),
+			buttons: countValue("buttons", "button"),
+			inputs: countValue("inputs", "input"),
+			forms: countValue("forms", "form"),
+			images: countValue("images", "img"),
 		},
 		textPreview: truncateText(text, 1_000).text,
 	};

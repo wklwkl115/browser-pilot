@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- 修复 `browser_content` / `browser_scan` 大结果 artifact 通道：正文/扫描抽取现在走 direct CDP `Runtime.evaluate returnByValue`，`outputPath` 保存脚本声明预算内的完整 extraction/scan envelope；超过 20 万字符的 Markdown/content 不再先被 `exec.js` smart serializer 截成带 `…` 的伪结果。
+- 修复 `browser_artifact` sample/JSON 缺失信号：`mode=sample` 现在去重小文件或重叠 head/middle/tail 区段，并在 summary 暴露 deduped sections；`mode=json jsonPath` 未命中时返回稳定 `{exists:false, notFound:true, value:null}`，`pick` 对每个请求路径返回 `{exists,value}` 或 notFound 占位，避免 `undefined` 序列化后静默丢 key。
+- 修复 `browser_html` 采集预算与 summary 失真：顶层 `maxChars` 现在只作为返回预算，不再自动写入 bridge `html.get maxChars`；显式 `params.maxChars/max_bytes` 才限制采集。`detailLevel:"full"`/`outputPath` 会先抓原始 HTML/text 再由 resultMiddleware 保存 artifact；bridge 在截断前返回 links/buttons/inputs/forms/images/text/original bytes 元数据，summary 优先使用这些结构计数。
+- 修复 `wait.diagnose` 与 evidence summary 观测缺口：frame 探测不再使用非标准 `document.frames`，改为 `document.querySelectorAll('iframe')` + `window.frames.length` 并返回 `frameCount/iframeCount/id/name/src/visible/rect`；`browser_evidence` summary 保留 `hook_status` 的 state/session/install/version/buffer 关键字段。
+- 修复 `browser_frame` new-document script 生命周期：`frame.addNewDocumentScript` 现在合并顶层 `runImmediately/worldName/includeCommandLineAPI` 与 `options` 且顶层优先；CDP bridge 维护 tab/session scoped identifier registry，未知 `removeNewDocumentScript` 返回 `SCRIPT_NOT_FOUND`，正常 remove 与已知 `alreadyRemoved` 都返回稳定 `identifier/removed/alreadyRemoved/sessionKey/cdpSessionName/tabId/method`。
+- 修复 performance/evidence timeout 契约：`hook.getPerformanceEntries` 显式 `entryType` 未命中时返回 `count:0` 且不再 fallback 全量 `performance.getEntries()`；`browser_evidence` 会把 `timeoutMs/timeout_ms` 透传给 hook status/collect 的页面 evaluate 与 performance 子源；`hook.status`/`hook.collect`/`hook.evaluate` 也会把命令 timeout 传入 `Runtime.evaluate`。
+- 修复 `browser_pick focus:false` 后台 tab 超时语义：工具层现在用用户 `timeoutMs` 作为总 deadline，CDP `Runtime.evaluate` 使用额外 grace；deadline 到期返回结构化 timeout 结果并主动调用页面 cleanup handle 清理 overlay/listeners，避免后台页面 timer throttle 时暴露底层 CDP timeout。
+- 修复 `browser_hook` event listener 生命周期：listener registry 改为 `tabId::listenerId` 作用域，同名 listener 可跨 tab 并存，`hook.removeEventListener` 只删除目标 tab 的 registry/page listener；`hook.uninstall` 与 `cleanupPiBrowserTab` 会尝试清理页面 `window.__piBrowserListeners` 中的真实 DOM listener，并返回或记录 cleanup 诊断。
+- 修复 `browser_hook` session/collect/clear 契约：status/collect/clear_buffer/pause/resume/uninstall 现在转发并校验显式 `sessionId/session_id`，不匹配返回 `INVALID_SESSION`/`SESSION_NOT_FOUND`；collect 不再向事件 buffer 写入 lifecycle 自噪声；clear_buffer 不再重置全局 `seq`，增量游标在清空前后保持单调。
+- 修复 `browser_download` mode 静默降级：工具层和 bridge 层现在都只允许 `click | media | url`；selector 目标拒绝 `mode:"url"`，URL 目标拒绝 `mode:"click"/"media"`，未知或冲突值返回 `INVALID_RULE` 且不会触发页面脚本或 Chrome downloads API。
+- 增强 `browser_network` 原始证据保真：recorder 默认对 XHR/Fetch/Document 的 JSON/text/html 响应在 `loadingFinished` 后立即有界抓取 body，默认保留有界 request `postData`，并通过 `bodyAvailability/bodyUnavailableReason` 区分 captured、too_large、binary、expired、not_requested、cdp_failed 等缺失原因；`network.body` 缺 body 时返回结构化 `BODY_UNAVAILABLE` 诊断。
 - 当前工具面：`browser_scan` + `browser_execute` + `browser_wait` 为 GA-style 主链路；下方 `browser_query` / `browser_click` / `browser_type` / `browser_dom_*` 记录均为历史阶段，已被“回归 GA 简化工具面”取代，不代表当前注册工具。
 - 收敛 Web 实现方向：保留原生工具能力优先，`browser_sqli_probe` 与 `browser_template_check` 作为原生能力继续演进，同时明确深度 SQLi / 深度模板扫描将通过成熟引擎 bridge 深适配接入；不再把原生工具表述成 `sqlmap` / `nuclei` 等成熟引擎平替。
 - 新增 `browser_sqlmap_bridge`：通过 Pi-native bridge 调用 `sqlmap`，统一复用 raw/captured/HAR 请求输入链路、浏览器态 cookie 绑定、显式 launcher / PATH/module auto-detect、结构化 findings 与 artifact 归档，并补契约与 runtime 验证路径。
@@ -13,11 +24,66 @@
 - 修复 raw HTTP 解析重复 header 覆盖：`parseRawHttpRequest` 现在按 header 名 case-insensitive 合并重复项，`Cookie` 用 `; `，通用 header 用 `, `，避免 replay 丢失会话或代理链信息。
 - 修复 `browser_http_replay` HAR 依赖图相对 URL 崩溃：`buildHarDependencyGraph` 与 HAR redirect/referer 解析现在支持相对 request/referer/location 与 `baseUrl` 归一化，不再因 `new URL(relative)` 中断整次 replay。
 - 修复 native bridge WebSocket 错误帧语义：`router.js` 的 native command 失败现在发送 `type:"error"`，不再把 `{ ok:false }` 错误对象伪装成 `type:"result"` 导致服务端 Promise 误 resolve。
+- 修复 bridge batch 内 `tabs` 命令分发：`handleBatch()` 现在复用 `handleTabsCommand()`，保留 `list/create/switch/close` method 语义，不再把 tab 控制静默降级为 list。
+- 修复 `browser_wait` / `wait.navigateAndWait` 总超时预算失真：导航阶段耗时现在会从后续 wait 租约预算中扣减；导航后预算耗尽会直接返回 `WAIT_TIMEOUT`，不再继续启动第二阶段 wait。
+- 修复 `browser_wait` supervisor 迟到成功语义：短租约在全局 deadline 之后才返回成功时会被丢弃并转成 `WAIT_TIMEOUT` / `WAIT_STATE_LOST`，避免等待结果超过用户声明总超时。
+- 修复 `browser_wait timeoutMs=0` 即时检查语义：tool 层与 TS wait supervisor 现在保留 0，向 bridge 发送一次 immediate probe，不再升级为默认长等待。
+- 加固 bridge 端 JS 工程类型栅栏：新增 `tsconfig.bridge.json`、ambient bridge 类型和 `check:bridge:types`，对 MV3 importScripts bridge 代码执行 `allowJs/checkJs/noEmit`，并用 contract 锁定脚本接入与 JSDoc 入口。
+- 加固 `browser_wait` 长等待 MV3 生命周期语义：Service Worker 侧暴露 `workerBootId/workerStartedAt`，TS 端对 navigation/loadState/selector/networkIdle/navigateAndWait/any/all 使用短租约 wait supervisor 续证；成功结果暴露 leases/workerRestarts/historyLost，不可证明时返回 `WAIT_STATE_LOST`。
+- 修复 `browser_content` 带 URL 导航路径：现在复用 TS durable wait supervisor 执行 `wait.navigateAndWait`，并在结果 details 中保留 navigation supervisor 元数据。
+- 修复 `browser_content` 抽取超时预算失真：内容抽取阶段现在直接使用用户声明的 `timeoutMs`，显式小于 100ms 的值返回 `INVALID_TIMEOUT`，不再静默扩容到默认 15s。
+- 修复 `browser_execute monitor:true` 结果结构：monitor 模式现在保留普通执行结果的顶层 `data/target/newTabs/acknowledged` 等元数据，仅追加 `monitor` diff 证据。
+- 加固 `browser_hook` 页面侧 redact pattern：`options.redact_patterns` 现在限制数量/长度并经过安全正则检查，嵌套量词等危险 pattern 降级为 literal 替换，避免 hook dispatcher ReDoS。
+- 加固 `browser_artifact search regex:true`：本地 artifact regex search 现在限制 pattern 与单行匹配输入长度，拒绝嵌套量词/回溯引用/lookaround 等危险 regex，并在结果 summary 中暴露 regex 扫描预算。
+- 修复 `browser_artifact` 流式读取契约：`text/search/sample` 不再被 JSON 读取大小上限阻断，UTF-8 `summary.chars` 改为真实字符数，空文件/越界 offset 不再返回非法行区间，长单行超预算仍返回可读前缀，search 命中末行时 `nextOffset:null`。
+- 加固 `browser_template_check` 模板 regex：body/header/DSL matcher 与 extractRegex/extractor 统一使用有界安全正则，拒绝危险 regex，并对响应体 regex 匹配截断到固定预算且返回诊断。
+- 加固 HAR URL pattern 过滤：`browser_http_replay` / `browser_sqlmap_bridge` / `browser_nuclei_bridge` 的 `harUrlPattern` 现在使用 bounded safe-regex 或 substring fallback，并限制候选 entry 与 URL 匹配文本长度，避免大 HAR + 恶意 regex 阻塞。
+- 明确高自动化 Web 工具判断增强边界：`browser_crawl` 暴露 `activeGraphqlIntrospection` passive-only 开关并记录默认主动 GraphQL introspection 行为；`browser_template_check` 明确省略模板选择器时运行小型内置 exposure/API baseline；契约检查 scanner/bridge 类工具必须保留 bounded/scoped/artifact/evidence 文案。
+- 修复 native bridge WebSocket malformed input 处理：`router.js` 对 `id` / `code` 使用 nullish 检查，空字符串脚本不再被静默丢弃；对象 code 缺失有效 `cmd` 或传入不支持 code 类型时直接返回明确错误帧。
+- 修复 native bridge JSON-looking 脚本误分发：WebSocket string `code` 只有在解析为含 `cmd` 的 JSON object 时才进入 command 模式，`[]`、`{"foo":1}` 等脚本字符串保留 JavaScript 执行路径。
+- 修复 native bridge cookie 合并维度：`cookies` command 合并 partitioned cookies 时按 name/domain/path/storeId/partitionKey 去重，不再折叠同名不同 path 或 partition 的合法 cookie。
+- 修复 native bridge cookie URL 错误边界：`cookies` command 现在先校验 URL；`about:` / `file:` 等非 HTTP(S) URL 返回空 cookie 结果，畸形 URL 返回 `INVALID_RULE`，不再泄漏 `url.match(...)[0]` 空指针异常。
+- 修复 `wait.all` 空条件语义：`wait.all` 现在与 `wait.any` 一样要求非空 `waits/conditions`，空复合等待返回 `INVALID_RULE`，不再把 `matched:0` 当成功。
 - 加固浏览器扩展 WebSocket transport：onclose/onerror/keepalive 清理改为 identity-guarded，onopen/onmessage 捕获当前 socket，避免旧 socket 晚到事件误清新连接或异步 ready 发错连接。
 - 修复浏览器扩展 tab sync 未处理 Promise rejection：tab lifecycle listener 中的 tab 更新发送与 WS 探测现在统一捕获并记录异步错误，避免 MV3 service worker 因 `tabs.query` / `ws.send` 失败出现未处理 rejection。
 - 修复 `stableJson` 循环引用崩溃：JSON 输出路径现在把真实祖先循环标记为 `[Circular]`，同时保留非循环共享引用、BigInt 与 Error 序列化行为。
 - 修复 `BrowserBridgeServer.closeTab` 会话引用残留：关闭最后一个活动 tab 时同步清理 `latestSessionId`，避免后续无显式 `tabId` 的命令 fallback 到已关闭 tab。
 - 修复 `BrowserBridgeServer` 断连会话引用残留：WebSocket client 断开或 `tabs_update` 标记 tab 缺失后同步清理 stale `defaultSessionId` / `latestSessionId`，避免省略 `tabId` 的命令落到断开的旧 tab。
+- 修复 `BrowserBridgeServer` 断开 session 历史无界增长：已断开 tab session 现在按 5 分钟 TTL 与最多 128 条 disconnected history 清理，保留短期诊断同时避免长期 tab churn 造成 `sessions` Map 泄漏。
+- 补强 tab removed 生命周期契约：`chrome.tabs.onRemoved` 必须走 `cleanupPiBrowserTab`，并释放 tab-scoped waits、event subscriptions、CDP refs 与 network recorders，防止 Service Worker 侧资源清理链路回归。
+- 修复 CDP domain disable 失败后引用丢失：wait/network CDP ref 现在只在 `*.disable` 成功后删除；disable 失败会保留 `disablePending` 与 `lastError`，后续 acquire/release 可复用并重试释放；tab removed / tab-gone 场景不保留无意义 stale ref。
+- 修复 `BrowserBridgeServer.switchTab` 失败结果污染默认 tab：兼容/异常客户端若返回 `type:"result"` + `{ ok:false }`，现在会抛 `BROWSER_COMMAND_FAILED` 且不更新 `defaultSessionId`。
+- 加固 `BrowserBridgeServer` 默认 tab 并发可观测性：selected/latest tab 变更维护 `selectionVersion`，隐式 tab fallback 的执行结果/错误暴露 `target.source`、dispatch/resolve 版本，`switchTab` 返回 selected tab 证据。
+- 修复 `BrowserBridgeServer.selectBrowser` 空浏览器选择语义：选择到无活动 tab 的浏览器会清空 default/latest 并返回 `NO_TAB`，tab-scoped 隐式命令不再回落到其它浏览器。
+- 修复 `BrowserBridgeServer.selectBrowser` 隐式目标选择：切换浏览器时优先选择该 client 上报的 `active:true` tab；无 active 标记时才回退到有效 latest/首个 live tab，避免命令落到后台 tab。
+- 修复 `BrowserBridgeServer` 多浏览器 tabId 碰撞：tab session 改为 browser-scoped 复合 id，`browser_tabs list` 暴露 `browserId`，显式同号 tabId 按当前 selected browser 路由，避免后上报 client 覆盖前一个 session。
+- 修复 `BrowserBridgeServer` stale tab 回退选择：default/latest 指向断开 session 时，刷新引用优先选择同 browser 的 `active:true` tab，再使用有效 latest，避免回退到较早后台 tab。
+- 修复 `BrowserBridgeServer` 显式 stale tabId 回退：指定 `tabId` 找不到 live session 时本地返回 `TAB_NOT_FOUND`，不再把请求发到任意打开的 extension client 后超时或误路由。
+- 修复 `wait.navigation timeoutMs=0` 假阳性：即时探测现在读取当前 URL 与 load state，只有声明条件已满足才成功，否则返回 `TIMEOUT`，不再无条件 ok。
+- 修复 `wait.any/all` 子条件命令名归一化：组合等待现在接受完整 native wait command 名（如 `wait.loadState` / `wait.selector` / `wait.navigation`），不再把带点号的标准 `cmd` 判为 unknown。
+- 修复 `browser_wait` supervisor 瞬时 lease timeout 重试风暴：底层立即返回 timeout 时现在按最小退避节流续租，并在 lease 诊断中记录 `retryDelayMs`。
+- 修复 `browser_screenshot` visible-tab fallback 格式漂移：fallback 实际只捕获 png/jpeg，返回 metadata 与默认 artifact 扩展名现在使用真实捕获格式和 mime，而不是请求的 unsupported format。
+- 修复 `browser_download` 结果 envelope 丢失：工具层现在保留完整 `BrowserBridgeExecutionResult` 顶层元数据（id/tabId/acknowledged/target/newTabs），仅在 summary 中解包下载 payload。
+- 加固 `BrowserBridgeServer` WebSocket origin 边界：upgrade 阶段拒绝普通网页 `http(s)://...` origin，保留 Chrome extension origin、`Origin:null` 与无 origin 本地客户端连接。
+- 修复 `browser_tabs` 缺失 tabId 的空字符串 fallback：`switch` / `close` 现在在工具层显式要求有效 `tabId`，缺失或非法时返回 `TAB_ID_REQUIRED`，不再启动 bridge 后向 server 传空字符串。
+- 加固 `browser_tabs create` URL 边界：create 现在要求绝对 URL 或默认 `about:blank`，并显式拒绝 `javascript:`；direct bridge `tabs.create` 同步返回明确 `INVALID_RULE`。
+- 修复 `tabs.create` 默认 `about:blank` 后不可见：bridge tab tracking/list/sync 现在保留 `about:blank` 新建 tab，同时继续过滤 `chrome://` 等内部页。
+- 加固工具错误 stack 抑制：bridge/tabs/transfer 结构化错误不再使用严格模式下可能抛错的 `delete error.stack`，改用共享 `suppressErrorStack`，避免 stack 清理掩盖原始错误。
+- 加固 `buildScanScript` 脚本字面量边界：scan 脚本内嵌 JSON 统一转义 HTML-sensitive 字符，并对非有限 `maxChars` / `maxNodes` 回退默认值，避免生成 `null` 预算。
+- 加固 Network recorder pattern 匹配：用户提供的 URL/MIME/body/ws/sse pattern 现在有长度和安全正则检查，嵌套量词等高风险 pattern 不再直接编译执行，避免 Service Worker ReDoS。
+- 加固 `wait.networkIdle` URL pattern 匹配：`includeUrls` / `ignoreUrls` 复用共享有界 matcher，嵌套量词等高风险 pattern 不再直接编译执行。
+- 加固 `browser_pick` 页面卸载路径：picker 现在监听 `pagehide` / `beforeunload`，标签页导航或关闭前会以取消结果结算并清理 overlay/listeners，而不是只等待交互超时。
+- 修复 `browser_screenshot` 缺失目标 tab 的错误语义：截图前先确认 tab 仍存在；Chrome 返回 missing-target 时直接返回 `TAB_NOT_FOUND`，不再把不存在的 tab 归类为截图超时。
+- 加固 screenshot data URL artifact 写入：`saveDataUrl` 现在严格校验 base64 payload，非法字符或 padding 不再被 `Buffer.from(..., "base64")` 容忍后写成损坏文件。
+- 加固 `browser_screenshot` debugger cleanup 观测：`chrome.debugger.detach` 失败不再静默吞掉，成功截图结果会携带 `cleanup.debuggerDetach` 警告并写扩展日志。
+- 修复正整数参数归一化向下截断：`asPositiveInt` 现在对正浮点数向上取整，避免 timeout/maxChars 等用户预算被静默缩短，并保证 `0.1` 归一化后仍为正整数。
+- 调整观测型工具默认 timeout：新增 `DEFAULT_OBSERVATION_TIMEOUT_MS=35_000`，用于 `browser_evidence` 与 `browser_network list/body/exportHar/wait`，避免复杂页面证据聚合或大缓冲读取过早超时。
+- 修复 `browser_network` 录制器契约：显式 `sessionId` 不再回退 default，`network.list` 末页返回 `nextOffset:null`，`network.get` 缺失请求返回 `REQUEST_NOT_FOUND`，二进制 body 按原始字节截断后重编码为合法 base64，`exportHar(format:"json", includeBody:true)` 的 bodies 只包含过滤命中的记录，network summary 保留 recorder tab/session 与 body url/status/mimeType。
+- 收敛结果契约层：`detailLevel:"preview"` 与 summary 统一返回 compact envelope；envelope 超预算时自动保存 raw/artifactValue 并返回 `saved.path`；`browser_content` / `browser_scan` / `browser_html` / native action / evidence 的 outputPath artifact 保存完整可复原 envelope；`browser_scan` 不再私自增加返回预算，长文本节点裁剪会标记 `truncated`。
+- 统一 selector/empty 语义：`browser_content` 与 `browser_html` selector 未命中返回 `SELECTOR_NOT_FOUND`，无效 selector 返回 `INVALID_SELECTOR`；`browser_content` 命中空节点时返回结构化 `empty:true`，不再抛通用抽取失败。
+- 收敛 hook/wait/frame 作用域契约：hook status/collect/list_sessions 等只读命令不再隐式 auto reinstall，显式 tab 只返回目标 scope；wait.diagnose 过滤目标 tab listeners/CDP/debugger 数据；frame.list/evaluate 返回稳定 tabId/frameId 元数据。
+- 收敛剩余 summary/detail 字段：generic bridge summary 上浮 `tabId/frameId/count/total/nextOffset/sessionId` 与 target source，evidence hook 聚合沿用只读 no-reinstall 语义，smoke fixture 覆盖 content empty、selector miss、frame list 与 hook no-install 读路径。
+- 修复 `browser_network action=wait timeoutMs=0` 工具层透传：network wait 现在与 bridge 即时检查语义一致，不再把 0 扩成默认长等待。
 - 修复 `disable_dialogs.js` 的 `prompt` 抑制返回语义：自动确认时保留空字符串 default，并按原生返回类型把 falsy default 转为字符串，不再用 `def || null` 混淆确认空输入与取消。
 - 修复 WebSocket 断连 pending Promise 挂起：`BrowserBridgeServer` 现在记录 pending 请求所属 client，并在 client unregister 时立即 reject/清理对应 pending 请求。
 - 修复 multipart 解析数据损坏：`parseMultipartBody` 改为识别行首 boundary delimiter，不再用全局 split 误切 payload 内 boundary 文本，也不再裁剪真实 payload 尾部 `--`；`parseRawHttpRequest` 同步保留 body 原始 CRLF，避免 multipart delimiter 被 header 解析步骤改写。

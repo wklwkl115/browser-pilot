@@ -15,7 +15,11 @@ async function handlePiBrowserEvidenceCommand(cmd, tabId, msg) {
   if (cmd !== 'evidence.collect') return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser evidence command: ' + cmd, { cmd });
   const eventTypes = Array.isArray(msg.event_types) ? msg.event_types : (Array.isArray(msg.eventTypes) ? msg.eventTypes : PI_BROWSER_EVIDENCE_EVENT_TYPES);
   const limit = Math.max(1, Math.min(5000, Number(msg.limit || 500)));
-  const timeout_ms = Math.max(0, Math.min(300000, Number(msg.timeout_ms || msg.timeoutMs || 0)));
+  const hasTimeout = msg.timeoutMs !== undefined || msg.timeout_ms !== undefined;
+  const timeout_ms = hasTimeout && typeof normalizePiBrowserTimeoutMs === 'function'
+    ? normalizePiBrowserTimeoutMs({ timeoutMs: msg.timeoutMs ?? msg.timeout_ms }, 0)
+    : hasTimeout ? Math.max(0, Math.min(300000, Number(msg.timeoutMs ?? msg.timeout_ms))) : 0;
+  const evaluateOptions = hasTimeout ? { timeoutMs: timeout_ms } : {};
   const includeHook = msg.includeHook !== false && msg.hook !== false;
   const includeNetwork = msg.includeNetwork !== false && msg.network !== false;
   const includePerformance = msg.includePerformance !== false && msg.performance !== false;
@@ -27,15 +31,17 @@ async function handlePiBrowserEvidenceCommand(cmd, tabId, msg) {
     sources: {},
   };
   if (includeHook) {
-    out.sources.hook_status = await safePiBrowserEvidence('hook.status', () => callPagePiBrowserWithAutoReinstall(tabId, 'hook.status', {}));
-    out.sources.hook_events = await safePiBrowserEvidence('hook.collect', () => callPagePiBrowserWithAutoReinstall(tabId, 'hook.collect', { event_types: eventTypes, limit, timeout_ms }));
+    out.sources.hook_status = await safePiBrowserEvidence('hook.status', () => callPagePiBrowser(tabId, 'hook.status', {}, evaluateOptions));
+    out.sources.hook_events = await safePiBrowserEvidence('hook.collect', () => callPagePiBrowser(tabId, 'hook.collect', { event_types: eventTypes, limit, timeout_ms }, evaluateOptions));
   }
   if (includeNetwork) {
     out.sources.network_status = await safePiBrowserEvidence('network.status', () => handleNetworkRecorderCommand(tabId, 'network.status', { sessionId: networkSessionId }));
     out.sources.network_entries = await safePiBrowserEvidence('network.list', () => handleNetworkRecorderCommand(tabId, 'network.list', { sessionId: networkSessionId, limit, includeDetails: true }));
   }
   if (includePerformance) {
-    out.sources.performance = await safePiBrowserEvidence('hook.getPerformanceEntries', () => getPerformanceEntries(tabId, { entryType: msg.entryType, nameContains: msg.nameContains }));
+    const performanceArgs = { entryType: msg.entryType ?? msg.entry_type, nameContains: msg.nameContains ?? msg.name_contains };
+    if (hasTimeout) performanceArgs.timeoutMs = timeout_ms;
+    out.sources.performance = await safePiBrowserEvidence('hook.getPerformanceEntries', () => getPerformanceEntries(tabId, performanceArgs));
   }
   return { ok: true, data: out };
 }

@@ -601,6 +601,7 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 	const maxPages = Math.min(500, positiveInt(options.maxPages, 50));
 	const sameOrigin = options.sameOrigin !== false;
 	const extractJs = options.extractJs !== false;
+	const activeGraphqlIntrospection = options.activeGraphqlIntrospection !== false;
 	const seedOrigins = new Set(seeds.map((seed) => new URL(seed).origin));
 	const baseHeaders = normalizeHeaders(options.headers);
 	const queue = seeds.map((url) => ({ url, depth: 0, source: "seed" }));
@@ -641,7 +642,7 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 			let graphqlSchema = /graphql/i.test(final.url) || /__schema|__typename/i.test(final.bodyText) ? detectGraphqlSchema(final.bodyText) : undefined;
 			let graphqlProbe: Record<string, unknown> | undefined;
 			if (graphqlSchema) graphqlSchema = { ...graphqlSchema, source: "passive-response" };
-			else if (shouldProbeGraphqlIntrospection(final.url, type)) {
+			else if (activeGraphqlIntrospection && shouldProbeGraphqlIntrospection(final.url, type)) {
 				graphqlProbe = await probeGraphqlIntrospection(final.url, headers, options);
 				if (isRecord(graphqlProbe) && isRecord(graphqlProbe.schema)) graphqlSchema = { ...graphqlProbe.schema, source: "active-probe", probeStatus: graphqlProbe.status, probeUrl: graphqlProbe.url, probeBodySha256: graphqlProbe.bodySha256 };
 			}
@@ -711,5 +712,5 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 	const sourceArchiveCount = pages.reduce((sum, page) => sum + Number(isRecord(page.sourceMapDetails) ? page.sourceMapDetails.archivedSourceCount || 0 : 0), 0);
 	const serviceWorkerCacheNames = Array.from(new Set(pages.flatMap((page) => isRecord(page.serviceWorkerDetails) && isRecord(page.serviceWorkerDetails.versionSummary) && Array.isArray(page.serviceWorkerDetails.versionSummary.cacheNames) ? page.serviceWorkerDetails.versionSummary.cacheNames.map(String) : []))).slice(0, 100);
 	const serviceWorkerVersionTokens = Array.from(new Set(pages.flatMap((page) => isRecord(page.serviceWorkerDetails) && isRecord(page.serviceWorkerDetails.versionSummary) && Array.isArray(page.serviceWorkerDetails.versionSummary.versionTokens) ? page.serviceWorkerDetails.versionSummary.versionTokens.map(String) : []))).slice(0, 100);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), seeds, maxDepth, maxPages, sameOrigin, artifactRoot, sourceArchiveCount, serviceWorkerCacheNames, serviceWorkerVersionTokens, pageCount: pages.length, endpointCount: endpoints.size, pages, endpoints: Array.from(endpoints.values()), failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), seeds, maxDepth, maxPages, sameOrigin, extractJs, activeGraphqlIntrospection, artifactRoot, sourceArchiveCount, serviceWorkerCacheNames, serviceWorkerVersionTokens, pageCount: pages.length, endpointCount: endpoints.size, pages, endpoints: Array.from(endpoints.values()), failures };
 }

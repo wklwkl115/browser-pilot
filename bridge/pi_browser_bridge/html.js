@@ -38,8 +38,27 @@ async function handlePiBrowserHtml(tabId, msg) {
       }
       return str.slice(0, lo);
     }
-    let node = selector ? document.querySelector(selector) : document.documentElement;
-    if (!node) return { ok: false, error_code: 'SELECTOR_TIMEOUT', error: 'selector not found: ' + selector, details: { selector, mode } };
+    let node = null;
+    try { node = selector ? document.querySelector(selector) : document.documentElement; }
+    catch (e) { return { ok: false, error_code: 'INVALID_SELECTOR', error: 'invalid selector: ' + selector, details: { selector, mode, name: e && e.name || 'Error', message: e && e.message || String(e) } }; }
+    if (!node) return { ok: false, error_code: 'SELECTOR_NOT_FOUND', error: 'selector not found: ' + selector, details: { selector, mode } };
+    function countTag(tag) {
+      let count = 0;
+      try { if (node.matches && node.matches(tag)) count += 1; } catch (_) {}
+      try { if (node.querySelectorAll) count += node.querySelectorAll(tag).length; } catch (_) {}
+      return count;
+    }
+    function titleTexts() {
+      const out = [];
+      try { if (node.matches && node.matches('title')) out.push(String(node.textContent || '').slice(0, 200)); } catch (_) {}
+      try {
+        if (node.querySelectorAll) for (const item of Array.from(node.querySelectorAll('title')).slice(0, 3)) out.push(String(item.textContent || '').slice(0, 200));
+      } catch (_) {}
+      return out.filter(Boolean).slice(0, 3);
+    }
+    const nodeText = String(node.textContent ?? '');
+    const counts = { links: countTag('a'), buttons: countTag('button'), inputs: countTag('input'), forms: countTag('form'), images: countTag('img') };
+    const structure = { counts, text_length: nodeText.length, text_bytes: encoder.encode(nodeText).length, titles: titleTexts() };
     let html;
     if (mode === 'inner') html = node.innerHTML ?? '';
     else if (mode === 'text') html = node.textContent ?? '';
@@ -50,10 +69,10 @@ async function handlePiBrowserHtml(tabId, msg) {
     let truncated = false;
     if (maxChars !== null && html.length > maxChars) { html = html.slice(0, maxChars); truncated = true; }
     if (maxBytes !== null && encoder.encode(html).length > maxBytes) { html = sliceUtf8(html, maxBytes); truncated = true; }
-    return { ok: true, data: { html, truncated, original_length, bytes: encoder.encode(html).length, original_bytes, selector, mode } };
+    return { ok: true, data: { html, truncated, original_length, bytes: encoder.encode(html).length, original_bytes, selector, mode, counts, text_length: structure.text_length, text_bytes: structure.text_bytes, titles: structure.titles, structure } };
   })()`;
   const res = await piBrowserEval(tabId, expression, true);
   if (!res || res.ok === false) return res;
-  if (res.data && res.data.ok === false) return piBrowserError(res.data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_TIMEOUT, res.data.error || 'html.get failed', res.data.details || { selector, mode: rawMode });
+  if (res.data && res.data.ok === false) return piBrowserError(res.data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, res.data.error || 'html.get failed', res.data.details || { selector, mode: rawMode });
   return res.data && res.data.ok === true ? res.data : { ok: true, data: res.data };
 }

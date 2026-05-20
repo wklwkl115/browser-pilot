@@ -4,11 +4,13 @@ import { WebSocket, WebSocketServer } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT } from "./browserBridgeConfig";
 import { BrowserBridgeError, errorToPlain } from "./errors";
 import { validateBridgeCommand } from "../protocol/nativeProtocol";
-import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserTabInfo, BrowserTabSession, ExecuteOptions, PendingRequest } from "./types";
+import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession, ExecuteOptions, PendingRequest } from "./types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const CLOSED_STATES = new Set([WebSocket.CLOSED, WebSocket.CLOSING]);
+const DISCONNECTED_SESSION_RETENTION_MS = 5 * 60_000;
+const MAX_DISCONNECTED_SESSION_HISTORY = 128;
 
 type IncomingMessage = {
 	type?: unknown;
@@ -21,6 +23,8 @@ type IncomingMessage = {
 	extension?: unknown;
 	[key: string]: unknown;
 };
+
+type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 
 function normalizePort(value: string | undefined): number {
 	const parsed = Number(value);
@@ -48,6 +52,24 @@ function normalizeErrorMessage(error: unknown): string {
 	return String(error);
 }
 
+function isAllowedBridgeOrigin(origin: string | undefined): boolean {
+	if (origin === undefined || origin === "null") return true;
+	return origin.startsWith("chrome-extension://");
+}
+
+function bridgeResultFailure(data: unknown): { message: string; details: Record<string, unknown> } | undefined {
+	if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+	const record = data as Record<string, unknown>;
+	if (record.ok !== false) return undefined;
+	const message = typeof record.error === "string" && record.error ? record.error
+		: typeof record.message === "string" && record.message ? record.message
+			: "Browser bridge command failed";
+	const details = record.details && typeof record.details === "object" && !Array.isArray(record.details)
+		? record.details as Record<string, unknown>
+		: {};
+	return { message, details };
+}
+
 function browserTabInfo(session: BrowserTabSession): BrowserTabInfo {
 	const { client: _client, ...info } = session;
 	return info;
@@ -55,6 +77,22 @@ function browserTabInfo(session: BrowserTabSession): BrowserTabInfo {
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function tabSessionSummary(session: BrowserTabSession): Record<string, unknown> {
+	return {
+		sessionId: session.id,
+		browserId: session.browserId,
+		extensionId: session.bridge?.extensionId,
+		name: session.bridge?.name,
+		tabId: session.tabId,
+		url: session.url,
+		active: session.active,
+	};
 }
 
 export class BrowserBridgeServer {
@@ -70,11 +108,37 @@ export class BrowserBridgeServer {
 	private pending = new Map<string, PendingRequest>();
 	private defaultSessionId?: string;
 	private latestSessionId?: string;
+	private selectionVersion = 0;
 	private starting?: Promise<void>;
 
 	constructor(options: { host?: string; port?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
 		this.port = options.port || normalizePort(process.env.PI_BROWSER_BRIDGE_PORT);
+	}
+
+	private setDefaultSessionId(id: string | undefined): void {
+		if (this.defaultSessionId === id) return;
+		this.defaultSessionId = id;
+		this.selectionVersion += 1;
+	}
+
+	private setLatestSessionId(id: string | undefined): void {
+		if (this.latestSessionId === id) return;
+		this.latestSessionId = id;
+		this.selectionVersion += 1;
+	}
+
+	private targetInfo(source: BrowserBridgeTargetSource, tabId?: number): BrowserBridgeTargetInfo {
+		return {
+			tabId,
+			source,
+			implicit: source === "default" || source === "latest",
+			selectionVersionAtDispatch: this.selectionVersion,
+		};
+	}
+
+	private resolvedTarget(target: BrowserBridgeTargetInfo | undefined): BrowserBridgeTargetInfo | undefined {
+		return target ? { ...target, selectionVersionAtResolve: this.selectionVersion } : undefined;
 	}
 
 	get running(): boolean {
@@ -97,6 +161,11 @@ export class BrowserBridgeServer {
 
 			const wss = new WebSocketServer({ noServer: true });
 			server.on("upgrade", (req, socket, head) => {
+				if (!isAllowedBridgeOrigin(req.headers.origin)) {
+					socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+					socket.destroy();
+					return;
+				}
 				wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
 			});
 			wss.on("connection", (ws) => this.registerClient(ws));
@@ -118,7 +187,7 @@ export class BrowserBridgeServer {
 	async stop(): Promise<void> {
 		for (const pending of this.pending.values()) {
 			clearTimeout(pending.timer);
-			pending.reject(new BrowserBridgeError("BRIDGE_STOPPED", "Browser bridge stopped before request completed", { id: pending.id, tabId: pending.tabId }));
+			pending.reject(new BrowserBridgeError("BRIDGE_STOPPED", "Browser bridge stopped before request completed", { id: pending.id, tabId: pending.tabId, target: this.resolvedTarget(pending.target) }));
 		}
 		this.pending.clear();
 		for (const client of this.clients) {
@@ -128,8 +197,8 @@ export class BrowserBridgeServer {
 		this.clientInfo.clear();
 		this.extensionClient = undefined;
 		this.sessions.clear();
-		this.defaultSessionId = undefined;
-		this.latestSessionId = undefined;
+		this.setDefaultSessionId(undefined);
+		this.setLatestSessionId(undefined);
 		await new Promise<void>((resolve) => {
 			if (!this.wss && !this.httpServer) { resolve(); return; }
 			try { this.wss?.close(); } catch {}
@@ -142,6 +211,7 @@ export class BrowserBridgeServer {
 	}
 
 	snapshot(): BrowserBridgeSnapshot {
+		this.refreshSelectedSessionRefs();
 		return {
 			host: this.host,
 			port: this.port,
@@ -150,18 +220,20 @@ export class BrowserBridgeServer {
 			extensionConnected: isOpen(this.extensionClient),
 			extension: this.extensionClient ? this.clientInfo.get(this.extensionClient) : undefined,
 			clients: Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState)).map((ws) => this.clientInfo.get(ws)).filter((item): item is BrowserBridgeClientInfo => !!item),
-			defaultTabId: toTabId(this.defaultSessionId),
-			latestTabId: toTabId(this.latestSessionId),
+			defaultTabId: this.tabIdForSessionId(this.defaultSessionId),
+			latestTabId: this.tabIdForSessionId(this.latestSessionId),
+			selectionVersion: this.selectionVersion,
 			tabs: this.getTabs({ includeDisconnected: true }),
-			pending: Array.from(this.pending.values()).map((item) => ({ id: item.id, tabId: item.tabId, createdAt: item.createdAt, acked: item.acked })),
+			pending: Array.from(this.pending.values()).map((item) => ({ id: item.id, tabId: item.tabId, createdAt: item.createdAt, acked: item.acked, target: item.target })),
 		};
 	}
 
 	getTabs(options: { includeDisconnected?: boolean } = {}): BrowserTabInfo[] {
+		this.refreshSelectedSessionRefs();
 		const tabs = Array.from(this.sessions.values());
 		return tabs
 			.filter((tab) => options.includeDisconnected || !tab.disconnectedAt)
-			.sort((a, b) => a.tabId - b.tabId)
+			.sort((a, b) => a.tabId - b.tabId || a.browserId.localeCompare(b.browserId) || a.id.localeCompare(b.id))
 			.map(browserTabInfo);
 	}
 
@@ -191,7 +263,10 @@ export class BrowserBridgeServer {
 			if (CLOSED_STATES.has(ws.readyState)) continue;
 			if (info.id !== id && info.extensionId !== id) continue;
 			this.extensionClient = ws;
-			this.defaultSessionId = this.firstActiveSessionIdForClient(ws) ?? this.defaultSessionId;
+			const sessionId = this.firstActiveSessionIdForClient(ws);
+			this.setDefaultSessionId(sessionId);
+			this.setLatestSessionId(sessionId);
+			if (!sessionId) throw new BrowserBridgeError("NO_TAB", "Selected browser has no active tabs", { browserId: id, selected: info, clients: this.snapshot().clients });
 			return info;
 		}
 		throw new BrowserBridgeError("BROWSER_NOT_FOUND", "No connected browser bridge client matches browserId", { browserId: id, clients: this.snapshot().clients });
@@ -199,9 +274,16 @@ export class BrowserBridgeServer {
 
 	async switchTab(tabId: number | string, timeoutMs = 5_000): Promise<BrowserBridgeExecutionResult> {
 		const id = this.requireTabId(tabId);
+		const previousDefaultTabId = this.tabIdForSessionId(this.defaultSessionId);
 		const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId: id });
-		this.defaultSessionId = String(id);
-		return result;
+		const failure = bridgeResultFailure(result.data);
+		if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
+		const selectedSession = this.liveSessionForTabId(id);
+		if (selectedSession) this.setDefaultSessionId(selectedSession.id);
+		const selection = { selectedTabId: id, previousDefaultTabId, selectionVersion: this.selectionVersion };
+		const dataRecord = recordValue(result.data);
+		const data = dataRecord ? { ...dataRecord, ...selection } : selection;
+		return { ...result, data };
 	}
 
 	async createTab(url: string, active = true, timeoutMs = 5_000): Promise<BrowserBridgeExecutionResult> {
@@ -211,15 +293,15 @@ export class BrowserBridgeServer {
 	async closeTab(tabId: number | string, timeoutMs = 5_000): Promise<BrowserBridgeExecutionResult> {
 		const id = this.requireTabId(tabId);
 		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId: id });
-		const session = this.sessions.get(String(id));
+		const session = this.liveSessionForTabId(id);
 		if (session && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		this.refreshSelectedSessionRefs();
 		return result;
 	}
 
 	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		const tabId = this.requireExecutionTabId(options.tabId);
-		return this.sendPayload(script, { tabId, timeoutMs: options.timeoutMs });
+		const target = this.requireExecutionTarget(options.tabId);
+		return this.sendPayload(script, { tabId: target.tabId, timeoutMs: options.timeoutMs, target });
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
@@ -233,14 +315,17 @@ export class BrowserBridgeServer {
 			throw new BrowserBridgeError("TAB_ID_CONFLICT", "Top-level tabId conflicts with command tabId", { cmd: command.cmd, tabId: optionTabId, commandTabId });
 		}
 		const requestedTabId = optionTabId ?? commandTabId;
-		const tabId = requestedTabId ?? this.optionalExecutionTabId(command);
+		const explicitTarget = requestedTabId !== undefined ? this.targetInfo("explicit", requestedTabId) : undefined;
+		const target = explicitTarget ?? this.optionalExecutionTarget(command);
+		const tabId = target?.tabId;
 		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
-		const validation = validateBridgeCommand(payload, { allowMissingTabId: false });
+		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
-		return this.sendPayload(validation.command, { tabId, timeoutMs: options.timeoutMs });
+		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.getTabs() });
+		return this.sendPayload(validation.command, { tabId, timeoutMs: options.timeoutMs, target });
 	}
 
-	private timeoutDiagnostics(tabId: number | undefined, timeoutMs: number, acked: boolean): Record<string, unknown> {
+	private timeoutDiagnostics(tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo): Record<string, unknown> {
 		const snapshot = this.snapshot();
 		return {
 			tabId,
@@ -251,15 +336,18 @@ export class BrowserBridgeServer {
 			connectedClients: snapshot.connectedClients,
 			defaultTabId: snapshot.defaultTabId,
 			latestTabId: snapshot.latestTabId,
+			selectionVersion: snapshot.selectionVersion,
+			target: this.resolvedTarget(target),
 			tabCount: snapshot.tabs.filter((tab) => !tab.disconnectedAt).length,
 			pendingCount: snapshot.pending.length,
 		};
 	}
 
-	private sendPayload(code: unknown, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
+	private sendPayload(code: unknown, options: SendPayloadOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		if (!this.running) throw new BrowserBridgeError("BRIDGE_NOT_RUNNING", "Browser bridge server is not running", { port: this.port });
 		const tabId = toTabId(options.tabId);
 		const socket = tabId !== undefined ? this.socketForTab(tabId) : this.requireExtensionClient();
+		const target = options.target ?? this.targetInfo(tabId !== undefined ? "explicit" : "none", tabId);
 		const id = randomUUID();
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
 		const payload: Record<string, unknown> = { id, code };
@@ -269,16 +357,16 @@ export class BrowserBridgeServer {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
 				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
-				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, ...this.timeoutDiagnostics(tabId, timeoutMs, pending.acked) }));
+				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, ...this.timeoutDiagnostics(tabId, timeoutMs, pending.acked, pending.target) }));
 			}, timeoutMs);
-			const pending: PendingRequest = { id, tabId, client: socket, createdAt: Date.now(), acked: false, timer, resolve, reject };
+			const pending: PendingRequest = { id, tabId, client: socket, createdAt: Date.now(), acked: false, target, timer, resolve, reject };
 			this.pending.set(id, pending);
 			try {
 				socket.send(JSON.stringify(payload));
 			} catch (error) {
 				clearTimeout(timer);
 				this.pending.delete(id);
-				reject(new BrowserBridgeError("BRIDGE_SEND_FAILED", normalizeErrorMessage(error), { id, tabId }));
+				reject(new BrowserBridgeError("BRIDGE_SEND_FAILED", normalizeErrorMessage(error), { id, tabId, target: this.resolvedTarget(target) }));
 			}
 		});
 	}
@@ -297,7 +385,7 @@ export class BrowserBridgeServer {
 			if (pending.client !== ws) continue;
 			clearTimeout(pending.timer);
 			this.pending.delete(pending.id);
-			pending.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: pending.id, tabId: pending.tabId, acked: pending.acked }));
+			pending.reject(new BrowserBridgeError("BRIDGE_CLIENT_DISCONNECTED", "Browser bridge client disconnected before request completed", { id: pending.id, tabId: pending.tabId, acked: pending.acked, target: this.resolvedTarget(pending.target) }));
 		}
 		this.clients.delete(ws);
 		this.clientInfo.delete(ws);
@@ -339,10 +427,10 @@ export class BrowserBridgeServer {
 			clearTimeout(pending.timer);
 			this.pending.delete(id);
 			if (type === "error") {
-				pending.reject(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", normalizeErrorMessage(message.error), { id, tabId: pending.tabId, error: message.error }));
+				pending.reject(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", normalizeErrorMessage(message.error), { id, tabId: pending.tabId, error: message.error, result: message.result, target: this.resolvedTarget(pending.target) }));
 				return;
 			}
-			pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: message.result, newTabs: Array.isArray(message.newTabs) ? message.newTabs : [] });
+			pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: message.result, newTabs: Array.isArray(message.newTabs) ? message.newTabs : [], target: this.resolvedTarget(pending.target) });
 		}
 	}
 
@@ -355,21 +443,25 @@ export class BrowserBridgeServer {
 		if (typeof raw.name === "string") current.name = raw.name;
 		if (typeof raw.version === "string") current.version = raw.version;
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
+		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
+		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
 	}
 
 	private updateTabs(rawTabs: unknown[], ws: WebSocket): void {
 		const now = Date.now();
 		const current = new Set<string>();
+		const browserId = this.browserIdForClient(ws);
 		for (const raw of rawTabs) {
 			if (!raw || typeof raw !== "object") continue;
 			const tab = raw as Record<string, unknown>;
 			const tabId = toTabId(tab.id ?? tab.tabId);
 			if (!tabId) continue;
-			const id = String(tabId);
+			const id = this.sessionIdForTab(ws, tabId);
 			current.add(id);
 			const existing = this.sessions.get(id);
 			this.sessions.set(id, {
 				id,
+				browserId,
 				tabId,
 				url: typeof tab.url === "string" ? tab.url : existing?.url || "",
 				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
@@ -380,8 +472,8 @@ export class BrowserBridgeServer {
 				bridge: this.clientInfo.get(ws),
 				client: ws,
 			});
-			if (tab.active === true || !this.defaultSessionId) this.defaultSessionId = id;
-			this.latestSessionId = id;
+			if (tab.active === true || !this.defaultSessionId) this.setDefaultSessionId(id);
+			this.setLatestSessionId(id);
 		}
 		for (const [id, session] of this.sessions) {
 			if (!current.has(id) && session.client === ws && !session.disconnectedAt) session.disconnectedAt = now;
@@ -389,19 +481,76 @@ export class BrowserBridgeServer {
 		this.refreshSelectedSessionRefs();
 	}
 
-	private firstActiveSessionId(): string | undefined {
-		return Array.from(this.sessions.values()).find((session) => !session.disconnectedAt)?.id;
+	private browserIdForClient(client: WebSocket): string {
+		const info = this.clientInfo.get(client);
+		if (!info?.id) throw new BrowserBridgeError("UNKNOWN_BROWSER_CLIENT", "Browser bridge client is not registered", { port: this.port });
+		return info.id;
 	}
 
-	private refreshSelectedSessionRefs(): void {
+	private sessionIdForTab(client: WebSocket, tabId: number): string {
+		return `${this.browserIdForClient(client)}:${tabId}`;
+	}
+
+	private tabIdForSessionId(sessionId: string | undefined): number | undefined {
+		if (!sessionId) return undefined;
+		return this.sessions.get(sessionId)?.tabId;
+	}
+
+	private liveSessionForTabId(tabId: number): BrowserTabSession | undefined {
+		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
+		const scopeClient = isOpen(this.extensionClient) ? this.extensionClient : undefined;
+		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
+		if (scoped) return scoped;
+		if (live.length <= 1) return live[0];
+		throw new BrowserBridgeError("AMBIGUOUS_TAB_ID", "Multiple connected browsers expose the same tabId; call browser_tabs selectBrowser before using this tabId", {
+			tabId,
+			tabs: live.map(tabSessionSummary),
+		});
+	}
+
+	private preferredImplicitSessionId(candidates: BrowserTabSession[]): string | undefined {
+		const live = candidates.filter((session) => !session.disconnectedAt);
+		return live.find((session) => session.active === true)?.id
+			?? live.find((session) => session.id === this.latestSessionId)?.id
+			?? live[0]?.id;
+	}
+
+	private firstActiveSessionId(): string | undefined {
+		return this.preferredImplicitSessionId(Array.from(this.sessions.values()));
+	}
+
+	private pruneDisconnectedSessions(now = Date.now()): void {
+		const retained: Array<{ id: string; disconnectedAt: number }> = [];
+		for (const [id, session] of this.sessions) {
+			const disconnectedAt = session.disconnectedAt;
+			if (typeof disconnectedAt !== "number") continue;
+			if (now - disconnectedAt >= DISCONNECTED_SESSION_RETENTION_MS) {
+				this.sessions.delete(id);
+				continue;
+			}
+			retained.push({ id, disconnectedAt });
+		}
+		const overflow = retained.length - MAX_DISCONNECTED_SESSION_HISTORY;
+		if (overflow <= 0) return;
+		retained
+			.sort((a, b) => a.disconnectedAt - b.disconnectedAt || a.id.localeCompare(b.id))
+			.slice(0, overflow)
+			.forEach((item) => this.sessions.delete(item.id));
+	}
+
+	private refreshSelectedSessionRefs(now = Date.now()): void {
+		this.pruneDisconnectedSessions(now);
+		const scopeClient = isOpen(this.extensionClient) ? this.extensionClient : undefined;
+		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient) : this.firstActiveSessionId();
+		const isValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt && (!scopeClient || session.client === scopeClient);
 		const defaultSession = this.defaultSessionId ? this.sessions.get(this.defaultSessionId) : undefined;
-		if (!this.defaultSessionId || !defaultSession || defaultSession.disconnectedAt) this.defaultSessionId = this.firstActiveSessionId();
+		if (!this.defaultSessionId || !isValid(defaultSession)) this.setDefaultSessionId(firstActive);
 		const latestSession = this.latestSessionId ? this.sessions.get(this.latestSessionId) : undefined;
-		if (!this.latestSessionId || !latestSession || latestSession.disconnectedAt) this.latestSessionId = this.firstActiveSessionId();
+		if (!this.latestSessionId || !isValid(latestSession)) this.setLatestSessionId(firstActive);
 	}
 
 	private firstActiveSessionIdForClient(client: WebSocket): string | undefined {
-		return Array.from(this.sessions.values()).find((session) => session.client === client && !session.disconnectedAt)?.id;
+		return this.preferredImplicitSessionId(Array.from(this.sessions.values()).filter((session) => session.client === client));
 	}
 
 	private requireExtensionClient(): WebSocket {
@@ -412,25 +561,38 @@ export class BrowserBridgeServer {
 	}
 
 	private socketForTab(tabId: number): WebSocket {
-		const session = this.sessions.get(String(tabId));
-		if (session && !session.disconnectedAt && isOpen(session.client)) return session.client;
-		return this.requireExtensionClient();
+		const session = this.liveSessionForTabId(tabId);
+		if (session) return session.client;
+		throw new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
+			tabId,
+			selectedBrowser: this.extensionClient ? this.clientInfo.get(this.extensionClient) : undefined,
+			tabs: this.getTabs(),
+		});
 	}
 
-	private requireExecutionTabId(value: unknown): number {
+	private fallbackExecutionTarget(): BrowserBridgeTargetInfo | undefined {
+		this.refreshSelectedSessionRefs();
+		const defaultTabId = this.tabIdForSessionId(this.defaultSessionId);
+		if (defaultTabId) return this.targetInfo("default", defaultTabId);
+		const latestTabId = this.tabIdForSessionId(this.latestSessionId);
+		if (latestTabId) return this.targetInfo("latest", latestTabId);
+		return undefined;
+	}
+
+	private requireExecutionTarget(value: unknown): BrowserBridgeTargetInfo {
 		const requested = toTabId(value);
-		if (requested) return requested;
+		if (requested) return this.targetInfo("explicit", requested);
 		if (value !== undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value, source: "options" });
-		const fallback = toTabId(this.defaultSessionId) ?? toTabId(this.latestSessionId);
+		const fallback = this.fallbackExecutionTarget();
 		if (fallback) return fallback;
 		throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { tabs: this.getTabs() });
 	}
 
-	private optionalExecutionTabId(command: BridgeCommand): number | undefined {
+	private optionalExecutionTarget(command: BridgeCommand): BrowserBridgeTargetInfo | undefined {
 		const cmd = String(command.cmd || "");
-		if (cmd === "tabs" && (!command.method || command.method === "list" || command.method === "create")) return undefined;
-		if (cmd === "management") return undefined;
-		return toTabId(this.defaultSessionId) ?? toTabId(this.latestSessionId);
+		if (cmd === "tabs" && (!command.method || command.method === "list" || command.method === "create")) return this.targetInfo("none");
+		if (cmd === "management") return this.targetInfo("none");
+		return this.fallbackExecutionTarget();
 	}
 
 	private requireTabId(value: unknown): number {

@@ -45,6 +45,20 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 	return { code: fallbackCode, message: String(error), details: {}, name: "Error" };
 }
 
+export function suppressErrorStack<T extends Error>(error: T): T {
+	const descriptor = Object.getOwnPropertyDescriptor(error, "stack");
+	if (!descriptor) {
+		if (Object.isExtensible(error)) Object.defineProperty(error, "stack", { value: undefined, configurable: true, writable: true });
+		return error;
+	}
+	if (descriptor.configurable) {
+		Reflect.deleteProperty(error, "stack");
+		return error;
+	}
+	if ("writable" in descriptor && descriptor.writable) Object.defineProperty(error, "stack", { value: undefined });
+	return error;
+}
+
 export function compactError(error: unknown, fallbackCode = "INTERNAL_ERROR"): Record<string, unknown> {
 	const normalized = normalizeError(error, fallbackCode);
 	return {

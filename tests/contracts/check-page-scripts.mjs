@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
-import { buildPickScript } from "../../src/pick/buildPickScript.ts";
+import { buildPickCleanupScript, buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 
 const root = new URL("../..", import.meta.url);
@@ -238,6 +238,7 @@ class MockDocument {
 }
 
 function createPageContext(document) {
+	const windowListeners = new Map();
 	const context = {
 		console,
 		document,
@@ -264,6 +265,18 @@ function createPageContext(document) {
 		setTimeout,
 		clearTimeout,
 		getComputedStyle: (el) => ({ display: el?.style?.display || "block", visibility: el?.style?.visibility || "visible", opacity: el?.style?.opacity ?? "1" }),
+	};
+	context.addEventListener = (type, handler) => {
+		const handlers = windowListeners.get(type) || [];
+		handlers.push(handler);
+		windowListeners.set(type, handlers);
+	};
+	context.removeEventListener = (type, handler) => {
+		const handlers = windowListeners.get(type) || [];
+		windowListeners.set(type, handlers.filter((item) => item !== handler));
+	};
+	context.dispatchWindowEvent = (type, event = {}) => {
+		for (const handler of windowListeners.get(type) || []) handler(event);
 	};
 	context.window = context;
 	context.window.innerHeight = 800;
@@ -329,6 +342,7 @@ const content = buildContentScript({ selector: "main", maxChars: 4_000, includeL
 new Function(content);
 assert(content.includes("DROP_SELECTOR"), "page-scripts content: must drop noisy nodes");
 assert(content.includes("[content truncated]"), "page-scripts content: must bound markdown output");
+assert(content.includes("SELECTOR_NOT_FOUND") && content.includes("INVALID_SELECTOR"), "page-scripts content: selector failures must be structured and stable");
 assert(!content.includes("Readability"), "page-scripts content: must stay dependency-free");
 
 const contentDoc = new MockDocument([
@@ -343,6 +357,17 @@ assert.equal(contentBehavior.rootTag, "main", "content behavior: selector root m
 assert(contentBehavior.markdown.includes("# Article Title"), "content behavior: heading must render as markdown");
 assert(contentBehavior.markdown.includes("[a link](http://example.test/target)"), "content behavior: links must be made absolute when requested");
 assert(!contentBehavior.markdown.includes("Navigation noise"), "content behavior: noisy navigation must be removed before extraction");
+assert.equal(contentBehavior.empty, false, "content behavior: non-empty extraction must expose empty:false");
+
+const missingContent = await runPageScript(buildContentScript({ selector: "#missing", maxChars: 4_000 }), contentDoc);
+assert.equal(missingContent.ok, false, "content behavior: missing selector must return a structured failure result");
+assert.equal(missingContent.error_code, "SELECTOR_NOT_FOUND", "content behavior: missing selector must not be reported as generic execution failure");
+assert.equal(missingContent.details.selector, "#missing", "content behavior: missing selector details must preserve selector");
+
+const emptyContentDoc = new MockDocument([mockEl("main", { id: "main" }, [])]);
+const emptyContent = await runPageScript(buildContentScript({ selector: "main", maxChars: 4_000 }), emptyContentDoc);
+assert.equal(emptyContent.empty, true, "content behavior: empty selected node must return structured empty:true instead of throwing");
+assert.equal(emptyContent.markdown, "", "content behavior: empty selected node markdown should remain empty");
 
 const pick = buildPickScript({ message: "Pick", timeoutMs: 5_000 });
 new Function(pick);
@@ -350,6 +375,25 @@ assert(pick.includes("data-pi-browser-pick"), "page-scripts pick: overlay must b
 assert(pick.includes("buildSelector"), "page-scripts pick: must return CSS selectors");
 assert(pick.includes("textWithoutNoise") && pick.includes("read-frog-translated"), "page-scripts pick: selected summaries must filter translation plugin noise");
 assert(pick.includes("normalizePickedElement"), "page-scripts pick: translation wrapper hits must normalize to a real parent element");
+assert(pick.includes("pagehide") && pick.includes("beforeunload"), "page-scripts pick: must settle on page unload before timeout");
+assert(pick.includes("__piBrowserActivePickers") && pick.includes("__piBrowserPickCleanup"), "page-scripts pick: must expose cleanup hooks for tool-owned timeout");
+
+const unloadDoc = new MockDocument([mockEl("button", { id: "leave" }, ["Leave"])]);
+const unloadContext = createPageContext(unloadDoc);
+const unloadPromise = vm.runInNewContext(buildPickScript({ message: "Pick unload", timeoutMs: 30_000 }), unloadContext);
+unloadContext.dispatchWindowEvent("pagehide", { persisted: false });
+const unloadPick = await unloadPromise;
+assert.equal(unloadPick.cancelled, true, "pick behavior: pagehide must cancel picker instead of waiting for timeout");
+assert.equal(unloadPick.reason, "pagehide", "pick behavior: pagehide cancellation reason must be explicit");
+
+const cleanupDoc = new MockDocument([mockEl("button", { id: "slow" }, ["Slow"])]);
+const cleanupContext = createPageContext(cleanupDoc);
+const cleanupPromise = vm.runInNewContext(buildPickScript({ message: "Pick cleanup", timeoutMs: 30_000, pickId: "cleanup-contract" }), cleanupContext);
+const cleanupResult = vm.runInNewContext(buildPickCleanupScript("cleanup-contract"), cleanupContext);
+const cleanupPick = await cleanupPromise;
+assert.equal(cleanupResult.cleaned, true, "pick cleanup script must call the active picker cleanup handle");
+assert.equal(cleanupPick.cancelled, true, "pick cleanup behavior: external cleanup must settle the picker");
+assert.equal(cleanupPick.reason, "timeout", "pick cleanup behavior: external cleanup should preserve timeout reason");
 
 const noisySpan = mockEl("span", { class: "read-frog-translated-inline-content" }, ["Translated noise"]);
 const realPickTarget = mockEl("p", { id: "real" }, ["Real text ", noisySpan]);
@@ -375,7 +419,7 @@ assert(wait.includes("target.addEventListener(eventType, handler, true)") && wai
 assert(wait.includes("const entries = Array.isArray(result?.result?.value) ? result.result.value : []") && wait.includes("data: { entries, entryType, nameContains, count"), "hook.getPerformanceEntries must unwrap Runtime.evaluate result.value into entries");
 
 const exec = read("bridge/pi_browser_bridge/exec.js");
-assert(exec.includes("MAX_NODES") && exec.includes("MAX_CHARS") && exec.includes("nodesUsed") && exec.includes("charsUsed"), "page-scripts exec: serializer must have traversal budgets");
+assert(exec.includes("MAX_NODES") && exec.includes("MAX_CHARS") && exec.includes("MAX_DEPTH") && exec.includes("nodesUsed") && exec.includes("charsUsed"), "page-scripts exec: serializer must have traversal budgets");
 assert(exec.includes("LARGE_TEXT_KEYS") && exec.includes("['content', 'markdown', 'html']") && exec.includes("trim(child, MAX_CHARS)"), "page-scripts exec: serializer must not truncate scan/content/html payload fields at nested string defaults");
 assert(exec.includes("value instanceof Map") && exec.includes("value instanceof Set") && exec.includes("[Circular]"), "page-scripts exec: serializer must handle rich JS values");
 const execSandbox = {};
@@ -387,5 +431,13 @@ const largeTextResult = await vm.runInNewContext(largeTextExec, { console, setTi
 assert.equal(largeTextResult.ok, true, "page-scripts exec behavior: generated script must execute in a mocked runtime");
 assert.equal(largeTextResult.data.content.length, 5000, "page-scripts exec behavior: top-level content payload must not be truncated at nested string defaults");
 assert(largeTextResult.data.nested.text.length <= 1001, "page-scripts exec behavior: ordinary nested strings must still be bounded");
+const circularExec = execSandbox.buildExecScript("const a = { label: 'root' }; a.self = a; return a", "return {ok:false}");
+const circularExecResult = await vm.runInNewContext(circularExec, { console, setTimeout, clearTimeout, WeakSet, Map, Set, Date, RegExp, Error, NodeList: class NodeList {}, HTMLCollection: class HTMLCollection {} }, { filename: "generated-exec-circular.js" });
+assert.equal(circularExecResult.data.self, "[Circular]", "page-scripts exec behavior: serializer must mark object reference cycles");
+const deepExec = execSandbox.buildExecScript("let root = {}; let cur = root; for (let i = 0; i < 20; i++) { cur.child = {}; cur = cur.child; } return root", "return {ok:false}");
+const deepExecResult = await vm.runInNewContext(deepExec, { console, setTimeout, clearTimeout, WeakSet, Map, Set, Date, RegExp, Error, NodeList: class NodeList {}, HTMLCollection: class HTMLCollection {} }, { filename: "generated-exec-depth.js" });
+let deepCursor = deepExecResult.data;
+for (let i = 0; i < 8 && deepCursor && typeof deepCursor === "object"; i++) deepCursor = deepCursor.child;
+assert.equal(deepCursor, "[MaxDepth]", "page-scripts exec behavior: serializer must bound deep acyclic objects");
 
 console.log("page script contract ok");

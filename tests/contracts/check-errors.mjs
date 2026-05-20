@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { BrowserBridgeError, errorToPlain } from "../../src/driver/errors.ts";
 import { validateBridgeCommand } from "../../src/protocol/nativeProtocol.ts";
 import { ArtifactReaderError } from "../../src/tools/artifactReader.ts";
-import { normalizeError } from "../../src/utils/errors.ts";
+import { normalizeError, suppressErrorStack } from "../../src/utils/errors.ts";
 import { jsonPreview, stableJson } from "../../src/utils/json.ts";
+import { asPositiveInt } from "../../src/utils/params.ts";
 import { errorResult } from "../../src/utils/toolResult.ts";
 
 function assertNormalized(value, label) {
@@ -51,6 +52,18 @@ assert.equal(nestedStack.details.error.details.selector, "#go", "normalizeError 
 const nestedResult = errorResult(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "script failed", { error: { code: "DOM_NODE_NOT_FOUND", message: "stale", stack: "nested stack" } }));
 assert.equal(nestedResult.content[0].text.includes("stack"), false, "errorResult content must strip nested stack traces");
 assert.equal(JSON.stringify(nestedResult.details).includes("stack"), false, "errorResult details must strip nested stack traces");
+
+const stacklessError = suppressErrorStack(new Error("stackless"));
+assert.equal(Object.hasOwn(stacklessError, "stack"), false, "suppressErrorStack must remove configurable own stack fields");
+const nonConfigurableStackError = new Error("non-configurable stack");
+Object.defineProperty(nonConfigurableStackError, "stack", { get() { return "locked stack"; }, configurable: false });
+assert.doesNotThrow(() => suppressErrorStack(nonConfigurableStackError), "suppressErrorStack must not throw on non-configurable stack accessors");
+assert.equal(nonConfigurableStackError.stack, "locked stack", "locked stack accessors remain readable when they cannot be suppressed safely");
+
+assert.equal(asPositiveInt(15.1, 100), 16, "asPositiveInt must not floor fractional user budgets below the requested value");
+assert.equal(asPositiveInt(0.1, 100), 1, "asPositiveInt must keep positive fractional input positive after integer normalization");
+assert.equal(asPositiveInt(15, 100), 15, "asPositiveInt must preserve integer values");
+assert.equal(asPositiveInt(0, 100), 100, "asPositiveInt must reject zero values to fallback");
 
 const circular = { name: "root" };
 circular.self = circular;

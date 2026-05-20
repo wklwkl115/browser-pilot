@@ -1,9 +1,23 @@
 import { Type } from "typebox";
+import { BrowserBridgeError } from "../driver/errors";
 import { errorResult } from "../utils/toolResult";
 import { defaultResultBudget } from "./budgets";
 import { distilledJsonResult, distilledTextResult, summarizeHtmlSnapshot } from "./resultMiddleware";
 import { asPositiveInt, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
+
+function htmlErrorResult(error: unknown) {
+	const details = error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
+	const result = details && typeof details === "object" && !Array.isArray(details) ? (details as Record<string, unknown>).result : undefined;
+	if (result && typeof result === "object" && !Array.isArray(result)) {
+		const record = result as Record<string, unknown>;
+		if (typeof record.error_code === "string" && record.error_code) {
+			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
+			return errorResult(new BrowserBridgeError(record.error_code, typeof record.error === "string" ? record.error : "html.get failed", { command: "html.get", ...resultDetails }));
+		}
+	}
+	return errorResult(error);
+}
 
 export function registerHtmlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	pi.registerTool({
@@ -29,7 +43,6 @@ export function registerHtmlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (params.selector !== undefined) body.selector = params.selector;
 				if (params.mode !== undefined) body.mode = params.mode;
 				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_html"));
-				body.maxChars = body.maxChars ?? maxChars;
 				const timeoutMs = asPositiveInt(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const result = await server.sendCommand({ ...body, cmd: "html.get" }, { tabId: params.tabId ?? body.tabId, timeoutMs });
 				const data = result.data as Record<string, unknown> | undefined;
@@ -43,9 +56,10 @@ export function registerHtmlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 						maxChars,
 						ctx,
 						outputPath: params.outputPath,
-						fallbackName: `snapshot-${Date.now()}.html`,
+						fallbackName: `snapshot-${Date.now()}.json`,
 						summary: summarizeHtmlSnapshot(html, data),
 						details: { command: "html.get", result: resultMeta },
+						artifactValue: result,
 					});
 				}
 				return await distilledJsonResult(result, {
@@ -57,10 +71,10 @@ export function registerHtmlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					outputPath: params.outputPath,
 					fallbackName: `html-result-${Date.now()}.json`,
 					details: { command: "html.get" },
-					artifactValue: result.data ?? result,
+					artifactValue: result,
 				});
 			} catch (error) {
-				return errorResult(error);
+				return htmlErrorResult(error);
 			}
 		},
 	});

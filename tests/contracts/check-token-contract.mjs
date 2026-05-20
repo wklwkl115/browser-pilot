@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonResult, textResult } from "../../src/utils/toolResult.ts";
-import { distilledJsonResult } from "../../src/tools/resultMiddleware.ts";
+import { distilledJsonResult, distilledTextResult } from "../../src/tools/resultMiddleware.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.isAbsolute(rel) ? rel : path.join(root, rel), "utf8");
@@ -37,8 +37,38 @@ try {
 	});
 	const distilledText = distilled.content[0].text;
 	assert.ok(existsSync(outputPath), `check-token distilledJsonResult.outputPath: artifact missing at ${outputPath}`);
+	assert.deepEqual(JSON.parse(readFileSync(outputPath, "utf8")), networkPayload, "check-token distilledJsonResult.outputPath: artifact must preserve the explicit artifactValue");
 	assert.ok(distilledText.includes('"detailLevel": "summary"'), "check-token distilledJsonResult.detailLevel: summary envelope missing");
 	assert.equal(distilledText.includes("requestId".repeat(20)), false, "check-token distilledJsonResult.rawPayload: repeated raw payload leaked");
+
+	const preview = await distilledJsonResult({ ok: true, payload: "p".repeat(50_000) }, {
+		toolName: "browser_execute",
+		command: "execute.script",
+		detailLevel: "preview",
+		maxChars: 1_500,
+		ctx: { cwd: tmp },
+		fallbackName: "preview.json",
+	});
+	const previewEnvelope = JSON.parse(preview.content[0].text);
+	assert.equal(previewEnvelope.detailLevel, "preview", "check-token distilledJsonResult.preview: preview must use the summary envelope contract");
+	assert.equal(preview.content[0].text.includes("p".repeat(1_000)), false, "check-token distilledJsonResult.preview: raw payload must not leak through preview");
+	assert.ok(previewEnvelope.saved?.path, "check-token distilledJsonResult.preview: oversized preview envelope must save the raw result artifact");
+
+	const contentOutputPath = path.join(tmp, "content.json");
+	const contentArtifact = { ok: true, data: { markdown: "# T", url: "https://example.test", meta: { target: "main" } } };
+	const contentResult = await distilledTextResult("# T", {
+		toolName: "browser_content",
+		command: "content",
+		detailLevel: "summary",
+		maxChars: 1_500,
+		ctx: { cwd: tmp },
+		outputPath: contentOutputPath,
+		fallbackName: "content.json",
+		summary: { url: "https://example.test", markdownChars: 3 },
+		artifactValue: contentArtifact,
+	});
+	assert.ok(contentResult.content[0].text.includes('"tool": "browser_content"'), "check-token distilledTextResult.outputPath: text tools must still return the compact envelope");
+	assert.deepEqual(JSON.parse(readFileSync(contentOutputPath, "utf8")), contentArtifact, "check-token distilledTextResult.outputPath: text tool artifact must preserve structured artifactValue");
 } finally {
 	await rm(tmp, { recursive: true, force: true });
 }

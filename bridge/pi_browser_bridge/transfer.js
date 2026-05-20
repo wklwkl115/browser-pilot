@@ -13,6 +13,26 @@ function piTransferIsHttpUrl(url) {
   catch (_) { return false; }
 }
 
+function piTransferNormalizeDownloadMode(msg, target) {
+  const raw = msg && msg.mode;
+  const omitted = raw === undefined || raw === null || raw === '';
+  if (omitted) return { ok: true, mode: target === 'url' ? 'url' : 'click' };
+  if (typeof raw !== 'string') {
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
+  }
+  const mode = raw.trim().toLowerCase();
+  if (!['click', 'media', 'url'].includes(mode)) {
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download mode must be one of click, media, or url', { mode: raw, target, allowedModes: ['click', 'media', 'url'] });
+  }
+  if (target === 'url' && mode !== 'url') {
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download url target only accepts mode:url or omitted mode', { mode, target, allowedModes: ['url'] });
+  }
+  if (target === 'selector' && mode === 'url') {
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download selector target only accepts mode:click, mode:media, or omitted mode', { mode, target, allowedModes: ['click', 'media'] });
+  }
+  return { ok: true, mode };
+}
+
 function piTransferDownloadItem(item) {
   if (!item) return null;
   return {
@@ -287,6 +307,8 @@ async function piTransferDownloadWithOptions(options, timeoutMs, mode, trigger) 
 }
 
 async function piTransferDownloadUrl(msg, timeoutMs) {
+  const modeCheck = piTransferNormalizeDownloadMode(msg, 'url');
+  if (modeCheck.ok === false) return modeCheck;
   if (!piTransferIsHttpUrl(msg.url)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download url must be http(s)', { url: msg.url });
   const options = { url: String(msg.url), saveAs: msg.saveAs === true };
   if (typeof msg.filename === 'string' && msg.filename.trim()) options.filename = msg.filename.trim();
@@ -298,7 +320,9 @@ async function piTransferDownloadFromPage(tabId, msg, timeoutMs) {
   if (!chrome.downloads?.onCreated) return piBrowserError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'chrome.downloads API is unavailable; reload the bridge extension after granting downloads permission', {});
   const selector = String(msg.selector || '');
   if (!selector) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'browser_download requires selector or url', {});
-  const mode = msg.mode === 'media' ? 'media' : 'click';
+  const modeCheck = piTransferNormalizeDownloadMode(msg, 'selector');
+  if (modeCheck.ok === false) return modeCheck;
+  const mode = modeCheck.mode;
   if (mode === 'media') {
     const extracted = await piTransferEvaluate(tabId, piTransferMediaUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 10000)).catch(error => ({ ok: false, error_code: error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, error: error.message || String(error), details: error.details || { selector } }));
     if (!extracted || extracted.ok === false) return extracted;

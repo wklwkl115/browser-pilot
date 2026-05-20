@@ -14,6 +14,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 		promptSnippet: "Read/search browser tool artifact files by path, offsets, snippets, or JSON paths.",
 		promptGuidelines: [
 			"Use browser_artifact after browser tools return saved.path; prefer search/json/text offsets over re-running full browser captures.",
+			"JSON path misses return explicit exists:false/notFound:true; pick results stay aligned one entry per requested path.",
 			"Keep maxChars small and request the next offset or a narrower jsonPath/query when more detail is needed.",
 		],
 		parameters: Type.Object({
@@ -22,10 +23,10 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; array offset for json arrays" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json" })),
 			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
-			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode, e.g. sources.hook_events.data.events[0]" })),
-			pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths to return as an object" })),
-			query: Type.Optional(Type.String({ description: "String or regex query for search mode" })),
-			regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression" })),
+			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode; missing paths return exists:false/notFound:true" })),
+			pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths; each requested path returns an aligned exists/value or notFound entry" })),
+			query: Type.Optional(Type.String({ description: "String or bounded safe-regex query for search mode" })),
+			regex: Type.Optional(Type.Boolean({ description: "Treat query as a bounded regular expression; unsafe patterns are rejected" })),
 			ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search unless false" })),
 			contextLines: Type.Optional(Type.Number({ description: "Context lines around search matches" })),
 			maxMatches: Type.Optional(Type.Number({ description: "Maximum search matches" })),

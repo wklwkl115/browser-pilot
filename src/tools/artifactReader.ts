@@ -3,8 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params";
+import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex";
 
 export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
+export const MAX_ARTIFACT_SEARCH_REGEX_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
+export const MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
 
 export class ArtifactReaderError extends Error {
 	readonly code: string;
@@ -37,7 +40,7 @@ type BrowserArtifactContext = { cwd?: string } | undefined;
 
 type TextSnippet = { lineStart: number; lineEnd: number; text: string; truncated: boolean };
 type SearchSnippet = TextSnippet & { matchLine: number };
-type SampleSnippet = TextSnippet & { section: string };
+type SampleSnippet = TextSnippet & { section: string; deduped?: boolean };
 
 export type BrowserArtifactReadResult =
 	| { mode: "text"; summary: Record<string, unknown>; offset: number; limit: number; nextOffset: number | null; snippets: TextSnippet[] }
@@ -73,7 +76,14 @@ function boundedJoin(lines: Array<{ line: number; text: string }>, maxChars: num
 	let lineEnd = lines[0]?.line || 0;
 	for (const item of lines) {
 		const value = `${item.line}: ${item.text}`;
-		if (used + value.length + 1 > maxChars) return { text: out.join("\n"), lineEnd, truncated: true };
+		if (used + value.length + 1 > maxChars) {
+			const remaining = Math.max(0, maxChars - used - (out.length ? 1 : 0));
+			if (remaining > 0) {
+				out.push(value.slice(0, remaining));
+				lineEnd = item.line;
+			}
+			return { text: out.join("\n"), lineEnd, truncated: true };
+		}
 		out.push(value);
 		used += value.length + 1;
 		lineEnd = item.line;
@@ -91,6 +101,33 @@ async function eachLine(absPath: string, onLine: (line: string, lineNumber: numb
 	return lineNumber;
 }
 
+async function countTextChars(absPath: string): Promise<number> {
+	let chars = 0;
+	for await (const chunk of createReadStream(absPath, { encoding: "utf8" })) chars += String(chunk).length;
+	return chars;
+}
+
+export function isSafeArtifactSearchRegexPattern(pattern: unknown): boolean {
+	return unsafeRegexReason(pattern, MAX_ARTIFACT_SEARCH_REGEX_CHARS) === undefined;
+}
+
+function compileArtifactSearchRegex(query: string, flags: string): RegExp {
+	const unsafeReason = unsafeRegexReason(query, MAX_ARTIFACT_SEARCH_REGEX_CHARS);
+	if (unsafeReason) {
+		throw new ArtifactReaderError("ARTIFACT_SEARCH_REGEX_UNSAFE", "browser_artifact search regex is unsafe or exceeds limits", {
+			query,
+			flags,
+			reason: unsafeReason,
+			maxPatternChars: MAX_ARTIFACT_SEARCH_REGEX_CHARS,
+			maxLineChars: MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS,
+		});
+	}
+	try { return new RegExp(query, flags); }
+	catch (error) {
+		throw new ArtifactReaderError("ARTIFACT_SEARCH_REGEX_INVALID", error instanceof Error ? error.message : String(error), { query, flags });
+	}
+}
+
 async function readTextRange(absPath: string, fileSize: number, params: BrowserArtifactParams, maxChars: number) {
 	const offset = Math.max(1, Math.floor(Number(params.offset || 1)));
 	const limit = Math.max(1, Math.floor(Number(params.limit || 120)));
@@ -98,15 +135,17 @@ async function readTextRange(absPath: string, fileSize: number, params: BrowserA
 	const lineCount = await eachLine(absPath, (line, lineNumber) => {
 		if (lineNumber >= offset && lineNumber < offset + limit) selected.push({ line: lineNumber, text: line });
 	});
+	const chars = await countTextChars(absPath);
+	if (!selected.length) return { mode: "text" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), offset, limit, nextOffset: null, snippets: [] };
 	const joined = boundedJoin(selected, maxChars);
 	const nextOffset = offset - 1 + selected.length < lineCount ? joined.lineEnd + 1 : null;
 	return {
 		mode: "text" as const,
-		summary: summaryFromStats(fileSize, absPath, lineCount),
+		summary: summaryFromStats(fileSize, absPath, lineCount, chars),
 		offset,
 		limit,
 		nextOffset,
-		snippets: [{ lineStart: offset, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated }],
+		snippets: [{ lineStart: selected[0].line, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated }],
 	};
 }
 
@@ -117,17 +156,14 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 	const contextLines = Math.max(0, Math.floor(Number(params.contextLines ?? 2)));
 	const maxMatches = Math.max(1, Math.floor(Number(params.maxMatches || 20)));
 	const flags = params.ignoreCase === false ? "" : "i";
-	let pattern: RegExp | undefined;
-	try { pattern = params.regex ? new RegExp(query, flags) : undefined; }
-	catch (error) {
-		throw new ArtifactReaderError("ARTIFACT_SEARCH_REGEX_INVALID", error instanceof Error ? error.message : String(error), { query, flags });
-	}
+	const pattern = params.regex ? compileArtifactSearchRegex(query, flags) : undefined;
 	const needle = params.ignoreCase === false ? query : query.toLowerCase();
 	const matches: SearchSnippet[] = [];
 	const ring: Array<{ line: number; text: string }> = [];
 	let pending: { matchLine: number; lines: Array<{ line: number; text: string }>; remainingAfter: number } | undefined;
 	let used = 0;
 	let lastRangeEnd = 0;
+	let regexTruncatedLines = 0;
 	const flushPending = () => {
 		if (!pending) return;
 		const budgetLeft = Math.max(0, maxChars - used);
@@ -151,8 +187,10 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 			if (ring.length > contextLines) ring.shift();
 			return;
 		}
+		const regexLine = pattern && line.length > MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS ? line.slice(0, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS) : line;
+		if (pattern && regexLine.length !== line.length) regexTruncatedLines += 1;
 		const haystack = params.ignoreCase === false ? line : line.toLowerCase();
-		const matched = pattern ? pattern.test(line) : haystack.includes(needle);
+		const matched = pattern ? pattern.test(regexLine) : haystack.includes(needle);
 		if (pattern) pattern.lastIndex = 0;
 		if (!matched) {
 			ring.push({ line: lineNumber, text: line });
@@ -165,14 +203,23 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		ring.splice(0, ring.length, { line: lineNumber, text: line });
 	});
 	flushPending();
+	const chars = await countTextChars(absPath);
+	const nextOffset = matches.length && matches[matches.length - 1].lineEnd < lineCount ? matches[matches.length - 1].lineEnd + 1 : null;
 	return {
 		mode: "search" as const,
-		summary: summaryFromStats(fileSize, absPath, lineCount),
+		summary: {
+			...summaryFromStats(fileSize, absPath, lineCount, chars),
+			search: pattern ? {
+				regexMaxPatternChars: MAX_ARTIFACT_SEARCH_REGEX_CHARS,
+				regexMaxLineChars: MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS,
+				regexTruncatedLines,
+			} : undefined,
+		},
 		query,
 		regex: params.regex === true,
 		offset,
 		matches: matches.length,
-		nextOffset: matches.length ? matches[matches.length - 1].lineEnd + 1 : null,
+		nextOffset,
 		snippets: matches,
 	};
 }
@@ -181,25 +228,49 @@ async function sampleText(absPath: string, fileSize: number, params: BrowserArti
 	const perSection = Math.max(1, Math.floor(Number(params.limit || 20)));
 	let lineCount = 0;
 	await eachLine(absPath, () => { lineCount += 1; });
+	const chars = await countTextChars(absPath);
+	if (lineCount === 0) return { mode: "sample" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), limit: perSection, snippets: [] };
 	const sections = [
-		{ name: "head", start: 1 },
-		{ name: "middle", start: Math.max(1, Math.floor(lineCount / 2) - Math.floor(perSection / 2)) },
-		{ name: "tail", start: Math.max(1, lineCount - perSection + 1) },
+		{ name: "head", start: 1, end: Math.min(lineCount, perSection) },
+		{ name: "middle", start: Math.max(1, Math.floor(lineCount / 2) - Math.floor(perSection / 2)), end: Math.min(lineCount, Math.max(1, Math.floor(lineCount / 2) - Math.floor(perSection / 2)) + perSection - 1) },
+		{ name: "tail", start: Math.max(1, lineCount - perSection + 1), end: lineCount },
 	];
 	const snippets: SampleSnippet[] = [];
+	const usedRanges: Array<{ start: number; end: number }> = [];
+	let dedupedSections = 0;
 	let used = 0;
 	for (const section of sections) {
+		let start = section.start;
+		let end = section.end;
+		for (const range of usedRanges) {
+			if (range.end < start || range.start > end) continue;
+			if (range.start <= start) start = Math.max(start, range.end + 1);
+			if (range.end >= end) end = Math.min(end, range.start - 1);
+		}
+		if (start > end) {
+			dedupedSections += 1;
+			continue;
+		}
 		const selected: Array<{ line: number; text: string }> = [];
 		await eachLine(absPath, (line, lineNumber) => {
-			if (lineNumber >= section.start && lineNumber < section.start + perSection) selected.push({ line: lineNumber, text: line });
+			if (lineNumber >= start && lineNumber <= end) selected.push({ line: lineNumber, text: line });
 		});
 		const joined = boundedJoin(selected, Math.max(0, maxChars - used));
 		if (!joined.text && snippets.length) break;
-		snippets.push({ section: section.name, lineStart: section.start, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated });
+		snippets.push({ section: section.name, lineStart: start, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated, deduped: start !== section.start || end !== section.end || dedupedSections > 0 });
+		usedRanges.push({ start, end: joined.lineEnd });
 		used += joined.text.length + 1;
 		if (joined.truncated || used >= maxChars) break;
 	}
-	return { mode: "sample" as const, summary: summaryFromStats(fileSize, absPath, lineCount), limit: perSection, snippets };
+	return {
+		mode: "sample" as const,
+		summary: {
+			...summaryFromStats(fileSize, absPath, lineCount, chars),
+			sample: { requestedSections: sections.length, returnedSections: snippets.length, dedupedSections },
+		},
+		limit: perSection,
+		snippets,
+	};
 }
 
 function parseJsonPath(jsonPath: string): Array<string | number> {
@@ -216,13 +287,14 @@ function parseJsonPath(jsonPath: string): Array<string | number> {
 	return tokens;
 }
 
-function getJsonPath(value: unknown, jsonPath: string | undefined): unknown {
+function getJsonPath(value: unknown, jsonPath: string | undefined): { exists: boolean; value: unknown } {
 	let current = value;
 	for (const token of parseJsonPath(jsonPath || "$")) {
-		if (current === null || current === undefined) return undefined;
-		current = (current as Record<string, unknown> | unknown[])[token as never];
+		if (current === null || current === undefined || typeof current !== "object") return { exists: false, value: undefined };
+		if (!Object.prototype.hasOwnProperty.call(current, token)) return { exists: false, value: undefined };
+		current = (current as Record<string | number, unknown>)[token];
 	}
-	return current;
+	return { exists: true, value: current };
 }
 
 function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth = 0): unknown {
@@ -260,18 +332,37 @@ function summarizeJsonValue(value: unknown, absPath: string, fileSize: number): 
 
 function readJson(text: string, fileSize: number, absPath: string, params: BrowserArtifactParams) {
 	const parsed = JSON.parse(text) as unknown;
-	let selected: unknown;
 	if (Array.isArray(params.pick) && params.pick.length) {
-		selected = Object.fromEntries(params.pick.map((item) => [item, getJsonPath(parsed, item)]));
-	} else {
-		selected = getJsonPath(parsed, params.jsonPath);
+		const entries = params.pick.map((item) => {
+			const selected = getJsonPath(parsed, item);
+			return [item, selected.exists
+				? { exists: true, jsonPath: item, value: compactJsonValue(selected.value, params) }
+				: { exists: false, notFound: true, jsonPath: item, value: null }];
+		});
+		const value = Object.fromEntries(entries);
+		const missingCount = Object.values(value).filter((item) => (item as { exists?: boolean }).exists === false).length;
+		return {
+			mode: "json" as const,
+			summary: { path: absPath, bytes: fileSize, type: "object", keyCount: Object.keys(value).length, keys: Object.keys(value).slice(0, 40), picked: true, missingCount },
+			pick: params.pick,
+			value,
+		};
+	}
+	const jsonPath = params.jsonPath || "$";
+	const selected = getJsonPath(parsed, jsonPath);
+	if (!selected.exists) {
+		return {
+			mode: "json" as const,
+			summary: { path: absPath, bytes: fileSize, type: "missing", exists: false, notFound: true, jsonPath },
+			jsonPath,
+			value: { exists: false, notFound: true, jsonPath, value: null },
+		};
 	}
 	return {
 		mode: "json" as const,
-		summary: summarizeJsonValue(selected, absPath, fileSize),
-		jsonPath: params.jsonPath || (params.pick?.length ? undefined : "$"),
-		pick: params.pick,
-		value: compactJsonValue(selected, params),
+		summary: { ...summarizeJsonValue(selected.value, absPath, fileSize), exists: true, jsonPath },
+		jsonPath,
+		value: compactJsonValue(selected.value, params),
 	};
 }
 
@@ -279,11 +370,13 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	const mode = normalizeArtifactMode(params.mode);
 	const absPath = resolveInputPath(ctx, params.path);
 	const info = await stat(absPath);
-	if (info.size > MAX_ARTIFACT_READ_BYTES) {
-		throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", "Artifact is too large for browser_artifact text/json reader", { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
-	}
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
-	if (mode === "json") return readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
+	if (mode === "json") {
+		if (info.size > MAX_ARTIFACT_READ_BYTES) {
+			throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", "Artifact is too large for browser_artifact json reader", { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
+		}
+		return readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
+	}
 	if (mode === "search") return searchText(absPath, info.size, params, maxChars);
 	if (mode === "sample") return sampleText(absPath, info.size, params, maxChars);
 	return readTextRange(absPath, info.size, params, maxChars);

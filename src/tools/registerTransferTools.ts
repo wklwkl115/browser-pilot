@@ -37,13 +37,13 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
 				requireDownloadTarget(params);
-				const server = await ensureStarted();
+				const command = buildTransferDownloadCommand(params);
 				const timeoutMs = asPositiveInt(params.timeoutMs, 35_000);
 				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_download"));
-				const command = buildTransferDownloadCommand(params);
 				command.timeoutMs = timeoutMs;
+				const server = await ensureStarted();
 				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
-				return await distilledJsonResult(result.data ?? result, {
+				return await distilledJsonResult(result, {
 					toolName: "browser_download",
 					command: "transfer.download",
 					detailLevel: params.detailLevel,
@@ -52,7 +52,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 					outputPath: params.outputPath,
 					fallbackName: `download-${Date.now()}.json`,
 					details: { command: "transfer.download", mode: command.mode || "click" },
-					artifactValue: result.data ?? result,
+					artifactValue: result,
 					distill: summarizeTransferData,
 				});
 			} catch (error) {
@@ -88,7 +88,7 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 				const command = buildTransferUploadCommand(selector, files, params.index);
 				command.timeoutMs = timeoutMs;
 				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
-				return await distilledJsonResult(result.data ?? result, {
+				return await distilledJsonResult(result, {
 					toolName: "browser_upload",
 					command: "transfer.upload",
 					detailLevel: params.detailLevel,
@@ -97,7 +97,7 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 					outputPath: params.outputPath,
 					fallbackName: `upload-${Date.now()}.json`,
 					details: { command: "transfer.upload", selector, files_count: files.length },
-					artifactValue: result.data ?? result,
+					artifactValue: result,
 					distill: summarizeTransferData,
 				});
 			} catch (error) {

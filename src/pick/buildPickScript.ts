@@ -4,6 +4,7 @@ export type BrowserPickOptions = {
 	message: string;
 	multiple?: boolean;
 	timeoutMs?: number;
+	pickId?: string;
 };
 
 export function buildPickScript(options: BrowserPickOptions): string {
@@ -12,6 +13,7 @@ export function buildPickScript(options: BrowserPickOptions): string {
 		message: options.message,
 		multiple: options.multiple !== false,
 		timeoutMs: Math.max(1_000, timeoutMs - 500),
+		pickId: options.pickId || `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`,
 		noiseSelectors: BROWSER_NOISE_SELECTORS,
 		noiseAttrNames: BROWSER_NOISE_ATTRIBUTE_NAMES,
 		noiseAttrPrefixes: BROWSER_NOISE_ATTRIBUTE_PREFIXES,
@@ -142,16 +144,28 @@ export function buildPickScript(options: BrowserPickOptions): string {
   updateBanner();
   document.documentElement.appendChild(overlay);
   document.documentElement.appendChild(banner);
+  let finished = false;
   const cleanup = () => {
+    try {
+      if (window.__piBrowserActivePickers && window.__piBrowserActivePickers[options.pickId]) delete window.__piBrowserActivePickers[options.pickId];
+      if (window.__piBrowserPickCleanupId === options.pickId) {
+        delete window.__piBrowserPickCleanup;
+        delete window.__piBrowserPickCleanupId;
+      }
+    } catch (_) {}
     document.removeEventListener('mousemove', onMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('pagehide', onPageHide, true);
+    window.removeEventListener('beforeunload', onBeforeUnload, true);
     clearTimeout(timer);
     overlay.remove();
     banner.remove();
     for (const [el, outline] of previousOutlines.entries()) { try { el.style.outline = outline; } catch (_) {} }
   };
   const finish = (cancelled, reason) => {
+    if (finished) return;
+    finished = true;
     cleanup();
     resolve({
       cancelled,
@@ -164,6 +178,12 @@ export function buildPickScript(options: BrowserPickOptions): string {
       title: document.title || ''
     });
   };
+  try {
+    window.__piBrowserActivePickers = window.__piBrowserActivePickers || {};
+    window.__piBrowserActivePickers[options.pickId] = { cleanup: (reason) => finish(true, reason || 'external_cleanup'), createdAt: Date.now() };
+    window.__piBrowserPickCleanup = window.__piBrowserActivePickers[options.pickId].cleanup;
+    window.__piBrowserPickCleanupId = options.pickId;
+  } catch (_) {}
   const elementFromEvent = (event) => {
     overlay.style.display = 'none';
     banner.style.display = 'none';
@@ -204,9 +224,44 @@ export function buildPickScript(options: BrowserPickOptions): string {
     if (event.key === 'Escape') { event.preventDefault(); finish(true, 'escape'); return; }
     if (event.key === 'Enter' && selections.length) { event.preventDefault(); finish(false, 'enter'); }
   }
+  function onPageHide() { finish(true, 'pagehide'); }
+  function onBeforeUnload() { finish(true, 'beforeunload'); }
   const timer = setTimeout(() => finish(true, 'timeout'), options.timeoutMs);
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
   document.addEventListener('keydown', onKey, true);
+  window.addEventListener('pagehide', onPageHide, true);
+  window.addEventListener('beforeunload', onBeforeUnload, true);
 })`;
+}
+
+export function buildPickCleanupScript(pickId: string): string {
+	const payload = JSON.stringify({ pickId });
+	return String.raw`(() => {
+  const options = ${payload};
+  const out = { cleaned:false, method:null, overlaysRemoved:0, pickId:options.pickId };
+  try {
+    const active = window.__piBrowserActivePickers && window.__piBrowserActivePickers[options.pickId];
+    if (active && typeof active.cleanup === 'function') {
+      active.cleanup('timeout');
+      out.cleaned = true;
+      out.method = 'active_cleanup';
+      return out;
+    }
+    if (window.__piBrowserPickCleanupId === options.pickId && typeof window.__piBrowserPickCleanup === 'function') {
+      window.__piBrowserPickCleanup('timeout');
+      out.cleaned = true;
+      out.method = 'legacy_cleanup';
+      return out;
+    }
+  } catch (error) {
+    out.error = error && error.message ? error.message : String(error);
+  }
+  try {
+    const nodes = Array.from(document.querySelectorAll('[data-pi-browser-pick]'));
+    out.overlaysRemoved = nodes.length;
+    nodes.forEach((node) => { try { node.remove(); } catch (_) {} });
+  } catch (_) {}
+  return out;
+})()`;
 }

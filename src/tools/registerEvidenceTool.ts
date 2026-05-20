@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { errorResult } from "../utils/toolResult";
 import { defaultResultBudget } from "./budgets";
 import { distilledJsonResult } from "./resultMiddleware";
-import { asPositiveInt, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, NativeStringList, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { asPositiveInt, DEFAULT_OBSERVATION_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, NativeStringList, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -34,7 +34,7 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 				if (params.includeHook !== undefined) body.includeHook = params.includeHook;
 				if (params.includeNetwork !== undefined) body.includeNetwork = params.includeNetwork;
 				if (params.includePerformance !== undefined) body.includePerformance = params.includePerformance;
-				const timeoutMs = asPositiveInt(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
+				const timeoutMs = asPositiveInt(params.timeoutMs, DEFAULT_OBSERVATION_TIMEOUT_MS);
 				if (body.timeoutMs === undefined && body.timeout_ms === undefined) body.timeoutMs = timeoutMs;
 				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_evidence"));
 				const result = await server.sendCommand({ ...body, cmd: "evidence.collect" }, { tabId: params.tabId ?? body.tabId, timeoutMs });
@@ -47,7 +47,7 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 					outputPath: params.outputPath,
 					fallbackName: `evidence-${Date.now()}.json`,
 					details: { command: "evidence.collect" },
-					artifactValue: result.data ?? result,
+					artifactValue: result,
 				});
 			} catch (error) {
 				return errorResult(error);

@@ -4,6 +4,7 @@ class WaitCoordinator {
   constructor() { this.activeWaits = new Map(); this.eventSubscriptions = new Map(); this.epoch = 0; }
   makeWaitId(tabId, kind) { return makeWaitId(tabId, kind); }
   waitKey(tabId, waitId) { return waitKey(tabId, waitId); }
+  eventSubscriptionKey(tabId, listenerId) { return eventSubscriptionKey(tabId, listenerId); }
   register(record) {
     const key = record.key || waitKey(record.tabId, record.wait_id || record.waitId);
     record.key = key;
@@ -19,8 +20,25 @@ class WaitCoordinator {
   keys() { return this.activeWaits.keys(); }
   get size() { return this.activeWaits.size; }
   [Symbol.iterator]() { return this.activeWaits[Symbol.iterator](); }
-  registerEventSubscription(listenerId, sub) { this.eventSubscriptions.set(listenerId, sub); return sub; }
-  deleteEventSubscription(listenerId) { return this.eventSubscriptions.delete(listenerId); }
+  registerEventSubscription(listenerId, sub) {
+    const key = eventSubscriptionKey(sub.tabId, listenerId);
+    sub.key = key;
+    this.eventSubscriptions.set(key, sub);
+    return sub;
+  }
+  eventSubscription(listenerId, tabId) {
+    if (tabId !== undefined && tabId !== null) return this.eventSubscriptions.get(eventSubscriptionKey(tabId, listenerId));
+    const matches = Array.from(this.eventSubscriptions.values()).filter(s => String(s.listenerId) === String(listenerId));
+    return matches.length === 1 ? matches[0] : null;
+  }
+  deleteEventSubscription(listenerId, tabId) {
+    if (tabId !== undefined && tabId !== null) return this.eventSubscriptions.delete(eventSubscriptionKey(tabId, listenerId));
+    let deleted = false;
+    for (const [key, sub] of Array.from(this.eventSubscriptions.entries())) {
+      if (String(sub.listenerId) === String(listenerId)) { this.eventSubscriptions.delete(key); deleted = true; }
+    }
+    return deleted;
+  }
   eventSubscriptionValues() { return this.eventSubscriptions.values(); }
   cleanupEventSubscriptionsForTab(tabId) {
     let n = 0;
@@ -32,7 +50,7 @@ class WaitCoordinator {
   cleanupWait(record, reason) { return cleanupWait(record, reason); }
   cleanupWaitsForFrame(tabId, frameId, reason) { return cleanupWaitsForFrame(tabId, frameId, reason); }
   cleanupWaitsForUninstall(tabId) { return cleanupWaitsForUninstall(tabId); }
-  diagnostics(tabId) { return { activeWaits: Array.from(this.activeWaits.values()).filter(w => !tabId || Number(w.tabId) === Number(tabId)).map(w => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), eventSubscriptions: this.eventSubscriptions.size, epoch: this.epoch }; }
+  diagnostics(tabId) { const scopedEvents = Array.from(this.eventSubscriptions.values()).filter(s => !tabId || Number(s.tabId) === Number(tabId)); return { activeWaits: Array.from(this.activeWaits.values()).filter(w => !tabId || Number(w.tabId) === Number(tabId)).map(w => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), eventSubscriptions: scopedEvents.length, epoch: this.epoch }; }
 }
 function cleanupWait(record, reason) { return cleanupPiBrowserWait(record, reason); }
 function cleanupWaitsForFrame(tabId, frameId, reason) { let n = 0; for (const r of Array.from(piBrowserWaits.values())) if (Number(r.tabId) === Number(tabId) && String(r.frameId || '') === String(frameId || '')) { cleanupPiBrowserWait(r, reason || 'FRAME_DETACHED'); n++; } return n; }
@@ -60,8 +78,8 @@ const piBrowserCdpTabRefs = new Map();
 const piBrowserCdpDomainRefs = new Map();
 const piBrowserCdpCleanupHistory = [];
 try {
-  if (typeof self !== 'undefined' && self.addEventListener && !self.__piBrowserUnhandledRejectionCleanupInstalled) {
-    self.__piBrowserUnhandledRejectionCleanupInstalled = true;
+  if (typeof self !== 'undefined' && self.addEventListener && !self['__piBrowserUnhandledRejectionCleanupInstalled']) {
+    self['__piBrowserUnhandledRejectionCleanupInstalled'] = true;
     self.addEventListener('unhandledrejection', () => { try { cleanupPiBrowserOrphanWaits('unhandledRejection', 0); } catch (_) {} });
   }
 } catch (_) {}
@@ -80,6 +98,7 @@ function normalizePiBrowserTimeoutMs(msg, fallback) {
 }
 function makeWaitId(tabId, kind) { return 'wait_' + Number(tabId) + '_' + String(kind || 'generic') + '_' + Date.now() + '_' + (++piBrowserWaitSeq); }
 function waitKey(tabId, waitId) { return Number(tabId) + ':' + String(waitId); }
+function eventSubscriptionKey(tabId, listenerId) { return Number(tabId) + '::' + String(listenerId); }
 function isAbortError(e) { return !!e && (e.name === 'AbortError' || /aborted|cancelled/i.test(e.message || String(e))); }
 function waitAbortMessage(record) { return 'piBrowser wait ' + record.waitId + ' cancelled'; }
 function normalizeWaitState(value, fallback) {
@@ -191,8 +210,12 @@ async function acquirePiBrowserCdpDomain(record, domain) {
     record.cdpAttached = true;
     return ref.mode || 'refcounted';
   }
+  if (ref?.disablePending) {
+    if (ref.disableInFlight && ref.disablePromise) await ref.disablePromise.catch(() => {});
+    ref = piBrowserCdpDomainRefs.get(key);
+  }
   if (!ref) {
-    ref = { key, tabId, domain, count: 0, holders: new Map(), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false };
+    ref = { key, tabId, domain, count: 0, holders: new Map(), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false, disableInFlight: false, disablePromise: null, disableToken: 0 };
     piBrowserCdpDomainRefs.set(key, ref);
   }
   const first = ref.count === 0;
@@ -201,6 +224,9 @@ async function acquirePiBrowserCdpDomain(record, domain) {
       ref.mode = await sendPiBrowserCdpDomainCommand(tabId, domain, 'enable', ref.mode);
       ref.enabledAt = Date.now();
       ref.lastError = null;
+      ref.disablePending = false;
+      ref.disableInFlight = false;
+      ref.disablePromise = null;
     }
     ref.holders.set(holderId, { holderId, waitId: record.waitId || null, kind: record.kind || null, acquiredAt: Date.now() });
     ref.count = ref.holders.size;
@@ -212,6 +238,43 @@ async function acquirePiBrowserCdpDomain(record, domain) {
     if (first && ref.count === 0 && !ref.holders.size) piBrowserCdpDomainRefs.delete(key);
     throw e;
   }
+}
+function schedulePiBrowserCdpDomainDisable(ref, reason, holderId, action) {
+  if (!ref || ref.disableInFlight) return false;
+  ref.count = 0;
+  ref.disablePending = true;
+  ref.disableInFlight = true;
+  ref.disableToken = Number(ref.disableToken || 0) + 1;
+  const token = ref.disableToken;
+  const mode = ref.mode;
+  const tabId = Number(ref.tabId);
+  const domain = ref.domain;
+  const key = ref.key;
+  rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: action || 'disable', mode });
+  ref.disablePromise = sendPiBrowserCdpDomainCommand(tabId, domain, 'disable', mode).then(() => {
+    const current = piBrowserCdpDomainRefs.get(key);
+    if (current !== ref || current.disableToken !== token) return;
+    current.disableInFlight = false;
+    current.disablePending = false;
+    current.disablePromise = null;
+    current.lastError = null;
+    if (current.count === 0 && current.holders.size === 0) piBrowserCdpDomainRefs.delete(key);
+  }).catch(e => {
+    const current = piBrowserCdpDomainRefs.get(key);
+    if (current === ref && current.disableToken === token) {
+      const errorText = e.message || String(e);
+      if (String(reason || '').toLowerCase() === 'tab_removed' || /no tab|no target|closed|detached/i.test(errorText)) {
+        piBrowserCdpDomainRefs.delete(key);
+      } else {
+        current.disableInFlight = false;
+        current.disablePending = true;
+        current.disablePromise = null;
+        current.lastError = errorText;
+      }
+    }
+    rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: (action || 'disable') + '_failed', mode, error: e.message || String(e) });
+  });
+  return true;
 }
 function releasePiBrowserCdpDomains(record, domains, reason) {
   const unique = Array.from(new Set(domains || []));
@@ -229,12 +292,7 @@ function releasePiBrowserCdpDomains(record, domains, reason) {
     try { record.cdpDomains?.delete(domain); } catch (_) {}
     if (ref.count === 0 || ref.holders.size === 0) {
       ref.count = 0;
-      ref.disablePending = true;
-      const mode = ref.mode;
-      piBrowserCdpDomainRefs.delete(key);
-      disabled += 1;
-      rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: 'disable', mode });
-      void sendPiBrowserCdpDomainCommand(tabId, domain, 'disable', mode).catch(e => rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: 'disable_failed', mode, error: e.message || String(e) }));
+      if (schedulePiBrowserCdpDomainDisable(ref, reason, holderId, 'disable')) disabled += 1;
     }
   }
   return { released, disabled };
@@ -245,11 +303,10 @@ function forceReleasePiBrowserCdpDomainsForTab(tabId, reason) {
   for (const [key, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
     if (Number(ref.tabId) !== Number(tabId)) continue;
     const holders = Array.from(ref.holders.values()).map(h => ({ holderId:h.holderId, waitId:h.waitId, kind:h.kind }));
-    piBrowserCdpDomainRefs.delete(key);
     released += ref.count || holders.length;
-    disabled += 1;
-    rememberPiBrowserCdpCleanup({ tabId:Number(tabId), domain:ref.domain, reason, action:'force_disable', holders, mode:ref.mode });
-    void sendPiBrowserCdpDomainCommand(Number(tabId), ref.domain, 'disable', ref.mode).catch(e => rememberPiBrowserCdpCleanup({ tabId:Number(tabId), domain:ref.domain, reason, action:'force_disable_failed', mode:ref.mode, error:e.message || String(e) }));
+    ref.holders.clear();
+    ref.count = 0;
+    if (schedulePiBrowserCdpDomainDisable(ref, reason, holders.map(h => h.holderId).join(','), 'force_disable')) disabled += 1;
   }
   return { released, disabled };
 }
@@ -371,7 +428,6 @@ async function waitForNavigation(tabId, msg) {
   const record = registerWait(tabId, 'navigation', { waitId: wait_id, wait_id, requestId, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, timeout_ms: timeoutMs, diagnostics, epoch: diagnostics.epoch, abortController: new AbortController(), cleanup: () => {} });
   // chrome.webNavigation.onBeforeNavigate / onCommitted / onCompleted / onErrorOccurred are the MV3 navigation backbone.
   // Persistent CDP Page.frameNavigated/Page.lifecycleEvent and tabs.onUpdated cover debugger-enabled and fallback paths.
-  if (timeoutMs === 0) { cleanupWait(record, 'immediate'); return { ok: true, data: { wait_id, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, diagnostics } }; }
   const urlMatches = (url) => {
     const value = String(url || '');
     if (!value) return !targetUrl && !urlContains;
@@ -380,6 +436,23 @@ async function waitForNavigation(tabId, msg) {
     const target = String(targetUrl);
     return value === target || value.startsWith(target + '#') || value.startsWith(target + '?');
   };
+  const currentNavigationState = async (source) => {
+    const tab = await chrome.tabs.get(tabId).catch(e => { record.lastError = e.message || String(e); return null; });
+    const metrics = await queryLoadMetrics(tabId).catch(() => null);
+    const url = metrics?.url || tab?.url || null;
+    recordWaitEvent(record, { method:'wait.navigation.currentUrl', source, url, tabStatus:tab?.status, readyState:metrics?.readyState });
+    if (!urlMatches(url)) return { ok:false, url, tab, metrics, stage:null, reason:'url_mismatch' };
+    if ((sameDocument === true) && (targetUrl || urlContains)) return { ok:true, url, tab, metrics, stage:'same-document' };
+    if (waitUntil === 'commit' || waitUntil === 'committed') return { ok:true, url, tab, metrics, stage:'commit' };
+    if (waitUntil === 'domcontentloaded' && loadStateSatisfied('domcontentloaded', tab, metrics)) return { ok:true, url, tab, metrics, stage:'domcontentloaded' };
+    if ((waitUntil === 'load' || waitUntil === 'complete') && loadStateSatisfied('complete', tab, metrics)) return { ok:true, url, tab, metrics, stage:'complete' };
+    return { ok:false, url, tab, metrics, stage:null, reason:'state_not_ready' };
+  };
+  if (timeoutMs === 0) {
+    const current = await currentNavigationState('immediate');
+    if (current.ok) return finishPiBrowserWait(record, true, { wait_id, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, source:'immediate', url:current.url, stage:current.stage, immediate:true, tabStatus:current.tab?.status, readyState:current.metrics?.readyState, diagnostics, events: record.cdpEvents.slice(-50) });
+    return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.navigation immediate check failed', { wait_id, request_id: requestId, timeout_ms:0, targetUrl, urlContains, sameDocument, waitUntil, source:'immediate', url:current.url, tabStatus:current.tab?.status, readyState:current.metrics?.readyState, reason:current.reason, diagnostics, events: record.cdpEvents.slice(-50) });
+  }
   const isMainWebNavigation = (details) => Number(details?.tabId) === Number(tabId) && Number(details?.frameId || 0) === 0;
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
@@ -485,7 +558,7 @@ function loadStateSatisfied(state, tab, metrics) {
 }
 async function queryLoadMetrics(tabId) {
   const expr = `(() => ({readyState:document.readyState, url:location.href, title:document.title, domContentLoaded:document.readyState==='interactive'||document.readyState==='complete', load:document.readyState==='complete'}))()`;
-  const res = await piBrowserEval(tabId, expr, true).catch(e => ({ ok:false, error:e.message || String(e) }));
+  const res = /** @type {any} */ (await piBrowserEval(tabId, expr, true).catch(e => ({ ok:false, error:e.message || String(e) })));
   return res && res.ok ? (res.data || res.result || null) : null;
 }
 async function waitForLoadState(tabId, msg) {
@@ -533,7 +606,7 @@ function compileNetworkIdleFilter(msg) {
   const includePreflight = msg.includePreflight === true || msg.include_preflight === true;
   const includeBeacon = msg.includeBeacon === true || msg.include_beacon === true;
   const ignoreLongPollingMs = Math.max(0, Number(msg.ignoreLongPollingMs || msg.ignore_long_polling_ms || 30000));
-  const matchAny = (url, list) => list.some(p => { try { return new RegExp(p).test(url); } catch (_) { return url.includes(p); } });
+  const matchAny = (url, list) => list.some(p => matchNetworkPattern(url, p));
   return function shouldTrack(req) {
     const url = req.url || '';
     const type = String(req.type || '').toLowerCase();
@@ -733,13 +806,13 @@ async function waitForSelector(tabId, msg) {
   const stableMs = Math.max(50, Math.min(5000, Number(msg.stableMs || msg.stable_ms || 250)));
   const maxStableWaitMs = Math.max(stableMs, Math.min(60000, Math.max(100, Number(msg.maxStableWaitMs || msg.max_stable_wait_ms || 10000))));
   const record = registerWait(tabId, 'selector', { selector: String(selector), state, visible: state === 'visible' || msg.visible === true, timeout_ms: timeoutMs, poll_ms: pollMs, stable_ms: stableMs, max_stable_wait_ms: maxStableWaitMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
-  const syntaxCheck = await piBrowserEval(tabId, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch(e => ({ ok:false, error:e.message || String(e) }));
+  const syntaxCheck = /** @type {any} */ (await piBrowserEval(tabId, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch(e => ({ ok:false, error:e.message || String(e) })));
   const syntaxData = syntaxCheck?.data || syntaxCheck?.result || syntaxCheck;
   if (syntaxData && syntaxData.ok === false) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Invalid selector syntax', { selector:String(selector), syntax_error:syntaxData.error });
   let mutationEpoch = 0;
   const visibleForProbe = msg.visible === true || state === 'visible' || state === 'stable';
   // contract literals: document.querySelector / getBoundingClientRect / visible / IntersectionObserver are inside buildSelectorProbe.
-  const evaluate = () => piBrowserEval(tabId, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch(e => ({ ok:false, error:e.message || String(e), method:'Runtime.evaluate' }));
+  const evaluate = async () => /** @type {any} */ (await piBrowserEval(tabId, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch(e => ({ ok:false, error:e.message || String(e), method:'Runtime.evaluate' })));
   const first = await evaluate();
   const firstData = first?.data || first?.result || null;
   if (firstData?.matched) return finishPiBrowserWait(record, true, { element: firstData, state, method: 'Runtime.evaluate', immediate: true });
@@ -916,6 +989,7 @@ async function waitForAny(tabId, msg) {
 }
 async function waitForAll(tabId, msg) {
   const waits = Array.isArray(msg.waits) ? msg.waits : Array.isArray(msg.conditions) ? msg.conditions : [];
+  if (!waits.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'wait.all requires waits/conditions', {});
   const parentTimeoutMs = normalizePiBrowserTimeoutMs(msg);
   const failFast = msg.failFast !== false && msg.fail_fast !== false;
   const children = waits.map((w, i) => ({ index:i, kind:w?.kind || w?.type || w?.cmd || 'selector', timeout_ms: normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs) }));
@@ -948,11 +1022,16 @@ async function waitForAll(tabId, msg) {
   return { ok: true, data: aggregate };
 }
 async function waitForComposite(tabId, msg, mode) { return mode === 'waitForAny' ? await waitForAny(tabId, msg) : await waitForAll(tabId, msg); }
+function normalizePiBrowserWaitKind(kind, msg) {
+  const raw = String(kind || msg?.kind || msg?.type || msg?.cmd || 'selector').trim().replace(/^piBrowser[._-]/i, '');
+  const withoutWaitPrefix = raw.replace(/^wait[._-]/i, '');
+  return withoutWaitPrefix.replace(/[._-]/g, '').toLowerCase();
+}
 async function dispatchPiBrowserWait(tabId, msg, kind) {
-  const raw = String(kind || msg.kind || msg.type || msg.cmd || '').replace(/^piBrowser[._]/, '');
-  const k = raw.replace(/[-_]/g, '').toLowerCase();
+  const k = normalizePiBrowserWaitKind(kind, msg);
   if (k === 'waitforloadstate' || k === 'loadstate' || k === 'load' || k === 'domcontentloaded' || k === 'complete') return await waitForLoadState(tabId, msg);
   if (k === 'waitfornetworkidle' || k === 'networkidle') return await waitForNetworkIdle(tabId, msg);
+  if (k === 'waitfornavigation' || k === 'navigation') return await waitForNavigation(tabId, msg);
   if (k === 'waitforselector' || k === 'selector' || k === 'css') return await waitForSelector(tabId, msg);
   if (k === 'navigateandwait' || k === 'navigate') return await navigateAndWait(tabId, msg);
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown wait condition: ' + kind, { kind, normalized: k, wait: msg });
@@ -968,6 +1047,34 @@ function cancelPiBrowserWait(tabId, msg) { return cancelWait(tabId, msg); }
 
 function cleanupEventSubscriptionsForTab(tabId) {
   return piBrowserWaits.cleanupEventSubscriptionsForTab(tabId);
+}
+function extractPiBrowserRuntimeValue(resp) {
+  return resp?.data?.result?.result?.value || resp?.result?.result?.value || resp?.data?.result?.value || resp?.result?.value || null;
+}
+async function cleanupPiBrowserPageListenersForTab(tabId, reason, timeoutMs) {
+  const cdp = piBrowserPersistentCdp();
+  if (!cdp?.send) return { ok: true, data: { tabId:Number(tabId), removed:0, listenerIds:[], skipped:true, reason:reason || 'cleanup', warning:'persistent CDP unavailable' } };
+  const expression = `(() => {
+    const store = window.__piBrowserListeners || {};
+    const listenerIds = Object.keys(store);
+    const errors = [];
+    let removed = 0;
+    for (const listenerId of listenerIds) {
+      const rec = store[listenerId];
+      try {
+        if (rec && rec.target && rec.handler) (rec.target || document).removeEventListener(rec.eventType, rec.handler, rec.capture !== false);
+        removed += 1;
+      } catch (error) {
+        errors.push({ listenerId, message:error && error.message ? error.message : String(error) });
+      }
+      try { delete store[listenerId]; } catch (_) {}
+    }
+    return { ok:true, removed, listenerIds, errors, reason:${JSON.stringify(reason || 'cleanup')} };
+  })()`;
+  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true }, { persistent: true, name: 'event_listener_cleanup', timeoutMs: timeoutMs || 5000 }));
+  if (!resp || resp.ok === false) return resp;
+  const pageResult = extractPiBrowserRuntimeValue(resp) || { ok:true, removed:0, listenerIds:[] };
+  return { ok: pageResult.ok !== false, data: { tabId:Number(tabId), reason:reason || 'cleanup', ...pageResult } };
 }
 async function addEventListener(tabId, msg) {
   const eventType = msg.eventType || msg.event_type;
@@ -999,18 +1106,20 @@ async function addEventListener(tabId, msg) {
     })()`;
     const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true }, { persistent: true, name: 'event_listener', timeoutMs: msg.timeoutMs || 5000 }));
     if (!resp || resp.ok === false) return resp;
-    pageResult = resp.data?.result?.result?.value || resp.result?.result?.value || resp.data?.result?.value || resp.result?.value || null;
+    pageResult = extractPiBrowserRuntimeValue(resp);
     if (pageResult && pageResult.ok === false) return piBrowserError(pageResult.code || PI_BROWSER_ERROR_CODES.INVALID_RULE, pageResult.message || 'hook.addEventListener failed', pageResult);
   }
-  const sub = { tabId, listenerId, eventType, selector, diagnostics: msg.diagnostics || {}, removeEventListener: true };
+  const sub = { tabId:Number(tabId), listenerId:String(listenerId), eventType, selector, diagnostics: msg.diagnostics || {}, removeEventListener: true };
   piBrowserWaits.registerEventSubscription(listenerId, sub);
-  return { ok: true, data: { listenerId, listener_id: listenerId, eventType, selector, page: pageResult } };
+  return { ok: true, data: { tabId:Number(tabId), listenerId, listener_id: listenerId, eventType, selector, page: pageResult } };
 }
 async function removeEventListener(tabId, msg) {
   const listenerId = msg.listenerId || msg.listener_id;
   if (!listenerId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'hook.removeEventListener requires listenerId', {});
+  const existingSub = piBrowserWaits.eventSubscription(listenerId, tabId);
   const cdp = piBrowserPersistentCdp();
   let pageRemoved = false;
+  let pageResult = null;
   if (cdp?.send) {
     const expression = `(() => {
       const listenerId = ${JSON.stringify(listenerId)};
@@ -1023,34 +1132,39 @@ async function removeEventListener(tabId, msg) {
     })()`;
     const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true }, { persistent: true, name: 'event_listener_remove', timeoutMs: msg.timeoutMs || 5000 }));
     if (!resp || resp.ok === false) return resp;
-    const pageResult = resp.data?.result?.result?.value || resp.result?.result?.value || resp.data?.result?.value || resp.result?.value || null;
+    pageResult = extractPiBrowserRuntimeValue(resp);
     pageRemoved = pageResult?.removed === true;
   }
-  const existed = piBrowserWaits.deleteEventSubscription(listenerId);
-  return { ok: true, data: { listenerId, listener_id: listenerId, removed: existed || pageRemoved, registry_removed: existed, page_removed: pageRemoved } };
+  const existed = existingSub ? piBrowserWaits.deleteEventSubscription(listenerId, tabId) : false;
+  return { ok: true, data: { tabId:Number(tabId), listenerId, listener_id: listenerId, removed: existed || pageRemoved, registry_removed: existed, page_removed: pageRemoved, page: pageResult } };
 }
 async function getPerformanceEntries(tabId, msg) {
-  const entryType = msg.entryType || msg.entry_type || 'resource';
-  const nameContains = msg.nameContains || msg.name_contains || '';
-  const expression = `(() => { const byType = performance.getEntriesByType(${JSON.stringify(entryType)}); const all = performance.getEntries(); return (byType.length ? byType : all).filter(e => !${JSON.stringify(nameContains)} || String(e.name||'').includes(${JSON.stringify(nameContains)})).map(e => ({ name:e.name, entryType:e.entryType, startTime:e.startTime, duration:e.duration, initiatorType:e.initiatorType || null, transferSize:e.transferSize || 0, encodedBodySize:e.encodedBodySize || 0, decodedBodySize:e.decodedBodySize || 0 })); })()`;
+  const input = msg || {};
+  const hasEntryType = input.entryType !== undefined || input.entry_type !== undefined;
+  const entryType = String(hasEntryType ? (input.entryType ?? input.entry_type) : 'resource');
+  const nameContains = String(input.nameContains ?? input.name_contains ?? '');
+  const timeoutMs = normalizePiBrowserTimeoutMs(input, 5000);
+  const expression = `(() => { const entries = performance.getEntriesByType(${JSON.stringify(entryType)}); return entries.filter(e => !${JSON.stringify(nameContains)} || String(e.name||'').includes(${JSON.stringify(nameContains)})).map(e => ({ name:e.name, entryType:e.entryType, startTime:e.startTime, duration:e.duration, initiatorType:e.initiatorType || null, transferSize:e.transferSize || 0, encodedBodySize:e.encodedBodySize || 0, decodedBodySize:e.decodedBodySize || 0 })); })()`;
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true }, { persistent: true, name: 'performance_entries', timeoutMs: msg.timeoutMs || 5000 }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true }, { persistent: true, name: 'performance_entries', timeoutMs }));
     if (!resp || resp.ok === false) return resp;
     const result = resp.data?.result || resp.result || resp.data;
     if (result?.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, result.exceptionDetails.exception?.description || 'Runtime.evaluate failed', result.exceptionDetails);
     const entries = Array.isArray(result?.result?.value) ? result.result.value : [];
-    return { ok: true, data: { entries, entryType, nameContains, count: entries.length, native_cmd: 'hook.getPerformanceEntries' } };
+    return { ok: true, data: { entries, entryType, nameContains, count: entries.length, explicit_entry_type: hasEntryType, native_cmd: 'hook.getPerformanceEntries' } };
   }
-  return { ok: true, data: { entries: [], entryType, nameContains, count: 0, note: 'PerformanceObserver performance.getEntriesByType performance.getEntries Runtime.evaluate unavailable' } };
+  return { ok: true, data: { entries: [], entryType, nameContains, count: 0, explicit_entry_type: hasEntryType, note: 'PerformanceObserver performance.getEntriesByType Runtime.evaluate unavailable' } };
 }
 
 async function diagnosePiBrowser(tabId, msg) {
   const tab = await chrome.tabs.get(tabId).catch(e => ({ error: e.message || String(e) }));
-  const status = await callPagePiBrowserWithAutoReinstall(tabId, 'hook.status', {}).catch(e => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, e.message || String(e), {}));
+  const status = await callPagePiBrowser(tabId, 'hook.status', {}).catch(e => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, e.message || String(e), {}));
   const cdp = piBrowserPersistentCdp();
   let debuggerTargets = [];
   let frames = [];
+  let frameCount = 0;
+  let iframeCount = 0;
   let inflight = 0;
   let readyState = null;
   let last_errors = [];
@@ -1070,12 +1184,42 @@ async function diagnosePiBrowser(tabId, msg) {
   const activeWaits = Array.from(piBrowserWaits.values()).filter(r => Number(r.tabId) === Number(tabId)).map(r => ({ waitId:r.waitId, kind:r.kind, criteria:r.criteria, age_ms:Date.now()-r.createdAt, status:r.status, cdpSubscriptions:r.cdpSubscriptions, lastEventAt:r.lastEventAt, diagnostics:r.diagnostics }));
   const listeners = Array.from(piBrowserWaits.eventSubscriptionValues()).filter(s => Number(s.tabId) === Number(tabId)).map(s => ({ listenerId:s.listenerId, eventType:s.eventType, selector:s.selector, diagnostics:s.diagnostics }));
   const diagnostics = piBrowserWaits.diagnostics(tabId);
-  try { if (chrome.debugger?.getTargets) debuggerTargets = await chrome.debugger.getTargets(); } catch (e) { last_errors.push(e.message || String(e)); }
+  try { if (chrome.debugger?.getTargets) debuggerTargets = (await chrome.debugger.getTargets()).filter(t => Number(t.tabId) === Number(tabId)); } catch (e) { last_errors.push(e.message || String(e)); }
   try {
-    const probe = await callPagePiBrowserWithAutoReinstall(tabId, 'hook.evaluate', { expression: `(() => ({ readyState: document.readyState, frames: Array.from(document.frames || []).map((_, i) => ({ index:i })), inflight: (window.__piBrowserInflight || 0), last_errors: window.__piBrowserLastErrors || [] }))()` }).catch(e => ({ ok:false, error:e.message || String(e) }));
+    const probe = await callPagePiBrowser(tabId, 'hook.evaluate', { expression: `(() => {
+      const nodes = Array.from(document.querySelectorAll ? document.querySelectorAll('iframe') : []);
+      const frameCount = window.frames ? Number(window.frames.length || 0) : nodes.length;
+      const frames = nodes.map((node, index) => {
+        let rect = null;
+        try {
+          const r = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+          if (r) rect = { x:r.x, y:r.y, top:r.top, left:r.left, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
+        } catch (_) {}
+        let style = null;
+        try { style = window.getComputedStyle ? window.getComputedStyle(node) : null; } catch (_) {}
+        const width = rect ? Number(rect.width || 0) : 0;
+        const height = rect ? Number(rect.height || 0) : 0;
+        const display = style ? String(style.display || '') : '';
+        const visibility = style ? String(style.visibility || '') : '';
+        const opacity = style ? Number(style.opacity === '' || style.opacity === undefined ? 1 : style.opacity) : 1;
+        return {
+          index,
+          id: node.id || '',
+          name: (node.getAttribute && node.getAttribute('name')) || node.name || '',
+          src: (node.getAttribute && node.getAttribute('src')) || node.src || '',
+          title: (node.getAttribute && node.getAttribute('title')) || node.title || '',
+          loading: (node.getAttribute && node.getAttribute('loading')) || node.loading || '',
+          visible: width > 0 && height > 0 && display !== 'none' && visibility !== 'hidden' && opacity !== 0,
+          rect
+        };
+      });
+      return { readyState: document.readyState, frameCount, iframeCount: frames.length, frames, inflight: (window.__piBrowserInflight || 0), last_errors: window.__piBrowserLastErrors || [] };
+    })()` }).catch(e => ({ ok:false, error:e.message || String(e) }));
     const data = probe?.data?.result || probe?.data || probe?.result || {};
     readyState = data.readyState || readyState;
     frames = Array.isArray(data.frames) ? data.frames : frames;
+    frameCount = Number(data.frameCount || frames.length || 0);
+    iframeCount = Number(data.iframeCount || frames.length || 0);
     inflight = Number(data.inflight || inflight || 0);
     if (Array.isArray(data.last_errors)) last_errors = last_errors.concat(data.last_errors);
   } catch (e) { last_errors.push(e.message || String(e)); }
@@ -1091,5 +1235,5 @@ async function diagnosePiBrowser(tabId, msg) {
     domain_ref_leaks: cdpDomainRefs.filter(r => r.count > 0 && !r.holders.length),
     subscription_leaks: activeCdpSubscriptions.filter(s => s.waitId && !piBrowserWaits.has(waitKey(s.tabId, s.waitId))),
   };
-  return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, listeners, frames, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
+  return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }

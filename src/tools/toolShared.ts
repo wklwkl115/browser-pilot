@@ -5,6 +5,7 @@ import type { BridgeCommand } from "../protocol/nativeProtocol";
 export { asPositiveInt } from "../utils/params";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
+export const DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000;
 
 export type EnsureStarted = () => Promise<BrowserBridgeServer>;
 export type ToolRegistrarContext = {

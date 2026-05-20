@@ -2,9 +2,9 @@
 
 const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';
 const PI_BROWSER_ERROR_CODES = {
-  NO_SESSION: 'NO_SESSION', ALREADY_INSTALLED: 'ALREADY_INSTALLED', NOT_INSTALLED: 'NOT_INSTALLED',
+  NO_SESSION: 'NO_SESSION', SESSION_NOT_FOUND: 'SESSION_NOT_FOUND', INVALID_SESSION: 'INVALID_SESSION', ALREADY_INSTALLED: 'ALREADY_INSTALLED', NOT_INSTALLED: 'NOT_INSTALLED',
   INVALID_RULE: 'INVALID_RULE', UNSUPPORTED_TARGET: 'UNSUPPORTED_TARGET', INJECTION_FAILED: 'INJECTION_FAILED',
-  SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', NAVIGATION_TIMEOUT: 'NAVIGATION_TIMEOUT', SELECTOR_TIMEOUT: 'SELECTOR_TIMEOUT', NETWORK_IDLE_TIMEOUT: 'NETWORK_IDLE_TIMEOUT', NETWORK_RECORDER_NOT_STARTED: 'NETWORK_RECORDER_NOT_STARTED', NETWORK_RECORDER_TIMEOUT: 'NETWORK_RECORDER_TIMEOUT', BODY_UNAVAILABLE: 'BODY_UNAVAILABLE', FRAME_DETACHED: 'FRAME_DETACHED', CROSS_ORIGIN_IFRAME: 'CROSS_ORIGIN_IFRAME', TAB_CRASHED: 'TAB_CRASHED', BACKGROUND_THROTTLED: 'BACKGROUND_THROTTLED', EVENT_SUBSCRIPTION_FAILED: 'EVENT_SUBSCRIPTION_FAILED', CANCELLED: 'CANCELLED', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', AMBIGUOUS_DOWNLOAD: 'AMBIGUOUS_DOWNLOAD', INTERNAL_ERROR: 'INTERNAL_ERROR'
+  SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', NAVIGATION_TIMEOUT: 'NAVIGATION_TIMEOUT', SELECTOR_TIMEOUT: 'SELECTOR_TIMEOUT', SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND', INVALID_SELECTOR: 'INVALID_SELECTOR', NETWORK_IDLE_TIMEOUT: 'NETWORK_IDLE_TIMEOUT', NETWORK_RECORDER_NOT_STARTED: 'NETWORK_RECORDER_NOT_STARTED', NETWORK_RECORDER_TIMEOUT: 'NETWORK_RECORDER_TIMEOUT', REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND', BODY_UNAVAILABLE: 'BODY_UNAVAILABLE', FRAME_DETACHED: 'FRAME_DETACHED', CROSS_ORIGIN_IFRAME: 'CROSS_ORIGIN_IFRAME', TAB_NOT_FOUND: 'TAB_NOT_FOUND', TAB_CRASHED: 'TAB_CRASHED', BACKGROUND_THROTTLED: 'BACKGROUND_THROTTLED', EVENT_SUBSCRIPTION_FAILED: 'EVENT_SUBSCRIPTION_FAILED', CANCELLED: 'CANCELLED', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', AMBIGUOUS_DOWNLOAD: 'AMBIGUOUS_DOWNLOAD', INTERNAL_ERROR: 'INTERNAL_ERROR'
 };
 const PI_BROWSER_PROTOCOL = self.PiNativeProtocol;
 if (!PI_BROWSER_PROTOCOL || !PI_BROWSER_PROTOCOL.schema || !PI_BROWSER_PROTOCOL.nativeCommandMap) throw new Error('Pi Browser protocol schema is not loaded');
@@ -42,6 +42,10 @@ function enqueuePiBrowserCommand(tabId, cmd, task) {
 function cleanupPiBrowserTab(tabId, reason) {
   const key = Number(tabId);
   const cleanupReason = reason || 'tab_cleanup';
+  try {
+    const pageCleanup = typeof cleanupPiBrowserPageListenersForTab === 'function' ? cleanupPiBrowserPageListenersForTab(tabId, cleanupReason) : null;
+    if (pageCleanup && typeof pageCleanup.catch === 'function') pageCleanup.catch(e => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e));
+  } catch (e) { console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e); }
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
   try { cleanupNetworkRecorderTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, e && e.message ? e.message : e); }
@@ -66,6 +70,13 @@ async function handlePiNativeBrowserCommand(msg, sender) {
   if (resp && typeof resp === 'object') {
     if (resp.details && typeof resp.details === 'object' && resp.details.cmd === undefined) resp.details.cmd = msg.cmd;
     if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data) && resp.data.native_cmd === undefined) resp.data.native_cmd = msg.cmd;
+    const bridge = typeof piBridgeInfo === 'function' ? piBridgeInfo() : null;
+    if (bridge && resp.ok === false) {
+      if (!resp.details || typeof resp.details !== 'object' || Array.isArray(resp.details)) resp.details = {};
+      if (resp.details.bridge === undefined) resp.details.bridge = bridge;
+    } else if (bridge && resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data) && resp.data.bridge === undefined) {
+      resp.data.bridge = bridge;
+    }
   }
   return resp;
 }
@@ -98,10 +109,12 @@ function redactSensitive(value, depth = 0, seen) {
   }
   return out;
 }
+/** @returns {PiBridgeResponse} */
 function piBrowserError(error_code, message, details) {
   const text = redactSensitive(message || String(error_code || 'ERROR'));
   return { ok: false, error_code, error: text, details: redactSensitive(details || {}) };
 }
+/** @returns {PiBridgeResponse} */
 function bridgeError(error_code, message, details) {
   const code = error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR;
   const text = redactSensitive(message || String(code));
@@ -128,18 +141,27 @@ function isPiBrowserSessionMissing(res) {
   return res && res.ok === false && (res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || res.error?.code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error?.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
 }
 function piSleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0)))); }
-function piBrowserPersistentCdp() { return globalThis.piPersistentCdpBridge || globalThis.PiPersistentCdp; }
+function piBrowserPersistentCdp() { const g = /** @type {any} */ (globalThis); return g.piPersistentCdpBridge || g.PiPersistentCdp; }
 function normalizePersistentPiBrowserResponse(resp) {
   if (resp && resp.ok === false && resp.error && !resp.error_code) return piBrowserError(resp.error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp.error.message || 'persistent CDP command failed', resp.error.details || {});
   return resp;
 }
-async function piBrowserEval(tabId, expression, awaitPromise = true) {
+/** @returns {number|undefined} */
+function normalizePiBrowserEvalTimeoutMs(options) {
+  const raw = options && (options.timeoutMs !== undefined ? options.timeoutMs : options.timeout_ms);
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+/** @returns {Promise<PiBridgeResponse>} */
+async function piBrowserEval(tabId, expression, awaitPromise = true, options = {}) {
+  const timeoutMs = normalizePiBrowserEvalTimeoutMs(options);
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
     // Runtime.evaluate is used between add/removeNewDocumentScript during acceptance.
     // Keep the logical CDP attachment persistent; a temporary attach/detach can invalidate
     // Page.addScriptToEvaluateOnNewDocument identifiers in Chrome's debugger session.
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise }, { persistent: true, name: 'eval' }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise }, { persistent: true, name: 'eval', timeoutMs }));
     if (!resp || resp.ok === false) return resp;
     const result = resp.data?.result || resp.result || resp.data;
     if (result?.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, result.exceptionDetails.exception?.description || 'Runtime.evaluate failed', result.exceptionDetails);
@@ -147,15 +169,16 @@ async function piBrowserEval(tabId, expression, awaitPromise = true) {
   }
   await chrome.debugger.attach({ tabId }, '1.3');
   try {
-    const result = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise });
+    const command = chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise });
+    const result = timeoutMs === undefined ? await command : await piWithTimeout(command, timeoutMs, 'Runtime.evaluate');
     await chrome.debugger.detach({ tabId });
     if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, result.exceptionDetails.exception?.description || 'Runtime.evaluate failed', result.exceptionDetails);
     return { ok: true, data: result.result?.value };
   } catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (_) {} throw e; }
 }
-async function callPagePiBrowser(tabId, command, args) {
+async function callPagePiBrowser(tabId, command, args, options = {}) {
   const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Pi browser dispatcher is not installed'}`;
-  const res = await piBrowserEval(tabId, expr, true);
+  const res = await piBrowserEval(tabId, expr, true, options);
   return res.ok ? res.data : res;
 }
 

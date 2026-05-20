@@ -36,10 +36,15 @@ export function buildContentScript(options: BrowserContentOptions = {}): string 
     const classBoost = /content|article|post|entry|story|markdown|main/i.test(el.id + ' ' + el.className) ? 200 : 0;
     return len + paragraphs * 80 + headings * 60 + semantic + classBoost - links * 0.6;
   }
+  function contentError(code, error, details) {
+    return { __piContentError: true, ok: false, error_code: code, error, details: details || {} };
+  }
   function pickRoot(docClone) {
     if (options.selector) {
-      const selected = docClone.querySelector(options.selector);
-      if (!selected) throw new Error('browser_content selector not found: ' + options.selector);
+      let selected = null;
+      try { selected = docClone.querySelector(options.selector); }
+      catch (e) { return contentError('INVALID_SELECTOR', 'browser_content invalid selector: ' + options.selector, { selector: options.selector, name: e && e.name || 'Error', message: e && e.message || String(e) }); }
+      if (!selected) return contentError('SELECTOR_NOT_FOUND', 'browser_content selector not found: ' + options.selector, { selector: options.selector });
       return selected;
     }
     const direct = docClone.querySelector('article, main, [role="main"], #content, .content, .entry-content, .post-content, .article-content, .markdown-body');
@@ -109,12 +114,14 @@ export function buildContentScript(options: BrowserContentOptions = {}): string 
   }
   const cloned = cloneDocument();
   const root = pickRoot(cloned);
+  if (root && root.__piContentError) return root;
   const originalMarkdown = block(root, 0) || clean(root.textContent || '');
   const originalChars = originalMarkdown.length;
   let markdown = originalMarkdown;
   let truncated = false;
   if (markdown.length > options.maxChars) { markdown = markdown.slice(0, options.maxChars) + '\n\n[content truncated]'; truncated = true; }
   const rootText = clean(root.textContent || '');
+  const empty = !clean(originalMarkdown) && !rootText;
   const headings = Array.from(root.querySelectorAll('h1,h2,h3')).map((h) => clean(h.textContent)).filter(Boolean).slice(0, 20);
   return {
     url: location.href,
@@ -123,6 +130,7 @@ export function buildContentScript(options: BrowserContentOptions = {}): string 
     rootTag: root.tagName ? root.tagName.toLowerCase() : '',
     rootId: root.id || '',
     rootClass: String(root.className || '').slice(0, 200),
+    empty,
     markdown,
     textPreview: rootText.slice(0, 1000),
     headings,

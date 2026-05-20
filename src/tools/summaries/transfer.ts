@@ -9,7 +9,8 @@ function maybeString(value: unknown): string | undefined {
 }
 
 export function summarizeTransferData(value: unknown): Summary {
-	const data = isRecord(value) ? value : {};
+	const envelope = isRecord(value) ? value : {};
+	const data = isRecord(envelope.data) ? envelope.data : envelope;
 	const download = isRecord(data.download) ? data.download : undefined;
 	const lines: string[] = [];
 	const items: Record<string, unknown>[] = [];

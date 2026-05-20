@@ -1,3 +1,5 @@
+import { suppressErrorStack } from "../utils/errors";
+
 function recordValue(value: unknown): Record<string, unknown> | undefined {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
@@ -31,6 +33,6 @@ export function assertBridgeCommandSucceeded(result: { data?: unknown }, command
 	error.name = "BrowserCommandError";
 	error.code = code;
 	error.details = withoutStackDetails({ command, ...nestedDetails, ...rawDetails }) as Record<string, unknown>;
-	delete error.stack;
+	suppressErrorStack(error);
 	throw error;
 }

@@ -22,10 +22,23 @@ export async function saveTextArtifact(ctx: { cwd?: string } | undefined, reques
 	return { path: outputPath, chars: content.length };
 }
 
+function decodeStrictBase64Payload(payload: string): Buffer {
+	const compact = payload.replace(/\s+/g, "");
+	if (!compact) throw new Error("screenshot result has an empty base64 payload");
+	if (compact.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
+		throw new Error("screenshot result has an invalid base64 payload");
+	}
+	const buffer = Buffer.from(compact, "base64");
+	const normalizedInput = compact.replace(/=+$/, "");
+	const normalizedRoundTrip = buffer.toString("base64").replace(/=+$/, "");
+	if (normalizedInput !== normalizedRoundTrip) throw new Error("screenshot result has an invalid base64 payload");
+	return buffer;
+}
+
 export async function saveDataUrl(dataUrl: string, outputPath: string): Promise<{ path: string; bytes: number; mime: string }> {
 	const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
 	if (!match) throw new Error("screenshot result is not a base64 data URL");
-	const buffer = Buffer.from(match[2], "base64");
+	const buffer = decodeStrictBase64Payload(match[2]);
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	await writeFile(outputPath, buffer);
 	return { path: outputPath, bytes: buffer.length, mime: match[1] };

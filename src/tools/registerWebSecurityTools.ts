@@ -126,9 +126,9 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	pi.registerTool({
 		name: "browser_crawl",
 		label: "Browser Crawl",
-		description: "Run a bounded scoped crawl for links, forms, known files, JavaScript-discovered endpoints, OpenAPI schema summaries, GraphQL introspection, source-map reverse-source archives, service-worker cache/version summaries, and response evidence.",
-		promptSnippet: "Crawl scoped targets, known files, forms, links, JS endpoint hints, source maps, service workers, and structured API discovery with artifact output.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_crawl after browser_recon_probe and before fuzzing; keep maxDepth/maxPages explicit and scope bounded."],
+		description: "Run a bounded scoped crawl for links, forms, known files, JavaScript-discovered endpoints, OpenAPI schema summaries, passive GraphQL schema parsing, active GraphQL introspection probes, source-map reverse-source archives, service-worker cache/version summaries, and response evidence.",
+		promptSnippet: "Crawl scoped targets, known files, forms, links, JS endpoint hints, source maps, service workers, and structured API discovery with evidence artifact output.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_crawl after browser_recon_probe and before fuzzing; keep maxDepth/maxPages explicit and scope bounded. activeGraphqlIntrospection defaults true and only POSTs a standard introspection query to URLs/content-types that look like GraphQL; set false for passive-only crawl."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Single seed URL or host. Host-only input uses defaultScheme." })),
@@ -141,6 +141,7 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			sameOrigin: Type.Optional(Type.Boolean({ description: "Stay within seed origins; default true." })),
 			knownFiles: Type.Optional(Type.String({ description: "none | robotstxt | sitemapxml | all. Adds common known-file seeds." })),
 			extractJs: Type.Optional(Type.Boolean({ description: "Extract JS endpoint hints and crawl same-origin script files; default true." })),
+			activeGraphqlIntrospection: Type.Optional(Type.Boolean({ description: "Actively POST a standard GraphQL introspection query only to URLs/content-types that look like GraphQL; default true. Set false for passive-only GraphQL parsing." })),
 			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Attach browser cookies for crawled URLs using the connected browser session; default false." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -162,8 +163,8 @@ export function registerFuzzPathsTool({ pi, ensureStarted }: ToolRegistrarContex
 	pi.registerTool({
 		name: "browser_fuzz_paths",
 		label: "Browser Fuzz Paths",
-		description: "Fuzz scoped HTTP paths, files, routes, and extensions with recursive depth, baseline-cluster filtering, match/filter/rate controls, and artifact output.",
-		promptSnippet: "Run bounded path/file/route fuzzing against scoped targets with structured results, recursive depth, and baseline clustering.",
+		description: "Fuzz scoped HTTP paths, files, routes, and extensions with recursive depth, baseline-cluster filtering, match/filter/rate controls, response evidence, and artifact output.",
+		promptSnippet: "Run bounded path/file/route fuzzing against scoped targets with structured response evidence, recursive depth, and baseline clustering.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz_paths only with explicit target scope and bounded wordlists; set match/filter/rate controls before increasing breadth."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
@@ -211,8 +212,8 @@ export function registerFuzzVhostsTool({ pi, ensureStarted }: ToolRegistrarConte
 	pi.registerTool({
 		name: "browser_fuzz_vhosts",
 		label: "Browser Fuzz Vhosts",
-		description: "Fuzz virtual hosts with Host header candidates, HTTPS SNI/certificate summaries, and baseline-cluster filtering.",
-		promptSnippet: "Run bounded Host-header virtual-host discovery with baseline clustering, SNI, and certificate summaries.",
+		description: "Fuzz virtual hosts with Host header candidates, HTTPS SNI/certificate summaries, baseline-cluster filtering, response evidence, and artifact output.",
+		promptSnippet: "Run bounded Host-header virtual-host discovery with baseline clustering, SNI, certificate summaries, and evidence artifacts.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz_vhosts only with explicit target scope and bounded host candidates; keep baseline filtering enabled unless diagnosing."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
@@ -263,7 +264,7 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 		label: "Browser SQLi Probe",
 		description: "Run SQL injection oracle probes from URL/raw/captured request templates with boolean, error, time, and union evidence.",
 		promptSnippet: "Probe SQLi boolean/error/time/union oracles from scoped HTTP request templates with structured evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqli_probe from a captured or raw request template for SQLi oracle evidence; keep param names, probe types, and maxCases bounded."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqli_probe from a captured or raw request template for SQLi oracle evidence; keep param names, probe types, and maxCases bounded, and retain outputPath/artifact evidence for follow-up judgment."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL." })),
@@ -324,7 +325,7 @@ export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 		label: "Browser SQLMap Bridge",
 		description: "Run deep SQL injection automation through a sqlmap bridge from URL, raw, captured, or HAR request inputs with structured findings and artifacts.",
 		promptSnippet: "Run a Pi-native sqlmap bridge for deep SQLi automation with structured findings and artifacts.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqlmap_bridge for deep SQLi automation from explicit scoped request templates; keep target scope explicit and retain artifacts for follow-up evidence."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqlmap_bridge for deep SQLi automation from explicit scoped request templates; keep bounded target scope explicit and retain request/stdout/stderr artifacts for follow-up evidence."],
 		parameters: Type.Object({
 			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
 			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
@@ -341,7 +342,7 @@ export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 			har: Type.Optional(Type.Any({ description: "HAR object; selected entries are replayed as sqlmap bridge targets." })),
 			harPath: Type.Optional(Type.String({ description: "Local HAR JSON file path; selected entries are replayed as sqlmap bridge targets." })),
 			harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
-			harUrlPattern: Type.Optional(Type.String({ description: "Regex or substring filter for HAR request URLs." })),
+			harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
 			harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
 			requests: Type.Optional(Type.Array(Type.Any(), { description: "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to sqlmap as a separate target." })),
 			sequence: Type.Optional(Type.Array(Type.Any(), { description: "Alias for requests; each selected entry is sent to sqlmap as a separate target." })),
@@ -391,7 +392,7 @@ export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 		label: "Browser Nuclei Bridge",
 		description: "Run template and fingerprint automation through a nuclei bridge from scoped URL, raw, captured, or HAR request inputs with structured matches and artifacts.",
 		promptSnippet: "Run a Pi-native nuclei bridge for deep template, fingerprint, and CVE-style automation with structured matches and artifacts.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_nuclei_bridge for deep template and fingerprint sweeps from explicit scope and template selectors; keep target scope explicit and retain artifacts for follow-up evidence."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_nuclei_bridge for deep template and fingerprint sweeps from explicit scope and template selectors; keep bounded target scope explicit and retain request/stdout/stderr artifacts for follow-up evidence."],
 		parameters: Type.Object({
 			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
 			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
@@ -410,7 +411,7 @@ export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 			har: Type.Optional(Type.Any({ description: "HAR object; selected entries are replayed as nuclei bridge targets." })),
 			harPath: Type.Optional(Type.String({ description: "Local HAR JSON file path; selected entries are replayed as nuclei bridge targets." })),
 			harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
-			harUrlPattern: Type.Optional(Type.String({ description: "Regex or substring filter for HAR request URLs." })),
+			harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
 			harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
 			requests: Type.Optional(Type.Array(Type.Any(), { description: "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to nuclei as a separate target." })),
 			sequence: Type.Optional(Type.Array(Type.Any(), { description: "Alias for requests; each selected entry is sent to nuclei as a separate target." })),
@@ -457,9 +458,9 @@ export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarCo
 	pi.registerTool({
 		name: "browser_template_check",
 		label: "Browser Template Check",
-		description: "Run template, configuration, and CVE-shaped HTTP checks against scoped targets or request templates with matcher evidence.",
-		promptSnippet: "Validate scoped targets or captured requests with built-in or custom HTTP templates, matchers, variables, and artifacts.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_template_check with explicit templateIds or templates; keep target scope, maxTemplates, and rate controls explicit."],
+		description: "Run template, configuration, and CVE-shaped HTTP checks against scoped targets or request templates with bounded safe-regex matcher evidence; omitting templateIds/templates/templatePath runs the small built-in exposure/API baseline.",
+		promptSnippet: "Validate scoped targets or captured requests with the default built-in exposure/API baseline or explicit custom HTTP templates, bounded matchers, variables, and evidence artifacts.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_template_check with explicit templateIds/templates/templatePath when selecting checks; omitted template selectors run the small built-in exposure/API baseline. Keep target scope, maxTemplates, rate controls, bounded safe regex, and artifact evidence explicit."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Single target URL or host. Host-only input uses defaultScheme." })),
@@ -473,8 +474,8 @@ export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarCo
 			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body for raw/captured replay mode." })),
 			mutations: Type.Optional(Type.Any({ description: "Optional base mutation object with url, method, headers, body, or bodyBase64." })),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
-			templateIds: Type.Optional(Type.Any({ description: "Built-in template ids or tags to run; use all/default omitted for built-ins." })),
-			templates: Type.Optional(Type.Any({ description: "Inline custom template object or array. Fields: id, paths/url, method, headers, body, matchStatus, bodyRegex, bodyIncludes, headerRegex, extractRegex, matchers, extractors." })),
+			templateIds: Type.Optional(Type.Any({ description: "Built-in template ids or tags to run. Omit templateIds/templates/templatePath to run the small built-in exposure/API baseline; use all for every built-in template." })),
+			templates: Type.Optional(Type.Any({ description: "Inline custom template object or array. Fields: id, paths/url, method, headers, body, matchStatus, bounded bodyRegex, bodyIncludes, bounded headerRegex, bounded extractRegex, matchers, extractors." })),
 			templatePath: Type.Optional(Type.String({ description: "Local JSON or YAML template file path containing a template object, array, or {templates}." })),
 			variables: Type.Optional(Type.Any({ description: "Template variable values for {{name}} substitution." })),
 			tech: Type.Optional(Type.Any({ description: "Optional technology hints retained for template selection workflows." })),
@@ -507,7 +508,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 		label: "Browser Callback OAST",
 		description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata.",
 		promptSnippet: "Start, inspect, trigger, collect, clear, or stop callback listener sessions for SSRF, blind injection, and deserialization evidence.",
-		promptGuidelines: ["Use browser_callback_oast to create callback URLs/hosts, trigger and collect correlated HTTP/HTTPS/DNS callbacks, and archive persisted callback evidence."],
+		promptGuidelines: ["Use browser_callback_oast to create callback URLs/hosts, trigger and collect correlated HTTP/HTTPS/DNS callbacks, keep maxEvents/maxBodyBytes bounded, and archive persisted callback evidence artifacts."],
 		parameters: Type.Object({
 			action: Type.Optional(Type.String({ description: "start | list | status | collect | clear | trigger | stop. Default start." })),
 			sessionId: Type.Optional(Type.String({ description: "Logical callback listener session id. Required for status/collect/clear/trigger/stop." })),
@@ -569,7 +570,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 		label: "Browser Cookie Analyze",
 		description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed or encrypted session values with decoding, signature/decryption checks, claim mutation generation, claim replay validation, browser-session cookie binding, and Rails AES-GCM/AES-CBC/direct-key evidence.",
 		promptSnippet: "Analyze cookies/JWT/session values, verify signing or decryption candidates, generate claim-mutation tokens, validate claim replays, and store structured evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, and bounded claim replay validation."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, bounded claim replay validation, and outputPath artifacts for follow-up evidence."],
 		parameters: Type.Object({
 			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
 			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
@@ -611,9 +612,9 @@ export function registerFuzzParamsTool({ pi, ensureStarted }: ToolRegistrarConte
 	pi.registerTool({
 		name: "browser_fuzz_params",
 		label: "Browser Fuzz Params",
-		description: "Fuzz query, JSON, form, multipart, and header parameters from raw/captured HTTP request templates with delta evidence.",
-		promptSnippet: "Run bounded parameter fuzzing from URL/raw/captured requests with matcher/filter controls.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz_params from a captured or raw request template; keep param names, values, and maxCases bounded."],
+		description: "Fuzz query, JSON, form, multipart, and header parameters from raw/captured HTTP request templates with delta evidence and artifact output.",
+		promptSnippet: "Run bounded parameter fuzzing from URL/raw/captured requests with matcher/filter controls and response evidence.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz_params from a captured or raw request template; keep param names, values, and maxCases bounded, and preserve artifact evidence for response deltas."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL." })),
@@ -665,9 +666,9 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 	pi.registerTool({
 		name: "browser_http_replay",
 		label: "Browser HTTP Replay",
-		description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, and optional browser-session cookie binding.",
-		promptSnippet: "Replay captured/raw HTTP requests, mutate method/headers/body, and store response evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_http_replay for focused request variants from captured evidence; keep mutations narrow and verify response deltas."],
+		description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie binding.",
+		promptSnippet: "Replay captured/raw HTTP requests, mutate method/headers/body, and store bounded response evidence artifacts.",
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_http_replay for focused bounded request variants from captured evidence; keep mutations narrow, preserve artifacts, and verify response deltas."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL." })),
@@ -677,7 +678,7 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 			har: Type.Optional(Type.Any({ description: "HAR object; selected entries are replayed as a request sequence." })),
 			harPath: Type.Optional(Type.String({ description: "Local HAR JSON file path; selected entries are replayed as a request sequence." })),
 			harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
-			harUrlPattern: Type.Optional(Type.String({ description: "Regex or substring filter for HAR request URLs." })),
+			harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
 			harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
 			requests: Type.Optional(Type.Array(Type.Any(), { description: "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Step objects may include variables, variableScope, and extractors/captures for later-step injection." })),
 			sequence: Type.Optional(Type.Array(Type.Any(), { description: "Alias for requests; replayed sequentially with optional step-variable extraction/injection." })),

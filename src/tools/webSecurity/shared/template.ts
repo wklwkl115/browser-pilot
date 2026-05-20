@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import yaml from "js-yaml";
+import { SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
 import { absoluteUrl, extractTitle, normalizeHeaders, parseSetCookieLine, redirectLocation, responseBodyHash } from "./http";
 import { asString, isRecord, numericList, positiveInt, stringList } from "./normalize";
 import type { FetchStep, HeaderMap, TemplateCheckOptions } from "./types";
@@ -52,6 +53,10 @@ export type TemplateDefinition = TemplateMatcher & {
 	body?: string;
 	bodyBase64?: string;
 };
+
+export const MAX_TEMPLATE_REGEX_PATTERN_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
+export const MAX_TEMPLATE_REGEX_TEXT_CHARS = 64 * 1024;
+const TEMPLATE_REGEX_ERROR_CODE = "TEMPLATE_REGEX_UNSAFE";
 
 const BUILTIN_TEMPLATE_CHECKS: TemplateDefinition[] = [
 	{ id: "exposure-env", name: ".env exposure", tags: ["exposure", "config"], paths: ["/.env", "/.env.local", "/.env.production"], matchStatus: [200], bodyRegex: ["^(?:APP_KEY|SECRET_KEY|DB_PASSWORD|DATABASE_URL|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)\\s*="] },
@@ -177,6 +182,49 @@ function templatePartText(part: string | undefined, final: FetchStep, headersLow
 	return final.bodyText;
 }
 
+function templateRegexInput(text: string): { text: string; truncated: boolean } {
+	if (text.length <= MAX_TEMPLATE_REGEX_TEXT_CHARS) return { text, truncated: false };
+	return { text: text.slice(0, MAX_TEMPLATE_REGEX_TEXT_CHARS), truncated: true };
+}
+
+function templateRegexIssue(pattern: string, reason: string, flags: string, textTruncated = false): Record<string, unknown> {
+	return { error_code: TEMPLATE_REGEX_ERROR_CODE, reason, pattern, flags, maxPatternChars: MAX_TEMPLATE_REGEX_PATTERN_CHARS, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS, textTruncated };
+}
+
+function compileTemplateRegex(pattern: string, flags: string, textTruncated = false): { regex?: RegExp; issue?: Record<string, unknown> } {
+	const unsafeReason = unsafeRegexReason(pattern, MAX_TEMPLATE_REGEX_PATTERN_CHARS);
+	if (unsafeReason) return { issue: templateRegexIssue(pattern, unsafeReason, flags, textTruncated) };
+	try { return { regex: new RegExp(pattern, flags) }; }
+	catch (error) { return { issue: templateRegexIssue(pattern, error instanceof Error ? error.message : String(error), flags, textTruncated) }; }
+}
+
+function testTemplateRegex(pattern: string, flags: string, text: string): { matched: boolean; issue?: Record<string, unknown>; textTruncated: boolean } {
+	const input = templateRegexInput(text);
+	const compiled = compileTemplateRegex(pattern, flags, input.truncated);
+	if (!compiled.regex) return { matched: false, issue: compiled.issue, textTruncated: input.truncated };
+	return { matched: compiled.regex.test(input.text), textTruncated: input.truncated };
+}
+
+function execTemplateRegex(pattern: string, flags: string, text: string, maxMatches = 20): { matches: RegExpExecArray[]; issue?: Record<string, unknown>; textTruncated: boolean } {
+	const input = templateRegexInput(text);
+	const normalizedFlags = flags.includes("g") ? flags : `${flags}g`;
+	const compiled = compileTemplateRegex(pattern, normalizedFlags, input.truncated);
+	const matches: RegExpExecArray[] = [];
+	if (!compiled.regex) return { matches, issue: compiled.issue, textTruncated: input.truncated };
+	if (maxMatches <= 0) return { matches, textTruncated: input.truncated };
+	let match: RegExpExecArray | null;
+	while ((match = compiled.regex.exec(input.text)) && matches.length < maxMatches) {
+		matches.push(match);
+		if (match[0] === "") compiled.regex.lastIndex += 1;
+	}
+	return { matches, textTruncated: input.truncated };
+}
+
+function regexIssueFields(result: { issue?: Record<string, unknown>; textTruncated?: boolean }): Record<string, unknown> {
+	if (result.issue) return { regexIssue: result.issue };
+	return result.textTruncated ? { regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS } : {};
+}
+
 function evaluateDslMatcher(matcher: TemplateDslMatcher, final: FetchStep, headersLower: HeaderMap): Record<string, unknown> {
 	let matched = false;
 	const type = matcher.type || "word";
@@ -184,17 +232,12 @@ function evaluateDslMatcher(matcher: TemplateDslMatcher, final: FetchStep, heade
 	const text = templatePartText(part, final, headersLower, matcher.name);
 	if (type === "status") matched = matcher.status?.length ? matcher.status.includes(final.status) : text === matcher.value;
 	else if (type === "word") matched = matcher.words?.length ? matcher.words.every((word) => text.includes(word)) : matcher.value !== undefined ? text.includes(matcher.value) : false;
-	else if (type === "regex") matched = (matcher.regex || []).some((pattern) => {
-		try {
-			return new RegExp(pattern, "im").test(text);
-		} catch {
-			return false;
-		}
-	});
+	else if (type === "regex") matched = (matcher.regex || []).some((pattern) => testTemplateRegex(pattern, "im", text).matched);
 	else if (type === "contains") matched = matcher.value !== undefined && text.includes(matcher.value);
 	else if (type === "equals") matched = matcher.value !== undefined && text === matcher.value;
 	if (matcher.negative) matched = !matched;
-	return { kind: `dsl:${type}`, matched, part, name: matcher.name, expected: matcher.status?.length ? matcher.status : matcher.words?.length ? matcher.words : (matcher.regex || []).length ? matcher.regex : matcher.value, negative: matcher.negative === true };
+	const regexDiagnostics = type === "regex" ? (matcher.regex || []).map((pattern) => ({ pattern, ...regexIssueFields(testTemplateRegex(pattern, "im", text)) })).filter((item) => item.regexIssue || item.regexInputTruncated) : [];
+	return { kind: `dsl:${type}`, matched, part, name: matcher.name, expected: matcher.status?.length ? matcher.status : matcher.words?.length ? matcher.words : (matcher.regex || []).length ? matcher.regex : matcher.value, negative: matcher.negative === true, ...(regexDiagnostics.length ? { regexDiagnostics } : {}) };
 }
 
 export function jsonPathParts(path: string): Array<string | number> {
@@ -265,15 +308,18 @@ export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: Fet
 		return out;
 	}
 	for (const pattern of extractor.regex || []) {
-		try {
-			const re = new RegExp(pattern, "igm");
-			let match: RegExpExecArray | null;
-			while ((match = re.exec(text)) && out.length < 20) {
-				const group = extractor.group || 0;
-				const value = match[group] ?? match[0];
-				out.push({ name: extractor.name, type: "regex", part, pattern, match: match[0], groups: match.slice(1, 6), group, value, values: [value] });
-			}
-		} catch {}
+		const result = execTemplateRegex(pattern, "igm", text, 20 - out.length);
+		if (result.issue) {
+			out.push({ name: extractor.name, type: "regex", part, pattern, skipped: true, ...result.issue });
+			continue;
+		}
+		for (const match of result.matches) {
+			const group = extractor.group || 0;
+			const value = match[group] ?? match[0];
+			out.push({ name: extractor.name, type: "regex", part, pattern, match: match[0], groups: match.slice(1, 6), group, value, values: [value], ...(result.textTruncated ? { regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS } : {}) });
+		}
+		if (result.textTruncated && !result.matches.length) out.push({ name: extractor.name, type: "regex", part, pattern, skipped: true, regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS });
+		if (out.length >= 20) break;
 	}
 	return out;
 }
@@ -286,30 +332,27 @@ export function evaluateTemplateMatcher(template: TemplateDefinition, final: Fet
 	if (template.filterStatus?.length) checks.push({ kind: "filterStatus", matched: !template.filterStatus.includes(final.status), expected: template.filterStatus, actual: final.status });
 	for (const expected of template.bodyIncludes || []) checks.push({ kind: "bodyIncludes", matched: final.bodyText.includes(expected), expected });
 	for (const pattern of template.bodyRegex || []) {
-		let matched = false;
-		try {
-			matched = new RegExp(pattern, "im").test(final.bodyText);
-		} catch {}
-		checks.push({ kind: "bodyRegex", matched, expected: pattern });
+		const result = testTemplateRegex(pattern, "im", final.bodyText);
+		checks.push({ kind: "bodyRegex", matched: result.matched, expected: pattern, ...regexIssueFields(result) });
 	}
 	for (const [name, expected] of Object.entries(template.headerIncludes || {})) checks.push({ kind: "headerIncludes", header: name, matched: (headersLower[name.trim().toLowerCase()] || "").includes(expected), expected });
 	for (const [name, pattern] of Object.entries(template.headerRegex || {})) {
-		let matched = false;
-		try {
-			matched = new RegExp(pattern, "i").test(headersLower[name.trim().toLowerCase()] || "");
-		} catch {}
-		checks.push({ kind: "headerRegex", header: name, matched, expected: pattern });
+		const result = testTemplateRegex(pattern, "i", headersLower[name.trim().toLowerCase()] || "");
+		checks.push({ kind: "headerRegex", header: name, matched: result.matched, expected: pattern, ...regexIssueFields(result) });
 	}
 	for (const matcher of template.matchers || []) checks.push(evaluateDslMatcher(matcher, final, headersLower));
 	const mode = template.matcherMode || "all";
 	const matched = checks.length ? mode === "any" ? checks.some((item) => item.matched === true) : checks.every((item) => item.matched === true) : final.status >= 200 && final.status < 400;
 	const extracts: Array<Record<string, unknown>> = [];
 	for (const pattern of template.extractRegex || []) {
-		try {
-			const re = new RegExp(pattern, "igm");
-			let match: RegExpExecArray | null;
-			while ((match = re.exec(final.bodyText)) && extracts.length < 20) extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, match: match[0], groups: match.slice(1, 6), group: 0, value: match[0], values: [match[0]] });
-		} catch {}
+		const result = execTemplateRegex(pattern, "igm", final.bodyText, 20 - extracts.length);
+		if (result.issue) {
+			extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, skipped: true, ...result.issue });
+			continue;
+		}
+		for (const match of result.matches) extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, match: match[0], groups: match.slice(1, 6), group: 0, value: match[0], values: [match[0]], ...(result.textTruncated ? { regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS } : {}) });
+		if (result.textTruncated && !result.matches.length) extracts.push({ name: "extractRegex", type: "regex", part: "body", pattern, skipped: true, regexInputTruncated: true, maxTextChars: MAX_TEMPLATE_REGEX_TEXT_CHARS });
+		if (extracts.length >= 20) break;
 	}
 	for (const extractor of template.extractors || []) {
 		for (const item of evaluateDslExtractor(extractor, final, headersLower)) {

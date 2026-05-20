@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { buildScanScript } from "../scan/buildScanScript";
+import type { BrowserBridgeExecutionResult } from "../driver/types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { compactError } from "../utils/errors";
 import { errorResult } from "../utils/toolResult";
@@ -15,19 +16,15 @@ type MonitorScanResult = {
 	error?: Record<string, unknown>;
 };
 
-type MonitorData = {
-	execution: unknown;
-	monitor: {
-		beforeOk: boolean;
-		afterOk: boolean;
-		beforeChars: number;
-		afterChars: number;
-		changed: number;
-		top_change?: string;
-		beforeError?: Record<string, unknown>;
-		afterError?: Record<string, unknown>;
-		newTabs: unknown[];
-	};
+type MonitorMetadata = {
+	beforeOk: boolean;
+	afterOk: boolean;
+	beforeChars: number;
+	afterChars: number;
+	changed: number;
+	top_change?: string;
+	beforeError?: Record<string, unknown>;
+	afterError?: Record<string, unknown>;
 };
 
 function textLines(value: unknown): string[] {
@@ -50,7 +47,7 @@ async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 	}
 }
 
-async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { tabId?: unknown; timeoutMs: number }): Promise<MonitorData> {
+async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { tabId?: unknown; timeoutMs: number }): Promise<BrowserBridgeExecutionResult & { monitor: MonitorMetadata }> {
 	const monitorTimeoutMs = Math.min(Math.max(500, options.timeoutMs), 5_000);
 	const scanScript = buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 });
 	const before = await monitorScan(server, scanScript, { tabId: options.tabId, timeoutMs: monitorTimeoutMs });
@@ -58,7 +55,7 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 	const after = await monitorScan(server, scanScript, { tabId: options.tabId, timeoutMs: monitorTimeoutMs });
 	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
 	return {
-		execution: executed.data,
+		...executed,
 		monitor: {
 			beforeOk: before.ok,
 			afterOk: after.ok,
@@ -67,7 +64,6 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 			...diff,
 			beforeError: before.error,
 			afterError: after.error,
-			newTabs: executed.newTabs || [],
 		},
 	};
 }

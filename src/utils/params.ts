@@ -3,7 +3,7 @@ export type ArtifactMode = "text" | "json" | "search" | "sample";
 
 export function asPositiveInt(value: unknown, fallback: number): number {
 	const n = Number(value);
-	return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+	return Number.isFinite(n) && n > 0 ? Math.ceil(n) : fallback;
 }
 
 export function normalizeDetailLevel(value: unknown): DetailLevel {

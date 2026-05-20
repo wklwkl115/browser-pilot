@@ -1,8 +1,9 @@
 import { Type } from "typebox";
 import { buildScanScript } from "../scan/buildScanScript";
-import { errorResult, jsonResult } from "../utils/toolResult";
+import { errorResult } from "../utils/toolResult";
 import { defaultResultBudget } from "./budgets";
-import { distilledTextResult, summarizeScanData } from "./resultMiddleware";
+import { evaluatePageScriptDirect } from "./pageScriptEvaluation";
+import { distilledJsonResult, distilledTextResult, summarizeScanData } from "./resultMiddleware";
 import { asPositiveInt, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
@@ -28,12 +29,25 @@ export function registerScanTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			try {
 				const server = await ensureStarted();
 				const tabs = await server.refreshTabs(5_000).catch(() => server.getTabs());
-				if (params.tabsOnly) return jsonResult({ tabs_count: tabs.length, tabs, active_tab: server.snapshot().defaultTabId }, { tabsOnly: true });
+				if (params.tabsOnly) {
+					const tabsOnlyData = { tabs_count: tabs.length, tabs, active_tab: server.snapshot().defaultTabId };
+					return await distilledJsonResult(tabsOnlyData, {
+						toolName: "browser_scan",
+						command: "tabsOnly",
+						detailLevel: params.detailLevel,
+						maxChars: asPositiveInt(params.maxChars, defaultResultBudget("browser_scan")),
+						ctx,
+						outputPath: params.outputPath,
+						fallbackName: `scan-tabs-${Date.now()}.json`,
+						details: { tabsOnly: true },
+						artifactValue: tabsOnlyData,
+					});
+				}
 				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_scan"));
 				const timeoutMs = asPositiveInt(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
 				const scanScript = buildScanScript({ textOnly: params.textOnly, maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
-				const result = await server.executeJavaScript(scanScript, { tabId: params.tabId, timeoutMs });
+				const result = await evaluatePageScriptDirect(server, scanScript, { tabId: params.tabId, timeoutMs, name: "scan_extract" });
 				const data = result.data as Record<string, unknown> | undefined;
 				const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? result.data, null, 2);
 				const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
@@ -41,12 +55,13 @@ export function registerScanTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					toolName: "browser_scan",
 					command: "scan",
 					detailLevel: params.detailLevel,
-					maxChars: maxChars + 2_000,
+					maxChars,
 					ctx,
 					outputPath: params.outputPath,
-					fallbackName: `scan-${Date.now()}.txt`,
+					fallbackName: `scan-${Date.now()}.json`,
 					summary: summarizeScanData(data, tabs),
 					details: { tabs_count: tabs.length, tabs, active_tab: server.snapshot().defaultTabId, scan: scanMeta },
+					artifactValue: { ...result, tabs_count: tabs.length, tabs, active_tab: server.snapshot().defaultTabId },
 				});
 			} catch (error) {
 				return errorResult(error);

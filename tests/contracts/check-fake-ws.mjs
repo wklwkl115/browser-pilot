@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import { WebSocket } from "ws";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
+import { executeBrowserWaitWithSupervisor } from "../../src/driver/BrowserWaitSupervisor.ts";
+import { BrowserBridgeError } from "../../src/driver/errors.ts";
 
 const HOST = "127.0.0.1";
 
@@ -26,13 +28,23 @@ function withTimeout(promise, ms, label) {
 	return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function openFakeClient(port) {
-	const ws = new WebSocket(`ws://${HOST}:${port}`);
+async function openFakeClient(port, origin) {
+	const options = origin === undefined ? undefined : { headers: { Origin: origin } };
+	const ws = new WebSocket(`ws://${HOST}:${port}`, options);
 	await withTimeout(new Promise((resolve, reject) => {
 		ws.once("open", resolve);
 		ws.once("error", reject);
 	}), 1_000, "fake ws open");
 	return ws;
+}
+
+async function rejectedFakeClient(port, origin) {
+	const ws = new WebSocket(`ws://${HOST}:${port}`, { headers: { Origin: origin } });
+	return await withTimeout(new Promise((resolve, reject) => {
+		ws.once("open", () => reject(new Error(`unexpected websocket open for origin ${origin}`)));
+		ws.once("error", resolve);
+		ws.once("close", () => resolve(new Error("websocket closed before open")));
+	}), 1_000, "fake ws rejected");
 }
 
 function sendJson(ws, message) {
@@ -55,6 +67,21 @@ async function nextJson(ws, label = "fake ws message") {
 	}), 1_000, label);
 }
 
+async function assertNoJson(ws, ms, label = "unexpected fake ws message") {
+	await new Promise((resolve, reject) => {
+		const onMessage = (data) => { cleanup(); reject(new Error(`${label}: ${data.toString()}`)); };
+		const onError = (error) => { cleanup(); reject(error); };
+		const cleanup = () => {
+			clearTimeout(timer);
+			ws.off("message", onMessage);
+			ws.off("error", onError);
+		};
+		const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+		ws.once("message", onMessage);
+		ws.once("error", onError);
+	});
+}
+
 async function waitUntil(predicate, label) {
 	const deadline = Date.now() + 1_000;
 	let last;
@@ -66,20 +93,48 @@ async function waitUntil(predicate, label) {
 	throw new Error(`${label} not reached; last=${JSON.stringify(last)}`);
 }
 
-function readyMessage(tabs) {
+function readyMessage(tabs, bridge = {}) {
 	return {
 		type: "ext_ready",
-		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test" },
+		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test", ...bridge },
 		tabs,
 	};
 }
+
+async function testWaitSupervisorInstantTimeoutBackoff() {
+	let calls = 0;
+	const fakeServer = {
+		snapshot() { return { extension: { id: "fake-browser", workerBootId: "boot-timeout" } }; },
+		async sendCommand(command) {
+			calls += 1;
+			throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "instant lease timeout", {
+				result: { ok: false, error_code: "TIMEOUT", error: "instant lease timeout", details: { timeoutMs: command.timeoutMs } },
+			});
+		},
+		async waitForExtensionReconnect() { throw new Error("unexpected reconnect wait"); },
+	};
+	await assert.rejects(executeBrowserWaitWithSupervisor(fakeServer, { cmd: "wait.selector", selector: "#never", timeoutMs: 180 }, { tabId: 1, timeoutMs: 180 }), (error) => {
+		assert.equal(error.code, "WAIT_TIMEOUT");
+		assert.equal(error.details.supervisor.attempts, calls);
+		assert.ok(calls <= 8, `instant lease timeouts must be throttled, got ${calls} attempts`);
+		assert.ok(error.details.supervisor.leases.some((lease) => lease.retryDelayMs > 0), "lease_timeout retries must record throttle delay diagnostics");
+		return true;
+	});
+}
+
+await testWaitSupervisorInstantTimeoutBackoff();
 
 const port = await freePort();
 const server = new BrowserBridgeServer({ host: HOST, port });
 let ws;
 let ws2;
 try {
-	await server.start();
+	await Promise.all([server.start(), server.start()]);
+	assert.equal(server.running, true, "concurrent start calls must share one running bridge server");
+	const rejectedOrigin = await rejectedFakeClient(port, "http://evil.example");
+	assert.match(rejectedOrigin.message || String(rejectedOrigin), /403|closed|Unexpected server response/i, "bridge websocket must reject page origins");
+	const extensionOriginWs = await openFakeClient(port, "chrome-extension://fixture-extension");
+	extensionOriginWs.close();
 	ws = await openFakeClient(port);
 	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }]));
 	await waitUntil(() => server.snapshot().extensionConnected && server.getTabs().length === 1, "ext_ready tabs registration");
@@ -176,8 +231,82 @@ try {
 	await disconnectRejection;
 	await waitUntil(() => !server.snapshot().extensionConnected && server.snapshot().pending.length === 0, "pending cleanup after websocket disconnect");
 	ws = await openFakeClient(port);
-	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }]));
+	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }], { workerBootId: "boot-wait-a", workerStartedAt: 1000 }));
 	await waitUntil(() => server.snapshot().extensionConnected && server.getTabs().some((tab) => tab.tabId === 101 && !tab.disconnectedAt), "reconnect after pending cleanup");
+	assert.equal(server.snapshot().extension?.workerBootId, "boot-wait-a", "bridge snapshot must expose service worker boot identity");
+
+	const durableWaitPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.selector", selector: "#ready", timeoutMs: 60_000 }, { tabId: 101, timeoutMs: 60_000 });
+	const durableWaitFirstOutbound = await nextJson(ws, "durable wait first lease outbound");
+	assert.equal(durableWaitFirstOutbound.code.cmd, "wait.selector");
+	assert.equal(durableWaitFirstOutbound.code.waitId, durableWaitFirstOutbound.code.wait_id);
+	assert.ok(durableWaitFirstOutbound.code.timeoutMs <= 25_000, "durable wait must use a short service-worker lease");
+	ws.close();
+	await waitUntil(() => !server.snapshot().extensionConnected, "durable wait disconnected first lease");
+	ws = await openFakeClient(port);
+	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }], { workerBootId: "boot-wait-b", workerStartedAt: 2000 }));
+	await waitUntil(() => server.snapshot().extension?.workerBootId === "boot-wait-b", "durable wait service worker reconnect");
+	const durableWaitSecondOutbound = await nextJson(ws, "durable wait second lease outbound");
+	assert.equal(durableWaitSecondOutbound.code.cmd, "wait.selector");
+	assert.equal(durableWaitSecondOutbound.code.waitId, durableWaitFirstOutbound.code.waitId, "durable wait retries must preserve waitId for diagnosis");
+	sendJson(ws, { type: "result", id: durableWaitSecondOutbound.id, result: { ok: true, selector: "#ready", bridge: { workerBootId: "boot-wait-b", workerStartedAt: 2000 } } });
+	const durableWaitResult = await durableWaitPromise;
+	assert.equal(durableWaitResult.data.selector, "#ready");
+	assert.equal(durableWaitResult.data.supervisor.durable, true);
+	assert.equal(durableWaitResult.data.supervisor.waitId, durableWaitFirstOutbound.code.waitId);
+	assert.equal(durableWaitResult.data.supervisor.workerRestarts, 1);
+	assert.equal(durableWaitResult.data.supervisor.historyLost, true);
+	assert.equal(durableWaitResult.data.supervisor.leases[0].status, "disconnect");
+	assert.equal(durableWaitResult.data.supervisor.leases.at(-1).status, "success");
+
+	const zeroWaitPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.selector", selector: "#instant" }, { tabId: 101, timeoutMs: 0 });
+	const zeroWaitOutbound = await nextJson(ws, "zero-timeout wait outbound");
+	assert.equal(zeroWaitOutbound.code.cmd, "wait.selector");
+	assert.equal(zeroWaitOutbound.code.timeoutMs, 0, "timeoutMs=0 must reach the bridge as an immediate check");
+	sendJson(ws, { type: "result", id: zeroWaitOutbound.id, result: { ok: true, selector: "#instant", immediate: true, bridge: { workerBootId: "boot-wait-b", workerStartedAt: 2000 } } });
+	const zeroWaitResult = await zeroWaitPromise;
+	assert.equal(zeroWaitResult.data.immediate, true);
+	assert.equal(zeroWaitResult.data.supervisor.totalTimeoutMs, 0);
+	assert.equal(zeroWaitResult.data.supervisor.leases[0].timeoutMs, 0);
+	assert.equal(zeroWaitResult.data.supervisor.leases[0].status, "success");
+
+	const lateSuccessPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.selector", selector: "#late", timeoutMs: 90 }, { tabId: 101, timeoutMs: 90 });
+	const lateSuccessOutbound = await nextJson(ws, "late wait success outbound");
+	assert.equal(lateSuccessOutbound.code.cmd, "wait.selector");
+	assert.ok(lateSuccessOutbound.code.timeoutMs > 0 && lateSuccessOutbound.code.timeoutMs <= 90, "first wait lease must stay within the total deadline");
+	await new Promise((resolve) => setTimeout(resolve, 140));
+	sendJson(ws, { type: "result", id: lateSuccessOutbound.id, result: { ok: true, selector: "#late", bridge: { workerBootId: "boot-wait-b", workerStartedAt: 2000 } } });
+	await assert.rejects(lateSuccessPromise, (error) => {
+		assert.equal(error.code, "WAIT_TIMEOUT");
+		assert.equal(error.details.supervisor.command, "wait.selector");
+		assert.equal(error.details.supervisor.totalTimeoutMs, 90);
+		assert.equal(error.details.supervisor.leases.at(-1).status, "late_success");
+		return true;
+	});
+
+	const lostWaitPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.networkIdle", timeoutMs: 2_000 }, { tabId: 101, timeoutMs: 2_000 });
+	const lostWaitOutbound = await nextJson(ws, "lost wait outbound");
+	assert.equal(lostWaitOutbound.code.cmd, "wait.networkIdle");
+	await assert.rejects(lostWaitPromise, (error) => {
+		assert.equal(error.code, "WAIT_STATE_LOST");
+		assert.equal(error.details.supervisor.leases.at(-1).status, "bridge_timeout");
+		return true;
+	});
+	sendJson(ws, { type: "result", id: lostWaitOutbound.id, result: { ok: true, late: true } });
+
+	const navigateBudgetPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: "https://example.test/slow", state: "complete", timeoutMs: 120 }, { tabId: 101, timeoutMs: 120 });
+	const navigateBudgetOutbound = await nextJson(ws, "navigateAndWait budget navigation outbound");
+	assert.equal(navigateBudgetOutbound.code.cmd, "wait.navigate");
+	assert.equal(navigateBudgetOutbound.code.timeoutMs, 120);
+	await new Promise((resolve) => setTimeout(resolve, 160));
+	sendJson(ws, { type: "result", id: navigateBudgetOutbound.id, result: { ok: true, navigated: true, bridge: { workerBootId: "boot-wait-b", workerStartedAt: 2000 } } });
+	await assert.rejects(navigateBudgetPromise, (error) => {
+		assert.equal(error.code, "WAIT_TIMEOUT");
+		assert.equal(error.details.supervisor.command, "wait.navigateAndWait");
+		assert.equal(error.details.supervisor.totalTimeoutMs, 120);
+		assert.equal(error.details.supervisor.leases.length, 0);
+		return true;
+	});
+	await assertNoJson(ws, 80, "navigateAndWait must not start wait phase after total budget is exhausted");
 
 	sendJson(ws, {
 		type: "tabs_update",
@@ -198,6 +327,30 @@ try {
 		],
 	});
 	await waitUntil(() => server.snapshot().defaultTabId === 202 && server.snapshot().latestTabId === 505, "latest tab tracks newest same-client tab");
+	const beforeSwitchSnapshot = server.snapshot();
+	const concurrentSwitchPromise = server.switchTab(505, 1_000);
+	const switchOutbound = await nextJson(ws, "concurrent switch outbound");
+	assert.equal(switchOutbound.tabId, 505);
+	assert.equal(switchOutbound.code.method, "switch");
+	const implicitExecutePromise = server.executeJavaScript("return 'old-default'", { timeoutMs: 1_000 });
+	const implicitExecuteOutbound = await nextJson(ws, "implicit execute during switch outbound");
+	assert.equal(implicitExecuteOutbound.tabId, 202, "implicit execute must use the selected-tab snapshot captured before switch resolves");
+	sendJson(ws, { type: "ack", id: switchOutbound.id });
+	sendJson(ws, { type: "result", id: switchOutbound.id, result: { ok: true } });
+	const switchResult = await concurrentSwitchPromise;
+	assert.equal(switchResult.data.selectedTabId, 505);
+	assert.equal(switchResult.data.previousDefaultTabId, 202);
+	assert.ok(switchResult.data.selectionVersion > beforeSwitchSnapshot.selectionVersion, "switch success must advance selectionVersion when default tab changes");
+	assert.equal(server.snapshot().defaultTabId, 505);
+	sendJson(ws, { type: "ack", id: implicitExecuteOutbound.id });
+	sendJson(ws, { type: "result", id: implicitExecuteOutbound.id, result: "old-default" });
+	const implicitExecuteResult = await implicitExecutePromise;
+	assert.equal(implicitExecuteResult.data, "old-default");
+	assert.equal(implicitExecuteResult.target.tabId, 202);
+	assert.equal(implicitExecuteResult.target.source, "default");
+	assert.equal(implicitExecuteResult.target.implicit, true);
+	assert.equal(implicitExecuteResult.target.selectionVersionAtDispatch, beforeSwitchSnapshot.selectionVersion);
+	assert.equal(implicitExecuteResult.target.selectionVersionAtResolve, switchResult.data.selectionVersion, "implicit execute result must expose current selectionVersion at resolve time");
 	sendJson(ws, {
 		type: "tabs_update",
 		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test-2" },
@@ -205,6 +358,18 @@ try {
 	});
 	await waitUntil(() => server.snapshot().latestTabId === 202, "tabs_update clears stale latest tab reference");
 	assert.ok(server.getTabs({ includeDisconnected: true }).find((tab) => tab.tabId === 505)?.disconnectedAt, "missing latest tab should be marked disconnected");
+
+	sendJson(ws, readyMessage([
+		{ id: 611, url: "https://example.test/eleven", title: "Eleven", active: false, windowId: 1 },
+		{ id: 613, url: "https://example.test/thirteen", title: "Thirteen", active: true, windowId: 2 },
+		{ id: 612, url: "https://example.test/twelve", title: "Twelve", active: true, windowId: 1 },
+	]));
+	await waitUntil(() => server.snapshot().defaultTabId === 612 && server.snapshot().latestTabId === 612, "multi-window active tab seed");
+	const disconnectedDefault = Array.from(server.sessions.values()).find((tab) => tab.tabId === 612 && !tab.disconnectedAt);
+	assert.ok(disconnectedDefault, "default tab session must exist before refresh fallback test");
+	disconnectedDefault.disconnectedAt = Date.now();
+	assert.equal(server.snapshot().defaultTabId, 613, "refresh fallback must prefer a remaining active tab over an older inactive tab");
+	assert.equal(server.snapshot().latestTabId, 613, "refresh fallback must move stale latest to the same active fallback");
 
 	ws2 = await openFakeClient(port);
 	sendJson(ws2, readyMessage([{ id: 606, url: "https://example.test/six", title: "Six", active: false, windowId: 2 }]));
@@ -220,15 +385,71 @@ try {
 	ws = ws2;
 	ws2 = undefined;
 
+	sendJson(ws, readyMessage([
+		{ id: 606, url: "https://example.test/six", title: "Six", active: false, windowId: 2 },
+		{ id: 607, url: "https://example.test/seven", title: "Seven", active: true, windowId: 2 },
+	]));
+	await waitUntil(() => server.snapshot().defaultTabId === 607 && server.snapshot().latestTabId === 607, "first browser active tab registration");
 	const firstBrowserId = server.snapshot().extension?.id;
 	ws2 = await openFakeClient(port);
-	sendJson(ws2, readyMessage([{ id: 404, url: "https://example.test/four", title: "Four", active: true, windowId: 2 }]));
+	sendJson(ws2, readyMessage([{ id: 607, url: "https://duplicate.example.test/seven", title: "Second Seven", active: true, windowId: 3 }]));
 	await waitUntil(() => server.snapshot().extension?.id && server.snapshot().extension?.id !== firstBrowserId, "second browser arbitration");
+	const secondBrowserId = server.snapshot().extension?.id;
+	await waitUntil(() => server.getTabs().filter((tab) => tab.tabId === 607 && !tab.disconnectedAt).length === 2, "duplicate tab ids retained across browsers");
+	const duplicateTabs = server.getTabs().filter((tab) => tab.tabId === 607 && !tab.disconnectedAt);
+	assert.equal(new Set(duplicateTabs.map((tab) => tab.browserId)).size, 2, "duplicate numeric tabIds must keep browser scope");
+	assert.equal(new Set(duplicateTabs.map((tab) => tab.id)).size, 2, "duplicate numeric tabIds must have distinct session ids");
 	const selected = server.selectBrowser(firstBrowserId);
 	assert.equal(selected.id, firstBrowserId);
 	assert.equal(server.snapshot().extension?.id, firstBrowserId);
+	assert.equal(server.snapshot().defaultTabId, 607, "selectBrowser must prefer the selected browser active tab");
+	const firstScopedDuplicatePromise = server.executeJavaScript("return 'first-607'", { tabId: 607, timeoutMs: 1_000 });
+	const firstScopedDuplicateOutbound = await nextJson(ws, "first browser duplicate tab outbound");
+	assert.equal(firstScopedDuplicateOutbound.tabId, 607);
+	await assertNoJson(ws2, 50, "duplicate tabId selected for first browser must not dispatch to second browser");
+	sendJson(ws, { type: "ack", id: firstScopedDuplicateOutbound.id });
+	sendJson(ws, { type: "result", id: firstScopedDuplicateOutbound.id, result: "first-607" });
+	assert.equal((await firstScopedDuplicatePromise).data, "first-607");
+	server.selectBrowser(secondBrowserId);
+	const secondScopedDuplicatePromise = server.executeJavaScript("return 'second-607'", { tabId: 607, timeoutMs: 1_000 });
+	const secondScopedDuplicateOutbound = await nextJson(ws2, "second browser duplicate tab outbound");
+	assert.equal(secondScopedDuplicateOutbound.tabId, 607);
+	await assertNoJson(ws, 50, "duplicate tabId selected for second browser must not dispatch to first browser");
+	sendJson(ws2, { type: "ack", id: secondScopedDuplicateOutbound.id });
+	sendJson(ws2, { type: "result", id: secondScopedDuplicateOutbound.id, result: "second-607" });
+	assert.equal((await secondScopedDuplicatePromise).data, "second-607");
+	server.selectBrowser(firstBrowserId);
 	ws2.close();
 	ws2 = undefined;
+
+	ws2 = await openFakeClient(port);
+	sendJson(ws2, readyMessage([], { id: "empty-extension", name: "Empty Browser", version: "empty" }));
+	await waitUntil(() => server.snapshot().extension?.extensionId === "empty-extension", "empty browser registration");
+	server.selectBrowser(firstBrowserId);
+	assert.equal(server.snapshot().defaultTabId, 607, "selecting the populated browser must restore its active implicit tab");
+	assert.throws(() => server.selectBrowser("empty-extension"), (error) => {
+		assert.equal(error.code, "NO_TAB");
+		assert.equal(error.details.browserId, "empty-extension");
+		return true;
+	});
+	assert.equal(server.snapshot().extension?.extensionId, "empty-extension", "empty selected browser remains the selected client");
+	assert.equal(server.snapshot().defaultTabId, undefined, "selecting an empty browser must clear default tab instead of preserving another client's tab");
+	assert.equal(server.snapshot().latestTabId, undefined, "selecting an empty browser must clear latest tab instead of preserving another client's tab");
+	await assert.rejects(server.executeJavaScript("return 'must-not-dispatch'", { timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "NO_TAB");
+		return true;
+	});
+	await assert.rejects(server.sendCommand({ cmd: "wait.selector", selector: "body" }, { timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "NO_TAB");
+		return true;
+	});
+	await assertNoJson(ws, 80, "empty-browser implicit execute must not dispatch to previous browser");
+	await assertNoJson(ws2, 80, "empty-browser implicit execute must not dispatch without a tab");
+	ws2.close();
+	ws2 = undefined;
+	const reselected = server.selectBrowser(firstBrowserId);
+	assert.equal(reselected.id, firstBrowserId);
+	assert.equal(server.snapshot().defaultTabId, 607, "reselecting populated browser restores active implicit tab after empty selection");
 
 	const previousClientId = server.snapshot().extension?.id;
 	const reconnectPromise = server.waitForExtensionReconnect(previousClientId, 1_000);
@@ -239,6 +460,40 @@ try {
 	const reconnect = await reconnectPromise;
 	assert.notEqual(reconnect.extension?.id, previousClientId);
 	assert.equal(reconnect.defaultTabId, 303);
+
+	sendJson(ws, readyMessage([{ id: 7000, url: "https://example.test/prune/0", title: "Prune 0", active: true, windowId: 1 }]));
+	await waitUntil(() => server.snapshot().defaultTabId === 7000, "session pruning seed");
+	for (let i = 1; i <= 150; i += 1) {
+		sendJson(ws, readyMessage([{ id: 7000 + i, url: `https://example.test/prune/${i}`, title: `Prune ${i}`, active: true, windowId: 1 }]));
+	}
+	await waitUntil(() => server.snapshot().defaultTabId === 7150, "bounded disconnected session pruning");
+	assert.ok(server.getTabs({ includeDisconnected: true }).filter((tab) => tab.disconnectedAt).length <= 128, "disconnected session history should be bounded");
+	for (const session of server.sessions.values()) {
+		if (session.disconnectedAt) session.disconnectedAt = Date.now() - 301_000;
+	}
+	assert.equal(server.getTabs({ includeDisconnected: true }).filter((tab) => tab.disconnectedAt).length, 0, "expired disconnected sessions should be pruned");
+	assert.equal(server.snapshot().defaultTabId, 7150, "session pruning must keep active tab selection");
+
+	await assert.rejects(server.sendCommand({ cmd: "wait.selector", selector: "body" }, { tabId: 7999, timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "TAB_NOT_FOUND");
+		assert.equal(error.details.tabId, 7999);
+		return true;
+	});
+	await assertNoJson(ws, 80, "explicit stale tabId must fail locally instead of dispatching to the selected browser");
+
+	const failedSwitchPromise = server.switchTab(7150, 1_000);
+	const failedSwitchOutbound = await nextJson(ws, "failed switch outbound");
+	assert.equal(failedSwitchOutbound.code.cmd, "tabs");
+	assert.equal(failedSwitchOutbound.code.method, "switch");
+	assert.equal(failedSwitchOutbound.code.tabId, 7150);
+	sendJson(ws, { type: "ack", id: failedSwitchOutbound.id });
+	sendJson(ws, { type: "result", id: failedSwitchOutbound.id, result: { ok: false, error: "cannot switch tab", details: { tabId: 7150 } } });
+	await assert.rejects(failedSwitchPromise, (error) => {
+		assert.equal(error.code, "BROWSER_COMMAND_FAILED");
+		assert.match(error.message, /cannot switch tab/);
+		return true;
+	});
+	assert.equal(server.snapshot().defaultTabId, 7150, "failed switchTab result must not update default tab");
 
 	sendJson(ws, readyMessage([{ id: 909, url: "https://example.test/nine", title: "Nine", active: true, windowId: 1 }]));
 	await waitUntil(() => server.snapshot().defaultTabId === 909 && server.snapshot().latestTabId === 909, "single-tab registration before close fallback test");

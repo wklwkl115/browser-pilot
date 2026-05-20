@@ -33,7 +33,8 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 				const screenshot = typeof data?.screenshot === "string" ? data.screenshot : undefined;
 				let saved: Record<string, unknown> | undefined;
 				if (screenshot) {
-					const ext = format === "jpeg" ? "jpg" : format;
+					const actualFormat = typeof data?.format === "string" ? data.format.toLowerCase() : format;
+					const ext = actualFormat === "jpeg" ? "jpg" : actualFormat;
 					const outputPath = resolveArtifactPath(ctx, params.outputPath, `screenshot-${Date.now()}.${ext}`);
 					saved = await saveDataUrl(screenshot, outputPath);
 					if (data) data.screenshot = `[saved to ${outputPath}]`;

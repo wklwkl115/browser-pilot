@@ -5,6 +5,17 @@ async function handleBridgeWake(msg, sender) {
   return { ok: true, data: { connecting: true, bridge: piBridgeInfo(), url: msg.url || sender.tab?.url || null } };
 }
 
+function normalizePiBrowserCreateTabUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return { ok: true, url: 'about:blank' };
+  let parsed;
+  try { parsed = new URL(raw); }
+  catch (_) { return { ok: false, error: 'tabs.create requires an absolute URL or about:blank', details: { url: value } }; }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol === 'javascript:') return { ok: false, error: 'tabs.create does not accept javascript: URLs; use browser_execute for JavaScript in an existing tab', details: { url: raw, protocol } };
+  return { ok: true, url: parsed.href };
+}
+
 async function handleTabsCommand(msg) {
   try {
     if (!msg.method || msg.method === 'list') {
@@ -18,8 +29,10 @@ async function handleTabsCommand(msg) {
       return { ok: true };
     }
     if (msg.method === 'create') {
-      const tab = await chrome.tabs.create({ url: msg.url || 'about:blank', active: msg.active !== false });
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || msg.url || 'about:blank', title: tab.title || '', windowId: tab.windowId } };
+      const normalized = normalizePiBrowserCreateTabUrl(msg.url);
+      if (!normalized.ok) return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, normalized.error, { cmd: msg.cmd, method: msg.method, ...normalized.details });
+      const tab = await chrome.tabs.create({ url: normalized.url, active: msg.active !== false });
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId } };
     }
     if (msg.method === 'close') {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;
@@ -76,6 +89,42 @@ async function handleContentSettingsCommand(msg) {
   }
 }
 
+function piBrowserCookiePartitionIdentity(cookie) {
+  const key = cookie && cookie.partitionKey;
+  if (!key || typeof key !== 'object') return '';
+  return [key.topLevelSite || '', key.hasCrossSiteAncestor === undefined ? '' : String(key.hasCrossSiteAncestor)].join('\u0000');
+}
+
+function piBrowserCookieIdentity(cookie) {
+  const item = cookie || {};
+  return [item.name || '', item.domain || '', item.path || '', item.storeId || '', piBrowserCookiePartitionIdentity(item)].join('\u0000');
+}
+
+function mergePiBrowserCookies(cookieLists) {
+  const merged = [];
+  const seen = new Set();
+  for (const list of cookieLists) {
+    for (const cookie of Array.isArray(list) ? list : []) {
+      const key = piBrowserCookieIdentity(cookie);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(cookie);
+    }
+  }
+  return merged;
+}
+
+function normalizePiBrowserCookieUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return { ok: false, error: 'cookies requires an http(s) URL or a tab with an http(s) URL', details: { url: value } };
+  let parsed;
+  try { parsed = new URL(raw); }
+  catch (_) { return { ok: false, error: 'cookies requires a valid absolute URL', details: { url: value } }; }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') return { ok: true, url: parsed.href, protocol, unsupported: true };
+  return { ok: true, url: parsed.href, origin: parsed.origin, protocol };
+}
+
 async function handleCookies(msg, sender) {
   try {
     let url = msg.url || sender.tab?.url;
@@ -83,13 +132,12 @@ async function handleCookies(msg, sender) {
       const tab = await chrome.tabs.get(msg.tabId);
       url = tab.url;
     }
-    const origin = url.match(/^https?:\/\/[^\/]+/)[0];
-    const all = await chrome.cookies.getAll({ url });
-    const part = await chrome.cookies.getAll({ url, partitionKey: { topLevelSite: origin } }).catch(() => []);
-    const merged = [...all];
-    for (const c of part) {
-      if (!merged.some(x => x.name === c.name && x.domain === c.domain)) merged.push(c);
-    }
+    const normalized = normalizePiBrowserCookieUrl(url);
+    if (!normalized.ok) return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, normalized.error, { cmd: msg.cmd, tabId: msg.tabId, ...normalized.details });
+    if (normalized.unsupported) return { ok: true, data: [], details: { reason: 'unsupported_cookie_url_scheme', url: normalized.url, protocol: normalized.protocol } };
+    const all = await chrome.cookies.getAll({ url: normalized.url });
+    const part = await chrome.cookies.getAll({ url: normalized.url, partitionKey: { topLevelSite: normalized.origin } }).catch(() => []);
+    const merged = mergePiBrowserCookies([all, part]);
     return { ok: true, data: merged };
   } catch (e) {
     return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, e.message || String(e), { cmd: msg.cmd, tabId: msg.tabId });
@@ -131,8 +179,7 @@ async function handleBatch(msg, sender) {
         if (c.cmd === 'cookies') {
           R.push(normalizeBridgeResponse(await handleCookies(c, sender), c.cmd));
         } else if (c.cmd === 'tabs') {
-          const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
-          R.push({ ok: true, data: tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId })) });
+          R.push(normalizeBridgeResponse(await handleTabsCommand(c), c.cmd));
         } else if (c.cmd === 'cdp') {
           const tabId = c.tabId || msg.tabId || sender.tab?.id;
           if (!tabId) {

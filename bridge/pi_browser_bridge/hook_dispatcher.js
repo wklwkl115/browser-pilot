@@ -4,7 +4,7 @@
 ;(function PiBrowserHookDispatcher() {
   'use strict';
 
-  const VERSION = 'pi-hook.0.3.1';
+  const VERSION = 'pi-hook.0.3.2';
   const existingPiBrowser = window.__PI_BROWSER_HOOKS__;
   if (existingPiBrowser && existingPiBrowser.dispatch) {
     if (existingPiBrowser.version === VERSION) return;
@@ -17,6 +17,7 @@
   const DEFAULT_BUFFER_SIZE = 1000;
   const ERROR_CODES = {
     NO_SESSION: 'NO_SESSION', ALREADY_INSTALLED: 'ALREADY_INSTALLED', NOT_INSTALLED: 'NOT_INSTALLED',
+    SESSION_NOT_FOUND: 'SESSION_NOT_FOUND', INVALID_SESSION: 'INVALID_SESSION',
     INVALID_RULE: 'INVALID_RULE', UNSUPPORTED_TARGET: 'UNSUPPORTED_TARGET', INJECTION_FAILED: 'INJECTION_FAILED',
     SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', INTERNAL_ERROR: 'INTERNAL_ERROR'
   };
@@ -39,6 +40,15 @@
     xpath_large_result_threshold: 500,
     xpath_large_result_repeat_ticks: 12
   };
+  const DEFAULT_REDACT_PATTERNS = [
+    'fixture-secret',
+    'fixture-password',
+    'bearer\\s+fixture-secret',
+    'authorization:\\s*bearer\\s+[^\\s,;\\x29]+'
+  ];
+  const PI_BROWSER_HOOK_MAX_REDACT_PATTERNS = 32;
+  const PI_BROWSER_HOOK_REDACT_MAX_PATTERN_CHARS = 512;
+  const PI_BROWSER_HOOK_REDACT_MAX_TEXT_CHARS = 65536;
 
   function canonicalCommand(cmd) { return COMMAND_CANONICAL[cmd] || cmd; }
   function structuredError(error_code, message, details) { return { ok: false, error_code, error: message, details: details || {} }; }
@@ -64,20 +74,40 @@
     if (max != null) n = Math.min(max, n);
     return n;
   }
+  function isSafeHookRedactRegexPattern(pattern) {
+    pattern = String(pattern || '');
+    if (!pattern || pattern.length > PI_BROWSER_HOOK_REDACT_MAX_PATTERN_CHARS) return false;
+    if (/\\(?:[1-9]|k[<'])/.test(pattern)) return false;
+    if (/\(\?[^:]/.test(pattern)) return false;
+    if (/\([^)]*(?:[*+]|\{\d)[^)]*\)\s*(?:[*+?]|\{\d)/.test(pattern)) return false;
+    if (/\([^)]*\|[^)]*\)\s*(?:[*+?]|\{\d)/.test(pattern)) return false;
+    if ((pattern.match(/\.\*/g) || []).length > 6) return false;
+    return true;
+  }
+  function escapeRegExpLiteral(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  function compileHookRedactPattern(raw) {
+    const pattern = String(raw == null ? '' : raw);
+    if (!pattern || pattern.length > PI_BROWSER_HOOK_REDACT_MAX_PATTERN_CHARS) return null;
+    if (isSafeHookRedactRegexPattern(pattern)) {
+      try { return { pattern, mode: 'regex', regex: new RegExp(pattern, 'gi') }; } catch (_) {}
+    }
+    try { return { pattern, mode: 'literal', regex: new RegExp(escapeRegExpLiteral(pattern), 'gi') }; } catch (_) { return null; }
+  }
+  function currentHookRedactors() {
+    if (redactMatchers) return redactMatchers;
+    const custom = options && Array.isArray(options.redact_patterns) ? options.redact_patterns.slice(0, PI_BROWSER_HOOK_MAX_REDACT_PATTERNS) : [];
+    redactMatchers = DEFAULT_REDACT_PATTERNS.concat(custom).map(compileHookRedactPattern).filter(Boolean);
+    return redactMatchers;
+  }
   function clone(v) { return safeString(v); }
   function redactText(text) {
     let out = String(text);
-    const defaults = [
-      'fixture-secret',
-      'fixture-password',
-      'bearer\\s+fixture-secret',
-      'authorization:\\s*bearer\\s+[^\\s,;\\x29]+'
-    ];
-    const custom = options && Array.isArray(options.redact_patterns) ? options.redact_patterns : [];
-    defaults.concat(custom).forEach(p => {
-      try { out = out.replace(new RegExp(String(p), 'gi'), '[REDACTED]'); } catch (_) {}
-    });
-    return out;
+    const truncated = out.length > PI_BROWSER_HOOK_REDACT_MAX_TEXT_CHARS;
+    if (truncated) out = out.slice(0, PI_BROWSER_HOOK_REDACT_MAX_TEXT_CHARS);
+    currentHookRedactors().forEach(item => { out = out.replace(item.regex, '[REDACTED]'); });
+    return truncated ? out + '…[redaction input truncated]' : out;
   }
   function redactClone(v, depth, seen) {
     if (v == null) return v;
@@ -91,7 +121,7 @@
     seen = seen || (typeof WeakSet !== 'undefined' ? new WeakSet() : null);
     if (seen) { if (seen.has(v)) return '[Circular]'; try { seen.add(v); } catch (_) {} }
     if (typeof ArrayBuffer !== 'undefined' && v instanceof ArrayBuffer) return { kind: 'ArrayBuffer', byteLength: v.byteLength };
-    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(v)) return { kind: v.constructor && v.constructor.name || 'TypedArray', byteLength: v.byteLength, length: v.length };
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(v)) { const view = /** @type {any} */ (v); return { kind: view.constructor && view.constructor.name || 'TypedArray', byteLength: view.byteLength, length: view.length }; }
     if (typeof Blob !== 'undefined' && v instanceof Blob) return { kind: 'Blob', size: v.size, type: v.type };
     if (typeof FormData !== 'undefined' && v instanceof FormData) { const keys = []; try { v.forEach((_, k) => keys.push(String(k))); } catch (_) {} return { kind: 'FormData', keys }; }
     if (v instanceof Error) return redactClone(serializeError(v), (depth || 0) + 1, seen);
@@ -205,6 +235,7 @@
   let errorHandlers = [];
   let hookWrappers = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
   let perfStats = {};
+  let redactMatchers = null;
   function resetDiagnostics() { cleanup_warnings = []; residue_signatures = []; }
   function addCleanupWarning(msg) { if (msg) cleanup_warnings.push(String(msg)); }
   function addResidueSignature(sig) { if (!sig) return; const s = String(sig); if (residue_signatures.indexOf(s) < 0) residue_signatures.push(s); }
@@ -281,7 +312,7 @@
   }
   function scheduleTimer(fn, ms) {
     const t = setTimeout(fn, ms);
-    try { if (t && typeof t.unref === 'function') t.unref(); } catch (_) {}
+    try { const timer = /** @type {any} */ (t); if (timer && typeof timer.unref === 'function') timer.unref(); } catch (_) {}
     return t;
   }
   function clearEventNotifyTimer() { if (eventNotifyTimer) { clearTimeout(eventNotifyTimer); eventNotifyTimer = null; } }
@@ -396,7 +427,7 @@
     Object.setPrototypeOf(WrappedWebSocket, NativeWebSocket);
     ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(k => { try { Object.defineProperty(WrappedWebSocket, k, { value: NativeWebSocket[k], enumerable: true }); } catch (_) {} });
     hookWrappers.websocket = WrappedWebSocket;
-    window.WebSocket = WrappedWebSocket;
+    window.WebSocket = /** @type {any} */ (WrappedWebSocket);
   }
   function hookConsole() {
     if ((!targets.console && !targets.error) || Object.keys(origConsole).length) return;
@@ -662,6 +693,7 @@
     install_fingerprint = requestedFingerprint;
     targets = requestedTargets;
     options = requestedOptions;
+    redactMatchers = null;
     buffer_size = requestedBufferSize;
     buffer = new Array(buffer_size); buffer_start = 0; buffer_count = 0; seq = 0; overflow = 0; stats = Object.assign({}, DEFAULT_STATS);
     mutationQueue = []; if (mutationTimer) { clearTimeout(mutationTimer); mutationTimer = null; }
@@ -679,13 +711,26 @@
       cleanup_warnings: cleanup_warnings.slice(), residue_signatures: residue_signatures.slice()
     } };
   }
-  function requireSession(op) { return session_id ? null : structuredError(ERROR_CODES.NO_SESSION, op + ' requires an installed Pi Browser session', { state }); }
+  function expectedSessionIdFrom(opts) {
+    if (!opts) return null;
+    const raw = opts.session_id !== undefined ? opts.session_id : opts.sessionId;
+    return raw === undefined || raw === null || raw === '' ? null : String(raw);
+  }
+  function requireSession(op, expectedSessionId, allowMissing) {
+    expectedSessionId = expectedSessionId == null || expectedSessionId === '' ? null : String(expectedSessionId);
+    if (!session_id) {
+      if (expectedSessionId) return structuredError(ERROR_CODES.SESSION_NOT_FOUND, op + ' sessionId was not found', { state, requested_session_id: expectedSessionId });
+      return allowMissing ? null : structuredError(ERROR_CODES.NO_SESSION, op + ' requires an installed Pi Browser session', { state });
+    }
+    if (expectedSessionId && expectedSessionId !== String(session_id)) {
+      return structuredError(ERROR_CODES.INVALID_SESSION, op + ' sessionId does not match the installed Pi Browser session', { state, requested_session_id: expectedSessionId, current_session_id: session_id });
+    }
+    return null;
+  }
   function collect(opts) {
     const t0 = Date.now();
-    const miss = requireSession('hook.collect'); if (miss) return miss;
     opts = opts || {};
-    if (state === 'INSTALLED') setState('ACTIVE', 'collect');
-    setState('COLLECTING', 'collect');
+    const miss = requireSession('hook.collect', expectedSessionIdFrom(opts)); if (miss) return miss;
     const since = Number(opts.since_seq || 0);
     const limit = Math.max(0, Number(opts.limit || 100));
     flushMutations();
@@ -693,11 +738,12 @@
     let events = bufferSnapshot().filter(e => e && e.seq > since);
     if (opts.event_types && opts.event_types.length) events = events.filter(e => opts.event_types.some(t => e.type.indexOf(t) === 0));
     const page = events.slice(0, limit);
-    setState('ACTIVE', 'collect_done');
     recordPerf('collect', t0);
     return { ok: true, data: Object.assign({ session_id, events: page, next_seq: page.length ? page[page.length - 1].seq : since, total_available: events.length, overflow }, bufferMetrics()) };
   }
-  function status() {
+  function status(opts) {
+    opts = opts || {};
+    const miss = requireSession('hook.status', expectedSessionIdFrom(opts), true); if (miss) return miss;
     return { ok: true, data: {
       session_id, state, installed_at, uptime_ms: installed_at ? Date.now() - Date.parse(installed_at) : 0,
       stats: Object.assign({}, stats, { buffer_count, buffer_size, buffer_usage: buffer_count / buffer_size }, bufferMetrics()),
@@ -708,8 +754,8 @@
       cleanup_warnings: cleanup_warnings.slice(), residue_signatures: residue_signatures.slice()
     } };
   }
-  function pause() { const miss = requireSession('hook.pause'); if (miss) return miss; paused = true; setState('PAUSED', 'pause'); return { ok: true, data: { session_id, state } }; }
-  function resume() { const miss = requireSession('hook.resume'); if (miss) return miss; paused = false; setState('ACTIVE', 'resume'); return { ok: true, data: { session_id, state } }; }
+  function pause(opts) { opts = opts || {}; const miss = requireSession('hook.pause', expectedSessionIdFrom(opts)); if (miss) return miss; paused = true; setState('PAUSED', 'pause'); return { ok: true, data: { session_id, state } }; }
+  function resume(opts) { opts = opts || {}; const miss = requireSession('hook.resume', expectedSessionIdFrom(opts)); if (miss) return miss; paused = false; setState('ACTIVE', 'resume'); return { ok: true, data: { session_id, state } }; }
   function evaluate(opts) {
     const expr = typeof opts === 'string' ? opts : opts && opts.expression;
     if (!expr) return structuredError(ERROR_CODES.INVALID_RULE, 'hook.evaluate requires expression', {});
@@ -719,13 +765,15 @@
       return { ok: true, data: { result: opts && opts.return_by_value === false ? type : clone(result), type } };
     } catch (e) { return structuredError(ERROR_CODES.INTERNAL_ERROR, e.message || String(e), serializeError(e)); }
   }
-  function clearBuffer() {
-    const miss = requireSession('hook.clear_buffer'); if (miss) return miss;
-    buffer = new Array(buffer_size); buffer_start = 0; buffer_count = 0; seq = 0; overflow = 0; stats.overflow = 0; perfStats = {};
-    return { ok: true, data: { session_id, cleared: true } };
+  function clearBuffer(opts) {
+    opts = opts || {};
+    const miss = requireSession('hook.clear_buffer', expectedSessionIdFrom(opts)); if (miss) return miss;
+    buffer = new Array(buffer_size); buffer_start = 0; buffer_count = 0; overflow = 0; stats.overflow = 0; perfStats = {};
+    return { ok: true, data: { session_id, cleared: true, last_seq: seq } };
   }
   function uninstall(opts) {
     opts = opts || {};
+    if (!opts.force) { const miss = requireSession('hook.uninstall', expectedSessionIdFrom(opts)); if (miss) return miss; }
     cleanup_warnings = [];
     if (origXHR) {
       if (XMLHttpRequest.prototype.open === hookWrappers.xhr.open) XMLHttpRequest.prototype.open = origXHR.open;
@@ -785,11 +833,11 @@
     switch (cmd) {
       case 'hook.install': return install(args);
       case 'hook.collect': return collect(args);
-      case 'hook.status': return status();
+      case 'hook.status': return status(args);
       case 'hook.uninstall': return uninstall(args);
-      case 'hook.clear_buffer': return clearBuffer();
-      case 'hook.pause': return pause();
-      case 'hook.resume': return resume();
+      case 'hook.clear_buffer': return clearBuffer(args);
+      case 'hook.pause': return pause(args);
+      case 'hook.resume': return resume(args);
       case 'hook.evaluate': return evaluate(args);
       default: return structuredError(ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
     }

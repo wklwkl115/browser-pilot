@@ -9,245 +9,139 @@
 - 已移除历史动作拆分工具：`browser_query`、`browser_click`、`browser_type`、`browser_dom_snapshot`、`browser_dom_click`、`browser_dom_type`；不要恢复为默认工具面。
 - 修改协议/工具后先跑：`npm run check`。真实浏览器 smoke 只在需要验证 reload 后 runtime 时执行。
 
-## 历史整理归档
+## 历史整理归档（1-162 已完成）
 
-### 1-26. 原生桥、token、artifact、content/pick 基础期（已完成）
+- 1-26：原生 Pi Browser Bridge、协议 schema、工具注册拆分、resultMiddleware/artifact/detailLevel、`browser_pick`/`browser_content` 基础能力完成。
+- 27-73：历史动作拆分与 semantic DOM 工具已复审撤回；当前工具面收敛为 scan/content/execute/wait/network/hook/evidence/frame/html/screenshot/artifact 等组合能力，复杂交互走 `browser_scan` + `browser_execute`。
+- 74-102：Web 执行面已落地并归档：recon/crawl/path-vhost-param fuzz/http replay/cookie/sqli/template/OAST/sqlmap/nuclei；单包分层、budget、summary、artifact、raw/HAR/captured request 链路与成熟引擎 bridge 契约完成。
+- 103-126：Bug report C/H/M/L 批次已处理；覆盖 BrowserBridge session/tab、WS origin/retry、upload/download、transport/tab_sync、network/wait/hook/html/screenshot、JSON/router 等边界修复与契约。
+- 127-129：默认 tab 竞态可观测化、MV3 长等待短租约 supervisor、Bridge JS `checkJs` 类型栅栏已完成。
+- 130-156：桌面审计报告 Bug 1-26 已完成；覆盖 wait deadline、BrowserBridge/tab 路由、native 命令、内容/下载/截图、ReDoS/安全预算、契约与 README/CHANGELOG/skill 同步。
+- 157-162：Bug 28+ 当前基线复核完成；已覆盖项与 callable 子集证据已归档，剩余未覆盖/部分覆盖项全部转入 TODO 163-174。
+- 历史归档不再作为执行队列；后续只从 TODO 163 起推进，必要时回看 git diff、桌面报告与对应契约文件。
 
-- 原生 Pi Browser Bridge 迁移完成，保留 tabs/execute/scan/wait/network/hook/frame/html/screenshot。
-- 协议单一事实源：`bridge/native_command_schema.json`；协议同步脚本与 bridge 契约已固化。
-- 工具注册拆分完成，`registerTools.ts` 保持薄组合入口。
-- 结果蒸馏、`detailLevel`、artifact 保存、`browser_artifact` 局部读取、错误归一化、token 预算契约已完成。
-- `browser_pick` 与 `browser_content` 已补齐并纳入契约。
+## 163. 当前代码缺陷审计报告剩余项执行索引（清晰基线）
 
-### 27-56. 动作拆分与 semantic DOM 探索期（已归档）
+- [x] 当前剩余范围已从桌面审计报告压缩版重新核对并随 TODO 164-173 收敛：当前未覆盖/待修 Bug 已清零；部分覆盖已清零；另有真实浏览器 smoke gate 仍需在可独占 bridge 端口时执行。
+- [x] 执行规则：从 TODO 164 开始顺序推进；每项先做事实复核，再改代码；每项完成时必须更新对应 TODO 勾选状态、README、CHANGELOG、桌面审计报告，触及全局 skill 时同步更新 `D:/Pi/agent/skills/pi-browser-tools/SKILL.md`。
+- [x] 验收规则：每项至少补静态/动态契约测试并运行相关局部 check；提交最终状态前运行 `cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"`。触及全局 skill 后运行 `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`。
+- [x] 文档规则：已覆盖项不得只写“已修”；必须写清事实是否成立、修复边界、契约证据。若复核发现报告不成立，也必须补防回归契约或说明无需代码修改的证据。
 
-- 历史上实现过 `browser_query/click/type` 与 `browser_dom_*` nodeId 工具。
-- 后续复审发现固定动作工具和 semantic nodeId 增加维护面、token 面和行为歧义。
-- 已在 57 回归 GA-style 简化工具面；历史实现、测试、summary 已移除。
-- 保留经验：复杂交互应通过 `browser_scan` 观察 + `browser_execute` 页面 JS/CDP 脚本完成。
+## 163A. 实战反馈：browser_network 原始响应证据保真（当前插队）
 
-### 57-73. GA-style 简化工具面与 scan/execute 强化期（已完成）
+- [x] 事实复核：确认当前 recorder 虽支持 `captureBodies/captureRequestPostData/maxBodyBytes/resourceTypes`，但默认不开启 body/postData，`network.body` 缺 body 时只返回泛化 `BODY_UNAVAILABLE`，无法区分未请求、过滤、CDP 失败、过期、过大或二进制。
+- [x] 修复边界：`network.start` 默认对 XHR/Fetch/Document 的小型 JSON/text/html 响应立即尝试 `Network.getResponseBody` 并保留 `bodyRef/bodyPreview`；保留 `captureBodies:false` 显式关闭和 `bodyMimeAllow/maxBodyBytes/resourceTypes/bodyTimeoutMs` 有界控制。
+- [x] 请求证据：`captureRequestPostData` 默认有界开启，`network.get/exportHar` 保留 `request.postData/postDataTruncated/postDataOriginalLength`，便于直接输入 `browser_http_replay`。
+- [x] 缺失诊断：`network.get/list/body/exportHar` 暴露 `bodyAvailability` 与 `bodyUnavailableReason`，`network.body` 无 body 时仍返回稳定错误细节，而不是裸 `BODY_UNAVAILABLE`。
+- [x] 契约：补 fake CDP network recorder 测试，覆盖默认 JSON body 捕获、显式关闭、mime/binary 过滤、CDP expired/failed、maxBodyBytes 截断和 request postData。
+- [x] 文档：README、CHANGELOG、skill 同步网络证据保真语义；TODO 本项完成后再回到 Bug 27 队列。
 
-- 当前注册工具面固定为 tabs/scan/content/pick/download/upload/wait/network/hook/evidence/frame/html/screenshot/artifact/execute 与 Web 新增工具。
-- `browser_scan` 已补 actionables、list_hints、top-layer、autofill 保护态和噪声过滤。
-- `browser_execute` 已补 `monitor:true`，用于可选 before/after scan diff。
-- upload/download、network、hook、frame、html、screenshot 均走 resultMiddleware / artifact 路径。
-- 契约防止旧动作拆分工具和大 payload 回流。
+## 164. Bug 27：browser_download mode 枚举校验
 
-## 74. CTF Web 方法论需要的下一阶段浏览器工具面
+- [x] 事实复核：确认当前 `bridge/pi_browser_bridge/transfer.js` 的 page 下载仍通过 `msg.mode === 'media' ? 'media' : 'click'` 静默降级；确认 `src/tools/transferValidation.ts` 的 `buildTransferDownloadCommand()` 对非法 `mode` 没有工具层拒绝。
+- [x] 修复边界：`browser_download.mode` 只允许 `click | media | url`；省略 `mode` 时 selector 目标默认为 `click`，url 目标默认为 `url`；显式非法值一律返回 `INVALID_RULE`，不得执行 click、media extraction、CDP wait 或 Chrome downloads API。
+- [x] 兼容决策：`url` 目标仅接受省略或 `mode:"url"`；selector 目标仅接受省略、`click` 或 `media`；`selector + mode:"url"`、`url + mode:"click/media"` 都是参数冲突并返回稳定错误。
+- [x] 实现位置：在 `transferValidation.ts` 增加纯函数校验/归一化，`registerTransferTools.ts` 在 `ensureStarted()` 前调用；bridge 端 `transfer.js` 也做同等防线，防止 `browser_execute command={cmd:"transfer.download"}` 绕过工具层。
+- [x] 契约：`check-transfer-runtime.mjs` 覆盖非法 mode 不调用 `Runtime.evaluate`/`chrome.downloads.download`；`check-transfer-tools.mjs` 静态锁定不再出现 `msg.mode === 'media' ? 'media' : 'click'`；必要时 `check-tools-contract.mjs` 锁定工具层预校验。
+- [x] 文档：README、CHANGELOG、skill、桌面审计报告同步说明 mode 枚举和冲突语义。
 
-- [x] 新增 `browser_recon_probe`：live URL probing、title/status/header/tech、redirect chain、response-store artifact，支撑 Web 首轮指纹与目标列表探测。
-- [x] 新增 `browser_crawl`：scoped crawl、known-file crawl、JS endpoint extraction、XHR endpoint inventory，优先复用真实浏览器会话与现有 network/artifact 能力。
-- [x] 新增 `browser_fuzz_paths`：path/file/route/extension fuzzing，支持 matcher/filter、速率控制、结构化结果、artifact 归档。
-- [x] 新增 `browser_fuzz_vhosts`：Host header / virtual-host discovery，支持 baseline filtering、状态/长度/标题差异摘要。
-- [x] 新增 `browser_fuzz_params`：query、JSON、form、header 参数 fuzzing，支持从 captured request 生成模板；multipart 暂不作为首版。
-- [x] 新增 `browser_http_replay`：raw request replay、method/header/body mutation、captured-request templates、browser-session/cookie 绑定。
-- [x] 新增 `browser_cookie_analyze`：cookie/JWT/session decode、签名元数据、签名验证/secret candidate workflow、claim mutation token 生成与浏览器态 cookie 采集衔接。
-- [x] 新增 `browser_sqli_probe`：SQLi oracle 分类、boolean/error/time/union 探测、请求/响应证据归档。
-- [x] 新增 `browser_template_check`：模板/配置/CVE-shaped 验证，输入为 scoped target、captured request 或技术指纹，支持模板选择、匹配器和证据归档。
-- [x] 新增 `browser_callback_oast`：callback listener、correlation ID、请求日志归档，用于 SSRF、盲注、反序列化等浏览器侧触发后的证据关联。
-- [x] 与 `pi-ctf-protocol` 的 Web solver 保持 capability label 命名一致；能力未实现前不得在工具清单、skill 或 README 中宣称可调用。
+## 165. Bug 33/34/35：hook sessionId、collect 自噪声、clear_buffer 单调序号
 
-## 75. 已实现 Web 工具补强任务
+- [x] 事实复核：确认 `hook.status/collect/clear_buffer/pause/resume/uninstall` 未把 `msg.sessionId/session_id` 传给页面 dispatcher；确认 dispatcher `collect()` 仍调用 `setState()` 写入 `hook.lifecycle`；确认 `clearBuffer()` 仍执行 `seq = 0`。
+- [x] Session 契约：本项目保持“单 tab 单 dispatcher session”，但调用方显式传 `sessionId/session_id` 时必须严格匹配当前 `session_id`；不匹配返回 `SESSION_NOT_FOUND` 或 `INVALID_SESSION`，不得回退到当前 session。
+- [x] Bridge 实现：`hook.js` 对 status/collect/clear/pause/resume/uninstall 统一转发 `session_id`；`hook_dispatcher.js` 增加 `requireSession(op, expectedSessionId)` 并用于这些操作。
+- [x] Collect 语义：只读 collect 不得向事件 buffer 写入 lifecycle 自噪声；如仍需状态观测，写入独立控制面字段/diagnostics，不混入 `events`。
+- [x] Clear 语义：`clear_buffer` 只清 buffer、overflow 和派生统计，不重置全局单调 `seq`；`since_seq` 在 clear 前后仍可稳定分页，新事件 seq 必须继续递增。
+- [x] 契约：`check-pi-browser-bridge.mjs` 增加 fake dispatcher/runtime 测试：错误 sessionId 返回稳定错误；空闲 collect 不产生 lifecycle 事件；clear 后新事件 seq 大于 clear 前 last seq。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告记录 hook session 严格匹配、collect no self-noise、seq monotonic。
 
-- [x] `browser_recon_probe`：补 scheme/port 扩展、TLS 证书元数据、响应 sha256、favicon sha256。
-- [x] `browser_recon_probe`：继续原生补 tech hints / fingerprint 字段、favicon mmh3/相似 hash。
-- [x] `browser_crawl`：补 source map、OpenAPI/Swagger、GraphQL、manifest、service worker、XHR/fetch 语义提取。
-- [x] `browser_crawl`：补 source map 内容解析、OpenAPI endpoint 展开、GraphQL introspection 结果结构化、service worker cache route 提取。
-- [x] `browser_crawl`：补 OpenAPI schema 参数摘要、GraphQL introspection 主动探测。
-- [x] `browser_crawl`：继续原生补 source map 反向源文件归档、service worker cache 版本摘要。
-- [x] `browser_fuzz_paths`：补多 FUZZ 位置、响应相似度聚类、自动 baseline、结果去重。
-- [x] `browser_fuzz_paths`：继续原生补递归 fuzz、目录深度控制、baseline 聚类过滤策略。
-- [x] `browser_fuzz_params`：补嵌套 JSON path、数组/对象参数、参数删除/新增矩阵、响应 diff classifier。
-- [x] `browser_fuzz_params`：补 multipart 参数 fuzz、文件字段矩阵、content-type 边界变体。
-- [x] `browser_fuzz_params`：补 multipart 多文件同名字段、嵌套 multipart、parser 差异聚类。
-- [x] `browser_fuzz_vhosts`：补 Host/SNI 分离模式、多 baseline host、wildcard baseline 聚类、响应哈希、批量 host 归并。
-- [x] `browser_fuzz_vhosts`：继续原生补 HTTPS fixture、SNI 证书差异摘要、baseline 聚类过滤策略调参。
-- [x] `browser_http_replay`：补 HAR import、multipart 构造、二进制 body、请求序列 replay、baseline diff 输出。
-- [x] `browser_http_replay`：补请求序列变量提取/注入、响应 diff 聚类。
-- [x] `browser_http_replay`：补 HAR entry 依赖图、更多 extractor 类型、变量作用域控制。
-- [x] `browser_http_replay`：继续原生补 multipart 文件字段变体矩阵。
-- [x] `browser_cookie_analyze`：继续原生补 JWE、PASETO、Django/Flask/Rails 签名格式、浏览器态 claim replay 验证。
-- [x] `browser_sqli_probe`：补 DBMS 指纹、ORDER BY 列数推断、UNION 列数 hint。
-- [x] `browser_sqli_probe`：补 UNION 回显位枚举、布尔盲注抽取循环、DBMS-specific payload pack。
-- [x] `browser_sqli_probe`：修改已完成功能文案与契约，去掉工具层能力弱化表述；保留原生 SQLi probe 能力，并把深度自动化分工明确给 `browser_sqlmap_bridge`。
-- [x] 新增 `browser_sqlmap_bridge`：同包内可选 bridge；按 Pi package 可迁移方式深度适配现有工具架构，不依赖用户本机私有绝对路径或临时脚本；已按 `sqlmapPath` / `sqlmapArgs` 显式 launcher + PATH/module auto-detect 双路径落地，统一复用 raw request/HAR/cookies/session 输入链路，输出结构化 findings / artifacts，并补 smoke + callable-tool runtime 验证。
-- [x] `browser_template_check`：补 YAML 模板、DSL matcher、extractor 输出 schema、template result 去重。
-- [x] 通用解析：将 template YAML 的手写 parser 替换为 `js-yaml`，并补契约 / 回归。
-- [x] `browser_template_check`：修改已完成功能文案与契约，去掉工具层能力弱化表述；保留原生 template/config/CVE-shaped check 能力，并把大规模模板生态与深度扫描分工明确给 `browser_nuclei_bridge`。
-- [x] 新增 `browser_nuclei_bridge`：同包内可选 bridge；按 Pi package 可迁移方式深度适配现有工具架构，不依赖用户本机私有绝对路径或临时脚本；已按 `nucleiPath` / `nucleiArgs` 显式 launcher + PATH auto-detect 落地，输入 target/raw request/HAR/headers/cookies/template selectors，调用 `nuclei`，输出结构化 matches / artifacts，并补 smoke + callable-tool runtime 验证。
-- [x] `browser_callback_oast`：继续原生补 DNS callback provider、HTTPS listener、external tunnel metadata、callback trigger helper、事件持久化恢复。
-  - 已定执行方式：保持同包原生实现；用 detached 本地 worker + 落盘 session state 做 listener 持续化与 reload 后恢复，不引入外部 tunnel/provider 依赖。
-  - 参数方向：补 HTTP/HTTPS/DNS 多 listener、external metadata、trigger action；保留现有 HTTP callback URL contract 不漂移。
+## 166. Bug 37/38：hook.addEventListener 注册表作用域与 uninstall 页面监听清理
 
-## 76. Web 工具注册壳去重（当前优先）
+- [x] 事实复核：确认 `WaitCoordinator.eventSubscriptions` 仍以裸 `listenerId` 为 key；确认 `hook.uninstall`/`cleanupPiBrowserTab()` 未主动移除页面 `window.__piBrowserListeners` 中的真实 DOM listener。
+- [x] 注册表契约：event listener registry key 改为 tab-scoped 复合 key（如 `tabId::listenerId`）；不同 tab 可使用相同 listenerId 且互不覆盖；同 tab 重复 listenerId 才替换同 tab 旧监听。
+- [x] Remove 契约：`hook.removeEventListener` 必须只删除目标 tab 的 listener；跨 tab 同名 listener 不影响；返回结构保留 `registry_removed/page_removed/listenerId/tabId`。
+- [x] Cleanup 契约：`hook.uninstall`、tab removed、cleanupPiBrowserTab 必须尝试清理页面 `window.__piBrowserListeners` 及真实 DOM listener；失败时返回/记录 cleanup warning，不静默吞掉。
+- [x] 契约：`check-pi-browser-bridge.mjs` 覆盖两 tab 同 listenerId 并存、按 tab diagnose/list/remove、uninstall 后页面 store 和 registry 均为空。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步 listener tab scope 与 uninstall cleanup 语义。
 
-- [x] 抽取 `registerWebSecurityTools.ts` 公共注册执行壳：统一 `ensureStarted`、budget、cookieProvider、artifact/distill、errorResult；保留每个工具显式 schema、summary 与 command，不做黑盒元注册。
-- [x] 补契约：防止注册外壳重复回流；新增/增强 Web 工具时必须复用公共执行壳，同时保持 `registerTools.ts` 为薄组合入口。
-- [x] 当前轮次已静态查证：未发现默认入口冲突、相邻工具描述漂移或实现职责重叠；后续若再次出现，再单独新开观察项收束。
+## 167. Bug 39：browser_pick focus:false 后台 tab 超时语义
 
-## 77. 已定方向：单包分层、成熟替代直接适配（新增）
+- [x] 事实复核：确认 `registerPickTool.ts` 把用户 `timeoutMs` 同时作为 CDP `Runtime.evaluate` 超时，而页面 picker 依赖页面 `setTimeout` 结算；后台 tab timer throttle 时 CDP 可先超时。
+- [x] 修复决策：TS 工具层拥有用户声明的总 deadline；页面脚本只负责交互状态。`focus:false` 时不得把“页面 timer 被节流”暴露成 `Runtime.evaluate timed out`，必须返回结构化 `{ cancelled:true, reason:"timeout" }` 或稳定 `PICK_TIMEOUT`。
+- [x] 实现方案：将 picker 执行改为可轮询/可清理模型，或给 CDP evaluate 增加受控 grace 并在 TS deadline 到达时主动注入 cleanup；无论哪种实现，都要保证用户超时边界和 overlay/listener cleanup。
+- [x] 契约：新增/扩展 `check-content-pick.mjs` 或专门 pick contract，模拟后台 timer 延迟，断言结果不是 CDP timeout，且 cleanup 脚本被调用。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告说明 `focus:false` 的 deadline 与 cleanup 行为。
 
-- [x] 固化单包分层：`browserNative` / `bridges` / `shared`；保留一个 Web 包，不拆成多个扩展，也不再新增并行 Web 包。
-- [x] 固化核心原生层：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_params`、`browser_fuzz_vhosts`、`browser_http_replay`、`browser_callback_oast` 继续作为 Pi-native 浏览器态执行层。
-- [x] 固化成熟替代接入：template YAML 直接改用 `js-yaml`；深度 SQLi 直接落到 `browser_sqlmap_bridge`；深度模板/指纹批量扫描直接落到 `browser_nuclei_bridge`；成熟替代必须适配成 Pi-native tool contract，而不是本地临时 glue。
-- [x] 固化已完成工具职责分工：`browser_sqli_probe` 与 `browser_template_check` 保留原生能力优先，深度 SQLi / 深度模板扫描交给成熟引擎 bridge；同步修改 README、skill、contracts、solver 文案，删掉工具层能力弱化或追平成熟 CLI 的旧表述。
-- [x] 固化 bridge 深适配要求：复用现有注册执行壳、budgets、artifact、summary/distill、cookie/HAR/raw-request 输入链路、runtime smoke + callable-tool runtime 验证；依赖管理必须可随 Pi package 迁移，不依赖用户本机私有路径或手工拼接脚本。
-- [x] 固化工具层边界表述：这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案。
+## 168. Bug 41/42/52：performance entries 与只读 hook timeout 透传
 
-## 78. Web 安全核心拆分与类型收紧（新增）
+- [x] 事实复核：确认 `getPerformanceEntries()` 对指定 `entryType` 空结果仍 fallback 到 `performance.getEntries()`；确认 `evidence.collect includePerformance` 未透传 `timeoutMs/timeout_ms`；确认 `hook.status` 到 `callPagePiBrowser/piBrowserEval` 的只读路径未透传命令 timeout。
+- [x] Performance 契约：显式 `entryType` 只返回 `performance.getEntriesByType(entryType)`；空结果就是 `count:0`，不得 fallback 全量 entries。未指定 entryType 时默认 `resource`，并在返回中标记 `explicit_entry_type:false`。
+- [x] Timeout 契约：`browser_evidence` 的 performance 源会把顶层 `timeoutMs/timeout_ms` 和 performance params 传给 `getPerformanceEntries()`；`hook.status`/`hook.collect`/`hook.evaluate` 与 `callPagePiBrowser`/`piBrowserEval` 会把命令 timeout 传入 CDP `Runtime.evaluate`。
+- [x] 契约：`check-pi-browser-bridge.mjs` 覆盖 missing entryType 返回空数组、不 fallback `performance.getEntries()`、evidence performance timeout/entryType/nameContains 透传、hook.status 与 `callPagePiBrowser` timeoutMs 透传到 evaluate options。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步 performance entryType 与 timeout 行为。
 
-- [x] 拆分 `src/tools/webSecurityCore.ts`：已落地 `src/tools/webSecurity/shared/*` 与分工具实现模块；`webSecurityCore.ts` 退化为薄导出层/兼容入口。
-- [x] 保持拆分过程中的外部接口稳定：现有工具名、schema、artifact 路径、summary 字段、contracts、runtime smoke/actual test 入口未因模块拆分漂移。
-- [x] 收紧内部类型：保留工具入口对外部输入的兼容性，在实现层前补 `NormalizedProbeOptions`、`NormalizedReplayOptions`、`NormalizedSqliProbeOptions`、`NormalizedTemplateCheckOptions` 等强类型归一化。
-- [x] 梳理 `unknown` 使用边界：大块 `?: unknown` 已收口到工具输入 / 通用解析入口，runner 与核心执行路径不再依赖单文件大面积传播。
-- [x] 补契约防回流：contracts 已检查 `webSecurityCore.ts` 薄导出层、`js-yaml` 解析入口与 `Normalized*Options` 约束，防止核心文件再次膨胀回总装文件。
-- [x] 拆分顺序与前面路线绑定：已在 `browser_sqli_probe` / `browser_template_check` 文案修正与 `js-yaml` 替换后完成核心拆分；下一步进入 `browser_sqlmap_bridge` / `browser_nuclei_bridge`。
+## 169. Bug 43/44/48：frame new-document script 生命周期
 
-## 79. Web 安全 raw/normalized 输入边界收口（当前）
+- [x] 事实复核：确认 `frame.addNewDocumentScript` 仍只传 `msg.options`，忽略顶层 `runImmediately/worldName/includeCommandLineAPI`；确认 `removeNewDocumentScript` 对未知 identifier 仍幂等成功且成功结果结构不稳定。
+- [x] Add 契约：顶层 `runImmediately`、`worldName`、`includeCommandLineAPI` 与 `options` 合并，顶层显式值优先；返回稳定 `{ identifier, sessionKey, cdpSessionName, tabId }`。
+- [x] Registry 契约：bridge 维护 tab/session scoped new-document identifier registry；只允许 remove 已知 identifier。未知 identifier 返回 `SCRIPT_NOT_FOUND`，不得伪装成功。
+- [x] Remove 契约：已知 identifier 正常 remove 和 Chrome 已清掉的 known identifier 都返回同一结构 `{ identifier, removed, alreadyRemoved, sessionKey, cdpSessionName, method }`；未知 identifier 是错误。
+- [x] 契约：`check-pi-browser-bridge.mjs` 覆盖顶层 option 透传、runImmediately 生效参数、未知 id 错误、known alreadyRemoved 稳定结构。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步 frame script lifecycle。
 
-- [x] 将 `src/tools/webSecurity/shared/types.ts` 的工具入口参数显式命名为 `Raw*Options`；保留旧 `*Options` 别名仅作兼容，不再作为执行层主语义类型。
-- [x] 为 `src/tools/webSecurity/browserNative/fuzzPaths.ts`、`fuzzVhosts.ts`、`cookieAnalyze.ts`、`callbackOast.ts` 补 `Normalized*Options`，并让 runner 在 normalize 后只消费规范化字段。
-- [x] 补 contract，防止上述 4 个 runner 重新直接消费 raw `unknown`。
+## 170. Bug 45/55：wait.diagnose frame 探测与 evidence hook_status 摘要字段
 
-## 80. Bridge artifact 与 multipart 后续收口
+- [x] 事实复核：确认 `wait.diagnose` frame probe 仍使用 `document.frames`；确认 `summarizeEvidenceData()` 的 `hook_status` summary 仍未保留 `state/session_id/installed_at/dispatcher_version/install_epoch`。
+- [x] Diagnose 契约：frame 探测改用 `document.querySelectorAll('iframe')` 与 `window.frames.length`；返回每个 iframe 的 index、id/name/src、可见基础信息和 `frameCount/iframeCount`，不依赖非标准 `document.frames`。
+- [x] Evidence summary 契约：`hook_status` 摘要保留最小现场判断字段：`state`、`session_id`、`installed_at`、`dispatcher_version/pi_browser_version`、`install_epoch`、`buffer_used/buffer_count`；继续避免事件明细和敏感内容膨胀。
+- [x] 契约：`check-pi-browser-bridge.mjs` 覆盖 diagnose iframe fixture；`check-summaries.mjs` 覆盖 hook_status 字段不丢失。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步 diagnose/evidence summary 字段。
 
-- [x] `browser_sqlmap_bridge` / `browser_nuclei_bridge`：将 request/stdout/stderr 日志补成 `browser_artifact` 兼容 Artifact 描述符，包含 path、bytes、chars、lineCount、sha256，并在 summary 中暴露可直接读取的 artifact 表。
-- [ ] `browser_http_replay` multipart：当前 builder 覆盖常规、同名多文件、嵌套 multipart 与 Content-Type 边界变体；后续仅在真实 CTF 样本暴露边界不兼容时，再按 fixture 补 raw multipart passthrough、固定嵌套 boundary、per-part header 保留、captured raw body 反解析后 mutation。
+## 171. Bug 58/68/70：browser_html 采集预算、artifact 与结构统计分离
 
-## 81. JSON path 原型链污染修复
+- [x] 事实复核：确认 `registerHtmlTool.ts` 仍把工具返回预算 `maxChars` 写入 bridge `body.maxChars`；确认 `summarizeHtmlSnapshot()` 仍基于可能已截断的 `html` 字符串计算 links/buttons/forms/images。
+- [x] 预算契约：区分“采集预算”和“返回预算”。工具层 `maxChars` 只控制返回文本预算；只有用户在 `params.maxChars/max_bytes` 显式声明采集限制时，才传给 bridge 截断采集内容。
+- [x] Artifact 契约：`detailLevel:"full"` 或显式 `outputPath` 时，必须先抓足够原始 HTML/text，再由 resultMiddleware 决定落 artifact；不得因小返回预算导致 artifact 只保存 80 字符级截断结果。
+- [x] Summary 契约：bridge 侧在截断前计算并返回结构元数据（links/buttons/inputs/forms/images/text length/original bytes）；summary 优先使用这些元数据，不再从截断 HTML 反推结构计数。
+- [x] 契约：`check-pi-browser-bridge.mjs` 覆盖 html.get 结构元数据；`check-tools-contract.mjs` 锁定工具层不把普通 `maxChars` 写成 bridge `body.maxChars`；`check-summaries.mjs` 覆盖截断 HTML summary 仍保留真实 link count。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步采集预算与返回预算区别。
 
-- [x] `mutateParamRequest` / JSON path mutation：改为只读写 own property，`__proto__`、`constructor`、`prototype` 作为普通 JSON 数据键序列化，不再触达继承原型链。
-- [x] `deleteJsonPath`：删除操作只遍历 own property，避免通过继承属性访问或删除原型对象字段。
-- [x] 补契约：覆盖 `__proto__.polluted`、`constructor.prototype.polluted` set/delete，断言 `Object.prototype` 不被污染。
+## 172. Bug 61/65/66：browser_artifact sample 去重与 JSON 缺失路径显式信号
 
-## 82. Callback OAST state 写入竞态修复
+- [x] 事实复核：确认 `sampleText()` 小文件 head/middle/tail 可返回完全重叠内容；确认 `readJson()` 对缺失 `jsonPath` 返回 `type:"undefined"` 且 `value` 被 JSON 序列化丢失；确认 `pick` 缺失路径导致 summary 与 value 不对齐。
+- [x] Sample 契约：sample sections 现在只返回非重叠片段；小文件退化为唯一 `head` 片段，并在 summary 暴露 `sample.dedupedSections`。
+- [x] JSON path 契约：单个 `jsonPath` 缺失时返回稳定成功结构 `{ exists:false, notFound:true, jsonPath, value:null }`，便于 agent 继续检查其它路径。
+- [x] Pick 契约：`pick` 返回与请求路径一一对应；每个 path 包含 `{ exists:boolean, jsonPath, value:any|null }`，缺失项不会因 `undefined` 序列化被删除。
+- [x] 契约：`check-artifact-reader.mjs` 覆盖小文件 sample 去重、jsonPath missing、pick mixed existing/missing、summary keyCount 与 value 对齐。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步 artifact JSON missing 与 sample 去重语义。
 
-- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：为共享 `state.json` 的读-改-写路径补跨进程 lock file，避免主进程 clear/stop 与 Worker append/shutdown 互相覆盖。
-- [x] Worker 事件追加改为 locked fresh-state update，保留并发事件、单调 `nextSeq`、stop/ready 控制字段，不再用旧内存快照整体覆盖。
-- [x] 补契约：并发 HTTP 回调 burst 后收集数量与 seq 唯一性稳定，clear 后状态保持为空。
+## 173. Bug 83/85：content/scan 超大结果绕过 exec.js MAX_CHARS
 
-## 83. JSON fuzz 畸形 body 静默重写修复
+- [x] 事实复核：确认 `browser_content` / `browser_scan` outputPath 场景虽把采集预算提高到 500000，但结果仍经过 `bridge/pi_browser_bridge/exec.js` 的 `MAX_CHARS=200000` smart serializer，导致 artifact 保存的已经是被 bridge 压缩后的内容。
+- [x] 架构决策：采用 direct CDP `Runtime.evaluate returnByValue` 作为 content/scan 抽取结果通道，继续复用 TS 端 `resultMiddleware` 落 artifact；不扩大普通 `browser_execute` serializer 全局预算，也不引入 bridge 侧文件写入边界。
+- [x] Content 契约：`browser_content outputPath` 对超过 200k 的正文保存脚本声明预算内的真实 Markdown/envelope；artifact 长度、summary `markdownChars/originalLength/truncated` 与文件内容一致，不出现 serializer 追加的 `…` 伪截断。
+- [x] Scan 契约：`browser_scan outputPath` 对超过 200k 的 content 保存真实 scan envelope；`contentChars/truncated` 与 artifact 一致，不被 `exec.js` 总字符预算提前截断。
+- [x] 契约：`check-content-pick.mjs` 增加 fake direct-CDP 大文本 fixture，覆盖 content/scan >200k outputPath artifact 长度、脚本截断标记和无 serializer ellipsis；静态锁定 content/scan 使用 `evaluatePageScriptDirect()`。
+- [x] 文档：README/CHANGELOG/skill/桌面审计报告同步大结果通道和 artifact 保真边界。
 
-- [x] `mutateParamRequest` JSON 分支：非空 body 的 `JSON.parse` 失败时抛出明确错误，不再静默初始化 `{}` 并丢失原始 payload。
-- [x] 有效但非 object/array 的 JSON body 直接失败，避免把 primitive JSON 静默替换为新对象。
-- [x] 补契约：直接 JSON mutation 与 `browser_fuzz_params` malformed JSON case 均记录失败，不返回破坏性重写后的请求体。
+## 174. 剩余 Bug 完成后的真实运行与收口 gate
 
-## 84. Raw HTTP 重复 Header 解析覆盖修复
-
-- [x] `parseRawHttpRequest`：重复 header 改为 case-insensitive 合并，不再由后一个同名 header 静默覆盖前值。
-- [x] `Cookie` 使用 `; ` 合并，通用 header 使用 `, ` 合并，保留 folded continuation 到当前活动 header。
-- [x] 补契约：覆盖重复 `Cookie`、大小写不同的重复 `X-Forwarded-For` 与 folded header continuation。
-
-## 85. WebSocket 断连 pending Promise 快速失败修复
-
-- [x] `PendingRequest` 记录承载请求的 WebSocket client，避免仅靠 `tabId` 推断连接归属。
-- [x] `BrowserBridgeServer.unregisterClient` 断连时立即清理并 reject 该 client 上所有 pending 请求，不再等待 10~15 秒 timeout。
-- [x] 补 fake WebSocket 契约：发送命令后断开连接，pending 立即以 `BRIDGE_CLIENT_DISCONNECTED` 失败且 `pending` 表清空。
-
-## 86. Multipart 边界解析数据损坏修复
-
-- [x] `parseMultipartBody`：移除全局 `raw.split("--boundary")`，改为仅识别行首 multipart delimiter / closing delimiter。
-- [x] 删除对每个 segment 的无差别 `endsWith("--")` 裁剪，保留 part payload 中真实尾部横杠。
-- [x] 补契约：覆盖 payload 以 `--` 结尾、payload 内包含 `--boundary` 文本时不损坏内容。
-- [x] 补 raw request 边界：`parseRawHttpRequest` 只规范化 header 区，不再把 multipart body 的 CRLF 改写成 LF，避免新 parser 无法识别标准 delimiter。
-
-## 87. 现代 Rails 加密 Cookie 支持补齐（原生完整实现）
-
-- [x] `cookieTokens.ts`：原生补齐现代 Rails `MessageEncryptor` encrypted-cookie 识别、AES-GCM 解密/校验、metadata 解析、purpose/expiry 暴露与结构化结果输出。
-- [x] 保持现有 signed-cookie 兼容，同时补齐 encrypted-cookie 的 key derivation 变体、claim mutation 重新加密、失败路径与无匹配 secret 证据输出。
-- [x] 补 fixture / contract / docs / runtime verification：已完成现代 Rails AES-GCM cookie 成功/失败解密、mutation token、summary、docs/contract 与 actual callable-tool runtime artifact。
-
-## 88. 质量评审剩余确认缺陷修复
-
-- [x] `http.ts`：收敛空 Buffer `simHash64` 固定碰撞。
-- [x] `callbackOastWorker.mjs`：修复 DNS QTYPE/QCLASS 16-bit 序列化截断。
-- [x] `callbackOast.ts`：关闭派生 worker 后父进程持有的 stdout/stderr log FDs。
-- [x] `cookieTokens.ts` / `cookieAnalyze.ts`：消除 Rails PBKDF2 同步阻塞主事件循环的路径。
-- [x] `sqliProbe.ts`：为确认命中的 probe 增加可控短路终止，减少无意义后续发包。
-
-## 89. Rails encrypted cookie 后续质量评审修复
-
-- [x] `cookieTokens.ts`：严格区分 Rails metadata 内层 message 的 standard base64 与 base64url，mutation 不改写原编码族。
-- [x] `cookieTokens.ts`：encrypted token 外层三段做 canonical round-trip 校验，未解密命中的三段值只作为 possible evidence，不计入已验证 token。
-- [x] `cookieTokens.ts` / contracts：暴露 Rails encrypted key variant 测试计数，补大 wordlist 异步预算回归。
-- [ ] 清理或确认 `.aceignore` / `AI_INSTALL.md` / `AGENTS.md` 等非本轮功能项是否纳入提交。
-
-## 90. Rails legacy CBC / binary serializer / direct key 质量评审修复
-
-- [x] `cookieTokens.ts`：补 Rails legacy AES-256-CBC encrypted cookie（外层 signed wrapper + 内层 `ciphertext--iv`）自动识别、解密、metadata/payload 输出与 mutation 重新加密重签。
-- [x] `cookieTokens.ts`：解密成功但 plaintext 为 Marshal/二进制时保留 serializer、hex/base64/sha256/bytes 证据，不静默丢失 payload。
-- [x] `cookieTokens.ts` / contracts：Rails signed direct hex/base64/base64url key candidate 与 mutation 重签使用同一 key source / key bytes。
-- [x] contracts / docs / skill / CTF 方法层：已同步 legacy CBC、binary serializer 与 direct key 能力，并补本地验证和 reload 后 callable runtime 验证。
-
-## 91. Rails cookie 逻辑按模块收敛
-
-- [x] `src/tools/webSecurity/shared/cookieTokens.ts`：移除 Rails 专属解码/验签/加解密实现，仅保留 orchestrator、跨格式通用 helper 与结果聚合。
-- [x] 新增 `src/tools/webSecurity/shared/railsCookieTokens.ts`：承接 Rails signed / AES-GCM / legacy AES-CBC / Marshal-binary / direct-key 相关实现，复用注入的通用 helper，避免逻辑重复与循环依赖。
-- [x] contracts：更新模块边界检查，确保 Rails 专属实现不再回流 `cookieTokens.ts`，并保持 callable 行为不变。
-- [x] verification：已跑 `npm run check`、`pi-ctf-protocol npm run check`、skill validate；本次仅内部重构，无额外 runtime reload 需求。
-
-## 92. HAR 依赖图相对 URL 崩溃修复
-
-- [x] `src/tools/webSecurity/shared/replay.ts`：`buildHarDependencyGraph` / `harDependencyResponseInfo` 对 HAR 相对 URL、相对 Referer、相对 Location 做安全规范化，不再对 `new URL(relative)` 直接抛异常。
-- [x] `browser_http_replay` / contracts：已补相对 HAR URL + `baseUrl` 回放与 dependencyGraph 回归，redirect/referer/cookie 边保持可用。
-- [x] docs：已在 `CHANGELOG.md` 记录本次 HAR 相对 URL 兼容性修复。
-
-## 93. Callback OAST DNS query 名称长度校验修复
-
-- [x] `src/tools/webSecurity/browserNative/callbackOast.ts`：`buildDnsQuery` 对 DNS label 字节长度（<=63）与整条 QNAME 线长（<=255）做显式校验，避免超长 label 生成畸形报文或单字节长度截断。
-- [x] contracts：已补超长单 label 与超长总 QNAME 的失败回归，并保留合法 63-byte label 的 DNS trigger 行为。
-- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；已补本地 smoke 与 actual callable-tool runtime artifact。
-
-## 94. Callback OAST IPv4-only DNS response 地址校验修复
-
-- [x] `src/tools/webSecurity/browserNative/callbackOast.ts` / `callbackOastWorker.mjs`：已对 `dnsResponseAddress` 做 IPv4 合法性校验；当前 A 记录响应不接受 IPv6/非 IPv4 输入，不再静默回落到错误的 `0.0.0.0` 类响应。
-- [x] contracts：已补 `dnsResponseAddress="::1"` 等非法输入失败回归，并保留合法 IPv4 DNS trigger / listener 行为。
-- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议兼容性修复；reload 后 local smoke 与 actual callable-tool runtime artifact 已完成。
-
-## 95. Native bridge WebSocket 错误帧语义修复
-
-- [x] `bridge/pi_browser_bridge/router.js`：native command 失败时已改发 `type:"error"`，不再把 `{ ok:false }` 错误对象包装进 `type:"result"`。
-- [x] contracts：已补 router/native command WebSocket 失败帧回归，确保 `BrowserBridgeServer` 对 native 失败走 reject 分支而非 resolve 成功分支。
-- [x] docs/runtime：已在 `CHANGELOG.md` 记录该协议语义修复；reload 后本地/actual runtime 验证已完成。
-
-## 96. BrowserBridgeServer closeTab 最新会话引用清理修复
-
-- [x] `src/driver/BrowserBridgeServer.ts`：`closeTab` 在关闭目标 tab 后已同步清理 `latestSessionId`，避免无活动 tab 时继续把后续命令 fallback 到已关闭 tab。
-- [x] contracts：已补 `closeTab` 后 `latestSessionId` 清理与 `NO_TAB` 回归，确保无显式 `tabId` 的执行路径不再向已关闭 tab 发包。
-- [x] docs/runtime：已在 `CHANGELOG.md` 记录该会话引用修复；reload 后 runtime 验证已完成。
-
-## 97. BrowserBridgeServer 断连后选中 Tab 引用清理修复
-
-- [x] `src/driver/BrowserBridgeServer.ts`：`unregisterClient` 在 WebSocket client 断开并标记 sessions disconnected 后，同步清理 stale `defaultSessionId` / `latestSessionId`，避免省略 `tabId` 的后续命令复用断开 tab。
-- [x] `src/driver/BrowserBridgeServer.ts`：`updateTabs` 在同源 tabs_update 标记缺失 tab disconnected 后，同步清理 `latestSessionId`，保持 default/latest 选中引用一致。
-- [x] contracts：补 fake WebSocket 多客户端断连回归，断开旧默认 tab 后省略 `tabId` 的执行必须落到仍连接的 tab；已跑 `check:fake-ws` 与 Windows shell 下 `npm run check`。
-
-## 98. Dialog suppression prompt 返回语义修复
-
-- [x] `bridge/pi_browser_bridge/disable_dialogs.js`：`prompt` 抑制策略明确为“自动确认当前输入框内容”，返回缺省输入字符串；无 defaultValue 时返回 `""`，传入 falsy defaultValue 时按字符串保留，不再把空字符串误当取消。
-- [x] contracts：补 bridge runtime contract，覆盖 `prompt()`、`prompt("", "")`、`prompt("", 0)`、`prompt("", false)` 的返回值，防止 `def || null` 回流。
-- [x] docs/runtime：已在 `CHANGELOG.md` 记录该行为兼容性修复；`tmwd_cdp_bridge` 仅为迁移参考资产，不同步运行时修复；reload 后 local smoke 与 actual runtime artifact 已完成。
-
-## 99. Callback OAST state lock stale recovery TOCTOU 修复
-
-- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：锁文件写入唯一 owner token；释放锁时只删除 token 匹配的本进程锁，避免误删其他 owner 的新锁。
-- [x] `callbackOast.ts` / `callbackOastWorker.mjs`：stale lock 回收改为先获取单独 breaker lock，再重新确认 main lock 仍 stale 后删除，避免多进程同时 `check -> rm -> create`。
-- [x] contracts/runtime：补 callback OAST stale lock 并发恢复回归，保留 burst callback 事件数与 seq 唯一性；已跑 `check:web-security` 与 Windows shell 下 `npm run check`；reload 后 local smoke 与 actual runtime artifact 已完成。
-
-## 100. Browser transport WebSocket error/close 鲁棒性加固
-
-- [x] `bridge/pi_browser_bridge/transport.js`：抽取 identity-guarded socket cleanup，`onclose` / 非 OPEN error / keepalive 非 OPEN 清理时不得误清后续新 socket。
-- [x] `bridge/pi_browser_bridge/transport.js`：`onopen` / `onmessage` 捕获当前 socket，避免异步闭包读取全局 `ws` 后误向新连接发 ready 或处理旧消息。
-- [x] contracts/runtime：补 transport socket 事件序列回归，覆盖旧 socket close/error 晚到不清新 socket、error 后非 OPEN socket 会清理并调度 probe；已跑 Windows shell 下 `npm run check`；reload 后 local smoke 与真实浏览器 create/list/close/execute artifact 已完成。
-
-## 101. Tab sync async rejection 与 stableJson 循环引用修复
-
-- [x] `bridge/pi_browser_bridge/tab_sync.js`：tab lifecycle listener 中所有 fire-and-forget async 路径统一捕获并记录错误，避免 MV3 service worker 出现未处理 Promise rejection。
-- [x] `src/utils/json.ts`：`stableJson` 增加循环引用检测，同时保留非循环共享引用的正常序列化、BigInt 与 Error 兼容行为。
-- [x] contracts/runtime：补 tab sync async error 与 JSON 循环引用回归，并跑 `check:pi-browser-bridge`、`check:errors` 与 Windows shell 下 `npm run check`；reload 后 tab create/remove 实际链路与 `stableJson` local smoke artifact 已完成。
+- [x] 全量静态/契约验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools && npm run check"` 已通过；`PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools` 已通过。
+- [x] 真实浏览器 smoke 尝试：`npm run smoke:browser` 已执行但 `127.0.0.1:18765` 被现有 bridge 占用；占用进程为 `node.exe` PID 26612（`@earendil-works/pi-coding-agent/dist/cli.js`），按规则未关闭用户现有 bridge；结果写入 `.pi/browser-artifacts/smoke-browser-results.json`。
+- [x] Callable 子集：reload 后真实 runtime callable 子集已通过，覆盖 download invalid mode、hook session/listener cleanup、evidence/performance、frame add/remove、html artifact、artifact missing/sample、content/scan >200k artifact；汇总证据写入 `.pi/browser-artifacts/todo174-runtime-callable-summary-reload.json`。
+- [x] 文档收口：桌面审计报告当前总览已更新为 Bug 1-89 全部覆盖；TODO 中 164-173 全部勾选；runtime smoke 阻塞原因已记录。
 
 ## 下一步建议顺序
 
-1. 确认未跟踪 `AGENTS.md` 是否纳入版本控制；默认不要混入当前 Web 安全修复工作流。
-2. 如后续出现真实 HAR 样本，再补无 `baseUrl` 场景下 hostless/相对 URL 依赖图的针对性 fixture。
+1. 已完成 163A：`browser_network` 原始响应 body/postData 证据保真与缺失诊断已补齐。
+2. 已完成 164：Bug 27 `browser_download` mode 枚举校验已补齐。
+3. 已完成 165：hook 显式 session 严格匹配、collect no self-noise、clear_buffer seq 单调已补齐。
+4. 已完成 166：hook listener tab scope 与 uninstall/tab cleanup 页面监听清理已补齐。
+5. 已完成 167：browser_pick focus:false 后台 tab deadline 与主动 cleanup 已补齐。
+6. 已完成 168：performance entryType 空结果不再 fallback，全链路透传 evidence/hook timeout。
+7. 已完成 169：frame new-document script option 透传、identifier registry 与稳定 remove 结构已补齐。
+8. 已完成 170：wait.diagnose iframe 探测与 evidence hook_status summary 字段已补齐。
+9. 已完成 171：browser_html 采集预算/返回预算分离、artifact 保真与结构元数据 summary 已补齐。
+10. 已完成 172：browser_artifact sample 去重与 JSON 缺失路径显式信号。
+11. 已完成 173：content/scan 超大结果绕过 exec.js MAX_CHARS。
+12. TODO 174 已完成静态/契约/skill/文档/runtime callable 收口；`npm run smoke:browser` 因现有 Pi agent bridge（PID 26612）占用 `127.0.0.1:18765` 未关闭用户 bridge，但 reload 后等价 callable 子集已通过并归档。

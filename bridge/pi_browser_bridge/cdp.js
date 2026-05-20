@@ -7,6 +7,7 @@ const PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15000;
 const PI_PERSISTENT_CDP_MAX_SESSIONS = 16;
 
 const piPersistentCdpSessions = new Map();
+const piPersistentCdpNewDocumentScripts = new Map();
 
 function piPersistentCdpHasSessionForTab(tabId) {
   return Array.from(piPersistentCdpSessions.values()).some(rec => Number(rec.tabId) === Number(tabId));
@@ -14,6 +15,12 @@ function piPersistentCdpHasSessionForTab(tabId) {
 
 function piCdpNow() { return Date.now(); }
 function piCdpSessionKey(tabId, name) { return String(tabId) + ':' + (name || 'default'); }
+function piCdpNewDocumentScriptKey(tabId, name, identifier) { return piCdpSessionKey(tabId, name || 'new_document') + ':' + String(identifier); }
+function piCdpKnownNewDocumentIdentifiers(tabId, name) {
+  return Array.from(piPersistentCdpNewDocumentScripts.values())
+    .filter(rec => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name))
+    .map(rec => rec.identifier);
+}
 function piCdpError(code, message, details) {
   const safeDetails = (details && typeof details === 'object') ? details : (details === undefined ? {} : { raw: details });
   return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } };
@@ -226,29 +233,56 @@ async function piPersistentCdpEvaluateInFrame(tabId, expression, options) {
 async function piPersistentCdpAddNewDocumentScript(tabId, source, options) {
   if (!source) return piCdpError('NO_SOURCE', 'script source is required');
   const cdpOptions = { ...(options || {}), persistent: options?.persistent === true, name: options?.name || 'new_document' };
-  const resp = await piPersistentCdpSend(tabId, 'Page.addScriptToEvaluateOnNewDocument', {
+  const params = {
     source: String(source),
-    worldName: options?.worldName,
     includeCommandLineAPI: Boolean(options?.includeCommandLineAPI),
     runImmediately: Boolean(options?.runImmediately)
-  }, cdpOptions);
+  };
+  if (options?.worldName !== undefined) params.worldName = String(options.worldName || '');
+  const resp = await piPersistentCdpSend(tabId, 'Page.addScriptToEvaluateOnNewDocument', params, cdpOptions);
   if (!resp.ok) return resp;
-  return piCdpOk({ identifier: resp.data.result.identifier, sessionKey: resp.data.sessionKey, cdpSessionName: cdpOptions.name, detached: cdpOptions.persistent !== true });
+  const identifier = String(resp.data.result.identifier);
+  const sessionKey = resp.data.sessionKey;
+  const rec = {
+    key: piCdpNewDocumentScriptKey(tabId, cdpOptions.name, identifier),
+    tabId:Number(tabId),
+    identifier,
+    sessionKey,
+    cdpSessionName: cdpOptions.name,
+    method: 'Page.addScriptToEvaluateOnNewDocument',
+    createdAt: piCdpNow(),
+    runImmediately: Boolean(options?.runImmediately),
+    includeCommandLineAPI: Boolean(options?.includeCommandLineAPI),
+    worldName: options?.worldName !== undefined ? String(options.worldName || '') : undefined
+  };
+  piPersistentCdpNewDocumentScripts.set(rec.key, rec);
+  return piCdpOk({ identifier, sessionKey, cdpSessionName: cdpOptions.name, tabId:Number(tabId), method: rec.method, detached: cdpOptions.persistent !== true });
 }
 
 async function piPersistentCdpRemoveNewDocumentScript(tabId, identifier, options) {
   if (!identifier) return piCdpError('NO_IDENTIFIER', 'script identifier is required');
-  const resp = await piPersistentCdpSend(tabId, 'Page.removeScriptToEvaluateOnNewDocument', { identifier }, { ...(options || {}), persistent: options?.persistent === true, name: options?.name || 'new_document' });
+  const cdpOptions = { ...(options || {}), persistent: options?.persistent === true, name: options?.name || 'new_document' };
+  const id = String(identifier);
+  const key = piCdpNewDocumentScriptKey(tabId, cdpOptions.name, id);
+  const known = piPersistentCdpNewDocumentScripts.get(key);
+  if (!known) {
+    return piCdpError('SCRIPT_NOT_FOUND', 'new document script identifier is not registered', { tabId:Number(tabId), identifier:id, cdpSessionName:cdpOptions.name, knownIdentifiers:piCdpKnownNewDocumentIdentifiers(tabId, cdpOptions.name) });
+  }
+  const method = 'Page.removeScriptToEvaluateOnNewDocument';
+  const resp = await piPersistentCdpSend(tabId, method, { identifier:id }, cdpOptions);
   if (!resp.ok) {
     const msg = String(resp.error?.message || resp.message || resp.error || '');
-    // Chrome may drop new-document identifiers when an older debugger client detached.
-    // Removal is a cleanup operation; make "not found" idempotent so acceptance can
-    // continue while the root cause (temporary detach) is eliminated above.
-    if (/script.*(not\s*found|does\s*not\s*exist)|identifier.*(not\s*found|does\s*not\s*exist)/i.test(msg)) {
-      return piCdpOk({ identifier, alreadyRemoved: true, cdpSessionName: options?.name || 'new_document' });
+    // Chrome may drop a previously registered new-document identifier after a debugger
+    // detach or navigation lifecycle reset.  Only known identifiers are treated as
+    // idempotent cleanup; arbitrary unknown ids still return SCRIPT_NOT_FOUND above.
+    if (/(no\s+script|script.*(not\s*found|does\s*not\s*exist|given\s+id)|identifier.*(not\s*found|does\s*not\s*exist))/i.test(msg)) {
+      piPersistentCdpNewDocumentScripts.delete(key);
+      return piCdpOk({ identifier:id, removed:false, alreadyRemoved:true, sessionKey:known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method, error:msg });
     }
+    return resp;
   }
-  return resp;
+  piPersistentCdpNewDocumentScripts.delete(key);
+  return piCdpOk({ identifier:id, removed:true, alreadyRemoved:false, sessionKey:resp.data.sessionKey || known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method });
 }
 
 async function piPersistentCdpReleaseIdle(maxIdleMs) {
@@ -293,6 +327,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 const piPersistentCdpBridge = {
   version: PI_PERSISTENT_CDP_VERSION,
   sessions: piPersistentCdpSessions,
+  newDocumentScripts: piPersistentCdpNewDocumentScripts,
   attach: piPersistentCdpAttach,
   send: piPersistentCdpSend,
   detach: piPersistentCdpDetach,
@@ -304,5 +339,5 @@ const piPersistentCdpBridge = {
   hasSessionForTab: piPersistentCdpHasSessionForTab,
   handleCommand: handlePersistentCdpCommand
 };
-self.PiPersistentCdp = piPersistentCdpBridge;
-self.piPersistentCdpBridge = piPersistentCdpBridge;
+self['PiPersistentCdp'] = piPersistentCdpBridge;
+self['piPersistentCdpBridge'] = piPersistentCdpBridge;

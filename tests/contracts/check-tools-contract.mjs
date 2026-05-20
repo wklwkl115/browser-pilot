@@ -13,6 +13,7 @@ function readToolSources() {
 }
 
 const indexSource = read("index.ts");
+assert(/if \(!startPromise\) \{\s*startPromise = server\.start\(\)\.catch/.test(indexSource), "ensureStarted must cache the startup promise synchronously before awaiting it");
 assert(indexSource.includes("server.start().catch"), "extension startup must clear cached startPromise on start failure so later calls can retry");
 assert(indexSource.includes("startPromise = undefined;\n\t\t\t\tthrow error;"), "extension startup retry path must reset and rethrow start errors");
 
@@ -28,6 +29,20 @@ for (const removedFile of ["src/tools/registerElementActionTools.ts", "src/tools
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
+const bridgeServerSource = read("src/driver/BrowserBridgeServer.ts");
+const driverTypesSource = read("src/driver/types.ts");
+assert(bridgeServerSource.includes("Selected browser has no active tabs") && bridgeServerSource.includes("firstActiveSessionIdForClient(ws)") && bridgeServerSource.includes("validation.spec.tabScoped && tabId === undefined"), "selectBrowser must clear implicit target for empty selected browsers and tab-scoped implicit commands must return NO_TAB");
+assert(bridgeServerSource.includes("preferredImplicitSessionId") && bridgeServerSource.includes("session.active === true") && bridgeServerSource.includes("session.id === this.latestSessionId"), "selectBrowser/default fallback must prefer active tabs, then a valid latest tab, before deterministic first-live fallback");
+assert(bridgeServerSource.includes("sessionIdForTab") && driverTypesSource.includes("browserId: string") && bridgeServerSource.includes("liveSessionForTabId") && !bridgeServerSource.includes("this.sessions.get(String(tabId))"), "BrowserBridgeServer tab sessions must be keyed by browser-scoped session id, not bare numeric tabId");
+assert(bridgeServerSource.includes("AMBIGUOUS_TAB_ID") && bridgeServerSource.includes("Multiple connected browsers expose the same tabId"), "duplicate numeric tabIds across browsers must not route through an unscoped arbitrary session");
+assert(bridgeServerSource.includes('throw new BrowserBridgeError("TAB_NOT_FOUND"') && bridgeServerSource.includes("Target browser tab is not connected") && !/private socketForTab[\s\S]*?return this\.requireExtensionClient\(\)/.test(bridgeServerSource), "explicit tabId without a live session must fail locally instead of falling back to another browser socket");
+const tabsTool = read("src/tools/registerTabsTool.ts");
+assert(tabsTool.includes("function requireTabsActionTabId"), "browser_tabs switch/close must validate tabId before calling the bridge");
+assert(tabsTool.includes("browser_tabs ${action} requires a valid tabId"), "browser_tabs tabId validation must return a clear action-specific error");
+assert(tabsTool.includes('action === "switch" || action === "close" ? requireTabsActionTabId'), "browser_tabs must require tabId for switch and close actions");
+assert(!tabsTool.includes('server.closeTab(params.tabId ?? ""') && !tabsTool.includes('server.switchTab(params.tabId ?? ""'), "browser_tabs must not pass empty-string tabId fallbacks to server methods");
+assert(tabsTool.includes("function normalizeCreateTabUrl") && tabsTool.includes("INVALID_TAB_URL") && tabsTool.includes("javascript:"), "browser_tabs create must validate malformed/script URLs before starting the bridge");
+assert(!tabsTool.includes('server.createTab(params.url || "about:blank"'), "browser_tabs create must not pass raw URL values directly to server.createTab");
 assert(toolSource.includes("For automation, call browser_tabs list or switch first"), "tab-scoped tools must warn agents to list/switch before automation");
 assert(toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tabId fallback warning missing from tool prompts");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
@@ -36,31 +51,75 @@ assert(toolSource.includes("NativeCommandParamsSchema"), "native tools must use 
 assert((toolSource.match(/params: Type.Optional\(NativeCommandParamsSchema\)/g) || []).length >= 3, "native tool params must use generic protocol-backed schema");
 for (const forbidden of ["NativeWaitCommandParamSchemas", "NativeNetworkCommandParamSchemas", "NativeHookCommandParamSchemas", "NativeFrameCommandParamSchemas", "NativeHtmlCommandParamSchemas", "NativeEvidenceCommandParamSchemas", "NativeWaitParamsSchema", "NativeNetworkParamsSchema", "NativeHookParamsSchema", "NativeFrameParamsSchema", "NativeHtmlParamsSchema", "NativeEvidenceParamsSchema"]) assert(!toolSource.includes(forbidden), `registerTools.ts must not duplicate native command params schema: ${forbidden}`);
 assert(toolSource.includes("outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION }))"), "scan output path option missing");
-assert(read("src/tools/registerScanTool.ts").includes("distilledTextResult"), "browser_scan must use result distillation middleware");
-assert(read("src/tools/registerHtmlTool.ts").includes("distilledTextResult"), "browser_html must use result distillation middleware");
-assert(read("src/tools/registerContentTool.ts").includes("distilledTextResult"), "browser_content must use result distillation middleware");
+const scanToolSource = read("src/tools/registerScanTool.ts");
+assert(scanToolSource.includes("distilledTextResult"), "browser_scan must use result distillation middleware");
+assert(scanToolSource.includes("distilledJsonResult(tabsOnlyData") && scanToolSource.includes("artifactValue: { ...result, tabs_count"), "browser_scan must preserve tabsOnly and full scan metadata through result distillation artifacts");
+const htmlToolSource = read("src/tools/registerHtmlTool.ts");
+assert(htmlToolSource.includes("distilledTextResult"), "browser_html must use result distillation middleware");
+assert(htmlToolSource.includes("artifactValue: result"), "browser_html outputPath artifacts must preserve the full bridge result envelope");
+assert(htmlToolSource.includes("htmlErrorResult") && htmlToolSource.includes("new BrowserBridgeError(record.error_code"), "browser_html bridge ok:false errors must preserve stable bridge error_code such as SELECTOR_NOT_FOUND");
+assert(!htmlToolSource.includes("body.maxChars =") && !htmlToolSource.includes("body.max_chars ="), "browser_html top-level maxChars must remain a return budget and must not become a bridge capture maxChars");
+const contentToolSource = read("src/tools/registerContentTool.ts");
+assert(contentToolSource.includes("distilledTextResult"), "browser_content must use result distillation middleware");
+assert(contentToolSource.includes("artifactValue: { ...result, navigation: navigationData }"), "browser_content outputPath artifacts must preserve structured extraction and navigation metadata");
+assert(contentToolSource.includes("executeBrowserWaitWithSupervisor") && !contentToolSource.includes("server.sendCommand({ cmd: \"wait.navigateAndWait\""), "browser_content URL navigation must route through the durable wait supervisor");
+assert(contentToolSource.includes("normalizeContentTimeoutMs(params.timeoutMs)") && !contentToolSource.includes("Math.max(timeoutMs"), "browser_content must not silently expand user timeoutMs during extraction");
 assert(read("src/tools/registerPickTool.ts").includes("distilledJsonResult"), "browser_pick must use result distillation middleware");
 const transferTools = read("src/tools/registerTransferTools.ts");
 assert(transferTools.includes("distilledJsonResult"), "browser_upload/download must use result distillation middleware");
+assert(!transferTools.includes("distilledJsonResult(result.data ?? result") && transferTools.includes("distilledJsonResult(result,"), "browser_upload/download must preserve full BrowserBridgeExecutionResult metadata at the top level");
 assert(transferTools.includes("confirm:true"), "browser_upload must require explicit confirmation");
 assert((transferTools.match(/command\.timeoutMs = timeoutMs/g) || []).length >= 2, "browser_upload/download must pass timeoutMs inside bridge commands");
-assert(read("src/tools/registerScreenshotTool.ts").includes("fallback: params.fallback, timeoutMs"), "browser_screenshot must pass timeoutMs inside bridge commands");
+assert(read("src/tools/toolShared.ts").includes("DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000"), "observation-heavy browser tools must have a named longer default timeout");
+const screenshotToolSource = read("src/tools/registerScreenshotTool.ts");
+assert(screenshotToolSource.includes("fallback: params.fallback, timeoutMs"), "browser_screenshot must pass timeoutMs inside bridge commands");
+assert(screenshotToolSource.includes("actualFormat") && screenshotToolSource.includes('typeof data?.format === "string"'), "browser_screenshot default artifact extension must follow the actual returned screenshot format");
 const evidenceTool = read("src/tools/registerEvidenceTool.ts");
+assert(evidenceTool.includes("DEFAULT_OBSERVATION_TIMEOUT_MS"), "browser_evidence must use the longer observation timeout by default");
 assert(evidenceTool.includes("distilledJsonResult"), "browser_evidence must use result distillation middleware");
 assert(evidenceTool.includes("body.timeoutMs = timeoutMs"), "browser_evidence must pass timeoutMs inside bridge commands");
 const executeTool = read("src/tools/registerExecuteTool.ts");
+assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
 assert(executeTool.includes("distilledJsonResult"), "browser_execute must route raw JS/command data through result distillation middleware");
 assert(executeTool.includes("monitor: Type.Optional") && executeTool.includes("executeJavaScriptWithMonitor") && executeTool.includes("buildScanScript"), "browser_execute must expose optional GA-style monitor without making it default");
 assert(executeTool.includes("monitorTimeoutMs") && executeTool.includes("beforeOk") && executeTool.includes("afterOk") && executeTool.includes("beforeError") && executeTool.includes("afterError"), "browser_execute monitor must bound scan timeout and report before/after scan failures explicitly");
+assert(executeTool.includes("...executed") && !executeTool.includes("execution: executed.data") && !executeTool.includes("newTabs: executed.newTabs"), "browser_execute monitor must preserve BrowserBridgeExecutionResult top-level metadata and append monitor only");
 const nativeActionTools = read("src/tools/registerNativeActionTools.ts");
+assert(nativeActionTools.includes("DEFAULT_OBSERVATION_TIMEOUT_MS") && nativeActionTools.includes('commandName.endsWith(".list")') && nativeActionTools.includes('commandName.endsWith(".exportHar")'), "browser_network list/body/exportHar must use the longer observation timeout by default");
 assert(nativeActionTools.includes("distilledJsonResult"), "native action tools must use result distillation middleware");
+assert(nativeActionTools.includes("nativeActionErrorResult") && nativeActionTools.includes("new BrowserBridgeError(record.error_code"), "native action tools must preserve bridge ok:false error_code in tool errors");
 assert(nativeActionTools.includes("body.timeoutMs = timeoutMs"), "native action tools must pass timeoutMs inside bridge commands");
+assert(nativeActionTools.includes("executeBrowserWaitWithSupervisor") && nativeActionTools.includes("commandExecutor: executeBrowserWaitWithSupervisor"), "browser_wait must route long waits through the TS durable wait supervisor");
+assert(nativeActionTools.includes("allowZeroTimeout?: boolean") && nativeActionTools.includes("function actionTimeoutMs"), "native action tools must support preserving timeoutMs=0 for immediate checks");
+assert(/name:\s*"browser_wait"[\s\S]*?allowZeroTimeout:\s*true/.test(nativeActionTools), "browser_wait must preserve timeoutMs=0 at the tool layer for immediate checks");
+assert(/name:\s*"browser_network"[\s\S]*?allowZeroTimeout:\s*true/.test(nativeActionTools), "browser_network wait must preserve timeoutMs=0 at the tool layer for immediate checks");
+const waitSupervisor = read("src/driver/BrowserWaitSupervisor.ts");
+assert(waitSupervisor.includes("waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TIMEOUT_MS, true)") && waitSupervisor.includes("timeoutMs: 0") && waitSupervisor.includes("totalTimeoutMs === 0"), "wait supervisor must preserve timeoutMs=0 and send one immediate bridge probe");
+assert(waitSupervisor.includes("WAIT_LEASE_MAX_MS = 25_000") && waitSupervisor.includes("WAIT_STATE_LOST") && waitSupervisor.includes("workerRestarts") && waitSupervisor.includes("historyLost"), "wait supervisor must use short leases and expose worker restart/state-loss evidence");
+assert(waitSupervisor.includes("WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS = 50") && waitSupervisor.includes("await sleep(retryDelayMs)") && waitSupervisor.includes("retryDelayMs"), "wait supervisor must throttle instant lease timeouts instead of tight-loop retrying");
+assert(waitSupervisor.includes('cmd: "wait.navigate"') && waitSupervisor.includes("waitCommandForNavigateAndWait"), "wait.navigateAndWait must navigate once and supervise only the follow-up wait");
+const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
+assert(bridgeInfo.includes("PI_BROWSER_WORKER_BOOT_ID") && bridgeInfo.includes("workerBootId") && bridgeInfo.includes("workerStartedAt"), "bridge metadata must expose service-worker boot identity for wait recovery diagnostics");
+assert(read("bridge/pi_browser_bridge/runtime.js").includes("resp.details.bridge") && read("bridge/pi_browser_bridge/runtime.js").includes("resp.data.bridge"), "native wait results/errors must carry bridge boot metadata");
 for (const prefix of ["wait-result", "network-result", "hook-result", "frame-result"]) assert(nativeActionTools.includes(`artifactPrefix: "${prefix}"`), `native action tool missing artifact prefix: ${prefix}`);
 assert(!nativeActionTools.includes("return jsonResult(result"), "native action tools must not return raw command result directly");
 assert(!executeTool.includes("return jsonResult(await server"), "browser_execute must not return raw bridge result directly");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
 const webSecurityTools = read("src/tools/registerWebSecurityTools.ts");
 assert(webSecurityTools.includes("browser_recon_probe") && webSecurityTools.includes("browser_crawl") && webSecurityTools.includes("browser_fuzz_paths") && webSecurityTools.includes("browser_fuzz_vhosts") && webSecurityTools.includes("browser_sqli_probe") && webSecurityTools.includes("browser_sqlmap_bridge") && webSecurityTools.includes("browser_nuclei_bridge") && webSecurityTools.includes("browser_template_check") && webSecurityTools.includes("browser_callback_oast") && webSecurityTools.includes("browser_cookie_analyze") && webSecurityTools.includes("browser_fuzz_params") && webSecurityTools.includes("browser_http_replay"), "web security tools must register recon/crawl/fuzz/replay tools");
+function toolRegistrationBlock(source, name) {
+	const marker = `name: "${name}"`;
+	const start = source.indexOf(marker);
+	assert(start >= 0, `missing tool registration block: ${name}`);
+	const next = source.indexOf("\nexport function register", start + marker.length);
+	return source.slice(start, next >= 0 ? next : source.length);
+}
+for (const name of ["browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) {
+	const block = toolRegistrationBlock(webSecurityTools, name);
+	assert(/bounded|max(?:Depth|Pages|Candidates|Cases|Templates|Events|BodyBytes)|rateLimit|timeout/i.test(block), `${name} must expose bounded execution wording or bounded controls`);
+	assert(/scoped|scope|captured|raw|request template|callback URLs\/hosts|cookie\/JWT/i.test(block), `${name} must expose scoped/captured input wording`);
+	assert(/artifact|evidence/i.test(block), `${name} must preserve artifact/evidence wording`);
+}
 assert(packageJson.dependencies?.["js-yaml"], "package must depend on js-yaml for template YAML parsing");
 const webSecurityCore = read("src/tools/webSecurityCore.ts");
 const webSecurityDir = path.join(root, "src", "tools", "webSecurity");
@@ -119,7 +178,11 @@ assert((webSecurityTools.match(/distilledJsonResult\(/g) || []).length === 1, "w
 assert((webSecurityTools.match(/errorResult\(/g) || []).length === 1, "web security tool error mapping must flow through one shared shell");
 assert((webSecurityTools.match(/cmd: "cookies"/g) || []).length === 1, "web security tool cookie binding must be centralized in one shared shell");
 assert(webSecurityTools.includes("for SQLi oracle evidence") && webSecurityTools.includes("stopOnFirstMatch"), "browser_sqli_probe tool docs must describe SQLi oracle evidence scope and expose stop-on-first-match short-circuiting");
-assert(webSecurityTools.includes("with explicit templateIds or templates"), "browser_template_check tool docs must require explicit template selection without weakening capability wording");
+assert(webSecurityTools.includes("activeGraphqlIntrospection defaults true") && webSecurityTools.includes("passive-only crawl"), "browser_crawl docs must make active GraphQL introspection behavior explicit");
+assert(webSecurityTools.includes("omitted template selectors run the small built-in exposure/API baseline"), "browser_template_check docs must make default built-in template semantics explicit");
+assert(webSecurityTools.includes("bounded safe-regex") && webSecurityTools.includes("bounded bodyRegex") && webSecurityTools.includes("bounded headerRegex") && webSecurityTools.includes("bounded extractRegex"), "browser_template_check docs must make bounded regex matcher/extractor semantics explicit");
+assert(webSecurityReplay.includes("MAX_HAR_FILTER_CANDIDATE_ENTRIES") && webSecurityReplay.includes("MAX_HAR_URL_MATCH_CHARS") && webSecurityReplay.includes("unsafeRegexReason(patternText"), "HAR URL pattern filtering must be bounded and safe-regex checked");
+assert((webSecurityTools.match(/Bounded safe-regex or substring filter for HAR request URLs/g) || []).length === 3, "HAR-consuming tools must document bounded harUrlPattern semantics");
 for (const forbiddenPhrase of ["risk-tier", "风险分级闸门", "安全收缩文案", "能力弱化默认值"]) {
 	assert(!webSecurityTools.includes(forbiddenPhrase), `web security tool docs must not introduce tool-layer boundary shrink wording: ${forbiddenPhrase}`);
 }
@@ -128,6 +191,7 @@ assert(read("src/tools/webSecurity/shared/http.ts").includes('if (!buffer.length
 const readme = read("README.md");
 assert(readme.includes("src/tools/webSecurity/browserNative") && readme.includes("src/tools/webSecurity/bridges") && readme.includes("src/tools/webSecurity/shared"), "README must document the fixed single-package webSecurity layering");
 assert(readme.includes("不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案"), "README must document the tool-layer boundary wording for webSecurity");
+assert(readme.includes("activeGraphqlIntrospection:true") && readme.includes("小型内置 exposure/API baseline"), "README must document active GraphQL crawl and default template-check semantics");
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");
 assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "skill must document explicit tabId automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_content"), "skill must document pick/content flows");
@@ -136,5 +200,6 @@ assert(skill.includes("browser_download") && skill.includes("browser_upload"), "
 assert(skill.includes("browser_execute") && skill.includes("browser_hook") && skill.includes("browser_frame"), "skill must document raw-data and advanced browser tools");
 assert(skill.includes("summary") && skill.includes("browser_artifact"), "skill must document summary/artifact flow");
 assert(skill.includes("Rails AES-GCM encrypted cookies") && skill.includes("legacy Rails AES-CBC signed wrappers") && skill.includes("Rails direct-key signed cookies"), "skill must document Rails encrypted, legacy, and direct-key cookie support");
+assert(skill.includes("activeGraphqlIntrospection") && skill.includes("small built-in exposure/API baseline"), "skill must document active GraphQL crawl and default template-check semantics");
 assert(!skill.includes("npm run check") && !skill.includes("smoke:browser"), "skill must not contain project development validation flow");
 console.log("tools contract ok");

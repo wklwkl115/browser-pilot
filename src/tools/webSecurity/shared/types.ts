@@ -65,6 +65,7 @@ export type RawCrawlOptions = WebFetchOptions & {
 	sameOrigin?: unknown;
 	knownFiles?: unknown;
 	extractJs?: unknown;
+	activeGraphqlIntrospection?: unknown;
 	bindBrowserSession?: unknown;
 	cookieProvider?: CookieProvider;
 };

@@ -6,12 +6,15 @@ export type BrowserBridgeClientInfo = {
 	name?: string;
 	version?: string;
 	userAgent?: string;
+	workerBootId?: string;
+	workerStartedAt?: number;
 	connectedAt: number;
 	lastSeenAt: number;
 };
 
 export type BrowserTabSession = {
 	id: string;
+	browserId: string;
 	tabId: number;
 	url: string;
 	title: string;
@@ -26,6 +29,16 @@ export type BrowserTabSession = {
 
 export type BrowserTabInfo = Omit<BrowserTabSession, "client">;
 
+export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
+
+export type BrowserBridgeTargetInfo = {
+	tabId?: number;
+	source: BrowserBridgeTargetSource;
+	implicit: boolean;
+	selectionVersionAtDispatch: number;
+	selectionVersionAtResolve?: number;
+};
+
 export type BrowserBridgeSnapshot = {
 	host: string;
 	port: number;
@@ -36,12 +49,14 @@ export type BrowserBridgeSnapshot = {
 	clients: BrowserBridgeClientInfo[];
 	defaultTabId?: number;
 	latestTabId?: number;
+	selectionVersion: number;
 	tabs: BrowserTabInfo[];
 	pending: Array<{
 		id: string;
 		tabId?: number;
 		createdAt: number;
 		acked: boolean;
+		target?: BrowserBridgeTargetInfo;
 	}>;
 };
 
@@ -57,6 +72,7 @@ export type PendingRequest = {
 	createdAt: number;
 	acked: boolean;
 	ackAt?: number;
+	target?: BrowserBridgeTargetInfo;
 	timer: NodeJS.Timeout;
 	resolve: (value: BrowserBridgeExecutionResult) => void;
 	reject: (error: Error) => void;
@@ -68,4 +84,5 @@ export type BrowserBridgeExecutionResult = {
 	tabId?: number;
 	data?: unknown;
 	newTabs?: unknown[];
+	target?: BrowserBridgeTargetInfo;
 };

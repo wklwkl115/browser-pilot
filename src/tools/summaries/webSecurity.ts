@@ -94,6 +94,7 @@ export function summarizeBrowserCrawlData(value: unknown): Summary {
 		endpointCount: endpoints.length,
 		failureCount: failures.length,
 		maxDepth: isRecord(value) ? value.maxDepth : undefined,
+		activeGraphqlIntrospection: isRecord(value) ? value.activeGraphqlIntrospection : undefined,
 		artifactRoot: isRecord(value) ? value.artifactRoot : undefined,
 		sourceArchiveCount: isRecord(value) ? value.sourceArchiveCount : sourceArchiveCount,
 		serviceWorkerCacheNames: isRecord(value) ? value.serviceWorkerCacheNames : undefined,

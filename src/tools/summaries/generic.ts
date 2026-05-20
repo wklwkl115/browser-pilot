@@ -28,6 +28,19 @@ function summarizePlainValue(value: unknown): Summary {
 	return compactSample(value) as Summary;
 }
 
+function bridgeResultMetadata(value: Record<string, unknown>, data: unknown): Summary {
+	const payload = isRecord(data) ? data : {};
+	const target = isRecord(value.target) ? value.target : {};
+	const out: Summary = {};
+	for (const key of ["tabId", "frameId", "sessionId", "requestId", "waitId", "listenerId", "count", "total", "nextOffset"] as const) {
+		const item = payload[key] ?? value[key];
+		if (item !== undefined) out[key] = item;
+	}
+	if (target.source !== undefined) out.targetSource = target.source;
+	if (target.implicit !== undefined) out.targetImplicit = target.implicit;
+	return out;
+}
+
 export function summarizeGenericValue(value: unknown): Summary {
 	if (isRecord(value) && ("ok" in value || "data" in value || "error_code" in value)) {
 		const data = value.data;
@@ -36,6 +49,7 @@ export function summarizeGenericValue(value: unknown): Summary {
 			ok: value.ok,
 			error_code: value.error_code,
 			message: typeof value.message === "string" ? truncateText(value.message, STRING_PREVIEW_CHARS).text : undefined,
+			...bridgeResultMetadata(value, data),
 			data: summarizePlainValue(data),
 			keys: Object.keys(value).slice(0, KEY_LIMIT),
 		};

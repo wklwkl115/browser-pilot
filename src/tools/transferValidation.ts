@@ -1,3 +1,4 @@
+import { suppressErrorStack } from "../utils/errors";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,7 +7,7 @@ export function codedTransferError(code: string, message: string, details: Recor
 	error.name = "TransferToolError";
 	error.code = code;
 	error.details = details;
-	delete error.stack;
+	suppressErrorStack(error);
 	return error;
 }
 
@@ -19,6 +20,28 @@ export function requireDownloadTarget(params: Record<string, unknown>): void {
 	const hasUrl = typeof params.url === "string" && params.url.trim();
 	const hasSelector = typeof params.selector === "string" && params.selector.trim();
 	if (!hasUrl && !hasSelector) throw codedTransferError("DOWNLOAD_TARGET_REQUIRED", "browser_download requires selector or url", {});
+}
+
+export type TransferDownloadMode = "click" | "media" | "url";
+
+export function normalizeTransferDownloadMode(params: Record<string, unknown>): TransferDownloadMode {
+	const hasUrl = typeof params.url === "string" && params.url.trim();
+	const rawMode = params.mode;
+	if (rawMode === undefined || rawMode === null || rawMode === "") return hasUrl ? "url" : "click";
+	if (typeof rawMode !== "string") {
+		throw codedTransferError("INVALID_RULE", "browser_download mode must be one of click, media, or url", { mode: rawMode, allowedModes: ["click", "media", "url"] });
+	}
+	const mode = rawMode.trim().toLowerCase();
+	if (!["click", "media", "url"].includes(mode)) {
+		throw codedTransferError("INVALID_RULE", "browser_download mode must be one of click, media, or url", { mode: rawMode, allowedModes: ["click", "media", "url"] });
+	}
+	if (hasUrl && mode !== "url") {
+		throw codedTransferError("INVALID_RULE", "browser_download url target only accepts mode:url or omitted mode", { mode, target: "url", allowedModes: ["url"] });
+	}
+	if (!hasUrl && mode === "url") {
+		throw codedTransferError("INVALID_RULE", "browser_download selector target only accepts mode:click, mode:media, or omitted mode", { mode, target: "selector", allowedModes: ["click", "media"] });
+	}
+	return mode as TransferDownloadMode;
 }
 
 export function requireUploadConfirmation(confirm: unknown, selector: unknown): void {
@@ -50,11 +73,12 @@ export async function checkedUploadFiles(value: unknown): Promise<string[]> {
 export function buildTransferDownloadCommand(params: Record<string, unknown>): Record<string, unknown> {
 	const hasUrl = typeof params.url === "string" && params.url.trim();
 	const hasSelector = typeof params.selector === "string" && params.selector.trim();
+	const mode = normalizeTransferDownloadMode(params);
 	return {
 		cmd: "transfer.download",
 		selector: hasSelector ? String(params.selector).trim() : undefined,
 		url: hasUrl ? String(params.url).trim() : undefined,
-		mode: hasUrl ? "url" : params.mode,
+		mode,
 		index: params.index,
 		filename: params.filename,
 		conflictAction: params.conflictAction,

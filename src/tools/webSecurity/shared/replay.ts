@@ -1,11 +1,16 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
 import { FETCH_OMIT_HEADER_NAMES, absoluteUrl, fetchWithRedirects, headersArrayToMap, mergeCookieHeaders, normalizeHeaders, parseSetCookieLine, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http";
 import { buildMultipartBody, buildMultipartBodyFromParts, multipartContentTypeVariants, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, positiveInt, stringList } from "./normalize";
 import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template";
 import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types";
+
+export const MAX_HAR_URL_PATTERN_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
+export const MAX_HAR_URL_MATCH_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
+export const MAX_HAR_FILTER_CANDIDATE_ENTRIES = 10_000;
 
 export type NormalizedReplayOptions = {
 	timeoutMs: number;
@@ -393,6 +398,24 @@ export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
+function boundedHarUrlText(url: string): string {
+	return url.length > MAX_HAR_URL_MATCH_CHARS ? url.slice(0, MAX_HAR_URL_MATCH_CHARS) : url;
+}
+
+function compileHarUrlMatcher(patternText: string): (url: string) => boolean {
+	const unsafeReason = unsafeRegexReason(patternText, MAX_HAR_URL_PATTERN_CHARS);
+	if (unsafeReason) {
+		if (unsafeReason === "pattern_too_long") return () => false;
+		return (url) => boundedHarUrlText(url).includes(patternText);
+	}
+	try {
+		const pattern = new RegExp(patternText);
+		return (url) => pattern.test(boundedHarUrlText(url));
+	} catch {
+		return (url) => boundedHarUrlText(url).includes(patternText);
+	}
+}
+
 export async function harEntriesFromOptions(options: ReplayOptions): Promise<Array<Record<string, unknown>>> {
 	let har = options.har;
 	const path = asString(options.harPath)?.trim();
@@ -400,6 +423,7 @@ export async function harEntriesFromOptions(options: ReplayOptions): Promise<Arr
 	if (!isRecord(har)) return [];
 	const entries = isRecord(har.log) && Array.isArray(har.log.entries) ? har.log.entries.filter(isRecord) : [];
 	let selected = entries;
+	const maxEntries = Math.min(100, positiveInt(options.harMaxEntries, options.harEntryIndex !== undefined ? 1 : 20));
 	if (options.harEntryIndex !== undefined) {
 		const index = typeof options.harEntryIndex === "number" ? options.harEntryIndex : Number(options.harEntryIndex);
 		if (!Number.isInteger(index) || index < 0) throw new Error("harEntryIndex must be a zero-based integer");
@@ -407,16 +431,9 @@ export async function harEntriesFromOptions(options: ReplayOptions): Promise<Arr
 	}
 	const patternText = asString(options.harUrlPattern)?.trim();
 	if (patternText) {
-		let matcher: (url: string) => boolean;
-		try {
-			const pattern = new RegExp(patternText);
-			matcher = (url) => pattern.test(url);
-		} catch {
-			matcher = (url) => url.includes(patternText);
-		}
-		selected = selected.filter((entry) => matcher(asString(isRecord(entry.request) ? entry.request.url : undefined) || ""));
+		const matcher = compileHarUrlMatcher(patternText);
+		selected = selected.slice(0, MAX_HAR_FILTER_CANDIDATE_ENTRIES).filter((entry) => matcher(asString(isRecord(entry.request) ? entry.request.url : undefined) || ""));
 	}
-	const maxEntries = Math.min(100, positiveInt(options.harMaxEntries, options.harEntryIndex !== undefined ? 1 : 20));
 	return selected.slice(0, maxEntries);
 }
 

@@ -14,11 +14,12 @@
     "sync:protocol": "node scripts/sync-native-protocol.mjs",
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "check:bridge:files": "node tests/contracts/check-bridge-files.mjs",
+    "check:bridge:types": "tsc -p tsconfig.bridge.json",
     "check:protocol": "node tests/contracts/check-protocol-contract.mjs",
-    "check:tools": "node tests/contracts/check-tools-contract.mjs",
+    "check:tools": "node tests/contracts/check-tools-contract.mjs && node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-execute-tool.mjs",
     "check:pi-browser-bridge": "node tests/contracts/check-pi-browser-bridge.mjs",
     "check:tool-docs": "node tests/contracts/check-tool-doc-drift.mjs",
-    "check:bridge": "npm run check:bridge:files && npm run check:protocol && npm run check:tools",
+    "check:bridge": "npm run check:bridge:files && npm run check:bridge:types && npm run check:protocol && npm run check:tools",
     "check:scan": "node --no-warnings --experimental-strip-types tests/contracts/check-scan-script.mjs",
     "check:content-pick": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-content-pick.mjs",
     "check:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-tools.mjs && node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-runtime.mjs",
@@ -59,5 +60,8 @@
     "extensions": [
       "./index.ts"
     ]
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }

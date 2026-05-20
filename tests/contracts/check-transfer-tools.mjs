@@ -18,6 +18,8 @@ assert(transfer.includes("matchStrategy"), "transfer.download click mode must re
 assert(transfer.includes("AMBIGUOUS_DOWNLOAD") && transfer.includes("piTransferAmbiguousDownload"), "transfer.download click fallback must report ambiguous when no precise tab event match exists");
 assert(!transfer.includes("global-created-fallback") && !transfer.includes("Promise.race([pageDownload"), "transfer.download click fallback must not accept global download events before tab/CDP matching");
 assert(transfer.includes("piTransferDownloadWithOptions(options, timeoutMs, 'media'"), "transfer.download media mode must use Chrome downloads API for stable path return");
+assert(transfer.includes("piTransferNormalizeDownloadMode"), "transfer.download must validate mode in the bridge layer");
+assert(!transfer.includes("msg.mode === 'media' ? 'media' : 'click'"), "transfer.download must not silently downgrade unknown page modes to click");
 assert(transfer.includes("Page.setInterceptFileChooserDialog"), "transfer.upload must intercept file choosers");
 assert(transfer.includes("Page.fileChooserOpened"), "transfer.upload must wait for file chooser event");
 assert(transfer.includes("DOM.setFileInputFiles"), "transfer.upload must set local files through CDP");
@@ -34,7 +36,12 @@ assert(read("src/tools/registerExecuteTool.ts").includes("rejectUnsafeExecuteCom
 assert(validation.includes("path.isAbsolute"), "browser_upload must require absolute paths");
 assert(validation.includes("await stat(file)"), "browser_upload must validate files exist before browser command");
 assert(validation.includes("buildTransferDownloadCommand"), "download command builder must be testable");
+assert(validation.includes("normalizeTransferDownloadMode"), "download mode normalization must be pure/testable in the tool layer");
+assert(validation.includes("url target only accepts mode:url") && validation.includes("selector target only accepts mode:click"), "download mode validation must reject target/mode conflicts");
+assert(tool.indexOf("const command = buildTransferDownloadCommand(params);") < tool.indexOf("const server = await ensureStarted();"), "browser_download must validate and normalize mode before starting the bridge");
 assert(tool.includes("summarizeTransferData"), "transfer tools must use compact summaries");
+assert(!tool.includes("distilledJsonResult(result.data ?? result") && !tool.includes("artifactValue: result.data ?? result"), "transfer tools must preserve the full BrowserBridgeExecutionResult envelope as the primary/artifact value");
+assert(tool.includes("distilledJsonResult(result,") && tool.includes("artifactValue: result"), "transfer tools must pass full bridge result metadata through distillation");
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.permissions.includes("downloads"), "manifest must include downloads permission");

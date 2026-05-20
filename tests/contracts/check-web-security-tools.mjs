@@ -9,7 +9,8 @@ import { createSecureContext } from "node:tls";
 import { readBrowserArtifact } from "../../src/tools/artifactReader.ts";
 import { buildReplayRequest, parseRawHttpRequest, runBrowserCrawl, runCallbackOast, runCookieAnalyze, runFuzzParams, runFuzzPaths, runFuzzVhosts, runHttpReplay, runNucleiBridge, runReconProbe, runSqlmapBridge, runSqliProbe, runTemplateCheck } from "../../src/tools/webSecurityCore.ts";
 import { buildMultipartBodyFromParts, parseMultipartBody } from "../../src/tools/webSecurity/shared/multipart.ts";
-import { mutateParamRequest } from "../../src/tools/webSecurity/shared/replay.ts";
+import { harEntriesFromOptions, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS, mutateParamRequest } from "../../src/tools/webSecurity/shared/replay.ts";
+import { evaluateTemplateMatcher, MAX_TEMPLATE_REGEX_TEXT_CHARS } from "../../src/tools/webSecurity/shared/template.ts";
 import { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWebReconProbeData } from "../../src/tools/summaries/index.ts";
 import { ALT_HTTPS_CERT_PEM, ALT_HTTPS_KEY_PEM, DEFAULT_HTTPS_CERT_PEM, DEFAULT_HTTPS_KEY_PEM } from "../fixtures/https-sni-certs.mjs";
 
@@ -545,6 +546,23 @@ const server = http.createServer((req, res) => {
 	res.end("not found");
 });
 
+const harEntry = (url) => ({ request: { method: "GET", url, headers: [] } });
+const harLog = (entries) => ({ log: { entries } });
+const safeHarRegexEntries = await harEntriesFromOptions({ har: harLog([harEntry("https://fixture.test/api/users"), harEntry("https://fixture.test/static/app.js")]), harUrlPattern: "api/.*users" });
+assert.equal(safeHarRegexEntries.length, 1, "HAR URL filter should keep safe regex semantics");
+assert.equal(safeHarRegexEntries[0].request.url, "https://fixture.test/api/users");
+const unsafeHarRegexEntries = await harEntriesFromOptions({ har: harLog([harEntry("https://fixture.test/(a+)+$"), harEntry(`https://fixture.test/${"a".repeat(128)}!`)]), harUrlPattern: "(a+)+$" });
+assert.equal(unsafeHarRegexEntries.length, 1, "HAR URL filter should fallback unsafe regex to literal matching");
+assert.equal(unsafeHarRegexEntries[0].request.url, "https://fixture.test/(a+)+$");
+const longHarPatternEntries = await harEntriesFromOptions({ har: harLog([harEntry(`https://fixture.test/${"x".repeat(MAX_HAR_URL_PATTERN_CHARS + 1)}`)]), harUrlPattern: "x".repeat(MAX_HAR_URL_PATTERN_CHARS + 1) });
+assert.equal(longHarPatternEntries.length, 0, "HAR URL filter should not execute overlong patterns");
+const longHarUrlEntries = await harEntriesFromOptions({ har: harLog([harEntry(`https://fixture.test/${"a".repeat(MAX_HAR_URL_MATCH_CHARS + 10)}NEEDLE`)]), harUrlPattern: "NEEDLE$" });
+assert.equal(longHarUrlEntries.length, 0, "HAR URL filter should bound URL text before regex matching");
+const cappedHarEntries = Array.from({ length: MAX_HAR_FILTER_CANDIDATE_ENTRIES + 1 }, (_, index) => harEntry(`https://fixture.test/no-match-${index}`));
+cappedHarEntries[MAX_HAR_FILTER_CANDIDATE_ENTRIES] = harEntry("https://fixture.test/cap-hit");
+const cappedHarFilterResult = await harEntriesFromOptions({ har: harLog(cappedHarEntries), harUrlPattern: "cap-hit" });
+assert.equal(cappedHarFilterResult.length, 0, "HAR URL filter should cap candidate entries before matching");
+
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const defaultSecureContext = createSecureContext({ key: DEFAULT_HTTPS_KEY_PEM, cert: DEFAULT_HTTPS_CERT_PEM });
 const adminSecureContext = createSecureContext({ key: ALT_HTTPS_KEY_PEM, cert: ALT_HTTPS_CERT_PEM });
@@ -610,7 +628,11 @@ try {
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/openapi.json` && page.apiSpec?.parameterSummary?.pathCount === 1 && page.apiSpec?.parameterSummary?.queryCount === 1 && page.apiSpec?.parameterSummary?.headerCount === 1), "crawl should summarize OpenAPI parameter locations");
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/openapi.json` && page.apiSpec?.parameterSummary?.requestBodyFields?.some((field) => field.path === "role") && page.apiSpec?.parameterSummary?.requestBodyFields?.some((field) => field.path === "meta.enabled")), "crawl should summarize OpenAPI request body schema fields");
 	assert.ok(crawl.endpoints.some((endpoint) => endpoint.url === `${base}/api/from-openapi-post` && endpoint.parameterSummary?.requestBodyFieldCount === 2), "crawl should attach OpenAPI request body summaries to endpoints");
+	assert.equal(crawl.activeGraphqlIntrospection, true, "crawl should expose that active GraphQL introspection defaults on");
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/graphql` && page.graphqlSchema?.source === "active-probe" && page.graphqlSchema?.queryFields?.some((field) => field.name === "viewer")), "crawl should actively probe GraphQL introspection when passive responses omit schema");
+	const passiveGraphqlCrawl = await runBrowserCrawl({ url: `${base}/graphql`, maxDepth: 0, maxPages: 1, activeGraphqlIntrospection: false, maxBodyBytes: 64_000 });
+	assert.equal(passiveGraphqlCrawl.activeGraphqlIntrospection, false, "crawl should expose passive-only GraphQL mode");
+	assert.equal(passiveGraphqlCrawl.pages.some((page) => page.graphqlProbe || page.graphqlSchema?.source === "active-probe"), false, "crawl activeGraphqlIntrospection:false must not POST active GraphQL introspection probes");
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/sw.js` && page.serviceWorkerDetails?.cacheRoutes?.some((route) => route.url === `${base}/api/from-sw`)), "crawl should extract service worker cache routes");
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/sw.js` && page.serviceWorkerDetails?.versionSummary?.cacheNames?.includes("v1") && page.serviceWorkerDetails?.versionSummary?.versionTokens?.includes("v1")), "crawl should summarize service worker cache versions");
 	assert.ok(crawl.pages.some((page) => page.url === `${base}/static/app.js.map` && page.sourceMapDetails?.endpointHints?.some((endpoint) => endpoint.url === `${base}/api/from-map`)), "crawl should parse source map sourcesContent endpoint hints");
@@ -955,8 +977,11 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.ok(templateCheck.matched.some((item) => item.templateId === "exposure-env" && item.url === `${base}/.env`), "template check should match env exposure");
 	assert.ok(templateCheck.matched.some((item) => item.templateId === "git-config" && item.url === `${base}/.git/config`), "template check should match git config exposure");
 	assert.ok(templateCheck.matched.some((item) => item.templateId === "openapi" && item.url === `${base}/openapi.json`), "template check should match openapi document");
+	const defaultTemplateCheck = await runTemplateCheck({ url: base, maxTemplates: 10, maxBodyBytes: 64_000 });
+	assert.ok(defaultTemplateCheck.templateIds.includes("exposure-env") && defaultTemplateCheck.templateIds.includes("openapi"), "template check omitted selectors should run the small built-in exposure/API baseline");
 	const customTemplateCheck = await runTemplateCheck({ url: base, templates: [{ id: "custom-home", path: "/", matchStatus: [200], bodyIncludes: ["Hello"], extractRegex: ["Hello"] }], maxBodyBytes: 64_000 });
 	assert.equal(customTemplateCheck.matchedCount, 1, "template check should run inline custom templates");
+	assert.deepEqual(customTemplateCheck.templateIds, ["custom-home"], "template check inline templates should override the built-in default template baseline");
 	const dslTemplateCheck = await runTemplateCheck({ url: base, templates: [{ id: "dsl-json", paths: ["/template-dsl", "/template-dsl"], matcherMode: "all", matchers: [{ type: "status", status: [200] }, { type: "word", part: "header", name: "x-template-fixture", words: ["dsl-ok"] }, { type: "regex", part: "body", regex: ["dsl-token"] }], extractors: [{ type: "regex", name: "token", part: "body", regex: ["\\\"token\\\":\\\"([^\\\"]+)"], group: 1 }, { type: "json", name: "nested", jsonPath: "nested.value" }, { type: "header", name: "fixture", header: "x-template-fixture" }] }], maxBodyBytes: 64_000 });
 	assert.equal(dslTemplateCheck.rawResultCount, 2, "template check should record raw duplicate checks");
 	assert.equal(dslTemplateCheck.deduplicatedResults, 1, "template check should dedupe duplicate template results");
@@ -964,6 +989,22 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.ok(dslTemplateCheck.matched[0].extracts.some((item) => item.name === "token" && item.value === "dsl-token"), "template DSL regex extractor should expose named value");
 	assert.ok(dslTemplateCheck.matched[0].extracts.some((item) => item.name === "nested" && item.value === "json-hit"), "template DSL json extractor should expose schema value");
 	assert.match(dslTemplateCheck.matched[0].bodySha256, /^[a-f0-9]{64}$/, "template check should hash response bodies");
+	const unsafeTemplateEval = evaluateTemplateMatcher({
+		id: "unsafe-regex",
+		bodyRegex: ["(a+)+$"],
+		headerRegex: { "x-template-fixture": "(a+)+$" },
+		extractRegex: ["(a+)+$"],
+		matchers: [{ type: "regex", part: "body", regex: ["(a+)+$"] }],
+		extractors: [{ type: "regex", name: "bad", part: "body", regex: ["(a+)+$"] }],
+	}, { url: `${base}/template-dsl`, status: 200, headers: { "x-template-fixture": "dsl-ok" }, setCookie: [], bodyText: "a".repeat(128) + "!", bodyBytes: 129, bodyBase64: undefined, bodyTruncated: false });
+	assert.equal(unsafeTemplateEval.matched, false, "template unsafe regex must not match by catastrophic backtracking");
+	assert.ok(unsafeTemplateEval.checks.some((item) => item.kind === "bodyRegex" && item.regexIssue?.reason === "nested_quantifier"), "template bodyRegex must report unsafe regex diagnostics");
+	assert.ok(unsafeTemplateEval.checks.some((item) => item.kind === "headerRegex" && item.regexIssue?.reason === "nested_quantifier"), "template headerRegex must report unsafe regex diagnostics");
+	assert.ok(unsafeTemplateEval.checks.some((item) => item.kind === "dsl:regex" && item.regexDiagnostics?.some((diag) => diag.regexIssue?.reason === "nested_quantifier")), "template DSL regex matcher must report unsafe regex diagnostics");
+	assert.ok(unsafeTemplateEval.extracts.some((item) => item.error_code === "TEMPLATE_REGEX_UNSAFE" && item.reason === "nested_quantifier"), "template regex extractors must report unsafe regex diagnostics instead of executing");
+	const longTemplateEval = evaluateTemplateMatcher({ id: "long-regex", bodyRegex: ["NEEDLE$"], extractRegex: ["NEEDLE$"] }, { url: `${base}/long`, status: 200, headers: {}, setCookie: [], bodyText: `${"a".repeat(MAX_TEMPLATE_REGEX_TEXT_CHARS + 10)}NEEDLE`, bodyBytes: MAX_TEMPLATE_REGEX_TEXT_CHARS + 16, bodyBase64: undefined, bodyTruncated: false });
+	assert.equal(longTemplateEval.checks[0].regexInputTruncated, true, "template bodyRegex must expose response text truncation budget");
+	assert.ok(longTemplateEval.extracts.some((item) => item.regexInputTruncated === true && item.skipped === true), "template extractRegex must expose response text truncation when no match is in budget");
 	const yamlTemplatePath = ".pi/browser-artifacts/template-dsl-fixture.yaml";
 	await writeFile(yamlTemplatePath, `templates:\n  - id: yaml-dsl\n    name: YAML DSL\n    paths:\n      - /template-dsl\n    matchers-condition: all\n    matchers:\n      - type: status\n        status: [200]\n      - type: word\n        part: body\n        words: [dsl-token]\n    extractors:\n      - type: regex\n        name: yaml-token\n        part: body\n        regex: ['\"token\":\"([^\"]+)']\n        group: 1\n`);
 	const yamlTemplateCheck = await runTemplateCheck({ url: base, templatePath: yamlTemplatePath, maxBodyBytes: 64_000 });

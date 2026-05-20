@@ -46,14 +46,22 @@ async function testPiToolLayer() {
 		assert.equal(directCommand.mode, "url");
 		assert.equal(directCommand.url, "https://example.test/file.txt");
 		assert.equal(directCommand.conflictAction, "overwrite");
+		assert.equal(buildTransferDownloadCommand({ selector: "a[download]" }).mode, "click", "selector download must default to click mode");
 		const selectorCommand = buildTransferDownloadCommand({ selector: " img.hero ", mode: "media", index: 1 });
 		assert.equal(selectorCommand.selector, "img.hero");
 		assert.equal(selectorCommand.mode, "media");
 		assert.equal(selectorCommand.index, 1);
+		assert.throws(() => buildTransferDownloadCommand({ selector: "a[download]", mode: "url" }), (error) => assertErrorCode(error, "INVALID_RULE"), "selector downloads must reject mode:url instead of silently clicking");
+		assert.throws(() => buildTransferDownloadCommand({ url: "https://example.test/file.txt", mode: "click" }), (error) => assertErrorCode(error, "INVALID_RULE"), "direct URL downloads must reject mode:click");
+		assert.throws(() => buildTransferDownloadCommand({ url: "https://example.test/file.txt", mode: "media" }), (error) => assertErrorCode(error, "INVALID_RULE"), "direct URL downloads must reject mode:media");
+		assert.throws(() => buildTransferDownloadCommand({ selector: "a[download]", mode: "bogus" }), (error) => assertErrorCode(error, "INVALID_RULE"), "download must reject unknown mode values");
 		const uploadSummary = summarizeTransferData({ uploaded: true, selector: "#file", files_count: 1, isMultiple: false });
 		assert.equal(uploadSummary.items[0].uploaded, true, "upload summaries must expose compact upload status");
-		const downloadSummary = summarizeTransferData({ downloadId: 12, path: "C:/Downloads/file.txt", download: { id: 12, state: "complete", path: "C:/Downloads/file.txt", url: "https://example.test/file.txt" } });
+		const downloadPayload = { downloadId: 12, path: "C:/Downloads/file.txt", download: { id: 12, state: "complete", path: "C:/Downloads/file.txt", url: "https://example.test/file.txt" } };
+		const downloadSummary = summarizeTransferData(downloadPayload);
 		assert.equal(downloadSummary.items[0].path, "C:/Downloads/file.txt", "download summaries must expose completed path");
+		const downloadEnvelopeSummary = summarizeTransferData({ id: "bridge-request", tabId: 7, acknowledged: true, data: downloadPayload, target: { tabId: 7, source: "explicit" } });
+		assert.equal(downloadEnvelopeSummary.items[0].path, "C:/Downloads/file.txt", "download summaries must unwrap full BrowserBridgeExecutionResult envelopes");
 	} finally {
 		await rm(temp, { recursive: true, force: true });
 	}
@@ -155,6 +163,22 @@ async function testBridgeDownloadRuntime() {
 	assert.equal(result.data.download.state, "complete");
 	assert.equal(result.data.path, "C:/Downloads/direct.txt");
 	assert.equal(runtime.downloadOptions[0].conflictAction, "overwrite");
+
+	runtime = createTransferRuntime();
+	result = await runtime.context.handlePiBrowserTransferCommand("transfer.download", 1, { url: "https://example.test/direct.txt", mode: "click", timeoutMs: 1000 });
+	assert.equal(result.error_code, "INVALID_RULE", "direct URL downloads must reject mode:click");
+	assert.equal(runtime.downloadOptions.length, 0, "invalid direct URL mode must not call chrome.downloads.download");
+
+	runtime = createTransferRuntime();
+	result = await runtime.context.handlePiBrowserTransferCommand("transfer.download", 1, { selector: "#download", mode: "url", timeoutMs: 1000 });
+	assert.equal(result.error_code, "INVALID_RULE", "selector downloads must reject mode:url");
+	assert.equal(runtime.cdpCalls.length, 0, "invalid selector mode:url must not evaluate page scripts");
+	assert.equal(runtime.downloadOptions.length, 0, "invalid selector mode:url must not call chrome.downloads.download");
+
+	runtime = createTransferRuntime();
+	result = await runtime.context.handlePiBrowserTransferCommand("transfer.download", 1, { selector: "#download", mode: "bogus", timeoutMs: 1000 });
+	assert.equal(result.error_code, "INVALID_RULE", "selector downloads must reject unknown mode values");
+	assert.equal(runtime.cdpCalls.length, 0, "invalid selector mode must not call Runtime.evaluate");
 
 	runtime = createTransferRuntime();
 	result = await runtime.context.handlePiBrowserTransferCommand("transfer.download", 1, { url: "file:///tmp/nope", timeoutMs: 1000 });

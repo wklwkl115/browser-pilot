@@ -8,32 +8,63 @@ export type BrowserScanOptions = {
 	includeIframes?: boolean;
 };
 
-export function buildScanScript(options: BrowserScanOptions): string {
+export function jsonForInlineScript(value: unknown): string {
+	const json = JSON.stringify(value);
+	return (json === undefined ? "null" : json).replace(/[<>&\u2028\u2029]/g, (char) => {
+		if (char === "<") return "\\u003C";
+		if (char === ">") return "\\u003E";
+		if (char === "&") return "\\u0026";
+		if (char === "\u2028") return "\\u2028";
+		return "\\u2029";
+	});
+}
+
+function boundedInt(value: unknown, fallback: number, min: number, max: number): number {
+	const n = Number(value);
+	const safe = Number.isFinite(n) ? Math.floor(n) : fallback;
+	return Math.max(min, Math.min(max, safe));
+}
+
+export function buildScanScript(options: BrowserScanOptions = {}): string {
 	const opts = {
 		textOnly: options.textOnly === true,
-		maxChars: Math.max(1_000, Math.min(500_000, Math.floor(options.maxChars ?? 35_000))),
-		maxNodes: Math.max(100, Math.min(20_000, Math.floor(options.maxNodes ?? 4_000))),
+		maxChars: boundedInt(options.maxChars, 35_000, 1_000, 500_000),
+		maxNodes: boundedInt(options.maxNodes, 4_000, 100, 20_000),
 		includeIframes: options.includeIframes !== false,
 	};
+	const optionsJson = jsonForInlineScript(opts);
+	const ignoreIdsJson = jsonForInlineScript(SCAN_IGNORE_IDS);
+	const ignoreTagsJson = jsonForInlineScript(SCAN_IGNORE_TAGS);
+	const ignoreSelectorsJson = jsonForInlineScript(SCAN_IGNORE_SELECTORS);
+	const noiseAttrNamesJson = jsonForInlineScript(BROWSER_NOISE_ATTRIBUTE_NAMES);
+	const noiseAttrPrefixesJson = jsonForInlineScript(BROWSER_NOISE_ATTRIBUTE_PREFIXES);
+	const noiseClassPatternsJson = jsonForInlineScript(BROWSER_NOISE_CLASS_PATTERNS);
+	const extensionUrlPatternJson = jsonForInlineScript(SCAN_EXTENSION_URL_PATTERN);
+	const actionAttrsJson = jsonForInlineScript(ACTIONABLE_ATTRIBUTE_NAMES);
+	const actionablePatternJson = jsonForInlineScript(ACTIONABLE_KEYWORD_PATTERN);
+	const highIntentPatternJson = jsonForInlineScript(ACTIONABLE_HIGH_INTENT_PATTERN);
+	const primaryIntentPatternJson = jsonForInlineScript(ACTIONABLE_PRIMARY_INTENT_PATTERN);
+	const frameworkOwnerPatternJson = jsonForInlineScript(FRAMEWORK_HANDLER_OWNER_PATTERN);
+	const frameworkActionPatternJson = jsonForInlineScript(FRAMEWORK_ACTION_HANDLER_PATTERN);
 
 	return String.raw`
 (async () => {
-  const options = ${JSON.stringify(opts)};
+  const options = ${optionsJson};
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','SVG','CANVAS','META','LINK','SOURCE','PICTURE','COLGROUP','COL','PARAM']);
-  const IGNORE_IDS = new Set(${JSON.stringify(SCAN_IGNORE_IDS)});
-  const IGNORE_TAGS = new Set(${JSON.stringify(SCAN_IGNORE_TAGS)});
-  const IGNORE_SELECTORS = ${JSON.stringify(SCAN_IGNORE_SELECTORS)};
-  const NOISE_ATTR_NAMES = new Set(${JSON.stringify(BROWSER_NOISE_ATTRIBUTE_NAMES)});
-  const NOISE_ATTR_PREFIXES = ${JSON.stringify(BROWSER_NOISE_ATTRIBUTE_PREFIXES)};
-  const NOISE_CLASS_PATTERNS = ${JSON.stringify(BROWSER_NOISE_CLASS_PATTERNS)};
-  const EXTENSION_URL_RE = new RegExp(${JSON.stringify(SCAN_EXTENSION_URL_PATTERN)}, 'i');
+  const IGNORE_IDS = new Set(${ignoreIdsJson});
+  const IGNORE_TAGS = new Set(${ignoreTagsJson});
+  const IGNORE_SELECTORS = ${ignoreSelectorsJson};
+  const NOISE_ATTR_NAMES = new Set(${noiseAttrNamesJson});
+  const NOISE_ATTR_PREFIXES = ${noiseAttrPrefixesJson};
+  const NOISE_CLASS_PATTERNS = ${noiseClassPatternsJson};
+  const EXTENSION_URL_RE = new RegExp(${extensionUrlPatternJson}, 'i');
   const KEEP_EMPTY = new Set(['INPUT','TEXTAREA','SELECT','BUTTON','IMG','IFRAME','VIDEO','A']);
-  const ACTION_ATTRS = ${JSON.stringify(ACTIONABLE_ATTRIBUTE_NAMES)};
-  const ACTIONABLE_RE = new RegExp(${JSON.stringify(ACTIONABLE_KEYWORD_PATTERN)}, 'i');
-  const HIGH_INTENT_RE = new RegExp(${JSON.stringify(ACTIONABLE_HIGH_INTENT_PATTERN)}, 'i');
-  const PRIMARY_INTENT_RE = new RegExp(${JSON.stringify(ACTIONABLE_PRIMARY_INTENT_PATTERN)}, 'i');
-  const FRAMEWORK_OWNER_RE = new RegExp(${JSON.stringify(FRAMEWORK_HANDLER_OWNER_PATTERN)}, 'i');
-  const FRAMEWORK_ACTION_RE = new RegExp(${JSON.stringify(FRAMEWORK_ACTION_HANDLER_PATTERN)});
+  const ACTION_ATTRS = ${actionAttrsJson};
+  const ACTIONABLE_RE = new RegExp(${actionablePatternJson}, 'i');
+  const HIGH_INTENT_RE = new RegExp(${highIntentPatternJson}, 'i');
+  const PRIMARY_INTENT_RE = new RegExp(${primaryIntentPatternJson}, 'i');
+  const FRAMEWORK_OWNER_RE = new RegExp(${frameworkOwnerPatternJson}, 'i');
+  const FRAMEWORK_ACTION_RE = new RegExp(${frameworkActionPatternJson});
   const ATTRS = ['id','class','name','type','role','placeholder','href','src','alt','value','data-e2e-state'].concat(ACTION_ATTRS);
   let nodeCount = 0;
   let truncated = false;
@@ -42,7 +73,10 @@ export function buildScanScript(options: BrowserScanOptions): string {
 
   function clean(text, max = 400) {
     text = String(text ?? '').replace(/\s+/g, ' ').trim();
-    if (text.length > max) return text.slice(0, max) + '…';
+    if (text.length > max) {
+      truncated = true;
+      return text.slice(0, max) + '…';
+    }
     return text;
   }
   function isNoiseAttr(name) {
@@ -304,6 +338,10 @@ export function buildScanScript(options: BrowserScanOptions): string {
     return hints.sort((a, b) => b.hiddenCount - a.hiddenCount || b.itemCount - a.itemCount).slice(0, 12);
   }
   function resetOutputBudget() { outputChars = 0; truncated = false; }
+  function cleanLineText(text, remaining) {
+    const max = Math.max(80, Math.min(4000, remaining));
+    return clean(text, max);
+  }
   function push(lines, value) {
     if (truncated || !value) return;
     const next = String(value);
@@ -322,7 +360,8 @@ export function buildScanScript(options: BrowserScanOptions): string {
     if (truncated || nodeCount >= options.maxNodes || depth > 20) { truncated = true; return; }
     if (!node) return;
     if (node.nodeType === Node.TEXT_NODE) {
-      const text = clean(node.nodeValue, 800);
+      const remaining = Math.max(0, options.maxChars - outputChars - depth * 2 - 40);
+      const text = cleanLineText(node.nodeValue, remaining);
       if (text) push(lines, '  '.repeat(depth) + text);
       return;
     }
@@ -354,7 +393,8 @@ export function buildScanScript(options: BrowserScanOptions): string {
   function collectVisibleText(node, out, depth) {
     if (truncated || !node || depth > 20) return;
     if (node.nodeType === Node.TEXT_NODE) {
-      const text = clean(node.nodeValue, 800);
+      const remaining = Math.max(0, options.maxChars - outputChars - 40);
+      const text = cleanLineText(node.nodeValue, remaining);
       if (text) push(out, text);
       return;
     }
