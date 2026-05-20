@@ -8,6 +8,17 @@ import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 const root = new URL("../..", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, root), "utf8");
 
+const hookDispatcherPageScript = read("bridge/pi_browser_bridge/hook_dispatcher.js");
+const hookRuntimeScript = read("bridge/pi_browser_bridge/runtime.js");
+const hookServiceWorkerScript = read("bridge/pi_browser_bridge/hook.js");
+
+assert(hookRuntimeScript.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';"), "page-scripts hook boundary: dispatcher filename must stay stable");
+assert(hookServiceWorkerScript.includes("files: [PI_BROWSER_HOOK_DISPATCHER_FILE]"), "page-scripts hook boundary: scripting injection must use the stable dispatcher file");
+assert(hookServiceWorkerScript.includes("chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE)"), "page-scripts hook boundary: CDP fallback must fetch the stable dispatcher file");
+assert(hookDispatcherPageScript.includes(";(function PiBrowserHookDispatcher()") && hookDispatcherPageScript.includes("window.__PI_BROWSER_HOOKS__ = {"), "page-scripts hook boundary: dispatcher must stay a self-contained IIFE with one public page global");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not require page-side imports before TODO 190");
+assert(!/chrome\./.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not call background-only Chrome APIs from MAIN world");
+
 const NODE = { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 };
 
 function cssEscape(value) {

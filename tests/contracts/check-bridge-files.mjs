@@ -45,6 +45,9 @@ const background = read("bridge/pi_browser_bridge/background.js");
 const bridgeInfo = read("bridge/pi_browser_bridge/bridge_info.js");
 const transport = read("bridge/pi_browser_bridge/transport.js");
 const router = read("bridge/pi_browser_bridge/router.js");
+const runtimeBridge = read("bridge/pi_browser_bridge/runtime.js");
+const hookBridge = read("bridge/pi_browser_bridge/hook.js");
+const hookDispatcher = read("bridge/pi_browser_bridge/hook_dispatcher.js");
 const waitCdp = read("bridge/pi_browser_bridge/wait_cdp.js");
 const waitCoordinator = read("bridge/pi_browser_bridge/wait_coordinator.js");
 const waitNavigation = read("bridge/pi_browser_bridge/wait_navigation.js");
@@ -62,6 +65,14 @@ assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "ba
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
 assert(background.indexOf("tab_sync.js") < background.indexOf("transport.js"), "background.js must load tab_sync.js before transport.js");
+assert(!background.includes("hook_dispatcher.js"), "hook_dispatcher.js must stay out of the service worker importScripts graph");
+assert(runtimeBridge.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'hook_dispatcher.js';"), "runtime.js must own the stable hook dispatcher filename");
+assert(runtimeBridge.includes("window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch"), "runtime page calls must dispatch through the stable hook page global");
+assert(hookBridge.includes("chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: [PI_BROWSER_HOOK_DISPATCHER_FILE] })"), "hook.js must inject the dispatcher through the stable file constant");
+assert(hookBridge.includes("fetch(chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))"), "hook.js CDP fallback must fetch the same dispatcher file constant");
+assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDispatcher.includes("window.__PI_BROWSER_HOOKS__ = {"), "hook_dispatcher.js must remain a self-contained page IIFE exposing window.__PI_BROWSER_HOOKS__");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "hook_dispatcher.js must not depend on page-side imports before TODO 190 bundle migration");
+assert(!/chrome\./.test(hookDispatcher), "hook_dispatcher.js must not call Chrome extension APIs from the page MAIN world");
 assert(waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait bridge runtime bundle must keep wait.js as the final facade/dispatch script");
 assert(waitBridgeRuntimeFiles[0] === "wait_cdp.js" && waitBridgeRuntimeFiles[1] === "wait_coordinator.js" && waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait helper modules must load before final wait.js facade");
 assert(waitCdp.includes("const piBrowserCdpDomainRefs = new Map()") && waitCdp.includes("function acquirePiBrowserCdpDomain") && waitCdp.includes("function subscribePiBrowserCdp") && waitCdp.includes("function diagnosePiBrowserCdpCleanupHistory"), "wait_cdp.js must own CDP refcount/subscription/cleanup diagnostics helpers");
@@ -96,6 +107,9 @@ for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTab
 
 assert(existsSync(path.join(root, "AI_INSTALL.md")), "AI_INSTALL.md install SOP must exist");
 assert(existsSync(path.join(root, "docs", "browser-usage.md")), "docs/browser-usage.md migration note must exist");
+assert(existsSync(path.join(root, "docs", "hook-dispatcher-boundary.md")), "docs/hook-dispatcher-boundary.md must freeze the page-injection boundary before bundler migration");
+const hookBoundaryDoc = read("docs/hook-dispatcher-boundary.md");
+assert(hookBoundaryDoc.includes("PI_BROWSER_HOOK_DISPATCHER_FILE") && hookBoundaryDoc.includes("chrome.scripting.executeScript") && hookBoundaryDoc.includes("CDP fallback") && hookBoundaryDoc.includes("TODO 190"), "hook dispatcher boundary doc must cover injection paths and the deferred page bundle migration");
 assert(read("AI_INSTALL.md").includes("PI_BROWSER_BRIDGE_PORT") && read("AI_INSTALL.md").includes("/browser-status"), "AI_INSTALL.md must own environment and diagnostics instructions");
 assert(readdirSync(path.join(root, "src", "tools", "summaries")).length >= 5, "summary modules must stay split");
 console.log("bridge files contract ok");

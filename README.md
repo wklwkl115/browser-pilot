@@ -52,7 +52,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
-- `hook_dispatcher.js` 仍是页面注入脚本，拆分前必须先有 bundling 或注入加载设计，不能直接按 SW 脚本方式拆。
+- `hook_dispatcher.js` 仍是页面注入脚本，当前冻结为单文件自包含页面 bundle；`chrome.scripting.executeScript({ files })` 与 CDP fallback 都加载同一个 `PI_BROWSER_HOOK_DISPATCHER_FILE`，拆分前必须先完成 TODO 190 独立页面 bundle 迁移，不能直接按 SW 脚本方式拆。边界见 `docs/hook-dispatcher-boundary.md`。
 
 ## Pi 命令
 

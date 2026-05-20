@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 冻结 `hook_dispatcher.js` 页面注入边界：新增 `docs/hook-dispatcher-boundary.md`，明确 dispatcher 在 bundler 迁移前保持单文件自包含页面 bundle，`chrome.scripting.executeScript({ files })` 与 CDP fallback 共用 `PI_BROWSER_HOOK_DISPATCHER_FILE`；契约锁定无页面 import、无 `chrome.*`、公开全局 `window.__PI_BROWSER_HOOKS__`、session strict-match/seq/redact/listener cleanup 不变。
 - 完成 Bridge `wait.js` 分阶段拆分收口：新增 `wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js`，分别承载 navigation/loadState、networkIdle 和 selector 等待子系统；`wait.js` 收敛到约 299 行 facade/dispatch/diagnose glue，所有 wait 子文件行数均低于 450，并用契约锁定职责边界和加载顺序。
 - 拆分 Bridge `wait.js` 的 WaitCoordinator/orphan/event subscription 子系统：新增 `bridge/pi_browser_bridge/wait_coordinator.js` 承载 wait registry、timeout/id、tab-scoped listener registry、orphan cleanup 和通用 wait cleanup；`wait.js` 收敛到约 850 行并继续作为 facade/dispatch，契约覆盖 listener scope、orphan cleanup、tab cleanup 和 cancelWaitsForTab。
 - 拆分 Bridge `wait.js` 的 CDP refs/subscription 子系统：新增 `bridge/pi_browser_bridge/wait_cdp.js` 承载 CDP domain refcount、subscriber registry、tab cleanup 与 diagnostics；`background.js`、VM 契约和文件边界检查锁定 `runtime.js -> wait_cdp.js -> wait_coordinator.js -> wait.js` 顺序，保持 disable failure retry、tab cleanup 和 diagnostics 结构不变。

@@ -70,11 +70,12 @@
 
 ## 184. 页面注入边界：`hook_dispatcher.js` 拆分/打包设计冻结
 
-- [ ] 性质判定：页面注入脚本边界设计，不得直接套用 service worker 多文件拆分；目标是解决 862 行 `hook_dispatcher.js` 单体并为支柱二页面 bundle 做前置。
-- [ ] 只读图谱：确认 `runtime.js` 的 `PI_BROWSER_HOOK_DISPATCHER_FILE`、`hook.js` 的 `chrome.scripting.executeScript({ files })`、CDP fallback fetch、uninstall cleanup、page global store、listener registry 和 session strict-match 边界。
-- [ ] 决策：在 TODO 中明确采用“独立页面 bundle”还是“单文件内按纯函数区域重排 + 契约锁定”；若无 bundler，禁止把 dispatcher 拆成多个需页面 import 的文件。
-- [ ] 不变式：install/collect/status/uninstall/evaluate、wrong-session `INVALID_SESSION`、collect no self-noise、seq monotonic、listener cleanup、redact pattern budget 全部不变。
-- [ ] 契约：`check-page-scripts.mjs` / `check-pi-browser-bridge.mjs` 覆盖注入文件名、dispatcher 自包含性、session/listener cleanup；文档记录为何不能按 SW 方式拆。
+- [x] 性质判定：页面注入脚本边界设计，不得直接套用 service worker 多文件拆分；目标是解决 862 行 `hook_dispatcher.js` 单体并为支柱二页面 bundle 做前置。
+- [x] 只读图谱：`docs/hook-dispatcher-boundary.md` 已确认 `runtime.js` 的 `PI_BROWSER_HOOK_DISPATCHER_FILE`、`hook.js` 的 `chrome.scripting.executeScript({ files })`、CDP fallback fetch、`callPagePiBrowser` dispatch、uninstall cleanup、page global store、listener registry 和 session strict-match 边界。
+- [x] 决策：当前采用“单文件自包含页面 bundle + 契约锁定”；禁止在无 bundler 阶段把 dispatcher 拆成多个需页面 import 的文件。真正拆分进入 TODO 190 独立页面 bundle 迁移。
+- [x] 不变式：install/collect/status/uninstall/evaluate、wrong-session `INVALID_SESSION`、collect no self-noise、seq monotonic、listener cleanup、redact pattern budget 全部不变，继续由 VM fixture 覆盖。
+- [x] 契约：`check-bridge-files.mjs`、`check-page-scripts.mjs`、`check-pi-browser-bridge.mjs` 覆盖注入文件名、service worker exclusion、dispatcher 自包含性、无页面 import/无 `chrome.*`、session/listener cleanup；README/CHANGELOG/边界文档已同步。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；首次全量 check 在 fake-ws 随机时序处失败，单跑 `check:fake-ws` 和随后全量重跑均通过。
 
 ## 185. Smoke 端口冲突显式诊断与文档收口
 
@@ -157,7 +158,7 @@
 2. 已完成 TODO 181：`wait_cdp.js` 拆出 CDP refs/subscription，契约与 `npm run check` 通过。
 3. 已完成 TODO 182：`wait_coordinator.js` 拆出 WaitCoordinator、orphan GC 与 event subscription registry，契约与 `npm run check` 通过。
 4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
-5. 下一项 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界。
-6. TODO 185-186：补 smoke 诊断、收紧 bridge ambient/global 类型。
+5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
+6. 下一项 TODO 185：补 smoke 端口冲突显式诊断；随后 TODO 186 收紧 bridge ambient/global 类型。
 7. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
 8. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
