@@ -8,7 +8,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const list = (rel) => readdirSync(path.join(root, rel));
 
 const scripts = list("scripts").sort();
-assert.deepEqual(scripts, ["register-ts-extension-loader.mjs", "sync-bridge-config.mjs", "sync-native-protocol.mjs", "ts-extension-loader.mjs"], "scripts/ must contain only generators/loaders; move tests to tests/");
+assert.deepEqual(scripts, ["build-bridge.mjs", "register-ts-extension-loader.mjs", "sync-bridge-config.mjs", "sync-native-protocol.mjs", "ts-extension-loader.mjs"], "scripts/ must contain only generators/loaders; move tests to tests/");
 assert(!existsSync(path.join(root, "scripts", "smoke-browser.mjs")), "smoke tests must live under tests/smoke/");
 assert(!scripts.some((file) => /^check-.*\.mjs$/.test(file)), "contract tests must live under tests/contracts/");
 

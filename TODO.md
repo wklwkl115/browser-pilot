@@ -105,10 +105,11 @@
 
 ## 188. Bridge build pipeline 骨架（不切 runtime）
 
-- [ ] 新增构建脚本：添加 `build:bridge`，生成临时/实验产物，不修改当前 `manifest.json` runtime 指向；构建应可在无私有路径环境运行。
-- [ ] 源目录：建立 `bridge_src/` 或等价目录，先放最小 service worker spike 和共享类型，验证 ESM TS -> MV3 service worker bundle。
-- [ ] 产物边界：生成文件必须有明确 generated-file 规则；契约禁止手改 dist；package include/exclude 规则明确。
-- [ ] 验证：`npm run check` 增加 build pipeline 静态验证，但不要求真实扩展切换；README/AI_INSTALL 说明这是未启用构建管线。
+- [x] 新增构建脚本：添加 `build:bridge`，通过 esbuild 生成实验产物，不修改当前 `manifest.json` runtime 指向；构建脚本无私有绝对路径。
+- [x] 源目录：建立 `bridge_src/`，新增最小 `service-worker.ts` spike 和 `shared/buildInfo.ts` 类型，验证 ESM TS -> MV3 service worker bundle。
+- [x] 产物边界：`bridge/pi_browser_bridge/dist/` 由脚本生成，`.gitignore` 只保留 marker；build manifest 标记 `generated:true/runtimeSwitched:false/manifestTarget:"background.js"`；契约禁止把 dist 误认为当前 runtime。
+- [x] 验证：`npm run check` 增加 `check:bridge:build` 静态验证，但不要求真实扩展切换；README/AI_INSTALL 说明这是未启用构建管线。
+- [x] 验证命令：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过。
 
 ## 189. Service worker bridge 迁移到 ESM TypeScript bundle
 
@@ -163,6 +164,7 @@
 5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
 6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
 7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
-8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计；下一项 TODO 188 建立 build pipeline 骨架但不切 runtime。
-9. TODO 189-193：迁移 service worker、页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
-10. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
+9. 已完成 TODO 188：建立 build pipeline 骨架但不切 runtime；下一项 TODO 189 迁移 service worker bridge 到 ESM TypeScript bundle。
+10. TODO 190-193：迁移页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
+11. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

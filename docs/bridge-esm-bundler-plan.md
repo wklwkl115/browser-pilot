@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for TODO 187-193. It is a migration design, not a runtime switch.
+This document freezes the target architecture and gates for TODO 187-193. It is a migration design, not a runtime switch. TODO 188 adds `npm run build:bridge` as an experimental build pipeline only; the active MV3 runtime remains `background.js` until TODO 191.
 
 ## Decision
 
