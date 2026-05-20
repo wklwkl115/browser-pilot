@@ -31,7 +31,7 @@
 
 ## 当前架构债决策（支柱二/三/四）
 
-- 支柱三（`wait.js` 解耦）是当前最高 ROI：`wait_cdp.js` 与 `wait_coordinator.js` 已迁出 CDP refs/subscription、WaitCoordinator、event subscription registry、orphan cleanup；`bridge/pi_browser_bridge/wait.js` 仍约 850 行，继续混合 navigation/selector/networkIdle/diagnose；当前从 TODO 183 继续。
+- 支柱三（`wait.js` 解耦）已完成：wait 子系统拆为 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js` 与 299 行 `wait.js` facade；当前从 TODO 184 继续处理页面注入边界。
 - 支柱二（ESM + TS bundler）是真实架构债，不因工作量大而搁置；但必须先完成 wait/hook 页面注入边界、smoke 诊断和 bridge 类型收口，再按构建产物切换路径迁移，避免一次性改动破坏 MV3 runtime。
 - 支柱四（smoke 端口冲突）诊断成立但原“动态端口自动协商”方案不直接适配固定 `config.js` 的 MV3 扩展；先做显式失败分类和文档，再做无 puppeteer/playwright 强依赖的独占 Chrome profile smoke。
 - `network.js` 已完成拆分，不再列为待拆债务；`hook_dispatcher.js` 是页面注入脚本，不能照搬 service worker `importScripts` 拆法，必须先冻结注入/打包边界。
@@ -51,22 +51,22 @@
 - [x] 加载顺序：`background.js` 保持 `runtime.js -> wait_cdp.js -> ... -> wait.js -> network_model.js` 顺序；当前经 TODO 182 扩展为 `runtime.js -> wait_cdp.js -> wait_coordinator.js -> wait.js -> network_model.js`，`check-bridge-files.mjs` 与 `check-pi-browser-bridge.mjs` 锁定 wait bundle 顺序和 `wait.js` facade 位置。
 - [x] 不变式：保留 `Network.disable/Page.disable` 失败时 ref 保留、retry release、tab removed 不留 stale ref、subscriber cleanup 和 `diagnosePiBrowserCdpDomainRefs/Subscriptions/CleanupHistory` 结构。
 - [x] 契约：fake CDP 测试覆盖 acquire/release、disable failure、retry release、tab cleanup、subscriber cleanup；`check-bridge-files.mjs` 锁定 `wait_cdp.js` 不包含 selector/navigation/networkIdle 业务，且 `wait.js` 不回吸 CDP maps/helper。
-- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-refactor-execution && npm run check"` 已通过；本项为内部 service worker 拆分，未执行真实 reload，后续 TODO 183 runtime gate 统一补 wait/navigation/networkIdle 子集 artifact。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-refactor-execution && npm run check"` 已通过；本项为内部 service worker 拆分；后续 TODO 183 已继续拆分 wait 子系统并记录 smoke 端口占用阻塞证据。
 
 ## 182. Bridge `wait.js` 拆分第二刀：WaitCoordinator / orphan GC / event subscription
 
 - [x] 执行边界：新增 `wait_coordinator.js`，迁出 `WaitCoordinator`、`piBrowserWaits`、`waitKey/makeWaitId`、timeout/state helper、event subscription registry、orphan wait cleanup、通用 wait cleanup helper；`wait.js` 当前约 850 行。
 - [x] 不变式：active wait key、tab-scoped listener key、`cleanupTabWaits`、`cancelWaitsForTab`、`cleanupWaitsForUninstall`、orphan age 语义和 diagnostics 字段不变；`wait.js` 继续只通过全局 facade 调用这些 helper。
 - [x] 契约：既有两 tab 同 listenerId/uninstall cleanup 契约继续通过；新增 wait coordinator fixture 覆盖 orphan cleanup、`cleanupTabWaits`、`cancelWaitsForTab(tabId,'tab_cleanup')`；`check-bridge-files.mjs` 锁定 `wait.js` 不再重定义 WaitCoordinator，`wait_coordinator.js` 不包含 navigation/networkIdle/selector 业务。
-- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-refactor-execution && npm run check"` 已通过；本项为内部 service worker 拆分，未执行真实 reload，后续 TODO 183 runtime gate 统一补 wait/navigation/networkIdle 子集 artifact。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-refactor-execution && npm run check"` 已通过；本项为内部 service worker 拆分；后续 TODO 183 已继续拆分 wait 子系统并记录 smoke 端口占用阻塞证据。
 
 ## 183. Bridge `wait.js` 拆分第三刀：navigation / networkIdle / selector 子系统与收口 gate
 
-- [ ] 执行边界：新增 `wait_navigation.js` 与 `wait_network_idle.js`；navigation/loadState/frame lifecycle、current-state probe、webNavigation handlers 进入 navigation；networkIdle include/ignore pattern、quiet window、inflight 计算进入 networkIdle；selector/polling helper 如仍过大再拆 `wait_selector.js`。
-- [ ] Facade 收口：`wait.js` 只保留 native wait command dispatch、diagnose glue 和少量 shared orchestration，目标行数 ≤450；所有 wait 子文件各自 ≤450。
-- [ ] 不变式：`wait.navigation timeoutMs=0` 真实当前状态探测、`navigateAndWait` 总 deadline 扣减、迟到 lease 成功转 `WAIT_TIMEOUT/WAIT_STATE_LOST`、networkIdle safe pattern、selector timeout/error code 全部不变。
-- [ ] 契约：组合 VM fixture 覆盖 navigation immediate check、any/all 空条件、networkIdle ReDoS 防护、diagnose iframe、performance timeout；`check-bridge-files.mjs` 锁职责边界和行数上限。
-- [ ] Runtime：真实扩展 reload 后跑 wait/navigation/networkIdle 子集，artifact 写入 `.pi/browser-artifacts/` 并回填 TODO。
+- [x] 执行边界：新增 `wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js`；navigation/loadState/current-state probe/webNavigation handlers 进入 navigation；networkIdle include/ignore pattern、quiet window、inflight 计算进入 networkIdle；selector probe/polling 进入 selector。
+- [x] Facade 收口：`wait.js` 只保留 composite wait、native wait command dispatch、cancel、hook/evidence helper、diagnose glue，当前约 299 行；所有 wait 子文件均 ≤450 行。
+- [x] 不变式：`wait.navigation timeoutMs=0` 真实当前状态探测、`navigateAndWait` 总 deadline 扣减、迟到 lease 成功转 `WAIT_TIMEOUT/WAIT_STATE_LOST`、networkIdle safe pattern、selector timeout/error code 保持不变。
+- [x] 契约：组合 VM fixture 继续覆盖 navigation immediate check、any/all 空条件、networkIdle ReDoS 防护、diagnose iframe、performance timeout；`check-bridge-files.mjs` 锁职责边界、加载顺序和所有 wait 子文件 ≤450 行。
+- [x] Runtime：`npm run smoke:browser` 已尝试，当前被既有 `127.0.0.1:18765` bridge 占用阻断，未关闭用户进程；失败证据写入 `.pi/browser-artifacts/smoke-browser-results.json`。本项代码路径由 `npm run check` 的 VM/contract 覆盖，端口诊断与隔离 smoke 继续由 TODO 185/194 处理。
 
 ## 184. 页面注入边界：`hook_dispatcher.js` 拆分/打包设计冻结
 
@@ -156,7 +156,8 @@
 1. 已完成 TODO 180：`wait.js` 只读依赖图和拆分契约准备。
 2. 已完成 TODO 181：`wait_cdp.js` 拆出 CDP refs/subscription，契约与 `npm run check` 通过。
 3. 已完成 TODO 182：`wait_coordinator.js` 拆出 WaitCoordinator、orphan GC 与 event subscription registry，契约与 `npm run check` 通过。
-4. 下一项 TODO 183：拆 navigation/networkIdle/selector 并做 wait runtime gate。
-5. TODO 184-186：冻结页面注入边界、补 smoke 诊断、收紧 bridge ambient/global 类型。
-6. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
-7. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
+5. 下一项 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界。
+6. TODO 185-186：补 smoke 诊断、收紧 bridge ambient/global 类型。
+7. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
+8. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

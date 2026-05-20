@@ -34,6 +34,9 @@ const requiredBridgeFiles = [
 	"runtime.js",
 	"wait_cdp.js",
 	"wait_coordinator.js",
+	"wait_navigation.js",
+	"wait_network_idle.js",
+	"wait_selector.js",
 	"wait.js",
 	"network_model.js",
 	"network.js",
@@ -85,7 +88,7 @@ const htmlBridge = read("bridge/pi_browser_bridge/html.js");
 const screenshotBridge = read("bridge/pi_browser_bridge/screenshot.js");
 const cdpBridge = read("bridge/pi_browser_bridge/cdp.js");
 const frameBridge = read("bridge/pi_browser_bridge/frame.js");
-const waitBridgeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait.js"];
+const waitBridgeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
 const waitBridge = readBridgeBundle(waitBridgeFiles);
 const hookBridge = read("bridge/pi_browser_bridge/hook.js");
 const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
@@ -102,13 +105,13 @@ assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversal
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
 assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
 assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
-assert(waitBridgeFiles[0] === "wait_cdp.js" && waitBridgeFiles[1] === "wait_coordinator.js", "wait CDP helper and coordinator must load before wait.js in VM fixtures");
-assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait.js"), "background.js must load runtime.js before wait_cdp.js before wait_coordinator.js before wait.js");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
+assert(waitBridgeFiles[0] === "wait_cdp.js" && waitBridgeFiles[1] === "wait_coordinator.js" && waitBridgeFiles.at(-1) === "wait.js", "wait helper modules must load before wait.js in VM fixtures");
+assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait_navigation.js") && background.indexOf("wait_navigation.js") < background.indexOf("wait_network_idle.js") && background.indexOf("wait_network_idle.js") < background.indexOf("wait_selector.js") && background.indexOf("wait_selector.js") < background.indexOf("wait.js"), "background.js must load wait helper modules before final wait.js facade");
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
-assert(background.indexOf("patterns.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait_cdp.js/wait_coordinator.js/wait.js, then network_model.js before network.js");
+assert(background.indexOf("patterns.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait_navigation.js") && background.indexOf("wait_navigation.js") < background.indexOf("wait_network_idle.js") && background.indexOf("wait_network_idle.js") < background.indexOf("wait_selector.js") && background.indexOf("wait_selector.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait helpers/facade, then network_model.js before network.js");
 assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "background.js must load protocol.js before runtime.js");
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");

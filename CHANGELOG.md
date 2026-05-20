@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 完成 Bridge `wait.js` 分阶段拆分收口：新增 `wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js`，分别承载 navigation/loadState、networkIdle 和 selector 等待子系统；`wait.js` 收敛到约 299 行 facade/dispatch/diagnose glue，所有 wait 子文件行数均低于 450，并用契约锁定职责边界和加载顺序。
 - 拆分 Bridge `wait.js` 的 WaitCoordinator/orphan/event subscription 子系统：新增 `bridge/pi_browser_bridge/wait_coordinator.js` 承载 wait registry、timeout/id、tab-scoped listener registry、orphan cleanup 和通用 wait cleanup；`wait.js` 收敛到约 850 行并继续作为 facade/dispatch，契约覆盖 listener scope、orphan cleanup、tab cleanup 和 cancelWaitsForTab。
 - 拆分 Bridge `wait.js` 的 CDP refs/subscription 子系统：新增 `bridge/pi_browser_bridge/wait_cdp.js` 承载 CDP domain refcount、subscriber registry、tab cleanup 与 diagnostics；`background.js`、VM 契约和文件边界检查锁定 `runtime.js -> wait_cdp.js -> wait_coordinator.js -> wait.js` 顺序，保持 disable failure retry、tab cleanup 和 diagnostics 结构不变。
 - 冻结 Bridge `wait.js` 拆分设计：新增 `docs/bridge-wait-split.md`，记录 wait 顶层状态/函数图谱、外部全局消费者、行为不变式，并让 bridge 契约测试改用可扩展的 wait bundle/helper，为后续 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js` 拆分做准备。

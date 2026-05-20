@@ -12,12 +12,12 @@ function assertBackgroundOrder(background, files, message) {
 	}
 }
 
-const waitBridgeRuntimeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait.js"];
+const waitBridgeRuntimeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
 const networkBridgeRuntimeFiles = ["network_model.js", "network.js"];
 const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"];
 
 const requiredBridgeFiles = [
-	"manifest.json", "background.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js", "hook_dispatcher.js", "content.js", "config.js", "disable_dialogs.js", "popup.html", "popup.js", "native_command_schema.json",
+	"manifest.json", "background.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js", "hook_dispatcher.js", "content.js", "config.js", "disable_dialogs.js", "popup.html", "popup.js", "native_command_schema.json",
 ];
 for (const file of requiredBridgeFiles) assert(existsSync(path.join(bridge, file)), `missing bridge file: ${file}`);
 
@@ -47,6 +47,9 @@ const transport = read("bridge/pi_browser_bridge/transport.js");
 const router = read("bridge/pi_browser_bridge/router.js");
 const waitCdp = read("bridge/pi_browser_bridge/wait_cdp.js");
 const waitCoordinator = read("bridge/pi_browser_bridge/wait_coordinator.js");
+const waitNavigation = read("bridge/pi_browser_bridge/wait_navigation.js");
+const waitNetworkIdle = read("bridge/pi_browser_bridge/wait_network_idle.js");
+const waitSelector = read("bridge/pi_browser_bridge/wait_selector.js");
 const waitRuntime = read("bridge/pi_browser_bridge/wait.js");
 const networkModel = read("bridge/pi_browser_bridge/network_model.js");
 const networkRuntime = read("bridge/pi_browser_bridge/network.js");
@@ -60,14 +63,21 @@ assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "bac
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
 assert(background.indexOf("tab_sync.js") < background.indexOf("transport.js"), "background.js must load tab_sync.js before transport.js");
 assert(waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait bridge runtime bundle must keep wait.js as the final facade/dispatch script");
-assert(waitBridgeRuntimeFiles[0] === "wait_cdp.js" && waitBridgeRuntimeFiles[1] === "wait_coordinator.js", "wait CDP helper and coordinator must load before wait.js");
+assert(waitBridgeRuntimeFiles[0] === "wait_cdp.js" && waitBridgeRuntimeFiles[1] === "wait_coordinator.js" && waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait helper modules must load before final wait.js facade");
 assert(waitCdp.includes("const piBrowserCdpDomainRefs = new Map()") && waitCdp.includes("function acquirePiBrowserCdpDomain") && waitCdp.includes("function subscribePiBrowserCdp") && waitCdp.includes("function diagnosePiBrowserCdpCleanupHistory"), "wait_cdp.js must own CDP refcount/subscription/cleanup diagnostics helpers");
 assert(waitCoordinator.includes("class WaitCoordinator") && waitCoordinator.includes("const piBrowserWaits = new WaitCoordinator()") && waitCoordinator.includes("function cleanupPiBrowserOrphanWaits") && waitCoordinator.includes("function cleanupEventSubscriptionsForTab"), "wait_coordinator.js must own wait registry, orphan cleanup, and event subscription helpers");
+assert(waitNavigation.includes("async function waitForNavigation") && waitNavigation.includes("async function waitForLoadState") && waitNavigation.includes("async function navigateAndWait"), "wait_navigation.js must own navigation and load-state helpers");
+assert(waitNetworkIdle.includes("function compileNetworkIdleFilter") && waitNetworkIdle.includes("async function waitForNetworkIdle"), "wait_network_idle.js must own network-idle helpers");
+assert(waitSelector.includes("PI_BROWSER_SELECTOR_PROBE_SOURCE") && waitSelector.includes("async function waitForSelector") && waitSelector.includes("function buildSelectorProbe"), "wait_selector.js must own selector probe helpers");
 for (const forbidden of ["const piBrowserCdpDomainRefs = new Map()", "const piBrowserCdpSubscriptions = new Map()", "let piBrowserCdpSubSeq = 0", "function acquirePiBrowserCdpDomain", "function subscribePiBrowserCdp", "function diagnosePiBrowserCdpDomainRefs"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb CDP helper/state: ${forbidden}`);
 for (const forbidden of ["class WaitCoordinator", "const piBrowserWaits = new WaitCoordinator()", "function cleanupPiBrowserOrphanWaits", "function registerWait", "function cleanupEventSubscriptionsForTab", "function cleanupTabWaits", "function cancelWaitsForTab"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb coordinator helper/state: ${forbidden}`);
+for (const forbidden of ["async function waitForNavigation", "async function waitForNetworkIdle", "async function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "function compileNetworkIdleFilter", "function buildSelectorProbe", "function loadStateSatisfied"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb wait subsystem helper: ${forbidden}`);
 for (const forbidden of ["function waitForNavigation", "function waitForNetworkIdle", "function waitForSelector", "function navigatePiBrowser", "function loadStateSatisfied"]) assert(!waitCdp.includes(forbidden), `wait_cdp.js must not own wait business logic: ${forbidden}`);
 for (const forbidden of ["function waitForNavigation", "function waitForNetworkIdle", "function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "PI_BROWSER_SELECTOR_STABLE_SAMPLES", "function navigatePiBrowser", "function loadStateSatisfied"]) assert(!waitCoordinator.includes(forbidden), `wait_coordinator.js must not own navigation/networkIdle/selector business logic: ${forbidden}`);
-assert(waitCdp.split(/\r?\n/).length <= 350 && waitCoordinator.split(/\r?\n/).length <= 350 && waitRuntime.split(/\r?\n/).length <= 900, "wait split files must stay below the staged health thresholds");
+for (const forbidden of ["async function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "async function waitForNetworkIdle", "function compileNetworkIdleFilter"]) assert(!waitNavigation.includes(forbidden), `wait_navigation.js must not own selector/networkIdle business logic: ${forbidden}`);
+for (const forbidden of ["async function waitForNavigation", "async function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "function loadStateSatisfied"]) assert(!waitNetworkIdle.includes(forbidden), `wait_network_idle.js must not own navigation/selector business logic: ${forbidden}`);
+for (const forbidden of ["async function waitForNavigation", "async function waitForNetworkIdle", "function compileNetworkIdleFilter", "function loadStateSatisfied"]) assert(!waitSelector.includes(forbidden), `wait_selector.js must not own navigation/networkIdle business logic: ${forbidden}`);
+assert([waitCdp, waitCoordinator, waitNavigation, waitNetworkIdle, waitSelector, waitRuntime].every((source) => source.split(/\r?\n/).length <= 450), "wait split files must each stay below the TODO 183 health threshold");
 assert(networkModel.includes("function normalizeNetworkRecorderConfig") && networkModel.includes("function storeNetworkBody") && networkModel.includes("const piBrowserNetworkRecorders = new Map()"), "network_model.js must own recorder state/config/body storage helpers");
 assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networkRuntime.includes("function handleNetworkRecorderCdpEvent") && networkRuntime.includes("async function handleNetworkRecorderCommand"), "network.js must own CDP events, lifecycle, and command dispatch");
 for (const forbidden of ["const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES", "function normalizeNetworkRecorderConfig", "function storeNetworkBody", "function truncateBase64Body"]) assert(!networkRuntime.includes(forbidden), `network.js must not re-absorb model helper: ${forbidden}`);

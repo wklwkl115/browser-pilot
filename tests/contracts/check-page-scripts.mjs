@@ -408,13 +408,15 @@ assert.equal(JSON.stringify(pickBehavior.selectors), JSON.stringify(["#real"]), 
 assert(!String(pickBehavior.selections[0]?.text || "").includes("Translated noise"), "pick behavior: selection text must exclude translation wrapper noise");
 
 const wait = read("bridge/pi_browser_bridge/wait.js");
-assert(wait.includes("textWithoutNoise") && wait.includes("sanitizedOuterHtml") && wait.includes("read-frog-translated"), "page-scripts wait.selector: element snapshots must filter translation plugin noise");
-assert(wait.includes("const visible = rectVisible") && wait.includes("hitTarget") && wait.includes("IntersectionObserver can lag"), "page-scripts wait.selector: visible must be CSS/rect based with IO kept as diagnostics");
-assert(!wait.includes("text:(el.innerText||el.textContent||'').slice"), "page-scripts wait.selector: must not return raw innerText snapshots");
-assert(wait.includes("chrome.webNavigation.onCommitted") && wait.includes("chrome.tabs.onUpdated.addListener(onTabsUpdated)") && wait.includes("Page.frameNavigated") && wait.includes("Page.navigatedWithinDocument"), "wait.navigation must register webNavigation/tabs/CDP success listeners instead of timeout-only waiting");
-assert(wait.includes("if (!value) return !targetUrl && !urlContains") && !wait.includes("target.startsWith(value)"), "wait.navigation must not match targetUrl against an empty or partial current URL before navigation starts");
-assert(wait.includes("const checkCurrent = async (source)") && wait.includes("wait.navigation.currentUrl") && wait.includes("setInterval(() => { void checkCurrent('poll'); }"), "wait.navigation must poll current URL/readyState as a deterministic fallback for missed navigation events");
-assert(wait.includes("chrome.webNavigation.onErrorOccurred") && wait.includes("waitForNavigation failed"), "wait.navigation must handle navigation failure events");
+const waitSelector = read("bridge/pi_browser_bridge/wait_selector.js");
+const waitNavigation = read("bridge/pi_browser_bridge/wait_navigation.js");
+assert(waitSelector.includes("textWithoutNoise") && waitSelector.includes("sanitizedOuterHtml") && waitSelector.includes("read-frog-translated"), "page-scripts wait.selector: element snapshots must filter translation plugin noise");
+assert(waitSelector.includes("const visible = rectVisible") && waitSelector.includes("hitTarget") && waitSelector.includes("IntersectionObserver can lag"), "page-scripts wait.selector: visible must be CSS/rect based with IO kept as diagnostics");
+assert(!waitSelector.includes("text:(el.innerText||el.textContent||'').slice"), "page-scripts wait.selector: must not return raw innerText snapshots");
+assert(waitNavigation.includes("chrome.webNavigation.onCommitted") && waitNavigation.includes("chrome.tabs.onUpdated.addListener(onTabsUpdated)") && waitNavigation.includes("Page.frameNavigated") && waitNavigation.includes("Page.navigatedWithinDocument"), "wait.navigation must register webNavigation/tabs/CDP success listeners instead of timeout-only waiting");
+assert(waitNavigation.includes("if (!value) return !targetUrl && !urlContains") && !waitNavigation.includes("target.startsWith(value)"), "wait.navigation must not match targetUrl against an empty or partial current URL before navigation starts");
+assert(waitNavigation.includes("const checkCurrent = async (source)") && waitNavigation.includes("wait.navigation.currentUrl") && waitNavigation.includes("setInterval(() => { void checkCurrent('poll'); }"), "wait.navigation must poll current URL/readyState as a deterministic fallback for missed navigation events");
+assert(waitNavigation.includes("chrome.webNavigation.onErrorOccurred") && waitNavigation.includes("waitForNavigation failed"), "wait.navigation must handle navigation failure events");
 assert(wait.includes("target.addEventListener(eventType, handler, true)") && wait.includes("removeEventListener(rec.eventType, rec.handler"), "hook add/removeEventListener must store handlers and remove the real page listener");
 assert(wait.includes("const entries = Array.isArray(result?.result?.value) ? result.result.value : []") && wait.includes("data: { entries, entryType, nameContains, count"), "hook.getPerformanceEntries must unwrap Runtime.evaluate result.value into entries");
 
