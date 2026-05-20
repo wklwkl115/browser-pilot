@@ -4,15 +4,16 @@ This document freezes the current `bridge/pi_browser_bridge/wait.js` dependency 
 
 ## Current loader and test boundary
 
-- Service worker loader after TODO 181: `config.js -> protocol.js -> patterns.js -> cdp.js -> runtime.js -> wait_cdp.js -> wait.js -> network_model.js -> network.js -> ... -> transport.js`.
-- `tests/contracts/check-pi-browser-bridge.mjs` executes wait code through `waitBridgeFiles`. That bundle now contains `wait_cdp.js -> wait.js`; future wait subfiles must be prepended there in the same order as `background.js`.
+- Service worker loader after TODO 182: `config.js -> protocol.js -> patterns.js -> cdp.js -> runtime.js -> wait_cdp.js -> wait_coordinator.js -> wait.js -> network_model.js -> network.js -> ... -> transport.js`.
+- `tests/contracts/check-pi-browser-bridge.mjs` executes wait code through `waitBridgeFiles`. That bundle now contains `wait_cdp.js -> wait_coordinator.js -> wait.js`; future wait subfiles must be prepended there in the same order as `background.js`.
 - `tests/contracts/check-bridge-files.mjs` owns the service worker script order contract and keeps `wait.js` as the final wait facade/dispatch script.
 
 ## Current staged split status
 
 - TODO 180 completed the read-only map and contract preparation.
 - TODO 181 migrated CDP domain refs, event subscriptions, tab cleanup and CDP diagnostics into `wait_cdp.js`; `wait.js` no longer owns `piBrowserCdp*` maps or `piBrowserCdpSubSeq`.
-- TODO 182-183 still own the WaitCoordinator/orphan cleanup and navigation/networkIdle/selector splits.
+- TODO 182 migrated `WaitCoordinator`, `piBrowserWaits`, wait id/timeout helpers, orphan cleanup, tab-scoped event subscription registry and common wait cleanup into `wait_coordinator.js`; `wait.js` no longer owns the wait registry.
+- TODO 183 still owns the navigation/networkIdle/selector splits and final wait facade line-count gate.
 
 ## Top-level state and responsibility map
 

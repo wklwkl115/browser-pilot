@@ -33,6 +33,7 @@ const requiredBridgeFiles = [
 	"cdp.js",
 	"runtime.js",
 	"wait_cdp.js",
+	"wait_coordinator.js",
 	"wait.js",
 	"network_model.js",
 	"network.js",
@@ -84,7 +85,7 @@ const htmlBridge = read("bridge/pi_browser_bridge/html.js");
 const screenshotBridge = read("bridge/pi_browser_bridge/screenshot.js");
 const cdpBridge = read("bridge/pi_browser_bridge/cdp.js");
 const frameBridge = read("bridge/pi_browser_bridge/frame.js");
-const waitBridgeFiles = ["wait_cdp.js", "wait.js"];
+const waitBridgeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait.js"];
 const waitBridge = readBridgeBundle(waitBridgeFiles);
 const hookBridge = read("bridge/pi_browser_bridge/hook.js");
 const evidenceBridge = read("bridge/pi_browser_bridge/evidence.js");
@@ -101,13 +102,13 @@ assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversal
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
 assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
 assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
-assert(waitBridgeFiles[0] === "wait_cdp.js", "wait CDP helper must load before wait.js in VM fixtures");
-assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait.js"), "background.js must load runtime.js before wait_cdp.js before wait.js");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
+assert(waitBridgeFiles[0] === "wait_cdp.js" && waitBridgeFiles[1] === "wait_coordinator.js", "wait CDP helper and coordinator must load before wait.js in VM fixtures");
+assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait.js"), "background.js must load runtime.js before wait_cdp.js before wait_coordinator.js before wait.js");
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
-assert(background.indexOf("patterns.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait_cdp.js/wait.js, then network_model.js before network.js");
+assert(background.indexOf("patterns.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait.js") && background.indexOf("patterns.js") < background.indexOf("network_model.js") && background.indexOf("network_model.js") < background.indexOf("network.js"), "background.js must load shared pattern helpers before wait_cdp.js/wait_coordinator.js/wait.js, then network_model.js before network.js");
 assert(background.indexOf("protocol.js") < background.indexOf("runtime.js"), "background.js must load protocol.js before runtime.js");
 assert(background.indexOf("protocol.js") < background.indexOf("router.js"), "background.js must load protocol.js before router.js");
 assert(background.indexOf("router.js") < background.indexOf("transport.js"), "background.js must load router.js before transport.js");
@@ -1394,6 +1395,48 @@ globalThis.__listenerScopeTest = {
 }
 
 await testHookEventListenerTabScopeAndCleanupContracts();
+
+async function testWaitCoordinatorCleanupContracts() {
+	const sandbox = {
+		self: {},
+		console,
+		setTimeout,
+		clearTimeout,
+		AbortController,
+		PI_BROWSER_ERROR_CODES: { TIMEOUT: "TIMEOUT", INTERNAL_ERROR: "INTERNAL_ERROR", CANCELLED: "CANCELLED" },
+		piBrowserError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
+		piBrowserPersistentCdp: () => null,
+		normalizePersistentPiBrowserResponse: (value) => value,
+	};
+	vm.runInNewContext(`${waitBridge}
+globalThis.__waitCoordinatorTest = {
+	registerWait,
+	cleanupPiBrowserOrphanWaits,
+	cleanupTabWaits,
+	cancelWaitsForTab,
+	waitKey,
+	hasWait: (tabId, waitId) => piBrowserWaits.has(waitKey(tabId, waitId)),
+	waits: () => Array.from(piBrowserWaits.values()).map((wait) => ({ tabId:wait.tabId, waitId:wait.waitId, kind:wait.kind, status:wait.status }))
+};`, sandbox, { filename: "wait-coordinator-contract.js" });
+	const api = sandbox.__waitCoordinatorTest;
+	const oldWait = api.registerWait(31, "orphan", { waitId: "old-orphan" });
+	const youngWait = api.registerWait(31, "young", { waitId: "young-live" });
+	oldWait.createdAt = Date.now() - 10000;
+	youngWait.createdAt = Date.now();
+	const orphanCleaned = api.cleanupPiBrowserOrphanWaits("contract_orphan", 1000);
+	assert(orphanCleaned === 1 && !api.hasWait(31, "old-orphan") && api.hasWait(31, "young-live"), "orphan cleanup must remove only waits older than the configured age");
+
+	api.registerWait(32, "cancel-a", { waitId: "cancel-a" });
+	api.registerWait(32, "cancel-b", { waitId: "cancel-b" });
+	const cancelled = api.cancelWaitsForTab(32, "tab_cleanup");
+	assert(cancelled === 2 && !api.hasWait(32, "cancel-a") && !api.hasWait(32, "cancel-b"), "cancelWaitsForTab(tabId,'tab_cleanup') must clean all waits for the target tab");
+
+	api.registerWait(33, "cleanup-tab", { waitId: "cleanup-tab" });
+	const cleanup = api.cleanupTabWaits(33, "tab_cleanup", { includeCdp: false, remember: false });
+	assert(cleanup.cleaned === 1 && cleanup.aborted === 1 && cleanup.orphaned === 0 && !api.hasWait(33, "cleanup-tab"), "cleanupTabWaits must abort and remove the target tab wait record");
+}
+
+await testWaitCoordinatorCleanupContracts();
 
 async function testWaitDiagnoseIframeProbeContract() {
 	function iframe(attrs, rect, style) {
