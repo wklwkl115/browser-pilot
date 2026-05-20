@@ -78,6 +78,14 @@ PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D
 npm run smoke:browser
 ```
 
+如果 `127.0.0.1:18765` 已被占用，smoke 会失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port` 诊断：
+
+- `agent_occupies`：常驻 Pi agent/bridge 正在使用扩展固定端口；先停止该 agent 或空闲时再跑 smoke。
+- `orphan_socket`：疑似遗留 node/smoke 进程占用端口；按输出 PID/命令行人工确认后关闭。
+- `unknown_owner`：其它进程占用端口；按输出 PID/命令行排查。
+
+smoke 只报告占用原因，不会自动 kill 用户进程。
+
 上传/下载真实浏览器 smoke（显式执行，会创建临时上传文件并触发下载）：
 
 ```bash

@@ -5,6 +5,7 @@ import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
+import { diagnoseBridgePortInUse } from "./smokePortDiagnostics.mjs";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -15,6 +16,14 @@ const results = [];
 
 function record(step, ok, data = {}) { results.push({ step, ok, ...data, t: Date.now() }); }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
+function isBridgePortStartFailure(error) {
+	const details = error && typeof error === "object" && error.details && typeof error.details === "object" ? error.details : {};
+	return error && typeof error === "object"
+		&& error.code === "BRIDGE_START_FAILED"
+		&& Number(details.port) === Number(bridge.port)
+		&& /EADDRINUSE|address already in use|listen/i.test(errorMessage(error));
+}
 
 function startFixture() {
 	const server = createServer((req, res) => {
@@ -131,7 +140,12 @@ try {
 	tabId = undefined;
 	record("tabs.close", true);
 } catch (error) {
-	record("error", false, { message: error instanceof Error ? error.message : String(error) });
+	if (isBridgePortStartFailure(error)) {
+		const diagnosis = await diagnoseBridgePortInUse({ host: bridge.host, port: bridge.port, error });
+		record("bridge.port", false, diagnosis);
+		console.error(`[PI-BROWSER-SMOKE] Bridge port ${bridge.host}:${bridge.port} is occupied: ${diagnosis.reason}`);
+	}
+	record("error", false, { message: errorMessage(error), code: error && typeof error === "object" ? error.code : undefined, details: error && typeof error === "object" ? error.details : undefined });
 	process.exitCode = 1;
 } finally {
 	if (tabId) await bridge.closeTab(tabId, 2_000).catch(() => {});

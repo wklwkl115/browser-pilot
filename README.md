@@ -101,6 +101,8 @@ npm run smoke:browser
 npm run smoke:browser:transfer
 ```
 
+`npm run smoke:browser` 与常驻 Pi agent/bridge 共用 MV3 固定端口 `127.0.0.1:18765`，本地并行时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本只诊断 PID/命令行，不自动关闭用户进程。
+
 当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload。
 
 `bridge/native_command_schema.json` 是命令协议单一事实来源。修改协议后执行：

@@ -79,11 +79,11 @@
 
 ## 185. Smoke 端口冲突显式诊断与文档收口
 
-- [ ] 性质判定：小成本验证体验修复；目标是让 `npm run smoke:browser` 在 `127.0.0.1:18765` 被占用时返回可执行诊断，而不是只暴露裸 `EADDRINUSE`。
-- [ ] 实现：smoke 启动失败时区分 `agent_occupies`、`orphan_socket`、`unknown_owner`；尽量输出 PID、进程名、命令行、是否疑似 Pi agent，并写入 `.pi/browser-artifacts/smoke-browser-results.json`。
-- [ ] 文档：更新 `AI_INSTALL.md` 和 README 维护入口，说明本地 smoke 与常驻 agent/bridge 互斥；不得建议自动 kill 用户进程。
-- [ ] 契约：新增 smoke 端口占用诊断的 Node fixture 或静态 contract，锁定错误 envelope 字段。
-- [ ] 验证：模拟占用端口与空闲端口两种场景；不要求引入 puppeteer/playwright。
+- [x] 性质判定：小成本验证体验修复；目标是让 `npm run smoke:browser` 在 `127.0.0.1:18765` 被占用时返回可执行诊断，而不是只暴露裸 `EADDRINUSE`。
+- [x] 实现：新增 `tests/smoke/smokePortDiagnostics.mjs`；smoke 启动失败时区分 `agent_occupies`、`orphan_socket`、`unknown_owner`，尽量输出 PID、进程名、命令行、health 探测，并写入 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` 记录。
+- [x] 文档：已更新 `AI_INSTALL.md` 和 README 维护入口，说明本地 smoke 与常驻 agent/bridge 互斥；脚本只诊断，不自动 kill 用户进程。
+- [x] 契约：新增 `tests/contracts/check-smoke-diagnostics.mjs` 并接入 `npm run check`，锁定分类语义、artifact step 名和文档 reason。
+- [x] 验证：`check-smoke-diagnostics` 模拟占用端口与空闲端口两种场景；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；未引入 puppeteer/playwright。
 
 ## 186. Bridge ambient/global 类型收紧（支柱二前置）
 
@@ -159,6 +159,6 @@
 3. 已完成 TODO 182：`wait_coordinator.js` 拆出 WaitCoordinator、orphan GC 与 event subscription registry，契约与 `npm run check` 通过。
 4. 已完成 TODO 183：`wait_navigation.js` / `wait_network_idle.js` / `wait_selector.js` 拆分与 wait facade 收口。
 5. 已完成 TODO 184：冻结 `hook_dispatcher.js` 页面注入拆分/打包边界，真正拆分延后到 TODO 190 独立页面 bundle。
-6. 下一项 TODO 185：补 smoke 端口冲突显式诊断；随后 TODO 186 收紧 bridge ambient/global 类型。
+6. 已完成 TODO 185：补 smoke 端口冲突显式诊断；下一项 TODO 186 收紧 bridge ambient/global 类型。
 7. TODO 187-193：完整执行支柱二 ESM + TS bundler 迁移，不留下“长期再说”的架构债。
 8. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

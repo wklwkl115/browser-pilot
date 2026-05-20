@@ -26,6 +26,7 @@
     "check:web-security": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-web-security-tools.mjs",
     "check:page-scripts": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-page-scripts.mjs",
     "check:fake-ws": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-fake-ws.mjs",
+    "check:smoke-diagnostics": "node tests/contracts/check-smoke-diagnostics.mjs",
     "check:paths": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-paths.mjs",
     "check:token": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-token-contract.mjs",
     "check:summaries": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-summaries.mjs",
@@ -33,7 +34,7 @@
     "check:errors": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-errors.mjs",
     "smoke:browser": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs",
     "smoke:browser:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs --transfer",
-    "check": "npm run check:bridge && npm run check:pi-browser-bridge && npm run check:tool-docs && npm run check:boundaries && npm run check:scan && npm run check:content-pick && npm run check:transfer && npm run check:web-security && npm run check:page-scripts && npm run check:fake-ws && npm run check:paths && npm run check:token && npm run check:summaries && npm run check:artifact && npm run check:errors",
+    "check": "npm run check:bridge && npm run check:pi-browser-bridge && npm run check:tool-docs && npm run check:boundaries && npm run check:scan && npm run check:content-pick && npm run check:transfer && npm run check:web-security && npm run check:page-scripts && npm run check:fake-ws && npm run check:smoke-diagnostics && npm run check:paths && npm run check:token && npm run check:summaries && npm run check:artifact && npm run check:errors",
     "check:boundaries": "node tests/contracts/check-boundaries.mjs"
   },
   "dependencies": {
