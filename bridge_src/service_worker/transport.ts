@@ -135,3 +135,5 @@ function connectWS() {
 void probeAndConnectWS(true);
 chrome.runtime.onStartup.addListener(() => { void probeAndConnectWS(true); });
 installPiBrowserTabSync();
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_transport = { name: "transport", symbols: { ws, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, connectWS } };

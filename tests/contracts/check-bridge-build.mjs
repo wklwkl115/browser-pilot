@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -20,7 +20,8 @@ assert(existsSync(path.join(root, "bridge_src", "service-worker.ts")), "bridge_s
 assert(existsSync(path.join(root, "bridge_src", "shared", "buildInfo.ts")), "bridge_src shared build type must exist");
 for (const moduleName of ["runtime", "cdp", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "frame", "html", "screenshot", "transfer", "router", "tab_sync", "transport"]) {
 	assert(existsSync(path.join(root, "bridge_src", "service_worker", `${moduleName}.ts`)), `bridge_src service worker module missing: ${moduleName}`);
-	assert(read("bridge_src/service-worker.ts").includes(`./service_worker/${moduleName}`), `service-worker entry must import module ${moduleName}`);
+	assert(read("bridge_src/service-worker.ts").includes(`__piBridgeModule_${moduleName}`) && read("bridge_src/service-worker.ts").includes(`./service_worker/${moduleName}`), `service-worker entry must import module symbol ${moduleName}`);
+	assert(read(`bridge_src/service_worker/${moduleName}.ts`).includes(`export const __piBridgeModule_${moduleName}`), `service worker module must export explicit boundary symbol: ${moduleName}`);
 }
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", ".gitignore")), "dist must declare generated-file boundary");
 assert(read("bridge/pi_browser_bridge/dist/.gitignore").includes("!.gitignore"), "dist .gitignore must keep only the generated-file marker tracked");
@@ -42,6 +43,100 @@ for (const required of ["PI_BROWSER_BRIDGE_WS_URL", "function matchNetworkPatter
 	assert(bundle.includes(required), `service-worker bundle must include migrated runtime symbol: ${required}`);
 }
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js.map")), "build pipeline must emit a source map for the experimental bundle");
+
+function eventStore() {
+	const listeners = [];
+	return {
+		listeners,
+		addListener(callback) { listeners.push(callback); },
+		removeListener(callback) {
+			const index = listeners.indexOf(callback);
+			if (index >= 0) listeners.splice(index, 1);
+		},
+	};
+}
+
+const runtimeOnMessage = eventStore();
+const runtimeOnInstalled = eventStore();
+const runtimeOnStartup = eventStore();
+const debuggerOnDetach = eventStore();
+const debuggerOnEvent = eventStore();
+const alarmsOnAlarm = eventStore();
+const tabsOnCreated = eventStore();
+const tabsOnUpdated = eventStore();
+const tabsOnRemoved = eventStore();
+const webNavigationEvents = Object.fromEntries(["onBeforeNavigate", "onCommitted", "onCompleted", "onErrorOccurred", "onHistoryStateUpdated", "onReferenceFragmentUpdated"].map((name) => [name, eventStore()]));
+const oldChrome = globalThis.chrome;
+const oldSelf = globalThis.self;
+const oldNavigator = globalThis.navigator;
+const oldFetch = globalThis.fetch;
+const oldWebSocket = globalThis.WebSocket;
+globalThis.self = globalThis;
+Object.defineProperty(globalThis, "navigator", { value: { userAgent: "bridge-build-contract" }, configurable: true });
+globalThis.fetch = async () => { throw new Error("fixture offline"); };
+globalThis.WebSocket = class FixtureWebSocket {
+	static CONNECTING = 0;
+	static OPEN = 1;
+	static CLOSING = 2;
+	static CLOSED = 3;
+	readyState = FixtureWebSocket.CLOSED;
+	constructor() { throw new Error("fixture websocket disabled"); }
+};
+globalThis.chrome = {
+	runtime: {
+		id: "bridge-build-contract",
+		getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0", version_name: "0.3.0-test" }),
+		getURL: (item) => `chrome-extension://fixture/${item}`,
+		reload() {},
+		sendMessage: async () => ({ ok: true, data: [] }),
+		onMessage: runtimeOnMessage,
+		onInstalled: runtimeOnInstalled,
+		onStartup: runtimeOnStartup,
+	},
+	debugger: {
+		attach: async () => {},
+		detach: async () => {},
+		sendCommand: async () => ({}),
+		getTargets: async () => [],
+		onDetach: debuggerOnDetach,
+		onEvent: debuggerOnEvent,
+	},
+	tabs: {
+		query: async () => [],
+		update: async (_tabId, updateProperties) => ({ id: _tabId, tabId: _tabId, ...updateProperties }),
+		create: async (createProperties) => ({ id: 1, tabId: 1, ...createProperties }),
+		get: async (tabId) => ({ id: tabId, tabId, url: "about:blank", active: true, windowId: 1 }),
+		remove: async () => {},
+		captureVisibleTab: async () => "data:image/png;base64,AA==",
+		onCreated: tabsOnCreated,
+		onUpdated: tabsOnUpdated,
+		onRemoved: tabsOnRemoved,
+	},
+	windows: { update: async () => ({}) },
+	scripting: { executeScript: async () => [] },
+	downloads: { download() {}, search(_query, callback) { callback([]); }, onChanged: eventStore(), onCreated: eventStore() },
+	cookies: { getAll: async () => [] },
+	management: { getAll: async () => [], setEnabled: async () => {} },
+	alarms: { create() {}, onAlarm: alarmsOnAlarm },
+	contentSettings: { automaticDownloads: { set: async () => {} } },
+	declarativeNetRequest: { updateDynamicRules: async () => {} },
+	webNavigation: webNavigationEvents,
+};
+try {
+	await import(`${pathToFileURL(path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js")).href}?contract=${Date.now()}`);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(globalThis.__PI_BROWSER_EXPERIMENTAL_BUILD__?.runtimeSwitched, false, "imported service-worker bundle must expose experimental build metadata");
+	assert(runtimeOnMessage.listeners.length > 0, "imported service-worker bundle must register runtime message dispatch");
+	assert(runtimeOnInstalled.listeners.length > 0 && runtimeOnStartup.listeners.length > 0, "imported service-worker bundle must register lifecycle listeners");
+	assert(debuggerOnDetach.listeners.length > 0 && alarmsOnAlarm.listeners.length > 0, "imported service-worker bundle must register debugger/alarms listeners");
+	assert(tabsOnCreated.listeners.length > 0 && tabsOnUpdated.listeners.length > 0 && tabsOnRemoved.listeners.length > 0, "imported service-worker bundle must register tab sync listeners");
+} finally {
+	globalThis.chrome = oldChrome;
+	globalThis.self = oldSelf;
+	Object.defineProperty(globalThis, "navigator", { value: oldNavigator, configurable: true });
+	globalThis.fetch = oldFetch;
+	globalThis.WebSocket = oldWebSocket;
+}
 
 for (const file of ["README.md", "AI_INSTALL.md", "docs/bridge-esm-bundler-plan.md"]) {
 	const text = read(file);

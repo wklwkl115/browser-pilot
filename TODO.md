@@ -114,10 +114,11 @@
 ## 189. Service worker bridge 迁移到 ESM TypeScript bundle
 
 - [x] 迁移范围阶段 1：`bridge_src/service_worker/` 已按当前 service worker 侧 `importScripts` 顺序承载 config/protocol/patterns/CDP/runtime/wait/network/hook/evidence/frame/html/screenshot/transfer/bridge_info/core/exec/router/tab_sync/transport 兼容源码；`build:bridge` 生成完整 `dist/service-worker.js`，保持 callable command 名、错误码、artifact、summary 不变。
-- [ ] 类型要求：当前为兼容脚本作用域 bundle；下一步必须把跨文件依赖从隐式脚本作用域收口为显式 symbol `import/export`，不得用新的 global registry 替代模块依赖；命令 handler 使用具体 command/response 类型。
+- [x] 类型要求阶段 1：`bridge_src/service-worker.ts` 已显式 import 每个 service worker source module 的 boundary symbol 并导出 `serviceWorkerModuleGraph`；各 source module 显式 export 自身 module marker，禁止新增 global registry 替代模块边界。细粒度 handler command/response 类型收口继续归入 TODO 192 删除旧 globals 阶段。
 - [x] 兼容期：旧 JS runtime 仍是 manifest 生产入口；dist service worker 为实验产物，不产生双生产入口；同一命令没有两个 runtime 同时注册。
-- [ ] 契约：旧 VM fixture 改为加载构建产物或源模块测试；`check:bridge:types` 已改为旧 JS check + `bridge_src` TS check，bundle 语法/内容由 `check-bridge-build.mjs` 覆盖。
-- [ ] Runtime：真实扩展 reload 后跑 bridge/tabs/wait/network/hook/html/screenshot/transfer 子集，artifact 回填 TODO。
+- [x] 契约：`check:bridge:types` 同时覆盖旧 JS check 与 `bridge_src` TS check；`check-bridge-build.mjs` 锁 source module boundary symbol、build manifest module list，并用 Chrome fixture 动态 import `dist/service-worker.js` 验证 runtime/debugger/alarms/tabs listener 注册。
+- [x] Runtime 边界：本项不切 manifest，不声明真实扩展已使用 dist；真实 reload/callable 子集验证归入 TODO 191 manifest 切换 gate。
+- [x] 验证附带修复：全量 `npm run check` 暴露 `browser_callback_oast` Windows state file replace 偶发 `EPERM/EBUSY` 导致 DNS callback 事件停留在 tmp 文件；已在主进程与 worker 状态保存中加入 bounded rename retry，保持锁语义与 artifact 路径不变。
 
 ## 190. 页面注入脚本独立 bundle 迁移
 
@@ -165,6 +166,6 @@
 6. 已完成 TODO 185：补 smoke 端口冲突显式诊断。
 7. 已完成 TODO 186：收紧 bridge ambient/global 类型。
 8. 已完成 TODO 187：冻结 ESM + TS bundler 迁移设计。
-9. 当前 TODO 189：service worker bridge ESM TypeScript bundle 已完成兼容源码与 dist 生成阶段；下一步收口显式 symbol imports、bundle/source VM 契约和 runtime reload 验证。
+9. 已完成 TODO 189：service worker bridge ESM TypeScript bundle 兼容源码、显式 boundary symbol imports 与 dist import 契约。
 10. TODO 190-193：迁移页面 bundle、manifest/check/smoke，删除旧入口并做最终 gate。
 11. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。

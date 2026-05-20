@@ -211,3 +211,5 @@ async function waitForLoadState(tabId, msg) {
   });
 }
 // CDP contract literal: 'Network.enable'
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_wait_navigation = { name: "wait_navigation", symbols: { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState } };

@@ -257,3 +257,5 @@ async function waitForSelector(tabId, msg) {
     triggerTick('initial');
   });
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_wait_selector = { name: "wait_selector", symbols: { PI_BROWSER_SELECTOR_STABLE_SAMPLES, PI_BROWSER_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector } };

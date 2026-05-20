@@ -89,3 +89,5 @@ async function waitForNetworkIdle(tabId, msg) {
 // ============================================================
 // N1: Edge F12 Network-equivalent recorder (CDP Network/Page)
 // ============================================================
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_wait_network_idle = { name: "wait_network_idle", symbols: { compileNetworkIdleFilter, waitForNetworkIdle } };

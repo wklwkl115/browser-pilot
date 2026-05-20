@@ -46,3 +46,5 @@ async function handlePiBrowserEvidenceCommand(cmd, tabId, msg) {
   }
   return { ok: true, data: out };
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_evidence = { name: "evidence", symbols: { PI_BROWSER_EVIDENCE_EVENT_TYPES, safePiBrowserEvidence, handlePiBrowserEvidenceCommand } };

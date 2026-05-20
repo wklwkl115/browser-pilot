@@ -494,3 +494,5 @@
   };
   global.PiNativeProtocol = protocol;
 })(typeof self !== 'undefined' ? self : globalThis);
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_protocol = { name: "protocol", symbols: {} };

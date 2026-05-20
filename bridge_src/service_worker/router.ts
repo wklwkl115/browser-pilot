@@ -71,3 +71,5 @@ async function handlePiBridgeWsMessage(data, socket) {
     sendPiBridgeWsInputError(socket, data.id, 'Unsupported message code type: ' + typeof code, { codeType: typeof code });
   }
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_router = { name: "router", symbols: { validatePiBridgeProtocolMessage, handlePiBridgeMessage, sendPiBridgeWsCommandResult, sendPiBridgeWsInputError, handlePiBridgeWsMessage } };

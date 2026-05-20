@@ -38,3 +38,5 @@ function installCspBypassRule() {
 
 // Track normal scriptable tabs plus about:blank tabs created by browser_tabs before navigation.
 const isScriptable = url => !!url && (/^https?:/.test(url) || url === 'about:blank');
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_bridge_info = { name: "bridge_info", symbols: { PI_BROWSER_WORKER_STARTED_AT, PI_BROWSER_WORKER_BOOT_ID, piBridgeInfo, installCspBypassRule, isScriptable } };

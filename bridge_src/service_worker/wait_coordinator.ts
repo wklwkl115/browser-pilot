@@ -191,3 +191,5 @@ function finishPiBrowserWait(record, ok, data, errorCode, message, details) {
 function rejectIfAborted(record) {
   if (record.abortController?.signal?.aborted || record.status === 'cancelled') throw new DOMException(waitAbortMessage(record), 'AbortError');
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_wait_coordinator = { name: "wait_coordinator", symbols: { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, piBrowserWaits, PI_BROWSER_ORPHAN_WAIT_MAX_AGE_MS, cleanupPiBrowserOrphanWaits, piBrowserWaitSeq, PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS, normalizePiBrowserTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, isAbortError, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupPiBrowserWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, waitWithTimeout, finishPiBrowserWait, rejectIfAborted } };

@@ -1,29 +1,57 @@
-import "./service_worker/config";
-import "./service_worker/protocol";
-import "./service_worker/patterns";
-import "./service_worker/cdp";
-import "./service_worker/runtime";
-import "./service_worker/wait_cdp";
-import "./service_worker/wait_coordinator";
-import "./service_worker/wait_navigation";
-import "./service_worker/wait_network_idle";
-import "./service_worker/wait_selector";
-import "./service_worker/wait";
-import "./service_worker/network_model";
-import "./service_worker/network";
-import "./service_worker/hook";
-import "./service_worker/evidence";
-import "./service_worker/frame";
-import "./service_worker/html";
-import "./service_worker/screenshot";
-import "./service_worker/transfer";
-import "./service_worker/bridge_info";
-import "./service_worker/core_commands";
-import "./service_worker/exec";
-import "./service_worker/router";
-import "./service_worker/tab_sync";
-import "./service_worker/transport";
+import { __piBridgeModule_config } from "./service_worker/config";
+import { __piBridgeModule_protocol } from "./service_worker/protocol";
+import { __piBridgeModule_patterns } from "./service_worker/patterns";
+import { __piBridgeModule_cdp } from "./service_worker/cdp";
+import { __piBridgeModule_runtime } from "./service_worker/runtime";
+import { __piBridgeModule_wait_cdp } from "./service_worker/wait_cdp";
+import { __piBridgeModule_wait_coordinator } from "./service_worker/wait_coordinator";
+import { __piBridgeModule_wait_navigation } from "./service_worker/wait_navigation";
+import { __piBridgeModule_wait_network_idle } from "./service_worker/wait_network_idle";
+import { __piBridgeModule_wait_selector } from "./service_worker/wait_selector";
+import { __piBridgeModule_wait } from "./service_worker/wait";
+import { __piBridgeModule_network_model } from "./service_worker/network_model";
+import { __piBridgeModule_network } from "./service_worker/network";
+import { __piBridgeModule_hook } from "./service_worker/hook";
+import { __piBridgeModule_evidence } from "./service_worker/evidence";
+import { __piBridgeModule_frame } from "./service_worker/frame";
+import { __piBridgeModule_html } from "./service_worker/html";
+import { __piBridgeModule_screenshot } from "./service_worker/screenshot";
+import { __piBridgeModule_transfer } from "./service_worker/transfer";
+import { __piBridgeModule_bridge_info } from "./service_worker/bridge_info";
+import { __piBridgeModule_core_commands } from "./service_worker/core_commands";
+import { __piBridgeModule_exec } from "./service_worker/exec";
+import { __piBridgeModule_router } from "./service_worker/router";
+import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
+import { __piBridgeModule_transport } from "./service_worker/transport";
 import { BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
+
+export const serviceWorkerModuleGraph = [
+	__piBridgeModule_config,
+	__piBridgeModule_protocol,
+	__piBridgeModule_patterns,
+	__piBridgeModule_cdp,
+	__piBridgeModule_runtime,
+	__piBridgeModule_wait_cdp,
+	__piBridgeModule_wait_coordinator,
+	__piBridgeModule_wait_navigation,
+	__piBridgeModule_wait_network_idle,
+	__piBridgeModule_wait_selector,
+	__piBridgeModule_wait,
+	__piBridgeModule_network_model,
+	__piBridgeModule_network,
+	__piBridgeModule_hook,
+	__piBridgeModule_evidence,
+	__piBridgeModule_frame,
+	__piBridgeModule_html,
+	__piBridgeModule_screenshot,
+	__piBridgeModule_transfer,
+	__piBridgeModule_bridge_info,
+	__piBridgeModule_core_commands,
+	__piBridgeModule_exec,
+	__piBridgeModule_router,
+	__piBridgeModule_tab_sync,
+	__piBridgeModule_transport,
+] as const;
 
 const buildInfo: BridgeBuildInfo = {
 	version: BRIDGE_BUILD_PIPELINE_VERSION,

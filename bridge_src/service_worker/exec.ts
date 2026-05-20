@@ -230,3 +230,5 @@ async function handleWsExec(data, socket) {
     chrome.tabs.onCreated.removeListener(onCreated);
   }
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_exec = { name: "exec", symbols: { buildExecScript, buildPageScript, buildCdpScript, handleWsExec } };

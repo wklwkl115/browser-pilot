@@ -96,3 +96,5 @@ async function captureScreenshotWithRetry(tabId, msg) {
   }
   return piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, 'screenshot.capture failed', { reason: lastErr?.message || String(lastErr), attempts });
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_screenshot = { name: "screenshot", symbols: { isScreenshotMissingTabError, screenshotErrorMessage, screenshotTabNotFound, detachScreenshotDebugger, getScreenshotTargetTab, captureVisibleFallback, captureScreenshotWithRetry } };

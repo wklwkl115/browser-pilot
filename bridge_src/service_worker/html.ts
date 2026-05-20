@@ -77,3 +77,5 @@ async function handlePiBrowserHtml(tabId, msg) {
   if (res.data && res.data.ok === false) return piBrowserError(res.data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, res.data.error || 'html.get failed', res.data.details || { selector, mode: rawMode });
   return res.data && res.data.ok === true ? res.data : { ok: true, data: res.data };
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_html = { name: "html", symbols: { handlePiBrowserHtml } };

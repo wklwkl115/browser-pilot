@@ -202,3 +202,5 @@ function diagnosePiBrowserCdpDomainRefs(tabId) {
 function diagnosePiBrowserCdpCleanupHistory(tabId) {
   return piBrowserCdpCleanupHistory.filter(e => tabId === undefined || Number(e.tabId) === Number(tabId)).slice(-50).map(e => ({ ...e, age_ms: Date.now() - e.t }));
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_wait_cdp = { name: "wait_cdp", symbols: { piBrowserCdpSubscriptions, piBrowserCdpTabRefs, piBrowserCdpDomainRefs, piBrowserCdpCleanupHistory, piBrowserCdpSubSeq, piBrowserCdpDomainKey, piBrowserCdpHolderId, rememberPiBrowserCdpCleanup, sendPiBrowserCdpDomainCommand, acquirePiBrowserCdpDomain, schedulePiBrowserCdpDomainDisable, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, enablePiBrowserCdpDomains, attachDebuggerForWait, subscribePiBrowserCdp, unsubscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpCleanupHistory } };

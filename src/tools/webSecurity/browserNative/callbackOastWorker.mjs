@@ -75,6 +75,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function renameStateFileWithRetry(tempPath, finalPath) {
+  const retryCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await rename(tempPath, finalPath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!retryCodes.has(error?.code || "")) throw error;
+      await sleep(Math.min(250, 10 + attempt * 15));
+    }
+  }
+  await rm(tempPath, { force: true }).catch(() => {});
+  throw lastError;
+}
+
 function isProcessAlive(pid) {
   const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
   if (!Number.isInteger(n) || n <= 0) return false;
@@ -203,7 +220,7 @@ async function saveStateUnlocked(state) {
   const tmp = path.join(dir, `.${path.basename(statePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
   await mkdir(dir, { recursive: true });
   await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-  await rename(tmp, statePath);
+  await renameStateFileWithRetry(tmp, statePath);
 }
 
 async function updateState(update) {

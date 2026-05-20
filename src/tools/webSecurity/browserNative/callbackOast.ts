@@ -153,6 +153,23 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function renameStateFileWithRetry(tempPath: string, finalPath: string): Promise<void> {
+	const retryCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
+	let lastError: unknown;
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		try {
+			await rename(tempPath, finalPath);
+			return;
+		} catch (error) {
+			lastError = error;
+			if (!retryCodes.has((error as NodeJS.ErrnoException).code || "")) throw error;
+			await sleep(Math.min(250, 10 + attempt * 15));
+		}
+	}
+	await rm(tempPath, { force: true }).catch(() => {});
+	throw lastError;
+}
+
 function isProcessAlive(pid: unknown): boolean {
 	const n = typeof pid === "number" ? pid : typeof pid === "string" ? Number(pid) : Number.NaN;
 	if (!Number.isInteger(n) || n <= 0) return false;
@@ -267,7 +284,7 @@ async function saveJsonUnlocked(filePath: string, value: unknown) {
 	const temp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
 	await mkdir(dir, { recursive: true });
 	await writeFile(temp, JSON.stringify(value, null, 2), "utf8");
-	await rename(temp, filePath);
+	await renameStateFileWithRetry(temp, filePath);
 }
 
 async function saveJson(filePath: string, value: unknown) {

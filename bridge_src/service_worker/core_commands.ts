@@ -211,3 +211,5 @@ async function handleBatch(msg, sender) {
     return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, e.message || String(e), { cmd: msg.cmd, results: R, raw: { name: e && e.name, message: e && e.message, stack: e && e.stack } });
   }
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_core_commands = { name: "core_commands", symbols: { handleBridgeWake, normalizePiBrowserCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, piBrowserCookiePartitionIdentity, piBrowserCookieIdentity, mergePiBrowserCookies, normalizePiBrowserCookieUrl, handleCookies, handleCDP, handlePersistentCDP, handleBatch } };

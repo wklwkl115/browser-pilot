@@ -130,3 +130,5 @@ async function handlePiBrowserHookCommand(cmd, tabId, msg) {
   if (cmd === 'hook.getPerformanceEntries') return await getPerformanceEntries(tabId, msg);
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser hook command: ' + cmd, { cmd });
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_hook = { name: "hook", symbols: { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand } };

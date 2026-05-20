@@ -46,3 +46,5 @@ function installPiBrowserTabSync() {
   chrome.tabs.onRemoved.addListener((tabId) => { cleanupPiBrowserTab(tabId, 'tab_removed'); safeSendTabsUpdate('tabs.onRemoved'); });
   chrome.tabs.onCreated.addListener(() => { safeProbeAndConnectWS('tabs.onCreated.probe'); safeSendTabsUpdate('tabs.onCreated'); });
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_tab_sync = { name: "tab_sync", symbols: { sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installPiBrowserTabSync } };

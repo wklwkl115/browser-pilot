@@ -25,3 +25,5 @@ function matchNetworkPattern(url, pattern) {
   if (pattern.length > PI_BROWSER_NETWORK_MAX_PATTERN_CHARS) return false;
   return url.includes(pattern);
 }
+// ESM module boundary marker for TODO 189
+export const __piBridgeModule_patterns = { name: "patterns", symbols: { PI_BROWSER_NETWORK_MAX_PATTERN_CHARS, PI_BROWSER_NETWORK_MAX_MATCH_CHARS, isSafeNetworkRegexPattern, matchNetworkPattern } };
