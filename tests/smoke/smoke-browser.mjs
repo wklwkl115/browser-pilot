@@ -18,6 +18,13 @@ const results = [];
 function record(step, ok, data = {}) { results.push({ step, ok, ...data, t: Date.now() }); }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
+async function commandResultOrError(command, options) {
+	try {
+		return await bridge.sendCommand(command, options);
+	} catch (error) {
+		return { data: error?.details?.result || { ok: false, error_code: error?.details?.result?.error_code || error?.code, error: errorMessage(error) } };
+	}
+}
 async function buildRuntimeMetadata() {
 	const manifestPath = path.join(root, "bridge", "pi_browser_bridge", "dist", "build-manifest.json");
 	const serviceWorkerPath = path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js");
@@ -84,9 +91,16 @@ try {
 	const connected = await waitForExtension();
 	record("bridge", true, { extension: connected.extension?.name, tabs: connected.tabs.length });
 
-	const created = await bridge.createTab(`http://127.0.0.1:${smokePort}/`, true, 5_000);
-	tabId = created.data?.tabId || created.data?.id;
-	record("tabs.create", Boolean(tabId), { tabId });
+	if (process.env.PI_BROWSER_SMOKE_REUSE_EXISTING === "1") {
+		const existing = connected.tabs.find((tab) => String(tab.url || "").startsWith(`http://127.0.0.1:${smokePort}/`));
+		tabId = existing?.tabId || existing?.id;
+		record("tabs.reuse", Boolean(tabId), { tabId, url: existing?.url });
+	} else {
+		const created = await bridge.createTab(`http://127.0.0.1:${smokePort}/`, true, 5_000);
+		tabId = created.data?.tabId || created.data?.id;
+		record("tabs.create", Boolean(tabId), { tabId });
+	}
+	if (!tabId) throw new Error("Smoke target tab was not created or discovered");
 	await bridge.sendCommand({ cmd: "wait.loadState", state: "complete", tabId }, { tabId, timeoutMs: 10_000 });
 	record("wait.loadState", true);
 
@@ -104,12 +118,12 @@ try {
 	record("content.empty", emptyContent.data?.empty === true && emptyContent.data?.markdown === "", { empty: emptyContent.data?.empty });
 	const missingContent = await bridge.executeJavaScript(buildContentScript({ selector: "#missing", maxChars: 20_000 }), { tabId, timeoutMs: 10_000 });
 	record("content.selectorMissing", missingContent.data?.ok === false && missingContent.data?.error_code === "SELECTOR_NOT_FOUND", { error_code: missingContent.data?.error_code });
-	const missingHtml = await bridge.sendCommand({ cmd: "html.get", tabId, selector: "#missing", timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
+	const missingHtml = await commandResultOrError({ cmd: "html.get", tabId, selector: "#missing", timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
 	record("html.selectorMissing", missingHtml.data?.ok === false && missingHtml.data?.error_code === "SELECTOR_NOT_FOUND", { error_code: missingHtml.data?.error_code });
 	const frameList = await bridge.sendCommand({ cmd: "frame.list", tabId, timeoutMs: 8_000 }, { tabId, timeoutMs: 10_000 });
 	record("frame.list", frameList.data?.tabId === tabId && Array.isArray(frameList.data?.frames), { count: frameList.data?.count });
-	const hookStatus = await bridge.sendCommand({ cmd: "hook.status", tabId, timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
-	const hookCollect = await bridge.sendCommand({ cmd: "hook.collect", tabId, timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
+	const hookStatus = await commandResultOrError({ cmd: "hook.status", tabId, timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
+	const hookCollect = await commandResultOrError({ cmd: "hook.collect", tabId, timeoutMs: 5_000 }, { tabId, timeoutMs: 8_000 });
 	record("hook.readOnlyNoInstall", hookStatus.data?.ok === false && hookCollect.data?.ok === false, { status: hookStatus.data?.error_code, collect: hookCollect.data?.error_code });
 
 	const interaction = await bridge.executeJavaScript("const input = document.querySelector('input[name=q]'); input.value = 'typed-smoke'; input.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#go').click(); const comment = document.querySelector('#comment'); comment.focus(); comment.textContent = '666'; comment.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '666' })); document.querySelector('#send').click(); return { result: document.querySelector('#result')?.textContent, comment: document.querySelector('#comment-result')?.textContent, sendDisabled: document.querySelector('#send')?.disabled };", { tabId, timeoutMs: 10_000 });

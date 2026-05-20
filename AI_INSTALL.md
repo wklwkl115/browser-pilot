@@ -84,6 +84,12 @@ PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D
 npm run smoke:browser
 ```
 
+本地已有常驻 Pi agent/bridge 占用 18765 时，使用独占临时 Chrome profile：
+
+```bash
+npm run smoke:browser:isolated
+```
+
 如果 `127.0.0.1:18765` 已被占用，smoke 会失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port` 诊断：
 
 - `agent_occupies`：常驻 Pi agent/bridge 正在使用扩展固定端口；先停止该 agent 或空闲时再跑 smoke。

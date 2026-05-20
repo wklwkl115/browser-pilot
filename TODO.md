@@ -131,7 +131,7 @@
 
 - [x] 切换：`manifest.json` 已指向 `dist/service-worker.js` module service worker，content scripts 已指向 `dist/disable_dialogs.js` / `dist/content.js`，hook 注入常量已切到 `dist/hook_dispatcher.js`；旧手工 `importScripts` 入口不再作为生产入口，只保留到 TODO 192 删除。
 - [x] 检查：`check:bridge` 顺序改为 typecheck -> build -> files/contracts；`npm run check` 覆盖 build、typecheck、manifest/dist/page script/tool doc drift，`check-bridge-build.mjs` 动态 import dist service worker 并验证 build metadata。
-- [x] Smoke 定位：`smoke:browser` 在启动 bridge 前写入 `build.runtime`，包含 `runtimeSwitched:true`、`manifestTarget:"dist/service-worker.js"`、entries 和 service worker sha256；本分支运行时被现有 Pi agent 占用 127.0.0.1:18765 阻断，artifact `.pi/browser-artifacts/smoke-browser-results.json` 已记录 `bridge.port.reason:"agent_occupies"`，未关闭用户进程。
+- [x] Smoke 定位：`smoke:browser` 在启动 bridge 前写入 `build.runtime`，包含 `runtimeSwitched:true`、`manifestTarget:"dist/service-worker.js"`、entries 和 service worker sha256；本地默认端口若被常驻 Pi agent 占用会记录 `bridge.port.reason:"agent_occupies"` 且不关闭用户进程，最终 runtime pass 证据由 TODO 193 的 isolated smoke 提供。
 - [x] 回滚：未保留双生产入口；若后续真实 reload 失败，必须在 TODO 193 gate 内修复或整项回滚，不能恢复旧 `background.js` 为备用生产路径。
 
 ## 192. 删除旧 `importScripts` 多文件入口与冗余 globals
@@ -143,18 +143,18 @@
 
 ## 193. 支柱二最终收口 gate
 
-- [ ] 证明：ESM TS source、bundle build、manifest dist、页面独立 bundle、旧 importScripts 删除、ambient 类型收口全部由当前源码和契约证明。
-- [ ] 全量验证：`npm run check`、真实扩展 runtime callable 子集、`npm run smoke:browser`（可独占端口时）全部通过；artifact 路径写入 TODO。
-- [ ] 行为审计：对比迁移前后 tool names、schemas、error codes、summary/artifact 字段、network body/postData、wait supervisor metadata 无漂移。
-- [ ] 文档收口：CHANGELOG 记录完整支柱二迁移；TODO 勾选所有支柱二任务；若全局 skill 文本涉及安装/reload/build 流程则运行 skill quick validate。
+- [x] 证明：ESM TS source 在 `bridge_src/service_worker/` 与 `bridge_src/page_scripts/`；`build:bridge` 生成 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`；`manifest.json` 指向 dist；旧 `importScripts` 多文件入口、`bridge-globals.d.ts`、`tsconfig.bridge.json` 已删除；`check-bridge-build.mjs` / `check-bridge-files.mjs` / `check-page-scripts.mjs` 锁定这些边界。
+- [x] 全量验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；`npm run smoke:browser:isolated` 已通过，artifact `.pi/browser-artifacts/smoke-browser-isolated-results.json`，覆盖 build.runtime、bridge、tabs.reuse、wait.loadState、scan/content/html/frame/hook、execute/CDP input、pick、network、screenshot、tabs.close。普通 `npm run smoke:browser` 保留端口占用诊断，不关闭用户进程。
+- [x] 行为审计：契约继续覆盖 tool names、protocol/native schema、error codes、summary/artifact distillation、network body/postData、wait supervisor metadata、transfer/page script 行为；runtime isolated smoke 证明 dist service worker 实际执行并连接 `ws://127.0.0.1:18766`。
+- [x] 文档收口：README/AI_INSTALL/CHANGELOG/TODO 已记录完整支柱二迁移、dist runtime、旧入口删除和 isolated smoke；未修改全局 skill 文本，因此未运行 skill quick validate。
 
 ## 194. 独占 Chrome profile smoke（支柱四中期闭环）
 
-- [ ] 性质判定：runtime 验证增强；目标是在不关闭用户常驻 agent/bridge 的情况下启动独占 Chrome profile 和临时扩展配置。
-- [ ] 实现路线：优先用 `child_process` 启动本机 Chrome/Chromium + `--user-data-dir .pi/temp-profiles/smoke-*` + `--load-extension` 临时扩展副本；不默认引入 puppeteer/playwright 大依赖。
-- [ ] 端口配置：临时复制扩展目录并生成对应端口的 `config.js`；测试结束清理临时 profile/extension 副本；不得修改用户正在使用的扩展目录。
-- [ ] 契约与文档：新增 `smoke:browser:isolated`，失败时输出 Chrome path/profile/port/artifact；AI_INSTALL 记录普通 smoke 与 isolated smoke 的适用场景。
-- [ ] Gate：本项排在 TODO 193 后执行；若本地 smoke 需要与常驻 agent 并行或提前进入 CI gate，则提前执行。TODO 保留明确方案，不替代 TODO 185 的即时诊断。
+- [x] 性质判定：runtime 验证增强；目标是在不关闭用户常驻 agent/bridge 的情况下启动独占 Chrome profile 和临时扩展配置。
+- [x] 实现路线：新增 `smoke:browser:isolated`，用 `child_process` 启动本机 Chrome/Chromium + `--user-data-dir .pi/temp-profiles/smoke-*` + `--load-extension` 临时扩展副本；未引入 puppeteer/playwright 大依赖。
+- [x] 端口配置：脚本从 18766-18800 选空闲 bridge port、8766-8800 选 fixture port，临时复制扩展目录并 patch `dist/service-worker.js` 中的 bridge 端口；测试结束清理临时 profile/extension 副本，不修改用户正在使用的扩展目录。
+- [x] 契约与文档：`check-smoke-diagnostics.mjs` 锁 `smoke:browser:isolated`、临时 profile/load-extension/端口 patch/artifact；失败时输出 Chrome path/profile/port 到 `.pi/browser-artifacts/smoke-browser-isolated-results.json`。
+- [x] Gate：本项提前执行以解除本地常驻 agent 端口互斥；TODO 193 仍负责最终真实 runtime callable 通过证据。
 
 ## 下一步建议顺序
 
@@ -170,5 +170,5 @@
 10. 已完成 TODO 190：页面/内容脚本独立 dist bundle 迁移与契约。
 11. 已完成 TODO 191：manifest/package/check/smoke 定位切到 dist；真实 callable 通过证据仍归 TODO 193 gate。
 12. 已完成 TODO 192：删除旧 importScripts 多文件入口与冗余 globals。
-13. TODO 193：最终行为/真实 runtime gate。
-14. TODO 194：在需要并行本地 smoke 或 CI runtime gate 时实现独占 Chrome profile smoke。
+13. 已完成 TODO 193：支柱二最终收口 gate。
+14. 已完成 TODO 194：独占 Chrome profile smoke 脚本与契约。

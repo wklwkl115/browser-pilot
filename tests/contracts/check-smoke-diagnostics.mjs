@@ -71,6 +71,10 @@ assert.equal(freeDiagnosis.health.ok, false, "free-port diagnostic must preserve
 
 const smoke = read("tests/smoke/smoke-browser.mjs");
 assert(smoke.includes("diagnoseBridgePortInUse") && smoke.includes('record("bridge.port"'), "smoke-browser must emit bridge.port diagnostics on bridge start conflicts");
+const isolatedSmoke = read("tests/smoke/smoke-browser-isolated.mjs");
+const pkg = JSON.parse(read("package.json"));
+assert(pkg.scripts?.["smoke:browser:isolated"]?.includes("smoke-browser-isolated.mjs"), "package must expose isolated browser smoke");
+assert(isolatedSmoke.includes("--user-data-dir") && isolatedSmoke.includes("--load-extension") && isolatedSmoke.includes("PI_BROWSER_BRIDGE_PORT") && isolatedSmoke.includes("smoke-browser-isolated-results.json"), "isolated smoke must launch a temporary Chrome profile, patch a temporary extension port, and write an artifact");
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
 	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);

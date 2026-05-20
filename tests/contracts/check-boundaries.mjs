@@ -24,7 +24,8 @@ for (const file of contractFiles) {
 }
 for (const [name, command] of Object.entries(pkg.scripts || {})) {
 	if (name.startsWith("check") && name !== "check") assert(!String(command).includes("scripts/check-"), `${name} must not point to scripts/check-*`);
-	if (name.startsWith("smoke:browser")) assert(String(command).includes("tests/smoke/smoke-browser.mjs"), `${name} must point to tests/smoke/smoke-browser.mjs`);
+	if (name === "smoke:browser" || name === "smoke:browser:transfer") assert(String(command).includes("tests/smoke/smoke-browser.mjs"), `${name} must point to tests/smoke/smoke-browser.mjs`);
+	if (name === "smoke:browser:isolated") assert(String(command).includes("tests/smoke/smoke-browser-isolated.mjs"), `${name} must point to tests/smoke/smoke-browser-isolated.mjs`);
 }
 assert(pkg.scripts?.["check:boundaries"] === "node tests/contracts/check-boundaries.mjs", "package must expose boundary check");
 assert(String(pkg.scripts?.check || "").includes("check:boundaries"), "npm run check must include boundary check");
