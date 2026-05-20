@@ -1,4 +1,11 @@
-// @ts-nocheck
+import { PiNativeProtocol } from "./protocol";
+import { chromeApi as chrome } from "./runtimeEnv";
+import { cancelWaitsForTab, cleanupTabWaits } from "./wait_coordinator";
+import { navigateAndWait, navigatePiBrowser, waitForLoadState, waitForNavigation } from "./wait_navigation";
+import { waitForNetworkIdle } from "./wait_network_idle";
+import { waitForSelector } from "./wait_selector";
+import { cancelWait, cleanupPiBrowserPageListenersForTab, diagnosePiBrowser, waitForAll, waitForAny } from "./wait";
+
 // runtime.js - Pi browser native command runtime (wait/network/hook/frame/html/screenshot).
 
 const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';
@@ -7,12 +14,25 @@ const PI_BROWSER_ERROR_CODES = {
   INVALID_RULE: 'INVALID_RULE', UNSUPPORTED_TARGET: 'UNSUPPORTED_TARGET', INJECTION_FAILED: 'INJECTION_FAILED',
   SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', NAVIGATION_TIMEOUT: 'NAVIGATION_TIMEOUT', SELECTOR_TIMEOUT: 'SELECTOR_TIMEOUT', SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND', INVALID_SELECTOR: 'INVALID_SELECTOR', NETWORK_IDLE_TIMEOUT: 'NETWORK_IDLE_TIMEOUT', NETWORK_RECORDER_NOT_STARTED: 'NETWORK_RECORDER_NOT_STARTED', NETWORK_RECORDER_TIMEOUT: 'NETWORK_RECORDER_TIMEOUT', REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND', BODY_UNAVAILABLE: 'BODY_UNAVAILABLE', FRAME_DETACHED: 'FRAME_DETACHED', CROSS_ORIGIN_IFRAME: 'CROSS_ORIGIN_IFRAME', TAB_NOT_FOUND: 'TAB_NOT_FOUND', TAB_CRASHED: 'TAB_CRASHED', BACKGROUND_THROTTLED: 'BACKGROUND_THROTTLED', EVENT_SUBSCRIPTION_FAILED: 'EVENT_SUBSCRIPTION_FAILED', CANCELLED: 'CANCELLED', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', AMBIGUOUS_DOWNLOAD: 'AMBIGUOUS_DOWNLOAD', INTERNAL_ERROR: 'INTERNAL_ERROR'
 };
-const PI_BROWSER_PROTOCOL = self.PiNativeProtocol;
+const PI_BROWSER_PROTOCOL = typeof PiNativeProtocol !== 'undefined' ? PiNativeProtocol : self['PiNativeProtocol'];
 if (!PI_BROWSER_PROTOCOL || !PI_BROWSER_PROTOCOL.schema || !PI_BROWSER_PROTOCOL.nativeCommandMap) throw new Error('Pi Browser protocol schema is not loaded');
 const PI_BROWSER_ALIASES = PI_BROWSER_PROTOCOL.aliases || {};
+/** @type {Map<number, any>} */
 const piBrowserSessions = new Map();
+/** @type {Map<number, any>} */
 const piBrowserTabQueues = new Map();
 const PI_BROWSER_QUEUE_MAX_DEPTH = 64;
+
+function legacyCommandSurface() { return /** @type {any} */ (globalThis); }
+function optionalLegacyCommand(name) {
+  const fn = legacyCommandSurface()[name];
+  return typeof fn === 'function' ? fn : null;
+}
+function requireLegacyCommand(name) {
+  const fn = optionalLegacyCommand(name);
+  if (!fn) throw new Error('Legacy bridge command handler is not loaded: ' + name);
+  return fn;
+}
 
 function getPiBrowserQueueStats(tabId) {
   const q = piBrowserTabQueues.get(Number(tabId));
@@ -44,12 +64,12 @@ function cleanupPiBrowserTab(tabId, reason) {
   const key = Number(tabId);
   const cleanupReason = reason || 'tab_cleanup';
   try {
-    const pageCleanup = typeof cleanupPiBrowserPageListenersForTab === 'function' ? cleanupPiBrowserPageListenersForTab(tabId, cleanupReason) : null;
+    const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId, cleanupReason);
     if (pageCleanup && typeof pageCleanup.catch === 'function') pageCleanup.catch(e => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e));
   } catch (e) { console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e); }
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
-  try { cleanupNetworkRecorderTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, e && e.message ? e.message : e); }
+  try { optionalLegacyCommand('cleanupNetworkRecorderTab')?.(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, e && e.message ? e.message : e); }
   // Preserve the public cancellation path for tab teardown so queued callers,
   // diagnostics and static contract tests all see the same lifecycle entrypoint.
   // Literal contract: cancelWaitsForTab(tabId, 'tab_cleanup')
@@ -71,7 +91,8 @@ async function handlePiNativeBrowserCommand(msg, sender) {
   if (resp && typeof resp === 'object') {
     if (resp.details && typeof resp.details === 'object' && resp.details.cmd === undefined) resp.details.cmd = msg.cmd;
     if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data) && resp.data.native_cmd === undefined) resp.data.native_cmd = msg.cmd;
-    const bridge = typeof piBridgeInfo === 'function' ? piBridgeInfo() : null;
+    const bridgeInfoFn = optionalLegacyCommand('piBridgeInfo');
+    const bridge = bridgeInfoFn ? bridgeInfoFn() : null;
     if (bridge && resp.ok === false) {
       if (!resp.details || typeof resp.details !== 'object' || Array.isArray(resp.details)) resp.details = {};
       if (resp.details.bridge === undefined) resp.details.bridge = bridge;
@@ -81,7 +102,7 @@ async function handlePiNativeBrowserCommand(msg, sender) {
   }
   return resp;
 }
-function redactSensitive(value, depth = 0, seen) {
+function redactSensitive(value, depth = 0, seen = undefined) {
   const patterns = [
     /bearer\s+fixture-secret/gi,
     /fixture-secret/gi,
@@ -148,7 +169,8 @@ function normalizePersistentPiBrowserResponse(resp) {
   return resp;
 }
 /** @returns {number|undefined} */
-function normalizePiBrowserEvalTimeoutMs(options) {
+function normalizePiBrowserEvalTimeoutMs(options = undefined) {
+  options = options || {};
   const raw = options && (options.timeoutMs !== undefined ? options.timeoutMs : options.timeout_ms);
   if (raw === undefined || raw === null || raw === '') return undefined;
   const n = Number(raw);
@@ -190,7 +212,7 @@ async function reinstallPiBrowserSession(tabId) {
 
   const sess = piBrowserSessions.get(tabId);
   if (!sess) return null;
-  const injected = await ensurePiBrowserDispatcher(tabId);
+  const injected = await requireLegacyCommand('ensurePiBrowserDispatcher')(tabId);
   if (!injected.ok) return injected;
   const args = sess.install_args || { session_id: sess.session_id, targets: sess.targets, options: sess.options, buffer_size: sess.buffer_size, install_fingerprint: sess.install_fingerprint };
   const res = await callPagePiBrowser(tabId, 'hook.install', args);
@@ -238,10 +260,10 @@ async function handlePiBrowser(msg, sender) {
 }
 async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
   try {
-    if (cmd.startsWith('hook.')) return await handlePiBrowserHookCommand(cmd, tabId, msg);
-    if (cmd.startsWith('evidence.')) return await handlePiBrowserEvidenceCommand(cmd, tabId, msg);
-    if (cmd.startsWith('frame.')) return await handlePiBrowserFrameCommand(cmd, tabId, msg);
-    if (cmd.startsWith('transfer.')) return await handlePiBrowserTransferCommand(cmd, tabId, msg);
+    if (cmd.startsWith('hook.')) return await requireLegacyCommand('handlePiBrowserHookCommand')(cmd, tabId, msg);
+    if (cmd.startsWith('evidence.')) return await requireLegacyCommand('handlePiBrowserEvidenceCommand')(cmd, tabId, msg);
+    if (cmd.startsWith('frame.')) return await requireLegacyCommand('handlePiBrowserFrameCommand')(cmd, tabId, msg);
+    if (cmd.startsWith('transfer.')) return await requireLegacyCommand('handlePiBrowserTransferCommand')(cmd, tabId, msg);
     switch (cmd) {
       case 'network.start':
       case 'network.stop':
@@ -251,7 +273,7 @@ async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
       case 'network.get':
       case 'network.body':
       case 'network.exportHar':
-      case 'network.wait': return await handleNetworkRecorderCommand(tabId, cmd, msg);
+      case 'network.wait': return await requireLegacyCommand('handleNetworkRecorderCommand')(tabId, cmd, msg);
       case 'wait.navigate': return await navigatePiBrowser(tabId, msg);
       case 'wait.navigateAndWait': return await navigateAndWait(tabId, msg);
       case 'wait.navigation': return await waitForNavigation(tabId, msg);
@@ -263,10 +285,11 @@ async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
       case 'wait.cancel': return await cancelWait(tabId, msg);
       case 'wait.diagnose': return await diagnosePiBrowser(tabId, msg);
     }
-    if (cmd === 'html.get') return await handlePiBrowserHtml(tabId, msg);
-    if (cmd === 'screenshot.capture') return await captureScreenshotWithRetry(tabId, msg);
+    if (cmd === 'html.get') return await requireLegacyCommand('handlePiBrowserHtml')(tabId, msg);
+    if (cmd === 'screenshot.capture') return await requireLegacyCommand('captureScreenshotWithRetry')(tabId, msg);
     return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
   } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, e.message || String(e), { cmd, tabId }); }
 }
+export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, legacyCommandSurface, optionalLegacyCommand, requireLegacyCommand, handlePiBrowser, handlePiBrowserImpl };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, handlePiBrowser, handlePiBrowserImpl } };
+export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, legacyCommandSurface, optionalLegacyCommand, requireLegacyCommand, handlePiBrowser, handlePiBrowserImpl } };

@@ -1,9 +1,14 @@
-// @ts-nocheck
+import { chromeApi as chrome } from "./runtimeEnv";
+import { normalizePersistentPiBrowserResponse, piBrowserPersistentCdp } from "./runtime";
+
 // wait_cdp.js - Pi browser wait CDP domain refcount, subscription and diagnostics helpers.
 // Loaded after runtime.js and before wait.js by background.js.
 
+/** @type {Map<string, any>} */
 const piBrowserCdpSubscriptions = new Map();
+/** @type {Map<number, Set<string>>} */
 const piBrowserCdpTabRefs = new Map();
+/** @type {Map<string, any>} */
 const piBrowserCdpDomainRefs = new Map();
 const piBrowserCdpCleanupHistory = [];
 let piBrowserCdpSubSeq = 0;
@@ -47,7 +52,7 @@ async function acquirePiBrowserCdpDomain(record, domain) {
     ref = piBrowserCdpDomainRefs.get(key);
   }
   if (!ref) {
-    ref = { key, tabId, domain, count: 0, holders: new Map(), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false, disableInFlight: false, disablePromise: null, disableToken: 0 };
+    ref = { key, tabId, domain, count: 0, holders: /** @type {Map<string, any>} */ (new Map()), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false, disableInFlight: false, disablePromise: null, disableToken: 0 };
     piBrowserCdpDomainRefs.set(key, ref);
   }
   const first = ref.count === 0;
@@ -134,7 +139,7 @@ function forceReleasePiBrowserCdpDomainsForTab(tabId, reason) {
   let disabled = 0;
   for (const [key, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
     if (Number(ref.tabId) !== Number(tabId)) continue;
-    const holders = Array.from(ref.holders.values()).map(h => ({ holderId:h.holderId, waitId:h.waitId, kind:h.kind }));
+    const holders = Array.from(ref.holders.values()).map(h => { const holder = h as any; return { holderId:holder.holderId, waitId:holder.waitId, kind:holder.kind }; });
     released += ref.count || holders.length;
     ref.holders.clear();
     ref.count = 0;
@@ -197,10 +202,11 @@ function diagnosePiBrowserCdpSubscriptions(tabId) {
   return Array.from(piBrowserCdpSubscriptions.values()).filter(s => tabId === undefined || Number(s.tabId) === Number(tabId)).map(s => ({ subscriptionId:s.subscriptionId, tabId:s.tabId, events:s.events, waitId:s.waitId, kind:s.kind, age_ms:Date.now()-s.createdAt }));
 }
 function diagnosePiBrowserCdpDomainRefs(tabId) {
-  return Array.from(piBrowserCdpDomainRefs.values()).filter(r => tabId === undefined || Number(r.tabId) === Number(tabId)).map(r => ({ key:r.key, tabId:r.tabId, domain:r.domain, count:r.count, mode:r.mode, holders:Array.from(r.holders.values()).map(h => ({ holderId:h.holderId, waitId:h.waitId, kind:h.kind, age_ms:Date.now()-h.acquiredAt })), age_ms:Date.now()-r.createdAt, enabled_age_ms:r.enabledAt ? Date.now()-r.enabledAt : null, lastError:r.lastError || null, disablePending:!!r.disablePending }));
+  return Array.from(piBrowserCdpDomainRefs.values()).filter(r => tabId === undefined || Number(r.tabId) === Number(tabId)).map(r => ({ key:r.key, tabId:r.tabId, domain:r.domain, count:r.count, mode:r.mode, holders:Array.from(r.holders.values()).map(h => { const holder = h as any; return { holderId:holder.holderId, waitId:holder.waitId, kind:holder.kind, age_ms:Date.now()-holder.acquiredAt }; }), age_ms:Date.now()-r.createdAt, enabled_age_ms:r.enabledAt ? Date.now()-r.enabledAt : null, lastError:r.lastError || null, disablePending:!!r.disablePending }));
 }
 function diagnosePiBrowserCdpCleanupHistory(tabId) {
   return piBrowserCdpCleanupHistory.filter(e => tabId === undefined || Number(e.tabId) === Number(tabId)).slice(-50).map(e => ({ ...e, age_ms: Date.now() - e.t }));
 }
+export { piBrowserCdpSubscriptions, piBrowserCdpTabRefs, piBrowserCdpDomainRefs, piBrowserCdpCleanupHistory, piBrowserCdpSubSeq, piBrowserCdpDomainKey, piBrowserCdpHolderId, rememberPiBrowserCdpCleanup, sendPiBrowserCdpDomainCommand, acquirePiBrowserCdpDomain, schedulePiBrowserCdpDomainDisable, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, enablePiBrowserCdpDomains, attachDebuggerForWait, subscribePiBrowserCdp, unsubscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpCleanupHistory };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait_cdp = { name: "wait_cdp", symbols: { piBrowserCdpSubscriptions, piBrowserCdpTabRefs, piBrowserCdpDomainRefs, piBrowserCdpCleanupHistory, piBrowserCdpSubSeq, piBrowserCdpDomainKey, piBrowserCdpHolderId, rememberPiBrowserCdpCleanup, sendPiBrowserCdpDomainCommand, acquirePiBrowserCdpDomain, schedulePiBrowserCdpDomainDisable, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, enablePiBrowserCdpDomains, attachDebuggerForWait, subscribePiBrowserCdp, unsubscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpCleanupHistory } };

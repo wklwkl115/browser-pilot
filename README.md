@@ -48,7 +48,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Bridge JS 内部边界
 
-- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 当前 service worker build mode 是 `ordered-concat-compat`：生成 dist 时仍按旧顺序拼接 service worker 源；目标 build mode 是 `esm-import-graph`，真实 ESM 依赖图迁移继续按 TODO 196-202 推进。
+- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 当前 service worker build mode 是 `ordered-concat-compat`：TODO 197 后 shared/runtime/CDP/wait 基础层已通过真实 ESM import/export 进入 bundle，剩余 network/hook/frame/html/transfer 与 router/transport/tab_sync 仍在 ordered legacy tail；目标 build mode 是 `esm-import-graph`，继续按 TODO 198-202 收口。
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
@@ -106,7 +106,7 @@ npm run smoke:browser:isolated
 npm run smoke:browser:transfer
 ```
 
-`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
+`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。shared/runtime/CDP/wait 基础层已是 ESM imported foundation，legacy command/startup tail 仍按 TODO 198-199 迁移。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
 
 `prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 通过 `check:package` 执行 `npm pack --dry-run --json`，防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行。
 

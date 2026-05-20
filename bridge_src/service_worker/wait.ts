@@ -1,4 +1,11 @@
-// @ts-nocheck
+import { chromeApi as chrome } from "./runtimeEnv";
+import { PI_BROWSER_ERROR_CODES, callPagePiBrowser, getPiBrowserQueueStats, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piBrowserSessions } from "./runtime";
+import { diagnosePiBrowserCdpCleanupHistory, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpSubscriptions } from "./wait_cdp";
+import { cancelWaitsForTab, clearWait, cleanupTabWaits, finishPiBrowserWait, makeWaitId, normalizePiBrowserTimeoutMs, piBrowserWaits, waitAbortMessage, waitKey } from "./wait_coordinator";
+import { navigateAndWait, waitForLoadState, waitForNavigation } from "./wait_navigation";
+import { waitForNetworkIdle } from "./wait_network_idle";
+import { waitForSelector } from "./wait_selector";
+
 // wait.js - Pi browser native wait, event listener and CDP wait coordination commands.
 
 async function waitForAny(tabId, msg) {
@@ -23,7 +30,7 @@ async function waitForAny(tabId, msg) {
       try { clearWait(record, reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {}
     }
   };
-  const cleanup = (reason, keepIndex) => {
+  const cleanup = (reason, keepIndex = undefined) => {
     controllers.forEach((c, i) => {
       if (i === keepIndex) return;
       try { if (!c.signal.aborted) { losers.push(i); c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } } catch (_) {}
@@ -58,7 +65,7 @@ async function waitForAll(tabId, msg) {
   const failFast = msg.failFast !== false && msg.fail_fast !== false;
   const children = waits.map((w, i) => ({ index:i, kind:w?.kind || w?.type || w?.cmd || 'selector', timeout_ms: normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs) }));
   const controllers = waits.map(() => new AbortController());
-  const cleanup = (reason, exceptIndex = -1) => { controllers.forEach((c, i) => { try { if (i !== exceptIndex && !c.signal.aborted) c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {} }); };
+  const cleanup = (reason = undefined, exceptIndex = -1) => { controllers.forEach((c, i) => { try { if (i !== exceptIndex && !c.signal.aborted) c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {} }); };
   const deadline = Date.now() + parentTimeoutMs;
   let failureIndex = -1;
   const toResult = (settled, i) => {
@@ -112,7 +119,7 @@ function cancelPiBrowserWait(tabId, msg) { return cancelWait(tabId, msg); }
 function extractPiBrowserRuntimeValue(resp) {
   return resp?.data?.result?.result?.value || resp?.result?.result?.value || resp?.data?.result?.value || resp?.result?.value || null;
 }
-async function cleanupPiBrowserPageListenersForTab(tabId, reason, timeoutMs) {
+async function cleanupPiBrowserPageListenersForTab(tabId, reason, timeoutMs = undefined) {
   const cdp = piBrowserPersistentCdp();
   if (!cdp?.send) return { ok: true, data: { tabId:Number(tabId), removed:0, listenerIds:[], skipped:true, reason:reason || 'cleanup', warning:'persistent CDP unavailable' } };
   const expression = `(() => {
@@ -298,5 +305,6 @@ async function diagnosePiBrowser(tabId, msg) {
   };
   return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }
+export { waitForAny, waitForAll, waitForComposite, normalizePiBrowserWaitKind, dispatchPiBrowserWait, cancelWait, cancelPiBrowserWait, extractPiBrowserRuntimeValue, cleanupPiBrowserPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnosePiBrowser };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait = { name: "wait", symbols: { waitForAny, waitForAll, waitForComposite, normalizePiBrowserWaitKind, dispatchPiBrowserWait, cancelWait, cancelPiBrowserWait, extractPiBrowserRuntimeValue, cleanupPiBrowserPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnosePiBrowser } };

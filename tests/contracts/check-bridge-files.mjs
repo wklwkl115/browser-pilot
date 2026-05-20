@@ -18,7 +18,12 @@ const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cd
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
-		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+		.replace(/^import\s+[^;]+;\r?\n/gm, "")
+		.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
+		.replace(/\s+as\s+any/g, "")
+		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\nexport \{\};\s*$/, "");
 }
 function readServiceWorkerSource(file) {
 	return stripBridgeSource(read(`bridge_src/service_worker/${file.replace(/\.js$/, "")}.ts`));
@@ -72,6 +77,13 @@ const waitSelector = readServiceWorkerSource("wait_selector.js");
 const waitRuntime = readServiceWorkerSource("wait.js");
 const networkModel = readServiceWorkerSource("network_model.js");
 const networkRuntime = readServiceWorkerSource("network.js");
+const foundationModuleNames = ["config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait"];
+for (const foundation of foundationModuleNames) {
+	const raw = read(`bridge_src/service_worker/${foundation}.ts`);
+	assert(!raw.includes("@ts-nocheck"), `TODO 197 foundation source must not use @ts-nocheck: ${foundation}`);
+	assert(raw.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation source must export its module symbol: ${foundation}`);
+}
+assert(read("bridge_src/service_worker/runtime.ts").includes("legacyCommandSurface") && read("bridge_src/service_worker/runtime.ts").includes("requireLegacyCommand('handlePiBrowserHookCommand')"), "runtime must route remaining legacy command tail through explicit compatibility surface until TODO 198");
 assert(router.includes("@param {PiBridgeCommand}") && router.includes("@param {PiBridgeWebSocketLike}"), "router must document bridge envelope/socket JSDoc types");
 assert(router.includes("@param {PiBridgeWsEnvelope}") && runtimeBridge.includes("PiBridgeGlobalThis"), "bridge runtime/router must consume tightened ambient boundary types");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");

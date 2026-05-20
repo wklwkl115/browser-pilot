@@ -1,4 +1,10 @@
-// @ts-nocheck
+import { chromeApi as chrome } from "./runtimeEnv";
+import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserEval, piBrowserPersistentCdp } from "./runtime";
+import { enablePiBrowserCdpDomains, subscribePiBrowserCdp } from "./wait_cdp";
+import { cleanupTabWaits, finishPiBrowserWait, makeWaitId, normalizePiBrowserTimeoutMs, normalizeWaitState, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
+import { waitForNetworkIdle } from "./wait_network_idle";
+import { waitForSelector } from "./wait_selector";
+
 // wait_navigation.js - Pi browser navigation and load-state wait helpers.
 // Loaded after wait_coordinator.js and before wait.js by background.js.
 
@@ -81,14 +87,14 @@ async function waitForNavigation(tabId, msg) {
     let completed = false;
     let lastUrl = null;
     let mainFrameId = null;
-    const terminalData = (source, extra) => ({ wait_id, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, source, url: extra?.url || lastUrl || null, diagnostics, events: record.cdpEvents.slice(-50), ...(extra || {}) });
-    const finish = (ok, source, extra, code, message) => {
+    const terminalData = (source, extra = undefined) => ({ wait_id, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, source, url: extra?.url || lastUrl || null, diagnostics, events: record.cdpEvents.slice(-50), ...(extra || {}) });
+    const finish = (ok, source, extra = undefined, code = undefined, message = undefined) => {
       if (completed) return;
       completed = true;
       if (ok) resolve(finishPiBrowserWait(record, true, terminalData(source, extra)));
       else resolve(finishPiBrowserWait(record, false, null, code || PI_BROWSER_ERROR_CODES.NAVIGATION_TIMEOUT, message || 'waitForNavigation timed out', terminalData(source, extra)));
     };
-    const completeIfReady = (source, url, stage, extra) => {
+    const completeIfReady = (source, url, stage, extra = undefined) => {
       if (url) lastUrl = url;
       if (!urlMatches(lastUrl)) return false;
       if (stage === 'error') { finish(false, source, { ...(extra || {}), url:lastUrl, stage }, PI_BROWSER_ERROR_CODES.NAVIGATION_TIMEOUT, 'waitForNavigation failed'); return true; }
@@ -211,5 +217,6 @@ async function waitForLoadState(tabId, msg) {
   });
 }
 // CDP contract literal: 'Network.enable'
+export { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait_navigation = { name: "wait_navigation", symbols: { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState } };

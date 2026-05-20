@@ -1,5 +1,6 @@
 # Changelog
 
+- 完成 TODO 197 service worker 基础层真实 ESM 迁移：`config/protocol/patterns/cdp/runtime/wait_*` 通过 ESM import/export 进入 dist bundle，`build-manifest.json` 记录 `foundationImported` 与 foundation/legacy 清单；本组 `@ts-nocheck` 清零，新增 `runtimeEnv.ts`/`types.ts` 基础类型边界，contracts 锁定 foundation 不再文本拼接。
 ## Unreleased
 
 - 完成 TODO 196 支柱二终态设计修正：`docs/bridge-esm-bundler-plan.md` 明确 TODO 188-193 只是一期 `ordered-concat-compat` dist runtime 迁移，TODO 196-202 才是 `esm-import-graph` 终态；`dist/build-manifest.json` 记录当前与目标 service worker build mode，契约可区分 ordered source concatenation 是否仍存在。

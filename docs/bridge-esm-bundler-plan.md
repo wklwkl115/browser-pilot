@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for the Bridge ESM migration. TODO 188-193 completed the first-phase dist runtime migration; TODO 196-202 are the remaining final-state work. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
+This document freezes the target architecture and gates for the Bridge ESM migration. TODO 188-193 completed the first-phase dist runtime migration; TODO 197 has migrated the shared/runtime/CDP/wait foundation into real ESM imports; TODO 198-202 are the remaining final-state work. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
 
 ## Decision
 
@@ -10,11 +10,11 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 
 ## Current phase vs target final state
 
-Current service worker build mode is `ordered-concat-compat`: `scripts/build-bridge.mjs` reads `bridge_src/service_worker/*.ts` in the old bootstrap order and builds that generated source as an ESM service worker bundle. This is a compatibility bridge, not the final ESM topology.
+Current service worker build mode is `ordered-concat-compat`: `scripts/build-bridge.mjs` imports the TODO 197 foundation modules (`config/protocol/patterns/cdp/runtime/wait_*`) through the ESM graph, then appends the unmigrated legacy command/startup tail in old bootstrap order. This is a compatibility bridge, not the final ESM topology.
 
 Target service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, esbuild follows the dependency graph, and `scripts/build-bridge.mjs` no longer reads service worker source text or carries a `serviceWorkerModules` ordered-concat list.
 
-The generated `dist/build-manifest.json` records both `serviceWorkerBuildMode:"ordered-concat-compat"` and `targetServiceWorkerBuildMode:"esm-import-graph"` until TODO 199 removes ordered concatenation.
+The generated `dist/build-manifest.json` records both `serviceWorkerBuildMode:"ordered-concat-compat"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `foundationImported:true`, and the foundation/legacy module lists until TODO 199 removes ordered concatenation.
 
 ## Target final state
 
@@ -63,7 +63,8 @@ Business modules must not depend on router, transport, popup UI, or startup side
 - TODO 192 removes old importScripts/global entrypoints; no long-term fallback path remains.
 - TODO 193 proves the first-phase dist runtime state with `npm run check`, runtime callable artifacts, and behavior drift audit.
 - TODO 195 closes the package portability gate by proving `npm pack --dry-run --json` includes every dist file referenced by `manifest.json`.
-- TODO 196-202 remain the true final-state work: remove ordered source concatenation, migrate to real import/export dependencies, clear `@ts-nocheck`, and enable strict bridge TypeScript.
+- TODO 197 completed the foundation layer: shared config/protocol/patterns, persistent CDP, runtime core, and wait subsystems now use real import/export and no longer carry `@ts-nocheck`.
+- TODO 198-202 remain the true final-state work: migrate command/startup tail to real import/export, remove ordered source concatenation, clear remaining `@ts-nocheck`, and enable strict bridge TypeScript.
 
 ## Gate
 

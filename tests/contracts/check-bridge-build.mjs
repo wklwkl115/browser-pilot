@@ -20,6 +20,8 @@ assert.deepEqual(manifest.content_scripts?.[1]?.js, ["dist/content.js"], "manife
 
 assert(existsSync(path.join(root, "bridge_src", "service-worker.ts")), "bridge_src service-worker module-order entry must exist");
 assert(existsSync(path.join(root, "bridge_src", "shared", "buildInfo.ts")), "bridge_src shared build type must exist");
+assert(existsSync(path.join(root, "bridge_src", "service_worker", "runtimeEnv.ts")), "TODO 197 must provide a typed service-worker runtime environment boundary");
+assert(existsSync(path.join(root, "bridge_src", "service_worker", "types.ts")), "TODO 197 must provide shared foundation bridge types");
 for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 	assert(existsSync(path.join(root, "bridge_src", "page_scripts", `${pageScript}.ts`)), `bridge_src page script module missing: ${pageScript}`);
 }
@@ -43,8 +45,20 @@ assert.equal(buildManifest.manifestTarget, "dist/service-worker.js", "build mani
 assert.equal(buildManifest.serviceWorkerBuildMode, "ordered-concat-compat", "build manifest must record the current first-phase service worker build mode");
 assert.equal(buildManifest.targetServiceWorkerBuildMode, "esm-import-graph", "build manifest must record the target service worker build mode");
 assert.equal(buildManifest.orderedConcatenation, true, "first-phase build manifest must make ordered source concatenation explicit until TODO 199 removes it");
+assert.equal(buildManifest.foundationImported, true, "TODO 197 must import foundation modules through the ESM graph");
 assert.deepEqual(buildManifest.entries.map((entry) => entry.name), ["service-worker", "content", "hook-dispatcher", "disable-dialogs"], "build manifest must record independent service-worker and page-script bundle entries");
 assert.deepEqual(buildManifest.pageScriptEntries.map((entry) => entry.name), ["content", "hook-dispatcher", "disable-dialogs"], "build manifest must keep page scripts separate from the service-worker bundle");
+assert.deepEqual(buildManifest.serviceWorkerFoundationModules, ["config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait"], "build manifest must record TODO 197 foundation ESM modules");
+for (const foundation of buildManifest.serviceWorkerFoundationModules) {
+	const source = read(`bridge_src/service_worker/${foundation}.ts`);
+	assert(!source.includes("@ts-nocheck"), `TODO 197 foundation module must be type-checked: ${foundation}`);
+	assert(source.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation module must keep explicit module boundary: ${foundation}`);
+	if (!["config", "protocol", "patterns"].includes(foundation)) assert(/^import\s+/m.test(source), `TODO 197 foundation module must express dependencies through ESM imports: ${foundation}`);
+}
+const runtimeSource = read("bridge_src/service_worker/runtime.ts");
+assert(runtimeSource.includes("legacyCommandSurface") && runtimeSource.includes("requireLegacyCommand('handleNetworkRecorderCommand')"), "TODO 197 runtime must isolate remaining legacy tail calls behind an explicit compatibility surface");
+assert(!runtimeSource.includes("typeof cleanupPiBrowserPageListenersForTab") && !runtimeSource.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)"), "TODO 197 runtime must not use ambient direct foundation/legacy globals for tab cleanup");
+assert.deepEqual(buildManifest.legacyServiceWorkerModules, ["network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport"], "build manifest must record remaining ordered-concat legacy modules");
 for (const moduleName of ["config", "protocol", "patterns", "runtime", "cdp", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport"]) {
 	assert(buildManifest.serviceWorkerModules?.includes(moduleName), `build manifest must record bundled service worker module: ${moduleName}`);
 }
@@ -55,7 +69,10 @@ assert(bundle.includes("bridge-build-dist-v1") && bundle.includes("__PI_BROWSER_
 assert(bundle.includes("runtimeSwitched: true") && bundle.includes('mode: "production"'), "dist service-worker bundle must expose production runtime build metadata");
 assert(!bundle.includes("importScripts("), "ESM service-worker bundle must not emit importScripts");
 assert(!bundle.includes("PiBrowserHookDispatcher"), "service-worker bundle must not inline the MAIN-world hook dispatcher page script");
-for (const required of ["PI_BROWSER_BRIDGE_WS_URL", "PI_BROWSER_HOOK_DISPATCHER_FILE = \"dist/hook_dispatcher.js\"", "function matchNetworkPattern", "async function handlePiBrowser", "async function handleNetworkRecorderCommand", "async function handlePiBrowserHookCommand", "async function handlePiBridgeMessage", "function connectWS"]) {
+assert(bundle.includes("__piBridgeFoundationModules") && bundle.includes("Object.assign(globalThis, module.symbols)"), "service-worker bundle must publish foundation ESM module symbols for legacy compatibility");
+for (const foundation of buildManifest.serviceWorkerFoundationModules) assert(!bundle.includes(`// ---- bridge_src/service_worker/${foundation}.ts ----`), `foundation module must not be text-concatenated: ${foundation}`);
+for (const legacy of buildManifest.legacyServiceWorkerModules) assert(bundle.includes(`__piBridgeModule_${legacy}`), `legacy module must remain in ordered-concat tail until its TODO phase: ${legacy}`);
+for (const required of ["PI_BROWSER_BRIDGE_WS_URL", "PI_BROWSER_HOOK_DISPATCHER_FILE", "dist/hook_dispatcher.js", "matchNetworkPattern", "async function handlePiBrowser", "handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "async function handlePiBridgeMessage", "function connectWS"]) {
 	assert(bundle.includes(required), `service-worker bundle must include migrated runtime symbol: ${required}`);
 }
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js.map")), "build pipeline must emit a source map for the experimental bundle");
@@ -179,7 +196,7 @@ for (const file of ["README.md", "AI_INSTALL.md", "docs/bridge-esm-bundler-plan.
 }
 const esmPlan = read("docs/bridge-esm-bundler-plan.md");
 assert(esmPlan.includes("ordered-concat-compat") && esmPlan.includes("esm-import-graph"), "bridge ESM plan must distinguish current ordered-concat mode from the target import graph mode");
-assert(esmPlan.includes("TODO 188-193") && esmPlan.includes("TODO 196-202"), "bridge ESM plan must separate first-phase runtime migration from final-state work");
+assert(esmPlan.includes("TODO 188-193") && esmPlan.includes("TODO 197") && esmPlan.includes("TODO 198-202"), "bridge ESM plan must separate first-phase runtime migration, foundation ESM migration, and remaining final-state work");
 assert(read("README.md").includes("ordered-concat-compat"), "README must expose the current service worker build mode instead of calling it final ESM");
 
 console.log("bridge build contract ok");

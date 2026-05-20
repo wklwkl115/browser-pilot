@@ -1,8 +1,15 @@
-// @ts-nocheck
+import { PI_BROWSER_ERROR_CODES, piBrowserError } from "./runtime";
+import { cleanupPiBrowserCdpTab, releasePiBrowserCdpDomains, rememberPiBrowserCdpCleanup, unsubscribePiBrowserCdp } from "./wait_cdp";
+
 // wait_coordinator.js - Pi browser wait registry, cleanup, timeout and event subscription helpers.
 // Loaded after wait_cdp.js and before wait.js by background.js.
 
 class WaitCoordinator {
+  /** @type {Map<string, any>} */
+  activeWaits = new Map();
+  /** @type {Map<string, any>} */
+  eventSubscriptions = new Map();
+  epoch = 0;
   constructor() { this.activeWaits = new Map(); this.eventSubscriptions = new Map(); this.epoch = 0; }
   makeWaitId(tabId, kind) { return makeWaitId(tabId, kind); }
   waitKey(tabId, waitId) { return waitKey(tabId, waitId); }
@@ -83,7 +90,7 @@ try {
 } catch (_) {}
 let piBrowserWaitSeq = 0;
 const PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS = 30000;
-function normalizePiBrowserTimeoutMs(msg, fallback) {
+function normalizePiBrowserTimeoutMs(msg, fallback = PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS) {
   const hasExplicit = msg && (msg.timeoutMs !== undefined || msg.timeout_ms !== undefined || msg.timeout !== undefined);
   if (hasExplicit && Number(msg.timeoutMs ?? msg.timeout_ms ?? msg.timeout) === 0) return 0;
   const raw = msg?.timeoutMs ?? msg?.timeout_ms ?? msg?.timeout ?? fallback ?? PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS;
@@ -97,7 +104,7 @@ function waitKey(tabId, waitId) { return Number(tabId) + ':' + String(waitId); }
 function eventSubscriptionKey(tabId, listenerId) { return Number(tabId) + '::' + String(listenerId); }
 function isAbortError(e) { return !!e && (e.name === 'AbortError' || /aborted|cancelled/i.test(e.message || String(e))); }
 function waitAbortMessage(record) { return 'piBrowser wait ' + record.waitId + ' cancelled'; }
-function normalizeWaitState(value, fallback) {
+function normalizeWaitState(value, fallback = 'complete') {
   const s = String(value || fallback || '').toLowerCase().replace(/_/g, '');
   if (s === 'domcontentloaded' || s === 'dominteractive') return 'domcontentloaded';
   if (s === 'load' || s === 'loaded') return 'load';
@@ -105,11 +112,12 @@ function normalizeWaitState(value, fallback) {
   if (s === 'networkidle') return 'networkidle';
   return s || 'complete';
 }
-function registerWait(tabId, kind, criteria) {
+function registerWait(tabId, kind, criteria = undefined) {
+  criteria = criteria || {};
   const waitId = (criteria && (criteria.waitId || criteria.wait_id)) || makeWaitId(tabId, kind);
   const requestId = criteria && (criteria.requestId || criteria.request_id);
   const abortController = criteria?.abortController || new AbortController();
-  const record = { waitId: String(waitId), wait_id: String(waitId), requestId: requestId ? String(requestId) : undefined, request_id: requestId ? String(requestId) : undefined, tabId: Number(tabId), kind, criteria: criteria || {}, createdAt: Date.now(), status: 'pending', listeners: [], timers: [], cdpAttached: false, cdpDomains: new Set(), cdpSubscriptions: [], cdpEvents: [], diagnostics: [], lastEventAt: 0, lastError: null, abortController };
+  const record = ({ waitId: String(waitId), wait_id: String(waitId), requestId: requestId ? String(requestId) : undefined, request_id: requestId ? String(requestId) : undefined, tabId: Number(tabId), kind, criteria: criteria || {}, createdAt: Date.now(), status: 'pending', listeners: [], timers: [], cdpAttached: false, cdpDomains: new Set(), cdpSubscriptions: [], cdpEvents: [], diagnostics: [], lastEventAt: 0, lastError: null, abortController } as any);
   record.key = waitKey(tabId, record.waitId);
   // lifecycle identity: key: waitKey(tabId, record.waitId)
   piBrowserWaits.register(record);
@@ -181,7 +189,7 @@ function waitWithTimeout(record, promise, timeoutMs, label) {
   record.timers.push(timeoutHandle);
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutHandle));
 }
-function finishPiBrowserWait(record, ok, data, errorCode, message, details) {
+function finishPiBrowserWait(record, ok, data = null, errorCode = undefined, message = undefined, details = {}) {
   const elapsed_ms = Date.now() - record.createdAt;
   const base = { waitId: record.waitId, nativeWaitId: record.waitId, kind: record.kind, tabId: record.tabId, elapsed_ms, criteria: record.criteria };
   clearWait(record, ok ? 'completed' : (errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? 'timeout' : (errorCode === 'CANCELLED' ? 'cancelled' : 'failed')));
@@ -191,5 +199,6 @@ function finishPiBrowserWait(record, ok, data, errorCode, message, details) {
 function rejectIfAborted(record) {
   if (record.abortController?.signal?.aborted || record.status === 'cancelled') throw new DOMException(waitAbortMessage(record), 'AbortError');
 }
+export { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, piBrowserWaits, PI_BROWSER_ORPHAN_WAIT_MAX_AGE_MS, cleanupPiBrowserOrphanWaits, piBrowserWaitSeq, PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS, normalizePiBrowserTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, isAbortError, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupPiBrowserWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, waitWithTimeout, finishPiBrowserWait, rejectIfAborted };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait_coordinator = { name: "wait_coordinator", symbols: { WaitCoordinator, cleanupWait, cleanupWaitsForFrame, cleanupWaitsForUninstall, piBrowserWaits, PI_BROWSER_ORPHAN_WAIT_MAX_AGE_MS, cleanupPiBrowserOrphanWaits, piBrowserWaitSeq, PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS, normalizePiBrowserTimeoutMs, makeWaitId, waitKey, eventSubscriptionKey, isAbortError, waitAbortMessage, normalizeWaitState, registerWait, recordWaitEvent, shouldAbortWaitCleanupReason, clearWait, cleanupPiBrowserWait, isWaitRecordForTab, cleanupTabWaits, cancelWaitsForTab, cleanupEventSubscriptionsForTab, waitWithTimeout, finishPiBrowserWait, rejectIfAborted } };

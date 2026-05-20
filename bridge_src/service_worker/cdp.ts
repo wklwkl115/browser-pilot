@@ -1,4 +1,5 @@
-// @ts-nocheck
+import { chromeApi as chrome } from "./runtimeEnv";
+
 // cdp.js — Pi browser persistent CDP / iframe helpers.
 // Design notes: chrome.debugger cannot attach to iframe targets with Target.attachToTarget in this bridge;
 // cross-origin iframe execution is performed on the owning tab by Page.getFrameTree -> Page.createIsolatedWorld -> Runtime.evaluate.
@@ -7,7 +8,9 @@ const PI_PERSISTENT_CDP_VERSION = 'p4.0.0';
 const PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15000;
 const PI_PERSISTENT_CDP_MAX_SESSIONS = 16;
 
+/** @type {Map<string, any>} */
 const piPersistentCdpSessions = new Map();
+/** @type {Map<string, any>} */
 const piPersistentCdpNewDocumentScripts = new Map();
 
 function piPersistentCdpHasSessionForTab(tabId) {
@@ -22,15 +25,15 @@ function piCdpKnownNewDocumentIdentifiers(tabId, name) {
     .filter(rec => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name))
     .map(rec => rec.identifier);
 }
-function piCdpError(code, message, details) {
+function piCdpError(code, message, details = {}) {
   const safeDetails = (details && typeof details === 'object') ? details : (details === undefined ? {} : { raw: details });
-  return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } };
+  return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } } as any;
 }
 function piCdpRawError(e) {
   return { name: e && e.name, message: e && e.message, stack: e && e.stack };
 }
-function piCdpOk(data) { return { ok: true, data }; }
-function piCdpWithTimeout(promise, timeoutMs, label) {
+function piCdpOk(data) { return { ok: true, data } as any; }
+function piCdpWithTimeout(promise, timeoutMs, label = 'CDP command') {
   const ms = Math.max(1, Number(timeoutMs || PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS));
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -39,7 +42,7 @@ function piCdpWithTimeout(promise, timeoutMs, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function piCdpFlattenFrameTree(node, out) {
+function piCdpFlattenFrameTree(node, out = []) {
   if (!node) return out;
   const frame = node.frame || node;
   if (frame && frame.id) out.push({
@@ -58,6 +61,7 @@ function piCdpNormalizeFrameTreeNode(node) {
   if (!node) return null;
   const frame = node.frame || node;
   const out = {
+    childFrames: [],
     id: frame?.id || '',
     frameId: frame?.id || '',
     parentId: frame?.parentId || null,
@@ -66,7 +70,7 @@ function piCdpNormalizeFrameTreeNode(node) {
     mimeType: frame?.mimeType || '',
     securityOrigin: frame?.securityOrigin || '',
     children: []
-  };
+  } as any;
   out.childFrames = out.children;
   for (const child of (node.childFrames || [])) {
     const c = piCdpNormalizeFrameTreeNode(child);
@@ -238,7 +242,7 @@ async function piPersistentCdpAddNewDocumentScript(tabId, source, options) {
     source: String(source),
     includeCommandLineAPI: Boolean(options?.includeCommandLineAPI),
     runImmediately: Boolean(options?.runImmediately)
-  };
+  } as any;
   if (options?.worldName !== undefined) params.worldName = String(options.worldName || '');
   const resp = await piPersistentCdpSend(tabId, 'Page.addScriptToEvaluateOnNewDocument', params, cdpOptions);
   if (!resp.ok) return resp;
@@ -342,5 +346,6 @@ const piPersistentCdpBridge = {
 };
 self['PiPersistentCdp'] = piPersistentCdpBridge;
 self['piPersistentCdpBridge'] = piPersistentCdpBridge;
+export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };

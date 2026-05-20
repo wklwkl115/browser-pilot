@@ -32,7 +32,7 @@
 ## 当前架构债决策（支柱二/三/四）
 
 - 支柱三（`wait.js` 解耦）已完成：wait 子系统拆为 `wait_cdp.js`、`wait_coordinator.js`、`wait_navigation.js`、`wait_network_idle.js`、`wait_selector.js` 与 299 行 `wait.js` facade。
-- 支柱二（ESM + TS bundler）仅完成一期 runtime 迁移：`bridge_src/**`、`build:bridge`、manifest 指向 dist、旧入口删除和 isolated smoke 已落地；但强类型 ESM 依赖拓扑、`@ts-nocheck` 清理、strict tsconfig、发布包 dist 完整性尚未完成，不能再称为完整收口。
+- 支柱二（ESM + TS bundler）已完成一期 runtime 迁移与 TODO 197 基础层真实 ESM 迁移：`config/protocol/patterns/cdp/runtime/wait_*` 已走 import/export 且本组 `@ts-nocheck` 清零；剩余 command/startup tail、ordered-concat fallback、全量 strict tsconfig 仍未完成，不能称为完整收口。
 - 支柱四（smoke 端口冲突）已完成当前阶段：默认 smoke 显式诊断端口占用，isolated smoke 可用独占 Chrome profile 验证 runtime；不引入 puppeteer/playwright。
 - `network.js` 已完成拆分，不再列为待拆债务；`hook_dispatcher` 已作为独立 page bundle 进入 dist，但源码仍是大文件，后续只在真实收益明确时继续拆，不阻塞支柱二终态。
 
@@ -175,11 +175,13 @@
 
 ## 197. Service worker 真实 ESM 迁移第一阶段：shared/runtime/CDP/wait 基础层
 
-- [ ] 范围：迁移 `config`、`protocol`、`patterns`、`runtime`、`cdp`、`wait_cdp`、`wait_coordinator`、`wait_navigation`、`wait_network_idle`、`wait_selector`、`wait` 到真实 import/export；保留命令名、错误码、diagnostics、wait supervisor metadata 不变。
-- [ ] 类型：为 Chrome fixture、CDP target、bridge response、wait record、domain refs、subscriber cleanup 建立最小强类型；本阶段移除这些文件的 `// @ts-nocheck`。
-- [ ] 构建：`bridge_src/service-worker.ts` 直接 import 基础层真实导出；`scripts/build-bridge.mjs` 不再把这些基础层文件文本拼入 generated service worker。
-- [ ] 契约：扩展 `check-bridge-build.mjs`/`check-bridge-files.mjs`，锁定基础层无 ambient global 函数回流，wait 子系统仍 ≤450 行，VM/fake CDP wait 契约继续通过。
-- [ ] 验证：`npm run build:bridge`、`npm run check:bridge`；如触及 wait runtime，再跑 isolated smoke 的 wait/navigation/networkIdle 子集。
+- [x] 执行约束：本项未提交半迁移状态；`config/protocol/patterns/runtime/cdp/wait_*` 同批完成，TODO 198/201 未提前推进。
+- [x] 范围：`config`、`protocol`、`patterns`、`runtime`、`cdp`、`wait_cdp`、`wait_coordinator`、`wait_navigation`、`wait_network_idle`、`wait_selector`、`wait` 已迁移到真实 import/export；命令名、错误码、diagnostics、wait supervisor metadata 不变。
+- [x] 图谱 gate 197A：`bridge_src/service-worker.ts` 与 generated service worker 均 import foundation modules；`scripts/build-bridge.mjs` 只拼接未迁移 legacy tail；`dist/build-manifest.json` 记录 `foundationImported:true`、`serviceWorkerFoundationModules`、`legacyServiceWorkerModules`。
+- [x] 类型 gate 197B：`config/protocol/patterns/runtime/cdp` 移除 `// @ts-nocheck`；新增 `runtimeEnv.ts` 与 `types.ts` 承载 Chrome/runtime/CDP 基础边界；runtime 对未迁移 legacy command tail 只经 `legacyCommandSurface/requireLegacyCommand` 显式兼容面调用。
+- [x] 类型 gate 197C：`wait_*` 与 `wait` 移除 `// @ts-nocheck`；wait registry/domain/subscriber/selector/networkIdle/navigation 通过局部 typed maps/defaults 收口；wait 子系统文件仍 ≤450 行。
+- [x] 契约 gate 197D：`check-bridge-build.mjs`/`check-bridge-files.mjs` 锁定 foundation 无 `@ts-nocheck`、无基础层文本拼接回归、foundation ESM imports、runtime legacy 兼容面和 wait 职责边界；VM/fake CDP wait 契约继续通过。
+- [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 通过；`npm run smoke:browser:isolated` 通过，artifact `.pi/browser-artifacts/smoke-browser-isolated-results.json`，覆盖 build.runtime、bridge、wait.loadState、scan/content/html/frame/hook/execute/pick/network/screenshot/tabs.close。
 
 ## 198. Service worker 真实 ESM 迁移第二阶段：network/hook/frame/html/transfer command 层
 
@@ -222,9 +224,8 @@
 
 ## 下一步建议顺序
 
-1. 先做 TODO 195：修发布/安装包 dist runtime 完整性，这是当前合并阻断项。
-2. 再做 TODO 196：修正文档和构建目标，明确一期 runtime 迁移与支柱二终态的差距。
-3. 按 TODO 197-199 分三层把 service worker 从 ordered concatenation 迁到真实 ESM import/export。
-4. 做 TODO 200：strict TypeScript 收口并清零 `@ts-nocheck`。
-5. 做 TODO 201：如果仍需要“小Pi/Performance HUD”，按新 `bridge_src` 架构移植，不套旧 JS dirty patch。
-6. 最后做 TODO 202：支柱二终态验证、文档同步和合并前检查。
+1. 下一步推进 TODO 198：迁移 network/hook/frame/html/transfer command 层，并保持 artifact/body/postData/hook session 行为不漂移。
+2. TODO 198 全量 `npm run check` 与必要 isolated runtime 子集通过后，再做 TODO 199：迁移 router/transport/tab_sync 启动层，删除 ordered-concat fallback 与 generated service worker 拼接路径。
+3. TODO 199 的 isolated runtime 通过后，再做 TODO 200：开启 strict TypeScript，清零全部 `@ts-nocheck` 与 broad ambient 类型回归。
+4. TODO 201 只在支柱二核心 runtime clean 后处理 UI/HUD 分支；不得把旧 dirty UI patch 直接套入当前 dist runtime。
+5. 最后做 TODO 202：支柱二终态收口，要求 build/check/pack/isolated smoke、README/AI_INSTALL/CHANGELOG/TODO/docs 全部同步，合并前复核工作树与 merge-tree。

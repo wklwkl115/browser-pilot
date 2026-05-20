@@ -24,10 +24,13 @@ function readToolSources() {
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
+		.replace(/^import\s+[^;]+;\r?\n/gm, "")
+		.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
+		.replace(/\s+as\s+any/g, "")
 		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
-
 function readBridgeRuntimeFile(file) {
 	const name = file.replace(/\.js$/, "");
 	if (file === "hook_dispatcher.js" || file === "disable_dialogs.js" || file === "content.js") {
@@ -171,7 +174,7 @@ assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"),
 assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTask"), "tab_sync.js must wrap async lifecycle tasks with rejection handling");
 assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 assert(/chrome\.tabs\.onRemoved\.addListener\(\(tabId\)\s*=>\s*\{\s*cleanupPiBrowserTab\(tabId,\s*['"]tab_removed['"]\)/s.test(tabSync), "tab removal must route through unified tab cleanup before sending tabs_update");
-assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, CDP refs, and network recorders for removed tabs");
+assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("optionalLegacyCommand('cleanupNetworkRecorderTab')?.(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, CDP refs, and network recorders for removed tabs");
 assert(waitBridge.includes("function cleanupTabWaits(tabId, reason, options)") && waitBridge.includes("cleanupPiBrowserCdpTab(tabId, cleanupReason)") && waitBridge.includes("cleanupEventSubscriptionsForTab(tabId)") && waitBridge.includes("remaining_waits"), "wait cleanup must remove tab-scoped active waits, event subscriptions, and CDP refs");
 assert(waitBridge.includes("wait.any requires waits/conditions") && waitBridge.includes("wait.all requires waits/conditions"), "wait.any/all must reject empty composite wait condition sets");
 assert(waitBridge.includes("eventSubscriptionKey(tabId, listenerId)") && waitBridge.includes("eventSubscription(listenerId, tabId)") && waitBridge.includes("deleteEventSubscription(listenerId, tabId)") && waitBridge.includes("filter(t => Number(t.tabId) === Number(tabId))"), "wait/hook diagnostics and listener removal must stay scoped to the target tab");

@@ -8,9 +8,13 @@ const quiet = process.argv.includes("--quiet");
 const distDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
 const serviceWorkerBuildMode = "ordered-concat-compat";
 const targetServiceWorkerBuildMode = "esm-import-graph";
-const serviceWorkerModules = [
-	"config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport",
+const serviceWorkerFoundationModules = [
+	"config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait",
 ];
+const legacyServiceWorkerModules = [
+	"network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "router", "tab_sync", "transport",
+];
+const serviceWorkerModules = [...serviceWorkerFoundationModules, ...legacyServiceWorkerModules];
 const entries = [
 	{
 		name: "service-worker",
@@ -36,16 +40,24 @@ const entries = [
 const pageScriptEntries = entries.filter((entry) => entry.name !== "service-worker");
 
 async function serviceWorkerSource() {
+	const foundationImports = serviceWorkerFoundationModules.map((name) => `import { __piBridgeModule_${name} } from "./bridge_src/service_worker/${name}";`);
+	const foundationGlobals = [
+		"const __piBridgeFoundationModules = [" + serviceWorkerFoundationModules.map((name) => `__piBridgeModule_${name}`).join(", ") + "];",
+		"for (const module of __piBridgeFoundationModules) Object.assign(globalThis, module.symbols);",
+	];
 	const parts = [
 		"// Generated from bridge_src/service_worker/*.ts by scripts/build-bridge.mjs.",
-		"// Runtime source order follows the pre-ESM bootstrap order recorded in serviceWorkerModules.",
+		"// Foundation modules are imported through the ESM graph; legacy command modules remain ordered-concat until TODO 198-199.",
+		...foundationImports,
+		...foundationGlobals,
 	];
-	for (const name of serviceWorkerModules) {
+	for (const name of legacyServiceWorkerModules) {
 		const rel = `bridge_src/service_worker/${name}.ts`;
 		let text = await readFile(path.join(root, rel), "utf8");
 		text = text.replace(/^\/\/ @ts-nocheck\r?\n/, "").replace(/^\/\/ @ts-check\r?\n/gm, "");
 		parts.push(`\n// ---- ${rel} ----\n${text.trim()}\n`);
 	}
+	parts.push("for (const module of [" + legacyServiceWorkerModules.map((name) => `__piBridgeModule_${name}`).join(", ") + "]) Object.assign(globalThis, module.symbols);");
 	parts.push(`
 // ---- bridge_src/shared/buildInfo.ts marker ----
 const BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-dist-v1";
@@ -108,8 +120,11 @@ await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	serviceWorkerBuildMode,
 	targetServiceWorkerBuildMode,
 	orderedConcatenation: true,
+	foundationImported: true,
 	entries,
 	serviceWorkerModules,
+	serviceWorkerFoundationModules,
+	legacyServiceWorkerModules,
 	pageScriptEntries,
 }, null, 2) + "\n", "utf8");
 

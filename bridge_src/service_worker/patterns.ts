@@ -1,4 +1,3 @@
-// @ts-nocheck
 // patterns.js - shared bounded pattern matching helpers for bridge filters.
 
 const PI_BROWSER_NETWORK_MAX_PATTERN_CHARS = 512;
@@ -26,4 +25,5 @@ function matchNetworkPattern(url, pattern) {
   return url.includes(pattern);
 }
 // ESM module boundary marker for TODO 189
+export { PI_BROWSER_NETWORK_MAX_PATTERN_CHARS, PI_BROWSER_NETWORK_MAX_MATCH_CHARS, isSafeNetworkRegexPattern, matchNetworkPattern };
 export const __piBridgeModule_patterns = { name: "patterns", symbols: { PI_BROWSER_NETWORK_MAX_PATTERN_CHARS, PI_BROWSER_NETWORK_MAX_MATCH_CHARS, isSafeNetworkRegexPattern, matchNetworkPattern } };

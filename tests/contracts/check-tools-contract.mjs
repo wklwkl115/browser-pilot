@@ -112,7 +112,12 @@ assert(waitSupervisor.includes("WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS = 50") && wa
 assert(waitSupervisor.includes('cmd: "wait.navigate"') && waitSupervisor.includes("waitCommandForNavigateAndWait"), "wait.navigateAndWait must navigate once and supervise only the follow-up wait");
 const stripBridgeSource = (text) => text
 	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
-	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+	.replace(/^import\s+[^;]+;\r?\n/gm, "")
+	.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
+	.replace(/\s+as\s+any/g, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 const bridgeInfo = readServiceWorkerSource("bridge_info");
 assert(bridgeInfo.includes("PI_BROWSER_WORKER_BOOT_ID") && bridgeInfo.includes("workerBootId") && bridgeInfo.includes("workerStartedAt"), "bridge metadata must expose service-worker boot identity for wait recovery diagnostics");

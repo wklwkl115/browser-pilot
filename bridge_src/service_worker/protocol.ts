@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Generated from bridge/native_command_schema.json. Do not edit by hand.
 (function installPiNativeProtocol(global) {
   'use strict';
@@ -494,5 +493,6 @@
   };
   global.PiNativeProtocol = protocol;
 })(typeof self !== 'undefined' ? self : globalThis);
+export const PiNativeProtocol = globalThis['PiNativeProtocol'];
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_protocol = { name: "protocol", symbols: {} };
+export const __piBridgeModule_protocol = { name: "protocol", symbols: { PiNativeProtocol } };

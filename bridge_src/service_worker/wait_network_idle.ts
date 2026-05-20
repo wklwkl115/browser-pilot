@@ -1,4 +1,8 @@
-// @ts-nocheck
+import { matchNetworkPattern } from "./patterns";
+import { PI_BROWSER_ERROR_CODES } from "./runtime";
+import { attachDebuggerForWait, subscribePiBrowserCdp } from "./wait_cdp";
+import { finishPiBrowserWait, makeWaitId, normalizePiBrowserTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
+
 // wait_network_idle.js - Pi browser network-idle wait helpers.
 // Loaded before wait.js by background.js.
 
@@ -89,5 +93,6 @@ async function waitForNetworkIdle(tabId, msg) {
 // ============================================================
 // N1: Edge F12 Network-equivalent recorder (CDP Network/Page)
 // ============================================================
+export { compileNetworkIdleFilter, waitForNetworkIdle };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait_network_idle = { name: "wait_network_idle", symbols: { compileNetworkIdleFilter, waitForNetworkIdle } };

@@ -9,7 +9,12 @@ const bridge = path.join(root, "bridge", "pi_browser_bridge");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const stripBridgeSource = (text) => text
 	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
-	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "");
+	.replace(/^import\s+[^;]+;\r?\n/gm, "")
+	.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
+	.replace(/\s+as\s+any/g, "")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 assert.equal(existsSync(path.join(bridge, "manifest.json")), true, "native bridge manifest must exist");
 assert.equal(path.win32.isAbsolute("D:\\Pi\\agent\\extensions\\pi-browser-tools\\bridge\\pi_browser_bridge"), true, "Windows bridge path must be absolute");

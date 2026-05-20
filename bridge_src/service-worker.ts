@@ -25,7 +25,46 @@ import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
 import { __piBridgeModule_transport } from "./service_worker/transport";
 import { BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
 
+export const serviceWorkerFoundationModuleGraph = [
+	__piBridgeModule_config,
+	__piBridgeModule_protocol,
+	__piBridgeModule_patterns,
+	__piBridgeModule_cdp,
+	__piBridgeModule_runtime,
+	__piBridgeModule_wait_cdp,
+	__piBridgeModule_wait_coordinator,
+	__piBridgeModule_wait_navigation,
+	__piBridgeModule_wait_network_idle,
+	__piBridgeModule_wait_selector,
+	__piBridgeModule_wait,
+] as const;
+
+export const serviceWorkerLegacyModuleGraph = [
+	__piBridgeModule_network_model,
+	__piBridgeModule_network,
+	__piBridgeModule_hook,
+	__piBridgeModule_evidence,
+	__piBridgeModule_frame,
+	__piBridgeModule_html,
+	__piBridgeModule_screenshot,
+	__piBridgeModule_transfer,
+	__piBridgeModule_bridge_info,
+	__piBridgeModule_core_commands,
+	__piBridgeModule_exec,
+	__piBridgeModule_router,
+	__piBridgeModule_tab_sync,
+	__piBridgeModule_transport,
+] as const;
+
+for (const module of serviceWorkerFoundationModuleGraph) Object.assign(globalThis, module.symbols);
+
 export const serviceWorkerModuleGraph = [
+	...serviceWorkerFoundationModuleGraph,
+	...serviceWorkerLegacyModuleGraph,
+] as const;
+
+/* legacy flat graph kept for TODO 188-196 contracts */
+export const serviceWorkerModuleGraphLegacyOrder = [
 	__piBridgeModule_config,
 	__piBridgeModule_protocol,
 	__piBridgeModule_patterns,

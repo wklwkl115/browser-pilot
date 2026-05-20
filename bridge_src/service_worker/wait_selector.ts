@@ -1,4 +1,7 @@
-// @ts-nocheck
+import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserEval, piBrowserPersistentCdp } from "./runtime";
+import { enablePiBrowserCdpDomains, subscribePiBrowserCdp } from "./wait_cdp";
+import { finishPiBrowserWait, normalizePiBrowserTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
+
 // wait_selector.js - Pi browser selector wait probe and polling helpers.
 // Loaded before wait.js by background.js.
 
@@ -103,7 +106,8 @@ const PI_BROWSER_SELECTOR_PROBE_SOURCE = String.raw`(() => {
   out.matched = (state === 'attached') || (state === 'visible' && visible) || (state === 'hidden' && !visible) || (state === 'stable' && visible && stable) || (state === 'detached' && false);
   return out;
 })()`;
-function buildSelectorProbe(selector, state, stableMs, options = {}) {
+function buildSelectorProbe(selector, state, stableMs, options = undefined) {
+  options = options || {};
   const cfg = {
     selector: String(selector),
     state: String(state),
@@ -150,7 +154,7 @@ async function waitForSelector(tabId, msg) {
     const complete = (res) => { if (completed) return; completed = true; clearPollTimer(); resolve(res); };
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.CANCELLED || 'CANCELLED', waitAbortMessage(record), { selector:String(selector), state })); };
     try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
-    const triggerTick = (reason, observedEpoch) => {
+    const triggerTick = (reason, observedEpoch = undefined) => {
       if (completed) return;
       const numericEpoch = Number(observedEpoch);
       if (Number.isFinite(numericEpoch)) mutationEpoch = Math.max(mutationEpoch, numericEpoch);
@@ -170,7 +174,7 @@ async function waitForSelector(tabId, msg) {
       if (!addResp || addResp.ok === false) throw new Error(addResp?.error?.message || addResp?.message || addResp?.error || 'Runtime.addBinding failed');
       const subId = subscribePiBrowserCdp(tabId, 'Runtime.bindingCalled', (_source, _method, params) => {
         if (completed || params?.name !== bindingName) return;
-        let payload = {};
+        let payload = {} as any;
         try { payload = JSON.parse(String(params.payload || '{}')); } catch (_) { payload = { raw: params.payload }; }
         const nextEpoch = Number(payload.mutationTick || payload.epoch || 0);
         recordWaitEvent(record, { kind:'selector_binding', reason:payload.reason || 'binding', mutationTick:nextEpoch, payload });
@@ -257,5 +261,6 @@ async function waitForSelector(tabId, msg) {
     triggerTick('initial');
   });
 }
+export { PI_BROWSER_SELECTOR_STABLE_SAMPLES, PI_BROWSER_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_wait_selector = { name: "wait_selector", symbols: { PI_BROWSER_SELECTOR_STABLE_SAMPLES, PI_BROWSER_SELECTOR_PROBE_SOURCE, buildSelectorProbe, waitForSelector } };
