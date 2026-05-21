@@ -1,19 +1,21 @@
-// @ts-nocheck
 // frame.js - Pi browser native frame commands.
 
-async function handlePiBrowserFrameCommand(cmd, tabId, msg) {
+import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp } from "./runtime";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+
+async function handlePiBrowserFrameCommand(cmd: string, tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   if (cmd === 'frame.list') {
     const cdp = piBrowserPersistentCdp();
     if (!cdp?.frameTree) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'Persistent CDP bridge is not loaded', { cmd });
-    const fr = normalizePersistentPiBrowserResponse(await cdp.frameTree(tabId, msg.options || {}));
-    if (fr && fr.ok && fr.data) return { ok: true, data: { tabId:Number(tabId), frameTree: fr.data.frameTree || null, frames: Array.isArray(fr.data.frames) ? fr.data.frames : [], count: Array.isArray(fr.data.frames) ? fr.data.frames.length : 0 } };
+    const fr = normalizePersistentPiBrowserResponse(await cdp.frameTree(tabId, (msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {}));
+    if (fr && fr.ok && fr.data) { const data = fr.data as JsonRecord; return { ok: true, data: { tabId:Number(tabId), frameTree: data.frameTree || null, frames: Array.isArray(data.frames) ? data.frames : [], count: Array.isArray(data.frames) ? data.frames.length : 0 } }; }
     return fr;
   }
   if (cmd === 'frame.evaluate') {
     const cdp = piBrowserPersistentCdp();
     if (!cdp?.evaluateInFrame) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'Persistent CDP bridge is not loaded', { cmd });
     if (!msg.frameId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'frame.evaluate requires frameId', {});
-    const options = { ...(msg.options || {}), frameId: String(msg.frameId), awaitPromise: msg.awaitPromise !== false };
+    const options: JsonRecord = { ...((msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {}), frameId: String(msg.frameId), awaitPromise: msg.awaitPromise !== false };
     if (msg.grantUniversalAccess !== undefined) options.grantUniversalAccess = Boolean(msg.grantUniversalAccess);
     if (msg.returnByValue !== undefined) options.returnByValue = msg.returnByValue !== false;
     if (msg.userGesture !== undefined) options.userGesture = Boolean(msg.userGesture);
@@ -26,7 +28,7 @@ async function handlePiBrowserFrameCommand(cmd, tabId, msg) {
     const cdp = piBrowserPersistentCdp();
     if (!cdp?.addNewDocumentScript) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'Persistent CDP bridge is not loaded', { cmd });
     if (!msg.source) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'frame.addNewDocumentScript requires source', {});
-    const options = { ...(msg.options || {}), persistent: true, name: 'new_document' };
+    const options: JsonRecord = { ...((msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {}), persistent: true, name: 'new_document' };
     if (msg.runImmediately !== undefined) options.runImmediately = Boolean(msg.runImmediately);
     if (msg.worldName !== undefined) options.worldName = String(msg.worldName || '');
     if (msg.includeCommandLineAPI !== undefined) options.includeCommandLineAPI = Boolean(msg.includeCommandLineAPI);
@@ -41,7 +43,7 @@ async function handlePiBrowserFrameCommand(cmd, tabId, msg) {
     const cdp = piBrowserPersistentCdp();
     if (!cdp?.removeNewDocumentScript) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'Persistent CDP bridge is not loaded', { cmd });
     if (!msg.identifier) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'frame.removeNewDocumentScript requires identifier', {});
-    const options = { ...(msg.options || {}), persistent: true, name: 'new_document' };
+    const options: JsonRecord = { ...((msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {}), persistent: true, name: 'new_document' };
     if (msg.timeoutMs !== undefined || msg.timeout_ms !== undefined) options.timeoutMs = msg.timeoutMs ?? msg.timeout_ms;
     const removed = normalizePersistentPiBrowserResponse(await cdp.removeNewDocumentScript(tabId, String(msg.identifier), options));
     if (removed && removed.ok && removed.data) return { ok: true, data: { tabId:Number(tabId), ...removed.data } };
@@ -49,5 +51,6 @@ async function handlePiBrowserFrameCommand(cmd, tabId, msg) {
   }
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser frame command: ' + cmd, { cmd });
 }
+export { handlePiBrowserFrameCommand };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_frame = { name: "frame", symbols: { handlePiBrowserFrameCommand } };

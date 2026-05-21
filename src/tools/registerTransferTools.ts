@@ -1,20 +1,13 @@
 import { Type } from "typebox";
-import { errorResult } from "../utils/toolResult";
-import { defaultResultBudget } from "./budgets";
-import { distilledJsonResult } from "./resultMiddleware";
+import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
 import { summarizeTransferData } from "./summaries/index";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation";
-import { asPositiveInt, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 function sharedTransferParams() {
-	return {
-		tabId: optionalTargetTabId(),
-		detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-		outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-		timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
-		maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
-	};
+	return sharedTabScopedToolParams();
 }
 
 export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -35,29 +28,24 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 			saveAs: Type.Optional(Type.Boolean({ description: "Direct URL only: ask Chrome to show Save As dialog; default false." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
+			return await runTool(async () => {
 				requireDownloadTarget(params);
 				const command = buildTransferDownloadCommand(params);
-				const timeoutMs = asPositiveInt(params.timeoutMs, 35_000);
-				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_download"));
+				const timeoutMs = toolTimeoutMs(params.timeoutMs, 35_000);
+				const maxChars = toolMaxChars(params, "browser_download");
 				command.timeoutMs = timeoutMs;
 				const server = await ensureStarted();
 				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
-				return await distilledJsonResult(result, {
+				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_download",
-					command: "transfer.download",
-					detailLevel: params.detailLevel,
+					command: nativeTransferToolMetadata.browser_download.command,
 					maxChars,
-					ctx,
-					outputPath: params.outputPath,
-					fallbackName: `download-${Date.now()}.json`,
-					details: { command: "transfer.download", mode: command.mode || "click" },
+					fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_download.artifactPrefix),
+					details: { command: nativeTransferToolMetadata.browser_download.command, mode: command.mode || "click" },
 					artifactValue: result,
 					distill: summarizeTransferData,
 				});
-			} catch (error) {
-				return errorResult(error);
-			}
+			});
 		},
 	});
 }
@@ -77,32 +65,27 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 			confirm: Type.Boolean({ description: "Must be true to confirm the user approved uploading these exact local file path(s)." }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
+			return await runTool(async () => {
 				requireUploadConfirmation(params.confirm, params.selector);
 				const selector = String(params.selector || "").trim();
 				if (!selector) throw codedTransferError("UPLOAD_SELECTOR_REQUIRED", "browser_upload requires selector", {});
 				const files = await checkedUploadFiles(params.files);
 				const server = await ensureStarted();
-				const timeoutMs = asPositiveInt(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_upload"));
+				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
+				const maxChars = toolMaxChars(params, "browser_upload");
 				const command = buildTransferUploadCommand(selector, files, params.index);
 				command.timeoutMs = timeoutMs;
 				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
-				return await distilledJsonResult(result, {
+				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_upload",
-					command: "transfer.upload",
-					detailLevel: params.detailLevel,
+					command: nativeTransferToolMetadata.browser_upload.command,
 					maxChars,
-					ctx,
-					outputPath: params.outputPath,
-					fallbackName: `upload-${Date.now()}.json`,
-					details: { command: "transfer.upload", selector, files_count: files.length },
+					fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_upload.artifactPrefix),
+					details: { command: nativeTransferToolMetadata.browser_upload.command, selector, files_count: files.length },
 					artifactValue: result,
 					distill: summarizeTransferData,
 				});
-			} catch (error) {
-				return errorResult(error);
-			}
+			});
 		},
 	});
 }

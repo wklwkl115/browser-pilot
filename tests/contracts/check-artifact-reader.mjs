@@ -56,6 +56,36 @@ try {
 	assert.ok(searchArtifact.matches > 0);
 	assert.ok(searchArtifact.snippets[0].text.includes("h1.test"));
 
+	const sensitivePath = path.join(tmp, ".pi", "browser-artifacts", "sensitive-evidence.json");
+	const sensitivePayload = {
+		request: {
+			url: "https://api.example.test/ws?token=query-secret",
+			headers: { Cookie: "sid=cookie-secret", Authorization: "Bearer auth-secret" },
+			postData: { text: "password=post-secret" },
+		},
+		response: { headers: { "Set-Cookie": "sid=response-secret" }, body: { text: "token=body-secret", bytes: 17, sha256: "body-hash" } },
+		websocket: { payloadData: "ws-secret", opcode: 1 },
+	};
+	await writeFile(sensitivePath, JSON.stringify(sensitivePayload, null, 2), "utf8");
+	const sensitiveJson = await readBrowserArtifact({ path: sensitivePath, mode: "json" }, { cwd: tmp });
+	const sensitiveJsonText = JSON.stringify(sensitiveJson);
+	for (const secret of ["query-secret", "cookie-secret", "auth-secret", "post-secret", "response-secret", "body-secret", "ws-secret"]) {
+		assert.equal(sensitiveJsonText.includes(secret), false, `check-artifact privacy.json: ${secret} must be redacted by default`);
+	}
+	assert.ok(sensitiveJsonText.includes("[redacted]") && sensitiveJsonText.includes("[redacted body]") && sensitiveJsonText.includes("[redacted postData]"), "check-artifact privacy.json: redaction markers must remain visible");
+	assert.equal(sensitiveJson.summary.privacy.classification, "local_raw_evidence", "check-artifact privacy.summary: artifacts must expose local raw evidence classification");
+	assert.equal(sensitiveJson.summary.privacy.localOnly, true, "check-artifact privacy.summary: artifacts must remain local-only");
+	assert.ok(String(sensitiveJson.summary.privacy.cleanup).includes(".pi/browser-artifacts"), "check-artifact privacy.summary: cleanup hint must name artifact root");
+	const sensitiveRaw = await readBrowserArtifact({ path: sensitivePath, mode: "json", redact: false }, { cwd: tmp });
+	assert.ok(JSON.stringify(sensitiveRaw).includes("cookie-secret"), "check-artifact privacy.raw: redact:false must allow explicit local raw evidence reads");
+	assert.equal(sensitiveRaw.summary.privacy.redaction, "disabled", "check-artifact privacy.raw: summary must record explicit redaction disable");
+	const sensitiveText = await readBrowserArtifact({ path: sensitivePath, mode: "text", maxChars: 4_000 }, { cwd: tmp });
+	assert.equal(JSON.stringify(sensitiveText).includes("auth-secret"), false, "check-artifact privacy.text: text snippets must redact Authorization values by default");
+	const sensitiveSearch = await readBrowserArtifact({ path: sensitivePath, mode: "search", query: "cookie-secret", contextLines: 0, maxChars: 2_000 }, { cwd: tmp });
+	assert.equal(JSON.stringify(sensitiveSearch).includes("cookie-secret"), false, "check-artifact privacy.search: search snippets and query must be redacted by default");
+	const sensitiveSample = await readBrowserArtifact({ path: sensitivePath, mode: "sample", maxChars: 4_000 }, { cwd: tmp });
+	assert.equal(JSON.stringify(sensitiveSample).includes("ws-secret"), false, "check-artifact privacy.sample: sampled websocket payloads must be redacted by default");
+
 	assert.equal(isSafeArtifactSearchRegexPattern("h[12]\\.test"), true, "check-artifact search.regex.safe: simple regex must remain allowed");
 	assert.equal(isSafeArtifactSearchRegexPattern("(a+)+$"), false, "check-artifact search.regex.safe: nested-quantifier regex must be rejected before compile");
 	const regexSearchArtifact = await readBrowserArtifact({ path: artifactPath, mode: "search", query: "h[12]\\.test", regex: true, maxMatches: 2 }, { cwd: tmp });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -14,7 +15,7 @@ const stripBridgeSource = (text) => text
 	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const transfer = stripBridgeSource(read("bridge_src/service_worker/transfer.ts"));
-new Function(transfer);
+new Function(transformSync(transfer, { loader: "ts", target: "chrome120", sourcefile: "bridge_src/service_worker/transfer.ts" }).code);
 assert(transfer.includes("chrome.downloads.download"), "transfer.download must use Chrome downloads API for direct URLs");
 assert(transfer.includes("chrome.downloads.onCreated"), "transfer.download must listen for started downloads");
 assert(transfer.includes("chrome.downloads.search"), "transfer.download must resolve completed filename/path");
@@ -48,7 +49,7 @@ assert(validation.includes("url target only accepts mode:url") && validation.inc
 assert(tool.indexOf("const command = buildTransferDownloadCommand(params);") < tool.indexOf("const server = await ensureStarted();"), "browser_download must validate and normalize mode before starting the bridge");
 assert(tool.includes("summarizeTransferData"), "transfer tools must use compact summaries");
 assert(!tool.includes("distilledJsonResult(result.data ?? result") && !tool.includes("artifactValue: result.data ?? result"), "transfer tools must preserve the full BrowserBridgeExecutionResult envelope as the primary/artifact value");
-assert(tool.includes("distilledJsonResult(result,") && tool.includes("artifactValue: result"), "transfer tools must pass full bridge result metadata through distillation");
+assert((tool.includes("distilledJsonResult(result,") || tool.includes("jsonToolResult(result,")) && tool.includes("artifactValue: result"), "transfer tools must pass full bridge result metadata through distillation");
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.permissions.includes("downloads"), "manifest must include downloads permission");

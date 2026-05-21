@@ -4,7 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (relOrAbs) => readFileSync(path.isAbsolute(relOrAbs) ? relOrAbs : path.join(root, relOrAbs), "utf8");
+function resolveReadPath(relOrAbs) {
+	if (path.isAbsolute(relOrAbs)) return relOrAbs;
+	const drivePath = /^([A-Za-z]):[\\/](.*)$/.exec(relOrAbs);
+	if (drivePath) return process.platform === "win32" ? relOrAbs : path.join("/mnt", drivePath[1].toLowerCase(), drivePath[2].replace(/\\/g, "/"));
+	return path.join(root, relOrAbs);
+}
+const read = (relOrAbs) => readFileSync(resolveReadPath(relOrAbs), "utf8");
 const toolDir = path.join(root, "src", "tools");
 const toolSource = readdirSync(toolDir).filter((file) => file.endsWith(".ts")).map((file) => read(path.join(toolDir, file))).join("\n");
 const registered = Array.from(new Set(Array.from(toolSource.matchAll(/name:\s*"(browser_[^"]+)"/g)).map((match) => match[1]))).sort();
@@ -13,7 +19,7 @@ assert(registered.length >= 15, "tool drift: expected registered browser tools")
 const readme = read("README.md");
 const sop = read("AI_INSTALL.md");
 const skillPath = "D:/Pi/agent/skills/pi-browser-tools/SKILL.md";
-assert(existsSync(skillPath), "tool drift: global pi-browser-tools skill must exist");
+assert(existsSync(resolveReadPath(skillPath)), "tool drift: global pi-browser-tools skill must exist");
 const skill = read(skillPath);
 
 assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");

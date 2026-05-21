@@ -5,13 +5,20 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, rejectUnsafeExecuteCommand, requireDownloadTarget, requireUploadConfirmation } from "../../src/tools/transferValidation.ts";
 import { summarizeTransferData } from "../../src/tools/summaries/transfer.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const transferSource = readFileSync(path.join(root, "bridge_src", "service_worker", "transfer.ts"), "utf8")
+const transferSource = transformSync(readFileSync(path.join(root, "bridge_src", "service_worker", "transfer.ts"), "utf8")
 	.replace(/^\/\/ @ts-nocheck\r?\n/, "")
-	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_transfer[\s\S]*?;\s*$/, "");
+	.replace(/^import\s+[^;]+;\r?\n/gm, "")
+	.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+	.replace(/^export async function /gm, "async function ")
+	.replace(/^export function /gm, "function ")
+	.replace(/^export class /gm, "class ")
+	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
+	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_transfer[\s\S]*?;\s*$/, ""), { loader: "ts", target: "chrome120", sourcefile: "bridge_src/service_worker/transfer.ts" }).code;
 
 function assertErrorCode(error, code) {
 	assert.equal(error?.code, code);

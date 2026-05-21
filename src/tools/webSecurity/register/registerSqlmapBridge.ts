@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeSqlmapBridgeData } from "../../summaries/index";
 import { runSqlmapBridge } from "../../webSecurityCore";
-import { DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, optionalTargetTabId, normalizeWebSecurityToolParams, type SqlmapBridgeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type SqlmapBridgeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -12,11 +12,7 @@ export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 		promptSnippet: "Run a Pi-native sqlmap bridge for deep SQLi automation with structured findings and artifacts.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqlmap_bridge for deep SQLi automation from explicit scoped request templates; keep bounded target scope explicit and retain request/stdout/stderr artifacts for follow-up evidence."],
 		parameters: Type.Object({
-			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
-			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-			outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-			timeoutMs: Type.Optional(Type.Number({ description: "Process timeout in milliseconds; default 120000." })),
-			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
+			...sharedWebSecurityBrowserSessionParams("Process timeout in milliseconds; default 120000."),
 			sqlmapPath: Type.Optional(Type.String({ description: "Optional sqlmap executable or launcher command. Default auto-detects sqlmap in PATH or python -m sqlmap." })),
 			sqlmapArgs: Type.Optional(Type.Array(Type.String(), { description: "Optional launcher arguments prepended before generated sqlmap flags, e.g. [-m, sqlmap]." })),
 			extraArgs: Type.Optional(Type.Array(Type.String(), { description: "Additional sqlmap CLI arguments appended after generated flags." })),

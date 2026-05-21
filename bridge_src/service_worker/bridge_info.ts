@@ -1,5 +1,6 @@
-// @ts-nocheck
 // bridge_info.js - shared bridge metadata and tab helpers.
+
+import { chromeApi as chrome } from "./runtimeEnv";
 
 const PI_BROWSER_WORKER_STARTED_AT = Date.now();
 const PI_BROWSER_WORKER_BOOT_ID = [
@@ -37,6 +38,10 @@ function installCspBypassRule() {
 }
 
 // Track normal scriptable tabs plus about:blank tabs created by browser_tabs before navigation.
-const isScriptable = url => !!url && (/^https?:/.test(url) || url === 'about:blank');
+const isScriptable = (url: unknown): boolean => {
+  const text = typeof url === 'string' ? url : '';
+  return !!text && (/^https?:/.test(text) || text === 'about:blank');
+};
+export { PI_BROWSER_WORKER_STARTED_AT, PI_BROWSER_WORKER_BOOT_ID, piBridgeInfo, installCspBypassRule, isScriptable };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_bridge_info = { name: "bridge_info", symbols: { PI_BROWSER_WORKER_STARTED_AT, PI_BROWSER_WORKER_BOOT_ID, piBridgeInfo, installCspBypassRule, isScriptable } };

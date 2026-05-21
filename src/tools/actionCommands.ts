@@ -1,3 +1,13 @@
+import { commandForNativeToolAction } from "../protocol/nativeActionMetadata";
+
+export function waitCommandForAction(action: string): string {
+	return commandForNativeToolAction("browser_wait", action);
+}
+
+export function networkCommandForAction(action: string): string {
+	return commandForNativeToolAction("browser_network", action);
+}
+
 function normalizeAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
 }
@@ -6,43 +16,6 @@ function commandForAction(action: string, map: Record<string, string>, toolName:
 	const command = map[normalizeAction(action)];
 	if (!command) throw new Error(`Unsupported ${toolName} action: ${action}`);
 	return command;
-}
-
-export function waitCommandForAction(action: string): string {
-	return commandForAction(action, {
-		navigate: "wait.navigate",
-		navigateandwait: "wait.navigateAndWait",
-		waitfornavigation: "wait.navigation",
-		navigation: "wait.navigation",
-		loadstate: "wait.loadState",
-		waitforloadstate: "wait.loadState",
-		networkidle: "wait.networkIdle",
-		waitfornetworkidle: "wait.networkIdle",
-		selector: "wait.selector",
-		waitforselector: "wait.selector",
-		any: "wait.any",
-		waitforany: "wait.any",
-		all: "wait.all",
-		waitforall: "wait.all",
-		cancel: "wait.cancel",
-		cancelwait: "wait.cancel",
-		diagnose: "wait.diagnose",
-	}, "browser_wait");
-}
-
-export function networkCommandForAction(action: string): string {
-	return commandForAction(action, {
-		start: "network.start",
-		stop: "network.stop",
-		status: "network.status",
-		clear: "network.clear",
-		list: "network.list",
-		get: "network.get",
-		body: "network.body",
-		exporthar: "network.exportHar",
-		export: "network.exportHar",
-		wait: "network.wait",
-	}, "browser_network");
 }
 
 export function hookCommandForAction(action: string): string {

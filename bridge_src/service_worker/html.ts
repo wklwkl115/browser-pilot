@@ -1,9 +1,11 @@
-// @ts-nocheck
 // html.js - Pi browser native HTML/text snapshot command.
 
-async function handlePiBrowserHtml(tabId, msg) {
-  const opts = (msg && msg.options && typeof msg.options === 'object') ? msg.options : {};
-  const pick = (...names) => {
+import { PI_BROWSER_ERROR_CODES, piBrowserError, piBrowserEval } from "./runtime";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+
+async function handlePiBrowserHtml(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+  const opts = (msg && msg.options && typeof msg.options === 'object') ? msg.options as JsonRecord : {};
+  const pick = (...names: string[]): unknown => {
     for (const name of names) {
       if (msg && msg[name] !== undefined) return msg[name];
       if (opts && opts[name] !== undefined) return opts[name];
@@ -13,7 +15,7 @@ async function handlePiBrowserHtml(tabId, msg) {
   const selector = pick('selector');
   const rawMode = pick('mode') ?? 'outer';
   const normalizedMode = String(rawMode).replace(/[-_]/g, '').toLowerCase();
-  const modeAliases = { raw: 'outer', fragment: 'inner', textcontent: 'text' };
+  const modeAliases: Record<string, string> = { raw: 'outer', fragment: 'inner', textcontent: 'text' };
   const mode = modeAliases[normalizedMode] || normalizedMode;
   const maxBytesRaw = pick('max_bytes', 'maxBytes');
   const maxCharsRaw = pick('max_chars', 'maxChars');
@@ -74,8 +76,10 @@ async function handlePiBrowserHtml(tabId, msg) {
   })()`;
   const res = await piBrowserEval(tabId, expression, true);
   if (!res || res.ok === false) return res;
-  if (res.data && res.data.ok === false) return piBrowserError(res.data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, res.data.error || 'html.get failed', res.data.details || { selector, mode: rawMode });
-  return res.data && res.data.ok === true ? res.data : { ok: true, data: res.data };
+  const data = res.data && typeof res.data === 'object' ? res.data as PiBridgeResponse : undefined;
+  if (data && data.ok === false) return piBrowserError(data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, data.error || 'html.get failed', data.details || { selector, mode: rawMode });
+  return data && data.ok === true ? data : { ok: true, data: res.data };
 }
+export { handlePiBrowserHtml };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_html = { name: "html", symbols: { handlePiBrowserHtml } };

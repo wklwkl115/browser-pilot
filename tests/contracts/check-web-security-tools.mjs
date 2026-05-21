@@ -7,6 +7,7 @@ import https from "node:https";
 import path from "node:path";
 import { createSecureContext } from "node:tls";
 import { readBrowserArtifact } from "../../src/tools/artifactReader.ts";
+import { webSecurityToolError } from "../../src/tools/webSecurity/shared/diagnostics.ts";
 import { buildReplayRequest, parseRawHttpRequest, runBrowserCrawl, runCallbackOast, runCookieAnalyze, runFuzzParams, runFuzzPaths, runFuzzVhosts, runHttpReplay, runNucleiBridge, runReconProbe, runSqlmapBridge, runSqliProbe, runTemplateCheck } from "../../src/tools/webSecurityCore.ts";
 import { buildMultipartBodyFromParts, parseMultipartBody } from "../../src/tools/webSecurity/shared/multipart.ts";
 import { harEntriesFromOptions, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS, mutateParamRequest } from "../../src/tools/webSecurity/shared/replay.ts";
@@ -54,10 +55,79 @@ async function checkWebSecurityRegisterFacadeFiles() {
 	const index = await readFile(new URL("../../src/tools/webSecurity/register/index.ts", import.meta.url), "utf8");
 	for (const exportName of expectedWebSecurityRegisterExports) assert.ok(index.includes(`export { ${exportName} }`), `register index must export ${exportName}`);
 	const shared = await readFile(new URL("../../src/tools/webSecurity/register/shared.ts", import.meta.url), "utf8");
-	assert.ok(shared.includes("executeWebSecurityToolShell") && shared.includes("distilledJsonResult") && shared.includes('cmd: "cookies"'), "webSecurity register shared shell must centralize execution, distillation, and cookie binding");
+	const diagnostics = await readFile(new URL("../../src/tools/webSecurity/shared/diagnostics.ts", import.meta.url), "utf8");
+	assert.ok(shared.includes("executeWebSecurityToolShell") && shared.includes("jsonToolResult") && shared.includes("runTool") && shared.includes('cmd: "cookies"'), "webSecurity register shared shell must centralize execution, distillation, and cookie binding");
+	assert.ok(shared.includes("webSecurityToolError") && shared.includes("catch (error)") && shared.includes("throw webSecurityToolError(error, config)"), "webSecurity shared shell must wrap tool failures before runTool formats them");
+	assert.ok(diagnostics.includes('domain: "webSecurity"') && diagnostics.includes("redactWebSecurityDiagnosticValue") && diagnostics.includes("suppressErrorStack"), "webSecurity diagnostics helper must create a domain envelope, redact sensitive details, and suppress stacks");
 }
 
 await checkWebSecurityRegisterFacadeFiles();
+
+async function checkWebSecurityDomainBoundaryContract() {
+	const registerDir = new URL("../../src/tools/webSecurity/register/", import.meta.url);
+	const registerFiles = (await readdir(registerDir)).filter((file) => file.endsWith(".ts") && file !== "index.ts" && file !== "shared.ts");
+	const sourceFiles = {
+		registerFacade: await readFile(new URL("../../src/tools/registerWebSecurityTools.ts", import.meta.url), "utf8"),
+		registerIndex: await readFile(new URL("../../src/tools/webSecurity/register/index.ts", import.meta.url), "utf8"),
+		registerShared: await readFile(new URL("../../src/tools/webSecurity/register/shared.ts", import.meta.url), "utf8"),
+		diagnostics: await readFile(new URL("../../src/tools/webSecurity/shared/diagnostics.ts", import.meta.url), "utf8"),
+		core: await readFile(new URL("../../src/tools/webSecurityCore.ts", import.meta.url), "utf8"),
+		toolsIndex: await readFile(new URL("../../src/tools/registerTools.ts", import.meta.url), "utf8"),
+	};
+	const registerSources = await Promise.all(registerFiles.map(async (file) => [file, await readFile(new URL(`../../src/tools/webSecurity/register/${file}`, import.meta.url), "utf8")]));
+	const browserNativeDir = new URL("../../src/tools/webSecurity/browserNative/", import.meta.url);
+	const bridgeDir = new URL("../../src/tools/webSecurity/bridges/", import.meta.url);
+	const sharedDir = new URL("../../src/tools/webSecurity/shared/", import.meta.url);
+	const browserNativeFiles = (await readdir(browserNativeDir)).filter((file) => /\.(ts|mjs)$/.test(file)).sort();
+	const bridgeFiles = (await readdir(bridgeDir)).filter((file) => file.endsWith(".ts")).sort();
+	const sharedFiles = (await readdir(sharedDir)).filter((file) => file.endsWith(".ts")).sort();
+	assert.deepEqual(bridgeFiles, ["nucleiBridge.ts", "sqlmapBridge.ts"], "webSecurity bridges layer must contain only mature-engine adapters");
+	assert.ok(browserNativeFiles.includes("crawl.ts") && browserNativeFiles.includes("httpReplay.ts") && browserNativeFiles.includes("cookieAnalyze.ts") && browserNativeFiles.includes("callbackOast.ts"), "webSecurity browserNative layer must own Pi-native Web execution modules");
+	assert.ok(sharedFiles.includes("http.ts") && sharedFiles.includes("replay.ts") && sharedFiles.includes("artifacts.ts") && sharedFiles.includes("types.ts"), "webSecurity shared layer must own HTTP/replay/artifact/type boundaries");
+
+	for (const [file, text] of registerSources) {
+		assert.ok(text.includes("executeWebSecurityToolShell(ensureStarted"), `${file} must execute through the shared WebSecurity shell`);
+		assert.ok(text.includes("normalizeWebSecurityToolParams<"), `${file} must normalize loose tool params to named typed params`);
+		assert.equal(/server\.sendCommand|server\.executeJavaScript|BrowserBridgeServer|bridge_src|chrome\./.test(text), false, `${file} must not call base browser driver/runtime directly`);
+		assert.equal(text.includes("browserCookiesToHeader"), false, `${file} must not own cookie binding; shared shell owns cookie provider`);
+	}
+	assert.equal((sourceFiles.registerShared.match(/cmd: "cookies"/g) || []).length, 1, "only WebSecurity shared shell may call native cookies command");
+	assert.ok(sourceFiles.registerShared.includes("createBrowserCookieProvider") && sourceFiles.registerShared.includes("browserCookiesToHeader"), "shared shell must expose cookie binding through a CookieProvider adapter");
+	assert.equal(/pi\.registerTool\(/.test(sourceFiles.core), false, "webSecurityCore must not register tools");
+	assert.equal(/BrowserBridgeServer|ensureStarted|server\.sendCommand|bridge_src|chrome\./.test(sourceFiles.core), false, "webSecurityCore must not depend on base browser driver/runtime");
+	assert.ok(sourceFiles.core.includes("./webSecurity/browserNative/") && sourceFiles.core.includes("./webSecurity/bridges/") && sourceFiles.core.includes("./webSecurity/shared/"), "webSecurityCore must stay a compatibility export layer over WebSecurity subdomains");
+	assert.equal((sourceFiles.toolsIndex.match(/register[A-Za-z]+Tool\(context\);/g) || []).filter((line) => /Recon|Crawl|Fuzz|Sqli|Sqlmap|Nuclei|Template|Callback|Cookie|Http/.test(line)).length, 12, "registerTools must compose exactly the 12 explicit WebSecurity tool registrations");
+	assert.equal(/from "\.\/webSecurity\//.test(sourceFiles.toolsIndex), false, "registerTools must not import WebSecurity implementation layers directly");
+
+	for (const file of browserNativeFiles) {
+		const text = await readFile(new URL(`../../src/tools/webSecurity/browserNative/${file}`, import.meta.url), "utf8");
+		assert.equal(/pi\.registerTool|ToolRegistrarContext|BrowserBridgeServer|server\.sendCommand|bridge_src|chrome\./.test(text), false, `${file} must not depend on tool registration or base browser runtime`);
+		if (file !== "callbackOastWorker.mjs") assert.ok(text.includes("../shared/") || file === "callbackOast.ts", `${file} must consume shared WebSecurity adapters for HTTP/replay/types`);
+	}
+	for (const file of bridgeFiles) {
+		const text = await readFile(new URL(`../../src/tools/webSecurity/bridges/${file}`, import.meta.url), "utf8");
+		assert.ok(text.includes("spawnSync") && text.includes("describeTextArtifact") && text.includes("normalizeReplayOptions"), `${file} must use bounded external process bridge, replay inputs, and artifacts`);
+		assert.equal(/pi\.registerTool|ToolRegistrarContext|BrowserBridgeServer|server\.sendCommand|bridge_src|chrome\./.test(text), false, `${file} must not depend on tool registration or base browser runtime`);
+		assert.ok(text.includes("timeout: normalized.processTimeoutMs") && text.includes("maxBuffer: 16 * 1024 * 1024"), `${file} must bound external process timeout and output buffer`);
+		assert.ok(text.includes("requestArtifact") && text.includes("stdoutArtifact") && text.includes("stderrArtifact"), `${file} must expose request/stdout/stderr artifact descriptors`);
+	}
+	assert.ok(sourceFiles.registerShared.includes("webSecurityToolError(error, config)") && sourceFiles.diagnostics.includes("WebSecurityToolError"), "shared shell must delegate failure envelope creation to WebSecurity diagnostics");
+	const sensitive = new Error("Authorization: Bearer secret\nCookie: sid=abc");
+	sensitive.name = "FixtureSensitiveError";
+	sensitive.details = { Cookie: "sid=abc", nested: { authorization: "Bearer secret", safe: "kept" }, stack: "hidden" };
+	const wrapped = webSecurityToolError(sensitive, {
+		toolName: "browser_http_replay",
+		command: "web.http_replay",
+	});
+	const wrappedText = JSON.stringify({ name: wrapped.name, message: wrapped.message, code: wrapped.code, details: wrapped.details });
+	assert.equal(wrappedText.includes("sid=abc"), false, "WebSecurity failure envelope must redact cookie values");
+	assert.equal(wrappedText.includes("Bearer secret"), false, "WebSecurity failure envelope must redact authorization values");
+	assert.equal(wrappedText.includes("stack"), false, "WebSecurity failure envelope must strip stack traces from details");
+	assert.equal(Object.hasOwn(wrapped, "stack") && wrapped.stack !== undefined, false, "WebSecurity failure envelope must suppress Error.stack");
+	assert.ok(wrappedText.includes("webSecurity") && wrappedText.includes("browser_http_replay") && wrappedText.includes("web.http_replay"), "WebSecurity failure envelope must include domain/tool/command diagnostics");
+}
+
+await checkWebSecurityDomainBoundaryContract();
 
 function b64u(value) {
 	return Buffer.from(Buffer.isBuffer(value) ? value : typeof value === "string" ? value : JSON.stringify(value)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -196,6 +266,17 @@ function sendDnsQuestion(port, name, type, qclass = 1) {
 		});
 		socket.send(rawDnsQuestion(name, type, qclass), port, "127.0.0.1");
 	});
+}
+
+async function collectCallbackUntil(sessionId, expectedCount, timeoutMs = 5_000) {
+	const deadline = Date.now() + timeoutMs;
+	let last;
+	do {
+		last = await runCallbackOast({ action: "collect", sessionId });
+		if (last.count >= expectedCount) return last;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	} while (Date.now() < deadline);
+	return last;
 }
 
 function parseMultipartFixture(body, contentType) {
@@ -1088,8 +1169,7 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	const dnsCaaResponse = await sendDnsQuestion(callbackStart.dnsPort, callbackStart.dnsCallbackHost, 257, 1);
 	const dnsQuestionTail = dnsCaaResponse.subarray(-4);
 	assert.deepEqual(Array.from(dnsQuestionTail), [0x01, 0x01, 0x00, 0x01], "callback DNS response should preserve 16-bit QTYPE/QCLASS values like CAA");
-	await new Promise((resolve) => setTimeout(resolve, 50));
-	const callbackCollected = await runCallbackOast({ action: "collect", sessionId: "contract-callback" });
+	const callbackCollected = await collectCallbackUntil("contract-callback", 5);
 	assert.equal(callbackCollected.count, 5, "callback listener should collect the persisted HTTP/HTTPS/DNS events plus the valid 63-byte DNS label trigger and raw CAA DNS query");
 	assert.ok(callbackCollected.events.every((event) => event.matchedCorrelation === true), "callback listener should mark correlation hits across all trigger modes");
 	const callbackSummary = summarizeCallbackOastData(callbackCollected);

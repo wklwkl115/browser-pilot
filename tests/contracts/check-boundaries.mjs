@@ -8,7 +8,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const list = (rel) => readdirSync(path.join(root, rel));
 
 const scripts = list("scripts").sort();
-assert.deepEqual(scripts, ["build-bridge.mjs", "register-ts-extension-loader.mjs", "sync-bridge-config.mjs", "sync-native-protocol.mjs", "ts-extension-loader.mjs"], "scripts/ must contain only generators/loaders; move tests to tests/");
+assert.deepEqual(scripts, ["build-bridge.mjs", "generate-tool-docs.mjs", "register-ts-extension-loader.mjs", "sync-bridge-config.mjs", "sync-native-protocol.mjs", "ts-extension-loader.mjs"], "scripts/ must contain only generators/loaders; move tests to tests/");
 assert(!existsSync(path.join(root, "scripts", "smoke-browser.mjs")), "smoke tests must live under tests/smoke/");
 assert(!scripts.some((file) => /^check-.*\.mjs$/.test(file)), "contract tests must live under tests/contracts/");
 
@@ -16,6 +16,7 @@ const contractFiles = list("tests/contracts").filter((file) => file.endsWith(".m
 assert(contractFiles.length >= 15, "tests/contracts must contain contract checks");
 assert(contractFiles.every((file) => /^check-.*\.mjs$/.test(file)), "tests/contracts files must be named check-*.mjs");
 assert(existsSync(path.join(root, "tests", "smoke", "smoke-browser.mjs")), "browser smoke must live under tests/smoke/");
+assert(existsSync(path.join(root, "tests", "release", "release-local-acceptance.mjs")), "local release acceptance must live under tests/release/");
 
 const pkg = JSON.parse(read("package.json"));
 const scriptText = Object.values(pkg.scripts || {}).map(String).join("\n").replace(/\\/g, "/");
@@ -26,6 +27,7 @@ for (const [name, command] of Object.entries(pkg.scripts || {})) {
 	if (name.startsWith("check") && name !== "check") assert(!String(command).includes("scripts/check-"), `${name} must not point to scripts/check-*`);
 	if (name === "smoke:browser" || name === "smoke:browser:transfer") assert(String(command).includes("tests/smoke/smoke-browser.mjs"), `${name} must point to tests/smoke/smoke-browser.mjs`);
 	if (name === "smoke:browser:isolated") assert(String(command).includes("tests/smoke/smoke-browser-isolated.mjs"), `${name} must point to tests/smoke/smoke-browser-isolated.mjs`);
+	if (name === "release:local" || name === "release:local:smoke") assert(String(command).includes("tests/release/release-local-acceptance.mjs"), `${name} must point to tests/release/release-local-acceptance.mjs`);
 }
 assert(pkg.scripts?.["check:boundaries"] === "node tests/contracts/check-boundaries.mjs", "package must expose boundary check");
 assert(String(pkg.scripts?.check || "").includes("check:boundaries"), "npm run check must include boundary check");

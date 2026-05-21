@@ -25,7 +25,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `browser_frame`：frame 列表、frame 内执行、新文档脚本；`frame.list` 返回 `{ tabId, frameTree, frames, count }`，`frame.evaluate` 返回目标 `tabId/frameId` 元数据；`addNewDocumentScript` 支持顶层 `runImmediately/worldName/includeCommandLineAPI` 覆盖 `options`，并返回稳定 `identifier/sessionKey/cdpSessionName/tabId`；`removeNewDocumentScript` 只接受已登记 identifier，未知 id 返回 `SCRIPT_NOT_FOUND`，已知但 Chrome 已清理的 id 返回稳定 `alreadyRemoved:true`。
 - `browser_html`：HTML/text snapshot；selector 未命中返回 `SELECTOR_NOT_FOUND`，无效 selector 返回 `INVALID_SELECTOR`，不再把普通 selector miss 报为 timeout；顶层 `maxChars` 只控制工具返回预算，不再写入 bridge 采集 `maxChars`，只有 `params.maxChars/max_bytes` 显式限制采集；`detailLevel:"full"` 或 `outputPath` 先抓原始 HTML/text 再由 resultMiddleware 落 artifact；summary 优先使用 bridge 截断前结构元数据统计 links/buttons/inputs/forms/images/text/original bytes。
 - `browser_screenshot`：截图并保存 artifact；visible-tab fallback 只使用 Chrome 支持的 png/jpeg，并按实际捕获格式返回 `format/mime` 与默认文件扩展名。
-- `browser_artifact`：按行、JSON path、关键词或抽样读取 artifact；text/search/sample 为流式读取，UTF-8 `chars` 按真实字符计数，空/越界结果不返回非法行区间，sample 小文件/重叠区段会去重并在 summary 标记，末页 `nextOffset:null`，长单行截断仍返回可读前缀；JSON `jsonPath` 未命中返回显式 `{exists:false, notFound:true, value:null}`，`pick` 每个请求路径都返回 `{exists,value}` 或 notFound 占位；search 的 `regex:true` 使用有界安全正则，危险 regex 明确拒绝。
+- `browser_artifact`：按行、JSON path、关键词或抽样读取 artifact；text/search/sample 为流式读取，UTF-8 `chars` 按真实字符计数，空/越界结果不返回非法行区间，sample 小文件/重叠区段会去重并在 summary 标记，末页 `nextOffset:null`，长单行截断仍返回可读前缀；JSON `jsonPath` 未命中返回显式 `{exists:false, notFound:true, value:null}`，`pick` 每个请求路径都返回 `{exists,value}` 或 notFound 占位；search 的 `regex:true` 使用有界安全正则，危险 regex 明确拒绝；默认对 cookie/token/authorization/body/postData/websocket payload 脱敏，只有显式 `redact:false` 才返回本地原始证据。
 - `browser_recon_probe`：小范围 URL/路径/端口/scheme 探测，返回 status/title/header/tech hints/fingerprint/redirect/body hash/favicon sha256/mmh3/simHash/TLS 证书摘要。
 - `browser_crawl`：有界同源 crawl，提取 links/forms/known files/JS endpoint hints，展开 OpenAPI endpoints 与 schema 参数摘要；默认 `activeGraphqlIntrospection:true` 仅对疑似 GraphQL URL/content-type 主动 POST 标准 introspection，设为 `false` 时只做被动 GraphQL 解析；解析 service worker cache routes 与版本摘要、source map 内容与反向源文件归档，并归档结构化结果。
 - `browser_fuzz_paths`：有界 path/file/route/extension fuzzing，支持 matcher/filter/rate、multi-FUZZ tuple、递归目录深度、auto/exact/cluster baseline、响应聚类和 artifact 归档。
@@ -42,19 +42,23 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 ## Web 安全层内部边界
 
 - 单包内固定分层：`src/tools/webSecurity/register`、`src/tools/webSecurity/browserNative`、`src/tools/webSecurity/bridges`、`src/tools/webSecurity/shared`
-- Tool 注册/schema/shell 放在 `register`；外部 TypeBox 参数先收口到具名 ToolParams，shell 以泛型约束 run/augment 参数；Pi-native 核心执行层保留在 `browserNative`；成熟引擎适配只放进 `bridges`
+- Tool 注册/schema/shell 放在 `register`；外部 TypeBox 参数先收口到具名 ToolParams，所有注册模块只通过 `executeWebSecurityToolShell` 执行，不能直接调用 driver、bridge runtime、`chrome.*` 或 cookie native command。
+- `shared.ts` 是唯一 browser-session cookie provider 入口；`webSecurity/shared/diagnostics.ts` 统一 domain=`webSecurity` 失败 envelope、cookie/authorization/token/secret 脱敏和 stack suppress；summary 只输出压缩诊断，完整证据继续走 artifact。
+- Pi-native 核心执行层保留在 `browserNative`，只能消费 `shared` 的 HTTP/replay/artifact/type adapter；成熟引擎适配只放进 `bridges`，并以 bounded `spawnSync`、timeout/maxBuffer、request/stdout/stderr artifact 接入 sqlmap/nuclei。
+- `webSecurityCore.ts` 只作为兼容 re-export 层，不注册工具、不依赖 `BrowserBridgeServer`/`ensureStarted`/bridge runtime；`registerTools.ts` 只组合 12 个显式 WebSecurity 注册函数，不直接导入实现层。
 - WebSecurity 响应摘要按能力族拆入 `src/tools/summaries/webSecurity`，共享脱敏、artifact 与表格裁剪 helper，summary 只做压缩展示，完整证据继续走 artifact
+- `npm run check:web-security` 锁定 register/browserNative/bridges/shared 分层、cookie/HAR/raw-request/artifact/browser-native adapter、domain failure envelope 与 sqlmap/nuclei bridge artifact/timeout 边界。
 - 这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案
 
 ## Bridge JS 内部边界
 
-- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。`build:bridge` 当前 service worker build mode 是 `ordered-concat-compat`：TODO 197 后 shared/runtime/CDP/wait 基础层已通过真实 ESM import/export 进入 bundle，剩余 network/hook/frame/html/transfer 与 router/transport/tab_sync 仍在 ordered legacy tail；目标 build mode 是 `esm-import-graph`，继续按 TODO 198-202 收口。
+- `manifest.json` 当前指向 `dist/service-worker.js` module service worker；旧 `background.js` / 多文件 `importScripts` 入口已删除。支柱二终态已完成：`build:bridge` service worker build mode 是 `esm-import-graph`，TODO 197 shared/runtime/CDP/wait 基础层、TODO 198 command 层、TODO 199 router/transport/tab_sync 启动层均已通过真实 ESM import/export 进入 bundle，TODO 200 已开启 strict/noImplicitAny 并完成 page script 类型收口，TODO 202 已通过 build/check/pack/isolated-smoke gate。
 - `wait_cdp.js` 持有 wait/network 共用的 CDP domain refcount、CDP event subscription、tab cleanup 与 diagnostics；`wait_coordinator.js` 持有 wait registry、timeout/id、orphan cleanup、tab-scoped event subscription registry 和通用 wait cleanup。
 - `wait_navigation.js` 持有 navigation/load-state/current-state probe；`wait_network_idle.js` 持有 networkIdle filter/inflight/quiet-window；`wait_selector.js` 持有 selector probe/polling；`wait.js` 只保留 composite wait、command dispatch、hook/evidence helper 与 diagnose glue。
 - `network_model.js` 只持有 Network recorder 的状态、配置归一化、过滤、record/body 存储与 summary clone helper；`network.js` 只持有 CDP 事件、生命周期、list/get/body/exportHar/wait 和命令分发。
 - `manifest.json` content scripts 使用 `dist/disable_dialogs.js` 与 `dist/content.js`；hook 注入使用 `PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js'`，`chrome.scripting.executeScript({ files })` 与 CDP fallback 仍加载同一个生成文件。边界见 `docs/hook-dispatcher-boundary.md`。
 - 旧 `bridge-globals.d.ts` / `tsconfig.bridge.json` 已删除；`check:bridge:types` 只检查 `bridge_src/**/*.ts`，内部边界由 ESM source graph 和契约锁定，不再依赖 importScripts ambient 黑盒声明。
-- Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；当前是 dist runtime 一期可用状态，不是 strict/真实 ESM 终态。
+- Bridge ESM + TypeScript bundler 终态与阶段 gate 见 `docs/bridge-esm-bundler-plan.md`；当前 service worker 已是真实 ESM import graph，`bridge_src/**/*.ts` 由 strict/noImplicitAny 检查，page script 类型收口、发布包 dist 验证与 isolated runtime smoke gate 已完成。
 
 ## Pi 命令
 
@@ -64,9 +68,9 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Token 预算约定
 
-- 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope，避免泄露大 raw payload；`full` 在超预算时返回 `fullResult:"saved_to_artifact"` 与 `saved.path`。
-- `outputPath` 与自动落盘 artifact 优先保存可复原的原始调用 envelope / `artifactValue`；`browser_content`、`browser_scan`、`browser_html` 等 text 工具的返回仍可保持紧凑文本/summary，但 artifact 不再只保存截断纯文本。
-- 通用 bridge summary 会上浮 `tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 tab/session/frame 对账，无需打开完整 artifact。
+- 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope；summary/full/details/error content 默认脱敏 cookie/token/authorization/body/postData/websocket payload，敏感完整证据改写入本地 artifact 并返回 `saved.path`。
+- `outputPath` 与自动落盘 artifact 优先保存可复原的原始调用 envelope / `artifactValue`；保存结果带 `privacy.classification:"local_raw_evidence"`、默认根目录 `.pi/browser-artifacts/`、`localOnly:true` 与手动清理提示；`browser_content`、`browser_scan`、`browser_html` 等 text 工具的返回仍可保持紧凑文本/summary，但 artifact 不再只保存截断纯文本。
+- 通用 bridge summary 会上浮 `tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 tab/session/frame 对账，无需打开完整 artifact；需要原始敏感字段时只用 `browser_artifact redact:false` 对本地路径做定点读取，不把 artifact 上传外部服务。
 - 操作流程保持 GA-style：`browser_scan` 观察页面 → `browser_execute` 执行定制 JS/CDP → `browser_wait` 等待 → 再 `browser_scan`/`browser_execute` 复查；长 wait 成功后检查 `supervisor` 元数据，若返回 `WAIT_STATE_LOST` 则重新观察页面/网络证据。
 - 复杂站点优先在单段脚本内完成定位、可见性判断、点击/输入和结果读取，避免拆成固定 selector 动作工具。
 
@@ -96,9 +100,27 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - 最终全量 smoke 结果：`.pi/browser-artifacts/final-smoke/results.json`
 - 全局 skill 验证：`PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`
 - 生成器/loader：`scripts/`
+- 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`
+- 协议单源设计：`docs/protocol-single-source-plan.md`
+- 生成 native 协议契约文档：`docs/generated/native-protocol.generated.md`
+- Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
+- Tool Adapter 边界：`src/tools/toolAdapter.ts` 只放共享参数、timeout/maxChars、错误包装、result middleware 与 artifact fallback；各 `register*Tool.ts` 仍保留 schema 组合和领域逻辑。
 
 ```bash
 npm run check
+npm run quality:local   # 本地发布/合并前门禁：build:bridge + check + pack dry-run；不启动浏览器
+npm run release:local   # 本地发布包验收：clean cwd pack dry-run/实际 pack/manifest dist/build manifest/回滚候选
+npm run release:local:smoke # 本地发布包验收 + 当前包 isolated smoke + 上一包最小回滚 smoke
+npm run check:lifecycle  # 本地生命周期 fixture：多浏览器/tab/pending/MV3 restart 长任务
+npm run check:runtime-fixtures # 可重放 runtime fixture：network/hook/wait/transfer/frame/screenshot/callback
+npm run check:web-security # WebSecurity 分层/domain envelope/bridge artifact 边界
+npm run sync:protocol     # 从 bridge/native_command_schema.json 生成 native protocol/type/metadata/docs
+npm run check:protocol    # native protocol 生成产物 drift + protocol contract
+npm run docs:generate     # 从工具注册元数据与 native command schema 生成契约文档
+npm run check:deps         # 本地依赖/lockfile/npm ls/生产 audit 检查
+npm run check:token        # 结果预算与隐私脱敏契约
+npm run check:artifact     # artifact 读取/脱敏/安全正则契约
+npm run check:errors       # 错误 taxonomy、diagnostics、脱敏与去 stack 契约
 npm run build:bridge   # 生成 manifest 当前使用的 dist runtime
 npm pack --dry-run --json   # 验证发布包包含 manifest 指向的 dist runtime
 npm run smoke:browser
@@ -106,9 +128,29 @@ npm run smoke:browser:isolated
 npm run smoke:browser:transfer
 ```
 
-`build:bridge` 现在从 `bridge_src/service_worker/` 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。shared/runtime/CDP/wait 基础层已是 ESM imported foundation，legacy command/startup tail 仍按 TODO 198-199 迁移。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
+`build:bridge` 现在从 `bridge_src/service-worker.ts` 真实 ESM entry 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。`dist/build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false`、`foundationImported:true`、`commandImported:true`、`startupImported:true`、`serviceWorkerStartupModules` 与 `legacyServiceWorkerModules:[]`。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
 
-`prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 通过 `check:package` 执行 `npm pack --dry-run --json`，防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行。
+`prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 通过 `check:package` 执行 `npm pack --dry-run --json`，防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行。`npm run quality:local` 串联 `build:bridge`、`check`、`npm pack --dry-run --json`，作为本地发布/合并前默认门禁；它只打印可选 isolated smoke 下一步，不自动启动 Chrome/Edge。失败时先看命令输出与 `.pi/browser-artifacts/`；端口占用看 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` 后人工处理。
+
+`npm run release:local` 在 `.pi/browser-artifacts/release-acceptance/work/pack-run` clean cwd 中执行 `npm pack --dry-run --json` 与实际 `npm pack --pack-destination`，解包校验 manifest 指向 `dist/service-worker.js`、dist/page bundles、native schema 与 `build-manifest.json` 的 `serviceWorkerBuildMode:"esm-import-graph"` / `orderedConcatenation:false`；摘要写 `.pi/browser-artifacts/release-acceptance/release-acceptance-summary.json`，当前包写 `current/pi-browser-tools-0.3.0.tgz`，上一轮成功包轮转到 `previous/`，本轮成功包保存到 `last-successful/` 作为后续回滚候选。
+
+`npm run release:local:smoke` 在上述验收基础上对当前解包扩展运行 full isolated smoke，并对 `previous/` 上一包运行最小 tabs/wait/execute 回滚 smoke；artifact 为 `.pi/browser-artifacts/release-acceptance/current-smoke-browser-isolated-results.json` 与 `rollback-smoke-browser-isolated-results.json`。失败摘要包含 pack 文件列表、build manifest、Chrome profile、bridge port 和 smoke artifact；需要保留失败临时 profile/扩展时加 `--keep-temp-on-failure` 或 `PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE=1`。
+
+`npm run docs:generate` 从实际 `pi.registerTool` 元数据、`bridge/native_command_schema.json` 与源码中的结构化错误码生成 `docs/generated/browser-tool-contract.generated.md`；其中 `Structured error taxonomy` 表保留公开 code，并列出 domain/category/retryable/source。`npm run check:tool-docs` 会执行 drift check，手改生成产物或 schema/tool 元数据未同步会失败。
+
+`npm run check:errors` 锁定错误归一化契约：`normalizeError` / `compactError` 保留 `code/message/details/name`，追加紧凑 `taxonomy` 与 `diagnostics`；覆盖 driver/tool/native/page/CDP/network/transfer/security/artifact/protocol 分类、nested bridge/native response、ArtifactReader、transfer、WebSecurity、stack strip、secret redaction 和 circular details。
+
+`bridge/native_command_schema.json` 是 native command 协议单一事实来源。修改后运行 `npm run sync:protocol`，生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`；这些生成文件禁止手改。`npm run check:protocol` 会检查 drift、root/bridge schema 一致、runtime/Node validator、wait/network/transfer metadata 消费与错误码表覆盖。当前首批生成消费域是 `browser_wait`、`browser_network`、`browser_download`、`browser_upload`；hook/frame/html/screenshot/evidence 后续按域迁移。
+
+`src/tools/toolAdapter.ts` 是注册层共享中间层：`sharedTabScopedToolParams`、`runTool`、`jsonToolResult/textToolResult`、`bridgeNestedErrorResult`、`artifactFallbackName` 等由 `check:tools`、`check:web-security` 与 `check:tool-docs` 锁定。新增或修改工具时只复用这些基础样板，不把 WebSecurity/cookie/transfer/native command 的领域逻辑上移到 adapter。
+
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。
+
+`BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
+
+`npm run check:lifecycle` 使用 fake WebSocket bridge fixture 覆盖多浏览器同数值 `tabId`、`selectBrowser`、WS 断连/重连、MV3 service worker restart、pending cleanup、tab command queue，以及 wait/network/hook 长任务 pending 诊断；失败时写 `.pi/browser-artifacts/lifecycle-fixture-failure.json`，包含 bridge snapshot、pending、target selection、listener/CDP/network recorder 状态并按字段名脱敏 cookie/token/authorization/body/postData。该 fixture 已纳入 `npm run check` 与 `npm run quality:local`，不启动真实浏览器。
+
+`npm run check:runtime-fixtures` 使用本地 HTTP/WS fixture、fake Chrome/CDP API 和可重放 bridge envelopes 覆盖 network body/postData/HAR、hook session/listener、wait immediate/MV3 相关状态、transfer download/upload、frame evaluate、screenshot visible-tab fallback、callback worker 状态文件与 stale lock recovery；成功摘要写 `.pi/browser-artifacts/fixtures/runtime-fixtures-summary.json`，失败诊断写 `.pi/browser-artifacts/fixtures/runtime-fixtures-failure.json` 并脱敏敏感字段。该 fixture 已纳入 `npm run check` 与 `quality:local`，不启动真实浏览器，也不引入 Playwright/Puppeteer。
 
 `npm run smoke:browser` 与常驻 Pi agent/bridge 共用 MV3 固定端口 `127.0.0.1:18765`，本地并行时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本会先写入 `build.runtime`（dist target、entries、service worker sha256），只诊断 PID/命令行，不自动关闭用户进程。
 
@@ -120,6 +162,7 @@ npm run smoke:browser:transfer
 
 ```bash
 npm run sync:protocol
+npm run check:protocol
 npm run check
 ```
 

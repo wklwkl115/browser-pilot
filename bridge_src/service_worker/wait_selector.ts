@@ -1,6 +1,11 @@
 import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserEval, piBrowserPersistentCdp } from "./runtime";
 import { enablePiBrowserCdpDomains, subscribePiBrowserCdp } from "./wait_cdp";
 import { finishPiBrowserWait, normalizePiBrowserTimeoutMs, recordWaitEvent, registerWait, waitAbortMessage } from "./wait_coordinator";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+
+type SelectorProbeOptions = { maxStableWaitMs?: number; max_stable_wait_ms?: number; mutationEpoch?: number; visible?: boolean; useIntersectionObserver?: boolean };
+function selectorRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
+function selectorErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 // wait_selector.js - Pi browser selector wait probe and polling helpers.
 // Loaded before wait.js by background.js.
@@ -106,8 +111,7 @@ const PI_BROWSER_SELECTOR_PROBE_SOURCE = String.raw`(() => {
   out.matched = (state === 'attached') || (state === 'visible' && visible) || (state === 'hidden' && !visible) || (state === 'stable' && visible && stable) || (state === 'detached' && false);
   return out;
 })()`;
-function buildSelectorProbe(selector, state, stableMs, options = undefined) {
-  options = options || {};
+function buildSelectorProbe(selector: unknown, state: unknown, stableMs: unknown, options: SelectorProbeOptions = {}): string {
   const cfg = {
     selector: String(selector),
     state: String(state),
@@ -119,7 +123,7 @@ function buildSelectorProbe(selector, state, stableMs, options = undefined) {
   };
   return PI_BROWSER_SELECTOR_PROBE_SOURCE.replace('__PI_BROWSER_SELECTOR_PROBE_CFG__', JSON.stringify(cfg));
 }
-async function waitForSelector(tabId, msg) {
+async function waitForSelector(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const selector = msg.selector || msg.css || msg.target;
   if (!selector) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'wait.selector requires selector', {});
   if (msg.frameId || msg.frame_id) return piBrowserError(PI_BROWSER_ERROR_CODES.CROSS_ORIGIN_IFRAME, 'waitForSelector currently supports the main frame only; frameId is not supported by DOM bridge', { frameId: msg.frameId || msg.frame_id });
@@ -130,31 +134,32 @@ async function waitForSelector(tabId, msg) {
   const stableMs = Math.max(50, Math.min(5000, Number(msg.stableMs || msg.stable_ms || 250)));
   const maxStableWaitMs = Math.max(stableMs, Math.min(60000, Math.max(100, Number(msg.maxStableWaitMs || msg.max_stable_wait_ms || 10000))));
   const record = registerWait(tabId, 'selector', { selector: String(selector), state, visible: state === 'visible' || msg.visible === true, timeout_ms: timeoutMs, poll_ms: pollMs, stable_ms: stableMs, max_stable_wait_ms: maxStableWaitMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
-  const syntaxCheck = /** @type {any} */ (await piBrowserEval(tabId, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch(e => ({ ok:false, error:e.message || String(e) })));
-  const syntaxData = syntaxCheck?.data || syntaxCheck?.result || syntaxCheck;
+  const syntaxCheck = await piBrowserEval(tabId, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch((e: unknown) => ({ ok:false, error:selectorErrorMessage(e) }));
+  const syntaxRecord = selectorRecord(syntaxCheck);
+  const syntaxData = selectorRecord(syntaxRecord.data || syntaxRecord.result || syntaxCheck);
   if (syntaxData && syntaxData.ok === false) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Invalid selector syntax', { selector:String(selector), syntax_error:syntaxData.error });
   let mutationEpoch = 0;
   const visibleForProbe = msg.visible === true || state === 'visible' || state === 'stable';
   // contract literals: document.querySelector / getBoundingClientRect / visible / IntersectionObserver are inside buildSelectorProbe.
-  const evaluate = async () => /** @type {any} */ (await piBrowserEval(tabId, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch(e => ({ ok:false, error:e.message || String(e), method:'Runtime.evaluate' })));
+  const evaluate = async (): Promise<JsonRecord> => selectorRecord(await piBrowserEval(tabId, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch((e: unknown) => ({ ok:false, error:selectorErrorMessage(e), method:'Runtime.evaluate' })));
   const first = await evaluate();
-  const firstData = first?.data || first?.result || null;
+  const firstData = selectorRecord(first.data || first.result);
   if (firstData?.matched) return finishPiBrowserWait(record, true, { element: firstData, state, method: 'Runtime.evaluate', immediate: true });
   if (firstData?.syntaxError) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Invalid selector syntax', { selector:String(selector), syntax_error:firstData.syntaxError });
   if (timeoutMs === 0) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.selector immediate check failed', { selector:String(selector), state, timeout_ms:0, snapshot:firstData });
   const deadline = Date.now() + timeoutMs;
-  return await new Promise(resolve => {
+  return await new Promise<PiBridgeResponse>(resolve => {
     let completed = false;
-    let timerHandle = null;
+    let timerHandle: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
     let pendingTick = false;
     let lastData = firstData || null;
     let lastTickAt = Date.now();
     const clearPollTimer = () => { if (timerHandle) { clearTimeout(timerHandle); const idx = record.timers.indexOf(timerHandle); if (idx >= 0) record.timers.splice(idx, 1); timerHandle = null; } };
-    const complete = (res) => { if (completed) return; completed = true; clearPollTimer(); resolve(res); };
+    const complete = (res: PiBridgeResponse) => { if (completed) return; completed = true; clearPollTimer(); resolve(res); };
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.CANCELLED || 'CANCELLED', waitAbortMessage(record), { selector:String(selector), state })); };
     try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
-    const triggerTick = (reason, observedEpoch = undefined) => {
+    const triggerTick = (reason: string, observedEpoch?: unknown): void => {
       if (completed) return;
       const numericEpoch = Number(observedEpoch);
       if (Number.isFinite(numericEpoch)) mutationEpoch = Math.max(mutationEpoch, numericEpoch);
@@ -171,15 +176,15 @@ async function waitForSelector(tabId, msg) {
       if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
       await enablePiBrowserCdpDomains(record, ['Runtime']);
       const addResp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.addBinding', { name: bindingName }, { persistent: true, name: 'selector_binding', timeoutMs: Math.min(5000, timeoutMs || 5000) }));
-      if (!addResp || addResp.ok === false) throw new Error(addResp?.error?.message || addResp?.message || addResp?.error || 'Runtime.addBinding failed');
+      if (!addResp || addResp.ok === false) throw new Error(String(selectorRecord(addResp?.error).message || addResp?.message || addResp?.error || 'Runtime.addBinding failed'));
       const subId = subscribePiBrowserCdp(tabId, 'Runtime.bindingCalled', (_source, _method, params) => {
         if (completed || params?.name !== bindingName) return;
-        let payload = {} as any;
-        try { payload = JSON.parse(String(params.payload || '{}')); } catch (_) { payload = { raw: params.payload }; }
+        let payload: JsonRecord = {};
+        try { payload = selectorRecord(JSON.parse(String(params.payload || '{}'))); } catch (_) { payload = { raw: params.payload }; }
         const nextEpoch = Number(payload.mutationTick || payload.epoch || 0);
         recordWaitEvent(record, { kind:'selector_binding', reason:payload.reason || 'binding', mutationTick:nextEpoch, payload });
         record.diagnostics.push({ t:Date.now(), reason:'runtime_binding_called', mutationTick:nextEpoch, bindingName });
-        triggerTick(payload.reason || 'binding', nextEpoch);
+        triggerTick(String(payload.reason || 'binding'), nextEpoch);
       }, record);
       if (!subId) throw new Error('Runtime.bindingCalled subscription unavailable');
       const installObserver = `(() => {
@@ -220,19 +225,21 @@ async function waitForSelector(tabId, msg) {
         return {ok:true, mutationTick:window.__piBrowserSelectorMutationTick||0, visibilityState:document.visibilityState, bindingName};
       })()`;
       const installed = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression: installObserver, awaitPromise: true, returnByValue: true }, { persistent: true, name: 'selector_binding_install', timeoutMs: Math.min(5000, timeoutMs || 5000) }));
-      if (!installed || installed.ok === false) throw new Error(installed?.error?.message || installed?.message || installed?.error || 'selector binding observer install failed');
-      const evalData = installed?.data?.result?.result?.value || installed?.data?.result?.value || installed?.result?.result?.value || installed?.result?.value || installed?.data || installed?.result || installed;
+      if (!installed || installed.ok === false) throw new Error(String(selectorRecord(installed?.error).message || installed?.message || installed?.error || 'selector binding observer install failed'));
+      const installedData = selectorRecord(installed.data);
+      const installedResult = selectorRecord(installed.result);
+      const evalData = selectorRecord(selectorRecord(selectorRecord(installedData.result).result).value || selectorRecord(installedData.result).value || selectorRecord(selectorRecord(installedResult.result).value) || installedResult.value || installed.data || installed.result || installed);
       if (Number.isFinite(Number(evalData?.mutationTick))) mutationEpoch = Math.max(mutationEpoch, Number(evalData.mutationTick));
       record.diagnostics.push({ t:Date.now(), reason:'runtime_binding_observer_installed', bindingName, mutationTick:evalData?.mutationTick });
       record.listeners.push({ remove: () => {
         const cleanupExpr = `(() => { const key=${JSON.stringify(bindingCleanupKey)}; const rec=window.__piBrowserSelectorObserverInstalled&&window.__piBrowserSelectorObserverInstalled[key]; if (rec&&typeof rec.cleanup==='function') rec.cleanup(); return true; })()`;
-        try { void cdp.send(tabId, 'Runtime.evaluate', { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: 'selector_binding_cleanup', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
-        try { void cdp.send(tabId, 'Runtime.removeBinding', { name: bindingName }, { persistent: true, name: 'selector_binding_remove', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
+        try { if (cdp.send) void cdp.send(tabId, 'Runtime.evaluate', { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: 'selector_binding_cleanup', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
+        try { if (cdp.send) void cdp.send(tabId, 'Runtime.removeBinding', { name: bindingName }, { persistent: true, name: 'selector_binding_remove', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
       } });
       return true;
     };
-    installBindingObserver().catch(e => {
-      record.diagnostics.push({ t:Date.now(), warning:'runtime_binding_observer_unavailable_poll_fallback_active', bindingName, error:e.message || String(e) });
+    installBindingObserver().catch((e: unknown) => {
+      record.diagnostics.push({ t:Date.now(), warning:'runtime_binding_observer_unavailable_poll_fallback_active', bindingName, error:selectorErrorMessage(e) });
     });
     const armPoll = () => {
       if (completed) return;
@@ -242,7 +249,7 @@ async function waitForSelector(tabId, msg) {
       timerHandle = setTimeout(tickFromPollTimer, pollMs);
       record.timers.push(timerHandle);
     };
-    const tick = async (reason) => {
+    const tick = async (reason: string): Promise<void> => {
       if (completed) return;
       if (record.abortController?.signal?.aborted) return failIfAbort();
       if (Date.now() >= deadline) return complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.selector timed out', { selector: String(selector), state, timeout_ms: timeoutMs, diagnostics: record.diagnostics, background_throttling_suspected: Date.now() - lastTickAt > Math.max(2000, pollMs * 5), last_state:lastData }));
@@ -250,7 +257,7 @@ async function waitForSelector(tabId, msg) {
       inFlight = true;
       const res = await evaluate();
       inFlight = false;
-      const data = res?.data || res?.result || null;
+      const data = selectorRecord(res.data || res.result);
       if (data) lastData = data;
       if (data?.matched) return complete(finishPiBrowserWait(record, true, { element: data, state, method: 'Runtime.evaluate', reason: reason || 'poll' }));
       if (data?.throttled) record.diagnostics.push({ t:Date.now(), warning:'background_tab_timer_throttling_possible', visibilityState:data.visibilityState });

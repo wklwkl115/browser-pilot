@@ -1,5 +1,6 @@
 import { compactError } from "./errors";
 import { jsonPreview, stableJson, truncateText } from "./json";
+import { redactSensitiveValue } from "./redaction";
 
 export type PiTextToolResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -46,7 +47,7 @@ function compactDetailsValue(value: unknown, depth: number, seen: WeakSet<object
 }
 
 function compactDetails(details: Record<string, unknown>): Record<string, unknown> {
-	return compactDetailsValue(details, 0, new WeakSet()) as Record<string, unknown>;
+	return compactDetailsValue(redactSensitiveValue(details), 0, new WeakSet()) as Record<string, unknown>;
 }
 
 export function textResult(text: string, details: Record<string, unknown> = {}, maxChars = 50_000): PiTextToolResult {

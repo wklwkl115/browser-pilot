@@ -4,6 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex";
+import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy";
 
 export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
 export const MAX_ARTIFACT_SEARCH_REGEX_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
@@ -34,6 +35,7 @@ export type BrowserArtifactParams = {
 	ignoreCase?: boolean;
 	contextLines?: number;
 	maxMatches?: number;
+	redact?: boolean;
 };
 
 type BrowserArtifactContext = { cwd?: string } | undefined;
@@ -68,6 +70,23 @@ function resolveInputPath(ctx: BrowserArtifactContext, requested: unknown): stri
 
 function summaryFromStats(fileSize: number, absPath: string, lineCount: number | null, chars: number | null = fileSize) {
 	return { path: absPath, bytes: fileSize, chars, lineCount };
+}
+
+function privacySummary(redacted: boolean) {
+	return redacted ? { redaction: "default", ...browserArtifactPrivacyMetadata() } : { redaction: "disabled", localOnly: true };
+}
+
+function redactTextSnippet<T extends TextSnippet>(snippet: T): T {
+	return { ...snippet, text: redactSensitiveText(snippet.text) };
+}
+
+function redactArtifactResult<T extends BrowserArtifactReadResult>(result: T, redacted: boolean): T {
+	const summary = { ...result.summary, privacy: privacySummary(redacted) };
+	if (!redacted) return { ...result, summary } as T;
+	if (result.mode === "text") return { ...result, summary, snippets: result.snippets.map(redactTextSnippet) } as T;
+	if (result.mode === "search") return { ...result, summary, query: "[redacted]", snippets: result.snippets.map(redactTextSnippet) } as T;
+	if (result.mode === "sample") return { ...result, summary, snippets: result.snippets.map(redactTextSnippet) } as T;
+	return { ...result, summary, value: redactSensitiveValue(result.value) } as T;
 }
 
 function boundedJoin(lines: Array<{ line: number; text: string }>, maxChars: number): { text: string; lineEnd: number; truncated: boolean } {
@@ -371,13 +390,17 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	const absPath = resolveInputPath(ctx, params.path);
 	const info = await stat(absPath);
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
+	const redact = params.redact !== false;
+	let result: BrowserArtifactReadResult;
 	if (mode === "json") {
 		if (info.size > MAX_ARTIFACT_READ_BYTES) {
 			throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", "Artifact is too large for browser_artifact json reader", { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
 		}
-		return readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
+		result = readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
+		return redactArtifactResult(result, redact);
 	}
-	if (mode === "search") return searchText(absPath, info.size, params, maxChars);
-	if (mode === "sample") return sampleText(absPath, info.size, params, maxChars);
-	return readTextRange(absPath, info.size, params, maxChars);
+	if (mode === "search") result = await searchText(absPath, info.size, params, maxChars);
+	else if (mode === "sample") result = await sampleText(absPath, info.size, params, maxChars);
+	else result = await readTextRange(absPath, info.size, params, maxChars);
+	return redactArtifactResult(result, redact);
 }

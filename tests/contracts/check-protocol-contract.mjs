@@ -1,7 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import vm from "node:vm";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -14,7 +16,20 @@ const stripBridgeSource = (text) => text
 	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
+const transformBridgeSourceForVm = (text, sourcefile) => transformSync(text, { loader: "ts", target: "chrome120", sourcefile }).code;
 function assert(condition, message) { if (!condition) throw new Error(message); }
+function walk(rel, predicate = () => true) {
+	const dir = path.join(root, rel);
+	const out = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const child = path.join(rel, entry.name).replace(/\\/g, "/");
+		if (entry.isDirectory()) out.push(...walk(child, predicate));
+		else if (predicate(child)) out.push(child);
+	}
+	return out;
+}
+
+execFileSync(process.execPath, ["scripts/sync-native-protocol.mjs", "--check"], { cwd: root, stdio: "pipe" });
 
 const rootSchemaText = read("bridge/native_command_schema.json");
 const bridgeSchemaText = read("bridge/pi_browser_bridge/native_command_schema.json");
@@ -24,9 +39,14 @@ assert(JSON.stringify(schema) === JSON.stringify(rootSchema), "bridge native_com
 for (const domain of ["core", "wait", "network", "hook", "frame", "html", "screenshot", "evidence", "transfer"]) assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
 assert(schema.commands && typeof schema.commands === "object", "schema must define command specs");
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
+assert(schema.toolMetadata?.nativeActionTools?.browser_wait?.actions?.some((item) => item.command === "wait.selector"), "schema must define browser_wait action metadata");
+assert(schema.toolMetadata?.nativeActionTools?.browser_network?.actions?.some((item) => item.command === "network.exportHar"), "schema must define browser_network action metadata");
+assert(schema.toolMetadata?.transferTools?.browser_download?.command === "transfer.download", "schema must define browser_download transfer metadata");
+assert(schema.toolMetadata?.transferTools?.browser_upload?.command === "transfer.upload", "schema must define browser_upload transfer metadata");
+assert(schema.errorCodes?.TAB_NOT_FOUND?.category === "driver.tab" && schema.errorCodes?.UPLOAD_REQUIRES_BROWSER_UPLOAD?.category === "tool.transfer", "schema must define generated error taxonomy");
 
 const protocolSandbox = { self: {} };
-vm.runInNewContext(readServiceWorkerSource("protocol"), protocolSandbox, { filename: "protocol.js" });
+vm.runInNewContext(transformBridgeSourceForVm(readServiceWorkerSource("protocol"), "bridge_src/service_worker/protocol.ts"), protocolSandbox, { filename: "protocol.js" });
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "transfer.download", tabId: 1, selector: "a[download]" })?.ok === true, "protocol validator must accept transfer commands");
@@ -39,4 +59,33 @@ assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
 assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "server sendCommand must not accept free-form Record commands");
+const nodeProtocolSource = read("src/protocol/nativeProtocol.ts");
+const actionMetadataSource = read("src/protocol/nativeActionMetadata.ts");
+const errorCodesSource = read("src/protocol/nativeErrorCodes.ts");
+const protocolDoc = read("docs/generated/native-protocol.generated.md");
+for (const generated of [nodeProtocolSource, actionMetadataSource, errorCodesSource, read("bridge_src/service_worker/protocol.ts")]) assert(generated.startsWith("// Generated from bridge/native_command_schema.json. Do not edit by hand."), "protocol generated source must carry generated header");
+assert(!nodeProtocolSource.includes("readFileSync") && !nodeProtocolSource.includes("protocolSchemaPath"), "Node protocol validator must be generated with embedded schema, not runtime file reads");
+assert(actionMetadataSource.includes('"waitforselector": "wait.selector"') && actionMetadataSource.includes('"export": "network.exportHar"'), "native action metadata must generate wait/network aliases");
+assert(errorCodesSource.includes('"TAB_NOT_FOUND"') && errorCodesSource.includes('"UPLOAD_REQUIRES_BROWSER_UPLOAD"'), "native error codes must be generated from schema");
+assert(protocolDoc.includes("## Native commands") && protocolDoc.includes("## Tool metadata slice") && protocolDoc.includes("## Error codes") && protocolDoc.includes("README snippet"), "native protocol generated docs must include command/tool/error/doc sections");
+const actionCommands = read("src/tools/actionCommands.ts");
+assert(actionCommands.includes("commandForNativeToolAction") && !actionCommands.includes('waitforselector: "wait.selector"') && !actionCommands.includes('exporthar: "network.exportHar"'), "wait/network action mapping must come from generated metadata");
+assert(read("src/tools/registerNativeActionTools.ts").includes("nativeToolMetadata.nativeActionTools.browser_wait.actionDescription"), "native action tool descriptions must consume generated metadata");
+assert(read("src/tools/transferValidation.ts").includes("nativeTransferToolMetadata.browser_upload.command"), "transfer validation must consume generated command metadata");
+assert(read("src/tools/registerTransferTools.ts").includes("nativeTransferToolMetadata.browser_download.artifactPrefix"), "transfer tools must consume generated artifact metadata");
+const structuredCodePatterns = [
+	/(?:BrowserBridgeError|tabsToolError|codedTransferError)\(\s*"([A-Z][A-Z0-9_]{2,})"/g,
+	/\berror_code\s*:\s*"([A-Z][A-Z0-9_]{2,})"/g,
+	/\bcode\s*:\s*"([A-Z][A-Z0-9_]{2,})"/g,
+];
+const generatedProtocolFiles = new Set(["src/protocol/nativeProtocol.ts", "src/protocol/nativeErrorCodes.ts", "bridge_src/service_worker/protocol.ts"]);
+for (const file of [...walk("src", (item) => item.endsWith(".ts")), ...walk("bridge_src", (item) => item.endsWith(".ts"))]) {
+	if (generatedProtocolFiles.has(file)) continue;
+	const text = read(file);
+	for (const pattern of structuredCodePatterns) {
+		for (const match of text.matchAll(pattern)) assert(schema.errorCodes?.[match[1]], `schema errorCodes missing structured code ${match[1]} from ${file}`);
+	}
+}
+const pkg = JSON.parse(read("package.json"));
+assert(pkg.scripts?.["check:protocol"] === "node scripts/sync-native-protocol.mjs --check && node tests/contracts/check-protocol-contract.mjs", "check:protocol must run generated protocol drift check before contracts");
 console.log("protocol contract ok");

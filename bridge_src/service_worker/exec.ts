@@ -1,7 +1,10 @@
-// @ts-nocheck
 // exec.js - plain JavaScript execution and CDP fallback for WebSocket requests.
 
-function buildExecScript(code, errorHandler) {
+import { chromeApi as chrome } from "./runtimeEnv";
+import { normalizePersistentPiBrowserResponse, piBrowserPersistentCdp } from "./runtime";
+import type { JsonRecord, PiChromeTab, PiWebSocketLike } from "./types";
+
+function buildExecScript(code: unknown, errorHandler: string): string {
   return `(async () => {
     function smartProcessResult(result) {
       const seen = new WeakSet();
@@ -119,7 +122,7 @@ function buildExecScript(code, errorHandler) {
   })()`;
 }
 
-function buildPageScript(code) {
+function buildPageScript(code: unknown): string {
   return buildExecScript(code, `
       const errMsg = e.message || String(e);
       return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {}, stack: e.stack || '' },
@@ -127,13 +130,13 @@ function buildPageScript(code) {
   `);
 }
 
-function buildCdpScript(code) {
+function buildCdpScript(code: unknown): string {
   return buildExecScript(code, `
       return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {}, stack: e.stack || '' } };
   `);
 }
 
-async function handleWsExec(data, socket) {
+async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown }, socket: PiWebSocketLike): Promise<void> {
   const tabId = data.tabId;
   console.log('[PI-BROWSER-WS] Exec request', data.id, 'on tab', tabId);
   socket.send(JSON.stringify({ type: 'ack', id: data.id }));
@@ -148,7 +151,7 @@ async function handleWsExec(data, socket) {
       await chrome.tabs.update(tabId, { url: navMatch[2] });
       socket.send(JSON.stringify({ type: 'result', id: data.id, result: { navigated: true, url: navMatch[2] } }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' } }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
     }
     return;
   }
@@ -159,21 +162,21 @@ async function handleWsExec(data, socket) {
       const newTabs = [{ id: t.id, tabId: t.id, url: t.url || gmOpenMatch[2], title: t.title || '' }];
       socket.send(JSON.stringify({ type: 'result', id: data.id, result: { opened: true, tabId: t.id, url: gmOpenMatch[2] }, newTabs }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' } }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
     }
     return;
   }
-  const newTabIds = new Set();
-  const onCreated = (tab) => { newTabIds.add(tab.id); };
+  const newTabIds = new Set<number>();
+  const onCreated = (tab: PiChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };
   chrome.tabs.onCreated.addListener(onCreated);
   try {
-    let res;
+    let res: unknown;
     try {
       const EXECUTE_SCRIPT_TIMEOUT_MS = 2500;
       const executePromise = chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
-        func: async (s) => await eval(s),
+        func: async (s: string) => await eval(s),
         args: [buildPageScript(data.code)]
       });
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
@@ -182,16 +185,18 @@ async function handleWsExec(data, socket) {
         reject(err);
       }, EXECUTE_SCRIPT_TIMEOUT_MS));
       const result = await Promise.race([executePromise, timeoutPromise]);
-      res = result[0]?.result;
+      const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
+      res = scriptResults[0]?.result;
       if (res === null || res === undefined) {
         console.log('[PI-BROWSER-WS] executeScript returned null/undefined, treating as CSP issue');
         res = { ok: false, error: { name: 'Error', message: 'executeScript returned null (possible CSP or context issue)', stack: '' }, csp: true };
       }
     } catch (e) {
-      console.log('[PI-BROWSER-WS] scripting.executeScript failed:', e.message);
-      res = { ok: false, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' }, csp: true };
+      console.log('[PI-BROWSER-WS] scripting.executeScript failed:', e instanceof Error ? e.message : String(e));
+      res = { ok: false, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' }, csp: true };
     }
-    if (res && !res.ok && res.csp) {
+    const firstRes = res && typeof res === 'object' ? res as JsonRecord : {};
+    if (res && firstRes.ok === false && firstRes.csp) {
       console.log('[PI-BROWSER-WS] CDP fallback for tab', tabId);
       const wrappedCode = buildCdpScript(data.code);
       try {
@@ -200,35 +205,40 @@ async function handleWsExec(data, socket) {
         const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', {
           expression: wrappedCode, awaitPromise: true, returnByValue: true
         }, { name: 'default', persistent: false }));
-        if (!resp || resp.ok === false) throw new Error(resp?.error || resp?.message || 'persistent CDP Runtime.evaluate failed');
-        const cdpRes = resp.data?.result || resp.result || resp.data;
-        if (cdpRes.exceptionDetails) {
-          const desc = cdpRes.exceptionDetails.exception?.description || 'CDP Error';
+        if (!resp || resp.ok === false) throw new Error(String(resp?.error || resp?.message || 'persistent CDP Runtime.evaluate failed'));
+        const cdpRes = (((resp.data && typeof resp.data === 'object') ? resp.data as JsonRecord : {}).result || resp.result || resp.data) as JsonRecord;
+        const exceptionDetails = cdpRes.exceptionDetails && typeof cdpRes.exceptionDetails === 'object' ? cdpRes.exceptionDetails as JsonRecord : undefined;
+        if (exceptionDetails) {
+          const exception = exceptionDetails.exception && typeof exceptionDetails.exception === 'object' ? exceptionDetails.exception as JsonRecord : {};
+          const desc = String(exception.description || 'CDP Error');
           res = { ok: false, error: { name: 'Error', message: desc, stack: desc } };
         } else {
-          res = cdpRes.result.value;
+          const result = cdpRes.result && typeof cdpRes.result === 'object' ? cdpRes.result as JsonRecord : {};
+          res = result.value;
         }
       } catch (cdpErr) {
-        res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + cdpErr.message, stack: '' } };
+        res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)), stack: '' } };
       }
     }
     if (newTabIds.size === 0) await new Promise(r => setTimeout(r, 200));
     chrome.tabs.onCreated.removeListener(onCreated);
-    const newTabs = [];
+    const newTabs: JsonRecord[] = [];
     for (const id of newTabIds) {
       try { const t = await chrome.tabs.get(id); newTabs.push({ id: t.id, url: t.url, title: t.title }); } catch (_) {}
     }
-    if (res?.ok) {
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: res.data, newTabs }));
+    const finalRes = res && typeof res === 'object' ? res as JsonRecord : {};
+    if (finalRes.ok) {
+      socket.send(JSON.stringify({ type: 'result', id: data.id, result: finalRes.data, newTabs }));
     } else {
       console.log(res);
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: res?.error || 'Unknown error', newTabs }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: finalRes.error || 'Unknown error', newTabs }));
     }
   } catch (e) {
-    socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' } }));
+    socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
   } finally {
     chrome.tabs.onCreated.removeListener(onCreated);
   }
 }
+export { buildExecScript, buildPageScript, buildCdpScript, handleWsExec };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_exec = { name: "exec", symbols: { buildExecScript, buildPageScript, buildCdpScript, handleWsExec } };

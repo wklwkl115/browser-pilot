@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeNucleiBridgeData } from "../../summaries/index";
 import { runNucleiBridge } from "../../webSecurityCore";
-import { DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, optionalTargetTabId, resolveBooleanParam, normalizeWebSecurityToolParams, type NucleiBridgeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, resolveBooleanParam, normalizeWebSecurityToolParams, type NucleiBridgeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -12,11 +12,7 @@ export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 		promptSnippet: "Run a Pi-native nuclei bridge for deep template, fingerprint, and CVE-style automation with structured matches and artifacts.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_nuclei_bridge for deep template and fingerprint sweeps from explicit scope and template selectors; keep bounded target scope explicit and retain request/stdout/stderr artifacts for follow-up evidence."],
 		parameters: Type.Object({
-			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
-			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-			outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-			timeoutMs: Type.Optional(Type.Number({ description: "Process timeout in milliseconds; default 120000." })),
-			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
+			...sharedWebSecurityBrowserSessionParams("Process timeout in milliseconds; default 120000."),
 			nucleiPath: Type.Optional(Type.String({ description: "Optional nuclei executable or launcher command. Default auto-detects nuclei in PATH." })),
 			nucleiArgs: Type.Optional(Type.Array(Type.String(), { description: "Optional launcher arguments prepended before generated nuclei flags." })),
 			extraArgs: Type.Optional(Type.Array(Type.String(), { description: "Additional nuclei CLI arguments appended after generated flags." })),

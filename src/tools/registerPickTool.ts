@@ -1,10 +1,8 @@
 import { Type } from "typebox";
 import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript";
-import { errorResult } from "../utils/toolResult";
-import { defaultResultBudget } from "./budgets";
-import { distilledJsonResult } from "./resultMiddleware";
 import { summarizePickData } from "./summaries/index";
-import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -77,21 +75,17 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_pick when the user needs to identify a specific visible element; it blocks until click/Enter/Escape/timeout."],
 		parameters: Type.Object({
 			message: Type.String({ description: "Instruction shown to the user in the page picker overlay" }),
-			tabId: optionalTargetTabId(),
+			...sharedTabScopedToolParams({ timeoutDescription: "Interactive picker timeout in milliseconds" }),
 			multiple: Type.Optional(Type.Boolean({ description: "Allow Cmd/Ctrl+click multi-select; default true" })),
 			focus: Type.Optional(Type.Boolean({ description: "Focus/switch to tabId before picking; default true when tabId is provided" })),
-			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-			outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-			timeoutMs: Type.Optional(Type.Number({ description: "Interactive picker timeout in milliseconds" })),
-			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
+			return await runTool(async () => {
 				const message = String(params.message || "").trim();
 				if (!message) throw new Error("browser_pick requires message");
 				const server = await ensureStarted();
-				const timeoutMs = asPositiveInt(params.timeoutMs, 120_000);
-				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget("browser_pick"));
+				const timeoutMs = toolTimeoutMs(params.timeoutMs, 120_000);
+				const maxChars = toolMaxChars(params, "browser_pick");
 				if (params.tabId !== undefined && params.focus !== false) await server.switchTab(params.tabId, 5_000);
 				const pickId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 				const script = buildPickScript({ message, multiple: params.multiple, timeoutMs, pickId });
@@ -124,20 +118,15 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					raw = await rawPromise;
 				}
 				const value = unwrapRuntimeEvaluateValue(raw);
-				return await distilledJsonResult(value, {
+				return await jsonToolResult(value, params, ctx, {
 					toolName: "browser_pick",
 					command: "pick",
-					detailLevel: params.detailLevel,
 					maxChars,
-					ctx,
-					outputPath: params.outputPath,
-					fallbackName: `pick-${Date.now()}.json`,
+					fallbackName: artifactFallbackName("pick"),
 					details: { command: "Runtime.evaluate", message, focus: params.focus !== false, timedOut, pickId },
 					distill: summarizePickData,
 				});
-			} catch (error) {
-				return errorResult(error);
-			}
+			});
 		},
 	});
 }

@@ -5,8 +5,29 @@ import { navigateAndWait, navigatePiBrowser, waitForLoadState, waitForNavigation
 import { waitForNetworkIdle } from "./wait_network_idle";
 import { waitForSelector } from "./wait_selector";
 import { cancelWait, cleanupPiBrowserPageListenersForTab, diagnosePiBrowser, waitForAll, waitForAny } from "./wait";
+import { cleanupNetworkRecorderTab, handleNetworkRecorderCommand } from "./network";
+import { ensurePiBrowserDispatcher, handlePiBrowserHookCommand } from "./hook";
+import { handlePiBrowserEvidenceCommand } from "./evidence";
+import { handlePiBrowserFrameCommand } from "./frame";
+import { handlePiBrowserTransferCommand } from "./transfer";
+import { handlePiBrowserHtml } from "./html";
+import { captureScreenshotWithRetry } from "./screenshot";
+import { piBridgeInfo } from "./bridge_info";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender, PiNativeProtocolRuntime, PiPersistentCdpBridge } from "./types";
 
 // runtime.js - Pi browser native command runtime (wait/network/hook/frame/html/screenshot).
+
+function runtimeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function runtimeErrorPreview(error: unknown): unknown {
+  return error instanceof Error ? error.message : error;
+}
+
+function runtimeRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
 
 const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';
 const PI_BROWSER_ERROR_CODES = {
@@ -14,33 +35,31 @@ const PI_BROWSER_ERROR_CODES = {
   INVALID_RULE: 'INVALID_RULE', UNSUPPORTED_TARGET: 'UNSUPPORTED_TARGET', INJECTION_FAILED: 'INJECTION_FAILED',
   SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', NAVIGATION_TIMEOUT: 'NAVIGATION_TIMEOUT', SELECTOR_TIMEOUT: 'SELECTOR_TIMEOUT', SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND', INVALID_SELECTOR: 'INVALID_SELECTOR', NETWORK_IDLE_TIMEOUT: 'NETWORK_IDLE_TIMEOUT', NETWORK_RECORDER_NOT_STARTED: 'NETWORK_RECORDER_NOT_STARTED', NETWORK_RECORDER_TIMEOUT: 'NETWORK_RECORDER_TIMEOUT', REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND', BODY_UNAVAILABLE: 'BODY_UNAVAILABLE', FRAME_DETACHED: 'FRAME_DETACHED', CROSS_ORIGIN_IFRAME: 'CROSS_ORIGIN_IFRAME', TAB_NOT_FOUND: 'TAB_NOT_FOUND', TAB_CRASHED: 'TAB_CRASHED', BACKGROUND_THROTTLED: 'BACKGROUND_THROTTLED', EVENT_SUBSCRIPTION_FAILED: 'EVENT_SUBSCRIPTION_FAILED', CANCELLED: 'CANCELLED', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', AMBIGUOUS_DOWNLOAD: 'AMBIGUOUS_DOWNLOAD', INTERNAL_ERROR: 'INTERNAL_ERROR'
 };
-const PI_BROWSER_PROTOCOL = typeof PiNativeProtocol !== 'undefined' ? PiNativeProtocol : self['PiNativeProtocol'];
+const PI_BROWSER_PROTOCOL = (typeof PiNativeProtocol !== 'undefined' ? PiNativeProtocol : (self as typeof self & { PiNativeProtocol?: unknown }).PiNativeProtocol) as PiNativeProtocolRuntime;
 if (!PI_BROWSER_PROTOCOL || !PI_BROWSER_PROTOCOL.schema || !PI_BROWSER_PROTOCOL.nativeCommandMap) throw new Error('Pi Browser protocol schema is not loaded');
 const PI_BROWSER_ALIASES = PI_BROWSER_PROTOCOL.aliases || {};
-/** @type {Map<number, any>} */
-const piBrowserSessions = new Map();
-/** @type {Map<number, any>} */
-const piBrowserTabQueues = new Map();
+type PiBrowserSessionRecord = JsonRecord & {
+  session_id?: string;
+  targets?: unknown;
+  options?: unknown;
+  buffer_size?: number;
+  install_fingerprint?: string;
+  install_args?: JsonRecord;
+  state?: string;
+  installed_at?: string;
+};
+type PiBrowserQueueRecord = { tail: Promise<unknown>; depth: number; pending: boolean; last_cmd: string | null };
+const piBrowserSessions = new Map<number, PiBrowserSessionRecord>();
+const piBrowserTabQueues = new Map<number, PiBrowserQueueRecord>();
 const PI_BROWSER_QUEUE_MAX_DEPTH = 64;
 
-function legacyCommandSurface() { return /** @type {any} */ (globalThis); }
-function optionalLegacyCommand(name) {
-  const fn = legacyCommandSurface()[name];
-  return typeof fn === 'function' ? fn : null;
-}
-function requireLegacyCommand(name) {
-  const fn = optionalLegacyCommand(name);
-  if (!fn) throw new Error('Legacy bridge command handler is not loaded: ' + name);
-  return fn;
-}
-
-function getPiBrowserQueueStats(tabId) {
+function getPiBrowserQueueStats(tabId: unknown) {
   const q = piBrowserTabQueues.get(Number(tabId));
   return q ? { pending: q.pending, depth: q.depth, last_cmd: q.last_cmd || null } : { pending: false, depth: 0, last_cmd: null };
 }
-function enqueuePiBrowserCommand(tabId, cmd, task) {
+function enqueuePiBrowserCommand(tabId: unknown, cmd: string, task: () => Promise<PiBridgeResponse> | PiBridgeResponse): Promise<PiBridgeResponse> {
   const key = Number(tabId);
-  const current = piBrowserTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null };
+  const current = piBrowserTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null } satisfies PiBrowserQueueRecord;
   if (current.depth >= PI_BROWSER_QUEUE_MAX_DEPTH) return Promise.resolve(piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, 'Pi Browser command queue is full', { tabId: key, cmd, depth: current.depth, max_depth: PI_BROWSER_QUEUE_MAX_DEPTH }));
   current.depth += 1;
   current.pending = true;
@@ -60,16 +79,16 @@ function enqueuePiBrowserCommand(tabId, cmd, task) {
   piBrowserTabQueues.set(key, current);
   return run;
 }
-function cleanupPiBrowserTab(tabId, reason) {
+function cleanupPiBrowserTab(tabId: number, reason?: string) {
   const key = Number(tabId);
   const cleanupReason = reason || 'tab_cleanup';
   try {
     const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId, cleanupReason);
-    if (pageCleanup && typeof pageCleanup.catch === 'function') pageCleanup.catch(e => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e));
-  } catch (e) { console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, e && e.message ? e.message : e); }
+    if (pageCleanup && typeof (pageCleanup as Promise<unknown>).catch === 'function') (pageCleanup as Promise<unknown>).catch((e: unknown) => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, runtimeErrorPreview(e)));
+  } catch (e) { console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, runtimeErrorPreview(e)); }
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
-  try { optionalLegacyCommand('cleanupNetworkRecorderTab')?.(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, e && e.message ? e.message : e); }
+  try { cleanupNetworkRecorderTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, runtimeErrorPreview(e)); }
   // Preserve the public cancellation path for tab teardown so queued callers,
   // diagnostics and static contract tests all see the same lifecycle entrypoint.
   // Literal contract: cancelWaitsForTab(tabId, 'tab_cleanup')
@@ -78,31 +97,35 @@ function cleanupPiBrowserTab(tabId, reason) {
     : cleanupTabWaits(tabId, cleanupReason, { includeCdp: true, action: 'tab_cleanup' });
   console.log('[PI-BROWSER] cleaned tab state', key, cleanupReason, { waits_cleaned: waits.cleaned, orphan_waits: waits.orphaned });
 }
-function canonicalPiBrowserCommand(cmd) { return PI_BROWSER_PROTOCOL.canonicalCommand ? PI_BROWSER_PROTOCOL.canonicalCommand(cmd) : (PI_BROWSER_ALIASES[cmd] || cmd); }
+function canonicalPiBrowserCommand(cmd: unknown): string { const key = String(cmd || ''); return PI_BROWSER_PROTOCOL.canonicalCommand ? PI_BROWSER_PROTOCOL.canonicalCommand(key) : (PI_BROWSER_ALIASES[key] || key); }
 const PI_NATIVE_BROWSER_COMMANDS = PI_BROWSER_PROTOCOL.nativeCommandMap;
-function isPiNativeBrowserCommand(cmd) { return typeof cmd === 'string' && Object.prototype.hasOwnProperty.call(PI_NATIVE_BROWSER_COMMANDS, cmd); }
-function nativeToPiBrowserMessage(msg) {
-  const mapped = PI_NATIVE_BROWSER_COMMANDS[msg.cmd];
-  return { ...msg, cmd: mapped, native_cmd: msg.cmd };
+function isPiNativeBrowserCommand(cmd: unknown): boolean { return typeof cmd === 'string' && Object.prototype.hasOwnProperty.call(PI_NATIVE_BROWSER_COMMANDS, cmd); }
+function nativeToPiBrowserMessage(msg: PiBridgeCommand): PiBridgeCommand {
+  const rawCmd = String(msg.cmd || '');
+  const mapped = PI_NATIVE_BROWSER_COMMANDS[rawCmd];
+  return { ...msg, cmd: mapped, native_cmd: rawCmd };
 }
-async function handlePiNativeBrowserCommand(msg, sender) {
+async function handlePiNativeBrowserCommand(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
   const mapped = nativeToPiBrowserMessage(msg);
   const resp = await handlePiBrowser(mapped, sender);
   if (resp && typeof resp === 'object') {
     if (resp.details && typeof resp.details === 'object' && resp.details.cmd === undefined) resp.details.cmd = msg.cmd;
-    if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data) && resp.data.native_cmd === undefined) resp.data.native_cmd = msg.cmd;
-    const bridgeInfoFn = optionalLegacyCommand('piBridgeInfo');
-    const bridge = bridgeInfoFn ? bridgeInfoFn() : null;
+    if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
+      const dataRecord = resp.data as JsonRecord;
+      if (dataRecord.native_cmd === undefined) dataRecord.native_cmd = msg.cmd;
+    }
+    const bridge = piBridgeInfo();
     if (bridge && resp.ok === false) {
       if (!resp.details || typeof resp.details !== 'object' || Array.isArray(resp.details)) resp.details = {};
       if (resp.details.bridge === undefined) resp.details.bridge = bridge;
-    } else if (bridge && resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data) && resp.data.bridge === undefined) {
-      resp.data.bridge = bridge;
+    } else if (bridge && resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
+      const dataRecord = resp.data as JsonRecord;
+      if (dataRecord.bridge === undefined) dataRecord.bridge = bridge;
     }
   }
   return resp;
 }
-function redactSensitive(value, depth = 0, seen = undefined) {
+function redactSensitive(value: unknown, depth = 0, seen?: WeakSet<object>): unknown {
   const patterns = [
     /bearer\s+fixture-secret/gi,
     /fixture-secret/gi,
@@ -123,7 +146,7 @@ function redactSensitive(value, depth = 0, seen = undefined) {
   if (seen.has(value)) return '[REDACTED_CYCLE]';
   seen.add(value);
   if (Array.isArray(value)) return value.map(v => redactSensitive(v, depth + 1, seen));
-  const out = {};
+  const out: JsonRecord = {};
   for (const [k, v] of Object.entries(value)) {
     const lk = String(k).toLowerCase();
     if (/(token|secret|password|passwd|pwd|authorization|cookie|set-cookie)/.test(lk)) out[k] = '[REDACTED]';
@@ -132,52 +155,55 @@ function redactSensitive(value, depth = 0, seen = undefined) {
   return out;
 }
 /** @returns {PiBridgeResponse} */
-function piBrowserError(error_code, message, details) {
+function piBrowserError(error_code: string, message: unknown, details?: unknown): PiBridgeResponse {
   const text = redactSensitive(message || String(error_code || 'ERROR'));
-  return { ok: false, error_code, error: text, details: redactSensitive(details || {}) };
+  return { ok: false, error_code, error: text, details: runtimeRecord(redactSensitive(details || {})) };
 }
 /** @returns {PiBridgeResponse} */
-function bridgeError(error_code, message, details) {
+function bridgeError(error_code: string | undefined, message: unknown, details?: unknown): PiBridgeResponse {
   const code = error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR;
   const text = redactSensitive(message || String(code));
   const baseDetails = (details && typeof details === 'object') ? details : (details === undefined ? {} : { raw: details });
-  return { ok: false, error_code: code, error: text, details: redactSensitive(baseDetails) };
+  return { ok: false, error_code: code, error: text, details: runtimeRecord(redactSensitive(baseDetails)) };
 }
-function normalizeBridgeResponse(resp, cmd) {
+function normalizeBridgeResponse(resp: PiBridgeResponse, cmd?: unknown): PiBridgeResponse {
   if (!resp || resp.ok !== false) return resp;
-  if (resp.error && typeof resp.error === 'object' && resp.error.code && typeof resp.error.message === 'string') {
-    const d = (resp.error.details && typeof resp.error.details === 'object') ? { ...resp.error.details } : {};
+  if (resp.error && typeof resp.error === 'object' && 'code' in resp.error && 'message' in resp.error && typeof resp.error.message === 'string') {
+    const d: JsonRecord = ('details' in resp.error && resp.error.details && typeof resp.error.details === 'object') ? { ...(resp.error.details as JsonRecord) } : {};
     if (cmd !== undefined && d.cmd === undefined) d.cmd = cmd;
-    return bridgeError(resp.error.code, resp.error.message, d);
+    return bridgeError(String(resp.error.code), resp.error.message, d);
   }
   const raw = resp.error !== undefined ? resp.error : (resp.message !== undefined ? resp.message : resp);
-  const details = { cmd, ...(resp.details && typeof resp.details === 'object' ? resp.details : {}), raw };
+  const details: JsonRecord = { cmd, ...(resp.details && typeof resp.details === 'object' ? resp.details : {}), raw };
   if (raw && typeof raw === 'object') {
-    if (raw.name && details.name === undefined) details.name = raw.name;
-    if (raw.stack && details.stack === undefined) details.stack = raw.stack;
-    return bridgeError(resp.error_code || raw.error_code || raw.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, raw.message || String(raw.code || raw.name || 'bridge command failed'), details);
+    const rawRecord = raw as JsonRecord;
+    if (rawRecord.name && details.name === undefined) details.name = rawRecord.name;
+    if (rawRecord.stack && details.stack === undefined) details.stack = rawRecord.stack;
+    return bridgeError(String(resp.error_code || rawRecord.error_code || rawRecord.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), rawRecord.message || String(rawRecord.code || rawRecord.name || 'bridge command failed'), details);
   }
   return bridgeError(resp.error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, raw || 'bridge command failed', details);
 }
-function isPiBrowserSessionMissing(res) {
-  return res && res.ok === false && (res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || res.error?.code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error?.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
+function isPiBrowserSessionMissing(res: PiBridgeResponse | null | undefined): boolean {
+  const error = runtimeRecord(res?.error);
+  return Boolean(res && res.ok === false && (res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || error.code === PI_BROWSER_ERROR_CODES.NO_SESSION || error.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED));
 }
-function piSleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0)))); }
-function piBrowserPersistentCdp() { const g = /** @type {PiBridgeGlobalThis} */ (globalThis); return g.piPersistentCdpBridge || g.PiPersistentCdp; }
-function normalizePersistentPiBrowserResponse(resp) {
-  if (resp && resp.ok === false && resp.error && !resp.error_code) return piBrowserError(resp.error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp.error.message || 'persistent CDP command failed', resp.error.details || {});
+function piSleep(ms: unknown): Promise<void> { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0)))); }
+function piBrowserPersistentCdp(): PiPersistentCdpBridge | undefined { const g = globalThis as typeof globalThis & { piPersistentCdpBridge?: PiPersistentCdpBridge; PiPersistentCdp?: PiPersistentCdpBridge }; return g.piPersistentCdpBridge || g.PiPersistentCdp; }
+function normalizePersistentPiBrowserResponse(resp: PiBridgeResponse): PiBridgeResponse {
+  const error = runtimeRecord(resp?.error);
+  if (resp && resp.ok === false && resp.error && !resp.error_code) return piBrowserError(String(error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error.message || 'persistent CDP command failed', error.details || {});
   return resp;
 }
 /** @returns {number|undefined} */
-function normalizePiBrowserEvalTimeoutMs(options = undefined) {
+function normalizePiBrowserEvalTimeoutMs(options?: PiBridgeCommand): number | undefined {
   options = options || {};
   const raw = options && (options.timeoutMs !== undefined ? options.timeoutMs : options.timeout_ms);
-  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (raw === undefined || raw === null) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 }
 /** @returns {Promise<PiBridgeResponse>} */
-async function piBrowserEval(tabId, expression, awaitPromise = true, options = {}) {
+async function piBrowserEval(tabId: number, expression: string, awaitPromise = true, options: PiBridgeCommand = {}): Promise<PiBridgeResponse> {
   const timeoutMs = normalizePiBrowserEvalTimeoutMs(options);
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
@@ -186,43 +212,47 @@ async function piBrowserEval(tabId, expression, awaitPromise = true, options = {
     // Page.addScriptToEvaluateOnNewDocument identifiers in Chrome's debugger session.
     const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise }, { persistent: true, name: 'eval', timeoutMs }));
     if (!resp || resp.ok === false) return resp;
-    const result = resp.data?.result || resp.result || resp.data;
-    if (result?.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, result.exceptionDetails.exception?.description || 'Runtime.evaluate failed', result.exceptionDetails);
-    return { ok: true, data: result?.result?.value };
+    const result = runtimeRecord(runtimeRecord(resp.data).result || resp.result || resp.data);
+    const exceptionDetails = runtimeRecord(result.exceptionDetails);
+    if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || 'Runtime.evaluate failed', exceptionDetails);
+    return { ok: true, data: runtimeRecord(result.result).value };
   }
   await chrome.debugger.attach({ tabId }, '1.3');
   try {
     const command = chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise });
     const result = timeoutMs === undefined ? await command : await piWithTimeout(command, timeoutMs, 'Runtime.evaluate');
     await chrome.debugger.detach({ tabId });
-    if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, result.exceptionDetails.exception?.description || 'Runtime.evaluate failed', result.exceptionDetails);
-    return { ok: true, data: result.result?.value };
+    const resultRecord = runtimeRecord(result);
+    const exceptionDetails = runtimeRecord(resultRecord.exceptionDetails);
+    if (resultRecord.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || 'Runtime.evaluate failed', exceptionDetails);
+    return { ok: true, data: runtimeRecord(resultRecord.result).value };
   } catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (_) {} throw e; }
 }
 /** @returns {Promise<PiBridgeResponse>} */
-async function callPagePiBrowser(tabId, command, args, options = {}) {
+async function callPagePiBrowser(tabId: number, command: string, args: unknown, options: PiBridgeCommand = {}): Promise<PiBridgeResponse> {
   const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Pi browser dispatcher is not installed'}`;
   const res = await piBrowserEval(tabId, expr, true, options);
-  return /** @type {PiBridgeResponse} */ (res.ok ? res.data : res);
+  return (res.ok ? runtimeRecord(res.data) : res) as PiBridgeResponse;
 }
 
 /** @returns {Promise<PiBridgeResponse|null>} */
-async function reinstallPiBrowserSession(tabId) {
+async function reinstallPiBrowserSession(tabId: number): Promise<PiBridgeResponse | null> {
   const attempted_recovery = true;
 
   const sess = piBrowserSessions.get(tabId);
   if (!sess) return null;
-  const injected = await requireLegacyCommand('ensurePiBrowserDispatcher')(tabId);
+  const injected = await ensurePiBrowserDispatcher(tabId);
   if (!injected.ok) return injected;
   const args = sess.install_args || { session_id: sess.session_id, targets: sess.targets, options: sess.options, buffer_size: sess.buffer_size, install_fingerprint: sess.install_fingerprint };
   const res = await callPagePiBrowser(tabId, 'hook.install', args);
   if (res && res.ok) {
-    piBrowserSessions.set(tabId, { ...sess, session_id: res.data?.session_id || args.session_id || sess.session_id, state: res.data?.state || 'INSTALLED', installed_at: res.data?.installed_at || new Date().toISOString(), install_fingerprint: res.data?.install_fingerprint || args.install_fingerprint || sess.install_fingerprint, install_args: args });
+    const data = runtimeRecord(res.data);
+    piBrowserSessions.set(tabId, { ...sess, session_id: String(data.session_id || args.session_id || sess.session_id || ''), state: String(data.state || 'INSTALLED'), installed_at: String(data.installed_at || new Date().toISOString()), install_fingerprint: String(data.install_fingerprint || args.install_fingerprint || sess.install_fingerprint || ''), install_args: args });
   }
   return res;
 }
 /** @returns {Promise<PiBridgeResponse>} */
-async function callPagePiBrowserWithAutoReinstall(tabId, command, args) {
+async function callPagePiBrowserWithAutoReinstall(tabId: number, command: string, args: unknown): Promise<PiBridgeResponse | null> {
   let res = await callPagePiBrowser(tabId, command, args);
   if (isPiBrowserSessionMissing(res) && piBrowserSessions.has(tabId) && command !== 'hook.uninstall') {
     let last = res;
@@ -239,16 +269,16 @@ async function callPagePiBrowserWithAutoReinstall(tabId, command, args) {
   return res;
 }
 
-function piWithTimeout(promise, timeoutMs, label) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
+function piWithTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(label + ' timed out after ' + timeoutMs + 'ms')), timeoutMs);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
-async function handlePiBrowser(msg, sender) {
+async function handlePiBrowser(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
   const cmd = canonicalPiBrowserCommand(msg.cmd);
-  const tabId = msg.tabId || sender.tab?.id;
+  const tabId = Number(msg.tabId || sender.tab?.id || 0);
   if (cmd === 'hook.list_sessions') return await handlePiBrowserImpl(msg, sender, cmd, tabId);
   if (!tabId) return piBrowserError('NO_SESSION', cmd + ' requires tabId', { cmd, details: {} });
   // Diagnostics must be out-of-band: enqueueing wait.diagnose makes its own
@@ -258,12 +288,12 @@ async function handlePiBrowser(msg, sender) {
   if (cmd === 'wait.diagnose') return await handlePiBrowserImpl(msg, sender, cmd, tabId);
   return await enqueuePiBrowserCommand(tabId, cmd, () => handlePiBrowserImpl(msg, sender, cmd, tabId));
 }
-async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
+async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender, cmd: string, tabId: number): Promise<PiBridgeResponse> {
   try {
-    if (cmd.startsWith('hook.')) return await requireLegacyCommand('handlePiBrowserHookCommand')(cmd, tabId, msg);
-    if (cmd.startsWith('evidence.')) return await requireLegacyCommand('handlePiBrowserEvidenceCommand')(cmd, tabId, msg);
-    if (cmd.startsWith('frame.')) return await requireLegacyCommand('handlePiBrowserFrameCommand')(cmd, tabId, msg);
-    if (cmd.startsWith('transfer.')) return await requireLegacyCommand('handlePiBrowserTransferCommand')(cmd, tabId, msg);
+    if (cmd.startsWith('hook.')) return await handlePiBrowserHookCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('evidence.')) return await handlePiBrowserEvidenceCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('frame.')) return await handlePiBrowserFrameCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('transfer.')) return await handlePiBrowserTransferCommand(cmd, tabId, msg) as PiBridgeResponse;
     switch (cmd) {
       case 'network.start':
       case 'network.stop':
@@ -273,23 +303,23 @@ async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
       case 'network.get':
       case 'network.body':
       case 'network.exportHar':
-      case 'network.wait': return await requireLegacyCommand('handleNetworkRecorderCommand')(tabId, cmd, msg);
-      case 'wait.navigate': return await navigatePiBrowser(tabId, msg);
-      case 'wait.navigateAndWait': return await navigateAndWait(tabId, msg);
-      case 'wait.navigation': return await waitForNavigation(tabId, msg);
-      case 'wait.loadState': return await waitForLoadState(tabId, msg);
-      case 'wait.networkIdle': return await waitForNetworkIdle(tabId, msg);
-      case 'wait.selector': return await waitForSelector(tabId, msg);
-      case 'wait.any': return await waitForAny(tabId, msg);
-      case 'wait.all': return await waitForAll(tabId, msg);
-      case 'wait.cancel': return await cancelWait(tabId, msg);
-      case 'wait.diagnose': return await diagnosePiBrowser(tabId, msg);
+      case 'network.wait': return await handleNetworkRecorderCommand(tabId, cmd, msg) as PiBridgeResponse;
+      case 'wait.navigate': return await navigatePiBrowser(tabId, msg) as PiBridgeResponse;
+      case 'wait.navigateAndWait': return await navigateAndWait(tabId, msg) as PiBridgeResponse;
+      case 'wait.navigation': return await waitForNavigation(tabId, msg) as PiBridgeResponse;
+      case 'wait.loadState': return await waitForLoadState(tabId, msg) as PiBridgeResponse;
+      case 'wait.networkIdle': return await waitForNetworkIdle(tabId, msg) as PiBridgeResponse;
+      case 'wait.selector': return await waitForSelector(tabId, msg) as PiBridgeResponse;
+      case 'wait.any': return await waitForAny(tabId, msg) as PiBridgeResponse;
+      case 'wait.all': return await waitForAll(tabId, msg) as PiBridgeResponse;
+      case 'wait.cancel': return await cancelWait(tabId, msg) as PiBridgeResponse;
+      case 'wait.diagnose': return await diagnosePiBrowser(tabId, msg) as PiBridgeResponse;
     }
-    if (cmd === 'html.get') return await requireLegacyCommand('handlePiBrowserHtml')(tabId, msg);
-    if (cmd === 'screenshot.capture') return await requireLegacyCommand('captureScreenshotWithRetry')(tabId, msg);
+    if (cmd === 'html.get') return await handlePiBrowserHtml(tabId, msg) as PiBridgeResponse;
+    if (cmd === 'screenshot.capture') return await captureScreenshotWithRetry(tabId, msg) as PiBridgeResponse;
     return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
-  } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, e.message || String(e), { cmd, tabId }); }
+  } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId }); }
 }
-export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, legacyCommandSurface, optionalLegacyCommand, requireLegacyCommand, handlePiBrowser, handlePiBrowserImpl };
+export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, handlePiBrowser, handlePiBrowserImpl };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, legacyCommandSurface, optionalLegacyCommand, requireLegacyCommand, handlePiBrowser, handlePiBrowserImpl } };
+export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, handlePiBrowser, handlePiBrowserImpl } };

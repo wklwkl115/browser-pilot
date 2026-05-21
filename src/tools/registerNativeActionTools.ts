@@ -1,14 +1,13 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../driver/errors";
-import { errorResult } from "../utils/toolResult";
 import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor";
-import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
-import type { DetailLevel } from "../utils/params";
 import type { BrowserBridgeExecutionResult } from "../driver/types";
+import type { DetailLevel } from "../utils/params";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
+import { nativeToolMetadata } from "../protocol/nativeActionMetadata";
+import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
-import { distilledJsonResult } from "./resultMiddleware";
-import { asPositiveInt, DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, NativeCommandParamsSchema, objectParam, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 type ActionToolConfig = {
@@ -29,34 +28,19 @@ type ActionToolConfig = {
 };
 
 function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): number {
-	const n = Number(value);
-	if (allowZero && Number.isFinite(n) && n === 0) return 0;
-	return asPositiveInt(value, fallback);
+	return toolTimeoutMs(value, fallback, { allowZero });
 }
 
 function nativeActionErrorResult(error: unknown) {
-	const details = error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
-	const result = details && typeof details === "object" && !Array.isArray(details) ? (details as Record<string, unknown>).result : undefined;
-	if (result && typeof result === "object" && !Array.isArray(result)) {
-		const record = result as Record<string, unknown>;
-		if (typeof record.error_code === "string" && record.error_code) {
-			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
-			return errorResult(new BrowserBridgeError(record.error_code, typeof record.error === "string" ? record.error : "browser native action failed", resultDetails));
-		}
-	}
-	return errorResult(error);
+	return bridgeNestedErrorResult(error, { defaultMessage: "browser native action failed" });
 }
 
 function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, config: ActionToolConfig) {
 	const parameterProperties = {
 		action: Type.String({ description: config.actionDescription }),
 		params: Type.Optional(NativeCommandParamsSchema),
-		tabId: optionalTargetTabId(),
+		...sharedTabScopedToolParams(),
 		...(config.sessionIdDescription ? { sessionId: Type.Optional(Type.String({ description: config.sessionIdDescription })) } : {}),
-		detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-		outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-		timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
-		maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
 	};
 	pi.registerTool({
 		name: config.name,
@@ -66,33 +50,30 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, config.promptGuideline],
 		parameters: Type.Object(parameterProperties),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
+			return await runTool(async () => {
 				const server = await ensureStarted();
 				const body = objectParam(params.params);
 				const commandName = config.commandForAction(params.action);
-				const tabId = params.tabId ?? body.tabId;
+				const tabId = targetTabId(params, body);
 				if (params.sessionId && body.sessionId === undefined && body.session_id === undefined) body.sessionId = params.sessionId;
 				const timeoutMs = actionTimeoutMs(params.timeoutMs, config.timeoutForCommand?.(commandName) ?? DEFAULT_TOOL_TIMEOUT_MS, config.allowZeroTimeout === true);
-				if (body.timeoutMs === undefined && body.timeout_ms === undefined) body.timeoutMs = timeoutMs;
-				const maxChars = asPositiveInt(params.maxChars, defaultResultBudget(config.budgetName));
+				applyDefaultTimeout(body, timeoutMs);
+				const maxChars = toolMaxChars(params, config.budgetName);
 				const command = { ...body, cmd: commandName };
 				const result = config.commandExecutor
 					? await config.commandExecutor(server, command, { tabId, timeoutMs })
 					: await server.sendCommand(command, { tabId, timeoutMs });
-				return await distilledJsonResult(result, {
+				return await jsonToolResult(result, params, ctx, {
 					toolName: config.name,
+					budgetName: config.budgetName,
 					command: commandName,
-					detailLevel: params.detailLevel ?? config.defaultDetailLevel,
+					defaultDetailLevel: config.defaultDetailLevel,
 					maxChars,
-					ctx,
-					outputPath: params.outputPath,
-					fallbackName: `${config.artifactPrefix}-${Date.now()}.json`,
+					fallbackName: artifactFallbackName(config.artifactPrefix),
 					details: { command: commandName, action: params.action },
 					artifactValue: result,
 				});
-			} catch (error) {
-				return nativeActionErrorResult(error);
-			}
+			}, nativeActionErrorResult);
 		},
 	});
 }
@@ -104,7 +85,7 @@ export function registerWaitTool(context: ToolRegistrarContext) {
 		description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions.",
 		promptSnippet: "Run browser wait/navigation commands with typed action names.",
 		promptGuideline: "Use browser_wait instead of manual sleep loops when waiting for page navigation, selectors, load state, or network idle.",
-		actionDescription: "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all (non-empty waits/conditions) | cancel | diagnose",
+		actionDescription: nativeToolMetadata.nativeActionTools.browser_wait.actionDescription,
 		sessionIdDescription: "Logical wait session id",
 		commandForAction: waitCommandForAction,
 		commandExecutor: executeBrowserWaitWithSupervisor,
@@ -123,7 +104,7 @@ export function registerNetworkTool(context: ToolRegistrarContext) {
 		description: "Native Network recorder commands: start, stop, status, clear, list, get, body, exportHar, wait.",
 		promptSnippet: "Control Browser Network recorder and inspect captured requests/bodies/HAR.",
 		promptGuideline: "Use browser_network for request/response observation instead of ad-hoc page fetch monkeypatches.",
-		actionDescription: "start | stop | status | clear | list | get | body | exportHar | wait",
+		actionDescription: nativeToolMetadata.nativeActionTools.browser_network.actionDescription,
 		sessionIdDescription: "Recorder session id",
 		commandForAction: networkCommandForAction,
 		budgetName: "browser_network",

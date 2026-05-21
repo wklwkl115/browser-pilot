@@ -20,9 +20,9 @@ import { __piBridgeModule_transfer } from "./service_worker/transfer";
 import { __piBridgeModule_bridge_info } from "./service_worker/bridge_info";
 import { __piBridgeModule_core_commands } from "./service_worker/core_commands";
 import { __piBridgeModule_exec } from "./service_worker/exec";
-import { __piBridgeModule_router } from "./service_worker/router";
+import { __piBridgeModule_router, installPiBridgeRouter } from "./service_worker/router";
 import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
-import { __piBridgeModule_transport } from "./service_worker/transport";
+import { __piBridgeModule_transport, installPiBrowserTransport } from "./service_worker/transport";
 import { BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
 
 export const serviceWorkerFoundationModuleGraph = [
@@ -39,7 +39,7 @@ export const serviceWorkerFoundationModuleGraph = [
 	__piBridgeModule_wait,
 ] as const;
 
-export const serviceWorkerLegacyModuleGraph = [
+export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_network_model,
 	__piBridgeModule_network,
 	__piBridgeModule_hook,
@@ -51,46 +51,26 @@ export const serviceWorkerLegacyModuleGraph = [
 	__piBridgeModule_bridge_info,
 	__piBridgeModule_core_commands,
 	__piBridgeModule_exec,
+] as const;
+
+export const serviceWorkerStartupModuleGraph = [
 	__piBridgeModule_router,
 	__piBridgeModule_tab_sync,
 	__piBridgeModule_transport,
 ] as const;
-
-for (const module of serviceWorkerFoundationModuleGraph) Object.assign(globalThis, module.symbols);
 
 export const serviceWorkerModuleGraph = [
 	...serviceWorkerFoundationModuleGraph,
-	...serviceWorkerLegacyModuleGraph,
+	...serviceWorkerCommandModuleGraph,
+	...serviceWorkerStartupModuleGraph,
 ] as const;
 
-/* legacy flat graph kept for TODO 188-196 contracts */
-export const serviceWorkerModuleGraphLegacyOrder = [
-	__piBridgeModule_config,
-	__piBridgeModule_protocol,
-	__piBridgeModule_patterns,
-	__piBridgeModule_cdp,
-	__piBridgeModule_runtime,
-	__piBridgeModule_wait_cdp,
-	__piBridgeModule_wait_coordinator,
-	__piBridgeModule_wait_navigation,
-	__piBridgeModule_wait_network_idle,
-	__piBridgeModule_wait_selector,
-	__piBridgeModule_wait,
-	__piBridgeModule_network_model,
-	__piBridgeModule_network,
-	__piBridgeModule_hook,
-	__piBridgeModule_evidence,
-	__piBridgeModule_frame,
-	__piBridgeModule_html,
-	__piBridgeModule_screenshot,
-	__piBridgeModule_transfer,
-	__piBridgeModule_bridge_info,
-	__piBridgeModule_core_commands,
-	__piBridgeModule_exec,
-	__piBridgeModule_router,
-	__piBridgeModule_tab_sync,
-	__piBridgeModule_transport,
-] as const;
+function installPiBrowserServiceWorker() {
+	installPiBridgeRouter();
+	installPiBrowserTransport();
+}
+
+installPiBrowserServiceWorker();
 
 const buildInfo: BridgeBuildInfo = {
 	version: BRIDGE_BUILD_PIPELINE_VERSION,
@@ -105,4 +85,4 @@ Object.defineProperty(globalThis, "__PI_BROWSER_EXPERIMENTAL_BUILD__", {
 	writable: false,
 });
 
-export { buildInfo };
+export { buildInfo, installPiBrowserServiceWorker };

@@ -1,5 +1,6 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { browserArtifactPrivacyMetadata } from "./artifactPrivacy";
 
 export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string): string {
 	const base = ctx?.cwd || process.cwd();
@@ -7,7 +8,7 @@ export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested
 	return path.isAbsolute(target) ? target : path.resolve(base, target);
 }
 
-export async function saveTextArtifact(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string, content: string): Promise<{ path: string; chars: number }> {
+export async function saveTextArtifact(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string, content: string): Promise<{ path: string; chars: number; bytes: number; privacy: Record<string, unknown> }> {
 	const outputPath = resolveArtifactPath(ctx, requested, fallbackName);
 	const dir = path.dirname(outputPath);
 	const tempPath = path.join(dir, `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.tmp`);
@@ -19,7 +20,7 @@ export async function saveTextArtifact(ctx: { cwd?: string } | undefined, reques
 		await rm(tempPath, { force: true }).catch(() => {});
 		throw error;
 	}
-	return { path: outputPath, chars: content.length };
+	return { path: outputPath, chars: content.length, bytes: Buffer.byteLength(content, "utf8"), privacy: browserArtifactPrivacyMetadata() };
 }
 
 function decodeStrictBase64Payload(payload: string): Buffer {

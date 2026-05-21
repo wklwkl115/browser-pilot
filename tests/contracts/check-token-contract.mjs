@@ -4,11 +4,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { jsonResult, textResult } from "../../src/utils/toolResult.ts";
+import { errorResult, jsonResult, textResult } from "../../src/utils/toolResult.ts";
 import { distilledJsonResult, distilledTextResult } from "../../src/tools/resultMiddleware.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (rel) => readFileSync(path.isAbsolute(rel) ? rel : path.join(root, rel), "utf8");
+function resolveReadPath(rel) {
+	if (path.isAbsolute(rel)) return rel;
+	const drivePath = /^([A-Za-z]):[\\/](.*)$/.exec(rel);
+	if (drivePath) return process.platform === "win32" ? rel : path.join("/mnt", drivePath[1].toLowerCase(), drivePath[2].replace(/\\/g, "/"));
+	return path.join(root, rel);
+}
+const read = (rel) => readFileSync(resolveReadPath(rel), "utf8");
 
 const large = "x".repeat(20_000);
 const json = jsonResult({ payload: large }, { command: "token-test" }, 1_000);
@@ -20,6 +26,13 @@ const detailsText = JSON.stringify(text.details);
 assert.ok(detailsText.length < 20_000, `check-token textResult.details length: expected <20000 got ${detailsText.length}`);
 assert.equal(detailsText.includes("x".repeat(2_000)), false, "check-token textResult.details large string: details must not contain unbounded large strings");
 assert.ok(detailsText.includes("truncatedItems"), "check-token textResult.details.items: details must report truncated arrays");
+const sensitiveError = new Error("Authorization: Bearer error-secret");
+sensitiveError.details = { headers: { Cookie: "sid=error-cookie" }, request: { postData: "error-postdata" }, websocket: { payloadData: "error-ws" } };
+const sensitiveErrorResult = errorResult(sensitiveError);
+const sensitiveErrorText = JSON.stringify(sensitiveErrorResult);
+for (const secret of ["error-secret", "error-cookie", "error-postdata", "error-ws"]) {
+	assert.equal(sensitiveErrorText.includes(secret), false, `check-token errorResult.privacy: ${secret} must be redacted from error content and details`);
+}
 
 const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-token-"));
 try {
@@ -69,6 +82,35 @@ try {
 	});
 	assert.ok(contentResult.content[0].text.includes('"tool": "browser_content"'), "check-token distilledTextResult.outputPath: text tools must still return the compact envelope");
 	assert.deepEqual(JSON.parse(readFileSync(contentOutputPath, "utf8")), contentArtifact, "check-token distilledTextResult.outputPath: text tool artifact must preserve structured artifactValue");
+
+	const sensitiveOutputPath = path.join(tmp, "sensitive-network.json");
+	const sensitiveNetwork = {
+		request: { headers: { Authorization: "Bearer summary-secret", Cookie: "sid=summary-cookie" }, postData: "summary-postdata" },
+		response: { body: { text: "token=summary-body", bytes: 18 } },
+		websocket: { payloadData: "summary-ws" },
+	};
+	const sensitiveFull = await distilledJsonResult(sensitiveNetwork, {
+		toolName: "browser_network",
+		command: "network.get",
+		detailLevel: "full",
+		maxChars: 50_000,
+		ctx: { cwd: tmp },
+		outputPath: sensitiveOutputPath,
+		fallbackName: "sensitive-network.json",
+		distill: () => ({
+			headers: sensitiveNetwork.request.headers,
+			postData: sensitiveNetwork.request.postData,
+			body: sensitiveNetwork.response.body,
+			websocket: sensitiveNetwork.websocket,
+		}),
+	});
+	const sensitiveFullText = sensitiveFull.content[0].text;
+	for (const secret of ["summary-secret", "summary-cookie", "summary-postdata", "summary-body", "summary-ws"]) {
+		assert.equal(sensitiveFullText.includes(secret), false, `check-token resultMiddleware.privacy: ${secret} must not leak through summary/full output`);
+	}
+	assert.ok(sensitiveFullText.includes("saved_to_artifact"), "check-token resultMiddleware.privacy: sensitive full output must be represented by a saved artifact envelope");
+	assert.ok(sensitiveFullText.includes("[redacted]") && sensitiveFullText.includes("[redacted body]") && sensitiveFullText.includes("[redacted postData]"), "check-token resultMiddleware.privacy: redaction markers must remain visible");
+	assert.ok(readFileSync(sensitiveOutputPath, "utf8").includes("summary-secret"), "check-token resultMiddleware.privacy: local artifact must preserve raw evidence for explicit reads");
 } finally {
 	await rm(tmp, { recursive: true, force: true });
 }
@@ -94,6 +136,7 @@ assert.ok(!compactEnvelope.summary.rows || compactEnvelope.summary.rows.rows.len
 const toolResultSource = read("src/utils/toolResult.ts");
 assert.equal(toolResultSource.includes("result: value"), false, "toolResult must not add full result into details");
 assert.ok(read("src/tools/resultMiddleware.ts").includes("fitSummaryBudget"), "result middleware must apply deterministic summary budget allocation");
+assert.ok(read("src/tools/resultMiddleware.ts").includes("containsSensitiveEvidence") && read("src/tools/artifactReader.ts").includes("redactArtifactResult"), "artifact privacy governance must redact summaries and browser_artifact output by default");
 assert.ok(read("src/tools/summaries/common.ts").includes("summaryTable"), "summary modules must support columns+rows compact tables");
 assert.ok(read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md").includes("detailLevel"), "pi-browser-tools skill must document detailLevel behavior");
 

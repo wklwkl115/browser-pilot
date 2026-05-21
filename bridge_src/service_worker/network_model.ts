@@ -1,5 +1,18 @@
-// @ts-nocheck
 // network_model.js - Pi browser Network recorder state, config, filtering and body storage helpers.
+
+import { matchNetworkPattern } from "./patterns";
+import { redactSensitive } from "./runtime";
+import { diagnosePiBrowserCdpDomainRefs } from "./wait_cdp";
+import { makeWaitId } from "./wait_coordinator";
+import type { JsonRecord, PiBridgeCommand, PiBrowserWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderWait, NetworkStringList, NetworkWaitNotifier } from "./types";
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES = 1000;
 const PI_BROWSER_NETWORK_DEFAULT_MAX_AGE_MS = 30 * 60 * 1000;
@@ -8,52 +21,61 @@ const PI_BROWSER_NETWORK_MAX_WS_FRAMES = 200;
 const PI_BROWSER_NETWORK_MAX_SSE_EVENTS = 200;
 const PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW = ['json', 'text', 'html'];
 const PI_BROWSER_NETWORK_DEFAULT_BODY_RESOURCE_TYPES = ['XHR', 'Fetch', 'Document'];
-const piBrowserNetworkRecorders = new Map();
+const piBrowserNetworkRecorders = new Map<string, NetworkRecorder>();
 let piBrowserNetworkRecorderSeq = 0;
 let piBrowserNetworkEntrySeq = 0;
 let piBrowserNetworkBodySeq = 0;
+let piBrowserNetworkWaitNotifier: NetworkWaitNotifier | null = null;
 
-function networkRecorderKey(tabId, sessionId) { return Number(tabId) + ':' + String(sessionId || 'default'); }
-function defaultNetworkSessionId(msg) { return String(msg?.sessionId || msg?.session_id || 'default'); }
-function numberInRange(value, fallback, min, max) {
+function setNetworkWaitNotifier(notifier: unknown): void {
+  piBrowserNetworkWaitNotifier = typeof notifier === 'function' ? notifier as NetworkWaitNotifier : null;
+}
+
+function notifyNetworkWaits(recorder: NetworkRecorder, eventType: string, rec: NetworkRecord | null): void {
+  if (piBrowserNetworkWaitNotifier) piBrowserNetworkWaitNotifier(recorder, eventType, rec);
+}
+
+function networkRecorderKey(tabId: unknown, sessionId: unknown): string { return Number(tabId) + ':' + String(sessionId || 'default'); }
+function defaultNetworkSessionId(msg: PiBridgeCommand | JsonRecord | null | undefined): string { return String(msg?.sessionId || msg?.session_id || 'default'); }
+function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
-function getHeaderValue(headers, name) {
+function getHeaderValue(headers: unknown, name: unknown): string {
   if (!headers || !name) return '';
   const target = String(name).toLowerCase();
-  for (const [k, v] of Object.entries(headers || {})) if (String(k).toLowerCase() === target) return String(v == null ? '' : v);
+  for (const [k, v] of Object.entries(asRecord(headers))) if (String(k).toLowerCase() === target) return String(v == null ? '' : v);
   return '';
 }
-function headersObjectToArray(headers) {
-  return Object.entries(headers || {}).map(([name, value]) => ({ name, value: String(value == null ? '' : value) }));
+function headersObjectToArray(headers: unknown): Array<{ name: string; value: string }> {
+  return Object.entries(asRecord(headers)).map(([name, value]) => ({ name, value: String(value == null ? '' : value) }));
 }
-function normalizeNetworkStringList(value, fallback) {
+function normalizeNetworkStringList(value: unknown, fallback: NetworkStringList): string[] {
   if (value === true) return ['all'];
   if (value === false || value === null) return [];
   const raw = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(/[,\s]+/) : fallback);
   return (Array.isArray(raw) ? raw : []).map(x => String(x || '').trim()).filter(Boolean);
 }
-function estimateStringBytes(str) {
-  str = String(str == null ? '' : str);
-  try { return new TextEncoder().encode(str).length; } catch (_) { return str.length; }
+function estimateStringBytes(str: unknown): number {
+  const text = String(str == null ? '' : str);
+  try { return new TextEncoder().encode(text).length; } catch (_) { return text.length; }
 }
-function truncateStringByBytes(str, maxBytes) {
-  str = String(str == null ? '' : str);
-  if (!Number.isFinite(Number(maxBytes)) || Number(maxBytes) < 0) return { value: str, truncated: false, originalLength: estimateStringBytes(str), bytes: estimateStringBytes(str) };
-  const originalLength = estimateStringBytes(str);
+function truncateStringByBytes(str: unknown, maxBytes: unknown): { value: string; truncated: boolean; originalLength: number; bytes: number } {
+  const text = String(str == null ? '' : str);
+  if (!Number.isFinite(Number(maxBytes)) || Number(maxBytes) < 0) return { value: text, truncated: false, originalLength: estimateStringBytes(text), bytes: estimateStringBytes(text) };
+  const originalLength = estimateStringBytes(text);
   const limit = Math.floor(Number(maxBytes));
-  if (originalLength <= limit) return { value: str, truncated: false, originalLength, bytes: originalLength };
-  let lo = 0, hi = str.length;
+  if (originalLength <= limit) return { value: text, truncated: false, originalLength, bytes: originalLength };
+  let lo = 0, hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (estimateStringBytes(str.slice(0, mid)) <= limit) lo = mid; else hi = mid - 1;
+    if (estimateStringBytes(text.slice(0, mid)) <= limit) lo = mid; else hi = mid - 1;
   }
-  const value = str.slice(0, lo);
+  const value = text.slice(0, lo);
   return { value, truncated: true, originalLength, bytes: estimateStringBytes(value) };
 }
-function truncateBase64Body(body, maxBytes) {
+function truncateBase64Body(body: unknown, maxBytes: unknown): { value: string; truncated: boolean; originalLength: number; bytes: number } {
   const text = String(body == null ? '' : body).replace(/\s+/g, '');
   if (!Number.isFinite(Number(maxBytes)) || Number(maxBytes) < 0) {
     try { const decoded = atob(text); return { value:text, truncated:false, originalLength:decoded.length, bytes:decoded.length }; }
@@ -72,14 +94,14 @@ function truncateBase64Body(body, maxBytes) {
     return { value:text.slice(0, chars), truncated:true, originalLength, bytes:Math.floor(chars * 3 / 4) };
   }
 }
-function makeNetworkRecorderFilter(config) {
+function makeNetworkRecorderFilter(config: NetworkRecorderConfig): NetworkRecorderConfig["filter"] {
   const includeUrls = Array.isArray(config.includeUrls) ? config.includeUrls.map(String) : [];
   const excludeUrls = Array.isArray(config.excludeUrls) ? config.excludeUrls.map(String) : [];
   const resourceTypes = new Set((Array.isArray(config.resourceTypes) ? config.resourceTypes : []).map(x => String(x).toLowerCase()));
   const allResourceTypes = resourceTypes.has('*') || resourceTypes.has('all');
   const methods = new Set((Array.isArray(config.methods) ? config.methods : []).map(x => String(x).toUpperCase()));
   const statuses = new Set((Array.isArray(config.statuses) ? config.statuses : []).map(x => Number(x)).filter(Number.isFinite));
-  return function networkRecorderFilter(rec, phase) {
+  return function networkRecorderFilter(rec: NetworkRecord, phase: string): NetworkFilterDecision {
     const url = rec?.request?.url || rec?.url || '';
     const type = String(rec?.type || rec?.resourceType || '').toLowerCase();
     const method = String(rec?.request?.method || rec?.method || 'GET').toUpperCase();
@@ -94,28 +116,29 @@ function makeNetworkRecorderFilter(config) {
     return { match:true, reason:'matched' };
   };
 }
-function normalizeNetworkBodyMimeAllow(msg) {
+function normalizeNetworkBodyMimeAllow(msg: PiBridgeCommand | JsonRecord): string[] {
   const raw = msg.bodyMimeAllow ?? msg.body_mime_allow ?? msg.bodyMimeTypes ?? msg.body_mime_types;
   return normalizeNetworkStringList(raw, PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW).map(x => String(x).toLowerCase());
 }
-function networkResponseMimeType(rec) {
+function networkResponseMimeType(rec: NetworkRecord): string {
   return String(rec?.response?.mimeType || getHeaderValue(rec?.response?.headers, 'content-type') || getHeaderValue(rec?.responseExtraInfo?.headers, 'content-type') || '').toLowerCase();
 }
-function isLikelyBinaryNetworkMime(mime) {
+function isLikelyBinaryNetworkMime(mime: unknown): boolean {
   if (!mime) return false;
-  return /^(image|audio|video|font)\//i.test(mime) || /(octet-stream|pdf|zip|gzip|br|protobuf|wasm|msword|excel|powerpoint)/i.test(mime);
+  const text = String(mime);
+  return /^(image|audio|video|font)\//i.test(text) || /(octet-stream|pdf|zip|gzip|br|protobuf|wasm|msword|excel|powerpoint)/i.test(text);
 }
-function networkMimeMatchesToken(mime, token) {
-  token = String(token || '').toLowerCase();
-  if (!token || token === '*' || token === 'all') return true;
-  if (token === 'json') return /(^|[/+.-])json($|[;+.-])/.test(mime) || mime.includes('+json');
-  if (token === 'text') return mime.startsWith('text/');
-  if (token === 'html') return mime.includes('html');
-  if (token === 'xml') return mime.includes('xml');
-  if (token === 'js' || token === 'javascript') return mime.includes('javascript') || mime.includes('ecmascript');
-  return mime.includes(token);
+function networkMimeMatchesToken(mime: string, token: unknown): boolean {
+  const normalizedToken = String(token || '').toLowerCase();
+  if (!normalizedToken || normalizedToken === '*' || normalizedToken === 'all') return true;
+  if (normalizedToken === 'json') return /(^|[/+.-])json($|[;+.-])/.test(mime) || mime.includes('+json');
+  if (normalizedToken === 'text') return mime.startsWith('text/');
+  if (normalizedToken === 'html') return mime.includes('html');
+  if (normalizedToken === 'xml') return mime.includes('xml');
+  if (normalizedToken === 'js' || normalizedToken === 'javascript') return mime.includes('javascript') || mime.includes('ecmascript');
+  return mime.includes(normalizedToken);
 }
-function networkBodyMimeDecision(config, rec) {
+function networkBodyMimeDecision(config: NetworkRecorderConfig, rec: NetworkRecord): NetworkBodyMimeDecision {
   const allow = Array.isArray(config.bodyMimeAllow) ? config.bodyMimeAllow : PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW;
   if (allow.some(token => token === '*' || token === 'all')) return { match:true, reason:'all' };
   const mime = networkResponseMimeType(rec);
@@ -123,21 +146,21 @@ function networkBodyMimeDecision(config, rec) {
   if (allow.some(token => networkMimeMatchesToken(mime, token))) return { match:true, reason:'mime_allowed', mimeType:mime };
   return { match:false, availability:isLikelyBinaryNetworkMime(mime) ? 'binary' : 'not_requested', reason:isLikelyBinaryNetworkMime(mime) ? 'binary_mime' : 'mime_not_allowed', mimeType:mime };
 }
-function classifyNetworkBodyError(error) {
-  const text = String(error && (error.message || error) || 'error');
+function classifyNetworkBodyError(error: unknown): { availability: string; reason: string } {
+  const text = errorText(error || 'error');
   if (/No resource with given identifier|No data found|no resource|not found|expired|evicted/i.test(text)) return { availability:'expired', reason:'cdp_body_expired' };
   if (/timed out|timeout/i.test(text)) return { availability:'cdp_failed', reason:'cdp_timeout' };
   return { availability:'cdp_failed', reason:'cdp_get_response_body_failed' };
 }
-function setNetworkBodyAvailability(rec, availability, reason, extra) {
+function setNetworkBodyAvailability(rec: NetworkRecord | null | undefined, availability: string, reason: string | null, extra: JsonRecord | null = null): void {
   if (!rec) return;
   rec.bodyAvailability = availability || 'not_requested';
   rec.bodyUnavailableReason = reason || null;
   if (extra && typeof extra === 'object') Object.assign(rec, extra);
 }
-function normalizeNetworkRecorderConfig(msg) {
+function normalizeNetworkRecorderConfig(msg: PiBridgeCommand | JsonRecord = {}): NetworkRecorderConfig {
   msg = msg || {};
-  const pickArr = (...names) => {
+  const pickArr = (...names: string[]): NetworkStringList => {
     for (const name of names) if (Array.isArray(msg[name])) return msg[name];
     return [];
   };
@@ -156,7 +179,7 @@ function normalizeNetworkRecorderConfig(msg) {
   const bodyTimeoutMs = numberInRange(msg.bodyTimeoutMs ?? msg.body_timeout_ms, 3000, 100, 30000);
   const rawResourceTypes = pickArr('resourceTypes', 'resource_types');
   const resourceTypes = rawResourceTypes.length ? rawResourceTypes : (captureBodies ? PI_BROWSER_NETWORK_DEFAULT_BODY_RESOURCE_TYPES : []);
-  const config = {
+  const config: NetworkRecorderConfig = {
     sessionId, maxEntries, maxAgeMs, maxBodyBytes, maxPostDataBytes, maxFrames, maxFrameBytes, maxSseEvents,
     captureBodies, captureRequestPostData, includeWebSocketFrames, includeSse, bodyTimeoutMs,
     bodyMimeAllow: normalizeNetworkBodyMimeAllow(msg),
@@ -168,15 +191,22 @@ function normalizeNetworkRecorderConfig(msg) {
     clearOnStart: msg.clear !== false,
     storeHeaders: msg.storeHeaders !== false && msg.store_headers !== false,
     storePostData: captureRequestPostData,
-    createdFrom: redactSensitive({ cmd: msg.cmd, waitId: msg.waitId || msg.wait_id })
+    createdFrom: redactSensitive({ cmd: msg.cmd, waitId: msg.waitId || msg.wait_id }),
+    filter: () => ({ match:true, reason:'uninitialized' })
   };
   config.filter = makeNetworkRecorderFilter(config);
   return config;
 }
-function makeNetworkCdpRecord(tabId, sessionId) {
-  return { tabId:Number(tabId), waitId:'network_recorder_' + String(sessionId || 'default'), wait_id:'network_recorder_' + String(sessionId || 'default'), kind:'network_recorder', key:networkRecorderKey(tabId, sessionId), timers:[], listeners:[], cdpSubscriptions:[], cdpDomains:new Set(), cdpAttached:false, diagnostics:[], cdpEvents:[], createdAt:Date.now(), status:'active', abortController:new AbortController() };
+function makeNetworkCdpRecord(tabId: unknown, sessionId: unknown): PiBrowserWaitRecord {
+  const waitId = 'network_recorder_' + String(sessionId || 'default');
+  return {
+    tabId:Number(tabId), waitId, wait_id:waitId, requestId:'', request_id:'', kind:'network_recorder',
+    key:networkRecorderKey(tabId, sessionId), criteria:{}, timers:[], listeners:[], cdpSubscriptions:[], cdpDomains:new Set<string>(),
+    cdpAttached:false, diagnostics:[], cdpEvents:[], createdAt:Date.now(), status:'active', abortController:new AbortController(),
+    lastEventAt:null, lastError:null
+  };
 }
-function createNetworkRecorder(tabId, config) {
+function createNetworkRecorder(tabId: unknown, config: NetworkRecorderConfig): NetworkRecorder {
   const sessionId = config.sessionId || 'default';
   const recorder = {
     tabId:Number(tabId), sessionId, key:networkRecorderKey(tabId, sessionId), recorderId:'netrec_' + Number(tabId) + '_' + (++piBrowserNetworkRecorderSeq),
@@ -187,22 +217,22 @@ function createNetworkRecorder(tabId, config) {
   };
   return recorder;
 }
-function recorderPublicConfig(config) {
+function recorderPublicConfig(config: NetworkRecorderConfig | null | undefined): unknown {
   const { filter, ...rest } = config || {};
   return redactSensitive(rest);
 }
-function getNetworkRecorder(tabId, sessionId) { return piBrowserNetworkRecorders.get(networkRecorderKey(tabId, sessionId || 'default')) || null; }
-function getActiveNetworkRecorder(tabId, msg) {
+function getNetworkRecorder(tabId: unknown, sessionId: unknown): NetworkRecorder | null { return piBrowserNetworkRecorders.get(networkRecorderKey(tabId, sessionId || 'default')) || null; }
+function getActiveNetworkRecorder(tabId: unknown, msg: PiBridgeCommand | JsonRecord | null | undefined): NetworkRecorder | null {
   const sessionId = defaultNetworkSessionId(msg);
   return getNetworkRecorder(tabId, sessionId);
 }
-function rememberNetworkError(recorder, where, error, extra) {
+function rememberNetworkError(recorder: NetworkRecorder | null | undefined, where: unknown, error: unknown, extra: JsonRecord | null = null): void {
   if (!recorder) return;
-  const item = { t:Date.now(), where, error:String(error && (error.message || error) || 'error'), ...(extra || {}) };
+  const item = { t:Date.now(), where, error:errorText(error || 'error'), ...(extra || {}) };
   recorder.lastErrors.push(redactSensitive(item));
   if (recorder.lastErrors.length > 50) recorder.lastErrors.splice(0, recorder.lastErrors.length - 50);
 }
-function networkRecorderSummary(recorder) {
+function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): JsonRecord | null {
   if (!recorder) return null;
   const activeWaits = Array.from(recorder.waits.values()).map(w => ({ waitId:w.waitId, condition:w.condition, age_ms:Date.now()-w.createdAt, criteria:redactSensitive(w.criteria || {}), lastMatchSeq:w.lastMatchSeq || 0 }));
   return {
@@ -215,12 +245,12 @@ function networkRecorderSummary(recorder) {
     config:recorderPublicConfig(recorder.config), diagnostics:recorder.diagnostics.slice(-20)
   };
 }
-function ensureNetworkEntry(recorder, requestId) {
-  requestId = String(requestId || makeWaitId(recorder.tabId, 'network_request'));
-  let rec = recorder.byRequestId.get(requestId);
+function ensureNetworkEntry(recorder: NetworkRecorder, requestId: unknown): NetworkRecord {
+  const normalizedRequestId = String(requestId || makeWaitId(recorder.tabId, 'network_request'));
+  let rec = recorder.byRequestId.get(normalizedRequestId);
   if (!rec) {
-    rec = { id:requestId, requestId, tabId:recorder.tabId, sessionId:recorder.sessionId, seq:++piBrowserNetworkEntrySeq, createdAt:Date.now(), updatedAt:Date.now(), wallTime:null, timestamp:null, type:'', resourceType:'', phase:'created', request:{ headers:{} }, response:null, redirects:[], data:{ encodedDataLength:0, dataLength:0, chunks:0 }, timing:{}, fromCache:false, failed:null, errorText:null, canceled:false, blockedReason:null, initiator:null, wsFrames:[], sseEvents:[], bodyRef:null, bodyPreview:null, bodyTruncated:false, bodyError:null, bodyPending:false, bodyAvailability:'not_requested', bodyUnavailableReason:'pending_response' };
-    recorder.byRequestId.set(requestId, rec);
+    rec = { id:normalizedRequestId, requestId:normalizedRequestId, tabId:recorder.tabId, sessionId:recorder.sessionId, seq:++piBrowserNetworkEntrySeq, createdAt:Date.now(), updatedAt:Date.now(), wallTime:null, timestamp:null, type:'', resourceType:'', phase:'created', request:{ headers:{} }, response:null, redirects:[], data:{ encodedDataLength:0, dataLength:0, chunks:0 }, timing:{}, fromCache:false, failed:null, errorText:null, canceled:false, blockedReason:null, initiator:null, wsFrames:[], sseEvents:[], bodyRef:null, bodyPreview:null, bodyTruncated:false, bodyError:null, bodyPending:false, bodyAvailability:'not_requested', bodyUnavailableReason:'pending_response' };
+    recorder.byRequestId.set(normalizedRequestId, rec);
     recorder.entries.push(rec);
     pruneNetworkRecorder(recorder);
   }
@@ -228,13 +258,13 @@ function ensureNetworkEntry(recorder, requestId) {
   recorder.lastEventAt = rec.updatedAt;
   return rec;
 }
-function deleteNetworkBodyForRecord(recorder, rec) {
+function deleteNetworkBodyForRecord(recorder: NetworkRecorder, rec: NetworkRecord | null | undefined): void {
   if (!rec) return;
   if (rec.bodyRef) recorder.bodyStore.delete(rec.bodyRef);
   recorder.bodyByRequestId.delete(rec.requestId);
   rec.bodyRef = null;
 }
-function pruneNetworkRecorder(recorder) {
+function pruneNetworkRecorder(recorder: NetworkRecorder | null | undefined): void {
   if (!recorder) return;
   const now = Date.now();
   const maxAgeMs = Number(recorder.config.maxAgeMs || 0);
@@ -251,7 +281,7 @@ function pruneNetworkRecorder(recorder) {
   }
   if (removed) recorder.overflowCount += removed;
 }
-function networkRecordMatchesList(rec, filters) {
+function networkRecordMatchesList(rec: NetworkRecord, filters: JsonRecord | null | undefined): boolean {
   filters = filters || {};
   if (filters.sinceSeq !== undefined && Number(rec.seq) <= Number(filters.sinceSeq)) return false;
   if (filters.requestId && String(rec.requestId) !== String(filters.requestId)) return false;
@@ -264,41 +294,43 @@ function networkRecordMatchesList(rec, filters) {
   const mime = filters.mime || filters.mimeType || filters.mime_type;
   if (mime && !matchNetworkPattern(String(rec.response?.mimeType || getHeaderValue(rec.response?.headers, 'content-type') || ''), String(mime))) return false;
   if (filters.status !== undefined && Number(rec.response?.status) !== Number(filters.status)) return false;
-  if (Array.isArray(filters.includeUrls) && filters.includeUrls.length && !filters.includeUrls.some(p => matchNetworkPattern(rec.request?.url || '', p))) return false;
-  if (Array.isArray(filters.excludeUrls) && filters.excludeUrls.length && filters.excludeUrls.some(p => matchNetworkPattern(rec.request?.url || '', p))) return false;
+  if (Array.isArray(filters.includeUrls) && filters.includeUrls.length && !filters.includeUrls.some(p => matchNetworkPattern(rec.request?.url || '', String(p)))) return false;
+  if (Array.isArray(filters.excludeUrls) && filters.excludeUrls.length && filters.excludeUrls.some(p => matchNetworkPattern(rec.request?.url || '', String(p)))) return false;
   return true;
 }
-function networkCriterionMatchesText(value, criterion) {
+function networkCriterionMatchesText(value: unknown, criterion: unknown): boolean {
   if (criterion === undefined || criterion === null || criterion === '') return true;
   return matchNetworkPattern(String(value == null ? '' : value), String(criterion));
 }
-function networkWsFrameMatches(frame, criterion) {
+function networkWsFrameMatches(frame: NetworkFrameRecord, criterion: unknown): boolean {
   if (criterion === undefined || criterion === null || criterion === '') return true;
   if (criterion && typeof criterion === 'object') {
-    if (criterion.method && String(frame.method || '') !== String(criterion.method)) return false;
-    if (criterion.opcode !== undefined && Number(frame.opcode) !== Number(criterion.opcode)) return false;
-    if (criterion.payloadContains !== undefined && !networkCriterionMatchesText(frame.payloadData, criterion.payloadContains)) return false;
-    if (criterion.payload_contains !== undefined && !networkCriterionMatchesText(frame.payloadData, criterion.payload_contains)) return false;
+    const criterionRecord = criterion as JsonRecord;
+    if (criterionRecord.method && String(frame.method || '') !== String(criterionRecord.method)) return false;
+    if (criterionRecord.opcode !== undefined && Number(frame.opcode) !== Number(criterionRecord.opcode)) return false;
+    if (criterionRecord.payloadContains !== undefined && !networkCriterionMatchesText(frame.payloadData, criterionRecord.payloadContains)) return false;
+    if (criterionRecord.payload_contains !== undefined && !networkCriterionMatchesText(frame.payloadData, criterionRecord.payload_contains)) return false;
     return true;
   }
   return networkCriterionMatchesText(frame.payloadData, criterion);
 }
-function networkSseEventMatches(event, criterion) {
+function networkSseEventMatches(event: NetworkFrameRecord, criterion: unknown): boolean {
   if (criterion === undefined || criterion === null || criterion === '') return true;
   if (criterion && typeof criterion === 'object') {
-    if (criterion.eventName !== undefined && !networkCriterionMatchesText(event.eventName, criterion.eventName)) return false;
-    if (criterion.event_name !== undefined && !networkCriterionMatchesText(event.eventName, criterion.event_name)) return false;
-    if (criterion.eventId !== undefined && !networkCriterionMatchesText(event.eventId, criterion.eventId)) return false;
-    if (criterion.event_id !== undefined && !networkCriterionMatchesText(event.eventId, criterion.event_id)) return false;
-    if (criterion.dataContains !== undefined && !networkCriterionMatchesText(event.data, criterion.dataContains)) return false;
-    if (criterion.data_contains !== undefined && !networkCriterionMatchesText(event.data, criterion.data_contains)) return false;
+    const criterionRecord = criterion as JsonRecord;
+    if (criterionRecord.eventName !== undefined && !networkCriterionMatchesText(event.eventName, criterionRecord.eventName)) return false;
+    if (criterionRecord.event_name !== undefined && !networkCriterionMatchesText(event.eventName, criterionRecord.event_name)) return false;
+    if (criterionRecord.eventId !== undefined && !networkCriterionMatchesText(event.eventId, criterionRecord.eventId)) return false;
+    if (criterionRecord.event_id !== undefined && !networkCriterionMatchesText(event.eventId, criterionRecord.event_id)) return false;
+    if (criterionRecord.dataContains !== undefined && !networkCriterionMatchesText(event.data, criterionRecord.dataContains)) return false;
+    if (criterionRecord.data_contains !== undefined && !networkCriterionMatchesText(event.data, criterionRecord.data_contains)) return false;
     return true;
   }
   return networkCriterionMatchesText([event.eventName, event.eventId, event.data].join('\n'), criterion);
 }
-function networkRecordSummary(rec, options) {
+function networkRecordSummary(rec: NetworkRecord, options: { includeDetails?: boolean; includeBody?: boolean } = {}): JsonRecord {
   options = options || {};
-  const out = {
+  const out: JsonRecord = {
     id:rec.id, requestId:rec.requestId, seq:rec.seq, tabId:rec.tabId, sessionId:rec.sessionId, url:rec.request?.url || '', method:rec.request?.method || '', type:rec.type || rec.resourceType || '', phase:rec.phase,
     status:rec.response?.status, statusText:rec.response?.statusText, mimeType:rec.response?.mimeType, protocol:rec.response?.protocol,
     fromCache:!!rec.fromCache, fromServiceWorker:!!rec.response?.fromServiceWorker, failed:!!rec.failed, errorText:rec.errorText || null, canceled:!!rec.canceled, blockedReason:rec.blockedReason || null,
@@ -309,15 +341,15 @@ function networkRecordSummary(rec, options) {
     redirects:(rec.redirects || []).length, wsFrameCount:(rec.wsFrames || []).length, sseEventCount:(rec.sseEvents || []).length
   };
   if (options.includeDetails) Object.assign(out, networkRecordClone(rec, { includeBody: options.includeBody }));
-  return redactSensitive(out);
+  return asRecord(redactSensitive(out));
 }
-function networkRecordClone(rec, options) {
+function networkRecordClone(rec: NetworkRecord, options: { includeBody?: boolean } = {}): JsonRecord {
   options = options || {};
-  const clone = JSON.parse(JSON.stringify(rec || {}));
+  const clone = JSON.parse(JSON.stringify(rec || {})) as JsonRecord;
   if (!options.includeBody) delete clone.body;
-  return redactSensitive(clone);
+  return asRecord(redactSensitive(clone));
 }
-function storeNetworkBody(recorder, rec, bodyResult) {
+function storeNetworkBody(recorder: NetworkRecorder, rec: NetworkRecord, bodyResult: JsonRecord | null | undefined): void {
   const body = String(bodyResult?.body ?? '');
   const base64Encoded = !!bodyResult?.base64Encoded;
   const rawBytes = base64Encoded ? Math.ceil(body.length * 3 / 4) : estimateStringBytes(body);
@@ -325,7 +357,7 @@ function storeNetworkBody(recorder, rec, bodyResult) {
     ? truncateBase64Body(body, recorder.config.maxBodyBytes)
     : truncateStringByBytes(body, recorder.config.maxBodyBytes);
   const bodyRef = rec.bodyRef || ('body_' + recorder.recorderId + '_' + (++piBrowserNetworkBodySeq));
-  const stored = { bodyRef, requestId:rec.requestId, tabId:rec.tabId, sessionId:rec.sessionId, base64Encoded, body:trunc.value, bodyTruncated:!!trunc.truncated, originalLength:trunc.originalLength, bytes:trunc.bytes, mimeType:rec.response?.mimeType || '', status:rec.response?.status, url:rec.request?.url || '', createdAt:Date.now() };
+  const stored: NetworkBodyStoreEntry = { bodyRef, requestId:rec.requestId, tabId:rec.tabId, sessionId:rec.sessionId, base64Encoded, body:trunc.value, bodyTruncated:!!trunc.truncated, originalLength:trunc.originalLength, bytes:trunc.bytes, mimeType:rec.response?.mimeType || '', status:rec.response?.status, url:rec.request?.url || '', createdAt:Date.now() };
   stored.bodyAvailability = trunc.truncated ? 'too_large' : 'captured';
   stored.bodyUnavailableReason = trunc.truncated ? 'max_body_bytes_exceeded' : null;
   recorder.bodyStore.set(bodyRef, stored);
@@ -340,7 +372,9 @@ function storeNetworkBody(recorder, rec, bodyResult) {
   rec.body = undefined;
   if (trunc.truncated) recorder.bodyOverflowCount += 1;
   recorder.counters.bodyCaptured += 1;
-  wakeNetworkWaits(recorder, 'body', rec);
+  notifyNetworkWaits(recorder, 'body', rec);
 }
+export type { NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderWait } from "./types";
+export { PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES, PI_BROWSER_NETWORK_DEFAULT_MAX_AGE_MS, PI_BROWSER_NETWORK_DEFAULT_MAX_BODY_BYTES, PI_BROWSER_NETWORK_MAX_WS_FRAMES, PI_BROWSER_NETWORK_MAX_SSE_EVENTS, PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW, PI_BROWSER_NETWORK_DEFAULT_BODY_RESOURCE_TYPES, piBrowserNetworkRecorders, piBrowserNetworkRecorderSeq, piBrowserNetworkEntrySeq, piBrowserNetworkBodySeq, piBrowserNetworkWaitNotifier, setNetworkWaitNotifier, notifyNetworkWaits, networkRecorderKey, defaultNetworkSessionId, numberInRange, getHeaderValue, headersObjectToArray, normalizeNetworkStringList, estimateStringBytes, truncateStringByBytes, truncateBase64Body, makeNetworkRecorderFilter, normalizeNetworkBodyMimeAllow, networkResponseMimeType, isLikelyBinaryNetworkMime, networkMimeMatchesToken, networkBodyMimeDecision, classifyNetworkBodyError, setNetworkBodyAvailability, normalizeNetworkRecorderConfig, makeNetworkCdpRecord, createNetworkRecorder, recorderPublicConfig, getNetworkRecorder, getActiveNetworkRecorder, rememberNetworkError, networkRecorderSummary, ensureNetworkEntry, deleteNetworkBodyForRecord, pruneNetworkRecorder, networkRecordMatchesList, networkCriterionMatchesText, networkWsFrameMatches, networkSseEventMatches, networkRecordSummary, networkRecordClone, storeNetworkBody };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_network_model = { name: "network_model", symbols: { PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES, PI_BROWSER_NETWORK_DEFAULT_MAX_AGE_MS, PI_BROWSER_NETWORK_DEFAULT_MAX_BODY_BYTES, PI_BROWSER_NETWORK_MAX_WS_FRAMES, PI_BROWSER_NETWORK_MAX_SSE_EVENTS, PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW, PI_BROWSER_NETWORK_DEFAULT_BODY_RESOURCE_TYPES, piBrowserNetworkRecorders, piBrowserNetworkRecorderSeq, piBrowserNetworkEntrySeq, piBrowserNetworkBodySeq, networkRecorderKey, defaultNetworkSessionId, numberInRange, getHeaderValue, headersObjectToArray, normalizeNetworkStringList, estimateStringBytes, truncateStringByBytes, truncateBase64Body, makeNetworkRecorderFilter, normalizeNetworkBodyMimeAllow, networkResponseMimeType, isLikelyBinaryNetworkMime, networkMimeMatchesToken, networkBodyMimeDecision, classifyNetworkBodyError, setNetworkBodyAvailability, normalizeNetworkRecorderConfig, makeNetworkCdpRecord, createNetworkRecorder, recorderPublicConfig, getNetworkRecorder, getActiveNetworkRecorder, rememberNetworkError, networkRecorderSummary, ensureNetworkEntry, deleteNetworkBodyForRecord, pruneNetworkRecorder, networkRecordMatchesList, networkCriterionMatchesText, networkWsFrameMatches, networkSseEventMatches, networkRecordSummary, networkRecordClone, storeNetworkBody } };
+export const __piBridgeModule_network_model = { name: "network_model", symbols: { PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES, PI_BROWSER_NETWORK_DEFAULT_MAX_AGE_MS, PI_BROWSER_NETWORK_DEFAULT_MAX_BODY_BYTES, PI_BROWSER_NETWORK_MAX_WS_FRAMES, PI_BROWSER_NETWORK_MAX_SSE_EVENTS, PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW, PI_BROWSER_NETWORK_DEFAULT_BODY_RESOURCE_TYPES, piBrowserNetworkRecorders, piBrowserNetworkRecorderSeq, piBrowserNetworkEntrySeq, piBrowserNetworkBodySeq, piBrowserNetworkWaitNotifier, setNetworkWaitNotifier, notifyNetworkWaits, networkRecorderKey, defaultNetworkSessionId, numberInRange, getHeaderValue, headersObjectToArray, normalizeNetworkStringList, estimateStringBytes, truncateStringByBytes, truncateBase64Body, makeNetworkRecorderFilter, normalizeNetworkBodyMimeAllow, networkResponseMimeType, isLikelyBinaryNetworkMime, networkMimeMatchesToken, networkBodyMimeDecision, classifyNetworkBodyError, setNetworkBodyAvailability, normalizeNetworkRecorderConfig, makeNetworkCdpRecord, createNetworkRecorder, recorderPublicConfig, getNetworkRecorder, getActiveNetworkRecorder, rememberNetworkError, networkRecorderSummary, ensureNetworkEntry, deleteNetworkBodyForRecord, pruneNetworkRecorder, networkRecordMatchesList, networkCriterionMatchesText, networkWsFrameMatches, networkSseEventMatches, networkRecordSummary, networkRecordClone, storeNetworkBody } };

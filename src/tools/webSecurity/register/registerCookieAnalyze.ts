@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeCookieAnalyzeData } from "../../summaries/index";
 import { runCookieAnalyze } from "../../webSecurityCore";
-import { DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, OUTPUT_PATH_DESCRIPTION, TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, optionalTargetTabId, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -12,11 +12,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 		promptSnippet: "Analyze cookies/JWT/session values, verify signing or decryption candidates, generate claim-mutation tokens, validate claim replays, and store structured evidence.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, bounded claim replay validation, and outputPath artifacts for follow-up evidence."],
 		parameters: Type.Object({
-			tabId: optionalTargetTabId("Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed."),
-			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-			outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-			timeoutMs: Type.Optional(Type.Number({ description: "Timeout in milliseconds for browser-session cookie collection." })),
-			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
+			...sharedWebSecurityBrowserSessionParams("Timeout in milliseconds for browser-session cookie collection."),
 			url: Type.Optional(Type.String({ description: "URL used when bindBrowserSession collects browser cookies." })),
 			cookie: Type.Optional(Type.String({ description: "Single Cookie header, Set-Cookie line, or name=value string." })),
 			cookies: Type.Optional(Type.Any({ description: "Cookie header string, array of strings, or browser-cookie-like objects with name/value." })),

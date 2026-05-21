@@ -1,6 +1,7 @@
 import { stableJson } from "../utils/json";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult";
+import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
 import { saveTextArtifact } from "./artifacts";
 import { isRecord } from "./summaries/common";
 import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
@@ -101,7 +102,7 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): DistilledEnvelope {
 	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
-	return { tool: options.toolName, command: options.command, detailLevel: normalizeDetailLevel(options.detailLevel), summary: fitSummaryBudget(summary, budget), saved };
+	return { tool: options.toolName, command: options.command, detailLevel: normalizeDetailLevel(options.detailLevel), summary: fitSummaryBudget(redactSensitiveValue(summary) as DistilledSummary, budget), saved };
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {
@@ -111,8 +112,9 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	const raw = stableJson(rawValue);
 	const summary = options.distill ? options.distill(value) : distillValue(options.toolName, options.command, value);
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);
+	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
-	if (options.outputPath || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
 		let envelope = responseEnvelope(options, summary, saved);
 		if (!saved && stableJson(envelope).length > maxChars) {
@@ -121,9 +123,9 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 		}
 		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
-	if (level === "full" && raw.length > maxChars) {
+	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact" }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return jsonResult(value, { ...(options.details || {}), saved, summary }, maxChars);
 }
@@ -135,8 +137,9 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	const rawValue = options.artifactValue ?? text;
 	const raw = typeof rawValue === "string" ? rawValue : stableJson(rawValue);
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);
+	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
-	if (options.outputPath || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
 		let envelope = responseEnvelope(options, summary, saved);
 		if (!saved && stableJson(envelope).length > maxChars) {
@@ -145,9 +148,9 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 		}
 		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
-	if (level === "full" && text.length > maxChars) {
+	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact" }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return textResult(text, { ...(options.details || {}), saved, summary }, maxChars);
 }

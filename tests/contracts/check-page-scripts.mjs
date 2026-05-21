@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
+import { transformSync } from "esbuild";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { buildPickCleanupScript, buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
@@ -17,6 +18,7 @@ const stripBridgeSource = (text) => text
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 const readPageSource = (name) => stripBridgeSource(read(`bridge_src/page_scripts/${name}.ts`));
+const transformBridgeSourceForVm = (text, sourcefile) => transformSync(text, { loader: "ts", target: "chrome120", sourcefile }).code;
 
 const hookDispatcherPageScript = readPageSource("hook_dispatcher");
 const hookDispatcherBundleScript = read("bridge/pi_browser_bridge/dist/hook_dispatcher.js");
@@ -31,10 +33,10 @@ for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 assert(hookRuntimeScript.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hook_dispatcher.js';"), "page-scripts hook boundary: generated dispatcher filename must stay stable");
 assert(hookServiceWorkerScript.includes("files: [PI_BROWSER_HOOK_DISPATCHER_FILE]"), "page-scripts hook boundary: scripting injection must use the stable dispatcher file");
 assert(hookServiceWorkerScript.includes("chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE)"), "page-scripts hook boundary: CDP fallback must fetch the stable dispatcher file");
-assert(hookDispatcherPageScript.includes(";(function PiBrowserHookDispatcher()") && hookDispatcherPageScript.includes("window.__PI_BROWSER_HOOKS__ = {"), "page-scripts hook boundary: dispatcher must stay a self-contained IIFE with one public page global");
+assert(hookDispatcherPageScript.includes(";(function PiBrowserHookDispatcher()") && hookDispatcherPageScript.includes("__PI_BROWSER_HOOKS__ = {"), "page-scripts hook boundary: dispatcher must stay a self-contained IIFE with one public page global");
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not require page-side imports before TODO 190");
 assert(!/chrome\./.test(hookDispatcherPageScript), "page-scripts hook boundary: dispatcher must not call background-only Chrome APIs from MAIN world");
-assert(hookDispatcherBundleScript.includes("PiBrowserHookDispatcher") && hookDispatcherBundleScript.includes("window.__PI_BROWSER_HOOKS__"), "page-scripts dist hook bundle: dispatcher public page global must survive bundling");
+assert(hookDispatcherBundleScript.includes("PiBrowserHookDispatcher") && hookDispatcherBundleScript.includes("__PI_BROWSER_HOOKS__"), "page-scripts dist hook bundle: dispatcher public page global must survive bundling");
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(|\bchrome\./.test(hookDispatcherBundleScript), "page-scripts dist hook bundle: must remain a self-contained MAIN-world file without background APIs");
 assert(contentBundleScript.includes("__pi_browser_bridge_request__") && contentBundleScript.includes("bridge_wake") && contentBundleScript.includes("MutationObserver"), "page-scripts dist content bundle: must include content bridge behavior and explicit TID");
 assert(disableDialogsBundleScript.includes("window.prompt") && disableDialogsBundleScript.includes("promptAcceptedValue") && !/chrome\./.test(disableDialogsBundleScript), "page-scripts dist disable-dialogs bundle: must preserve dialog overrides without Chrome APIs");
@@ -446,17 +448,23 @@ assert(waitSelector.includes("const visible = rectVisible") && waitSelector.incl
 assert(!waitSelector.includes("text:(el.innerText||el.textContent||'').slice"), "page-scripts wait.selector: must not return raw innerText snapshots");
 assert(waitNavigation.includes("chrome.webNavigation.onCommitted") && waitNavigation.includes("chrome.tabs.onUpdated.addListener(onTabsUpdated)") && waitNavigation.includes("Page.frameNavigated") && waitNavigation.includes("Page.navigatedWithinDocument"), "wait.navigation must register webNavigation/tabs/CDP success listeners instead of timeout-only waiting");
 assert(waitNavigation.includes("if (!value) return !targetUrl && !urlContains") && !waitNavigation.includes("target.startsWith(value)"), "wait.navigation must not match targetUrl against an empty or partial current URL before navigation starts");
-assert(waitNavigation.includes("const checkCurrent = async (source)") && waitNavigation.includes("wait.navigation.currentUrl") && waitNavigation.includes("setInterval(() => { void checkCurrent('poll'); }"), "wait.navigation must poll current URL/readyState as a deterministic fallback for missed navigation events");
+assert(/const\s+checkCurrent\s*=\s*async\s*\(\s*source(?:\s*:\s*string)?\s*\)/.test(waitNavigation) && waitNavigation.includes("wait.navigation.currentUrl") && waitNavigation.includes("setInterval(() => { void checkCurrent('poll'); }"), "wait.navigation must poll current URL/readyState as a deterministic fallback for missed navigation events");
 assert(waitNavigation.includes("chrome.webNavigation.onErrorOccurred") && waitNavigation.includes("waitForNavigation failed"), "wait.navigation must handle navigation failure events");
 assert(wait.includes("target.addEventListener(eventType, handler, true)") && wait.includes("removeEventListener(rec.eventType, rec.handler"), "hook add/removeEventListener must store handlers and remove the real page listener");
-assert(wait.includes("const entries = Array.isArray(result?.result?.value) ? result.result.value : []") && wait.includes("data: { entries, entryType, nameContains, count"), "hook.getPerformanceEntries must unwrap Runtime.evaluate result.value into entries");
+assert(
+	(
+		wait.includes("const entries = Array.isArray(result?.result?.value) ? result.result.value : []")
+		|| (/const\s+value\s*=\s*waitRecord\s*\(\s*result\.result\s*\)\.value/.test(wait) && /const\s+entries\s*=\s*Array\.isArray\s*\(\s*value\s*\)\s*\?\s*value\s*:\s*\[\]/.test(wait))
+	) && wait.includes("data: { entries, entryType, nameContains, count"),
+	"hook.getPerformanceEntries must unwrap Runtime.evaluate result.value into entries",
+);
 
 const exec = readServiceWorkerSource("exec");
 assert(exec.includes("MAX_NODES") && exec.includes("MAX_CHARS") && exec.includes("MAX_DEPTH") && exec.includes("nodesUsed") && exec.includes("charsUsed"), "page-scripts exec: serializer must have traversal budgets");
 assert(exec.includes("LARGE_TEXT_KEYS") && exec.includes("['content', 'markdown', 'html']") && exec.includes("trim(child, MAX_CHARS)"), "page-scripts exec: serializer must not truncate scan/content/html payload fields at nested string defaults");
 assert(exec.includes("value instanceof Map") && exec.includes("value instanceof Set") && exec.includes("[Circular]"), "page-scripts exec: serializer must handle rich JS values");
 const execSandbox = {};
-vm.runInNewContext(exec, execSandbox, { filename: "exec.js" });
+vm.runInNewContext(transformBridgeSourceForVm(exec, "bridge_src/service_worker/exec.ts"), execSandbox, { filename: "exec.js" });
 const generatedExec = execSandbox.buildExecScript("return 'status smoke class test'", "return {ok:false}");
 assert(generatedExec.includes("return charge(String(value || ''), limit);") && !generatedExec.includes("replace(/s+/g, ' ')") && !generatedExec.includes("replace(/\\s+/g, ' ')"), "page-scripts exec: generated serializer must preserve returned string whitespace and not strip lowercase s");
 const largeTextExec = execSandbox.buildExecScript("return { content: 'x'.repeat(5000), nested: { text: 'y'.repeat(2000) } }", "return {ok:false}");

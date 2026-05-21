@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeCallbackOastData } from "../../summaries/index";
 import { runCallbackOast } from "../../webSecurityCore";
-import { DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, OUTPUT_PATH_DESCRIPTION, executeWebSecurityToolShell, normalizeWebSecurityToolParams, type CallbackOastToolParams } from "./shared";
+import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, type CallbackOastToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -47,9 +47,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum request body bytes stored per callback event; default 64000." })),
 			afterSeq: Type.Optional(Type.Number({ description: "collect only: return callback events with seq greater than this value." })),
 			timeoutMs: Type.Optional(Type.Number({ description: "trigger only: wait timeout in milliseconds for the triggered callback event to be persisted." })),
-			detailLevel: Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION })),
-			outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION })),
-			maxChars: Type.Optional(Type.Number({ description: MAX_CHARS_DESCRIPTION })),
+			...sharedWebSecurityResultParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<CallbackOastToolParams>(params), ctx, {

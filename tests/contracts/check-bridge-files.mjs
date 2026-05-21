@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const bridge = path.join(root, "bridge", "pi_browser_bridge");
@@ -24,6 +25,9 @@ function stripBridgeSource(text) {
 		.replace(/\s+as\s+any/g, "")
 		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
+}
+function executableBridgeSource(text, sourcefile) {
+	return transformSync(text, { loader: "ts", target: "chrome120", sourcefile }).code;
 }
 function readServiceWorkerSource(file) {
 	return stripBridgeSource(read(`bridge_src/service_worker/${file.replace(/\.js$/, "")}.ts`));
@@ -53,7 +57,19 @@ assert(String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:build")
 assert(pkg.devDependencies?.typescript, "package must depend on TypeScript for bridge checkJs typecheck");
 const bridgeSrcTsconfig = JSON.parse(read("tsconfig.bridge-src.json"));
 assert(bridgeSrcTsconfig.include?.includes("bridge_src/**/*.ts"), "bridge source tsconfig must cover bridge_src TypeScript modules");
+assert(bridgeSrcTsconfig.compilerOptions?.strict === true && bridgeSrcTsconfig.compilerOptions?.noImplicitAny === true, "TODO 200 bridge tsconfig must enable strict and noImplicitAny");
 assert(!existsSync(path.join(bridge, "bridge-globals.d.ts")), "legacy bridge ambient globals must be removed after manifest switches to dist");
+for (const sourcePath of [
+	...serviceWorkerBridgeFiles.map((file) => `bridge_src/service_worker/${file.replace(/\.js$/, "")}.ts`),
+	...['content', 'hook_dispatcher', 'disable_dialogs'].map((file) => `bridge_src/page_scripts/${file}.ts`),
+	'tsconfig.bridge-src.json',
+]) {
+	const raw = read(sourcePath);
+	assert(!raw.includes('@ts-nocheck'), `TODO 200 source must not use @ts-nocheck: ${sourcePath}`);
+	assert(!raw.includes('Record<string, any>'), `TODO 200 source must not use broad Record<string, any>: ${sourcePath}`);
+	assert(!/\bas\s+any\b/.test(raw), `TODO 200 source must not use broad as any casts: ${sourcePath}`);
+}
+const runtimeEnvSource = read('bridge_src/service_worker/runtimeEnv.ts');
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
@@ -83,9 +99,13 @@ for (const foundation of foundationModuleNames) {
 	assert(!raw.includes("@ts-nocheck"), `TODO 197 foundation source must not use @ts-nocheck: ${foundation}`);
 	assert(raw.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation source must export its module symbol: ${foundation}`);
 }
-assert(read("bridge_src/service_worker/runtime.ts").includes("legacyCommandSurface") && read("bridge_src/service_worker/runtime.ts").includes("requireLegacyCommand('handlePiBrowserHookCommand')"), "runtime must route remaining legacy command tail through explicit compatibility surface until TODO 198");
+const runtimeSourceRaw = read("bridge_src/service_worker/runtime.ts");
+assert(runtimeSourceRaw.includes("from \"./network\"") && runtimeSourceRaw.includes("handleNetworkRecorderCommand") && runtimeSourceRaw.includes("from \"./hook\"") && runtimeSourceRaw.includes("handlePiBrowserHookCommand"), "runtime must route TODO 198 command handlers through ESM imports");
+for (const legacyHandler of ["handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "handlePiBrowserEvidenceCommand", "handlePiBrowserFrameCommand", "handlePiBrowserTransferCommand", "handlePiBrowserHtml", "captureScreenshotWithRetry"]) {
+	assert(!runtimeSourceRaw.includes(`requireLegacyCommand('${legacyHandler}')`), `runtime must not route command handler through legacy global: ${legacyHandler}`);
+}
 assert(router.includes("@param {PiBridgeCommand}") && router.includes("@param {PiBridgeWebSocketLike}"), "router must document bridge envelope/socket JSDoc types");
-assert(router.includes("@param {PiBridgeWsEnvelope}") && runtimeBridge.includes("PiBridgeGlobalThis"), "bridge runtime/router must consume tightened ambient boundary types");
+assert(router.includes("@param {PiBridgeWsEnvelope}") && runtimeEnvSource.includes("serviceWorkerGlobal") && runtimeEnvSource.includes("ChromeApi"), "bridge runtime/router must consume tightened ambient boundary types");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
 for (const file of serviceWorkerBridgeFiles) assert(background.includes(file), `background.js must import ${file}`);
 assertBackgroundOrder(background, serviceWorkerBridgeFiles, "background service worker script order");
@@ -98,18 +118,20 @@ assert(runtimeBridge.includes("const PI_BROWSER_HOOK_DISPATCHER_FILE = 'dist/hoo
 assert(runtimeBridge.includes("window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch"), "runtime page calls must dispatch through the stable hook page global");
 assert(hookBridge.includes("chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: [PI_BROWSER_HOOK_DISPATCHER_FILE] })"), "hook.js must inject the dispatcher through the stable file constant");
 assert(hookBridge.includes("fetch(chrome.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))"), "hook.js CDP fallback must fetch the same dispatcher file constant");
-assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDispatcher.includes("window.__PI_BROWSER_HOOKS__ = {"), "hook_dispatcher.js must remain a self-contained page IIFE exposing window.__PI_BROWSER_HOOKS__");
-assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook_dispatcher.js must remain self-contained until TODO 192 removes old runtime files");
+assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDispatcher.includes("__PI_BROWSER_HOOKS__ = {"), "hook_dispatcher.ts must remain a self-contained page IIFE exposing window.__PI_BROWSER_HOOKS__");
+assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "hook_dispatcher.ts must remain self-contained page script source");
 assert(!/chrome\./.test(hookDispatcher), "hook_dispatcher.js must not call Chrome extension APIs from the page MAIN world");
 assert(waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait bridge runtime bundle must keep wait.js as the final facade/dispatch script");
 assert(waitBridgeRuntimeFiles[0] === "wait_cdp.js" && waitBridgeRuntimeFiles[1] === "wait_coordinator.js" && waitBridgeRuntimeFiles.at(-1) === "wait.js", "wait helper modules must load before final wait.js facade");
-assert(waitCdp.includes("const piBrowserCdpDomainRefs = new Map()") && waitCdp.includes("function acquirePiBrowserCdpDomain") && waitCdp.includes("function subscribePiBrowserCdp") && waitCdp.includes("function diagnosePiBrowserCdpCleanupHistory"), "wait_cdp.js must own CDP refcount/subscription/cleanup diagnostics helpers");
-assert(waitCoordinator.includes("class WaitCoordinator") && waitCoordinator.includes("const piBrowserWaits = new WaitCoordinator()") && waitCoordinator.includes("function cleanupPiBrowserOrphanWaits") && waitCoordinator.includes("function cleanupEventSubscriptionsForTab"), "wait_coordinator.js must own wait registry, orphan cleanup, and event subscription helpers");
+assert(/const\s+piBrowserCdpDomainRefs\s*=\s*new Map/.test(waitCdp) && waitCdp.includes("function acquirePiBrowserCdpDomain") && waitCdp.includes("function subscribePiBrowserCdp") && waitCdp.includes("function diagnosePiBrowserCdpCleanupHistory"), "wait_cdp.js must own CDP refcount/subscription/cleanup diagnostics helpers");
+assert(waitCoordinator.includes("class WaitCoordinator") && /const\s+piBrowserWaits\s*=\s*new WaitCoordinator/.test(waitCoordinator) && waitCoordinator.includes("function cleanupPiBrowserOrphanWaits") && waitCoordinator.includes("function cleanupEventSubscriptionsForTab"), "wait_coordinator.js must own wait registry, orphan cleanup, and event subscription helpers");
 assert(waitNavigation.includes("async function waitForNavigation") && waitNavigation.includes("async function waitForLoadState") && waitNavigation.includes("async function navigateAndWait"), "wait_navigation.js must own navigation and load-state helpers");
 assert(waitNetworkIdle.includes("function compileNetworkIdleFilter") && waitNetworkIdle.includes("async function waitForNetworkIdle"), "wait_network_idle.js must own network-idle helpers");
 assert(waitSelector.includes("PI_BROWSER_SELECTOR_PROBE_SOURCE") && waitSelector.includes("async function waitForSelector") && waitSelector.includes("function buildSelectorProbe"), "wait_selector.js must own selector probe helpers");
-for (const forbidden of ["const piBrowserCdpDomainRefs = new Map()", "const piBrowserCdpSubscriptions = new Map()", "let piBrowserCdpSubSeq = 0", "function acquirePiBrowserCdpDomain", "function subscribePiBrowserCdp", "function diagnosePiBrowserCdpDomainRefs"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb CDP helper/state: ${forbidden}`);
-for (const forbidden of ["class WaitCoordinator", "const piBrowserWaits = new WaitCoordinator()", "function cleanupPiBrowserOrphanWaits", "function registerWait", "function cleanupEventSubscriptionsForTab", "function cleanupTabWaits", "function cancelWaitsForTab"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb coordinator helper/state: ${forbidden}`);
+for (const forbidden of ["function acquirePiBrowserCdpDomain", "function subscribePiBrowserCdp", "function diagnosePiBrowserCdpDomainRefs"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb CDP helper/state: ${forbidden}`);
+assert(!/const\s+piBrowserCdpDomainRefs\s*=\s*new Map/.test(waitRuntime) && !/const\s+piBrowserCdpSubscriptions\s*=\s*new Map/.test(waitRuntime) && !/let\s+piBrowserCdpSubSeq\s*=\s*0/.test(waitRuntime), "wait.js must not re-absorb CDP maps/sequence state");
+for (const forbidden of ["class WaitCoordinator", "function cleanupPiBrowserOrphanWaits", "function registerWait", "function cleanupEventSubscriptionsForTab", "function cleanupTabWaits", "function cancelWaitsForTab"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb coordinator helper/state: ${forbidden}`);
+assert(!/const\s+piBrowserWaits\s*=\s*new WaitCoordinator/.test(waitRuntime), "wait.js must not re-absorb wait coordinator state");
 for (const forbidden of ["async function waitForNavigation", "async function waitForNetworkIdle", "async function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "function compileNetworkIdleFilter", "function buildSelectorProbe", "function loadStateSatisfied"]) assert(!waitRuntime.includes(forbidden), `wait.js must not re-absorb wait subsystem helper: ${forbidden}`);
 for (const forbidden of ["function waitForNavigation", "function waitForNetworkIdle", "function waitForSelector", "function navigatePiBrowser", "function loadStateSatisfied"]) assert(!waitCdp.includes(forbidden), `wait_cdp.js must not own wait business logic: ${forbidden}`);
 for (const forbidden of ["function waitForNavigation", "function waitForNetworkIdle", "function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "PI_BROWSER_SELECTOR_STABLE_SAMPLES", "function navigatePiBrowser", "function loadStateSatisfied"]) assert(!waitCoordinator.includes(forbidden), `wait_coordinator.js must not own navigation/networkIdle/selector business logic: ${forbidden}`);
@@ -117,7 +139,7 @@ for (const forbidden of ["async function waitForSelector", "PI_BROWSER_SELECTOR_
 for (const forbidden of ["async function waitForNavigation", "async function waitForSelector", "PI_BROWSER_SELECTOR_PROBE_SOURCE", "function loadStateSatisfied"]) assert(!waitNetworkIdle.includes(forbidden), `wait_network_idle.js must not own navigation/selector business logic: ${forbidden}`);
 for (const forbidden of ["async function waitForNavigation", "async function waitForNetworkIdle", "function compileNetworkIdleFilter", "function loadStateSatisfied"]) assert(!waitSelector.includes(forbidden), `wait_selector.js must not own navigation/networkIdle business logic: ${forbidden}`);
 assert([waitCdp, waitCoordinator, waitNavigation, waitNetworkIdle, waitSelector, waitRuntime].every((source) => source.split(/\r?\n/).length <= 450), "wait split files must each stay below the TODO 183 health threshold");
-assert(networkModel.includes("function normalizeNetworkRecorderConfig") && networkModel.includes("function storeNetworkBody") && networkModel.includes("const piBrowserNetworkRecorders = new Map()"), "network_model.js must own recorder state/config/body storage helpers");
+assert(networkModel.includes("function normalizeNetworkRecorderConfig") && networkModel.includes("function storeNetworkBody") && /const\s+piBrowserNetworkRecorders\s*=\s*new Map/.test(networkModel), "network_model.js must own recorder state/config/body storage helpers");
 assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networkRuntime.includes("function handleNetworkRecorderCdpEvent") && networkRuntime.includes("async function handleNetworkRecorderCommand"), "network.js must own CDP events, lifecycle, and command dispatch");
 for (const forbidden of ["const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES", "function normalizeNetworkRecorderConfig", "function storeNetworkBody", "function truncateBase64Body"]) assert(!networkRuntime.includes(forbidden), `network.js must not re-absorb model helper: ${forbidden}`);
 for (const forbidden of ["chrome.debugger.sendCommand", "function handleNetworkRecorderCdpEvent", "function handleNetworkRecorderCommand"]) assert(!networkModel.includes(forbidden), `network_model.js must not own runtime command logic: ${forbidden}`);
@@ -126,13 +148,13 @@ assert(networkModel.split(/\r?\n/).length <= 450 && networkRuntime.split(/\r?\n/
 const forbiddenNaming = [/TMWD/i, /TMWebDriver/i, /GABrowser/i, /GA_BROWSER/, /__GA/, /__ga/, /gaBrowser/, /gaPersistent/, /BrowserPro/, /browserPro/, /native_hook_dispatcher/, /tmwd_cdp_bridge/];
 for (const file of serviceWorkerBridgeFiles) {
 	const text = readServiceWorkerSource(file);
-	new Function(text);
+	new Function(executableBridgeSource(text, file));
 	for (const pattern of forbiddenNaming) assert(!pattern.test(text), `${file} contains legacy naming: ${pattern}`);
 	assert(!text.includes("browser_pro"), `${file} must not contain browser_pro compatibility routing`);
 }
 for (const file of ["hook_dispatcher.js", "disable_dialogs.js"]) {
 	const text = readPageSource(file);
-	new Function(text);
+	new Function(executableBridgeSource(text, file));
 	for (const pattern of forbiddenNaming) assert(!pattern.test(text), `${file} contains legacy naming: ${pattern}`);
 }
 assert(transport.split(/\r?\n/).length <= 150, "transport.js must stay focused on WebSocket lifecycle");

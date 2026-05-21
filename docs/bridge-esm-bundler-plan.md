@@ -1,6 +1,6 @@
 # Bridge ESM + TypeScript Bundler Plan
 
-This document freezes the target architecture and gates for the Bridge ESM migration. TODO 188-193 completed the first-phase dist runtime migration; TODO 197 has migrated the shared/runtime/CDP/wait foundation into real ESM imports; TODO 198-202 are the remaining final-state work. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
+This document freezes the target architecture and gates for the Bridge ESM migration. TODO 188-193 completed the first-phase dist runtime migration; TODO 197 migrated the shared/runtime/CDP/wait foundation into real ESM imports; TODO 198 migrated the command layer; TODO 199 migrated the router/transport/tab_sync startup layer and removed ordered service-worker concatenation. TODO 200 completed strict bridge TypeScript and page-script typing; TODO 202 completed the final build/check/pack/isolated-smoke gate. TODO 191 switched the active MV3 runtime to generated dist output; TODO 192 removed the old `background.js importScripts(...)` path instead of keeping it as a second production entry.
 
 ## Decision
 
@@ -10,11 +10,11 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 
 ## Current phase vs target final state
 
-Current service worker build mode is `ordered-concat-compat`: `scripts/build-bridge.mjs` imports the TODO 197 foundation modules (`config/protocol/patterns/cdp/runtime/wait_*`) through the ESM graph, then appends the unmigrated legacy command/startup tail in old bootstrap order. This is a compatibility bridge, not the final ESM topology.
+Current service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, calls explicit router/transport startup functions, and esbuild follows the dependency graph from that single entry.
 
-Target service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, esbuild follows the dependency graph, and `scripts/build-bridge.mjs` no longer reads service worker source text or carries a `serviceWorkerModules` ordered-concat list.
+The previous `ordered-concat-compat` bridge has been removed: `scripts/build-bridge.mjs` no longer reads service worker source text, no longer creates `bridge_src/.generated/service-worker.generated.ts`, and no longer carries a `serviceWorkerModules` ordered-concat list.
 
-The generated `dist/build-manifest.json` records both `serviceWorkerBuildMode:"ordered-concat-compat"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `foundationImported:true`, and the foundation/legacy module lists until TODO 199 removes ordered concatenation.
+The generated `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, `foundationImported:true`, `commandImported:true`, `startupImported:true`, `serviceWorkerFoundationModules`, `serviceWorkerCommandModules`, `serviceWorkerStartupModules`, and `legacyServiceWorkerModules:[]`.
 
 ## Target final state
 
@@ -64,7 +64,21 @@ Business modules must not depend on router, transport, popup UI, or startup side
 - TODO 193 proves the first-phase dist runtime state with `npm run check`, runtime callable artifacts, and behavior drift audit.
 - TODO 195 closes the package portability gate by proving `npm pack --dry-run --json` includes every dist file referenced by `manifest.json`.
 - TODO 197 completed the foundation layer: shared config/protocol/patterns, persistent CDP, runtime core, and wait subsystems now use real import/export and no longer carry `@ts-nocheck`.
-- TODO 198-202 remain the true final-state work: migrate command/startup tail to real import/export, remove ordered source concatenation, clear remaining `@ts-nocheck`, and enable strict bridge TypeScript.
+- TODO 198 completed the command layer: command modules moved into the ESM import graph, direct runtime imports replaced legacy command globals, command-layer `@ts-nocheck` was removed, and batch/router dispatch now uses a listener-free command helper.
+- TODO 199 completed the startup layer: router/transport/tab_sync now use real ESM imports, explicit install functions bind listeners, transport injects tab-sync dependencies, and ordered source concatenation was removed from the build.
+- TODO 200 completed the type finalization layer: `tsconfig.bridge-src.json` now has `strict:true` and `noImplicitAny:true`, service-worker and page-script `@ts-nocheck` comments are gone, and type hygiene contracts reject broad `any` regressions.
+- TODO 202 completed the final-state gate: `npm run build:bridge`, `npm run check`, `npm pack --dry-run --json`, and isolated runtime smoke passed; final closure is documented in README, AI_INSTALL, CHANGELOG, TODO, and this plan.
+
+
+## Final gate evidence
+
+TODO 202 final gate evidence:
+
+- `bridge/pi_browser_bridge/manifest.json` points to `dist/service-worker.js` with `type:"module"`.
+- `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, and `legacyServiceWorkerModules:[]`.
+- `tsconfig.bridge-src.json` has `strict:true` and `noImplicitAny:true`; bridge/page source `@ts-nocheck` comments are forbidden by contract.
+- Verification commands passed: `npm run build:bridge`, `npm run check`, `npm pack --dry-run --json`, and `PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run smoke:browser:isolated`.
+- Isolated smoke artifact: `.pi/browser-artifacts/smoke-browser-isolated-results.json`; recorded service worker sha256 `b4bc10872b5b9b8e13ba239ff3eed398bc9f7b7d9118473a1807889228e937c7`.
 
 ## Gate
 

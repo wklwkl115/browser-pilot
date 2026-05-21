@@ -58,7 +58,11 @@ const bridgeResultValidationSource = read("src/tools/bridgeResultValidation.ts")
 assert(bridgeResultValidationSource.includes("suppressErrorStack(error)"), "bridge ok:false errors must use non-throwing stack suppression");
 assert(!bridgeResultValidationSource.includes("delete error.stack"), "bridge ok:false errors must not use strict-mode delete on Error.stack");
 const registerContentToolSource = read("src/tools/registerContentTool.ts");
-assert(registerContentToolSource.includes("distilledTextResult"), "browser_content must use text distillation");
+const toolAdapterSource = read("src/tools/toolAdapter.ts");
+function usesTextDistillation(source) {
+	return source.includes("distilledTextResult") || (source.includes("textToolResult") && toolAdapterSource.includes("distilledTextResult"));
+}
+assert(usesTextDistillation(registerContentToolSource), "browser_content must use text distillation");
 assert(registerContentToolSource.includes("executeBrowserWaitWithSupervisor") && !registerContentToolSource.includes("server.sendCommand({ cmd: \"wait.navigateAndWait\""), "browser_content URL navigation must use the TS wait supervisor instead of direct bridge wait.navigateAndWait");
 assert(registerContentToolSource.includes("assertBridgeCommandSucceeded(navigation, \"wait.navigateAndWait\")"), "browser_content must fail when URL navigation returns ok:false instead of extracting the old page");
 assert(registerContentToolSource.includes("navigation: navigationData"), "browser_content must preserve wait supervisor navigation metadata in tool details");

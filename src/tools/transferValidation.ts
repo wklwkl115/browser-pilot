@@ -1,6 +1,7 @@
 import { suppressErrorStack } from "../utils/errors";
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
 
 export function codedTransferError(code: string, message: string, details: Record<string, unknown> = {}): Error {
 	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
@@ -49,7 +50,7 @@ export function requireUploadConfirmation(confirm: unknown, selector: unknown): 
 }
 
 export function rejectUnsafeExecuteCommand(command: { cmd?: unknown }): void {
-	if (String(command?.cmd || "") === "transfer.upload") {
+	if (String(command?.cmd || "") === nativeTransferToolMetadata.browser_upload.command) {
 		throw codedTransferError("UPLOAD_REQUIRES_BROWSER_UPLOAD", "transfer.upload must be invoked through browser_upload so confirm:true and file path validation are enforced", {});
 	}
 }
@@ -75,7 +76,7 @@ export function buildTransferDownloadCommand(params: Record<string, unknown>): R
 	const hasSelector = typeof params.selector === "string" && params.selector.trim();
 	const mode = normalizeTransferDownloadMode(params);
 	return {
-		cmd: "transfer.download",
+		cmd: nativeTransferToolMetadata.browser_download.command,
 		selector: hasSelector ? String(params.selector).trim() : undefined,
 		url: hasUrl ? String(params.url).trim() : undefined,
 		mode,
@@ -87,5 +88,5 @@ export function buildTransferDownloadCommand(params: Record<string, unknown>): R
 }
 
 export function buildTransferUploadCommand(selector: string, files: string[], index: unknown): Record<string, unknown> {
-	return { cmd: "transfer.upload", selector, files, index };
+	return { cmd: nativeTransferToolMetadata.browser_upload.command, selector, files, index };
 }

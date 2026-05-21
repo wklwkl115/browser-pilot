@@ -1,5 +1,20 @@
-// @ts-nocheck
 import { TID } from "../shared/protocol";
+
+declare const chrome: {
+  runtime: {
+    sendMessage(message: unknown): Promise<unknown>;
+  };
+};
+
+type BridgeRequest = Record<string, unknown> & { cmd?: string };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'Error';
+}
 
 ;(function(){ if (/streamlit/i.test(document.title)) return;
 
@@ -22,17 +37,17 @@ void chrome.runtime.sendMessage({ cmd: 'bridge_wake', url: location.href, title:
 new MutationObserver(muts => {
   for (const m of muts) for (const n of m.addedNodes) {
     if (n.nodeType !== 1) continue;
-    const node = /** @type {Element} */ (n);
+    const node = n as Element;
     if (node.id === TID || node.querySelector('#' + TID)) {
       const el = node.id === TID ? node : node.querySelector('#' + TID);
-      handle(el);
+      if (el) handle(el);
     }
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
 
-async function handle(el) {
+async function handle(el: Element): Promise<void> {
   try {
-    const req = el.textContent.trim() ? JSON.parse(el.textContent) : { cmd: 'cookies' };
+    const req = (el.textContent || '').trim() ? JSON.parse(el.textContent || '{}') as BridgeRequest : { cmd: 'cookies' };
     const cmd = req.cmd || 'cookies';
     let resp;
     if (cmd === 'cookies') {
@@ -48,8 +63,7 @@ async function handle(el) {
     }
     el.textContent = JSON.stringify(resp);
   } catch (e) {
-    el.textContent = JSON.stringify({ ok: false, error_code: 'INTERNAL_ERROR', error: e.message || String(e), details: { name: e.name || 'Error' } });
+    el.textContent = JSON.stringify({ ok: false, error_code: 'INTERNAL_ERROR', error: errorMessage(e), details: { name: errorName(e) } });
   }
 }
 })();
-

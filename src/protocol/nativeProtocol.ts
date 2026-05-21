@@ -1,7 +1,4 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
+// Generated from bridge/native_command_schema.json. Do not edit by hand.
 export type BridgeCommand = {
 	cmd: string;
 	method?: string;
@@ -27,17 +24,919 @@ type NativeCommandProtocolSchema = {
 	domains: Record<string, string[]>;
 	aliases?: Record<string, string>;
 	commands: Record<string, CommandSpec>;
+	errorCodes?: Record<string, { category?: string; retryable?: boolean; summary?: string }>;
+	toolMetadata?: Record<string, unknown>;
 };
 
 export type BridgeCommandValidation =
 	| { ok: true; command: BridgeCommand; spec: CommandSpec; canonicalCmd: string }
 	| { ok: false; error: string; details: Record<string, unknown> };
 
-let cachedSchema: NativeCommandProtocolSchema | undefined;
-
-function protocolSchemaPath(): string {
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "bridge", "native_command_schema.json");
-}
+const schema = {
+  "name": "pi-browser-native-commands",
+  "version": "0.2.0",
+  "transport": "Pi Browser Bridge WebSocket command envelope",
+  "envelope": {
+    "type": "object",
+    "required": [
+      "cmd"
+    ],
+    "properties": {
+      "cmd": {
+        "type": "string"
+      },
+      "tabId": {
+        "type": "integer"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "integer"
+      }
+    },
+    "additionalProperties": true
+  },
+  "aliases": {
+    "hook.clear": "hook.clear_buffer",
+    "hook.ping": "hook.status"
+  },
+  "domains": {
+    "core": [
+      "bridge_wake",
+      "tabs",
+      "management",
+      "cookies",
+      "cdp",
+      "persistent_cdp",
+      "batch",
+      "contentSettings"
+    ],
+    "wait": [
+      "wait.navigate",
+      "wait.navigateAndWait",
+      "wait.navigation",
+      "wait.loadState",
+      "wait.networkIdle",
+      "wait.selector",
+      "wait.any",
+      "wait.all",
+      "wait.cancel",
+      "wait.diagnose"
+    ],
+    "network": [
+      "network.start",
+      "network.stop",
+      "network.status",
+      "network.clear",
+      "network.list",
+      "network.get",
+      "network.body",
+      "network.exportHar",
+      "network.wait"
+    ],
+    "hook": [
+      "hook.list_sessions",
+      "hook.install",
+      "hook.status",
+      "hook.collect",
+      "hook.clear",
+      "hook.clear_buffer",
+      "hook.pause",
+      "hook.resume",
+      "hook.uninstall",
+      "hook.evaluate",
+      "hook.addEventListener",
+      "hook.removeEventListener",
+      "hook.getPerformanceEntries"
+    ],
+    "frame": [
+      "frame.list",
+      "frame.evaluate",
+      "frame.addNewDocumentScript",
+      "frame.removeNewDocumentScript"
+    ],
+    "transfer": [
+      "transfer.download",
+      "transfer.upload"
+    ],
+    "html": [
+      "html.get"
+    ],
+    "screenshot": [
+      "screenshot.capture"
+    ],
+    "evidence": [
+      "evidence.collect"
+    ]
+  },
+  "commands": {
+    "bridge_wake": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "tabs": {
+      "domain": "core",
+      "tabScoped": false,
+      "methods": [
+        "list",
+        "switch",
+        "create",
+        "close"
+      ],
+      "defaultMethod": "list",
+      "methodSpecs": {
+        "switch": {
+          "required": [
+            "tabId"
+          ]
+        },
+        "close": {
+          "requiredAny": [
+            [
+              "targetTabId"
+            ],
+            [
+              "closeTabId"
+            ],
+            [
+              "tabId"
+            ]
+          ]
+        }
+      }
+    },
+    "management": {
+      "domain": "core",
+      "tabScoped": false,
+      "methods": [
+        "list",
+        "reload",
+        "disable",
+        "enable"
+      ],
+      "methodSpecs": {
+        "disable": {
+          "required": [
+            "extId"
+          ]
+        },
+        "enable": {
+          "required": [
+            "extId"
+          ]
+        }
+      }
+    },
+    "cookies": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "cdp": {
+      "domain": "core",
+      "tabScoped": true,
+      "required": [
+        "method"
+      ]
+    },
+    "persistent_cdp": {
+      "domain": "core",
+      "tabScoped": true
+    },
+    "batch": {
+      "domain": "core",
+      "tabScoped": false,
+      "required": [
+        "commands"
+      ]
+    },
+    "contentSettings": {
+      "domain": "core",
+      "tabScoped": false
+    },
+    "wait.navigate": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "url"
+      ]
+    },
+    "wait.navigateAndWait": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "url"
+      ]
+    },
+    "wait.navigation": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.loadState": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.networkIdle": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.selector": {
+      "domain": "wait",
+      "tabScoped": true,
+      "required": [
+        "selector"
+      ]
+    },
+    "wait.any": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.all": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.cancel": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "wait.diagnose": {
+      "domain": "wait",
+      "tabScoped": true
+    },
+    "network.start": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.stop": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.status": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.clear": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.list": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.get": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.body": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.exportHar": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "network.wait": {
+      "domain": "network",
+      "tabScoped": true
+    },
+    "hook.list_sessions": {
+      "domain": "hook",
+      "tabScoped": false
+    },
+    "hook.install": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.status": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.collect": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.clear": {
+      "domain": "hook",
+      "tabScoped": true,
+      "canonical": "hook.clear_buffer"
+    },
+    "hook.clear_buffer": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.pause": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.resume": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.uninstall": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "hook.evaluate": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "expression"
+      ]
+    },
+    "hook.addEventListener": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "eventType"
+      ]
+    },
+    "hook.removeEventListener": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "listenerId"
+      ]
+    },
+    "hook.getPerformanceEntries": {
+      "domain": "hook",
+      "tabScoped": true
+    },
+    "frame.list": {
+      "domain": "frame",
+      "tabScoped": true
+    },
+    "frame.evaluate": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "frameId",
+        "expression"
+      ]
+    },
+    "frame.addNewDocumentScript": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "source"
+      ]
+    },
+    "frame.removeNewDocumentScript": {
+      "domain": "frame",
+      "tabScoped": true,
+      "required": [
+        "identifier"
+      ]
+    },
+    "html.get": {
+      "domain": "html",
+      "tabScoped": true
+    },
+    "screenshot.capture": {
+      "domain": "screenshot",
+      "tabScoped": true
+    },
+    "evidence.collect": {
+      "domain": "evidence",
+      "tabScoped": true
+    },
+    "transfer.download": {
+      "domain": "transfer",
+      "tabScoped": true,
+      "requiredAny": [
+        [
+          "selector"
+        ],
+        [
+          "url"
+        ]
+      ]
+    },
+    "transfer.upload": {
+      "domain": "transfer",
+      "tabScoped": true,
+      "required": [
+        "selector",
+        "files"
+      ]
+    }
+  },
+  "errorCodes": {
+    "ALREADY_INSTALLED": {
+      "category": "runtime.lifecycle",
+      "retryable": false,
+      "summary": "Requested recorder or hook session is already installed."
+    },
+    "AMBIGUOUS_DOWNLOAD": {
+      "category": "runtime.transfer",
+      "retryable": false,
+      "summary": "Download click produced multiple possible download events without a precise match."
+    },
+    "AMBIGUOUS_TAB_ID": {
+      "category": "driver.tab",
+      "retryable": false,
+      "summary": "Multiple connected browsers expose the same numeric tabId."
+    },
+    "BACKGROUND_THROTTLED": {
+      "category": "runtime.page",
+      "retryable": true,
+      "summary": "Background tab throttling affected page-side timing."
+    },
+    "BODY_UNAVAILABLE": {
+      "category": "runtime.network",
+      "retryable": false,
+      "summary": "Captured network body is unavailable or expired."
+    },
+    "BRIDGE_CLIENT_DISCONNECTED": {
+      "category": "driver.pending",
+      "retryable": true,
+      "summary": "Extension client disconnected before a pending command completed."
+    },
+    "BRIDGE_NOT_RUNNING": {
+      "category": "driver.lifecycle",
+      "retryable": true,
+      "summary": "Bridge server is not running."
+    },
+    "BRIDGE_SEND_FAILED": {
+      "category": "driver.pending",
+      "retryable": true,
+      "summary": "Bridge failed to send a command to the extension client."
+    },
+    "BRIDGE_START_FAILED": {
+      "category": "driver.lifecycle",
+      "retryable": true,
+      "summary": "Bridge HTTP/WebSocket server failed to start."
+    },
+    "BRIDGE_STOPPED": {
+      "category": "driver.pending",
+      "retryable": true,
+      "summary": "Bridge stopped while a command was pending."
+    },
+    "BRIDGE_TIMEOUT": {
+      "category": "driver.pending",
+      "retryable": true,
+      "summary": "Bridge command timed out before a response arrived."
+    },
+    "BROWSER_COMMAND_FAILED": {
+      "category": "driver.command",
+      "retryable": false,
+      "summary": "Browser command returned a structured failure result."
+    },
+    "BROWSER_EXECUTION_ERROR": {
+      "category": "driver.execution",
+      "retryable": false,
+      "summary": "Browser execution or page-script evaluation failed."
+    },
+    "BROWSER_EXTENSION_RECONNECT_TIMEOUT": {
+      "category": "driver.lifecycle",
+      "retryable": true,
+      "summary": "Extension reload did not reconnect before the deadline."
+    },
+    "BROWSER_NOT_FOUND": {
+      "category": "driver.selection",
+      "retryable": false,
+      "summary": "Requested browser client was not found."
+    },
+    "BUFFER_OVERFLOW": {
+      "category": "runtime.hook",
+      "retryable": false,
+      "summary": "Hook buffer overflowed before collection."
+    },
+    "CANCELLED": {
+      "category": "runtime.wait",
+      "retryable": true,
+      "summary": "Wait, network wait, or subscription was cancelled."
+    },
+    "CONTENT_EXTRACTION_FAILED": {
+      "category": "tool.content",
+      "retryable": false,
+      "summary": "browser_content extraction did not return structured content data."
+    },
+    "CROSS_ORIGIN_IFRAME": {
+      "category": "runtime.frame",
+      "retryable": false,
+      "summary": "Requested operation cannot cross an iframe origin boundary."
+    },
+    "DOWNLOAD_TARGET_REQUIRED": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_download requires selector or url."
+    },
+    "ELEMENT_NOT_FOUND": {
+      "category": "runtime.page",
+      "retryable": true,
+      "summary": "Page-side selector did not match an element."
+    },
+    "EVENT_SUBSCRIPTION_FAILED": {
+      "category": "runtime.hook",
+      "retryable": true,
+      "summary": "Page event listener subscription or cleanup failed."
+    },
+    "FRAME_DETACHED": {
+      "category": "runtime.frame",
+      "retryable": true,
+      "summary": "Target frame detached before command completion."
+    },
+    "INJECTION_FAILED": {
+      "category": "runtime.hook",
+      "retryable": true,
+      "summary": "Hook dispatcher injection or readiness check failed."
+    },
+    "INTERNAL_ERROR": {
+      "category": "runtime.internal",
+      "retryable": false,
+      "summary": "Unexpected internal runtime or tool failure."
+    },
+    "INVALID_BROWSER_COMMAND": {
+      "category": "driver.command",
+      "retryable": false,
+      "summary": "Command payload failed native protocol validation."
+    },
+    "INVALID_BROWSER_ID": {
+      "category": "driver.selection",
+      "retryable": false,
+      "summary": "Browser id is malformed or unsupported."
+    },
+    "INVALID_RULE": {
+      "category": "tool.validation",
+      "retryable": false,
+      "summary": "Tool rule or mode combination is invalid."
+    },
+    "INVALID_SELECTOR": {
+      "category": "runtime.selector",
+      "retryable": false,
+      "summary": "CSS selector syntax is invalid."
+    },
+    "INVALID_SESSION": {
+      "category": "runtime.session",
+      "retryable": false,
+      "summary": "Requested session id does not match the installed session."
+    },
+    "INVALID_TAB_ID": {
+      "category": "driver.tab",
+      "retryable": false,
+      "summary": "tabId is malformed or unsupported."
+    },
+    "INVALID_TAB_URL": {
+      "category": "tool.tabs",
+      "retryable": false,
+      "summary": "browser_tabs create URL is invalid or blocked."
+    },
+    "NAVIGATION_TIMEOUT": {
+      "category": "runtime.wait",
+      "retryable": true,
+      "summary": "Navigation wait timed out or failed before target state."
+    },
+    "NETWORK_IDLE_TIMEOUT": {
+      "category": "runtime.wait",
+      "retryable": true,
+      "summary": "Network idle wait timed out."
+    },
+    "NETWORK_RECORDER_NOT_STARTED": {
+      "category": "runtime.network",
+      "retryable": true,
+      "summary": "Network recorder session is not started."
+    },
+    "NETWORK_RECORDER_TIMEOUT": {
+      "category": "runtime.network",
+      "retryable": true,
+      "summary": "Network recorder wait timed out."
+    },
+    "NOT_INSTALLED": {
+      "category": "runtime.session",
+      "retryable": true,
+      "summary": "Page hook dispatcher is not installed."
+    },
+    "NO_BROWSER_EXTENSION": {
+      "category": "driver.lifecycle",
+      "retryable": true,
+      "summary": "No browser extension client is connected."
+    },
+    "NO_SESSION": {
+      "category": "runtime.session",
+      "retryable": true,
+      "summary": "No matching runtime session or tab-scoped dispatcher is available."
+    },
+    "NO_TAB": {
+      "category": "driver.tab",
+      "retryable": true,
+      "summary": "No usable target tab is available for a tab-scoped command."
+    },
+    "REQUEST_NOT_FOUND": {
+      "category": "runtime.network",
+      "retryable": false,
+      "summary": "Network request id was not found in recorder state."
+    },
+    "SAFETY_BLOCKED": {
+      "category": "runtime.transfer",
+      "retryable": false,
+      "summary": "Browser blocked file access or another safety-sensitive operation."
+    },
+    "SELECTOR_NOT_FOUND": {
+      "category": "runtime.selector",
+      "retryable": true,
+      "summary": "Selector was valid but did not match an element."
+    },
+    "SELECTOR_TIMEOUT": {
+      "category": "runtime.selector",
+      "retryable": true,
+      "summary": "Selector wait timed out."
+    },
+    "SESSION_NOT_FOUND": {
+      "category": "runtime.session",
+      "retryable": true,
+      "summary": "Requested runtime session was not found."
+    },
+    "TAB_CRASHED": {
+      "category": "runtime.tab",
+      "retryable": true,
+      "summary": "Target tab crashed during operation."
+    },
+    "TAB_ID_CONFLICT": {
+      "category": "driver.tab",
+      "retryable": false,
+      "summary": "Conflicting tab id values were supplied."
+    },
+    "TAB_ID_REQUIRED": {
+      "category": "tool.tabs",
+      "retryable": false,
+      "summary": "browser_tabs switch/close requires tabId."
+    },
+    "TAB_NOT_FOUND": {
+      "category": "driver.tab",
+      "retryable": true,
+      "summary": "Target browser tab is not connected."
+    },
+    "TIMEOUT": {
+      "category": "runtime.timeout",
+      "retryable": true,
+      "summary": "Generic runtime wait or command timeout."
+    },
+    "UNKNOWN_BROWSER_CLIENT": {
+      "category": "driver.selection",
+      "retryable": false,
+      "summary": "Requested browser client id is unknown."
+    },
+    "UNSUPPORTED_TARGET": {
+      "category": "runtime.transfer",
+      "retryable": false,
+      "summary": "Target URL, element, or chooser mode is unsupported."
+    },
+    "UPLOAD_CONFIRMATION_REQUIRED": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload requires confirm:true after user approval."
+    },
+    "UPLOAD_FILES_LIMIT": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload file count exceeds the supported limit."
+    },
+    "UPLOAD_FILES_REQUIRED": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload requires at least one file."
+    },
+    "UPLOAD_FILE_NOT_FOUND": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload file path does not exist."
+    },
+    "UPLOAD_PATH_NOT_ABSOLUTE": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload requires absolute local file paths."
+    },
+    "UPLOAD_PATH_NOT_FILE": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload path is not a file."
+    },
+    "UPLOAD_REQUIRES_BROWSER_UPLOAD": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "transfer.upload must go through browser_upload validation."
+    },
+    "UPLOAD_SELECTOR_REQUIRED": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload requires a selector."
+    }
+  },
+  "toolMetadata": {
+    "nativeActionTools": {
+      "browser_wait": {
+        "domain": "wait",
+        "parameters": [
+          "action",
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "sessionId"
+        ],
+        "actionDescription": "navigate | navigateAndWait | navigation | loadState | networkIdle | selector | any | all (non-empty waits/conditions) | cancel | diagnose",
+        "actions": [
+          {
+            "action": "navigate",
+            "command": "wait.navigate",
+            "aliases": [
+              "navigate"
+            ]
+          },
+          {
+            "action": "navigateAndWait",
+            "command": "wait.navigateAndWait",
+            "aliases": [
+              "navigateAndWait"
+            ]
+          },
+          {
+            "action": "navigation",
+            "command": "wait.navigation",
+            "aliases": [
+              "waitForNavigation",
+              "navigation"
+            ]
+          },
+          {
+            "action": "loadState",
+            "command": "wait.loadState",
+            "aliases": [
+              "loadState",
+              "waitForLoadState"
+            ]
+          },
+          {
+            "action": "networkIdle",
+            "command": "wait.networkIdle",
+            "aliases": [
+              "networkIdle",
+              "waitForNetworkIdle"
+            ]
+          },
+          {
+            "action": "selector",
+            "command": "wait.selector",
+            "aliases": [
+              "selector",
+              "waitForSelector"
+            ]
+          },
+          {
+            "action": "any",
+            "command": "wait.any",
+            "aliases": [
+              "any",
+              "waitForAny"
+            ]
+          },
+          {
+            "action": "all",
+            "command": "wait.all",
+            "aliases": [
+              "all",
+              "waitForAll"
+            ]
+          },
+          {
+            "action": "cancel",
+            "command": "wait.cancel",
+            "aliases": [
+              "cancel",
+              "cancelWait"
+            ]
+          },
+          {
+            "action": "diagnose",
+            "command": "wait.diagnose",
+            "aliases": [
+              "diagnose"
+            ]
+          }
+        ]
+      },
+      "browser_network": {
+        "domain": "network",
+        "parameters": [
+          "action",
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "sessionId"
+        ],
+        "actionDescription": "start | stop | status | clear | list | get | body | exportHar | wait",
+        "actions": [
+          {
+            "action": "start",
+            "command": "network.start",
+            "aliases": [
+              "start"
+            ]
+          },
+          {
+            "action": "stop",
+            "command": "network.stop",
+            "aliases": [
+              "stop"
+            ]
+          },
+          {
+            "action": "status",
+            "command": "network.status",
+            "aliases": [
+              "status"
+            ]
+          },
+          {
+            "action": "clear",
+            "command": "network.clear",
+            "aliases": [
+              "clear"
+            ]
+          },
+          {
+            "action": "list",
+            "command": "network.list",
+            "aliases": [
+              "list"
+            ]
+          },
+          {
+            "action": "get",
+            "command": "network.get",
+            "aliases": [
+              "get"
+            ]
+          },
+          {
+            "action": "body",
+            "command": "network.body",
+            "aliases": [
+              "body"
+            ]
+          },
+          {
+            "action": "exportHar",
+            "command": "network.exportHar",
+            "aliases": [
+              "exportHar",
+              "export"
+            ]
+          },
+          {
+            "action": "wait",
+            "command": "network.wait",
+            "aliases": [
+              "wait"
+            ]
+          }
+        ]
+      }
+    },
+    "transferTools": {
+      "browser_download": {
+        "domain": "transfer",
+        "command": "transfer.download",
+        "parameters": [
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "selector",
+          "url",
+          "mode",
+          "index",
+          "filename",
+          "conflictAction",
+          "saveAs"
+        ],
+        "artifactPrefix": "download"
+      },
+      "browser_upload": {
+        "domain": "transfer",
+        "command": "transfer.upload",
+        "parameters": [
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "selector",
+          "files",
+          "index",
+          "confirm"
+        ],
+        "artifactPrefix": "upload"
+      }
+    }
+  }
+} as NativeCommandProtocolSchema;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
@@ -52,22 +951,14 @@ function toTabId(value: unknown): number | undefined {
 	return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-function assertProtocolShape(value: unknown): NativeCommandProtocolSchema {
-	if (!isRecord(value)) throw new Error("native command protocol schema must be an object");
-	if (!isRecord(value.commands)) throw new Error("native command protocol schema requires commands map");
-	if (!isRecord(value.domains)) throw new Error("native command protocol schema requires domains map");
-	return value as NativeCommandProtocolSchema;
-}
-
 export function getNativeCommandProtocolSchema(): NativeCommandProtocolSchema {
-	if (!cachedSchema) cachedSchema = assertProtocolShape(JSON.parse(readFileSync(protocolSchemaPath(), "utf8")));
-	return cachedSchema;
+	return schema;
 }
 
-export function canonicalBridgeCommand(cmd: string, schema = getNativeCommandProtocolSchema()): string {
-	const spec = schema.commands[cmd];
+export function canonicalBridgeCommand(cmd: string, currentSchema = getNativeCommandProtocolSchema()): string {
+	const spec = currentSchema.commands[cmd];
 	if (spec?.canonical) return spec.canonical;
-	return schema.aliases?.[cmd] || cmd;
+	return currentSchema.aliases?.[cmd] || cmd;
 }
 
 function missingRequired(command: Record<string, unknown>, required: string[] | undefined): string[] {
@@ -80,13 +971,13 @@ function requiredAnySatisfied(command: Record<string, unknown>, groups: string[]
 }
 
 export function validateBridgeCommand(command: unknown, options: { allowMissingTabId?: boolean } = {}): BridgeCommandValidation {
-	const schema = getNativeCommandProtocolSchema();
+	const currentSchema = getNativeCommandProtocolSchema();
 	if (!isRecord(command)) return { ok: false, error: "Bridge command must be an object", details: { commandType: typeof command } };
 	if (typeof command.cmd !== "string" || !command.cmd.trim()) return { ok: false, error: "Bridge command requires string cmd", details: { cmd: command.cmd } };
 
 	const cmd = command.cmd.trim();
-	const canonicalCmd = canonicalBridgeCommand(cmd, schema);
-	const spec = schema.commands[cmd] || schema.commands[canonicalCmd];
+	const canonicalCmd = canonicalBridgeCommand(cmd, currentSchema);
+	const spec = currentSchema.commands[cmd] || currentSchema.commands[canonicalCmd];
 	if (!spec) return { ok: false, error: `Unknown bridge command: ${cmd}`, details: { cmd } };
 
 	const checked: BridgeCommand = { ...command, cmd } as BridgeCommand;
@@ -112,8 +1003,8 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 	return { ok: true, command: checked, spec, canonicalCmd };
 }
 
-export function nativeBridgeCommandNames(schema = getNativeCommandProtocolSchema()): string[] {
-	return Object.entries(schema.domains)
+export function nativeBridgeCommandNames(currentSchema = getNativeCommandProtocolSchema()): string[] {
+	return Object.entries(currentSchema.domains)
 		.filter(([domain]) => domain !== "core")
 		.flatMap(([, names]) => names);
 }

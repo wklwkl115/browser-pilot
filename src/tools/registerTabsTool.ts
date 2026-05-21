@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { suppressErrorStack } from "../utils/errors";
-import { errorResult, jsonResult } from "../utils/toolResult";
-import { asPositiveInt } from "./toolShared";
+import { jsonResult } from "../utils/toolResult";
+import { runTool, toolTimeoutMs } from "./toolAdapter";
 import type { ToolRegistrarContext } from "./toolShared";
 
 function tabsToolError(code: string, message: string, details: Record<string, unknown> = {}): Error {
@@ -56,9 +56,9 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
 		}),
 		async execute(_toolCallId, params) {
-			try {
+			return await runTool(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
-				const timeoutMs = asPositiveInt(params.timeoutMs, 5_000);
+				const timeoutMs = toolTimeoutMs(params.timeoutMs, 5_000);
 				const tabId = action === "switch" || action === "close" ? requireTabsActionTabId(action, params.tabId) : undefined;
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
@@ -68,9 +68,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs), { action });
 				if (action === "close") return jsonResult(await server.closeTab(tabId, timeoutMs), { action });
 				throw new Error(`Unsupported browser_tabs action: ${params.action}`);
-			} catch (error) {
-				return errorResult(error);
-			}
+			});
 		},
 	});
 }

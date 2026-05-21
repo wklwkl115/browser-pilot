@@ -66,7 +66,85 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 npm run check
 ```
 
-Bridge ESM TypeScript 构建管线（生成当前 manifest 使用的 service worker 与 content/hook/disable-dialogs dist bundles；TODO 197 后 shared/runtime/CDP/wait 已走 ESM imported foundation，剩余 command/startup tail 继续按 TODO 198-199 迁移；修改 `bridge_src/**` 后先 build 再 reload 扩展）：
+本地发布/合并前质量门禁（本地脚本，不依赖 GitHub Actions/远程 CI，不启动真实浏览器）：
+
+```bash
+npm run quality:local
+```
+
+该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；成功后只打印可选 isolated smoke 下一步。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
+
+
+
+
+本地依赖与生产安全审计（已纳入 `npm run check`；不接入远程 Dependabot/Sonar/Sentry）：
+
+```bash
+npm run check:deps
+```
+
+该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。
+
+依赖升级记录必须包含：升级范围、兼容性风险、回滚方式、`npm run check`、`npm pack --dry-run --json`，必要时附 `npm run smoke:browser:isolated` artifact。错误统计只落本地 artifact，不发送 cookie/token/网络正文到外部服务。
+
+工具/协议契约文档生成（已纳入 `npm run check:tool-docs` 的漂移检查）：
+
+```bash
+npm run sync:protocol
+npm run check:protocol
+npm run docs:generate
+npm run check:tool-docs
+```
+
+生成产物为 `docs/generated/browser-tool-contract.generated.md`，来源是实际工具注册元数据、`bridge/native_command_schema.json` 和源码结构化错误码；其中 `Structured error taxonomy` 表列出公开 code、domain、category、retryable 与来源；不要手工编辑生成文件。
+
+Native 协议单源为 `bridge/native_command_schema.json`。修改该文件后先执行 `npm run sync:protocol`，再执行 `npm run check:protocol`；脚本会生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`。这些生成文件禁止手改，`check:protocol` 会捕获 drift、schema 副本不一致、wait/network/transfer metadata 漂移和错误码漏项。
+
+错误 taxonomy 与诊断契约（已纳入 `npm run check`）：
+
+```bash
+npm run check:errors
+```
+
+该契约锁定 `normalizeError` / `compactError` 保留公开 `code/message/details/name`，追加 `taxonomy` 与紧凑 `diagnostics`；覆盖 driver/tool/native/page/CDP/network/transfer/security/artifact/protocol 分类、nested bridge/native response、ArtifactReader、transfer、WebSecurity、stack strip、secret redaction 和 circular details。
+
+Tool Adapter 注册层边界由 `src/tools/toolAdapter.ts` 承载：共享 tab-scoped 参数、timeout/maxChars 归一、`runTool`、`jsonToolResult/textToolResult`、nested bridge error 与 artifact fallback。修改工具注册样板后至少运行 `npm run check:tools`、`npm run check:tool-docs`；涉及 WebSecurity shared shell 时同步运行 `npm run check:web-security`。
+
+WebSecurity 子域边界验证（已纳入 `npm run check`）：
+
+```bash
+npm run check:web-security
+```
+
+该契约锁定 `register/browserNative/bridges/shared` 分层、`executeWebSecurityToolShell` 唯一执行 shell、browser-session cookie provider 单点、`webSecurity/shared/diagnostics.ts` domain failure envelope 脱敏/去 stack、sqlmap/nuclei bounded process + request/stdout/stderr artifact，以及 WebSecurity 不反向依赖 driver、bridge runtime 或 `chrome.*`。
+
+
+Artifact 与证据隐私治理（已纳入 `npm run check`）：
+
+```bash
+npm run check:token
+npm run check:artifact
+```
+
+默认 artifact 根目录是 `.pi/browser-artifacts/`，保存的原始证据标记为 `local_raw_evidence`、`localOnly:true`、手动清理。工具 summary/details/error 与 `browser_artifact` 默认脱敏 cookie/token/authorization/body/postData/websocket payload；只有明确需要本地原始证据时才对具体路径使用 `browser_artifact` 的 `redact:false`。清理命令：`rm -rf .pi/browser-artifacts/*`。不要上传或提交该目录。
+
+本地生命周期 fixture（已纳入 `npm run check`，不启动真实浏览器）：
+
+```bash
+npm run check:lifecycle
+```
+
+该 fixture 覆盖多浏览器同数值 `tabId`、`selectBrowser`、WS 断连/重连、MV3 service worker restart、pending cleanup、tab command queue、wait/network/hook 长任务。失败时写 `.pi/browser-artifacts/lifecycle-fixture-failure.json`，包含 bridge snapshot、pending、target selection、listener/CDP/network recorder 状态；cookie/token/authorization/body/postData 等字段按字段名脱敏。
+
+可重放 runtime fixture（已纳入 `npm run check`，不启动真实浏览器）：
+
+```bash
+npm run check:runtime-fixtures
+```
+
+该 fixture 使用本地 HTTP/WS server、fake Chrome/CDP API 与 recorded bridge envelopes，覆盖 network body/postData/HAR、hook session/listener、wait immediate/MV3 状态、transfer download/upload、frame evaluate、screenshot fallback、callback worker 状态文件和 stale lock recovery。成功摘要写 `.pi/browser-artifacts/fixtures/runtime-fixtures-summary.json`；失败诊断写 `.pi/browser-artifacts/fixtures/runtime-fixtures-failure.json` 并按字段名脱敏。
+
+Bridge ESM TypeScript 构建管线（生成当前 manifest 使用的 service worker 与 content/hook/disable-dialogs dist bundles；支柱二终态已完成：TODO 197 shared/runtime/CDP/wait、TODO 198 command 层、TODO 199 router/transport/tab_sync 启动层均已走真实 ESM import graph，TODO 200 已开启 strict/noImplicitAny 并完成 page script 类型收口，TODO 202 已通过 build/check/pack/isolated-smoke gate；`build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false`、`legacyServiceWorkerModules:[]`；修改 `bridge_src/**` 后先 build 再 reload 扩展）：
 
 ```bash
 npm run build:bridge
@@ -80,6 +158,15 @@ npm pack --dry-run --json
 
 `npm run check` 已包含 `check:package`，会用同一 dry-run 验证 `dist/service-worker.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内；干净安装不应依赖手工提前 build。
 
+本地发布包验收与回滚演练：
+
+```bash
+npm run release:local
+PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run release:local:smoke
+```
+
+`release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact`。
+
 全局 skill 变更后按 skill-creator 要求验证：
 
 ```bash
@@ -92,11 +179,19 @@ PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D
 npm run smoke:browser
 ```
 
-本地已有常驻 Pi agent/bridge 占用 18765 时，使用独占临时 Chrome profile：
+本地已有常驻 Pi agent/bridge 占用 18765 时，使用独占临时 Chrome/Edge profile：
 
 ```bash
 npm run smoke:browser:isolated
 ```
+
+WSL 调 Windows Edge 的已验证命令：
+
+```bash
+PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run smoke:browser:isolated
+```
+
+Chrome 在部分 Windows/WSL 组合下可能忽略 `--disable-extensions-except`，优先用上述 Edge 命令复现 isolated smoke。
 
 如果 `127.0.0.1:18765` 已被占用，smoke 会失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port` 诊断：
 
@@ -133,7 +228,7 @@ npm run smoke:browser:transfer
 3. 如果 tab 不可用，先用 `browser_tabs list` 确认目标 tab。
 4. 如果命令超时，检查 `/browser-status` 的 pending 请求和目标页面是否阻塞。
 5. 如果 `browser_dom_snapshot` 返回空 viewport/nodes，先切换到目标 tab，确认页面可见后重试。
-6. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径。
+6. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
 7. 如果 `browser_download` 没有返回路径，重新加载浏览器扩展并确认 downloads 权限。
 8. 如果 `browser_upload` 返回 file access 错误，在扩展详情启用文件网址访问后重试。
 
@@ -141,4 +236,4 @@ npm run smoke:browser:transfer
 
 - 不把 API key、cookie、密码、token 写入项目文件。
 - 不把个人浏览器 profile、下载文件、截图 artifact 提交为项目代码。
-- 真实浏览器 smoke 会创建临时页面和 artifact；完成后按需清理 `.pi/browser-artifacts/`。
+- 真实浏览器 smoke 会创建临时页面和 artifact；完成后按需清理 `.pi/browser-artifacts/`，例如 `rm -rf .pi/browser-artifacts/*`。

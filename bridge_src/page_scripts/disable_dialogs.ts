@@ -1,8 +1,7 @@
-// @ts-nocheck
 // Disable alert/confirm/prompt to prevent page JS from blocking extension
 (function() {
   const _log = console.log.bind(console);
-  function toast(type, msg) {
+  function toast(type: string, msg: unknown): void {
     _log('[PI-BROWSER] ' + type + ' suppressed:', msg);
     try {
       const d = document.createElement('div');
@@ -17,14 +16,14 @@
       (document.body || document.documentElement).appendChild(d);
       setTimeout(() => { d.style.opacity = '0'; }, 3000);
       setTimeout(() => { d.remove(); }, 3600);
-    } catch(e) {}
+    } catch (_) {}
   }
-  function promptAcceptedValue(args) {
+  function promptAcceptedValue(args: IArguments): string {
     return args.length > 1 ? String(args[1]) : '';
   }
-  window.alert = function(msg) { toast('alert', msg); };
-  window.confirm = function(msg) { toast('confirm', msg); return true; };
-  window.prompt = function(msg, def) { toast('prompt', msg); return promptAcceptedValue(arguments); };
+  window.alert = function(msg?: unknown): void { toast('alert', msg); };
+  window.confirm = function(msg?: string): boolean { toast('confirm', msg); return true; };
+  window.prompt = function(msg?: string, _def?: string): string { toast('prompt', msg); return promptAcceptedValue(arguments); };
 })();
 
 export {};

@@ -2,12 +2,20 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import vm from "node:vm";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const bridge = path.join(root, "bridge", "pi_browser_bridge");
 
+function resolveReadPath(rel) {
+	if (path.isAbsolute(rel)) return rel;
+	const drivePath = /^([A-Za-z]):[\\/](.*)$/.exec(rel);
+	if (drivePath) return process.platform === "win32" ? rel : path.join("/mnt", drivePath[1].toLowerCase(), drivePath[2].replace(/\\/g, "/"));
+	return path.join(root, rel);
+}
+
 function read(rel) {
-	return readFileSync(path.isAbsolute(rel) ? rel : path.join(root, rel), "utf8");
+	return readFileSync(resolveReadPath(rel), "utf8");
 }
 
 function assert(condition, message) {
@@ -26,17 +34,25 @@ function stripBridgeSource(text) {
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
 		.replace(/^import\s+[^;]+;\r?\n/gm, "")
 		.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+		.replace(/^export async function /gm, "async function ")
+		.replace(/^export function /gm, "function ")
+		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-		.replace(/\s+as\s+any/g, "")
 		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
+}
+
+function transformBridgeSource(text, sourcefile) {
+	const stripped = stripBridgeSource(text);
+	const rawComment = stripped.split(/\r?\n/).map((line) => `// raw:${line}`).join("\n");
+	return `${rawComment}\n${transformSync(stripped, { loader: "ts", target: "chrome120", sourcefile }).code}`;
 }
 function readBridgeRuntimeFile(file) {
 	const name = file.replace(/\.js$/, "");
 	if (file === "hook_dispatcher.js" || file === "disable_dialogs.js" || file === "content.js") {
-		return stripBridgeSource(read(`bridge_src/page_scripts/${name}.ts`).replace(/^import \{ TID \} from "\.\.\/shared\/protocol";\r?\n\r?\n/, 'const TID = "__pi_browser_bridge_request__";\n'));
+		return transformBridgeSource(read(`bridge_src/page_scripts/${name}.ts`).replace(/^import \{ TID \} from "\.\.\/shared\/protocol";\r?\n\r?\n/, 'const TID = "__pi_browser_bridge_request__";\n'), `bridge_src/page_scripts/${name}.ts`);
 	}
-	return stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
+	return transformBridgeSource(read(`bridge_src/service_worker/${name}.ts`), `bridge_src/service_worker/${name}.ts`);
 }
 
 function readBridgeBundle(files) {
@@ -90,13 +106,18 @@ const patternsBridge = readBridgeRuntimeFile("patterns.js");
 const hookDispatcher = readBridgeRuntimeFile("hook_dispatcher.js");
 const coreCommands = readBridgeRuntimeFile("core_commands.js");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
-assert(bridgeInfo.includes("url === 'about:blank'"), "bridge tab tracking must include about:blank tabs created before navigation");
-assert(htmlBridge.includes("raw: 'outer'") && htmlBridge.includes("fragment: 'inner'"), "html.get must implement documented raw/fragment mode aliases");
+assert(/\b(?:url|text)\s*===\s*["']about:blank["']/.test(bridgeInfo), "bridge tab tracking must include about:blank tabs created before navigation");
+assert(/raw:\s*["']outer["']/.test(htmlBridge) && /fragment:\s*["']inner["']/.test(htmlBridge), "html.get must implement documented raw/fragment mode aliases");
 assert(htmlBridge.includes("function sliceUtf8(str, limit)") && htmlBridge.indexOf("function sliceUtf8(str, limit)") < htmlBridge.indexOf("sliceUtf8(html, maxBytes)"), "html.get must define sliceUtf8 inside the page expression before maxBytes truncation");
-assert(htmlBridge.includes("error_code: 'SELECTOR_NOT_FOUND'") && htmlBridge.includes("error_code: 'INVALID_SELECTOR'") && !htmlBridge.includes("error_code: 'SELECTOR_TIMEOUT'"), "html.get selector lookup must use stable selector-not-found/invalid-selector errors instead of timeout");
+assert(/error_code:\s*["']SELECTOR_NOT_FOUND["']/.test(htmlBridge) && /error_code:\s*["']INVALID_SELECTOR["']/.test(htmlBridge) && !/error_code:\s*["']SELECTOR_TIMEOUT["']/.test(htmlBridge), "html.get selector lookup must use stable selector-not-found/invalid-selector errors instead of timeout");
 assert(cdpBridge.includes("grantUniversalAccess: Boolean(options?.grantUniversalAccess)") && !cdpBridge.includes("grantUniveralAccess"), "frame.evaluate must pass correctly-spelled CDP grantUniversalAccess option");
 assert(frameBridge.includes("msg.grantUniversalAccess") && frameBridge.includes("options.grantUniversalAccess"), "frame.evaluate must forward top-level grantUniversalAccess to CDP options");
-assert(frameBridge.includes("tabId:Number(tabId)") && frameBridge.includes("frames: Array.isArray(fr.data.frames)") && frameBridge.includes("frameId:String(msg.frameId)"), "frame commands must return tab-scoped structured frame list/evaluate metadata");
+assert(
+	/(?:tabId\s*:\s*Number\s*\(\s*tabId\s*\)|tabId:Number\(tabId\))/.test(frameBridge)
+	&& /frames\s*:\s*Array\.isArray\s*\(\s*(?:data|fr\.data)\.frames\s*\)/.test(frameBridge)
+	&& /frameId\s*:\s*String\s*\(\s*msg\.frameId\s*\)/.test(frameBridge),
+	"frame commands must return tab-scoped structured frame list/evaluate metadata",
+);
 assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
 assert(waitBridgeFiles[0] === "wait_cdp.js" && waitBridgeFiles[1] === "wait_coordinator.js" && waitBridgeFiles.at(-1) === "wait.js", "wait helper modules must load before wait.js in VM fixtures");
 assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait_navigation.js") && background.indexOf("wait_navigation.js") < background.indexOf("wait_network_idle.js") && background.indexOf("wait_network_idle.js") < background.indexOf("wait_selector.js") && background.indexOf("wait_selector.js") < background.indexOf("wait.js"), "background.js must load wait helper modules before final wait.js facade");
@@ -163,7 +184,7 @@ assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDisp
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs instead of hardcoding the port");
-assert(transport.split(/\r?\n/).length <= 150, "transport.js must stay focused on WebSocket lifecycle");
+assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 150, "transport.js must stay focused on WebSocket lifecycle");
 assert(transport.includes("cleanupTransportSocket") && transport.includes("if (ws !== socket) return false"), "transport.js must use identity-guarded socket cleanup");
 assert(transport.includes("const socket = ws;") && transport.includes("handlePiBridgeWsMessage(JSON.parse(event.data), socket)"), "transport.js handlers must capture the current socket instead of reading global ws");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
@@ -174,10 +195,22 @@ assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"),
 assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTask"), "tab_sync.js must wrap async lifecycle tasks with rejection handling");
 assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 assert(/chrome\.tabs\.onRemoved\.addListener\(\(tabId\)\s*=>\s*\{\s*cleanupPiBrowserTab\(tabId,\s*['"]tab_removed['"]\)/s.test(tabSync), "tab removal must route through unified tab cleanup before sending tabs_update");
-assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("optionalLegacyCommand('cleanupNetworkRecorderTab')?.(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, CDP refs, and network recorders for removed tabs");
-assert(waitBridge.includes("function cleanupTabWaits(tabId, reason, options)") && waitBridge.includes("cleanupPiBrowserCdpTab(tabId, cleanupReason)") && waitBridge.includes("cleanupEventSubscriptionsForTab(tabId)") && waitBridge.includes("remaining_waits"), "wait cleanup must remove tab-scoped active waits, event subscriptions, and CDP refs");
+assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, CDP refs, and network recorders for removed tabs");
+assert(
+	/function\s+cleanupTabWaits\s*\(\s*tabId\s*,\s*reason\s*,\s*options(?:\s*=\s*\{\})?\s*\)/.test(waitBridge)
+	&& waitBridge.includes("cleanupPiBrowserCdpTab(tabId, cleanupReason)")
+	&& waitBridge.includes("cleanupEventSubscriptionsForTab(tabId)")
+	&& waitBridge.includes("remaining_waits"),
+	"wait cleanup must remove tab-scoped active waits, event subscriptions, and CDP refs",
+);
 assert(waitBridge.includes("wait.any requires waits/conditions") && waitBridge.includes("wait.all requires waits/conditions"), "wait.any/all must reject empty composite wait condition sets");
-assert(waitBridge.includes("eventSubscriptionKey(tabId, listenerId)") && waitBridge.includes("eventSubscription(listenerId, tabId)") && waitBridge.includes("deleteEventSubscription(listenerId, tabId)") && waitBridge.includes("filter(t => Number(t.tabId) === Number(tabId))"), "wait/hook diagnostics and listener removal must stay scoped to the target tab");
+assert(
+	waitBridge.includes("eventSubscriptionKey(tabId, listenerId)")
+	&& waitBridge.includes("eventSubscription(listenerId, tabId)")
+	&& waitBridge.includes("deleteEventSubscription(listenerId, tabId)")
+	&& /\.filter\s*\(\s*\(?[A-Za-z_$][\w$]*\)?\s*=>\s*Number\s*\(\s*[A-Za-z_$][\w$]*\.tabId\s*\)\s*===\s*Number\s*\(\s*tabId\s*\)/.test(waitBridge),
+	"wait/hook diagnostics and listener removal must stay scoped to the target tab",
+);
 assert(waitBridge.includes("callPagePiBrowser(tabId, 'hook.status'") && waitBridge.includes("callPagePiBrowser(tabId, 'hook.evaluate'"), "wait.diagnose must not auto-reinstall hook dispatchers as a read-only diagnostic command");
 assert(waitBridge.includes("document.querySelectorAll('iframe')") && waitBridge.includes("window.frames") && !waitBridge.includes("document.frames"), "wait.diagnose frame probe must use iframe nodes/window.frames instead of non-standard document.frames");
 assert(waitBridge.includes("function normalizePiBrowserWaitKind") && waitBridge.includes("replace(/[._-]/g") && waitBridge.includes("waitForNavigation(tabId, msg)"), "wait.any/all child dispatch must accept full native wait command names such as wait.loadState/wait.selector/wait.navigation");
@@ -192,7 +225,12 @@ assert(networkBridge.includes("function truncateBase64Body") && networkBridge.in
 assert(networkBridge.includes("const bodyRefs = new Set(records.map(r => r.bodyRef).filter(Boolean))"), "network.exportHar format=json must limit exported bodies to filtered records");
 assert(networkBridge.includes("PI_BROWSER_NETWORK_DEFAULT_BODY_MIME_ALLOW") && networkBridge.includes("bodyMimeAllow") && networkBridge.includes("bodyAvailability"), "network recorder must expose bounded automatic body capture and body availability diagnostics");
 assert(networkBridge.includes("captureRequestPostData !== false") && networkBridge.includes("maxPostDataSize: config.maxPostDataBytes"), "network recorder must capture bounded request postData by default and configure CDP postData size");
-assert(patternsBridge.includes("PI_BROWSER_NETWORK_MAX_PATTERN_CHARS") && patternsBridge.includes("isSafeNetworkRegexPattern") && patternsBridge.includes("pattern.length > PI_BROWSER_NETWORK_MAX_PATTERN_CHARS"), "shared pattern matching must bound user-controlled regex patterns");
+assert(
+	patternsBridge.includes("PI_BROWSER_NETWORK_MAX_PATTERN_CHARS")
+	&& patternsBridge.includes("isSafeNetworkRegexPattern")
+	&& /\b(?:pattern|text)\.length\s*>\s*PI_BROWSER_NETWORK_MAX_PATTERN_CHARS/.test(patternsBridge),
+	"shared pattern matching must bound user-controlled regex patterns",
+);
 assert(networkBridge.includes("matchNetworkPattern(url, p)") && waitBridge.includes("matchNetworkPattern(url, p)") && !waitBridge.includes("new RegExp(p)"), "network recorder and wait.networkIdle must use the shared safe pattern matcher");
 assert(hookDispatcher.includes("PI_BROWSER_HOOK_MAX_REDACT_PATTERNS") && hookDispatcher.includes("PI_BROWSER_HOOK_REDACT_MAX_PATTERN_CHARS") && hookDispatcher.includes("isSafeHookRedactRegexPattern"), "hook dispatcher redact patterns must be bounded and safety-checked");
 assert(hookDispatcher.includes("escapeRegExpLiteral") && !hookDispatcher.includes("new RegExp(String(p), 'gi')"), "hook dispatcher unsafe redact patterns must fall back to literal replacement instead of direct regex compilation");
@@ -204,13 +242,24 @@ assert(coreCommands.includes("function mergePiBrowserCookies") && coreCommands.i
 assert(coreCommands.includes("function normalizePiBrowserCookieUrl") && coreCommands.includes("unsupported_cookie_url_scheme") && !coreCommands.includes("url.match(/^https?"), "bridge cookie URL handling must validate non-http(s) URLs before origin extraction");
 assert(router.includes("data.id === undefined") && router.includes("data.code === undefined") && !router.includes("if (!data.id || !data.code)"), "router.js must use nullish websocket envelope checks instead of falsy drops");
 assert(router.includes("Message object must contain a non-empty") && router.includes("Unsupported message code type"), "router.js must return explicit malformed websocket input errors");
-assert(router.includes("!Array.isArray(p)") && router.includes("typeof p.cmd === 'string'"), "router.js must only promote JSON string code to command mode when it contains cmd");
+assert(router.includes("!Array.isArray(p)") && /typeof\s+(?:\([^)]*\)\.)?p(?:\s+as\s+[^\n]+)?\.cmd\s*===\s*["']string["']|typeof\s+p\.cmd\s*===\s*["']string["']/.test(router), "router.js must only promote JSON string code to command mode when it contains cmd");
 assert(cdpBridge.includes("piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS"), "persistent CDP session limit must be enforced before new attach");
 assert(coreCommands.includes("R.push(normalizeBridgeResponse(await handleTabsCommand(c), c.cmd))"), "batch tabs commands must reuse handleTabsCommand instead of forcing list semantics");
 const artifactReaderSource = read("src/tools/artifactReader.ts");
 assert(artifactReaderSource.includes("createReadStream") && artifactReaderSource.includes("readline.createInterface"), "browser_artifact text/search/sample readers must stay streaming");
-assert(artifactReaderSource.includes('if (mode === "json") {') && artifactReaderSource.includes('return readJson(await readFile(absPath, "utf8"), info.size, absPath, params);'), "browser_artifact readFile path must stay isolated to json mode after size cap");
-assert(/if \(mode === "json"\) \{\s*if \(info\.size > MAX_ARTIFACT_READ_BYTES\)/s.test(artifactReaderSource), "browser_artifact size cap must apply to json readFile path, not streaming text/search/sample paths");
+const jsonModeStart = artifactReaderSource.indexOf('if (mode === "json") {');
+const streamingModeStart = artifactReaderSource.indexOf('if (mode === "search") result', jsonModeStart);
+assert(jsonModeStart >= 0 && streamingModeStart > jsonModeStart, "browser_artifact must keep a dedicated json branch before streaming modes");
+const jsonModeBranch = artifactReaderSource.slice(jsonModeStart, streamingModeStart);
+const streamingModeBranch = artifactReaderSource.slice(streamingModeStart);
+assert(
+	jsonModeBranch.includes("info.size > MAX_ARTIFACT_READ_BYTES")
+	&& jsonModeBranch.includes('readFile(absPath, "utf8")')
+	&& jsonModeBranch.includes("redactArtifactResult(result, redact)"),
+	"browser_artifact readFile path must stay isolated to json mode after size cap and feed the redacted output path",
+);
+assert(!streamingModeBranch.includes("readFile(absPath"), "browser_artifact text/search/sample paths must not use readFile");
+assert(/if \(mode === "json"\) \{\s*if \(info\.size > MAX_ARTIFACT_READ_BYTES\)/s.test(jsonModeBranch), "browser_artifact size cap must apply to json readFile path, not streaming text/search/sample paths");
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) {
 	assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 }
@@ -348,7 +397,8 @@ async function testTransportSocketCleanupIdentity() {
 		isScriptable: () => true,
 		piBridgeInfo: () => ({ id: "bridge-test" }),
 		installCspBypassRule() {},
-		installPiBrowserTabSync() {},
+		installPiBrowserTabSync(deps) { sandbox.tabSyncDeps = deps; },
+		setBridgeWakeProbe(fn) { sandbox.bridgeWakeProbe = fn; },
 		handlePiBridgeWsMessage: async () => {},
 		chrome: {
 			runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, reload() {} },
@@ -357,7 +407,11 @@ async function testTransportSocketCleanupIdentity() {
 		},
 	};
 	vm.runInNewContext(transport, sandbox, { filename: "transport.js" });
+	assert(sandbox.installPiBrowserTransport() === true, "transport must install explicitly through the ESM service-worker entry");
+	assert(sandbox.installPiBrowserTransport() === false, "transport install must be idempotent");
 	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sandbox.bridgeWakeProbe === sandbox.probeAndConnectWS, "transport must register bridge_wake probe through the command-layer hook");
+	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
 	assert(sockets.length === 1, "transport must create an initial socket after successful health probe");
 	const first = sockets[0];
 	first.readyState = FakeWebSocket.OPEN;
@@ -474,7 +528,7 @@ async function testTabSyncAsyncErrorsAreCaught() {
 		},
 	};
 	vm.runInNewContext(tabSync, sandbox, { filename: "tab_sync.js" });
-	sandbox.installPiBrowserTabSync();
+	sandbox.installPiBrowserTabSync({ getSocket: () => socket, probe: (...args) => probeImpl(...args) });
 	queryImpl = async () => { throw new Error("query boom"); };
 	listeners.updated(1, { status: "complete" });
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -918,9 +972,10 @@ async function testRouterWsMalformedInputErrors() {
 	const execRequests = [];
 	const validationInputs = [];
 	const routerSandbox = {
-		self: { PiNativeProtocol: { validateCommand: (msg) => { validationInputs.push(msg); return { ok: true, command: msg }; } } },
 		chrome: { runtime: { onMessage: { addListener() {} } } },
+		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE" },
 		bridgeError: (_code, error, details) => ({ ok: false, error, details }),
+		validatePiBridgeProtocolMessage: (msg) => { validationInputs.push(msg); return { ok: true, command: msg }; },
 		handleBridgeWake: async () => ({ ok: true, data: {} }),
 		handleCookies: async () => ({ ok: true, data: {} }),
 		handleCDP: async () => ({ ok: true, data: {} }),
@@ -931,6 +986,7 @@ async function testRouterWsMalformedInputErrors() {
 		handleContentSettingsCommand: async () => ({ ok: true, data: {} }),
 		handlePiNativeBrowserCommand: async () => ({ ok: true, data: {} }),
 		isPiNativeBrowserCommand: () => false,
+		dispatchPiBridgeCommand: async () => ({ ok: true, data: {} }),
 		handleWsExec: async (data, socket) => { execRequests.push(data); socket.send(JSON.stringify({ type: "exec", id: data.id, code: data.code })); },
 		socket: { send(text) { sent.push(JSON.parse(text)); } },
 		console,
@@ -960,9 +1016,10 @@ await testRouterWsMalformedInputErrors();
 async function testRouterNativeWsErrorFrames() {
 	const sent = [];
 	const routerSandbox = {
-		self: { PiNativeProtocol: { validateCommand: (msg) => ({ ok: true, command: msg }) } },
 		chrome: { runtime: { onMessage: { addListener() {} } } },
+		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE" },
 		bridgeError: (_code, error, details) => ({ ok: false, error, details }),
+		validatePiBridgeProtocolMessage: (msg) => ({ ok: true, command: msg }),
 		handleBridgeWake: async () => ({ ok: true, data: {} }),
 		handleCookies: async () => ({ ok: true, data: {} }),
 		handleCDP: async () => ({ ok: true, data: {} }),
@@ -973,6 +1030,7 @@ async function testRouterNativeWsErrorFrames() {
 		handleContentSettingsCommand: async () => ({ ok: true, data: {} }),
 		handlePiNativeBrowserCommand: async () => ({ ok: false, error: "native boom", details: { cmd: "wait.selector" } }),
 		isPiNativeBrowserCommand: (cmd) => cmd === "wait.selector",
+		dispatchPiBridgeCommand: async (msg) => msg.cmd === "wait.selector" ? { ok: false, error: "native boom", details: { cmd: "wait.selector" } } : { ok: true, data: {} },
 		handleWsExec: async () => {},
 		socket: { send(text) { sent.push(JSON.parse(text)); } },
 		console,
@@ -993,6 +1051,10 @@ assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "
 
 const registerToolsSource = read("src/tools/registerTools.ts");
 const toolSource = readToolSources();
+
+const toolAdapterSource = read("src/tools/toolAdapter.ts");
+function usesJsonDistillation(source) { return source.includes("distilledJsonResult") || (source.includes("jsonToolResult") && toolAdapterSource.includes("distilledJsonResult")); }
+function usesTextDistillation(source) { return source.includes("distilledTextResult") || (source.includes("textToolResult") && toolAdapterSource.includes("distilledTextResult")); }
 assert(registerToolsSource.split(/\r?\n/).length <= 60, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
@@ -1005,17 +1067,17 @@ for (const removed of ["browser_query", "browser_click", "browser_type", "browse
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
-assert(read("src/tools/registerScanTool.ts").includes("distilledTextResult"), "browser_scan must use result distillation middleware");
-assert(read("src/tools/registerHtmlTool.ts").includes("distilledTextResult"), "browser_html must use result distillation middleware");
-assert(read("src/tools/registerContentTool.ts").includes("distilledTextResult"), "browser_content must use result distillation middleware");
-assert(read("src/tools/registerPickTool.ts").includes("distilledJsonResult"), "browser_pick must use result distillation middleware");
-assert(read("src/tools/registerEvidenceTool.ts").includes("distilledJsonResult"), "browser_evidence must use result distillation middleware");
-assert(read("src/tools/registerNativeActionTools.ts").includes("distilledJsonResult"), "browser_network must use result distillation middleware through native action tools");
+assert(usesTextDistillation(read("src/tools/registerScanTool.ts")), "browser_scan must use result distillation middleware");
+assert(usesTextDistillation(read("src/tools/registerHtmlTool.ts")), "browser_html must use result distillation middleware");
+assert(usesTextDistillation(read("src/tools/registerContentTool.ts")), "browser_content must use result distillation middleware");
+assert(usesJsonDistillation(read("src/tools/registerPickTool.ts")), "browser_pick must use result distillation middleware");
+assert(usesJsonDistillation(read("src/tools/registerEvidenceTool.ts")), "browser_evidence must use result distillation middleware");
+assert(usesJsonDistillation(read("src/tools/registerNativeActionTools.ts")), "browser_network must use result distillation middleware through native action tools");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
 assert(toolSource.includes("For automation, call browser_tabs list or switch first"), "tab-scoped tools must warn agents to list/switch before automation");
 assert(toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tabId fallback warning missing from tool prompts");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
-assert((toolSource.match(/optionalTargetTabId\(/g) || []).length >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
+assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");
 assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "pi-browser-tools skill must document explicit tabId automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_content"), "pi-browser-tools skill must document pick/content flows");
@@ -1041,7 +1103,7 @@ for (const forbidden of [
 ]) {
 	assert(!toolSource.includes(forbidden), `registerTools.ts must not duplicate native command params schema: ${forbidden}`);
 }
-assert(toolSource.includes("outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION }))"), "scan output path option missing");
+assert(toolSource.includes("outputPath: Type.Optional(Type.String({ description: OUTPUT_PATH_DESCRIPTION }))") || toolSource.includes("sharedTabScopedToolParams"), "scan output path option missing");
 
 async function testCdpAliasReleaseAndFrameOptions() {
 	const attachedTabs = new Set();
@@ -1237,7 +1299,8 @@ await testHookReadOnlyScopeContracts();
 async function testRuntimeCallPagePiBrowserTimeoutContract() {
 	const cdpCalls = [];
 	const sandbox = {
-		self: { PiNativeProtocol: { schema: {}, nativeCommandMap: {}, aliases: {}, canonicalCommand: (cmd) => cmd } },
+		PiNativeProtocol: { schema: {}, nativeCommandMap: {}, aliases: {}, canonicalCommand: (cmd) => cmd },
+		self: {},
 		console,
 		setTimeout,
 		clearTimeout,

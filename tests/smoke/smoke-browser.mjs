@@ -12,6 +12,7 @@ const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
 const smokePort = Number(process.env.PI_BROWSER_SMOKE_PORT || 8765);
 const transferSmoke = process.env.PI_BROWSER_SMOKE_TRANSFER === "1" || process.argv.includes("--transfer");
+const minimalSmoke = process.env.PI_BROWSER_SMOKE_MINIMAL === "1" || process.argv.includes("--minimal");
 const bridge = new BrowserBridgeServer();
 const results = [];
 
@@ -104,6 +105,13 @@ try {
 	await bridge.sendCommand({ cmd: "wait.loadState", state: "complete", tabId }, { tabId, timeoutMs: 10_000 });
 	record("wait.loadState", true);
 
+	if (minimalSmoke) {
+		const minimal = await bridge.executeJavaScript("(() => { const el = document.querySelector('#result'); el.textContent = 'rollback-minimal'; return { title: document.title, result: el.textContent }; })()", { tabId, timeoutMs: 10_000 });
+		record("execute.minimal", minimal.data?.title === "Pi Browser Smoke" && minimal.data?.result === "rollback-minimal", minimal.data || {});
+		await bridge.closeTab(tabId, 5_000).catch(() => {});
+		tabId = undefined;
+		record("tabs.close", true, { minimal: true });
+	} else {
 	const scan = await bridge.executeJavaScript(buildScanScript({ maxChars: 20_000 }), { tabId, timeoutMs: 10_000 });
 	const scanContent = String(scan.data?.content || "");
 	await writeFile(path.join(outDir, "smoke-script-scan.txt"), scanContent, "utf8");
@@ -167,6 +175,7 @@ try {
 	await bridge.closeTab(tabId, 5_000).catch(() => {});
 	tabId = undefined;
 	record("tabs.close", true);
+	}
 } catch (error) {
 	if (isBridgePortStartFailure(error)) {
 		const diagnosis = await diagnoseBridgePortInUse({ host: bridge.host, port: bridge.port, error });
@@ -179,6 +188,8 @@ try {
 	if (tabId) await bridge.closeTab(tabId, 2_000).catch(() => {});
 	await bridge.stop().catch(() => {});
 	if (fixture) await new Promise((resolve) => fixture.close(resolve));
-	await writeFile(path.join(outDir, "smoke-browser-results.json"), JSON.stringify({ ok: process.exitCode !== 1, results }, null, 2), "utf8");
-	console.log(JSON.stringify({ ok: process.exitCode !== 1, results }, null, 2));
+	const ok = process.exitCode !== 1 && results.every((item) => item.ok !== false);
+	if (!ok) process.exitCode = 1;
+	await writeFile(path.join(outDir, "smoke-browser-results.json"), JSON.stringify({ ok, results }, null, 2), "utf8");
+	console.log(JSON.stringify({ ok, results }, null, 2));
 }

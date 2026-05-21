@@ -7,4 +7,4 @@ export const serviceWorkerGlobal = globalThis as typeof globalThis & {
   piPersistentCdpBridge?: unknown;
 };
 
-export const chromeApi = serviceWorkerGlobal.chrome as any;
+export const chromeApi = serviceWorkerGlobal.chrome as ChromeApi;
