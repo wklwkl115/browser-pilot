@@ -37,6 +37,42 @@ function chromePath() {
 	for (const candidate of chromeCandidates) if (existsSync(candidate)) return candidate;
 	throw new Error(`Chrome/Chromium executable not found; set PI_BROWSER_SMOKE_CHROME. Tried: ${chromeCandidates.join(", ")}`);
 }
+function innerSmokeResultPath(isolatedResultPath) {
+	const base = path.basename(isolatedResultPath).replace(/-isolated-results\.json$/, "-results.json");
+	return path.join(path.dirname(isolatedResultPath), base === path.basename(isolatedResultPath) ? "smoke-browser-results.json" : base);
+}
+async function readJsonFile(file) {
+	try { return JSON.parse(await readFile(file, "utf8")); }
+	catch { return undefined; }
+}
+function extractOrchestrationDiagnostics(smokeArtifact) {
+	const results = Array.isArray(smokeArtifact?.results) ? smokeArtifact.results : [];
+	const orchestrationSteps = results.filter((item) => String(item.step || "").startsWith("browser_orchestrate."));
+	const windowSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.window"));
+	const windowApplyStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowApply");
+	const windowArtifactStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowArtifact");
+	const windowDeleteStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowDelete");
+	const orchestrationId = orchestrationSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
+	const windowOrchestrationId = windowSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
+	const operationResults = orchestrationSteps.flatMap((item) => Array.isArray(item.operationResults) ? item.operationResults : []);
+	const bindings = orchestrationSteps.flatMap((item) => Array.isArray(item.bindings) ? item.bindings : []);
+	const windowOperationResults = [windowApplyStep, windowDeleteStep].flatMap((item) => Array.isArray(item?.operationResults) ? item.operationResults : []);
+	const windowBindings = Array.isArray(windowApplyStep?.bindings) ? windowApplyStep.bindings : Array.isArray(windowArtifactStep?.bindings) ? windowArtifactStep.bindings : [];
+	const artifactPaths = orchestrationSteps.map((item) => item.path).filter((item) => typeof item === "string");
+	const windowTabGroups = {
+		windowOrchestrationId,
+		windowIds: Array.from(new Set(windowBindings.map((item) => item.windowId).filter((item) => typeof item === "number"))),
+		groupIds: Array.from(new Set(windowBindings.map((item) => item.groupId).filter((item) => typeof item === "number"))),
+		tabGroupsStatuses: Array.from(new Set([
+			...windowBindings.map((item) => item.tabGroupsStatus).filter(Boolean),
+			...windowOperationResults.map((item) => item.tabGroupsStatus).filter(Boolean),
+		])),
+		windowOwnedCount: windowBindings.filter((item) => item.windowOwned === true).length,
+		closeWindowCount: windowOperationResults.filter((item) => item.action === "closeWindow").length,
+		groupTabsStatus: windowOperationResults.find((item) => item.action === "groupTabs")?.status,
+	};
+	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, artifactPaths } : undefined;
+}
 async function fetchJson(url) {
 	const res = await fetch(url);
 	return await res.json();
@@ -132,7 +168,7 @@ let chromeStderr = "";
 let debugPort;
 let chromeTargets = [];
 let serviceWorkerWake;
-let result = { ok: false, profileDir, extensionDir, extensionSource, resultPath };
+let result = { ok: false, profileDir, extensionDir, extensionSource, resultPath, smokeResultPath: innerSmokeResultPath(resultPath) };
 try {
 	await mkdir(outDir, { recursive: true });
 	await mkdir(path.dirname(resultPath), { recursive: true });
@@ -146,7 +182,8 @@ try {
 	const chromeExe = chromePath();
 	const chromeProfileDir = windowsPathForChrome(profileDir, chromeExe);
 	const chromeExtensionDir = windowsPathForChrome(extensionDir, chromeExe);
-	const smokeRun = startNodeSmoke({ PI_BROWSER_BRIDGE_PORT: String(bridgePort), PI_BROWSER_SMOKE_PORT: String(fixturePort), PI_BROWSER_SMOKE_REUSE_EXISTING: "1" });
+	const smokeResultPath = innerSmokeResultPath(resultPath);
+	const smokeRun = startNodeSmoke({ PI_BROWSER_BRIDGE_PORT: String(bridgePort), PI_BROWSER_SMOKE_PORT: String(fixturePort), PI_BROWSER_SMOKE_REUSE_EXISTING: "1", PI_BROWSER_SMOKE_BROWSER_RESULT_PATH: smokeResultPath });
 	smokeChild = smokeRun.child;
 	await delay(1000);
 	chrome = spawn(chromeExe, [
@@ -173,7 +210,9 @@ try {
 		await delay(250);
 	}
 	const smoke = await smokeRun.done;
-	result = { ok: smoke.code === 0, bridgePort, fixturePort, debugPort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, serviceWorkerWake, chromeTargets: chromeTargets.map((target) => ({ type: target.type, title: target.title, url: target.url })), stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
+	const smokeArtifact = await readJsonFile(smokeResultPath);
+	const orchestration = extractOrchestrationDiagnostics(smokeArtifact);
+	result = { ok: smoke.code === 0, bridgePort, fixturePort, debugPort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, smokeResultPath, orchestration, smokeArtifactSummary: smokeArtifact ? { ok: smokeArtifact.ok, resultCount: Array.isArray(smokeArtifact.results) ? smokeArtifact.results.length : 0, failedSteps: (Array.isArray(smokeArtifact.results) ? smokeArtifact.results : []).filter((item) => item.ok === false).map((item) => item.step) } : undefined, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, serviceWorkerWake, chromeTargets: chromeTargets.map((target) => ({ type: target.type, title: target.title, url: target.url })), stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
 	process.exitCode = smoke.code === 0 ? 0 : 1;
 } catch (error) {
 	result = { ...result, ok: false, error: error instanceof Error ? error.message : String(error) };

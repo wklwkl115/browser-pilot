@@ -1,6 +1,6 @@
 # Pi Browser Tools
 
-Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简化 DOM 扫描、JavaScript/CDP 执行、正文提取、网络证据、上传下载、截图、artifact 局部读取、Web 探测/请求重放和原生 bridge 命令。
+Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、页面 DOM 检查、选择器验证、元素定位、JavaScript/CDP 执行、正文提取、网络证据、上传下载、截图、artifact 局部读取、Web 探测/请求重放和原生 bridge 命令。
 
 ## 职责划分
 
@@ -11,9 +11,9 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 ## 工具清单
 
 - `browser_tabs`：list / switch / create / close / selectBrowser；list 返回 `tabId`、browser-scoped `id` 与 `browserId`，可区分多浏览器相同数值 tabId；create 省略 URL 时创建并持续列出 `about:blank`；`selectBrowser` 优先使用该浏览器上报的 `active:true` tab 作为隐式目标，无活动 tab 时清空隐式目标并返回 `NO_TAB`，避免省略 `tabId` 时落到后台 tab 或跨浏览器回落。
-- Tab-scoped 工具自动化场景应显式传 `tabId`；省略时使用当前 selected/latest fallback，断开或关闭后优先回退到同 browser 的 `active:true` tab，再用有效 latest；显式 stale `tabId` 会本地返回 `TAB_NOT_FOUND`，不会回落到其它 browser socket；结果会暴露 `target.source` 与 `selectionVersion` 便于诊断并发切 tab。
+- Tab-scoped 工具自动化场景应显式传 `tabId`，或在 `browser_orchestrate` 已绑定 tab 后使用 `target:{orchestrationId,sessionTag,tabRole}`；省略时使用当前 selected/latest fallback，断开或关闭后优先回退到同 browser 的 `active:true` tab，再用有效 latest；显式 stale `tabId` 会本地返回 `TAB_NOT_FOUND`，不会回落到其它 browser socket；逻辑 target 冲突/歧义/stale 会返回 `TARGET_CONFLICT`、`TARGET_AMBIGUOUS`、`ORCHESTRATION_TARGET_STALE` 等结构化错误；结果会暴露 `target.source` 与 `selectionVersion` 便于诊断并发切 tab。
 - `browser_execute`：执行 JavaScript 或发送 bridge command；只有显式 `command` 或含 `cmd` 的 JSON object string 会走 command 模式，其他 JSON-looking string 保持 JavaScript source；batch bridge command 会保留 `tabs.create/switch/close/list` 的 method 语义；常规点击、输入、复杂页面操作默认在这里用 JS/CDP 一次性完成；可选 `monitor:true` 在保留 `data/target/newTabs/acknowledged` 顶层执行结果的同时追加执行前后 scan diff；上传必须使用 `browser_upload`。
-- `browser_scan`：GA-style 简化 DOM/text 扫描，可包含同源 iframe；返回 `actionables` 候选表（selector/action/label/point/hitOk）与 `list_hints` 重复列表提示，用于生成后续执行脚本；抽取结果走 direct CDP value 通道，`outputPath` 保存脚本声明预算内的真实 scan envelope，不再受 `exec.js` 20 万字符 serializer 截断。
+- `browser_scan`：检查页面 DOM/text，可包含同源 iframe；返回 `actionables` 候选表（selector/action/label/point/hitOk）与 `list_hints` 重复列表提示，用于选择器验证、元素定位和生成后续执行脚本；抽取结果走 direct CDP value 通道，`outputPath` 保存脚本声明预算内的真实 scan envelope，不再受 `exec.js` 20 万字符 serializer 截断。
 - `browser_pick`：用户交互点选页面元素，返回 selector 和摘要；`focus:false` 时由工具层持有用户 `timeoutMs` 总 deadline，到期返回结构化 `{cancelled:true, reason:"timeout"}` 并通过页面 cleanup handle 清理 overlay/listeners，不把后台 tab timer throttle 暴露成 CDP `Runtime.evaluate` 超时。
 - `browser_content`：提取当前页或指定 URL 的正文 Markdown；带 URL 导航复用 `browser_wait` 的 durable wait supervisor，并在详情中保留 supervisor 元数据；抽取阶段严格使用 `timeoutMs`，小于 100ms 的显式超时返回参数错误；selector 未命中返回 `SELECTOR_NOT_FOUND`，无效 selector 返回 `INVALID_SELECTOR`，命中空节点返回结构化 `empty:true`；抽取结果走 direct CDP value 通道，`outputPath` 保存脚本声明预算内的真实 Markdown envelope，不再受 `exec.js` 20 万字符 serializer 截断。
 - `browser_download`：通过 selector click、media selector 或 URL 下载并回传 Chrome 本地路径；`mode` 只允许 `click|media|url`，selector 目标仅接受省略/`click`/`media`，URL 目标仅接受省略/`url`，冲突或未知值返回 `INVALID_RULE`；click 会优先用可提取 URL 或 tab-scoped 下载事件关联；主结果保留完整 bridge envelope（id/tabId/acknowledged/target/newTabs），摘要只压缩 payload。
@@ -71,10 +71,10 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope；summary/full/details/error content 默认脱敏 cookie/token/authorization/body/postData/websocket payload，敏感完整证据改写入本地 artifact 并返回 `saved.path`。
 - `outputPath` 与自动落盘 artifact 优先保存可复原的原始调用 envelope / `artifactValue`；保存结果带 `privacy.classification:"local_raw_evidence"`、默认根目录 `.pi/browser-artifacts/`、`localOnly:true` 与手动清理提示；`browser_content`、`browser_scan`、`browser_html` 等 text 工具的返回仍可保持紧凑文本/summary，但 artifact 不再只保存截断纯文本。
 - 通用 bridge summary 会上浮 `tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 tab/session/frame 对账，无需打开完整 artifact；需要原始敏感字段时只用 `browser_artifact redact:false` 对本地路径做定点读取，不把 artifact 上传外部服务。
-- 操作流程保持 GA-style：`browser_scan` 观察页面 → `browser_execute` 执行定制 JS/CDP → `browser_wait` 等待 → 再 `browser_scan`/`browser_execute` 复查；长 wait 成功后检查 `supervisor` 元数据，若返回 `WAIT_STATE_LOST` 则重新观察页面/网络证据。
+- 操作流程保持明确闭环：`browser_scan` 观察 DOM/定位元素 → `browser_execute` 执行定制 JS/CDP → `browser_wait` 等待 → 再 `browser_scan`/`browser_execute` 做功能状态复查；长 wait 成功后检查 `supervisor` 元数据，若返回 `WAIT_STATE_LOST` 则重新观察页面/网络证据。
 - 复杂站点优先在单段脚本内完成定位、可见性判断、点击/输入和结果读取，避免拆成固定 selector 动作工具。
 
-## GA-style 执行脚本模板
+## DOM 定位执行脚本模板
 
 ```js
 (() => {
@@ -91,7 +91,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 输入类页面优先用页面真实事件：`focus()`、native value setter、`InputEvent`、必要时 CDP `Input.insertText`。复杂卡片点击优先用 scan 返回的 `point` 发 CDP `Input.dispatchMouseEvent`。
 
-CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再用 command `{cmd:'persistent_cdp',action:'send',cdpMethod:'Input.insertText',params:{text:'...'}}` 输入，最后 JS 读取状态；清空用 `Ctrl+A` + `Backspace` 的 `Input.dispatchKeyEvent`。需要 GA-style 自动变化摘要时，给 JS 模式传 `monitor:true`。
+CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再用 command `{cmd:'persistent_cdp',action:'send',cdpMethod:'Input.insertText',params:{text:'...'}}` 输入，最后 JS 读取状态；清空用 `Ctrl+A` + `Backspace` 的 `Input.dispatchKeyEvent`。需要紧凑的前后 DOM 变化摘要时，给 JS 模式传 `monitor:true`。
 
 ## 维护入口
 
@@ -103,7 +103,9 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`
 - 协议单源设计：`docs/protocol-single-source-plan.md`
 - 生成 native 协议契约文档：`docs/generated/native-protocol.generated.md`
-- Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
+- Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserTargetResolver.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
+- 状态协调器：`docs/browser-orchestration-coordinator.md`；`browser_orchestrate` 已注册为 callable Node 组合工具，支持 `plan/apply/status/watch/stop/delete` 与显式 TTL watch/self-heal，不替代页面观察/证据判断；首个生产闭环 gate 已由 `quality:local`、isolated smoke、release smoke 覆盖。
+- 状态协调器后续路线：`docs/browser-orchestration-next-roadmap.md`；target resolver 设计与运行规则：`docs/browser-target-resolver.md`；window/tabGroups primitive/runtime/smoke gate：`docs/window-isolation-tabgroups.md`；pre-navigation hook policy：`docs/pre-navigation-hook-policy.md`。TODO 224 已使 tab-scoped tools 支持 tool-level `target:{orchestrationId,sessionTag,tabRole}`；TODO 226 已落地 `windows` native primitives、owned window 创建/绑定/cleanup 与可降级 `tabGroups` 视觉分组；TODO 227 已用真实 Edge isolated/release smoke 验证 owned window、两个 owned tabs、`groupId`、`tabGroupsStatus` 与 `closeWindow` cleanup；TODO 228 已冻结 document-start hook metadata/registry/no-script-persistence policy，runtime 安装与 smoke 留给 TODO 229。逻辑 target 不进入 native schema，Node driver 解析后只向 bridge 发送最终 `tabId`；`tabGroupsStatus` degraded 不阻断 tabs/navigation/cookies/network/hook 核心 reconcile；orchestration Desired/persisted state 禁止保存 `script/code/source` 或任意可执行脚本文本。
 - Tool Adapter 边界：`src/tools/toolAdapter.ts` 只放共享参数、timeout/maxChars、错误包装、result middleware 与 artifact fallback；各 `register*Tool.ts` 仍保留 schema 组合和领域逻辑。
 
 ```bash
@@ -119,6 +121,7 @@ npm run check:protocol    # native protocol 生成产物 drift + protocol contra
 npm run docs:generate     # 从工具注册元数据与 native command schema 生成契约文档
 npm run check:deps         # 本地依赖/lockfile/npm ls/生产 audit 检查
 npm run check:token        # 结果预算与隐私脱敏契约
+npm run check:pre-nav-hook-policy # document-start hook policy / no-script-persistence 静态契约
 npm run check:artifact     # artifact 读取/脱敏/安全正则契约
 npm run check:errors       # 错误 taxonomy、diagnostics、脱敏与去 stack 契约
 npm run build:bridge   # 生成 manifest 当前使用的 dist runtime
@@ -134,7 +137,7 @@ npm run smoke:browser:transfer
 
 `npm run release:local` 在 `.pi/browser-artifacts/release-acceptance/work/pack-run` clean cwd 中执行 `npm pack --dry-run --json` 与实际 `npm pack --pack-destination`，解包校验 manifest 指向 `dist/service-worker.js`、dist/page bundles、native schema 与 `build-manifest.json` 的 `serviceWorkerBuildMode:"esm-import-graph"` / `orderedConcatenation:false`；摘要写 `.pi/browser-artifacts/release-acceptance/release-acceptance-summary.json`，当前包写 `current/pi-browser-tools-0.3.0.tgz`，上一轮成功包轮转到 `previous/`，本轮成功包保存到 `last-successful/` 作为后续回滚候选。
 
-`npm run release:local:smoke` 在上述验收基础上对当前解包扩展运行 full isolated smoke，并对 `previous/` 上一包运行最小 tabs/wait/execute 回滚 smoke；artifact 为 `.pi/browser-artifacts/release-acceptance/current-smoke-browser-isolated-results.json` 与 `rollback-smoke-browser-isolated-results.json`。失败摘要包含 pack 文件列表、build manifest、Chrome profile、bridge port 和 smoke artifact；需要保留失败临时 profile/扩展时加 `--keep-temp-on-failure` 或 `PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE=1`。
+`npm run release:local:smoke` 在上述验收基础上对当前解包扩展运行 full isolated smoke，并对 `previous/` 上一包运行最小 tabs/wait/execute 回滚 smoke；artifact 为 `.pi/browser-artifacts/release-acceptance/current-smoke-browser-isolated-results.json` 与 `rollback-smoke-browser-isolated-results.json`。当前包 full smoke artifact 上浮 `windowTabGroups`、`windowBindings`、`windowOperationResults`、`windowId/groupId/tabGroupsStatus` 与 `closeWindow` cleanup 证据。失败摘要包含 pack 文件列表、build manifest、Chrome profile、bridge port、smoke artifact、orchestrationId、operationResults、window/tabGroups diagnostics 与 orchestration artifact paths；需要保留失败临时 profile/扩展时加 `--keep-temp-on-failure` 或 `PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE=1`。
 
 `npm run docs:generate` 从实际 `pi.registerTool` 元数据、`bridge/native_command_schema.json` 与源码中的结构化错误码生成 `docs/generated/browser-tool-contract.generated.md`；其中 `Structured error taxonomy` 表保留公开 code，并列出 domain/category/retryable/source。`npm run check:tool-docs` 会执行 drift check，手改生成产物或 schema/tool 元数据未同步会失败。
 
@@ -156,7 +159,7 @@ npm run smoke:browser:transfer
 
 `npm run smoke:browser:isolated` 会复制临时扩展目录、patch dist bridge 端口、启动独占 Chrome profile，并写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json`；用于本地常驻 agent 占用 18765 时的 runtime 验证，不修改用户当前扩展目录。
 
-当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload。
+当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload，以及 `browser_orchestrate plan/apply/status/watch/delete`、cookie set/remove、network/hook 编排、watch 自愈、owned window 创建/cleanup 与 tabGroups success/degraded diagnostics。
 
 `bridge/native_command_schema.json` 是命令协议单一事实来源。修改协议后执行：
 

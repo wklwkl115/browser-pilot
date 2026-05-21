@@ -25,7 +25,7 @@ async function sendTabsUpdate() {
   ws.send(JSON.stringify({
     type: 'tabs_update',
     bridge: piBridgeInfo(),
-    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
+    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, groupId: t.groupId }))
   }));
 }
 

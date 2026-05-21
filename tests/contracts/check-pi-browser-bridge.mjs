@@ -240,6 +240,7 @@ assert(screenshotBridge.includes("actualFormat = format === 'jpeg' ? 'jpeg' : 'p
 assert(coreCommands.includes("normalizePiBrowserCreateTabUrl") && coreCommands.includes("javascript:") && coreCommands.includes("tabs.create requires an absolute URL"), "bridge tabs.create must validate malformed/script URLs before chrome.tabs.create");
 assert(coreCommands.includes("function mergePiBrowserCookies") && coreCommands.includes("item.path") && coreCommands.includes("item.storeId") && coreCommands.includes("partitionKey"), "bridge cookie merging must preserve distinct path/store/partition cookie identities");
 assert(coreCommands.includes("function normalizePiBrowserCookieUrl") && coreCommands.includes("unsupported_cookie_url_scheme") && !coreCommands.includes("url.match(/^https?"), "bridge cookie URL handling must validate non-http(s) URLs before origin extraction");
+assert(coreCommands.includes("chrome.cookies.set") && coreCommands.includes("chrome.cookies.remove") && coreCommands.includes("safePiBrowserCookieMutationDetails"), "bridge cookies command must expose set/remove primitives without returning raw cookie values from mutations");
 assert(router.includes("data.id === undefined") && router.includes("data.code === undefined") && !router.includes("if (!data.id || !data.code)"), "router.js must use nullish websocket envelope checks instead of falsy drops");
 assert(router.includes("Message object must contain a non-empty") && router.includes("Unsupported message code type"), "router.js must return explicit malformed websocket input errors");
 assert(router.includes("!Array.isArray(p)") && /typeof\s+(?:\([^)]*\)\.)?p(?:\s+as\s+[^\n]+)?\.cmd\s*===\s*["']string["']|typeof\s+p\.cmd\s*===\s*["']string["']/.test(router), "router.js must only promote JSON string code to command mode when it contains cmd");
@@ -883,6 +884,7 @@ await testTabsCreateUrlValidation();
 
 async function testCookiesPreserveDistinctScopes() {
 	const cookieQueries = [];
+	const cookieMutations = [];
 	const sandbox = {
 		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE", INTERNAL_ERROR: "INTERNAL_ERROR" },
 		bridgeError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
@@ -892,6 +894,7 @@ async function testCookiesPreserveDistinctScopes() {
 			cookies: {
 				async getAll(query) {
 					cookieQueries.push(query);
+					if (query.name === "sid") return [{ name: "sid", value: "root", domain: "example.test", path: "/", storeId: "0" }];
 					if (query.partitionKey) return [
 						{ name: "sid", value: "admin", domain: "example.test", path: "/admin", storeId: "0", partitionKey: { topLevelSite: "https://example.test" } },
 						{ name: "sid", value: "partition-root", domain: "example.test", path: "/", storeId: "0", partitionKey: { topLevelSite: "https://example.test" } },
@@ -901,6 +904,9 @@ async function testCookiesPreserveDistinctScopes() {
 						{ name: "prefs", value: "dark", domain: "example.test", path: "/", storeId: "0" },
 					];
 				},
+				async get(details) { cookieMutations.push(["get", details]); return { name: details.name, value: "read-secret", domain: "example.test", path: "/", storeId: "0" }; },
+				async set(details) { cookieMutations.push(["set", details]); if (details.name === "boom") throw new Error(`native set failed for ${details.value}`); return { ...details, domain: "example.test", path: details.path || "/", storeId: "0" }; },
+				async remove(details) { cookieMutations.push(["remove", details]); return { url: details.url, name: details.name, storeId: details.storeId || "0" }; },
 			},
 		},
 	};
@@ -912,6 +918,25 @@ async function testCookiesPreserveDistinctScopes() {
 	assert(result.data.some((cookie) => cookie.name === "sid" && cookie.path === "/admin" && cookie.value === "admin" && cookie.partitionKey?.topLevelSite === "https://example.test"), "cookies command must keep partitioned path-specific cookie");
 	assert(result.data.some((cookie) => cookie.name === "sid" && cookie.path === "/" && cookie.value === "partition-root" && cookie.partitionKey?.topLevelSite === "https://example.test"), "cookies command must keep partitioned root cookie distinct from unpartitioned root cookie");
 	assert(cookieQueries.some((query) => query.partitionKey?.topLevelSite === "https://example.test"), "cookies command must still query partitioned cookies for the request origin");
+	const getResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "get", url: "https://example.test/admin/panel", name: "sid" }, {});
+	assert(getResult.ok === true && getResult.data?.value === "read-secret", "cookies.get must return the requested cookie for browser-session consumers");
+	const setResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "session", value: "set-secret", path: "/admin", secure: true, httpOnly: true, sameSite: "lax", partitionKey: { topLevelSite: "https://example.test" } }, {});
+	assert(setResult.ok === true && setResult.data?.set === true, "cookies.set should call chrome.cookies.set and return success metadata");
+	assert(!JSON.stringify(setResult).includes("set-secret"), "cookies.set result must not leak raw cookie value");
+	const setCall = cookieMutations.find((item) => item[0] === "set")?.[1];
+	assert(setCall?.value === "set-secret" && setCall?.path === "/admin" && setCall?.secure === true && setCall?.httpOnly === true && setCall?.sameSite === "lax", "cookies.set must pass normalized cookie attributes to chrome.cookies.set");
+	const emptyValueSet = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "empty", value: "" }, {});
+	assert(emptyValueSet.ok === true && cookieMutations.some((item) => item[0] === "set" && item[1].name === "empty" && item[1].value === ""), "cookies.set must support empty string cookie values");
+	const setFailure = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "boom", value: "native-secret" }, {});
+	assert(setFailure.ok === false && setFailure.error_code === "INTERNAL_ERROR", "cookies.set native failures must return structured bridge errors");
+	assert(!JSON.stringify(setFailure).includes("native-secret"), "cookies.set failure details must not leak raw cookie value");
+	const removeResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "remove", url: "https://example.test/admin/panel", name: "session", storeId: "0" }, {});
+	assert(removeResult.ok === true && removeResult.data?.removed === true && removeResult.data?.details?.name === "session", "cookies.remove should call chrome.cookies.remove and return removal metadata");
+	assert(cookieMutations.some((item) => item[0] === "remove" && item[1].storeId === "0"), "cookies.remove must pass storeId to chrome.cookies.remove");
+	const invalidName = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "", value: "x" }, {});
+	assert(invalidName.ok === false && invalidName.error_code === "INVALID_RULE", "cookies.set must reject empty names at runtime");
+	const unsupportedSet = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "about:blank", name: "sid", value: "x" }, {});
+	assert(unsupportedSet.ok === false && unsupportedSet.error_code === "INVALID_RULE" && unsupportedSet.details?.reason === "unsupported_cookie_url_scheme", "cookies.set must reject unsupported URL schemes without calling chrome.cookies.set");
 	const queryCount = cookieQueries.length;
 	const aboutBlank = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", url: "about:blank" }, {});
 	assert(aboutBlank.ok === true && Array.isArray(aboutBlank.data) && aboutBlank.data.length === 0 && aboutBlank.details?.reason === "unsupported_cookie_url_scheme", "cookies command must return an empty stable result for non-http(s) URLs");

@@ -28,9 +28,10 @@ export class BrowserTabSessionRouter {
 		this.setLatestSessionId(undefined);
 	}
 
-	targetInfo(source: BrowserBridgeTargetSource, tabId?: number): BrowserBridgeTargetInfo {
+	targetInfo(source: BrowserBridgeTargetSource, tabId?: number, metadata: Partial<Omit<BrowserBridgeTargetInfo, "tabId" | "source" | "implicit" | "selectionVersionAtDispatch" | "selectionVersionAtResolve">> = {}): BrowserBridgeTargetInfo {
 		return {
 			tabId,
+			...metadata,
 			source,
 			implicit: source === "default" || source === "latest",
 			selectionVersionAtDispatch: this.selectionVersionValue,
@@ -56,8 +57,8 @@ export class BrowserTabSessionRouter {
 		this.refreshSelectedSessionRefs();
 	}
 
-	markTabDisconnected(tabId: number): void {
-		const session = this.liveSessionForTabId(tabId);
+	markTabDisconnected(tabId: number, browserId?: string): void {
+		const session = this.liveSessionForTabTarget(tabId, browserId);
 		if (session && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		this.refreshSelectedSessionRefs();
 	}
@@ -91,6 +92,7 @@ export class BrowserTabSessionRouter {
 				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
 				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
 				windowId: toTabId(tab.windowId) ?? existing?.windowId,
+				groupId: toTabId(tab.groupId) ?? existing?.groupId,
 				type: "ext_ws",
 				connectedAt: existing?.connectedAt || now,
 				bridge: this.clients.info(ws),
@@ -112,8 +114,8 @@ export class BrowserTabSessionRouter {
 		return sessionId;
 	}
 
-	selectTab(tabId: number): void {
-		const selectedSession = this.liveSessionForTabId(tabId);
+	selectTab(tabId: number, browserId?: string): void {
+		const selectedSession = this.liveSessionForTabTarget(tabId, browserId);
 		if (selectedSession) this.setDefaultSessionId(selectedSession.id);
 	}
 
@@ -121,8 +123,9 @@ export class BrowserTabSessionRouter {
 		return this.tabIdForSessionId(this.defaultSessionId);
 	}
 
-	liveSessionForTabId(tabId: number): BrowserTabSession | undefined {
+	liveSessionForTabTarget(tabId: number, browserId?: string): BrowserTabSession | undefined {
 		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
+		if (browserId) return live.find((session) => session.browserId === browserId || session.bridge?.extensionId === browserId || session.bridge?.id === browserId);
 		const scopeClient = this.clients.selectedOpenClient();
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
 		if (scoped) return scoped;
@@ -133,8 +136,16 @@ export class BrowserTabSessionRouter {
 		});
 	}
 
+	liveSessionForTabId(tabId: number): BrowserTabSession | undefined {
+		return this.liveSessionForTabTarget(tabId);
+	}
+
+	socketForTabTarget(tabId: number, browserId?: string): WebSocket | undefined {
+		return this.liveSessionForTabTarget(tabId, browserId)?.client;
+	}
+
 	socketForTab(tabId: number): WebSocket | undefined {
-		return this.liveSessionForTabId(tabId)?.client;
+		return this.socketForTabTarget(tabId);
 	}
 
 	fallbackExecutionTarget(): BrowserBridgeTargetInfo | undefined {

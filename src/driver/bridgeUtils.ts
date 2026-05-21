@@ -71,5 +71,7 @@ export function tabSessionSummary(session: BrowserTabSession): Record<string, un
 		tabId: session.tabId,
 		url: session.url,
 		active: session.active,
+		windowId: session.windowId,
+		groupId: session.groupId,
 	};
 }

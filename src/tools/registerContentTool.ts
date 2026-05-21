@@ -48,13 +48,13 @@ export function registerContentTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const maxChars = toolMaxChars(params, "browser_content");
 				let navigationData: unknown;
 				if (params.url) {
-					const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url, state: "complete", timeoutMs }, { tabId: params.tabId, timeoutMs });
+					const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url, state: "complete", timeoutMs }, { tabId: params.tabId, target: params.target, timeoutMs });
 					assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
 					navigationData = navigation.data;
 				}
 				const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 120_000);
 				const script = buildContentScript({ selector: params.selector, includeLinks: params.includeLinks, maxChars: captureMaxChars });
-				const result = await evaluatePageScriptDirect(server, script, { tabId: params.tabId, timeoutMs, name: "content_extract" });
+				const result = await evaluatePageScriptDirect(server, script, { tabId: params.tabId, target: params.target, timeoutMs, name: "content_extract" });
 				const data = result.data as Record<string, unknown> | undefined;
 				if (data?.ok === false) {
 					const code = typeof data.error_code === "string" ? data.error_code : "CONTENT_EXTRACTION_FAILED";

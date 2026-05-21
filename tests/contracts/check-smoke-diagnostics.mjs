@@ -71,10 +71,19 @@ assert.equal(freeDiagnosis.health.ok, false, "free-port diagnostic must preserve
 
 const smoke = read("tests/smoke/smoke-browser.mjs");
 assert(smoke.includes("diagnoseBridgePortInUse") && smoke.includes('record("bridge.port"'), "smoke-browser must emit bridge.port diagnostics on bridge start conflicts");
+for (const step of ["browser_orchestrate.plan", "browser_orchestrate.apply", "browser_orchestrate.status", "browser_orchestrate.selfHeal", "browser_orchestrate.delete"]) assert(smoke.includes(step), `smoke-browser must cover orchestration step ${step}`);
+for (const step of ["browser_orchestrate.windowPlan", "browser_orchestrate.windowApply", "browser_orchestrate.windowStatus", "browser_orchestrate.windowDelete", "browser_orchestrate.windowArtifact"]) assert(smoke.includes(step), `smoke-browser must cover window/tabGroups orchestration step ${step}`);
+assert(smoke.includes("ownedWindow") && smoke.includes("visualGrouping") && smoke.includes("groupTabs") && smoke.includes("closeWindow"), "smoke-browser must create owned windows and exercise visual grouping cleanup");
+assert(smoke.includes("PI_BROWSER_SMOKE_BROWSER_RESULT_PATH") && smoke.includes("smoke-orchestration-result.json") && smoke.includes("smoke-window-tabgroups-result.json"), "smoke-browser must write configurable smoke and orchestration full-envelope artifacts");
 const isolatedSmoke = read("tests/smoke/smoke-browser-isolated.mjs");
+const releaseAcceptance = read("tests/release/release-local-acceptance.mjs");
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.scripts?.["smoke:browser:isolated"]?.includes("smoke-browser-isolated.mjs"), "package must expose isolated browser smoke");
 assert(isolatedSmoke.includes("--user-data-dir") && isolatedSmoke.includes("--load-extension") && isolatedSmoke.includes("PI_BROWSER_BRIDGE_PORT") && isolatedSmoke.includes("smoke-browser-isolated-results.json"), "isolated smoke must launch a temporary Chrome profile, patch a temporary extension port, and write an artifact");
+assert(isolatedSmoke.includes("extractOrchestrationDiagnostics") && isolatedSmoke.includes("PI_BROWSER_SMOKE_BROWSER_RESULT_PATH"), "isolated smoke must surface orchestration diagnostics from the inner smoke artifact");
+assert(isolatedSmoke.includes("windowTabGroups") && isolatedSmoke.includes("windowIds") && isolatedSmoke.includes("groupIds") && isolatedSmoke.includes("tabGroupsStatuses"), "isolated smoke must surface window/tabGroups diagnostics from the inner smoke artifact");
+assert(releaseAcceptance.includes("orchestrationId") && releaseAcceptance.includes("operationResults") && releaseAcceptance.includes("artifactPaths"), "release smoke failure diagnostics must include orchestration id, operation results, and artifact paths");
+assert(releaseAcceptance.includes("windowTabGroups") && releaseAcceptance.includes("bindings"), "release smoke diagnostics must include window/tabGroups binding diagnostics");
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
 	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);

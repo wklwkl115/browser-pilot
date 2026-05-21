@@ -369,7 +369,7 @@ assert(actionableScan.actionables.some((node) => node.action === "comment-input-
 assert(actionableScan.actionables.findIndex((node) => node.action === "comment-input-container") < actionableScan.actionables.findIndex((node) => node.action === "searchbar-input"), "scan behavior: comment/reply/send controls must outrank persistent search inputs");
 assert(actionableScan.actionables.some((node) => node.editable === true && node.role === "combobox"), "scan behavior: actionables must include Draft-like contenteditable editors");
 assert(actionableScan.actionables.some((node) => node.action === "comment-reply-expand-btn" && node.point?.y >= 0), "scan behavior: actionables must include visible controls inside scroll containers");
-assert(actionableScan.list_hints.some((hint) => String(hint.selector).includes("article.result-card") && String(hint.selector).includes("w-1\\/2") && hint.hiddenCount === 3), "scan behavior: repeated lists must expose GA-style hidden item hints with CSS-escaped class selectors");
+assert(actionableScan.list_hints.some((hint) => String(hint.selector).includes("article.result-card") && String(hint.selector).includes("w-1\\/2") && hint.hiddenCount === 3), "scan behavior: repeated lists must expose hidden item hints with CSS-escaped class selectors");
 
 const content = buildContentScript({ selector: "main", maxChars: 4_000, includeLinks: true });
 new Function(content);

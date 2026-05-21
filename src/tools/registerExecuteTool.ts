@@ -35,9 +35,9 @@ function diffScanContent(before: unknown, after: unknown): { changed: number; to
 	return { changed: added.length, top_change: added[0]?.slice(0, 2_000) };
 }
 
-async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
+async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { tabId?: unknown; target?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
 	try {
-		const result = await server.executeJavaScript(scanScript, { tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
+		const result = await server.executeJavaScript(scanScript, { tabId: options.tabId as number | string | undefined, target: options.target, timeoutMs: options.timeoutMs, toolName: "browser_execute", commandName: "monitor.scan" });
 		const content = (result.data as Record<string, unknown> | undefined)?.content;
 		return { ok: true, content: typeof content === "string" ? content : undefined };
 	} catch (error) {
@@ -45,12 +45,12 @@ async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 	}
 }
 
-async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { tabId?: unknown; timeoutMs: number }): Promise<BrowserBridgeExecutionResult & { monitor: MonitorMetadata }> {
+async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { tabId?: unknown; target?: unknown; timeoutMs: number }): Promise<BrowserBridgeExecutionResult & { monitor: MonitorMetadata }> {
 	const monitorTimeoutMs = Math.min(Math.max(500, options.timeoutMs), 5_000);
 	const scanScript = buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 });
-	const before = await monitorScan(server, scanScript, { tabId: options.tabId, timeoutMs: monitorTimeoutMs });
-	const executed = await server.executeJavaScript(script, { tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
-	const after = await monitorScan(server, scanScript, { tabId: options.tabId, timeoutMs: monitorTimeoutMs });
+	const before = await monitorScan(server, scanScript, { tabId: options.tabId, target: options.target, timeoutMs: monitorTimeoutMs });
+	const executed = await server.executeJavaScript(script, { tabId: options.tabId as number | string | undefined, target: options.target, timeoutMs: options.timeoutMs, toolName: "browser_execute", commandName: "javascript" });
+	const after = await monitorScan(server, scanScript, { tabId: options.tabId, target: options.target, timeoutMs: monitorTimeoutMs });
 	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
 	return {
 		...executed,
@@ -87,7 +87,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				if (params.command && typeof params.command === "object") {
 					const command = params.command as BridgeCommand;
 					rejectUnsafeExecuteCommand(command);
-					const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
+					const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_execute", commandName: String(command.cmd || "command") });
 					return await jsonToolResult(result, params, ctx, {
 						toolName: "browser_execute",
 						command: String(command.cmd || "command"),
@@ -101,7 +101,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const command = parseMaybeCommand(params.script);
 				if (command?.cmd) {
 					rejectUnsafeExecuteCommand(command);
-					const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
+					const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_execute", commandName: String(command.cmd) });
 					return await jsonToolResult(result, params, ctx, {
 						toolName: "browser_execute",
 						command: String(command.cmd),
@@ -112,8 +112,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					});
 				}
 				const jsResult = params.monitor === true
-					? await executeJavaScriptWithMonitor(server, params.script, { tabId: params.tabId, timeoutMs })
-					: await server.executeJavaScript(params.script, { tabId: params.tabId, timeoutMs });
+					? await executeJavaScriptWithMonitor(server, params.script, { tabId: params.tabId, target: params.target, timeoutMs })
+					: await server.executeJavaScript(params.script, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_execute", commandName: "javascript" });
 				return await jsonToolResult(jsResult, params, ctx, {
 					toolName: "browser_execute",
 					command: "javascript",

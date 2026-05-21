@@ -49,13 +49,14 @@ function usesBridgeNestedError(source) { return source.includes("new BrowserBrid
 assert(registerToolsSource.split(/\r?\n/).length <= 60, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
-for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact", "browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
+for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact", "browser_orchestrate", "browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) assert(!toolSource.includes(`name: "${removed}"`), `removed split action tool must not be registered: ${removed}`);
 for (const removedFile of ["src/tools/registerElementActionTools.ts", "src/tools/registerSemanticDomTools.ts", "src/actions/buildElementActionScript.ts", "src/dom/buildSemanticDomScript.ts"]) assert(!existsSync(path.join(root, removedFile)), `removed split action source must not exist: ${removedFile}`);
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
 const bridgeServerSource = read("src/driver/BrowserBridgeServer.ts");
+const targetResolverSource = read("src/driver/BrowserTargetResolver.ts");
 const tabRouterSource = read("src/driver/BrowserTabSessionRouter.ts");
 const driverTypesSource = read("src/driver/types.ts");
 assert(bridgeServerSource.includes("Selected browser has no active tabs") && tabRouterSource.includes("firstActiveSessionIdForClient(ws)") && bridgeServerSource.includes("validation.spec.tabScoped && tabId === undefined"), "selectBrowser must clear implicit target for empty selected browsers and tab-scoped implicit commands must return NO_TAB");
@@ -72,9 +73,13 @@ assert(!tabsTool.includes('server.closeTab(params.tabId ?? ""') && !tabsTool.inc
 assert(tabsTool.includes("function normalizeCreateTabUrl") && tabsTool.includes("INVALID_TAB_URL") && tabsTool.includes("javascript:"), "browser_tabs create must validate malformed/script URLs before starting the bridge");
 assert(!tabsTool.includes('server.createTab(params.url || "about:blank"'), "browser_tabs create must not pass raw URL values directly to server.createTab");
 assert(toolSource.includes("For automation, call browser_tabs list or switch first"), "tab-scoped tools must warn agents to list/switch before automation");
-assert(toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tabId fallback warning missing from tool prompts");
+assert(toolSource.includes("target:{orchestrationId,sessionTag,tabRole}") && toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tab-scoped guidance must document logical target resolver and legacy fallback");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
+assert(read("src/tools/toolShared.ts").includes("BrowserToolTargetRefSchema") && read("src/tools/toolShared.ts").includes("orchestrationId") && read("src/tools/toolShared.ts").includes("sessionTag") && read("src/tools/toolShared.ts").includes("tabRole"), "tool shared params must define the structured logical target schema");
+assert(toolAdapterSource.includes("BrowserToolTargetRefSchema") && toolAdapterSource.includes("includeTarget") && toolAdapterSource.includes("params.target"), "tool adapter must expose target through shared tab-scoped params");
+assert(bridgeServerSource.includes("BrowserTargetResolver") && bridgeServerSource.includes("resolveToolTarget") && targetResolverSource.includes('targetInfo("orchestration"') && targetResolverSource.includes("TARGET_AMBIGUOUS") && targetResolverSource.includes("ORCHESTRATION_TARGET_STALE"), "BrowserBridgeServer must delegate logical target resolution to the target resolver with structured target errors");
+assert(tabRouterSource.includes("liveSessionForTabTarget") && tabRouterSource.includes("socketForTabTarget"), "BrowserTabSessionRouter must support browser-scoped physical target resolution");
 assert(toolAdapterSource.includes("sharedTabScopedToolParams") && toolAdapterSource.includes("toolTimeoutMs") && toolAdapterSource.includes("jsonToolResult") && toolAdapterSource.includes("textToolResult") && toolAdapterSource.includes("runTool"), "tool adapter must centralize shared params, timeout, result distillation, and error wrapping");
 assert(toolSource.includes("NativeCommandParamsSchema"), "native tools must use one generic params schema and protocol validation");
 assert((toolSource.match(/params: Type.Optional\(NativeCommandParamsSchema\)/g) || []).length >= 3, "native tool params must use generic protocol-backed schema");
@@ -110,7 +115,7 @@ assert(passesBodyTimeout(evidenceTool), "browser_evidence must pass timeoutMs in
 const executeTool = read("src/tools/registerExecuteTool.ts");
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
 assert(usesJsonDistillation(executeTool), "browser_execute must route raw JS/command data through result distillation middleware");
-assert(executeTool.includes("monitor: Type.Optional") && executeTool.includes("executeJavaScriptWithMonitor") && executeTool.includes("buildScanScript"), "browser_execute must expose optional GA-style monitor without making it default");
+assert(executeTool.includes("monitor: Type.Optional") && executeTool.includes("executeJavaScriptWithMonitor") && executeTool.includes("buildScanScript"), "browser_execute must expose optional before/after DOM monitor without making it default");
 assert(executeTool.includes("monitorTimeoutMs") && executeTool.includes("beforeOk") && executeTool.includes("afterOk") && executeTool.includes("beforeError") && executeTool.includes("afterError"), "browser_execute monitor must bound scan timeout and report before/after scan failures explicitly");
 assert(executeTool.includes("...executed") && !executeTool.includes("execution: executed.data") && !executeTool.includes("newTabs: executed.newTabs"), "browser_execute monitor must preserve BrowserBridgeExecutionResult top-level metadata and append monitor only");
 const nativeActionTools = read("src/tools/registerNativeActionTools.ts");
@@ -148,7 +153,11 @@ assert(
 for (const prefix of ["wait-result", "network-result", "hook-result", "frame-result"]) assert(nativeActionTools.includes(`artifactPrefix: "${prefix}"`), `native action tool missing artifact prefix: ${prefix}`);
 assert(!nativeActionTools.includes("return jsonResult(result"), "native action tools must not return raw command result directly");
 assert(!executeTool.includes("return jsonResult(await server"), "browser_execute must not return raw bridge result directly");
-assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
+const orchestrateTool = read("src/tools/registerOrchestrateTool.ts");
+assert(orchestrateTool.includes("server.orchestrator()") && orchestrateTool.includes("coordinator.plan") && orchestrateTool.includes("coordinator.apply") && orchestrateTool.includes("coordinator.watch") && orchestrateTool.includes("coordinator.delete"), "browser_orchestrate must route callable actions through the Node coordinator facade");
+assert(orchestrateTool.includes("summarizeOrchestrationData") && orchestrateTool.includes("artifactFallbackName(\"orchestration-result\")"), "browser_orchestrate must use orchestration summary and artifact fallback");
+assert(orchestrateTool.includes("cleanup:false is not allowed"), "browser_orchestrate must not silently orphan owned resources on delete cleanup:false");
+assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index") && read("src/tools/resultMiddleware.ts").includes("summarizeOrchestrationData"), "result middleware must use split summary modules including orchestration");
 const webSecurityTools = readWebSecurityRegisterSources();
 assert(webSecurityTools.includes("browser_recon_probe") && webSecurityTools.includes("browser_crawl") && webSecurityTools.includes("browser_fuzz_paths") && webSecurityTools.includes("browser_fuzz_vhosts") && webSecurityTools.includes("browser_sqli_probe") && webSecurityTools.includes("browser_sqlmap_bridge") && webSecurityTools.includes("browser_nuclei_bridge") && webSecurityTools.includes("browser_template_check") && webSecurityTools.includes("browser_callback_oast") && webSecurityTools.includes("browser_cookie_analyze") && webSecurityTools.includes("browser_fuzz_params") && webSecurityTools.includes("browser_http_replay"), "web security tools must register recon/crawl/fuzz/replay tools");
 function toolRegistrationBlock(source, name) {

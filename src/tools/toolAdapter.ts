@@ -4,12 +4,13 @@ import type { DetailLevel } from "../utils/params";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware";
-import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared";
+import { asPositiveInt, BrowserToolTargetRefSchema, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TARGET_DESCRIPTION } from "./toolShared";
 
 export type ToolResultContext = { cwd?: string } | undefined;
 
 export type StandardToolParams = {
 	tabId?: number | string;
+	target?: unknown;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -22,6 +23,7 @@ type SharedToolParamOptions = {
 	outputPathDescription?: string;
 	maxCharsDescription?: string;
 	includeTabId?: boolean;
+	includeTarget?: boolean;
 	includeDetailLevel?: boolean;
 	includeOutputPath?: boolean;
 	includeTimeout?: boolean;
@@ -66,6 +68,7 @@ export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
 export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) {
 	const params: Record<string, unknown> = {};
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
+	if (options.includeTarget !== false && options.includeTabId !== false) params.target = Type.Optional(BrowserToolTargetRefSchema, { description: TARGET_DESCRIPTION });
 	if (options.includeDetailLevel !== false) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
 	if (options.includeOutputPath !== false) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
 	if (options.includeTimeout !== false) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
@@ -97,6 +100,10 @@ export function applyDefaultTimeout(body: Record<string, unknown>, timeoutMs: nu
 
 export function targetTabId(params: Pick<StandardToolParams, "tabId">, body?: Record<string, unknown>): unknown {
 	return params.tabId ?? body?.tabId;
+}
+
+export function targetRef(params: Pick<StandardToolParams, "target">): unknown {
+	return params.target;
 }
 
 export async function runTool(handler: () => Promise<PiTextToolResult>, onError: (error: unknown) => PiTextToolResult = errorResult): Promise<PiTextToolResult> {

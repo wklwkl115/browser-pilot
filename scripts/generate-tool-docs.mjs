@@ -7,10 +7,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outFile = path.join(root, "docs", "generated", "browser-tool-contract.generated.md");
 const checkOnly = process.argv.includes("--check");
 
-const SHARED_TOOL_PARAMS = ["tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
-const SHARED_WEB_SECURITY_PARAMS = ["tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars", "maxBodyBytes"];
-const NATIVE_ACTION_PARAMS = ["action", "params", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
-const SHARED_TRANSFER_PARAMS = ["tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
+const SHARED_TOOL_PARAMS = ["tabId", "target", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
+const SHARED_WEB_SECURITY_PARAMS = ["tabId", "target", "detailLevel", "outputPath", "timeoutMs", "maxChars", "maxBodyBytes"];
+const NATIVE_ACTION_PARAMS = ["action", "params", "tabId", "target", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
+const SHARED_TRANSFER_PARAMS = ["tabId", "target", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
 
 async function read(rel) {
 	return await readFile(path.join(root, rel), "utf8");
@@ -76,11 +76,19 @@ function extractActionDescription(block) {
 
 function sharedTabScopedParamKeys(objectText) {
 	const keys = [...SHARED_TOOL_PARAMS];
-	if (/includeTabId\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("tabId"), 1);
-	if (/includeDetailLevel\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("detailLevel"), 1);
-	if (/includeOutputPath\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("outputPath"), 1);
-	if (/includeTimeout\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("timeoutMs"), 1);
-	if (/includeMaxChars\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("maxChars"), 1);
+	const removeKey = (key) => {
+		const index = keys.indexOf(key);
+		if (index >= 0) keys.splice(index, 1);
+	};
+	if (/includeTabId\s*:\s*false/.test(objectText)) {
+		removeKey("tabId");
+		removeKey("target");
+	}
+	if (/includeTarget\s*:\s*false/.test(objectText)) removeKey("target");
+	if (/includeDetailLevel\s*:\s*false/.test(objectText)) removeKey("detailLevel");
+	if (/includeOutputPath\s*:\s*false/.test(objectText)) removeKey("outputPath");
+	if (/includeTimeout\s*:\s*false/.test(objectText)) removeKey("timeoutMs");
+	if (/includeMaxChars\s*:\s*false/.test(objectText)) removeKey("maxChars");
 	return keys;
 }
 

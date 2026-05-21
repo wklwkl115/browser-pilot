@@ -35,7 +35,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 				const maxChars = toolMaxChars(params, "browser_download");
 				command.timeoutMs = timeoutMs;
 				const server = await ensureStarted();
-				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
+				const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_download", commandName: nativeTransferToolMetadata.browser_download.command });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_download",
 					command: nativeTransferToolMetadata.browser_download.command,
@@ -75,7 +75,7 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 				const maxChars = toolMaxChars(params, "browser_upload");
 				const command = buildTransferUploadCommand(selector, files, params.index);
 				command.timeoutMs = timeoutMs;
-				const result = await server.sendCommand(command, { tabId: params.tabId, timeoutMs });
+				const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_upload", commandName: nativeTransferToolMetadata.browser_upload.command });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_upload",
 					command: nativeTransferToolMetadata.browser_upload.command,

@@ -11,20 +11,20 @@
 
 当前项目已经覆盖 GenericAgent 暴露给 Agent 的浏览器工具面：
 
-- GA `web_scan` → Pi `browser_scan` + `browser_tabs`
-- GA `web_execute_js` → Pi `browser_execute`
+- GenericAgent `web_scan` → Pi `browser_scan` + `browser_tabs`
+- GenericAgent `web_execute_js` → Pi `browser_execute`
 
 Pi 项目额外保留了正文提取、pick、wait、network、hook/evidence、frame、html、screenshot、upload/download、artifact 读取等能力。当前不应恢复 `browser_query` / `browser_click` / `browser_type` / `browser_dom_*` 动作拆分层。
 
-GA 内部体验级能力也已对齐为 Pi 风格：
+GenericAgent 内部体验级能力也已对齐为 Pi 风格：
 
-1. GA `web_execute_js` 默认自动做页面变化监控；Pi 以 `browser_execute monitor:true` 提供可选执行前后 scan diff，默认关闭以控制 token 和延迟。
-2. GA `web_scan` 有 `findMainList` + `[FAKE ELEMENT]` 列表压缩提示；Pi 以 `list_hints` 暴露重复列表、隐藏项数量和样例，完整内容仍进 artifact。
-3. GA `optHTML` 标注 `:-webkit-autofill` 受保护输入；Pi scan 现在输出 `data-autofilled="true"` 与 `protected-autofill` 提示。
+1. GenericAgent `web_execute_js` 默认自动做页面变化监控；Pi 以 `browser_execute monitor:true` 提供可选执行前后 scan diff，默认关闭以控制 token 和延迟。
+2. GenericAgent `web_scan` 有 `findMainList` + `[FAKE ELEMENT]` 列表压缩提示；Pi 以 `list_hints` 暴露重复列表、隐藏项数量和样例，完整内容仍进 artifact。
+3. GenericAgent `optHTML` 标注 `:-webkit-autofill` 受保护输入；Pi scan 现在输出 `data-autofilled="true"` 与 `protected-autofill` 提示。
 
 ## 工具面映射
 
-| GA 能力 | GA 实现 | Pi 当前实现 | 状态 |
+| GenericAgent 能力 | GenericAgent 实现 | Pi 当前实现 | 状态 |
 | --- | --- | --- | --- |
 | 标签页列表 | `web_scan(tabs_only=True)` | `browser_tabs list` / `browser_scan tabsOnly` | 已覆盖 |
 | 切换目标页 | `switch_tab_id` 设置默认 session | 每个工具显式 `tabId`，`browser_tabs switch` 可切换 | 已覆盖，Pi 更严格 |
@@ -45,10 +45,10 @@ GA 内部体验级能力也已对齐为 Pi 风格：
 | 临时文本捕获 | `temp_monitor_js` | 显式 hook/evidence；execute monitor 聚焦稳定 DOM diff | 替代覆盖 |
 | 跳过监控 | `no_monitor` | 默认不监控；传 `monitor:true` 才开启 | 已覆盖 |
 
-## 当前 Pi 对 GA 的增强
+## 当前 Pi 对 GenericAgent 的增强
 
 - `browser_wait`：selector/navigation/loadState/networkIdle typed wait。
-- `browser_network` / `browser_hook` / `browser_evidence`：比 GA 自动 diff 更可控的证据链。
+- `browser_network` / `browser_hook` / `browser_evidence`：比 GenericAgent 自动 diff 更可控的证据链。
 - `browser_frame`：frame 列表和 frame 内执行。
 - `browser_content` / `browser_html`：正文和 HTML 定向抽取。
 - `browser_pick`：用户可视点选。
@@ -59,5 +59,5 @@ GA 内部体验级能力也已对齐为 Pi 风格：
 ## 后续建议
 
 1. 不新增动作工具；继续坚持 `scan -> execute -> wait -> verify`。
-2. `browser_execute monitor:true` 只在需要 GA-style 自动 diff 时使用；常规动作仍显式 wait/verify。
+2. `browser_execute monitor:true` 只在需要紧凑的前后 DOM diff 时使用；常规动作仍显式 wait/verify。
 3. `browser_scan` 的 `list_hints` 是 Pi 表格化列表压缩提示，不应替代 artifact 原文。

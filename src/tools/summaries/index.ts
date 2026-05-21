@@ -4,6 +4,7 @@ export { summarizeEvidenceData } from "./evidence";
 export { summarizeGenericValue } from "./generic";
 export { summarizeHtmlSnapshot } from "./html";
 export { summarizeNetworkData } from "./network";
+export { summarizeOrchestrationData } from "./orchestration";
 export { summarizePickData } from "./pick";
 export { summarizeScanData } from "./scan";
 export { summarizeTransferData } from "./transfer";

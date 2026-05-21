@@ -7,8 +7,10 @@ import { BrowserBridgeHttpServer } from "./BrowserBridgeHttpServer";
 import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter";
+import { BrowserTargetResolver } from "./BrowserTargetResolver";
+import { BrowserOrchestrationCoordinator } from "./orchestration/BrowserOrchestrationCoordinator";
 import { bridgeResultFailure, delay, normalizePort, recordValue, toTabId } from "./bridgeUtils";
-import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserTabInfo, BrowserTabSession, ExecuteOptions } from "./types";
+import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserTabInfo, BrowserTabSession, ExecuteOptions, ResolveBrowserToolTargetInput } from "./types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 
 type IncomingMessage = {
@@ -23,7 +25,7 @@ type IncomingMessage = {
 	[key: string]: unknown;
 };
 
-type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
+type SendPayloadOptions = ExecuteOptions & { resolvedTarget?: BrowserBridgeTargetInfo };
 
 export class BrowserBridgeServer {
 	readonly host: string;
@@ -34,6 +36,8 @@ export class BrowserBridgeServer {
 	private readonly tabs: BrowserTabSessionRouter;
 	private readonly pendingRequests: BrowserBridgePendingRequests;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
+	private readonly orchestrationCoordinator: BrowserOrchestrationCoordinator;
+	private readonly targetResolver: BrowserTargetResolver;
 
 	constructor(options: { host?: string; port?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -46,6 +50,8 @@ export class BrowserBridgeServer {
 			(target) => this.tabs.resolvedTarget(target),
 		);
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.port, (ws) => this.registerClient(ws));
+		this.orchestrationCoordinator = new BrowserOrchestrationCoordinator(this);
+		this.targetResolver = new BrowserTargetResolver(this.tabs, this.orchestrationCoordinator.store, () => this.getTabs());
 	}
 
 	get running(): boolean {
@@ -57,10 +63,15 @@ export class BrowserBridgeServer {
 	}
 
 	async stop(): Promise<void> {
+		await this.orchestrationCoordinator.shutdown({ cleanup: true, timeoutMs: 5_000 }).catch(() => undefined);
 		this.pendingRequests.rejectAllStopped();
 		this.clients.clear();
 		this.tabs.clear();
 		await this.httpEndpoint.stop();
+	}
+
+	orchestrator(): BrowserOrchestrationCoordinator {
+		return this.orchestrationCoordinator;
 	}
 
 	snapshot(): BrowserBridgeSnapshot {
@@ -78,6 +89,7 @@ export class BrowserBridgeServer {
 			selectionVersion: this.tabs.selectionVersion,
 			tabs: this.getTabs({ includeDisconnected: true }),
 			pending: this.pendingRequests.snapshot(),
+			orchestration: this.orchestrationCoordinator.snapshot(),
 		};
 	}
 
@@ -115,13 +127,14 @@ export class BrowserBridgeServer {
 		return selected.info;
 	}
 
-	async switchTab(tabId: number | string, timeoutMs = 5_000): Promise<BrowserBridgeExecutionResult> {
+	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
 		const id = this.requireTabId(tabId);
 		const previousDefaultTabId = this.tabs.previousDefaultTabId();
-		const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId: id });
+		const target = options.browserId ? { tabId: id, browserId: options.browserId } : undefined;
+		const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId: id, target });
 		const failure = bridgeResultFailure(result.data);
 		if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
-		this.tabs.selectTab(id);
+		this.tabs.selectTab(id, options.browserId);
 		const selection = { selectedTabId: id, previousDefaultTabId, selectionVersion: this.tabs.selectionVersion };
 		const dataRecord = recordValue(result.data);
 		const data = dataRecord ? { ...dataRecord, ...selection } : selection;
@@ -132,37 +145,38 @@ export class BrowserBridgeServer {
 		return this.sendCommand({ cmd: "tabs", method: "create", url, active }, { timeoutMs });
 	}
 
-	async closeTab(tabId: number | string, timeoutMs = 5_000): Promise<BrowserBridgeExecutionResult> {
+	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
 		const id = this.requireTabId(tabId);
-		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId: id });
-		this.tabs.markTabDisconnected(id);
+		const target = options.browserId ? { tabId: id, browserId: options.browserId } : undefined;
+		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId: id, target });
+		this.tabs.markTabDisconnected(id, options.browserId);
 		return result;
 	}
 
 	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		const target = this.requireExecutionTarget(options.tabId);
-		return this.sendPayload(script, { tabId: target.tabId, timeoutMs: options.timeoutMs, target });
+		const target = this.requireExecutionTarget(options);
+		return this.sendPayload(script, { tabId: target.tabId, timeoutMs: options.timeoutMs, resolvedTarget: target });
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		const hasOptionTabId = options.tabId !== undefined;
-		const hasCommandTabId = command.tabId !== undefined;
-		const optionTabId = toTabId(options.tabId);
-		const commandTabId = toTabId(command.tabId);
-		if (hasOptionTabId && optionTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { cmd: command.cmd, tabId: options.tabId, source: "options" });
-		if (hasCommandTabId && commandTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid command tabId is required", { cmd: command.cmd, tabId: command.tabId, source: "command" });
-		if (optionTabId !== undefined && commandTabId !== undefined && optionTabId !== commandTabId) {
-			throw new BrowserBridgeError("TAB_ID_CONFLICT", "Top-level tabId conflicts with command tabId", { cmd: command.cmd, tabId: optionTabId, commandTabId });
-		}
-		const requestedTabId = optionTabId ?? commandTabId;
-		const explicitTarget = requestedTabId !== undefined ? this.tabs.targetInfo("explicit", requestedTabId) : undefined;
+		const explicitTarget = this.resolveToolTarget({
+			toolName: options.toolName,
+			commandName: options.commandName || command.cmd,
+			topLevelTabId: options.tabId,
+			target: options.target,
+			commandBody: command,
+		});
 		const target = explicitTarget ?? this.optionalExecutionTarget(command);
 		const tabId = target?.tabId;
 		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
 		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.getTabs() });
-		return this.sendPayload(validation.command, { tabId, timeoutMs: options.timeoutMs, target });
+		return this.sendPayload(validation.command, { tabId, timeoutMs: options.timeoutMs, resolvedTarget: target });
+	}
+
+	resolveToolTarget(input: ResolveBrowserToolTargetInput): BrowserBridgeTargetInfo | undefined {
+		return this.targetResolver.resolve(input);
 	}
 
 	formatError(error: unknown): string {
@@ -176,8 +190,8 @@ export class BrowserBridgeServer {
 	private sendPayload(code: unknown, options: SendPayloadOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		if (!this.running) throw new BrowserBridgeError("BRIDGE_NOT_RUNNING", "Browser bridge server is not running", { port: this.port });
 		const tabId = toTabId(options.tabId);
-		const socket = tabId !== undefined ? this.socketForTab(tabId) : this.clients.requireExtensionClient();
-		const target = options.target ?? this.tabs.targetInfo(tabId !== undefined ? "explicit" : "none", tabId);
+		const target = options.resolvedTarget ?? this.tabs.targetInfo(tabId !== undefined ? "explicit" : "none", tabId);
+		const socket = tabId !== undefined ? this.socketForTab(tabId, target) : this.clients.requireExtensionClient();
 		return this.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target });
 	}
 
@@ -222,20 +236,21 @@ export class BrowserBridgeServer {
 		}
 	}
 
-	private socketForTab(tabId: number): WebSocket {
-		const socket = this.tabs.socketForTab(tabId);
+	private socketForTab(tabId: number, target?: BrowserBridgeTargetInfo): WebSocket {
+		const socket = this.tabs.socketForTabTarget(tabId, target?.browserId);
 		if (socket) return socket;
 		throw new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
 			tabId,
+			browserId: target?.browserId,
 			selectedBrowser: this.clients.selectedInfo(),
+			target,
 			tabs: this.getTabs(),
 		});
 	}
 
-	private requireExecutionTarget(value: unknown): BrowserBridgeTargetInfo {
-		const requested = toTabId(value);
-		if (requested) return this.tabs.targetInfo("explicit", requested);
-		if (value !== undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value, source: "options" });
+	private requireExecutionTarget(options: ExecuteOptions): BrowserBridgeTargetInfo {
+		const explicit = this.resolveToolTarget({ toolName: options.toolName, commandName: options.commandName || "javascript", topLevelTabId: options.tabId, target: options.target });
+		if (explicit) return explicit;
 		const fallback = this.tabs.fallbackExecutionTarget();
 		if (fallback) return fallback;
 		throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { tabs: this.getTabs() });
@@ -244,7 +259,7 @@ export class BrowserBridgeServer {
 	private optionalExecutionTarget(command: BridgeCommand): BrowserBridgeTargetInfo | undefined {
 		const cmd = String(command.cmd || "");
 		if (cmd === "tabs" && (!command.method || command.method === "list" || command.method === "create")) return this.tabs.targetInfo("none");
-		if (cmd === "management") return this.tabs.targetInfo("none");
+		if (cmd === "management" || cmd === "windows" || cmd === "tabGroups") return this.tabs.targetInfo("none");
 		return this.tabs.fallbackExecutionTarget();
 	}
 

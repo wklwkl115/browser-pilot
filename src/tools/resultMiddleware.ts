@@ -4,9 +4,9 @@ import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResu
 import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
 import { saveTextArtifact } from "./artifacts";
 import { isRecord } from "./summaries/common";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeOrchestrationData, summarizeScanData } from "./summaries/index";
 
-export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeOrchestrationData, summarizeScanData } from "./summaries/index";
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {
@@ -47,6 +47,7 @@ type DistilledTextOptions = DistillBaseOptions & {
 export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
 	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
 	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
+	if (toolName === "browser_orchestrate" || String(command || "").startsWith("orchestration.")) return summarizeOrchestrationData(isRecord(value) && value.data !== undefined ? value.data : value);
 	return summarizeGenericValue(value);
 }
 

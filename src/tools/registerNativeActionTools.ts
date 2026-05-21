@@ -21,7 +21,7 @@ type ActionToolConfig = {
 	commandForAction: (action: string) => string;
 	timeoutForCommand?: (commandName: string) => number;
 	allowZeroTimeout?: boolean;
-	commandExecutor?: (server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { tabId?: unknown; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
+	commandExecutor?: (server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { tabId?: unknown; target?: unknown; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
 	artifactPrefix: string;
 	budgetName: ToolResultBudgetName;
 	defaultDetailLevel?: DetailLevel;
@@ -61,8 +61,8 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 				const maxChars = toolMaxChars(params, config.budgetName);
 				const command = { ...body, cmd: commandName };
 				const result = config.commandExecutor
-					? await config.commandExecutor(server, command, { tabId, timeoutMs })
-					: await server.sendCommand(command, { tabId, timeoutMs });
+					? await config.commandExecutor(server, command, { tabId, target: params.target, timeoutMs })
+					: await server.sendCommand(command, { tabId, target: params.target, timeoutMs, toolName: config.name, commandName });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: config.name,
 					budgetName: config.budgetName,

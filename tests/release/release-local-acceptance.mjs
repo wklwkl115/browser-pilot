@@ -121,6 +121,22 @@ function smokeResultPath(label) {
 	return path.join(artifactsDir, `${label}-smoke-browser-isolated-results.json`);
 }
 
+function compactSmokeDiagnostics(smokeSummary) {
+	const artifact = smokeSummary?.artifact;
+	const orchestration = artifact?.orchestration;
+	return {
+		chromeProfile: artifact?.profileDir,
+		bridgePort: artifact?.bridgePort,
+		smokeArtifact: smokeSummary?.resultPath,
+		innerSmokeArtifact: artifact?.smokeResultPath,
+		orchestrationId: orchestration?.orchestrationId,
+		operationResults: orchestration?.operationResults,
+		bindings: orchestration?.bindings,
+		windowTabGroups: orchestration?.windowTabGroups,
+		artifactPaths: [smokeSummary?.resultPath, artifact?.smokeResultPath, ...(Array.isArray(orchestration?.artifactPaths) ? orchestration.artifactPaths : [])].filter(Boolean),
+	};
+}
+
 async function runIsolatedSmoke(label, extensionDir, minimal) {
 	const resultPath = smokeResultPath(label);
 	const env = {
@@ -134,6 +150,7 @@ async function runIsolatedSmoke(label, extensionDir, minimal) {
 	let artifact;
 	if (existsSync(resultPath)) artifact = await readJson(resultPath);
 	const summary = { ok: result.status === 0 && artifact?.ok !== false, label, minimal, resultPath, status: result.status, stdoutTail: String(result.stdout || "").slice(-4000), stderrTail: String(result.stderr || "").slice(-4000), artifact };
+	summary.diagnostics = compactSmokeDiagnostics(summary);
 	if (!summary.ok) {
 		const error = new Error(`${label} isolated smoke failed`);
 		error.details = { smoke: summary };
@@ -196,12 +213,12 @@ async function main() {
 		summary.ok = false;
 		summary.error = error instanceof Error ? error.message : String(error);
 		if (error && typeof error === "object" && "details" in error) summary.errorDetails = error.details;
+		const failedSmoke = error && typeof error === "object" && "details" in error && error.details && typeof error.details === "object" && "smoke" in error.details ? error.details.smoke : undefined;
+		const smokeDiagnostics = compactSmokeDiagnostics(failedSmoke || summary.current?.smoke || summary.rollback?.smoke);
 		summary.failureDiagnostics = {
 			packFiles: summary.packDryRun?.files || summary.current?.pack?.files || [],
 			buildManifest: summary.current?.buildManifest || summary.rollback?.buildManifest,
-			chromeProfile: summary.current?.smoke?.artifact?.profileDir || summary.rollback?.smoke?.artifact?.profileDir,
-			bridgePort: summary.current?.smoke?.artifact?.bridgePort || summary.rollback?.smoke?.artifact?.bridgePort,
-			smokeArtifact: summary.current?.smoke?.resultPath || summary.rollback?.smoke?.resultPath,
+			...smokeDiagnostics,
 		};
 		process.exitCode = 1;
 	} finally {

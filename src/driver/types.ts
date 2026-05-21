@@ -20,6 +20,7 @@ export type BrowserTabSession = {
 	title: string;
 	active?: boolean;
 	windowId?: number;
+	groupId?: number;
 	type: "ext_ws";
 	connectedAt: number;
 	disconnectedAt?: number;
@@ -29,14 +30,39 @@ export type BrowserTabSession = {
 
 export type BrowserTabInfo = Omit<BrowserTabSession, "client">;
 
-export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
+export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none" | "orchestration";
 
 export type BrowserBridgeTargetInfo = {
 	tabId?: number;
+	browserId?: string;
 	source: BrowserBridgeTargetSource;
 	implicit: boolean;
 	selectionVersionAtDispatch: number;
 	selectionVersionAtResolve?: number;
+	orchestrationId?: string;
+	sessionTag?: string;
+	tabRole?: string;
+};
+
+export type BrowserToolTargetRef = {
+	tabId?: number | string;
+	browserId?: string;
+	orchestrationId?: string;
+	sessionTag?: string;
+	tabRole?: string;
+	windowId?: number | string;
+	groupId?: number | string;
+	profileId?: string;
+	requireOwned?: boolean;
+};
+
+export type ResolveBrowserToolTargetInput = {
+	toolName?: string;
+	commandName?: string;
+	topLevelTabId?: unknown;
+	target?: unknown;
+	commandBody?: Record<string, unknown>;
+	allowEmptyTarget?: boolean;
 };
 
 export type BrowserBridgeSnapshot = {
@@ -51,6 +77,7 @@ export type BrowserBridgeSnapshot = {
 	latestTabId?: number;
 	selectionVersion: number;
 	tabs: BrowserTabInfo[];
+	orchestration?: Record<string, unknown>;
 	pending: Array<{
 		id: string;
 		tabId?: number;
@@ -62,7 +89,10 @@ export type BrowserBridgeSnapshot = {
 
 export type ExecuteOptions = {
 	tabId?: number | string;
+	target?: BrowserToolTargetRef | unknown;
 	timeoutMs?: number;
+	toolName?: string;
+	commandName?: string;
 };
 
 export type PendingRequest = {

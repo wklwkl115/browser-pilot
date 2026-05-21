@@ -60,7 +60,7 @@ async function cleanupPick(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 			method: "Runtime.evaluate",
 			params: { expression: buildPickCleanupScript(pickId), awaitPromise: false, returnByValue: true, userGesture: true },
 			timeoutMs: PICK_CLEANUP_TIMEOUT_MS,
-		}, { tabId, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000 });
+		}, { tabId, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000, toolName: "browser_pick", commandName: "pick.cleanup" });
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
@@ -86,7 +86,8 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 120_000);
 				const maxChars = toolMaxChars(params, "browser_pick");
-				if (params.tabId !== undefined && params.focus !== false) await server.switchTab(params.tabId, 5_000);
+				const resolvedTarget = (params.tabId !== undefined || params.target !== undefined) ? server.resolveToolTarget({ toolName: "browser_pick", commandName: "pick", topLevelTabId: params.tabId, target: params.target }) : undefined;
+				if (resolvedTarget?.tabId !== undefined && params.focus !== false) await server.switchTab(resolvedTarget.tabId, 5_000, { browserId: resolvedTarget.browserId });
 				const pickId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 				const script = buildPickScript({ message, multiple: params.multiple, timeoutMs, pickId });
 				const cdpTimeoutMs = params.focus === false ? timeoutMs + PICK_FOCUS_FALSE_CDP_GRACE_MS : timeoutMs;
@@ -95,7 +96,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					method: "Runtime.evaluate",
 					params: { expression: script, awaitPromise: true, returnByValue: true, userGesture: true },
 					timeoutMs: cdpTimeoutMs,
-				}, { tabId: params.tabId, timeoutMs: cdpTimeoutMs + 1_000 });
+				}, { tabId: params.tabId, target: params.target, timeoutMs: cdpTimeoutMs + 1_000, toolName: "browser_pick", commandName: "pick" });
 				let raw: unknown;
 				let timedOut = false;
 				if (params.focus === false) {
@@ -105,7 +106,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 						if (raced === PICK_TIMEOUT) {
 							timedOut = true;
 							void rawPromise.catch(() => {});
-							const cleanup = await cleanupPick(server, params.tabId, pickId);
+							const cleanup = await cleanupPick(server, resolvedTarget?.tabId ?? params.tabId, pickId);
 							raw = { data: { result: { value: buildTimedOutPickResult(message, timeoutMs, cleanup) } } };
 						} else {
 							deadline.cancel();

@@ -32,6 +32,7 @@ export function sharedWebSecurityParams() {
 
 export type WebSecuritySharedToolParams = {
 	tabId?: number | string;
+	target?: unknown;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -83,7 +84,7 @@ export function resolveBooleanParam(value: unknown, defaultValue: boolean) {
 function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSecuritySharedToolParams, timeoutMs: number): CookieProvider {
 	return async (url: string) => {
 		const server = await ensureStarted();
-		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { tabId: params.tabId, timeoutMs });
+		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "webSecurity.cookieProvider", commandName: "cookies" });
 		return browserCookiesToHeader(cookies.data);
 	};
 }

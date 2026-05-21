@@ -308,9 +308,33 @@ export type PiChromeTab = {
   title?: string;
   active?: boolean;
   windowId?: number;
+  groupId?: number;
   status?: string;
   pendingUrl?: string;
   favIconUrl?: string;
+  [key: string]: unknown;
+};
+
+export type PiChromeWindow = {
+  id?: number;
+  focused?: boolean;
+  incognito?: boolean;
+  type?: string;
+  state?: string;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  tabs?: PiChromeTab[];
+  [key: string]: unknown;
+};
+
+export type PiChromeTabGroup = {
+  id?: number;
+  windowId?: number;
+  title?: string;
+  color?: string;
+  collapsed?: boolean;
   [key: string]: unknown;
 };
 
@@ -336,9 +360,28 @@ export type PiChromeCookie = {
   value?: string;
   domain?: string;
   path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: string;
+  expirationDate?: number;
+  session?: boolean;
   storeId?: string;
   partitionKey?: { topLevelSite?: string; hasCrossSiteAncestor?: boolean };
   [key: string]: unknown;
+};
+
+export type PiChromeCookieDetails = JsonRecord & {
+  url: string;
+  name: string;
+  value?: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: string;
+  expirationDate?: number;
+  storeId?: string;
+  partitionKey?: { topLevelSite?: string; hasCrossSiteAncestor?: boolean };
 };
 
 export type PiWebSocketLike = {
@@ -366,10 +409,25 @@ export type PiChromeTabs = {
   create(createProperties: JsonRecord): Promise<PiChromeTab>;
   get(tabId: number): Promise<PiChromeTab>;
   remove(tabId: number): Promise<void>;
+  group?(options: JsonRecord): Promise<number>;
+  ungroup?(tabIds: number | number[]): Promise<void>;
   captureVisibleTab(windowId?: number, options?: JsonRecord): Promise<string>;
   onCreated: PiChromeEvent<(tab: PiChromeTab) => void>;
   onUpdated: PiChromeEvent<(tabId: number, changeInfo: JsonRecord, tab: PiChromeTab) => void>;
   onRemoved: PiChromeEvent<(tabId: number, removeInfo?: JsonRecord) => void>;
+};
+
+export type PiChromeWindows = {
+  getAll(queryInfo?: JsonRecord): Promise<PiChromeWindow[]>;
+  get(windowId: number, getInfo?: JsonRecord): Promise<PiChromeWindow>;
+  create(createData?: JsonRecord): Promise<PiChromeWindow>;
+  update(windowId: number, updateInfo: JsonRecord): Promise<PiChromeWindow>;
+  remove(windowId: number): Promise<void>;
+};
+
+export type PiChromeTabGroups = {
+  query(queryInfo: JsonRecord): Promise<PiChromeTabGroup[]>;
+  update(groupId: number, updateProperties: JsonRecord): Promise<PiChromeTabGroup>;
 };
 
 export type PiChromeDebugger = {
@@ -392,10 +450,16 @@ export type PiChromeApi = {
   runtime: PiChromeRuntime;
   debugger: PiChromeDebugger;
   tabs: PiChromeTabs;
-  windows: { update(windowId: number, updateInfo: JsonRecord): Promise<unknown> };
+  windows: PiChromeWindows;
+  tabGroups?: PiChromeTabGroups;
   scripting: { executeScript(options: JsonRecord): Promise<unknown[]> };
   downloads: PiChromeDownloads;
-  cookies: { getAll(details: JsonRecord): Promise<PiChromeCookie[]> };
+  cookies: {
+    getAll(details: JsonRecord): Promise<PiChromeCookie[]>;
+    get?(details: PiChromeCookieDetails): Promise<PiChromeCookie | undefined>;
+    set(details: PiChromeCookieDetails): Promise<PiChromeCookie | undefined>;
+    remove(details: PiChromeCookieDetails): Promise<{ url?: string; name?: string; storeId?: string } | undefined>;
+  };
   management: { getAll(): Promise<Array<JsonRecord & { id?: string; name?: string; enabled?: boolean; type?: string; version?: string }>>; setEnabled(id: string, enabled: boolean): Promise<void> };
   alarms: { create(name: string, alarmInfo: JsonRecord): void; onAlarm: PiChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
   contentSettings?: Record<string, { set(details: JsonRecord): Promise<void> }>;

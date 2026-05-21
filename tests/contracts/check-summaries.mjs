@@ -52,8 +52,8 @@ assert.deepEqual(Object.keys(scan).sort(), ["actionables", "contentChars", "head
 assert.equal(scan.tabs_count, 2);
 assert.equal(scan.interactive.length, 2);
 assert.equal(scan.headings.length, 1);
-assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: GA-style actionables table must be exposed");
-assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
+assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: actionables table must be exposed");
+assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: repeated list hints must be exposed");
 
 const html = summarizeHtmlSnapshot("<html><head><title>T</title></head><body><form><input><button>Go</button></form><a href='/'>Home</a></body></html>", { selector: "body", mode: "outer" });
 assert.deepEqual(Object.keys(html).sort(), ["chars", "counts", "mode", "original_bytes", "original_length", "selector", "textChars", "textPreview", "titles", "truncated"].sort(), "check-summaries html.keys: summary fields must stay stable");
