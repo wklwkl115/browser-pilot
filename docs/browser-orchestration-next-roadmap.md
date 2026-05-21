@@ -235,7 +235,7 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 
 ### TODO228. Pre-navigation Hook Policy 设计
 
-状态：已完成设计落档与静态契约；runtime 实现留给 TODO229。
+状态：已完成设计落档与静态契约；TODO229 已基于该 policy 完成 runtime 实现与 smoke gate。
 
 目标：定义 document-start 级 hook policy，禁止持久化任意可执行脚本文本。
 
@@ -246,21 +246,23 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 - Desired 只保存 `hookId/enabled/params/scope/version/hash`。
 - 脚本文本来自 driver 内置 registry 或仓库只读安全目录 + hash。
 - contract 禁止 `script/code/source` 进入 persisted Desired。
-- TODO229 前 runtime 对 enabled `preNavigationHooks` 返回 `ORCHESTRATION_INVALID_DESIRED`，避免静默忽略。
+- TODO228 阶段 runtime 对 enabled `preNavigationHooks` 返回 `ORCHESTRATION_INVALID_DESIRED`，避免静默忽略；TODO229 已替换为 registry-backed runtime validation。
 
 实施结果：
 
 1. 新增 `docs/pre-navigation-hook-policy.md`，定义 hook registry、metadata schema、install-before-navigate lifecycle、MV3 restart/watch 恢复、cleanup/verification、错误与回滚边界。
-2. `docs/browser-orchestration-coordinator.md` 增加 Pre-navigation Hook Policy metadata 小节，明确 raw `frame.addNewDocumentScript source` 与 orchestration policy 的边界。
-3. `src/driver/orchestration/types.ts` 增加设计期 metadata/registry/registration 类型。
-4. `normalizeDesired` 递归拒绝 `script/code/source`，并在 TODO229 前拒绝 enabled `preNavigationHooks`。
-5. 新增 `check:pre-nav-hook-policy` 静态契约并纳入 `npm run check`。
+2. `docs/browser-orchestration-coordinator.md` 增加 Pre-navigation Hook metadata 小节，明确 raw `frame.addNewDocumentScript source` 与 orchestration policy 的边界。
+3. `src/driver/orchestration/types.ts` 增加 metadata/registry/registration 类型。
+4. `normalizeDesired` 递归拒绝 `script/code/source`，TODO229 后接受 registry-backed `preNavigationHooks`。
+5. 新增 `check:pre-nav-hook-policy` 契约并纳入 `npm run check`。
 
 验收 Gate：`npm run check:tools`、`npm run check:token`、`npm run check:pre-nav-hook-policy`、`npm run check`。
 
-风险与回滚：外部 JSON 注入可执行脚本文本；回滚为移除 future metadata 类型与 `preNavigationHooks` rejection contract，保留 `browser_frame.addNewDocumentScript` primitive。
+风险与回滚：外部 JSON 注入可执行脚本文本；回滚为禁用 orchestration Desired `preNavigationHooks`，保留 `browser_frame.addNewDocumentScript` primitive。
 
 ### TODO229. Pre-navigation Hook 实现与 Smoke
+
+状态：已完成 runtime 实现与 smoke gate。
 
 目标：coordinator 支持 pre-navigation hook 安装、验证、清理与 watch 恢复。
 
@@ -268,22 +270,23 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 
 关键设计点：
 
-- hook phase 必须在 navigation 前。
-- Binding 保存 hook id、registration id、hash，不保存脚本文本。
-- delete/stop 清理 registration；watch 可检测丢失并重装。
-- 已加载页面不承诺 retroactive 生效。
+- hook phase 固定在 navigation 前。
+- 有 pre-navigation hook 的新 tab/window 先创建 `about:blank`，完成 `frame.addNewDocumentScript` 后再导航。
+- Binding 保存 hook id、version、hash、registration id、CDP session metadata、workerBootId，不保存脚本文本。
+- delete/stop/失败补偿清理 registration；watch/status 检测丢失或 workerBoot 变化并重装。
+- 已加载页面不承诺 retroactive 生效；必要时重新导航生成新 document。
 
-实施步骤：
+实施结果：
 
-1. 实现安全 hook registry。
-2. 扩展 Desired normalization。
-3. 扩展 DiffPlanner/ReconcileExecutor/ActualStateCollector。
-4. 增加 restart/lost registration fixtures。
-5. smoke 验证 document-start 标记早于页面脚本。
+1. 新增安全 hook registry 与内置 `pi.preNavigationMarker@1`，脚本 bytes 固定并以 sha256 校验。
+2. 扩展 Desired normalization，接受 registry-backed `preNavigationHooks`，继续递归拒绝 `script/code/source`。
+3. 扩展 DiffPlanner/ReconcileExecutor/ActualStateCollector/Store：新增 `hook-pre-nav` phase、`installPreNavigationHook` / `uninstallPreNavigationHook` operation、`persistent_cdp.listNewDocumentScripts` registration 观测与 marker effect 验证。
+4. 增加 restart/lost registration fixtures，验证 workerBoot/registration drift 可恢复，delete/stop 可清理。
+5. smoke 验证 document-start marker 早于页面 head script 生效，artifact 写入 `.pi/browser-artifacts/smoke-pre-navigation-hook-result.json`。
 
 验收 Gate：`npm run check`、`npm run check:orchestration`、`npm run check:runtime-fixtures`、Edge isolated smoke。
 
-风险与回滚：CDP/session 与 frame 生命周期复杂；回滚为禁用 Desired `preNavigationHooks`。
+风险与回滚：CDP/session 与 frame 生命周期复杂；回滚为禁用 Desired `preNavigationHooks`，保留 raw `browser_frame.addNewDocumentScript` primitive。
 
 ### TODO230. Persistent State 安全设计
 
@@ -386,8 +389,8 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 
 ## 5. 推荐执行顺序
 
-1. TODO223 → TODO228 已完成。
-2. 下一步执行 TODO229，完成 pre-navigation hook runtime 与 smoke gate。
+1. TODO223 → TODO229 已完成。
+2. 下一步执行 TODO230，完成 Persistent State 安全设计。
 3. TODO230 → TODO231。
 4. TODO232 → TODO233。
 5. 完整 Incognito 实现如需推进，另开 TODO234，不纳入当前主干 gate。

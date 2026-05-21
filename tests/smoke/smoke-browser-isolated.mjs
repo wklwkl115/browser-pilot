@@ -49,15 +49,23 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const results = Array.isArray(smokeArtifact?.results) ? smokeArtifact.results : [];
 	const orchestrationSteps = results.filter((item) => String(item.step || "").startsWith("browser_orchestrate."));
 	const windowSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.window"));
+	const preNavSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.preNav"));
 	const windowApplyStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowApply");
 	const windowArtifactStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowArtifact");
 	const windowDeleteStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowDelete");
+	const preNavApplyStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavApply");
+	const preNavArtifactStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavArtifact");
+	const preNavStopStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavStop");
+	const preNavDeleteStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavDelete");
 	const orchestrationId = orchestrationSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const windowOrchestrationId = windowSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
+	const preNavigationOrchestrationId = preNavSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const operationResults = orchestrationSteps.flatMap((item) => Array.isArray(item.operationResults) ? item.operationResults : []);
 	const bindings = orchestrationSteps.flatMap((item) => Array.isArray(item.bindings) ? item.bindings : []);
 	const windowOperationResults = [windowApplyStep, windowDeleteStep].flatMap((item) => Array.isArray(item?.operationResults) ? item.operationResults : []);
 	const windowBindings = Array.isArray(windowApplyStep?.bindings) ? windowApplyStep.bindings : Array.isArray(windowArtifactStep?.bindings) ? windowArtifactStep.bindings : [];
+	const preNavigationOperationResults = [preNavApplyStep, preNavStopStep, preNavDeleteStep].flatMap((item) => Array.isArray(item?.operationResults) ? item.operationResults : []);
+	const preNavigationBindings = Array.isArray(preNavApplyStep?.bindings) ? preNavApplyStep.bindings : Array.isArray(preNavArtifactStep?.bindings) ? preNavArtifactStep.bindings : [];
 	const artifactPaths = orchestrationSteps.map((item) => item.path).filter((item) => typeof item === "string");
 	const windowTabGroups = {
 		windowOrchestrationId,
@@ -71,7 +79,16 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 		closeWindowCount: windowOperationResults.filter((item) => item.action === "closeWindow").length,
 		groupTabsStatus: windowOperationResults.find((item) => item.action === "groupTabs")?.status,
 	};
-	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, artifactPaths } : undefined;
+	const preNavigationHooks = {
+		preNavigationOrchestrationId,
+		hookIds: Array.from(new Set(preNavigationBindings.flatMap((item) => Array.isArray(item.preNavigationHooks) ? item.preNavigationHooks.map((hook) => hook.hookId).filter(Boolean) : []))),
+		identifiers: Array.from(new Set(preNavigationBindings.flatMap((item) => Array.isArray(item.preNavigationHooks) ? item.preNavigationHooks.map((hook) => hook.identifier).filter(Boolean) : []))),
+		effectVerifiedCount: preNavigationBindings.flatMap((item) => Array.isArray(item.preNavigationHooks) ? item.preNavigationHooks : []).filter((hook) => hook.effectVerifiedAt).length,
+		installCount: preNavigationOperationResults.filter((item) => item.action === "installPreNavigationHook").length,
+		uninstallCount: preNavigationOperationResults.filter((item) => item.action === "uninstallPreNavigationHook").length,
+		effectStepOk: preNavSteps.find((item) => item.step === "browser_orchestrate.preNavEffect")?.ok === true,
+	};
+	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, preNavigationOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, preNavigationOperationResults, preNavigationBindings, preNavigationHooks, artifactPaths } : undefined;
 }
 async function fetchJson(url) {
 	const res = await fetch(url);

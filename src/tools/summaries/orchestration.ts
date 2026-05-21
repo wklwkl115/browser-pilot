@@ -26,6 +26,8 @@ function compactBindings(value: unknown): unknown {
 		{ key: "windowOwned", value: (item) => item.windowOwned },
 		{ key: "groupId", value: (item) => item.groupId },
 		{ key: "tabGroupsStatus", value: (item) => item.tabGroupsStatus },
+		{ key: "preNavigationHookCount", value: (item) => Array.isArray(item.preNavigationHooks) ? item.preNavigationHooks.length : undefined },
+		{ key: "preNavigationHookDegradedCount", value: (item) => Array.isArray(item.preNavigationHookDegraded) ? item.preNavigationHookDegraded.length : undefined },
 		{ key: "owned", value: (item) => item.owned },
 		{ key: "url", value: (item) => item.desiredUrl },
 	], 12);

@@ -1,9 +1,11 @@
 import { browserNotFound } from "./orchestrationErrors";
+import { preNavigationHookAppliesToTab, preNavigationHookKey, resolvePreNavigationHook } from "./preNavigationHooks";
 import { hashSensitiveString, redactedErrorDetails, stableJson } from "./orchestrationRedaction";
 import type { OrchestrationStore } from "./OrchestrationStore";
 import type {
 	ActualCookieState,
 	ActualHookState,
+	ActualPreNavigationHookState,
 	ActualRecorderState,
 	ActualTabState,
 	BrowserOrchestrationActual,
@@ -13,6 +15,7 @@ import type {
 	NormalizedDesiredCookie,
 	NormalizedDesiredSession,
 	NormalizedDesiredTab,
+	NormalizedPreNavigationHookMetadata,
 	OrchestrationBinding,
 } from "./types";
 import type { BrowserBridgeSnapshot, BrowserTabInfo } from "../types";
@@ -187,6 +190,8 @@ export class ActualStateCollector {
 		if (!selected) return actual;
 		actual.navigation = await this.collectNavigation(tab, selected, actual.navigation.urlMatchesDesired, diagnostics, timeoutMs);
 		if (session.networkRecorder?.enabled) actual.networkRecorder = await this.collectNetwork(desired, session, tab, selected, diagnostics, timeoutMs);
+		const desiredPreNavigationHooks = session.preNavigationHooks.filter((hook) => preNavigationHookAppliesToTab(hook, tab));
+		if (desiredPreNavigationHooks.length) actual.preNavigationHooks = await this.collectPreNavigationHooks(desired, session, tab, selected, binding, desiredPreNavigationHooks, diagnostics, timeoutMs);
 		if (session.hookDispatcher?.enabled) actual.hookDispatcher = await this.collectHook(desired, session, tab, selected, diagnostics, timeoutMs);
 		return actual;
 	}
@@ -219,6 +224,44 @@ export class ActualStateCollector {
 		} catch (error) {
 			diagnostics.push({ source: "network.status", tabId: actualTab.tabId, sessionId, error: error instanceof Error ? error.message : String(error), details: redactedErrorDetails(error) });
 			return { desired: true, active: false, sessionId, error: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	private async collectPreNavigationHooks(desired: NormalizedBrowserOrchestrationDesired, session: NormalizedDesiredSession, tab: NormalizedDesiredTab, actualTab: BrowserTabInfo, binding: OrchestrationBinding | undefined, hooks: NormalizedPreNavigationHookMetadata[], diagnostics: JsonRecord[], timeoutMs: number | undefined): Promise<ActualPreNavigationHookState[]> {
+		let scripts: JsonRecord[] = [];
+		try {
+			const result = await this.server.sendCommand({ cmd: "persistent_cdp", action: "listNewDocumentScripts", name: "new_document" }, { tabId: actualTab.tabId, target: { tabId: actualTab.tabId, browserId: actualTab.browserId }, timeoutMs: Math.min(timeoutMs || 2_000, 5_000) });
+			const failure = failureData(result.data);
+			if (failure) diagnostics.push({ source: "persistent_cdp.listNewDocumentScripts", tabId: actualTab.tabId, error: failure.message, details: failure.details });
+			else {
+				const data = isRecord(result.data) ? result.data : {};
+				scripts = Array.isArray(data.scripts) ? data.scripts.filter(isRecord) : [];
+			}
+		} catch (error) {
+			diagnostics.push({ source: "persistent_cdp.listNewDocumentScripts", tabId: actualTab.tabId, error: error instanceof Error ? error.message : String(error), details: redactedErrorDetails(error) });
+		}
+		return await Promise.all(hooks.map(async (hook): Promise<ActualPreNavigationHookState> => {
+			const registration = binding?.preNavigationHooks?.find((item) => preNavigationHookKey(item) === preNavigationHookKey(hook));
+			const script = registration ? scripts.find((item) => item.identifier === registration.identifier) : undefined;
+			const stale = !!registration && (!script || (!!registration.workerBootId && !!desired && registration.workerBootId !== this.server.snapshot().extension?.workerBootId));
+			const effect = registration && !stale ? await this.evaluatePreNavigationHookEffect(actualTab, hook, timeoutMs, diagnostics) : { active: false };
+			return { desired: true, hookId: hook.hookId, version: hook.version, hash: hook.hash, registered: !!registration && !!script && !stale, identifier: registration?.identifier, sessionKey: registration?.sessionKey, cdpSessionName: registration?.cdpSessionName, workerBootId: registration?.workerBootId, stale, effectActive: effect.active, error: effect.error };
+		}));
+	}
+
+	private async evaluatePreNavigationHookEffect(actualTab: BrowserTabInfo, hook: NormalizedPreNavigationHookMetadata, timeoutMs: number | undefined, diagnostics: JsonRecord[]): Promise<{ active: boolean; error?: string }> {
+		try {
+			const entry = resolvePreNavigationHook(hook);
+			const result = await this.server.sendCommand({ cmd: "persistent_cdp", action: "send", cdpMethod: "Runtime.evaluate", params: { expression: entry.effectExpression, returnByValue: true, awaitPromise: true }, persistent: true, name: "new_document", timeoutMs: Math.min(timeoutMs || 2_000, 5_000) }, { tabId: actualTab.tabId, target: { tabId: actualTab.tabId, browserId: actualTab.browserId }, timeoutMs: Math.min(timeoutMs || 2_000, 5_000) });
+			const failure = failureData(result.data);
+			if (failure) return { active: false, error: failure.message };
+			const data = isRecord(result.data) ? result.data : {};
+			const cdpResult = isRecord(data.result) ? data.result : data;
+			const value = isRecord(cdpResult.result) ? cdpResult.result.value : undefined;
+			return { active: value === true };
+		} catch (error) {
+			diagnostics.push({ source: "persistent_cdp.Runtime.evaluate", tabId: actualTab.tabId, hookId: hook.hookId, error: error instanceof Error ? error.message : String(error), details: redactedErrorDetails(error) });
+			return { active: false, error: error instanceof Error ? error.message : String(error) };
 		}
 	}
 

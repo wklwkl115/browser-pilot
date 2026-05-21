@@ -35,6 +35,11 @@ function piCdpKnownNewDocumentIdentifiers(tabId: unknown, name?: string): string
     .filter(rec => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name))
     .map(rec => rec.identifier);
 }
+function piCdpListNewDocumentScripts(tabId: unknown, name?: string): JsonRecord[] {
+  return Array.from(piPersistentCdpNewDocumentScripts.values())
+    .filter(rec => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name))
+    .map(rec => ({ tabId: rec.tabId, identifier: rec.identifier, sessionKey: rec.sessionKey, cdpSessionName: rec.cdpSessionName, method: rec.method, createdAt: rec.createdAt, runImmediately: rec.runImmediately, includeCommandLineAPI: rec.includeCommandLineAPI, worldName: rec.worldName }));
+}
 function piCdpError(code: string, message: unknown, details: unknown = {}): PiCdpResponse {
   const safeDetails = (details && typeof details === 'object') ? details as JsonRecord : (details === undefined ? {} : { raw: details });
   return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } };
@@ -332,6 +337,7 @@ async function handlePersistentCdpCommand(msg: PiBridgeCommand, sender: PiBridge
   if (action === 'evaluateInFrame') return await piPersistentCdpEvaluateInFrame(tabId, msg.expression, msg as PiCdpOptions);
   if (action === 'addNewDocumentScript') return await piPersistentCdpAddNewDocumentScript(tabId, msg.source, msg as PiCdpOptions);
   if (action === 'removeNewDocumentScript') return await piPersistentCdpRemoveNewDocumentScript(tabId, msg.identifier, msg as PiCdpOptions);
+  if (action === 'listNewDocumentScripts') return piCdpOk({ tabId, cdpSessionName: String(msg.name || 'new_document'), scripts: piCdpListNewDocumentScripts(tabId, String(msg.name || 'new_document')) });
   if (action === 'releaseIdle') return await piPersistentCdpReleaseIdle(msg.maxIdleMs);
   return piCdpError('UNKNOWN_ACTION', 'unknown persistent CDP action: ' + action, { action });
 }
@@ -354,6 +360,7 @@ const piPersistentCdpBridge = {
   evaluateInFrame: piPersistentCdpEvaluateInFrame,
   addNewDocumentScript: piPersistentCdpAddNewDocumentScript,
   removeNewDocumentScript: piPersistentCdpRemoveNewDocumentScript,
+  listNewDocumentScripts: piCdpListNewDocumentScripts,
   releaseIdle: piPersistentCdpReleaseIdle,
   hasSessionForTab: piPersistentCdpHasSessionForTab,
   handleCommand: handlePersistentCdpCommand
@@ -361,6 +368,6 @@ const piPersistentCdpBridge = {
 const cdpGlobal = self as typeof self & { PiPersistentCdp?: unknown; piPersistentCdpBridge?: unknown };
 cdpGlobal.PiPersistentCdp = piPersistentCdpBridge;
 cdpGlobal.piPersistentCdpBridge = piPersistentCdpBridge;
-export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge };
+export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpListNewDocumentScripts, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };
+export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpListNewDocumentScripts, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };

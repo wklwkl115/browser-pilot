@@ -1213,6 +1213,11 @@ async function testCdpNewDocumentScriptLifecycleContract() {
 	assert(added.data?.tabId === 66 && added.data?.sessionKey === "66:new_document" && added.data?.cdpSessionName === "new_document", "addNewDocumentScript must return stable tab/session metadata");
 	const addCall = sendCalls.find((call) => call.method === "Page.addScriptToEvaluateOnNewDocument");
 	assert(addCall?.params.runImmediately === true && addCall?.params.worldName === "pi_world" && addCall?.params.includeCommandLineAPI === true, "addNewDocumentScript must forward runImmediately/worldName/includeCommandLineAPI");
+	const listed = cdp.listNewDocumentScripts(66, "new_document");
+	assert(Array.isArray(listed) && listed.length === 1 && listed[0].identifier === "script-1" && listed[0].cdpSessionName === "new_document", "listNewDocumentScripts must expose stable registration metadata for orchestration recovery");
+	assert(cdp.listNewDocumentScripts(66, "other_session").length === 0, "listNewDocumentScripts must stay scoped by CDP session name");
+	const listedViaCommand = await cdp.handleCommand({ tabId: 66, action: "listNewDocumentScripts", name: "new_document" }, {});
+	assert(listedViaCommand.ok === true && listedViaCommand.data?.scripts?.length === 1 && listedViaCommand.data.scripts[0].identifier === "script-1", "persistent_cdp listNewDocumentScripts command must return registration metadata");
 
 	const removed = await cdp.removeNewDocumentScript(66, added.data.identifier, { persistent: true, name: "new_document" });
 	assert(removed.ok === true && removed.data?.identifier === "script-1" && removed.data?.removed === true && removed.data?.alreadyRemoved === false, "removeNewDocumentScript must return a stable normal removal result");

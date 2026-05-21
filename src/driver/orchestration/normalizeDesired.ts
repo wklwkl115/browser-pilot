@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { invalidDesired } from "./orchestrationErrors";
+import { preNavigationHookKey, resolvePreNavigationHook } from "./preNavigationHooks";
 import { hashSensitiveString, shortHash, stableJson } from "./orchestrationRedaction";
 import type {
 	BrowserDesiredCookieInput,
+	BrowserDesiredPreNavigationHookInput,
 	BrowserDesiredSessionInput,
 	BrowserDesiredTabInput,
 	BrowserOrchestrationDesiredInput,
@@ -13,6 +15,8 @@ import type {
 	NormalizedDesiredTab,
 	NormalizedHookDispatcher,
 	NormalizedNetworkRecorder,
+	NormalizedPreNavigationHookMetadata,
+	NormalizedPreNavigationHookScope,
 	NormalizedOwnedWindow,
 	NormalizedVisualGrouping,
 } from "./types";
@@ -192,17 +196,66 @@ function assertNoPreNavigationExecutableFields(value: unknown, field: string, de
 	}
 }
 
-function preNavigationHooksEnabled(value: unknown): boolean {
-	if (value === undefined || value === null || value === false) return false;
-	if (Array.isArray(value)) return value.some((item) => preNavigationHooksEnabled(item));
-	if (isRecord(value) && value.enabled === false) return false;
-	return true;
+function normalizeStringArray(value: unknown, field: string, options: { pattern?: RegExp } = {}): string[] | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	const raw = Array.isArray(value) ? value : [value];
+	const out = raw.map((item, index) => stringField(item, `${field}[${index}]`, { required: true, pattern: options.pattern }) || "");
+	const unique = Array.from(new Set(out.filter(Boolean)));
+	return unique.length ? unique : undefined;
 }
 
-function assertPreNavigationHooksDesignOnly(value: unknown, field: string): void {
+function normalizePreNavigationHookScope(value: unknown, field: string, allowedOrigins: Set<string>): NormalizedPreNavigationHookScope {
+	if (value === undefined || value === null) return { allFrames: true, matchAboutBlank: false };
+	if (!isRecord(value)) throw invalidDesired(`${field} must be an object`, { field });
+	const origins = normalizeStringArray(value.origins, `${field}.origins`)?.map((origin, index) => {
+		const normalized = originFromInput(origin, `${field}.origins[${index}]`);
+		assertAllowedOrigin(normalized, allowedOrigins, `${field}.origins[${index}]`);
+		return normalized;
+	});
+	return {
+		tabRoles: normalizeStringArray(value.tabRoles ?? value.tab_roles, `${field}.tabRoles`, { pattern: TAG_PATTERN }),
+		origins,
+		allFrames: booleanField(value.allFrames ?? value.all_frames, true, `${field}.allFrames`),
+		matchAboutBlank: booleanField(value.matchAboutBlank ?? value.match_about_blank, false, `${field}.matchAboutBlank`),
+	};
+}
+
+function normalizePreNavigationHooks(value: unknown, field: string, allowedOrigins: Set<string>): NormalizedPreNavigationHookMetadata[] {
 	assertNoPreNavigationExecutableFields(value, field);
-	if (!preNavigationHooksEnabled(value)) return;
-	throw invalidDesired("preNavigationHooks is design-only until TODO229 runtime implementation", { field, supportedAfter: "TODO229" });
+	if (value === undefined || value === null || value === false) return [];
+	const rawItems = Array.isArray(value) ? value : [value];
+	const hooks: NormalizedPreNavigationHookMetadata[] = [];
+	for (const [index, raw] of rawItems.entries()) {
+		if (raw === undefined || raw === null || raw === false) continue;
+		if (!isRecord(raw)) throw invalidDesired(`${field}[${index}] must be an object`, { field: `${field}[${index}]` });
+		if (raw.enabled === false && raw.hookId === undefined && raw.version === undefined && raw.hash === undefined) continue;
+		const enabled = booleanField(raw.enabled, true, `${field}[${index}].enabled`);
+		if (!enabled) continue;
+		const hookId = stringField(raw.hookId, `${field}[${index}].hookId`, { required: true, pattern: TAG_PATTERN }) || "";
+		const version = stringField(raw.version, `${field}[${index}].version`, { required: true, pattern: TAG_PATTERN }) || "";
+		const hash = stringField(raw.hash, `${field}[${index}].hash`, { required: true }) || "";
+		if (!/^sha256:[a-f0-9]{64}$/i.test(hash)) throw invalidDesired(`${field}[${index}].hash must be sha256:<64 hex chars>`, { field: `${field}[${index}].hash`, hookId, version });
+		if (raw.params !== undefined && !isRecord(raw.params)) throw invalidDesired(`${field}[${index}].params must be an object`, { field: `${field}[${index}].params`, hookId, version });
+		const normalized: NormalizedPreNavigationHookMetadata = {
+			hookId,
+			enabled: true,
+			params: isRecord(raw.params) ? raw.params : {},
+			scope: normalizePreNavigationHookScope(raw.scope, `${field}[${index}].scope`, allowedOrigins),
+			version,
+			hash,
+			required: booleanField(raw.required, true, `${field}[${index}].required`),
+			installPhase: "pre-navigation",
+		};
+		resolvePreNavigationHook(normalized);
+		hooks.push(normalized);
+	}
+	const seen = new Set<string>();
+	for (const hook of hooks) {
+		const key = preNavigationHookKey(hook);
+		if (seen.has(key)) throw invalidDesired("preNavigationHooks entries must be unique by hookId/version/hash", { field, hookId: hook.hookId, version: hook.version, hash: hook.hash });
+		seen.add(key);
+	}
+	return hooks;
 }
 
 function normalizeNetworkRecorder(value: unknown, sessionTag: string): NormalizedNetworkRecorder | undefined {
@@ -323,8 +376,8 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 		requireSelected: booleanField(browserRaw.requireSelected, false, "browser.requireSelected"),
 		crossBrowserFallback: false as const,
 	};
-	assertPreNavigationHooksDesignOnly(desiredInput.preNavigationHooks, "preNavigationHooks");
 	const allowedOrigins = deriveAllowedOrigins(desiredInput);
+	const topLevelPreNavigationHooks = normalizePreNavigationHooks(desiredInput.preNavigationHooks, "preNavigationHooks", allowedOrigins);
 	const defaultOwnedWindow = normalizeOwnedWindow(desiredInput.windowIsolation, "*");
 	const defaultVisualGrouping = normalizeVisualGrouping(desiredInput.visualGrouping, "*");
 	const sessionsInput = Array.isArray(desiredInput.sessions) ? desiredInput.sessions as BrowserDesiredSessionInput[] : undefined;
@@ -335,7 +388,7 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 		const tag = stringField(session.tag, "session.tag", { required: true, pattern: TAG_PATTERN }) || "";
 		if (seenTags.has(tag)) throw invalidDesired("session tags must be unique", { tag });
 		seenTags.add(tag);
-		assertPreNavigationHooksDesignOnly(session.preNavigationHooks, `sessions[${index}].preNavigationHooks`);
+		const sessionPreNavigationHooks = session.preNavigationHooks === undefined ? topLevelPreNavigationHooks : normalizePreNavigationHooks(session.preNavigationHooks, `sessions[${index}].preNavigationHooks`, allowedOrigins);
 		const tabs = normalizeTabs(tag, session, defaults, allowedOrigins);
 		const cookies = Array.isArray(session.cookies) ? (session.cookies as BrowserDesiredCookieInput[]).map((cookie, cookieIndex) => normalizeCookie(tag, cookie, tabs, allowedOrigins, cookieIndex)) : [];
 		if (!tabs.length && (session.networkRecorder || session.hookDispatcher)) throw invalidDesired("networkRecorder and hookDispatcher require at least one desired tab", { tag });
@@ -347,6 +400,7 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 			cookies,
 			ownedWindow: session.ownedWindow === undefined ? defaultOwnedWindow : normalizeOwnedWindow(session.ownedWindow, tag),
 			visualGrouping: session.visualGrouping === undefined ? defaultVisualGrouping : normalizeVisualGrouping(session.visualGrouping, tag),
+			preNavigationHooks: sessionPreNavigationHooks,
 			networkRecorder: normalizeNetworkRecorder(session.networkRecorder, tag),
 			hookDispatcher: normalizeHookDispatcher(session.hookDispatcher, tag),
 		};

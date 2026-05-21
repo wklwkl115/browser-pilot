@@ -6,5 +6,6 @@ export { ReconcileExecutor } from "./ReconcileExecutor";
 export { ResourceLocks } from "./ResourceLocks";
 export { normalizeDesired } from "./normalizeDesired";
 export { BrowserOrchestrationError } from "./orchestrationErrors";
+export { listPreNavigationHookRegistry, preNavigationHookRegistryHash } from "./preNavigationHooks";
 export { redactDesired, redactOrchestrationValue } from "./orchestrationRedaction";
 export type * from "./types";

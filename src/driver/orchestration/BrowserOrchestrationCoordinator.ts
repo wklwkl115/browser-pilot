@@ -22,7 +22,7 @@ import type {
 } from "./types";
 
 function recoveryCount(result: BrowserOrchestrationApplyResult): number {
-	return result.operationResults.filter((item) => item.status === "succeeded" && ["createWindow", "createTab", "groupTabs", "navigate", "startNetwork", "installHook", "setCookie", "removeCookie"].includes(item.action)).length;
+	return result.operationResults.filter((item) => item.status === "succeeded" && ["createWindow", "createTab", "groupTabs", "navigate", "startNetwork", "installPreNavigationHook", "installHook", "setCookie", "removeCookie"].includes(item.action)).length;
 }
 
 function firstFailure(result: Pick<BrowserOrchestrationApplyResult, "failures">, error?: unknown): OrchestrationFailure | undefined {
@@ -110,10 +110,13 @@ export class BrowserOrchestrationCoordinator {
 		return { ...applied, action: "watch", watch };
 	}
 
-	stop(orchestrationId: string): BrowserOrchestrationStopResult {
+	async stop(orchestrationId: string, options: BrowserOrchestrationRunOptions = {}): Promise<BrowserOrchestrationStopResult> {
 		const stopped = this.stopWatch(orchestrationId);
-		const state = this.storeValue.updateWatch(orchestrationId, stopped ? { active: false, paused: true, pauseReason: "stopped" } : this.storeValue.get(orchestrationId)?.watch ? { active: false, paused: true, pauseReason: "not_running" } : undefined);
-		return { ok: true, action: "stop", orchestrationId, stopped, state };
+		let state = this.storeValue.updateWatch(orchestrationId, stopped ? { active: false, paused: true, pauseReason: "stopped" } : this.storeValue.get(orchestrationId)?.watch ? { active: false, paused: true, pauseReason: "not_running" } : undefined);
+		const operations = state ? this.preNavigationCleanupOperations(state, "uninstall pre-navigation hooks on stop") : [];
+		const cleanup = operations.length ? await this.executor.executeOperations(operations, { timeoutMs: options.timeoutMs }) : { operationResults: [], failures: [] };
+		state = this.storeValue.get(orchestrationId);
+		return { ok: cleanup.failures.length === 0, action: "stop", orchestrationId, stopped, operationResults: cleanup.operationResults, failures: cleanup.failures, state };
 	}
 
 	async delete(orchestrationId: string, options: BrowserOrchestrationRunOptions = {}): Promise<BrowserOrchestrationApplyResult> {
@@ -201,9 +204,29 @@ export class BrowserOrchestrationCoordinator {
 		};
 	}
 
-	private cleanupOperations(state: OrchestrationRuntimeState): ReconcileOperation[] {
+	private preNavigationCleanupOperations(state: OrchestrationRuntimeState, reason: string): ReconcileOperation[] {
 		const operations: ReconcileOperation[] = [];
 		let seq = 0;
+		for (const binding of state.bindings) {
+			for (const registration of binding.preNavigationHooks || []) {
+				operations.push({
+					id: `pre-nav-cleanup-${++seq}-uninstallPreNavigationHook`,
+					phase: "cleanup",
+					action: "uninstallPreNavigationHook",
+					resourceRef: { orchestrationId: state.orchestrationId, sessionTag: binding.sessionTag, tabRole: binding.tabRole, tabId: binding.tabId, browserId: binding.browserId, windowId: binding.windowId, groupId: binding.groupId, hookId: registration.hookId, hookVersion: registration.version, hookHash: registration.hash, hookIdentifier: registration.identifier },
+					reason,
+					idempotencyKey: `${state.orchestrationId}:${binding.sessionTag}:${binding.tabRole}:cleanup:uninstallPreNavigationHook:${registration.identifier}`,
+					required: false,
+					redactedParams: { tabId: binding.tabId, browserId: binding.browserId, windowId: binding.windowId, hookId: registration.hookId, version: registration.version, hash: registration.hash, identifier: registration.identifier },
+				});
+			}
+		}
+		return operations;
+	}
+
+	private cleanupOperations(state: OrchestrationRuntimeState): ReconcileOperation[] {
+		const operations: ReconcileOperation[] = [...this.preNavigationCleanupOperations(state, "uninstall pre-navigation hooks on delete")];
+		let seq = operations.length;
 		const push = (action: ReconcileOperation["action"], binding: OrchestrationRuntimeState["bindings"][number], sessionId: string | undefined, reason: string, required: boolean) => {
 			operations.push({
 				id: `delete-${++seq}-${action}`,

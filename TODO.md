@@ -480,20 +480,22 @@
 - [x] 目标：定义基于 `frame.addNewDocumentScript` 的 document-start hook policy，解决导航前早期注入，同时禁止持久化任意可执行脚本文本。
 - [x] 范围：`docs/browser-orchestration-coordinator.md`、新增 hook policy doc、orchestration types、frame primitive docs、page script contracts。
 - [x] 关键设计：Desired 只保存 `hookId/enabled/params/scope/version/hash`；真实脚本文本只来自 driver 内置 registry 或仓库只读安全目录 + hash；contract 禁止 `script/code/source` 进入 persisted Desired。
-- [x] 实施：新增 `docs/pre-navigation-hook-policy.md`，冻结 hook registry、metadata schema、install-before-navigate lifecycle、MV3 restart/watch 恢复策略、cleanup/verification 与 no-script-persistence 边界；`normalizeDesired` 对 TODO229 前的 `preNavigationHooks` 显式拒绝，避免字段被静默忽略；orchestration types 增加设计期 metadata 类型但不规划 runtime operation。
+- [x] 实施：新增 `docs/pre-navigation-hook-policy.md`，冻结 hook registry、metadata schema、install-before-navigate lifecycle、MV3 restart/watch 恢复策略、cleanup/verification 与 no-script-persistence 边界；TODO228 阶段 `normalizeDesired` 对 enabled `preNavigationHooks` 显式拒绝，避免字段被静默忽略；orchestration types 增加设计期 metadata 类型但不规划 runtime operation。TODO229 已替换为 runtime normalization。
 - [x] Contract：新增 `check:pre-nav-hook-policy`，锁定 policy 文档、metadata 字段、forbidden `script/code/source` 递归拒绝、`browser_frame.addNewDocumentScript` raw primitive 与 orchestration policy 的边界；`npm run check` 纳入该静态契约。
 - [x] 验收条件：`npm run check:tools`、`npm run check:token`、`npm run check:pre-nav-hook-policy`、`npm run check` 已通过。
 - [x] 风险/回滚：外部 JSON 注入脚本文本风险；回滚为移除 future `preNavigationHooks` metadata 类型与 rejection contract，保留 `browser_frame.addNewDocumentScript` primitive。
 
 ## 229. Pre-navigation Hook 实现与 Smoke
 
-- [ ] 优先级：P1；依赖：TODO 228。
-- [ ] 目标：coordinator 支持 pre-navigation hook 安装、验证、清理与 watch 恢复。
-- [ ] 范围：orchestration modules、frame command path、orchestrate tool schema/summary、contracts、runtime smoke。
-- [ ] 关键设计：hook phase 必须在 navigation 前；Binding 保存 hook id、registration id、hash，不保存脚本文本；delete/stop 清理 registration；watch 检测 registration 丢失并重装；已加载页面不承诺 retroactive 生效。
-- [ ] 实施步骤：实现安全 hook registry；扩展 Desired normalization；扩展 DiffPlanner/ReconcileExecutor/ActualStateCollector；增加 restart/lost registration fixtures；smoke 验证 document-start 标记早于页面脚本。
-- [ ] 验收条件：`npm run check`、`npm run check:orchestration`、`npm run check:runtime-fixtures`、Edge isolated smoke 通过。
-- [ ] 风险/回滚：CDP/session 与 frame lifecycle 复杂；回滚为禁用 Desired `preNavigationHooks`。
+- [x] 优先级：P1；依赖：TODO 228。
+- [x] 目标：coordinator 支持 pre-navigation hook 安装、验证、清理与 watch 恢复。
+- [x] 范围：orchestration modules、frame command path、orchestrate tool schema/summary、contracts、runtime smoke。
+- [x] 关键设计：hook phase 固定在 navigation 前；有 pre-navigation hook 的新 tab/window 先创建 `about:blank`，完成 `frame.addNewDocumentScript` 后再 navigate；Binding 只保存 hook id、version、hash、identifier、sessionKey、cdpSessionName、workerBootId，不保存脚本文本；delete/stop 清理 registration；watch/status 检测 registration 丢失或 workerBoot 变化并重装；已加载页面不承诺 retroactive 生效，必要时重新导航生成新 document。
+- [x] 实施：新增受控内置 registry `pi.preNavigationMarker@1` 与 sha256 hash 校验；`normalizeDesired` 接受 registry-backed `preNavigationHooks` 并递归拒绝 `script/code/source`；`DiffPlanner` 增加 `hook-pre-nav` phase 与 `installPreNavigationHook` operation；`ReconcileExecutor` 通过 `frame.addNewDocumentScript` 安装、`persistent_cdp Runtime.evaluate` 验证 marker、`frame.removeNewDocumentScript` 清理；`ActualStateCollector` 通过 `persistent_cdp.listNewDocumentScripts` 与 marker evaluate 检测 registration/effect；Store/summary/status 上浮 registration metadata。
+- [x] Contract：`check:pre-nav-hook-policy` 更新为 runtime 契约；`check:orchestration` fixture 覆盖 about:blank 创建、安装后导航、effect 验证、workerBoot/lost registration 恢复、delete cleanup 与 no raw script bytes；`check:smoke-diagnostics` 锁定真实 smoke 的 preNav steps/artifact。
+- [x] Smoke：`smoke:browser` 新增 `browser_orchestrate.preNavPlan/preNavApply/preNavEffect/preNavStop/preNavDelete/preNavArtifact`，页面 head 脚本验证 document-start marker 早于页面脚本生效，artifact 写入 `.pi/browser-artifacts/smoke-pre-navigation-hook-result.json`；Edge isolated smoke gate 需通过后记录 artifact。
+- [x] 验收条件：`npm run check`、`npm run check:orchestration`、`npm run check:runtime-fixtures`、Edge isolated smoke 通过。
+- [x] 风险/回滚：CDP/session 与 frame lifecycle 复杂；回滚为禁用 Desired `preNavigationHooks`，保留 raw `browser_frame.addNewDocumentScript` primitive。
 
 ## 230. Persistent State 安全设计
 
@@ -537,7 +539,7 @@
 
 ## 下一步建议顺序
 
-1. TODO 223-228 已完成；下一步执行 TODO 229，推进 pre-navigation hook runtime 与 smoke gate。
+1. TODO 223-229 已完成；下一步执行 TODO 230，推进 Persistent State 安全设计。
 2. 执行 TODO 230 → 231，推进 redacted persistence 与 explicit adoption。
 3. 执行 TODO 232 → 233，推进 profile-first；完整 Incognito 如需主干实现，另开 TODO 234。
 4. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。

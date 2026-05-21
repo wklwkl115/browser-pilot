@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeDesired, redactDesired } from "../../src/driver/orchestration/index.ts";
+import { normalizeDesired, preNavigationHookRegistryHash, redactDesired } from "../../src/driver/orchestration/index.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -29,16 +29,19 @@ const baseDesired = {
 	}],
 };
 
+const markerHash = preNavigationHookRegistryHash();
 const disabledTopLevel = normalizeDesired({ ...baseDesired, preNavigationHooks: { enabled: false } });
-assert.equal(JSON.stringify(redactDesired(disabledTopLevel)).includes("preNavigationHooks"), false, "disabled top-level preNavigationHooks must not enter normalized/redacted Desired before TODO229 runtime");
+assert.equal(disabledTopLevel.sessions[0].preNavigationHooks.length, 0, "disabled top-level preNavigationHooks must normalize to an empty hook list");
 normalizeDesired({ ...baseDesired, preNavigationHooks: [] });
 normalizeDesired({ ...baseDesired, sessions: [{ ...baseDesired.sessions[0], preNavigationHooks: [{ enabled: false }] }] });
-
-assertRejectsInvalidDesired({ ...baseDesired, preNavigationHooks: [{ hookId: "early-marker", version: "1", hash: "sha256:test" }] }, /design-only until TODO229/, "enabled top-level preNavigationHooks");
+const normalizedHook = normalizeDesired({ ...baseDesired, preNavigationHooks: [{ hookId: "pi.preNavigationMarker", version: "1", hash: markerHash }] });
+assert.equal(normalizedHook.sessions[0].preNavigationHooks[0].hookId, "pi.preNavigationMarker", "TODO229 runtime must accept registry-backed preNavigationHooks");
+assert.equal(JSON.stringify(redactDesired(normalizedHook)).includes("__PI_BROWSER_PRE_NAVIGATION_HOOKS__"), false, "redacted Desired must not expose raw pre-navigation hook script bytes");
+assertRejectsInvalidDesired({ ...baseDesired, preNavigationHooks: [{ hookId: "early-marker", version: "1", hash: "sha256:test" }] }, /hash must be sha256|registry entry is not found/, "unknown enabled preNavigationHooks must fail registry validation");
 assertRejectsInvalidDesired({ ...baseDesired, preNavigationHooks: { hookId: "early-marker", params: { nested: { code: "alert(1)" } } } }, /cannot include executable script\/code\/source fields/, "nested code forbidden");
 assertRejectsInvalidDesired({ ...baseDesired, preNavigationHooks: { source: "window.__x=1" } }, /cannot include executable script\/code\/source fields/, "source forbidden");
 assertRejectsInvalidDesired({ ...baseDesired, sessions: [{ ...baseDesired.sessions[0], preNavigationHooks: [{ hookId: "early-marker", script: "window.__x=1" }] }] }, /cannot include executable script\/code\/source fields/, "session script forbidden");
-assertRejectsInvalidDesired({ ...baseDesired, sessions: [{ ...baseDesired.sessions[0], preNavigationHooks: [{ hookId: "early-marker", version: "1", hash: "sha256:test" }] }] }, /design-only until TODO229/, "enabled session preNavigationHooks");
+assertRejectsInvalidDesired({ ...baseDesired, sessions: [{ ...baseDesired.sessions[0], preNavigationHooks: [{ hookId: "pi.preNavigationMarker", version: "1", hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000" }] }] }, /hash does not match registry entry/, "session preNavigationHooks must validate registry hash");
 
 const policy = read("docs/pre-navigation-hook-policy.md");
 for (const required of [
@@ -64,15 +67,15 @@ assert(policy.includes("当前可直接调用的底层原语仍是 `browser_fram
 
 const coordinatorDoc = read("docs/browser-orchestration-coordinator.md");
 assert(coordinatorDoc.includes("docs/pre-navigation-hook-policy.md"), "coordinator doc must link the TODO228 policy doc");
-assert(coordinatorDoc.includes("TODO 229") && coordinatorDoc.includes("runtime pending"), "coordinator doc must mark pre-navigation runtime as TODO229 pending");
+assert(coordinatorDoc.includes("TODO 229") && coordinatorDoc.includes("document-start hook runtime"), "coordinator doc must mark pre-navigation runtime as implemented by TODO229");
 assert(coordinatorDoc.includes("禁止 Desired、runtime store、status、summary 与 artifact 持久化 `script`、`code`、`source`"), "coordinator doc must state no script/code/source persistence");
 
 const roadmap = read("docs/browser-orchestration-next-roadmap.md");
-assert(roadmap.includes("状态：已完成设计落档与静态契约"), "roadmap must mark TODO228 design contract complete");
-assert(roadmap.includes("下一步执行 TODO229"), "roadmap next step must move to TODO229");
+assert(roadmap.includes("状态：已完成 runtime 实现与 smoke gate"), "roadmap must mark TODO229 runtime complete");
+assert(roadmap.includes("下一步执行 TODO230"), "roadmap next step must move to TODO230");
 const todo = read("TODO.md");
-assert(todo.includes("## 228. Pre-navigation Hook Policy 设计") && todo.includes("- [x] Contract：新增 `check:pre-nav-hook-policy`"), "TODO.md must mark TODO228 contract complete");
-assert(todo.includes("TODO 223-228 已完成；下一步执行 TODO 229"), "TODO.md next-step ordering must point to TODO229");
+assert(todo.includes("## 229. Pre-navigation Hook 实现与 Smoke") && todo.includes("- [x] Contract：`check:pre-nav-hook-policy`"), "TODO.md must mark TODO229 contract complete");
+assert(todo.includes("TODO 223-229 已完成；下一步执行 TODO 230"), "TODO.md next-step ordering must point to TODO230");
 
 const types = read("src/driver/orchestration/types.ts");
 for (const requiredType of [
@@ -80,6 +83,7 @@ for (const requiredType of [
 	"NormalizedPreNavigationHookMetadata",
 	"PreNavigationHookRegistryEntry",
 	"PreNavigationHookRegistration",
+	"ActualPreNavigationHookState",
 	"installPhase: \"pre-navigation\"",
 ]) assert(types.includes(requiredType), `orchestration types missing ${requiredType}`);
 const registryBlock = types.slice(types.indexOf("export type PreNavigationHookRegistryEntry"), types.indexOf("export type PreNavigationHookRegistration"));
@@ -90,7 +94,7 @@ for (const forbiddenField of ["script", "code", "source", "sourcePath"]) {
 
 const normalizeSource = read("src/driver/orchestration/normalizeDesired.ts");
 assert(normalizeSource.includes("assertNoPreNavigationExecutableFields"), "normalizeDesired must recursively reject executable hook fields");
-assert(normalizeSource.includes("preNavigationHooks is design-only until TODO229 runtime implementation"), "normalizeDesired must reject enabled preNavigationHooks before TODO229 runtime");
+assert(normalizeSource.includes("resolvePreNavigationHook(normalized)"), "normalizeDesired must validate preNavigationHooks against the safe registry");
 for (const forbidden of ["script", "code", "source"]) assert(normalizeSource.includes(`normalizedKey === \"${forbidden}\"`), `normalizeDesired must check forbidden key: ${forbidden}`);
 
 const schema = json("bridge/native_command_schema.json");
@@ -100,9 +104,15 @@ const generatedNativeDoc = read("docs/generated/native-protocol.generated.md");
 assert(generatedNativeDoc.includes("`frame.addNewDocumentScript`") && generatedNativeDoc.includes("source"), "generated native docs must preserve raw frame source requirement");
 
 const orchestrateTool = read("src/tools/registerOrchestrateTool.ts");
-assert.equal(orchestrateTool.includes("preNavigationHooks"), false, "browser_orchestrate callable schema must not expose TODO229 runtime fields during TODO228 design-only stage");
+assert(orchestrateTool.includes("preNavigationHooks"), "browser_orchestrate schema/docs must expose TODO229 preNavigationHooks runtime metadata");
 const generatedToolDoc = read("docs/generated/browser-tool-contract.generated.md");
-assert.equal(generatedToolDoc.includes("preNavigationHooks"), false, "generated tool contract must not expose TODO229 runtime fields during TODO228 design-only stage");
+assert(generatedToolDoc.includes("preNavigationHooks"), "generated tool contract must expose TODO229 preNavigationHooks runtime metadata");
+const registrySource = read("src/driver/orchestration/preNavigationHooks.ts");
+assert(registrySource.includes("PRE_NAVIGATION_MARKER_BYTES") && registrySource.includes("sha256"), "pre-navigation hook registry must use fixed packaged bytes and sha256 hash validation");
+assert(!registrySource.includes("eval(") && !registrySource.includes("new Function"), "pre-navigation hook registry must not evaluate external Desired script text");
+const executorSource = read("src/driver/orchestration/ReconcileExecutor.ts");
+assert(executorSource.includes("frame.addNewDocumentScript") && executorSource.includes("frame.removeNewDocumentScript"), "ReconcileExecutor must install and cleanup pre-navigation hooks through frame primitives");
+assert(executorSource.includes("about:blank"), "ReconcileExecutor must create new tabs/windows as about:blank when pre-navigation hooks are requested");
 
 const pkg = json("package.json");
 assert(String(pkg.scripts?.["check:pre-nav-hook-policy"] || "").includes("tests/contracts/check-pre-nav-hook-policy.mjs"), "package must expose check:pre-nav-hook-policy");

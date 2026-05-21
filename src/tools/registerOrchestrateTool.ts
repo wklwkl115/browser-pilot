@@ -52,17 +52,18 @@ export function registerOrchestrateTool({ pi, ensureStarted }: ToolRegistrarCont
 	pi.registerTool({
 		name: "browser_orchestrate",
 		label: "Browser Orchestration",
-		description: "Coordinate desired browser state across owned tabs/windows, visual grouping, navigation, cookies, network recorder, hook dispatcher, status, watch, and cleanup.",
-		promptSnippet: "Declare desired browser state and run plan/apply/status/watch/stop/delete through the Node driver coordinator.",
+		description: "Coordinate desired browser state across owned tabs/windows, visual grouping, pre-navigation document-start hooks, navigation, cookies, network recorder, hook dispatcher, status, watch, and cleanup.",
+		promptSnippet: "Declare desired browser state, including registry-backed preNavigationHooks, and run plan/apply/status/watch/stop/delete through the Node driver coordinator.",
 		promptGuidelines: [
 			"Use browser_orchestrate for explicit multi-resource state convergence; do not use it as a substitute for page observation, selector validation, or evidence judgment.",
-			"Keep desiredState scoped with explicit sessions, tabs, URLs, allowedOrigins, ownedWindow/visualGrouping intent, and cleanup policy. Cookie values are redacted from summaries/artifacts by default.",
-			"Use plan or dryRun before apply/watch when target ownership, reuse, cookies, window creation, visual grouping, network recorder, or hook effects need review.",
+			"Keep desiredState scoped with explicit sessions, tabs, URLs, allowedOrigins, ownedWindow/visualGrouping/preNavigationHooks intent, and cleanup policy. Cookie values are redacted from summaries/artifacts by default; pre-navigation hook script bytes are never persisted.",
+			"Use plan or dryRun before apply/watch when target ownership, reuse, cookies, window creation, visual grouping, pre-navigation hooks, network recorder, or hook effects need review.",
 			"Treat tabGroups degraded status as diagnostic; it must not block core tab/window/navigation/cookie/network/hook reconcile.",
+			"Use preNavigationHooks only with registry-backed hookId/version/hash metadata; desiredState must not contain script/code/source fields.",
 		],
 		parameters: Type.Object({
 			action: Type.String({ description: "plan | apply | status | watch | stop | delete. Default status." }),
-			desiredState: Type.Optional(Type.Any({ description: "Desired browser state object for plan/apply/watch. apiVersion pi.browser/v1, sessions, tabs, ownedWindow/windowIsolation, visualGrouping, cookies, networkRecorder, hookDispatcher, allowedOrigins, cleanup policy." })),
+			desiredState: Type.Optional(Type.Any({ description: "Desired browser state object for plan/apply/watch. apiVersion pi.browser/v1, sessions, tabs, ownedWindow/windowIsolation, visualGrouping, preNavigationHooks registry metadata, cookies, networkRecorder, hookDispatcher, allowedOrigins, cleanup policy." })),
 			orchestrationId: Type.Optional(Type.String({ description: "Logical orchestration id for status/stop/delete or desiredState override." })),
 			dryRun: Type.Optional(Type.Boolean({ description: "For apply/watch/delete, return a non-mutating plan/status preview instead of applying side effects." })),
 			watch: Type.Optional(Type.Object({
@@ -86,7 +87,7 @@ export function registerOrchestrateTool({ pi, ensureStarted }: ToolRegistrarCont
 				else if (action === "apply") result = params.dryRun ? await coordinator.plan(requireDesiredState(params, action), { timeoutMs }) : await coordinator.apply(requireDesiredState(params, action), { timeoutMs });
 				else if (action === "watch") result = params.dryRun ? await coordinator.plan(requireDesiredState(params, action), { timeoutMs }) : await coordinator.watch(requireDesiredState(params, action), watchOptions(params, timeoutMs));
 				else if (action === "status") result = await coordinator.status(params.orchestrationId, { timeoutMs });
-				else if (action === "stop") result = coordinator.stop(requireOrchestrationId(params, action));
+				else if (action === "stop") result = await coordinator.stop(requireOrchestrationId(params, action), { timeoutMs });
 				else {
 					if (params.cleanup === false) throw new BrowserBridgeError("ORCHESTRATION_INVALID_DESIRED", "browser_orchestrate delete cleanup:false is not allowed for owned resources", { action, orchestrationId: params.orchestrationId });
 					result = params.dryRun ? await coordinator.status(requireOrchestrationId(params, action), { timeoutMs }) : await coordinator.delete(requireOrchestrationId(params, action), { timeoutMs });

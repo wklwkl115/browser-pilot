@@ -56,6 +56,7 @@ export function redactDesired(desired: NormalizedBrowserOrchestrationDesired): u
 		...desired,
 		sessions: desired.sessions.map((session) => ({
 			...session,
+			preNavigationHooks: session.preNavigationHooks.map((hook) => ({ ...hook, params: redactOrchestrationValue(hook.params) })),
 			cookies: session.cookies.map(redactCookie),
 		})),
 	};
@@ -66,6 +67,7 @@ export function stripCookieValuesFromDesired(desired: NormalizedBrowserOrchestra
 		...desired,
 		sessions: desired.sessions.map((session) => ({
 			...session,
+			preNavigationHooks: session.preNavigationHooks.map((hook) => ({ ...hook, params: redactOrchestrationValue(hook.params) as typeof hook.params })),
 			cookies: session.cookies.map((cookie) => {
 				const { value: _value, ...safe } = cookie;
 				return safe;

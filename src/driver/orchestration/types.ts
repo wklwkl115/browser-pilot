@@ -4,11 +4,11 @@ import type { BridgeCommand } from "../../protocol/nativeProtocol";
 export type JsonRecord = Record<string, unknown>;
 
 export type BrowserOrchestrationAction = "plan" | "apply" | "status" | "delete" | "watch" | "stop";
-export type BrowserOrchestrationPhase = "observe" | "window" | "tab" | "visual-grouping" | "recorder-pre-nav" | "cookie" | "navigation" | "recorder" | "hook" | "verify" | "cleanup";
-export type BrowserOrchestrationOperationAction = "createWindow" | "createTab" | "reuseTab" | "groupTabs" | "startNetwork" | "setCookie" | "removeCookie" | "navigate" | "installHook" | "verifyStatus" | "closeTab" | "closeWindow" | "stopNetwork" | "uninstallHook";
+export type BrowserOrchestrationPhase = "observe" | "window" | "tab" | "visual-grouping" | "recorder-pre-nav" | "hook-pre-nav" | "cookie" | "navigation" | "recorder" | "hook" | "verify" | "cleanup";
+export type BrowserOrchestrationOperationAction = "createWindow" | "createTab" | "reuseTab" | "groupTabs" | "startNetwork" | "installPreNavigationHook" | "setCookie" | "removeCookie" | "navigate" | "installHook" | "verifyStatus" | "closeTab" | "closeWindow" | "stopNetwork" | "uninstallHook" | "uninstallPreNavigationHook";
 export type BrowserOrchestrationOperationStatus = "pending" | "succeeded" | "degraded" | "failed" | "skipped";
 
-export const ORCHESTRATION_PHASE_ORDER: BrowserOrchestrationPhase[] = ["observe", "window", "tab", "visual-grouping", "recorder-pre-nav", "cookie", "navigation", "recorder", "hook", "verify", "cleanup"];
+export const ORCHESTRATION_PHASE_ORDER: BrowserOrchestrationPhase[] = ["observe", "window", "tab", "visual-grouping", "recorder-pre-nav", "hook-pre-nav", "cookie", "navigation", "recorder", "hook", "verify", "cleanup"];
 
 export type BrowserOrchestrationServer = {
 	snapshot(): BrowserBridgeSnapshot;
@@ -209,10 +209,12 @@ export type PreNavigationHookRegistration = {
 	version: string;
 	hash: string;
 	identifier: string;
+	sessionKey?: string;
 	cdpSessionName: string;
 	sessionTag: string;
 	tabRole: string;
 	installedAt: number;
+	effectVerifiedAt?: number;
 	workerBootId?: string;
 };
 
@@ -223,6 +225,7 @@ export type NormalizedDesiredSession = {
 	cookies: NormalizedDesiredCookie[];
 	ownedWindow: NormalizedOwnedWindow;
 	visualGrouping: NormalizedVisualGrouping;
+	preNavigationHooks: NormalizedPreNavigationHookMetadata[];
 	networkRecorder?: NormalizedNetworkRecorder;
 	hookDispatcher?: NormalizedHookDispatcher;
 };
@@ -259,6 +262,8 @@ export type OrchestrationBinding = {
 	networkConfigHash?: string;
 	hookSessionId?: string;
 	hookFingerprint?: string;
+	preNavigationHooks?: PreNavigationHookRegistration[];
+	preNavigationHookDegraded?: Array<{ hookId: string; version: string; hash: string; code?: string; message?: string; updatedAt: number }>;
 	workerBootId?: string;
 };
 
@@ -325,6 +330,22 @@ export type ActualHookState = {
 	details?: JsonRecord;
 };
 
+export type ActualPreNavigationHookState = {
+	desired: boolean;
+	hookId: string;
+	version: string;
+	hash: string;
+	registered: boolean;
+	identifier?: string;
+	sessionKey?: string;
+	cdpSessionName?: string;
+	workerBootId?: string;
+	stale?: boolean;
+	effectActive?: boolean;
+	error?: string;
+	details?: JsonRecord;
+};
+
 export type ActualTabState = {
 	sessionTag: string;
 	role: string;
@@ -345,6 +366,7 @@ export type ActualTabState = {
 	browserMismatch?: boolean;
 	navigation: { matchesDesired: boolean; urlMatchesDesired: boolean; loadState?: string; loadStateMatchesDesired?: boolean; error?: string };
 	networkRecorder?: ActualRecorderState;
+	preNavigationHooks?: ActualPreNavigationHookState[];
 	hookDispatcher?: ActualHookState;
 	cookies: ActualCookieState[];
 };
@@ -376,6 +398,10 @@ export type ReconcileOperationResourceRef = {
 	cookieKey?: string;
 	cookieName?: string;
 	sessionId?: string;
+	hookId?: string;
+	hookVersion?: string;
+	hookHash?: string;
+	hookIdentifier?: string;
 };
 
 export type ReconcileOperation = {
@@ -496,5 +522,7 @@ export type BrowserOrchestrationStopResult = {
 	action: "stop";
 	orchestrationId: string;
 	stopped: boolean;
+	operationResults?: ReconcileOperationResult[];
+	failures?: OrchestrationFailure[];
 	state?: OrchestrationRuntimeState;
 };

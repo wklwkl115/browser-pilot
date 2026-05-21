@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES } from "../../src/driver/orchestration/index.ts";
+import { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES, preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
 
 const fixtureEvidence = [];
 const fixtureArtifactPath = path.resolve(".pi", "browser-artifacts", "orchestration-fixture-results.json");
@@ -34,6 +34,9 @@ class FakeOrchestrationServer {
 		this.cookies = new Map();
 		this.network = new Map();
 		this.hooks = new Map();
+		this.preNavigationScripts = new Map();
+		this.preNavigationEffects = new Map();
+		this.nextScriptId = 1;
 		this.fail = options.fail || {};
 		this.waitReady = options.waitReady !== false;
 		this.ensureWindowsFromTabs();
@@ -105,14 +108,19 @@ class FakeOrchestrationServer {
 		if (command.cmd === "hook.status") return this.hookStatus(command, options);
 		if (command.cmd === "hook.install") return this.hookInstall(command, options);
 		if (command.cmd === "hook.uninstall") return this.hookUninstall(command, options);
+		if (command.cmd === "frame.addNewDocumentScript") return this.addPreNavigationScript(command, options);
+		if (command.cmd === "frame.removeNewDocumentScript") return this.removePreNavigationScript(command, options);
+		if (command.cmd === "persistent_cdp") return this.handlePersistentCdp(command, options);
 		if (command.cmd === "tabs") return this.handleTabs(command);
 		if (command.cmd === "windows") return this.handleWindows(command);
 		if (command.cmd === "tabGroups") return this.handleTabGroups(command);
 		if (command.cmd === "wait.loadState" || command.cmd === "wait.networkIdle") return { id: `wait-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: this.waitReady ? { state: command.state || "networkidle", ok: true } : { ok: false, error_code: "WAIT_TIMEOUT", error: "wait state not ready", details: { state: command.state || "networkidle" } } };
 		if (command.cmd === "wait.navigate") {
-			const tab = this.tabs.find((item) => item.tabId === Number(options.tabId));
+			const tabId = Number(options.tabId);
+			const tab = this.tabs.find((item) => item.tabId === tabId);
 			if (tab) tab.url = command.url;
-			return { id: `nav-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: { ok: true, url: command.url } };
+			if ((this.preNavigationScripts.get(tabId) || []).length) this.preNavigationEffects.set(tabId, true);
+			return { id: `nav-${this.commandLog.length}`, acknowledged: true, tabId, data: { ok: true, url: command.url } };
 		}
 		return { id: `cmd-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId || command.tabId || 0) || undefined, data: { ok: true } };
 	}
@@ -226,6 +234,33 @@ class FakeOrchestrationServer {
 		this.hooks.delete(this.hookKey(command, options));
 		return { id: `hook-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: { session_id: command.sessionId, state: "CLOSED" } };
 	}
+
+	addPreNavigationScript(command, options) {
+		const tabId = Number(options.tabId);
+		const identifier = `script-${this.nextScriptId++}`;
+		const scripts = this.preNavigationScripts.get(tabId) || [];
+		const item = { tabId, identifier, sessionKey: `${tabId}:new_document`, cdpSessionName: "new_document", method: "Page.addScriptToEvaluateOnNewDocument", createdAt: Date.now(), runImmediately: command.runImmediately === true, includeCommandLineAPI: command.includeCommandLineAPI === true };
+		scripts.push(item);
+		this.preNavigationScripts.set(tabId, scripts);
+		return { id: `frame-${this.commandLog.length}`, acknowledged: true, tabId, data: { tabId, ...item, detached: false } };
+	}
+
+	removePreNavigationScript(command, options) {
+		const tabId = Number(options.tabId);
+		const scripts = this.preNavigationScripts.get(tabId) || [];
+		const before = scripts.length;
+		const next = scripts.filter((item) => item.identifier !== command.identifier);
+		this.preNavigationScripts.set(tabId, next);
+		if (!next.length) this.preNavigationEffects.delete(tabId);
+		return { id: `frame-${this.commandLog.length}`, acknowledged: true, tabId, data: { tabId, identifier: command.identifier, removed: before !== next.length, alreadyRemoved: before === next.length, sessionKey: `${tabId}:new_document`, cdpSessionName: "new_document", method: "Page.removeScriptToEvaluateOnNewDocument" } };
+	}
+
+	handlePersistentCdp(command, options) {
+		const tabId = Number(options.tabId || command.tabId);
+		if (command.action === "listNewDocumentScripts") return { id: `pcdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { tabId, cdpSessionName: "new_document", scripts: this.preNavigationScripts.get(tabId) || [] } };
+		if (command.action === "send" && command.cdpMethod === "Runtime.evaluate") return { id: `pcdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { result: { result: { type: "boolean", value: this.preNavigationEffects.get(tabId) === true } }, sessionKey: `${tabId}:new_document`, method: "Runtime.evaluate" } };
+		return { id: `pcdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { ok: true } };
+	}
 }
 
 const desired = {
@@ -261,7 +296,7 @@ const desired = {
 	const watched = await coordinator.watch(desired, { intervalMs: 1000, ttlMs: 2000, maxAttempts: 2, timeoutMs: 1000 });
 	assert.equal(watched.action, "watch", "watch must return a watch action envelope");
 	assert.equal(watched.watch.active, true, "watch must mark active watch metadata");
-	const stopped = coordinator.stop("orch-main");
+	const stopped = await coordinator.stop("orch-main");
 	assert.equal(stopped.stopped, true, "stop must cancel the watch timer");
 	const deleted = captureFixture("delete", await coordinator.delete("orch-main"));
 	assert.equal(deleted.ok, true, "delete must clean owned resources");
@@ -303,7 +338,7 @@ const desired = {
 	const status = captureFixture("watchSelfHealStatus", await coordinator.status("orch-watch"));
 	assert.equal(status.ok, true, "status must converge after watch self-heal");
 	assert.ok(status.state.watch.recoveries >= 1, "watch state must report recovery attempts");
-	coordinator.stop("orch-watch");
+	await coordinator.stop("orch-watch");
 	const deleted = await coordinator.delete("orch-watch");
 	assert.equal(deleted.ok, true, "delete after watch must clean resources");
 	assert.equal(server.tabs.length, 0, "delete after watch must leave no owned zombie tabs");
@@ -411,6 +446,40 @@ const desired = {
 }
 
 {
+	const server = new FakeOrchestrationServer();
+	const coordinator = new BrowserOrchestrationCoordinator(server);
+	const hookHash = preNavigationHookRegistryHash();
+	const hookDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: "orch-pre-nav",
+		defaults: { timeoutMs: 3000, navigationTimeoutMs: 800 },
+		preNavigationHooks: [{ hookId: "pi.preNavigationMarker", version: "1", hash: hookHash, required: true }],
+		sessions: [{ tag: "pre", tabs: [{ role: "main", url: "https://pre-nav.test/app", waitUntil: "none" }] }],
+	};
+	const plan = captureFixture("preNavigationPlan", await coordinator.plan(hookDesired));
+	const actions = plan.plan.operations.map((item) => item.action);
+	assert(actions.indexOf("installPreNavigationHook") > actions.indexOf("createTab"), "pre-navigation plan must install after tab creation");
+	assert(actions.indexOf("navigate") > actions.indexOf("installPreNavigationHook"), "pre-navigation plan must navigate after hook install");
+	const applied = captureFixture("preNavigationApply", await coordinator.apply(hookDesired));
+	assert.equal(applied.ok, true, "pre-navigation hook apply must converge");
+	assert.equal(applied.operationResults.some((item) => item.action === "installPreNavigationHook" && item.status === "succeeded"), true, "apply must install pre-navigation hook");
+	assert.equal(applied.operationResults.some((item) => item.action === "navigate" && item.status === "succeeded"), true, "apply must navigate after hook install");
+	assert.equal(applied.bindings[0].preNavigationHooks.length, 1, "binding must store pre-navigation hook registration metadata");
+	assert.equal(server.commandLog.some((item) => item.cmd === "tabs.create" && item.url === "about:blank"), true, "tabs with pre-navigation hook must be created as about:blank first");
+	assert.equal(server.commandLog.some((item) => item.cmd === "frame.addNewDocumentScript"), true, "runtime must call frame.addNewDocumentScript");
+	assert.equal(server.preNavigationEffects.get(applied.bindings[0].tabId), true, "fake page must observe pre-navigation hook effect after navigate");
+	server.browser.workerBootId = "boot-pre-nav-2";
+	server.preNavigationScripts.clear();
+	server.preNavigationEffects.clear();
+	const recovered = captureFixture("preNavigationRecoverApply", await coordinator.apply(hookDesired));
+	assert.equal(recovered.ok, true, "pre-navigation hook apply must recover after worker restart/lost registration");
+	assert.equal(recovered.operationResults.some((item) => item.action === "installPreNavigationHook" && item.status === "succeeded"), true, "recovery must reinstall lost pre-navigation hook");
+	const deleted = captureFixture("preNavigationDelete", await coordinator.delete("orch-pre-nav"));
+	assert.equal(deleted.ok, true, "delete must cleanup pre-navigation hook resources");
+	assert.equal(deleted.operationResults.some((item) => item.action === "uninstallPreNavigationHook" && item.status === "succeeded"), true, "delete must uninstall pre-navigation hooks before tab cleanup");
+}
+
+{
 	const server = new FakeOrchestrationServer({ fail: { "hook.install": "INJECTION_FAILED" } });
 	const coordinator = new BrowserOrchestrationCoordinator(server);
 	const failed = captureFixture("partialFailure", await coordinator.apply({ apiVersion: "pi.browser/v1", orchestrationId: "orch-fail", sessions: [{ tag: "s", tabs: [{ role: "main", url: "https://failure.test/", waitUntil: "none" }], hookDispatcher: true }] }));
@@ -427,6 +496,9 @@ assert.equal(fixtureEvidence.some((item) => item.name === "partialFailure" && it
 assert.equal(fixtureEvidence.some((item) => item.name === "duplicateApply" && item.data.ok === true), true, "fixture artifact must include duplicate apply envelope");
 assert.equal(fixtureEvidence.some((item) => item.name === "ownedWindowApply" && item.data.operationResults.some((op) => op.action === "createWindow") && item.data.bindings.every((binding) => binding.windowId && binding.groupId)), true, "fixture artifact must include owned window/group lifecycle evidence");
 assert.equal(fixtureEvidence.some((item) => item.name === "tabGroupsDegradedApply" && item.data.operationResults.some((op) => op.status === "degraded") && item.data.bindings.every((binding) => binding.tabGroupsStatus === "degraded_not_supported")), true, "fixture artifact must include tabGroups degraded evidence");
+assert.equal(fixtureEvidence.some((item) => item.name === "preNavigationApply" && item.data.operationResults.some((op) => op.action === "installPreNavigationHook") && item.data.bindings.every((binding) => binding.preNavigationHooks?.length === 1)), true, "fixture artifact must include pre-navigation hook registration evidence");
+assert.equal(fixtureEvidence.some((item) => item.name === "preNavigationRecoverApply" && item.data.operationResults.some((op) => op.action === "installPreNavigationHook")), true, "fixture artifact must include pre-navigation recovery evidence");
+assert.equal(fixtureText.includes("__PI_BROWSER_PRE_NAVIGATION_HOOKS__"), false, "fixture artifact must not include raw pre-navigation hook script bytes");
 await mkdir(path.dirname(fixtureArtifactPath), { recursive: true });
 await writeFile(fixtureArtifactPath, `${fixtureText}\n`, "utf8");
 

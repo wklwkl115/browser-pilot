@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
+import { preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
 import { buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { diagnoseBridgePortInUse } from "./smokePortDiagnostics.mjs";
@@ -66,7 +67,7 @@ function startFixture() {
 			res.end(body);
 			return;
 		}
-		const body = "<!doctype html><html><head><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><div id='empty'></div><form onsubmit='event.preventDefault();document.querySelector(\"#result\").textContent=\"submitted\"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector(\"#result\").textContent=document.querySelector(\"input[name=q]\").value'>Go</button><input id='upload' type='file' onchange='document.querySelector(\"#result\").textContent=this.files[0]?.name||\"no-file\"'></form><div id='comment' role='textbox' contenteditable='true' style='border:1px solid #999;padding:4px' oninput='document.querySelector(\"#send\").disabled=!this.textContent.trim()'></div><button id='send' type='button' disabled onclick='document.querySelector(\"#comment-result\").textContent=document.querySelector(\"#comment\").textContent'>Send</button><div id='comment-result'></div><button id='download' type='button' onclick='const blob=new Blob([\"pi smoke download\"],{type:\"text/plain\"});const a=document.createElement(\"a\");a.href=URL.createObjectURL(blob);a.download=\"pi-browser-smoke-download.txt\";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>";
+		const body = "<!doctype html><html><head><script>window.__PI_BROWSER_PAGE_SCRIPT_PRE_NAV_PRESENT__=Array.isArray(window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__)&&window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__.some(item=>item&&item.hookId==='pi.preNavigationMarker'&&item.readyState==='loading');window.__PI_BROWSER_PAGE_SCRIPT_READY_STATE__=document.readyState;</script><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><div id='empty'></div><form onsubmit='event.preventDefault();document.querySelector(\"#result\").textContent=\"submitted\"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector(\"#result\").textContent=document.querySelector(\"input[name=q]\").value'>Go</button><input id='upload' type='file' onchange='document.querySelector(\"#result\").textContent=this.files[0]?.name||\"no-file\"'></form><div id='comment' role='textbox' contenteditable='true' style='border:1px solid #999;padding:4px' oninput='document.querySelector(\"#send\").disabled=!this.textContent.trim()'></div><button id='send' type='button' disabled onclick='document.querySelector(\"#comment-result\").textContent=document.querySelector(\"#comment\").textContent'>Send</button><div id='comment-result'></div><button id='download' type='button' onclick='const blob=new Blob([\"pi smoke download\"],{type:\"text/plain\"});const a=document.createElement(\"a\");a.href=URL.createObjectURL(blob);a.download=\"pi-browser-smoke-download.txt\";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>";
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(body) });
 		res.end(body);
 	});
@@ -108,6 +109,10 @@ function compactOperationResults(result) {
 		tabRole: item.resourceRef?.tabRole,
 		cookieName: item.resourceRef?.cookieName,
 		sessionId: item.resourceRef?.sessionId,
+		hookId: item.resourceRef?.hookId,
+		hookVersion: item.resourceRef?.hookVersion,
+		hookHash: item.resourceRef?.hookHash,
+		hookIdentifier: item.resourceRef?.hookIdentifier ?? item.result?.identifier,
 		failure: item.failure ? { code: item.failure.code, retryable: item.failure.retryable } : undefined,
 	}));
 }
@@ -124,7 +129,43 @@ function compactBindings(result) {
 		groupId: binding.groupId,
 		tabGroupsStatus: binding.tabGroupsStatus,
 		owned: binding.owned,
+		preNavigationHooks: Array.isArray(binding.preNavigationHooks) ? binding.preNavigationHooks.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, identifier: hook.identifier, effectVerifiedAt: hook.effectVerifiedAt })) : [],
 	}));
+}
+
+async function runPreNavigationHookSmoke() {
+	const coordinator = bridge.orchestrator();
+	const origin = `http://127.0.0.1:${smokePort}`;
+	const orchestrationId = `smoke-pre-nav-${Date.now()}`;
+	const artifactPath = path.join(outDir, "smoke-pre-navigation-hook-result.json");
+	const desired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId,
+		allowedOrigins: [origin],
+		defaults: { timeoutMs: 15_000, navigationTimeoutMs: 10_000 },
+		preNavigationHooks: [{ hookId: "pi.preNavigationMarker", version: "1", hash: preNavigationHookRegistryHash(), required: true }],
+		sessions: [{ tag: "pre-nav", tabs: [{ role: "main", url: `${origin}/pre-navigation?run=${encodeURIComponent(orchestrationId)}`, waitUntil: "complete" }] }],
+	};
+	const envelope = { orchestrationId, artifactPath };
+	try {
+		envelope.plan = await coordinator.plan(desired, { timeoutMs: 15_000 });
+		const actions = envelope.plan.plan.operations.map((item) => item.action);
+		record("browser_orchestrate.preNavPlan", envelope.plan.ok === true && actions.includes("installPreNavigationHook") && actions.includes("navigate") && actions.indexOf("navigate") > actions.indexOf("installPreNavigationHook"), { orchestrationId, operationCount: envelope.plan.plan.operations.length, actions });
+
+		envelope.apply = await coordinator.apply(desired, { timeoutMs: 25_000 });
+		const bindings = compactBindings(envelope.apply);
+		record("browser_orchestrate.preNavApply", envelope.apply.ok === true && bindings.length === 1 && bindings[0].preNavigationHooks.length === 1 && envelope.apply.operationResults.some((item) => item.action === "installPreNavigationHook" && item.status === "succeeded"), { orchestrationId, bindings, operationResults: compactOperationResults(envelope.apply) });
+
+		const effect = await bridge.executeJavaScript("return {hooks: globalThis.__PI_BROWSER_PRE_NAVIGATION_HOOKS__ || [], pageScriptSaw: globalThis.__PI_BROWSER_PAGE_SCRIPT_PRE_NAV_PRESENT__ === true, pageScriptReadyState: globalThis.__PI_BROWSER_PAGE_SCRIPT_READY_STATE__};", { target: { orchestrationId, sessionTag: "pre-nav", tabRole: "main" }, timeoutMs: 10_000 });
+		record("browser_orchestrate.preNavEffect", effect.data?.pageScriptSaw === true && Array.isArray(effect.data?.hooks) && effect.data.hooks.some((hook) => hook.hookId === "pi.preNavigationMarker" && hook.readyState === "loading") && effect.target?.source === "orchestration", { orchestrationId, effect: effect.data, targetSource: effect.target?.source });
+	} finally {
+		envelope.stop = await coordinator.stop(orchestrationId, { timeoutMs: 12_000 }).catch((error) => ({ ok: false, action: "stop", orchestrationId, failures: [{ code: error?.code || "STOP_FAILED", message: errorMessage(error) }] }));
+		record("browser_orchestrate.preNavStop", envelope.stop.ok === true && envelope.stop.operationResults?.some((item) => item.action === "uninstallPreNavigationHook" && item.status === "succeeded"), { orchestrationId, operationResults: compactOperationResults(envelope.stop) });
+		envelope.delete = await coordinator.delete(orchestrationId, { timeoutMs: 15_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		record("browser_orchestrate.preNavDelete", envelope.delete.ok === true && envelope.delete.operationResults?.some((item) => item.action === "closeTab" && item.status === "succeeded"), { orchestrationId, operationResults: compactOperationResults(envelope.delete) });
+		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+		record("browser_orchestrate.preNavArtifact", true, { orchestrationId, path: artifactPath, bindings: compactBindings(envelope.apply), operationResults: compactOperationResults(envelope.apply) });
+	}
 }
 
 async function runWindowTabGroupsSmoke() {
@@ -165,7 +206,7 @@ async function runWindowTabGroupsSmoke() {
 		envelope.status = await coordinator.status(orchestrationId, { timeoutMs: 15_000 });
 		record("browser_orchestrate.windowStatus", envelope.status.ok === true && envelope.status.converged === true && Boolean(envelope.status.actual?.tabGroups?.tabGroupsStatus), { orchestrationId, operationCount: envelope.status.plan?.operationCount, tabGroupsStatus: envelope.status.actual?.tabGroups?.tabGroupsStatus, windowCount: envelope.status.actual?.windows?.length });
 	} finally {
-		coordinator.stop(orchestrationId);
+		await coordinator.stop(orchestrationId);
 		envelope.delete = await coordinator.delete(orchestrationId, { timeoutMs: 15_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
 		record("browser_orchestrate.windowDelete", envelope.delete.ok === true && envelope.delete.operationResults?.some((item) => item.action === "closeWindow" && item.status === "succeeded"), { orchestrationId, operationResults: compactOperationResults(envelope.delete) });
 		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
@@ -246,7 +287,7 @@ async function runOrchestrationSmoke() {
 		const healedLocation = await bridge.executeJavaScript("return location.href", { target: orchestrationTarget, timeoutMs: 8_000 });
 		record("browser_orchestrate.selfHeal", fullEnvelope.selfHealStatus.ok === true && healedCookie.data?.name === cookieName && String(healedHook.data?.state || "").toUpperCase() === "INSTALLED" && healedNetwork.data?.request?.status === 200 && healedLocation.data === desiredUrl && healedLocation.target?.source === "orchestration", { orchestrationId, recoveries: fullEnvelope.selfHealStatus.state?.watch?.recoveries, url: healedLocation.data, hookState: healedHook.data?.state, requestId: healedNetwork.data?.request?.requestId, targetSource: healedLocation.target?.source });
 	} finally {
-		coordinator.stop(orchestrationId);
+		await coordinator.stop(orchestrationId);
 		fullEnvelope.delete = await coordinator.delete(orchestrationId, { timeoutMs: 15_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
 		record("browser_orchestrate.delete", fullEnvelope.delete.ok === true && fullEnvelope.delete.operationResults?.some((item) => item.action === "closeTab" && item.status === "succeeded"), { orchestrationId, operationResults: compactOperationResults(fullEnvelope.delete) });
 		const fullText = JSON.stringify(fullEnvelope);
@@ -357,6 +398,7 @@ try {
 	record("screenshot", typeof shot.data?.screenshot === "string", { format: shot.data?.format });
 
 	await runOrchestrationSmoke();
+	await runPreNavigationHookSmoke();
 	await runWindowTabGroupsSmoke();
 
 	await bridge.closeTab(tabId, 5_000).catch(() => {});

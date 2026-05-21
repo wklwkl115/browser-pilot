@@ -1,6 +1,7 @@
 import { executeBrowserWaitWithSupervisor } from "../BrowserWaitSupervisor";
 import { bridgeResultFailure } from "../bridgeUtils";
 import { BrowserOrchestrationError, ORCHESTRATION_ERROR_CODES, orchestrationFailure, orchestrationTimeout } from "./orchestrationErrors";
+import { compactPreNavigationHookMetadata, preNavigationHookAppliesToTab, preNavigationHookKey, preNavigationHooksForTab, resolvePreNavigationHook } from "./preNavigationHooks";
 import { hashSensitiveString, redactedErrorDetails, redactOrchestrationValue, stableJson } from "./orchestrationRedaction";
 import type { OrchestrationStore } from "./OrchestrationStore";
 import type { ResourceLocks } from "./ResourceLocks";
@@ -14,7 +15,9 @@ import type {
 	NormalizedDesiredCookie,
 	NormalizedDesiredSession,
 	NormalizedDesiredTab,
+	NormalizedPreNavigationHookMetadata,
 	OrchestrationBinding,
+	PreNavigationHookRegistration,
 	OrchestrationFailure,
 	ReconcileOperation,
 	ReconcileOperationResult,
@@ -76,6 +79,7 @@ export class ReconcileExecutor {
 		const failures: OrchestrationFailure[] = [];
 		const failedOrSkipped = new Set<string>();
 		const createdBindings: OrchestrationBinding[] = [];
+		const preNavigationCleanupBindings = new Map<string, OrchestrationBinding>();
 		let requiredFailure = false;
 		for (const operation of plan.operations) {
 			if ((operation.dependsOn || []).some((id) => failedOrSkipped.has(id))) {
@@ -95,10 +99,9 @@ export class ReconcileExecutor {
 				const result = await this.withOperationLock(operation, () => this.executeOperation(desired, operation, Math.max(100, Math.min(remainingMs(deadline), desired.defaults.timeoutMs))));
 				const status = result.status === "degraded" ? "degraded" : "succeeded";
 				operationResults.push({ ...operationResultBase(operation), status, finishedAt: Date.now(), result });
-				if (operation.action === "createTab" || operation.action === "createWindow") {
-					const binding = this.store.binding(desired.orchestrationId, operation.resourceRef.sessionTag, operation.resourceRef.tabRole);
-					if (binding?.createdByOrchestrator) createdBindings.push(binding);
-				}
+				const binding = this.store.binding(desired.orchestrationId, operation.resourceRef.sessionTag, operation.resourceRef.tabRole);
+				if ((operation.action === "createTab" || operation.action === "createWindow") && binding?.createdByOrchestrator) createdBindings.push(binding);
+				if (operation.action === "installPreNavigationHook" && binding?.preNavigationHooks?.length) preNavigationCleanupBindings.set(`${binding.browserId}:${binding.tabId}`, binding);
 			} catch (error) {
 				const failure = redactedFailure(error, operation.id);
 				failures.push(failure);
@@ -107,8 +110,8 @@ export class ReconcileExecutor {
 				operationResults.push({ ...operationResultBase(operation), status: "failed", finishedAt: Date.now(), failure });
 			}
 		}
-		if (requiredFailure && desired.defaults.cleanupOnFailure && createdBindings.length) {
-			const cleanupResults = await this.compensateCreatedBindings(desired, createdBindings, deadline);
+		if (requiredFailure && desired.defaults.cleanupOnFailure && (createdBindings.length || preNavigationCleanupBindings.size)) {
+			const cleanupResults = await this.compensateCreatedBindings(desired, createdBindings, Array.from(preNavigationCleanupBindings.values()), deadline);
 			operationResults.push(...cleanupResults.results);
 			failures.push(...cleanupResults.failures);
 		}
@@ -127,7 +130,7 @@ export class ReconcileExecutor {
 		};
 	}
 
-	async executeCleanup(orchestrationId: string, operations: ReconcileOperation[], options: BrowserOrchestrationRunOptions = {}): Promise<BrowserOrchestrationApplyResult> {
+	async executeOperations(operations: ReconcileOperation[], options: BrowserOrchestrationRunOptions = {}): Promise<{ operationResults: ReconcileOperationResult[]; failures: OrchestrationFailure[] }> {
 		const deadline = (options.now || Date.now()) + Math.max(100, Math.floor(options.timeoutMs || 15_000));
 		const operationResults: ReconcileOperationResult[] = [];
 		const failures: OrchestrationFailure[] = [];
@@ -141,6 +144,11 @@ export class ReconcileExecutor {
 				operationResults.push({ ...operationResultBase(operation), status: "failed", finishedAt: Date.now(), failure });
 			}
 		}
+		return { operationResults, failures };
+	}
+
+	async executeCleanup(orchestrationId: string, operations: ReconcileOperation[], options: BrowserOrchestrationRunOptions = {}): Promise<BrowserOrchestrationApplyResult> {
+		const { operationResults, failures } = await this.executeOperations(operations, options);
 		return { ok: failures.length === 0, action: "delete", orchestrationId, generation: "deleted", converged: failures.length === 0, bindings: [], operationResults, failures };
 	}
 
@@ -165,9 +173,11 @@ export class ReconcileExecutor {
 			case "removeCookie": return await this.removeCookie(this.requireDesired(desired), operation, timeoutMs);
 			case "navigate": return await this.navigate(this.requireDesired(desired), operation, timeoutMs);
 			case "startNetwork": return await this.startNetwork(this.requireDesired(desired), operation, timeoutMs);
+			case "installPreNavigationHook": return await this.installPreNavigationHook(this.requireDesired(desired), operation, timeoutMs);
 			case "installHook": return await this.installHook(this.requireDesired(desired), operation, timeoutMs);
 			case "verifyStatus": return await this.verifyStatus(this.requireDesired(desired), operation, timeoutMs);
 			case "stopNetwork": return await this.stopNetwork(operation, timeoutMs);
+			case "uninstallPreNavigationHook": return await this.uninstallPreNavigationHook(operation, timeoutMs);
 			case "uninstallHook": return await this.uninstallHook(operation, timeoutMs);
 			case "closeTab": return await this.closeTab(operation, timeoutMs);
 			case "closeWindow": return await this.closeWindow(operation, timeoutMs);
@@ -199,6 +209,14 @@ export class ReconcileExecutor {
 		return cookie;
 	}
 
+	private preNavigationHook(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation): NormalizedPreNavigationHookMetadata {
+		const tab = this.tab(desired, operation);
+		const session = this.session(desired, operation);
+		const hook = session.preNavigationHooks.find((item) => item.hookId === operation.resourceRef.hookId && item.version === operation.resourceRef.hookVersion && item.hash === operation.resourceRef.hookHash);
+		if (!hook || !preNavigationHookAppliesToTab(hook, tab)) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.INVALID_DESIRED, "Desired pre-navigation hook is not found for tab", { hookId: operation.resourceRef.hookId, hookVersion: operation.resourceRef.hookVersion, hookHash: operation.resourceRef.hookHash, sessionTag: session.tag, tabRole: tab.role }, { retryable: false });
+		return hook;
+	}
+
 	private binding(operation: ReconcileOperation): OrchestrationBinding {
 		const binding = this.store.binding(operation.resourceRef.orchestrationId, operation.resourceRef.sessionTag, operation.resourceRef.tabRole);
 		if (!binding) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Operation has no tab binding", { resourceRef: operation.resourceRef }, { retryable: true });
@@ -213,16 +231,17 @@ export class ReconcileExecutor {
 		this.selectDesiredBrowser(desired, operation.resourceRef.browserId);
 		const session = this.session(desired, operation);
 		const tab = this.tab(desired, operation);
-		const command: BridgeCommand = { cmd: "windows", method: "create", url: tab.url, focused: session.ownedWindow.focused, state: session.ownedWindow.state, left: session.ownedWindow.left, top: session.ownedWindow.top, width: session.ownedWindow.width, height: session.ownedWindow.height };
+		const createUrl = preNavigationHooksForTab(session.preNavigationHooks, tab).length ? "about:blank" : tab.url;
+		const command: BridgeCommand = { cmd: "windows", method: "create", url: createUrl, focused: session.ownedWindow.focused, state: session.ownedWindow.state, left: session.ownedWindow.left, top: session.ownedWindow.top, width: session.ownedWindow.width, height: session.ownedWindow.height };
 		const result = await this.assertCommand(await this.server.sendCommand(command, { timeoutMs }), "windows.create");
 		const data = isRecord(result.data) ? result.data : {};
 		const tabs = Array.isArray(data.tabs) ? data.tabs.filter(isRecord) : [];
 		const firstTab = tabs[0] || {};
-		const syntheticResult = { ...result, data: { ...data, id: firstTab.id ?? firstTab.tabId, tabId: firstTab.tabId ?? firstTab.id, url: firstTab.url ?? tab.url, windowId: data.windowId ?? data.id, groupId: firstTab.groupId } };
-		const created = await this.resolveCreatedTab(syntheticResult, tab.url, timeoutMs);
-		if (!created?.tabId || !created.browserId || !created.windowId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created window tab could not be resolved", { url: tab.url, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
+		const syntheticResult = { ...result, data: { ...data, id: firstTab.id ?? firstTab.tabId, tabId: firstTab.tabId ?? firstTab.id, url: firstTab.url ?? createUrl, windowId: data.windowId ?? data.id, groupId: firstTab.groupId } };
+		const created = await this.resolveCreatedTab(syntheticResult, createUrl, timeoutMs);
+		if (!created?.tabId || !created.browserId || !created.windowId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created window tab could not be resolved", { url: createUrl, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
 		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, tabId: created.tabId, windowId: created.windowId, windowOwned: true, windowCloseOnDelete: session.ownedWindow.closeOnDelete, groupId: created.groupId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
-		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId, windowOwned: true, owned: true, url: created.url };
+		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId, windowOwned: true, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
 	}
 
 	private async createTab(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
@@ -231,13 +250,14 @@ export class ReconcileExecutor {
 		const tab = this.tab(desired, operation);
 		const windowBinding = this.sessionOwnedWindowBinding(desired.orchestrationId, session.tag);
 		const windowId = operation.resourceRef.windowId || windowBinding?.windowId;
+		const createUrl = preNavigationHooksForTab(session.preNavigationHooks, tab).length ? "about:blank" : tab.url;
 		const result = await this.assertCommand(windowId
-			? await this.server.sendCommand({ cmd: "tabs", method: "create", url: tab.url, active: tab.active, windowId }, { timeoutMs })
-			: await this.server.createTab(tab.url, tab.active, timeoutMs), "tabs.create");
-		const created = await this.resolveCreatedTab(result, tab.url, timeoutMs);
-		if (!created?.tabId || !created.browserId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created tab could not be resolved", { url: tab.url, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
+			? await this.server.sendCommand({ cmd: "tabs", method: "create", url: createUrl, active: tab.active, windowId }, { timeoutMs })
+			: await this.server.createTab(createUrl, tab.active, timeoutMs), "tabs.create");
+		const created = await this.resolveCreatedTab(result, createUrl, timeoutMs);
+		if (!created?.tabId || !created.browserId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created tab could not be resolved", { url: createUrl, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
 		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, tabId: created.tabId, windowId: created.windowId || windowId, windowOwned: windowBinding?.windowOwned, windowCloseOnDelete: windowBinding?.windowCloseOnDelete, groupId: created.groupId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
-		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId || windowId, owned: true, url: created.url };
+		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId || windowId, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
 	}
 
 	private reuseTab(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation): JsonRecord {
@@ -316,6 +336,33 @@ export class ReconcileExecutor {
 		return { tabId: binding.tabId, sessionId, active: true, configHash: networkConfigHash };
 	}
 
+	private async installPreNavigationHook(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
+		const hook = this.preNavigationHook(desired, operation);
+		const binding = this.binding(operation);
+		const entry = resolvePreNavigationHook(hook);
+		try {
+			const result = await this.assertCommand(await this.server.sendCommand({ cmd: "frame.addNewDocumentScript", source: entry.bytes, runImmediately: false, includeCommandLineAPI: false, worldName: entry.worldName, timeoutMs }, { tabId: binding.tabId, target: { tabId: binding.tabId, browserId: binding.browserId }, timeoutMs }), "frame.addNewDocumentScript");
+			const data = isRecord(result.data) ? result.data : {};
+			const identifier = typeof data.identifier === "string" ? data.identifier : "";
+			if (!identifier) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.COMMAND_FAILED, "frame.addNewDocumentScript did not return identifier", { hookId: hook.hookId, version: hook.version }, { retryable: true });
+			const registration: PreNavigationHookRegistration = { hookId: hook.hookId, version: hook.version, hash: hook.hash, identifier, sessionKey: typeof data.sessionKey === "string" ? data.sessionKey : undefined, cdpSessionName: typeof data.cdpSessionName === "string" ? data.cdpSessionName : "new_document", sessionTag: binding.sessionTag, tabRole: binding.tabRole, installedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId };
+			this.store.setBinding(desired.orchestrationId, { ...binding, preNavigationHooks: [...(binding.preNavigationHooks || []).filter((item) => preNavigationHookKey(item) !== preNavigationHookKey(hook)), registration], preNavigationHookDegraded: (binding.preNavigationHookDegraded || []).filter((item) => preNavigationHookKey(item) !== preNavigationHookKey(hook)), workerBootId: this.server.snapshot().extension?.workerBootId });
+			return { tabId: binding.tabId, browserId: binding.browserId, ...compactPreNavigationHookMetadata(hook), identifier, sessionKey: registration.sessionKey, cdpSessionName: registration.cdpSessionName, installed: true };
+		} catch (error) {
+			if (operation.required) throw error;
+			const failure = redactedFailure(error, operation.id);
+			this.store.setBinding(desired.orchestrationId, {
+				...binding,
+				preNavigationHookDegraded: [
+					...(binding.preNavigationHookDegraded || []).filter((item) => preNavigationHookKey(item) !== preNavigationHookKey(hook)),
+					{ hookId: hook.hookId, version: hook.version, hash: hook.hash, code: failure.code, message: failure.message, updatedAt: Date.now() },
+				],
+				workerBootId: this.server.snapshot().extension?.workerBootId,
+			});
+			return { status: "degraded", tabId: binding.tabId, browserId: binding.browserId, ...compactPreNavigationHookMetadata(hook), reason: failure.message, code: failure.code };
+		}
+	}
+
 	private async installHook(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		const session = this.session(desired, operation);
 		const binding = this.binding(operation);
@@ -328,6 +375,7 @@ export class ReconcileExecutor {
 
 	private async verifyStatus(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		const tab = this.tab(desired, operation);
+		const session = this.session(desired, operation);
 		const binding = this.binding(operation);
 		const tabs = await this.refreshTabs(timeoutMs);
 		const current = tabs.find((item) => item.tabId === binding.tabId && item.browserId === binding.browserId && !item.disconnectedAt);
@@ -338,8 +386,39 @@ export class ReconcileExecutor {
 				: { cmd: "wait.loadState", state: mapWaitUntil(tab.waitUntil), timeoutMs: Math.min(timeoutMs, desired.defaults.navigationTimeoutMs) };
 			await this.assertCommand(await this.server.sendCommand(command, { tabId: binding.tabId, target: { tabId: binding.tabId, browserId: binding.browserId }, timeoutMs: Math.min(timeoutMs, desired.defaults.navigationTimeoutMs) }), command.cmd);
 		}
-		if (current.windowId !== binding.windowId || current.groupId !== binding.groupId) this.store.setBinding(desired.orchestrationId, { ...binding, windowId: current.windowId || binding.windowId, groupId: current.groupId || binding.groupId });
-		return { tabId: binding.tabId, browserId: binding.browserId, windowId: current.windowId || binding.windowId, groupId: current.groupId || binding.groupId, url: current.url, waitUntil: tab.waitUntil };
+		let updatedBinding: OrchestrationBinding = { ...binding, windowId: current.windowId || binding.windowId, groupId: current.groupId || binding.groupId };
+		const hookResults: JsonRecord[] = [];
+		for (const hook of preNavigationHooksForTab(session.preNavigationHooks, tab)) {
+			const registration = updatedBinding.preNavigationHooks?.find((item) => preNavigationHookKey(item) === preNavigationHookKey(hook));
+			if (!registration) {
+				if (hook.required) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "pre-navigation hook registration is missing during verify", { hookId: hook.hookId, version: hook.version, hash: hook.hash, tabId: binding.tabId }, { retryable: true });
+				hookResults.push({ ...compactPreNavigationHookMetadata(hook), registered: false });
+				continue;
+			}
+			const effect = await this.verifyPreNavigationHookEffect(binding, hook, timeoutMs);
+			hookResults.push({ ...compactPreNavigationHookMetadata(hook), identifier: registration.identifier, effectActive: effect.active, effectError: effect.error });
+			if (effect.active) {
+				updatedBinding = { ...updatedBinding, preNavigationHooks: (updatedBinding.preNavigationHooks || []).map((item) => preNavigationHookKey(item) === preNavigationHookKey(hook) ? { ...item, effectVerifiedAt: Date.now() } : item) };
+			} else if (hook.required) {
+				throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "pre-navigation hook effect is not active in the current document", { hookId: hook.hookId, version: hook.version, hash: hook.hash, tabId: binding.tabId, error: effect.error }, { retryable: true });
+			}
+		}
+		if (current.windowId !== binding.windowId || current.groupId !== binding.groupId || hookResults.length) this.store.setBinding(desired.orchestrationId, updatedBinding);
+		return { tabId: binding.tabId, browserId: binding.browserId, windowId: current.windowId || binding.windowId, groupId: current.groupId || binding.groupId, url: current.url, waitUntil: tab.waitUntil, preNavigationHooks: hookResults };
+	}
+
+	private async verifyPreNavigationHookEffect(binding: OrchestrationBinding, hook: NormalizedPreNavigationHookMetadata, timeoutMs: number): Promise<{ active: boolean; error?: string }> {
+		const entry = resolvePreNavigationHook(hook);
+		try {
+			const result = await this.assertCommand(await this.server.sendCommand({ cmd: "persistent_cdp", action: "send", cdpMethod: "Runtime.evaluate", params: { expression: entry.effectExpression, returnByValue: true, awaitPromise: true }, persistent: true, name: "new_document", timeoutMs }, { tabId: binding.tabId, target: { tabId: binding.tabId, browserId: binding.browserId }, timeoutMs }), "persistent_cdp.Runtime.evaluate");
+			const data = isRecord(result.data) ? result.data : {};
+			const cdpResult = isRecord(data.result) ? data.result : data;
+			const resultValue = isRecord(cdpResult.result) ? cdpResult.result.value : undefined;
+			return { active: resultValue === true };
+		} catch (error) {
+			const failure = redactedFailure(error);
+			return { active: false, error: failure.message };
+		}
 	}
 
 	private async stopNetwork(operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
@@ -354,6 +433,33 @@ export class ReconcileExecutor {
 		}
 		this.store.setBinding(operation.resourceRef.orchestrationId, { ...binding, networkSessionId: undefined });
 		return { tabId: binding.tabId, sessionId, stopped: true };
+	}
+
+	private async uninstallPreNavigationHook(operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
+		const binding = this.binding(operation);
+		const registrations = (binding.preNavigationHooks || []).filter((item) => {
+			if (operation.resourceRef.hookIdentifier && item.identifier !== operation.resourceRef.hookIdentifier) return false;
+			if (operation.resourceRef.hookId && item.hookId !== operation.resourceRef.hookId) return false;
+			if (operation.resourceRef.hookVersion && item.version !== operation.resourceRef.hookVersion) return false;
+			if (operation.resourceRef.hookHash && item.hash !== operation.resourceRef.hookHash) return false;
+			return true;
+		});
+		if (!registrations.length) return { skipped: true, reason: "no_pre_navigation_hook_registration" };
+		const removed: JsonRecord[] = [];
+		for (const registration of registrations) {
+			try {
+				const result = await this.assertCommand(await this.server.sendCommand({ cmd: "frame.removeNewDocumentScript", identifier: registration.identifier, timeoutMs }, { tabId: binding.tabId, target: { tabId: binding.tabId, browserId: binding.browserId }, timeoutMs }), "frame.removeNewDocumentScript");
+				const data = isRecord(result.data) ? result.data : {};
+				removed.push({ hookId: registration.hookId, version: registration.version, hash: registration.hash, identifier: registration.identifier, removed: data.removed !== false, alreadyRemoved: data.alreadyRemoved === true });
+			} catch (error) {
+				const failure = redactedFailure(error, operation.id);
+				if (!/SCRIPT_NOT_FOUND|NO_IDENTIFIER|not registered|not found|does not exist/i.test(failure.code + failure.message)) throw error;
+				removed.push({ hookId: registration.hookId, version: registration.version, hash: registration.hash, identifier: registration.identifier, removed: false, alreadyRemoved: true, reason: failure.message });
+			}
+		}
+		const removeKeys = new Set(registrations.map((item) => `${item.identifier}:${preNavigationHookKey(item)}`));
+		this.store.setBinding(operation.resourceRef.orchestrationId, { ...binding, preNavigationHooks: (binding.preNavigationHooks || []).filter((item) => !removeKeys.has(`${item.identifier}:${preNavigationHookKey(item)}`)) });
+		return { tabId: binding.tabId, browserId: binding.browserId, removed };
 	}
 
 	private async uninstallHook(operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
@@ -441,12 +547,37 @@ export class ReconcileExecutor {
 		if (failure) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.COMMAND_FAILED, failure.message, { command, ...redactedErrorDetails(failure.details) }, { retryable: false });
 	}
 
-	private async compensateCreatedBindings(desired: NormalizedBrowserOrchestrationDesired, bindings: OrchestrationBinding[], deadline: number): Promise<{ results: ReconcileOperationResult[]; failures: OrchestrationFailure[] }> {
+	private async compensateCreatedBindings(desired: NormalizedBrowserOrchestrationDesired, createdBindings: OrchestrationBinding[], preNavigationBindings: OrchestrationBinding[], deadline: number): Promise<{ results: ReconcileOperationResult[]; failures: OrchestrationFailure[] }> {
 		const results: ReconcileOperationResult[] = [];
 		const failures: OrchestrationFailure[] = [];
 		let seq = 0;
 		const closedWindows = new Set<string>();
-		for (const binding of bindings) {
+		const hookBindings = new Map<string, OrchestrationBinding>();
+		for (const binding of [...createdBindings, ...preNavigationBindings]) hookBindings.set(`${binding.browserId}:${binding.tabId}`, this.store.binding(desired.orchestrationId, binding.sessionTag, binding.tabRole) || binding);
+		for (const binding of hookBindings.values()) {
+			for (const registration of binding.preNavigationHooks || []) {
+				const operation: ReconcileOperation = {
+					id: `cleanup-${++seq}-uninstallPreNavigationHook`,
+					phase: "cleanup",
+					action: "uninstallPreNavigationHook",
+					resourceRef: { orchestrationId: desired.orchestrationId, sessionTag: binding.sessionTag, tabRole: binding.tabRole, tabId: binding.tabId, browserId: binding.browserId, windowId: binding.windowId, hookId: registration.hookId, hookVersion: registration.version, hookHash: registration.hash, hookIdentifier: registration.identifier },
+					reason: "cleanup pre-navigation hook after required operation failure",
+					idempotencyKey: `${desired.orchestrationId}:${binding.sessionTag}:${binding.tabRole}:cleanup:uninstallPreNavigationHook:${registration.identifier}`,
+					required: false,
+					redactedParams: { tabId: binding.tabId, browserId: binding.browserId, hookId: registration.hookId, version: registration.version, hash: registration.hash, identifier: registration.identifier },
+				};
+				try {
+					const result = await this.uninstallPreNavigationHook(operation, Math.max(100, remainingMs(deadline)));
+					results.push({ ...operationResultBase(operation), status: "succeeded", finishedAt: Date.now(), result });
+				} catch (error) {
+					const failure = redactedFailure(error, operation.id);
+					failures.push(failure);
+					results.push({ ...operationResultBase(operation), status: "failed", finishedAt: Date.now(), failure });
+				}
+			}
+		}
+		for (const createdBinding of createdBindings) {
+			const binding = this.store.binding(desired.orchestrationId, createdBinding.sessionTag, createdBinding.tabRole) || createdBinding;
 			const closeWindow = binding.windowOwned && binding.windowCloseOnDelete !== false && binding.windowId !== undefined;
 			const windowKey = closeWindow ? `${binding.browserId}:${binding.windowId}` : undefined;
 			if (windowKey && closedWindows.has(windowKey)) continue;

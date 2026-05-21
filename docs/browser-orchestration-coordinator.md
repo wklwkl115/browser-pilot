@@ -1,6 +1,6 @@
 # Browser Orchestration Coordinator 生产级设计
 
-本文冻结 `browser_orchestrate` / 浏览器状态协调器的工程设计与落地边界。当前实现状态：TODO 216-222 首个生产闭环、TODO 223 Target Resolver 设计、TODO 224 Target Resolver runtime、TODO 225 Window/tabGroups primitive 设计、TODO 226 Window Isolation 与 tabGroups runtime、TODO 227 Window/tabGroups Runtime Smoke Gate、TODO 228 Pre-navigation Hook Policy 设计均已完成；TODO 229 才实现 document-start hook runtime。
+本文冻结 `browser_orchestrate` / 浏览器状态协调器的工程设计与落地边界。当前实现状态：TODO 216-222 首个生产闭环、TODO 223 Target Resolver 设计、TODO 224 Target Resolver runtime、TODO 225 Window/tabGroups primitive 设计、TODO 226 Window Isolation 与 tabGroups runtime、TODO 227 Window/tabGroups Runtime Smoke Gate、TODO 228 Pre-navigation Hook Policy 设计、TODO 229 Pre-navigation Hook runtime 与 smoke gate 均已完成；下一步进入 TODO 230 Persistent State 安全设计。
 
 ## 1. 目标与适用范围
 
@@ -19,6 +19,7 @@
 - tabs create/reuse/close ownership 管理。
 - owned window 创建/绑定/cleanup 与保守 ownership 校验。
 - 可降级 Chrome `tabGroups` 视觉分组 diagnostics。
+- pre-navigation document-start hook 安装、验证、清理与 watch 恢复；新 tab/window 先 `about:blank` 绑定，再安装 `frame.addNewDocumentScript` 后导航。
 - navigation/load state 收敛。
 - browser cookie set/remove/list 作为底层原语。
 - network recorder start/status/stop/reconfigure。
@@ -31,7 +32,7 @@
 - Chrome profile、incognito、cookie jar 强隔离。
 - 自动漏洞判断、扫描决策、目标选择或策略推理。
 - 在 MV3 service worker 中保存高层 Desired State。
-- 页面 `document_start` 级全量 hook runtime 编排；TODO 228 已冻结 `frame.addNewDocumentScript` policy 与 no-script-persistence contract，实际安装/恢复/清理留给 TODO 229。
+- 任意外部脚本文本作为 Desired State；pre-navigation hook 只接受 registry-backed `hookId/version/hash` metadata。
 
 ## 2. 架构原则
 
@@ -57,6 +58,7 @@ src/driver/orchestration/
   ActualStateCollector.ts
   DiffPlanner.ts
   ReconcileExecutor.ts
+  preNavigationHooks.ts
   BrowserOrchestrationCoordinator.ts
   ResourceLocks.ts
   orchestrationErrors.ts
@@ -65,11 +67,11 @@ src/driver/orchestration/
 
 职责：
 
-- `normalizeDesired.ts`：归一化 loose tool input，校验 URL、tag、role、cookie、recorder、hook 配置。
-- `OrchestrationStore.ts`：维护内存态 desired hash、generation、bindings、owned resources、watch metadata。
-- `ActualStateCollector.ts`：从 `BrowserBridgeServer.snapshot()`、`refreshTabs()`、`windows.list`、`tabGroups.status`、`network.status`、`hook.status`、`cookies`、`wait.navigation/loadState` 聚合 Actual State。
-- `DiffPlanner.ts`：计算 Desired 与 Actual 的差异，生成有依赖顺序的 operation plan。
-- `ReconcileExecutor.ts`：按 phase、依赖和 deadline 执行 windows/tabs/tabGroups/cookies/navigation/network/hook/verify/cleanup 操作。
+- `normalizeDesired.ts`：归一化 loose tool input，校验 URL、tag、role、cookie、recorder、hook dispatcher 与 pre-navigation hook metadata。
+- `OrchestrationStore.ts`：维护内存态 desired hash、generation、bindings、owned resources、pre-navigation hook registrations、watch metadata。
+- `ActualStateCollector.ts`：从 `BrowserBridgeServer.snapshot()`、`refreshTabs()`、`windows.list`、`tabGroups.status`、`persistent_cdp.listNewDocumentScripts`、`network.status`、`hook.status`、`cookies`、`wait.navigation/loadState` 聚合 Actual State。
+- `DiffPlanner.ts`：计算 Desired 与 Actual 的差异，生成有依赖顺序的 operation plan；pre-navigation hook operation 固定排在 navigation 前。
+- `ReconcileExecutor.ts`：按 phase、依赖和 deadline 执行 windows/tabs/tabGroups/pre-navigation hooks/cookies/navigation/network/hook/verify/cleanup 操作。
 - `BrowserOrchestrationCoordinator.ts`：对外提供 `plan/apply/status/watch/stop/delete`，管理 watch loop 与 lifecycle。
 - `ResourceLocks.ts`：按 `orchestrationId`、`browserId:tabId`、`networkSessionId`、`hookSessionId` 加锁。
 - `orchestrationErrors.ts`：定义 `ORCHESTRATION_*` 错误与 retryable 分类。
@@ -223,11 +225,11 @@ type BrowserDesiredVisualGrouping = {
 };
 ```
 
-### 4.1.1 Pre-navigation Hook Policy metadata（TODO 228 设计完成，TODO 229 runtime pending）
+### 4.1.1 Pre-navigation Hook metadata（TODO 228 设计完成，TODO 229 runtime 已完成）
 
-TODO 228 冻结了 future `preNavigationHooks` 的声明式 metadata，详见 `docs/pre-navigation-hook-policy.md`。当前 runtime 仍拒绝 enabled `preNavigationHooks`，避免字段被静默忽略；TODO 229 实现前不得把它写成 callable capability。
+TODO 228 冻结了 `preNavigationHooks` 的声明式 metadata，详见 `docs/pre-navigation-hook-policy.md`。TODO 229 已实现 document-start hook runtime：Desired 只接收 registry-backed `hookId/version/hash/params/scope/required`，driver 从受控 registry 解析脚本 bytes，在 navigation 前调用 `frame.addNewDocumentScript`，并在 stop/delete 时调用 `frame.removeNewDocumentScript` 清理。raw `source` 仍只属于底层 `browser_frame` primitive，不进入 orchestration Desired/persisted state。
 
-允许的 future Desired metadata 仅包含：
+允许的 Desired metadata 仅包含：
 
 ```ts
 type BrowserDesiredPreNavigationHook = {
@@ -246,7 +248,7 @@ type BrowserDesiredPreNavigationHook = {
 };
 ```
 
-禁止 Desired、runtime store、status、summary 与 artifact 持久化 `script`、`code`、`source` 或任意可执行 JavaScript 文本。真实脚本文本只能来自 driver 内置 registry 或仓库只读安全目录，并以 `hookId/version/hash` 校验。
+禁止 Desired、runtime store、status、summary 与 artifact 持久化 `script`、`code`、`source` 或任意可执行 JavaScript 文本。真实脚本文本只能来自 driver 内置 registry 或仓库只读安全目录，并以 `hookId/version/hash` 校验。当前内置 registry 提供 `pi.preNavigationMarker@1`，用于验证 document-start marker 早于页面 head script 生效。
 
 ### 4.2 Actual State
 
