@@ -343,7 +343,13 @@
 - [x] 失败诊断：`release-acceptance-summary.json` 输出 pack 文件列表、build manifest、Chrome profile、bridge port、smoke artifact；失败时可用 `--keep-temp-on-failure` 或 `PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE=1` 保留临时 profile/extension。
 - [x] 验证：已运行 `npm run release:local`；已用 Edge 运行 `PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run release:local:smoke`，当前包 full isolated smoke 和上一包最小 rollback smoke 均通过。关键 artifact：`.pi/browser-artifacts/release-acceptance/release-acceptance-summary.json`、`current-smoke-browser-isolated-results.json`、`rollback-smoke-browser-isolated-results.json`。
 
+## 215. 支柱五：仓库换行治理基线
+
+- [x] 性质判定：本地开发一致性治理，不改变 runtime、tool schema、artifact、协议或构建产物语义。
+- [x] 决策：新增 `.gitattributes`，固定 TS/JS/MJS/JSON/Markdown/YAML/HTML/CSS/SVG 为 LF，图片与压缩包为 binary；不做全仓换行重写，避免制造无意义大 diff。
+- [x] 验证：运行 `git diff --check`，确认无 whitespace error；后续新增/修改文本文件由 Git attributes 统一规整，减少 Windows/Git Bash 下 CRLF 噪声。
+
 ## 下一步建议顺序
 
-1. TODO 200-214 工程治理期当前队列已完成；后续新增工作必须先补 TODO 决策和边界。
+1. TODO 200-215 工程治理期当前队列已完成；后续新增工作必须先补 TODO 决策和边界。
 2. 发布/合并前继续复跑 `npm run quality:local`，需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。
