@@ -13,6 +13,7 @@ const outDir = path.resolve(root, ".pi", "browser-artifacts");
 const smokePort = Number(process.env.PI_BROWSER_SMOKE_PORT || 8765);
 const transferSmoke = process.env.PI_BROWSER_SMOKE_TRANSFER === "1" || process.argv.includes("--transfer");
 const minimalSmoke = process.env.PI_BROWSER_SMOKE_MINIMAL === "1" || process.argv.includes("--minimal");
+const extensionTimeoutMs = Number(process.env.PI_BROWSER_SMOKE_EXTENSION_TIMEOUT_MS || 15_000);
 const bridge = new BrowserBridgeServer();
 const results = [];
 
@@ -78,8 +79,8 @@ async function cdpSend(tabId, cdpMethod, params) {
 	return await bridge.sendCommand({ cmd: "persistent_cdp", action: "send", tabId, cdpMethod, params, timeoutMs: 8_000, persistent: false }, { tabId, timeoutMs: 10_000 });
 }
 
-async function cdpKey(tabId, type, key, code, windowsVirtualKeyCode, modifiers = 0) {
-	return await cdpSend(tabId, "Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, modifiers });
+async function cdpKey(tabId, type, key, code, windowsVirtualKeyCode, modifiers = 0, extra = {}) {
+	return await cdpSend(tabId, "Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, modifiers, ...extra });
 }
 
 let fixture;
@@ -89,7 +90,7 @@ try {
 	record("build.runtime", true, await buildRuntimeMetadata());
 	fixture = await startFixture();
 	await bridge.start();
-	const connected = await waitForExtension();
+	const connected = await waitForExtension(extensionTimeoutMs);
 	record("bridge", true, { extension: connected.extension?.name, tabs: connected.tabs.length });
 
 	if (process.env.PI_BROWSER_SMOKE_REUSE_EXISTING === "1") {
@@ -142,11 +143,11 @@ try {
 	await cdpSend(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x: cdpTarget.data.x, y: cdpTarget.data.y, button: "left", clickCount: 1 });
 	await cdpSend(tabId, "Input.insertText", { text: "cdp-smoke" });
 	const cdpTyped = await bridge.executeJavaScript("return { text: document.querySelector('#comment')?.textContent, sendDisabled: document.querySelector('#send')?.disabled, active: document.activeElement === document.querySelector('#comment') };", { tabId, timeoutMs: 10_000 });
-	await cdpKey(tabId, "keyDown", "Control", "ControlLeft", 17, 2);
-	await cdpKey(tabId, "keyDown", "a", "KeyA", 65, 2);
+	await cdpKey(tabId, "rawKeyDown", "Control", "ControlLeft", 17, 2);
+	await cdpKey(tabId, "rawKeyDown", "a", "KeyA", 65, 2, { commands: ["selectAll"] });
 	await cdpKey(tabId, "keyUp", "a", "KeyA", 65, 2);
 	await cdpKey(tabId, "keyUp", "Control", "ControlLeft", 17, 0);
-	await cdpKey(tabId, "keyDown", "Backspace", "Backspace", 8, 0);
+	await cdpKey(tabId, "rawKeyDown", "Backspace", "Backspace", 8, 0);
 	await cdpKey(tabId, "keyUp", "Backspace", "Backspace", 8, 0);
 	const cdpCleared = await bridge.executeJavaScript("return { text: document.querySelector('#comment')?.textContent, sendDisabled: document.querySelector('#send')?.disabled };", { tabId, timeoutMs: 10_000 });
 	record("execute.cdpInput", cdpTyped.data?.text === "cdp-smoke" && cdpTyped.data?.sendDisabled === false && cdpCleared.data?.text === "" && cdpCleared.data?.sendDisabled === true, { typed: cdpTyped.data, cleared: cdpCleared.data });

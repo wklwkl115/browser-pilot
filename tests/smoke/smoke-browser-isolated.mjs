@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { WebSocket } from "ws";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -36,6 +37,54 @@ function chromePath() {
 	for (const candidate of chromeCandidates) if (existsSync(candidate)) return candidate;
 	throw new Error(`Chrome/Chromium executable not found; set PI_BROWSER_SMOKE_CHROME. Tried: ${chromeCandidates.join(", ")}`);
 }
+async function fetchJson(url) {
+	const res = await fetch(url);
+	return await res.json();
+}
+
+async function listChromeTargets(debugPort) {
+	try {
+		const targets = await fetchJson(`http://127.0.0.1:${debugPort}/json/list`);
+		return Array.isArray(targets) ? targets : [];
+	} catch {
+		return [];
+	}
+}
+
+function cdpSend(socket, id, method, params = {}) {
+	return new Promise((resolve, reject) => {
+		const onMessage = (data) => {
+			let message;
+			try { message = JSON.parse(String(data)); } catch { return; }
+			if (message.id !== id) return;
+			socket.off("message", onMessage);
+			resolve(message);
+		};
+		socket.on("message", onMessage);
+		socket.send(JSON.stringify({ id, method, params }), (error) => {
+			if (error) {
+				socket.off("message", onMessage);
+				reject(error);
+			}
+		});
+	});
+}
+
+async function wakeExtensionServiceWorker(target) {
+	if (!target?.webSocketDebuggerUrl) return { ok: false, reason: "no_debugger_url" };
+	const socket = new WebSocket(target.webSocketDebuggerUrl);
+	try {
+		await new Promise((resolve, reject) => socket.once("open", resolve).once("error", reject));
+		await cdpSend(socket, 1, "Runtime.enable");
+		const evaluated = await cdpSend(socket, 2, "Runtime.evaluate", { expression: "globalThis.__PI_BROWSER_EXPERIMENTAL_BUILD__ || null", returnByValue: true });
+		return { ok: true, result: evaluated?.result?.result?.value || null };
+	} catch (error) {
+		return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+	} finally {
+		socket.close();
+	}
+}
+
 async function freePort(start, end) {
 	for (let port = start; port <= end; port += 1) {
 		const server = createServer();
@@ -60,7 +109,7 @@ async function patchExtensionPort(extensionDir, bridgePort) {
 function startNodeSmoke(env) {
 	const child = spawn(process.execPath, ["--no-warnings", "--experimental-strip-types", "--import", "./scripts/register-ts-extension-loader.mjs", "tests/smoke/smoke-browser.mjs"], {
 			cwd: root,
-			env: { ...process.env, ...env },
+			env: { ...process.env, PI_BROWSER_SMOKE_EXTENSION_TIMEOUT_MS: "30000", ...env },
 			stdio: ["ignore", "pipe", "pipe"],
 	});
 	let stdout = "";
@@ -80,6 +129,9 @@ let chrome;
 let smokeChild;
 let chromeStdout = "";
 let chromeStderr = "";
+let debugPort;
+let chromeTargets = [];
+let serviceWorkerWake;
 let result = { ok: false, profileDir, extensionDir, extensionSource, resultPath };
 try {
 	await mkdir(outDir, { recursive: true });
@@ -88,6 +140,7 @@ try {
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
 	const bridgePort = await freePort(18766, 18800);
 	const fixturePort = await freePort(8766, 8800);
+	debugPort = await freePort(9229, 9260);
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
 	await patchExtensionPort(extensionDir, bridgePort);
 	const chromeExe = chromePath();
@@ -100,6 +153,7 @@ try {
 		`--user-data-dir=${chromeProfileDir}`,
 		`--disable-extensions-except=${chromeExtensionDir}`,
 		`--load-extension=${chromeExtensionDir}`,
+		`--remote-debugging-port=${debugPort}`,
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-background-networking",
@@ -109,8 +163,17 @@ try {
 	], { stdio: ["ignore", "pipe", "pipe"], detached: false });
 	chrome.stdout.on("data", (chunk) => { chromeStdout += chunk.toString(); });
 	chrome.stderr.on("data", (chunk) => { chromeStderr += chunk.toString(); });
+	for (let i = 0; i < 40; i += 1) {
+		chromeTargets = await listChromeTargets(debugPort);
+		const serviceWorker = chromeTargets.find((target) => target.type === "service_worker" && String(target.url || "").includes("dist/service-worker.js"));
+		if (serviceWorker) {
+			serviceWorkerWake = await wakeExtensionServiceWorker(serviceWorker);
+			break;
+		}
+		await delay(250);
+	}
 	const smoke = await smokeRun.done;
-	result = { ok: smoke.code === 0, bridgePort, fixturePort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
+	result = { ok: smoke.code === 0, bridgePort, fixturePort, debugPort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, serviceWorkerWake, chromeTargets: chromeTargets.map((target) => ({ type: target.type, title: target.title, url: target.url })), stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
 	process.exitCode = smoke.code === 0 ? 0 : 1;
 } catch (error) {
 	result = { ...result, ok: false, error: error instanceof Error ? error.message : String(error) };
