@@ -156,6 +156,8 @@ assert(!executeTool.includes("return jsonResult(await server"), "browser_execute
 const orchestrateTool = read("src/tools/registerOrchestrateTool.ts");
 assert(orchestrateTool.includes("server.orchestrator()") && orchestrateTool.includes("coordinator.plan") && orchestrateTool.includes("coordinator.apply") && orchestrateTool.includes("coordinator.watch") && orchestrateTool.includes("coordinator.delete"), "browser_orchestrate must route callable actions through the Node coordinator facade");
 assert(orchestrateTool.includes("summarizeOrchestrationData") && orchestrateTool.includes("artifactFallbackName(\"orchestration-result\")"), "browser_orchestrate must use orchestration summary and artifact fallback");
+assert(orchestrateTool.includes("declarative browser session reconciliation") && orchestrateTool.includes("workflow DSL") && orchestrateTool.includes("browser_execute/browser_scan/browser_wait"), "browser_orchestrate wording must keep session-reconciliation boundaries explicit");
+assert(!orchestrateTool.includes("explicit multi-resource state convergence"), "browser_orchestrate wording must not fall back to ambiguous state-convergence language");
 assert(orchestrateTool.includes("cleanup:false is not allowed"), "browser_orchestrate must not silently orphan owned resources on delete cleanup:false");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index") && read("src/tools/resultMiddleware.ts").includes("summarizeOrchestrationData"), "result middleware must use split summary modules including orchestration");
 const webSecurityTools = readWebSecurityRegisterSources();

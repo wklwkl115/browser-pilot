@@ -75,7 +75,7 @@ assert(roadmap.includes("状态：已完成 runtime 实现与 smoke gate"), "roa
 assert(roadmap.includes("TODO233. Managed Profile-first 实现 Gate") && roadmap.includes("状态：已完成 runtime 实现与 smoke gate"), "roadmap must mark TODO233 runtime complete");
 const todo = read("TODO.md");
 assert(todo.includes("## 229. Pre-navigation Hook 实现与 Smoke") && todo.includes("- [x] Contract：`check:pre-nav-hook-policy`"), "TODO.md must mark TODO229 contract complete");
-assert(todo.includes("TODO 223-233 已完成") && todo.includes("完整 Incognito 实现如需推进，另开 TODO 234"), "TODO.md next-step ordering must mark TODO233 complete and defer full Incognito to TODO234");
+assert(todo.includes("TODO 223-233 已完成") && todo.includes("## 234. `browser_orchestrate` 术语与边界冻结") && todo.includes("## 235. `sessionAssertions/readinessChecks` 设计冻结") && todo.includes("## 236. `sessionAssertions/readinessChecks` runtime 实现 Gate") && todo.includes("## 237. 断言层真实回归与证据面") && todo.includes("- [x] 目标：已用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。") && todo.includes("下一步先做 TODO238") && todo.includes("完整 Incognito 实现继续后移，另开号段"), "TODO.md must record TODO237 completion and keep Incognito deferred behind the runtime session-assertions workstream");
 
 const types = read("src/driver/orchestration/types.ts");
 for (const requiredType of [

@@ -16,12 +16,14 @@
 固定边界：
 
 - 高层协调继续只在 Node driver；Chrome extension 只提供底层 native primitives。
+- `browser_orchestrate` 的定位是声明式浏览器会话状态协调/对账，不是通用站点工作流自动化 DSL。
 - `browser_orchestrate` 是 Node 组合工具，不进入 `native_command_schema.json`。
 - Existing `tabId` 参数和 omitted fallback 兼容保留；新增逻辑寻址不得 silently fallback 到默认 tab。
 - Desired State 与 persistent state 禁止持久化 cookie raw value、authorization/body/postData/websocket payload、任意可执行脚本文本。
 - 跨 Pi session / driverRunId 自动 cleanup 默认禁止；adoption 必须显式声明并重新 observe 验证。
 - `tabGroups` 是视觉/诊断增强，不作为核心 reconcile 的 hard fail 条件。
 - Incognito 仅作为 opt-in 能力，不阻塞 profile-first 主干和 release gate。
+- 点击步骤、表单填写、账号口令、站点专用脚本与业务流程执行继续留在 `browser_execute` / `browser_scan` / `browser_wait` 等命令式工具层。
 
 ## 2. 架构决策
 
@@ -395,11 +397,60 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 
 风险与回滚：最高风险项，不与 TODO224 同批；回滚为禁用 `isolation.scope:"profile"`。
 
+### TODO234. `browser_orchestrate` 术语与边界冻结
+
+状态：已完成。
+
+目标：把对外口径统一到“声明式浏览器会话状态协调/对账”，并明确 `browser_orchestrate` 不承接 workflow DSL。
+
+实施结果：
+
+1. tool/README/skill/coordinator 文案统一收紧为 browser session reconciliation。
+2. 明确点击步骤、表单填写、站点专用脚本与业务流程执行继续留在 `browser_execute` / `browser_scan` / `browser_wait`。
+3. 契约锁定不回落到含糊的“state convergence”外部口径。
+
+### TODO235. `sessionAssertions/readinessChecks` 设计冻结
+
+状态：已完成。
+
+目标：在不把 orchestration 变成流程 DSL 的前提下，引入只读、声明式的业务就绪断言层。
+
+实施结果：
+
+1. 新增 `docs/browser-orchestration-assertions.md`，冻结 canonical desired field `sessionAssertions`，`readinessChecks` 仅保留为描述性术语。
+2. 锁定允许的可观测断言类型：`url/origin/loadState/cookie/storage/selector/text/attribute/hook/networkRecorder/profile`。
+3. 锁定断言层只参与 `apply/status/watch/self-heal` 验收与 diagnostics，不引入点击、表单填写、账号口令、脚本源码或 workflow DSL。
+4. 新增 `check:orchestration-assertions-design` 并纳入 `npm run check`。
+
+### TODO236. `sessionAssertions/readinessChecks` runtime 实现 Gate
+
+状态：已完成。
+
+目标：让 `browser_orchestrate` 对“已登录/已准备好/监控 hook 已生效”这类状态给出声明式验收结果，同时保持 workflow DSL 边界不变。
+
+实施结果：
+
+1. `normalizeDesired.ts` 接入 `sessionAssertions`，拒绝 `readinessChecks` alias，并校验 assertion kinds/hash/selector/storage/loadState/profile 等输入。
+2. `ActualStateCollector.ts` 新增只读 readiness probes：`url/origin/loadState/cookie/storage/selector/text/attribute/hook/networkRecorder/profile`。
+3. `BrowserOrchestrationCoordinator.ts` 在 post-apply/status 路径上把 assertion failures 合并进 `ok/converged/failures`，区分 `ORCHESTRATION_ASSERTION_FAILED` 与 `ORCHESTRATION_ASSERTION_PROBE_FAILED`。
+4. `summaries/orchestration.ts` 与 `OrchestrationStore.ts` 上浮 assertion count / passed / failed / probeFailed 摘要。
+5. `check-orchestration-coordinator.mjs` 覆盖 satisfied/unsatisfied assertions 与 watch pause；`check-summaries.mjs` 锁定 orchestration assertion counters。
+
+### TODO237. 断言层真实回归与证据面
+
+状态：已完成。
+
+目标：用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。
+
+实施结果：
+
+1. `tests/smoke/smoke-browser.mjs` 新增真实浏览器 assertion smoke，覆盖登录态存在/不存在、pre-navigation effect、hook dispatcher 已安装，以及 logical target 继续可用。
+2. 新增 artifact `.pi/browser-artifacts/smoke-orchestration-assertions-result.json`，记录断言 id、pass/fail、bindings、failure diagnostics、artifact privacy 与 redaction 分类，并验证不泄漏 raw cookie value。
+3. `tests/smoke/smoke-browser-isolated.mjs` 与 `tests/release/release-local-acceptance.mjs` 上浮 `assertions` diagnostics，包含 satisfied/unsatisfied orchestrationId、logicalTargetSource 与 artifact path。
+4. `check-smoke-diagnostics.mjs` 锁定 assertions smoke steps、isolated diagnostics 与 release diagnostics，确保 sessionAssertions 证据面进入 runtime gate。
+
 ## 5. 推荐执行顺序
 
-1. TODO223 → TODO229 已完成。
-2. TODO230 已完成设计落档与静态契约。
-3. TODO231 已完成 Persistent State 与 Adoption Gate。
-4. TODO232 已完成 Profile/Incognito 隔离设计。
-5. TODO233 已完成 Managed Profile-first 实现 Gate。
-6. 完整 Incognito 实现如需推进，另开 TODO234，不纳入当前主干 gate。
+1. TODO223 → TODO237 已完成。
+2. 下一步先做 TODO238，补 isolated smoke 自举与 preflight 强化。
+3. 完整 Incognito 实现继续后移，另开号段，不纳入当前主干 gate。

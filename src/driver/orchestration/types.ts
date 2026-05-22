@@ -74,6 +74,13 @@ export type BrowserOrchestrationAdoptionInput = {
 	requireOwnedFingerprint?: unknown;
 };
 
+export type BrowserDesiredSessionAssertionsInput = {
+	mode?: unknown;
+	checks?: unknown;
+};
+
+export type BrowserDesiredAssertionInput = JsonRecord;
+
 export type BrowserDesiredSessionInput = {
 	tag?: unknown;
 	required?: unknown;
@@ -85,6 +92,8 @@ export type BrowserDesiredSessionInput = {
 	ownedWindow?: unknown;
 	visualGrouping?: unknown;
 	preNavigationHooks?: unknown;
+	sessionAssertions?: unknown;
+	readinessChecks?: unknown;
 };
 
 export type BrowserOrchestrationProfileIsolationInput = { profileId?: unknown; lifecycle?: unknown; reuse?: unknown; cleanup?: unknown };
@@ -185,6 +194,27 @@ export type NormalizedHookDispatcher = {
 	installFingerprint?: string;
 };
 
+export type NormalizedSessionAssertionMode = "all" | "any";
+export type NormalizedSessionAssertionKind = "url" | "origin" | "loadState" | "cookie" | "storage" | "selector" | "text" | "attribute" | "hook" | "networkRecorder" | "profile";
+
+export type NormalizedSessionAssertion =
+	| { id: string; kind: "url"; tabRole: string; equals?: string; includes?: string }
+	| { id: string; kind: "origin"; tabRole: string; equals: string }
+	| { id: string; kind: "loadState"; tabRole: string; state: "domcontentloaded" | "complete" | "networkIdle" }
+	| { id: string; kind: "cookie"; tabRole: string; name: string; present: boolean; valueHash?: string }
+	| { id: string; kind: "storage"; tabRole: string; storageArea: "localStorage" | "sessionStorage"; key: string; present: boolean; valueHash?: string }
+	| { id: string; kind: "selector"; tabRole: string; selector: string; present: boolean }
+	| { id: string; kind: "text"; tabRole: string; selector?: string; includes?: string; equalsHash?: string }
+	| { id: string; kind: "attribute"; tabRole: string; selector: string; name: string; present: boolean; equals?: string; equalsHash?: string }
+	| { id: string; kind: "hook"; tabRole: string; sessionId?: string; state: "INSTALLED" }
+	| { id: string; kind: "networkRecorder"; tabRole: string; sessionId?: string; state: "running" }
+	| { id: string; kind: "profile"; tabRole: string; profileId?: string; present: boolean };
+
+export type NormalizedSessionAssertions = {
+	mode: NormalizedSessionAssertionMode;
+	checks: NormalizedSessionAssertion[];
+};
+
 export type NormalizedOwnedWindow = {
 	enabled: boolean;
 	focused: boolean;
@@ -255,6 +285,7 @@ export type NormalizedDesiredSession = {
 	preNavigationHooks: NormalizedPreNavigationHookMetadata[];
 	networkRecorder?: NormalizedNetworkRecorder;
 	hookDispatcher?: NormalizedHookDispatcher;
+	sessionAssertions?: NormalizedSessionAssertions;
 };
 
 export type NormalizedBrowserOrchestrationDesired = {
@@ -535,6 +566,33 @@ export type ActualTabState = {
 	cookies: ActualCookieState[];
 };
 
+export type ActualSessionAssertionState = {
+	id: string;
+	kind: NormalizedSessionAssertionKind;
+	tabRole: string;
+	status: "passed" | "failed" | "probe_failed";
+	passed: boolean;
+	message?: string;
+	details?: JsonRecord;
+};
+
+export type ActualSessionAssertionsState = {
+	mode: NormalizedSessionAssertionMode;
+	passed: boolean;
+	total: number;
+	passedCount: number;
+	failedCount: number;
+	probeFailedCount: number;
+	checks: ActualSessionAssertionState[];
+};
+
+export type ActualSessionState = {
+	tag: string;
+	tabs: ActualTabState[];
+	cookies: ActualCookieState[];
+	sessionAssertions?: ActualSessionAssertionsState;
+};
+
 export type BrowserOrchestrationActual = {
 	observedAt: number;
 	bridge: {
@@ -548,7 +606,7 @@ export type BrowserOrchestrationActual = {
 	windows?: JsonRecord[];
 	tabGroups?: JsonRecord;
 	profiles?: BrowserManagedProfileInfo[];
-	sessions: Array<{ tag: string; tabs: ActualTabState[]; cookies: ActualCookieState[] }>;
+	sessions: ActualSessionState[];
 	diagnostics: Array<JsonRecord>;
 };
 
@@ -666,6 +724,10 @@ export type BrowserOrchestrationResultSummary = {
 	converged: boolean;
 	operationCount: number;
 	failureCount: number;
+	assertionCount?: number;
+	assertionPassedCount?: number;
+	assertionFailedCount?: number;
+	assertionProbeFailedCount?: number;
 	updatedAt: number;
 };
 

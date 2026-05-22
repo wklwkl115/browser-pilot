@@ -541,8 +541,57 @@
 - [x] 验收条件：`npm run check`、Edge isolated smoke、`release:local:smoke` 通过；artifact 证明 profile A/B cookie/storage 不互通且 owned process 清理完成。
 - [x] 风险/回滚：最高风险项，不与 TODO 224 同批；回滚为禁用 `isolation.scope:"profile"`。
 
+## 234. `browser_orchestrate` 术语与边界冻结
+
+- [x] 优先级：P1；依赖：TODO 223-233。
+- [x] 目标：已把对外口径从含糊的“目标状态收敛”收紧为“声明式浏览器会话状态协调/对账”，并锁定 `browser_orchestrate` 与其他工具的职责边界。
+- [x] 范围：已同步 `README.md`、`docs/browser-orchestration-coordinator.md`、`docs/browser-orchestration-next-roadmap.md`、generated tool docs、skill 文案、tool 注册描述。
+- [x] 决策：`browser_orchestrate` 只负责浏览器资源/会话状态对账（session/tab/window/group/profile/url/loadState/cookie/network recorder/hook/pre-navigation hook/persistence/adoption/watch/self-heal/logical target），不接收点击步骤、表单填写、站点专用脚本、流程 DSL。
+- [x] 契约：已更新 `check-tools-contract.mjs` 与 `check-tool-doc-drift.mjs`，锁定 session reconciliation wording、workflow DSL 禁止边界，以及 README/skill 文案一致性；schema/description 继续禁止 `script/code/source`。
+- [x] 验收条件：`npm run check` 与 skill quick validate 通过；README/generated docs/skill 与 runtime capability 口径一致。
+
+## 235. `sessionAssertions/readinessChecks` 设计冻结
+
+- [x] 优先级：P1；依赖：TODO 234。
+- [x] 目标：已在不把 `browser_orchestrate` 变成流程 DSL 的前提下，冻结“声明式业务就绪断言”设计。
+- [x] 范围：已新增 `docs/browser-orchestration-assertions.md` 与 desired schema 草案；覆盖 coordinator、summary、artifact、redaction、watch/self-heal 的断言参与边界。
+- [x] 决策：断言层只接受可观测事实，不接受动作；允许 `url/origin/loadState`、cookie/storage 存在性或 hash、selector/text/attribute、hook/recorder/profile 状态；禁止脚本源码、点击序列、账号口令、站点特化执行步骤进入 desired/store/artifact。
+- [x] 命名冻结：canonical desired field 为 `sessionAssertions`；`readinessChecks` 只保留为描述性术语，不引入第二个 schema alias。
+- [x] 语义：断言用于 apply/status/watch 的验收、降级、诊断与 self-heal 判断；apply 仍只做浏览器资源协调，不因断言层膨胀成业务流程执行器；DOM/text/attribute/storage 断言默认只产生 diagnostics，不驱动业务动作。
+- [x] 契约：已新增 `check:orchestration-assertions-design` 并纳入 `npm run check`，锁定断言字段、redaction、failure envelope、“无 silent fallback”以及 design-only capability 边界。
+- [x] 验收条件：设计文档与静态契约已完成；README/roadmap/coordinator/TODO/CHANGELOG 已同步；TODO236 完成前不得把该能力写入当前 capability。
+
+## 236. `sessionAssertions/readinessChecks` runtime 实现 Gate
+
+- [x] 优先级：P2；依赖：TODO 235。
+- [x] 目标：已实现断言层，并让 `browser_orchestrate` 对“已登录/已准备好/监控 hook 已生效”这类状态给出声明式验收结果。
+- [x] 范围：已覆盖 `normalizeDesired`、types、collector、coordinator、tool summary/artifact、orchestration fixture；planner 继续保持资源协调职责，不引入 assertion action。
+- [x] 实施边界：断言只参与 apply 后验收、status、watch 与 self-heal 判断；资源创建、导航、cookie/hook/profile 仍由现有 orchestration phase 执行；未新增任意脚本执行入口或站点流程动作入口。
+- [x] 失败语义：断言不满足时返回结构化 diagnostics/failure codes，区分 `ORCHESTRATION_ASSERTION_FAILED` 与 `ORCHESTRATION_ASSERTION_PROBE_FAILED`，并继续区分“资源已协调但断言未满足”和“资源协调失败”。
+- [x] 契约：已扩展 `check:orchestration`、`check:summaries`、`check:orchestration-assertions-design`；持久化/状态文件继续禁止保存 raw secret/script/body。当前未改 bridge runtime，`check:runtime-fixtures` 无新增 browser primitive 需求。
+- [x] 验收条件：`npm run check` 通过；本地 fixture 已证明 apply/status/watch 能报告断言满足/不满足两类结果。
+
+## 237. 断言层真实回归与证据面
+
+- [x] 优先级：P2；依赖：TODO 236。
+- [x] 目标：已用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。
+- [x] 范围：已覆盖 isolated smoke、release/local runtime regression artifact 诊断上浮，以及必要文档/契约同步。
+- [x] 场景：已覆盖“登录态已存在/不存在”的可观测断言、“监控页 pre-navigation hook 与 hook dispatcher 已生效”的断言，以及 logical target 继续可用。
+- [x] 证据：新增 `.pi/browser-artifacts/smoke-orchestration-assertions-result.json`，记录断言名、满足/不满足、对应 bindings、diagnostics 和 redaction 分类；isolated/release smoke 已上浮 `assertions` diagnostics。
+- [x] 验收条件：`npm run smoke:browser:isolated`、`npm run release:local:smoke`、必要 callable-tool runtime 回归通过；最终响应汇总 artifact 路径。
+
+## 238. `smoke:browser:isolated` 自举与 preflight 改进
+
+- [ ] 优先级：P3；依赖：无；可与 TODO 234-237 并行，但不替代其验证。
+- [ ] 目标：消除缺少 `bridge/pi_browser_bridge/dist/build-manifest.json` 时的脆弱前置条件，让 isolated smoke 更接近一键 gate。
+- [ ] 范围：smoke 脚本、preflight diagnostics、必要时自动 build。
+- [ ] 决策：优先在启动前显式检查 `dist/build-manifest.json` 与 manifest 目标文件；可自动执行 `npm run build:bridge`，或在 dry diagnostics 中给出明确、可执行的修复提示；不得静默跳过 build/runtime 校验。
+- [ ] 契约：新增或更新 smoke diagnostics contract，锁定 preflight reason、artifact 字段与自动 build 行为。
+- [ ] 验收条件：缺少 dist 时 smoke 给出确定性可复现结果；`npm run check` 通过。
+
 ## 下一步建议顺序
 
 1. TODO 223-233 已完成。
-2. 完整 Incognito 实现如需推进，另开 TODO 234，不纳入当前主干 gate。
-3. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。
+2. 下一步先做 TODO238，补 isolated smoke 自举与 preflight 强化，同时继续守住非 workflow DSL 边界。
+3. 完整 Incognito 实现继续后移，另开号段，不纳入 TODO 238 主干 gate。
+4. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。

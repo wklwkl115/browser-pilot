@@ -24,6 +24,8 @@ const skill = read(skillPath);
 
 assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");
 assert(readme.includes("D:/Pi/agent/skills/pi-browser-tools/SKILL.md"), "README must link global Pi skill");
+assert(readme.includes("声明式浏览器会话状态协调/对账"), "README must describe browser_orchestrate as browser session reconciliation");
+assert(skill.includes("declare browser session state") && skill.includes("workflow DSL"), "skill must keep browser_orchestrate session-reconciliation boundary wording");
 for (const tool of registered) {
 	assert(readme.includes(tool), `tool drift: README missing ${tool}`);
 	assert(skill.includes(tool), `tool drift: skill missing ${tool}`);

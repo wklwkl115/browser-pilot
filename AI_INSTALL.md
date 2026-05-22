@@ -169,7 +169,7 @@ npm run release:local
 PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run release:local:smoke
 ```
 
-`release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact/profileIsolation`。
+`release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact/profileIsolation/assertions`。
 
 全局 skill 变更后按 skill-creator 要求验证：
 

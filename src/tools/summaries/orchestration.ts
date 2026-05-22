@@ -43,6 +43,21 @@ function planSummary(plan: unknown): Record<string, unknown> {
 	};
 }
 
+function assertionSummary(actual: unknown): Record<string, unknown> {
+	const sessions = isRecord(actual) ? asArray(actual.sessions).filter(isRecord) : [];
+	const assertionStates = sessions.map((session) => session.sessionAssertions).filter(isRecord);
+	const assertionCount = assertionStates.reduce((sum, item) => sum + (typeof item.total === "number" ? item.total : 0), 0);
+	const assertionPassedCount = assertionStates.reduce((sum, item) => sum + (typeof item.passedCount === "number" ? item.passedCount : 0), 0);
+	const assertionFailedCount = assertionStates.reduce((sum, item) => sum + (typeof item.failedCount === "number" ? item.failedCount : 0), 0);
+	const assertionProbeFailedCount = assertionStates.reduce((sum, item) => sum + (typeof item.probeFailedCount === "number" ? item.probeFailedCount : 0), 0);
+	return {
+		assertionCount: assertionCount || undefined,
+		assertionPassedCount: assertionPassedCount || undefined,
+		assertionFailedCount: assertionFailedCount || undefined,
+		assertionProbeFailedCount: assertionProbeFailedCount || undefined,
+	};
+}
+
 export function summarizeOrchestrationData(value: unknown): Summary {
 	const payload = isRecord(value) ? value : {};
 	const result = isRecord(payload.data) ? payload.data : payload;
@@ -52,6 +67,7 @@ export function summarizeOrchestrationData(value: unknown): Summary {
 	const state = isRecord(result.state) ? result.state : undefined;
 	const plan = planSummary(result.plan);
 	const lastResult = isRecord(state?.lastResult) ? state?.lastResult as Record<string, unknown> : undefined;
+	const assertions = assertionSummary(result.actual ?? state?.lastActual);
 	return {
 		action: result.action,
 		ok: result.ok,
@@ -68,5 +84,6 @@ export function summarizeOrchestrationData(value: unknown): Summary {
 		stateCount: states.length || undefined,
 		watch: result.watch ?? state?.watch,
 		actualObservedAt: isRecord(result.actual) ? result.actual.observedAt : undefined,
+		...assertions,
 	};
 }

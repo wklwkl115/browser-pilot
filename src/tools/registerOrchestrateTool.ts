@@ -52,11 +52,13 @@ export function registerOrchestrateTool({ pi, ensureStarted }: ToolRegistrarCont
 	pi.registerTool({
 		name: "browser_orchestrate",
 		label: "Browser Orchestration",
-		description: "Coordinate desired browser state across owned tabs/windows, visual grouping, pre-navigation document-start hooks, navigation, cookies, network recorder, hook dispatcher, status, watch, and cleanup.",
-		promptSnippet: "Declare desired browser state, including registry-backed preNavigationHooks, and run plan/apply/status/watch/stop/delete through the Node driver coordinator.",
+		description: "Reconcile declared browser session state across owned tabs/windows, visual grouping, pre-navigation document-start hooks, navigation, cookies, network recorder, hook dispatcher, sessionAssertions readiness checks, status, watch, and cleanup.",
+		promptSnippet: "Declare browser session state for the Node driver coordinator to reconcile across plan/apply/status/watch/stop/delete, including registry-backed preNavigationHooks and sessionAssertions readiness checks; readinessChecks remains a descriptive alias only, not a schema field.",
 		promptGuidelines: [
-			"Use browser_orchestrate for explicit multi-resource state convergence; do not use it as a substitute for page observation, selector validation, or evidence judgment.",
-			"Keep desiredState scoped with explicit sessions, tabs, URLs, allowedOrigins, ownedWindow/visualGrouping/preNavigationHooks intent, and cleanup policy. Cookie values are redacted from summaries/artifacts by default; pre-navigation hook script bytes are never persisted.",
+			"Use browser_orchestrate for declarative browser session reconciliation; do not use it to encode click sequences, form-filling steps, site-specific scripts, or workflow DSL.",
+			"Use browser_execute/browser_scan/browser_wait for site-specific page observation, selector checks, and workflow execution before or after reconciliation.",
+			"Use sessionAssertions for declarative readiness checks only. They may verify url/origin/loadState, cookie/storage presence or hash, selector/text/attribute, hook/network/profile state, but they must not contain click steps, workflow DSL, readinessChecks alias, or script/code/source.",
+			"Keep desiredState scoped with explicit sessions, tabs, URLs, allowedOrigins, ownedWindow/visualGrouping/preNavigationHooks intent, sessionAssertions, and cleanup policy. Cookie values are redacted from summaries/artifacts by default; pre-navigation hook script bytes are never persisted.",
 			"Use plan or dryRun before apply/watch when target ownership, reuse, cookies, window creation, visual grouping, pre-navigation hooks, network recorder, or hook effects need review.",
 			"Treat tabGroups degraded status as diagnostic; it must not block core tab/window/navigation/cookie/network/hook reconcile.",
 			"Use preNavigationHooks only with registry-backed hookId/version/hash metadata; desiredState must not contain script/code/source fields.",
@@ -64,7 +66,7 @@ export function registerOrchestrateTool({ pi, ensureStarted }: ToolRegistrarCont
 		],
 		parameters: Type.Object({
 			action: Type.String({ description: "plan | apply | status | watch | stop | delete. Default status." }),
-			desiredState: Type.Optional(Type.Any({ description: "Desired browser state object for plan/apply/watch. apiVersion pi.browser/v1, sessions, tabs, ownedWindow/windowIsolation, visualGrouping, preNavigationHooks registry metadata, cookies, networkRecorder, hookDispatcher, allowedOrigins, cleanup policy." })),
+			desiredState: Type.Optional(Type.Any({ description: "Declared browser session state for plan/apply/watch. apiVersion pi.browser/v1, sessions, tabs, ownedWindow/windowIsolation, visualGrouping, preNavigationHooks registry metadata, cookies, networkRecorder, hookDispatcher, sessionAssertions readiness checks, allowedOrigins, cleanup policy. Do not put click steps, workflow DSL, readinessChecks alias, or script/code/source fields here." })),
 			orchestrationId: Type.Optional(Type.String({ description: "Logical orchestration id for status/stop/delete or desiredState override." })),
 			dryRun: Type.Optional(Type.Boolean({ description: "For apply/watch/delete, return a non-mutating plan/status preview instead of applying side effects." })),
 			watch: Type.Optional(Type.Object({

@@ -3,9 +3,11 @@ import { invalidDesired } from "./orchestrationErrors";
 import { preNavigationHookKey, resolvePreNavigationHook } from "./preNavigationHooks";
 import { hashSensitiveString, shortHash, stableJson } from "./orchestrationRedaction";
 import type {
+	BrowserDesiredAssertionInput,
 	BrowserDesiredCookieInput,
 	BrowserOrchestrationAdoptionInput,
 	BrowserDesiredPreNavigationHookInput,
+	BrowserDesiredSessionAssertionsInput,
 	BrowserDesiredSessionInput,
 	BrowserDesiredTabInput,
 	BrowserOrchestrationDesiredInput,
@@ -20,12 +22,15 @@ import type {
 	NormalizedPreNavigationHookMetadata,
 	NormalizedPreNavigationHookScope,
 	NormalizedOwnedWindow,
+	NormalizedSessionAssertion,
+	NormalizedSessionAssertions,
 	NormalizedVisualGrouping,
 	OrchestrationAdoptionPolicy,
 	OrchestrationPersistenceResourceType,
 } from "./types";
 
 const TAG_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
+const HEX64_PATTERN = /^[a-f0-9]{64}$/i;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 15_000;
 const ADOPTION_RESOURCE_TYPES = new Set<OrchestrationPersistenceResourceType>(["tab", "window", "networkRecorder", "hookDispatcher", "preNavigationHook", "cookie"]);
@@ -352,6 +357,115 @@ function normalizeHookDispatcher(value: unknown, sessionTag: string): Normalized
 	};
 }
 
+function assertionHashField(value: unknown, field: string): string | undefined {
+	const out = stringField(value, field);
+	if (!out) return undefined;
+	if (!HEX64_PATTERN.test(out)) throw invalidDesired(`${field} must be a sha256 hex string`, { field, value: out });
+	return out.toLowerCase();
+}
+
+function requireAssertionTabRole(sessionTag: string, tabs: NormalizedDesiredTab[], value: unknown, field: string): string {
+	const role = stringField(value, field, { pattern: TAG_PATTERN }) || tabs[0]?.role;
+	if (!role) throw invalidDesired("sessionAssertions require at least one desired tab", { sessionTag, field });
+	if (!tabs.some((tab) => tab.role === role)) throw invalidDesired(`${field} must reference an existing desired tab role`, { sessionTag, field, tabRole: role, tabRoles: tabs.map((tab) => tab.role) });
+	return role;
+}
+
+function normalizeSessionAssertions(value: unknown, sessionTag: string, tabs: NormalizedDesiredTab[], allowedOrigins: Set<string>): NormalizedSessionAssertions | undefined {
+	if (value === undefined || value === null || value === false) return undefined;
+	if (!isRecord(value)) throw invalidDesired("sessionAssertions must be an object", { sessionTag, field: "sessionAssertions" });
+	const raw = value as BrowserDesiredSessionAssertionsInput;
+	const modeRaw = raw.mode === undefined ? "all" : String(raw.mode).trim();
+	if (modeRaw !== "all" && modeRaw !== "any") throw invalidDesired("sessionAssertions.mode must be all or any", { sessionTag, field: "sessionAssertions.mode", value: raw.mode });
+	if (!Array.isArray(raw.checks) || raw.checks.length === 0) throw invalidDesired("sessionAssertions.checks must be a non-empty array", { sessionTag, field: "sessionAssertions.checks" });
+	const seenIds = new Set<string>();
+	const checks = raw.checks.map((item, index): NormalizedSessionAssertion => {
+		if (!isRecord(item)) throw invalidDesired("sessionAssertions.checks entries must be objects", { sessionTag, field: `sessionAssertions.checks[${index}]` });
+		const rawAssertion = item as BrowserDesiredAssertionInput;
+		const id = stringField(rawAssertion.id, `sessionAssertions.checks[${index}].id`, { required: true, pattern: TAG_PATTERN }) || "";
+		if (seenIds.has(id)) throw invalidDesired("sessionAssertions ids must be unique per session", { sessionTag, id });
+		seenIds.add(id);
+		const kind = stringField(rawAssertion.kind, `sessionAssertions.checks[${index}].kind`, { required: true }) || "";
+		const tabRole = requireAssertionTabRole(sessionTag, tabs, rawAssertion.tabRole, `sessionAssertions.checks[${index}].tabRole`);
+		switch (kind) {
+			case "url": {
+				const equals = rawAssertion.equals === undefined ? undefined : normalizeHttpUrl(rawAssertion.equals, `sessionAssertions.checks[${index}].equals`).url;
+				if (equals) assertAllowedOrigin(new URL(equals).origin, allowedOrigins, `sessionAssertions.checks[${index}].equals`);
+				const includes = stringField(rawAssertion.includes, `sessionAssertions.checks[${index}].includes`);
+				if (!equals && !includes) throw invalidDesired("url assertion requires equals or includes", { sessionTag, id, kind });
+				return { id, kind: "url", tabRole, equals, includes };
+			}
+			case "origin": {
+				const equals = originFromInput(rawAssertion.equals, `sessionAssertions.checks[${index}].equals`);
+				assertAllowedOrigin(equals, allowedOrigins, `sessionAssertions.checks[${index}].equals`);
+				return { id, kind: "origin", tabRole, equals };
+			}
+			case "loadState": {
+				const state = normalizeWaitUntil(rawAssertion.state);
+				if (state === "none") throw invalidDesired("loadState assertion cannot use none", { sessionTag, id, field: `sessionAssertions.checks[${index}].state` });
+				return { id, kind: "loadState", tabRole, state };
+			}
+			case "cookie": {
+				const name = stringField(rawAssertion.name, `sessionAssertions.checks[${index}].name`, { required: true }) || "";
+				const present = booleanField(rawAssertion.present, true, `sessionAssertions.checks[${index}].present`);
+				const valueHash = assertionHashField(rawAssertion.valueHash, `sessionAssertions.checks[${index}].valueHash`);
+				if (valueHash && !present) throw invalidDesired("cookie assertion cannot set valueHash when present is false", { sessionTag, id, kind });
+				return { id, kind: "cookie", tabRole, name, present, valueHash };
+			}
+			case "storage": {
+				const storageArea = stringField(rawAssertion.storageArea, `sessionAssertions.checks[${index}].storageArea`, { required: true }) || "";
+				if (storageArea !== "localStorage" && storageArea !== "sessionStorage") throw invalidDesired("storage assertion storageArea must be localStorage or sessionStorage", { sessionTag, id, value: storageArea });
+				const key = stringField(rawAssertion.key, `sessionAssertions.checks[${index}].key`, { required: true }) || "";
+				const present = booleanField(rawAssertion.present, true, `sessionAssertions.checks[${index}].present`);
+				const valueHash = assertionHashField(rawAssertion.valueHash, `sessionAssertions.checks[${index}].valueHash`);
+				if (valueHash && !present) throw invalidDesired("storage assertion cannot set valueHash when present is false", { sessionTag, id, kind });
+				return { id, kind: "storage", tabRole, storageArea: storageArea as "localStorage" | "sessionStorage", key, present, valueHash };
+			}
+			case "selector": {
+				const selector = stringField(rawAssertion.selector, `sessionAssertions.checks[${index}].selector`, { required: true }) || "";
+				const present = booleanField(rawAssertion.present, true, `sessionAssertions.checks[${index}].present`);
+				return { id, kind: "selector", tabRole, selector, present };
+			}
+			case "text": {
+				const selector = stringField(rawAssertion.selector, `sessionAssertions.checks[${index}].selector`);
+				const includes = stringField(rawAssertion.includes, `sessionAssertions.checks[${index}].includes`);
+				const equalsHash = assertionHashField(rawAssertion.equalsHash, `sessionAssertions.checks[${index}].equalsHash`);
+				if (!includes && !equalsHash) throw invalidDesired("text assertion requires includes or equalsHash", { sessionTag, id, kind });
+				return { id, kind: "text", tabRole, selector, includes, equalsHash };
+			}
+			case "attribute": {
+				const selector = stringField(rawAssertion.selector, `sessionAssertions.checks[${index}].selector`, { required: true }) || "";
+				const name = stringField(rawAssertion.name, `sessionAssertions.checks[${index}].name`, { required: true }) || "";
+				const present = booleanField(rawAssertion.present, rawAssertion.equals === undefined && rawAssertion.equalsHash === undefined, `sessionAssertions.checks[${index}].present`);
+				const equals = stringField(rawAssertion.equals, `sessionAssertions.checks[${index}].equals`);
+				const equalsHash = assertionHashField(rawAssertion.equalsHash, `sessionAssertions.checks[${index}].equalsHash`);
+				if (!present && (equals || equalsHash)) throw invalidDesired("attribute assertion cannot compare equals/equalsHash when present is false", { sessionTag, id, kind });
+				if (!present && rawAssertion.equals === undefined && rawAssertion.equalsHash === undefined) return { id, kind: "attribute", tabRole, selector, name, present };
+				if (present && !equals && !equalsHash && rawAssertion.present === undefined) throw invalidDesired("attribute assertion requires present, equals, or equalsHash", { sessionTag, id, kind });
+				return { id, kind: "attribute", tabRole, selector, name, present, equals, equalsHash };
+			}
+			case "hook": {
+				const state = rawAssertion.state === undefined ? "INSTALLED" : String(rawAssertion.state).trim().toUpperCase();
+				if (state !== "INSTALLED") throw invalidDesired("hook assertion state must be INSTALLED", { sessionTag, id, kind, value: rawAssertion.state });
+				return { id, kind: "hook", tabRole, sessionId: stringField(rawAssertion.sessionId ?? rawAssertion.session_id, `sessionAssertions.checks[${index}].sessionId`), state: "INSTALLED" };
+			}
+			case "networkRecorder": {
+				const state = rawAssertion.state === undefined ? "running" : String(rawAssertion.state).trim();
+				if (state !== "running") throw invalidDesired("networkRecorder assertion state must be running", { sessionTag, id, kind, value: rawAssertion.state });
+				return { id, kind: "networkRecorder", tabRole, sessionId: stringField(rawAssertion.sessionId ?? rawAssertion.session_id, `sessionAssertions.checks[${index}].sessionId`), state: "running" };
+			}
+			case "profile": {
+				const profileId = stringField(rawAssertion.profileId, `sessionAssertions.checks[${index}].profileId`, { pattern: TAG_PATTERN });
+				const present = booleanField(rawAssertion.present, true, `sessionAssertions.checks[${index}].present`);
+				return { id, kind: "profile", tabRole, profileId, present };
+			}
+			default:
+				throw invalidDesired("sessionAssertions kind is not supported", { sessionTag, id, kind });
+		}
+	});
+	return { mode: modeRaw as "all" | "any", checks };
+}
+
 function normalizeWindowState(value: unknown, field: string): NormalizedOwnedWindow["state"] | undefined {
 	if (value === undefined || value === null || value === "") return undefined;
 	const state = String(value).trim();
@@ -449,10 +563,12 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 		const tag = stringField(session.tag, "session.tag", { required: true, pattern: TAG_PATTERN }) || "";
 		if (seenTags.has(tag)) throw invalidDesired("session tags must be unique", { tag });
 		seenTags.add(tag);
+		if (session.readinessChecks !== undefined) throw invalidDesired("readinessChecks is not supported as a desiredState field; use sessionAssertions only", { tag, field: `sessions[${index}].readinessChecks` });
 		const sessionPreNavigationHooks = session.preNavigationHooks === undefined ? topLevelPreNavigationHooks : normalizePreNavigationHooks(session.preNavigationHooks, `sessions[${index}].preNavigationHooks`, allowedOrigins);
 		const tabs = normalizeTabs(tag, session, defaults, allowedOrigins);
 		const cookies = Array.isArray(session.cookies) ? (session.cookies as BrowserDesiredCookieInput[]).map((cookie, cookieIndex) => normalizeCookie(tag, cookie, tabs, allowedOrigins, cookieIndex)) : [];
-		if (!tabs.length && (session.networkRecorder || session.hookDispatcher)) throw invalidDesired("networkRecorder and hookDispatcher require at least one desired tab", { tag });
+		const sessionAssertions = normalizeSessionAssertions(session.sessionAssertions, tag, tabs, allowedOrigins);
+		if (!tabs.length && (session.networkRecorder || session.hookDispatcher || session.sessionAssertions)) throw invalidDesired("networkRecorder, hookDispatcher, and sessionAssertions require at least one desired tab", { tag });
 		if (!tabs.length && !cookies.length) throw invalidDesired("session requires tabs, url, or cookies", { tag });
 		return {
 			tag,
@@ -464,6 +580,7 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 			preNavigationHooks: sessionPreNavigationHooks,
 			networkRecorder: normalizeNetworkRecorder(session.networkRecorder, tag),
 			hookDispatcher: normalizeHookDispatcher(session.hookDispatcher, tag),
+			sessionAssertions,
 		};
 	});
 	if (isolation.scope === "profile" && !sessions.some((session) => session.tabs.length > 0)) throw invalidDesired("isolation.scope profile requires at least one desired tab", { field: "isolation.scope" });

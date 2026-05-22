@@ -142,7 +142,7 @@ assert(roadmap.includes("TODO233. Managed Profile-first 实现 Gate") && roadmap
 const todo = read("TODO.md");
 assert(todo.includes("## 230. Persistent State 安全设计") && todo.includes("- [x] 目标：设计 redacted orchestration state 持久化"), "TODO.md must mark TODO230 complete");
 assert(todo.includes("## 231. Persistent State 实现与 Adoption Gate") && todo.includes("- [x] 目标：实现持久化"), "TODO231 must be marked complete after runtime implementation");
-assert(todo.includes("TODO 223-233 已完成") && todo.includes("完整 Incognito 实现如需推进，另开 TODO 234"), "TODO next-step ordering must mark TODO233 complete and defer full Incognito to TODO234");
+assert(todo.includes("TODO 223-233 已完成") && todo.includes("## 234. `browser_orchestrate` 术语与边界冻结") && todo.includes("## 235. `sessionAssertions/readinessChecks` 设计冻结") && todo.includes("## 236. `sessionAssertions/readinessChecks` runtime 实现 Gate") && todo.includes("## 237. 断言层真实回归与证据面") && todo.includes("- [x] 目标：已用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。") && todo.includes("下一步先做 TODO238") && todo.includes("完整 Incognito 实现继续后移，另开号段"), "TODO.md must record TODO237 completion and keep Incognito deferred behind the runtime session-assertions workstream");
 
 const readme = read("README.md");
 assert(readme.includes("docs/orchestration-persistence.md"), "README must link persistence policy doc");

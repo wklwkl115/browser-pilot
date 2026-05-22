@@ -47,6 +47,42 @@ function firstFailure(result: Pick<BrowserOrchestrationApplyResult, "failures">,
 	return { code: error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "ORCHESTRATION_COMMAND_FAILED", message: error instanceof Error ? error.message : String(error), retryable: true };
 }
 
+function assertionFailures(actual: BrowserOrchestrationActual | undefined): OrchestrationFailure[] {
+	if (!actual) return [];
+	const failures: OrchestrationFailure[] = [];
+	for (const session of actual.sessions) {
+		const assertions = session.sessionAssertions;
+		if (!assertions || !assertions.total) continue;
+		if (assertions.mode === "any") {
+			if (assertions.passed) continue;
+			const allProbeFailed = assertions.probeFailedCount === assertions.total;
+			failures.push({
+				code: allProbeFailed ? "ORCHESTRATION_ASSERTION_PROBE_FAILED" : "ORCHESTRATION_ASSERTION_FAILED",
+				message: allProbeFailed ? "Session assertions could not be probed" : "No session assertion passed under any-mode readiness checks",
+				retryable: allProbeFailed,
+				details: {
+					sessionTag: session.tag,
+					mode: assertions.mode,
+					total: assertions.total,
+					failedIds: assertions.checks.filter((item) => item.status === "failed").map((item) => item.id),
+					probeFailedIds: assertions.checks.filter((item) => item.status === "probe_failed").map((item) => item.id),
+				},
+			});
+			continue;
+		}
+		for (const check of assertions.checks) {
+			if (check.status === "passed") continue;
+			failures.push({
+				code: check.status === "probe_failed" ? "ORCHESTRATION_ASSERTION_PROBE_FAILED" : "ORCHESTRATION_ASSERTION_FAILED",
+				message: check.message || `${check.kind} assertion failed`,
+				retryable: check.status === "probe_failed",
+				details: { sessionTag: session.tag, assertionId: check.id, kind: check.kind, tabRole: check.tabRole, ...(check.details || {}) },
+			});
+		}
+	}
+	return failures;
+}
+
 export class BrowserOrchestrationCoordinator {
 	private readonly server: BrowserOrchestrationServer;
 	private readonly storeValue: OrchestrationStore;
@@ -121,8 +157,10 @@ export class BrowserOrchestrationCoordinator {
 			const result = await this.executor.executePlan(desired, plan, { timeoutMs: options.timeoutMs || desired.defaults.timeoutMs });
 			const postActual = await this.collector.collect(this.storeValue.getDesired(desired.orchestrationId) || desired, { timeoutMs: Math.min(options.timeoutMs || desired.defaults.timeoutMs, 5_000) });
 			const postPlan = this.planner.plan(this.storeValue.getDesired(desired.orchestrationId) || desired, postActual);
+			const postAssertionFailures = result.failures.length === 0 && postPlan.operations.length === 0 ? assertionFailures(postActual) : [];
 			result.actual = postActual;
 			result.plan = summarizePlan(postPlan);
+			result.failures = [...result.failures, ...postAssertionFailures];
 			result.converged = result.failures.length === 0 && postPlan.operations.length === 0;
 			result.ok = result.converged;
 			result.bindings = this.storeValue.get(desired.orchestrationId)?.bindings || [];
@@ -142,9 +180,10 @@ export class BrowserOrchestrationCoordinator {
 		if (this.requiresAdoption(state) || !desired) return { ok: true, action: "status", orchestrationId, state, converged: state.lastResult?.converged, failures: state.lastFailures || [], persistence: this.persistenceForState(state) };
 		const actual = await this.collector.collect(desired, { timeoutMs: options.timeoutMs || desired.defaults.timeoutMs });
 		const plan = this.planner.plan(desired, actual);
+		const failures = plan.operations.length === 0 ? assertionFailures(actual) : [];
 		this.storeValue.markActual(orchestrationId, actual);
 		this.storeValue.markPlan(orchestrationId, plan);
-		return { ok: plan.operations.length === 0, action: "status", orchestrationId, state: this.storeValue.get(orchestrationId), actual, plan: summarizePlan(plan), converged: plan.operations.length === 0, failures: state.lastFailures || [], persistence: this.persistenceForState(this.storeValue.get(orchestrationId)) };
+		return { ok: plan.operations.length === 0 && failures.length === 0, action: "status", orchestrationId, state: this.storeValue.get(orchestrationId), actual, plan: summarizePlan(plan), converged: plan.operations.length === 0 && failures.length === 0, failures, persistence: this.persistenceForState(this.storeValue.get(orchestrationId)) };
 	}
 
 	async watch(desiredState: unknown, options: BrowserOrchestrationWatchOptions = {}): Promise<BrowserOrchestrationWatchResult> {

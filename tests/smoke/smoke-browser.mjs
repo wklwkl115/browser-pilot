@@ -69,7 +69,10 @@ function startFixture() {
 			res.end(body);
 			return;
 		}
-		const body = "<!doctype html><html><head><script>window.__PI_BROWSER_PAGE_SCRIPT_PRE_NAV_PRESENT__=Array.isArray(window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__)&&window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__.some(item=>item&&item.hookId==='pi.preNavigationMarker'&&item.readyState==='loading');window.__PI_BROWSER_PAGE_SCRIPT_READY_STATE__=document.readyState;</script><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><div id='empty'></div><form onsubmit='event.preventDefault();document.querySelector(\"#result\").textContent=\"submitted\"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector(\"#result\").textContent=document.querySelector(\"input[name=q]\").value'>Go</button><input id='upload' type='file' onchange='document.querySelector(\"#result\").textContent=this.files[0]?.name||\"no-file\"'></form><div id='comment' role='textbox' contenteditable='true' style='border:1px solid #999;padding:4px' oninput='document.querySelector(\"#send\").disabled=!this.textContent.trim()'></div><button id='send' type='button' disabled onclick='document.querySelector(\"#comment-result\").textContent=document.querySelector(\"#comment\").textContent'>Send</button><div id='comment-result'></div><button id='download' type='button' onclick='const blob=new Blob([\"pi smoke download\"],{type:\"text/plain\"});const a=document.createElement(\"a\");a.href=URL.createObjectURL(blob);a.download=\"pi-browser-smoke-download.txt\";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>";
+		const requestUrl = new URL(req.url || "/", `http://127.0.0.1:${smokePort}`);
+		const authState = requestUrl.searchParams.get("auth") === "signed-in" ? "signed-in" : "guest";
+		const authHeading = authState === "signed-in" ? "Welcome back" : "Please sign in";
+		const body = `<!doctype html><html><head><script>(()=>{const params=new URLSearchParams(location.search);const authState=params.get("auth")==="signed-in"?"signed-in":"guest";const storageKey=params.get("storageKey")||"";const storageValue=params.get("storageValue")||"signed-in";window.__PI_BROWSER_PAGE_SCRIPT_PRE_NAV_PRESENT__=Array.isArray(window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__)&&window.__PI_BROWSER_PRE_NAVIGATION_HOOKS__.some(item=>item&&item.hookId==='pi.preNavigationMarker'&&item.readyState==='loading');window.__PI_BROWSER_PAGE_SCRIPT_READY_STATE__=document.readyState;document.documentElement.setAttribute("data-auth-state",authState);document.documentElement.setAttribute("data-pre-nav",window.__PI_BROWSER_PAGE_SCRIPT_PRE_NAV_PRESENT__===true?"loading":"missing");if(storageKey){if(authState==="signed-in")window.localStorage.setItem(storageKey,storageValue);else window.localStorage.removeItem(storageKey);window.sessionStorage.removeItem(storageKey);}})();</script><title>Pi Browser Smoke</title></head><body><main><h1>Smoke Page</h1><p>Readable smoke article body.</p><div id='auth-status' data-auth-state='${authState}'>${authHeading}</div><div id='empty'></div><form onsubmit='event.preventDefault();document.querySelector("#result").textContent="submitted"'><label>Query <input name='q' value='pi'></label><button id='go' type='button' onclick='document.querySelector("#result").textContent=document.querySelector("input[name=q]").value'>Go</button><input id='upload' type='file' onchange='document.querySelector("#result").textContent=this.files[0]?.name||"no-file"'></form><div id='comment' role='textbox' contenteditable='true' style='border:1px solid #999;padding:4px' oninput='document.querySelector("#send").disabled=!this.textContent.trim()'></div><button id='send' type='button' disabled onclick='document.querySelector("#comment-result").textContent=document.querySelector("#comment").textContent'>Send</button><div id='comment-result'></div><button id='download' type='button' onclick='const blob=new Blob(["pi smoke download"],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="pi-browser-smoke-download.txt";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)'>Download</button><div id='result' role='status'>idle</div><a href='/api/data'>Data</a></main></body></html>`;
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(body) });
 		res.end(body);
 	});
@@ -148,6 +151,43 @@ function compactProfiles(profiles) {
 		profileDir: profile.profileDir,
 		extensionDir: profile.extensionDir,
 	}));
+}
+
+function compactFailures(result) {
+	return (Array.isArray(result?.failures) ? result.failures : []).map((failure) => ({
+		code: failure.code,
+		message: failure.message,
+		retryable: failure.retryable,
+		assertionId: failure.assertionId,
+		kind: failure.kind,
+		tabRole: failure.tabRole,
+	}));
+}
+
+function compactSessionAssertions(state) {
+	if (!state || typeof state !== "object") return undefined;
+	return {
+		mode: state.mode,
+		passed: state.passed,
+		total: state.total,
+		passedCount: state.passedCount,
+		failedCount: state.failedCount,
+		probeFailedCount: state.probeFailedCount,
+		checks: (Array.isArray(state.checks) ? state.checks : []).map((check) => ({
+			id: check.id,
+			kind: check.kind,
+			tabRole: check.tabRole,
+			status: check.status,
+			passed: check.passed,
+			message: check.message,
+			details: check.details,
+		})),
+	};
+}
+
+function sessionAssertionsFromResult(result, sessionTag) {
+	const session = (Array.isArray(result?.actual?.sessions) ? result.actual.sessions : []).find((item) => item?.tag === sessionTag);
+	return compactSessionAssertions(session?.sessionAssertions);
 }
 
 async function runPreNavigationHookSmoke() {
@@ -358,6 +398,153 @@ async function runPersistentAdoptionSmoke() {
 		if (text.includes(cookieSecret)) throw new Error("orchestration persistence smoke artifact leaked raw cookie value");
 		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
 		record("browser_orchestrate.persistenceArtifact", true, { orchestrationId, path: artifactPath, statePath });
+	}
+}
+
+async function runSessionAssertionsSmoke() {
+	const coordinator = bridge.orchestrator();
+	const origin = `http://127.0.0.1:${smokePort}`;
+	const runId = Date.now();
+	const artifactPath = path.join(outDir, "smoke-orchestration-assertions-result.json");
+	const cookieName = `pi_assert_auth_${runId}`;
+	const cookieSecret = `assert-auth-secret-${runId}`;
+	const storageKey = `pi_assert_state_${runId}`;
+	const storageValue = "signed-in";
+	const hookSessionId = `smoke-assert-hook-${runId}`;
+	const passOrchestrationId = `smoke-assert-pass-${runId}`;
+	const failOrchestrationId = `smoke-assert-fail-${runId}`;
+	const cookieHash = sha256(cookieSecret);
+	const storageHash = sha256(storageValue);
+	const passUrl = `${origin}/assertions?auth=signed-in&storageKey=${encodeURIComponent(storageKey)}&storageValue=${encodeURIComponent(storageValue)}&run=${runId}`;
+	const failUrl = `${origin}/assertions?auth=guest&storageKey=${encodeURIComponent(storageKey)}&run=${runId}`;
+	const passTarget = { orchestrationId: passOrchestrationId, sessionTag: "assert-pass", tabRole: "main" };
+	const passDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: passOrchestrationId,
+		allowedOrigins: [origin],
+		defaults: { timeoutMs: 20_000, navigationTimeoutMs: 10_000 },
+		preNavigationHooks: [{ hookId: "pi.preNavigationMarker", version: "1", hash: preNavigationHookRegistryHash(), required: true }],
+		sessions: [{
+			tag: "assert-pass",
+			tabs: [{ role: "main", url: passUrl, waitUntil: "complete" }],
+			cookies: [{ name: cookieName, value: cookieSecret, path: "/" }],
+			hookDispatcher: { sessionId: hookSessionId, installFingerprint: `assert-hook-${runId}`, bufferSize: 25 },
+			sessionAssertions: {
+				mode: "all",
+				checks: [
+					{ id: "login-cookie", kind: "cookie", name: cookieName, present: true, valueHash: cookieHash },
+					{ id: "login-storage", kind: "storage", storageArea: "localStorage", key: storageKey, present: true, valueHash: storageHash },
+					{ id: "login-attr", kind: "attribute", selector: "html", name: "data-auth-state", present: true, equals: "signed-in" },
+					{ id: "pre-nav-effect", kind: "attribute", selector: "html", name: "data-pre-nav", present: true, equals: "loading" },
+					{ id: "hook-installed", kind: "hook", state: "INSTALLED", sessionId: hookSessionId },
+				],
+			},
+		}],
+	};
+	const failDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: failOrchestrationId,
+		allowedOrigins: [origin],
+		defaults: { timeoutMs: 20_000, navigationTimeoutMs: 10_000 },
+		sessions: [{
+			tag: "assert-fail",
+			tabs: [{ role: "main", url: failUrl, waitUntil: "complete" }],
+			sessionAssertions: {
+				mode: "all",
+				checks: [
+					{ id: "missing-login-cookie", kind: "cookie", name: cookieName, present: true, valueHash: cookieHash },
+					{ id: "missing-login-storage", kind: "storage", storageArea: "localStorage", key: storageKey, present: true, valueHash: storageHash },
+				],
+			},
+		}],
+	};
+	const envelope = {
+		artifactPrivacy: "local_redacted_session_assertions",
+		artifactPath,
+		redaction: {
+			cookie: "value_hash_only",
+			storage: "value_hash_only",
+			attribute: "public_selector_bool_only",
+			logicalTarget: "no_raw_cookie_values",
+		},
+		scenarios: {},
+	};
+	try {
+		envelope.scenarios.unsatisfied = { orchestrationId: failOrchestrationId };
+		envelope.scenarios.unsatisfied.apply = await coordinator.apply(failDesired, { timeoutMs: 25_000 });
+		const failAssertions = sessionAssertionsFromResult(envelope.scenarios.unsatisfied.apply, "assert-fail");
+		envelope.scenarios.unsatisfied.summary = failAssertions;
+		record("browser_orchestrate.assertionsApplyFail", envelope.scenarios.unsatisfied.apply.ok === false && failAssertions?.failedCount >= 1 && compactFailures(envelope.scenarios.unsatisfied.apply).some((failure) => failure.code === "ORCHESTRATION_ASSERTION_FAILED") && envelope.scenarios.unsatisfied.apply.plan?.operationCount === 0, {
+			orchestrationId: failOrchestrationId,
+			assertions: failAssertions,
+			bindings: compactBindings(envelope.scenarios.unsatisfied.apply),
+			failures: compactFailures(envelope.scenarios.unsatisfied.apply),
+		});
+		envelope.scenarios.unsatisfied.status = await coordinator.status(failOrchestrationId, { timeoutMs: 15_000 });
+		record("browser_orchestrate.assertionsStatusFail", envelope.scenarios.unsatisfied.status.ok === false && sessionAssertionsFromResult(envelope.scenarios.unsatisfied.status, "assert-fail")?.failedCount >= 1 && compactFailures(envelope.scenarios.unsatisfied.status).some((failure) => failure.code === "ORCHESTRATION_ASSERTION_FAILED"), {
+			orchestrationId: failOrchestrationId,
+			assertions: sessionAssertionsFromResult(envelope.scenarios.unsatisfied.status, "assert-fail"),
+			failures: compactFailures(envelope.scenarios.unsatisfied.status),
+		});
+
+		envelope.scenarios.satisfied = { orchestrationId: passOrchestrationId };
+		envelope.scenarios.satisfied.apply = await coordinator.apply(passDesired, { timeoutMs: 30_000 });
+		const passAssertions = sessionAssertionsFromResult(envelope.scenarios.satisfied.apply, "assert-pass");
+		envelope.scenarios.satisfied.summary = passAssertions;
+		record("browser_orchestrate.assertionsApplyPass", envelope.scenarios.satisfied.apply.ok === true && passAssertions?.passed === true && passAssertions?.passedCount === 5, {
+			orchestrationId: passOrchestrationId,
+			assertions: passAssertions,
+			bindings: compactBindings(envelope.scenarios.satisfied.apply),
+			operationResults: compactOperationResults(envelope.scenarios.satisfied.apply),
+		});
+		envelope.scenarios.satisfied.status = await coordinator.status(passOrchestrationId, { timeoutMs: 15_000 });
+		record("browser_orchestrate.assertionsStatusPass", envelope.scenarios.satisfied.status.ok === true && sessionAssertionsFromResult(envelope.scenarios.satisfied.status, "assert-pass")?.passed === true && envelope.scenarios.satisfied.status.plan?.operationCount === 0, {
+			orchestrationId: passOrchestrationId,
+			assertions: sessionAssertionsFromResult(envelope.scenarios.satisfied.status, "assert-pass"),
+			operationCount: envelope.scenarios.satisfied.status.plan?.operationCount,
+		});
+		const logicalTarget = await bridge.executeJavaScript(`return {
+			authState: document.documentElement.getAttribute("data-auth-state"),
+			preNav: document.documentElement.getAttribute("data-pre-nav"),
+			cookiePresent: document.cookie.includes(${JSON.stringify(`${cookieName}=${cookieSecret}`)}),
+			storageValue: localStorage.getItem(${JSON.stringify(storageKey)}),
+			hookCount: Array.isArray(globalThis.__PI_BROWSER_PRE_NAVIGATION_HOOKS__) ? globalThis.__PI_BROWSER_PRE_NAVIGATION_HOOKS__.length : 0,
+		};`, { target: passTarget, timeoutMs: 10_000 });
+		envelope.scenarios.satisfied.logicalTarget = {
+			targetSource: logicalTarget.target?.source,
+			authState: logicalTarget.data?.authState,
+			preNav: logicalTarget.data?.preNav,
+			cookiePresent: logicalTarget.data?.cookiePresent === true,
+			storageValueHash: logicalTarget.data?.storageValue ? sha256(logicalTarget.data.storageValue) : undefined,
+			hookCount: logicalTarget.data?.hookCount,
+		};
+		record("browser_orchestrate.assertionsLogicalTarget", logicalTarget.target?.source === "orchestration" && logicalTarget.data?.authState === "signed-in" && logicalTarget.data?.preNav === "loading" && logicalTarget.data?.cookiePresent === true && logicalTarget.data?.storageValue === storageValue && Number(logicalTarget.data?.hookCount || 0) >= 1, {
+			orchestrationId: passOrchestrationId,
+			targetSource: logicalTarget.target?.source,
+			authState: logicalTarget.data?.authState,
+			preNav: logicalTarget.data?.preNav,
+			cookiePresent: logicalTarget.data?.cookiePresent === true,
+			storageValueHash: logicalTarget.data?.storageValue ? sha256(logicalTarget.data.storageValue) : undefined,
+			hookCount: logicalTarget.data?.hookCount,
+		});
+	} finally {
+		envelope.scenarios.unsatisfiedDelete = await coordinator.delete(failOrchestrationId, { timeoutMs: 20_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId: failOrchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		record("browser_orchestrate.assertionsDeleteFail", envelope.scenarios.unsatisfiedDelete.ok === true && envelope.scenarios.unsatisfiedDelete.operationResults?.some((item) => item.action === "closeTab" && item.status === "succeeded"), { orchestrationId: failOrchestrationId, operationResults: compactOperationResults(envelope.scenarios.unsatisfiedDelete) });
+		envelope.scenarios.satisfiedDelete = await coordinator.delete(passOrchestrationId, { timeoutMs: 20_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId: passOrchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		record("browser_orchestrate.assertionsDeletePass", envelope.scenarios.satisfiedDelete.ok === true && envelope.scenarios.satisfiedDelete.operationResults?.some((item) => item.action === "closeTab" && item.status === "succeeded"), { orchestrationId: passOrchestrationId, operationResults: compactOperationResults(envelope.scenarios.satisfiedDelete) });
+		const text = JSON.stringify(envelope);
+		if (text.includes(cookieSecret)) throw new Error("orchestration assertions smoke artifact leaked raw cookie value");
+		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+		record("browser_orchestrate.assertionsArtifact", true, {
+			path: artifactPath,
+			artifactPrivacy: envelope.artifactPrivacy,
+			redaction: envelope.redaction,
+			satisfiedOrchestrationId: passOrchestrationId,
+			unsatisfiedOrchestrationId: failOrchestrationId,
+			satisfiedAssertions: envelope.scenarios.satisfied?.summary,
+			unsatisfiedAssertions: envelope.scenarios.unsatisfied?.summary,
+			logicalTargetSource: envelope.scenarios.satisfied?.logicalTarget?.targetSource,
+		});
 	}
 }
 
@@ -583,6 +770,7 @@ try {
 
 	await runOrchestrationSmoke();
 	await runPersistentAdoptionSmoke();
+	await runSessionAssertionsSmoke();
 	await runPreNavigationHookSmoke();
 	await runWindowTabGroupsSmoke();
 	await runProfileIsolationSmoke();

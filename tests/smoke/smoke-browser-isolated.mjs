@@ -67,6 +67,7 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const windowSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.window"));
 	const preNavSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.preNav"));
 	const profileSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.profileIsolation"));
+	const assertionSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.assertions"));
 	const windowApplyStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowApply");
 	const windowArtifactStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowArtifact");
 	const windowDeleteStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowDelete");
@@ -79,6 +80,12 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const profileDeleteAStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationDeleteA");
 	const profileDeleteStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationDelete");
 	const profileArtifactStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationArtifact");
+	const assertionsApplyFailStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsApplyFail");
+	const assertionsStatusFailStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsStatusFail");
+	const assertionsApplyPassStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsApplyPass");
+	const assertionsStatusPassStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsStatusPass");
+	const assertionsLogicalTargetStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsLogicalTarget");
+	const assertionsArtifactStep = assertionSteps.find((item) => item.step === "browser_orchestrate.assertionsArtifact");
 	const orchestrationId = orchestrationSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const windowOrchestrationId = windowSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const preNavigationOrchestrationId = preNavSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
@@ -126,7 +133,19 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 		artifactPath: profileArtifactStep?.path,
 		artifactPrivacy: profileArtifactStep?.artifactPrivacy,
 	};
-	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, preNavigationOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, preNavigationOperationResults, preNavigationBindings, preNavigationHooks, profileIsolation, artifactPaths } : undefined;
+	const assertions = {
+		satisfiedOrchestrationId: assertionsApplyPassStep?.orchestrationId || assertionsArtifactStep?.satisfiedOrchestrationId,
+		unsatisfiedOrchestrationId: assertionsApplyFailStep?.orchestrationId || assertionsArtifactStep?.unsatisfiedOrchestrationId,
+		satisfied: assertionsApplyPassStep?.assertions || assertionsStatusPassStep?.assertions || assertionsArtifactStep?.satisfiedAssertions,
+		unsatisfied: assertionsApplyFailStep?.assertions || assertionsStatusFailStep?.assertions || assertionsArtifactStep?.unsatisfiedAssertions,
+		bindings: Array.isArray(assertionsApplyPassStep?.bindings) ? assertionsApplyPassStep.bindings : [],
+		failures: [assertionsApplyFailStep, assertionsStatusFailStep].flatMap((item) => Array.isArray(item?.failures) ? item.failures : []),
+		logicalTargetSource: assertionsLogicalTargetStep?.targetSource || assertionsArtifactStep?.logicalTargetSource,
+		artifactPath: assertionsArtifactStep?.path,
+		artifactPrivacy: assertionsArtifactStep?.artifactPrivacy,
+		redaction: assertionsArtifactStep?.redaction,
+	};
+	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, preNavigationOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, preNavigationOperationResults, preNavigationBindings, preNavigationHooks, profileIsolation, assertions, artifactPaths } : undefined;
 }
 async function fetchJson(url) {
 	const res = await fetch(url);

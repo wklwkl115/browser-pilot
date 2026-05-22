@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { JsonRecord, NormalizedBrowserOrchestrationDesired, NormalizedDesiredCookie } from "./types";
+import type { JsonRecord, NormalizedBrowserOrchestrationDesired, NormalizedDesiredCookie, NormalizedSessionAssertion } from "./types";
 
 const SENSITIVE_KEY = /cookie|token|authorization|password|secret|body|postdata|websocket|value/i;
 
@@ -51,6 +51,19 @@ export function redactCookie(cookie: NormalizedDesiredCookie): JsonRecord {
 	};
 }
 
+function redactSessionAssertion(assertion: NormalizedSessionAssertion): JsonRecord {
+	switch (assertion.kind) {
+		case "url":
+			return { ...assertion, includes: assertion.includes ? "[REDACTED]" : undefined, includesLength: assertion.includes?.length };
+		case "text":
+			return { ...assertion, includes: assertion.includes ? "[REDACTED]" : undefined, includesLength: assertion.includes?.length };
+		case "attribute":
+			return { ...assertion, equals: assertion.equals ? "[REDACTED]" : undefined, equalsLength: assertion.equals?.length };
+		default:
+			return { ...assertion };
+	}
+}
+
 export function redactDesired(desired: NormalizedBrowserOrchestrationDesired): unknown {
 	return {
 		...desired,
@@ -58,6 +71,7 @@ export function redactDesired(desired: NormalizedBrowserOrchestrationDesired): u
 			...session,
 			preNavigationHooks: session.preNavigationHooks.map((hook) => ({ ...hook, params: redactOrchestrationValue(hook.params) })),
 			cookies: session.cookies.map(redactCookie),
+			sessionAssertions: session.sessionAssertions ? { ...session.sessionAssertions, checks: session.sessionAssertions.checks.map(redactSessionAssertion) } : undefined,
 		})),
 	};
 }

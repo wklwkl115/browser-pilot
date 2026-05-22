@@ -6,7 +6,7 @@
 
 ### 1.1 目标
 
-- 引入 Node driver 层的声明式状态协调器：智能体提交 Desired State，驱动层采集 Actual State，计算 Diff，并执行 bounded reconcile，使真实浏览器资源收敛到目标状态。
+- 引入 Node driver 层的声明式浏览器会话状态协调器：智能体提交 Desired State，驱动层采集 Actual State，计算 Diff，并执行 bounded reconcile，使真实浏览器资源与声明的会话状态持续对齐。
 - 降低多 tab、多 window、多 recorder、多 hook、多 cookie 场景中手动 `browser_tabs list/create/switch` 与显式 `tabId/windowId` 维护成本。
 - 保持现有工具链的观察、执行、等待、证据、artifact 能力，不把高层决策下沉到 Chrome extension 或页面脚本。
 - 为长期并发任务、自愈、状态诊断、资源清理和后续 `sessionId/tabRole` 目标解析提供稳定基础。
@@ -32,6 +32,7 @@
 
 - Incognito、用户个人 Chrome profile 或任意外部 cookie jar 接管。
 - 自动漏洞判断、扫描决策、目标选择或策略推理。
+- 登录、下单、发消息等站点业务流程执行；这些仍由 `browser_execute` / `browser_scan` / `browser_wait` 负责。
 - 在 MV3 service worker 中保存高层 Desired State。
 - 任意外部脚本文本作为 Desired State；pre-navigation hook 只接受 registry-backed `hookId/version/hash` metadata。
 
@@ -39,6 +40,7 @@
 
 - 高层协调只在 Node driver：Desired/Actual/Diff/Reconcile、并发锁、watch loop、artifact、summary、错误 taxonomy 全部在 Node 侧实现。
 - Chrome extension 只提供明确底层原语：tabs、windows、tabGroups、cookies、wait、network、hook、frame、html、screenshot、transfer 等 native command。
+- `browser_orchestrate` 是声明式浏览器会话状态协调工具，不是站点流程 DSL：不接收点击步骤、表单填写、账号口令、站点专用脚本或任意业务流程状态机。
 - 不新增静默 fallback：`tabId`、`orchestrationId/sessionTag/tabRole` 冲突必须返回结构化错误。
 - 不跨 browser 自动回退：除非 Desired State 显式允许，orchestration 绑定的 `browserId` 是硬边界。
 - 不关闭非 owned tabs/windows：cleanup 只处理 coordinator 创建或明确绑定为 owned 的资源；owned window cleanup 只允许 `windowOwned:true`。
@@ -106,13 +108,13 @@ src/tools/summaries/orchestration.ts
 - `src/tools/resultMiddleware.ts` 接入 orchestration summary。
 - `scripts/generate-tool-docs.mjs` 若无法自动识别新增 helper，补生成器支持。
 
-`browser_orchestrate` 是组合工具，不替代现有工具：
+`browser_orchestrate` 是声明式浏览器会话状态协调工具，不替代现有工具：
 
 - `browser_tabs` 保持底层 tab 控制。
 - `browser_wait` 保持等待/导航原语。
 - `browser_network` 保持 recorder 原语。
 - `browser_hook` 保持 hook 原语。
-- `browser_execute` 仍是页面动作主工具。
+- `browser_execute`、`browser_scan` 与 `browser_wait` 仍是页面观察、站点流程执行与验收主工具。
 
 ### 3.3 Native command schema 与 Chrome extension
 
@@ -410,6 +412,8 @@ Runtime State 默认内存态，仅 Pi session 内有效；可将 redacted audit
 6. 更新 store bindings。
 7. 返回 converged、bindings、operationResults、failures。
 
+这里的 `converged` 仅表示浏览器会话状态对账后没有待执行的 reconcile operation；它不表示登录、提交、下单等站点业务流程已经完成。
+
 ### 5.3 `watch`
 
 1. 先执行一次 bounded `apply`。
@@ -539,7 +543,7 @@ Drift 类型与恢复：
 验收：
 
 - `npm run check` 通过。
-- `npm run smoke:browser:isolated` 覆盖 `browser_orchestrate` happy path、cookie set/remove、network/hook 编排、导航等待、watch 自愈，以及 owned window / tabGroups runtime diagnostics。
+- `npm run smoke:browser:isolated` 覆盖 `browser_orchestrate` happy path、cookie set/remove、network/hook 编排、导航等待、watch 自愈、`sessionAssertions` 登录态存在/不存在与 pre-navigation/hook effect 断言，以及 owned window / tabGroups runtime diagnostics。
 - `browser_orchestrate` 出现在 generated tool contract 与 skill，且文案不把 future capability 写成当前能力。
 - `quality:local`、isolated smoke、release smoke 已作为首个生产闭环 gate 通过；关键 artifacts 记录在 TODO 222。
 
@@ -553,4 +557,5 @@ Drift 类型与恢复：
 - window-level isolation 与 Chrome `tabGroups` 视觉分组分阶段推进；`tabGroups` 不作为 hard fail 依赖。
 - pre-navigation hook policy 只持久化声明式 hook metadata，禁止持久化任意可执行脚本文本。
 - TODO 230/231 已冻结并实现 `docs/orchestration-persistence.md`：受控持久化 orchestration state 默认 read-only/stale，跨 Pi session 自动 cleanup 禁止；adoption 必须显式声明并校验 live resource 指纹。
+- TODO 235/236 已冻结并实现 `docs/browser-orchestration-assertions.md`：`sessionAssertions` 只允许可观测、只读的 readiness checks；不得把点击、表单填写、站点脚本或 workflow DSL 引入 `browser_orchestrate`，`readinessChecks` 也不得作为第二个 schema alias。
 - 物理隔离运行规则见 `docs/browser-profile-isolation.md`；TODO 232 已冻结 profile-first 方案，TODO 233 已实现 `isolation.scope:"profile"` managed profile runtime 与 smoke gate；Incognito 仅作为 opt-in diagnostic，不阻塞主干 smoke/release gate。

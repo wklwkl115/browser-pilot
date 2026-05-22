@@ -27,7 +27,12 @@ export function summarizePlan(plan: BrowserOrchestrationPlan): BrowserOrchestrat
 }
 
 export function summarizeResult(result: BrowserOrchestrationApplyResult): BrowserOrchestrationResultSummary {
-	return { ok: result.ok, converged: result.converged, operationCount: result.operationResults.length, failureCount: result.failures.length, updatedAt: nowMs() };
+	const sessionAssertions = (result.actual?.sessions || []).map((session) => session.sessionAssertions).filter(Boolean);
+	const assertionCount = sessionAssertions.reduce((sum, item) => sum + Number(item?.total || 0), 0) || undefined;
+	const assertionPassedCount = sessionAssertions.reduce((sum, item) => sum + Number(item?.passedCount || 0), 0) || undefined;
+	const assertionFailedCount = sessionAssertions.reduce((sum, item) => sum + Number(item?.failedCount || 0), 0) || undefined;
+	const assertionProbeFailedCount = sessionAssertions.reduce((sum, item) => sum + Number(item?.probeFailedCount || 0), 0) || undefined;
+	return { ok: result.ok, converged: result.converged, operationCount: result.operationResults.length, failureCount: result.failures.length, assertionCount, assertionPassedCount, assertionFailedCount, assertionProbeFailedCount, updatedAt: nowMs() };
 }
 
 export class OrchestrationStore {

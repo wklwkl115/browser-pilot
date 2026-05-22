@@ -15,6 +15,7 @@ import {
 	summarizeHttpReplayData,
 	summarizeNetworkData,
 	summarizeNucleiBridgeData,
+	summarizeOrchestrationData,
 	summarizeScanData,
 	summarizeSqlmapBridgeData,
 	summarizeSqliProbeData,
@@ -109,6 +110,21 @@ const networkHar = summarizeNetworkData({ log: { entries: [{ _requestId: "5", re
 assert.equal(networkHar.tabId, 9, "check-summaries network.har.tabId: HAR diagnostics tabId must be retained");
 assert.equal(networkHar.sessionId, "har", "check-summaries network.har.sessionId: HAR diagnostics sessionId must be retained");
 assert.equal(networkHar.recorder.recorderId, "r2", "check-summaries network.har.recorder: diagnostics recorder must be retained");
+
+const orchestrationSummary = summarizeOrchestrationData({
+	action: "apply",
+	ok: false,
+	orchestrationId: "orch-summary",
+	converged: false,
+	plan: { operationCount: 0, operationsByPhase: {}, converged: true },
+	actual: { observedAt: 1, sessions: [{ tag: "s", tabs: [], cookies: [], sessionAssertions: { mode: "all", passed: false, total: 2, passedCount: 1, failedCount: 1, probeFailedCount: 0, checks: [] } }] },
+	failures: [{ code: "ORCHESTRATION_ASSERTION_FAILED", message: "selector assertion is not satisfied", retryable: false }],
+	bindings: [],
+});
+assert.equal(orchestrationSummary.assertionCount, 2, "check-summaries orchestration.assertionCount: assertion totals must stay visible");
+assert.equal(orchestrationSummary.assertionPassedCount, 1, "check-summaries orchestration.assertionPassed: passed assertions must stay visible");
+assert.equal(orchestrationSummary.assertionFailedCount, 1, "check-summaries orchestration.assertionFailed: failed assertions must stay visible");
+assert.equal(orchestrationSummary.assertionProbeFailedCount, undefined, "check-summaries orchestration.assertionProbeFailed: zero probe failures should stay compact");
 
 const generic = summarizeGenericValue({ ok: true, tabId: 7, target: { source: "explicit", implicit: false }, data: { tabId: 7, frameId: "main", count: 2, html: "x".repeat(2000), rows: Array.from({ length: 20 }, (_, id) => ({ id, value: "v".repeat(500) })) } });
 assert.equal(generic.type, "bridgeResult", "check-summaries generic.bridge: bridge envelopes must be recognized");

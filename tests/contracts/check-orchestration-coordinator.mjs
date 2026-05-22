@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES, PersistentOrchestrationStore, preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
@@ -38,6 +39,7 @@ class FakeOrchestrationServer {
 		this.preNavigationEffects = new Map();
 		this.nextScriptId = 1;
 		this.fail = options.fail || {};
+		this.assertionPages = structuredClone(options.assertionPages || {});
 		this.waitReady = options.waitReady !== false;
 		this.immediateWaitFails = options.immediateWaitFails === true;
 		this.ensureWindowsFromTabs();
@@ -112,6 +114,7 @@ class FakeOrchestrationServer {
 		if (command.cmd === "frame.addNewDocumentScript") return this.addPreNavigationScript(command, options);
 		if (command.cmd === "frame.removeNewDocumentScript") return this.removePreNavigationScript(command, options);
 		if (command.cmd === "persistent_cdp") return this.handlePersistentCdp(command, options);
+		if (command.cmd === "cdp") return this.handleCdp(command, options);
 		if (command.cmd === "tabs") return this.handleTabs(command);
 		if (command.cmd === "windows") return this.handleWindows(command);
 		if (command.cmd === "tabGroups") return this.handleTabGroups(command);
@@ -266,6 +269,69 @@ class FakeOrchestrationServer {
 		if (command.action === "send" && command.cdpMethod === "Runtime.evaluate") return { id: `pcdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { result: { result: { type: "boolean", value: this.preNavigationEffects.get(tabId) === true } }, sessionKey: `${tabId}:new_document`, method: "Runtime.evaluate" } };
 		return { id: `pcdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { ok: true } };
 	}
+
+	hash(text) {
+		return createHash("sha256").update(String(text)).digest("hex");
+	}
+
+	assertionProbeFromExpression(expression) {
+		const marker = "})(";
+		const start = String(expression).lastIndexOf(marker);
+		if (start < 0) return undefined;
+		const raw = String(expression).slice(start + marker.length, -1);
+		try { return JSON.parse(raw); }
+		catch { return undefined; }
+	}
+
+	handleCdp(command, options) {
+		const tabId = Number(options.tabId || command.tabId);
+		if (command.method !== "Runtime.evaluate") return { id: `cdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { result: { type: "object", value: { ok: true } } } };
+		const expression = String(command.params?.expression || "");
+		const probe = this.assertionProbeFromExpression(expression);
+		if (!probe || !String(command.name || "").startsWith("sessionAssertion.")) return { id: `cdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { result: { type: "object", value: { ok: true } } } };
+		const tab = this.tabs.find((item) => item.tabId === tabId);
+		const page = structuredClone(this.assertionPages[tab?.url || ""] || {});
+		const selectors = page.selectors || {};
+		const textBySelector = page.textBySelector || {};
+		const attributes = page.attributes || {};
+		const storage = page.storage || {};
+		let value = { ok: false, error: "unsupported assertion kind" };
+		if (probe.kind === "storage") {
+			const area = probe.storageArea === "sessionStorage" ? storage.sessionStorage || {} : storage.localStorage || {};
+			const rawValue = Object.prototype.hasOwnProperty.call(area, probe.key) ? area[probe.key] : null;
+			const present = rawValue !== null && rawValue !== undefined;
+			const valueHash = present ? this.hash(rawValue) : undefined;
+			const passed = probe.present ? present && (!probe.valueHash || valueHash === probe.valueHash) : !present;
+			value = { ok: true, passed, details: { present, valueLength: present ? String(rawValue).length : undefined, hasExpectedHash: !!probe.valueHash, hashMatched: probe.valueHash ? valueHash === probe.valueHash : undefined } };
+		} else if (probe.kind === "selector") {
+			const present = selectors[probe.selector] === true;
+			value = { ok: true, passed: present === probe.present, details: { present } };
+		} else if (probe.kind === "text") {
+			const hasElement = probe.selector ? selectors[probe.selector] === true || typeof textBySelector[probe.selector] === "string" : true;
+			if (!hasElement) value = { ok: true, passed: false, details: { present: false, reason: "selector_not_found" } };
+			else {
+				const text = probe.selector ? String(textBySelector[probe.selector] || "") : String(page.bodyText || "");
+				const textHash = this.hash(text);
+				const includesMatched = probe.includes ? text.includes(probe.includes) : undefined;
+				const equalsHashMatched = probe.equalsHash ? textHash === probe.equalsHash : undefined;
+				const passed = (probe.includes ? includesMatched === true : true) && (probe.equalsHash ? equalsHashMatched === true : true);
+				value = { ok: true, passed, details: { present: true, textLength: text.length, includesMatched, hasEqualsHash: !!probe.equalsHash, equalsHashMatched } };
+			}
+		} else if (probe.kind === "attribute") {
+			const attributeSource = attributes[probe.selector];
+			if (!attributeSource) value = { ok: true, passed: false, details: { present: false, reason: "selector_not_found" } };
+			else {
+				const attributePresent = Object.prototype.hasOwnProperty.call(attributeSource, probe.name);
+				const rawValue = attributePresent ? attributeSource[probe.name] : null;
+				const valueHash = attributePresent ? this.hash(rawValue || "") : undefined;
+				const equalsMatched = probe.equals !== undefined ? rawValue === probe.equals : undefined;
+				const equalsHashMatched = probe.equalsHash ? valueHash === probe.equalsHash : undefined;
+				const passed = probe.present ? attributePresent && (probe.equals !== undefined ? equalsMatched === true : true) && (probe.equalsHash ? equalsHashMatched === true : true) : attributePresent === false;
+				value = { ok: true, passed, details: { present: true, attributePresent, valueLength: typeof rawValue === "string" ? rawValue.length : undefined, equalsMatched, hasEqualsHash: !!probe.equalsHash, equalsHashMatched } };
+			}
+		}
+		return { id: `cdp-${this.commandLog.length}`, acknowledged: true, tabId, data: { result: { type: "object", value } } };
+	}
 }
 
 const desired = {
@@ -326,6 +392,80 @@ const desired = {
 	assert.equal(server.commandLog.some((item) => item.cmd === "wait.loadState" && Number(item.timeoutMs || 0) > 0), true, "post-observe loadState checks must use a positive timeout");
 	const deleted = await coordinator.delete("orch-post-apply-observe");
 	assert.equal(deleted.ok, true, "wait-ready fixture cleanup must succeed");
+}
+
+{
+	const storageHash = createHash("sha256").update("signed-in").digest("hex");
+	const server = new FakeOrchestrationServer({
+		assertionPages: {
+			"https://assertions.test/app": {
+				selectors: { "#ready": true },
+				textBySelector: { "#ready": "Welcome back" },
+				storage: { localStorage: { auth_state: "signed-in" }, sessionStorage: {} },
+			},
+		},
+	});
+	const coordinator = new BrowserOrchestrationCoordinator(server);
+	const desiredWithAssertions = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: "orch-assertions-pass",
+		defaults: { timeoutMs: 2500, navigationTimeoutMs: 800 },
+		sessions: [{
+			tag: "assert",
+			tabs: [{ role: "main", url: "https://assertions.test/app", waitUntil: "none" }],
+			sessionAssertions: {
+				mode: "all",
+				checks: [
+					{ id: "url", kind: "url", equals: "https://assertions.test/app" },
+					{ id: "selector", kind: "selector", selector: "#ready", present: true },
+					{ id: "storage", kind: "storage", storageArea: "localStorage", key: "auth_state", valueHash: storageHash },
+				],
+			},
+		}],
+	};
+	const applied = captureFixture("assertionsApplyPass", await coordinator.apply(desiredWithAssertions));
+	assert.equal(applied.ok, true, "apply must stay converged when sessionAssertions are satisfied");
+	assert.equal(applied.actual.sessions[0].sessionAssertions.passed, true, "actual state must mark satisfied assertions");
+	assert.equal(applied.actual.sessions[0].sessionAssertions.passedCount, 3, "all configured assertions must pass");
+	const status = captureFixture("assertionsStatusPass", await coordinator.status("orch-assertions-pass"));
+	assert.equal(status.ok, true, "status must remain converged when assertions are satisfied");
+	assert.equal(status.actual.sessions[0].sessionAssertions.total, 3, "status actual must surface assertion counts");
+	assert.equal(status.actual.sessions[0].sessionAssertions.failedCount, 0, "status actual must report zero failed assertions");
+	assert.equal(server.commandLog.some((item) => item.cmd === "cdp" && item.method === "Runtime.evaluate" && String(item.name || "").startsWith("sessionAssertion.")), true, "read-only assertions must use controlled Runtime.evaluate probes");
+	const deleted = await coordinator.delete("orch-assertions-pass");
+	assert.equal(deleted.ok, true, "assertion fixture cleanup must succeed");
+}
+
+{
+	const server = new FakeOrchestrationServer({
+		assertionPages: {
+			"https://assertions.test/fail": { selectors: {}, textBySelector: {}, storage: { localStorage: {}, sessionStorage: {} } },
+		},
+	});
+	const coordinator = new BrowserOrchestrationCoordinator(server);
+	const failingDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: "orch-assertions-fail",
+		defaults: { timeoutMs: 2500, navigationTimeoutMs: 800 },
+		sessions: [{
+			tag: "assert-fail",
+			tabs: [{ role: "main", url: "https://assertions.test/fail", waitUntil: "none" }],
+			sessionAssertions: { mode: "all", checks: [{ id: "selector-missing", kind: "selector", selector: "#ready", present: true }] },
+		}],
+	};
+	const applied = captureFixture("assertionsApplyFail", await coordinator.apply(failingDesired));
+	assert.equal(applied.ok, false, "apply must report failure when readiness assertions are unsatisfied after resource reconcile");
+	assert.equal(applied.plan.operationCount, 0, "resource plan must be empty when only readiness assertions remain unsatisfied");
+	assert.equal(applied.failures.some((failure) => failure.code === "ORCHESTRATION_ASSERTION_FAILED"), true, "apply must surface assertion failure codes");
+	const status = captureFixture("assertionsStatusFail", await coordinator.status("orch-assertions-fail"));
+	assert.equal(status.ok, false, "status must report non-converged readiness assertions");
+	assert.equal(status.failures.some((failure) => failure.code === "ORCHESTRATION_ASSERTION_FAILED"), true, "status must surface assertion failure codes");
+	const watched = await coordinator.watch(failingDesired, { intervalMs: 1000, ttlMs: 2000, maxAttempts: 1, timeoutMs: 1000 });
+	assert.equal(watched.ok, false, "watch must report unsatisfied readiness assertions on initial apply");
+	assert.equal(watched.watch.active, false, "watch must pause when assertion failures exhaust maxAttempts");
+	assert.equal(watched.failures.some((failure) => failure.code === "ORCHESTRATION_ASSERTION_FAILED"), true, "watch failure envelope must retain assertion failure codes");
+	const deleted = await coordinator.delete("orch-assertions-fail");
+	assert.equal(deleted.ok, true, "failing assertion fixture cleanup must still succeed");
 }
 
 {
