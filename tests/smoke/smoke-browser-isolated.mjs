@@ -33,6 +33,22 @@ function windowsPathForChrome(value, chromeExe) {
 	if (!match) return value;
 	return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, "\\")}`;
 }
+function powershellString(value) {
+	return `'${String(value || "").replace(/'/g, "''")}'`;
+}
+function stopWindowsChromeForProfile(chromeExe, profileDir, debugPort) {
+	if (!isWindowsChromeExecutable(chromeExe)) return;
+	const profileNeedle = windowsPathForChrome(profileDir, chromeExe);
+	const debugNeedle = `--remote-debugging-port=${debugPort}`;
+	const command = [
+		`$profileNeedle=${powershellString(profileNeedle)};`,
+		`$debugNeedle=${powershellString(debugNeedle)};`,
+		"Get-CimInstance Win32_Process |",
+		"Where-Object { $_.CommandLine -and ($_.CommandLine.Contains($profileNeedle) -or $_.CommandLine.Contains($debugNeedle)) } |",
+		"ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+	].join(" ");
+	spawnSync("powershell.exe", ["-NoProfile", "-Command", command], { stdio: "ignore" });
+}
 function chromePath() {
 	for (const candidate of chromeCandidates) if (existsSync(candidate)) return candidate;
 	throw new Error(`Chrome/Chromium executable not found; set PI_BROWSER_SMOKE_CHROME. Tried: ${chromeCandidates.join(", ")}`);
@@ -50,6 +66,7 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const orchestrationSteps = results.filter((item) => String(item.step || "").startsWith("browser_orchestrate."));
 	const windowSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.window"));
 	const preNavSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.preNav"));
+	const profileSteps = orchestrationSteps.filter((item) => String(item.step || "").startsWith("browser_orchestrate.profileIsolation"));
 	const windowApplyStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowApply");
 	const windowArtifactStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowArtifact");
 	const windowDeleteStep = windowSteps.find((item) => item.step === "browser_orchestrate.windowDelete");
@@ -57,6 +74,11 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const preNavArtifactStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavArtifact");
 	const preNavStopStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavStop");
 	const preNavDeleteStep = preNavSteps.find((item) => item.step === "browser_orchestrate.preNavDelete");
+	const profileApplyStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationApply");
+	const profileStorageStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationStorage");
+	const profileDeleteAStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationDeleteA");
+	const profileDeleteStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationDelete");
+	const profileArtifactStep = profileSteps.find((item) => item.step === "browser_orchestrate.profileIsolationArtifact");
 	const orchestrationId = orchestrationSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const windowOrchestrationId = windowSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
 	const preNavigationOrchestrationId = preNavSteps.find((item) => typeof item.orchestrationId === "string")?.orchestrationId;
@@ -66,6 +88,8 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 	const windowBindings = Array.isArray(windowApplyStep?.bindings) ? windowApplyStep.bindings : Array.isArray(windowArtifactStep?.bindings) ? windowArtifactStep.bindings : [];
 	const preNavigationOperationResults = [preNavApplyStep, preNavStopStep, preNavDeleteStep].flatMap((item) => Array.isArray(item?.operationResults) ? item.operationResults : []);
 	const preNavigationBindings = Array.isArray(preNavApplyStep?.bindings) ? preNavApplyStep.bindings : Array.isArray(preNavArtifactStep?.bindings) ? preNavArtifactStep.bindings : [];
+	const profileOperationResults = [profileApplyStep, profileDeleteAStep, profileDeleteStep].flatMap((item) => Array.isArray(item?.operationResults) ? item.operationResults : []);
+	const profileBindings = Array.isArray(profileApplyStep?.bindings) ? profileApplyStep.bindings : [];
 	const artifactPaths = orchestrationSteps.map((item) => item.path).filter((item) => typeof item === "string");
 	const windowTabGroups = {
 		windowOrchestrationId,
@@ -88,7 +112,21 @@ function extractOrchestrationDiagnostics(smokeArtifact) {
 		uninstallCount: preNavigationOperationResults.filter((item) => item.action === "uninstallPreNavigationHook").length,
 		effectStepOk: preNavSteps.find((item) => item.step === "browser_orchestrate.preNavEffect")?.ok === true,
 	};
-	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, preNavigationOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, preNavigationOperationResults, preNavigationBindings, preNavigationHooks, artifactPaths } : undefined;
+	const profileIsolation = {
+		profileOrchestrationIds: Array.from(new Set(profileSteps.flatMap((item) => Array.isArray(item.orchestrationIds) ? item.orchestrationIds : typeof item.orchestrationId === "string" ? [item.orchestrationId] : []))),
+		profileIds: Array.from(new Set(profileBindings.map((item) => item.profileId).filter(Boolean))),
+		profiles: Array.isArray(profileApplyStep?.profiles) ? profileApplyStep.profiles : [],
+		bridgePorts: Array.from(new Set((Array.isArray(profileApplyStep?.profiles) ? profileApplyStep.profiles : []).map((item) => item.bridgePort).filter((item) => typeof item === "number"))),
+		operationResults: profileOperationResults,
+		bindings: profileBindings,
+		cookieIsolation: { a: profileStorageStep?.a?.cookiePresent === true && profileStorageStep?.a?.forbiddenCookieAbsent === true, b: profileStorageStep?.b?.cookiePresent === true && profileStorageStep?.b?.forbiddenCookieAbsent === true },
+		storageIsolation: { a: profileStorageStep?.a?.localMatches === true && profileStorageStep?.a?.sessionMatches === true, b: profileStorageStep?.b?.localMatches === true && profileStorageStep?.b?.sessionMatches === true },
+		deleteAOk: profileDeleteAStep?.ok === true,
+		cleanup: profileDeleteStep?.cleanup || profileArtifactStep?.cleanup,
+		artifactPath: profileArtifactStep?.path,
+		artifactPrivacy: profileArtifactStep?.artifactPrivacy,
+	};
+	return orchestrationSteps.length ? { orchestrationId, windowOrchestrationId, preNavigationOrchestrationId, steps: orchestrationSteps.map((item) => ({ step: item.step, ok: item.ok })), operationResults, bindings, windowOperationResults, windowBindings, windowTabGroups, preNavigationOperationResults, preNavigationBindings, preNavigationHooks, profileIsolation, artifactPaths } : undefined;
 }
 async function fetchJson(url) {
 	const res = await fetch(url);
@@ -179,6 +217,7 @@ const runId = String(Date.now());
 const profileDir = path.join(tempRoot, `smoke-profile-${runId}`);
 const extensionDir = path.join(tempRoot, `smoke-extension-${runId}`);
 let chrome;
+let chromeExe;
 let smokeChild;
 let chromeStdout = "";
 let chromeStderr = "";
@@ -196,7 +235,7 @@ try {
 	debugPort = await freePort(9229, 9260);
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
 	await patchExtensionPort(extensionDir, bridgePort);
-	const chromeExe = chromePath();
+	chromeExe = chromePath();
 	const chromeProfileDir = windowsPathForChrome(profileDir, chromeExe);
 	const chromeExtensionDir = windowsPathForChrome(extensionDir, chromeExe);
 	const smokeResultPath = innerSmokeResultPath(resultPath);
@@ -236,6 +275,7 @@ try {
 	process.exitCode = 1;
 } finally {
 	if (chrome?.pid) {
+		stopWindowsChromeForProfile(chromeExe, profileDir, debugPort);
 		if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" });
 		else chrome.kill("SIGTERM");
 	}

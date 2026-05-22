@@ -73,7 +73,8 @@ export class DiffPlanner {
 		if (workerBootChanged) diagnostics.push({ source: "diff", reason: "service_worker_boot_changed", previousWorkerBootId: previousActual?.bridge.workerBootId, workerBootId: actual.bridge.workerBootId });
 		const phaseCounts: Record<string, number> = {};
 		let seq = 0;
-		const push = (phase: BrowserOrchestrationPhase, action: ReconcileOperation["action"], session: NormalizedDesiredSession, tab: NormalizedDesiredTab, options: { reason: string; dependsOn?: string[]; required?: boolean; redactedParams?: JsonRecord; tabId?: number; browserId?: string; windowId?: number; groupId?: number; cookie?: NormalizedDesiredCookie; sessionId?: string; hook?: NormalizedPreNavigationHookMetadata; hookIdentifier?: string }): ReconcileOperation => {
+		let ensureProfileOp: ReconcileOperation | undefined;
+		const push = (phase: BrowserOrchestrationPhase, action: ReconcileOperation["action"], session: NormalizedDesiredSession, tab: NormalizedDesiredTab, options: { reason: string; dependsOn?: string[]; required?: boolean; redactedParams?: JsonRecord; tabId?: number; browserId?: string; windowId?: number; groupId?: number; profileId?: string; cookie?: NormalizedDesiredCookie; sessionId?: string; hook?: NormalizedPreNavigationHookMetadata; hookIdentifier?: string }): ReconcileOperation => {
 			addCount(phaseCounts, phase);
 			const id = `op-${++seq}-${phase}-${action}`;
 			const hookKey = options.hook ? preNavigationHookKey(options.hook) : undefined;
@@ -89,6 +90,7 @@ export class DiffPlanner {
 					browserId: options.browserId,
 					windowId: options.windowId,
 					groupId: options.groupId,
+					profileId: options.profileId,
 					cookieKey: options.cookie?.key,
 					cookieName: options.cookie?.name,
 					sessionId: options.sessionId,
@@ -106,6 +108,17 @@ export class DiffPlanner {
 			operations.push(op);
 			return op;
 		};
+
+		if (desired.isolation.scope === "profile") {
+			const firstSession = desired.sessions.find((session) => session.tabs.length > 0);
+			const firstTab = firstSession?.tabs[0];
+			const profileId = desired.isolation.profile?.profileId;
+			const profileConnected = !!profileId && (actual.profiles || []).some((profile) => profile.profileId === profileId && profile.browserId);
+			const profileAlreadyBound = !!profileId && (this.store.get(desired.orchestrationId)?.bindings || []).some((binding) => binding.profileId === profileId);
+			if (firstSession && firstTab && profileId && (!profileConnected || (desired.isolation.profile?.reuse === "none" && !profileAlreadyBound))) {
+				ensureProfileOp = push("profile", "ensureProfile", firstSession, firstTab, { reason: profileConnected ? "managed profile restart requested" : "managed profile is required for physical isolation", required: true, profileId, redactedParams: { profileId, lifecycle: desired.isolation.profile?.lifecycle, reuse: desired.isolation.profile?.reuse, cleanup: desired.isolation.profile?.cleanup } });
+			}
+		}
 
 		for (const session of desired.sessions) {
 			const sessionEnsureOps: ReconcileOperation[] = [];
@@ -127,12 +140,12 @@ export class DiffPlanner {
 						const createParams = planParamsForTab(tab, { create: true, preNavigationHookCount: desiredPreNavigationHooks.length });
 						const shouldCreateWindow = session.ownedWindow.enabled && !createOwnedWindowOp && (!existingOwnedWindowId || binding?.windowOwned) && session.tabs[0]?.role === tab.role;
 						if (shouldCreateWindow) {
-							ensureOp = push("window", "createWindow", session, tab, { reason: binding ? "owned window tab is missing" : "desired session requires an owned window", required: tab.required, browserId: binding?.browserId, redactedParams: { ...createParams, createWindow: true, ownedWindow: session.ownedWindow } });
+							ensureOp = push("window", "createWindow", session, tab, { reason: binding ? "owned window tab is missing" : "desired session requires an owned window", dependsOn: ensureProfileOp ? [ensureProfileOp.id] : undefined, required: tab.required, browserId: binding?.browserId, profileId: desired.isolation.profile?.profileId, redactedParams: { ...createParams, createWindow: true, ownedWindow: session.ownedWindow } });
 							createOwnedWindowOp = ensureOp;
 						} else {
-							const dependsOn = createOwnedWindowOp ? [createOwnedWindowOp.id] : undefined;
+							const dependsOn = [ensureProfileOp?.id, createOwnedWindowOp?.id].filter((item): item is string => !!item);
 							const targetWindowId = binding?.windowOwned ? binding.windowId : existingOwnedWindowId;
-							ensureOp = push("tab", "createTab", session, tab, { reason: binding ? "owned bound tab is missing" : "desired tab has no binding", dependsOn, required: tab.required, browserId: binding?.browserId, windowId: targetWindowId, redactedParams: { ...createParams, browserId: binding?.browserId, windowId: targetWindowId } });
+							ensureOp = push("tab", "createTab", session, tab, { reason: binding ? "owned bound tab is missing" : "desired tab has no binding", dependsOn: dependsOn.length ? dependsOn : undefined, required: tab.required, browserId: binding?.browserId, windowId: targetWindowId, profileId: desired.isolation.profile?.profileId, redactedParams: { ...createParams, browserId: binding?.browserId, windowId: targetWindowId } });
 						}
 						sessionEnsureOps.push(ensureOp);
 					}
@@ -147,8 +160,8 @@ export class DiffPlanner {
 				let navigateOp: ReconcileOperation | undefined;
 				let needsVerify = !!ensureOp;
 				const canTargetTab = !!actualTab?.exists || !!ensureOp;
-				const preNavigationDeps = [ensureOp?.id].filter((item): item is string => !!item);
-				const verifyDeps = [ensureOp?.id].filter((item): item is string => !!item);
+				const preNavigationDeps = [ensureProfileOp?.id, ensureOp?.id].filter((item): item is string => !!item);
+				const verifyDeps = [ensureProfileOp?.id, ensureOp?.id].filter((item): item is string => !!item);
 				const network = session.networkRecorder;
 				let recorderDrift = false;
 				let networkSessionId: string | undefined;
@@ -161,7 +174,7 @@ export class DiffPlanner {
 						|| explicitConfigDrift(actualTab?.networkRecorder?.config, network.config)
 						|| (workerBootChanged && !!binding?.networkSessionId);
 					if (recorderDrift && network.startBeforeNavigate) {
-						const op = push("recorder-pre-nav", "startNetwork", session, tab, { reason: workerBootChanged ? "service worker restarted; restart network recorder before navigation" : "network recorder drift before navigation", dependsOn: ensureOp ? [ensureOp.id] : undefined, required: network.required, tabId, browserId, sessionId: networkSessionId, redactedParams: { sessionId: networkSessionId, startBeforeNavigate: true, config: network.config, configHash: networkConfigHash } });
+						const op = push("recorder-pre-nav", "startNetwork", session, tab, { reason: workerBootChanged ? "service worker restarted; restart network recorder before navigation" : "network recorder drift before navigation", dependsOn: [ensureProfileOp?.id, ensureOp?.id].filter((item): item is string => !!item), required: network.required, tabId, browserId, sessionId: networkSessionId, redactedParams: { sessionId: networkSessionId, startBeforeNavigate: true, config: network.config, configHash: networkConfigHash } });
 						preNavigationDeps.push(op.id);
 						verifyDeps.push(op.id);
 						needsVerify = true;
@@ -195,7 +208,7 @@ export class DiffPlanner {
 					needsVerify = true;
 				}
 				if (network?.enabled && canTargetTab && recorderDrift && !network.startBeforeNavigate) {
-					const op = push("recorder", "startNetwork", session, tab, { reason: workerBootChanged ? "service worker restarted; restart network recorder" : "network recorder drift", dependsOn: [ensureOp?.id, navigateOp?.id].filter((item): item is string => !!item), required: network.required, tabId, browserId, sessionId: networkSessionId, redactedParams: { sessionId: networkSessionId, config: network.config, configHash: networkConfigHash } });
+					const op = push("recorder", "startNetwork", session, tab, { reason: workerBootChanged ? "service worker restarted; restart network recorder" : "network recorder drift", dependsOn: [ensureProfileOp?.id, ensureOp?.id, navigateOp?.id].filter((item): item is string => !!item), required: network.required, tabId, browserId, sessionId: networkSessionId, redactedParams: { sessionId: networkSessionId, config: network.config, configHash: networkConfigHash } });
 					verifyDeps.push(op.id);
 					needsVerify = true;
 				}
@@ -205,7 +218,7 @@ export class DiffPlanner {
 					const fingerprintDrift = !!hook.installFingerprint && actualTab?.hookDispatcher?.installFingerprint !== hook.installFingerprint;
 					const hookDrift = actualTab?.hookDispatcher?.installed !== true || actualTab?.hookDispatcher?.sessionId !== sessionId || fingerprintDrift || (workerBootChanged && !!binding?.hookSessionId);
 					if (hookDrift) {
-						const op = push("hook", "installHook", session, tab, { reason: workerBootChanged ? "service worker restarted; reinstall hook dispatcher" : fingerprintDrift ? "hook fingerprint drift" : "hook dispatcher drift", dependsOn: [ensureOp?.id, navigateOp?.id].filter((item): item is string => !!item), required: hook.required, tabId, browserId, sessionId, redactedParams: { sessionId, targets: hook.targets, options: hook.options, bufferSize: hook.bufferSize, force: hook.force, installFingerprint: hook.installFingerprint } });
+						const op = push("hook", "installHook", session, tab, { reason: workerBootChanged ? "service worker restarted; reinstall hook dispatcher" : fingerprintDrift ? "hook fingerprint drift" : "hook dispatcher drift", dependsOn: [ensureProfileOp?.id, ensureOp?.id, navigateOp?.id].filter((item): item is string => !!item), required: hook.required, tabId, browserId, sessionId, redactedParams: { sessionId, targets: hook.targets, options: hook.options, bufferSize: hook.bufferSize, force: hook.force, installFingerprint: hook.installFingerprint } });
 						verifyDeps.push(op.id);
 						needsVerify = true;
 					}
@@ -220,7 +233,7 @@ export class DiffPlanner {
 				const actualGroupIds = actualTabs.map((tab) => tab?.groupId).filter((groupId): groupId is number => typeof groupId === "number" && groupId > 0);
 				const sameGroup = actualTabs.every((tab) => tab?.exists) && actualGroupIds.length === session.tabs.length && new Set(actualGroupIds).size === 1;
 				if (!degraded && (!sameGroup || bindings.some((binding) => binding?.tabGroupsStatus !== "available"))) {
-					push("visual-grouping", "groupTabs", session, fallbackTab, { reason: "visual grouping requested for owned session tabs", dependsOn: sessionEnsureOps.map((op) => op.id), required: false, groupId: sameGroup ? actualGroupIds[0] : undefined, redactedParams: { sessionTag: session.tag, tabRoles: session.tabs.map((tab) => tab.role), title: session.visualGrouping.title, color: session.visualGrouping.color, collapsed: session.visualGrouping.collapsed } });
+					push("visual-grouping", "groupTabs", session, fallbackTab, { reason: "visual grouping requested for owned session tabs", dependsOn: [ensureProfileOp?.id, ...sessionEnsureOps.map((op) => op.id)].filter((item): item is string => !!item), required: false, groupId: sameGroup ? actualGroupIds[0] : undefined, redactedParams: { sessionTag: session.tag, tabRoles: session.tabs.map((tab) => tab.role), title: session.visualGrouping.title, color: session.visualGrouping.color, collapsed: session.visualGrouping.collapsed } });
 				}
 			}
 			for (const cookie of session.cookies) {
@@ -229,7 +242,9 @@ export class DiffPlanner {
 				if (!drift) continue;
 				push("cookie", cookie.action === "remove" ? "removeCookie" : "setCookie", session, fallbackTab || { sessionTag: session.tag, role: cookie.tabRole, url: cookie.url, origin: cookie.origin, reuse: "owned", active: false, waitUntil: "none", recreateOnMissing: false, required: cookie.required }, {
 					reason: cookie.action === "remove" ? "cookie is present and must be removed" : "cookie is missing or differs from desired hash",
+					dependsOn: ensureProfileOp ? [ensureProfileOp.id] : undefined,
 					required: cookie.required,
+					profileId: desired.isolation.profile?.profileId,
 					cookie,
 					redactedParams: redactedCookieParams(cookie),
 				});

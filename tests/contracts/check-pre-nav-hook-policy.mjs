@@ -72,10 +72,10 @@ assert(coordinatorDoc.includes("禁止 Desired、runtime store、status、summar
 
 const roadmap = read("docs/browser-orchestration-next-roadmap.md");
 assert(roadmap.includes("状态：已完成 runtime 实现与 smoke gate"), "roadmap must mark TODO229 runtime complete");
-assert(roadmap.includes("下一步执行 TODO230"), "roadmap next step must move to TODO230");
+assert(roadmap.includes("TODO233. Managed Profile-first 实现 Gate") && roadmap.includes("状态：已完成 runtime 实现与 smoke gate"), "roadmap must mark TODO233 runtime complete");
 const todo = read("TODO.md");
 assert(todo.includes("## 229. Pre-navigation Hook 实现与 Smoke") && todo.includes("- [x] Contract：`check:pre-nav-hook-policy`"), "TODO.md must mark TODO229 contract complete");
-assert(todo.includes("TODO 223-229 已完成；下一步执行 TODO 230"), "TODO.md next-step ordering must point to TODO230");
+assert(todo.includes("TODO 223-233 已完成") && todo.includes("完整 Incognito 实现如需推进，另开 TODO 234"), "TODO.md next-step ordering must mark TODO233 complete and defer full Incognito to TODO234");
 
 const types = read("src/driver/orchestration/types.ts");
 for (const requiredType of [

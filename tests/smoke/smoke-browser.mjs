@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildContentScript } from "../../src/content/buildContentScript.ts";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
-import { preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
+import { BrowserOrchestrationCoordinator, PersistentOrchestrationStore, preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
 import { buildPickScript } from "../../src/pick/buildPickScript.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { diagnoseBridgePortInUse } from "./smokePortDiagnostics.mjs";
@@ -16,12 +17,13 @@ const smokeResultPath = path.resolve(process.env.PI_BROWSER_SMOKE_BROWSER_RESULT
 const transferSmoke = process.env.PI_BROWSER_SMOKE_TRANSFER === "1" || process.argv.includes("--transfer");
 const minimalSmoke = process.env.PI_BROWSER_SMOKE_MINIMAL === "1" || process.argv.includes("--minimal");
 const extensionTimeoutMs = Number(process.env.PI_BROWSER_SMOKE_EXTENSION_TIMEOUT_MS || 15_000);
-const bridge = new BrowserBridgeServer();
+const bridge = new BrowserBridgeServer({ profileExtensionSource: process.env.PI_BROWSER_SMOKE_EXTENSION_DIR ? path.resolve(process.env.PI_BROWSER_SMOKE_EXTENSION_DIR) : undefined });
 const results = [];
 
 function record(step, ok, data = {}) { results.push({ step, ok, ...data, t: Date.now() }); }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
+function sha256(value) { return createHash("sha256").update(String(value)).digest("hex"); }
 async function waitUntil(predicate, label, timeoutMs = 8_000) {
 	const deadline = Date.now() + timeoutMs;
 	let last;
@@ -127,9 +129,24 @@ function compactBindings(result) {
 		windowOwned: binding.windowOwned,
 		windowCloseOnDelete: binding.windowCloseOnDelete,
 		groupId: binding.groupId,
+		profileId: binding.profileId,
 		tabGroupsStatus: binding.tabGroupsStatus,
 		owned: binding.owned,
 		preNavigationHooks: Array.isArray(binding.preNavigationHooks) ? binding.preNavigationHooks.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, identifier: hook.identifier, effectVerifiedAt: hook.effectVerifiedAt })) : [],
+	}));
+}
+
+function compactProfiles(profiles) {
+	return (Array.isArray(profiles) ? profiles : []).map((profile) => ({
+		profileId: profile.profileId,
+		bridgePort: profile.bridgePort,
+		debugPort: profile.debugPort,
+		browserId: profile.browserId,
+		processId: profile.processId,
+		owned: profile.owned,
+		cleanup: profile.cleanup,
+		profileDir: profile.profileDir,
+		extensionDir: profile.extensionDir,
 	}));
 }
 
@@ -297,6 +314,173 @@ async function runOrchestrationSmoke() {
 	}
 }
 
+async function runPersistentAdoptionSmoke() {
+	const origin = `http://127.0.0.1:${smokePort}`;
+	const orchestrationId = `smoke-persist-${Date.now()}`;
+	const desiredUrl = `${origin}/persistent-adoption?run=${encodeURIComponent(orchestrationId)}`;
+	const cookieName = `pi_persist_${Date.now()}`;
+	const cookieSecret = "orchestration-persistence-secret";
+	const stateDir = path.join(outDir, "smoke-orchestration-state");
+	const statePath = path.join(stateDir, "state.v1.json");
+	const artifactPath = path.join(outDir, "smoke-orchestration-persistence-result.json");
+	const desired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId,
+		allowedOrigins: [origin],
+		defaults: { timeoutMs: 15_000, navigationTimeoutMs: 10_000 },
+		sessions: [{ tag: "persist", tabs: [{ role: "main", url: desiredUrl, waitUntil: "complete" }], cookies: [{ name: cookieName, value: cookieSecret, path: "/" }] }],
+	};
+	const envelope = { orchestrationId, artifactPath, statePath };
+	await rm(stateDir, { recursive: true, force: true });
+	const first = new BrowserOrchestrationCoordinator(bridge, { persistence: new PersistentOrchestrationStore({ statePath, driverRunId: `${orchestrationId}-run-a`, piSessionId: "smoke-session" }) });
+	const restarted = new BrowserOrchestrationCoordinator(bridge, { persistence: new PersistentOrchestrationStore({ statePath, driverRunId: `${orchestrationId}-run-b`, piSessionId: "smoke-session" }) });
+	try {
+		envelope.apply = await first.apply(desired, { timeoutMs: 20_000 });
+		const binding = envelope.apply.bindings[0];
+		record("browser_orchestrate.persistenceApply", envelope.apply.ok === true && Boolean(binding?.tabId), { orchestrationId, bindings: compactBindings(envelope.apply), operationResults: compactOperationResults(envelope.apply) });
+		const stateText = await readFile(statePath, "utf8");
+		if (stateText.includes(cookieSecret)) throw new Error("orchestration persistence smoke state leaked raw cookie value");
+		envelope.stateFile = { path: statePath, bytes: stateText.length, rawCookieLeaked: false };
+		envelope.load = await restarted.loadPersistentState();
+		envelope.staleStatus = await restarted.status(orchestrationId, { timeoutMs: 10_000 });
+		record("browser_orchestrate.persistenceLoad", envelope.load.loaded === 1 && envelope.staleStatus.state?.persistence?.adoptionRequired === true, { orchestrationId, persistence: envelope.staleStatus.state?.persistence });
+		const tabsBeforeDelete = bridge.getTabs().length;
+		envelope.staleDelete = await restarted.delete(orchestrationId, { timeoutMs: 10_000 });
+		record("browser_orchestrate.persistenceStaleDelete", envelope.staleDelete.ok === false && envelope.staleDelete.failures?.[0]?.code === "ORCHESTRATION_TARGET_STALE" && bridge.getTabs().length === tabsBeforeDelete, { orchestrationId, failure: envelope.staleDelete.failures?.[0] });
+		envelope.badAdoption = await restarted.apply({ ...desired, adoption: { enabled: true, orchestrationId, resourceTypes: ["tab"], verifyOrigins: ["https://wrong.invalid"], verifyUrls: ["https://wrong.invalid/app"], requireOwnedFingerprint: true } }, { timeoutMs: 15_000 });
+		record("browser_orchestrate.persistenceBadAdoption", envelope.badAdoption.ok === false && bridge.getTabs().some((tab) => tab.tabId === binding.tabId), { orchestrationId, failure: envelope.badAdoption.failures?.[0] });
+		envelope.adopt = await restarted.apply({ ...desired, adoption: { enabled: true, orchestrationId, resourceTypes: ["tab", "cookie"], verifyOrigins: [origin], verifyUrls: [desiredUrl], requireOwnedFingerprint: true } }, { timeoutMs: 20_000 });
+		record("browser_orchestrate.persistenceAdopt", envelope.adopt.ok === true && envelope.adopt.persistence?.status !== "adoption_required", { orchestrationId, persistence: envelope.adopt.persistence, bindings: compactBindings(envelope.adopt) });
+	} finally {
+		envelope.delete = await restarted.delete(orchestrationId, { timeoutMs: 15_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		record("browser_orchestrate.persistenceDelete", envelope.delete.ok === true && envelope.delete.operationResults?.some((item) => item.action === "closeTab" && item.status === "succeeded"), { orchestrationId, operationResults: compactOperationResults(envelope.delete) });
+		const text = JSON.stringify(envelope);
+		if (text.includes(cookieSecret)) throw new Error("orchestration persistence smoke artifact leaked raw cookie value");
+		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+		record("browser_orchestrate.persistenceArtifact", true, { orchestrationId, path: artifactPath, statePath });
+	}
+}
+
+function profileDesired(orchestrationId, profileId, sessionTag, tabRole, url, cookieName, cookieValue) {
+	return {
+		apiVersion: "pi.browser/v1",
+		orchestrationId,
+		allowedOrigins: [new URL(url).origin],
+		defaults: { timeoutMs: 30_000, navigationTimeoutMs: 12_000 },
+		isolation: { scope: "profile", profile: { profileId, lifecycle: "managed", reuse: "none", cleanup: "delete" } },
+		sessions: [{ tag: sessionTag, tabs: [{ role: tabRole, url, waitUntil: "complete" }], cookies: [{ name: cookieName, value: cookieValue, path: "/" }] }],
+	};
+}
+
+async function readProfileState(target, storageKey, cookieName) {
+	const result = await bridge.executeJavaScript(
+		`return { cookie: document.cookie || "", local: localStorage.getItem(${JSON.stringify(storageKey)}), session: sessionStorage.getItem(${JSON.stringify(storageKey)}), href: location.href };`,
+		{ target, timeoutMs: 10_000 },
+	);
+	const data = result.data || {};
+	return {
+		cookieText: String(data.cookie || ""),
+		local: data.local === null || data.local === undefined ? null : String(data.local),
+		session: data.session === null || data.session === undefined ? null : String(data.session),
+		href: String(data.href || ""),
+		targetSource: result.target?.source,
+		cookieName,
+	};
+}
+
+function summarizeProfileState(state, expected, forbidden, cookieName) {
+	return {
+		targetSource: state.targetSource,
+		hrefHash: sha256(state.href),
+		cookiePresent: state.cookieText.includes(`${cookieName}=${expected.cookie}`),
+		forbiddenCookieAbsent: !state.cookieText.includes(`${cookieName}=${forbidden.cookie}`),
+		localMatches: state.local === expected.local,
+		sessionMatches: state.session === expected.session,
+		forbiddenLocalAbsent: state.local !== forbidden.local,
+		forbiddenSessionAbsent: state.session !== forbidden.session,
+		cookieHash: state.cookieText.includes(`${cookieName}=${expected.cookie}`) ? sha256(expected.cookie) : undefined,
+		localHash: state.local ? sha256(state.local) : undefined,
+		sessionHash: state.session ? sha256(state.session) : undefined,
+	};
+}
+
+async function runProfileIsolationSmoke() {
+	const coordinator = bridge.orchestrator();
+	const origin = `http://127.0.0.1:${smokePort}`;
+	const runId = Date.now();
+	const artifactDir = path.join(outDir, "profile-isolation");
+	const artifactPath = path.join(artifactDir, "profile-isolation-result.json");
+	const profileA = `smoke-profile-a-${runId}`;
+	const profileB = `smoke-profile-b-${runId}`;
+	const orchestrationA = `smoke-profile-a-${runId}`;
+	const orchestrationB = `smoke-profile-b-${runId}`;
+	const cookieName = `pi_profile_${runId}`;
+	const storageKey = `pi_profile_storage_${runId}`;
+	const secretA = { cookie: `profile-cookie-a-${runId}`, local: `profile-local-a-${runId}`, session: `profile-session-a-${runId}` };
+	const secretB = { cookie: `profile-cookie-b-${runId}`, local: `profile-local-b-${runId}`, session: `profile-session-b-${runId}` };
+	const targetA = { orchestrationId: orchestrationA, sessionTag: "profile-a", tabRole: "main", profileId: profileA };
+	const targetB = { orchestrationId: orchestrationB, sessionTag: "profile-b", tabRole: "main", profileId: profileB };
+	const desiredA = profileDesired(orchestrationA, profileA, "profile-a", "main", `${origin}/profile-isolation?slot=a&run=${runId}`, cookieName, secretA.cookie);
+	const desiredB = profileDesired(orchestrationB, profileB, "profile-b", "main", `${origin}/profile-isolation?slot=b&run=${runId}`, cookieName, secretB.cookie);
+	const envelope = { artifactPrivacy: "local_redacted_profile_isolation", artifactPath, profiles: {}, bridgePorts: [], operationResults: {} };
+	let profileDirs = [];
+	let extensionDirs = [];
+	try {
+		await mkdir(artifactDir, { recursive: true });
+		envelope.planA = await coordinator.plan(desiredA, { timeoutMs: 35_000 });
+		envelope.planB = await coordinator.plan(desiredB, { timeoutMs: 35_000 });
+		const planActions = [...envelope.planA.plan.operations, ...envelope.planB.plan.operations].map((item) => item.action);
+		record("browser_orchestrate.profileIsolationPlan", planActions.filter((action) => action === "ensureProfile").length === 2, { orchestrationIds: [orchestrationA, orchestrationB], actions: planActions });
+
+		envelope.applyA = await coordinator.apply(desiredA, { timeoutMs: 60_000 });
+		envelope.applyB = await coordinator.apply(desiredB, { timeoutMs: 60_000 });
+		const bindingsA = compactBindings(envelope.applyA);
+		const bindingsB = compactBindings(envelope.applyB);
+		const profiles = compactProfiles(bridge.managedProfiles());
+		profileDirs = profiles.map((profile) => profile.profileDir).filter(Boolean);
+		extensionDirs = profiles.map((profile) => profile.extensionDir).filter(Boolean);
+		const bridgePorts = Array.from(new Set(profiles.map((profile) => profile.bridgePort).filter(Boolean)));
+		envelope.profiles.afterApply = profiles;
+		envelope.bridgePorts = bridgePorts;
+		envelope.operationResults.applyA = compactOperationResults(envelope.applyA);
+		envelope.operationResults.applyB = compactOperationResults(envelope.applyB);
+		record("browser_orchestrate.profileIsolationApply", envelope.applyA.ok === true && envelope.applyB.ok === true && bindingsA.some((binding) => binding.profileId === profileA) && bindingsB.some((binding) => binding.profileId === profileB) && bridgePorts.length >= 2, { orchestrationIds: [orchestrationA, orchestrationB], bindings: [...bindingsA, ...bindingsB], profiles });
+
+		await bridge.executeJavaScript(`(() => { localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(secretA.local)}); sessionStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(secretA.session)}); return true; })()`, { target: targetA, timeoutMs: 10_000 });
+		await bridge.executeJavaScript(`(() => { localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(secretB.local)}); sessionStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(secretB.session)}); return true; })()`, { target: targetB, timeoutMs: 10_000 });
+		const stateA = await readProfileState(targetA, storageKey, cookieName);
+		const stateB = await readProfileState(targetB, storageKey, cookieName);
+		const summaryA = summarizeProfileState(stateA, secretA, secretB, cookieName);
+		const summaryB = summarizeProfileState(stateB, secretB, secretA, cookieName);
+		envelope.cookieIsolation = { a: { present: summaryA.cookiePresent, forbiddenAbsent: summaryA.forbiddenCookieAbsent, valueHash: summaryA.cookieHash }, b: { present: summaryB.cookiePresent, forbiddenAbsent: summaryB.forbiddenCookieAbsent, valueHash: summaryB.cookieHash } };
+		envelope.storageIsolation = { a: { localMatches: summaryA.localMatches, sessionMatches: summaryA.sessionMatches, localHash: summaryA.localHash, sessionHash: summaryA.sessionHash }, b: { localMatches: summaryB.localMatches, sessionMatches: summaryB.sessionMatches, localHash: summaryB.localHash, sessionHash: summaryB.sessionHash } };
+		record("browser_orchestrate.profileIsolationStorage", [summaryA, summaryB].every((item) => item.targetSource === "orchestration" && item.cookiePresent && item.forbiddenCookieAbsent && item.localMatches && item.sessionMatches && item.forbiddenLocalAbsent && item.forbiddenSessionAbsent), { orchestrationIds: [orchestrationA, orchestrationB], a: summaryA, b: summaryB });
+
+		envelope.deleteA = await coordinator.delete(orchestrationA, { timeoutMs: 30_000 });
+		const stateBAfterDeleteA = await readProfileState(targetB, storageKey, cookieName);
+		const summaryBAfterDeleteA = summarizeProfileState(stateBAfterDeleteA, secretB, secretA, cookieName);
+		envelope.cleanupAfterDeleteA = { profiles: compactProfiles(bridge.managedProfiles()), bStillIsolated: summaryBAfterDeleteA.cookiePresent && summaryBAfterDeleteA.localMatches && summaryBAfterDeleteA.sessionMatches };
+		record("browser_orchestrate.profileIsolationDeleteA", envelope.deleteA.ok === true && envelope.cleanupAfterDeleteA.bStillIsolated && !bridge.managedProfiles().some((profile) => profile.profileId === profileA), { orchestrationId: orchestrationA, operationResults: compactOperationResults(envelope.deleteA), cleanup: envelope.cleanupAfterDeleteA });
+	} finally {
+		if (!envelope.deleteA) envelope.deleteA = await coordinator.delete(orchestrationA, { timeoutMs: 30_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId: orchestrationA, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		envelope.deleteB = await coordinator.delete(orchestrationB, { timeoutMs: 30_000 }).catch((error) => ({ ok: false, action: "delete", orchestrationId: orchestrationB, failures: [{ code: error?.code || "DELETE_FAILED", message: errorMessage(error) }] }));
+		const remainingProfiles = compactProfiles(bridge.managedProfiles());
+		const cleanup = {
+			remainingProfiles,
+			profileDirsRemoved: profileDirs.every((dir) => !existsSync(dir)),
+			extensionDirsRemoved: extensionDirs.every((dir) => !existsSync(dir)),
+		};
+		envelope.cleanup = cleanup;
+		envelope.operationResults.deleteA = compactOperationResults(envelope.deleteA);
+		envelope.operationResults.deleteB = compactOperationResults(envelope.deleteB);
+		record("browser_orchestrate.profileIsolationDelete", envelope.deleteA.ok === true && envelope.deleteB.ok === true && !remainingProfiles.some((profile) => profile.profileId === profileA || profile.profileId === profileB) && cleanup.profileDirsRemoved && cleanup.extensionDirsRemoved, { orchestrationIds: [orchestrationA, orchestrationB], cleanup, operationResults: [...compactOperationResults(envelope.deleteA), ...compactOperationResults(envelope.deleteB)] });
+		const text = JSON.stringify(envelope);
+		if ([secretA.cookie, secretA.local, secretA.session, secretB.cookie, secretB.local, secretB.session].some((secret) => text.includes(secret))) throw new Error("profile isolation smoke artifact leaked raw profile cookie/storage value");
+		await writeFile(artifactPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+		record("browser_orchestrate.profileIsolationArtifact", true, { path: artifactPath, artifactPrivacy: "local_redacted_profile_isolation", cleanup });
+	}
+}
+
 let fixture;
 let tabId;
 try {
@@ -398,8 +582,10 @@ try {
 	record("screenshot", typeof shot.data?.screenshot === "string", { format: shot.data?.format });
 
 	await runOrchestrationSmoke();
+	await runPersistentAdoptionSmoke();
 	await runPreNavigationHookSmoke();
 	await runWindowTabGroupsSmoke();
+	await runProfileIsolationSmoke();
 
 	await bridge.closeTab(tabId, 5_000).catch(() => {});
 	tabId = undefined;

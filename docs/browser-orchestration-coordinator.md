@@ -1,6 +1,6 @@
 # Browser Orchestration Coordinator 生产级设计
 
-本文冻结 `browser_orchestrate` / 浏览器状态协调器的工程设计与落地边界。当前实现状态：TODO 216-222 首个生产闭环、TODO 223 Target Resolver 设计、TODO 224 Target Resolver runtime、TODO 225 Window/tabGroups primitive 设计、TODO 226 Window Isolation 与 tabGroups runtime、TODO 227 Window/tabGroups Runtime Smoke Gate、TODO 228 Pre-navigation Hook Policy 设计、TODO 229 Pre-navigation Hook runtime 与 smoke gate 均已完成；下一步进入 TODO 230 Persistent State 安全设计。
+本文冻结 `browser_orchestrate` / 浏览器状态协调器的工程设计与落地边界。当前实现状态：TODO 216-222 首个生产闭环、TODO 223 Target Resolver 设计、TODO 224 Target Resolver runtime、TODO 225 Window/tabGroups primitive 设计、TODO 226 Window Isolation 与 tabGroups runtime、TODO 227 Window/tabGroups Runtime Smoke Gate、TODO 228 Pre-navigation Hook Policy 设计、TODO 229 Pre-navigation Hook runtime 与 smoke gate、TODO 230 Persistent State 安全设计、TODO 231 Persistent State 实现与 Adoption Gate、TODO 232 Profile/Incognito 隔离设计、TODO 233 Managed Profile-first 实现 Gate 均已完成。
 
 ## 1. 目标与适用范围
 
@@ -20,6 +20,7 @@
 - owned window 创建/绑定/cleanup 与保守 ownership 校验。
 - 可降级 Chrome `tabGroups` 视觉分组 diagnostics。
 - pre-navigation document-start hook 安装、验证、清理与 watch 恢复；新 tab/window 先 `about:blank` 绑定，再安装 `frame.addNewDocumentScript` 后导航。
+- managed profile-first 物理隔离：显式 `isolation.scope:"profile"` 创建独立 `--user-data-dir`、extension copy、bridge port 与 driver-owned browser process。
 - navigation/load state 收敛。
 - browser cookie set/remove/list 作为底层原语。
 - network recorder start/status/stop/reconfigure。
@@ -29,7 +30,7 @@
 
 当前版本仍不承诺：
 
-- Chrome profile、incognito、cookie jar 强隔离。
+- Incognito、用户个人 Chrome profile 或任意外部 cookie jar 接管。
 - 自动漏洞判断、扫描决策、目标选择或策略推理。
 - 在 MV3 service worker 中保存高层 Desired State。
 - 任意外部脚本文本作为 Desired State；pre-navigation hook 只接受 registry-backed `hookId/version/hash` metadata。
@@ -55,6 +56,7 @@ src/driver/orchestration/
   types.ts
   normalizeDesired.ts
   OrchestrationStore.ts
+  PersistentOrchestrationStore.ts
   ActualStateCollector.ts
   DiffPlanner.ts
   ReconcileExecutor.ts
@@ -68,7 +70,8 @@ src/driver/orchestration/
 职责：
 
 - `normalizeDesired.ts`：归一化 loose tool input，校验 URL、tag、role、cookie、recorder、hook dispatcher 与 pre-navigation hook metadata。
-- `OrchestrationStore.ts`：维护内存态 desired hash、generation、bindings、owned resources、pre-navigation hook registrations、watch metadata。
+- `OrchestrationStore.ts`：维护内存态 desired hash、generation、bindings、owned resources、pre-navigation hook registrations、watch metadata；仍不直接做文件 I/O。
+- `PersistentOrchestrationStore.ts`：负责 redacted state schema validate、atomic write、startup stale/read-only load 与 redaction enforcement。
 - `ActualStateCollector.ts`：从 `BrowserBridgeServer.snapshot()`、`refreshTabs()`、`windows.list`、`tabGroups.status`、`persistent_cdp.listNewDocumentScripts`、`network.status`、`hook.status`、`cookies`、`wait.navigation/loadState` 聚合 Actual State。
 - `DiffPlanner.ts`：计算 Desired 与 Actual 的差异，生成有依赖顺序的 operation plan；pre-navigation hook operation 固定排在 navigation 前。
 - `ReconcileExecutor.ts`：按 phase、依赖和 deadline 执行 windows/tabs/tabGroups/pre-navigation hooks/cookies/navigation/network/hook/verify/cleanup 操作。
@@ -82,7 +85,7 @@ src/driver/orchestration/
 - `src/driver/BrowserBridgeServer.ts`
   - 持有 coordinator 实例。
   - 暴露 `orchestrator()` 或 thin facade 方法。
-  - `stop()` 时停止 watch loops，并按 state cleanup policy 释放 owned resources。
+  - `start()` 时加载 persistent state 为 read-only/adoptionRequired status；`stop()` 时停止 watch loops，跳过未 adoption stale state，并保存 redacted state。
 - `src/driver/types.ts`
   - 扩展 target metadata：`source:"orchestration"`、`orchestrationId`、`sessionTag`、`tabRole`。
   - 增加 orchestration 内部类型 re-export，仅限 driver/tool 共享必要部分。
@@ -481,7 +484,7 @@ Drift 类型与恢复：
 - Hook/network 默认不自动开启；必须在 Desired State 显式声明。
 - Recorder/hook sessionId 由 coordinator 生成稳定前缀：`orch:{orchestrationId}:{sessionTag}:{tabRole}:network|hook`。
 - Pre-navigation hook policy 只持久化 `hookId/enabled/params/scope/version/hash` metadata；禁止 `script/code/source` 进入 Desired/persisted state。底层 `frame.addNewDocumentScript` raw primitive 可以接收 `source`，但 orchestration policy 不从 Desired 读取或保存该字段。
-- Artifact 使用现有 `local_raw_evidence` 分类与脱敏机制。
+- Artifact 使用现有 `local_raw_evidence` 分类与脱敏机制。Persistent state policy 见 `docs/orchestration-persistence.md`；该状态文件使用 `local_redacted_orchestration_state` 分类，只保存 `redactedDesired/bindings/fingerprints`，跨 Pi session 自动 cleanup 禁止；显式 adoption 成功前 `apply/watch/stop/delete` 均拒绝副作用。
 - 不修改 Chrome 扩展安全沙箱；只复用现有权限与 native command 原语。高层策略留在 Node driver，避免 MV3 重启丢失状态或绕过 Pi 平台边界。
 
 ## 8. 可维护性与可测试性
@@ -549,5 +552,5 @@ Drift 类型与恢复：
 - Target resolver 采用 tool-level `target:{...}`，不进入 `native_command_schema.json`。
 - window-level isolation 与 Chrome `tabGroups` 视觉分组分阶段推进；`tabGroups` 不作为 hard fail 依赖。
 - pre-navigation hook policy 只持久化声明式 hook metadata，禁止持久化任意可执行脚本文本。
-- 受控持久化 orchestration state 默认 read-only/stale，跨 Pi session 自动 cleanup 禁止；adoption 必须显式声明。
-- 物理隔离采用 profile-first；Incognito 仅作为 opt-in diagnostic，不阻塞主干 smoke/release gate。
+- TODO 230/231 已冻结并实现 `docs/orchestration-persistence.md`：受控持久化 orchestration state 默认 read-only/stale，跨 Pi session 自动 cleanup 禁止；adoption 必须显式声明并校验 live resource 指纹。
+- 物理隔离运行规则见 `docs/browser-profile-isolation.md`；TODO 232 已冻结 profile-first 方案，TODO 233 已实现 `isolation.scope:"profile"` managed profile runtime 与 smoke gate；Incognito 仅作为 opt-in diagnostic，不阻塞主干 smoke/release gate。

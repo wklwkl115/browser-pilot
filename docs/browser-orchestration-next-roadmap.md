@@ -112,7 +112,7 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 | Window/tabGroups | 225-227 | P1 | 224 | owned window lifecycle、tabGroups degraded visual grouping、runtime smoke |
 | Pre-navigation Hook | 228-229 | P1 | 224 | 安全 hook registry、document-start 编排、runtime smoke |
 | Persistent State | 230-231 | P2 | 224；建议 226 后 | redacted persistence、stale/adoption gate、restart fixture |
-| Physical Isolation | 232-233 | P2/P3 | 224；建议 231 后 | profile-first 设计与 managed profile smoke；incognito opt-in diagnostic |
+| Physical Isolation | 232-233 | P2/P3 | 224；建议 231 后 | profile-first 设计与 managed profile smoke 已完成；incognito opt-in diagnostic |
 
 ## 4. TODO 执行方案
 
@@ -290,29 +290,33 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 
 ### TODO230. Persistent State 安全设计
 
+状态：已完成设计落档与静态契约；runtime save/load 与 adoption gate 已由 TODO231 完成。
+
 目标：设计 redacted orchestration state 持久化，提供重启诊断与显式 adoption 基础。
 
-范围：`OrchestrationStore.ts`、future `PersistentOrchestrationStore.ts`、`BrowserBridgeServer.ts`、driver types、orchestration docs、artifact privacy docs。
+范围：`OrchestrationStore.ts`、`PersistentOrchestrationStore.ts`、`BrowserBridgeServer.ts`、driver types、orchestration docs、artifact privacy docs。
 
 关键设计点：
 
+- state schema 为 `pi.browser.orchestration.state/v1`，默认路径 `.pi/browser-artifacts/orchestration-state/state.v1.json`。
 - state 包含 `schemaVersion/driverRunId/piSessionId/orchestrationId/redactedDesired/bindings/fingerprints`。
 - 禁止 raw cookie、body/postData/payload、任意脚本文本落盘。
-- startup load 默认 read-only/stale，不启动 watch，不 cleanup。
+- startup load 默认 `stale/readOnly/adoptionRequired`，不启动 watch，不 cleanup，不 close。
 
-实施步骤：
+实施结果：
 
-1. 定义 state path 与 schema。
-2. 定义 driverRunId/Pi session 边界。
-3. 定义 stale/adoption 状态机。
-4. 定义 redaction 与清理策略。
-5. 文档化手动恢复/清理。
+1. 新增 `docs/orchestration-persistence.md`，定义 state path、schema、driverRunId/Pi session 边界、stale/adoption 状态机、redaction 与手动清理策略。
+2. `types.ts` 增加 `OrchestrationPersistedStateFile`、persisted record/binding/fingerprint/cookie fingerprint 与 `OrchestrationAdoptionPolicy` 草案。
+3. 新增 `check:orchestration-persistence` 契约，锁定 no raw cookie/body/postData/payload/script/code/source、`OrchestrationStore` 继续纯内存，runtime 文件 I/O 仅在 `PersistentOrchestrationStore.ts`。
+4. README、AI_INSTALL、coordinator doc、TODO、CHANGELOG 已同步 persistence policy 与隐私分类 `local_redacted_orchestration_state`。
 
-验收 Gate：`npm run check:token`、`npm run check:artifact`、static persistence contract。
+验收 Gate：`npm run check:orchestration-persistence`、`npm run check:token`、`npm run check:artifact`。
 
 风险与回滚：tabId/windowId 复用导致误托管；回滚为忽略 state 文件，恢复内存 store。
 
 ### TODO231. Persistent State 实现与 Adoption Gate
+
+状态：已完成 runtime 实现、contracts 与 restart/adoption smoke gate。
 
 目标：实现持久化、重启后 read-only status、显式 adoption；禁止跨 session 自动误关。
 
@@ -324,20 +328,22 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 - Adoption 前重新 observe live resources。
 - 未 adoption 的 stale resources：status visible，no watch，no cleanup，no close。
 
-实施步骤：
+实施结果：
 
-1. 实现 save/load。
-2. startup 加载 stale state。
-3. status 显示 `adoptionRequired`。
-4. apply/watch 处理 explicit adoption。
-5. restart fixture 验证不误关旧 tab。
+1. `PersistentOrchestrationStore.ts` 实现 redacted save/load 与 atomic write。
+2. `BrowserBridgeServer.start()` 加载 stale/read-only state。
+3. `status` 显示 `adoptionRequired`，不 collect、不 cleanup。
+4. `apply/watch/stop/delete` 对未 adoption state 拒绝副作用；explicit adoption 重新 observe 并校验 live resources。
+5. lifecycle fixture 验证 restart read-only state 不误关旧 tab。
 6. smoke 验证 adoption 后才可 cleanup。
 
-验收 Gate：`npm run check`、`npm run check:lifecycle`、`npm run check:orchestration`、Edge isolated smoke restart/adoption artifact。
+验收 Gate：`npm run check`、`npm run check:lifecycle`、`npm run check:orchestration`、Edge isolated smoke restart/adoption artifact `.pi/browser-artifacts/smoke-orchestration-persistence-result.json`。
 
 风险与回滚：错误 adoption 误关用户资源；回滚为启动时不加载 persistent state。
 
 ### TODO232. Profile/Incognito 隔离设计
+
+状态：已完成设计落档与静态契约。详见 `docs/browser-profile-isolation.md`。本项冻结 profile-first 物理隔离方案、Desired schema 草案、profile lifecycle、cookie/storage 验证、incognito opt-in diagnostic 与默认 gate 边界；runtime managed profile 已由 TODO233 实现。
 
 目标：冻结 profile-first 物理隔离方案；Incognito 仅作为 opt-in diagnostic。
 
@@ -349,23 +355,25 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 - Incognito：需要用户授权扩展无痕运行；未授权只返回 diagnostic。
 - 默认 isolation 仍是 logical；profile scope 需显式声明。
 
-实施步骤：
+实施结果：
 
-1. 提炼 isolated smoke profile 启动经验。
-2. 定义 profile lifecycle：create/start/connect/stop/delete。
-3. 定义 cookie/storage 隔离验证。
-4. 定义 incognito probe。
-5. 定义 release smoke 条件。
+1. `docs/browser-profile-isolation.md` 提炼 isolated smoke profile 启动经验。
+2. 定义 managed profile lifecycle：create/start/connect/observe/stop/delete。
+3. 定义 cookie/localStorage/sessionStorage 隔离验证与 artifact 边界。
+4. 定义 incognito opt-in probe 与 `INCOGNITO_NOT_ALLOWED` diagnostic。
+5. 定义 release smoke 条件，并锁定 incognito 不进入默认 gate。
 
-验收 Gate：设计文档、static contract 确认 incognito 不进入默认 gate。
+验收 Gate：设计文档、`npm run check:profile-isolation`，contract 确认 incognito 不进入默认 gate。
 
-风险与回滚：Chrome path、端口、子进程清理跨平台复杂；回滚为不启用 profile scope。
+风险与回滚：Chrome path、端口、子进程清理跨平台复杂；TODO233 runtime 回滚方式为禁用 profile scope。
 
 ### TODO233. Managed Profile-first 实现 Gate
 
+状态：已完成 runtime 实现与 smoke gate。
+
 目标：实现 owned browser profile lifecycle 与隔离 smoke；Incognito 保持 opt-in probe，不阻塞主干。
 
-范围：future `BrowserProfileManager.ts`、`BrowserBridgeServer.ts`、driver/orchestration modules、isolated smoke、release smoke、docs/skill/CHANGELOG。
+范围：`BrowserProfileManager.ts`、`BrowserBridgeServer.ts`、driver/orchestration modules、isolated smoke、release smoke、docs/skill/CHANGELOG。
 
 关键设计点：
 
@@ -375,13 +383,13 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 - cookie/localStorage 隔离是必测。
 - Incognito 未授权返回 `INCOGNITO_NOT_ALLOWED` diagnostic。
 
-实施步骤：
+实施结果：
 
-1. 抽出 managed profile lifecycle。
-2. 支持 Desired `isolation.scope:"profile"`。
-3. target resolver 支持 profile-bound browserId。
-4. smoke 启动两个 profiles 并验证 storage 隔离。
-5. release smoke 用解包扩展验证 fresh profile。
+1. 抽出 `BrowserProfileManager.ts` managed profile lifecycle。
+2. 支持 Desired `isolation.scope:"profile"` 与 `ensureProfile/stopProfile` reconcile operations。
+3. target resolver 支持 profile-bound browserId/profileId。
+4. smoke 启动两个 profiles 并验证 cookie/localStorage/sessionStorage 隔离。
+5. release smoke 用解包扩展验证 fresh profile 并上浮 `profileIsolation` diagnostics。
 
 验收 Gate：`npm run check`、Edge isolated smoke、`release:local:smoke`，artifact 证明 profile A/B cookie/storage 不互通且 owned process 清理完成。
 
@@ -390,7 +398,8 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 ## 5. 推荐执行顺序
 
 1. TODO223 → TODO229 已完成。
-2. 下一步执行 TODO230，完成 Persistent State 安全设计。
-3. TODO230 → TODO231。
-4. TODO232 → TODO233。
-5. 完整 Incognito 实现如需推进，另开 TODO234，不纳入当前主干 gate。
+2. TODO230 已完成设计落档与静态契约。
+3. TODO231 已完成 Persistent State 与 Adoption Gate。
+4. TODO232 已完成 Profile/Incognito 隔离设计。
+5. TODO233 已完成 Managed Profile-first 实现 Gate。
+6. 完整 Incognito 实现如需推进，另开 TODO234，不纳入当前主干 gate。

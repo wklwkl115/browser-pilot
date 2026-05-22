@@ -134,6 +134,7 @@ function compactSmokeDiagnostics(smokeSummary) {
 		bindings: orchestration?.bindings,
 		windowTabGroups: orchestration?.windowTabGroups,
 		preNavigationHooks: orchestration?.preNavigationHooks,
+		profileIsolation: orchestration?.profileIsolation,
 		artifactPaths: [smokeSummary?.resultPath, artifact?.smokeResultPath, ...(Array.isArray(orchestration?.artifactPaths) ? orchestration.artifactPaths : [])].filter(Boolean),
 	};
 }

@@ -60,6 +60,7 @@ export function registerOrchestrateTool({ pi, ensureStarted }: ToolRegistrarCont
 			"Use plan or dryRun before apply/watch when target ownership, reuse, cookies, window creation, visual grouping, pre-navigation hooks, network recorder, or hook effects need review.",
 			"Treat tabGroups degraded status as diagnostic; it must not block core tab/window/navigation/cookie/network/hook reconcile.",
 			"Use preNavigationHooks only with registry-backed hookId/version/hash metadata; desiredState must not contain script/code/source fields.",
+			"Persistent state loaded after restart is read-only until desiredState.adoption explicitly verifies origins, URLs, resourceTypes, and ownership fingerprints.",
 		],
 		parameters: Type.Object({
 			action: Type.String({ description: "plan | apply | status | watch | stop | delete. Default status." }),

@@ -7,6 +7,8 @@ import type {
 	BrowserOrchestrationResultSummary,
 	NormalizedBrowserOrchestrationDesired,
 	OrchestrationBinding,
+	OrchestrationPersistedRecord,
+	OrchestrationPersistenceMetadata,
 	OrchestrationRuntimeState,
 } from "./types";
 
@@ -58,6 +60,7 @@ export class OrchestrationStore {
 			cleanupOnFailure: desired.defaults.cleanupOnFailure,
 			closeOwnedTabsOnDelete: desired.isolation.closeOwnedTabsOnDelete,
 			redactedDesired: redactDesired(desired),
+			persistence: current.persistence?.status === "adopted" ? current.persistence : undefined,
 		} : {
 			orchestrationId: desired.orchestrationId,
 			generation: desired.generation,
@@ -100,6 +103,7 @@ export class OrchestrationStore {
 	findBindingByTab(browserId: string | undefined, tabId: number | undefined): { orchestrationId: string; binding: OrchestrationBinding } | undefined {
 		if (!browserId || !tabId) return undefined;
 		for (const [orchestrationId, state] of this.states.entries()) {
+			if (state.persistence?.readOnly || state.persistence?.adoptionRequired) continue;
 			for (const binding of state.bindings) {
 				if (binding.browserId === browserId && binding.tabId === tabId) return { orchestrationId, binding };
 			}
@@ -146,6 +150,59 @@ export class OrchestrationStore {
 		return this.cloneState({ ...state, deletedAt: nowMs(), updatedAt: nowMs() });
 	}
 
+	upsertPersistedRecord(record: OrchestrationPersistedRecord, persistence: OrchestrationPersistenceMetadata): OrchestrationRuntimeState {
+		const current = this.states.get(record.orchestrationId);
+		const bindings = record.bindings.map((binding) => ({
+			sessionTag: binding.sessionTag,
+			tabRole: binding.tabRole,
+			browserId: binding.browserId,
+			browserExtensionId: binding.browserExtensionId,
+			tabId: binding.tabId,
+			windowId: binding.windowId,
+			windowOwned: binding.windowOwned,
+			windowCloseOnDelete: binding.windowCloseOnDelete,
+			groupId: binding.groupId,
+			tabGroupsStatus: binding.tabGroupsStatus,
+			owned: binding.owned,
+			desiredUrl: binding.desiredUrl,
+			createdByOrchestrator: binding.createdByOrchestrator,
+			createdAt: binding.createdAt,
+			updatedAt: binding.updatedAt,
+			networkSessionId: binding.networkSessionId,
+			networkConfigHash: binding.networkConfigHash,
+			hookSessionId: binding.hookSessionId,
+			hookFingerprint: binding.hookFingerprint,
+			preNavigationHooks: binding.preNavigationHooks,
+			workerBootId: binding.workerBootId,
+		}));
+		const state: OrchestrationRuntimeState = {
+			orchestrationId: record.orchestrationId,
+			generation: record.generation,
+			desiredHash: record.desiredHash,
+			createdAt: record.createdAt,
+			updatedAt: nowMs(),
+			deletedAt: record.deletedAt,
+			cleanupOnFailure: record.cleanupOnFailure ?? current?.cleanupOnFailure ?? true,
+			closeOwnedTabsOnDelete: record.closeOwnedTabsOnDelete ?? current?.closeOwnedTabsOnDelete ?? true,
+			bindings,
+			redactedDesired: record.redactedDesired,
+			lastResult: current?.lastResult,
+			lastFailures: current?.lastFailures,
+			persistence,
+		};
+		this.states.set(record.orchestrationId, state);
+		this.desiredById.delete(record.orchestrationId);
+		return this.cloneState(state);
+	}
+
+	markAdopted(orchestrationId: string, metadata: Omit<OrchestrationPersistenceMetadata, "status" | "readOnly" | "adoptionRequired">): OrchestrationRuntimeState | undefined {
+		const state = this.states.get(orchestrationId);
+		if (!state) return undefined;
+		state.persistence = { ...metadata, status: "adopted", readOnly: false, adoptionRequired: false, adoptedAt: nowMs() };
+		state.updatedAt = nowMs();
+		return this.cloneState(state);
+	}
+
 	snapshot(): Array<Record<string, unknown>> {
 		return Array.from(this.states.values()).map((state) => ({
 			orchestrationId: state.orchestrationId,
@@ -154,8 +211,9 @@ export class OrchestrationStore {
 			createdAt: state.createdAt,
 			updatedAt: state.updatedAt,
 			workerBootId: state.workerBootId,
+			persistence: state.persistence ? { status: state.persistence.status, readOnly: state.persistence.readOnly, adoptionRequired: state.persistence.adoptionRequired, driverRunId: state.persistence.driverRunId, piSessionId: state.persistence.piSessionId, loadedAt: state.persistence.loadedAt, adoptedAt: state.persistence.adoptedAt, path: state.persistence.path } : undefined,
 			watch: state.watch ? { active: state.watch.active, paused: state.watch.paused, intervalMs: state.watch.intervalMs, expiresAt: state.watch.expiresAt, nextRunAt: state.watch.nextRunAt, failures: state.watch.failures, maxAttempts: state.watch.maxAttempts, pauseReason: state.watch.pauseReason, lastFailure: state.watch.lastFailure, recoveries: state.watch.recoveries } : undefined,
-			bindings: state.bindings.map((binding) => ({ sessionTag: binding.sessionTag, tabRole: binding.tabRole, browserId: binding.browserId, tabId: binding.tabId, windowId: binding.windowId, windowOwned: binding.windowOwned, groupId: binding.groupId, tabGroupsStatus: binding.tabGroupsStatus, owned: binding.owned, desiredUrl: binding.desiredUrl, networkSessionId: binding.networkSessionId, hookSessionId: binding.hookSessionId, preNavigationHooks: binding.preNavigationHooks?.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, identifier: hook.identifier, cdpSessionName: hook.cdpSessionName, effectVerifiedAt: hook.effectVerifiedAt, workerBootId: hook.workerBootId })), preNavigationHookDegraded: binding.preNavigationHookDegraded?.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, code: hook.code, updatedAt: hook.updatedAt })), workerBootId: binding.workerBootId })),
+				bindings: state.bindings.map((binding) => ({ sessionTag: binding.sessionTag, tabRole: binding.tabRole, browserId: binding.browserId, browserExtensionId: binding.browserExtensionId, tabId: binding.tabId, windowId: binding.windowId, windowOwned: binding.windowOwned, groupId: binding.groupId, profileId: binding.profileId, tabGroupsStatus: binding.tabGroupsStatus, owned: binding.owned, desiredUrl: binding.desiredUrl, networkSessionId: binding.networkSessionId, hookSessionId: binding.hookSessionId, preNavigationHooks: binding.preNavigationHooks?.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, identifier: hook.identifier, cdpSessionName: hook.cdpSessionName, effectVerifiedAt: hook.effectVerifiedAt, workerBootId: hook.workerBootId })), preNavigationHookDegraded: binding.preNavigationHookDegraded?.map((hook) => ({ hookId: hook.hookId, version: hook.version, hash: hook.hash, code: hook.code, updatedAt: hook.updatedAt })), workerBootId: binding.workerBootId })),
 			lastResult: state.lastResult,
 		}));
 	}

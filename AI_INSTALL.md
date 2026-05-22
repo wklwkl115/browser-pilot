@@ -128,6 +128,10 @@ npm run check:artifact
 
 默认 artifact 根目录是 `.pi/browser-artifacts/`，保存的原始证据标记为 `local_raw_evidence`、`localOnly:true`、手动清理。工具 summary/details/error 与 `browser_artifact` 默认脱敏 cookie/token/authorization/body/postData/websocket payload；只有明确需要本地原始证据时才对具体路径使用 `browser_artifact` 的 `redact:false`。清理命令：`rm -rf .pi/browser-artifacts/*`。不要上传或提交该目录。
 
+Orchestration persistent state 运行规则见 `docs/orchestration-persistence.md`，默认路径 `.pi/browser-artifacts/orchestration-state/state.v1.json`，隐私分类 `local_redacted_orchestration_state`。该文件只允许保存 `redactedDesired/bindings/fingerprints` 与 hash/presence metadata，禁止 raw cookie/body/postData/payload、`script/code/source` 或任意可执行文本；startup load 默认 stale/read-only/adoptionRequired，不启动 watch、不 cleanup、不 close。只有显式 adoption 校验 `resourceTypes/verifyOrigins/verifyUrls` 与 ownership fingerprint 后才允许托管和 cleanup。清理命令：`rm -rf .pi/browser-artifacts/orchestration-state`。契约：`npm run check:orchestration-persistence`。
+
+Profile/Incognito isolation 运行规则见 `docs/browser-profile-isolation.md`。当前 runtime 支持显式 `isolation.scope:"profile"` managed profile-first 隔离：driver 创建独立 `--user-data-dir`、extension copy、bridge port 与 owned browser process；`PI_BROWSER_PROFILE_CHROME` 可指定 Chrome/Edge。Incognito 仅 opt-in diagnostic；未授权扩展无痕运行时应返回 `INCOGNITO_NOT_ALLOWED`，不进入默认 `npm run check`、`quality:local`、isolated smoke 或 release smoke gate。契约：`npm run check:profile-isolation`。
+
 本地生命周期 fixture（已纳入 `npm run check`，不启动真实浏览器）：
 
 ```bash
@@ -165,7 +169,7 @@ npm run release:local
 PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run release:local:smoke
 ```
 
-`release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact`。
+`release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact/profileIsolation`。
 
 全局 skill 变更后按 skill-creator 要求验证：
 
@@ -185,10 +189,12 @@ npm run smoke:browser
 npm run smoke:browser:isolated
 ```
 
-WSL 调 Windows Edge 的已验证命令：
+WSL 调 Windows Edge 的已验证命令；同一命令也会驱动 managed profile runtime，或用 `PI_BROWSER_PROFILE_CHROME` 单独指定 profile manager 浏览器：
 
 ```bash
-PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run smoke:browser:isolated
+PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
+PI_BROWSER_PROFILE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
+npm run smoke:browser:isolated
 ```
 
 Chrome 在部分 Windows/WSL 组合下可能忽略 `--disable-extensions-except`，优先用上述 Edge 命令复现 isolated smoke。

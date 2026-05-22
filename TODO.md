@@ -28,7 +28,7 @@
 - 127-129：默认 tab 竞态可观测化、MV3 长等待短租约 supervisor、Bridge JS `checkJs` 类型栅栏已完成。
 - 130-156：桌面审计报告 Bug 1-26 已完成；覆盖 wait deadline、BrowserBridge/tab 路由、native 命令、内容/下载/截图、ReDoS/安全预算、契约与 README/CHANGELOG/skill 同步。
 - 157-162：Bug 28+ 当前基线复核完成；已覆盖项与 callable 子集证据已归档，剩余未覆盖/部分覆盖项全部转入 TODO 163-174。
-- 历史归档不再作为执行队列；Bug 审计队列已收口，当前从未完成 TODO 195 起推进，必要时回看 git diff、桌面报告与对应契约文件。
+- 历史归档不再作为执行队列；Bug 审计队列与当前 TODO 195-233 执行队列均已收口，新增能力必须先补 TODO 决策、边界文档、契约与验证计划。
 
 
 ## 近期完成归档（163-179 已完成）
@@ -418,7 +418,7 @@
 
 ## 状态协调器后续增强执行队列（223-233）
 
-后续路线已落档到 `docs/browser-orchestration-next-roadmap.md`。TODO 217-222 保持已完成状态；以下条目均为未实现的后续增强，完成前不得写入当前 callable capability。固定边界：Target resolver 是 tool-level `target:{...}`，不进入 native schema；Desired/Persistent State 禁止持久化任意可执行脚本文本；跨 Pi session 自动 cleanup 默认禁止；adoption 必须显式声明；`tabGroups` 只做 degraded diagnostic；Incognito 仅 opt-in，不阻塞主干。
+后续路线已落档到 `docs/browser-orchestration-next-roadmap.md`。TODO 217-233 均已完成；以下条目记录已落地的增强与验收证据。固定边界：Target resolver 是 tool-level `target:{...}`，不进入 native schema；Desired/Persistent State 禁止持久化任意可执行脚本文本；跨 Pi session 自动 cleanup 默认禁止；adoption 必须显式声明；`tabGroups` 只做 degraded diagnostic；Incognito 仅 opt-in，不阻塞主干。
 
 ## 223. Target Resolver 设计与 Tool Schema 审计
 
@@ -499,47 +499,50 @@
 
 ## 230. Persistent State 安全设计
 
-- [ ] 优先级：P2；依赖：TODO 224；建议在 TODO 226 后执行。
-- [ ] 目标：设计 redacted orchestration state 持久化，提供重启诊断与显式 adoption 基础。
-- [ ] 范围：`OrchestrationStore.ts`、future `PersistentOrchestrationStore.ts`、`BrowserBridgeServer.ts`、driver types、orchestration docs、artifact privacy docs。
-- [ ] 关键设计：state 包含 `schemaVersion/driverRunId/piSessionId/orchestrationId/redactedDesired/bindings/fingerprints`；禁止 raw cookie、body/postData/payload、任意脚本文本落盘；startup load 默认 read-only/stale，不启动 watch，不 cleanup。
-- [ ] 预期产出：`docs/orchestration-persistence.md`、state schema、driverRunId/Pi session 边界、stale/adoption 状态机、redaction 与手动清理策略。
-- [ ] 验收条件：`npm run check:token`、`npm run check:artifact`、static persistence contract 通过。
-- [ ] 风险/回滚：tabId/windowId 复用导致误托管；回滚为忽略 state 文件，恢复纯内存 store。
+- [x] 优先级：P2；依赖：TODO 224；建议在 TODO 226 后执行。
+- [x] 目标：设计 redacted orchestration state 持久化，提供重启诊断与显式 adoption 基础。
+- [x] 范围：已新增 `docs/orchestration-persistence.md`，覆盖 `OrchestrationStore.ts`、future `PersistentOrchestrationStore.ts`、`BrowserBridgeServer.ts` lifecycle 边界、driver persistence types、orchestration docs 与 artifact privacy docs；本项不实现 runtime save/load。
+- [x] 关键设计：state schema 固定为 `pi.browser.orchestration.state/v1`，包含 `schemaVersion/driverRunId/piSessionId/orchestrationId/redactedDesired/bindings/fingerprints`；禁止 raw cookie、body/postData/payload、任意脚本文本落盘；startup load 默认 `stale/readOnly/adoptionRequired`，不启动 watch，不 cleanup，不 close。
+- [x] 类型/边界：`types.ts` 增加 `OrchestrationPersistedStateFile`、`OrchestrationPersistedRecord`、`OrchestrationPersistedResourceFingerprint`、`OrchestrationPersistedCookieFingerprint` 与 `OrchestrationAdoptionPolicy` 草案；`OrchestrationStore.ts` 保持纯内存，无文件 I/O；`PersistentOrchestrationStore.ts` 已由 TODO 231 承担文件 I/O。
+- [x] 契约/文档：新增 `check:orchestration-persistence` 并纳入 `npm run check`；README/AI_INSTALL/roadmap/coordinator doc/CHANGELOG/TODO 同步 persistence path、隐私分类 `local_redacted_orchestration_state`、manual cleanup 与 adoption 状态机。
+- [x] 验收条件：已通过 `npm run check:orchestration-persistence`、`npm run check:token`、`npm run check:artifact`；TODO 231 已完成 save/load、restart fixture、adoption runtime 与 smoke gate。
+- [x] 风险/回滚：tabId/windowId 复用导致误托管；回滚为忽略 state 文件，恢复纯内存 store。
 
 ## 231. Persistent State 实现与 Adoption Gate
 
-- [ ] 优先级：P2；依赖：TODO 230。
-- [ ] 目标：实现持久化、重启后 read-only status、显式 adoption；禁止跨 session 自动误关。
-- [ ] 范围：orchestration store/coordinator/server lifecycle、contracts、lifecycle fixture、isolated smoke。
-- [ ] 关键设计：adoption 必须显式声明 `enabled:true/orchestrationId/resourceTypes/verifyOrigins/verifyUrls`；adoption 前重新 observe live resources；未 adoption 的 stale resources 只可 status，不可 watch/cleanup/close。
-- [ ] 实施步骤：实现 save/load；server startup 加载 stale state；status 显示 `adoptionRequired`；apply/watch 处理 explicit adoption；restart fixture 验证不误关旧 tab；smoke 验证 adoption 后才可 cleanup。
-- [ ] 验收条件：`npm run check`、`npm run check:lifecycle`、`npm run check:orchestration`、Edge isolated smoke restart/adoption artifact 通过。
-- [ ] 风险/回滚：错误 adoption 误关用户资源；回滚为启动时不加载 persistent state。
+- [x] 优先级：P2；依赖：TODO 230。
+- [x] 目标：实现持久化、重启后 read-only status、显式 adoption；禁止跨 session 自动误关。
+- [x] 范围：orchestration store/coordinator/server lifecycle、contracts、lifecycle fixture、isolated smoke。
+- [x] 实现：新增 `PersistentOrchestrationStore.ts`，默认 `.pi/browser-artifacts/orchestration-state/state.v1.json`，schema `pi.browser.orchestration.state/v1`；save 使用 redacted record + temp/fsync/rename，load 写入 read-only/adoptionRequired stale view。
+- [x] Lifecycle：`BrowserBridgeServer.start()` 加载 stale state，`stop()/shutdown/apply/stop/delete` 保存 redacted state；`OrchestrationStore.ts` 继续纯内存，文件 I/O 只在 persistence adapter。
+- [x] Adoption gate：未 adoption 的 stale resources 只可 status；`apply/watch/stop/delete` 返回 `ORCHESTRATION_TARGET_STALE` 且不 watch/cleanup/close；explicit `adoption` 校验 `resourceTypes/verifyOrigins/verifyUrls`、browserId/windowId/profileId 与 owned fingerprint 后才转 `adopted`。
+- [x] 契约：`check-orchestration-coordinator.mjs` 覆盖 redacted state、stale read-only gate、bad adoption 不误关旧 tab、adoption 后 cleanup；`check-lifecycle.mjs` 覆盖 restart load；`check-orchestration-persistence.mjs` 锁 runtime wiring。
+- [x] 验收条件：已通过 `npm run check:orchestration-persistence`、`npm run check:orchestration`、`npm run check:lifecycle`；Edge isolated smoke restart/adoption artifact 路径 `.pi/browser-artifacts/smoke-orchestration-persistence-result.json`。
+- [x] 风险/回滚：错误 adoption 误关用户资源；回滚为启动时不加载 persistent state。
 
 ## 232. Profile/Incognito 隔离设计
 
-- [ ] 优先级：P2/P3；依赖：TODO 224；建议在 TODO 231 后执行。
-- [ ] 目标：冻结 profile-first 物理隔离方案；Incognito 仅作为 opt-in diagnostic。
-- [ ] 范围：isolated smoke、release smoke、new profile isolation doc、driver/profile manager design、orchestration Desired schema。
-- [ ] 关键设计：Profile-first 使用独立 `--user-data-dir`、extension copy、bridge port、owned process；Incognito 需要用户授权扩展无痕运行，未授权只返回 diagnostic；默认 isolation 仍为 logical，profile scope 必须显式声明。
-- [ ] 预期产出：`docs/browser-profile-isolation.md`、profile lifecycle、cookie/storage 隔离验证、incognito probe、release smoke 条件。
-- [ ] 验收条件：设计文档完成；static contract 确认 Incognito 不进入默认 gate。
-- [ ] 风险/回滚：Chrome path、端口、子进程清理跨平台复杂；回滚为不启用 profile scope。
+- [x] 优先级：P2/P3；依赖：TODO 224；建议在 TODO 231 后执行。
+- [x] 目标：冻结 profile-first 物理隔离方案；Incognito 仅作为 opt-in diagnostic。
+- [x] 范围：isolated smoke、release smoke、new profile isolation doc、driver/profile manager design、orchestration Desired schema。
+- [x] 关键设计：Profile-first 使用独立 `--user-data-dir`、extension copy、bridge port、owned process；Incognito 需要用户授权扩展无痕运行，未授权只返回 diagnostic；默认 isolation 仍为 logical，profile scope 必须显式声明。
+- [x] 预期产出：`docs/browser-profile-isolation.md`，冻结 profile lifecycle、Desired `isolation.scope:"profile"` 草案、cookie/localStorage/sessionStorage 隔离验证、incognito opt-in probe 与 release smoke 条件；TODO 233 已接续实现 runtime profile scope。
+- [x] 契约：新增 `check:profile-isolation` 并纳入 `npm run check`，锁定 manifest 默认不启用 incognito、isolated/release smoke 不把 incognito 放入默认 gate；TODO 233 已替换 design-only runtime 边界。
+- [x] 验收条件：设计文档完成；static contract 确认 Incognito 不进入默认 gate。
+- [x] 风险/回滚：Chrome path、端口、子进程清理跨平台复杂；回滚为不启用 profile scope。
 
 ## 233. Managed Profile-first 实现 Gate
 
-- [ ] 优先级：P3；依赖：TODO 232。
-- [ ] 目标：实现 owned browser profile lifecycle 与隔离 smoke；Incognito 保持 opt-in probe，不阻塞主干。
-- [ ] 范围：future `BrowserProfileManager.ts`、`BrowserBridgeServer.ts`、driver/orchestration modules、isolated smoke、release smoke、docs/skill/CHANGELOG。
-- [ ] 关键设计：profile 由 driver 创建并 owned；delete 只停止 owned profile process，不关闭用户 Chrome；每个 profile 有 `profileId/profileDir/bridgePort/extensionDir`；cookie/localStorage 隔离必测；Incognito 未授权返回 `INCOGNITO_NOT_ALLOWED` diagnostic。
-- [ ] 实施步骤：抽出 managed profile lifecycle；支持 Desired `isolation.scope:"profile"`；target resolver 支持 profile-bound browserId；smoke 启动两个 profiles 并验证 storage 隔离；release smoke 用解包扩展验证 fresh profile。
-- [ ] 验收条件：`npm run check`、Edge isolated smoke、`release:local:smoke` 通过；artifact 证明 profile A/B cookie/storage 不互通且 owned process 清理完成。
-- [ ] 风险/回滚：最高风险项，不与 TODO 224 同批；回滚为禁用 `isolation.scope:"profile"`。
+- [x] 优先级：P3；依赖：TODO 232。
+- [x] 目标：实现 owned browser profile lifecycle 与隔离 smoke；Incognito 保持 opt-in probe，不阻塞主干。
+- [x] 范围：`BrowserProfileManager.ts`、`BrowserBridgeServer.ts`、driver/orchestration modules、isolated smoke、release smoke、docs/skill/CHANGELOG。
+- [x] 关键设计：profile 由 driver 创建并 owned；delete 只停止 owned profile process，不关闭用户 Chrome；每个 profile 有 `profileId/profileDir/bridgePort/extensionDir`；cookie/localStorage 隔离必测；Incognito 未授权返回 `INCOGNITO_NOT_ALLOWED` diagnostic。
+- [x] 实施步骤：抽出 managed profile lifecycle；支持 Desired `isolation.scope:"profile"`；target resolver 支持 profile-bound browserId；smoke 启动两个 profiles 并验证 storage 隔离；release smoke 用解包扩展验证 fresh profile。
+- [x] 验收条件：`npm run check`、Edge isolated smoke、`release:local:smoke` 通过；artifact 证明 profile A/B cookie/storage 不互通且 owned process 清理完成。
+- [x] 风险/回滚：最高风险项，不与 TODO 224 同批；回滚为禁用 `isolation.scope:"profile"`。
 
 ## 下一步建议顺序
 
-1. TODO 223-229 已完成；下一步执行 TODO 230，推进 Persistent State 安全设计。
-2. 执行 TODO 230 → 231，推进 redacted persistence 与 explicit adoption。
-3. 执行 TODO 232 → 233，推进 profile-first；完整 Incognito 如需主干实现，另开 TODO 234。
-4. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。
+1. TODO 223-233 已完成。
+2. 完整 Incognito 实现如需推进，另开 TODO 234，不纳入当前主干 gate。
+3. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。

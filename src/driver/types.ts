@@ -8,6 +8,8 @@ export type BrowserBridgeClientInfo = {
 	userAgent?: string;
 	workerBootId?: string;
 	workerStartedAt?: number;
+	profileId?: string;
+	managedProfile?: { profileId?: string; profileDir?: string; extensionDir?: string; bridgePort?: number; debugPort?: number; owned?: boolean; cleanup?: string };
 	connectedAt: number;
 	lastSeenAt: number;
 };
@@ -21,6 +23,7 @@ export type BrowserTabSession = {
 	active?: boolean;
 	windowId?: number;
 	groupId?: number;
+	profileId?: string;
 	type: "ext_ws";
 	connectedAt: number;
 	disconnectedAt?: number;
@@ -42,6 +45,7 @@ export type BrowserBridgeTargetInfo = {
 	orchestrationId?: string;
 	sessionTag?: string;
 	tabRole?: string;
+	profileId?: string;
 };
 
 export type BrowserToolTargetRef = {
@@ -78,6 +82,7 @@ export type BrowserBridgeSnapshot = {
 	selectionVersion: number;
 	tabs: BrowserTabInfo[];
 	orchestration?: Record<string, unknown>;
+	profiles?: unknown[];
 	pending: Array<{
 		id: string;
 		tabId?: number;

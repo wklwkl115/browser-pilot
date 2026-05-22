@@ -4,10 +4,12 @@ import { preNavigationHookKey, resolvePreNavigationHook } from "./preNavigationH
 import { hashSensitiveString, shortHash, stableJson } from "./orchestrationRedaction";
 import type {
 	BrowserDesiredCookieInput,
+	BrowserOrchestrationAdoptionInput,
 	BrowserDesiredPreNavigationHookInput,
 	BrowserDesiredSessionInput,
 	BrowserDesiredTabInput,
 	BrowserOrchestrationDesiredInput,
+	BrowserOrchestrationProfileIsolationInput,
 	JsonRecord,
 	NormalizedBrowserOrchestrationDesired,
 	NormalizedDesiredCookie,
@@ -19,11 +21,14 @@ import type {
 	NormalizedPreNavigationHookScope,
 	NormalizedOwnedWindow,
 	NormalizedVisualGrouping,
+	OrchestrationAdoptionPolicy,
+	OrchestrationPersistenceResourceType,
 } from "./types";
 
 const TAG_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 15_000;
+const ADOPTION_RESOURCE_TYPES = new Set<OrchestrationPersistenceResourceType>(["tab", "window", "networkRecorder", "hookDispatcher", "preNavigationHook", "cookie"]);
 
 function isRecord(value: unknown): value is JsonRecord {
 	return !!value && typeof value === "object" && !Array.isArray(value);
@@ -203,6 +208,60 @@ function normalizeStringArray(value: unknown, field: string, options: { pattern?
 	const unique = Array.from(new Set(out.filter(Boolean)));
 	return unique.length ? unique : undefined;
 }
+function normalizeNumberArray(value: unknown, field: string): number[] | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	const raw = Array.isArray(value) ? value : [value];
+	const out = raw.map((item, index) => numberField(item, undefined, `${field}[${index}]`, 0, Number.MAX_SAFE_INTEGER));
+	const unique = Array.from(new Set(out.filter((item): item is number => item !== undefined)));
+	return unique.length ? unique : undefined;
+}
+
+function normalizeProfileIsolation(value: unknown): import("./types").NormalizedOrchestrationProfileIsolation | undefined {
+	if (!isRecord(value)) throw invalidDesired("isolation.profile is required when isolation.scope is profile", { field: "isolation.profile" });
+	const raw = value as BrowserOrchestrationProfileIsolationInput;
+	const profileId = stringField(raw.profileId, "isolation.profile.profileId", { required: true, pattern: TAG_PATTERN }) || "";
+	const lifecycle = raw.lifecycle === undefined ? "managed" : String(raw.lifecycle);
+	if (lifecycle !== "managed") throw invalidDesired("isolation.profile.lifecycle must be managed", { field: "isolation.profile.lifecycle", value: raw.lifecycle });
+	const reuse = raw.reuse === undefined ? "owned" : String(raw.reuse);
+	if (reuse !== "none" && reuse !== "owned") throw invalidDesired("isolation.profile.reuse must be none or owned", { field: "isolation.profile.reuse", value: raw.reuse });
+	const cleanup = raw.cleanup === undefined ? "delete" : String(raw.cleanup);
+	if (cleanup !== "delete" && cleanup !== "keepOnFailure") throw invalidDesired("isolation.profile.cleanup must be delete or keepOnFailure", { field: "isolation.profile.cleanup", value: raw.cleanup });
+	return { profileId, lifecycle: "managed", reuse: reuse as "none" | "owned", cleanup: cleanup as "delete" | "keepOnFailure" };
+}
+
+function normalizeResourceTypes(value: unknown, field: string): OrchestrationPersistenceResourceType[] {
+	const raw = normalizeStringArray(value, field) || [];
+	if (!raw.length) throw invalidDesired(`${field} must be a non-empty array`, { field });
+	return raw.map((item) => {
+		if (!ADOPTION_RESOURCE_TYPES.has(item as OrchestrationPersistenceResourceType)) throw invalidDesired(`${field} contains unsupported resource type`, { field, value: item });
+		return item as OrchestrationPersistenceResourceType;
+	});
+}
+
+function normalizeAdoption(value: unknown, orchestrationId: string): OrchestrationAdoptionPolicy | undefined {
+	if (value === undefined || value === null || value === false) return undefined;
+	if (!isRecord(value)) throw invalidDesired("adoption must be an object", { field: "adoption" });
+	const raw = value as BrowserOrchestrationAdoptionInput;
+	if (raw.enabled !== true) throw invalidDesired("adoption.enabled must be true when adoption is supplied", { field: "adoption.enabled" });
+	const adoptionId = stringField(raw.orchestrationId, "adoption.orchestrationId", { required: true, pattern: TAG_PATTERN }) || "";
+	if (adoptionId !== orchestrationId) throw invalidDesired("adoption.orchestrationId must match desiredState.orchestrationId", { field: "adoption.orchestrationId", orchestrationId, adoptionOrchestrationId: adoptionId });
+	const verifyOrigins = normalizeStringArray(raw.verifyOrigins, "adoption.verifyOrigins")?.map((origin, index) => originFromInput(origin, `adoption.verifyOrigins[${index}]`)) || [];
+	const verifyUrls = normalizeStringArray(raw.verifyUrls, "adoption.verifyUrls")?.map((url, index) => normalizeHttpUrl(url, `adoption.verifyUrls[${index}]`).url) || [];
+	if (!verifyOrigins.length) throw invalidDesired("adoption.verifyOrigins must be a non-empty array", { field: "adoption.verifyOrigins" });
+	if (!verifyUrls.length) throw invalidDesired("adoption.verifyUrls must be a non-empty array", { field: "adoption.verifyUrls" });
+	return {
+		enabled: true,
+		orchestrationId: adoptionId,
+		resourceTypes: normalizeResourceTypes(raw.resourceTypes, "adoption.resourceTypes"),
+		verifyOrigins: Array.from(new Set(verifyOrigins)).sort(),
+		verifyUrls: Array.from(new Set(verifyUrls)).sort(),
+		verifyBrowserIds: normalizeStringArray(raw.verifyBrowserIds, "adoption.verifyBrowserIds", { pattern: TAG_PATTERN }),
+		verifyWindowIds: normalizeNumberArray(raw.verifyWindowIds, "adoption.verifyWindowIds"),
+		verifyProfileIds: normalizeStringArray(raw.verifyProfileIds, "adoption.verifyProfileIds", { pattern: TAG_PATTERN }),
+		requireOwnedFingerprint: booleanField(raw.requireOwnedFingerprint, true, "adoption.requireOwnedFingerprint"),
+	};
+}
+
 
 function normalizePreNavigationHookScope(value: unknown, field: string, allowedOrigins: Set<string>): NormalizedPreNavigationHookScope {
 	if (value === undefined || value === null) return { allFrames: true, matchAboutBlank: false };
@@ -361,11 +420,13 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 	};
 	const isolationRaw = isRecord(desiredInput.isolation) ? desiredInput.isolation : {};
 	const scope = isolationRaw.scope === undefined ? "logical" : String(isolationRaw.scope);
-	if (scope !== "logical" && scope !== "browser") throw invalidDesired("isolation.scope must be logical or browser", { field: "isolation.scope", value: isolationRaw.scope });
+	if (scope !== "logical" && scope !== "browser" && scope !== "profile") throw invalidDesired("isolation.scope must be logical, browser, or profile", { field: "isolation.scope", value: isolationRaw.scope });
+	const profile = scope === "profile" ? normalizeProfileIsolation(isolationRaw.profile) : undefined;
 	const isolation = {
-		scope,
+		scope: scope as "logical" | "browser" | "profile",
 		ownedTabsOnly: booleanField(isolationRaw.ownedTabsOnly, true, "isolation.ownedTabsOnly"),
 		closeOwnedTabsOnDelete: booleanField(isolationRaw.closeOwnedTabsOnDelete, true, "isolation.closeOwnedTabsOnDelete"),
+		profile,
 	};
 	const browserRaw = isRecord(desiredInput.browser) ? desiredInput.browser : {};
 	const browserId = stringField(browserRaw.browserId, "browser.browserId");
@@ -405,10 +466,13 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 			hookDispatcher: normalizeHookDispatcher(session.hookDispatcher, tag),
 		};
 	});
+	if (isolation.scope === "profile" && !sessions.some((session) => session.tabs.length > 0)) throw invalidDesired("isolation.scope profile requires at least one desired tab", { field: "isolation.scope" });
 	const ttlMs = numberField(desiredInput.ttlMs, undefined, "ttlMs", 1_000, 24 * 60 * 60_000);
+	const orchestrationId = stringField(desiredInput.orchestrationId, "orchestrationId", { pattern: TAG_PATTERN }) || `orch-${randomUUID()}`;
+	const adoption = normalizeAdoption(desiredInput.adoption, orchestrationId);
 	const withoutDigest = {
 		apiVersion: "pi.browser/v1" as const,
-		orchestrationId: stringField(desiredInput.orchestrationId, "orchestrationId", { pattern: TAG_PATTERN }) || `orch-${randomUUID()}`,
+		orchestrationId,
 		generation: stringField(desiredInput.generation, "generation", { pattern: TAG_PATTERN }) || "",
 		desiredHash: "",
 		browser,
@@ -417,6 +481,7 @@ export function normalizeDesired(input: unknown): NormalizedBrowserOrchestration
 		allowedOrigins: Array.from(allowedOrigins).sort(),
 		ttlMs,
 		sessions,
+		adoption,
 	};
 	const desiredHash = hashSensitiveString(stableJson(withoutDigest));
 	return { ...withoutDigest, generation: withoutDigest.generation || `g-${shortHash(desiredHash)}`, desiredHash };

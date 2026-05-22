@@ -1,5 +1,6 @@
 // bridge_info.js - shared bridge metadata and tab helpers.
 
+import { PI_BROWSER_MANAGED_PROFILE } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
 
 const PI_BROWSER_WORKER_STARTED_AT = Date.now();
@@ -18,7 +19,9 @@ function piBridgeInfo() {
     manifestVersion: manifest.version,
     userAgent: navigator.userAgent,
     workerBootId: PI_BROWSER_WORKER_BOOT_ID,
-    workerStartedAt: PI_BROWSER_WORKER_STARTED_AT
+    workerStartedAt: PI_BROWSER_WORKER_STARTED_AT,
+    profileId: PI_BROWSER_MANAGED_PROFILE?.profileId,
+    managedProfile: PI_BROWSER_MANAGED_PROFILE
   };
 }
 

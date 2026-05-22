@@ -42,6 +42,16 @@ function tabMatchesBrowser(tab: BrowserTabInfo, browserId: string | undefined): 
 	return tab.browserId === browserId || tab.bridge?.extensionId === browserId || tab.bridge?.id === browserId;
 }
 
+function tabMatchesProfile(tab: BrowserTabInfo, profileId: string | undefined): boolean {
+	return !profileId || tab.profileId === profileId || tab.bridge?.profileId === profileId;
+}
+
+function tabMatchesBinding(tab: BrowserTabInfo, binding: OrchestrationBinding): boolean {
+	if (tab.tabId !== binding.tabId) return false;
+	if (tab.browserId === binding.browserId) return true;
+	return !!binding.browserExtensionId && tab.bridge?.extensionId === binding.browserExtensionId;
+}
+
 function urlsMatch(a: string | undefined, b: string): boolean {
 	if (!a) return false;
 	try { return new URL(a).href === new URL(b).href; }
@@ -69,6 +79,10 @@ export class ActualStateCollector {
 		const diagnostics: JsonRecord[] = [];
 		let snapshot = this.server.snapshot();
 		const targetBrowserId = this.resolveTargetBrowser(desired, snapshot);
+		if (targetBrowserId && typeof this.server.selectBrowser === "function") {
+			try { this.server.selectBrowser(targetBrowserId); snapshot = this.server.snapshot(); }
+			catch (error) { diagnostics.push({ source: "browser.select", error: error instanceof Error ? error.message : String(error), details: redactedErrorDetails(error) }); }
+		}
 		let tabs = snapshot.tabs || [];
 		if (snapshot.running && snapshot.extensionConnected && typeof this.server.refreshTabs === "function") {
 			try {
@@ -91,7 +105,7 @@ export class ActualStateCollector {
 				sessionTabs.push(actualTab);
 			}
 			for (const cookie of session.cookies) {
-				const actualCookie = await this.collectCookie(cookie, diagnostics, options.timeoutMs);
+				const actualCookie = await this.collectCookie(desired, cookie, diagnostics, options.timeoutMs);
 				sessionCookies.push(actualCookie);
 			}
 			sessions.push({ tag: session.tag, tabs: sessionTabs, cookies: sessionCookies });
@@ -108,6 +122,7 @@ export class ActualStateCollector {
 			tabs,
 			windows,
 			tabGroups,
+			profiles: Array.isArray(snapshot.profiles) ? snapshot.profiles.filter(isRecord) : [],
 			sessions,
 			diagnostics,
 		};
@@ -147,8 +162,13 @@ export class ActualStateCollector {
 	}
 
 	private resolveTargetBrowser(desired: NormalizedBrowserOrchestrationDesired, snapshot: BrowserBridgeSnapshot): string | undefined {
+		if (desired.isolation.scope === "profile") {
+			const profileId = desired.isolation.profile?.profileId;
+			const found = snapshot.clients.find((client) => client.profileId === profileId);
+			return found?.id;
+		}
 		const requested = desired.browser.browserId;
-		const boundBrowserIds = Array.from(new Set((this.store.get(desired.orchestrationId)?.bindings || []).map((binding) => binding.browserId).filter(Boolean)));
+		const boundBrowserIds = Array.from(new Set((this.store.get(desired.orchestrationId)?.bindings || []).map((binding) => binding.browserExtensionId || binding.browserId).filter(Boolean)));
 		if (!requested || requested === "selected") {
 			if (boundBrowserIds.length === 1) return boundBrowserIds[0];
 			if (desired.browser.requireSelected && !snapshot.extension?.id) throw browserNotFound("Browser orchestration requires a selected browser", { orchestrationId: desired.orchestrationId });
@@ -161,8 +181,8 @@ export class ActualStateCollector {
 
 	private async collectTab(desired: NormalizedBrowserOrchestrationDesired, session: NormalizedDesiredSession, tab: NormalizedDesiredTab, tabs: BrowserTabInfo[], targetBrowserId: string | undefined, diagnostics: JsonRecord[], timeoutMs: number | undefined): Promise<ActualTabState> {
 		const binding = this.store.binding(desired.orchestrationId, session.tag, tab.role);
-		const liveTabs = tabs.filter((item) => tabIsLive(item) && tabMatchesBrowser(item, targetBrowserId));
-		const boundTab = binding ? liveTabs.find((item) => item.tabId === binding.tabId && item.browserId === binding.browserId) : undefined;
+		const liveTabs = tabs.filter((item) => tabIsLive(item) && tabMatchesBrowser(item, targetBrowserId) && tabMatchesProfile(item, desired.isolation.profile?.profileId));
+		const boundTab = binding ? liveTabs.find((item) => tabMatchesBinding(item, binding)) : undefined;
 		const candidates = !boundTab && tab.reuse === "matchingUrl" ? liveTabs.filter((item) => urlsMatch(item.url, tab.url)) : [];
 		const selected = boundTab || (candidates.length === 1 ? candidates[0] : undefined);
 		const urlMatchesDesired = !!selected && urlsMatch(selected.url, tab.url);
@@ -172,10 +192,12 @@ export class ActualStateCollector {
 			desiredUrl: tab.url,
 			tabId: selected?.tabId,
 			browserId: selected?.browserId || binding?.browserId,
+			browserExtensionId: selected?.bridge?.extensionId || binding?.browserExtensionId,
 			windowId: selected?.windowId || binding?.windowId,
 			windowOwned: binding?.windowOwned,
 			windowCloseOnDelete: binding?.windowCloseOnDelete,
 			groupId: selected?.groupId || binding?.groupId,
+			profileId: selected?.profileId || binding?.profileId,
 			tabGroupsStatus: binding?.tabGroupsStatus,
 			exists: !!selected,
 			url: selected?.url,
@@ -183,7 +205,7 @@ export class ActualStateCollector {
 			owned: !!binding?.owned,
 			createdByOrchestrator: binding?.createdByOrchestrator,
 			candidateTabIds: candidates.length > 1 ? candidates.map((item) => item.tabId) : undefined,
-			browserMismatch: !!binding && !!selected && binding.browserId !== selected.browserId,
+			browserMismatch: !!binding && !!selected && !tabMatchesBinding(selected, binding),
 			navigation: { matchesDesired: urlMatchesDesired, urlMatchesDesired },
 			cookies: [],
 		};
@@ -281,8 +303,14 @@ export class ActualStateCollector {
 		}
 	}
 
-	private async collectCookie(cookie: NormalizedDesiredCookie, diagnostics: JsonRecord[], timeoutMs: number | undefined): Promise<ActualCookieState> {
+	private async collectCookie(desired: NormalizedBrowserOrchestrationDesired, cookie: NormalizedDesiredCookie, diagnostics: JsonRecord[], timeoutMs: number | undefined): Promise<ActualCookieState> {
 		try {
+			if (desired.isolation.scope === "profile") {
+				const profileId = desired.isolation.profile?.profileId;
+				const client = this.server.snapshot().clients.find((item) => item.profileId === profileId);
+				if (!client?.id) return { key: cookie.key, name: cookie.name, action: cookie.action, present: undefined, drift: true, error: "managed profile is not connected" };
+				if (typeof this.server.selectBrowser === "function") this.server.selectBrowser(client.id);
+			}
 			const result = await this.server.sendCommand({ cmd: "cookies", method: "get", url: cookie.url, name: cookie.name }, { timeoutMs: Math.min(timeoutMs || 2_000, 5_000) });
 			const failure = failureData(result.data);
 			if (failure) return { key: cookie.key, name: cookie.name, action: cookie.action, present: undefined, drift: true, error: failure.message };

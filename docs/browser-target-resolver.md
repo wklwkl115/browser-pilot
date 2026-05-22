@@ -34,7 +34,7 @@ type BrowserToolTargetRef = {
   sessionTag?: string;
   tabRole?: string;
 
-  // 后续 TODO 预留；TODO 224 不实现 window/group/profile 语义
+  // Window/group/profile 由后续 TODO 接入；当前 profileId 用于 profile-bound orchestration target disambiguation
   windowId?: number | string;
   groupId?: number | string;
   profileId?: string;
@@ -58,7 +58,7 @@ export const BrowserToolTargetRefSchema = Type.Object({
 }, { additionalProperties: false });
 ```
 
-TODO 224 已通过 `sharedTabScopedToolParams()` 暴露 `target`，并保持该 schema 不写入 native command schema。
+TODO 224 已通过 `sharedTabScopedToolParams()` 暴露 `target`，并保持该 schema 不写入 native command schema；TODO 233 已使 `profileId` 用于 managed profile-bound orchestration target 过滤。
 
 ## 4. 覆盖工具清单
 
@@ -201,14 +201,14 @@ PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/m
 
 - 不给 `browser_tabs` 增加 logical target；它仍是底层 tab/browser lifecycle tool。
 - 不把 `target` 写入 `native_command_schema.json` 或 Chrome extension native protocol。
-- 不实现 windowId/groupId/profileId 语义；这些字段只为 TODO 225+ 预留。
+- `windowId/groupId/profileId` 只在 Node target resolver/orchestration 层使用，不进入 native schema；`profileId` 已用于 profile-bound orchestration target disambiguation。
 - 不改变 omitted `tabId` fallback 兼容路径；只在显式 `target`/`tabId` 冲突、歧义、stale 时失败。
-- 不提供 profile/incognito 隔离。
+- 不提供 Incognito 默认隔离；managed profile 隔离由 `browser_orchestrate` 的显式 `isolation.scope:"profile"` 管理。
 
 ## 10. 后续输入条件
 
-TODO 225+ 开始前必须保持：
+后续维护必须保持：
 
 - 本文档与 generated docs/README/skill 对当前 target 能力描述一致。
 - `check:protocol` 持续验证 native schema 未被逻辑 target 污染。
-- TODO 224 smoke artifact 能证明 logical target 真实路由到 orchestration binding。
+- TODO 224/233 smoke artifact 能证明 logical/profile-bound target 真实路由到 orchestration binding。

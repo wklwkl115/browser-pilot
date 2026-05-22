@@ -79,6 +79,7 @@ export class ReconcileExecutor {
 		const failures: OrchestrationFailure[] = [];
 		const failedOrSkipped = new Set<string>();
 		const createdBindings: OrchestrationBinding[] = [];
+		const createdProfileIds = new Set<string>();
 		const preNavigationCleanupBindings = new Map<string, OrchestrationBinding>();
 		let requiredFailure = false;
 		for (const operation of plan.operations) {
@@ -99,6 +100,7 @@ export class ReconcileExecutor {
 				const result = await this.withOperationLock(operation, () => this.executeOperation(desired, operation, Math.max(100, Math.min(remainingMs(deadline), desired.defaults.timeoutMs))));
 				const status = result.status === "degraded" ? "degraded" : "succeeded";
 				operationResults.push({ ...operationResultBase(operation), status, finishedAt: Date.now(), result });
+				if (operation.action === "ensureProfile" && typeof result.profileId === "string") createdProfileIds.add(result.profileId);
 				const binding = this.store.binding(desired.orchestrationId, operation.resourceRef.sessionTag, operation.resourceRef.tabRole);
 				if ((operation.action === "createTab" || operation.action === "createWindow") && binding?.createdByOrchestrator) createdBindings.push(binding);
 				if (operation.action === "installPreNavigationHook" && binding?.preNavigationHooks?.length) preNavigationCleanupBindings.set(`${binding.browserId}:${binding.tabId}`, binding);
@@ -110,8 +112,8 @@ export class ReconcileExecutor {
 				operationResults.push({ ...operationResultBase(operation), status: "failed", finishedAt: Date.now(), failure });
 			}
 		}
-		if (requiredFailure && desired.defaults.cleanupOnFailure && (createdBindings.length || preNavigationCleanupBindings.size)) {
-			const cleanupResults = await this.compensateCreatedBindings(desired, createdBindings, Array.from(preNavigationCleanupBindings.values()), deadline);
+		if (requiredFailure && desired.defaults.cleanupOnFailure && (createdBindings.length || preNavigationCleanupBindings.size || createdProfileIds.size)) {
+			const cleanupResults = await this.compensateCreatedBindings(desired, createdBindings, Array.from(preNavigationCleanupBindings.values()), Array.from(createdProfileIds), deadline);
 			operationResults.push(...cleanupResults.results);
 			failures.push(...cleanupResults.failures);
 		}
@@ -165,6 +167,8 @@ export class ReconcileExecutor {
 
 	private async executeOperation(desired: NormalizedBrowserOrchestrationDesired | undefined, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		switch (operation.action) {
+			case "ensureProfile": return await this.ensureProfile(this.requireDesired(desired), operation, timeoutMs);
+			case "stopProfile": return await this.stopProfile(operation, timeoutMs);
 			case "createWindow": return await this.createWindow(this.requireDesired(desired), operation, timeoutMs);
 			case "createTab": return await this.createTab(this.requireDesired(desired), operation, timeoutMs);
 			case "reuseTab": return this.reuseTab(this.requireDesired(desired), operation);
@@ -227,6 +231,32 @@ export class ReconcileExecutor {
 		return this.store.get(orchestrationId)?.bindings.find((binding) => binding.sessionTag === sessionTag && binding.windowOwned && binding.windowId !== undefined);
 	}
 
+	private async ensureProfile(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
+		const profile = desired.isolation.profile;
+		if (!profile?.profileId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.INVALID_DESIRED, "ensureProfile requires isolation.profile.profileId", { resourceRef: operation.resourceRef }, { retryable: false });
+		if (typeof this.server.ensureManagedProfile !== "function") throw new BrowserOrchestrationError("PROFILE_MANAGER_UNAVAILABLE", "Managed profile manager is unavailable", { profileId: profile.profileId }, { retryable: false });
+		const tab = this.tab(desired, operation);
+		const managed = await this.server.ensureManagedProfile({ profileId: profile.profileId, initialUrl: "about:blank", reuse: profile.reuse, cleanup: profile.cleanup, timeoutMs });
+		if (!managed.browserId) throw new BrowserOrchestrationError("PROFILE_CONNECT_TIMEOUT", "Managed profile connected without browserId", { profileId: profile.profileId }, { retryable: true });
+		if (typeof this.server.selectBrowser === "function") this.server.selectBrowser(managed.browserId);
+		return { profileId: managed.profileId, browserId: managed.browserId, bridgePort: managed.bridgePort, debugPort: managed.debugPort, processId: managed.processId, owned: managed.owned, cleanup: managed.cleanup, initialUrl: tab.url };
+	}
+
+	private async stopProfile(operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
+		const profileId = operation.resourceRef.profileId;
+		if (!profileId) return { skipped: true, reason: "no_profile_id" };
+		if (typeof this.server.stopManagedProfile !== "function") return { status: "degraded", profileId, reason: "managed profile manager unavailable" };
+		const stopped = await this.server.stopManagedProfile(profileId, { deleteFiles: true, timeoutMs });
+		return { profileId, stopped: !!stopped, processId: stopped?.processId, bridgePort: stopped?.bridgePort, owned: stopped?.owned === true };
+	}
+
+	private selectProfileBrowser(desired: NormalizedBrowserOrchestrationDesired): void {
+		if (desired.isolation.scope !== "profile" || typeof this.server.selectBrowser !== "function") return;
+		const profileId = desired.isolation.profile?.profileId;
+		const client = this.server.snapshot().clients.find((item) => item.profileId === profileId);
+		if (client?.id) this.server.selectBrowser(client.id);
+	}
+
 	private async createWindow(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		this.selectDesiredBrowser(desired, operation.resourceRef.browserId);
 		const session = this.session(desired, operation);
@@ -240,8 +270,8 @@ export class ReconcileExecutor {
 		const syntheticResult = { ...result, data: { ...data, id: firstTab.id ?? firstTab.tabId, tabId: firstTab.tabId ?? firstTab.id, url: firstTab.url ?? createUrl, windowId: data.windowId ?? data.id, groupId: firstTab.groupId } };
 		const created = await this.resolveCreatedTab(syntheticResult, createUrl, timeoutMs);
 		if (!created?.tabId || !created.browserId || !created.windowId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created window tab could not be resolved", { url: createUrl, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
-		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, tabId: created.tabId, windowId: created.windowId, windowOwned: true, windowCloseOnDelete: session.ownedWindow.closeOnDelete, groupId: created.groupId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
-		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId, windowOwned: true, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
+		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, browserExtensionId: created.bridge?.extensionId, tabId: created.tabId, windowId: created.windowId, windowOwned: true, windowCloseOnDelete: session.ownedWindow.closeOnDelete, groupId: created.groupId, profileId: desired.isolation.profile?.profileId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
+		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId, profileId: desired.isolation.profile?.profileId, windowOwned: true, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
 	}
 
 	private async createTab(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
@@ -256,8 +286,8 @@ export class ReconcileExecutor {
 			: await this.server.createTab(createUrl, tab.active, timeoutMs), "tabs.create");
 		const created = await this.resolveCreatedTab(result, createUrl, timeoutMs);
 		if (!created?.tabId || !created.browserId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "Created tab could not be resolved", { url: createUrl, result: redactOrchestrationValue(result) as JsonRecord }, { retryable: true });
-		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, tabId: created.tabId, windowId: created.windowId || windowId, windowOwned: windowBinding?.windowOwned, windowCloseOnDelete: windowBinding?.windowCloseOnDelete, groupId: created.groupId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
-		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId || windowId, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
+		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId: created.browserId, browserExtensionId: created.bridge?.extensionId, tabId: created.tabId, windowId: created.windowId || windowId, windowOwned: windowBinding?.windowOwned, windowCloseOnDelete: windowBinding?.windowCloseOnDelete, groupId: created.groupId, profileId: desired.isolation.profile?.profileId, owned: true, desiredUrl: tab.url, createdByOrchestrator: true, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
+		return { tabId: created.tabId, browserId: created.browserId, windowId: created.windowId || windowId, profileId: desired.isolation.profile?.profileId, owned: true, url: created.url, desiredUrl: tab.url, preNavigationHookCount: preNavigationHooksForTab(session.preNavigationHooks, tab).length };
 	}
 
 	private reuseTab(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation): JsonRecord {
@@ -265,8 +295,8 @@ export class ReconcileExecutor {
 		const tabId = operation.resourceRef.tabId;
 		const browserId = operation.resourceRef.browserId;
 		if (!tabId || !browserId) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.TARGET_CONFLICT, "reuseTab operation is missing tabId/browserId", { resourceRef: operation.resourceRef }, { retryable: false });
-		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId, tabId, windowId: operation.resourceRef.windowId, groupId: operation.resourceRef.groupId, windowOwned: false, owned: false, desiredUrl: tab.url, createdByOrchestrator: false, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
-		return { tabId, browserId, windowId: operation.resourceRef.windowId, groupId: operation.resourceRef.groupId, owned: false, url: tab.url };
+		this.store.setBinding(desired.orchestrationId, { sessionTag: operation.resourceRef.sessionTag, tabRole: operation.resourceRef.tabRole, browserId, browserExtensionId: this.server.snapshot().extension?.extensionId, tabId, windowId: operation.resourceRef.windowId, groupId: operation.resourceRef.groupId, profileId: desired.isolation.profile?.profileId, windowOwned: false, owned: false, desiredUrl: tab.url, createdByOrchestrator: false, createdAt: Date.now(), updatedAt: Date.now(), workerBootId: this.server.snapshot().extension?.workerBootId });
+		return { tabId, browserId, windowId: operation.resourceRef.windowId, groupId: operation.resourceRef.groupId, profileId: desired.isolation.profile?.profileId, owned: false, url: tab.url };
 	}
 
 	private async groupTabs(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
@@ -276,6 +306,8 @@ export class ReconcileExecutor {
 			.filter((binding): binding is OrchestrationBinding => !!binding);
 		const tabIds = bindings.map((binding) => binding.tabId).filter((tabId) => Number.isInteger(tabId) && tabId > 0);
 		if (!tabIds.length) return { status: "degraded", tabGroupsStatus: "degraded_operation_failed", reason: "no_bound_tabs_for_grouping" };
+		const browserId = bindings[0]?.browserId;
+		if (browserId && typeof this.server.selectBrowser === "function") this.server.selectBrowser(browserId);
 		const windowId = bindings.find((binding) => binding.windowId)?.windowId;
 		const groupResult = await this.assertCommand(await this.server.sendCommand({ cmd: "tabGroups", method: "group", tabIds, windowId }, { timeoutMs }), "tabGroups.group");
 		const groupData = isRecord(groupResult.data) ? groupResult.data : {};
@@ -302,6 +334,7 @@ export class ReconcileExecutor {
 
 	private async setCookie(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		const cookie = this.cookie(desired, operation);
+		this.selectProfileBrowser(desired);
 		if (cookie.value === undefined) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.INVALID_DESIRED, "setCookie requires a raw cookie value during apply", { cookieKey: cookie.key, name: cookie.name }, { retryable: false });
 		const command: BridgeCommand = { cmd: "cookies", method: "set", url: cookie.url, name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path, storeId: cookie.storeId, partitionKey: cookie.partitionKey, secure: cookie.secure, httpOnly: cookie.httpOnly, sameSite: cookie.sameSite, expirationDate: cookie.expirationDate };
 		await this.assertCommand(await this.server.sendCommand(command, { timeoutMs }), "cookies.set");
@@ -310,6 +343,7 @@ export class ReconcileExecutor {
 
 	private async removeCookie(desired: NormalizedBrowserOrchestrationDesired, operation: ReconcileOperation, timeoutMs: number): Promise<JsonRecord> {
 		const cookie = this.cookie(desired, operation);
+		this.selectProfileBrowser(desired);
 		const command: BridgeCommand = { cmd: "cookies", method: "remove", url: cookie.url, name: cookie.name, storeId: cookie.storeId };
 		await this.assertCommand(await this.server.sendCommand(command, { timeoutMs }), "cookies.remove");
 		return { url: cookie.url, name: cookie.name, removed: true };
@@ -489,6 +523,7 @@ export class ReconcileExecutor {
 		const windowId = operation.resourceRef.windowId || binding.windowId;
 		if (!windowId) return { skipped: true, reason: "no_window_id" };
 		if (!binding.windowOwned && operation.required !== false) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.WINDOW_OWNERSHIP_REQUIRED, "Refusing to close a non-owned window", { windowId, tabId: binding.tabId, browserId: binding.browserId }, { retryable: false });
+		if (typeof this.server.selectBrowser === "function") this.server.selectBrowser(binding.browserId);
 		await this.assertCommand(await this.server.sendCommand({ cmd: "windows", method: "close", windowId }, { timeoutMs }), "windows.close");
 		const state = this.store.get(operation.resourceRef.orchestrationId);
 		for (const item of state?.bindings || []) {
@@ -498,6 +533,10 @@ export class ReconcileExecutor {
 	}
 
 	private selectDesiredBrowser(desired: NormalizedBrowserOrchestrationDesired, operationBrowserId?: string): void {
+		if (!operationBrowserId && desired.isolation.scope === "profile") {
+			this.selectProfileBrowser(desired);
+			return;
+		}
 		const browserId = operationBrowserId || desired.browser.browserId;
 		if (browserId && browserId !== "selected" && typeof this.server.selectBrowser === "function") this.server.selectBrowser(browserId);
 	}
@@ -526,7 +565,7 @@ export class ReconcileExecutor {
 			const snapshotBrowserId = this.server.snapshot().extension?.id;
 			const windowId = Number(fallbackRecord.windowId || 0) || undefined;
 			const groupId = Number(fallbackRecord.groupId || 0) || undefined;
-			return { tabId, browserId: String(fallbackRecord.browserId || snapshotBrowserId || ""), windowId, groupId, url: String(fallbackRecord.url || url), title: String(fallbackRecord.title || ""), type: "ext_ws", connectedAt: Date.now() };
+			return { tabId, browserId: String(fallbackRecord.browserId || snapshotBrowserId || ""), windowId, groupId, url: String(fallbackRecord.url || url), title: String(fallbackRecord.title || ""), type: "ext_ws", connectedAt: Date.now(), bridge: this.server.snapshot().extension };
 		}
 		return tabs.filter((tab) => !tab.disconnectedAt).reverse().find((tab) => urlMatches(tab.url));
 	}
@@ -547,7 +586,7 @@ export class ReconcileExecutor {
 		if (failure) throw new BrowserOrchestrationError(ORCHESTRATION_ERROR_CODES.COMMAND_FAILED, failure.message, { command, ...redactedErrorDetails(failure.details) }, { retryable: false });
 	}
 
-	private async compensateCreatedBindings(desired: NormalizedBrowserOrchestrationDesired, createdBindings: OrchestrationBinding[], preNavigationBindings: OrchestrationBinding[], deadline: number): Promise<{ results: ReconcileOperationResult[]; failures: OrchestrationFailure[] }> {
+	private async compensateCreatedBindings(desired: NormalizedBrowserOrchestrationDesired, createdBindings: OrchestrationBinding[], preNavigationBindings: OrchestrationBinding[], profileIds: string[], deadline: number): Promise<{ results: ReconcileOperationResult[]; failures: OrchestrationFailure[] }> {
 		const results: ReconcileOperationResult[] = [];
 		const failures: OrchestrationFailure[] = [];
 		let seq = 0;
@@ -596,6 +635,26 @@ export class ReconcileExecutor {
 			try {
 				const result = closeWindow ? await this.closeWindow(operation, Math.max(100, remainingMs(deadline))) : await this.closeTab(operation, Math.max(100, remainingMs(deadline)));
 				results.push({ ...operationResultBase(operation), status: "succeeded", finishedAt: Date.now(), result });
+			} catch (error) {
+				const failure = redactedFailure(error, operation.id);
+				failures.push(failure);
+				results.push({ ...operationResultBase(operation), status: "failed", finishedAt: Date.now(), failure });
+			}
+		}
+		for (const profileId of profileIds) {
+			const operation: ReconcileOperation = {
+				id: `cleanup-${++seq}-stopProfile`,
+				phase: "cleanup",
+				action: "stopProfile",
+				resourceRef: { orchestrationId: desired.orchestrationId, sessionTag: createdBindings[0]?.sessionTag || desired.sessions[0]?.tag || "profile", tabRole: createdBindings[0]?.tabRole || desired.sessions[0]?.tabs[0]?.role || "main", profileId },
+				reason: "cleanup managed profile after required operation failure",
+				idempotencyKey: `${desired.orchestrationId}:cleanup:stopProfile:${profileId}`,
+				required: false,
+				redactedParams: { profileId, owned: true },
+			};
+			try {
+				const result = await this.stopProfile(operation, Math.max(100, remainingMs(deadline)));
+				results.push({ ...operationResultBase(operation), status: result.status === "degraded" ? "degraded" : "succeeded", finishedAt: Date.now(), result });
 			} catch (error) {
 				const failure = redactedFailure(error, operation.id);
 				failures.push(failure);

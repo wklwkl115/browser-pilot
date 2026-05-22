@@ -2,6 +2,7 @@ export { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES } from "./Br
 export { ActualStateCollector } from "./ActualStateCollector";
 export { DiffPlanner } from "./DiffPlanner";
 export { OrchestrationStore } from "./OrchestrationStore";
+export { PersistentOrchestrationStore } from "./PersistentOrchestrationStore";
 export { ReconcileExecutor } from "./ReconcileExecutor";
 export { ResourceLocks } from "./ResourceLocks";
 export { normalizeDesired } from "./normalizeDesired";

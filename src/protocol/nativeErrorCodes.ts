@@ -115,6 +115,16 @@ export const nativeErrorCodes = {
     "retryable": true,
     "summary": "Target frame detached before command completion."
   },
+  "INCOGNITO_NOT_ALLOWED": {
+    "category": "driver.profile",
+    "retryable": false,
+    "summary": "Browser extension is not allowed to run in incognito mode."
+  },
+  "INCOGNITO_PROBE_FAILED": {
+    "category": "driver.profile",
+    "retryable": false,
+    "summary": "Explicit incognito diagnostic probe failed."
+  },
   "INJECTION_FAILED": {
     "category": "runtime.hook",
     "retryable": true,
@@ -240,6 +250,36 @@ export const nativeErrorCodes = {
     "retryable": true,
     "summary": "Browser orchestration reconcile or cleanup exceeded its deadline."
   },
+  "ORCHESTRATION_WINDOW_OWNERSHIP_REQUIRED": {
+    "category": "driver.orchestration",
+    "retryable": false,
+    "summary": "Browser orchestration attempted a window operation without owned-window authority."
+  },
+  "PROFILE_CLEANUP_FAILED": {
+    "category": "driver.profile",
+    "retryable": true,
+    "summary": "Managed browser profile process or temporary directory cleanup failed."
+  },
+  "PROFILE_CONNECT_TIMEOUT": {
+    "category": "driver.profile",
+    "retryable": true,
+    "summary": "Managed browser profile extension did not connect before the deadline."
+  },
+  "PROFILE_MANAGER_UNAVAILABLE": {
+    "category": "driver.profile",
+    "retryable": false,
+    "summary": "Managed browser profile manager is unavailable or cannot locate Chrome/Edge."
+  },
+  "PROFILE_START_FAILED": {
+    "category": "driver.profile",
+    "retryable": true,
+    "summary": "Managed browser profile process or temporary extension failed to start."
+  },
+  "PROFILE_STORAGE_LEAK": {
+    "category": "driver.profile",
+    "retryable": false,
+    "summary": "Managed browser profile cookie or storage isolation verification failed."
+  },
   "REQUEST_NOT_FOUND": {
     "category": "runtime.network",
     "retryable": false,
@@ -269,6 +309,26 @@ export const nativeErrorCodes = {
     "category": "runtime.tab",
     "retryable": true,
     "summary": "Target tab crashed during operation."
+  },
+  "TAB_GROUP_ID_REQUIRED": {
+    "category": "runtime.tabGroups",
+    "retryable": false,
+    "summary": "tabGroups.update requires a valid groupId."
+  },
+  "TAB_GROUP_TAB_IDS_REQUIRED": {
+    "category": "runtime.tabGroups",
+    "retryable": false,
+    "summary": "tabGroups group or ungroup requires non-empty tabIds."
+  },
+  "TAB_GROUPS_NOT_SUPPORTED": {
+    "category": "runtime.tabGroups",
+    "retryable": false,
+    "summary": "Chrome tabGroups API is unavailable or not permitted; visual grouping is degraded."
+  },
+  "TAB_GROUPS_OPERATION_FAILED": {
+    "category": "runtime.tabGroups",
+    "retryable": false,
+    "summary": "Chrome tabGroups API operation failed; visual grouping may be degraded."
   },
   "TAB_ID_CONFLICT": {
     "category": "driver.tab",
@@ -379,31 +439,6 @@ export const nativeErrorCodes = {
     "category": "runtime.window",
     "retryable": true,
     "summary": "Chrome windows API operation failed."
-  },
-  "ORCHESTRATION_WINDOW_OWNERSHIP_REQUIRED": {
-    "category": "driver.orchestration",
-    "retryable": false,
-    "summary": "Browser orchestration attempted a window operation without owned-window authority."
-  },
-  "TAB_GROUPS_NOT_SUPPORTED": {
-    "category": "runtime.tabGroups",
-    "retryable": false,
-    "summary": "Chrome tabGroups API is unavailable or not permitted; visual grouping is degraded."
-  },
-  "TAB_GROUP_ID_REQUIRED": {
-    "category": "runtime.tabGroups",
-    "retryable": false,
-    "summary": "tabGroups.update requires a valid groupId."
-  },
-  "TAB_GROUP_TAB_IDS_REQUIRED": {
-    "category": "runtime.tabGroups",
-    "retryable": false,
-    "summary": "tabGroups group or ungroup requires non-empty tabIds."
-  },
-  "TAB_GROUPS_OPERATION_FAILED": {
-    "category": "runtime.tabGroups",
-    "retryable": false,
-    "summary": "Chrome tabGroups API operation failed; visual grouping may be degraded."
   }
 } as const;
 

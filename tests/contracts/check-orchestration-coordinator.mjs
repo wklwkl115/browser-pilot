@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES, preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
+import { BrowserOrchestrationCoordinator, ORCHESTRATION_ERROR_CODES, PersistentOrchestrationStore, preNavigationHookRegistryHash } from "../../src/driver/orchestration/index.ts";
 
 const fixtureEvidence = [];
 const fixtureArtifactPath = path.resolve(".pi", "browser-artifacts", "orchestration-fixture-results.json");
@@ -304,6 +304,71 @@ const desired = {
 	assert.equal(server.commandLog.some((item) => item.cmd === "hook.uninstall"), true, "delete must uninstall owned hook");
 	assert.equal(server.commandLog.some((item) => item.cmd === "tabs.close"), true, "delete must close owned tab");
 	assert.equal((await coordinator.status("orch-main")).ok, false, "delete must remove runtime state");
+}
+
+{
+	const stateDir = path.resolve(".pi", "browser-artifacts", "orchestration-persistence-fixture");
+	const statePath = path.join(stateDir, "state.v1.json");
+	await rm(stateDir, { recursive: true, force: true });
+	const server = new FakeOrchestrationServer();
+	const persistence = new PersistentOrchestrationStore({ statePath, driverRunId: "persist-run-a", piSessionId: "persist-session" });
+	const coordinator = new BrowserOrchestrationCoordinator(server, { persistence });
+	const persistDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: "orch-persist",
+		defaults: { timeoutMs: 3000, navigationTimeoutMs: 1000 },
+		sessions: [{
+			tag: "persist",
+			tabs: [{ role: "main", url: "https://persist.test/app", waitUntil: "none" }],
+			cookies: [{ name: "sid", value: "persist-secret", path: "/" }],
+			networkRecorder: { sessionId: "persist-net" },
+			hookDispatcher: { sessionId: "persist-hook", installFingerprint: "persist-fp" },
+		}],
+	};
+	const applied = captureFixture("persistenceApply", await coordinator.apply(persistDesired));
+	assert.equal(applied.ok, true, "persistence apply must converge before save/load");
+	const savedText = await readFile(statePath, "utf8");
+	assert.equal(savedText.includes("persist-secret"), false, "persisted state must not leak raw cookie values");
+	for (const forbidden of ["HTTP/WebSocket raw body", "postData", "payloadData", "__PI_BROWSER_PRE_NAVIGATION_HOOKS__"]) assert.equal(savedText.includes(forbidden), false, `persisted state must not contain ${forbidden}`);
+	const saved = JSON.parse(savedText);
+	assert.equal(saved.schemaVersion, "pi.browser.orchestration.state/v1", "persisted state schema must be v1");
+	assert.equal(saved.privacy.classification, "local_redacted_orchestration_state", "persisted state must carry local redacted privacy metadata");
+	assert.equal(saved.orchestrations[0].cookies[0].valuePresent, true, "persisted cookie must retain presence metadata");
+	assert.match(saved.orchestrations[0].cookies[0].valueHash, /^[a-f0-9]{64}$/, "persisted cookie must retain only a hash");
+	assert.equal(saved.orchestrations[0].cookies[0].value, undefined, "persisted cookie must not expose raw value field");
+
+	const reloaded = new BrowserOrchestrationCoordinator(server, { persistence: new PersistentOrchestrationStore({ statePath, driverRunId: "persist-run-b", piSessionId: "persist-session" }) });
+	const load = captureFixture("persistenceLoad", await reloaded.loadPersistentState());
+	assert.equal(load.loaded, 1, "persistent store must load one stale orchestration");
+	const staleStatus = captureFixture("persistenceStaleStatus", await reloaded.status("orch-persist"));
+	assert.equal(staleStatus.ok, true, "stale status must be visible");
+	assert.equal(staleStatus.state.persistence.readOnly, true, "loaded persistent state must be read-only");
+	assert.equal(staleStatus.state.persistence.adoptionRequired, true, "loaded persistent state must require adoption");
+	const beforeSideEffects = server.commandLog.length;
+	for (const result of [
+		await reloaded.apply(persistDesired),
+		await reloaded.watch(persistDesired, { intervalMs: 1000, ttlMs: 1000, maxAttempts: 1 }),
+		await reloaded.stop("orch-persist"),
+		await reloaded.delete("orch-persist"),
+	]) {
+		assert.equal(result.ok, false, "stale apply/watch/stop/delete must be rejected before adoption");
+		assert.equal(result.failures[0].code, ORCHESTRATION_ERROR_CODES.TARGET_STALE, "stale mutation must return target-stale/adoption-required failure");
+	}
+	assert.equal(server.commandLog.length, beforeSideEffects, "stale mutation rejection must not execute browser side effects");
+
+	const badAdoption = await reloaded.apply({ ...persistDesired, adoption: { enabled: true, orchestrationId: "orch-persist", resourceTypes: ["tab"], verifyOrigins: ["https://wrong.test"], verifyUrls: ["https://wrong.test/app"], requireOwnedFingerprint: true } });
+	assert.equal(badAdoption.ok, false, "adoption must fail when verifyOrigins/verifyUrls do not match");
+	assert.equal(server.commandLog.some((item) => item.cmd === "tabs.close"), false, "failed adoption must not close old tabs");
+	const adopted = captureFixture("persistenceAdopt", await reloaded.apply({ ...persistDesired, adoption: { enabled: true, orchestrationId: "orch-persist", resourceTypes: ["tab", "networkRecorder", "hookDispatcher", "cookie"], verifyOrigins: ["https://persist.test"], verifyUrls: ["https://persist.test/app"], requireOwnedFingerprint: true } }));
+	assert.equal(adopted.ok, true, "explicit adoption must allow normal reconcile after verification");
+	const adoptedStatus = await reloaded.status("orch-persist");
+	assert.equal(adoptedStatus.state.persistence.status, "adopted", "adopted state must clear read-only gate");
+	assert.equal(adoptedStatus.state.persistence.readOnly, false, "adopted state must become mutable");
+	const deleted = captureFixture("persistenceAdoptedDelete", await reloaded.delete("orch-persist"));
+	assert.equal(deleted.ok, true, "delete after adoption must cleanup adopted resources");
+	assert.equal(server.commandLog.some((item) => item.cmd === "network.stop"), true, "adopted delete must stop adopted network recorder");
+	assert.equal(server.commandLog.some((item) => item.cmd === "hook.uninstall"), true, "adopted delete must uninstall adopted hook dispatcher");
+	assert.equal(server.commandLog.some((item) => item.cmd === "tabs.close"), true, "adopted delete may close verified owned tab");
 }
 
 {

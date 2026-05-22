@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,8 @@ import { executeBrowserWaitWithSupervisor } from "../../src/driver/BrowserWaitSu
 const HOST = "127.0.0.1";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const failureArtifactPath = path.join(root, ".pi", "browser-artifacts", "lifecycle-fixture-failure.json");
+const lifecycleStateDir = path.join(root, ".pi", "browser-artifacts", "lifecycle-orchestration-state");
+const lifecycleStatePath = path.join(lifecycleStateDir, "state.v1.json");
 const SECRET_KEY = /cookie|token|authorization|password|secret|body|postdata/i;
 
 function sanitize(value, depth = 0) {
@@ -132,13 +134,49 @@ async function expectReject(promise, code) {
 async function runLifecycleFixture() {
 	const diagnostics = { events: [], outbounds: [], snapshots: [], resourceState: {} };
 	const port = await freePort();
-	const server = new BrowserBridgeServer({ host: HOST, port });
+	await rm(lifecycleStateDir, { recursive: true, force: true });
+	await mkdir(lifecycleStateDir, { recursive: true });
+	const now = Date.now();
+	await writeFile(lifecycleStatePath, `${JSON.stringify({
+		schemaVersion: "pi.browser.orchestration.state/v1",
+		createdAt: now,
+		updatedAt: now,
+		driverRunId: "previous-lifecycle-run",
+		piSessionId: "previous-lifecycle-session",
+		mode: "diagnostic",
+		privacy: { classification: "local_redacted_orchestration_state", localOnly: true, redaction: "required", cleanup: "rm -rf .pi/browser-artifacts/orchestration-state" },
+		orchestrations: [{
+			orchestrationId: "orch-lifecycle-persist",
+			generation: "g-old",
+			desiredHash: "h-old",
+			createdAt: now,
+			updatedAt: now,
+			cleanupOnFailure: true,
+			closeOwnedTabsOnDelete: true,
+			redactedDesired: { apiVersion: "pi.browser/v1", orchestrationId: "orch-lifecycle-persist", sessions: [{ tag: "persist", tabs: [{ role: "main", url: "https://persist.lifecycle.test/" }] }] },
+			bindings: [{ sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, owned: true, createdByOrchestrator: true, desiredUrl: "https://persist.lifecycle.test/", createdAt: now, updatedAt: now, fingerprint: { sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, url: "https://persist.lifecycle.test/", origin: "https://persist.lifecycle.test", owned: true, createdByOrchestrator: true } }],
+			cookies: [],
+			fingerprints: [{ sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, url: "https://persist.lifecycle.test/", origin: "https://persist.lifecycle.test", owned: true, createdByOrchestrator: true }],
+			status: "current",
+			readOnly: false,
+			adoptionRequired: false,
+		}],
+	}, null, 2)}\n`, "utf8");
+	const server = new BrowserBridgeServer({ host: HOST, port, orchestrationStatePath: lifecycleStatePath, orchestrationDriverRunId: "current-lifecycle-run", piSessionId: "current-lifecycle-session" });
 	let alpha;
 	let beta;
 	let gamma;
 	try {
 		await server.start();
 		diagnostics.events.push({ event: "server.start", port });
+		const persistentStatus = await server.orchestrator().status("orch-lifecycle-persist");
+		assert.equal(persistentStatus.ok, true, "server.start must load persisted orchestration status");
+		assert.equal(persistentStatus.state.persistence.readOnly, true, "server.start loaded persistent state must be read-only");
+		assert.equal(persistentStatus.state.persistence.adoptionRequired, true, "server.start loaded persistent state must require adoption");
+		const persistentDelete = await server.orchestrator().delete("orch-lifecycle-persist", { timeoutMs: 200 });
+		assert.equal(persistentDelete.ok, false, "loaded read-only persistent state must reject delete before adoption");
+		assert.equal(persistentDelete.failures[0].code, "ORCHESTRATION_TARGET_STALE", "read-only persistent delete must fail as stale target");
+		diagnostics.resourceState.persistentOrchestration = { status: persistentStatus.state.persistence, deleteFailure: persistentDelete.failures[0] };
 
 		alpha = await openFakeClient(port, "alpha");
 		sendJson(alpha, readyMessage("alpha-extension", [

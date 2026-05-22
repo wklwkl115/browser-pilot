@@ -8,7 +8,9 @@ import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter";
 import { BrowserTargetResolver } from "./BrowserTargetResolver";
+import { BrowserProfileManager, type ManagedBrowserProfile } from "./BrowserProfileManager";
 import { BrowserOrchestrationCoordinator } from "./orchestration/BrowserOrchestrationCoordinator";
+import { PersistentOrchestrationStore } from "./orchestration/PersistentOrchestrationStore";
 import { bridgeResultFailure, delay, normalizePort, recordValue, toTabId } from "./bridgeUtils";
 import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserTabInfo, BrowserTabSession, ExecuteOptions, ResolveBrowserToolTargetInput } from "./types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
@@ -26,6 +28,15 @@ type IncomingMessage = {
 };
 
 type SendPayloadOptions = ExecuteOptions & { resolvedTarget?: BrowserBridgeTargetInfo };
+type BrowserBridgeServerOptions = {
+	host?: string;
+	port?: number;
+	orchestrationStatePath?: string;
+	orchestrationPersistence?: boolean;
+	orchestrationDriverRunId?: string;
+	piSessionId?: string;
+	profileExtensionSource?: string;
+};
 
 export class BrowserBridgeServer {
 	readonly host: string;
@@ -38,8 +49,9 @@ export class BrowserBridgeServer {
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private readonly orchestrationCoordinator: BrowserOrchestrationCoordinator;
 	private readonly targetResolver: BrowserTargetResolver;
+	private readonly profileManager: BrowserProfileManager;
 
-	constructor(options: { host?: string; port?: number } = {}) {
+	constructor(options: BrowserBridgeServerOptions = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
 		this.port = options.port || normalizePort(process.env.PI_BROWSER_BRIDGE_PORT);
 		this.clients = new BrowserBridgeClientRegistry(this.port);
@@ -50,7 +62,19 @@ export class BrowserBridgeServer {
 			(target) => this.tabs.resolvedTarget(target),
 		);
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.port, (ws) => this.registerClient(ws));
-		this.orchestrationCoordinator = new BrowserOrchestrationCoordinator(this);
+		this.profileManager = new BrowserProfileManager({
+			bridgePort: this.port,
+			extensionSource: options.profileExtensionSource,
+			getClients: () => this.clients.connectedClientInfos(),
+			selectBrowser: (browserId) => this.selectBrowser(browserId),
+			startBridgeEndpoint: async (port) => {
+				const endpoint = new BrowserBridgeHttpServer(this.host, port, (ws) => this.registerClient(ws));
+				await endpoint.start();
+				return endpoint;
+			},
+		});
+		const persistence = options.orchestrationPersistence === false ? false : new PersistentOrchestrationStore({ statePath: options.orchestrationStatePath, driverRunId: options.orchestrationDriverRunId, piSessionId: options.piSessionId });
+		this.orchestrationCoordinator = new BrowserOrchestrationCoordinator(this, { persistence });
 		this.targetResolver = new BrowserTargetResolver(this.tabs, this.orchestrationCoordinator.store, () => this.getTabs());
 	}
 
@@ -59,11 +83,14 @@ export class BrowserBridgeServer {
 	}
 
 	async start(): Promise<void> {
-		return this.httpEndpoint.start();
+		await this.httpEndpoint.start();
+		await this.orchestrationCoordinator.loadPersistentState().catch(() => undefined);
 	}
 
 	async stop(): Promise<void> {
 		await this.orchestrationCoordinator.shutdown({ cleanup: true, timeoutMs: 5_000 }).catch(() => undefined);
+		await this.orchestrationCoordinator.savePersistentState("bridge_stop").catch(() => undefined);
+		await this.profileManager.stopAll({ deleteFiles: true, timeoutMs: 5_000 }).catch(() => undefined);
 		this.pendingRequests.rejectAllStopped();
 		this.clients.clear();
 		this.tabs.clear();
@@ -72,6 +99,18 @@ export class BrowserBridgeServer {
 
 	orchestrator(): BrowserOrchestrationCoordinator {
 		return this.orchestrationCoordinator;
+	}
+
+	async ensureManagedProfile(options: { profileId: string; initialUrl?: string; reuse?: "none" | "owned"; cleanup?: "delete" | "keepOnFailure"; timeoutMs?: number }): Promise<ManagedBrowserProfile> {
+		return await this.profileManager.ensureProfile(options);
+	}
+
+	async stopManagedProfile(profileId: string, options: { deleteFiles?: boolean; timeoutMs?: number } = {}): Promise<ManagedBrowserProfile | undefined> {
+		return await this.profileManager.stopProfile(profileId, options);
+	}
+
+	managedProfiles(): ManagedBrowserProfile[] {
+		return this.profileManager.list();
 	}
 
 	snapshot(): BrowserBridgeSnapshot {
@@ -90,6 +129,7 @@ export class BrowserBridgeServer {
 			tabs: this.getTabs({ includeDisconnected: true }),
 			pending: this.pendingRequests.snapshot(),
 			orchestration: this.orchestrationCoordinator.snapshot(),
+			profiles: this.profileManager.list(),
 		};
 	}
 
@@ -237,7 +277,7 @@ export class BrowserBridgeServer {
 	}
 
 	private socketForTab(tabId: number, target?: BrowserBridgeTargetInfo): WebSocket {
-		const socket = this.tabs.socketForTabTarget(tabId, target?.browserId);
+		const socket = this.tabs.socketForTabTarget(tabId, target?.browserId, target?.profileId);
 		if (socket) return socket;
 		throw new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
 			tabId,

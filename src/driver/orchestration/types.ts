@@ -4,11 +4,13 @@ import type { BridgeCommand } from "../../protocol/nativeProtocol";
 export type JsonRecord = Record<string, unknown>;
 
 export type BrowserOrchestrationAction = "plan" | "apply" | "status" | "delete" | "watch" | "stop";
-export type BrowserOrchestrationPhase = "observe" | "window" | "tab" | "visual-grouping" | "recorder-pre-nav" | "hook-pre-nav" | "cookie" | "navigation" | "recorder" | "hook" | "verify" | "cleanup";
-export type BrowserOrchestrationOperationAction = "createWindow" | "createTab" | "reuseTab" | "groupTabs" | "startNetwork" | "installPreNavigationHook" | "setCookie" | "removeCookie" | "navigate" | "installHook" | "verifyStatus" | "closeTab" | "closeWindow" | "stopNetwork" | "uninstallHook" | "uninstallPreNavigationHook";
+export type BrowserOrchestrationPhase = "profile" | "observe" | "window" | "tab" | "visual-grouping" | "recorder-pre-nav" | "hook-pre-nav" | "cookie" | "navigation" | "recorder" | "hook" | "verify" | "cleanup";
+export type BrowserOrchestrationOperationAction = "ensureProfile" | "stopProfile" | "createWindow" | "createTab" | "reuseTab" | "groupTabs" | "startNetwork" | "installPreNavigationHook" | "setCookie" | "removeCookie" | "navigate" | "installHook" | "verifyStatus" | "closeTab" | "closeWindow" | "stopNetwork" | "uninstallHook" | "uninstallPreNavigationHook";
 export type BrowserOrchestrationOperationStatus = "pending" | "succeeded" | "degraded" | "failed" | "skipped";
 
-export const ORCHESTRATION_PHASE_ORDER: BrowserOrchestrationPhase[] = ["observe", "window", "tab", "visual-grouping", "recorder-pre-nav", "hook-pre-nav", "cookie", "navigation", "recorder", "hook", "verify", "cleanup"];
+export const ORCHESTRATION_PHASE_ORDER: BrowserOrchestrationPhase[] = ["profile", "observe", "window", "tab", "visual-grouping", "recorder-pre-nav", "hook-pre-nav", "cookie", "navigation", "recorder", "hook", "verify", "cleanup"];
+
+export type BrowserManagedProfileInfo = { profileId: string; profileDir?: string; extensionDir?: string; bridgePort?: number; debugPort?: number; browserId?: string; browserExtensionId?: string; processId?: number; owned: true; cleanup?: string; connectedAt?: number };
 
 export type BrowserOrchestrationServer = {
 	snapshot(): BrowserBridgeSnapshot;
@@ -19,6 +21,8 @@ export type BrowserOrchestrationServer = {
 	closeTab(tabId: number | string, timeoutMs?: number, options?: { browserId?: string }): Promise<BrowserBridgeExecutionResult>;
 	sendCommand(command: BridgeCommand, options?: ExecuteOptions): Promise<BrowserBridgeExecutionResult>;
 	waitForExtensionReconnect?(previousClientId: string | undefined, timeoutMs?: number): Promise<BrowserBridgeSnapshot>;
+	ensureManagedProfile?(options: { profileId: string; initialUrl?: string; reuse?: "none" | "owned"; cleanup?: "delete" | "keepOnFailure"; timeoutMs?: number }): Promise<BrowserManagedProfileInfo>;
+	stopManagedProfile?(profileId: string, options?: { deleteFiles?: boolean; timeoutMs?: number }): Promise<BrowserManagedProfileInfo | undefined>;
 };
 
 export type BrowserDesiredCookieInput = {
@@ -58,6 +62,18 @@ export type BrowserDesiredPreNavigationHookInput = {
 	required?: unknown;
 };
 
+export type BrowserOrchestrationAdoptionInput = {
+	enabled?: unknown;
+	orchestrationId?: unknown;
+	resourceTypes?: unknown;
+	verifyOrigins?: unknown;
+	verifyUrls?: unknown;
+	verifyBrowserIds?: unknown;
+	verifyWindowIds?: unknown;
+	verifyProfileIds?: unknown;
+	requireOwnedFingerprint?: unknown;
+};
+
 export type BrowserDesiredSessionInput = {
 	tag?: unknown;
 	required?: unknown;
@@ -71,6 +87,8 @@ export type BrowserDesiredSessionInput = {
 	preNavigationHooks?: unknown;
 };
 
+export type BrowserOrchestrationProfileIsolationInput = { profileId?: unknown; lifecycle?: unknown; reuse?: unknown; cleanup?: unknown };
+
 export type BrowserOrchestrationDesiredInput = {
 	apiVersion?: unknown;
 	orchestrationId?: unknown;
@@ -81,6 +99,7 @@ export type BrowserOrchestrationDesiredInput = {
 	windowIsolation?: unknown;
 	visualGrouping?: unknown;
 	preNavigationHooks?: unknown;
+	adoption?: unknown;
 	allowedOrigins?: unknown;
 	ttlMs?: unknown;
 	sessions?: unknown;
@@ -99,10 +118,18 @@ export type NormalizedOrchestrationDefaults = {
 	cleanupOnFailure: boolean;
 };
 
+export type NormalizedOrchestrationProfileIsolation = {
+	profileId: string;
+	lifecycle: "managed";
+	reuse: "none" | "owned";
+	cleanup: "delete" | "keepOnFailure";
+};
+
 export type NormalizedOrchestrationIsolation = {
-	scope: "logical" | "browser";
+	scope: "logical" | "browser" | "profile";
 	ownedTabsOnly: boolean;
 	closeOwnedTabsOnDelete: boolean;
+	profile?: NormalizedOrchestrationProfileIsolation;
 };
 
 export type NormalizedDesiredTab = {
@@ -241,17 +268,20 @@ export type NormalizedBrowserOrchestrationDesired = {
 	allowedOrigins: string[];
 	ttlMs?: number;
 	sessions: NormalizedDesiredSession[];
+	adoption?: OrchestrationAdoptionPolicy;
 };
 
 export type OrchestrationBinding = {
 	sessionTag: string;
 	tabRole: string;
 	browserId: string;
+	browserExtensionId?: string;
 	tabId: number;
 	windowId?: number;
 	windowOwned?: boolean;
 	windowCloseOnDelete?: boolean;
 	groupId?: number;
+	profileId?: string;
 	tabGroupsStatus?: "available" | "degraded_not_supported" | "degraded_operation_failed" | "disabled";
 	owned: boolean;
 	desiredUrl: string;
@@ -298,6 +328,138 @@ export type OrchestrationRuntimeState = {
 	lastPlan?: BrowserOrchestrationPlanSummary;
 	lastResult?: BrowserOrchestrationResultSummary;
 	lastFailures?: OrchestrationFailure[];
+	persistence?: OrchestrationPersistenceMetadata;
+};
+
+export type OrchestrationPersistenceSchemaVersion = "pi.browser.orchestration.state/v1";
+export type OrchestrationPersistenceMode = "diagnostic" | "adoption_pending" | "adopted_current";
+export type OrchestrationPersistenceStatus = "current" | "stale" | "read_only" | "adoption_required" | "adopted";
+export type OrchestrationPersistenceResourceType = "tab" | "window" | "networkRecorder" | "hookDispatcher" | "preNavigationHook" | "cookie";
+
+export type OrchestrationPersistenceMetadata = {
+	schemaVersion: OrchestrationPersistenceSchemaVersion;
+	driverRunId: string;
+	piSessionId: string;
+	status: OrchestrationPersistenceStatus;
+	readOnly: boolean;
+	adoptionRequired: boolean;
+	loadedAt?: number;
+	adoptedAt?: number;
+	path?: string;
+};
+
+export type OrchestrationPersistedResourceFingerprint = {
+	sessionTag: string;
+	tabRole: string;
+	browserId?: string;
+	browserExtensionId?: string;
+	tabId?: number;
+	windowId?: number;
+	profileId?: string;
+	origin?: string;
+	url?: string;
+	desiredUrl?: string;
+	workerBootId?: string;
+	networkSessionId?: string;
+	networkConfigHash?: string;
+	hookSessionId?: string;
+	hookFingerprint?: string;
+	preNavigationHookHashes?: string[];
+	cookieKeys?: string[];
+	owned?: boolean;
+	createdByOrchestrator?: boolean;
+};
+
+export type OrchestrationPersistedBinding = {
+	sessionTag: string;
+	tabRole: string;
+	browserId: string;
+	browserExtensionId?: string;
+	tabId: number;
+	windowId?: number;
+	windowOwned?: boolean;
+	windowCloseOnDelete?: boolean;
+	groupId?: number;
+	profileId?: string;
+	tabGroupsStatus?: OrchestrationBinding["tabGroupsStatus"];
+	owned: boolean;
+	createdByOrchestrator: boolean;
+	desiredUrl: string;
+	createdAt: number;
+	updatedAt: number;
+	networkSessionId?: string;
+	networkConfigHash?: string;
+	hookSessionId?: string;
+	hookFingerprint?: string;
+	preNavigationHooks?: PreNavigationHookRegistration[];
+	workerBootId?: string;
+	fingerprint: OrchestrationPersistedResourceFingerprint;
+};
+
+export type OrchestrationPersistedCookieFingerprint = {
+	key: string;
+	sessionTag: string;
+	tabRole: string;
+	origin: string;
+	name: string;
+	action: "set" | "remove";
+	domain?: string;
+	path?: string;
+	storeId?: string;
+	partitionKeyHash?: string;
+	secure?: boolean;
+	httpOnly?: boolean;
+	sameSite?: NormalizedDesiredCookie["sameSite"];
+	expirationDate?: number;
+	valueHash?: string;
+	valuePresent?: boolean;
+};
+
+export type OrchestrationPersistedRecord = {
+	orchestrationId: string;
+	generation: string;
+	desiredHash: string;
+	createdAt: number;
+	updatedAt: number;
+	deletedAt?: number;
+	cleanupOnFailure?: boolean;
+	closeOwnedTabsOnDelete?: boolean;
+	redactedDesired: unknown;
+	bindings: OrchestrationPersistedBinding[];
+	cookies: OrchestrationPersistedCookieFingerprint[];
+	fingerprints: OrchestrationPersistedResourceFingerprint[];
+	status: OrchestrationPersistenceStatus;
+	readOnly: boolean;
+	adoptionRequired: boolean;
+	adoptedAt?: number;
+};
+
+export type OrchestrationAdoptionPolicy = {
+	enabled: true;
+	orchestrationId: string;
+	resourceTypes: OrchestrationPersistenceResourceType[];
+	verifyOrigins: string[];
+	verifyUrls: string[];
+	verifyBrowserIds?: string[];
+	verifyWindowIds?: number[];
+	verifyProfileIds?: string[];
+	requireOwnedFingerprint: boolean;
+};
+
+export type OrchestrationPersistedStateFile = {
+	schemaVersion: OrchestrationPersistenceSchemaVersion;
+	createdAt: number;
+	updatedAt: number;
+	driverRunId: string;
+	piSessionId: string;
+	mode: OrchestrationPersistenceMode;
+	privacy: {
+		classification: "local_redacted_orchestration_state";
+		localOnly: true;
+		redaction: "required";
+		cleanup: string;
+	};
+	orchestrations: OrchestrationPersistedRecord[];
 };
 
 export type ActualCookieState = {
@@ -352,10 +514,12 @@ export type ActualTabState = {
 	desiredUrl: string;
 	tabId?: number;
 	browserId?: string;
+	browserExtensionId?: string;
 	windowId?: number;
 	windowOwned?: boolean;
 	windowCloseOnDelete?: boolean;
 	groupId?: number;
+	profileId?: string;
 	tabGroupsStatus?: string;
 	exists: boolean;
 	url?: string;
@@ -383,6 +547,7 @@ export type BrowserOrchestrationActual = {
 	tabs: BrowserTabInfo[];
 	windows?: JsonRecord[];
 	tabGroups?: JsonRecord;
+	profiles?: BrowserManagedProfileInfo[];
 	sessions: Array<{ tag: string; tabs: ActualTabState[]; cookies: ActualCookieState[] }>;
 	diagnostics: Array<JsonRecord>;
 };
@@ -395,6 +560,7 @@ export type ReconcileOperationResourceRef = {
 	browserId?: string;
 	windowId?: number;
 	groupId?: number;
+	profileId?: string;
 	cookieKey?: string;
 	cookieName?: string;
 	sessionId?: string;
@@ -468,6 +634,7 @@ export type BrowserOrchestrationApplyResult = {
 	failures: OrchestrationFailure[];
 	actual?: BrowserOrchestrationActual;
 	plan?: BrowserOrchestrationPlanSummary;
+	persistence?: JsonRecord;
 };
 
 export type BrowserOrchestrationPlanResult = {
@@ -491,6 +658,7 @@ export type BrowserOrchestrationStatusResult = {
 	plan?: BrowserOrchestrationPlanSummary;
 	converged?: boolean;
 	failures?: OrchestrationFailure[];
+	persistence?: JsonRecord;
 };
 
 export type BrowserOrchestrationResultSummary = {
@@ -525,4 +693,5 @@ export type BrowserOrchestrationStopResult = {
 	operationResults?: ReconcileOperationResult[];
 	failures?: OrchestrationFailure[];
 	state?: OrchestrationRuntimeState;
+	persistence?: JsonRecord;
 };

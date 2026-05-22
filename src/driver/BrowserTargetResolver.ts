@@ -52,7 +52,7 @@ export class BrowserTargetResolver {
 		}
 		if (target && explicitTabId === undefined && !input.allowEmptyTarget) throw new BrowserBridgeError("TARGET_NOT_FOUND", "Target object does not identify a browser tab", { toolName: input.toolName, commandName, target: compactTarget(target) });
 		if (explicitTabId === undefined) return undefined;
-		const session = this.tabs.liveSessionForTabTarget(explicitTabId, target?.browserId);
+		const session = this.tabs.liveSessionForTabTarget(explicitTabId, target?.browserId, target?.profileId);
 		if (!session) {
 			const code = target ? "TARGET_NOT_FOUND" : "TAB_NOT_FOUND";
 			throw new BrowserBridgeError(code, "Target browser tab is not connected", { toolName: input.toolName, commandName, tabId: explicitTabId, browserId: target?.browserId, target: compactTarget(target), tabs: this.getTabs() });
@@ -103,23 +103,28 @@ export class BrowserTargetResolver {
 		if (target.orchestrationId && !states.some((state) => state.orchestrationId === target.orchestrationId)) {
 			throw new BrowserBridgeError("ORCHESTRATION_SESSION_NOT_FOUND", "Orchestration state is not found", { toolName: context.toolName, commandName: context.commandName, orchestrationId: target.orchestrationId });
 		}
-		const candidates = states.flatMap((state) => {
+		const allCandidates = states.flatMap((state) => {
 			if (target.orchestrationId && state.orchestrationId !== target.orchestrationId) return [];
 			return state.bindings
 				.filter((binding) => binding.sessionTag === target.sessionTag && binding.tabRole === target.tabRole)
-				.map((binding) => ({ orchestrationId: state.orchestrationId, binding }));
+				.map((binding) => ({ orchestrationId: state.orchestrationId, binding, persistence: state.persistence }));
 		});
-		if (candidates.length === 0) throw new BrowserBridgeError("TARGET_NOT_FOUND", "No orchestration binding matches target", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target), states: states.map((state) => ({ orchestrationId: state.orchestrationId, bindings: state.bindings.map((binding) => ({ sessionTag: binding.sessionTag, tabRole: binding.tabRole, browserId: binding.browserId, tabId: binding.tabId, owned: binding.owned })) })) });
+		const staleCandidates = allCandidates.filter((item) => item.persistence?.readOnly || item.persistence?.adoptionRequired);
+		const candidates = allCandidates.filter((item) => !item.persistence?.readOnly && !item.persistence?.adoptionRequired);
+		if (candidates.length === 0 && staleCandidates.length) throw new BrowserBridgeError("ORCHESTRATION_TARGET_STALE", "Orchestration target requires explicit adoption before use", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target), adoptionRequired: true, candidates: staleCandidates.map((item) => ({ orchestrationId: item.orchestrationId, browserId: item.binding.browserId, tabId: item.binding.tabId, persistence: item.persistence })) });
+		if (candidates.length === 0) throw new BrowserBridgeError("TARGET_NOT_FOUND", "No orchestration binding matches target", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target), states: states.map((state) => ({ orchestrationId: state.orchestrationId, persistence: state.persistence ? { status: state.persistence.status, readOnly: state.persistence.readOnly, adoptionRequired: state.persistence.adoptionRequired } : undefined, bindings: state.bindings.map((binding) => ({ sessionTag: binding.sessionTag, tabRole: binding.tabRole, browserId: binding.browserId, tabId: binding.tabId, owned: binding.owned })) })) });
 		const browserFiltered = target.browserId ? candidates.filter((item) => this.targetBrowserMatchesBinding(item.binding.browserId, item.binding.tabId, target.browserId as string)) : candidates;
 		if (target.browserId && browserFiltered.length === 0) throw new BrowserBridgeError("TARGET_BROWSER_CONFLICT", "Target browserId conflicts with orchestration binding", { toolName: context.toolName, commandName: context.commandName, browserId: target.browserId, target: compactTarget(target), candidates: candidates.map((item) => ({ orchestrationId: item.orchestrationId, browserId: item.binding.browserId, tabId: item.binding.tabId })) });
-		const ownedFiltered = target.requireOwned ? browserFiltered.filter((item) => item.binding.owned) : browserFiltered;
+		const profileFiltered = target.profileId ? browserFiltered.filter((item) => item.binding.profileId === target.profileId) : browserFiltered;
+		if (target.profileId && profileFiltered.length === 0) throw new BrowserBridgeError("TARGET_NOT_FOUND", "No orchestration binding matches target profileId", { toolName: context.toolName, commandName: context.commandName, profileId: target.profileId, target: compactTarget(target), candidates: browserFiltered.map((item) => ({ orchestrationId: item.orchestrationId, browserId: item.binding.browserId, tabId: item.binding.tabId, profileId: item.binding.profileId })) });
+		const ownedFiltered = target.requireOwned ? profileFiltered.filter((item) => item.binding.owned) : profileFiltered;
 		if (ownedFiltered.length === 0) throw new BrowserBridgeError("TARGET_NOT_FOUND", "No owned orchestration binding matches target", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target) });
 		if (ownedFiltered.length > 1) throw new BrowserBridgeError("TARGET_AMBIGUOUS", "Logical browser target matches multiple orchestration bindings", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target), candidates: ownedFiltered.map((item) => ({ orchestrationId: item.orchestrationId, browserId: item.binding.browserId, tabId: item.binding.tabId, owned: item.binding.owned })) });
 		const resolved = ownedFiltered[0];
 		this.assertSameTabId(explicitTabId, resolved.binding.tabId, { commandName: context.commandName, left: "explicit tabId", right: "orchestration binding", target });
-		const session = this.tabs.liveSessionForTabTarget(resolved.binding.tabId, resolved.binding.browserId);
+		const session = this.tabs.liveSessionForTabTarget(resolved.binding.tabId, resolved.binding.browserId, resolved.binding.profileId);
 		if (!session) throw new BrowserBridgeError("ORCHESTRATION_TARGET_STALE", "Orchestration target binding does not reference a live tab", { toolName: context.toolName, commandName: context.commandName, target: compactTarget(target), orchestrationId: resolved.orchestrationId, binding: { sessionTag: resolved.binding.sessionTag, tabRole: resolved.binding.tabRole, browserId: resolved.binding.browserId, tabId: resolved.binding.tabId, owned: resolved.binding.owned }, tabs: this.getTabs() });
-		return this.tabs.targetInfo("orchestration", resolved.binding.tabId, { browserId: resolved.binding.browserId, orchestrationId: resolved.orchestrationId, sessionTag: resolved.binding.sessionTag, tabRole: resolved.binding.tabRole });
+		return this.tabs.targetInfo("orchestration", resolved.binding.tabId, { browserId: resolved.binding.browserId, orchestrationId: resolved.orchestrationId, sessionTag: resolved.binding.sessionTag, tabRole: resolved.binding.tabRole, profileId: resolved.binding.profileId });
 	}
 
 	private targetBrowserMatchesBinding(bindingBrowserId: string, tabId: number, targetBrowserId: string): boolean {

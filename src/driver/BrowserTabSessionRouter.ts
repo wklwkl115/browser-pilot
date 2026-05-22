@@ -93,6 +93,7 @@ export class BrowserTabSessionRouter {
 				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
 				windowId: toTabId(tab.windowId) ?? existing?.windowId,
 				groupId: toTabId(tab.groupId) ?? existing?.groupId,
+				profileId: this.clients.info(ws)?.profileId || existing?.profileId,
 				type: "ext_ws",
 				connectedAt: existing?.connectedAt || now,
 				bridge: this.clients.info(ws),
@@ -123,8 +124,8 @@ export class BrowserTabSessionRouter {
 		return this.tabIdForSessionId(this.defaultSessionId);
 	}
 
-	liveSessionForTabTarget(tabId: number, browserId?: string): BrowserTabSession | undefined {
-		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
+	liveSessionForTabTarget(tabId: number, browserId?: string, profileId?: string): BrowserTabSession | undefined {
+		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client) && (!profileId || session.profileId === profileId));
 		if (browserId) return live.find((session) => session.browserId === browserId || session.bridge?.extensionId === browserId || session.bridge?.id === browserId);
 		const scopeClient = this.clients.selectedOpenClient();
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
@@ -140,8 +141,8 @@ export class BrowserTabSessionRouter {
 		return this.liveSessionForTabTarget(tabId);
 	}
 
-	socketForTabTarget(tabId: number, browserId?: string): WebSocket | undefined {
-		return this.liveSessionForTabTarget(tabId, browserId)?.client;
+	socketForTabTarget(tabId: number, browserId?: string, profileId?: string): WebSocket | undefined {
+		return this.liveSessionForTabTarget(tabId, browserId, profileId)?.client;
 	}
 
 	socketForTab(tabId: number): WebSocket | undefined {

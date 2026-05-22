@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(root, "bridge", "browser_bridge_config.json");
-const bridgeConfigPath = path.join(root, "bridge", "pi_browser_bridge", "config.js");
+const bridgeConfigPath = path.join(root, "bridge_src", "service_worker", "config.ts");
 const tsConfigPath = path.join(root, "src", "driver", "browserBridgeConfig.ts");
 
 function assertConfig(value) {
@@ -28,6 +28,11 @@ const PI_BROWSER_BRIDGE_HOST = ${JSON.stringify(config.host)};
 const PI_BROWSER_BRIDGE_PORT = ${JSON.stringify(config.port)};
 const PI_BROWSER_BRIDGE_WS_URL = ${JSON.stringify(wsUrl)};
 const PI_BROWSER_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
+const PI_BROWSER_MANAGED_PROFILE_B64 = String((globalThis as { __PI_BROWSER_MANAGED_PROFILE_B64__?: string }).__PI_BROWSER_MANAGED_PROFILE_B64__ || "__PI_BROWSER_MANAGED_PROFILE_B64__");
+const PI_BROWSER_MANAGED_PROFILE = PI_BROWSER_MANAGED_PROFILE_B64 === "__PI_BROWSER_MANAGED_PROFILE_B64__" ? null : JSON.parse(atob(PI_BROWSER_MANAGED_PROFILE_B64));
+// ESM module boundary marker for TODO 189
+export { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL, PI_BROWSER_MANAGED_PROFILE };
+export const __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL, PI_BROWSER_MANAGED_PROFILE } };
 `;
 writeFileSync(bridgeConfigPath, bridgeConfig, "utf8");
 

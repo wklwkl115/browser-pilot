@@ -138,6 +138,8 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `FRAME_DETACHED` | page | runtime.frame | yes | schema |  |
 | `FRAME_EVAL_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `FRAME_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
+| `INCOGNITO_NOT_ALLOWED` | driver | driver.profile | no | schema |  |
+| `INCOGNITO_PROBE_FAILED` | driver | driver.profile | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
 | `INTERNAL_ERROR` | native | runtime.internal | no | schema |  |
 | `INVALID_BROWSER_COMMAND` | protocol | driver.command | no | schema | `src/driver/BrowserBridgeServer.ts` |
@@ -170,6 +172,11 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ORCHESTRATION_TARGET_STALE` | driver | driver.target | yes | schema | `src/driver/BrowserTargetResolver.ts` |
 | `ORCHESTRATION_TIMEOUT` | driver | driver.orchestration | yes | schema |  |
 | `ORCHESTRATION_WINDOW_OWNERSHIP_REQUIRED` | driver | driver.orchestration | no | schema |  |
+| `PROFILE_CLEANUP_FAILED` | driver | driver.profile | yes | schema |  |
+| `PROFILE_CONNECT_TIMEOUT` | driver | driver.profile | yes | schema | `src/driver/BrowserProfileManager.ts` |
+| `PROFILE_MANAGER_UNAVAILABLE` | driver | driver.profile | no | schema | `src/driver/BrowserProfileManager.ts` |
+| `PROFILE_START_FAILED` | driver | driver.profile | yes | schema | `src/driver/BrowserProfileManager.ts` |
+| `PROFILE_STORAGE_LEAK` | driver | driver.profile | no | schema |  |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
 | `SAFETY_BLOCKED` | transfer | runtime.transfer | no | schema |  |
 | `SCRIPT_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |

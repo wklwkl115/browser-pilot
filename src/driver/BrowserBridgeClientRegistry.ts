@@ -52,6 +52,18 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
+		const managedProfile = raw.managedProfile && typeof raw.managedProfile === "object" && !Array.isArray(raw.managedProfile) ? raw.managedProfile as Record<string, unknown> : undefined;
+		const profileId = typeof raw.profileId === "string" ? raw.profileId : typeof managedProfile?.profileId === "string" ? managedProfile.profileId : undefined;
+		if (profileId) current.profileId = profileId;
+		if (managedProfile) current.managedProfile = {
+			profileId,
+			profileDir: typeof managedProfile.profileDir === "string" ? managedProfile.profileDir : undefined,
+			extensionDir: typeof managedProfile.extensionDir === "string" ? managedProfile.extensionDir : undefined,
+			bridgePort: typeof managedProfile.bridgePort === "number" ? managedProfile.bridgePort : undefined,
+			debugPort: typeof managedProfile.debugPort === "number" ? managedProfile.debugPort : undefined,
+			owned: managedProfile.owned === true,
+			cleanup: typeof managedProfile.cleanup === "string" ? managedProfile.cleanup : undefined,
+		};
 	}
 
 	select(ws: WebSocket | undefined): void {

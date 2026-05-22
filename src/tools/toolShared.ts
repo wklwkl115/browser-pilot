@@ -46,7 +46,7 @@ export const BrowserToolTargetRefSchema = Type.Object({
 	tabRole: Type.Optional(Type.String({ description: "browser_orchestrate tab role within the session." })),
 	windowId: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: "Reserved for future window-level target resolution." })),
 	groupId: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: "Reserved for future tabGroups target resolution." })),
-	profileId: Type.Optional(Type.String({ description: "Reserved for future managed browser profile target resolution." })),
+	profileId: Type.Optional(Type.String({ description: "Managed profile id used to disambiguate profile-bound orchestration targets." })),
 	requireOwned: Type.Optional(Type.Boolean({ description: "When true, logical orchestration targets must resolve to an owned binding." })),
 }, { additionalProperties: false, description: TARGET_DESCRIPTION });
 

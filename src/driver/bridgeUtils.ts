@@ -73,5 +73,6 @@ export function tabSessionSummary(session: BrowserTabSession): Record<string, un
 		active: session.active,
 		windowId: session.windowId,
 		groupId: session.groupId,
+		profileId: session.profileId,
 	};
 }
