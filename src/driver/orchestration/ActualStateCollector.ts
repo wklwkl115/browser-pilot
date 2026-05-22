@@ -220,11 +220,12 @@ export class ActualStateCollector {
 
 	private async collectNavigation(tab: NormalizedDesiredTab, actualTab: BrowserTabInfo, urlMatchesDesired: boolean, diagnostics: JsonRecord[], timeoutMs: number | undefined): Promise<ActualTabState["navigation"]> {
 		if (tab.waitUntil === "none") return { matchesDesired: urlMatchesDesired, urlMatchesDesired, loadStateMatchesDesired: true };
+		const waitTimeoutMs = Math.min(Math.max(250, Math.floor((timeoutMs || 1_000) / 4)), 1_000);
 		const command = tab.waitUntil === "networkIdle"
-			? { cmd: "wait.networkIdle" as const, timeoutMs: 0 }
-			: { cmd: "wait.loadState" as const, state: tab.waitUntil === "domcontentloaded" ? "domcontentloaded" : "complete", timeoutMs: 0 };
+			? { cmd: "wait.networkIdle" as const, timeoutMs: waitTimeoutMs }
+			: { cmd: "wait.loadState" as const, state: tab.waitUntil === "domcontentloaded" ? "domcontentloaded" : "complete", timeoutMs: waitTimeoutMs };
 		try {
-			const result = await this.server.sendCommand(command, { tabId: actualTab.tabId, target: { tabId: actualTab.tabId, browserId: actualTab.browserId }, timeoutMs: Math.min(timeoutMs || 1_000, 2_000) });
+			const result = await this.server.sendCommand(command, { tabId: actualTab.tabId, target: { tabId: actualTab.tabId, browserId: actualTab.browserId }, timeoutMs: waitTimeoutMs });
 			const failure = failureData(result.data);
 			if (failure) return { matchesDesired: false, urlMatchesDesired, loadState: command.cmd === "wait.networkIdle" ? "networkIdle" : command.state, loadStateMatchesDesired: false, error: failure.message };
 			return { matchesDesired: urlMatchesDesired, urlMatchesDesired, loadState: command.cmd === "wait.networkIdle" ? "networkIdle" : command.state, loadStateMatchesDesired: true };

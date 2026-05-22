@@ -39,6 +39,7 @@ class FakeOrchestrationServer {
 		this.nextScriptId = 1;
 		this.fail = options.fail || {};
 		this.waitReady = options.waitReady !== false;
+		this.immediateWaitFails = options.immediateWaitFails === true;
 		this.ensureWindowsFromTabs();
 	}
 
@@ -114,7 +115,11 @@ class FakeOrchestrationServer {
 		if (command.cmd === "tabs") return this.handleTabs(command);
 		if (command.cmd === "windows") return this.handleWindows(command);
 		if (command.cmd === "tabGroups") return this.handleTabGroups(command);
-		if (command.cmd === "wait.loadState" || command.cmd === "wait.networkIdle") return { id: `wait-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: this.waitReady ? { state: command.state || "networkidle", ok: true } : { ok: false, error_code: "WAIT_TIMEOUT", error: "wait state not ready", details: { state: command.state || "networkidle" } } };
+		if (command.cmd === "wait.loadState" || command.cmd === "wait.networkIdle") {
+			const state = command.state || "networkidle";
+			if (this.immediateWaitFails && Number(command.timeoutMs || 0) === 0) return { id: `wait-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: { ok: false, error_code: "WAIT_TIMEOUT", error: `${command.cmd} immediate check failed`, details: { state } } };
+			return { id: `wait-${this.commandLog.length}`, acknowledged: true, tabId: Number(options.tabId), data: this.waitReady ? { state, ok: true } : { ok: false, error_code: "WAIT_TIMEOUT", error: "wait state not ready", details: { state } } };
+		}
 		if (command.cmd === "wait.navigate") {
 			const tabId = Number(options.tabId);
 			const tab = this.tabs.find((item) => item.tabId === tabId);
@@ -304,6 +309,23 @@ const desired = {
 	assert.equal(server.commandLog.some((item) => item.cmd === "hook.uninstall"), true, "delete must uninstall owned hook");
 	assert.equal(server.commandLog.some((item) => item.cmd === "tabs.close"), true, "delete must close owned tab");
 	assert.equal((await coordinator.status("orch-main")).ok, false, "delete must remove runtime state");
+}
+
+{
+	const server = new FakeOrchestrationServer({ immediateWaitFails: true });
+	const coordinator = new BrowserOrchestrationCoordinator(server);
+	const waitDesired = {
+		apiVersion: "pi.browser/v1",
+		orchestrationId: "orch-post-apply-observe",
+		defaults: { timeoutMs: 1200, navigationTimeoutMs: 800 },
+		sessions: [{ tag: "wait", tabs: [{ role: "main", url: "https://wait-ready.test/app", waitUntil: "complete" }] }],
+	};
+	const applied = captureFixture("applyPostObserveWait", await coordinator.apply(waitDesired));
+	assert.equal(applied.ok, true, "apply must stay converged when post-observe loadState requires a positive timeout");
+	assert.equal(applied.plan.operationCount, 0, "apply must not retain synthetic navigation drift after verify succeeds");
+	assert.equal(server.commandLog.some((item) => item.cmd === "wait.loadState" && Number(item.timeoutMs || 0) > 0), true, "post-observe loadState checks must use a positive timeout");
+	const deleted = await coordinator.delete("orch-post-apply-observe");
+	assert.equal(deleted.ok, true, "wait-ready fixture cleanup must succeed");
 }
 
 {
