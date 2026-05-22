@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { WebSocket } from "ws";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { ensureIsolatedSmokePreflight } from "./isolatedSmokePreflight.mjs";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -248,7 +249,8 @@ try {
 	await mkdir(outDir, { recursive: true });
 	await mkdir(path.dirname(resultPath), { recursive: true });
 	await mkdir(tempRoot, { recursive: true });
-	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
+	const preflight = await ensureIsolatedSmokePreflight({ workspaceRoot: root, extensionSource, autoBuild: process.env.PI_BROWSER_SMOKE_AUTO_BUILD !== "0" });
+	result = { ...result, preflight };
 	const bridgePort = await freePort(18766, 18800);
 	const fixturePort = await freePort(8766, 8800);
 	debugPort = await freePort(9229, 9260);
@@ -287,10 +289,10 @@ try {
 	const smoke = await smokeRun.done;
 	const smokeArtifact = await readJsonFile(smokeResultPath);
 	const orchestration = extractOrchestrationDiagnostics(smokeArtifact);
-	result = { ok: smoke.code === 0, bridgePort, fixturePort, debugPort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, smokeResultPath, orchestration, smokeArtifactSummary: smokeArtifact ? { ok: smokeArtifact.ok, resultCount: Array.isArray(smokeArtifact.results) ? smokeArtifact.results.length : 0, failedSteps: (Array.isArray(smokeArtifact.results) ? smokeArtifact.results : []).filter((item) => item.ok === false).map((item) => item.step) } : undefined, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, serviceWorkerWake, chromeTargets: chromeTargets.map((target) => ({ type: target.type, title: target.title, url: target.url })), stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
+	result = { ...result, ok: smoke.code === 0, bridgePort, fixturePort, debugPort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, smokeResultPath, orchestration, smokeArtifactSummary: smokeArtifact ? { ok: smokeArtifact.ok, resultCount: Array.isArray(smokeArtifact.results) ? smokeArtifact.results.length : 0, failedSteps: (Array.isArray(smokeArtifact.results) ? smokeArtifact.results : []).filter((item) => item.ok === false).map((item) => item.step) } : undefined, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, serviceWorkerWake, chromeTargets: chromeTargets.map((target) => ({ type: target.type, title: target.title, url: target.url })), stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
 	process.exitCode = smoke.code === 0 ? 0 : 1;
 } catch (error) {
-	result = { ...result, ok: false, error: error instanceof Error ? error.message : String(error) };
+	result = { ...result, ok: false, preflight: error?.details?.preflight || result.preflight, error: error instanceof Error ? error.message : String(error) };
 	process.exitCode = 1;
 } finally {
 	if (chrome?.pid) {

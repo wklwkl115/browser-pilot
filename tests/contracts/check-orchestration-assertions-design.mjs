@@ -49,7 +49,7 @@ const roadmap = read("docs/browser-orchestration-next-roadmap.md");
 assert(roadmap.includes("### TODO235. `sessionAssertions/readinessChecks` 设计冻结") && roadmap.includes("状态：已完成。"), "roadmap must record TODO235 as complete");
 assert(roadmap.includes("### TODO236. `sessionAssertions/readinessChecks` runtime 实现 Gate") && roadmap.includes("状态：已完成。"), "roadmap must record TODO236 runtime completion");
 assert(roadmap.includes("### TODO237. 断言层真实回归与证据面") && roadmap.includes("smoke-orchestration-assertions-result.json"), "roadmap must record TODO237 runtime smoke completion");
-assert(roadmap.includes("下一步先做 TODO238") && roadmap.includes("完整 Incognito 实现继续后移"), "roadmap must move next-step ordering to TODO238 after TODO237");
+assert(roadmap.includes("### TODO238. `smoke:browser:isolated` 自举与 preflight 改进") && roadmap.includes("状态：已完成。") && roadmap.includes("PI_BROWSER_SMOKE_AUTO_BUILD=0") && roadmap.includes("完整 Incognito 实现继续后移"), "roadmap must record TODO238 isolated-smoke preflight completion and keep Incognito deferred");
 
 const coordinatorDoc = read("docs/browser-orchestration-coordinator.md");
 assert(coordinatorDoc.includes("docs/browser-orchestration-assertions.md"), "coordinator doc must link assertions design doc");
@@ -58,7 +58,7 @@ assert(coordinatorDoc.includes("`sessionAssertions` 只允许可观测、只读�
 const todo = read("TODO.md");
 assert(todo.includes("## 235. `sessionAssertions/readinessChecks` 设计冻结") && todo.includes("- [x] 目标：已在不把 `browser_orchestrate` 变成流程 DSL 的前提下，冻结“声明式业务就绪断言”设计。"), "TODO.md must mark TODO235 complete");
 assert(todo.includes("## 236. `sessionAssertions/readinessChecks` runtime 实现 Gate") && todo.includes("- [x] 目标：已实现断言层"), "TODO.md must mark TODO236 complete");
-assert(todo.includes("## 237. 断言层真实回归与证据面") && todo.includes("- [x] 目标：已用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。") && todo.includes("下一步先做 TODO238") && todo.includes("完整 Incognito 实现继续后移，另开号段"), "TODO.md must mark TODO237 complete and move next-step ordering to TODO238");
+assert(todo.includes("## 237. 断言层真实回归与证据面") && todo.includes("- [x] 目标：已用真实浏览器回归证明断言层没有把 `browser_orchestrate` 变成脆弱的黑盒流程器。") && todo.includes("## 238. `smoke:browser:isolated` 自举与 preflight 改进") && todo.includes("PI_BROWSER_SMOKE_AUTO_BUILD=0") && todo.includes("TODO 223-238 已完成") && todo.includes("完整 Incognito 实现继续后移，另开号段"), "TODO.md must mark TODO238 complete after TODO237 and keep Incognito deferred");
 
 const changelog = read("CHANGELOG.md");
 assert(changelog.includes("完成 TODO 235 `sessionAssertions/readinessChecks` 设计冻结") && changelog.includes("完成 TODO 236 `sessionAssertions/readinessChecks` runtime 实现 Gate") && changelog.includes("完成 TODO 237 断言层真实回归与证据面"), "CHANGELOG must record TODO235-237 assertions workstream");

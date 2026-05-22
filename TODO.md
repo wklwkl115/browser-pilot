@@ -582,16 +582,15 @@
 
 ## 238. `smoke:browser:isolated` 自举与 preflight 改进
 
-- [ ] 优先级：P3；依赖：无；可与 TODO 234-237 并行，但不替代其验证。
-- [ ] 目标：消除缺少 `bridge/pi_browser_bridge/dist/build-manifest.json` 时的脆弱前置条件，让 isolated smoke 更接近一键 gate。
-- [ ] 范围：smoke 脚本、preflight diagnostics、必要时自动 build。
-- [ ] 决策：优先在启动前显式检查 `dist/build-manifest.json` 与 manifest 目标文件；可自动执行 `npm run build:bridge`，或在 dry diagnostics 中给出明确、可执行的修复提示；不得静默跳过 build/runtime 校验。
-- [ ] 契约：新增或更新 smoke diagnostics contract，锁定 preflight reason、artifact 字段与自动 build 行为。
-- [ ] 验收条件：缺少 dist 时 smoke 给出确定性可复现结果；`npm run check` 通过。
+- [x] 优先级：P3；依赖：无；本项不替代 TODO 234-237 的 orchestration/runtime 证据，只补强 isolated smoke 自举体验。
+- [x] 目标：消除缺少 `bridge/pi_browser_bridge/dist/build-manifest.json` 时的脆弱前置条件，让 isolated smoke 更接近一键 gate。
+- [x] 范围：`tests/smoke/isolatedSmokePreflight.mjs`、`tests/smoke/smoke-browser-isolated.mjs`、`tests/contracts/check-smoke-diagnostics.mjs`、release diagnostics 与维护文档。
+- [x] 决策：启动前显式检查 `dist/build-manifest.json`、manifest 指向的 dist runtime 与 `dist/hook_dispatcher.js`；当前工作树 bridge 缺 dist 时默认自动执行 `node scripts/build-bridge.mjs --quiet`，`PI_BROWSER_SMOKE_AUTO_BUILD=0` 可关闭自动 build 并稳定返回 `preflight.reason:"autobuild_disabled"`、`missingPaths` 与 `npm run build:bridge` 修复提示；不得静默跳过 build/runtime 校验。
+- [x] 契约：`check-smoke-diagnostics.mjs` 现在用临时 fixture 真实验证缺 dist + auto-build disabled / enabled 两条路径，并锁定 isolated/release artifact 的 `preflight` diagnostics。
+- [x] 验收条件：缺少 dist 时 smoke 给出确定性可复现结果；`npm run check` 通过；针对缺少 `build-manifest.json` 的最小 isolated smoke 回归通过。
 
 ## 下一步建议顺序
 
-1. TODO 223-233 已完成。
-2. 下一步先做 TODO238，补 isolated smoke 自举与 preflight 强化，同时继续守住非 workflow DSL 边界。
-3. 完整 Incognito 实现继续后移，另开号段，不纳入 TODO 238 主干 gate。
-4. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。
+1. TODO 223-238 已完成。
+2. 完整 Incognito 实现继续后移，另开号段，不纳入当前主干 gate。
+3. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。

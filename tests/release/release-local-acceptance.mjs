@@ -127,6 +127,7 @@ function compactSmokeDiagnostics(smokeSummary) {
 	return {
 		chromeProfile: artifact?.profileDir,
 		bridgePort: artifact?.bridgePort,
+		preflight: artifact?.preflight,
 		smokeArtifact: smokeSummary?.resultPath,
 		innerSmokeArtifact: artifact?.smokeResultPath,
 		orchestrationId: orchestration?.orchestrationId,

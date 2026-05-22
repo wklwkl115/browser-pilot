@@ -449,8 +449,19 @@ TODO 223 已将细化设计落档到 `docs/browser-target-resolver.md`。采用�
 3. `tests/smoke/smoke-browser-isolated.mjs` 与 `tests/release/release-local-acceptance.mjs` 上浮 `assertions` diagnostics，包含 satisfied/unsatisfied orchestrationId、logicalTargetSource 与 artifact path。
 4. `check-smoke-diagnostics.mjs` 锁定 assertions smoke steps、isolated diagnostics 与 release diagnostics，确保 sessionAssertions 证据面进入 runtime gate。
 
+### TODO238. `smoke:browser:isolated` 自举与 preflight 改进
+
+状态：已完成。
+
+实施结果：
+
+1. 新增 `tests/smoke/isolatedSmokePreflight.mjs`，在 isolated smoke 启动前显式检查 `dist/build-manifest.json`、manifest 指向的 dist runtime 与 `dist/hook_dispatcher.js`。
+2. 当前工作树 bridge 缺 dist 时，默认自动执行 `node scripts/build-bridge.mjs --quiet`；结果写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json` 的 `preflight.reason`、`missingPaths` 与 `autoBuild`。
+3. `PI_BROWSER_SMOKE_AUTO_BUILD=0` 可关闭自动 build，并稳定返回 `preflight.reason:"autobuild_disabled"` 与 `npm run build:bridge` 修复提示。
+4. `tests/release/release-local-acceptance.mjs` 失败摘要同步上浮 `preflight` diagnostics，`check-smoke-diagnostics.mjs` 用临时 fixture 锁定 disabled/enabled 两条路径。
+
 ## 5. 推荐执行顺序
 
-1. TODO223 → TODO237 已完成。
-2. 下一步先做 TODO238，补 isolated smoke 自举与 preflight 强化。
-3. 完整 Incognito 实现继续后移，另开号段，不纳入当前主干 gate。
+1. TODO223 → TODO238 已完成。
+2. 完整 Incognito 实现继续后移，另开号段，不纳入当前主干 gate。
+3. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run release:local:smoke` 或 `npm run smoke:browser:isolated`。

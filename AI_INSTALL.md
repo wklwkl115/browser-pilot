@@ -189,6 +189,14 @@ npm run smoke:browser
 npm run smoke:browser:isolated
 ```
 
+该脚本现在会先检查 `bridge/pi_browser_bridge/dist/build-manifest.json`、manifest 指向的 dist runtime 与 `dist/hook_dispatcher.js`。当前工作树缺 dist 时，默认自动执行 `node scripts/build-bridge.mjs --quiet`；结果会写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json` 的 `preflight.reason`、`missingPaths` 与 `autoBuild`。如只想看 preflight 诊断而不自动 build，先设：
+
+```bash
+PI_BROWSER_SMOKE_AUTO_BUILD=0 npm run smoke:browser:isolated
+```
+
+此时缺 dist 会稳定返回 `preflight.reason:"autobuild_disabled"` 与 `npm run build:bridge` 修复提示。
+
 WSL 调 Windows Edge 的已验证命令；同一命令也会驱动 managed profile runtime，或用 `PI_BROWSER_PROFILE_CHROME` 单独指定 profile manager 浏览器：
 
 ```bash
