@@ -4,13 +4,13 @@ import type { DetailLevel } from "../utils/params";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware";
-import { asPositiveInt, BrowserToolTargetRefSchema, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION, TARGET_DESCRIPTION } from "./toolShared";
+import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared";
 
 export type ToolResultContext = { cwd?: string } | undefined;
 
 export type StandardToolParams = {
+	browserSessionId?: string;
 	tabId?: number | string;
-	target?: unknown;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -23,7 +23,6 @@ type SharedToolParamOptions = {
 	outputPathDescription?: string;
 	maxCharsDescription?: string;
 	includeTabId?: boolean;
-	includeTarget?: boolean;
 	includeDetailLevel?: boolean;
 	includeOutputPath?: boolean;
 	includeTimeout?: boolean;
@@ -37,6 +36,7 @@ type JsonToolResultOptions = {
 	toolName: ToolResultBudgetName | string;
 	budgetName?: ToolResultBudgetName;
 	command?: string;
+	browserSessionId?: string;
 	defaultDetailLevel?: DetailLevel;
 	fallbackName: string;
 	details?: Record<string, unknown>;
@@ -50,6 +50,7 @@ type TextToolResultOptions = {
 	toolName: ToolResultBudgetName | string;
 	budgetName?: ToolResultBudgetName;
 	command?: string;
+	browserSessionId?: string;
 	defaultDetailLevel?: DetailLevel;
 	fallbackName: string;
 	details?: Record<string, unknown>;
@@ -67,8 +68,8 @@ export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
 
 export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) {
 	const params: Record<string, unknown> = {};
+	params.browserSessionId = Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this; runtime defaults to the default session." }));
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
-	if (options.includeTarget !== false && options.includeTabId !== false) params.target = Type.Optional(BrowserToolTargetRefSchema, { description: TARGET_DESCRIPTION });
 	if (options.includeDetailLevel !== false) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
 	if (options.includeOutputPath !== false) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
 	if (options.includeTimeout !== false) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
@@ -102,10 +103,6 @@ export function targetTabId(params: Pick<StandardToolParams, "tabId">, body?: Re
 	return params.tabId ?? body?.tabId;
 }
 
-export function targetRef(params: Pick<StandardToolParams, "target">): unknown {
-	return params.target;
-}
-
 export async function runTool(handler: () => Promise<PiTextToolResult>, onError: (error: unknown) => PiTextToolResult = errorResult): Promise<PiTextToolResult> {
 	try {
 		return await handler();
@@ -134,11 +131,12 @@ export function inlineJsonToolResult(value: unknown, details: Record<string, unk
 	return jsonResult(value, details, toolMaxChars(params, budgetName));
 }
 
-export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
+export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
 	const budgetName = options.budgetName ?? (options.toolName as ToolResultBudgetName);
 	return await distilledJsonResult(value, {
 		toolName: String(options.toolName),
 		command: options.command,
+		browserSessionId: options.browserSessionId ?? params.browserSessionId,
 		detailLevel: params.detailLevel ?? options.defaultDetailLevel,
 		maxChars: options.maxChars ?? toolMaxChars(params, budgetName),
 		ctx,
@@ -151,11 +149,12 @@ export async function jsonToolResult(value: unknown, params: Pick<StandardToolPa
 	});
 }
 
-export async function textToolResult(text: string, params: Pick<StandardToolParams, "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: TextToolResultOptions): Promise<PiTextToolResult> {
+export async function textToolResult(text: string, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: TextToolResultOptions): Promise<PiTextToolResult> {
 	const budgetName = options.budgetName ?? (options.toolName as ToolResultBudgetName);
 	return await distilledTextResult(text, {
 		toolName: String(options.toolName),
 		command: options.command,
+		browserSessionId: options.browserSessionId ?? params.browserSessionId,
 		detailLevel: params.detailLevel ?? options.defaultDetailLevel,
 		maxChars: options.maxChars ?? toolMaxChars(params, budgetName),
 		ctx,

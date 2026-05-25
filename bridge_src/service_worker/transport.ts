@@ -1,4 +1,4 @@
-import { PI_BROWSER_BRIDGE_HTTP_URL, PI_BROWSER_BRIDGE_WS_URL } from "./config";
+import { PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_HTTP_URL, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_PORT_RANGE_END, PI_BROWSER_BRIDGE_WS_URL } from "./config";
 import { chromeApi as chrome } from "./runtimeEnv";
 import { installCspBypassRule, isScriptable, piBridgeInfo } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
@@ -6,9 +6,8 @@ import { handlePiBridgeWsMessage } from "./router";
 import { installPiBrowserTabSync } from "./tab_sync";
 import type { PiChromeAlarm, PiChromeTab } from "./types";
 
-// transport.js - Pi browser WebSocket connection, probe, reconnect, keepalive, and envelope handling.
-
-let ws: WebSocket | null = null;
+let primaryPort = PI_BROWSER_BRIDGE_PORT;
+const sockets = new Map<number, WebSocket>();
 const WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 const WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
 const WS_RECONNECT_INITIAL_MS = 1000;
@@ -16,8 +15,29 @@ const WS_RECONNECT_MAX_MS = 30000;
 let wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
 let piBrowserTransportInstalled = false;
 
+function portRange(): number[] {
+  const ports: number[] = [];
+  for (let port = PI_BROWSER_BRIDGE_PORT; port <= PI_BROWSER_BRIDGE_PORT_RANGE_END; port += 1) ports.push(port);
+  return ports;
+}
+
+function wsUrlForPort(port: number): string {
+  return port === PI_BROWSER_BRIDGE_PORT ? PI_BROWSER_BRIDGE_WS_URL : `ws://${PI_BROWSER_BRIDGE_HOST}:${port}`;
+}
+
+function httpUrlForPort(port: number): string {
+  return port === PI_BROWSER_BRIDGE_PORT ? PI_BROWSER_BRIDGE_HTTP_URL : `http://${PI_BROWSER_BRIDGE_HOST}:${port}`;
+}
+
 function getPiBrowserTransportSocket(): WebSocket | null {
-  return ws;
+  const open = getPiBrowserTransportSockets()[0];
+  if (open) return open;
+  for (const socket of sockets.values()) if (socket.readyState === WebSocket.CONNECTING) return socket;
+  return null;
+}
+
+function getPiBrowserTransportSockets(): WebSocket[] {
+  return Array.from(sockets.values()).filter((socket) => socket.readyState === WebSocket.OPEN);
 }
 
 function piBrowserErrorMessage(error: unknown): string {
@@ -25,9 +45,15 @@ function piBrowserErrorMessage(error: unknown): string {
 }
 
 function cleanupTransportSocket(socket: WebSocket | null, reason: string = ''): boolean {
-  if (ws !== socket) return false;
-  ws = null;
-  console.log('[PI-BROWSER-WS] Disconnected', reason || '');
+  if (!socket) return false;
+  let removed = false;
+  for (const [port, current] of sockets.entries()) {
+    if (current !== socket) continue;
+    sockets.delete(port);
+    removed = true;
+    console.log('[PI-BROWSER-WS] Disconnected', port, reason || '');
+  }
+  if (!removed) return false;
   bumpProbeBackoff();
   scheduleProbe();
   return true;
@@ -48,11 +74,11 @@ function scheduleKeepalive(): void {
   chrome.alarms.create('pi-browser-ws-keepalive', { delayInMinutes: 0.4 });
 }
 
-async function isServerAlive(): Promise<boolean> {
+async function isServerAlive(port: number = PI_BROWSER_BRIDGE_PORT): Promise<boolean> {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 2000);
-    await fetch(WS_HEALTH_URL, { signal: ctrl.signal });
+    await fetch(httpUrlForPort(port), { signal: ctrl.signal });
     return true;
   } catch (e) {
     return false;
@@ -60,15 +86,20 @@ async function isServerAlive(): Promise<boolean> {
 }
 
 async function probeAndConnectWS(resetDelay: boolean) {
-  if (ws && ws.readyState <= 1) return;
   if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-  if (await isServerAlive()) {
-    console.log('[PI-BROWSER-WS] Server detected, connecting...');
-    connectWS();
-  } else {
-    bumpProbeBackoff();
-    scheduleProbe();
+  let detected = false;
+  for (const port of portRange()) {
+    const current = sockets.get(port);
+    if (current && current.readyState <= WebSocket.OPEN) { detected = true; continue; }
+    if (current) sockets.delete(port);
+    if (await isServerAlive(port)) {
+      detected = true;
+      console.log('[PI-BROWSER-WS] Server detected, connecting...', port);
+      connectWS(port);
+    }
   }
+  if (!detected) bumpProbeBackoff();
+  scheduleProbe();
 }
 
 async function handlePiBrowserTransportAlarm(alarm: PiChromeAlarm) {
@@ -77,49 +108,51 @@ async function handlePiBrowserTransportAlarm(alarm: PiChromeAlarm) {
     return;
   }
   if (alarm.name === 'pi-browser-ws-keepalive') {
-    const socket = ws;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      try { socket.send('{"type":"ping"}'); } catch (_) {}
-      scheduleKeepalive();
-    } else {
-      cleanupTransportSocket(socket, 'keepalive');
+    const openSockets = getPiBrowserTransportSockets();
+    for (const socket of openSockets) {
+      try { socket.send('{"type":"ping"}'); } catch (_) { cleanupTransportSocket(socket, 'keepalive-send'); }
     }
+    if (openSockets.length) scheduleKeepalive();
+    else await probeAndConnectWS(false);
   }
   if (alarm.name === 'pi-browser-ws-probe') {
     await probeAndConnectWS(false);
   }
 }
 
-function connectWS(): void {
-  if (ws && ws.readyState <= 1) return;
-  ws = null;
-  console.log('[PI-BROWSER-WS] Connecting to', WS_URL);
+function connectWS(port: number = PI_BROWSER_BRIDGE_PORT): void {
+  const current = sockets.get(port);
+  if (current && current.readyState <= WebSocket.OPEN) return;
+  sockets.delete(port);
+  const url = wsUrlForPort(port);
+  console.log('[PI-BROWSER-WS] Connecting to', url);
+  let socket: WebSocket;
   try {
-    ws = new WebSocket(WS_URL);
+    socket = new WebSocket(url);
+    sockets.set(port, socket);
   } catch (e) {
     console.warn('[PI-BROWSER-WS] Constructor failed:', piBrowserErrorMessage(e));
-    ws = null;
     bumpProbeBackoff();
     scheduleProbe();
     return;
   }
-  const socket = ws;
   socket.onopen = async () => {
-    if (ws !== socket) return;
+    if (sockets.get(port) !== socket) return;
+    primaryPort = port;
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-    console.log('[PI-BROWSER-WS] Connected!');
+    console.log('[PI-BROWSER-WS] Connected!', port);
     scheduleKeepalive();
     const tabs = (await chrome.tabs.query({}) as PiChromeTab[]).filter((t: PiChromeTab) => isScriptable(t.url));
-    if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+    if (sockets.get(port) !== socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({
       type: 'ext_ready',
-      bridge: piBridgeInfo(),
+      bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
       tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
     }));
-    console.log('[PI-BROWSER-WS] Sent ext_ready with', tabs.length, 'tabs');
+    console.log('[PI-BROWSER-WS] Sent ext_ready with', tabs.length, 'tabs to', port);
   };
   socket.onmessage = async (event: MessageEvent) => {
-    if (ws !== socket) return;
+    if (sockets.get(port) !== socket) return;
     try {
       await handlePiBridgeWsMessage(JSON.parse(event.data), socket);
     } catch (e) {
@@ -131,6 +164,7 @@ function connectWS(): void {
   };
   socket.onerror = (e: Event) => {
     console.debug('[PI-BROWSER-WS] Connection error; waiting for local server', {
+      port,
       readyState: socket ? socket.readyState : null,
       type: e && e.type ? e.type : 'error'
     });
@@ -149,11 +183,11 @@ function installPiBrowserTransport(): boolean {
   setBridgeWakeProbe(probeAndConnectWS);
   void probeAndConnectWS(true);
   chrome.runtime.onStartup.addListener(() => { void probeAndConnectWS(true); });
-  installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, probe: probeAndConnectWS });
+  installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
   piBrowserTransportInstalled = true;
   return true;
 }
 
-export { installPiBrowserTransport, getPiBrowserTransportSocket, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS };
+export { installPiBrowserTransport, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, ws, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS } };
+export const __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, sockets, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS } };

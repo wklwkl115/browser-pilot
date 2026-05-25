@@ -35,7 +35,6 @@ type PiCommandSpec = JsonRecord & {
   defaultMethod?: string;
   methodRequired?: boolean;
   required?: string[];
-  allowEmptyRequired?: string[];
   requiredAny?: string[][];
   methodSpecs?: Record<string, PiCommandSpec>;
   canonical?: string;
@@ -93,9 +92,8 @@ type PiProtocolSchema = JsonRecord & {
     return out;
   }
 
-  function missingRequired(command: JsonRecord, required?: string[], allowEmptyRequired?: string[]): string[] {
-    const allowEmpty = new Set(Array.isArray(allowEmptyRequired) ? allowEmptyRequired : []);
-    return (required || []).filter((field) => allowEmpty.has(field) ? command[field] === undefined || command[field] === null : !hasValue(command[field]));
+  function missingRequired(command: JsonRecord, required?: string[]): string[] {
+    return (required || []).filter((field) => !hasValue(command[field]));
   }
 
   function requiredAnySatisfied(command: JsonRecord, groups?: string[][]): boolean {
@@ -128,7 +126,7 @@ type PiProtocolSchema = JsonRecord & {
       }
     }
 
-    const missing = missingRequired(checked, spec.required, spec.allowEmptyRequired).concat(missingRequired(checked, methodSpec?.required, methodSpec?.allowEmptyRequired));
+    const missing = missingRequired(checked, spec.required).concat(missingRequired(checked, methodSpec?.required));
     if (missing.length) return { ok: false, error: cmd + ' missing required fields: ' + missing.join(', '), details: { cmd, missing } };
 
     const anyGroups: string[][] = [];
@@ -175,9 +173,8 @@ type CommandSpec = {
 	defaultMethod?: string;
 	methodRequired?: boolean;
 	required?: string[];
-	allowEmptyRequired?: string[];
 	requiredAny?: string[][];
-	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "allowEmptyRequired" | "requiredAny">>;
+	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny">>;
 	canonical?: string;
 };
 
@@ -220,9 +217,8 @@ export function canonicalBridgeCommand(cmd: string, currentSchema = getNativeCom
 	return currentSchema.aliases?.[cmd] || cmd;
 }
 
-function missingRequired(command: Record<string, unknown>, required: string[] | undefined, allowEmptyRequired?: string[]): string[] {
-	const allowEmpty = new Set(Array.isArray(allowEmptyRequired) ? allowEmptyRequired : []);
-	return (required || []).filter((field) => allowEmpty.has(field) ? command[field] === undefined || command[field] === null : !hasValue(command[field]));
+function missingRequired(command: Record<string, unknown>, required: string[] | undefined): string[] {
+	return (required || []).filter((field) => !hasValue(command[field]));
 }
 
 function requiredAnySatisfied(command: Record<string, unknown>, groups: string[][] | undefined): boolean {
@@ -242,7 +238,7 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 
 	const checked: BridgeCommand = { ...command, cmd } as BridgeCommand;
 	const methods = Array.isArray(spec.methods) ? spec.methods : [];
-	let methodSpec: Pick<CommandSpec, "required" | "allowEmptyRequired" | "requiredAny"> | undefined;
+	let methodSpec: Pick<CommandSpec, "required" | "requiredAny"> | undefined;
 	if (methods.length) {
 		const rawMethod = hasValue(checked.method) ? String(checked.method) : spec.defaultMethod;
 		if (spec.methodRequired && !hasValue(rawMethod)) return { ok: false, error: \`\${cmd} requires method\`, details: { cmd } };
@@ -253,7 +249,7 @@ export function validateBridgeCommand(command: unknown, options: { allowMissingT
 		}
 	}
 
-	const missing = [...missingRequired(checked, spec.required, spec.allowEmptyRequired), ...missingRequired(checked, methodSpec?.required, methodSpec?.allowEmptyRequired)];
+	const missing = [...missingRequired(checked, spec.required), ...missingRequired(checked, methodSpec?.required)];
 	if (missing.length) return { ok: false, error: \`\${cmd} missing required fields: \${missing.join(", ")}\`, details: { cmd, missing } };
 
 	const requiredAny = [...(spec.requiredAny || []), ...(methodSpec?.requiredAny || [])];

@@ -35,7 +35,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 				const maxChars = toolMaxChars(params, "browser_download");
 				command.timeoutMs = timeoutMs;
 				const server = await ensureStarted();
-				const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_download", commandName: nativeTransferToolMetadata.browser_download.command });
+				const result = await server.sendCommand(command, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_download",
 					command: nativeTransferToolMetadata.browser_download.command,
@@ -73,18 +73,23 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = toolMaxChars(params, "browser_upload");
-				const command = buildTransferUploadCommand(selector, files, params.index);
-				command.timeoutMs = timeoutMs;
-				const result = await server.sendCommand(command, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_upload", commandName: nativeTransferToolMetadata.browser_upload.command });
-				return await jsonToolResult(result, params, ctx, {
-					toolName: "browser_upload",
-					command: nativeTransferToolMetadata.browser_upload.command,
-					maxChars,
-					fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_upload.artifactPrefix),
-					details: { command: nativeTransferToolMetadata.browser_upload.command, selector, files_count: files.length },
-					artifactValue: result,
-					distill: summarizeTransferData,
-				});
+				server.acquireUiLock(params.browserSessionId, "browser_upload");
+				try {
+					const command = buildTransferUploadCommand(selector, files, params.index);
+					command.timeoutMs = timeoutMs;
+					const result = await server.sendCommand(command, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+					return await jsonToolResult(result, params, ctx, {
+						toolName: "browser_upload",
+						command: nativeTransferToolMetadata.browser_upload.command,
+						maxChars,
+						fallbackName: artifactFallbackName(nativeTransferToolMetadata.browser_upload.artifactPrefix),
+						details: { command: nativeTransferToolMetadata.browser_upload.command, selector, files_count: files.length },
+						artifactValue: result,
+						distill: summarizeTransferData,
+					});
+				} finally {
+					server.releaseUiLock(params.browserSessionId);
+				}
 			});
 		},
 	});

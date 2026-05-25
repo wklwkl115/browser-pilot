@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeCookieAnalyzeData } from "../../summaries/index";
 import { runCookieAnalyze } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -28,7 +28,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 			maxSecretCandidates: Type.Optional(Type.Number({ description: "Maximum HMAC secret candidates to test; default 10000, hard-capped at 100000." })),
 			claimMutations: Type.Optional(Type.Any({ description: "Claims to merge into decoded JWT/JWE/session payloads when generating a mutated token." })),
 			claimReplay: Type.Optional(Type.Any({ description: "Optional bounded replay check for generated claim mutations. Supports url, method, headers, body/bodyBase64, cookieName, matchStatus, maxCases, followRedirects, timeoutMs, and maxBodyBytes." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Collect browser cookies for url using the connected browser session; default false." })),
+			...browserCookieBindingParams("Collect browser cookies for url using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<CookieAnalyzeToolParams>(params), ctx, {

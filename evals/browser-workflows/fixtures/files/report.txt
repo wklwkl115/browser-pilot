@@ -1,0 +1,3 @@
+Pi browser workflow fixture report
+Expected filename: report.txt
+This file is synthetic and contains no secrets.

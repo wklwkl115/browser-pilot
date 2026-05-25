@@ -8,7 +8,6 @@ type PiCommandSpec = JsonRecord & {
   defaultMethod?: string;
   methodRequired?: boolean;
   required?: string[];
-  allowEmptyRequired?: string[];
   requiredAny?: string[][];
   methodSpecs?: Record<string, PiCommandSpec>;
   canonical?: string;
@@ -54,8 +53,6 @@ type PiProtocolSchema = JsonRecord & {
     "core": [
       "bridge_wake",
       "tabs",
-      "windows",
-      "tabGroups",
       "management",
       "cookies",
       "cdp",
@@ -181,38 +178,7 @@ type PiProtocolSchema = JsonRecord & {
     },
     "cookies": {
       "domain": "core",
-      "tabScoped": false,
-      "methods": [
-        "list",
-        "get",
-        "set",
-        "remove"
-      ],
-      "defaultMethod": "list",
-      "methodSpecs": {
-        "get": {
-          "required": [
-            "url",
-            "name"
-          ]
-        },
-        "set": {
-          "required": [
-            "url",
-            "name",
-            "value"
-          ],
-          "allowEmptyRequired": [
-            "value"
-          ]
-        },
-        "remove": {
-          "required": [
-            "url",
-            "name"
-          ]
-        }
-      }
+      "tabScoped": false
     },
     "cdp": {
       "domain": "core",
@@ -440,70 +406,6 @@ type PiProtocolSchema = JsonRecord & {
         "selector",
         "files"
       ]
-    },
-    "windows": {
-      "domain": "core",
-      "tabScoped": false,
-      "methods": [
-        "list",
-        "get",
-        "create",
-        "update",
-        "focus",
-        "close"
-      ],
-      "defaultMethod": "list",
-      "methodSpecs": {
-        "get": {
-          "required": [
-            "windowId"
-          ]
-        },
-        "update": {
-          "required": [
-            "windowId"
-          ]
-        },
-        "focus": {
-          "required": [
-            "windowId"
-          ]
-        },
-        "close": {
-          "required": [
-            "windowId"
-          ]
-        }
-      }
-    },
-    "tabGroups": {
-      "domain": "core",
-      "tabScoped": false,
-      "methods": [
-        "status",
-        "query",
-        "group",
-        "update",
-        "ungroup"
-      ],
-      "defaultMethod": "status",
-      "methodSpecs": {
-        "group": {
-          "required": [
-            "tabIds"
-          ]
-        },
-        "update": {
-          "required": [
-            "tabGroupId"
-          ]
-        },
-        "ungroup": {
-          "required": [
-            "tabIds"
-          ]
-        }
-      }
     }
   },
   "errorCodes": {
@@ -521,6 +423,16 @@ type PiProtocolSchema = JsonRecord & {
       "category": "driver.tab",
       "retryable": false,
       "summary": "Multiple connected browsers expose the same numeric tabId."
+    },
+    "TAB_LEASE_CONFLICT": {
+      "category": "driver.lease",
+      "retryable": false,
+      "summary": "Target tab is leased by another browser session."
+    },
+    "UI_LOCK_CONFLICT": {
+      "category": "driver.lease",
+      "retryable": false,
+      "summary": "Browser UI is locked by another browser session."
     },
     "BACKGROUND_THROTTLED": {
       "category": "runtime.page",
@@ -622,16 +534,6 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": true,
       "summary": "Target frame detached before command completion."
     },
-    "INCOGNITO_NOT_ALLOWED": {
-      "category": "driver.profile",
-      "retryable": false,
-      "summary": "Browser extension is not allowed to run in incognito mode."
-    },
-    "INCOGNITO_PROBE_FAILED": {
-      "category": "driver.profile",
-      "retryable": false,
-      "summary": "Explicit incognito diagnostic probe failed."
-    },
     "INJECTION_FAILED": {
       "category": "runtime.hook",
       "retryable": true,
@@ -697,6 +599,11 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": true,
       "summary": "Network recorder wait timed out."
     },
+    "NOT_INSTALLED": {
+      "category": "runtime.session",
+      "retryable": true,
+      "summary": "Page hook dispatcher is not installed."
+    },
     "NO_BROWSER_EXTENSION": {
       "category": "driver.lifecycle",
       "retryable": true,
@@ -711,81 +618,6 @@ type PiProtocolSchema = JsonRecord & {
       "category": "driver.tab",
       "retryable": true,
       "summary": "No usable target tab is available for a tab-scoped command."
-    },
-    "NOT_INSTALLED": {
-      "category": "runtime.session",
-      "retryable": true,
-      "summary": "Page hook dispatcher is not installed."
-    },
-    "ORCHESTRATION_BROWSER_NOT_FOUND": {
-      "category": "driver.orchestration",
-      "retryable": true,
-      "summary": "Requested orchestration browser boundary is not connected."
-    },
-    "ORCHESTRATION_COMMAND_FAILED": {
-      "category": "driver.orchestration",
-      "retryable": false,
-      "summary": "A browser orchestration reconcile operation returned a structured command failure."
-    },
-    "ORCHESTRATION_INVALID_DESIRED": {
-      "category": "driver.orchestration",
-      "retryable": false,
-      "summary": "Browser orchestration desired state failed normalization or validation."
-    },
-    "ORCHESTRATION_LOCKED": {
-      "category": "driver.orchestration",
-      "retryable": true,
-      "summary": "Browser orchestration resource or session is already locked."
-    },
-    "ORCHESTRATION_SESSION_NOT_FOUND": {
-      "category": "driver.orchestration",
-      "retryable": false,
-      "summary": "Requested browser orchestration runtime state or desired session was not found."
-    },
-    "ORCHESTRATION_TARGET_CONFLICT": {
-      "category": "driver.orchestration",
-      "retryable": false,
-      "summary": "Browser orchestration target binding conflicts with existing ownership or tab state."
-    },
-    "ORCHESTRATION_TARGET_STALE": {
-      "category": "driver.target",
-      "retryable": true,
-      "summary": "Orchestration target binding exists but no live browser tab matches it."
-    },
-    "ORCHESTRATION_TIMEOUT": {
-      "category": "driver.orchestration",
-      "retryable": true,
-      "summary": "Browser orchestration reconcile or cleanup exceeded its deadline."
-    },
-    "ORCHESTRATION_WINDOW_OWNERSHIP_REQUIRED": {
-      "category": "driver.orchestration",
-      "retryable": false,
-      "summary": "Browser orchestration attempted a window operation without owned-window authority."
-    },
-    "PROFILE_CLEANUP_FAILED": {
-      "category": "driver.profile",
-      "retryable": true,
-      "summary": "Managed browser profile process or temporary directory cleanup failed."
-    },
-    "PROFILE_CONNECT_TIMEOUT": {
-      "category": "driver.profile",
-      "retryable": true,
-      "summary": "Managed browser profile extension did not connect before the deadline."
-    },
-    "PROFILE_MANAGER_UNAVAILABLE": {
-      "category": "driver.profile",
-      "retryable": false,
-      "summary": "Managed browser profile manager is unavailable or cannot locate Chrome/Edge."
-    },
-    "PROFILE_START_FAILED": {
-      "category": "driver.profile",
-      "retryable": true,
-      "summary": "Managed browser profile process or temporary extension failed to start."
-    },
-    "PROFILE_STORAGE_LEAK": {
-      "category": "driver.profile",
-      "retryable": false,
-      "summary": "Managed browser profile cookie or storage isolation verification failed."
     },
     "REQUEST_NOT_FOUND": {
       "category": "runtime.network",
@@ -817,26 +649,6 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": true,
       "summary": "Target tab crashed during operation."
     },
-    "TAB_GROUP_ID_REQUIRED": {
-      "category": "runtime.tabGroups",
-      "retryable": false,
-      "summary": "tabGroups.update requires a valid groupId."
-    },
-    "TAB_GROUP_TAB_IDS_REQUIRED": {
-      "category": "runtime.tabGroups",
-      "retryable": false,
-      "summary": "tabGroups group or ungroup requires non-empty tabIds."
-    },
-    "TAB_GROUPS_NOT_SUPPORTED": {
-      "category": "runtime.tabGroups",
-      "retryable": false,
-      "summary": "Chrome tabGroups API is unavailable or not permitted; visual grouping is degraded."
-    },
-    "TAB_GROUPS_OPERATION_FAILED": {
-      "category": "runtime.tabGroups",
-      "retryable": false,
-      "summary": "Chrome tabGroups API operation failed; visual grouping may be degraded."
-    },
     "TAB_ID_CONFLICT": {
       "category": "driver.tab",
       "retryable": false,
@@ -851,31 +663,6 @@ type PiProtocolSchema = JsonRecord & {
       "category": "driver.tab",
       "retryable": true,
       "summary": "Target browser tab is not connected."
-    },
-    "TARGET_AMBIGUOUS": {
-      "category": "driver.target",
-      "retryable": false,
-      "summary": "Logical browser target matched multiple candidates."
-    },
-    "TARGET_BROWSER_CONFLICT": {
-      "category": "driver.target",
-      "retryable": false,
-      "summary": "Requested browser id conflicts with the resolved target binding."
-    },
-    "TARGET_CONFLICT": {
-      "category": "driver.target",
-      "retryable": false,
-      "summary": "Conflicting browser target values were supplied."
-    },
-    "TARGET_INVALID": {
-      "category": "driver.target",
-      "retryable": false,
-      "summary": "Browser target object is invalid."
-    },
-    "TARGET_NOT_FOUND": {
-      "category": "driver.target",
-      "retryable": true,
-      "summary": "Browser target could not be resolved to a live tab."
     },
     "TIMEOUT": {
       "category": "runtime.timeout",
@@ -897,11 +684,6 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": false,
       "summary": "browser_upload requires confirm:true after user approval."
     },
-    "UPLOAD_FILE_NOT_FOUND": {
-      "category": "tool.transfer",
-      "retryable": false,
-      "summary": "browser_upload file path does not exist."
-    },
     "UPLOAD_FILES_LIMIT": {
       "category": "tool.transfer",
       "retryable": false,
@@ -911,6 +693,11 @@ type PiProtocolSchema = JsonRecord & {
       "category": "tool.transfer",
       "retryable": false,
       "summary": "browser_upload requires at least one file."
+    },
+    "UPLOAD_FILE_NOT_FOUND": {
+      "category": "tool.transfer",
+      "retryable": false,
+      "summary": "browser_upload file path does not exist."
     },
     "UPLOAD_PATH_NOT_ABSOLUTE": {
       "category": "tool.transfer",
@@ -931,21 +718,6 @@ type PiProtocolSchema = JsonRecord & {
       "category": "tool.transfer",
       "retryable": false,
       "summary": "browser_upload requires a selector."
-    },
-    "WINDOW_ID_REQUIRED": {
-      "category": "runtime.window",
-      "retryable": false,
-      "summary": "Window command requires a valid windowId."
-    },
-    "WINDOW_NOT_FOUND": {
-      "category": "runtime.window",
-      "retryable": true,
-      "summary": "Requested browser window was not found or is already closed."
-    },
-    "WINDOW_OPERATION_FAILED": {
-      "category": "runtime.window",
-      "retryable": true,
-      "summary": "Chrome windows API operation failed."
     }
   },
   "toolMetadata": {
@@ -1207,9 +979,8 @@ type PiProtocolSchema = JsonRecord & {
     return out;
   }
 
-  function missingRequired(command: JsonRecord, required?: string[], allowEmptyRequired?: string[]): string[] {
-    const allowEmpty = new Set(Array.isArray(allowEmptyRequired) ? allowEmptyRequired : []);
-    return (required || []).filter((field) => allowEmpty.has(field) ? command[field] === undefined || command[field] === null : !hasValue(command[field]));
+  function missingRequired(command: JsonRecord, required?: string[]): string[] {
+    return (required || []).filter((field) => !hasValue(command[field]));
   }
 
   function requiredAnySatisfied(command: JsonRecord, groups?: string[][]): boolean {
@@ -1242,7 +1013,7 @@ type PiProtocolSchema = JsonRecord & {
       }
     }
 
-    const missing = missingRequired(checked, spec.required, spec.allowEmptyRequired).concat(missingRequired(checked, methodSpec?.required, methodSpec?.allowEmptyRequired));
+    const missing = missingRequired(checked, spec.required).concat(missingRequired(checked, methodSpec?.required));
     if (missing.length) return { ok: false, error: cmd + ' missing required fields: ' + missing.join(', '), details: { cmd, missing } };
 
     const anyGroups: string[][] = [];

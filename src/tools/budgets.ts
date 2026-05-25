@@ -13,7 +13,6 @@ export const TOOL_RESULT_BUDGETS = {
 	browser_html: 20_000,
 	browser_screenshot: 20_000,
 	browser_artifact: 8_000,
-	browser_orchestrate: 12_000,
 	browser_recon_probe: 12_000,
 	browser_crawl: 12_000,
 	browser_fuzz_paths: 12_000,

@@ -18,17 +18,27 @@ assert(registered.length >= 15, "tool drift: expected registered browser tools")
 
 const readme = read("README.md");
 const sop = read("AI_INSTALL.md");
+const boundaries = read("docs/tool-boundaries.md");
 const skillPath = "D:/Pi/agent/skills/pi-browser-tools/SKILL.md";
 assert(existsSync(resolveReadPath(skillPath)), "tool drift: global pi-browser-tools skill must exist");
 const skill = read(skillPath);
 
 assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");
 assert(readme.includes("D:/Pi/agent/skills/pi-browser-tools/SKILL.md"), "README must link global Pi skill");
-assert(readme.includes("声明式浏览器会话状态协调/对账"), "README must describe browser_orchestrate as browser session reconciliation");
-assert(skill.includes("declare browser session state") && skill.includes("workflow DSL"), "skill must keep browser_orchestrate session-reconciliation boundary wording");
+assert(readme.includes("docs/tool-boundaries.md"), "README must link tool boundary matrix");
+assert(skill.includes("docs/tool-boundaries.md"), "skill must link tool boundary matrix");
+assert(boundaries.includes("## Primary workflow") && boundaries.includes("## Runtime browser tools") && boundaries.includes("## Scoped Web follow-up tools"), "tool boundaries doc must define workflow and tool groups");
+for (const token of ["Semantic", "Use when", "Do not use when", "Primary inputs", "Primary output/evidence", "Follow-up", "browser_http_replay as the primitive"]) {
+	assert(boundaries.includes(token), `tool boundaries doc missing boundary token: ${token}`);
+}
+function boundaryRowsForTool(tool) {
+	const escaped = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return boundaries.match(new RegExp(`^\\|\\s*\\\`${escaped}\\\`\\s*\\|.*$`, "gm")) || [];
+}
 for (const tool of registered) {
 	assert(readme.includes(tool), `tool drift: README missing ${tool}`);
 	assert(skill.includes(tool), `tool drift: skill missing ${tool}`);
+	assert.equal(boundaryRowsForTool(tool).length, 1, `tool drift: docs/tool-boundaries.md must contain exactly one table row for ${tool}`);
 }
 
 for (const token of ["PI_BROWSER_BRIDGE_PORT", "bridge/pi_browser_bridge", "/browser-install", "/browser-status", "/browser-reload", "npm run check", "npm run smoke:browser"]) {
@@ -36,6 +46,9 @@ for (const token of ["PI_BROWSER_BRIDGE_PORT", "bridge/pi_browser_bridge", "/bro
 }
 for (const forbidden of ["npm run check", "npm run smoke:browser", "npm install", "chrome://extensions", "edge://extensions"]) {
 	assert(!skill.includes(forbidden), `skill must not contain project install/test content: ${forbidden}`);
+}
+for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type", "browser_orchestrate"]) {
+	assert(!boundaries.includes(removed), `tool boundaries must not document removed tool: ${removed}`);
 }
 const migration = read("docs/browser-usage.md");
 assert(migration.includes("迁移指引") && migration.includes("AI_INSTALL.md") && migration.includes("SKILL.md"), "docs/browser-usage.md must only be a migration pointer");

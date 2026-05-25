@@ -49,10 +49,10 @@ for (const options of [
 	assert(script.includes("resetOutputBudget"), "scan script must reset shared output budget per mode");
 	assert(script.includes("cleanLineText") && !script.includes("clean(node.nodeValue, 800)"), "scan script must not silently cap every text node at 800 chars without tying it to the caller maxChars budget");
 	assert(script.includes("topLayerRoot") && script.includes("top_layer") && script.includes("modalish") && script.includes("popupish") && script.includes("fixedLayer"), "scan script must prefer real top-layer/modal roots without treating ordinary player popups as modal roots");
-	assert(script.includes("collectActionables") && script.includes("actionables") && script.includes("hitOk") && script.includes("selectorFor"), "scan script must expose actionable candidates for browser_execute scripts");
+	assert(script.includes("collectActionables") && script.includes("actionables") && script.includes("hitOk") && script.includes("selectorFor"), "scan script must expose GA-style actionable candidates for browser_execute scripts");
 	assert(script.includes("frameworkHandlers") && script.includes("ACTIONABLE_RE") && script.includes("FRAMEWORK_OWNER_RE") && script.includes("data-e2e") && script.includes("point"), "scan actionables must cover framework delegated clicks, configured actionable controls and CDP-ready center points");
-	assert(script.includes(":-webkit-autofill") && script.includes("data-autofilled") && script.includes("protected-autofill"), "scan script must preserve autofill protected-state hints");
-	assert(script.includes("collectListHints") && script.includes("list_hints") && script.includes("hiddenCount") && script.includes("map(cssEscape).join('.')"), "scan script must expose repeated list compression hints with CSS-escaped selector classes");
+	assert(script.includes(":-webkit-autofill") && script.includes("data-autofilled") && script.includes("protected-autofill"), "scan script must preserve GA-style autofill protected-state hints");
+	assert(script.includes("collectListHints") && script.includes("list_hints") && script.includes("hiddenCount") && script.includes("map(cssEscape).join('.')"), "scan script must expose GA-style repeated list compression hints with CSS-escaped selector classes");
 	assert(script.includes("input:not([type=hidden])"), "scan text mode must preserve visible form controls");
 }
 

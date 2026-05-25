@@ -8,10 +8,10 @@ export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();
 	private readonly clientInfo = new Map<WebSocket, BrowserBridgeClientInfo>();
 	private extensionClient?: WebSocket;
-	private readonly port: number;
+	private readonly getPort: () => number;
 
-	constructor(port: number) {
-		this.port = port;
+	constructor(port: number | (() => number)) {
+		this.getPort = typeof port === "function" ? port : () => port;
 	}
 
 	register(ws: WebSocket): BrowserBridgeClientInfo {
@@ -52,18 +52,6 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;
-		const managedProfile = raw.managedProfile && typeof raw.managedProfile === "object" && !Array.isArray(raw.managedProfile) ? raw.managedProfile as Record<string, unknown> : undefined;
-		const profileId = typeof raw.profileId === "string" ? raw.profileId : typeof managedProfile?.profileId === "string" ? managedProfile.profileId : undefined;
-		if (profileId) current.profileId = profileId;
-		if (managedProfile) current.managedProfile = {
-			profileId,
-			profileDir: typeof managedProfile.profileDir === "string" ? managedProfile.profileDir : undefined,
-			extensionDir: typeof managedProfile.extensionDir === "string" ? managedProfile.extensionDir : undefined,
-			bridgePort: typeof managedProfile.bridgePort === "number" ? managedProfile.bridgePort : undefined,
-			debugPort: typeof managedProfile.debugPort === "number" ? managedProfile.debugPort : undefined,
-			owned: managedProfile.owned === true,
-			cleanup: typeof managedProfile.cleanup === "string" ? managedProfile.cleanup : undefined,
-		};
 	}
 
 	select(ws: WebSocket | undefined): void {
@@ -110,12 +98,12 @@ export class BrowserBridgeClientRegistry {
 		if (isOpen(this.extensionClient)) return this.extensionClient;
 		const open = Array.from(this.clients).find(isOpen);
 		if (open) return open;
-		throw new BrowserBridgeError("NO_BROWSER_EXTENSION", "No connected browser bridge extension", { port: this.port });
+		throw new BrowserBridgeError("NO_BROWSER_EXTENSION", "No connected browser bridge extension", { port: this.getPort() });
 	}
 
 	browserIdForClient(client: WebSocket): string {
 		const info = this.clientInfo.get(client);
-		if (!info?.id) throw new BrowserBridgeError("UNKNOWN_BROWSER_CLIENT", "Browser bridge client is not registered", { port: this.port });
+		if (!info?.id) throw new BrowserBridgeError("UNKNOWN_BROWSER_CLIENT", "Browser bridge client is not registered", { port: this.getPort() });
 		return info.id;
 	}
 }

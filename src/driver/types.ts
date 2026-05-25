@@ -8,8 +8,6 @@ export type BrowserBridgeClientInfo = {
 	userAgent?: string;
 	workerBootId?: string;
 	workerStartedAt?: number;
-	profileId?: string;
-	managedProfile?: { profileId?: string; profileDir?: string; extensionDir?: string; bridgePort?: number; debugPort?: number; owned?: boolean; cleanup?: string };
 	connectedAt: number;
 	lastSeenAt: number;
 };
@@ -22,8 +20,6 @@ export type BrowserTabSession = {
 	title: string;
 	active?: boolean;
 	windowId?: number;
-	groupId?: number;
-	profileId?: string;
 	type: "ext_ws";
 	connectedAt: number;
 	disconnectedAt?: number;
@@ -33,43 +29,67 @@ export type BrowserTabSession = {
 
 export type BrowserTabInfo = Omit<BrowserTabSession, "client">;
 
-export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none" | "orchestration";
+export type BrowserAutomationSession = {
+	id: string;
+	name?: string;
+	selectedClient?: WebSocket;
+	defaultSessionId?: string;
+	latestSessionId?: string;
+	selectionVersion: number;
+	createdAt: number;
+	lastSeenAt: number;
+};
+
+export type BrowserAutomationSessionInfo = {
+	id: string;
+	name?: string;
+	defaultTabId?: number;
+	latestTabId?: number;
+	selectionVersion: number;
+	createdAt: number;
+	lastSeenAt: number;
+	selectedBrowser?: BrowserBridgeClientInfo;
+};
+
+export type BrowserTabLeaseInfo = {
+	id: string;
+	browserSessionId: string;
+	tabSessionId: string;
+	browserId: string;
+	tabId: number;
+	explicit: boolean;
+	createdAt: number;
+	lastSeenAt: number;
+};
+
+export type BrowserUiLockInfo = {
+	browserSessionId: string;
+	toolName: string;
+	createdAt: number;
+	lastSeenAt: number;
+	count: number;
+};
+
+export type BrowserCommandQueueInfo = {
+	key: string;
+	browserSessionId: string;
+	tabId: number;
+	depth: number;
+};
+
+export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
 
 export type BrowserBridgeTargetInfo = {
+	browserSessionId?: string;
 	tabId?: number;
-	browserId?: string;
 	source: BrowserBridgeTargetSource;
 	implicit: boolean;
 	selectionVersionAtDispatch: number;
 	selectionVersionAtResolve?: number;
-	orchestrationId?: string;
-	sessionTag?: string;
-	tabRole?: string;
-	profileId?: string;
-};
-
-export type BrowserToolTargetRef = {
-	tabId?: number | string;
-	browserId?: string;
-	orchestrationId?: string;
-	sessionTag?: string;
-	tabRole?: string;
-	windowId?: number | string;
-	groupId?: number | string;
-	profileId?: string;
-	requireOwned?: boolean;
-};
-
-export type ResolveBrowserToolTargetInput = {
-	toolName?: string;
-	commandName?: string;
-	topLevelTabId?: unknown;
-	target?: unknown;
-	commandBody?: Record<string, unknown>;
-	allowEmptyTarget?: boolean;
 };
 
 export type BrowserBridgeSnapshot = {
+	browserSessionId?: string;
 	host: string;
 	port: number;
 	running: boolean;
@@ -81,8 +101,9 @@ export type BrowserBridgeSnapshot = {
 	latestTabId?: number;
 	selectionVersion: number;
 	tabs: BrowserTabInfo[];
-	orchestration?: Record<string, unknown>;
-	profiles?: unknown[];
+	leases?: BrowserTabLeaseInfo[];
+	uiLock?: BrowserUiLockInfo;
+	queues?: BrowserCommandQueueInfo[];
 	pending: Array<{
 		id: string;
 		tabId?: number;
@@ -93,11 +114,10 @@ export type BrowserBridgeSnapshot = {
 };
 
 export type ExecuteOptions = {
+	browserSessionId?: string;
 	tabId?: number | string;
-	target?: BrowserToolTargetRef | unknown;
 	timeoutMs?: number;
-	toolName?: string;
-	commandName?: string;
+	accessMode?: "read" | "write";
 };
 
 export type PendingRequest = {

@@ -1,8 +1,9 @@
 import { WebSocket } from "ws";
 import { BrowserBridgeError } from "./errors";
 import { browserTabInfo, isOpen, tabSessionSummary, toTabId } from "./bridgeUtils";
-import type { BrowserBridgeClientInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types";
+import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
+import { DEFAULT_BROWSER_SESSION_ID, type BrowserSessionRegistry } from "./BrowserSessionRegistry";
 
 const DISCONNECTED_SESSION_RETENTION_MS = 5 * 60_000;
 const MAX_DISCONNECTED_SESSION_HISTORY = 128;
@@ -10,57 +11,59 @@ const MAX_DISCONNECTED_SESSION_HISTORY = 128;
 export class BrowserTabSessionRouter {
 	readonly sessions = new Map<string, BrowserTabSession>();
 	private readonly clients: BrowserBridgeClientRegistry;
-	private defaultSessionId?: string;
-	private latestSessionId?: string;
-	private selectionVersionValue = 0;
+	private readonly browserSessions: BrowserSessionRegistry;
 
-	constructor(clients: BrowserBridgeClientRegistry) {
+	constructor(clients: BrowserBridgeClientRegistry, browserSessions: BrowserSessionRegistry) {
 		this.clients = clients;
+		this.browserSessions = browserSessions;
 	}
 
 	get selectionVersion(): number {
-		return this.selectionVersionValue;
+		return this.browserSession().selectionVersion;
 	}
 
 	clear(): void {
 		this.sessions.clear();
-		this.setDefaultSessionId(undefined);
-		this.setLatestSessionId(undefined);
+		const session = this.browserSession();
+		this.setDefaultSessionId(session, undefined);
+		this.setLatestSessionId(session, undefined);
 	}
 
-	targetInfo(source: BrowserBridgeTargetSource, tabId?: number, metadata: Partial<Omit<BrowserBridgeTargetInfo, "tabId" | "source" | "implicit" | "selectionVersionAtDispatch" | "selectionVersionAtResolve">> = {}): BrowserBridgeTargetInfo {
+	targetInfo(source: BrowserBridgeTargetSource, tabId?: number, session = this.browserSession()): BrowserBridgeTargetInfo {
 		return {
+			browserSessionId: session.id,
 			tabId,
-			...metadata,
 			source,
 			implicit: source === "default" || source === "latest",
-			selectionVersionAtDispatch: this.selectionVersionValue,
+			selectionVersionAtDispatch: session.selectionVersion,
 		};
 	}
 
 	resolvedTarget(target: BrowserBridgeTargetInfo | undefined): BrowserBridgeTargetInfo | undefined {
-		return target ? { ...target, selectionVersionAtResolve: this.selectionVersionValue } : undefined;
+		const session = this.browserSession(target?.browserSessionId);
+		return target ? { ...target, browserSessionId: session.id, selectionVersionAtResolve: session.selectionVersion } : undefined;
 	}
 
-	defaultTabId(): number | undefined {
-		return this.tabIdForSessionId(this.defaultSessionId);
+	defaultTabId(browserSessionId?: string): number | undefined {
+		return this.tabIdForSessionId(this.browserSession(browserSessionId).defaultSessionId);
 	}
 
-	latestTabId(): number | undefined {
-		return this.tabIdForSessionId(this.latestSessionId);
+	latestTabId(browserSessionId?: string): number | undefined {
+		return this.tabIdForSessionId(this.browserSession(browserSessionId).latestSessionId);
 	}
 
 	markClientDisconnected(ws: WebSocket): void {
 		for (const session of this.sessions.values()) {
 			if (session.client === ws && !session.disconnectedAt) session.disconnectedAt = Date.now();
 		}
+		this.browserSessions.markClientDisconnected(ws);
 		this.refreshSelectedSessionRefs();
 	}
 
-	markTabDisconnected(tabId: number, browserId?: string): void {
-		const session = this.liveSessionForTabTarget(tabId, browserId);
+	markTabDisconnected(tabId: number, browserSessionId?: string): void {
+		const session = this.liveSessionForTabId(tabId, browserSessionId);
 		if (session && !session.disconnectedAt) session.disconnectedAt = Date.now();
-		this.refreshSelectedSessionRefs();
+		this.refreshSelectedSessionRefs(undefined, browserSessionId);
 	}
 
 	getTabs(options: { includeDisconnected?: boolean } = {}): BrowserTabInfo[] {
@@ -92,15 +95,14 @@ export class BrowserTabSessionRouter {
 				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
 				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
 				windowId: toTabId(tab.windowId) ?? existing?.windowId,
-				groupId: toTabId(tab.groupId) ?? existing?.groupId,
-				profileId: this.clients.info(ws)?.profileId || existing?.profileId,
 				type: "ext_ws",
 				connectedAt: existing?.connectedAt || now,
 				bridge: this.clients.info(ws),
 				client: ws,
 			});
-			if (tab.active === true || !this.defaultSessionId) this.setDefaultSessionId(id);
-			this.setLatestSessionId(id);
+			const browserSession = this.browserSessions.defaultSession();
+			if (tab.active === true || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
+			this.setLatestSessionId(browserSession, id);
 		}
 		for (const [id, session] of this.sessions) {
 			if (!current.has(id) && session.client === ws && !session.disconnectedAt) session.disconnectedAt = now;
@@ -108,26 +110,45 @@ export class BrowserTabSessionRouter {
 		this.refreshSelectedSessionRefs();
 	}
 
-	selectBrowser(ws: WebSocket): string | undefined {
-		const sessionId = this.firstActiveSessionIdForClient(ws);
-		this.setDefaultSessionId(sessionId);
-		this.setLatestSessionId(sessionId);
+	selectBrowser(ws: WebSocket, browserSessionId?: string): string | undefined {
+		const browserSession = this.browserSession(browserSessionId);
+		this.browserSessions.selectClient(browserSession, ws);
+		const sessionId = this.firstActiveSessionIdForClient(ws, browserSessionId);
+		this.setDefaultSessionId(browserSession, sessionId);
+		this.setLatestSessionId(browserSession, sessionId);
 		return sessionId;
 	}
 
-	selectTab(tabId: number, browserId?: string): void {
-		const selectedSession = this.liveSessionForTabTarget(tabId, browserId);
-		if (selectedSession) this.setDefaultSessionId(selectedSession.id);
+	selectTab(tabId: number, browserSessionId?: string): void {
+		const selectedSession = this.liveSessionForTabId(tabId, browserSessionId);
+		if (selectedSession) this.setDefaultSessionId(this.browserSession(browserSessionId), selectedSession.id);
 	}
 
-	previousDefaultTabId(): number | undefined {
-		return this.tabIdForSessionId(this.defaultSessionId);
+	attachTab(tabId: number, browserSessionId: string | undefined, browserId?: string): BrowserTabSession | undefined {
+		const selectedSession = browserId ? this.liveSessionForTabRef(tabId, browserId) : this.liveSessionForTabId(tabId, browserSessionId);
+		if (!selectedSession) return undefined;
+		const browserSession = this.browserSession(browserSessionId);
+		this.browserSessions.selectClient(browserSession, selectedSession.client);
+		this.setDefaultSessionId(browserSession, selectedSession.id);
+		this.setLatestSessionId(browserSession, selectedSession.id);
+		return selectedSession;
 	}
 
-	liveSessionForTabTarget(tabId: number, browserId?: string, profileId?: string): BrowserTabSession | undefined {
-		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client) && (!profileId || session.profileId === profileId));
-		if (browserId) return live.find((session) => session.browserId === browserId || session.bridge?.extensionId === browserId || session.bridge?.id === browserId);
-		const scopeClient = this.clients.selectedOpenClient();
+	detachTab(tabId: number, browserSessionId?: string): void {
+		const browserSession = this.browserSession(browserSessionId);
+		const live = this.liveSessionForTabId(tabId, browserSessionId);
+		if (live?.id && browserSession.defaultSessionId === live.id) this.setDefaultSessionId(browserSession, undefined);
+		if (live?.id && browserSession.latestSessionId === live.id) this.setLatestSessionId(browserSession, undefined);
+		if (live?.client && this.browserSessions.selectedOpenClient(browserSession) === live.client) this.browserSessions.selectClient(browserSession, undefined);
+	}
+
+	previousDefaultTabId(browserSessionId?: string): number | undefined {
+		return this.tabIdForSessionId(this.browserSession(browserSessionId).defaultSessionId);
+	}
+
+	liveSessionForTabId(tabId: number, browserSessionId?: string): BrowserTabSession | undefined {
+		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
+		const scopeClient = this.browserSessions.selectedOpenClient(this.browserSession(browserSessionId));
 		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
 		if (scoped) return scoped;
 		if (live.length <= 1) return live[0];
@@ -137,52 +158,59 @@ export class BrowserTabSessionRouter {
 		});
 	}
 
-	liveSessionForTabId(tabId: number): BrowserTabSession | undefined {
-		return this.liveSessionForTabTarget(tabId);
+	socketForTab(tabId: number, browserSessionId?: string): WebSocket | undefined {
+		return this.liveSessionForTabId(tabId, browserSessionId)?.client;
 	}
 
-	socketForTabTarget(tabId: number, browserId?: string, profileId?: string): WebSocket | undefined {
-		return this.liveSessionForTabTarget(tabId, browserId, profileId)?.client;
+	describeBrowserSession(session: BrowserAutomationSession, selectedBrowser?: BrowserAutomationSessionInfo["selectedBrowser"]): BrowserAutomationSessionInfo {
+		return {
+			id: session.id,
+			name: session.name,
+			defaultTabId: this.tabIdForSessionId(session.defaultSessionId),
+			latestTabId: this.tabIdForSessionId(session.latestSessionId),
+			selectionVersion: session.selectionVersion,
+			createdAt: session.createdAt,
+			lastSeenAt: session.lastSeenAt,
+			selectedBrowser,
+		};
 	}
 
-	socketForTab(tabId: number): WebSocket | undefined {
-		return this.socketForTabTarget(tabId);
-	}
-
-	fallbackExecutionTarget(): BrowserBridgeTargetInfo | undefined {
-		this.refreshSelectedSessionRefs();
-		const defaultTabId = this.tabIdForSessionId(this.defaultSessionId);
-		if (defaultTabId) return this.targetInfo("default", defaultTabId);
-		const latestTabId = this.tabIdForSessionId(this.latestSessionId);
-		if (latestTabId) return this.targetInfo("latest", latestTabId);
+	fallbackExecutionTarget(browserSessionId?: string): BrowserBridgeTargetInfo | undefined {
+		this.refreshSelectedSessionRefs(undefined, browserSessionId);
+		const browserSession = this.browserSession(browserSessionId);
+		const defaultTabId = this.tabIdForSessionId(browserSession.defaultSessionId);
+		if (defaultTabId) return this.targetInfo("default", defaultTabId, browserSession);
+		const latestTabId = this.tabIdForSessionId(browserSession.latestSessionId);
+		if (latestTabId) return this.targetInfo("latest", latestTabId, browserSession);
 		return undefined;
 	}
 
-	firstActiveSessionIdForClient(client: WebSocket): string | undefined {
-		return this.preferredImplicitSessionId(Array.from(this.sessions.values()).filter((session) => session.client === client));
+	firstActiveSessionIdForClient(client: WebSocket, browserSessionId?: string): string | undefined {
+		return this.preferredImplicitSessionId(Array.from(this.sessions.values()).filter((session) => session.client === client), this.browserSession(browserSessionId));
 	}
 
-	refreshSelectedSessionRefs(now = Date.now()): void {
+	refreshSelectedSessionRefs(now = Date.now(), browserSessionId?: string): void {
 		this.pruneDisconnectedSessions(now);
-		const scopeClient = this.clients.selectedOpenClient();
-		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient) : this.firstActiveSessionId();
+		const browserSession = this.browserSession(browserSessionId);
+		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
+		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient, browserSessionId) : browserSession.id === DEFAULT_BROWSER_SESSION_ID ? this.firstActiveSessionId(browserSessionId) : undefined;
 		const isValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt && (!scopeClient || session.client === scopeClient);
-		const defaultSession = this.defaultSessionId ? this.sessions.get(this.defaultSessionId) : undefined;
-		if (!this.defaultSessionId || !isValid(defaultSession)) this.setDefaultSessionId(firstActive);
-		const latestSession = this.latestSessionId ? this.sessions.get(this.latestSessionId) : undefined;
-		if (!this.latestSessionId || !isValid(latestSession)) this.setLatestSessionId(firstActive);
+		const defaultSession = browserSession.defaultSessionId ? this.sessions.get(browserSession.defaultSessionId) : undefined;
+		if (!browserSession.defaultSessionId || !isValid(defaultSession)) this.setDefaultSessionId(browserSession, firstActive);
+		const latestSession = browserSession.latestSessionId ? this.sessions.get(browserSession.latestSessionId) : undefined;
+		if (!browserSession.latestSessionId || !isValid(latestSession)) this.setLatestSessionId(browserSession, firstActive);
 	}
 
-	private setDefaultSessionId(id: string | undefined): void {
-		if (this.defaultSessionId === id) return;
-		this.defaultSessionId = id;
-		this.selectionVersionValue += 1;
+	private setDefaultSessionId(session: BrowserAutomationSession, id: string | undefined): void {
+		this.browserSessions.setDefaultTabSessionId(session, id);
 	}
 
-	private setLatestSessionId(id: string | undefined): void {
-		if (this.latestSessionId === id) return;
-		this.latestSessionId = id;
-		this.selectionVersionValue += 1;
+	private setLatestSessionId(session: BrowserAutomationSession, id: string | undefined): void {
+		this.browserSessions.setLatestTabSessionId(session, id);
+	}
+
+	private liveSessionForTabRef(tabId: number, browserId: string): BrowserTabSession | undefined {
+		return Array.from(this.sessions.values()).find((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client) && (session.browserId === browserId || session.bridge?.extensionId === browserId || session.bridge?.id === browserId));
 	}
 
 	private sessionIdForTab(client: WebSocket, tabId: number): string {
@@ -194,15 +222,19 @@ export class BrowserTabSessionRouter {
 		return this.sessions.get(sessionId)?.tabId;
 	}
 
-	private preferredImplicitSessionId(candidates: BrowserTabSession[]): string | undefined {
+	private preferredImplicitSessionId(candidates: BrowserTabSession[], browserSession: BrowserAutomationSession): string | undefined {
 		const live = candidates.filter((session) => !session.disconnectedAt);
 		return live.find((session) => session.active === true)?.id
-			?? live.find((session) => session.id === this.latestSessionId)?.id
+			?? live.find((session) => session.id === browserSession.latestSessionId)?.id
 			?? live[0]?.id;
 	}
 
-	private firstActiveSessionId(): string | undefined {
-		return this.preferredImplicitSessionId(Array.from(this.sessions.values()));
+	private browserSession(browserSessionId?: string): BrowserAutomationSession {
+		return browserSessionId ? this.browserSessions.get(browserSessionId) : this.browserSessions.selectedSession();
+	}
+
+	private firstActiveSessionId(browserSessionId?: string): string | undefined {
+		return this.preferredImplicitSessionId(Array.from(this.sessions.values()), this.browserSession(browserSessionId));
 	}
 
 	private pruneDisconnectedSessions(now = Date.now()): void {

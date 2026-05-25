@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeSqliProbeData } from "../../summaries/index";
 import { runSqliProbe } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type SqliProbeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type SqliProbeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -13,16 +13,13 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqli_probe from a captured or raw request template for SQLi oracle evidence; keep param names, probe types, and maxCases bounded, and retain outputPath/artifact evidence for follow-up judgment."],
 		parameters: Type.Object({
 			...sharedWebSecurityParams(),
-			url: Type.Optional(Type.String({ description: "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL." })),
-			baseUrl: Type.Optional(Type.String({ description: "Base URL for relative raw request targets." })),
-			rawRequest: Type.Optional(Type.String({ description: "Raw HTTP request text used as the probe template." })),
-			request: Type.Optional(Type.Any({ description: "Captured request-like object from browser_network/HAR." })),
-			method: Type.Optional(Type.String({ description: "Override HTTP method." })),
-			headers: Type.Optional(Type.Any({ description: "Headers to merge or override on the template." })),
-			body: Type.Optional(Type.String({ description: "Text request body override." })),
-			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
-			mutations: Type.Optional(Type.Any({ description: "Optional base mutation object with url, method, headers, body, or bodyBase64." })),
-			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
+			...rawRequestParams({
+				urlDescription: "Absolute URL or host/path target. Required unless rawRequest or request supplies a URL.",
+				rawRequestDescription: "Raw HTTP request text used as the probe template.",
+				requestDescription: "Captured request-like object from browser_network/HAR.",
+				headersDescription: "Headers to merge or override on the template.",
+				mutationsDescription: "Optional base mutation object with url, method, headers, body, or bodyBase64.",
+			}),
 			locations: Type.Optional(Type.Any({ description: "Parameter locations: query, json, form, header, or all. Default inferred from template." })),
 			paramNames: Type.Optional(Type.Array(Type.String(), { description: "Parameter names to probe. If omitted, existing template params are used." })),
 			probeTypes: Type.Optional(Type.Any({ description: "Probe families: boolean, error, time, union, or all. Default all." })),
@@ -42,12 +39,13 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 			timeThresholdMs: Type.Optional(Type.Number({ description: "Elapsed-time delta threshold for time oracle matches; default 2000." })),
 			baselineRepeats: Type.Optional(Type.Number({ description: "Baseline request repetitions; default 1, hard-capped at 10." })),
 			stopOnFirstMatch: Type.Optional(Type.Boolean({ description: "Stop probing a confirmed vulnerable parameter after the first oracle match; default false." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
-			maxCases: Type.Optional(Type.Number({ description: "Maximum probe cases; default 100, hard-capped at 5000." })),
-			rateLimitPerSecond: Type.Optional(Type.Number({ description: "Sequential request rate cap per second; default unlimited sequential." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Merge browser cookies for request URLs; default false." })),
-			cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
+			}),
+			...maxCasesParam("Maximum probe cases; default 100, hard-capped at 5000."),
+			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
+			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<SqliProbeToolParams>(params), ctx, {

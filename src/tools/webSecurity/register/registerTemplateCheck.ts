@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeTemplateCheckData } from "../../summaries/index";
 import { runTemplateCheck } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type TemplateCheckToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type TemplateCheckToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -29,12 +29,13 @@ export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarCo
 			templatePath: Type.Optional(Type.String({ description: "Local JSON or YAML template file path containing a template object, array, or {templates}." })),
 			variables: Type.Optional(Type.Any({ description: "Template variable values for {{name}} substitution." })),
 			tech: Type.Optional(Type.Any({ description: "Optional technology hints retained for template selection workflows." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
-			maxTemplates: Type.Optional(Type.Number({ description: "Maximum templates to run; default 100, hard-capped at 1000." })),
-			rateLimitPerSecond: Type.Optional(Type.Number({ description: "Sequential request rate cap per second; default unlimited sequential." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Merge browser cookies for request URLs; default false." })),
-			cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
+			}),
+			...maxTemplatesParam("Maximum templates to run; default 100, hard-capped at 1000."),
+			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
+			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<TemplateCheckToolParams>(params), ctx, {

@@ -8,7 +8,6 @@
   "permissions": [
     "cookies",
     "tabs",
-    "tabGroups",
     "activeTab",
     "debugger",
     "scripting",

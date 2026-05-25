@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeFuzzParamsData } from "../../summaries/index";
 import { runFuzzParams } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzParamsToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCasesParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzParamsToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerFuzzParamsTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -32,15 +32,16 @@ export function registerFuzzParamsTool({ pi, ensureStarted }: ToolRegistrarConte
 			wordlistPath: Type.Optional(Type.String({ description: "Optional local wordlist file path; one entry per line." })),
 			operations: Type.Optional(Type.Array(Type.String(), { description: "Parameter operations: set, add, delete. Default set." })),
 			contentTypeVariants: Type.Optional(Type.Array(Type.String(), { description: "Multipart Content-Type variants: normal, quoted, missing-boundary, mismatch." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false for stable matching." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false for stable matching.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
+			}),
 			matchStatus: Type.Optional(Type.Any({ description: "Optional status matcher list/string, e.g. [200,201,302]." })),
 			filterStatus: Type.Optional(Type.Any({ description: "Optional status filter list/string, e.g. [403,404]." })),
 			filterBodyBytes: Type.Optional(Type.Any({ description: "Optional body byte-size filter list/string for noisy baselines." })),
-			maxCases: Type.Optional(Type.Number({ description: "Maximum location*param*operation*value cases; default 500, hard-capped at 5000." })),
-			rateLimitPerSecond: Type.Optional(Type.Number({ description: "Sequential request rate cap per second; default unlimited sequential." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Merge browser cookies for request URLs; default false." })),
-			cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })),
+			...maxCasesParam("Maximum location*param*operation*value cases; default 500, hard-capped at 5000."),
+			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
+			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzParamsToolParams>(params), ctx, {

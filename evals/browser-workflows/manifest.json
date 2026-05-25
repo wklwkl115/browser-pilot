@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "suite": "browser-workflows",
+  "mode": "manual-or-future-runner",
+  "externalNetwork": false,
+  "runsBrowser": false,
+  "runsScanners": false,
+  "evals": [
+    {
+      "id": "01-readable-content-artifact",
+      "spec": "01-readable-content-artifact.md",
+      "fixtures": ["fixtures/article.html"],
+      "primaryTools": ["browser_tabs", "browser_content", "browser_artifact"],
+      "evidence": ["summary", "artifact"]
+    },
+    {
+      "id": "02-scan-execute-wait",
+      "spec": "02-scan-execute-wait.md",
+      "fixtures": ["fixtures/interactive.html"],
+      "primaryTools": ["browser_tabs", "browser_scan", "browser_execute", "browser_wait"],
+      "evidence": ["before-state", "after-state"]
+    },
+    {
+      "id": "03-network-capture-replay",
+      "spec": "03-network-capture-replay.md",
+      "fixtures": ["fixtures/network.html"],
+      "primaryTools": ["browser_network", "browser_execute", "browser_http_replay"],
+      "evidence": ["captured-request", "replay-delta"]
+    },
+    {
+      "id": "04-selector-missing-recovery",
+      "spec": "04-selector-missing-recovery.md",
+      "fixtures": ["fixtures/selector-recovery.html"],
+      "primaryTools": ["browser_wait", "browser_html", "browser_scan"],
+      "evidence": ["timeout-diagnostics", "corrected-selector"]
+    },
+    {
+      "id": "05-download-artifact",
+      "spec": "05-download-artifact.md",
+      "fixtures": ["fixtures/download.html", "fixtures/files/report.txt"],
+      "primaryTools": ["browser_download", "browser_artifact"],
+      "evidence": ["download-state", "file-metadata"]
+    },
+    {
+      "id": "06-wait-timeout-diagnostics",
+      "spec": "06-wait-timeout-diagnostics.md",
+      "fixtures": ["fixtures/wait-timeout.html"],
+      "primaryTools": ["browser_wait", "browser_html", "browser_evidence"],
+      "evidence": ["timeout", "diagnostics"]
+    },
+    {
+      "id": "07-bounded-path-fuzz-baseline",
+      "spec": "07-bounded-path-fuzz-baseline.md",
+      "fixtures": ["fixtures/path-fuzz-routes.json"],
+      "primaryTools": ["browser_recon_probe", "browser_fuzz_paths", "browser_artifact"],
+      "evidence": ["baseline", "matched-paths"]
+    },
+    {
+      "id": "08-cookie-jwt-redaction",
+      "spec": "08-cookie-jwt-redaction.md",
+      "fixtures": ["fixtures/cookies.json"],
+      "primaryTools": ["browser_cookie_analyze", "browser_artifact"],
+      "evidence": ["redacted-summary", "claims"]
+    },
+    {
+      "id": "09-sqli-probe-vs-bridge",
+      "spec": "09-sqli-probe-vs-bridge.md",
+      "fixtures": ["fixtures/sqli-request.txt"],
+      "primaryTools": ["browser_http_replay", "browser_sqli_probe", "browser_sqlmap_bridge"],
+      "evidence": ["request-baseline", "oracle-evidence", "bridge-artifact"]
+    },
+    {
+      "id": "10-multi-session-lease-conflict",
+      "spec": "10-multi-session-lease-conflict.md",
+      "fixtures": ["fixtures/interactive.html"],
+      "primaryTools": ["browser_tabs", "browser_execute", "browser_evidence"],
+      "evidence": ["session-id", "tab-id", "lease-diagnostics"]
+    }
+  ]
+}

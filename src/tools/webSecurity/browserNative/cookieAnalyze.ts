@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
-import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseDistance, responseFingerprint } from "../shared/http";
+import { responseReplayDelta } from "../shared/baseline";
+import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
 import { analyzeCookieSample, tokenCountOf, tokenFormatOf, tokenMutationToken, tokenVerifiedOf } from "../shared/cookieTokens";
 import type { RawCookieAnalyzeOptions } from "../shared/types";
@@ -109,15 +110,7 @@ async function normalizeCookieAnalyzeOptions(options: RawCookieAnalyzeOptions): 
 }
 
 function claimReplayDeltaRecord(left: ReturnType<typeof responseFingerprint>, right: ReturnType<typeof responseFingerprint>) {
-	return {
-		statusChanged: right.status !== left.status,
-		titleChanged: right.title !== left.title,
-		bodyBytesDelta: right.bodyBytes - left.bodyBytes,
-		bodyHashChanged: right.bodySha256 !== left.bodySha256,
-		locationChanged: right.location !== left.location,
-		distance: responseDistance(left, right),
-		classifier: [right.status !== left.status ? "status" : "", right.title !== left.title ? "title" : "", right.bodyBytes !== left.bodyBytes ? "length" : "", right.bodySha256 !== left.bodySha256 ? "body-hash" : "", right.location !== left.location ? "location" : ""].filter(Boolean),
-	};
+	return responseReplayDelta(left, right);
 }
 
 async function runClaimReplayChecks(samples: CookieSample[], results: Record<string, unknown>[], options: NormalizedCookieAnalyzeOptions) {

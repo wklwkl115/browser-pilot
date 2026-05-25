@@ -23,7 +23,7 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 				const server = await ensureStarted();
 				const format = String(params.format || "png").toLowerCase();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const result = await server.sendCommand({ cmd: "screenshot.capture", format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "browser_screenshot", commandName: "screenshot.capture" });
+				const result = await server.sendCommand({ cmd: "screenshot.capture", format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
 				const data = result.data as Record<string, unknown> | undefined;
 				const screenshot = typeof data?.screenshot === "string" ? data.screenshot : undefined;
 				let saved: Record<string, unknown> | undefined;

@@ -1,11 +1,10 @@
 import http from "node:http";
 import https from "node:https";
 import { Buffer } from "node:buffer";
+import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline";
 import { TEXTUAL_CONTENT_TYPE, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
 import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types";
-
-const BASELINE_CLUSTER_BODY_DELTA = 96;
 
 type TlsCertificateSummary = Record<string, unknown>;
 type VhostFetchStep = FetchStep & { tlsCertificate?: TlsCertificateSummary };
@@ -17,13 +16,6 @@ type VhostResponseFingerprint = ReturnType<typeof responseFingerprint> & {
 	tlsSerialNumber?: string;
 };
 type VhostBaselineFingerprint = VhostResponseFingerprint & { host: string; sniName?: string; clusterKey: string };
-
-function matchesFuzzResult(status: number, bodyBytes: number, options: { matchStatus: number[]; filterStatus: number[]; filterBodyBytes: number[] }): boolean {
-	if (options.matchStatus.length && !options.matchStatus.includes(status)) return false;
-	if (options.filterStatus.includes(status)) return false;
-	if (options.filterBodyBytes.includes(bodyBytes)) return false;
-	return true;
-}
 
 function isIpLikeHost(hostname: string): boolean {
 	return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname === "localhost" || hostname.includes(":");
@@ -184,14 +176,8 @@ function vhostDistance(left: VhostBaselineFingerprint, right: VhostResponseFinge
 	return score;
 }
 
-function normalizeBaselineStrategy(value: unknown): "exact" | "cluster" | "auto" {
-	const normalized = String(value || "auto").trim().toLowerCase();
-	if (normalized === "exact" || normalized === "cluster") return normalized;
-	return "auto";
-}
-
 function sameBaselineCluster(left: VhostResponseFingerprint, right: VhostBaselineFingerprint): boolean {
-	return left.status === right.status && left.title === right.title && left.location === right.location && left.certificateKey === right.certificateKey && Math.abs(left.bodyBytes - right.bodyBytes) <= BASELINE_CLUSTER_BODY_DELTA;
+	return left.certificateKey === right.certificateKey && sameHttpBaselineCluster(left, right);
 }
 
 function exactBaselineMatch(left: VhostResponseFingerprint, right: VhostBaselineFingerprint): boolean {
@@ -199,7 +185,7 @@ function exactBaselineMatch(left: VhostResponseFingerprint, right: VhostBaseline
 }
 
 function clusterKeyForBaseline(fingerprint: VhostBaselineFingerprint): string {
-	return `${fingerprint.status}|${fingerprint.title || ""}|${fingerprint.location || ""}|${fingerprint.certificateKey}`;
+	return `${baselineClusterKey(fingerprint)}|${fingerprint.certificateKey}`;
 }
 
 function clusterBaselineFingerprints(baselines: VhostBaselineFingerprint[]): Array<Record<string, unknown>> {
@@ -351,12 +337,12 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 				const exchange = await fetchWithHostRedirects({ url: base, method: normalized.method, headers: sanitized.headers }, host, normalized, sniName);
 				const final = exchange.final;
 				const fingerprint = vhostResponse(final);
-				const nearestBaseline = currentBaselines.length ? currentBaselines.map((baseline) => ({ baseline, distance: vhostDistance(baseline, fingerprint) })).sort((a, b) => a.distance - b.distance)[0] : undefined;
+				const nearestBaseline = nearestBaselineByDistance(currentBaselines, fingerprint, vhostDistance);
 				const isExactBaseline = currentBaselines.some((baseline) => exactBaselineMatch(fingerprint, baseline));
 				const isClusterBaseline = currentBaselines.some((baseline) => sameBaselineCluster(fingerprint, baseline));
 				const similarToBaseline = normalized.baselineStrategy === "exact" ? isExactBaseline : normalized.baselineStrategy === "cluster" ? isClusterBaseline : (isExactBaseline || isClusterBaseline);
 				const differentFromBaseline = currentBaselines.length ? !similarToBaseline : true;
-				const statusBodyMatched = matchesFuzzResult(final.status, final.bodyBytes, normalized);
+				const statusBodyMatched = matchesStatusBodyResult(final.status, final.bodyBytes, normalized);
 				const matched = statusBodyMatched && (!normalized.filterBaseline || differentFromBaseline);
 				results.push({
 					matched,
@@ -378,7 +364,7 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 					exactBaselineMatch: isExactBaseline,
 					nearestBaseline: nearestBaseline ? { host: nearestBaseline.baseline.host, sniName: nearestBaseline.baseline.sniName, distance: nearestBaseline.distance, tlsFingerprint256: nearestBaseline.baseline.tlsFingerprint256, certificateKey: nearestBaseline.baseline.certificateKey } : undefined,
 					certificateDelta: nearestBaseline ? { fingerprintChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey, subjectChanged: fingerprint.tlsSubject !== nearestBaseline.baseline.tlsSubject, subjectAltNameChanged: fingerprint.tlsSubjectAltName !== nearestBaseline.baseline.tlsSubjectAltName, serialNumberChanged: fingerprint.tlsSerialNumber !== nearestBaseline.baseline.tlsSerialNumber } : undefined,
-					delta: nearestBaseline ? { statusChanged: fingerprint.status !== nearestBaseline.baseline.status, titleChanged: fingerprint.title !== nearestBaseline.baseline.title, bodyBytesDelta: fingerprint.bodyBytes - nearestBaseline.baseline.bodyBytes, bodyHashChanged: fingerprint.bodySha256 !== nearestBaseline.baseline.bodySha256, locationChanged: fingerprint.location !== nearestBaseline.baseline.location, certificateChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey } : undefined,
+					delta: nearestBaseline ? { ...responseChangeDelta(nearestBaseline.baseline, fingerprint), certificateChanged: fingerprint.certificateKey !== nearestBaseline.baseline.certificateKey } : undefined,
 					redirects: exchange.chain.slice(0, -1).map(compactStep),
 					body: { text: final.bodyText, base64: final.bodyBase64 },
 				});

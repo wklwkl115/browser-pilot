@@ -66,6 +66,10 @@ try {
 	assert.equal(previewEnvelope.detailLevel, "preview", "check-token distilledJsonResult.preview: preview must use the summary envelope contract");
 	assert.equal(preview.content[0].text.includes("p".repeat(1_000)), false, "check-token distilledJsonResult.preview: raw payload must not leak through preview");
 	assert.ok(previewEnvelope.saved?.path, "check-token distilledJsonResult.preview: oversized preview envelope must save the raw result artifact");
+	assert.equal(previewEnvelope.diagnostics.warnings.includes("raw_result_saved_to_artifact"), true, "check-token distilledJsonResult.diagnostics: saved raw result must be diagnosable");
+	assert.equal(previewEnvelope.limits.maxChars, 1_500, "check-token distilledJsonResult.limits: envelope must surface response budget");
+	assert.equal(previewEnvelope.privacy.localOnly, true, "check-token distilledJsonResult.privacy: saved artifacts must expose local-only privacy metadata");
+	assert.ok(previewEnvelope.nextActions.some((item) => item.includes("browser_artifact")), "check-token distilledJsonResult.nextActions: saved artifacts must suggest browser_artifact follow-up");
 
 	const contentOutputPath = path.join(tmp, "content.json");
 	const contentArtifact = { ok: true, data: { markdown: "# T", url: "https://example.test", meta: { target: "main" } } };

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeFuzzPathsData } from "../../summaries/index";
 import { runFuzzPaths } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzPathsToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzPathsToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerFuzzPathsTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -22,21 +22,23 @@ export function registerFuzzPathsTool({ pi, ensureStarted }: ToolRegistrarContex
 			extensions: Type.Optional(Type.Array(Type.String(), { description: "Optional extensions to add for extension fuzzing, e.g. php,json,txt." })),
 			appendSlash: Type.Optional(Type.Boolean({ description: "Also test trailing-slash directory variants." })),
 			recursive: Type.Optional(Type.Boolean({ description: "Recursively fuzz discovered directory-like paths; default false." })),
-			maxDepth: Type.Optional(Type.Number({ description: "Maximum recursive directory depth when recursive is enabled; default 2, hard-capped at 5." })),
+			...maxDepthParam("Maximum recursive directory depth when recursive is enabled; default 2, hard-capped at 5."),
 			method: Type.Optional(Type.String({ description: "HTTP method; default GET." })),
 			headers: Type.Optional(Type.Any({ description: "Optional request headers object." })),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false for stable status matching." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false for stable status matching.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
+			}),
 			matchStatus: Type.Optional(Type.Any({ description: "Optional status matcher list/string, e.g. [200,204,301,302,403]." })),
 			filterStatus: Type.Optional(Type.Any({ description: "Optional status filter list/string, e.g. [404]." })),
 			filterBodyBytes: Type.Optional(Type.Any({ description: "Optional body byte-size filter list/string for noisy baselines." })),
 			filterBaseline: Type.Optional(Type.Boolean({ description: "Only return candidates that differ from the auto baseline status/title/body/hash; default false." })),
 			baselinePath: Type.Optional(Type.String({ description: "Optional baseline path/word used for automatic baseline comparison." })),
 			baselineStrategy: Type.Optional(Type.String({ description: "Baseline comparison mode: exact | cluster | auto. Default auto." })),
-			maxCandidates: Type.Optional(Type.Number({ description: "Maximum candidates per base after extension/slash expansion; default 500, hard-capped at 5000." })),
-			rateLimitPerSecond: Type.Optional(Type.Number({ description: "Sequential request rate cap per second; default unlimited sequential." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Attach browser cookies for fuzz requests using the connected browser session; default false." })),
+			...maxCandidatesParam("Maximum candidates per base after extension/slash expansion; default 500, hard-capped at 5000."),
+			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
+			...browserCookieBindingParams("Attach browser cookies for fuzz requests using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzPathsToolParams>(params), ctx, {

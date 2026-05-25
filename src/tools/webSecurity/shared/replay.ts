@@ -1,16 +1,11 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
-import { FETCH_OMIT_HEADER_NAMES, absoluteUrl, fetchWithRedirects, headersArrayToMap, mergeCookieHeaders, normalizeHeaders, parseSetCookieLine, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http";
-import { buildMultipartBody, buildMultipartBodyFromParts, multipartContentTypeVariants, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart";
-import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, positiveInt, stringList } from "./normalize";
+import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http";
+import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize";
 import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template";
+import { harEntriesFromOptions } from "./har";
 import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types";
-
-export const MAX_HAR_URL_PATTERN_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
-export const MAX_HAR_URL_MATCH_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
-export const MAX_HAR_FILTER_CANDIDATE_ENTRIES = 10_000;
 
 export type NormalizedReplayOptions = {
 	timeoutMs: number;
@@ -27,92 +22,7 @@ export type NormalizedReplayOptions = {
 	cookieProvider?: CookieProvider;
 };
 
-function appendRawHeader(headers: HeaderMap, rawName: string, rawValue: string): string {
-	const name = rawName.trim();
-	const value = rawValue.trim();
-	const normalized = normalizeHeaderName(name);
-	const existingName = Object.keys(headers).find((key) => normalizeHeaderName(key) === normalized);
-	if (!existingName) {
-		headers[name] = value;
-		return name;
-	}
-	const separator = normalized === "cookie" ? "; " : ", ";
-	headers[existingName] = headers[existingName] ? `${headers[existingName]}${separator}${value}` : value;
-	return existingName;
-}
-
-export function parseRawHttpRequest(rawValue: unknown, options: { baseUrl?: unknown; defaultScheme?: unknown } = {}) {
-	const raw = asString(rawValue);
-	if (!raw) throw new Error("rawRequest must be a non-empty string");
-	const split = raw.match(/\r?\n\r?\n/);
-	const splitAt = split?.index ?? -1;
-	const separatorLength = split?.[0]?.length ?? 0;
-	const head = (splitAt >= 0 ? raw.slice(0, splitAt) : raw).replace(/\r\n/g, "\n");
-	const body = splitAt >= 0 ? raw.slice(splitAt + separatorLength) : undefined;
-	const lines = head.split("\n").filter(Boolean);
-	const requestLine = lines.shift() || "";
-	const match = requestLine.match(/^(\S+)\s+(\S+)(?:\s+HTTP\/\d(?:\.\d)?)?$/i);
-	if (!match) throw new Error("rawRequest first line must be: METHOD path HTTP/1.1");
-	const headers: HeaderMap = {};
-	let lastName = "";
-	for (const line of lines) {
-		if (/^[\t ]/.test(line) && lastName) {
-			headers[lastName] = `${headers[lastName]} ${line.trim()}`;
-			continue;
-		}
-		const idx = line.indexOf(":");
-		if (idx <= 0) continue;
-		lastName = appendRawHeader(headers, line.slice(0, idx), line.slice(idx + 1));
-	}
-	const host = headers.Host || headers.host;
-	const target = match[2];
-	const baseUrl = options.baseUrl || (host ? `${defaultScheme(options.defaultScheme)}://${host}` : undefined);
-	return { method: normalizeMethod(match[1]), url: absoluteUrl(target, { baseUrl, scheme: options.defaultScheme }), headers, body };
-}
-
-function capturedBodyFromPostData(postData: unknown): string | Buffer | undefined {
-	if (typeof postData === "string") return postData;
-	if (!isRecord(postData)) return undefined;
-	const text = asString(postData.text);
-	if (text === undefined) return undefined;
-	return String(postData.encoding || "").toLowerCase() === "base64" ? Buffer.from(text, "base64") : text;
-}
-
-function capturedRequestTemplate(value: unknown) {
-	if (!isRecord(value)) return {};
-	const source = isRecord(value.request) ? value.request : value;
-	const body = capturedBodyFromPostData(source.postData) ?? asString(source.body) ?? (asString(source.bodyBase64) ? Buffer.from(String(source.bodyBase64), "base64") : undefined);
-	return {
-		url: asString(source.url),
-		method: asString(source.method),
-		headers: headersArrayToMap(source.headers),
-		body,
-	};
-}
-
-function requestBodyFromOptions(options: ReplayOptions, mutation: Record<string, unknown>): string | Buffer | undefined {
-	const bodyBase64 = asString(mutation.bodyBase64) ?? asString(options.bodyBase64);
-	if (bodyBase64 !== undefined) return Buffer.from(bodyBase64, "base64");
-	const body = asString(mutation.body) ?? asString(options.body);
-	return body;
-}
-
-export function buildReplayRequest(options: ReplayOptions): ReplayRequest {
-	const raw = options.rawRequest !== undefined ? parseRawHttpRequest(options.rawRequest, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme }) : {};
-	const captured = capturedRequestTemplate(options.request);
-	const mutation = isRecord(options.mutations) ? options.mutations : {};
-	const urlValue = mutation.url ?? options.url ?? raw.url ?? captured.url;
-	const url = absoluteUrl(urlValue, { baseUrl: options.baseUrl, scheme: options.defaultScheme });
-	const method = normalizeMethod(mutation.method ?? options.method ?? raw.method ?? captured.method, "GET");
-	const headers = { ...headersArrayToMap(captured.headers), ...normalizeHeaders(raw.headers), ...normalizeHeaders(options.headers), ...normalizeHeaders(mutation.headers) };
-	let body = requestBodyFromOptions(options, mutation) ?? raw.body ?? captured.body;
-	const multipart = buildMultipartBody(mutation.multipart ?? options.multipart);
-	if (multipart) {
-		body = multipart.body;
-		setHeaderCaseInsensitive(headers, "Content-Type", multipart.contentType);
-	}
-	return { url, method, headers, body, multipart: multipart?.summary };
-}
+export { buildReplayRequest, parseRawHttpRequest } from "./requestTemplate";
 
 export function requestContentType(headers: HeaderMap): string {
 	const found = Object.entries(headers).find(([name]) => normalizeHeaderName(name) === "content-type");
@@ -398,44 +308,7 @@ export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
-function boundedHarUrlText(url: string): string {
-	return url.length > MAX_HAR_URL_MATCH_CHARS ? url.slice(0, MAX_HAR_URL_MATCH_CHARS) : url;
-}
-
-function compileHarUrlMatcher(patternText: string): (url: string) => boolean {
-	const unsafeReason = unsafeRegexReason(patternText, MAX_HAR_URL_PATTERN_CHARS);
-	if (unsafeReason) {
-		if (unsafeReason === "pattern_too_long") return () => false;
-		return (url) => boundedHarUrlText(url).includes(patternText);
-	}
-	try {
-		const pattern = new RegExp(patternText);
-		return (url) => pattern.test(boundedHarUrlText(url));
-	} catch {
-		return (url) => boundedHarUrlText(url).includes(patternText);
-	}
-}
-
-export async function harEntriesFromOptions(options: ReplayOptions): Promise<Array<Record<string, unknown>>> {
-	let har = options.har;
-	const path = asString(options.harPath)?.trim();
-	if (path) har = JSON.parse(await readFile(path, "utf8"));
-	if (!isRecord(har)) return [];
-	const entries = isRecord(har.log) && Array.isArray(har.log.entries) ? har.log.entries.filter(isRecord) : [];
-	let selected = entries;
-	const maxEntries = Math.min(100, positiveInt(options.harMaxEntries, options.harEntryIndex !== undefined ? 1 : 20));
-	if (options.harEntryIndex !== undefined) {
-		const index = typeof options.harEntryIndex === "number" ? options.harEntryIndex : Number(options.harEntryIndex);
-		if (!Number.isInteger(index) || index < 0) throw new Error("harEntryIndex must be a zero-based integer");
-		selected = entries[index] ? [entries[index]] : [];
-	}
-	const patternText = asString(options.harUrlPattern)?.trim();
-	if (patternText) {
-		const matcher = compileHarUrlMatcher(patternText);
-		selected = selected.slice(0, MAX_HAR_FILTER_CANDIDATE_ENTRIES).filter((entry) => matcher(asString(isRecord(entry.request) ? entry.request.url : undefined) || ""));
-	}
-	return selected.slice(0, maxEntries);
-}
+export { buildHarDependencyGraph, harDependencyRequestInfo, harDependencyResponseInfo, harEntriesFromOptions, harHeaderValues, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS } from "./har";
 
 export function replayInputOptions(input: unknown, parent: ReplayOptions): ReplayOptions {
 	const common: ReplayOptions = { ...parent, url: undefined, rawRequest: undefined, request: undefined, body: undefined, bodyBase64: undefined, multipart: undefined, requests: undefined, sequence: undefined, har: undefined, harPath: undefined };
@@ -452,120 +325,3 @@ export async function replaySequenceInputs(options: ReplayOptions): Promise<Arra
 	return harEntries.map((entry, index) => ({ input: entry, source: "har", label: asString(isRecord(entry.request) ? entry.request.url : undefined) || `har-${index + 1}` }));
 }
 
-export function harHeaderValues(value: unknown, headerName: string): string[] {
-	const target = normalizeHeaderName(headerName);
-	if (Array.isArray(value)) return value.filter(isRecord).filter((item) => normalizeHeaderName(String(item.name)) === target).map((item) => asString(item.value)).filter((item): item is string => item !== undefined);
-	if (isRecord(value)) return Object.entries(value).filter(([name]) => normalizeHeaderName(name) === target).flatMap(([, item]) => Array.isArray(item) ? item.map((part) => asString(part)).filter((part): part is string => part !== undefined) : asString(item) !== undefined ? [String(item)] : []);
-	return [];
-}
-
-type HarDependencyUrlOptions = Pick<ReplayOptions, "baseUrl" | "defaultScheme">;
-
-const HAR_DEPENDENCY_FALLBACK_BASE = "http://har-relative.invalid/";
-
-function normalizeHarDependencyUrl(value: unknown, options: HarDependencyUrlOptions = {}) {
-	const raw = asString(value)?.trim();
-	if (!raw) return undefined;
-	try {
-		const parsed = new URL(absoluteUrl(raw, { baseUrl: options.baseUrl, scheme: options.defaultScheme }));
-		parsed.hash = "";
-		return parsed.toString();
-	} catch {}
-	try {
-		const parsed = new URL(raw, HAR_DEPENDENCY_FALLBACK_BASE);
-		parsed.hash = "";
-		return parsed.toString();
-	} catch {
-		return undefined;
-	}
-}
-
-function resolveHarDependencyUrl(value: unknown, requestUrl?: string, options: HarDependencyUrlOptions = {}) {
-	const raw = asString(value)?.trim();
-	if (!raw) return undefined;
-	if (requestUrl) {
-		try {
-			const parsed = new URL(raw, requestUrl);
-			parsed.hash = "";
-			return parsed.toString();
-		} catch {}
-	}
-	return normalizeHarDependencyUrl(raw, options);
-}
-
-export function harDependencyRequestInfo(entry: unknown) {
-	const request = isRecord(entry) && isRecord(entry.request) ? entry.request : {};
-	const url = asString(request.url);
-	const headers = headersArrayToMap(request.headers);
-	return { url, method: asString(request.method), headers, referer: headers["Referer"] || headers.referer, cookieHeader: headers.Cookie || headers.cookie };
-}
-
-export function harDependencyResponseInfo(entry: unknown, requestUrl?: string, options: HarDependencyUrlOptions = {}) {
-	const response = isRecord(entry) && isRecord(entry.response) ? entry.response : {};
-	const headers = headersArrayToMap(response.headers);
-	const rawLocation = asString(response.redirectURL) || harHeaderValues(response.headers, "location")[0];
-	const normalizedRequestUrl = normalizeHarDependencyUrl(requestUrl, options);
-	const locationKey = rawLocation ? resolveHarDependencyUrl(rawLocation, normalizedRequestUrl, options) : undefined;
-	const cookies = harHeaderValues(response.headers, "set-cookie").map((line) => parseSetCookieLine(line, "set-cookie")).filter((item) => !!item && typeof item.name === "string");
-	return { status: typeof response.status === "number" ? response.status : Number(response.status), headers, location: rawLocation, locationKey, cookies };
-}
-
-export function buildHarDependencyGraph(sequence: Array<{ input: unknown; source: string; label?: string }>, options: HarDependencyUrlOptions = {}) {
-	const items = sequence.filter((item) => item.source === "har");
-	if (!items.length) return undefined;
-	const nodes = items.map((item, index) => {
-		const request = harDependencyRequestInfo(item.input);
-		const response = harDependencyResponseInfo(item.input, request.url, options);
-		return {
-			id: `har-${index}`,
-			index,
-			label: item.label,
-			method: request.method,
-			url: request.url,
-			status: Number.isFinite(response.status) ? response.status : undefined,
-			startedAt: isRecord(item.input) ? asString(item.input.startedDateTime) : undefined,
-		};
-	});
-	const edges: Array<Record<string, unknown>> = [];
-	const seen = new Set<string>();
-	const addEdge = (fromIndex: number, toIndex: number, type: string, details: Record<string, unknown> = {}) => {
-		const key = `${fromIndex}|${toIndex}|${type}|${JSON.stringify(details)}`;
-		if (seen.has(key)) return;
-		seen.add(key);
-		edges.push({ from: `har-${fromIndex}`, to: `har-${toIndex}`, fromIndex, toIndex, type, ...details });
-	};
-	for (let toIndex = 0; toIndex < items.length; toIndex += 1) {
-		const currentRequest = harDependencyRequestInfo(items[toIndex].input);
-		const currentUrl = normalizeHarDependencyUrl(currentRequest.url, options);
-		const currentReferer = resolveHarDependencyUrl(currentRequest.referer, currentUrl, options);
-		const currentCookies = parseCookieHeader(currentRequest.cookieHeader);
-		for (let fromIndex = 0; fromIndex < toIndex; fromIndex += 1) {
-			const previousRequest = harDependencyRequestInfo(items[fromIndex].input);
-			const previousUrl = normalizeHarDependencyUrl(previousRequest.url, options);
-			const previousResponse = harDependencyResponseInfo(items[fromIndex].input, previousRequest.url, options);
-			if (previousResponse.locationKey && currentUrl && previousResponse.locationKey === currentUrl) addEdge(fromIndex, toIndex, "redirect", { location: previousResponse.location });
-			if (currentReferer && previousUrl && previousUrl === currentReferer) addEdge(fromIndex, toIndex, "referer", { referer: currentRequest.referer || currentReferer });
-			const sharedCookies = previousResponse.cookies.filter((cookie) => cookie.name && currentCookies.has(String(cookie.name)) && (cookie.value === "" || currentCookies.get(String(cookie.name)) === cookie.value || currentCookies.get(String(cookie.name)) !== undefined));
-			if (sharedCookies.length) addEdge(fromIndex, toIndex, "cookie", { cookies: sharedCookies.map((cookie) => cookie.name).filter(Boolean) });
-		}
-	}
-	const edgeTypeCounts: Record<string, number> = {};
-	for (const edge of edges) {
-		const key = String(edge.type || "unknown");
-		edgeTypeCounts[key] = (edgeTypeCounts[key] || 0) + 1;
-	}
-	const edgeTypes = Object.entries(edgeTypeCounts).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 20);
-	return { source: "har", nodeCount: nodes.length, edgeCount: edges.length, edgeTypes, nodes, edges };
-}
-
-function parseCookieHeader(header: string | undefined): Map<string, string> {
-	const map = new Map<string, string>();
-	for (const part of String(header || "").split(";")) {
-		const idx = part.indexOf("=");
-		if (idx <= 0) continue;
-		const name = part.slice(0, idx).trim();
-		const value = part.slice(idx + 1).trim();
-		if (name) map.set(name, value);
-	}
-	return map;
-}

@@ -4,16 +4,22 @@ import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResu
 import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
 import { saveTextArtifact } from "./artifacts";
 import { isRecord } from "./summaries/common";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeOrchestrationData, summarizeScanData } from "./summaries/index";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
 
-export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeOrchestrationData, summarizeScanData } from "./summaries/index";
+export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {
 	tool: string;
 	command?: string;
+	browserSessionId?: string;
 	detailLevel: DetailLevel;
 	summary: DistilledSummary;
+	diagnostics?: Record<string, unknown>;
+	target?: Record<string, unknown>;
+	limits?: Record<string, unknown>;
+	privacy?: Record<string, unknown>;
+	nextActions?: string[];
 	saved?: Record<string, unknown>;
 };
 
@@ -24,6 +30,7 @@ const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headin
 type DistillBaseOptions = {
 	toolName: string;
 	command?: string;
+	browserSessionId?: string;
 	detailLevel?: unknown;
 	maxChars: number;
 	ctx?: { cwd?: string };
@@ -47,7 +54,6 @@ type DistilledTextOptions = DistillBaseOptions & {
 export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
 	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
 	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
-	if (toolName === "browser_orchestrate" || String(command || "").startsWith("orchestration.")) return summarizeOrchestrationData(isRecord(value) && value.data !== undefined ? value.data : value);
 	return summarizeGenericValue(value);
 }
 
@@ -100,10 +106,102 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 	return dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
 }
 
-function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): DistilledEnvelope {
+function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
+	for (const key of keys) if (record[key] !== undefined && record[key] !== null && record[key] !== "") return record[key];
+	return undefined;
+}
+
+function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const key of keys) {
+		const value = record[key];
+		if (value !== undefined && value !== null && value !== "") out[key] = value;
+	}
+	return out;
+}
+
+function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<string, unknown> | undefined {
+	if (!saved) return undefined;
+	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
+}
+
+function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
+	const summaryTarget = isRecord(summary.target) ? summary.target : {};
+	const target = {
+		...pickDefined(summary, ["browserId", "tabId", "frameId", "url", "origin", "targetSource", "targetImplicit"]),
+		...pickDefined(summaryTarget, ["browserSessionId", "browserId", "tabId", "frameId", "url", "origin", "source", "implicit", "selectionVersion"]),
+	};
+	if (options.browserSessionId !== undefined) target.browserSessionId = options.browserSessionId;
+	return Object.keys(target).length ? target : undefined;
+}
+
+function normalizedLimits(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
+	const limits = {
+		maxChars: options.maxChars,
+		detailLevel: normalizeDetailLevel(options.detailLevel),
+		...pickDefined(summary, ["truncated", "originalLength", "original_length", "original_bytes", "bodyTruncated", "truncatedCases", "truncatedCandidates", "truncatedDiscoveredDirectories", "maxDepth", "requestCount", "caseCount", "candidateCount"]),
+	};
+	return Object.keys(limits).length ? limits : undefined;
+}
+
+function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string, unknown>): Record<string, unknown> | undefined {
+	const warnings: string[] = [];
+	const omitted = firstDefined(summary, ["summaryOmitted"]);
+	if (Array.isArray(omitted) && omitted.length) warnings.push(`summary_omitted:${omitted.join(",")}`);
+	if (summary.bodyUnavailableReason) warnings.push(`body_unavailable:${String(summary.bodyUnavailableReason)}`);
+	if (summary.empty === true) warnings.push("empty_result");
+	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) warnings.push("truncated");
+	if (saved?.path) warnings.push("raw_result_saved_to_artifact");
+	const diagnostics = {
+		...pickDefined(summary, ["ok", "error_code", "message", "bodyAvailability", "bodyUnavailableReason", "failureCount", "matchedCount", "entryCount", "source_count", "waitId", "sessionId", "requestId"]),
+		...(warnings.length ? { warnings: Array.from(new Set(warnings)) } : {}),
+		...(saved ? { artifact: compactArtifactDescriptor(saved) } : {}),
+	};
+	return Object.keys(diagnostics).length ? diagnostics : undefined;
+}
+
+function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false): Record<string, unknown> | undefined {
+	const savedPrivacy = isRecord(saved?.privacy) ? saved.privacy : undefined;
+	if (!savedPrivacy && !sensitiveRaw) return undefined;
+	return {
+		...pickDefined(savedPrivacy || {}, ["classification", "localOnly", "redaction"]),
+		...(sensitiveRaw ? { sensitiveEvidence: true, modelFacingRedaction: "default" } : {}),
+	};
+}
+
+function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): string[] | undefined {
+	const actions: string[] = [];
+	if (saved?.path) actions.push(`browser_artifact path=${String(saved.path)} mode=json|text`);
+	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`browser_artifact offset=${String(summary.nextOffset)}`);
+	if (summary.bodyUnavailableReason) actions.push("browser_network body with a fresh recorder entry or recapture with captureBodies enabled");
+	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_scan/browser_html");
+	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or read the saved artifact by offset/jsonPath");
+	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
+	return actions.length ? Array.from(new Set(actions)).slice(0, 5) : undefined;
+}
+
+function sanitizeDistilledEnvelope(envelope: DistilledEnvelope): DistilledEnvelope {
+	return redactSensitiveValue(envelope) as DistilledEnvelope;
+}
+
+function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, sensitiveRaw = false): DistilledEnvelope {
 	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
-	return { tool: options.toolName, command: options.command, detailLevel: normalizeDetailLevel(options.detailLevel), summary: fitSummaryBudget(redactSensitiveValue(summary) as DistilledSummary, budget), saved };
+	const redactedSummary = redactSensitiveValue(summary) as DistilledSummary;
+	const fittedSummary = fitSummaryBudget(redactedSummary, budget);
+	return sanitizeDistilledEnvelope({
+		tool: options.toolName,
+		command: options.command,
+		browserSessionId: options.browserSessionId,
+		detailLevel: normalizeDetailLevel(options.detailLevel),
+		summary: fittedSummary,
+		diagnostics: normalizedDiagnostics(fittedSummary, saved),
+		target: normalizedTarget(options, fittedSummary),
+		limits: normalizedLimits(options, fittedSummary),
+		privacy: normalizedPrivacy(saved, sensitiveRaw),
+		nextActions: normalizedNextActions(options, fittedSummary, saved),
+		saved,
+	});
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {
@@ -117,16 +215,16 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	let saved: Record<string, unknown> | undefined;
 	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
-		let envelope = responseEnvelope(options, summary, saved);
+		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await saveRawArtifact(options, raw);
-			envelope = responseEnvelope(options, summary, saved);
+			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		}
 		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return jsonResult(value, { ...(options.details || {}), saved, summary }, maxChars);
 }
@@ -142,16 +240,16 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	let saved: Record<string, unknown> | undefined;
 	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
-		let envelope = responseEnvelope(options, summary, saved);
+		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await saveRawArtifact(options, raw);
-			envelope = responseEnvelope(options, summary, saved);
+			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
 		}
 		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return textResult(text, { ...(options.details || {}), saved, summary }, maxChars);
 }

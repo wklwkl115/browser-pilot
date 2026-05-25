@@ -2,50 +2,60 @@
 
 ## Scope
 
-- Applies to `D:/Pi/agent/extensions/pi-browser-tools` and child paths.
-- Inherits `D:/Pi/agent/AGENTS.md`; this file refines project rules and must not weaken root engineering rules.
+- Applies to `D:/Pi/agent/extensions/pi-browser-tools` and all child paths.
+- Inherits `D:/Pi/agent/AGENTS.md`; this file only adds stricter browser/Web extension rules.
 
-## Project Role
+## Role
 
-- This extension is the browser/Web tool execution layer.
-- Keep CTF protocol, routing, solver methodology, and challenge policy in `pi-ctf-protocol`, not here.
-- Keep concrete callable browser/Web capabilities here.
+- This package is Pi's browser/Web capability layer.
+- Keep CTF protocol, routing, solver methodology, and challenge policy in `pi-ctf-protocol`.
+- Keep concrete callable browser/Web tools, evidence capture, replay, state sync, and artifacts here.
 
-## Project Rules
+## Design Principles
 
-- Capability first: implement complete behavior, parameters, artifacts, summaries, and contracts.
-- Tools must enhance agent situational judgment, not replace it. Prefer capabilities that expose observation, execution, replay, state synchronization, and evidence access over pre-baked decision flows.
-- Keep programmable execution surfaces first-class. When a task-specific short script can locate, act, verify, and return structured evidence, prefer improving `browser_execute`, `browser_http_replay`, `browser_artifact`, or evidence surfaces over adding narrow one-off tools.
-- Specialized automation must be evidence-triggered. Do not design tools so agents can skip baseline observation, request capture, replay, or proof construction and jump directly to crawl/fuzz/scanner-style conclusions.
-- Expert bridges and scanners are follow-up layers, not default reasoning substitutes. They should consume stable scoped inputs and preserve artifacts; they should not become the first step for ordinary browser/Web tasks.
-- Do not weaken tool capability through tool-layer safety/policy wording, hidden gates, or risk-tier defaults. Security boundaries belong to Pi/platform guard layers, not this extension.
-- Keep one Web package. Prefer clear internal layering over spawning parallel Web extensions unless explicitly required.
-- Keep composition entrypoints thin. Put domain logic in domain modules, not in top-level registration/composition files.
-- Avoid oversized monolithic files or modules. Split by responsibility before a file becomes a mixed-domain maintenance bottleneck.
-- Keep external tool contracts stable unless an explicit migration is required and fully documented: tool names, schemas, summaries, artifact behavior, and verification flow must not drift accidentally.
-- Prefer mature dependencies for generic parsing/format support. Prefer deeply adapted Pi-native bridges for mature external engines when they are better than maintaining a local reimplementation.
-- Mature substitutions and bridges must be package-portable: no private absolute paths, no throwaway local scripts, no host-specific production assumptions.
-- Reuse existing project architecture where possible: registration shell, budgets, summaries/distill, artifact handling, cookie/HAR/raw-request flows, and verification conventions.
-- Normalize loose external inputs early and keep internal implementation types as strong as practical. Do not let broad `unknown`-heavy flows spread through core implementation layers.
-- Future `browser_*` labels must not be registered as callable tools until implemented.
-- Keep summaries compact and avoid leaking cookies/tokens; preserve full evidence through artifacts.
+- Brain-Hand Separation: tools expose perception and execution; agents keep judgment, planning, and proof construction.
+- Semantic Singularity: one capability class has one canonical tool. Names, schemas, and descriptions must have clear non-overlapping boundaries.
+- Atomic Composability: prefer Unix-like primitives and programmable surfaces over black-box workflows or excessive micro-tools.
+- Recoverable Diagnostics: optimize for feedback loops. Return structured high-signal summaries, actionable errors, observable state, idempotent/replayable operations, and artifact evidence.
+- Eval-Driven Evolution: evolve tool interfaces from realistic task evals, failed transcripts, token/call cost, success rate, and recovery quality.
 
-## TODO Workflow
+## Tool Design Rules
 
-- Before large architecture changes, scope redefinitions, mature-substitute adoption, bridge introduction, or major refactors, update `TODO.md` first so the execution path is explicit before coding.
-- TODO entries must make a decision, not defer vaguely. State whether work continues as native implementation, adopts a mature dependency, adds a Pi-native bridge, or is prerequisite refactor debt.
-- When changing an already implemented tool, update TODO explicitly to record the scope/boundary/doc/contract change; do not hide it under unrelated future work.
-- Keep TODO order actionable. Prerequisite refactors or debt that unblock later work should be placed before the dependent features.
-- After completing a TODO item, update its status and any affected next-step ordering in the same workstream.
+- Expose pure capability. Do not encode strategic decisions, challenge-solving policy, broad safety gates, or hidden risk tiers in this extension.
+- Prefer improving `browser_execute`, `browser_http_replay`, `browser_artifact`, evidence, and wait/state tools before adding narrow one-off tools.
+- Specialized automation, scanners, fuzzers, and bridges are follow-up layers; they must consume explicit scoped inputs and preserve evidence.
+- Tool descriptions must state purpose, when to use, constraints, limitations, and examples when helpful.
+- Choose granularity by frequency, certainty, and risk: high-frequency deterministic actions stay atomic; side effects need verification/stale-state protection; rare work may use bounded aggregation.
+- Parameters should be minimal, strongly typed, and enum-based where practical. Normalize loose input early; do not let `unknown`-heavy flows spread.
+- Outputs must be compact by default, structured, semantically named, token-efficient, optionally detailed, and non-leaking for cookies/tokens; full evidence belongs in artifacts.
 
-## Sync Requirements
+## Architecture Rules
 
-- When a tool is added or materially changed, update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts in the same workstream.
-- Runtime capability claims in docs/skills/contracts must match actual implemented tools. Do not document future capability as current callable capability.
+- Keep one Web package; prefer internal layering over parallel Web extensions unless explicitly required.
+- Keep registration/composition entrypoints thin; put domain logic in domain modules.
+- Split files before they become mixed-domain maintenance bottlenecks.
+- Keep external tool contracts stable unless a migration is explicit and documented: names, schemas, summaries, artifacts, and verification flow must not drift.
+- Prefer mature dependencies for generic parsing/format work and Pi-native bridges for mature external engines when they beat local reimplementation.
+- Mature bridges must be portable: no private absolute paths, throwaway scripts, or host-specific production assumptions.
+- Future `browser_*` names must not be registered until implemented.
 
-## Verification
+## Anti-Patterns
 
+- Tools that decide strategy for the agent or hide uncertainty behind broad if/else logic.
+- Duplicate or overlapping tools, namespace drift, and capability sprawl.
+- Swiss-army workflow tools that cannot be diagnosed, replayed, or composed.
+- Excessive fragmentation that makes tool choice the task.
+- Static design without evals, transcript review, or production feedback.
+
+## Change Workflow
+
+- Before large architecture changes, scope changes, mature substitutions, bridges, or major refactors, update `TODO.md` with the concrete decision and execution path.
+- When changing an implemented tool, update affected contracts/docs in the same workstream; do not document future capability as current callable capability.
+- Keep TODO order actionable; mark completed items and reorder dependent work when scope changes.
+
+## Sync & Verification
+
+- Tool additions or material changes must update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts when affected.
 - After code or contract changes run `npm run check` in this extension.
 - When touching global skill text, run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`.
-- After runtime reload, run both verification layers for newly registered or enhanced browser tools: bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts.
-- Summarize runtime smoke and actual test artifact paths in the final response.
+- After runtime reload for new/enhanced tools, run bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts; summarize artifact paths.

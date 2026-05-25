@@ -18,7 +18,7 @@ assert(qualityLocal.includes("smoke:browser:isolated") && qualityLocal.includes(
 assert(!qualityLocal.split("node -e")[0].includes("smoke:browser"), "quality:local must not launch browser smoke by default");
 assert.equal(pkg.scripts?.["release:local"], "node tests/release/release-local-acceptance.mjs", "release:local must expose local pack acceptance without browser smoke by default");
 assert.equal(pkg.scripts?.["release:local:smoke"], "node tests/release/release-local-acceptance.mjs --smoke --rollback-smoke", "release:local:smoke must exercise current and rollback isolated smoke");
-for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "docs/"]) {
+for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "docs/", "evals/"]) {
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
 }
 
@@ -65,13 +65,17 @@ assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bri
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/check-package-files.mjs"), "npm package must include package contract");
+assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
 assert(![...packed].some((file) => file.startsWith(".pi/") || file.includes("/node_modules/")), "npm package must not include runtime artifacts or node_modules");
 const packedDist = [...packed].filter((file) => file.startsWith("bridge/pi_browser_bridge/dist/"));
 assert(packedDist.length > 5, "npm package must include generated dist runtime, not only dist/.gitignore");
 
-for (const file of ["README.md", "AI_INSTALL.md", "CHANGELOG.md", "TODO.md"]) {
+for (const file of ["README.md", "AI_INSTALL.md", "CHANGELOG.md", "ARCHIVE.md"]) {
 	const text = read(file);
 	assert(text.includes("npm pack --dry-run"), `${file} must document or record package dry-run verification`);
+}
+for (const file of ["TODO.md", "CURRENT.md", "ARCHIVE.md", "ROADMAP.md", "WORKSTREAMS_A_E_SUMMARY.md"]) {
+	assert(packed.has(file), `npm package must include planning document: ${file}`);
 }
 
 console.log("package files contract ok");

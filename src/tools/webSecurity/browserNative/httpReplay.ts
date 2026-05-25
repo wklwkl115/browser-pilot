@@ -1,4 +1,5 @@
-import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseDistance, responseFingerprint, setCookieHeader } from "../shared/http";
+import { responseReplayDelta } from "../shared/baseline";
+import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http";
 import { asString, isRecord, positiveInt, stringList } from "../shared/normalize";
 import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, sendReplayLikeRequest } from "../shared/replay";
 import type { FetchStep, ReplayOptions, ReplayRequest } from "../shared/types";
@@ -63,15 +64,7 @@ function replayResponseRecord(final: FetchStep) {
 function replayDeltaRecord(baseline: FetchStep, final: FetchStep) {
 	const left = responseFingerprint(baseline);
 	const right = responseFingerprint(final);
-	return {
-		statusChanged: right.status !== left.status,
-		titleChanged: right.title !== left.title,
-		bodyBytesDelta: right.bodyBytes - left.bodyBytes,
-		bodyHashChanged: right.bodySha256 !== left.bodySha256,
-		locationChanged: right.location !== left.location,
-		distance: responseDistance(left, right),
-		classifier: [right.status !== left.status ? "status" : "", right.title !== left.title ? "title" : "", right.bodyBytes !== left.bodyBytes ? "length" : "", right.bodySha256 !== left.bodySha256 ? "body-hash" : "", right.location !== left.location ? "location" : ""].filter(Boolean),
-	};
+	return responseReplayDelta(left, right);
 }
 
 async function executeReplayRequest(request: ReplayRequest, options: ReturnType<typeof normalizeReplayOptions>) {

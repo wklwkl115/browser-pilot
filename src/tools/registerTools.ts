@@ -11,8 +11,20 @@ import { registerEvidenceTool } from "./registerEvidenceTool";
 import { registerHtmlTool } from "./registerHtmlTool";
 import { registerScreenshotTool } from "./registerScreenshotTool";
 import { registerArtifactTool } from "./registerArtifactTool";
-import { registerOrchestrateTool } from "./registerOrchestrateTool";
-import { registerCallbackOastTool, registerCookieAnalyzeTool, registerCrawlTool, registerFuzzParamsTool, registerFuzzPathsTool, registerFuzzVhostsTool, registerHttpReplayTool, registerNucleiBridgeTool, registerReconProbeTool, registerSqlmapBridgeTool, registerSqliProbeTool, registerTemplateCheckTool } from "./registerWebSecurityTools";
+import {
+	registerCallbackOastTool,
+	registerCookieAnalyzeTool,
+	registerCrawlTool,
+	registerFuzzParamsTool,
+	registerFuzzPathsTool,
+	registerFuzzVhostsTool,
+	registerHttpReplayTool,
+	registerNucleiBridgeTool,
+	registerReconProbeTool,
+	registerSqlmapBridgeTool,
+	registerSqliProbeTool,
+	registerTemplateCheckTool,
+} from "./registerWebSecurityTools";
 import type { EnsureStarted, ToolRegistrarContext } from "./toolShared";
 export function registerBrowserTools(_pi: ExtensionAPI, _server: BrowserBridgeServer, ensureStarted: EnsureStarted) {
 	const context: ToolRegistrarContext = { pi: _pi, ensureStarted };
@@ -31,7 +43,6 @@ export function registerBrowserTools(_pi: ExtensionAPI, _server: BrowserBridgeSe
 	registerHtmlTool(context);
 	registerScreenshotTool(context);
 	registerArtifactTool(context);
-	registerOrchestrateTool(context);
 	registerReconProbeTool(context);
 	registerCrawlTool(context);
 	registerFuzzPathsTool(context);

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeFuzzVhostsData } from "../../summaries/index";
 import { runFuzzVhosts } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzVhostsToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, rateLimitPerSecondParam, redirectControlParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, type FuzzVhostsToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerFuzzVhostsTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -28,16 +28,18 @@ export function registerFuzzVhostsTool({ pi, ensureStarted }: ToolRegistrarConte
 			method: Type.Optional(Type.String({ description: "HTTP method; default GET." })),
 			headers: Type.Optional(Type.Any({ description: "Optional request headers except Host; Host is controlled by candidates." })),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only base targets; default https." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true; default 3." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
+			}),
 			matchStatus: Type.Optional(Type.Any({ description: "Optional status matcher list/string, e.g. [200,301,302,403]." })),
 			filterStatus: Type.Optional(Type.Any({ description: "Optional status filter list/string, e.g. [404]." })),
 			filterBodyBytes: Type.Optional(Type.Any({ description: "Optional body byte-size filter list/string for noisy baselines." })),
 			filterBaseline: Type.Optional(Type.Boolean({ description: "Only return candidates that differ from baseline status/title/body length; default true." })),
 			baselineStrategy: Type.Optional(Type.String({ description: "Baseline comparison mode: exact | cluster | auto. Default auto." })),
-			maxCandidates: Type.Optional(Type.Number({ description: "Maximum host candidates per base; default 500, hard-capped at 5000." })),
-			rateLimitPerSecond: Type.Optional(Type.Number({ description: "Sequential request rate cap per second; default unlimited sequential." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Attach browser cookies for fuzz requests using the connected browser session; default false." })),
+			...maxCandidatesParam("Maximum host candidates per base; default 500, hard-capped at 5000."),
+			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
+			...browserCookieBindingParams("Attach browser cookies for fuzz requests using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzVhostsToolParams>(params), ctx, {

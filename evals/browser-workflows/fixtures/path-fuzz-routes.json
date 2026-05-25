@@ -1,0 +1,11 @@
+{
+  "description": "Synthetic route map for bounded path fuzz baseline evals.",
+  "routes": {
+    "/": { "status": 200, "body": "home" },
+    "/health": { "status": 200, "body": "ok" },
+    "/admin": { "status": 403, "body": "forbidden fixture route" },
+    "/missing-alpha": { "status": 404, "body": "fallback" },
+    "/missing-beta": { "status": 404, "body": "fallback" }
+  },
+  "wordlist": ["health", "admin", "missing-alpha", "missing-beta"]
+}

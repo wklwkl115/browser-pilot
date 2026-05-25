@@ -30,9 +30,102 @@ export function sharedWebSecurityParams() {
 	};
 }
 
+export function browserCookieBindingParams(bindBrowserSessionDescription: string, options: { includeCookieMode?: boolean } = {}) {
+	return {
+		bindBrowserSession: Type.Optional(Type.Boolean({ description: bindBrowserSessionDescription })),
+		...(options.includeCookieMode === false ? {} : { cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })) }),
+	};
+}
+
+export function harReplayParams(options: { harDescription: string; harPathDescription: string }) {
+	return {
+		har: Type.Optional(Type.Any({ description: options.harDescription })),
+		harPath: Type.Optional(Type.String({ description: options.harPathDescription })),
+		harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
+		harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
+		harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
+	};
+}
+
+export function rawRequestParams(options: { urlDescription: string; rawRequestDescription: string; requestDescription: string; headersDescription: string; mutationsDescription: string }, config: { section?: "all" | "target" | "overrides"; includeUrl?: boolean } = {}) {
+	const targetParams = {
+		...(config.includeUrl === false ? {} : { url: Type.Optional(Type.String({ description: options.urlDescription })) }),
+		baseUrl: Type.Optional(Type.String({ description: "Base URL for relative raw request targets." })),
+		rawRequest: Type.Optional(Type.String({ description: options.rawRequestDescription })),
+		request: Type.Optional(Type.Any({ description: options.requestDescription })),
+	};
+	const overrideParams = {
+		method: Type.Optional(Type.String({ description: "Override HTTP method." })),
+		headers: Type.Optional(Type.Any({ description: options.headersDescription })),
+		body: Type.Optional(Type.String({ description: "Text request body override." })),
+		bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
+		mutations: Type.Optional(Type.Any({ description: options.mutationsDescription })),
+		defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
+	};
+	if (config.section === "target") return targetParams;
+	if (config.section === "overrides") return overrideParams;
+	return { ...targetParams, ...overrideParams };
+}
+
+export function requestSequenceParams(options: { requestsDescription: string; sequenceDescription: string }) {
+	return {
+		requests: Type.Optional(Type.Array(Type.Any(), { description: options.requestsDescription })),
+		sequence: Type.Optional(Type.Array(Type.Any(), { description: options.sequenceDescription })),
+	};
+}
+
+export function boundedExecutionParams(options: { timeoutSecondsDescription: string }) {
+	return {
+		timeoutSeconds: Type.Optional(Type.Number({ description: options.timeoutSecondsDescription })),
+	};
+}
+
+export function redirectControlParams(options: { followRedirectsDescription: string; maxRedirectsDescription: string }) {
+	return {
+		followRedirects: Type.Optional(Type.Boolean({ description: options.followRedirectsDescription })),
+		maxRedirects: Type.Optional(Type.Number({ description: options.maxRedirectsDescription })),
+	};
+}
+
+export function rateLimitPerSecondParam(description: string) {
+	return {
+		rateLimitPerSecond: Type.Optional(Type.Number({ description })),
+	};
+}
+
+export function maxCasesParam(description: string) {
+	return {
+		maxCases: Type.Optional(Type.Number({ description })),
+	};
+}
+
+export function maxCandidatesParam(description: string) {
+	return {
+		maxCandidates: Type.Optional(Type.Number({ description })),
+	};
+}
+
+export function maxDepthParam(description: string) {
+	return {
+		maxDepth: Type.Optional(Type.Number({ description })),
+	};
+}
+
+export function maxPagesParam(description: string) {
+	return {
+		maxPages: Type.Optional(Type.Number({ description })),
+	};
+}
+
+export function maxTemplatesParam(description: string) {
+	return {
+		maxTemplates: Type.Optional(Type.Number({ description })),
+	};
+}
+
 export type WebSecuritySharedToolParams = {
+	browserSessionId?: string;
 	tabId?: number | string;
-	target?: unknown;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -84,7 +177,7 @@ export function resolveBooleanParam(value: unknown, defaultValue: boolean) {
 function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSecuritySharedToolParams, timeoutMs: number): CookieProvider {
 	return async (url: string) => {
 		const server = await ensureStarted();
-		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { tabId: params.tabId, target: params.target, timeoutMs, toolName: "webSecurity.cookieProvider", commandName: "cookies" });
+		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
 		return browserCookiesToHeader(cookies.data);
 	};
 }

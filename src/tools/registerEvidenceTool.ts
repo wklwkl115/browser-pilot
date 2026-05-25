@@ -31,7 +31,7 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_OBSERVATION_TIMEOUT_MS);
 				applyDefaultTimeout(body, timeoutMs);
 				const maxChars = toolMaxChars(params, "browser_evidence");
-				const result = await server.sendCommand({ ...body, cmd: "evidence.collect" }, { tabId: targetTabId(params, body), target: params.target, timeoutMs, toolName: "browser_evidence", commandName: "evidence.collect" });
+				const result = await server.sendCommand({ ...body, cmd: "evidence.collect" }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body), timeoutMs });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_evidence",
 					command: "evidence.collect",

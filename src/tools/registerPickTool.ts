@@ -53,14 +53,14 @@ function buildTimedOutPickResult(message: string, timeoutMs: number, cleanup: un
 	};
 }
 
-async function cleanupPick(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, tabId: unknown, pickId: string): Promise<unknown> {
+async function cleanupPick(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, browserSessionId: string | undefined, tabId: unknown, pickId: string): Promise<unknown> {
 	try {
 		return await server.sendCommand({
 			cmd: "cdp",
 			method: "Runtime.evaluate",
 			params: { expression: buildPickCleanupScript(pickId), awaitPromise: false, returnByValue: true, userGesture: true },
 			timeoutMs: PICK_CLEANUP_TIMEOUT_MS,
-		}, { tabId, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000, toolName: "browser_pick", commandName: "pick.cleanup" });
+		}, { browserSessionId, tabId, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000 });
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
@@ -86,8 +86,9 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 120_000);
 				const maxChars = toolMaxChars(params, "browser_pick");
-				const resolvedTarget = (params.tabId !== undefined || params.target !== undefined) ? server.resolveToolTarget({ toolName: "browser_pick", commandName: "pick", topLevelTabId: params.tabId, target: params.target }) : undefined;
-				if (resolvedTarget?.tabId !== undefined && params.focus !== false) await server.switchTab(resolvedTarget.tabId, 5_000, { browserId: resolvedTarget.browserId });
+				server.acquireUiLock(params.browserSessionId, "browser_pick");
+				try {
+				if (params.tabId !== undefined && params.focus !== false) await server.switchTab(params.tabId, 5_000, { browserSessionId: params.browserSessionId });
 				const pickId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 				const script = buildPickScript({ message, multiple: params.multiple, timeoutMs, pickId });
 				const cdpTimeoutMs = params.focus === false ? timeoutMs + PICK_FOCUS_FALSE_CDP_GRACE_MS : timeoutMs;
@@ -96,7 +97,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					method: "Runtime.evaluate",
 					params: { expression: script, awaitPromise: true, returnByValue: true, userGesture: true },
 					timeoutMs: cdpTimeoutMs,
-				}, { tabId: params.tabId, target: params.target, timeoutMs: cdpTimeoutMs + 1_000, toolName: "browser_pick", commandName: "pick" });
+				}, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs: cdpTimeoutMs + 1_000 });
 				let raw: unknown;
 				let timedOut = false;
 				if (params.focus === false) {
@@ -106,7 +107,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 						if (raced === PICK_TIMEOUT) {
 							timedOut = true;
 							void rawPromise.catch(() => {});
-							const cleanup = await cleanupPick(server, resolvedTarget?.tabId ?? params.tabId, pickId);
+							const cleanup = await cleanupPick(server, params.browserSessionId, params.tabId, pickId);
 							raw = { data: { result: { value: buildTimedOutPickResult(message, timeoutMs, cleanup) } } };
 						} else {
 							deadline.cancel();
@@ -127,6 +128,9 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					details: { command: "Runtime.evaluate", message, focus: params.focus !== false, timedOut, pickId },
 					distill: summarizePickData,
 				});
+				} finally {
+					server.releaseUiLock(params.browserSessionId);
+				}
 			});
 		},
 	});

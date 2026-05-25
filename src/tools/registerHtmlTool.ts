@@ -29,7 +29,7 @@ export function registerHtmlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (params.mode !== undefined) body.mode = params.mode;
 				const maxChars = toolMaxChars(params, "browser_html");
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const result = await server.sendCommand({ ...body, cmd: "html.get" }, { tabId: targetTabId(params, body), target: params.target, timeoutMs, toolName: "browser_html", commandName: "html.get" });
+				const result = await server.sendCommand({ ...body, cmd: "html.get" }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body), timeoutMs });
 				const data = result.data as Record<string, unknown> | undefined;
 				const html = typeof data?.html === "string" ? data.html : undefined;
 				const resultMeta = data ? { ...result, data: { ...data, html: html === undefined ? undefined : `[${html.length} chars]` } } : result;

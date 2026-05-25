@@ -49,37 +49,32 @@ function usesBridgeNestedError(source) { return source.includes("new BrowserBrid
 assert(registerToolsSource.split(/\r?\n/).length <= 60, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
-for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact", "browser_orchestrate", "browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
+for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact", "browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) assert(!toolSource.includes(`name: "${removed}"`), `removed split action tool must not be registered: ${removed}`);
 for (const removedFile of ["src/tools/registerElementActionTools.ts", "src/tools/registerSemanticDomTools.ts", "src/actions/buildElementActionScript.ts", "src/dom/buildSemanticDomScript.ts"]) assert(!existsSync(path.join(root, removedFile)), `removed split action source must not exist: ${removedFile}`);
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
 const bridgeServerSource = read("src/driver/BrowserBridgeServer.ts");
-const targetResolverSource = read("src/driver/BrowserTargetResolver.ts");
 const tabRouterSource = read("src/driver/BrowserTabSessionRouter.ts");
 const driverTypesSource = read("src/driver/types.ts");
-assert(bridgeServerSource.includes("Selected browser has no active tabs") && tabRouterSource.includes("firstActiveSessionIdForClient(ws)") && bridgeServerSource.includes("validation.spec.tabScoped && tabId === undefined"), "selectBrowser must clear implicit target for empty selected browsers and tab-scoped implicit commands must return NO_TAB");
-assert(tabRouterSource.includes("preferredImplicitSessionId") && tabRouterSource.includes("session.active === true") && tabRouterSource.includes("session.id === this.latestSessionId"), "selectBrowser/default fallback must prefer active tabs, then a valid latest tab, before deterministic first-live fallback");
+assert(bridgeServerSource.includes("Selected browser has no active tabs") && (tabRouterSource.includes("firstActiveSessionIdForClient(ws)") || tabRouterSource.includes("firstActiveSessionIdForClient(ws, browserSessionId)")) && bridgeServerSource.includes("validation.spec.tabScoped && tabId === undefined"), "selectBrowser must clear implicit target for empty selected browsers and tab-scoped implicit commands must return NO_TAB");
+assert(tabRouterSource.includes("preferredImplicitSessionId") && tabRouterSource.includes("session.active === true") && (tabRouterSource.includes("session.id === this.latestSessionId") || tabRouterSource.includes("session.id === browserSession.latestSessionId")), "selectBrowser/default fallback must prefer active tabs, then a valid latest tab, before deterministic first-live fallback");
 assert(tabRouterSource.includes("sessionIdForTab") && driverTypesSource.includes("browserId: string") && tabRouterSource.includes("liveSessionForTabId") && !bridgeServerSource.includes("this.sessions.get(String(tabId))") && !tabRouterSource.includes("this.sessions.get(String(tabId))"), "BrowserBridgeServer tab sessions must be keyed by browser-scoped session id, not bare numeric tabId");
 assert(tabRouterSource.includes("AMBIGUOUS_TAB_ID") && tabRouterSource.includes("Multiple connected browsers expose the same tabId"), "duplicate numeric tabIds across browsers must not route through an unscoped arbitrary session");
 assert(bridgeServerSource.includes('throw new BrowserBridgeError("TAB_NOT_FOUND"') && bridgeServerSource.includes("Target browser tab is not connected") && !/private socketForTab[\s\S]*?return this\.clients\.requireExtensionClient\(\)/.test(bridgeServerSource), "explicit tabId without a live session must fail locally instead of falling back to another browser socket");
-assert(bridgeServerSource.split(/\r?\n/).length <= 320 && tabRouterSource.split(/\r?\n/).length <= 260, "BrowserBridgeServer must stay a thin facade after driver split");
+assert(bridgeServerSource.split(/\r?\n/).length <= 380 && tabRouterSource.split(/\r?\n/).length <= 260, "BrowserBridgeServer must stay a thin facade after driver split");
 const tabsTool = read("src/tools/registerTabsTool.ts");
 assert(tabsTool.includes("function requireTabsActionTabId"), "browser_tabs switch/close must validate tabId before calling the bridge");
 assert(tabsTool.includes("browser_tabs ${action} requires a valid tabId"), "browser_tabs tabId validation must return a clear action-specific error");
-assert(tabsTool.includes('action === "switch" || action === "close" ? requireTabsActionTabId'), "browser_tabs must require tabId for switch and close actions");
+assert(tabsTool.includes('action === "switch" || action === "close"') && tabsTool.includes('action === "attachtab" || action === "detachtab"') && tabsTool.includes('requireTabsActionTabId(action, params.tabId)'), "browser_tabs must require tabId for switch/close/attachTab/detachTab actions");
 assert(!tabsTool.includes('server.closeTab(params.tabId ?? ""') && !tabsTool.includes('server.switchTab(params.tabId ?? ""'), "browser_tabs must not pass empty-string tabId fallbacks to server methods");
 assert(tabsTool.includes("function normalizeCreateTabUrl") && tabsTool.includes("INVALID_TAB_URL") && tabsTool.includes("javascript:"), "browser_tabs create must validate malformed/script URLs before starting the bridge");
 assert(!tabsTool.includes('server.createTab(params.url || "about:blank"'), "browser_tabs create must not pass raw URL values directly to server.createTab");
 assert(toolSource.includes("For automation, call browser_tabs list or switch first"), "tab-scoped tools must warn agents to list/switch before automation");
-assert(toolSource.includes("target:{orchestrationId,sessionTag,tabRole}") && toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tab-scoped guidance must document logical target resolver and legacy fallback");
+assert(toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tabId fallback warning missing from tool prompts");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
-assert(read("src/tools/toolShared.ts").includes("BrowserToolTargetRefSchema") && read("src/tools/toolShared.ts").includes("orchestrationId") && read("src/tools/toolShared.ts").includes("sessionTag") && read("src/tools/toolShared.ts").includes("tabRole"), "tool shared params must define the structured logical target schema");
-assert(toolAdapterSource.includes("BrowserToolTargetRefSchema") && toolAdapterSource.includes("includeTarget") && toolAdapterSource.includes("params.target"), "tool adapter must expose target through shared tab-scoped params");
-assert(bridgeServerSource.includes("BrowserTargetResolver") && bridgeServerSource.includes("resolveToolTarget") && targetResolverSource.includes('targetInfo("orchestration"') && targetResolverSource.includes("TARGET_AMBIGUOUS") && targetResolverSource.includes("ORCHESTRATION_TARGET_STALE"), "BrowserBridgeServer must delegate logical target resolution to the target resolver with structured target errors");
-assert(tabRouterSource.includes("liveSessionForTabTarget") && tabRouterSource.includes("socketForTabTarget"), "BrowserTabSessionRouter must support browser-scoped physical target resolution");
 assert(toolAdapterSource.includes("sharedTabScopedToolParams") && toolAdapterSource.includes("toolTimeoutMs") && toolAdapterSource.includes("jsonToolResult") && toolAdapterSource.includes("textToolResult") && toolAdapterSource.includes("runTool"), "tool adapter must centralize shared params, timeout, result distillation, and error wrapping");
 assert(toolSource.includes("NativeCommandParamsSchema"), "native tools must use one generic params schema and protocol validation");
 assert((toolSource.match(/params: Type.Optional\(NativeCommandParamsSchema\)/g) || []).length >= 3, "native tool params must use generic protocol-backed schema");
@@ -115,7 +110,7 @@ assert(passesBodyTimeout(evidenceTool), "browser_evidence must pass timeoutMs in
 const executeTool = read("src/tools/registerExecuteTool.ts");
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
 assert(usesJsonDistillation(executeTool), "browser_execute must route raw JS/command data through result distillation middleware");
-assert(executeTool.includes("monitor: Type.Optional") && executeTool.includes("executeJavaScriptWithMonitor") && executeTool.includes("buildScanScript"), "browser_execute must expose optional before/after DOM monitor without making it default");
+assert(executeTool.includes("monitor: Type.Optional") && executeTool.includes("executeJavaScriptWithMonitor") && executeTool.includes("buildScanScript"), "browser_execute must expose optional GA-style monitor without making it default");
 assert(executeTool.includes("monitorTimeoutMs") && executeTool.includes("beforeOk") && executeTool.includes("afterOk") && executeTool.includes("beforeError") && executeTool.includes("afterError"), "browser_execute monitor must bound scan timeout and report before/after scan failures explicitly");
 assert(executeTool.includes("...executed") && !executeTool.includes("execution: executed.data") && !executeTool.includes("newTabs: executed.newTabs"), "browser_execute monitor must preserve BrowserBridgeExecutionResult top-level metadata and append monitor only");
 const nativeActionTools = read("src/tools/registerNativeActionTools.ts");
@@ -153,13 +148,9 @@ assert(
 for (const prefix of ["wait-result", "network-result", "hook-result", "frame-result"]) assert(nativeActionTools.includes(`artifactPrefix: "${prefix}"`), `native action tool missing artifact prefix: ${prefix}`);
 assert(!nativeActionTools.includes("return jsonResult(result"), "native action tools must not return raw command result directly");
 assert(!executeTool.includes("return jsonResult(await server"), "browser_execute must not return raw bridge result directly");
-const orchestrateTool = read("src/tools/registerOrchestrateTool.ts");
-assert(orchestrateTool.includes("server.orchestrator()") && orchestrateTool.includes("coordinator.plan") && orchestrateTool.includes("coordinator.apply") && orchestrateTool.includes("coordinator.watch") && orchestrateTool.includes("coordinator.delete"), "browser_orchestrate must route callable actions through the Node coordinator facade");
-assert(orchestrateTool.includes("summarizeOrchestrationData") && orchestrateTool.includes("artifactFallbackName(\"orchestration-result\")"), "browser_orchestrate must use orchestration summary and artifact fallback");
-assert(orchestrateTool.includes("declarative browser session reconciliation") && orchestrateTool.includes("workflow DSL") && orchestrateTool.includes("browser_execute/browser_scan/browser_wait"), "browser_orchestrate wording must keep session-reconciliation boundaries explicit");
-assert(!orchestrateTool.includes("explicit multi-resource state convergence"), "browser_orchestrate wording must not fall back to ambiguous state-convergence language");
-assert(orchestrateTool.includes("cleanup:false is not allowed"), "browser_orchestrate must not silently orphan owned resources on delete cleanup:false");
-assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index") && read("src/tools/resultMiddleware.ts").includes("summarizeOrchestrationData"), "result middleware must use split summary modules including orchestration");
+const resultMiddlewareSource = read("src/tools/resultMiddleware.ts");
+assert(resultMiddlewareSource.includes("./summaries/index") && resultMiddlewareSource.includes("browserSessionId: options.browserSessionId"), "result middleware must use split summary modules and preserve browserSessionId in distilled envelopes");
+for (const token of ["diagnostics?:", "target?:", "limits?:", "privacy?:", "nextActions?:", "function sanitizeDistilledEnvelope", "redactSensitiveValue(envelope)"]) assert(resultMiddlewareSource.includes(token), `result middleware must expose bounded redacted optional envelope metadata: ${token}`);
 const webSecurityTools = readWebSecurityRegisterSources();
 assert(webSecurityTools.includes("browser_recon_probe") && webSecurityTools.includes("browser_crawl") && webSecurityTools.includes("browser_fuzz_paths") && webSecurityTools.includes("browser_fuzz_vhosts") && webSecurityTools.includes("browser_sqli_probe") && webSecurityTools.includes("browser_sqlmap_bridge") && webSecurityTools.includes("browser_nuclei_bridge") && webSecurityTools.includes("browser_template_check") && webSecurityTools.includes("browser_callback_oast") && webSecurityTools.includes("browser_cookie_analyze") && webSecurityTools.includes("browser_fuzz_params") && webSecurityTools.includes("browser_http_replay"), "web security tools must register recon/crawl/fuzz/replay tools");
 function toolRegistrationBlock(source, name) {
@@ -187,11 +178,14 @@ const registerFiles = readdirSync(path.join(webSecurityDir, "register")).filter(
 const webSecurityTypes = read("src/tools/webSecurity/shared/types.ts");
 const webSecurityTemplate = read("src/tools/webSecurity/shared/template.ts");
 const webSecurityReplay = read("src/tools/webSecurity/shared/replay.ts");
+const webSecurityHar = read("src/tools/webSecurity/shared/har.ts");
+const webSecurityRequestTemplate = read("src/tools/webSecurity/shared/requestTemplate.ts");
 const webSecurityRecon = read("src/tools/webSecurity/browserNative/recon.ts");
 const webSecurityFuzzPaths = read("src/tools/webSecurity/browserNative/fuzzPaths.ts");
 const webSecurityFuzzVhosts = read("src/tools/webSecurity/browserNative/fuzzVhosts.ts");
 const webSecurityCookieAnalyze = read("src/tools/webSecurity/browserNative/cookieAnalyze.ts");
 const webSecurityCallbackOast = read("src/tools/webSecurity/browserNative/callbackOast.ts");
+const webSecurityOastWorkerManager = read("src/tools/webSecurity/browserNative/oastWorkerManager.ts");
 const webSecuritySqli = read("src/tools/webSecurity/browserNative/sqliProbe.ts");
 const webSecuritySqlmap = read("src/tools/webSecurity/bridges/sqlmapBridge.ts");
 const webSecurityNuclei = read("src/tools/webSecurity/bridges/nucleiBridge.ts");
@@ -221,7 +215,7 @@ assert(webSecurityRails.includes("verifyRailsEncryptedToken") && webSecurityRail
 assert(webSecurityRails.includes("verifyRailsLegacyCbcPayload") && webSecurityRails.includes("encryptRailsLegacyCbcToken"), "rails cookie module must implement native Rails legacy AES-CBC decrypt and mutation flows");
 assert(webSecurityRails.includes("binaryPayloadEvidence") && webSecurityRails.includes("unsupportedSerializer"), "rails cookie module must retain binary or Marshal plaintext evidence after successful decrypt");
 assert(webSecurityCallbackOast.includes("NormalizedCallbackOastOptions") && webSecurityCallbackOast.includes("RawCallbackOastOptions"), "callback-oast implementation must normalize raw inputs before execution");
-assert(webSecurityCallbackOast.includes("closeSync(stdoutFd)") && webSecurityCallbackOast.includes("closeSync(stderrFd)"), "callback-oast parent must close inherited worker log file descriptors");
+assert(webSecurityCallbackOast.includes("oastWorkerManager") && webSecurityOastWorkerManager.includes("createCallbackSession") && webSecurityOastWorkerManager.includes("closeSync(stdoutFd)") && webSecurityOastWorkerManager.includes("closeSync(stderrFd)"), "callback-oast worker manager must close inherited worker log file descriptors");
 assert(webSecuritySqli.includes("NormalizedSqliProbeOptions") && webSecuritySqli.includes("stopOnFirstMatch"), "sqli implementation must normalize inputs before execution and support stop-on-first-match short-circuiting");
 assert(webSecuritySqlmap.includes("NormalizedSqlmapBridgeOptions"), "sqlmap bridge implementation must normalize inputs before execution");
 assert(webSecurityNuclei.includes("NormalizedNucleiBridgeOptions"), "nuclei bridge implementation must normalize inputs before execution");
@@ -249,8 +243,79 @@ assert(webSecurityTools.includes("for SQLi oracle evidence") && webSecurityTools
 assert(webSecurityTools.includes("activeGraphqlIntrospection defaults true") && webSecurityTools.includes("passive-only crawl"), "browser_crawl docs must make active GraphQL introspection behavior explicit");
 assert(webSecurityTools.includes("omitted template selectors run the small built-in exposure/API baseline"), "browser_template_check docs must make default built-in template semantics explicit");
 assert(webSecurityTools.includes("bounded safe-regex") && webSecurityTools.includes("bounded bodyRegex") && webSecurityTools.includes("bounded headerRegex") && webSecurityTools.includes("bounded extractRegex"), "browser_template_check docs must make bounded regex matcher/extractor semantics explicit");
-assert(webSecurityReplay.includes("MAX_HAR_FILTER_CANDIDATE_ENTRIES") && webSecurityReplay.includes("MAX_HAR_URL_MATCH_CHARS") && webSecurityReplay.includes("unsafeRegexReason(patternText"), "HAR URL pattern filtering must be bounded and safe-regex checked");
-assert((webSecurityTools.match(/Bounded safe-regex or substring filter for HAR request URLs/g) || []).length === 3, "HAR-consuming tools must document bounded harUrlPattern semantics");
+assert(webSecurityReplay.includes('from "./har"') && webSecurityHar.includes("MAX_HAR_FILTER_CANDIDATE_ENTRIES") && webSecurityHar.includes("MAX_HAR_URL_MATCH_CHARS") && webSecurityHar.includes("unsafeRegexReason(patternText"), "HAR URL pattern filtering must be bounded, safe-regex checked, and isolated in shared/har.ts");
+assert(webSecurityReplay.includes('from "./requestTemplate"') && webSecurityRequestTemplate.includes("parseRawHttpRequest") && webSecurityRequestTemplate.includes("buildReplayRequest") && webSecurityRequestTemplate.includes("capturedRequestTemplate"), "raw/captured replay request template parsing must be isolated in shared/requestTemplate.ts");
+assert(webSecurityRegisterShared.includes("rawRequestParams") && (webSecurityTools.match(/\.\.\.rawRequestParams\(/g) || []).length === 4 && webSecurityTools.includes("Raw HTTP request text used as the probe template.") && webSecurityTools.includes("Raw HTTP request text used as the sqlmap request template.") && webSecurityTools.includes("Raw HTTP request text used as the nuclei request template."), "raw/captured request schema fields must be consolidated without losing tool-specific descriptions");
+assert(webSecurityRegisterShared.includes("requestSequenceParams") && (webSecurityTools.match(/\.\.\.requestSequenceParams\(/g) || []).length === 3 && webSecurityTools.includes("Step objects may include variables, variableScope, and extractors/captures for later-step injection.") && webSecurityTools.includes("Each selected entry is sent to sqlmap as a separate target.") && webSecurityTools.includes("Each selected entry is sent to nuclei as a separate target."), "request sequence schema fields must be consolidated without losing tool-specific descriptions");
+assert(webSecurityRegisterShared.includes("requests: Type.Optional(Type.Array(Type.Any(), { description: options.requestsDescription }))") && webSecurityRegisterShared.includes("sequence: Type.Optional(Type.Array(Type.Any(), { description: options.sequenceDescription }))"), "requestSequenceParams must preserve requests/sequence TypeBox shapes");
+assert(webSecurityRegisterShared.includes("boundedExecutionParams") && (webSecurityTools.match(/\.\.\.boundedExecutionParams\(/g) || []).length === 2 && webSecurityTools.includes("sqlmap per-request timeout seconds; default derived from timeoutMs.") && webSecurityTools.includes("nuclei per-request timeout seconds; default derived from timeoutMs."), "bounded execution schema fields must be consolidated without losing bridge-specific timeoutSeconds descriptions");
+assert(webSecurityRegisterShared.includes("timeoutSeconds: Type.Optional(Type.Number({ description: options.timeoutSecondsDescription }))"), "boundedExecutionParams must preserve timeoutSeconds TypeBox shape");
+assert(webSecurityRegisterShared.includes("redirectControlParams") && (webSecurityTools.match(/\.\.\.redirectControlParams\(/g) || []).length === 8 && webSecurityTools.includes("Follow redirects and record the chain; default true.") && webSecurityTools.includes("Follow redirects; default false for replay determinism.") && webSecurityTools.includes("Follow redirects; default false for stable matching.") && webSecurityTools.includes("Follow redirects; default false for stable status matching."), "redirect control schema fields must be consolidated without losing tool-specific descriptions");
+assert(webSecurityRegisterShared.includes("followRedirects: Type.Optional(Type.Boolean({ description: options.followRedirectsDescription }))") && webSecurityRegisterShared.includes("maxRedirects: Type.Optional(Type.Number({ description: options.maxRedirectsDescription }))"), "redirectControlParams must preserve followRedirects/maxRedirects TypeBox shapes");
+assert(webSecurityRegisterShared.includes("rateLimitPerSecondParam") && (webSecurityTools.match(/\.\.\.rateLimitPerSecondParam\(/g) || []).length === 6 && webSecurityTools.includes("Sequential request rate cap per second; default unlimited sequential.") && webSecurityTools.includes("nuclei request rate cap per second via -rl; default unlimited."), "rate limit schema fields must be consolidated without losing native/nuclei-specific descriptions");
+assert(webSecurityRegisterShared.includes("rateLimitPerSecond: Type.Optional(Type.Number({ description }))"), "rateLimitPerSecondParam must preserve rateLimitPerSecond TypeBox shape");
+assert(webSecurityRegisterShared.includes("maxCasesParam") && (webSecurityTools.match(/\.\.\.maxCasesParam\(/g) || []).length === 2 && webSecurityTools.includes("Maximum location*param*operation*value cases; default 500, hard-capped at 5000.") && webSecurityTools.includes("Maximum probe cases; default 100, hard-capped at 5000."), "maxCases schema field must be consolidated without losing fuzz/SQLi-specific descriptions");
+assert(webSecurityRegisterShared.includes("maxCandidatesParam") && (webSecurityTools.match(/\.\.\.maxCandidatesParam\(/g) || []).length === 2 && webSecurityTools.includes("Maximum candidates per base after extension/slash expansion; default 500, hard-capped at 5000.") && webSecurityTools.includes("Maximum host candidates per base; default 500, hard-capped at 5000."), "maxCandidates schema field must be consolidated without losing fuzz path/vhost descriptions");
+assert(webSecurityRegisterShared.includes("maxDepthParam") && (webSecurityTools.match(/\.\.\.maxDepthParam\(/g) || []).length === 2 && webSecurityTools.includes("Maximum crawl depth; default 2, hard-capped at 5.") && webSecurityTools.includes("Maximum recursive directory depth when recursive is enabled; default 2, hard-capped at 5."), "maxDepth schema field must be consolidated without losing crawl/fuzz descriptions");
+assert(webSecurityRegisterShared.includes("maxPagesParam") && (webSecurityTools.match(/\.\.\.maxPagesParam\(/g) || []).length === 1 && webSecurityTools.includes("Maximum pages/resources fetched; default 50, hard-capped at 500."), "maxPages schema field must be consolidated without losing crawl description");
+assert(webSecurityRegisterShared.includes("maxTemplatesParam") && (webSecurityTools.match(/\.\.\.maxTemplatesParam\(/g) || []).length === 1 && webSecurityTools.includes("Maximum templates to run; default 100, hard-capped at 1000."), "maxTemplates schema field must be consolidated without losing template description");
+for (const token of ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"]) assert(webSecurityRegisterShared.includes(`${token}: Type.Optional(Type.Number({ description }))`), `${token} helper must preserve TypeBox Number shape`);
+const generatedToolDocs = read("docs/generated/browser-tool-contract.generated.md");
+for (const name of ["browser_http_replay", "browser_sqlmap_bridge", "browser_nuclei_bridge"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(row.includes("`requests`") && row.includes("`sequence`"), `${name} generated docs must retain requests and sequence parameters`);
+}
+for (const name of ["browser_fuzz_params", "browser_sqli_probe", "browser_template_check"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(!row.includes("`requests`") && !row.includes("`sequence`"), `${name} generated docs must not expose request sequence parameters`);
+}
+for (const name of ["browser_sqlmap_bridge", "browser_nuclei_bridge"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(row.includes("`timeoutSeconds`"), `${name} generated docs must retain timeoutSeconds parameter`);
+}
+for (const name of ["browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(!row.includes("`timeoutSeconds`"), `${name} generated docs must not expose timeoutSeconds`);
+}
+for (const name of ["browser_recon_probe", "browser_fuzz_params", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_template_check", "browser_nuclei_bridge", "browser_http_replay"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(row.includes("`followRedirects`") && row.includes("`maxRedirects`"), `${name} generated docs must retain redirect control parameters`);
+}
+for (const name of ["browser_crawl", "browser_sqlmap_bridge", "browser_callback_oast", "browser_cookie_analyze"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(!row.includes("`followRedirects`") && !row.includes("`maxRedirects`"), `${name} generated docs must not expose redirect control parameters`);
+}
+for (const name of ["browser_fuzz_params", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_template_check", "browser_nuclei_bridge"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(row.includes("`rateLimitPerSecond`"), `${name} generated docs must retain rateLimitPerSecond parameter`);
+}
+for (const name of ["browser_recon_probe", "browser_crawl", "browser_http_replay", "browser_sqlmap_bridge", "browser_callback_oast", "browser_cookie_analyze"]) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	assert(!row.includes("`rateLimitPerSecond`"), `${name} generated docs must not expose rateLimitPerSecond`);
+}
+for (const [name, params] of Object.entries({
+	browser_crawl: ["maxDepth", "maxPages"],
+	browser_fuzz_paths: ["maxDepth", "maxCandidates"],
+	browser_fuzz_vhosts: ["maxCandidates"],
+	browser_fuzz_params: ["maxCases"],
+	browser_sqli_probe: ["maxCases"],
+	browser_template_check: ["maxTemplates"],
+})) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	for (const param of params) assert(row.includes(`\`${param}\``), `${name} generated docs must retain ${param}`);
+}
+for (const [name, params] of Object.entries({
+	browser_recon_probe: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+	browser_http_replay: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+	browser_sqlmap_bridge: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+	browser_nuclei_bridge: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+	browser_callback_oast: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+	browser_cookie_analyze: ["maxCases", "maxCandidates", "maxDepth", "maxPages", "maxTemplates"],
+})) {
+	const row = generatedToolDocs.split(/\r?\n/).find((line) => line.startsWith(`| \`${name}\``)) || "";
+	for (const param of params) assert(!row.includes(`\`${param}\``), `${name} generated docs must not expose ${param}`);
+}
+assert((`${webSecurityTools}\n${webSecurityRegisterShared}`.match(/Bounded safe-regex or substring filter for HAR request URLs/g) || []).length >= 1 && (webSecurityTools.match(/\.\.\.harReplayParams\(/g) || []).length === 3, "HAR-consuming tools must document bounded harUrlPattern semantics through shared harReplayParams");
 for (const forbiddenPhrase of ["risk-tier", "风险分级闸门", "安全收缩文案", "能力弱化默认值"]) {
 	assert(!webSecurityTools.includes(forbiddenPhrase), `web security tool docs must not introduce tool-layer boundary shrink wording: ${forbiddenPhrase}`);
 }

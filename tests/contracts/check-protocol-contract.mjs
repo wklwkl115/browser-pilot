@@ -39,15 +39,6 @@ assert(JSON.stringify(schema) === JSON.stringify(rootSchema), "bridge native_com
 for (const domain of ["core", "wait", "network", "hook", "frame", "html", "screenshot", "evidence", "transfer"]) assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
 assert(schema.commands && typeof schema.commands === "object", "schema must define command specs");
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
-assert(schema.commands.cookies?.methods?.includes("set") && schema.commands.cookies?.methods?.includes("remove"), "schema must expose cookies set/remove methods for orchestration primitives");
-assert(schema.commands.cookies?.methodSpecs?.set?.required?.includes("value") && schema.commands.cookies?.methodSpecs?.set?.allowEmptyRequired?.includes("value") && schema.commands.cookies?.methodSpecs?.remove?.required?.includes("name"), "schema must validate required fields for cookies set/remove while allowing empty cookie values");
-const nativeCommandSpecText = JSON.stringify(schema.commands);
-for (const logicalTargetField of ["target", "sessionTag", "tabRole", "orchestrationId", "profileId", "groupId", "requireOwned"]) {
-	assert(!nativeCommandSpecText.includes(`\"${logicalTargetField}\"`), `native command schema must not expose tool-level logical target field: ${logicalTargetField}`);
-}
-assert(schema.domains.core?.includes("windows") && schema.commands.windows?.methods?.includes("create") && schema.commands.windows?.methodSpecs?.close?.required?.includes("windowId"), "schema must expose TODO 226 windows native primitives with windowId validation");
-assert(schema.domains.core?.includes("tabGroups") && schema.commands.tabGroups?.methods?.includes("status") && schema.commands.tabGroups?.methodSpecs?.group?.required?.includes("tabIds") && schema.commands.tabGroups?.methodSpecs?.update?.required?.includes("tabGroupId"), "schema must expose TODO 226 tabGroups native primitives with group/update validation");
-assert(schema.errorCodes?.WINDOW_ID_REQUIRED?.category === "runtime.window" && schema.errorCodes?.TAB_GROUPS_NOT_SUPPORTED?.category === "runtime.tabGroups" && schema.errorCodes?.ORCHESTRATION_WINDOW_OWNERSHIP_REQUIRED?.category === "driver.orchestration", "schema must expose TODO 226 window/tabGroups error taxonomy");
 assert(schema.toolMetadata?.nativeActionTools?.browser_wait?.actions?.some((item) => item.command === "wait.selector"), "schema must define browser_wait action metadata");
 assert(schema.toolMetadata?.nativeActionTools?.browser_network?.actions?.some((item) => item.command === "network.exportHar"), "schema must define browser_network action metadata");
 assert(schema.toolMetadata?.transferTools?.browser_download?.command === "transfer.download", "schema must define browser_download transfer metadata");
@@ -59,17 +50,6 @@ vm.runInNewContext(transformBridgeSourceForVm(readServiceWorkerSource("protocol"
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "transfer.download", tabId: 1, selector: "a[download]" })?.ok === true, "protocol validator must accept transfer commands");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "cookies", method: "set", url: "https://example.test", name: "sid", value: "abc" })?.ok === true, "protocol validator must accept cookies.set with required fields");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "cookies", method: "set", url: "https://example.test", name: "sid", value: "" })?.ok === true, "protocol validator must accept empty cookie values for cookies.set");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "cookies", method: "set", url: "https://example.test", name: "sid" })?.ok === false, "protocol validator must reject cookies.set without value");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "windows", method: "create", url: "https://example.test" })?.ok === true, "protocol validator must accept windows.create without tabId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "windows", method: "close", windowId: 1 })?.ok === true, "protocol validator must accept windows.close with windowId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "windows", method: "close" })?.ok === false, "protocol validator must reject windows.close without windowId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "tabGroups", method: "status" })?.ok === true, "protocol validator must accept tabGroups.status without tabId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "tabGroups", method: "group", tabIds: [1, 2] })?.ok === true, "protocol validator must accept tabGroups.group with tabIds");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "tabGroups", method: "update", tabGroupId: 1 })?.ok === true, "protocol validator must accept tabGroups.update with tabGroupId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "tabGroups", method: "update", groupId: 1 })?.ok === false, "protocol validator must keep native tabGroups field distinct from logical target.groupId");
-assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "" })?.ok === false, "protocol validator must still reject empty required fields for normal commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "missing.command" })?.ok === false, "protocol validator must reject unknown commands");
 
 const runtime = readServiceWorkerSource("runtime");

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeWebReconProbeData } from "../../summaries/index";
 import { runReconProbe } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type ReconProbeToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type ReconProbeToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerReconProbeTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -21,11 +21,13 @@ export function registerReconProbeTool({ pi, ensureStarted }: ToolRegistrarConte
 			method: Type.Optional(Type.String({ description: "HTTP method for probing; default GET." })),
 			headers: Type.Optional(Type.Any({ description: "Optional request headers object." })),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects and record the chain; default true." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects per URL; default 5 when followRedirects is true." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects and record the chain; default true.",
+				maxRedirectsDescription: "Maximum redirects per URL; default 5 when followRedirects is true.",
+			}),
 			includeFaviconHash: Type.Optional(Type.Boolean({ description: "Fetch /favicon.ico for each final origin and include favicon hash metadata; default false." })),
 			includeTlsCertificate: Type.Optional(Type.Boolean({ description: "Inspect HTTPS peer certificate metadata for final URLs; default false." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Attach browser cookies for each probed URL using the connected browser session; default false." })),
+			...browserCookieBindingParams("Attach browser cookies for each probed URL using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<ReconProbeToolParams>(params), ctx, {

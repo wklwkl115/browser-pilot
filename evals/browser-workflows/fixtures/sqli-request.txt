@@ -1,0 +1,5 @@
+GET /api/search?id=1&category=books HTTP/1.1
+Host: 127.0.0.1:0
+User-Agent: pi-browser-tools-fixture
+Accept: application/json
+

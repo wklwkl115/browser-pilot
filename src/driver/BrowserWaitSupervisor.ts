@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BrowserBridgeError } from "./errors";
 import type { BrowserBridgeServer } from "./BrowserBridgeServer";
-import type { BrowserBridgeExecutionResult, ExecuteOptions } from "./types";
+import type { BrowserBridgeExecutionResult } from "./types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 
 const WAIT_LEASE_MAX_MS = 25_000;
@@ -152,7 +152,7 @@ type WaitRunClock = {
 	command?: string;
 };
 
-async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand, options: ExecuteOptions, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
+async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
 	const waitId = String(command.waitId ?? command.wait_id ?? `pi_ts_wait_${randomUUID()}`);
 	const startedAt = clock.startedAt ?? Date.now();
 	const state: WaitSupervisorState = {
@@ -249,7 +249,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 	throw finalWaitError(state, "browser wait timed out");
 }
 
-export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServer, command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
+export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServer, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
 	const totalTimeoutMs = commandTimeoutMs(command, waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TIMEOUT_MS, true));
 	if (totalTimeoutMs === 0 && (command.cmd === "wait.navigateAndWait" || SUPERVISED_WAIT_COMMANDS.has(command.cmd))) return runLeasedWait(server, command, options, 0);
 	if (command.cmd === "wait.navigateAndWait") {

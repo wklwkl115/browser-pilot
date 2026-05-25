@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,6 @@ import { executeBrowserWaitWithSupervisor } from "../../src/driver/BrowserWaitSu
 const HOST = "127.0.0.1";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const failureArtifactPath = path.join(root, ".pi", "browser-artifacts", "lifecycle-fixture-failure.json");
-const lifecycleStateDir = path.join(root, ".pi", "browser-artifacts", "lifecycle-orchestration-state");
-const lifecycleStatePath = path.join(lifecycleStateDir, "state.v1.json");
 const SECRET_KEY = /cookie|token|authorization|password|secret|body|postdata/i;
 
 function sanitize(value, depth = 0) {
@@ -134,49 +132,13 @@ async function expectReject(promise, code) {
 async function runLifecycleFixture() {
 	const diagnostics = { events: [], outbounds: [], snapshots: [], resourceState: {} };
 	const port = await freePort();
-	await rm(lifecycleStateDir, { recursive: true, force: true });
-	await mkdir(lifecycleStateDir, { recursive: true });
-	const now = Date.now();
-	await writeFile(lifecycleStatePath, `${JSON.stringify({
-		schemaVersion: "pi.browser.orchestration.state/v1",
-		createdAt: now,
-		updatedAt: now,
-		driverRunId: "previous-lifecycle-run",
-		piSessionId: "previous-lifecycle-session",
-		mode: "diagnostic",
-		privacy: { classification: "local_redacted_orchestration_state", localOnly: true, redaction: "required", cleanup: "rm -rf .pi/browser-artifacts/orchestration-state" },
-		orchestrations: [{
-			orchestrationId: "orch-lifecycle-persist",
-			generation: "g-old",
-			desiredHash: "h-old",
-			createdAt: now,
-			updatedAt: now,
-			cleanupOnFailure: true,
-			closeOwnedTabsOnDelete: true,
-			redactedDesired: { apiVersion: "pi.browser/v1", orchestrationId: "orch-lifecycle-persist", sessions: [{ tag: "persist", tabs: [{ role: "main", url: "https://persist.lifecycle.test/" }] }] },
-			bindings: [{ sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, owned: true, createdByOrchestrator: true, desiredUrl: "https://persist.lifecycle.test/", createdAt: now, updatedAt: now, fingerprint: { sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, url: "https://persist.lifecycle.test/", origin: "https://persist.lifecycle.test", owned: true, createdByOrchestrator: true } }],
-			cookies: [],
-			fingerprints: [{ sessionTag: "persist", tabRole: "main", browserId: "previous-browser", tabId: 909, url: "https://persist.lifecycle.test/", origin: "https://persist.lifecycle.test", owned: true, createdByOrchestrator: true }],
-			status: "current",
-			readOnly: false,
-			adoptionRequired: false,
-		}],
-	}, null, 2)}\n`, "utf8");
-	const server = new BrowserBridgeServer({ host: HOST, port, orchestrationStatePath: lifecycleStatePath, orchestrationDriverRunId: "current-lifecycle-run", piSessionId: "current-lifecycle-session" });
+	const server = new BrowserBridgeServer({ host: HOST, port });
 	let alpha;
 	let beta;
 	let gamma;
 	try {
 		await server.start();
 		diagnostics.events.push({ event: "server.start", port });
-		const persistentStatus = await server.orchestrator().status("orch-lifecycle-persist");
-		assert.equal(persistentStatus.ok, true, "server.start must load persisted orchestration status");
-		assert.equal(persistentStatus.state.persistence.readOnly, true, "server.start loaded persistent state must be read-only");
-		assert.equal(persistentStatus.state.persistence.adoptionRequired, true, "server.start loaded persistent state must require adoption");
-		const persistentDelete = await server.orchestrator().delete("orch-lifecycle-persist", { timeoutMs: 200 });
-		assert.equal(persistentDelete.ok, false, "loaded read-only persistent state must reject delete before adoption");
-		assert.equal(persistentDelete.failures[0].code, "ORCHESTRATION_TARGET_STALE", "read-only persistent delete must fail as stale target");
-		diagnostics.resourceState.persistentOrchestration = { status: persistentStatus.state.persistence, deleteFailure: persistentDelete.failures[0] };
 
 		alpha = await openFakeClient(port, "alpha");
 		sendJson(alpha, readyMessage("alpha-extension", [
@@ -209,43 +171,6 @@ async function runLifecycleFixture() {
 		sendJson(beta, { type: "ack", id: betaOutbound.id });
 		sendJson(beta, { type: "result", id: betaOutbound.id, result: "beta" });
 		assert.equal((await betaCommand).data, "beta");
-
-		const alphaOne = server.getTabs().find((tab) => tab.url === "https://alpha.test/one");
-		const alphaSeven = server.getTabs().find((tab) => tab.url === "https://alpha.test/seven");
-		const betaOne = server.getTabs().find((tab) => tab.url === "https://beta.test/one");
-		assert.ok(alphaOne, "alpha duplicate target fixture tab must exist");
-		assert.ok(alphaSeven, "alpha target fixture tab must exist");
-		assert.ok(betaOne, "beta target fixture tab must exist");
-		const targetStore = server.orchestrator().store;
-		targetStore.upsertDesired({ apiVersion: "pi.browser/v1", orchestrationId: "orch-target", generation: "g1", desiredHash: "h1", browser: { requireSelected: false, crossBrowserFallback: false }, defaults: { timeoutMs: 1000, navigationTimeoutMs: 1000, tabRole: "main", cleanupOnFailure: true }, isolation: { scope: "logical", ownedTabsOnly: true, closeOwnedTabsOnDelete: true }, allowedOrigins: [], sessions: [] });
-		targetStore.setBinding("orch-target", { sessionTag: "alpha", tabRole: "main", browserId: alphaSeven.browserId, tabId: alphaSeven.tabId, windowId: alphaSeven.windowId, owned: false, desiredUrl: alphaSeven.url, createdByOrchestrator: false, createdAt: Date.now(), updatedAt: Date.now() });
-		const logicalCommand = server.executeJavaScript("return 'logical-alpha'", { target: { orchestrationId: "orch-target", sessionTag: "alpha", tabRole: "main" }, timeoutMs: 1_000 });
-		const logicalOutbound = await nextJson(alpha, "logical orchestration target dispatch", diagnostics);
-		assert.equal(logicalOutbound.tabId, alphaSeven.tabId, "logical target must dispatch to the bound orchestration tab");
-		await assertNoJson(beta, 50, "logical orchestration target must not dispatch to selected beta browser");
-		sendJson(alpha, { type: "ack", id: logicalOutbound.id });
-		sendJson(alpha, { type: "result", id: logicalOutbound.id, result: "logical-alpha" });
-		const logicalResult = await logicalCommand;
-		assert.equal(logicalResult.data, "logical-alpha");
-		assert.equal(logicalResult.target.source, "orchestration");
-		assert.equal(logicalResult.target.orchestrationId, "orch-target");
-		assert.equal(logicalResult.target.sessionTag, "alpha");
-		assert.equal(logicalResult.target.tabRole, "main");
-		assert.equal(logicalResult.target.browserId, alphaSeven.browserId);
-		await expectReject(server.executeJavaScript("return 'conflict'", { tabId: betaOne.tabId, target: { orchestrationId: "orch-target", sessionTag: "alpha", tabRole: "main" }, timeoutMs: 1_000 }), "TARGET_CONFLICT");
-		await expectReject(server.executeJavaScript("return 'browser-conflict'", { target: { orchestrationId: "orch-target", sessionTag: "alpha", tabRole: "main", browserId: betaOne.browserId }, timeoutMs: 1_000 }), "TARGET_BROWSER_CONFLICT");
-		targetStore.setBinding("orch-target", { sessionTag: "stale", tabRole: "main", browserId: alphaSeven.browserId, tabId: 999_001, owned: false, desiredUrl: "https://alpha.test/stale", createdByOrchestrator: false, createdAt: Date.now(), updatedAt: Date.now() });
-		await expectReject(server.executeJavaScript("return 'stale'", { target: { orchestrationId: "orch-target", sessionTag: "stale", tabRole: "main" }, timeoutMs: 1_000 }), "ORCHESTRATION_TARGET_STALE");
-		targetStore.upsertDesired({ apiVersion: "pi.browser/v1", orchestrationId: "orch-target-2", generation: "g1", desiredHash: "h2", browser: { requireSelected: false, crossBrowserFallback: false }, defaults: { timeoutMs: 1000, navigationTimeoutMs: 1000, tabRole: "main", cleanupOnFailure: true }, isolation: { scope: "logical", ownedTabsOnly: true, closeOwnedTabsOnDelete: true }, allowedOrigins: [], sessions: [] });
-		targetStore.setBinding("orch-target-2", { sessionTag: "alpha", tabRole: "main", browserId: betaOne.browserId, tabId: betaOne.tabId, windowId: betaOne.windowId, owned: false, desiredUrl: betaOne.url, createdByOrchestrator: false, createdAt: Date.now(), updatedAt: Date.now() });
-		await expectReject(server.executeJavaScript("return 'ambiguous'", { target: { sessionTag: "alpha", tabRole: "main" }, timeoutMs: 1_000 }), "TARGET_AMBIGUOUS");
-		const scopedSwitchCommand = server.switchTab(alphaOne.tabId, 1_000, { browserId: alphaOne.browserId });
-		const scopedSwitchOutbound = await nextJson(alpha, "browser-scoped duplicate switch", diagnostics);
-		assert.equal(scopedSwitchOutbound.tabId, alphaOne.tabId);
-		await assertNoJson(beta, 50, "browser-scoped duplicate switch must not dispatch to selected beta browser");
-		sendJson(alpha, { type: "ack", id: scopedSwitchOutbound.id });
-		sendJson(alpha, { type: "result", id: scopedSwitchOutbound.id, result: { ok: true } });
-		assert.equal((await scopedSwitchCommand).data.selectedTabId, alphaOne.tabId);
 
 		server.selectBrowser("alpha-extension");
 		const beforeSwitch = server.snapshot();

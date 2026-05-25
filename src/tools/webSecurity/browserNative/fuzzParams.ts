@@ -1,4 +1,5 @@
-import { compactStep, extractTitle, responseBodyHash } from "../shared/http";
+import { matchesStatusBodyResult, responseChangeDelta, responseDeltaClassifier } from "../shared/baseline";
+import { compactStep, extractTitle, redirectLocation, responseBodyHash } from "../shared/http";
 import { multipartContentTypeVariants } from "../shared/multipart";
 import { isRecord, numericList, positiveInt, readWordlist, sleep, stringList } from "../shared/normalize";
 import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay";
@@ -17,13 +18,6 @@ type NormalizedFuzzParamsOptions = ReturnType<typeof normalizeReplayOptions> & {
 	rateLimitPerSecond: number;
 	delayMs: number;
 };
-
-function matchesFuzzResult(status: number, bodyBytes: number, options: { matchStatus: number[]; filterStatus: number[]; filterBodyBytes: number[] }): boolean {
-	if (options.matchStatus.length && !options.matchStatus.includes(status)) return false;
-	if (options.filterStatus.includes(status)) return false;
-	if (options.filterBodyBytes.includes(bodyBytes)) return false;
-	return true;
-}
 
 function clusterMultipartParserResults(results: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
 	const clusters = new Map<string, { key: string; status?: unknown; title?: unknown; bodyBytes?: unknown; bodySha256?: unknown; responseLocation?: unknown; count: number; matchedCount: number; contentTypeVariants: string[]; params: string[]; operations: string[]; multipartShapes: string[]; repeatedNames: string[]; nestedMultipartPartCount: number }>();
@@ -104,15 +98,7 @@ export async function runFuzzParams(options: FuzzParamsOptions) {
 	const limitedCases = cases.slice(0, normalized.maxCases);
 	const baselineSent = await sendReplayLikeRequest(baseRequest, normalized);
 	const baselineFinal = baselineSent.exchange.final;
-	const baseline = { status: baselineFinal.status, title: extractTitle(baselineFinal.bodyText), bodyBytes: baselineFinal.bodyBytes, bodySha256: responseBodyHash(baselineFinal), location: (() => {
-		const location = baselineFinal.headers.location || baselineFinal.headers.Location;
-		if (!location) return undefined;
-		try {
-			return new URL(location, baselineFinal.url).toString();
-		} catch {
-			return undefined;
-		}
-	})(), url: baselineFinal.url };
+	const baseline = { status: baselineFinal.status, title: extractTitle(baselineFinal.bodyText), bodyBytes: baselineFinal.bodyBytes, bodySha256: responseBodyHash(baselineFinal), location: redirectLocation(baselineFinal.status, baselineFinal.headers, baselineFinal.url), url: baselineFinal.url };
 	const results: Array<Record<string, unknown>> = [];
 	const failures: Array<Record<string, unknown>> = [];
 	let sent = 0;
@@ -123,16 +109,9 @@ export async function runFuzzParams(options: FuzzParamsOptions) {
 			const final = replay.exchange.final;
 			const title = extractTitle(final.bodyText);
 			const bodySha256 = responseBodyHash(final);
-			const responseLocation = (() => {
-				const location = final.headers.location || final.headers.Location;
-				if (!location) return undefined;
-				try {
-					return new URL(location, final.url).toString();
-				} catch {
-					return undefined;
-				}
-			})();
-			const matched = matchesFuzzResult(final.status, final.bodyBytes, normalized);
+			const responseLocation = redirectLocation(final.status, final.headers, final.url);
+			const matched = matchesStatusBodyResult(final.status, final.bodyBytes, normalized);
+			const fingerprint = { status: final.status, title, bodyBytes: final.bodyBytes, bodySha256, location: responseLocation };
 			results.push({
 				matched,
 				location: item.location,
@@ -150,7 +129,7 @@ export async function runFuzzParams(options: FuzzParamsOptions) {
 				responseLocation,
 				multipart: request.multipart,
 				redirects: replay.exchange.chain.slice(0, -1).map(compactStep),
-				delta: { statusChanged: final.status !== baseline.status, titleChanged: title !== baseline.title, bodyBytesDelta: final.bodyBytes - baseline.bodyBytes, bodyHashChanged: bodySha256 !== baseline.bodySha256, locationChanged: responseLocation !== baseline.location, classifier: [final.status !== baseline.status ? "status" : "", title !== baseline.title ? "title" : "", final.bodyBytes !== baseline.bodyBytes ? "length" : "", bodySha256 !== baseline.bodySha256 ? "body-hash" : "", responseLocation !== baseline.location ? "location" : ""].filter(Boolean) },
+				delta: { ...responseChangeDelta(baseline, fingerprint), classifier: responseDeltaClassifier(baseline, fingerprint) },
 				body: { text: final.bodyText, base64: final.bodyBase64 },
 			});
 		} catch (error) {

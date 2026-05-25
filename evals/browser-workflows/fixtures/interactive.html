@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Interactive Fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Interactive Fixture</h1>
+    <p id="status" data-state="idle">Status: idle</p>
+    <button id="activate" type="button">Activate workflow</button>
+  </main>
+  <script>
+    document.getElementById('activate').addEventListener('click', () => {
+      const status = document.getElementById('status');
+      status.dataset.state = 'activated';
+      status.textContent = 'Status: activated';
+    });
+  </script>
+</body>
+</html>

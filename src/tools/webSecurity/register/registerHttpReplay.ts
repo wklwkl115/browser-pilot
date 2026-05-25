@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeHttpReplayData } from "../../summaries/index";
 import { runHttpReplay } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, executeWebSecurityToolShell, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type HttpReplayToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type HttpReplayToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -17,13 +17,14 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 			baseUrl: Type.Optional(Type.String({ description: "Base URL for relative raw request targets." })),
 			rawRequest: Type.Optional(Type.String({ description: "Raw HTTP request text: request line, headers, blank line, optional body." })),
 			request: Type.Optional(Type.Any({ description: "Captured request-like object from browser_network/HAR; url/method/headers/postData are recognized." })),
-			har: Type.Optional(Type.Any({ description: "HAR object; selected entries are replayed as a request sequence." })),
-			harPath: Type.Optional(Type.String({ description: "Local HAR JSON file path; selected entries are replayed as a request sequence." })),
-			harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
-			harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
-			harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
-			requests: Type.Optional(Type.Array(Type.Any(), { description: "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Step objects may include variables, variableScope, and extractors/captures for later-step injection." })),
-			sequence: Type.Optional(Type.Array(Type.Any(), { description: "Alias for requests; replayed sequentially with optional step-variable extraction/injection." })),
+			...harReplayParams({
+				harDescription: "HAR object; selected entries are replayed as a request sequence.",
+				harPathDescription: "Local HAR JSON file path; selected entries are replayed as a request sequence.",
+			}),
+			...requestSequenceParams({
+				requestsDescription: "Request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Step objects may include variables, variableScope, and extractors/captures for later-step injection.",
+				sequenceDescription: "Alias for requests; replayed sequentially with optional step-variable extraction/injection.",
+			}),
 			multipart: Type.Optional(Type.Any({ description: "Multipart body builder: fields object/array and files with inline content/bodyBase64. fileFieldMatrix can expand focused multipart file-field replay cases from one template file." })),
 			compareBaseline: Type.Optional(Type.Boolean({ description: "When true, replay an unmutated baseline request and include response delta evidence." })),
 			sequenceCookies: Type.Optional(Type.Boolean({ description: "Carry Set-Cookie values between sequence steps; default true for sequences." })),
@@ -36,10 +37,11 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
 			mutations: Type.Optional(Type.Any({ description: "Optional mutation object with url, method, headers, body, bodyBase64, or multipart." })),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
-			followRedirects: Type.Optional(Type.Boolean({ description: "Follow redirects; default false for replay determinism." })),
-			maxRedirects: Type.Optional(Type.Number({ description: "Maximum redirects when followRedirects is true." })),
-			bindBrowserSession: Type.Optional(Type.Boolean({ description: "Merge browser cookies for the request URL; default false." })),
-			cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })),
+			...redirectControlParams({
+				followRedirectsDescription: "Follow redirects; default false for replay determinism.",
+				maxRedirectsDescription: "Maximum redirects when followRedirects is true.",
+			}),
+			...browserCookieBindingParams("Merge browser cookies for the request URL; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<HttpReplayToolParams>(params), ctx, {

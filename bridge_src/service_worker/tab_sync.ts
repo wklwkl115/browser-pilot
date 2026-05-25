@@ -10,7 +10,7 @@ let piBrowserTabSyncTransport: PiBrowserTabSyncTransport | null = null;
 
 function setPiBrowserTabSyncTransport(deps: PiBrowserTabSyncTransport) {
   if (!deps || typeof deps.getSocket !== 'function' || typeof deps.probe !== 'function') throw new Error('tab sync transport dependencies are invalid');
-  piBrowserTabSyncTransport = { getSocket: deps.getSocket, probe: deps.probe };
+  piBrowserTabSyncTransport = { getSocket: deps.getSocket, getSockets: deps.getSockets, probe: deps.probe };
 }
 
 function requirePiBrowserTabSyncTransport(): PiBrowserTabSyncTransport {
@@ -19,14 +19,17 @@ function requirePiBrowserTabSyncTransport(): PiBrowserTabSyncTransport {
 }
 
 async function sendTabsUpdate() {
-  const ws: PiBridgeWebSocketLike | null = requirePiBrowserTabSyncTransport().getSocket();
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const transport = requirePiBrowserTabSyncTransport();
+  const sockets = typeof transport.getSockets === 'function' ? transport.getSockets() : [transport.getSocket()].filter((socket): socket is PiBridgeWebSocketLike => !!socket);
+  const openSockets = sockets.filter((socket) => socket.readyState === WebSocket.OPEN);
+  if (!openSockets.length) return;
   const tabs = (await chrome.tabs.query({}) as PiChromeTab[]).filter((t: PiChromeTab) => isScriptable(t.url || '') && !/streamlit/i.test(t.title || ''));
-  ws.send(JSON.stringify({
+  const payload = JSON.stringify({
     type: 'tabs_update',
     bridge: piBridgeInfo(),
-    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, groupId: t.groupId }))
-  }));
+    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
+  });
+  for (const socket of openSockets) socket.send(payload);
 }
 
 function piBrowserErrorMessage(error: unknown): string {

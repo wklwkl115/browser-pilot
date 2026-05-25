@@ -5,9 +5,9 @@ import type { BrowserTabInfo, BrowserTabSession } from "./types";
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const CLOSED_STATES = new Set([WebSocket.CLOSED, WebSocket.CLOSING]);
 
-export function normalizePort(value: string | undefined): number {
+export function normalizePort(value: string | number | undefined, fallback = DEFAULT_BROWSER_BRIDGE_PORT): number {
 	const parsed = Number(value);
-	if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) return DEFAULT_BROWSER_BRIDGE_PORT;
+	if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) return fallback;
 	return parsed;
 }
 
@@ -71,8 +71,5 @@ export function tabSessionSummary(session: BrowserTabSession): Record<string, un
 		tabId: session.tabId,
 		url: session.url,
 		active: session.active,
-		windowId: session.windowId,
-		groupId: session.groupId,
-		profileId: session.profileId,
 	};
 }

@@ -183,10 +183,10 @@ assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDi
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook dispatcher must remain self-contained until TODO 192 removes old runtime files");
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
-assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs instead of hardcoding the port");
-assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 150, "transport.js must stay focused on WebSocket lifecycle");
-assert(transport.includes("cleanupTransportSocket") && transport.includes("if (ws !== socket) return false"), "transport.js must use identity-guarded socket cleanup");
-assert(transport.includes("const socket = ws;") && transport.includes("handlePiBridgeWsMessage(JSON.parse(event.data), socket)"), "transport.js handlers must capture the current socket instead of reading global ws");
+assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && transport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs and port range instead of hardcoding the port");
+assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "transport.js must stay focused on WebSocket lifecycle");
+assert(transport.includes("cleanupTransportSocket") && transport.includes("if (current !== socket) continue"), "transport.js must use identity-guarded socket cleanup");
+assert(transport.includes("sockets.set(port, socket)") && transport.includes("handlePiBridgeWsMessage(JSON.parse(event.data), socket)"), "transport.js handlers must capture the current socket instead of reading global socket state");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
 assert(scheduleProbeBlock.includes("chrome.alarms.create('pi-browser-ws-probe'"), "transport scheduleProbe must use the single named Chrome alarm for reconnect probes");
 assert(!scheduleProbeBlock.includes("setTimeout("), "transport scheduleProbe must not create untracked setTimeout probe timers");
@@ -240,7 +240,6 @@ assert(screenshotBridge.includes("actualFormat = format === 'jpeg' ? 'jpeg' : 'p
 assert(coreCommands.includes("normalizePiBrowserCreateTabUrl") && coreCommands.includes("javascript:") && coreCommands.includes("tabs.create requires an absolute URL"), "bridge tabs.create must validate malformed/script URLs before chrome.tabs.create");
 assert(coreCommands.includes("function mergePiBrowserCookies") && coreCommands.includes("item.path") && coreCommands.includes("item.storeId") && coreCommands.includes("partitionKey"), "bridge cookie merging must preserve distinct path/store/partition cookie identities");
 assert(coreCommands.includes("function normalizePiBrowserCookieUrl") && coreCommands.includes("unsupported_cookie_url_scheme") && !coreCommands.includes("url.match(/^https?"), "bridge cookie URL handling must validate non-http(s) URLs before origin extraction");
-assert(coreCommands.includes("chrome.cookies.set") && coreCommands.includes("chrome.cookies.remove") && coreCommands.includes("safePiBrowserCookieMutationDetails"), "bridge cookies command must expose set/remove primitives without returning raw cookie values from mutations");
 assert(router.includes("data.id === undefined") && router.includes("data.code === undefined") && !router.includes("if (!data.id || !data.code)"), "router.js must use nullish websocket envelope checks instead of falsy drops");
 assert(router.includes("Message object must contain a non-empty") && router.includes("Unsupported message code type"), "router.js must return explicit malformed websocket input errors");
 assert(router.includes("!Array.isArray(p)") && /typeof\s+(?:\([^)]*\)\.)?p(?:\s+as\s+[^\n]+)?\.cmd\s*===\s*["']string["']|typeof\s+p\.cmd\s*===\s*["']string["']/.test(router), "router.js must only promote JSON string code to command mode when it contains cmd");
@@ -388,8 +387,11 @@ async function testTransportSocketCleanupIdentity() {
 		send(data) { this.sent.push(data); }
 	}
 	const sandbox = {
-		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test",
-		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test",
+		PI_BROWSER_BRIDGE_HOST: "bridge.test",
+		PI_BROWSER_BRIDGE_PORT: 18765,
+		PI_BROWSER_BRIDGE_PORT_RANGE_END: 18765,
+		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test:18765",
+		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
 		WebSocket: FakeWebSocket,
 		AbortController,
 		setTimeout,
@@ -412,7 +414,7 @@ async function testTransportSocketCleanupIdentity() {
 	assert(sandbox.installPiBrowserTransport() === false, "transport install must be idempotent");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert(sandbox.bridgeWakeProbe === sandbox.probeAndConnectWS, "transport must register bridge_wake probe through the command-layer hook");
-	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
+	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.getSockets === sandbox.getPiBrowserTransportSockets && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
 	assert(sockets.length === 1, "transport must create an initial socket after successful health probe");
 	const first = sockets[0];
 	first.readyState = FakeWebSocket.OPEN;
@@ -434,6 +436,62 @@ async function testTransportSocketCleanupIdentity() {
 	await second.onopen();
 	assert(second.sent.length === 1, "second socket should send its own ext_ready");
 }
+
+async function testTransportMultiPortFanout() {
+	const sockets = [];
+	class FakeWebSocket {
+		static CONNECTING = 0;
+		static OPEN = 1;
+		static CLOSING = 2;
+		static CLOSED = 3;
+		constructor(url) {
+			this.url = url;
+			this.readyState = FakeWebSocket.CONNECTING;
+			this.sent = [];
+			sockets.push(this);
+		}
+		send(data) { this.sent.push(data); }
+	}
+	const sandbox = {
+		PI_BROWSER_BRIDGE_HOST: "bridge.test",
+		PI_BROWSER_BRIDGE_PORT: 18765,
+		PI_BROWSER_BRIDGE_PORT_RANGE_END: 18766,
+		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test:18765",
+		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
+		WebSocket: FakeWebSocket,
+		AbortController,
+		setTimeout,
+		console: { log() {}, warn() {}, debug() {}, error() {} },
+		fetch: async () => ({}),
+		isScriptable: () => true,
+		piBridgeInfo: () => ({ id: "bridge-test" }),
+		installCspBypassRule() {},
+		installPiBrowserTabSync(deps) { sandbox.tabSyncDeps = deps; },
+		setBridgeWakeProbe(fn) { sandbox.bridgeWakeProbe = fn; },
+		handlePiBridgeWsMessage: async () => {},
+		chrome: {
+			runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, reload() {} },
+			alarms: { create() {}, onAlarm: { addListener(fn) { sandbox.onAlarm = fn; } } },
+			tabs: {
+				async query() { return [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }]; },
+				onUpdated: { addListener() {} },
+				onRemoved: { addListener() {} },
+				onCreated: { addListener() {} },
+			},
+		},
+	};
+	vm.runInNewContext(transport, sandbox, { filename: "transport.js" });
+	vm.runInNewContext(tabSync, sandbox, { filename: "tab_sync.js" });
+	sandbox.installPiBrowserTransport();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sockets.length === 2, "transport must connect to every live bridge server in the configured port range");
+	assert(sockets.map((socket) => socket.url).join(" ").includes("18765") && sockets.map((socket) => socket.url).join(" ").includes("18766"), "transport sockets must target distinct bridge ports");
+	for (const socket of sockets) { socket.readyState = FakeWebSocket.OPEN; await socket.onopen(); }
+	await sandbox.sendTabsUpdate();
+	assert(sockets.every((socket) => socket.sent.some((message) => String(message).includes('"tabs_update"'))), "tab sync must fan out updates to every open bridge socket");
+}
+
+await testTransportMultiPortFanout();
 
 async function testHtmlGetSliceUtf8IsSelfContained() {
 	const bridgeSandbox = {
@@ -884,7 +942,6 @@ await testTabsCreateUrlValidation();
 
 async function testCookiesPreserveDistinctScopes() {
 	const cookieQueries = [];
-	const cookieMutations = [];
 	const sandbox = {
 		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE", INTERNAL_ERROR: "INTERNAL_ERROR" },
 		bridgeError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
@@ -894,7 +951,6 @@ async function testCookiesPreserveDistinctScopes() {
 			cookies: {
 				async getAll(query) {
 					cookieQueries.push(query);
-					if (query.name === "sid") return [{ name: "sid", value: "root", domain: "example.test", path: "/", storeId: "0" }];
 					if (query.partitionKey) return [
 						{ name: "sid", value: "admin", domain: "example.test", path: "/admin", storeId: "0", partitionKey: { topLevelSite: "https://example.test" } },
 						{ name: "sid", value: "partition-root", domain: "example.test", path: "/", storeId: "0", partitionKey: { topLevelSite: "https://example.test" } },
@@ -904,9 +960,6 @@ async function testCookiesPreserveDistinctScopes() {
 						{ name: "prefs", value: "dark", domain: "example.test", path: "/", storeId: "0" },
 					];
 				},
-				async get(details) { cookieMutations.push(["get", details]); return { name: details.name, value: "read-secret", domain: "example.test", path: "/", storeId: "0" }; },
-				async set(details) { cookieMutations.push(["set", details]); if (details.name === "boom") throw new Error(`native set failed for ${details.value}`); return { ...details, domain: "example.test", path: details.path || "/", storeId: "0" }; },
-				async remove(details) { cookieMutations.push(["remove", details]); return { url: details.url, name: details.name, storeId: details.storeId || "0" }; },
 			},
 		},
 	};
@@ -918,25 +971,6 @@ async function testCookiesPreserveDistinctScopes() {
 	assert(result.data.some((cookie) => cookie.name === "sid" && cookie.path === "/admin" && cookie.value === "admin" && cookie.partitionKey?.topLevelSite === "https://example.test"), "cookies command must keep partitioned path-specific cookie");
 	assert(result.data.some((cookie) => cookie.name === "sid" && cookie.path === "/" && cookie.value === "partition-root" && cookie.partitionKey?.topLevelSite === "https://example.test"), "cookies command must keep partitioned root cookie distinct from unpartitioned root cookie");
 	assert(cookieQueries.some((query) => query.partitionKey?.topLevelSite === "https://example.test"), "cookies command must still query partitioned cookies for the request origin");
-	const getResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "get", url: "https://example.test/admin/panel", name: "sid" }, {});
-	assert(getResult.ok === true && getResult.data?.value === "read-secret", "cookies.get must return the requested cookie for browser-session consumers");
-	const setResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "session", value: "set-secret", path: "/admin", secure: true, httpOnly: true, sameSite: "lax", partitionKey: { topLevelSite: "https://example.test" } }, {});
-	assert(setResult.ok === true && setResult.data?.set === true, "cookies.set should call chrome.cookies.set and return success metadata");
-	assert(!JSON.stringify(setResult).includes("set-secret"), "cookies.set result must not leak raw cookie value");
-	const setCall = cookieMutations.find((item) => item[0] === "set")?.[1];
-	assert(setCall?.value === "set-secret" && setCall?.path === "/admin" && setCall?.secure === true && setCall?.httpOnly === true && setCall?.sameSite === "lax", "cookies.set must pass normalized cookie attributes to chrome.cookies.set");
-	const emptyValueSet = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "empty", value: "" }, {});
-	assert(emptyValueSet.ok === true && cookieMutations.some((item) => item[0] === "set" && item[1].name === "empty" && item[1].value === ""), "cookies.set must support empty string cookie values");
-	const setFailure = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "boom", value: "native-secret" }, {});
-	assert(setFailure.ok === false && setFailure.error_code === "INTERNAL_ERROR", "cookies.set native failures must return structured bridge errors");
-	assert(!JSON.stringify(setFailure).includes("native-secret"), "cookies.set failure details must not leak raw cookie value");
-	const removeResult = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "remove", url: "https://example.test/admin/panel", name: "session", storeId: "0" }, {});
-	assert(removeResult.ok === true && removeResult.data?.removed === true && removeResult.data?.details?.name === "session", "cookies.remove should call chrome.cookies.remove and return removal metadata");
-	assert(cookieMutations.some((item) => item[0] === "remove" && item[1].storeId === "0"), "cookies.remove must pass storeId to chrome.cookies.remove");
-	const invalidName = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "https://example.test/admin/panel", name: "", value: "x" }, {});
-	assert(invalidName.ok === false && invalidName.error_code === "INVALID_RULE", "cookies.set must reject empty names at runtime");
-	const unsupportedSet = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", method: "set", url: "about:blank", name: "sid", value: "x" }, {});
-	assert(unsupportedSet.ok === false && unsupportedSet.error_code === "INVALID_RULE" && unsupportedSet.details?.reason === "unsupported_cookie_url_scheme", "cookies.set must reject unsupported URL schemes without calling chrome.cookies.set");
 	const queryCount = cookieQueries.length;
 	const aboutBlank = await sandbox.__cookieTest.handleCookies({ cmd: "cookies", url: "about:blank" }, {});
 	assert(aboutBlank.ok === true && Array.isArray(aboutBlank.data) && aboutBlank.data.length === 0 && aboutBlank.details?.reason === "unsupported_cookie_url_scheme", "cookies command must return an empty stable result for non-http(s) URLs");
@@ -1213,11 +1247,6 @@ async function testCdpNewDocumentScriptLifecycleContract() {
 	assert(added.data?.tabId === 66 && added.data?.sessionKey === "66:new_document" && added.data?.cdpSessionName === "new_document", "addNewDocumentScript must return stable tab/session metadata");
 	const addCall = sendCalls.find((call) => call.method === "Page.addScriptToEvaluateOnNewDocument");
 	assert(addCall?.params.runImmediately === true && addCall?.params.worldName === "pi_world" && addCall?.params.includeCommandLineAPI === true, "addNewDocumentScript must forward runImmediately/worldName/includeCommandLineAPI");
-	const listed = cdp.listNewDocumentScripts(66, "new_document");
-	assert(Array.isArray(listed) && listed.length === 1 && listed[0].identifier === "script-1" && listed[0].cdpSessionName === "new_document", "listNewDocumentScripts must expose stable registration metadata for orchestration recovery");
-	assert(cdp.listNewDocumentScripts(66, "other_session").length === 0, "listNewDocumentScripts must stay scoped by CDP session name");
-	const listedViaCommand = await cdp.handleCommand({ tabId: 66, action: "listNewDocumentScripts", name: "new_document" }, {});
-	assert(listedViaCommand.ok === true && listedViaCommand.data?.scripts?.length === 1 && listedViaCommand.data.scripts[0].identifier === "script-1", "persistent_cdp listNewDocumentScripts command must return registration metadata");
 
 	const removed = await cdp.removeNewDocumentScript(66, added.data.identifier, { persistent: true, name: "new_document" });
 	assert(removed.ok === true && removed.data?.identifier === "script-1" && removed.data?.removed === true && removed.data?.alreadyRemoved === false, "removeNewDocumentScript must return a stable normal removal result");

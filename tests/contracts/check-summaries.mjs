@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { distilledJsonResult, distilledTextResult } from "../../src/tools/resultMiddleware.ts";
 import {
 	summarizeBrowserCrawlData,
 	summarizeCallbackOastData,
@@ -15,7 +16,6 @@ import {
 	summarizeHttpReplayData,
 	summarizeNetworkData,
 	summarizeNucleiBridgeData,
-	summarizeOrchestrationData,
 	summarizeScanData,
 	summarizeSqlmapBridgeData,
 	summarizeSqliProbeData,
@@ -26,6 +26,7 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const tableCell = (table, key, row = 0) => table.rows[row][table.columns.indexOf(key)];
+const parseToolText = (result) => JSON.parse(result.content[0].text);
 
 function assertWebSecuritySummarySplit() {
 	const files = readdirSync(path.join(root, "src/tools/summaries/webSecurity")).filter((file) => file.endsWith(".ts")).sort();
@@ -53,8 +54,8 @@ assert.deepEqual(Object.keys(scan).sort(), ["actionables", "contentChars", "head
 assert.equal(scan.tabs_count, 2);
 assert.equal(scan.interactive.length, 2);
 assert.equal(scan.headings.length, 1);
-assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: actionables table must be exposed");
-assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: repeated list hints must be exposed");
+assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: GA-style actionables table must be exposed");
+assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 
 const html = summarizeHtmlSnapshot("<html><head><title>T</title></head><body><form><input><button>Go</button></form><a href='/'>Home</a></body></html>", { selector: "body", mode: "outer" });
 assert.deepEqual(Object.keys(html).sort(), ["chars", "counts", "mode", "original_bytes", "original_length", "selector", "textChars", "textPreview", "titles", "truncated"].sort(), "check-summaries html.keys: summary fields must stay stable");
@@ -106,25 +107,13 @@ assert.equal(networkBody.mimeType, "text/plain", "check-summaries network.body.m
 const networkMissingBody = summarizeNetworkData({ requestId: "missing-body", url: "https://api.example.test/body", method: "POST", status: 200, bodyAvailability: "expired", bodyUnavailableReason: "cdp_body_expired" });
 assert.equal(networkMissingBody.bodyAvailability, "expired", "check-summaries network.bodyAvailability: missing body diagnostics must be surfaced");
 assert.equal(networkMissingBody.bodyUnavailableReason, "cdp_body_expired", "check-summaries network.bodyUnavailableReason: missing body reason must be surfaced");
+const networkEnvelope = parseToolText(await distilledJsonResult({ data: { requestId: "missing-body", url: "https://api.example.test/body", method: "POST", status: 200, bodyAvailability: "expired", bodyUnavailableReason: "cdp_body_expired" } }, { toolName: "browser_network", command: "network.body", detailLevel: "summary", maxChars: 4_000, fallbackName: "network-body.json" }));
+assert.equal(networkEnvelope.diagnostics.bodyUnavailableReason, "cdp_body_expired", "check-summaries envelope.diagnostics.network: body unavailable reason must be promoted");
+assert.equal(networkEnvelope.nextActions.some((item) => item.includes("browser_network body")), true, "check-summaries envelope.nextActions.network: network body recovery hint must be present");
 const networkHar = summarizeNetworkData({ log: { entries: [{ _requestId: "5", request: { url: "https://api.example.test/har", method: "GET" }, response: { status: 200 }, _type: "Fetch" }] }, diagnostics: { tabId: 9, sessionId: "har", recorderId: "r2", active: true, entries: 1, bodyCount: 1, activeWaitCount: 0 } });
 assert.equal(networkHar.tabId, 9, "check-summaries network.har.tabId: HAR diagnostics tabId must be retained");
 assert.equal(networkHar.sessionId, "har", "check-summaries network.har.sessionId: HAR diagnostics sessionId must be retained");
 assert.equal(networkHar.recorder.recorderId, "r2", "check-summaries network.har.recorder: diagnostics recorder must be retained");
-
-const orchestrationSummary = summarizeOrchestrationData({
-	action: "apply",
-	ok: false,
-	orchestrationId: "orch-summary",
-	converged: false,
-	plan: { operationCount: 0, operationsByPhase: {}, converged: true },
-	actual: { observedAt: 1, sessions: [{ tag: "s", tabs: [], cookies: [], sessionAssertions: { mode: "all", passed: false, total: 2, passedCount: 1, failedCount: 1, probeFailedCount: 0, checks: [] } }] },
-	failures: [{ code: "ORCHESTRATION_ASSERTION_FAILED", message: "selector assertion is not satisfied", retryable: false }],
-	bindings: [],
-});
-assert.equal(orchestrationSummary.assertionCount, 2, "check-summaries orchestration.assertionCount: assertion totals must stay visible");
-assert.equal(orchestrationSummary.assertionPassedCount, 1, "check-summaries orchestration.assertionPassed: passed assertions must stay visible");
-assert.equal(orchestrationSummary.assertionFailedCount, 1, "check-summaries orchestration.assertionFailed: failed assertions must stay visible");
-assert.equal(orchestrationSummary.assertionProbeFailedCount, undefined, "check-summaries orchestration.assertionProbeFailed: zero probe failures should stay compact");
 
 const generic = summarizeGenericValue({ ok: true, tabId: 7, target: { source: "explicit", implicit: false }, data: { tabId: 7, frameId: "main", count: 2, html: "x".repeat(2000), rows: Array.from({ length: 20 }, (_, id) => ({ id, value: "v".repeat(500) })) } });
 assert.equal(generic.type, "bridgeResult", "check-summaries generic.bridge: bridge envelopes must be recognized");
@@ -208,5 +197,11 @@ const replaySummary = summarizeHttpReplayData({ ok: true, mode: "sequence", step
 assert.equal(replaySummary.request.cookiesBound, true, "check-summaries webSecurity.replay.cookiesBound: browser cookie binding flag must stay visible");
 assert.equal(replaySummary.dependencyGraph.edgeTypes[0].key, "cookie", "check-summaries webSecurity.replay.dependencyGraph: dependency graph edge types must stay visible");
 assert.equal(JSON.stringify(replaySummary).includes("sid=secret"), false, "check-summaries webSecurity.replay.redact: replay response previews must redact cookies");
+const replayEnvelope = parseToolText(await distilledJsonResult(replaySummary, { toolName: "browser_http_replay", command: "http.replay", detailLevel: "summary", maxChars: 6_000, fallbackName: "replay.json", distill: () => replaySummary }));
+assert.equal(replayEnvelope.diagnostics.entryCount, undefined, "check-summaries envelope.diagnostics.replay: unrelated network fields must not be invented");
+assert.equal(replayEnvelope.limits.requestCount, undefined, "check-summaries envelope.limits.replay: absent limits must remain absent");
+const contentEnvelope = parseToolText(await distilledTextResult("# T", { toolName: "browser_content", command: "content", detailLevel: "summary", maxChars: 3_000, fallbackName: "content.json", summary: { url: "https://example.test", markdownChars: 3, empty: true } }));
+assert.equal(contentEnvelope.target.url, "https://example.test", "check-summaries envelope.target.content: URL must be promoted to target metadata");
+assert.equal(contentEnvelope.diagnostics.warnings.includes("empty_result"), true, "check-summaries envelope.diagnostics.content: empty extraction must be diagnosable");
 
 console.log("summary contract ok");

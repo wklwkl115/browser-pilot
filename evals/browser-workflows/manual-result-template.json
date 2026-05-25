@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "evalId": "01-readable-content-artifact",
+  "status": "not-run",
+  "toolCallCount": 0,
+  "firstWrongToolChoice": null,
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "not-evaluated",
+  "scopedFollowUpDiscipline": "not-evaluated",
+  "evidence": {
+    "summary": [],
+    "artifacts": [],
+    "diagnostics": []
+  },
+  "notes": []
+}
