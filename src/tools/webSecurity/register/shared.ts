@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolPositiveInt, toolTimeoutMs } from "../../toolAdapter";
+import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolPositiveInt, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate } from "../../toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "../../toolShared";
 import type { EnsureStarted } from "../../toolShared";
 import { browserCookiesToHeader } from "../../webSecurityCore";
@@ -11,7 +11,7 @@ export { TAB_SCOPED_TOOL_GUIDELINE };
 
 export function sharedWebSecurityBrowserSessionParams(timeoutDescription: string) {
 	return sharedTabScopedToolParams({
-		tabIdDescription: "Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed.",
+		tabIdDescription: "Target tab id used when bindBrowserSession injects browser cookies into HTTP requests; otherwise omitted is allowed.",
 		timeoutDescription,
 	});
 }
@@ -23,7 +23,7 @@ export function sharedWebSecurityResultParams() {
 export function sharedWebSecurityParams() {
 	return {
 		...sharedTabScopedToolParams({
-			tabIdDescription: "Target tab id used when bindBrowserSession needs browser cookies; otherwise omitted is allowed.",
+			tabIdDescription: "Target tab id used when bindBrowserSession injects browser cookies into HTTP requests; otherwise omitted is allowed.",
 			timeoutDescription: "Per-request timeout in milliseconds",
 		}),
 		maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum response body bytes stored per request before truncation; default 256000." })),
@@ -33,7 +33,7 @@ export function sharedWebSecurityParams() {
 export function browserCookieBindingParams(bindBrowserSessionDescription: string, options: { includeCookieMode?: boolean } = {}) {
 	return {
 		bindBrowserSession: Type.Optional(Type.Boolean({ description: bindBrowserSessionDescription })),
-		...(options.includeCookieMode === false ? {} : { cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie binding; default merge." })) }),
+		...(options.includeCookieMode === false ? {} : { cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie injection into HTTP requests; default merge." })) }),
 	};
 }
 
@@ -174,6 +174,11 @@ export function resolveBooleanParam(value: unknown, defaultValue: boolean) {
 	return value === undefined ? defaultValue : value === true;
 }
 
+function normalizeTabId(value: unknown): number | undefined {
+	const tabId = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+	return Number.isInteger(tabId) && tabId > 0 ? tabId : undefined;
+}
+
 function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSecuritySharedToolParams, timeoutMs: number): CookieProvider {
 	return async (url: string) => {
 		const server = await ensureStarted();
@@ -184,25 +189,43 @@ function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSe
 
 export type WebSecurityToolContext = { cwd?: string };
 
-export async function executeWebSecurityToolShell<TParams extends WebSecuritySharedToolParams, TRunParams extends object, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>) {
+export async function executeWebSecurityToolShell<TParams extends WebSecuritySharedToolParams, TRunParams extends object, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>, onUpdate?: ToolOnUpdate) {
 	return await runTool(async () => {
 		try {
+			const server = await ensureStarted();
 			const timeoutMs = toolTimeoutMs(params.timeoutMs, config.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
 			const maxChars = toolMaxChars(params, config.toolName);
-			const runParams: TRunParams & RunParamMutation = {
-				...params,
-				...(config.augmentParams?.(params) || {}),
-			} as unknown as TRunParams & RunParamMutation;
-			if (config.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
-			if (config.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, config.defaultMaxBodyBytes);
-			if (config.includeCookieProvider) runParams.cookieProvider = createBrowserCookieProvider(ensureStarted, params, timeoutMs);
-			const result = await config.run(runParams);
+			const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+			const tabId = normalizeTabId(params.tabId);
+			const { result, operation } = await withTrackedOperation(server, {
+				toolName: config.toolName,
+				command: config.command,
+				browserSessionId,
+				tabId,
+				phase: "running",
+				progress: 5,
+				queueDepth: server.queueDepth(browserSessionId, tabId),
+				leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+			}, onUpdate, async (handle) => {
+				const runParams: TRunParams & RunParamMutation = {
+					...params,
+					...(config.augmentParams?.(params) || {}),
+				} as unknown as TRunParams & RunParamMutation;
+				if (config.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
+				if (config.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, config.defaultMaxBodyBytes);
+				if (config.includeCookieProvider) runParams.cookieProvider = createBrowserCookieProvider(ensureStarted, params, timeoutMs);
+				await handle.update({ progress: 35 });
+				const result = await config.run(runParams);
+				await handle.update({ progress: 85, details: config.details(result) });
+				return result;
+			});
 			return await jsonToolResult(result, params, ctx, {
 				toolName: config.toolName,
 				command: config.command,
 				maxChars,
 				fallbackName: artifactFallbackName(config.fallbackPrefix),
 				details: { command: config.command, ...config.details(result) },
+				operation,
 				artifactValue: result,
 				distill: config.distill,
 			});

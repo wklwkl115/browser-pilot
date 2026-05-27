@@ -3,8 +3,8 @@ import { normalizeDetailLevel, type DetailLevel } from "../utils/params";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult";
 import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
 import { saveTextArtifact } from "./artifacts";
-import { isRecord } from "./summaries/common";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+import { asArray, isRecord } from "./summaries/common";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData } from "./summaries/index";
 
 export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
 
@@ -20,6 +20,8 @@ export type DistilledEnvelope = {
 	limits?: Record<string, unknown>;
 	privacy?: Record<string, unknown>;
 	nextActions?: string[];
+	operation?: Record<string, unknown>;
+	snapshot?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
 };
 
@@ -37,6 +39,8 @@ type DistillBaseOptions = {
 	outputPath?: string;
 	fallbackName: string;
 	details?: Record<string, unknown>;
+	operation?: Record<string, unknown>;
+	snapshot?: Record<string, unknown>;
 	artifactThreshold?: number;
 };
 
@@ -169,12 +173,24 @@ function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false
 	};
 }
 
+function artifactReadActions(summary: DistilledSummary, saved?: Record<string, unknown>): string[] {
+	if (!saved?.path) return [];
+	const path = String(saved.path);
+	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
+	const preferredReads = asArray(hints?.preferredReads).filter(isRecord);
+	const actions = preferredReads
+		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `browser_artifact path=${path} mode=json jsonPath=${hint.jsonPath}` : undefined)
+		.filter((item): item is string => !!item)
+		.slice(0, 3);
+	return actions.length ? actions : [`browser_artifact path=${path} mode=json|text`];
+}
+
 function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): string[] | undefined {
 	const actions: string[] = [];
-	if (saved?.path) actions.push(`browser_artifact path=${String(saved.path)} mode=json|text`);
+	actions.push(...artifactReadActions(summary, saved));
 	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`browser_artifact offset=${String(summary.nextOffset)}`);
 	if (summary.bodyUnavailableReason) actions.push("browser_network body with a fresh recorder entry or recapture with captureBodies enabled");
-	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_scan/browser_html");
+	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_observe mode=scan|html");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or read the saved artifact by offset/jsonPath");
 	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
 	return actions.length ? Array.from(new Set(actions)).slice(0, 5) : undefined;
@@ -200,6 +216,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw),
 		nextActions: normalizedNextActions(options, fittedSummary, saved),
+		operation: options.operation ? redactSensitiveValue(options.operation) as Record<string, unknown> : undefined,
+		snapshot: options.snapshot ? redactSensitiveValue(options.snapshot) as Record<string, unknown> : undefined,
 		saved,
 	});
 }

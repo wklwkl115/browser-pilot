@@ -11,7 +11,7 @@
 
 当前项目已经覆盖 GenericAgent 暴露给 Agent 的浏览器工具面：
 
-- GenericAgent `web_scan` → Pi `browser_scan` + `browser_tabs`
+- GenericAgent `web_scan` → Pi `browser_observe mode=scan|text|tabs` + `browser_tabs`
 - GenericAgent `web_execute_js` → Pi `browser_execute`
 
 Pi 项目额外保留了正文提取、pick、wait、network、hook/evidence、frame、html、screenshot、upload/download、artifact 读取等能力。当前不应恢复 `browser_query` / `browser_click` / `browser_type` / `browser_dom_*` 动作拆分层。
@@ -26,12 +26,12 @@ GenericAgent 内部体验级能力也已对齐为 Pi 风格：
 
 | GenericAgent 能力 | GenericAgent 实现 | Pi 当前实现 | 状态 |
 | --- | --- | --- | --- |
-| 标签页列表 | `web_scan(tabs_only=True)` | `browser_tabs list` / `browser_scan tabsOnly` | 已覆盖 |
+| 标签页列表 | `web_scan(tabs_only=True)` | `browser_tabs list` / `browser_observe mode=tabs` | 已覆盖 |
 | 切换目标页 | `switch_tab_id` 设置默认 session | 每个工具显式 `tabId`，`browser_tabs switch` 可切换 | 已覆盖，Pi 更严格 |
-| 简化 DOM 扫描 | `simphtml.get_html(... optHTML)` | `browser_scan` 简化 DOM + top-layer + actionables | 已覆盖 |
-| 纯文本扫描 | `web_scan(text_only=True)` | `browser_scan textOnly:true` | 已覆盖 |
-| 同源 iframe | `optHTML` 读取 iframe body | `browser_scan includeIframes` | 已覆盖 |
-| shadow DOM | `optHTML` 遍历 shadowRoot | `browser_scan` 遍历 shadowRoot | 已覆盖 |
+| 简化 DOM 扫描 | `simphtml.get_html(... optHTML)` | `browser_observe mode=scan` 简化 DOM + top-layer + actionables | 已覆盖 |
+| 纯文本扫描 | `web_scan(text_only=True)` | `browser_observe mode=text` | 已覆盖 |
+| 同源 iframe | `optHTML` 读取 iframe body | `browser_observe mode=scan includeIframes:true` | 已覆盖 |
+| shadow DOM | `optHTML` 遍历 shadowRoot | `browser_observe mode=scan` 遍历 shadowRoot | 已覆盖 |
 | 表单值 | input/textarea value、checked、select data-selected | input/textarea value、checked、select value | 已覆盖 |
 | 自动填充保护提示 | `:-webkit-autofill` → `data-autofilled` / warning | `data-autofilled="true"` / `protected-autofill` | 已覆盖 |
 | 可见性过滤 | rect/style/opacity/area | CSS + rect + hit-test diagnostics | 已覆盖 |
@@ -50,7 +50,7 @@ GenericAgent 内部体验级能力也已对齐为 Pi 风格：
 - `browser_wait`：selector/navigation/loadState/networkIdle typed wait。
 - `browser_network` / `browser_hook` / `browser_evidence`：比 GenericAgent 自动 diff 更可控的证据链。
 - `browser_frame`：frame 列表和 frame 内执行。
-- `browser_content` / `browser_html`：正文和 HTML 定向抽取。
+- `browser_observe mode=content|html`：正文和 HTML 定向抽取。
 - `browser_pick`：用户可视点选。
 - `browser_download` / `browser_upload`：文件传输，一等工具，上传有 `confirm:true` 安全门。
 - `browser_artifact`：大结果局部读取。
@@ -60,4 +60,4 @@ GenericAgent 内部体验级能力也已对齐为 Pi 风格：
 
 1. 不新增动作工具；继续坚持 `scan -> execute -> wait -> verify`。
 2. `browser_execute monitor:true` 只在需要紧凑的前后 DOM diff 时使用；常规动作仍显式 wait/verify。
-3. `browser_scan` 的 `list_hints` 是 Pi 表格化列表压缩提示，不应替代 artifact 原文。
+3. `browser_observe mode=scan` 的 `list_hints` 是 Pi 表格化列表压缩提示，不应替代 artifact 原文。

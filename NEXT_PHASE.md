@@ -4,7 +4,7 @@
 
 ## Phase Theme
 
-工具接口治理与内部可组合性重构。目标是降低工具选择负担、统一高信号输出、拆出 Web Security primitives；不新增 callable tool，不改变现有工具名和默认行为。
+工具接口治理与内部可组合性重构。Workstreams A-E 已完成当前主线；下一阶段按 `docs/tool-surface-consolidation-plan.md` 执行 TODO 244-249。目标是把观察层收敛到 `browser_observe` canonical surface，拆清 JavaScript execution 与 bridge command，补 recovery/artifact/progress/snapshot/operation diagnostics，并用显式 profile 管理 Web Security 可见工具面。
 
 ## Guiding Constraints
 
@@ -12,7 +12,7 @@
 - 保持 Semantic Singularity：同类能力只保留一个 canonical 工具；发现重叠先改描述/边界，不急于新增或删除工具。
 - 保持 Atomic Composability：优先增强 `browser_execute`、`browser_http_replay`、`browser_artifact`、wait/state/evidence 面。
 - 保持 Recoverable Diagnostics：失败结果必须可诊断、可复现、可恢复；长输出走 artifact。
-- 保持契约稳定：工具名、参数 schema、错误码、summary/artifact envelope、README/skill 现有声明默认不破坏。
+- 保持契约稳定：工具名、参数 schema、错误码、summary/artifact envelope、README/skill 现有声明默认不破坏；TODO 244/245 是显式迁移例外，必须有 wrapper 兼容期、退出步骤、contracts、docs、evals 和 runtime smoke 证据。
 
 ## Non-Goals
 
@@ -20,7 +20,23 @@
 - 不新增 `browser_orchestrate`、target resolver、desired-state coordinator 或黑箱流程工具。
 - 不把 Web Security 拆成新扩展。
 - 不新增工具层安全闸、风险分级默认值或能力收缩文案。
+- 不新增 `mode:"auto"` observe、透明 tab cache、自动 tab 选择、自动 lease 抢占、自动 recovery 执行或 Web 安全任务分类器。
 - 不引入远端 CI/SaaS 监控作为主线验收。
+
+## Active Tool-Surface Workstreams
+
+The active implementation contract is `docs/tool-surface-consolidation-plan.md`.
+
+| TODO | Workstream | Required outcome |
+|---|---|---|
+| 244 | Observation surface consolidation | Completed: `browser_observe` is the canonical observation tool and legacy `browser_scan` / `browser_content` / `browser_html` are removed. |
+| 245 | Execute/command split | Completed: `browser_execute` is JavaScript-only and `browser_command` is the bridge-command-only surface. |
+| 246 | Recovery hints and artifact multi-search | Completed: errors expose factual nextActions/recovery and `browser_artifact` supports bounded multi-artifact search. |
+| 247 | Progress and stream-ready evidence | Completed phase 1: tool-level progress lands first; final envelopes and artifacts remain authoritative. |
+| 248 | Explicit snapshots and operation metadata | Completed: snapshot reuse is explicit and artifact-backed, and operation metadata is diagnostic only. |
+| 249 | Web Security capability profiles | Completed: optional visible tool tiers are controlled only by explicit Pi config/profile. |
+
+Each TODO must update `CURRENT.md`, `ROADMAP.md`, `docs/tool-boundaries.md`, README, CHANGELOG, generated docs, relevant contracts/evals, and the global `pi-browser-tools` skill when runtime tool selection changes.
 
 ## Workstream A: Tool Boundary & Semantic Singleton Audit
 
@@ -32,7 +48,7 @@
 
 重点审计：
 
-- Observation：`browser_scan` / `browser_content` / `browser_html` / `browser_screenshot`
+- Observation：`browser_observe` / `browser_screenshot`
 - State & Evidence：`browser_network` / `browser_hook` / `browser_evidence` / `browser_artifact`
 - Web follow-up：`browser_recon_probe` / `browser_crawl` / `browser_template_check` / `browser_nuclei_bridge`
 - Injection：`browser_sqli_probe` / `browser_sqlmap_bridge`
@@ -181,7 +197,7 @@ Create `evals/browser-workflows/` after A-D have stable boundaries:
 1. Open local fixture, extract readable article, cite artifact path.
 2. Inspect page, choose element via scan, execute JS action, wait for state.
 3. Capture network request, replay with one header/body mutation.
-4. Diagnose selector missing and recover with `browser_html` or `browser_scan`.
+4. Diagnose selector missing and recover with `browser_observe mode=html|scan`.
 5. Download fixture file and inspect artifact.
 6. Trigger wait timeout and verify actionable diagnostics.
 7. Run bounded path fuzz against local fixture and explain baseline filtering.

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "evalId": "18-debugger-script-provenance",
+  "status": "passed",
+  "toolCallCount": 4,
+  "firstWrongToolChoice": null,
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "browser_scan found the explicit trigger #run-provenance and idle status on the local fixture.",
+      "browser_execute produced payload evidence with branch=helper-script and sourceTag=provenance-helper.js.",
+      "browser_crawl discovered the same-origin helper script URL under /debugger/provenance-helper.js.",
+      "Current tools can correlate helper-script provenance, but page-authored inline-script provenance remains RFC-only."
+    ],
+    "artifacts": [
+      ".pi/browser-artifacts/eval18-debugger-provenance-execute.json",
+      ".pi/browser-artifacts/eval18-debugger-provenance-crawl.json",
+      ".pi/browser-artifacts/scan-1779817053766.json"
+    ],
+    "diagnostics": [
+      "No new public debugger tool was required.",
+      "Authored helper-script provenance was recoverable through existing canonical tools.",
+      "Inline/page-authored script correlation remains an RFC-only provenance gap."
+    ]
+  },
+  "notes": [
+    "Used browser_scan -> browser_execute -> browser_crawl -> browser_artifact-style artifact evidence only.",
+    "The remaining provenance gap is narrower than a general source/debugger gap: it is specifically page-authored script correlation."
+  ]
+}

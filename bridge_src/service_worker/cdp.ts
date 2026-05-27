@@ -40,6 +40,21 @@ function piCdpError(code: string, message: unknown, details: unknown = {}): PiCd
   return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } };
 }
 function piCdpRawError(e: unknown): JsonRecord { return cdpRawError(e); }
+function piCdpAugmentDebuggerEvidence(method: string, data: JsonRecord): JsonRecord {
+  const out = { ...data };
+  const result = cdpRecord(out.result);
+  if (method === 'Debugger.enable' && result.debuggerId !== undefined && out.debuggerId === undefined) out.debuggerId = result.debuggerId;
+  if (method === 'Debugger.getScriptSource' && result.scriptSource !== undefined && out.scriptSource === undefined) out.scriptSource = result.scriptSource;
+  if (method === 'Runtime.evaluate') {
+    if (result.value !== undefined && out.value === undefined) out.value = result.value;
+    if (result.exceptionDetails && out.exceptionDetails === undefined) out.exceptionDetails = result.exceptionDetails;
+    const exceptionDetails = cdpRecord(out.exceptionDetails);
+    if (exceptionDetails.scriptId !== undefined && out.scriptId === undefined) out.scriptId = exceptionDetails.scriptId;
+    const stackTrace = cdpRecord(exceptionDetails.stackTrace);
+    if (Array.isArray(stackTrace.callFrames) && out.callFrames === undefined) out.callFrames = stackTrace.callFrames;
+  }
+  return out;
+}
 function piCdpOk(data: JsonRecord): PiCdpResponse { return { ok: true, data }; }
 function piCdpWithTimeout<T>(promise: Promise<T>, timeoutMs?: unknown, label = 'CDP command'): Promise<T> {
   const ms = Math.max(1, Number(timeoutMs || PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS));
@@ -192,7 +207,7 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
       method
     );
     rec.commands += 1; rec.lastUsed = piCdpNow();
-    return piCdpOk({ result: data, sessionKey: key, method });
+    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method }));
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (!retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(msg || ''))) {

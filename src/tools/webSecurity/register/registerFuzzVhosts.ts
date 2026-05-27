@@ -39,7 +39,7 @@ export function registerFuzzVhostsTool({ pi, ensureStarted }: ToolRegistrarConte
 			baselineStrategy: Type.Optional(Type.String({ description: "Baseline comparison mode: exact | cluster | auto. Default auto." })),
 			...maxCandidatesParam("Maximum host candidates per base; default 500, hard-capped at 5000."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
-			...browserCookieBindingParams("Attach browser cookies for fuzz requests using the connected browser session; default false.", { includeCookieMode: false }),
+			...browserCookieBindingParams("Inject browser cookies for fuzz requests into the outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzVhostsToolParams>(params), ctx, {
@@ -51,7 +51,7 @@ export function registerFuzzVhostsTool({ pi, ensureStarted }: ToolRegistrarConte
 				run: runFuzzVhosts,
 				details: (result) => ({ requestCount: result.requestCount, matchedCount: result.matchedCount }),
 				distill: summarizeFuzzVhostsData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

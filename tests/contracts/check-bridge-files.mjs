@@ -53,7 +53,9 @@ assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "
 assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge-src.json"), "bridge type checks must include the ESM TypeScript source graph");
 assert(!String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge.json"), "bridge type checks must not depend on deleted legacy JS ambient globals");
 assert(String(pkg.scripts?.["check:bridge"] || "").includes("check:bridge:types"), "bridge checks must include bridge checkJs/typecheck");
-assert(String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:build") < String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:files"), "bridge checks must build dist before file contracts read manifest/dist output");
+assert(pkg.scripts?.["verify:bridge:dist"] === "node tests/contracts/check-bridge-build.mjs", "package must expose a read-only bridge dist verification command");
+assert(pkg.scripts?.["check:bridge:build"] === "npm run verify:bridge:dist", "bridge checks must verify current dist instead of rebuilding it");
+assert(String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:build") < String(pkg.scripts?.["check:bridge"] || "").indexOf("check:bridge:files"), "bridge checks must verify dist before file contracts read manifest/dist output");
 assert(pkg.devDependencies?.typescript, "package must depend on TypeScript for bridge checkJs typecheck");
 const bridgeSrcTsconfig = JSON.parse(read("tsconfig.bridge-src.json"));
 assert(bridgeSrcTsconfig.include?.includes("bridge_src/**/*.ts"), "bridge source tsconfig must cover bridge_src TypeScript modules");

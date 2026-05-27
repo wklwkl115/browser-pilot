@@ -27,7 +27,7 @@ export function registerReconProbeTool({ pi, ensureStarted }: ToolRegistrarConte
 			}),
 			includeFaviconHash: Type.Optional(Type.Boolean({ description: "Fetch /favicon.ico for each final origin and include favicon hash metadata; default false." })),
 			includeTlsCertificate: Type.Optional(Type.Boolean({ description: "Inspect HTTPS peer certificate metadata for final URLs; default false." })),
-			...browserCookieBindingParams("Attach browser cookies for each probed URL using the connected browser session; default false.", { includeCookieMode: false }),
+			...browserCookieBindingParams("Inject browser cookies for each probed URL into the outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<ReconProbeToolParams>(params), ctx, {
@@ -40,7 +40,7 @@ export function registerReconProbeTool({ pi, ensureStarted }: ToolRegistrarConte
 				run: runReconProbe,
 				details: (result) => ({ count: result.count }),
 				distill: summarizeWebReconProbeData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

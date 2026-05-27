@@ -36,6 +36,16 @@ Each eval should define:
 - `08-cookie-jwt-redaction.md`
 - `09-sqli-probe-vs-bridge.md`
 - `10-multi-session-lease-conflict.md`
+- `11-jshook-runtime-hook-targets.md`
+- `12-jshook-source-map-artifact.md`
+- `13-jshook-storage-evidence.md`
+- `14-jshook-replay-not-intercept.md`
+- `15-jshook-canvas-observation.md`
+- `16-scan-high-entropy-summary.md`
+- `17-debugger-evidence-workflow.md`
+- `18-debugger-script-provenance.md`
+- `19-debugger-pause-lifecycle.md`
+- `20-debugger-navigation-recovery.md`
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 
@@ -44,3 +54,5 @@ Use `spec-template.md` for new workflow evals. Fixture requirements live under `
 `future-runner.md` freezes the opt-in boundary for any later runner or fixture server. It is documentation only; the current suite remains static/manual.
 
 `result-schema.json` defines the compact manual result record shape. Optional hand-run results belong under `results/` and should reference artifacts by path instead of pasting raw browser evidence.
+
+`jshook-closure-ledger.md` maps TODO 241.2 jshookmcp capability classes to eval specs and closure states. It is a planning/evidence ledger only, not a tool contract.

@@ -14,8 +14,8 @@ const workDir = path.join(artifactsDir, "work");
 const packRunDir = path.join(workDir, "pack-run");
 const summaryPath = path.join(artifactsDir, "release-acceptance-summary.json");
 const args = new Set(process.argv.slice(2));
-const runCurrentSmoke = args.has("--smoke") || args.has("--current-smoke") || process.env.PI_BROWSER_RELEASE_ACCEPTANCE_SMOKE === "1";
-const runRollbackSmoke = args.has("--rollback-smoke") || process.env.PI_BROWSER_RELEASE_ROLLBACK_SMOKE === "1";
+const runCurrentSmoke = args.has("--smoke") || args.has("--current-smoke") || process.env.PI_BROWSER_RELEASE_ACCEPTANCE_SMOKE === "1" || process.env.PI_BROWSER_CI_RELEASE_SMOKE === "1";
+const runRollbackSmoke = args.has("--rollback-smoke") || process.env.PI_BROWSER_RELEASE_ROLLBACK_SMOKE === "1" || process.env.PI_BROWSER_CI_ROLLBACK_SMOKE === "1";
 const keepTempOnFailure = args.has("--keep-temp-on-failure") || process.env.PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE === "1";
 
 function run(command, argv, options = {}) {
@@ -128,6 +128,7 @@ async function runIsolatedSmoke(label, extensionDir, minimal) {
 		PI_BROWSER_SMOKE_EXTENSION_DIR: extensionDir,
 		PI_BROWSER_SMOKE_RESULT_PATH: resultPath,
 		PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE: keepTempOnFailure ? "1" : "",
+		PI_BROWSER_CI_BROWSER_SMOKE: process.env.PI_BROWSER_CI_BROWSER_SMOKE === "1" ? "1" : "",
 		...(minimal ? { PI_BROWSER_SMOKE_MINIMAL: "1" } : {}),
 	};
 	const result = runNpmSync(["run", "smoke:browser:isolated"], { cwd: root, env });

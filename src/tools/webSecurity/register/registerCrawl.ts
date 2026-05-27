@@ -24,7 +24,7 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			knownFiles: Type.Optional(Type.String({ description: "none | robotstxt | sitemapxml | all. Adds common known-file seeds." })),
 			extractJs: Type.Optional(Type.Boolean({ description: "Extract JS endpoint hints and crawl same-origin script files; default true." })),
 			activeGraphqlIntrospection: Type.Optional(Type.Boolean({ description: "Actively POST a standard GraphQL introspection query only to URLs/content-types that look like GraphQL; default true. Set false for passive-only GraphQL parsing." })),
-			...browserCookieBindingParams("Attach browser cookies for crawled URLs using the connected browser session; default false.", { includeCookieMode: false }),
+			...browserCookieBindingParams("Inject browser cookies for crawled URLs into the outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<CrawlToolParams>(params), ctx, {
@@ -36,7 +36,7 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				run: runBrowserCrawl,
 				details: (result) => ({ pageCount: result.pageCount, endpointCount: result.endpointCount }),
 				distill: summarizeBrowserCrawlData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

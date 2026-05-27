@@ -41,7 +41,7 @@ export function registerFuzzParamsTool({ pi, ensureStarted }: ToolRegistrarConte
 			filterBodyBytes: Type.Optional(Type.Any({ description: "Optional body byte-size filter list/string for noisy baselines." })),
 			...maxCasesParam("Maximum location*param*operation*value cases; default 500, hard-capped at 5000."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
-			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzParamsToolParams>(params), ctx, {
@@ -54,7 +54,7 @@ export function registerFuzzParamsTool({ pi, ensureStarted }: ToolRegistrarConte
 				run: runFuzzParams,
 				details: (result) => ({ caseCount: result.caseCount, matchedCount: result.matchedCount }),
 				distill: summarizeFuzzParamsData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

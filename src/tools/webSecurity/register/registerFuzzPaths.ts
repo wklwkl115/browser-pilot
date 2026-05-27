@@ -38,7 +38,7 @@ export function registerFuzzPathsTool({ pi, ensureStarted }: ToolRegistrarContex
 			baselineStrategy: Type.Optional(Type.String({ description: "Baseline comparison mode: exact | cluster | auto. Default auto." })),
 			...maxCandidatesParam("Maximum candidates per base after extension/slash expansion; default 500, hard-capped at 5000."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
-			...browserCookieBindingParams("Attach browser cookies for fuzz requests using the connected browser session; default false.", { includeCookieMode: false }),
+			...browserCookieBindingParams("Inject browser cookies for fuzz requests into the outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<FuzzPathsToolParams>(params), ctx, {
@@ -50,7 +50,7 @@ export function registerFuzzPathsTool({ pi, ensureStarted }: ToolRegistrarContex
 				run: runFuzzPaths,
 				details: (result) => ({ requestCount: result.requestCount, matchedCount: result.matchedCount }),
 				distill: summarizeFuzzPathsData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

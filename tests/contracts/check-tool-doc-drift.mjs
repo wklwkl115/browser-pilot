@@ -12,7 +12,17 @@ function resolveReadPath(relOrAbs) {
 }
 const read = (relOrAbs) => readFileSync(resolveReadPath(relOrAbs), "utf8");
 const toolDir = path.join(root, "src", "tools");
-const toolSource = readdirSync(toolDir).filter((file) => file.endsWith(".ts")).map((file) => read(path.join(toolDir, file))).join("\n");
+function readTypeScriptSources(rel) {
+	const dir = path.join(root, rel);
+	return readdirSync(dir, { withFileTypes: true })
+		.flatMap((entry) => {
+			const child = path.join(rel, entry.name);
+			if (entry.isDirectory()) return [readTypeScriptSources(child)];
+			return entry.name.endsWith(".ts") ? [read(child)] : [];
+		})
+		.join("\n");
+}
+const toolSource = readTypeScriptSources("src/tools");
 const registered = Array.from(new Set(Array.from(toolSource.matchAll(/name:\s*"(browser_[^"]+)"/g)).map((match) => match[1]))).sort();
 assert(registered.length >= 15, "tool drift: expected registered browser tools");
 

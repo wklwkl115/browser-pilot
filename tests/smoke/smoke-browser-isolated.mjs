@@ -9,6 +9,7 @@ const outDir = path.resolve(root, ".pi", "browser-artifacts");
 const tempRoot = path.resolve(root, ".pi", "temp-profiles");
 const extensionSource = path.resolve(process.env.PI_BROWSER_SMOKE_EXTENSION_DIR || path.join(root, "bridge", "pi_browser_bridge"));
 const resultPath = path.resolve(process.env.PI_BROWSER_SMOKE_RESULT_PATH || path.join(outDir, "smoke-browser-isolated-results.json"));
+const ciBrowserSmoke = process.env.PI_BROWSER_CI_BROWSER_SMOKE === "1";
 const chromeCandidates = [
 	process.env.PI_BROWSER_SMOKE_CHROME,
 	process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
@@ -111,7 +112,7 @@ try {
 	chrome.stdout.on("data", (chunk) => { chromeStdout += chunk.toString(); });
 	chrome.stderr.on("data", (chunk) => { chromeStderr += chunk.toString(); });
 	const smoke = await smokeRun.done;
-	result = { ok: smoke.code === 0, bridgePort, fixturePort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, chromeProfileDir, chromeExtensionDir, smokeCode: smoke.code, smokeSignal: smoke.signal, stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
+	result = { ok: smoke.code === 0, bridgePort, fixturePort, chrome: chromeExe, profileDir, extensionDir, extensionSource, resultPath, chromeProfileDir, chromeExtensionDir, ciBrowserSmoke, smokeCode: smoke.code, smokeSignal: smoke.signal, stdoutTail: smoke.stdout.slice(-4000), stderrTail: smoke.stderr.slice(-4000), chromeStdoutTail: chromeStdout.slice(-4000), chromeStderrTail: chromeStderr.slice(-4000) };
 	process.exitCode = smoke.code === 0 ? 0 : 1;
 } catch (error) {
 	result = { ...result, ok: false, error: error instanceof Error ? error.message : String(error) };

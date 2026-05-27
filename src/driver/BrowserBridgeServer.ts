@@ -8,10 +8,12 @@ import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests";
 import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry";
 import { BrowserLeaseRegistry } from "./BrowserLeaseRegistry";
+import { BrowserObservationSnapshotRegistry } from "./BrowserObservationSnapshotRegistry";
+import { BrowserOperationRegistry } from "./BrowserOperationRegistry";
 import { BrowserSessionRegistry } from "./BrowserSessionRegistry";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter";
 import { bridgeResultFailure, delay, normalizePort, recordValue, toTabId } from "./bridgeUtils";
-import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo, ExecuteOptions } from "./types";
+import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserToolCapabilityProfileInfo, BrowserUiLockInfo, ExecuteOptions } from "./types";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 
 type IncomingMessage = {
@@ -40,7 +42,16 @@ export class BrowserBridgeServer {
 	private readonly leases: BrowserLeaseRegistry;
 	private readonly tabs: BrowserTabSessionRouter;
 	private readonly pendingRequests: BrowserBridgePendingRequests;
+	private readonly operations: BrowserOperationRegistry;
+	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
+	private capabilityProfile: BrowserToolCapabilityProfileInfo = {
+		name: "security",
+		source: "default",
+		envVar: "PI_BROWSER_TOOL_PROFILE",
+		securityToolsEnabled: true,
+		enableHint: "PI_BROWSER_TOOL_PROFILE=security then /reload",
+	};
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -56,6 +67,8 @@ export class BrowserBridgeServer {
 			(tabId, timeoutMs, acked, target) => this.timeoutDiagnostics(tabId, timeoutMs, acked, target),
 			(target) => this.tabs.resolvedTarget(target),
 		);
+		this.operations = new BrowserOperationRegistry();
+		this.observationSnapshots = new BrowserObservationSnapshotRegistry();
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
 	}
 
@@ -78,6 +91,8 @@ export class BrowserBridgeServer {
 		this.queues.clear();
 		this.leases.clear();
 		this.tabs.clear();
+		this.operations.clear();
+		this.observationSnapshots.clear();
 		await this.httpEndpoint.stop();
 	}
 
@@ -100,6 +115,8 @@ export class BrowserBridgeServer {
 			leases: this.leases.listTabLeases(),
 			uiLock: this.leases.uiLockInfo(),
 			queues: this.queues.snapshot(),
+			operations: this.operations.snapshot(),
+			capabilityProfile: this.capabilityProfileInfo(),
 			pending: this.pendingRequests.snapshot(),
 		};
 	}
@@ -244,6 +261,49 @@ export class BrowserBridgeServer {
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.getTabs() });
 		return this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? this.commandAccessMode(validation.command) });
+	}
+
+	setCapabilityProfile(profile: BrowserToolCapabilityProfileInfo): void {
+		this.capabilityProfile = { ...profile };
+	}
+
+	capabilityProfileInfo(): BrowserToolCapabilityProfileInfo {
+		return { ...this.capabilityProfile };
+	}
+
+	beginOperation(operation: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): BrowserActiveOperationInfo {
+		return this.operations.begin(operation);
+	}
+
+	updateOperation(operationId: string, patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>): BrowserActiveOperationInfo | undefined {
+		return this.operations.update(operationId, patch);
+	}
+
+	finishOperation(operationId: string): BrowserActiveOperationInfo | undefined {
+		return this.operations.finish(operationId);
+	}
+
+	queueDepth(browserSessionId: string | undefined, tabId: number | undefined): number | undefined {
+		if (!browserSessionId || !tabId) return undefined;
+		return this.queues.depth(browserSessionId, tabId);
+	}
+
+	leaseOwnerHash(browserSessionId: string | undefined, tabId: number | undefined): string | undefined {
+		if (!browserSessionId || !tabId) return undefined;
+		const lease = this.leases.listTabLeases().find((item) => item.browserSessionId === browserSessionId && item.tabId === tabId);
+		return lease?.browserSessionId;
+	}
+
+	createObservationSnapshot(snapshot: Omit<BrowserObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): BrowserObservationSnapshotInfo {
+		return this.observationSnapshots.create(snapshot);
+	}
+
+	getObservationSnapshot(snapshotId: string): BrowserObservationSnapshotInfo | undefined {
+		return this.observationSnapshots.get(snapshotId, this.snapshot());
+	}
+
+	listObservationSnapshots(): BrowserObservationSnapshotInfo[] {
+		return this.observationSnapshots.list(this.snapshot());
 	}
 
 	formatError(error: unknown): string {

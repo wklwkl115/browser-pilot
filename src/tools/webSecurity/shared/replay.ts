@@ -286,17 +286,17 @@ export function extractReplayVariables(value: unknown, final: FetchStep): Record
 
 export async function sendReplayLikeRequest(request: ReplayRequest, options: NormalizedReplayOptions) {
 	const headers = { ...request.headers };
-	const browserCookie = options.bindBrowserSession === true ? await options.cookieProvider?.(request.url) : undefined;
-	if (browserCookie) {
+	const injectedBrowserCookie = options.bindBrowserSession === true ? await options.cookieProvider?.(request.url) : undefined;
+	if (injectedBrowserCookie) {
 		const currentCookie = headers.Cookie ?? headers.cookie;
-		if (options.cookieMode === "replace") setCookieHeader(headers, browserCookie);
-		else if (options.cookieMode !== "preserve") setCookieHeader(headers, mergeCookieHeaders(currentCookie, browserCookie));
-		else if (!currentCookie) setCookieHeader(headers, browserCookie);
+		if (options.cookieMode === "replace") setCookieHeader(headers, injectedBrowserCookie);
+		else if (options.cookieMode !== "preserve") setCookieHeader(headers, mergeCookieHeaders(currentCookie, injectedBrowserCookie));
+		else if (!currentCookie) setCookieHeader(headers, injectedBrowserCookie);
 	}
 	const bodyOmittedForMethod = (request.method === "GET" || request.method === "HEAD") && request.body !== undefined;
 	const sanitized = sanitizeFetchHeaders(headers);
 	const exchange = await fetchWithRedirects({ url: request.url, method: request.method, headers: sanitized.headers, body: bodyOmittedForMethod ? undefined : request.body }, options);
-	return { exchange, sanitized, bodyOmittedForMethod, cookiesBound: !!browserCookie };
+	return { exchange, sanitized, bodyOmittedForMethod, cookiesBound: !!injectedBrowserCookie };
 }
 
 export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {

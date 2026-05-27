@@ -20,7 +20,7 @@ assert(contentScript.includes("DROP_SELECTOR"), "browser_content must drop noisy
 assert(contentScript.includes("read-frog-translated") && contentScript.includes("immersive-translate"), "browser_content must drop translation plugin wrappers");
 assert(contentScript.includes("[content truncated]"), "browser_content must bound extracted markdown");
 assert(contentScript.includes("includeLinks"), "browser_content must support link-preserving markdown");
-assert(contentScript.includes("SELECTOR_NOT_FOUND") && contentScript.includes("INVALID_SELECTOR") && !contentScript.includes("throw new Error('browser_content selector not found"), "browser_content selector failures must return stable structured errors instead of thrown generic errors");
+assert(contentScript.includes("SELECTOR_NOT_FOUND") && contentScript.includes("INVALID_SELECTOR") && !contentScript.includes("throw new Error('browser_observe content selector not found"), "browser_observe content selector failures must return stable structured errors instead of thrown generic errors");
 assert(contentScript.includes("empty,"), "browser_content must expose empty extraction state instead of forcing a generic tool error");
 assert(!contentScript.includes("Readability"), "browser_content must not depend on Readability in page script");
 
@@ -57,19 +57,18 @@ assert(registerPickToolSource.includes("buildTimedOutPickResult") && registerPic
 const bridgeResultValidationSource = read("src/tools/bridgeResultValidation.ts");
 assert(bridgeResultValidationSource.includes("suppressErrorStack(error)"), "bridge ok:false errors must use non-throwing stack suppression");
 assert(!bridgeResultValidationSource.includes("delete error.stack"), "bridge ok:false errors must not use strict-mode delete on Error.stack");
-const registerContentToolSource = read("src/tools/registerContentTool.ts");
+const observeRunnerSource = read("src/tools/observeRunners.ts");
 const toolAdapterSource = read("src/tools/toolAdapter.ts");
 function usesTextDistillation(source) {
 	return source.includes("distilledTextResult") || (source.includes("textToolResult") && toolAdapterSource.includes("distilledTextResult"));
 }
-assert(usesTextDistillation(registerContentToolSource), "browser_content must use text distillation");
-assert(registerContentToolSource.includes("executeBrowserWaitWithSupervisor") && !registerContentToolSource.includes("server.sendCommand({ cmd: \"wait.navigateAndWait\""), "browser_content URL navigation must use the TS wait supervisor instead of direct bridge wait.navigateAndWait");
-assert(registerContentToolSource.includes("assertBridgeCommandSucceeded(navigation, \"wait.navigateAndWait\")"), "browser_content must fail when URL navigation returns ok:false instead of extracting the old page");
-assert(registerContentToolSource.includes("navigation: navigationData"), "browser_content must preserve wait supervisor navigation metadata in tool details");
-assert(registerContentToolSource.includes("MIN_CONTENT_TIMEOUT_MS = 100") && registerContentToolSource.includes("normalizeContentTimeoutMs(params.timeoutMs)"), "browser_content must explicitly validate tiny timeoutMs values instead of silently expanding them");
-assert(registerContentToolSource.includes("evaluatePageScriptDirect(server, script") && !registerContentToolSource.includes("server.executeJavaScript(script, { tabId: params.tabId, timeoutMs })") && !registerContentToolSource.includes("Math.max(timeoutMs"), "browser_content extraction must use the direct CDP value channel with the normalized user timeout");
-const registerScanToolSource = read("src/tools/registerScanTool.ts");
-assert(registerScanToolSource.includes("evaluatePageScriptDirect(server, scanScript") && !registerScanToolSource.includes("server.executeJavaScript(scanScript"), "browser_scan extraction must use the direct CDP value channel instead of exec.js smart serializer");
+assert(usesTextDistillation(observeRunnerSource), "browser_observe must use text distillation for observation text modes");
+assert(observeRunnerSource.includes("executeBrowserWaitWithSupervisor") && !observeRunnerSource.includes("server.sendCommand({ cmd: \"wait.navigateAndWait\""), "browser_observe content URL navigation must use the TS wait supervisor instead of direct bridge wait.navigateAndWait");
+assert(observeRunnerSource.includes("assertBridgeCommandSucceeded(navigation, \"wait.navigateAndWait\")"), "browser_observe content must fail when URL navigation returns ok:false instead of extracting the old page");
+assert(observeRunnerSource.includes("navigation: navigationData") || observeRunnerSource.includes("navigation: result.navigationData"), "browser_observe content must preserve wait supervisor navigation metadata in tool details");
+assert(observeRunnerSource.includes("MIN_CONTENT_TIMEOUT_MS = 100") && observeRunnerSource.includes("normalizeContentTimeoutMs(params.timeoutMs)"), "browser_observe content must explicitly validate tiny timeoutMs values instead of silently expanding them");
+assert(observeRunnerSource.includes("evaluatePageScriptDirect(server, script") && !observeRunnerSource.includes("server.executeJavaScript(script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs })") && !observeRunnerSource.includes("Math.max(timeoutMs"), "browser_observe content extraction must use the direct CDP value channel with the normalized user timeout");
+assert(observeRunnerSource.includes("evaluatePageScriptDirect(server, scanScript") && !observeRunnerSource.includes("server.executeJavaScript(scanScript"), "browser_observe scan extraction must use the direct CDP value channel instead of exec.js smart serializer");
 const pageScriptEvaluationSource = read("src/tools/pageScriptEvaluation.ts");
 assert(pageScriptEvaluationSource.includes('cmd: "cdp"') && pageScriptEvaluationSource.includes('method: "Runtime.evaluate"') && pageScriptEvaluationSource.includes("returnByValue: true"), "direct page script evaluation must use CDP Runtime.evaluate returnByValue");
 assert.doesNotThrow(() => assertBridgeCommandSucceeded({ data: { waitId: "ok" } }, "wait.navigateAndWait"), "bridge success data must pass");
@@ -124,7 +123,7 @@ try {
 	const contentPath = path.join(tmp, ".pi", "browser-artifacts", "content-large.json");
 	const contentDirect = await evaluatePageScriptDirect(fakeServer, "content-script", { tabId: 1, timeoutMs: 1_000, name: "content_extract" });
 	await distilledTextResult(contentDirect.data.markdown, {
-		toolName: "browser_content",
+		toolName: "browser_observe",
 		command: "content",
 		maxChars: 8_000,
 		ctx: { cwd: tmp },
@@ -141,7 +140,7 @@ try {
 	const scanPath = path.join(tmp, ".pi", "browser-artifacts", "scan-large.json");
 	const scanDirect = await evaluatePageScriptDirect(fakeServer, "scan-script", { tabId: 1, timeoutMs: 1_000, name: "scan_extract" });
 	await distilledTextResult(scanDirect.data.content, {
-		toolName: "browser_scan",
+		toolName: "browser_observe",
 		command: "scan",
 		maxChars: 8_000,
 		ctx: { cwd: tmp },

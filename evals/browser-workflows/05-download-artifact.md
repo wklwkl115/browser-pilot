@@ -13,7 +13,7 @@ Download a local fixture file and inspect the resulting artifact metadata.
 ## Allowed starting tools
 
 - `browser_tabs`
-- `browser_scan`
+- `browser_observe mode=scan`
 - `browser_download`
 - `browser_artifact`
 

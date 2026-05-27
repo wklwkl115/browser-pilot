@@ -74,7 +74,7 @@ try {
 	const contentOutputPath = path.join(tmp, "content.json");
 	const contentArtifact = { ok: true, data: { markdown: "# T", url: "https://example.test", meta: { target: "main" } } };
 	const contentResult = await distilledTextResult("# T", {
-		toolName: "browser_content",
+		toolName: "browser_observe",
 		command: "content",
 		detailLevel: "summary",
 		maxChars: 1_500,
@@ -84,7 +84,7 @@ try {
 		summary: { url: "https://example.test", markdownChars: 3 },
 		artifactValue: contentArtifact,
 	});
-	assert.ok(contentResult.content[0].text.includes('"tool": "browser_content"'), "check-token distilledTextResult.outputPath: text tools must still return the compact envelope");
+	assert.ok(contentResult.content[0].text.includes('"tool": "browser_observe"'), "check-token distilledTextResult.outputPath: text tools must still return the compact envelope");
 	assert.deepEqual(JSON.parse(readFileSync(contentOutputPath, "utf8")), contentArtifact, "check-token distilledTextResult.outputPath: text tool artifact must preserve structured artifactValue");
 
 	const sensitiveOutputPath = path.join(tmp, "sensitive-network.json");

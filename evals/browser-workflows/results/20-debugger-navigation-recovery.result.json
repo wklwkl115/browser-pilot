@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "evalId": "20-debugger-navigation-recovery",
+  "status": "passed",
+  "toolCallCount": 4,
+  "firstWrongToolChoice": null,
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "browser_execute command mode enabled Debugger on the local navigation fixture.",
+      "After clicking the same-origin navigation link, browser_wait confirmed the new page load completed.",
+      "A follow-up persistent_cdp Runtime.evaluate still returned href=http://127.0.0.1:8810/debugger-navigation.html?page=b and state=page-b."
+    ],
+    "artifacts": [
+      ".pi/browser-artifacts/eval20-debugger-enable.json",
+      ".pi/browser-artifacts/eval20-runtime-evaluate-after-nav.json"
+    ],
+    "diagnostics": [
+      "Navigation recovery worked with existing canonical tools for this same-origin fixture.",
+      "This eval did not justify a broader public debugger tool.",
+      "Remaining lifecycle risk stays narrower: scriptParsed/page-authored provenance and pause/breakpoint/step workflow."
+    ]
+  },
+  "notes": [
+    "The fixture showed that navigation/reload recovery is not the strongest remaining blocker for current debugger evidence work.",
+    "The stronger unresolved gaps remain authored script provenance and paused-state lifecycle control."
+  ]
+}

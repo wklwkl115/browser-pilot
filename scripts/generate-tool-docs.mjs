@@ -11,6 +11,7 @@ const SHARED_TOOL_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputP
 const SHARED_WEB_SECURITY_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars", "maxBodyBytes"];
 const NATIVE_ACTION_PARAMS = ["action", "params", "browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
 const SHARED_TRANSFER_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
+const SECURITY_PROFILE_TOOLS = new Set(["browser_recon_probe", "browser_crawl", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check", "browser_callback_oast", "browser_cookie_analyze", "browser_fuzz_params", "browser_http_replay"]);
 
 async function read(rel) {
 	return await readFile(path.join(root, rel), "utf8");
@@ -328,9 +329,10 @@ async function generate() {
 		`- Native command source: \`bridge/native_command_schema.json\` (${schema.name} ${schema.version}).\n` +
 		`- Error taxonomy source: \`bridge/native_command_schema.json\` plus local \`src/**\` and \`bridge_src/**\` structured error declarations.\n\n` +
 		`## Callable browser tools\n\n` +
-		renderTable(["Tool", "Label", "Parameters", "Actions / command surface", "Artifact behavior", "Source"], tools.map((tool) => [
+		renderTable(["Tool", "Label", "Profile", "Parameters", "Actions / command surface", "Artifact behavior", "Source"], tools.map((tool) => [
 			`\`${tool.name}\``,
 			tool.label,
+			SECURITY_PROFILE_TOOLS.has(tool.name) ? "security (default profile; set PI_BROWSER_TOOL_PROFILE=core to hide)" : "always-on",
 			tool.parameters.map((item) => `\`${item}\``).join(", "),
 			tool.actions || tool.promptSnippet || tool.description,
 			tool.artifact,

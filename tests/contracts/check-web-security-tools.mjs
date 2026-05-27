@@ -73,6 +73,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 		diagnostics: await readFile(new URL("../../src/tools/webSecurity/shared/diagnostics.ts", import.meta.url), "utf8"),
 		core: await readFile(new URL("../../src/tools/webSecurityCore.ts", import.meta.url), "utf8"),
 		toolsIndex: await readFile(new URL("../../src/tools/registerTools.ts", import.meta.url), "utf8"),
+		toolRegistry: await readFile(new URL("../../src/tools/toolRegistry.ts", import.meta.url), "utf8"),
 	};
 	const registerSources = await Promise.all(registerFiles.map(async (file) => [file, await readFile(new URL(`../../src/tools/webSecurity/register/${file}`, import.meta.url), "utf8")]));
 	const browserNativeDir = new URL("../../src/tools/webSecurity/browserNative/", import.meta.url);
@@ -83,7 +84,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 	const sharedFiles = (await readdir(sharedDir)).filter((file) => file.endsWith(".ts")).sort();
 	assert.deepEqual(bridgeFiles, ["nucleiBridge.ts", "sqlmapBridge.ts"], "webSecurity bridges layer must contain only mature-engine adapters");
 	assert.ok(browserNativeFiles.includes("crawl.ts") && browserNativeFiles.includes("httpReplay.ts") && browserNativeFiles.includes("cookieAnalyze.ts") && browserNativeFiles.includes("callbackOast.ts"), "webSecurity browserNative layer must own Pi-native Web execution modules");
-	assert.ok(sharedFiles.includes("http.ts") && sharedFiles.includes("replay.ts") && sharedFiles.includes("artifacts.ts") && sharedFiles.includes("types.ts"), "webSecurity shared layer must own HTTP/replay/artifact/type boundaries");
+	assert.ok(sharedFiles.includes("http.ts") && sharedFiles.includes("replay.ts") && sharedFiles.includes("artifacts.ts") && sharedFiles.includes("types.ts") && sharedFiles.includes("matureBridge.ts"), "webSecurity shared layer must own HTTP/replay/artifact/type/mature-bridge boundaries");
 
 	for (const [file, text] of registerSources) {
 		assert.ok(text.includes("executeWebSecurityToolShell(ensureStarted"), `${file} must execute through the shared WebSecurity shell`);
@@ -96,17 +97,23 @@ async function checkWebSecurityDomainBoundaryContract() {
 	assert.equal(/pi\.registerTool\(/.test(sourceFiles.core), false, "webSecurityCore must not register tools");
 	assert.equal(/BrowserBridgeServer|ensureStarted|server\.sendCommand|bridge_src|chrome\./.test(sourceFiles.core), false, "webSecurityCore must not depend on base browser driver/runtime");
 	assert.ok(sourceFiles.core.includes("./webSecurity/browserNative/") && sourceFiles.core.includes("./webSecurity/bridges/") && sourceFiles.core.includes("./webSecurity/shared/"), "webSecurityCore must stay a compatibility export layer over WebSecurity subdomains");
-	assert.equal((sourceFiles.toolsIndex.match(/register[A-Za-z]+Tool\(context\);/g) || []).filter((line) => /Recon|Crawl|Fuzz|Sqli|Sqlmap|Nuclei|Template|Callback|Cookie|Http/.test(line)).length, 12, "registerTools must compose exactly the 12 explicit WebSecurity tool registrations");
+	assert.ok(sourceFiles.toolsIndex.includes("resolveBrowserToolRegistrars") && !sourceFiles.toolsIndex.includes("registerReconProbeTool(context);"), "registerTools must consume the declarative registry instead of hard-coded WebSecurity registrations");
+	const webSecurityRegistryBlock = /export const WEB_SECURITY_TOOL_REGISTRARS:[\s\S]*?= \[([\s\S]*?)\];/.exec(sourceFiles.toolRegistry)?.[1] || "";
+	assert.equal((webSecurityRegistryBlock.match(/register[A-Za-z]+Tool/g) || []).filter((line) => /Recon|Crawl|Fuzz|Sqli|Sqlmap|Nuclei|Template|Callback|Cookie|Http/.test(line)).length, 12, "toolRegistry must compose exactly the 12 explicit WebSecurity tool registrations");
+	assert.ok(sourceFiles.toolRegistry.includes("WEB_SECURITY_TOOL_REGISTRARS") && sourceFiles.toolRegistry.includes("resolveBrowserToolRegistrars"), "toolRegistry must expose the WebSecurity registrar group and resolver");
 	assert.equal(/from "\.\/webSecurity\//.test(sourceFiles.toolsIndex), false, "registerTools must not import WebSecurity implementation layers directly");
+	assert.equal(/from "\.\/webSecurity\//.test(sourceFiles.toolRegistry), false, "toolRegistry must not import WebSecurity implementation layers directly");
 
 	for (const file of browserNativeFiles) {
 		const text = await readFile(new URL(`../../src/tools/webSecurity/browserNative/${file}`, import.meta.url), "utf8");
 		assert.equal(/pi\.registerTool|ToolRegistrarContext|BrowserBridgeServer|server\.sendCommand|bridge_src|chrome\./.test(text), false, `${file} must not depend on tool registration or base browser runtime`);
 		if (file !== "callbackOastWorker.mjs") assert.ok(text.includes("../shared/") || file === "callbackOast.ts", `${file} must consume shared WebSecurity adapters for HTTP/replay/types`);
 	}
+	const matureBridgeShared = await readFile(new URL("../../src/tools/webSecurity/shared/matureBridge.ts", import.meta.url), "utf8");
+	assert.ok(matureBridgeShared.includes("spawnSync") && matureBridgeShared.includes("MATURE_BRIDGE_LAUNCHER_NOT_FOUND") && matureBridgeShared.includes("MATURE_BRIDGE_PROCESS_TIMEOUT"), "matureBridge shared helper must own launcher probe/process diagnostics and structured codes");
 	for (const file of bridgeFiles) {
 		const text = await readFile(new URL(`../../src/tools/webSecurity/bridges/${file}`, import.meta.url), "utf8");
-		assert.ok(text.includes("spawnSync") && text.includes("describeTextArtifact") && text.includes("normalizeReplayOptions"), `${file} must use bounded external process bridge, replay inputs, and artifacts`);
+		assert.ok(text.includes("describeTextArtifact") && text.includes("normalizeReplayOptions") && text.includes("detectMatureBridgeLauncher") && text.includes("assertMatureBridgeProcessResult"), `${file} must use replay inputs, artifacts, and the shared mature-bridge diagnostics helper`);
 		assert.equal(/pi\.registerTool|ToolRegistrarContext|BrowserBridgeServer|server\.sendCommand|bridge_src|chrome\./.test(text), false, `${file} must not depend on tool registration or base browser runtime`);
 		assert.ok(text.includes("timeout: normalized.processTimeoutMs") && text.includes("maxBuffer: 16 * 1024 * 1024"), `${file} must bound external process timeout and output buffer`);
 		assert.ok(text.includes("requestArtifact") && text.includes("stdoutArtifact") && text.includes("stderrArtifact"), `${file} must expose request/stdout/stderr artifact descriptors`);
@@ -1041,6 +1048,14 @@ console.log(requestText.includes("Cookie:") ? "request cookie observed" : "reque
 	assert.equal(sqlmapSummary.artifactCount, 3, "sqlmap bridge summary should expose artifact count");
 	assert.equal(JSON.stringify(sqlmapSummary).includes("stdout.txt"), true, "sqlmap bridge summary should expose artifact paths");
 	assert.equal(JSON.stringify(sqlmapSummary).includes("session=secret"), false, "sqlmap bridge summary must redact sensitive preview text");
+	await assert.rejects(() => runSqlmapBridge({ sqlmapPath: process.execPath, sqlmapArgs: [fakeSqlmapPath] }), (error) => {
+		assert.equal(error.code, "MATURE_BRIDGE_TARGET_REQUIRED", "sqlmap bridge should fail early without explicit target input");
+		return true;
+	});
+	await assert.rejects(() => runSqlmapBridge({ url: base, sqlmapPath: "__missing_sqlmap__" }), (error) => {
+		assert.equal(error.code, "MATURE_BRIDGE_LAUNCHER_NOT_FOUND", "sqlmap bridge should expose structured launcher-not-found diagnostics");
+		return true;
+	});
 
 	const fakeNucleiPath = ".pi/browser-artifacts/fake-nuclei-fixture.mjs";
 	const fakeNucleiTemplatePath = ".pi/browser-artifacts/fake-nuclei-template.yaml";
@@ -1097,6 +1112,18 @@ console.error(requestText.includes("sid=abc") ? "browser cookie observed" : "bro
 	assert.equal(nucleiSummary.artifactCount, 3, "nuclei bridge summary should expose artifact count");
 	assert.equal(JSON.stringify(nucleiSummary).includes("stderr.txt"), true, "nuclei bridge summary should expose artifact paths");
 	assert.equal(JSON.stringify(nucleiSummary).includes("session=secret"), false, "nuclei bridge summary must redact sensitive preview text");
+	await assert.rejects(() => runNucleiBridge({ url: base }), (error) => {
+		assert.equal(error.code, "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED", "nuclei bridge should fail early when template selectors are missing");
+		return true;
+	});
+	await assert.rejects(() => runNucleiBridge({ templatePaths: [fakeNucleiTemplatePath] }), (error) => {
+		assert.equal(error.code, "MATURE_BRIDGE_TARGET_REQUIRED", "nuclei bridge should fail early without explicit target input");
+		return true;
+	});
+	await assert.rejects(() => runNucleiBridge({ url: base, templatePaths: [fakeNucleiTemplatePath], nucleiPath: "__missing_nuclei__" }), (error) => {
+		assert.equal(error.code, "MATURE_BRIDGE_LAUNCHER_NOT_FOUND", "nuclei bridge should expose structured launcher-not-found diagnostics");
+		return true;
+	});
 
 	const templateCheck = await runTemplateCheck({ url: base, templateIds: ["exposure", "openapi"], maxTemplates: 10, maxBodyBytes: 64_000 });
 	assert.equal(templateCheck.ok, true, "template check should complete fixture");

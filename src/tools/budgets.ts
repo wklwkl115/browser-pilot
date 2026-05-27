@@ -1,8 +1,8 @@
 export const TOOL_RESULT_BUDGETS = {
+	browser_command: 50_000,
 	browser_execute: 50_000,
-	browser_scan: 35_000,
+	browser_observe: 35_000,
 	browser_pick: 12_000,
-	browser_content: 20_000,
 	browser_upload: 12_000,
 	browser_download: 12_000,
 	browser_wait: 50_000,
@@ -10,7 +10,6 @@ export const TOOL_RESULT_BUDGETS = {
 	browser_hook: 50_000,
 	browser_frame: 50_000,
 	browser_evidence: 12_000,
-	browser_html: 20_000,
 	browser_screenshot: 20_000,
 	browser_artifact: 8_000,
 	browser_recon_probe: 12_000,

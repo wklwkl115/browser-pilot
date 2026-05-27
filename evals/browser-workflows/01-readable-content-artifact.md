@@ -13,15 +13,15 @@ Open a local article fixture, extract readable content, and cite an artifact pat
 ## Allowed starting tools
 
 - `browser_tabs`
-- `browser_content`
-- `browser_html`
+- `browser_observe mode=content`
+- `browser_observe mode=html`
 - `browser_artifact`
 
 ## Expected tool sequence
 
 1. Create or select a tab for the local fixture.
-2. Run `browser_content` with an explicit `tabId` or URL.
-3. If extraction is weak, run `browser_html` on an article/main selector.
+2. Run `browser_observe mode=content` with an explicit `tabId` or URL.
+3. If extraction is weak, run `browser_observe mode=html` on an article/main selector.
 4. Read the artifact path with `browser_artifact` only if the summary is insufficient.
 
 ## Success criteria
@@ -39,7 +39,7 @@ Open a local article fixture, extract readable content, and cite an artifact pat
 ## Recovery checks
 
 - Expected failure mode: automatic readable extraction selects navigation or wrapper text.
-- Required recovery path: use `browser_html` with a narrower selector before retrying content extraction.
+- Required recovery path: use `browser_observe mode=html` with a narrower selector before retrying content extraction.
 
 ## Metrics
 

@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "bundle.js",
+  "sources": ["src/pi-jshook-fixture.js"],
+  "sourcesContent": ["export function piJshookFixtureMessage() {\n  return 'source-map-fixture-value';\n}\n\ndocument.getElementById('source-map-status').textContent = piJshookFixtureMessage();\n"],
+  "names": ["piJshookFixtureMessage", "document", "getElementById", "textContent"],
+  "mappings": "AAAA"
+}

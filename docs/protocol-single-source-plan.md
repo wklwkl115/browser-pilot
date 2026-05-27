@@ -3,7 +3,7 @@
 ## 决策
 
 - 单源继续使用 `bridge/native_command_schema.json`，不引入新的 IDL 文件或外部 schema 编译器。
-- 本轮只迁移 wait/network/transfer 代表域与错误码表；其它 hook/frame/html/screenshot/evidence 后续按域迁移。
+- wait/network/transfer 已先落地；hook/frame/html/screenshot/evidence 的 tool metadata 消费已并入当前生成链。
 - 外部 callable tool 名称、参数、summary/saved envelope、bridge command 名称与错误码不迁移、不重命名。
 
 ## 单源结构
@@ -24,7 +24,7 @@
 - `bridge/pi_browser_bridge/native_command_schema.json`：浏览器扩展随包 schema 副本。
 - `bridge_src/service_worker/protocol.ts`：MV3 runtime 内嵌 protocol schema、canonical map 和 validator。
 - `src/protocol/nativeProtocol.ts`：Node driver/tool 侧内嵌 protocol schema、validator 和 command list。
-- `src/protocol/nativeActionMetadata.ts`：wait/network action alias 与 transfer tool metadata。
+- `src/protocol/nativeActionMetadata.ts`：wait/network/hook/frame action alias、html/screenshot/evidence command tool metadata 与 transfer tool metadata。
 - `src/protocol/nativeErrorCodes.ts`：错误码 taxonomy 表。
 - `docs/generated/native-protocol.generated.md`：native command、tool metadata、错误码、README/skill 文档片段。
 
@@ -34,13 +34,13 @@
 
 - 人工编辑：`bridge/native_command_schema.json`、领域实现代码、tool 注册的说明文案。
 - 禁止人工编辑：`bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts`、`docs/generated/native-protocol.generated.md`。
-- 工具注册层只消费生成 metadata；不在 `actionCommands.ts` 或 transfer 工具里重复 wait/network/transfer command 字符串映射。
+- 工具注册层只消费生成 metadata；不在 `actionCommands.ts`、observe/evidence/screenshot/transfer 工具里重复 wait/network/hook/frame/html/screenshot/evidence/transfer command 字符串映射。
 
 ## 兼容策略
 
 - command 名、tool 名、参数名和错误码保持原值。
 - `hook.clear` / `hook.ping` 等 alias 继续通过 schema `aliases` 解析。
-- wait/network/transfer 先读生成 metadata，但执行路径、timeout、artifact、summary 仍保留现有实现。
+- wait/network/hook/frame/html/screenshot/evidence/transfer 通过生成 metadata 驱动 command mapping 或 tool metadata；执行路径、timeout、artifact、summary 仍保留现有实现。
 - Node driver 与 MV3 runtime 使用同一 schema 文本生成 validator，避免一侧接受、一侧拒绝。
 
 ## 回滚方式
@@ -52,6 +52,6 @@
 
 ## 后续迁移顺序
 
-1. hook/frame/html/screenshot/evidence action metadata 继续迁入 `toolMetadata.nativeActionTools`。
-2. 将更多 tool 参数描述和 artifact 行为迁入 schema 后再更新 `scripts/generate-tool-docs.mjs`。
+1. 将更多 tool 参数描述和 artifact 行为迁入 schema 后再更新 `scripts/generate-tool-docs.mjs`。
+2. 评估是否把更多 native-command-backed tools 统一沉到 `toolMetadata.nativeCommandTools`。
 3. 错误码 details/retryability 细分留给 TODO 213 taxonomy 收口。

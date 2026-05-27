@@ -45,7 +45,7 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 			}),
 			...maxCasesParam("Maximum probe cases; default 100, hard-capped at 5000."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
-			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<SqliProbeToolParams>(params), ctx, {
@@ -58,7 +58,7 @@ export function registerSqliProbeTool({ pi, ensureStarted }: ToolRegistrarContex
 				run: runSqliProbe,
 				details: (result) => ({ requestCount: result.requestCount, matchedCount: result.matchedCount }),
 				distill: summarizeSqliProbeData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

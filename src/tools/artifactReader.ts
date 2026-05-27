@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params";
@@ -9,6 +9,10 @@ import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveVal
 export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
 export const MAX_ARTIFACT_SEARCH_REGEX_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
 export const MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
+export const MAX_MULTI_ARTIFACT_FILES = 100;
+export const MAX_MULTI_ARTIFACT_BYTES = 8 * 1024 * 1024;
+export const MAX_MULTI_ARTIFACT_MATCHES_PER_FILE = 20;
+export const MAX_MULTI_ARTIFACT_TOTAL_MATCHES = 100;
 
 export class ArtifactReaderError extends Error {
 	readonly code: string;
@@ -23,7 +27,10 @@ export class ArtifactReaderError extends Error {
 }
 
 export type BrowserArtifactParams = {
-	path: string;
+	path?: string;
+	paths?: string[];
+	root?: string;
+	glob?: string;
 	mode?: string;
 	offset?: number;
 	limit?: number;
@@ -35,13 +42,17 @@ export type BrowserArtifactParams = {
 	ignoreCase?: boolean;
 	contextLines?: number;
 	maxMatches?: number;
+	maxFiles?: number;
+	maxBytes?: number;
+	maxMatchesPerFile?: number;
+	maxTotalMatches?: number;
 	redact?: boolean;
 };
 
 type BrowserArtifactContext = { cwd?: string } | undefined;
 
 type TextSnippet = { lineStart: number; lineEnd: number; text: string; truncated: boolean };
-type SearchSnippet = TextSnippet & { matchLine: number };
+type SearchSnippet = TextSnippet & { matchLine: number; path?: string };
 type SampleSnippet = TextSnippet & { section: string; deduped?: boolean };
 
 export type BrowserArtifactReadResult =
@@ -55,15 +66,32 @@ function isInsideOrEqual(parent: string, child: string): boolean {
 	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function allowedArtifactRoot(ctx: BrowserArtifactContext): string {
+	const base = path.resolve(ctx?.cwd || process.cwd());
+	return path.resolve(base, ".pi", "browser-artifacts");
+}
+
 function resolveInputPath(ctx: BrowserArtifactContext, requested: unknown): string {
 	const text = String(requested || "").trim();
 	if (!text) throw new ArtifactReaderError("ARTIFACT_PATH_REQUIRED", "browser_artifact requires path");
 	if (path.isAbsolute(text)) return path.normalize(text);
 	const base = path.resolve(ctx?.cwd || process.cwd());
 	const target = path.resolve(base, text);
-	const allowed = path.resolve(base, ".pi", "browser-artifacts");
+	const allowed = allowedArtifactRoot(ctx);
 	if (!isInsideOrEqual(allowed, target)) {
 		throw new ArtifactReaderError("ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "Relative browser_artifact paths must stay under .pi/browser-artifacts; use an absolute path for explicit files", { requested: text, allowedRoot: allowed });
+	}
+	return target;
+}
+
+function resolveSearchRoot(ctx: BrowserArtifactContext, requested: unknown): string {
+	const allowed = allowedArtifactRoot(ctx);
+	const text = String(requested || "").trim();
+	if (!text) return allowed;
+	const base = path.resolve(ctx?.cwd || process.cwd());
+	const target = path.isAbsolute(text) ? path.normalize(text) : path.resolve(base, text);
+	if (!isInsideOrEqual(allowed, target)) {
+		throw new ArtifactReaderError("ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "browser_artifact root must stay under .pi/browser-artifacts", { requested: text, allowedRoot: allowed });
 	}
 	return target;
 }
@@ -385,12 +413,111 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 	};
 }
 
+function globToRegExp(pattern: string): RegExp {
+	const normalized = pattern.replace(/\\/g, "/");
+	let out = "^";
+	for (let i = 0; i < normalized.length; i += 1) {
+		const ch = normalized[i];
+		if (ch === "*") {
+			if (normalized[i + 1] === "*") {
+				out += ".*";
+				i += 1;
+			} else out += "[^/]*";
+			continue;
+		}
+		if (ch === "?") {
+			out += ".";
+			continue;
+		}
+		out += /[|\\{}()[\]^$+?.]/.test(ch) ? `\\${ch}` : ch;
+	}
+	out += "$";
+	return new RegExp(out, "i");
+}
+
+async function walkFiles(rootPath: string, out: string[]): Promise<void> {
+	for (const entry of await readdir(rootPath, { withFileTypes: true })) {
+		const child = path.join(rootPath, entry.name);
+		if (entry.isDirectory()) await walkFiles(child, out);
+		else out.push(child);
+	}
+}
+
+async function resolveSearchPaths(params: BrowserArtifactParams, ctx?: BrowserArtifactContext): Promise<string[]> {
+	if (Array.isArray(params.paths) && params.paths.length) return params.paths.map((item) => resolveInputPath(ctx, item));
+	const root = resolveSearchRoot(ctx, params.root);
+	const all: string[] = [];
+	await walkFiles(root, all);
+	const glob = String(params.glob || "**/*").trim() || "**/*";
+	const matcher = globToRegExp(glob);
+	return all.filter((file) => matcher.test(path.relative(root, file).replace(/\\/g, "/")));
+}
+
+async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: BrowserArtifactContext) {
+	const query = String(params.query || "");
+	if (!query) throw new ArtifactReaderError("ARTIFACT_SEARCH_QUERY_REQUIRED", "browser_artifact search mode requires query");
+	const files = await resolveSearchPaths(params, ctx);
+	const maxFiles = Math.min(MAX_MULTI_ARTIFACT_FILES, Math.max(1, Math.floor(Number(params.maxFiles || 20))));
+	const maxBytes = Math.min(MAX_ARTIFACT_READ_BYTES, Math.max(1, Math.floor(Number(params.maxBytes || MAX_MULTI_ARTIFACT_BYTES))));
+	const maxMatchesPerFile = Math.min(MAX_MULTI_ARTIFACT_MATCHES_PER_FILE, Math.max(1, Math.floor(Number(params.maxMatchesPerFile || params.maxMatches || 10))));
+	const maxTotalMatches = Math.min(MAX_MULTI_ARTIFACT_TOTAL_MATCHES, Math.max(1, Math.floor(Number(params.maxTotalMatches || 50))));
+	const selected = files.slice(0, maxFiles);
+	let consumedBytes = 0;
+	let totalMatches = 0;
+	let matchedFiles = 0;
+	let truncatedFiles = 0;
+	const snippets: SearchSnippet[] = [];
+	const perFileChars = Math.max(400, Math.floor(asPositiveInt(params.maxChars, 8_000) / Math.max(1, Math.min(selected.length, 4))));
+	for (const file of selected) {
+		const info = await stat(file);
+		if (consumedBytes + info.size > maxBytes) {
+			truncatedFiles += 1;
+			break;
+		}
+		consumedBytes += info.size;
+		const single = await searchText(file, info.size, { ...params, path: file, maxMatches: Math.min(maxMatchesPerFile, maxTotalMatches - totalMatches) }, perFileChars);
+		if (single.matches > 0) matchedFiles += 1;
+		for (const snippet of single.snippets) {
+			if (totalMatches >= maxTotalMatches) break;
+			snippets.push({ ...snippet, path: file });
+			totalMatches += 1;
+		}
+		if (single.matches >= maxMatchesPerFile) truncatedFiles += 1;
+		if (totalMatches >= maxTotalMatches) break;
+	}
+	return {
+		mode: "search" as const,
+		summary: {
+			root: Array.isArray(params.paths) && params.paths.length ? undefined : resolveSearchRoot(ctx, params.root),
+			glob: Array.isArray(params.paths) && params.paths.length ? undefined : String(params.glob || "**/*"),
+			fileCount: files.length,
+			searchedFiles: selected.length,
+			matchedFiles,
+			truncatedFiles,
+			bytes: consumedBytes,
+			limits: { maxFiles, maxBytes, maxMatchesPerFile, maxTotalMatches },
+		},
+		query,
+		regex: params.regex === true,
+		offset: Math.max(1, Math.floor(Number(params.offset || 1))),
+		matches: totalMatches,
+		nextOffset: null,
+		snippets,
+	};
+}
+
 export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: BrowserArtifactContext): Promise<BrowserArtifactReadResult> {
 	const mode = normalizeArtifactMode(params.mode);
-	const absPath = resolveInputPath(ctx, params.path);
-	const info = await stat(absPath);
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
 	const redact = params.redact !== false;
+	if (mode !== "search" && (Array.isArray(params.paths) || params.root !== undefined || params.glob !== undefined)) {
+		throw new ArtifactReaderError("ARTIFACT_MULTI_SEARCH_MODE_INVALID", "browser_artifact paths/root/glob are only valid for mode=search", { mode, root: params.root, glob: params.glob, pathCount: Array.isArray(params.paths) ? params.paths.length : 0 });
+	}
+	if (mode === "search" && ((Array.isArray(params.paths) && params.paths.length) || params.root !== undefined || params.glob !== undefined)) {
+		return redactArtifactResult(await searchMultipleArtifacts(params, ctx), redact);
+	}
+	const absPath = resolveInputPath(ctx, params.path);
+	const info = await stat(absPath);
 	let result: BrowserArtifactReadResult;
 	if (mode === "json") {
 		if (info.size > MAX_ARTIFACT_READ_BYTES) {

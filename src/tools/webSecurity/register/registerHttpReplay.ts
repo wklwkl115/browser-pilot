@@ -8,7 +8,7 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 	pi.registerTool({
 		name: "browser_http_replay",
 		label: "Browser HTTP Replay",
-		description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie binding.",
+		description: "Replay raw or structured HTTP requests with method/header/body mutation, HAR dependency graph evidence, artifact output, and optional browser-session cookie injection.",
 		promptSnippet: "Replay captured/raw HTTP requests, mutate method/headers/body, and store bounded response evidence artifacts.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_http_replay for focused bounded request variants from captured evidence; keep mutations narrow, preserve artifacts, and verify response deltas."],
 		parameters: Type.Object({
@@ -41,7 +41,7 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 				followRedirectsDescription: "Follow redirects; default false for replay determinism.",
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true.",
 			}),
-			...browserCookieBindingParams("Merge browser cookies for the request URL; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for the request URL; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<HttpReplayToolParams>(params), ctx, {
@@ -54,7 +54,7 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 				run: runHttpReplay,
 				details: (result) => ({ status: result.response?.status, stepCount: result.stepCount }),
 				distill: summarizeHttpReplayData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

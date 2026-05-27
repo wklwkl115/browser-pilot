@@ -14,14 +14,14 @@ Trigger a bounded wait timeout and verify that diagnostics support a concrete re
 
 - `browser_tabs`
 - `browser_wait`
-- `browser_html`
+- `browser_observe mode=html`
 - `browser_evidence`
 
 ## Expected tool sequence
 
 1. Run a bounded wait for an absent selector.
 2. Inspect the timeout diagnostics.
-3. Use `browser_html` or `browser_evidence` to understand current page state.
+3. Use `browser_observe mode=html` or `browser_evidence` to understand current page state.
 4. Retry only with a corrected selector or report the absent condition.
 
 ## Success criteria

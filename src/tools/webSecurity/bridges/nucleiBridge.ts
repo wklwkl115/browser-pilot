@@ -3,8 +3,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http";
-import { asString, isRecord, positiveInt, stringList } from "../shared/normalize";
+import { asString, isRecord, parseCommandArgs, positiveInt, stringList } from "../shared/normalize";
 import { describeTextArtifact } from "../shared/artifacts";
+import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge";
 import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay";
 import type { NucleiBridgeOptions, ReplayRequest } from "../shared/types";
 
@@ -78,9 +79,7 @@ function stringArray(value: unknown): string[] {
 }
 
 function normalizeCliArgs(value: unknown): string[] {
-	if (Array.isArray(value)) return value.map((item) => asString(item)?.trim() || "").filter(Boolean);
-	const single = asString(value)?.trim();
-	return single ? single.split(/\s+/).map((item) => item.trim()).filter(Boolean) : [];
+	return parseCommandArgs(value);
 }
 
 function nonNegativeInt(value: unknown, fallback: number): number {
@@ -95,7 +94,12 @@ async function normalizeNucleiBridgeOptions(options: NucleiBridgeOptions): Promi
 	const directTargets = hasRequestTarget || !hasDirectTargets
 		? []
 		: normalizeProbeTargets({ url: options.url, urls: options.urls, paths: options.paths, defaultScheme: options.defaultScheme });
-	if (!hasRequestTarget && !directTargets.length) throw new Error("browser_nuclei_bridge requires url, urls, rawRequest, request, requests, sequence, or HAR input");
+	if (!hasRequestTarget && !directTargets.length) {
+		throw matureBridgeToolError("MATURE_BRIDGE_TARGET_REQUIRED", "browser_nuclei_bridge requires url, urls, rawRequest, request, requests, sequence, or HAR input", {
+			bridgeName: "nuclei",
+			toolName: "browser_nuclei_bridge",
+		});
+	}
 	const templatePaths = splitPathSelectors(options.templatePaths);
 	const workflowPaths = splitPathSelectors(options.workflowPaths);
 	const templateIds = splitCsvWords(options.templateIds);
@@ -104,7 +108,10 @@ async function normalizeNucleiBridgeOptions(options: NucleiBridgeOptions): Promi
 	const severities = splitCsvWords(options.severities).map((item) => item.toLowerCase());
 	const authors = splitCsvWords(options.authors);
 	if (!templatePaths.length && !workflowPaths.length && !templateIds.length && !tags.length && !severities.length && !authors.length) {
-		throw new Error("browser_nuclei_bridge requires explicit templatePaths, workflowPaths, templateIds, tags, authors, or severities");
+		throw matureBridgeToolError("MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED", "browser_nuclei_bridge requires explicit templatePaths, workflowPaths, templateIds, tags, authors, or severities", {
+			bridgeName: "nuclei",
+			toolName: "browser_nuclei_bridge",
+		});
 	}
 	const artifactBaseDir = path.resolve(process.cwd(), ".pi", "browser-artifacts");
 	await mkdir(artifactBaseDir, { recursive: true });
@@ -135,18 +142,17 @@ async function normalizeNucleiBridgeOptions(options: NucleiBridgeOptions): Promi
 }
 
 function detectLauncher(options: NormalizedNucleiBridgeOptions): NucleiLauncher {
-	if (options.nucleiPath) return { command: options.nucleiPath, preArgs: options.nucleiArgs, source: "param" };
-	const envPath = asString(process.env.PI_NUCLEI_PATH)?.trim();
-	const envArgs = normalizeCliArgs(process.env.PI_NUCLEI_ARGS);
-	const candidates: NucleiLauncher[] = [];
-	if (envPath) candidates.push({ command: envPath, preArgs: envArgs, source: "env" });
-	candidates.push({ command: "nuclei", preArgs: [], source: "auto" });
-	for (const candidate of candidates) {
-		const probe = spawnSync(candidate.command, [...candidate.preArgs, "-version"], { encoding: "utf8", timeout: 5_000, maxBuffer: 256_000, windowsHide: true });
-		const combined = `${probe.stdout || ""}\n${probe.stderr || ""}`;
-		if (!probe.error && (probe.status === 0 || /nuclei/i.test(combined))) return candidate;
-	}
-	throw new Error("browser_nuclei_bridge could not locate nuclei; set nucleiPath/nucleiArgs or PI_NUCLEI_PATH/PI_NUCLEI_ARGS, or install nuclei in PATH");
+	return detectMatureBridgeLauncher({
+		bridgeName: "nuclei",
+		explicitPath: options.nucleiPath,
+		explicitArgs: options.nucleiArgs,
+		envPathVar: "PI_NUCLEI_PATH",
+		envArgsVar: "PI_NUCLEI_ARGS",
+		envArgs: normalizeCliArgs(process.env.PI_NUCLEI_ARGS),
+		autoCandidates: [{ command: "nuclei", preArgs: [], source: "auto" }],
+		versionArgs: ["-version"],
+		successPattern: /nuclei/i,
+	});
 }
 
 function normalizeHeadersForRequestFile(request: ReplayRequest): Record<string, string> {
@@ -296,8 +302,7 @@ async function executeNucleiRun(launcher: NucleiLauncher, normalized: Normalized
 	const stderrArtifact = await describeTextArtifact(stderrPath, { artifactRoot: normalized.artifactRoot, kind: "stderr", label: "nuclei stderr" });
 	const parsed = parseNucleiOutput(stdout);
 	const outputFiles = await listArtifactFiles(runDir);
-	if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`browser_nuclei_bridge failed to launch ${launcher.command}; executable was not found`);
-	if (result.error && (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT") throw new Error(`browser_nuclei_bridge timed out after ${normalized.processTimeoutMs}ms`);
+	assertMatureBridgeProcessResult("nuclei", launcher, args, result, normalized.processTimeoutMs);
 	const matchTemplateIds = Array.from(new Set(parsed.matches.map((item) => item.templateId).filter(Boolean) as string[]));
 	const matchSeverities = Array.from(new Set(parsed.matches.map((item) => item.severity).filter(Boolean) as string[]));
 	return {
@@ -346,7 +351,7 @@ export async function runNucleiBridge(options: NucleiBridgeOptions) {
 		try {
 			runs.push(await executeNucleiRun(launcher, normalized, options, inputs[index], index));
 		} catch (error) {
-			failures.push({ index, source: inputs[index].source, label: inputs[index].label, error: error instanceof Error ? error.message : String(error) });
+			failures.push({ index, source: inputs[index].source, label: inputs[index].label, ...matureBridgeFailureRecord(error) });
 		}
 	}
 	const matches = runs.flatMap((run) => Array.isArray(run.matches)

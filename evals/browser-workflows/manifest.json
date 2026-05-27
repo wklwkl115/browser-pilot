@@ -9,72 +9,356 @@
     {
       "id": "01-readable-content-artifact",
       "spec": "01-readable-content-artifact.md",
-      "fixtures": ["fixtures/article.html"],
-      "primaryTools": ["browser_tabs", "browser_content", "browser_artifact"],
-      "evidence": ["summary", "artifact"]
+      "fixtures": [
+        "fixtures/article.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "summary",
+        "artifact"
+      ]
     },
     {
       "id": "02-scan-execute-wait",
       "spec": "02-scan-execute-wait.md",
-      "fixtures": ["fixtures/interactive.html"],
-      "primaryTools": ["browser_tabs", "browser_scan", "browser_execute", "browser_wait"],
-      "evidence": ["before-state", "after-state"]
+      "fixtures": [
+        "fixtures/interactive.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_wait"
+      ],
+      "evidence": [
+        "before-state",
+        "after-state"
+      ]
     },
     {
       "id": "03-network-capture-replay",
       "spec": "03-network-capture-replay.md",
-      "fixtures": ["fixtures/network.html"],
-      "primaryTools": ["browser_network", "browser_execute", "browser_http_replay"],
-      "evidence": ["captured-request", "replay-delta"]
+      "fixtures": [
+        "fixtures/network.html"
+      ],
+      "primaryTools": [
+        "browser_network",
+        "browser_execute",
+        "browser_http_replay"
+      ],
+      "evidence": [
+        "captured-request",
+        "replay-delta"
+      ]
     },
     {
       "id": "04-selector-missing-recovery",
       "spec": "04-selector-missing-recovery.md",
-      "fixtures": ["fixtures/selector-recovery.html"],
-      "primaryTools": ["browser_wait", "browser_html", "browser_scan"],
-      "evidence": ["timeout-diagnostics", "corrected-selector"]
+      "fixtures": [
+        "fixtures/selector-recovery.html"
+      ],
+      "primaryTools": [
+        "browser_wait",
+        "browser_observe"
+      ],
+      "evidence": [
+        "timeout-diagnostics",
+        "corrected-selector"
+      ]
     },
     {
       "id": "05-download-artifact",
       "spec": "05-download-artifact.md",
-      "fixtures": ["fixtures/download.html", "fixtures/files/report.txt"],
-      "primaryTools": ["browser_download", "browser_artifact"],
-      "evidence": ["download-state", "file-metadata"]
+      "fixtures": [
+        "fixtures/download.html",
+        "fixtures/files/report.txt"
+      ],
+      "primaryTools": [
+        "browser_download",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "download-state",
+        "file-metadata"
+      ]
     },
     {
       "id": "06-wait-timeout-diagnostics",
       "spec": "06-wait-timeout-diagnostics.md",
-      "fixtures": ["fixtures/wait-timeout.html"],
-      "primaryTools": ["browser_wait", "browser_html", "browser_evidence"],
-      "evidence": ["timeout", "diagnostics"]
+      "fixtures": [
+        "fixtures/wait-timeout.html"
+      ],
+      "primaryTools": [
+        "browser_wait",
+        "browser_observe",
+        "browser_evidence"
+      ],
+      "evidence": [
+        "timeout",
+        "diagnostics"
+      ]
     },
     {
       "id": "07-bounded-path-fuzz-baseline",
       "spec": "07-bounded-path-fuzz-baseline.md",
-      "fixtures": ["fixtures/path-fuzz-routes.json"],
-      "primaryTools": ["browser_recon_probe", "browser_fuzz_paths", "browser_artifact"],
-      "evidence": ["baseline", "matched-paths"]
+      "fixtures": [
+        "fixtures/path-fuzz-routes.json"
+      ],
+      "primaryTools": [
+        "browser_recon_probe",
+        "browser_fuzz_paths",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "baseline",
+        "matched-paths"
+      ]
     },
     {
       "id": "08-cookie-jwt-redaction",
       "spec": "08-cookie-jwt-redaction.md",
-      "fixtures": ["fixtures/cookies.json"],
-      "primaryTools": ["browser_cookie_analyze", "browser_artifact"],
-      "evidence": ["redacted-summary", "claims"]
+      "fixtures": [
+        "fixtures/cookies.json"
+      ],
+      "primaryTools": [
+        "browser_cookie_analyze",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "redacted-summary",
+        "claims"
+      ]
     },
     {
       "id": "09-sqli-probe-vs-bridge",
       "spec": "09-sqli-probe-vs-bridge.md",
-      "fixtures": ["fixtures/sqli-request.txt"],
-      "primaryTools": ["browser_http_replay", "browser_sqli_probe", "browser_sqlmap_bridge"],
-      "evidence": ["request-baseline", "oracle-evidence", "bridge-artifact"]
+      "fixtures": [
+        "fixtures/sqli-request.txt"
+      ],
+      "primaryTools": [
+        "browser_http_replay",
+        "browser_sqli_probe",
+        "browser_sqlmap_bridge"
+      ],
+      "evidence": [
+        "request-baseline",
+        "oracle-evidence",
+        "bridge-artifact"
+      ]
     },
     {
       "id": "10-multi-session-lease-conflict",
       "spec": "10-multi-session-lease-conflict.md",
-      "fixtures": ["fixtures/interactive.html"],
-      "primaryTools": ["browser_tabs", "browser_execute", "browser_evidence"],
-      "evidence": ["session-id", "tab-id", "lease-diagnostics"]
+      "fixtures": [
+        "fixtures/interactive.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_execute",
+        "browser_evidence"
+      ],
+      "evidence": [
+        "session-id",
+        "tab-id",
+        "lease-diagnostics"
+      ]
+    },
+    {
+      "id": "11-jshook-runtime-hook-targets",
+      "spec": "11-jshook-runtime-hook-targets.md",
+      "fixtures": [
+        "fixtures/jshook-runtime-sinks.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_hook",
+        "browser_execute",
+        "browser_evidence",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "hook-events",
+        "artifact",
+        "expanded-targets"
+      ]
+    },
+    {
+      "id": "12-jshook-source-map-artifact",
+      "spec": "12-jshook-source-map-artifact.md",
+      "fixtures": [
+        "fixtures/jshook-source-map.html",
+        "fixtures/jshook/bundle.js",
+        "fixtures/jshook/bundle.js.map"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_crawl",
+        "browser_artifact",
+        "browser_execute"
+      ],
+      "evidence": [
+        "source-map",
+        "artifact",
+        "parser-diagnostics"
+      ]
+    },
+    {
+      "id": "13-jshook-storage-evidence",
+      "spec": "13-jshook-storage-evidence.md",
+      "fixtures": [
+        "fixtures/jshook-storage.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_execute",
+        "browser_hook",
+        "browser_evidence",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "storage-summary",
+        "artifact",
+        "redaction"
+      ]
+    },
+    {
+      "id": "14-jshook-replay-not-intercept",
+      "spec": "14-jshook-replay-not-intercept.md",
+      "fixtures": [
+        "fixtures/jshook-replay.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_network",
+        "browser_execute",
+        "browser_http_replay",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "captured-request",
+        "replay-delta",
+        "artifact"
+      ]
+    },
+    {
+      "id": "15-jshook-canvas-observation",
+      "spec": "15-jshook-canvas-observation.md",
+      "fixtures": [
+        "fixtures/jshook-canvas.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_screenshot",
+        "browser_execute",
+        "browser_hook",
+        "browser_evidence",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "canvas-events",
+        "artifact",
+        "scene-metadata"
+      ]
+    },
+    {
+      "id": "16-scan-high-entropy-summary",
+      "spec": "16-scan-high-entropy-summary.md",
+      "fixtures": [
+        "fixtures/scan-high-entropy.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_artifact",
+        "browser_execute",
+        "browser_wait"
+      ],
+      "evidence": [
+        "primary_actions",
+        "artifact_hints",
+        "text_signals"
+      ]
+    },
+    {
+      "id": "17-debugger-evidence-workflow",
+      "spec": "17-debugger-evidence-workflow.md",
+      "fixtures": [
+        "fixtures/debugger-evidence.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_frame",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "cleanup-diagnostics",
+        "artifact",
+        "RFC-only"
+      ]
+    },
+    {
+      "id": "18-debugger-script-provenance",
+      "spec": "18-debugger-script-provenance.md",
+      "fixtures": [
+        "fixtures/debugger-provenance.html",
+        "fixtures/debugger/provenance-helper.js"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_crawl",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "script-provenance",
+        "artifact",
+        "RFC-only"
+      ]
+    },
+    {
+      "id": "19-debugger-pause-lifecycle",
+      "spec": "19-debugger-pause-lifecycle.md",
+      "fixtures": [
+        "fixtures/debugger-pause.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_wait",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "cleanup-diagnostics",
+        "artifact",
+        "RFC-only"
+      ]
+    },
+    {
+      "id": "20-debugger-navigation-recovery",
+      "spec": "20-debugger-navigation-recovery.md",
+      "fixtures": [
+        "fixtures/debugger-navigation.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_wait",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "stale-state",
+        "artifact",
+        "RFC-only"
+      ]
     }
   ]
 }

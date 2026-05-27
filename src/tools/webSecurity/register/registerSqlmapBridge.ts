@@ -47,7 +47,7 @@ export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 			isDba: Type.Optional(Type.Boolean({ description: "Request DBA capability metadata via --is-dba." })),
 			banner: Type.Optional(Type.Boolean({ description: "Request DBMS banner metadata via --banner." })),
 			tamper: Type.Optional(Type.Any({ description: "Optional sqlmap tamper script list or comma string passed to --tamper." })),
-			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<SqlmapBridgeToolParams>(params), ctx, {
@@ -59,7 +59,7 @@ export function registerSqlmapBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 				run: runSqlmapBridge,
 				details: (result) => ({ runCount: result.runCount, findingCount: result.findingCount, vulnerableRunCount: result.vulnerableRunCount }),
 				distill: summarizeSqlmapBridgeData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

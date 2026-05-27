@@ -56,7 +56,7 @@ export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 				followRedirectsDescription: "Follow redirects; default false.",
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
 			}),
-			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<NucleiBridgeToolParams>(params), ctx, {
@@ -69,7 +69,7 @@ export function registerNucleiBridgeTool({ pi, ensureStarted }: ToolRegistrarCon
 				run: runNucleiBridge,
 				details: (result) => ({ runCount: result.runCount, matchCount: result.matchCount, matchedRunCount: result.matchedRunCount }),
 				distill: summarizeNucleiBridgeData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

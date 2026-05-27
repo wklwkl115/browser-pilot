@@ -77,6 +77,49 @@ export type BrowserCommandQueueInfo = {
 	depth: number;
 };
 
+export type BrowserToolCapabilityProfileInfo = {
+	name: "security" | "core";
+	source: "default" | "env";
+	envVar: "PI_BROWSER_TOOL_PROFILE";
+	securityToolsEnabled: boolean;
+	enableHint: string;
+};
+
+export type BrowserActiveOperationInfo = {
+	operationId: string;
+	toolName: string;
+	command?: string;
+	browserSessionId?: string;
+	tabId?: number;
+	phase: string;
+	progress?: number;
+	queueDepth?: number;
+	leaseOwnerHash?: string;
+	conflictReason?: string;
+	snapshotId?: string;
+	sourceMode?: string;
+	details?: Record<string, unknown>;
+	startedAt: number;
+	updatedAt: number;
+};
+
+export type BrowserObservationSnapshotInfo = {
+	snapshotId: string;
+	browserSessionId?: string;
+	tabId?: number;
+	url?: string;
+	frameScope?: string;
+	selectionVersion?: number;
+	sourceMode: string;
+	capturedAt: number;
+	ttlMs: number;
+	invalidatedReason?: string;
+	expired?: boolean;
+	saved?: {
+		path?: string;
+	};
+};
+
 export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
 
 export type BrowserBridgeTargetInfo = {
@@ -104,6 +147,8 @@ export type BrowserBridgeSnapshot = {
 	leases?: BrowserTabLeaseInfo[];
 	uiLock?: BrowserUiLockInfo;
 	queues?: BrowserCommandQueueInfo[];
+	operations?: BrowserActiveOperationInfo[];
+	capabilityProfile?: BrowserToolCapabilityProfileInfo;
 	pending: Array<{
 		id: string;
 		tabId?: number;

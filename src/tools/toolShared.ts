@@ -13,6 +13,8 @@ export type ToolRegistrarContext = {
 	ensureStarted: EnsureStarted;
 };
 
+export type ToolRegistrar = (context: ToolRegistrarContext) => void;
+
 export function parseMaybeCommand(script: string): BridgeCommand | undefined {
 	const trimmed = script.trim();
 	if (!trimmed.startsWith("{")) return undefined;

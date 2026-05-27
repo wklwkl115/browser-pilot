@@ -30,6 +30,65 @@ function piBrowserHookSessionArgs(msg: PiBridgeCommand): JsonRecord {
   return sessionId ? { session_id: sessionId } : {};
 }
 
+const PI_BROWSER_HOOK_TARGETS: Record<string, { target: string; description: string; eventTypes: string[] }> = {
+  console: { target: 'console', description: 'console log/warn/error/info/debug calls', eventTypes: ['console.*'] },
+  error: { target: 'error', description: 'window error and unhandledrejection events', eventTypes: ['error.*'] },
+  networkApi: { target: 'network', description: 'page fetch/XMLHttpRequest API call evidence, not passive Network recorder replacement', eventTypes: ['network.request', 'network.response', 'network.error'] },
+  websocket: { target: 'websocket', description: 'WebSocket constructor, send, message, close, and error events', eventTypes: ['websocket.*'] },
+  storage: { target: 'storage', description: 'localStorage/sessionStorage method calls and snapshots', eventTypes: ['storage.*'] },
+  crypto: { target: 'crypto', description: 'crypto.getRandomValues and crypto.subtle operation metadata', eventTypes: ['crypto.*'] },
+  dom: { target: 'dom', description: 'MutationObserver DOM mutation summaries', eventTypes: ['dom.mutation', 'dom.mutation.overflow', 'dom.mutation.queue_overflow'] },
+  domSinks: { target: 'dom_sinks', description: 'innerHTML/outerHTML/insertAdjacentHTML/document.write script text writes', eventTypes: ['dom.sink.*'] },
+  cookies: { target: 'cookies', description: 'document.cookie read/write names with redacted values', eventTypes: ['cookies.*'] }
+};
+
+const PI_BROWSER_HOOK_TARGET_ALIASES: Record<string, string> = {
+  console: 'console', logs: 'console', errors: 'error', error: 'error', exceptions: 'error',
+  network: 'networkApi', networkapi: 'networkApi', fetch: 'networkApi', xhr: 'networkApi',
+  websocket: 'websocket', websockets: 'websocket', ws: 'websocket',
+  storage: 'storage', localstorage: 'storage', sessionstorage: 'storage',
+  crypto: 'crypto', dom: 'dom', mutations: 'dom', mutation: 'dom',
+  domsinks: 'domSinks', dom_sinks: 'domSinks', sinks: 'domSinks',
+  cookies: 'cookies', cookie: 'cookies'
+};
+
+function normalizeHookTargetName(value: unknown): string | null {
+  const normalized = String(value || '').trim().replace(/[_.-]/g, '').toLowerCase();
+  return normalized ? PI_BROWSER_HOOK_TARGET_ALIASES[normalized] || null : null;
+}
+
+function listPiBrowserHookTargets(): Array<JsonRecord> {
+  return Object.entries(PI_BROWSER_HOOK_TARGETS).map(([id, spec]) => ({ id, target: spec.target, description: spec.description, eventTypes: spec.eventTypes.slice() }));
+}
+
+function expandPiBrowserHookTargets(input: unknown): { targets: JsonRecord; expanded: Array<JsonRecord>; rejected: string[] } {
+  const requested = Array.isArray(input) ? input : (input == null || input === '' ? [] : [input]);
+  const ids = requested.length ? requested.map(normalizeHookTargetName).filter((item): item is string => Boolean(item)) : [];
+  const rejected = requested.map((item, index) => ({ item, id: normalizeHookTargetName(item), index })).filter((entry) => !entry.id).map((entry) => String(entry.item));
+  const unique = Array.from(new Set(ids));
+  const targets: JsonRecord = {};
+  const expanded: Array<JsonRecord> = [];
+  for (const id of unique) {
+    const spec = PI_BROWSER_HOOK_TARGETS[id];
+    if (!spec) continue;
+    targets[spec.target] = true;
+    expanded.push({ id, target: spec.target, description: spec.description, eventTypes: spec.eventTypes.slice() });
+  }
+  return { targets, expanded, rejected };
+}
+
+function hookInstallArgsFromMessage(msg: PiBridgeCommand, targetOverride?: JsonRecord): JsonRecord {
+  return {
+    session_id: msg.session_id || msg.sessionId,
+    targets: targetOverride || msg.targets,
+    options: msg.options,
+    buffer_size: msg.buffer_size === undefined ? undefined : Number(msg.buffer_size),
+    force: msg.force === true,
+    expected_version: msg.expected_version || msg.expectedVersion,
+    install_fingerprint: msg.install_fingerprint || msg.installFingerprint
+  };
+}
+
 async function ensurePiBrowserDispatcher(tabId: number): Promise<PiBridgeResponse> {
   const timeoutMs = 3000;
   let scriptingErr: unknown;
@@ -65,31 +124,44 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
     const queueEntries = Array.from(piBrowserTabQueues.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId));
     return { ok: true, data: { tabId: explicitTab ? Number(tabId) : undefined, sessions: sessionEntries.map(([tid, s]) => ({ tabId: tid, queue: getPiBrowserQueueStats(tid), ...s })), count: sessionEntries.length, queues: queueEntries.map(([tid]) => ({ tabId: tid, ...getPiBrowserQueueStats(tid) })) } };
   }
-  if (cmd === 'hook.install') {
+  if (cmd === 'hook.list_targets') return { ok: true, data: { targets: listPiBrowserHookTargets(), count: listPiBrowserHookTargets().length, boundary: 'static-explicit-targets', rejectedStrategyPresets: ['all','auto','aggressive','ctf','exploit','stealth'] } };
+  if (cmd === 'hook.install' || cmd === 'hook.install_targets') {
+    let expandedTargets: Array<JsonRecord> | undefined;
+    let rejectedTargets: string[] | undefined;
+    let targetOverride: JsonRecord | undefined;
+    if (cmd === 'hook.install_targets') {
+      const expanded = expandPiBrowserHookTargets(msg.targets || msg.hookTargets || msg.targetIds);
+      if (expanded.rejected.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unsupported hook target ids: ' + expanded.rejected.join(', '), { rejected: expanded.rejected, supported: listPiBrowserHookTargets().map((item) => item.id) });
+      if (!expanded.expanded.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'hook.install_targets requires at least one explicit hook target id', { supported: listPiBrowserHookTargets().map((item) => item.id) });
+      expandedTargets = expanded.expanded;
+      rejectedTargets = expanded.rejected;
+      targetOverride = expanded.targets;
+    }
     const injected = await ensurePiBrowserDispatcher(tabId);
     if (!injected.ok) return injected;
-    const args = {
-      session_id: msg.session_id || msg.sessionId,
-      targets: msg.targets,
-      options: msg.options,
-      buffer_size: msg.buffer_size === undefined ? undefined : Number(msg.buffer_size),
-      force: msg.force === true,
-      expected_version: msg.expected_version || msg.expectedVersion,
-      install_fingerprint: msg.install_fingerprint || msg.installFingerprint
-    };
+    const args = hookInstallArgsFromMessage(msg, targetOverride);
     const res = await callPagePiBrowser(tabId, 'hook.install', args);
-    if (res && res.ok) { const data = (res.data && typeof res.data === 'object') ? res.data as JsonRecord : {}; piBrowserSessions.set(tabId, {
+    if (res && res.ok) {
+      const data = (res.data && typeof res.data === 'object') ? res.data as JsonRecord : {};
+      if (cmd === 'hook.install_targets') {
+        data.expanded_targets = expandedTargets || [];
+        data.rejected_targets = rejectedTargets || [];
+        data.target_boundary = 'static-explicit-targets';
+        data.rejected_strategy_presets = ['all','auto','aggressive','ctf','exploit','stealth'];
+      }
+      piBrowserSessions.set(tabId, {
       session_id: String(data.session_id || args.session_id || ''),
       state: String(data.state || 'INSTALLED'),
       installed_at: String(data.installed_at || new Date().toISOString()),
-      targets: msg.targets,
+      targets: args.targets,
       options: msg.options,
       buffer_size: msg.buffer_size === undefined ? undefined : Number(msg.buffer_size),
       dispatcher_version: data.dispatcher_version || data.pi_browser_version,
       install_epoch: data.install_epoch,
       owner_session_id: data.owner_session_id,
       install_fingerprint: data.install_fingerprint !== undefined ? String(data.install_fingerprint) : (args.install_fingerprint ? String(args.install_fingerprint) : undefined),
-      install_args: args
+      install_args: args,
+      expanded_targets: expandedTargets
     }); }
     return res;
   }

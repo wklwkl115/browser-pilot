@@ -24,6 +24,10 @@ export class BrowserCommandQueueRegistry {
 		return next;
 	}
 
+	depth(browserSessionId: string, tabId: number): number {
+		return this.depths.get(this.key(browserSessionId, tabId)) || 0;
+	}
+
 	snapshot(): BrowserCommandQueueInfo[] {
 		return Array.from(this.depths.entries()).map(([key, depth]) => {
 			const [browserSessionId, tabIdRaw] = key.split(":", 2);

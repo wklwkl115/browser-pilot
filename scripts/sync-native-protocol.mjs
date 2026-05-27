@@ -281,7 +281,11 @@ function generatedNativeActionMetadata() {
 		}
 		nativeActionTools[toolName] = { ...tool, actionAliases };
 	}
-	return { nativeActionTools, transferTools: source.transferTools || {} };
+	return {
+		nativeActionTools,
+		nativeCommandTools: source.nativeCommandTools || {},
+		transferTools: source.transferTools || {},
+	};
 }
 
 function generateNativeActionMetadataTs() {
@@ -289,6 +293,8 @@ function generateNativeActionMetadataTs() {
 	return `${generatedHeader()}export const nativeToolMetadata = ${metadataText} as const;
 
 export type NativeActionToolName = keyof typeof nativeToolMetadata.nativeActionTools;
+export type NativeCommandToolName = keyof typeof nativeToolMetadata.nativeCommandTools;
+export type NativeTransferToolName = keyof typeof nativeToolMetadata.transferTools;
 
 export function normalizeNativeToolAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
@@ -301,7 +307,16 @@ export function commandForNativeToolAction(toolName: NativeActionToolName, actio
 	return command;
 }
 
+export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
+
+export function metadataForNativeCommandTool(toolName: NativeCommandToolName) {
+	return nativeCommandToolMetadata[toolName];
+}
+
+export function metadataForNativeTransferTool(toolName: NativeTransferToolName) {
+	return nativeTransferToolMetadata[toolName];
+}
 `;
 }
 
@@ -347,10 +362,13 @@ function toolRows() {
 	const actionRows = Object.entries(metadata.nativeActionTools).map(([name, tool]) => [
 		`\`${name}\``, tool.domain, (tool.parameters || []).map((item) => `\`${item}\``).join(", "), tool.actionDescription || "",
 	]);
+	const commandRows = Object.entries(metadata.nativeCommandTools || {}).map(([name, tool]) => [
+		`\`${name}\``, tool.domain, (tool.parameters || []).map((item) => `\`${item}\``).join(", "), tool.command || "",
+	]);
 	const transferRows = Object.entries(metadata.transferTools).map(([name, tool]) => [
 		`\`${name}\``, tool.domain, (tool.parameters || []).map((item) => `\`${item}\``).join(", "), tool.command || "",
 	]);
-	return [...actionRows, ...transferRows];
+	return [...actionRows, ...commandRows, ...transferRows];
 }
 
 function errorRows() {

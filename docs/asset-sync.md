@@ -10,7 +10,7 @@
 
 1. 在 GA 资产中定位行为与边界条件。
 2. 在 `bridge/pi_browser_bridge/` 实现原生命令或页面 dispatcher 能力。
-3. 在 `src/tools/registerTools.ts` 暴露 TypeBox schema。
+3. 在 `src/tools/toolRegistry.ts` 登记工具注册器，并由 `src/tools/registerTools.ts` 组合入口暴露 TypeBox schema。
 4. 把契约回归沉淀到 `tests/contracts/check-*.mjs`；真实浏览器 smoke 放到 `tests/smoke/`。
 5. 执行 `npm run check`。
 

@@ -1,10 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { BrowserBridgeServer } from "./src/driver/BrowserBridgeServer";
+import { resolveBrowserToolCapabilityProfile } from "./src/tools/capabilityProfile";
 import { registerBrowserCommands } from "./src/tools/commands";
 import { registerBrowserTools } from "./src/tools/registerTools";
 
 export default function piBrowserTools(pi: ExtensionAPI) {
 	const server = new BrowserBridgeServer();
+	const capabilityProfile = resolveBrowserToolCapabilityProfile();
+	server.setCapabilityProfile(capabilityProfile);
 	let startPromise: Promise<void> | undefined;
 
 	const ensureStarted = async () => {
@@ -34,5 +37,5 @@ export default function piBrowserTools(pi: ExtensionAPI) {
 	});
 
 	registerBrowserCommands(pi, server, ensureStarted);
-	registerBrowserTools(pi, server, ensureStarted);
+	registerBrowserTools(pi, server, ensureStarted, { securityToolsEnabled: capabilityProfile.securityToolsEnabled });
 }

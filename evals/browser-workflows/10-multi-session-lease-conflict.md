@@ -14,7 +14,7 @@ Recover from a browser session/tab lease conflict with explicit session and tab 
 
 - `browser_tabs`
 - `browser_execute`
-- `browser_scan`
+- `browser_observe mode=scan`
 - `browser_evidence`
 
 ## Expected tool sequence

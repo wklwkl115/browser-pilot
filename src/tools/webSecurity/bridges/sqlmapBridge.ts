@@ -3,8 +3,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { mergeCookieHeaders, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http";
-import { asString, isRecord, positiveInt, splitWords, stringList } from "../shared/normalize";
+import { asString, isRecord, parseCommandArgs, positiveInt, stringList } from "../shared/normalize";
 import { describeTextArtifact } from "../shared/artifacts";
+import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge";
 import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay";
 import type { ReplayRequest, SqlmapBridgeOptions } from "../shared/types";
 
@@ -60,9 +61,7 @@ function normalizeTechnique(value: unknown): string | undefined {
 }
 
 function normalizeSqlmapArgs(value: unknown): string[] {
-	if (Array.isArray(value)) return value.map((item) => asString(item)?.trim() || "").filter(Boolean);
-	const single = asString(value)?.trim();
-	return single ? single.split(/\s+/).map((item) => item.trim()).filter(Boolean) : [];
+	return parseCommandArgs(value);
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
@@ -71,6 +70,14 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
 
 async function normalizeSqlmapBridgeOptions(options: SqlmapBridgeOptions): Promise<NormalizedSqlmapBridgeOptions> {
 	const sequence = await replaySequenceInputs(options);
+	const hasRequestTarget = sequence.length > 0 || options.rawRequest !== undefined || options.request !== undefined || options.har !== undefined || options.harPath !== undefined;
+	const hasDirectUrlTarget = options.url !== undefined;
+	if (!hasRequestTarget && !hasDirectUrlTarget) {
+		throw matureBridgeToolError("MATURE_BRIDGE_TARGET_REQUIRED", "browser_sqlmap_bridge requires url, rawRequest, request, requests, sequence, or HAR input", {
+			bridgeName: "sqlmap",
+			toolName: "browser_sqlmap_bridge",
+		});
+	}
 	const artifactBaseDir = path.resolve(process.cwd(), ".pi", "browser-artifacts");
 	await mkdir(artifactBaseDir, { recursive: true });
 	const artifactRoot = await mkdtemp(path.join(artifactBaseDir, "sqlmap-bridge-"));
@@ -103,23 +110,22 @@ async function normalizeSqlmapBridgeOptions(options: SqlmapBridgeOptions): Promi
 }
 
 function detectLauncher(options: NormalizedSqlmapBridgeOptions): SqlmapLauncher {
-	if (options.sqlmapPath) return { command: options.sqlmapPath, preArgs: options.sqlmapArgs, source: "param" };
-	const envPath = asString(process.env.PI_SQLMAP_PATH)?.trim();
-	const envArgs = normalizeSqlmapArgs(process.env.PI_SQLMAP_ARGS);
-	const candidates: SqlmapLauncher[] = [];
-	if (envPath) candidates.push({ command: envPath, preArgs: envArgs, source: "env" });
-	candidates.push(
-		{ command: "sqlmap", preArgs: [], source: "auto" },
-		{ command: "python", preArgs: ["-m", "sqlmap"], source: "auto" },
-		{ command: "python3", preArgs: ["-m", "sqlmap"], source: "auto" },
-		{ command: "py", preArgs: ["-m", "sqlmap"], source: "auto" },
-	);
-	for (const candidate of candidates) {
-		const probe = spawnSync(candidate.command, [...candidate.preArgs, "--version"], { encoding: "utf8", timeout: 5_000, maxBuffer: 256_000, windowsHide: true });
-		const combined = `${probe.stdout || ""}\n${probe.stderr || ""}`;
-		if (!probe.error && (probe.status === 0 || /sqlmap/i.test(combined))) return candidate;
-	}
-	throw new Error("browser_sqlmap_bridge could not locate sqlmap; set sqlmapPath/sqlmapArgs or PI_SQLMAP_PATH/PI_SQLMAP_ARGS, or install sqlmap in PATH");
+	return detectMatureBridgeLauncher({
+		bridgeName: "sqlmap",
+		explicitPath: options.sqlmapPath,
+		explicitArgs: options.sqlmapArgs,
+		envPathVar: "PI_SQLMAP_PATH",
+		envArgsVar: "PI_SQLMAP_ARGS",
+		envArgs: normalizeSqlmapArgs(process.env.PI_SQLMAP_ARGS),
+		autoCandidates: [
+			{ command: "sqlmap", preArgs: [], source: "auto" },
+			{ command: "python", preArgs: ["-m", "sqlmap"], source: "auto" },
+			{ command: "python3", preArgs: ["-m", "sqlmap"], source: "auto" },
+			{ command: "py", preArgs: ["-m", "sqlmap"], source: "auto" },
+		],
+		versionArgs: ["--version"],
+		successPattern: /sqlmap/i,
+	});
 }
 
 function normalizeHeadersForRequestFile(request: ReplayRequest): Record<string, string> {
@@ -286,8 +292,7 @@ async function executeSqlmapRun(launcher: SqlmapLauncher, normalized: Normalized
 	const stderrArtifact = await describeTextArtifact(stderrPath, { artifactRoot: normalized.artifactRoot, kind: "stderr", label: "sqlmap stderr" });
 	const parsed = parseSqlmapOutput(stdout);
 	const outputFiles = await listArtifactFiles(runDir);
-	if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`browser_sqlmap_bridge failed to launch ${launcher.command}; executable was not found`);
-	if (result.error && (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT") throw new Error(`browser_sqlmap_bridge timed out after ${normalized.processTimeoutMs}ms`);
+	assertMatureBridgeProcessResult("sqlmap", launcher, args, result, normalized.processTimeoutMs);
 	return {
 		ok: !result.error && (result.status ?? 0) === 0,
 		index,
@@ -334,7 +339,7 @@ export async function runSqlmapBridge(options: SqlmapBridgeOptions) {
 		try {
 			runs.push(await executeSqlmapRun(launcher, normalized, options, inputs[index], index));
 		} catch (error) {
-			failures.push({ index, source: inputs[index].source, label: inputs[index].label, error: error instanceof Error ? error.message : String(error) });
+			failures.push({ index, source: inputs[index].source, label: inputs[index].label, ...matureBridgeFailureRecord(error) });
 		}
 	}
 	const findings = runs.flatMap((run) => Array.isArray(run.findings) ? run.findings.map((finding) => isRecord(finding) ? { runIndex: run.index, targetUrl: run.targetUrl, source: run.source, parameter: finding.parameter, place: finding.place, type: finding.type, title: finding.title, payload: finding.payload } : undefined).filter(Boolean) : []);

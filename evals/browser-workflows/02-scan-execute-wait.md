@@ -13,18 +13,18 @@ Inspect a local interactive fixture, identify an element, execute a JavaScript a
 ## Allowed starting tools
 
 - `browser_tabs`
-- `browser_scan`
+- `browser_observe mode=scan`
 - `browser_execute`
 - `browser_wait`
-- `browser_html`
+- `browser_observe mode=html`
 
 ## Expected tool sequence
 
 1. Use `browser_tabs` to get an explicit `tabId`.
-2. Use `browser_scan` to identify the actionable element and current state.
+2. Use `browser_observe mode=scan` to identify the actionable element and current state.
 3. Use `browser_execute` for a narrow DOM action.
 4. Use `browser_wait` for a selector/text state change.
-5. Verify final state with `browser_scan` or `browser_html`.
+5. Verify final state with `browser_observe mode=scan` or `browser_observe mode=html`.
 
 ## Success criteria
 

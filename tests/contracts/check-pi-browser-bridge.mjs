@@ -1117,7 +1117,7 @@ function usesTextDistillation(source) { return source.includes("distilledTextRes
 assert(registerToolsSource.split(/\r?\n/).length <= 60, "registerTools.ts must stay a thin composition entrypoint");
 assert(!registerToolsSource.includes("registerTool({"), "registerTools.ts must not directly register individual tools");
 assert(!registerToolsSource.includes("waitCommandForAction"), "registerTools.ts must not own domain action mapping");
-for (const name of ["browser_tabs", "browser_execute", "browser_scan", "browser_pick", "browser_content", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_html", "browser_screenshot", "browser_artifact"]) {
+for (const name of ["browser_tabs", "browser_execute", "browser_observe", "browser_pick", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_screenshot", "browser_artifact"]) {
 	assert(toolSource.includes(`name: "${name}"`), `tool not registered: ${name}`);
 }
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
@@ -1126,9 +1126,7 @@ for (const removed of ["browser_query", "browser_click", "browser_type", "browse
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
-assert(usesTextDistillation(read("src/tools/registerScanTool.ts")), "browser_scan must use result distillation middleware");
-assert(usesTextDistillation(read("src/tools/registerHtmlTool.ts")), "browser_html must use result distillation middleware");
-assert(usesTextDistillation(read("src/tools/registerContentTool.ts")), "browser_content must use result distillation middleware");
+assert(usesTextDistillation(read("src/tools/observeRunners.ts")), "browser_observe must use result distillation middleware across scan/content/html modes");
 assert(usesJsonDistillation(read("src/tools/registerPickTool.ts")), "browser_pick must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerEvidenceTool.ts")), "browser_evidence must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerNativeActionTools.ts")), "browser_network must use result distillation middleware through native action tools");
@@ -1139,7 +1137,7 @@ assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");
 assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "pi-browser-tools skill must document explicit tabId automation flow");
-assert(skill.includes("browser_pick") && skill.includes("browser_content"), "pi-browser-tools skill must document pick/content flows");
+assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "pi-browser-tools skill must document pick/observe flows");
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
 	assert(!skill.includes(removed), `pi-browser-tools skill must not document removed split action tool: ${removed}`);
 }
@@ -1319,19 +1317,30 @@ async function testHookReadOnlyScopeContracts() {
 	const sandbox = {
 		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE", INVALID_SESSION: "INVALID_SESSION", INJECTION_FAILED: "INJECTION_FAILED", NO_SESSION: "NO_SESSION", NOT_INSTALLED: "NOT_INSTALLED" },
 		PI_BROWSER_HOOK_DISPATCHER_FILE: "hook_dispatcher.js",
+		piWithTimeout: async (value) => await value,
+		chrome: { scripting: { async executeScript() { return []; } } },
 		piBrowserSessions: sessions,
 		piBrowserTabQueues: queues,
 		getPiBrowserQueueStats: (tabId) => ({ tabId:Number(tabId), pending: false, depth: 0 }),
 		piBrowserError(code, error, details) { return { ok: false, error_code: code, error, details }; },
-		callPagePiBrowser: async (tabId, command, args, options) => { calls.push({ tabId, command, args, options }); return { ok: true, data: { state: "INSTALLED", command } }; },
+		callPagePiBrowser: async (tabId, command, args, options) => { calls.push({ tabId, command, args, options }); return { ok: true, data: { state: "INSTALLED", command, session_id: args?.session_id } }; },
 		callPagePiBrowserWithAutoReinstall: async (tabId, command, args) => { calls.push({ tabId, command, args, autoReinstall: true }); return { ok: true, data: { state: "INSTALLED", command } }; },
 		cleanupPiBrowserPageListenersForTab: async (tabId, reason) => { pageListenerCleanups.push({ tabId, reason }); return { ok: true, data: { tabId, removed: 2, listenerIds: ["a", "b"], reason } }; },
+		async ensurePiBrowserDispatcher(tabId) { return { ok: true, data: { tabId, method: "test" } }; },
 		cleanupWaitsForUninstall(tabId) { cleanups.push({ kind: "waits", tabId }); },
 		cleanupPiBrowserTab(tabId, reason) { cleanups.push({ kind: "tab", tabId, reason }); },
 	};
 	vm.runInNewContext(`${hookBridge}\nglobalThis.handlePiBrowserHookCommand = handlePiBrowserHookCommand;`, sandbox, { filename: "hook.js" });
 	const scoped = await sandbox.handlePiBrowserHookCommand("hook.list_sessions", 2, { tabId: 2 });
 	assert(scoped.ok === true && scoped.data.count === 1 && scoped.data.sessions[0].tabId === 2, "hook.list_sessions with explicit tabId must only return the target tab session");
+	const targets = await sandbox.handlePiBrowserHookCommand("hook.list_targets", 2, {});
+	assert(targets.ok === true && targets.data.targets.some((item) => item.id === "domSinks" && item.target === "dom_sinks") && targets.data.rejectedStrategyPresets.includes("stealth"), "hook.list_targets must expose bounded static hook targets and rejected strategy presets");
+	const installTargets = await sandbox.handlePiBrowserHookCommand("hook.install_targets", 2, { sessionId: "two", targets: ["console", "dom-sinks", "storage"], buffer_size: 20 });
+	assert(installTargets.ok === true && Array.isArray(installTargets.data.expanded_targets) && installTargets.data.expanded_targets.length === 3 && installTargets.data.target_boundary === "static-explicit-targets", "hook.install_targets must return expanded target diagnostics");
+	const installCall = calls.find((call) => call.command === "hook.install" && call.args?.targets?.dom_sinks === true && call.args?.targets?.storage === true);
+	assert(installCall && installCall.args.session_id === "two", "hook.install_targets must expand ids into hook.install targets and preserve session id");
+	const badTarget = await sandbox.handlePiBrowserHookCommand("hook.install_targets", 2, { targets: ["all"] });
+	assert(badTarget.ok === false && badTarget.error_code === "INVALID_RULE" && badTarget.details.supported.includes("console"), "hook.install_targets must reject strategy-like or unknown targets with supported ids");
 	await sandbox.handlePiBrowserHookCommand("hook.status", 2, { sessionId: "two", timeoutMs: 777 });
 	await sandbox.handlePiBrowserHookCommand("hook.collect", 2, { session_id: "two", limit: 5 });
 	await sandbox.handlePiBrowserHookCommand("hook.clear_buffer", 2, { sessionId: "two" });

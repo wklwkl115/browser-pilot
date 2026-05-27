@@ -1,11 +1,10 @@
 import { Type } from "typebox";
 import type { BrowserBridgeExecutionResult } from "../driver/types";
-import type { BridgeCommand } from "../protocol/nativeProtocol";
+import { BrowserBridgeError } from "../driver/errors";
 import { buildScanScript } from "../scan/buildScanScript";
 import { compactError } from "../utils/errors";
-import { rejectUnsafeExecuteCommand } from "./transferValidation";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, parseMaybeCommand, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
+import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 type MonitorScanResult = {
@@ -25,6 +24,11 @@ type MonitorMetadata = {
 	afterError?: Record<string, unknown>;
 };
 
+function normalizeTabId(value: unknown): number | undefined {
+	const tabId = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+	return Number.isInteger(tabId) && tabId > 0 ? tabId : undefined;
+}
+
 function textLines(value: unknown): string[] {
 	return String(value || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
@@ -33,6 +37,17 @@ function diffScanContent(before: unknown, after: unknown): { changed: number; to
 	const beforeSet = new Set(textLines(before));
 	const added = textLines(after).filter((line) => !beforeSet.has(line));
 	return { changed: added.length, top_change: added[0]?.slice(0, 2_000) };
+}
+
+function detectCommandLikeScript(script: string): boolean {
+	const trimmed = script.trim();
+	if (!trimmed.startsWith("{")) return false;
+	try {
+		const parsed = JSON.parse(trimmed) as unknown;
+		return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as Record<string, unknown>).cmd === "string";
+	} catch {
+		return false;
+	}
 }
 
 async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
@@ -70,50 +85,42 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 	pi.registerTool({
 		name: "browser_execute",
 		label: "Browser Execute",
-		description: "Execute JavaScript or a bridge command object in a connected real browser tab.",
-		promptSnippet: "Execute JS in a real browser tab or send a bridge command object.",
+		description: "Execute JavaScript in a connected real browser tab.",
+		promptSnippet: "Execute JavaScript in a real browser tab.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_execute for precise browser actions; return explicit values from async JavaScript."],
 		parameters: Type.Object({
-			script: Type.Optional(Type.String({ description: "JavaScript source. If it is a JSON object string with cmd, it is sent as a bridge command." })),
-			command: Type.Optional(Type.Any({ description: "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}" })),
+			script: Type.String({ description: "JavaScript source." }),
 			...sharedTabScopedToolParams(),
-			monitor: Type.Optional(Type.Boolean({ description: "For JavaScript mode only: capture compact before/after scan diff. Default false to avoid token and latency overhead." })),
+			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
+				if (!params.script) throw new Error("browser_execute requires script");
+				if (detectCommandLikeScript(params.script)) {
+					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { toolName: "browser_execute", recovery: { useTool: "browser_command" } });
+				}
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = toolMaxChars(params, "browser_execute");
-				if (params.command && typeof params.command === "object") {
-					const command = params.command as BridgeCommand;
-					rejectUnsafeExecuteCommand(command);
-					const result = await server.sendCommand(command, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
-					return await jsonToolResult(result, params, ctx, {
-						toolName: "browser_execute",
-						command: String(command.cmd || "command"),
-						defaultDetailLevel: "preview",
-						maxChars,
-						fallbackName: artifactFallbackName("execute"),
-						details: { mode: "command" },
-					});
-				}
-				if (!params.script) throw new Error("browser_execute requires script or command");
-				const command = parseMaybeCommand(params.script);
-				if (command?.cmd) {
-					rejectUnsafeExecuteCommand(command);
-					const result = await server.sendCommand(command, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
-					return await jsonToolResult(result, params, ctx, {
-						toolName: "browser_execute",
-						command: String(command.cmd),
-						defaultDetailLevel: "preview",
-						maxChars,
-						fallbackName: artifactFallbackName("execute"),
-						details: { mode: "command" },
-					});
-				}
-				const jsResult = params.monitor === true
-					? await executeJavaScriptWithMonitor(server, params.script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs })
-					: await server.executeJavaScript(params.script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
+				const tabId = normalizeTabId(params.tabId);
+				const { result: jsResult, operation } = await withTrackedOperation(server, {
+					toolName: "browser_execute",
+					command: "javascript",
+					browserSessionId,
+					tabId,
+					phase: "running",
+					progress: 5,
+					queueDepth: server.queueDepth(browserSessionId, tabId),
+					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+				}, _onUpdate, async (handle) => {
+					await handle.update({ progress: params.monitor === true ? 15 : 35 });
+					const result = params.monitor === true
+						? await executeJavaScriptWithMonitor(server, params.script, { browserSessionId, tabId: params.tabId, timeoutMs })
+						: await server.executeJavaScript(params.script, { browserSessionId, tabId: params.tabId, timeoutMs });
+					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
+					return result;
+				});
 				return await jsonToolResult(jsResult, params, ctx, {
 					toolName: "browser_execute",
 					command: "javascript",
@@ -121,6 +128,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					maxChars,
 					fallbackName: artifactFallbackName("execute"),
 					details: { mode: "javascript", monitor: params.monitor === true },
+					operation,
+					artifactValue: jsResult,
 				});
 			});
 		},

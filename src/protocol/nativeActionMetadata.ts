@@ -204,6 +204,260 @@ export const nativeToolMetadata = {
         "export": "network.exportHar",
         "wait": "network.wait"
       }
+    },
+    "browser_hook": {
+      "domain": "hook",
+      "parameters": [
+        "action",
+        "params",
+        "tabId",
+        "detailLevel",
+        "outputPath",
+        "timeoutMs",
+        "maxChars",
+        "sessionId"
+      ],
+      "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions",
+      "actions": [
+        {
+          "action": "listTargets",
+          "command": "hook.list_targets",
+          "aliases": [
+            "listTargets",
+            "targets",
+            "targetList"
+          ]
+        },
+        {
+          "action": "installTargets",
+          "command": "hook.install_targets",
+          "aliases": [
+            "installTargets",
+            "targetInstall"
+          ]
+        },
+        {
+          "action": "listSessions",
+          "command": "hook.list_sessions",
+          "aliases": [
+            "listSessions",
+            "sessions"
+          ]
+        },
+        {
+          "action": "install",
+          "command": "hook.install",
+          "aliases": [
+            "install"
+          ]
+        },
+        {
+          "action": "status",
+          "command": "hook.status",
+          "aliases": [
+            "status"
+          ]
+        },
+        {
+          "action": "collect",
+          "command": "hook.collect",
+          "aliases": [
+            "collect"
+          ]
+        },
+        {
+          "action": "clear",
+          "command": "hook.clear",
+          "aliases": [
+            "clear"
+          ]
+        },
+        {
+          "action": "clearBuffer",
+          "command": "hook.clear_buffer",
+          "aliases": [
+            "clearBuffer"
+          ]
+        },
+        {
+          "action": "pause",
+          "command": "hook.pause",
+          "aliases": [
+            "pause"
+          ]
+        },
+        {
+          "action": "resume",
+          "command": "hook.resume",
+          "aliases": [
+            "resume"
+          ]
+        },
+        {
+          "action": "uninstall",
+          "command": "hook.uninstall",
+          "aliases": [
+            "uninstall"
+          ]
+        },
+        {
+          "action": "evaluate",
+          "command": "hook.evaluate",
+          "aliases": [
+            "evaluate"
+          ]
+        },
+        {
+          "action": "addEventListener",
+          "command": "hook.addEventListener",
+          "aliases": [
+            "addEventListener"
+          ]
+        },
+        {
+          "action": "removeEventListener",
+          "command": "hook.removeEventListener",
+          "aliases": [
+            "removeEventListener"
+          ]
+        },
+        {
+          "action": "performance",
+          "command": "hook.getPerformanceEntries",
+          "aliases": [
+            "performance",
+            "getPerformanceEntries"
+          ]
+        }
+      ],
+      "actionAliases": {
+        "listtargets": "hook.list_targets",
+        "targets": "hook.list_targets",
+        "targetlist": "hook.list_targets",
+        "installtargets": "hook.install_targets",
+        "targetinstall": "hook.install_targets",
+        "listsessions": "hook.list_sessions",
+        "sessions": "hook.list_sessions",
+        "install": "hook.install",
+        "status": "hook.status",
+        "collect": "hook.collect",
+        "clear": "hook.clear",
+        "clearbuffer": "hook.clear_buffer",
+        "pause": "hook.pause",
+        "resume": "hook.resume",
+        "uninstall": "hook.uninstall",
+        "evaluate": "hook.evaluate",
+        "addeventlistener": "hook.addEventListener",
+        "removeeventlistener": "hook.removeEventListener",
+        "performance": "hook.getPerformanceEntries",
+        "getperformanceentries": "hook.getPerformanceEntries"
+      }
+    },
+    "browser_frame": {
+      "domain": "frame",
+      "parameters": [
+        "action",
+        "params",
+        "tabId",
+        "detailLevel",
+        "outputPath",
+        "timeoutMs",
+        "maxChars"
+      ],
+      "actionDescription": "list | evaluate | addNewDocumentScript | removeNewDocumentScript",
+      "actions": [
+        {
+          "action": "list",
+          "command": "frame.list",
+          "aliases": [
+            "list",
+            "frames"
+          ]
+        },
+        {
+          "action": "evaluate",
+          "command": "frame.evaluate",
+          "aliases": [
+            "evaluate"
+          ]
+        },
+        {
+          "action": "addNewDocumentScript",
+          "command": "frame.addNewDocumentScript",
+          "aliases": [
+            "addNewDocumentScript",
+            "addScript"
+          ]
+        },
+        {
+          "action": "removeNewDocumentScript",
+          "command": "frame.removeNewDocumentScript",
+          "aliases": [
+            "removeNewDocumentScript",
+            "removeScript"
+          ]
+        }
+      ],
+      "actionAliases": {
+        "list": "frame.list",
+        "frames": "frame.list",
+        "evaluate": "frame.evaluate",
+        "addnewdocumentscript": "frame.addNewDocumentScript",
+        "addscript": "frame.addNewDocumentScript",
+        "removenewdocumentscript": "frame.removeNewDocumentScript",
+        "removescript": "frame.removeNewDocumentScript"
+      }
+    }
+  },
+  "nativeCommandTools": {
+    "browser_evidence": {
+      "domain": "evidence",
+      "command": "evidence.collect",
+      "parameters": [
+        "params",
+        "tabId",
+        "detailLevel",
+        "outputPath",
+        "timeoutMs",
+        "maxChars",
+        "sessionId",
+        "eventTypes",
+        "includeHook",
+        "includeNetwork",
+        "includePerformance"
+      ],
+      "artifactPrefix": "evidence"
+    },
+    "browser_screenshot": {
+      "domain": "screenshot",
+      "command": "screenshot.capture",
+      "parameters": [
+        "tabId",
+        "outputPath",
+        "timeoutMs",
+        "maxChars",
+        "format",
+        "quality",
+        "captureBeyondViewport",
+        "fallback"
+      ],
+      "artifactPrefix": "screenshot"
+    },
+    "browser_observe_html": {
+      "domain": "html",
+      "displayName": "browser_observe (mode=html)",
+      "command": "html.get",
+      "parameters": [
+        "selector",
+        "htmlMode",
+        "params",
+        "tabId",
+        "detailLevel",
+        "outputPath",
+        "timeoutMs",
+        "maxChars"
+      ],
+      "artifactPrefix": "observe-html"
     }
   },
   "transferTools": {
@@ -246,6 +500,8 @@ export const nativeToolMetadata = {
 } as const;
 
 export type NativeActionToolName = keyof typeof nativeToolMetadata.nativeActionTools;
+export type NativeCommandToolName = keyof typeof nativeToolMetadata.nativeCommandTools;
+export type NativeTransferToolName = keyof typeof nativeToolMetadata.transferTools;
 
 export function normalizeNativeToolAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
@@ -258,4 +514,13 @@ export function commandForNativeToolAction(toolName: NativeActionToolName, actio
 	return command;
 }
 
+export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
+
+export function metadataForNativeCommandTool(toolName: NativeCommandToolName) {
+	return nativeCommandToolMetadata[toolName];
+}
+
+export function metadataForNativeTransferTool(toolName: NativeTransferToolName) {
+	return nativeTransferToolMetadata[toolName];
+}

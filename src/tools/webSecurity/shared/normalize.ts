@@ -85,6 +85,51 @@ export function splitWords(value: unknown): string[] {
 	return stringList(value).flatMap((item) => item.split(/[\r\n]+/)).map((item) => item.trim()).filter(Boolean);
 }
 
+export function parseCommandArgs(value: unknown): string[] {
+	if (Array.isArray(value)) return value.map((item) => asString(item)?.trim() || "").filter(Boolean);
+	const input = asString(value)?.trim();
+	if (!input) return [];
+	const args: string[] = [];
+	let current = "";
+	let quote: '"' | "'" | undefined;
+	let escaped = false;
+	for (const char of input) {
+		if (escaped) {
+			current += char;
+			escaped = false;
+			continue;
+		}
+		if (char === "\\") {
+			escaped = true;
+			continue;
+		}
+		if (quote) {
+			if (char === quote) {
+				quote = undefined;
+				continue;
+			}
+			current += char;
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+			continue;
+		}
+		if (/\s/.test(char)) {
+			if (current) {
+				args.push(current);
+				current = "";
+			}
+			continue;
+		}
+		current += char;
+	}
+	if (escaped) throw new Error("Command args end with an unfinished escape sequence");
+	if (quote) throw new Error(`Command args contain an unclosed ${quote} quote`);
+	if (current) args.push(current);
+	return args;
+}
+
 export function sleep(ms: number): Promise<void> {
 	if (ms <= 0) return Promise.resolve();
 	return new Promise((resolve) => setTimeout(resolve, ms));

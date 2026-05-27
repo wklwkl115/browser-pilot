@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>jshook storage fixture</title>
+<main>
+  <h1>Storage fixture</h1>
+  <button id="write-storage">Write storage</button>
+  <output id="storage-status">idle</output>
+</main>
+<script>
+(function () {
+  const status = document.getElementById('storage-status');
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('pi-jshook-storage-fixture', 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('records')) db.createObjectStore('records', { keyPath: 'id' });
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+  async function putRecord() {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('records', 'readwrite');
+      tx.objectStore('records').put({
+        id: 'fixture-record-1',
+        label: 'Synthetic fixture record',
+        tokenLike: 'fixture-token-redact-me'
+      });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }
+  document.getElementById('write-storage').addEventListener('click', async () => {
+    localStorage.setItem('pi-jshook-token', 'fixture-token-redact-me');
+    localStorage.setItem('pi-jshook-preference', 'fixture-pref-value');
+    sessionStorage.setItem('pi-jshook-session', 'fixture-session-value');
+    await putRecord();
+    status.textContent = 'done';
+  });
+})();
+</script>

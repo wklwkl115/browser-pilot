@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Debugger Evidence Fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Debugger Evidence Fixture</h1>
+    <p id="status" data-state="idle">Status: idle</p>
+    <button id="run-workflow" type="button">Run workflow</button>
+  </main>
+  <script>
+    function computeToken(input) {
+      const base = input + '-seed';
+      return base.split('').reverse().join('');
+    }
+
+    function buildPayload() {
+      const token = computeToken('debugger');
+      const nested = { token, branch: 'alpha', count: 3 };
+      return { ok: true, nested, stackHint: 'workflow-handler' };
+    }
+
+    document.getElementById('run-workflow').addEventListener('click', () => {
+      const status = document.getElementById('status');
+      const payload = buildPayload();
+      status.dataset.state = 'ran';
+      status.dataset.tokenLength = String(payload.nested.token.length);
+      status.textContent = 'Status: ran ' + payload.nested.branch + ' ' + payload.nested.count;
+      window.__DEBUGGER_FIXTURE_LAST__ = payload;
+    });
+  </script>
+</body>
+</html>

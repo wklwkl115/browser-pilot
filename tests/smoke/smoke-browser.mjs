@@ -102,13 +102,22 @@ try {
 	record("bridge", true, { extension: connected.extension?.name, tabs: connected.tabs.length });
 
 	if (process.env.PI_BROWSER_SMOKE_REUSE_EXISTING === "1") {
-		const existing = connected.tabs.find((tab) => String(tab.url || "").startsWith(`http://127.0.0.1:${smokePort}/`));
+		const existing = await waitUntil(async () => {
+			await bridge.refreshTabs(5_000).catch(() => undefined);
+			return bridge.getTabs().find((tab) => String(tab.url || "").startsWith(`http://127.0.0.1:${smokePort}/`) && !tab.disconnectedAt);
+		}, 8_000);
 		tabId = existing?.tabId || existing?.id;
 		record("tabs.reuse", Boolean(tabId), { tabId, url: existing?.url });
 	} else {
 		const created = await bridge.createTab(`http://127.0.0.1:${smokePort}/`, true, 5_000);
 		tabId = created.data?.tabId || created.data?.id;
 		record("tabs.create", Boolean(tabId), { tabId });
+		if (tabId) {
+			await waitUntil(async () => {
+				await bridge.refreshTabs(5_000).catch(() => undefined);
+				return bridge.getTabs().some((tab) => tab.tabId === tabId && !tab.disconnectedAt);
+			}, 5_000);
+		}
 	}
 	if (!tabId) throw new Error("Smoke target tab was not created or discovered");
 	await bridge.sendCommand({ cmd: "wait.loadState", state: "complete", tabId }, { tabId, timeoutMs: 10_000 });

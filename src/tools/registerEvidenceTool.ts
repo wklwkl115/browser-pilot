@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
 import { applyDefaultTimeout, artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
@@ -31,13 +32,14 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_OBSERVATION_TIMEOUT_MS);
 				applyDefaultTimeout(body, timeoutMs);
 				const maxChars = toolMaxChars(params, "browser_evidence");
-				const result = await server.sendCommand({ ...body, cmd: "evidence.collect" }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body), timeoutMs });
+				const commandName = nativeCommandToolMetadata.browser_evidence.command;
+				const result = await server.sendCommand({ ...body, cmd: commandName }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body), timeoutMs });
 				return await jsonToolResult(result, params, ctx, {
 					toolName: "browser_evidence",
-					command: "evidence.collect",
+					command: commandName,
 					maxChars,
-					fallbackName: artifactFallbackName("evidence"),
-					details: { command: "evidence.collect" },
+					fallbackName: artifactFallbackName(nativeCommandToolMetadata.browser_evidence.artifactPrefix),
+					details: { command: commandName },
 					artifactValue: result,
 				});
 			});

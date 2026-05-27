@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
 import { resolveArtifactPath, saveDataUrl } from "./artifacts";
 import { inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
@@ -10,7 +11,7 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 		label: "Browser Screenshot",
 		description: "Native screenshot capture. Saves the image to disk by default and returns the file path.",
 		promptSnippet: "Capture a screenshot of the target browser tab and save it as an artifact file.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_screenshot when visual state is required; prefer targeted browser_scan/browser_html for text."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_screenshot when visual state is required; prefer browser_observe mode=scan|html|content for text."],
 		parameters: Type.Object({
 			...sharedTabScopedToolParams({ includeDetailLevel: false, outputPathDescription: "Output image path; defaults to .pi/browser-artifacts", maxCharsDescription: "Maximum metadata characters returned" }),
 			format: Type.Optional(Type.String({ description: "png | jpeg | webp" })),
@@ -23,7 +24,8 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 				const server = await ensureStarted();
 				const format = String(params.format || "png").toLowerCase();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
-				const result = await server.sendCommand({ cmd: "screenshot.capture", format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+				const commandName = nativeCommandToolMetadata.browser_screenshot.command;
+				const result = await server.sendCommand({ cmd: commandName, format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
 				const data = result.data as Record<string, unknown> | undefined;
 				const screenshot = typeof data?.screenshot === "string" ? data.screenshot : undefined;
 				let saved: Record<string, unknown> | undefined;
@@ -34,7 +36,7 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 					saved = await saveDataUrl(screenshot, outputPath);
 					if (data) data.screenshot = `[saved to ${outputPath}]`;
 				}
-				return inlineJsonToolResult({ ...result, data, saved }, { command: "screenshot.capture", saved }, params, "browser_screenshot");
+				return inlineJsonToolResult({ ...result, data, saved }, { command: commandName, saved }, params, "browser_screenshot");
 			});
 		},
 	});

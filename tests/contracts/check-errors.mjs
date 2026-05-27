@@ -36,6 +36,7 @@ const targetPlain = normalizeError(new BrowserBridgeError("TAB_NOT_FOUND", "miss
 assert.equal(targetPlain.taxonomy.domain, "driver");
 assert.equal(targetPlain.diagnostics.target.tabId, 7, "driver target diagnostics must preserve tabId");
 assert.equal(targetPlain.diagnostics.target.browserId, "browser-1", "driver target diagnostics must preserve browserId");
+assert.equal(targetPlain.diagnostics.nextActions?.includes("browser_tabs action=list"), true, "driver target errors must expose factual nextActions");
 
 const artifactError = new ArtifactReaderError("ARTIFACT_TOO_LARGE", "too large", { bytes: 10, maxBytes: 5 });
 const artifactPlain = normalizeError(artifactError);
@@ -45,6 +46,7 @@ assert.equal(artifactPlain.details.maxBytes, 5);
 assert.equal(artifactPlain.taxonomy.domain, "artifact");
 assert.equal(artifactPlain.taxonomy.source, "heuristic");
 assert.ok(artifactPlain.diagnostics.scopes.includes("artifact"), "artifact errors must expose artifact diagnostics scope");
+assert.equal(Array.isArray(artifactPlain.recovery?.nextActions), true, "artifact errors must expose bounded browser_artifact recovery guidance");
 
 const protocol = validateBridgeCommand({ cmd: "wait.selector", tabId: 1 }, { allowMissingTabId: false });
 assert.equal(protocol.ok, false, "protocol command must fail for missing selector");
@@ -54,6 +56,7 @@ assert.equal(protocolError.code, "INVALID_BROWSER_COMMAND");
 assert.deepEqual(protocolError.details.missing, ["selector"]);
 assert.equal(protocolError.taxonomy.domain, "protocol");
 assert.equal(protocolError.taxonomy.category, "driver.command");
+assert.equal(protocolError.recovery?.nextActions?.includes("use browser_command with a validated command object"), true, "protocol validation errors must suggest browser_command recovery");
 
 const plainError = normalizeError(new Error("plain boom"));
 assertNormalized(plainError, "plain Error");

@@ -14,7 +14,7 @@ Current service worker build mode is `esm-import-graph`: `bridge_src/service-wor
 
 The previous `ordered-concat-compat` bridge has been removed: `scripts/build-bridge.mjs` no longer reads service worker source text, no longer creates `bridge_src/.generated/service-worker.generated.ts`, and no longer carries a `serviceWorkerModules` ordered-concat list.
 
-The generated `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, `foundationImported:true`, `commandImported:true`, `startupImported:true`, `serviceWorkerFoundationModules`, `serviceWorkerCommandModules`, `serviceWorkerStartupModules`, and `legacyServiceWorkerModules:[]`.
+The generated `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, `foundationImported:true`, `commandImported:true`, `startupImported:true`, and metadata-only module lists (`metadataOnlyServiceWorkerFoundationModules`, `metadataOnlyServiceWorkerCommandModules`, `metadataOnlyServiceWorkerStartupModules`, `metadataOnlyLegacyServiceWorkerModules`).
 
 ## Target final state
 
@@ -50,7 +50,7 @@ Business modules must not depend on router, transport, popup UI, or startup side
 - `dist/` is generated. It must not be edited by hand.
 - `npm run build:bridge` regenerates all dist entries used by `manifest.json`.
 - Source maps are allowed for development artifacts; release packaging must decide whether to include or exclude maps explicitly.
-- `npm run check` regenerates dist before manifest/file contracts validate it after TODO 191.
+- `npm run check` validates the current dist through `check:bridge:build`; dist regeneration is an explicit `npm run build:bridge` step.
 - Package/include rules must keep source, generated runtime files, manifest, native schema, docs, and contracts portable; no private absolute paths.
 - `prepack` regenerates dist in quiet mode. `package.json.files` and generated `bridge/pi_browser_bridge/dist/.npmignore` make `npm pack --dry-run --json` include the generated runtime files even though dist remains git-ignored.
 
@@ -75,7 +75,7 @@ Business modules must not depend on router, transport, popup UI, or startup side
 TODO 202 final gate evidence:
 
 - `bridge/pi_browser_bridge/manifest.json` points to `dist/service-worker.js` with `type:"module"`.
-- `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, and `legacyServiceWorkerModules:[]`.
+- `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, and `metadataOnlyLegacyServiceWorkerModules:[]`.
 - `tsconfig.bridge-src.json` has `strict:true` and `noImplicitAny:true`; bridge/page source `@ts-nocheck` comments are forbidden by contract.
 - Verification commands passed: `npm run build:bridge`, `npm run check`, `npm pack --dry-run --json`, and `PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run smoke:browser:isolated`.
 - Isolated smoke artifact: `.pi/browser-artifacts/smoke-browser-isolated-results.json`; recorded service worker sha256 `b4bc10872b5b9b8e13ba239ff3eed398bc9f7b7d9118473a1807889228e937c7`.

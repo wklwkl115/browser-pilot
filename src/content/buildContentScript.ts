@@ -43,8 +43,8 @@ export function buildContentScript(options: BrowserContentOptions = {}): string 
     if (options.selector) {
       let selected = null;
       try { selected = docClone.querySelector(options.selector); }
-      catch (e) { return contentError('INVALID_SELECTOR', 'browser_content invalid selector: ' + options.selector, { selector: options.selector, name: e && e.name || 'Error', message: e && e.message || String(e) }); }
-      if (!selected) return contentError('SELECTOR_NOT_FOUND', 'browser_content selector not found: ' + options.selector, { selector: options.selector });
+      catch (e) { return contentError('INVALID_SELECTOR', 'browser_observe content invalid selector: ' + options.selector, { selector: options.selector, name: e && e.name || 'Error', message: e && e.message || String(e) }); }
+      if (!selected) return contentError('SELECTOR_NOT_FOUND', 'browser_observe content selector not found: ' + options.selector, { selector: options.selector });
       return selected;
     }
     const direct = docClone.querySelector('article, main, [role="main"], #content, .content, .entry-content, .post-content, .article-content, .markdown-body');

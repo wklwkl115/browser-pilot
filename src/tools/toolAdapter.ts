@@ -1,7 +1,10 @@
 import { Type } from "typebox";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
+import type { BrowserActiveOperationInfo } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
 import type { DetailLevel } from "../utils/params";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
+import { stableJson } from "../utils/json";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared";
@@ -40,6 +43,8 @@ type JsonToolResultOptions = {
 	defaultDetailLevel?: DetailLevel;
 	fallbackName: string;
 	details?: Record<string, unknown>;
+	operation?: Record<string, unknown>;
+	snapshot?: Record<string, unknown>;
 	artifactValue?: unknown;
 	distill?: DistillFn;
 	artifactThreshold?: number;
@@ -54,11 +59,21 @@ type TextToolResultOptions = {
 	defaultDetailLevel?: DetailLevel;
 	fallbackName: string;
 	details?: Record<string, unknown>;
+	operation?: Record<string, unknown>;
+	snapshot?: Record<string, unknown>;
 	artifactValue?: unknown;
 	summary?: Record<string, unknown>;
 	distill?: TextDistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
+};
+
+export type ToolOnUpdate = ((result: PiTextToolResult) => void | Promise<void>) | undefined;
+
+export type TrackedOperationHandle = {
+	operation: BrowserActiveOperationInfo;
+	update: (patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>) => Promise<BrowserActiveOperationInfo | undefined>;
+	finish: () => BrowserActiveOperationInfo | undefined;
 };
 
 
@@ -143,6 +158,8 @@ export async function jsonToolResult(value: unknown, params: Pick<StandardToolPa
 		outputPath: params.outputPath,
 		fallbackName: options.fallbackName,
 		details: options.details,
+		operation: options.operation,
+		snapshot: options.snapshot,
 		artifactValue: options.artifactValue,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
@@ -161,9 +178,84 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		outputPath: params.outputPath,
 		fallbackName: options.fallbackName,
 		details: options.details,
+		operation: options.operation,
+		snapshot: options.snapshot,
 		artifactValue: options.artifactValue,
 		summary: options.summary,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
 	});
+}
+
+function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Record<string, unknown> {
+	return {
+		operationId: operation.operationId,
+		toolName: operation.toolName,
+		command: operation.command,
+		browserSessionId: operation.browserSessionId,
+		tabId: operation.tabId,
+		phase: operation.phase,
+		progress: operation.progress,
+		queueDepth: operation.queueDepth,
+		leaseOwnerHash: operation.leaseOwnerHash,
+		conflictReason: operation.conflictReason,
+		snapshotId: operation.snapshotId,
+		sourceMode: operation.sourceMode,
+		startedAt: operation.startedAt,
+		updatedAt: operation.updatedAt,
+	};
+}
+
+async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserActiveOperationInfo): Promise<void> {
+	if (!onUpdate) return;
+	const payload = compactOperationForEnvelope(operation);
+	await onUpdate({
+		content: [{ type: "text", text: stableJson({ progress: payload }) }],
+		details: { progress: payload },
+	});
+}
+
+function attachOperationToError(error: unknown, operation: BrowserActiveOperationInfo): unknown {
+	if (!error || typeof error !== "object") return error;
+	const record = error as { details?: unknown };
+	const details = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
+	record.details = { ...details, operation: compactOperationForEnvelope(operation) };
+	return error;
+}
+
+export async function startTrackedOperation(server: BrowserBridgeServer, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate?: ToolOnUpdate): Promise<TrackedOperationHandle> {
+	let current = server.beginOperation(meta);
+	await emitTrackedProgress(onUpdate, current);
+	return {
+		get operation() { return current; },
+		update: async (patch) => {
+			const next = server.updateOperation(current.operationId, patch);
+			if (next) {
+				current = next;
+				await emitTrackedProgress(onUpdate, next);
+			}
+			return next;
+		},
+		finish: () => server.finishOperation(current.operationId),
+	};
+}
+
+export async function withTrackedOperation<T>(server: BrowserBridgeServer, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate: ToolOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
+	const handle = await startTrackedOperation(server, meta, onUpdate);
+	let heartbeat: NodeJS.Timeout | undefined;
+	try {
+		heartbeat = setInterval(() => {
+			void handle.update({ details: { heartbeatAt: Date.now() } });
+		}, 1_000);
+		const result = await run(handle);
+		const completed = await handle.update({ phase: "completed", progress: 100 });
+		const finalOperation = handle.finish() || completed || handle.operation;
+		return { result, operation: finalOperation };
+	} catch (error) {
+		const failed = await handle.update({ phase: "failed", conflictReason: error instanceof Error ? error.message : String(error) });
+		handle.finish();
+		throw attachOperationToError(error, failed || handle.operation);
+	} finally {
+		if (heartbeat) clearInterval(heartbeat);
+	}
 }

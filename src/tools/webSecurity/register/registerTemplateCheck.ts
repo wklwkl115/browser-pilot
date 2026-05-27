@@ -35,7 +35,7 @@ export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarCo
 			}),
 			...maxTemplatesParam("Maximum templates to run; default 100, hard-capped at 1000."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
-			...browserCookieBindingParams("Merge browser cookies for request URLs; default false."),
+			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for request URLs; default false."),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<TemplateCheckToolParams>(params), ctx, {
@@ -48,7 +48,7 @@ export function registerTemplateCheckTool({ pi, ensureStarted }: ToolRegistrarCo
 				run: runTemplateCheck,
 				details: (result) => ({ requestCount: result.requestCount, matchedCount: result.matchedCount }),
 				distill: summarizeTemplateCheckData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

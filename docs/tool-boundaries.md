@@ -7,33 +7,83 @@ Primary inputs are the tool parameters shown in `docs/generated/browser-tool-con
 ## Primary workflow
 
 1. `browser_tabs` establishes target and explicit `tabId`.
-2. Observe with `browser_scan`, `browser_content`, `browser_html`, `browser_screenshot`, or `browser_frame`.
-3. Act with `browser_execute`, `browser_upload`, `browser_download`, or `browser_wait`.
+2. Observe with `browser_observe mode=scan|content|html|text|tabs`, `browser_screenshot`, or `browser_frame`.
+3. Act with `browser_execute`, `browser_command`, `browser_upload`, `browser_download`, or `browser_wait`.
 4. Capture evidence with `browser_network`, `browser_hook`, `browser_evidence`.
 5. Read large or sensitive evidence with `browser_artifact`.
 6. Use Web Security tools only after baseline observation and explicit scoped inputs.
+
+## jshookmcp capability migration boundary
+
+jshookmcp research is treated as capability discovery only. Do not copy its AGPL code/text/schema/payloads/tests, do not import its MCP registry/runtime, and do not expose its tool names as Pi API. The public `browser_*` surface remains Semantic-singleton driven.
+
+Rejected public tool names for this migration: `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, `browser_canvas`.
+
+Capability mapping:
+
+| Capability class | Canonical Pi surface | Boundary |
+|---|---|---|
+| Page-side JS API observation, DOM sinks, console/error, storage/websocket/crypto/canvas events | `browser_hook` + `browser_evidence` + `browser_artifact` | Implement only as explicit hook targets or static preset expansion. `browser_hook` exposes `listTargets` / `installTargets` for bounded target expansion and diagnostics; no `all/auto/aggressive/ctf/exploit/stealth` strategy bundles. |
+| One-shot runtime/debugger/storage/source reads or precise CDP calls | `browser_command` / `browser_frame` / `browser_execute` | Use `browser_command` for native bridge/CDP command objects and `browser_execute` for page JavaScript. Do not create a broad debugger/source/storage tool. Long-running observation belongs to hook/network. |
+| Passive request/response/HAR capture | `browser_network` | Do not monkeypatch fetch/XHR for ordinary network observation. |
+| Request replay, mutation, sequence, baseline deltas | `browser_http_replay` and follow-up Web Security tools | Do not mix replay/mutation into hook or create a live intercept Swiss-army tool. |
+| JS endpoint, source map, service worker, OpenAPI/GraphQL discovery | `browser_crawl` + `browser_artifact` | Crawl remains bounded discovery. Large source/source-map data is artifact-first. |
+| Large or sensitive evidence | `browser_artifact`; multi-source bundle via `browser_evidence` | Default redaction remains on; full local evidence requires targeted artifact reads. |
+
+TODO 241 closure is tracked in `docs/jshookmcp-native-absorption.md`. Any future public tool in these areas requires a separate RFC with eval evidence, non-overlap proof against this table, contracts, budgets, summaries, README/skill updates, and runtime smoke artifacts.
+
+Future frontend-reversing work is tracked only as RFC/eval problem areas, not as public tool commitments: `Debugger evidence workflow`, `deterministic runtime provenance/symbolization`, `scoped request intervention/replay gap`, `storage/service-worker evidence navigation`, `canvas/WebGL/Wasm observability`, and `multi-signal evidence correlation`. These areas must first map to existing canonical tools (`browser_execute`, `browser_command`, `browser_frame`, `browser_hook`, `browser_network`, `browser_http_replay`, `browser_crawl`, `browser_evidence`, `browser_artifact`). The rejected names `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, and `browser_canvas` remain rejected by default, including synonymous replacement names.
+
+## Observation mode boundary
+
+`browser_observe` is the current canonical observation tool.
+
+| Mode | Replaces | Boundary |
+|---|---|---|
+| `scan` | legacy `browser_scan` | Compact DOM/text perception, Scan Manifest v2, actionables, forms/lists/text signals, same-origin iframe overview. |
+| `content` | legacy `browser_content` | Readable Markdown extraction, optional URL navigation through durable wait supervisor, selector empty/miss/invalid semantics. |
+| `html` | legacy `browser_html` | Native exact HTML/text snapshots through `html.get`, selector diagnostics, raw/inner/outer/text/fragment modes. |
+| `text` | text-first observation shorthand | Uses the scan extraction path with text-first output and explicit `sourceMode`; it must not auto-select between scan/content/html. |
+| `tabs` | legacy `browser_scan tabsOnly` convenience | Observation-only tab facts; it does not replace `browser_tabs` session/tab management. |
+
+Hard rules:
+
+- No `mode:"auto"`.
+- No selector miss fallback across modes.
+- `browser_screenshot` and `browser_frame` remain separate tools.
+- `SELECTOR_NOT_FOUND`, `INVALID_SELECTOR`, content `empty:true`, durable navigation, and native `html.get` errors must remain stable.
 
 ## Runtime browser tools
 
 | Tool | Purpose | Use when | Do not use when | Primary output/evidence | Follow-up |
 |---|---|---|---|---|---|
-| `browser_tabs` | Manage connected browsers, tabs, and advanced browser sessions. | Start automation, list tabs, create/switch/close tabs, diagnose target identity, manage `browserSessionId` only for advanced routing. | Do not use as a page action primitive or to infer page content. Do not switch unless intentionally changing active tab. | Tab list, browser ids, session snapshot, selected/default target facts. | Pass explicit `tabId` to tab-scoped tools. |
-| `browser_scan` | Compact DOM/text perception with actionables. | Need page structure, visible text, selectors, action candidates, same-origin iframe overview, or unclear target via `tabsOnly`. | Do not use for exact HTML source, article extraction, visual proof, or large raw dumps. | Simplified content, actionables, list hints, tab metadata, artifact envelope. | `browser_execute`, `browser_wait`, `browser_content`, `browser_html`. |
-| `browser_content` | Extract readable article/main content as Markdown. | Need human-readable page/article text, optionally after URL navigation or a content selector. | Do not use for forms/actions, exact DOM/HTML, visual layout, or non-article structured scraping. | Markdown, title/url/selector stats, navigation metadata, artifact. | `browser_artifact` for full Markdown; `browser_html` if selector/source precision is needed. |
-| `browser_html` | Capture exact HTML/text snapshot for a selector or document. | Need raw/inner/outer/text HTML, selector miss diagnostics, or targeted source evidence. | Do not use as first-line page understanding when compact scan is enough, or as visual proof. | HTML/text fragment, selector/status metadata, artifact. | `browser_scan` to choose selectors; `browser_artifact` for large snapshots. |
-| `browser_screenshot` | Save visual browser state as an image artifact. | Need visual proof, layout confirmation, or OCR/manual review fallback. | Do not use for text extraction when `browser_scan`, `browser_content`, or `browser_html` can return structured text. | Image artifact path, format/mime, target metadata. | Use with textual tools for explanation. |
-| `browser_frame` | Inspect or execute inside frames and manage new-document scripts. | Need frame tree, cross-frame evaluation, or CDP script injection lifecycle. | Do not guess iframe DOM access with top-frame `browser_execute` when frame targeting is required. | Frame tree, frame evaluation result, script identifiers. | `browser_execute`, `browser_html`, `browser_hook`. |
-| `browser_execute` | Execute precise JavaScript or bridge command in a tab. | Need custom page action, state read, DOM mutation, CDP command, focused interaction, or compact before/after monitor. | Do not use for file upload, stable download handling, long waits, or bulk network replay. | JS/CDP result, target/newTabs metadata, optional monitor diff, artifact. | `browser_wait` then re-observe with `browser_scan`/`browser_html`. |
-| `browser_pick` | Let user select visible DOM elements interactively. | User must identify a specific visible element and selectors cannot be inferred confidently. | Do not use for autonomous bulk selection or background tabs where interaction is unavailable. | Selected selectors, element summaries, cancellation/timeout state. | `browser_execute`, `browser_html`, `browser_upload` when file input is selected. |
+| `browser_tabs` | Manage connected browsers, tabs, advanced browser sessions, and explicit runtime/snapshot diagnostics. | Start automation, list tabs, create/switch/close tabs, inspect capability profile, inspect active operations, or read explicit observation snapshot metadata. | Do not use as a page action primitive or to infer page content. Do not switch unless intentionally changing active tab. | Tab list, browser ids, session snapshot, capability profile, active operations, explicit observation snapshots. | Pass explicit `tabId` to tab-scoped tools. |
+| `browser_observe` | Canonical observation tool for structure, readable content, exact HTML/text, text-first reads, and tab-fact reads through explicit modes. | Use `mode=scan` for structure/actionables/forms/lists/text signals, `mode=content` for Markdown/article extraction, `mode=html` for exact HTML/text slices and selector diagnostics, `mode=text` for visible text-first observation, and `mode=tabs` when the target tab is unclear. | Do not use `mode="auto"`. Do not rely on selector-miss fallback across modes. Do not use screenshot when structured text is sufficient. | Scan Manifest v2, Markdown, HTML/text fragments, tab facts, selector diagnostics, artifact envelope, and explicit `mode`/`sourceMode` metadata. | `browser_execute`, `browser_wait`, targeted `browser_artifact` jsonPath reads, `browser_screenshot`, `browser_frame`. |
+| `browser_screenshot` | Save visual browser state as an image artifact. | Need visual proof, layout confirmation, or OCR/manual review fallback. | Do not use for text extraction when `browser_observe` can return structured text. | Image artifact path, format/mime, target metadata. | Use with textual tools for explanation. |
+| `browser_frame` | Inspect or execute inside frames and manage new-document scripts. | Need frame tree, cross-frame evaluation, or CDP script injection lifecycle. | Do not guess iframe DOM access with top-frame `browser_execute` when frame targeting is required. | Frame tree, frame evaluation result, script identifiers. | `browser_execute`, `browser_observe`, `browser_hook`. |
+| `browser_execute` | Precise JavaScript execution in a tab. | Need custom page action, state read, DOM mutation, focused interaction, or compact before/after monitor. | Do not use for native bridge commands, file upload, stable download handling, long waits, or bulk network replay. | JS result, target/newTabs metadata, optional monitor diff, artifact, operation metadata. | `browser_wait` then re-observe with `browser_observe`. |
+| `browser_pick` | Let user select visible DOM elements interactively. | User must identify a specific visible element and selectors cannot be inferred confidently. | Do not use for autonomous bulk selection or background tabs where interaction is unavailable. | Selected selectors, element summaries, cancellation/timeout state. | `browser_execute`, `browser_observe`, `browser_upload` when file input is selected. |
 | `browser_wait` | Durable waits and navigation state probes. | Need navigation, selector, load state, network idle, composite waits, immediate probe, or wait diagnostics. | Do not use manual sleeps or repeated polling loops in JS when native wait covers the condition. | Wait result, supervisor metadata, timeout/state-loss diagnostics. | Re-observe page/network; adjust condition or repeat action. |
 | `browser_network` | Record and inspect browser network requests/responses/HAR. | Need captured requests, response bodies, postData, HAR, or wait for request/response evidence. | Do not monkeypatch fetch/XHR via page JS for ordinary request observation. | Recorder entries, body availability, request ids, HAR/artifact data. | `browser_http_replay`, `browser_evidence`, `browser_artifact`. |
 | `browser_hook` | Install and collect page-side event hooks. | Need DOM/console/error/storage/websocket/crypto/dom_sinks or custom listener evidence across actions. | Do not use when passive network recorder or simple DOM scan is enough. | Hook sessions, event buffer, listener/performance data. | `browser_evidence`, `browser_artifact`, `browser_execute`. |
 | `browser_evidence` | Aggregate hook, network, and performance evidence. | Need one compact proof bundle from already configured evidence sources. | Do not use as a replacement for initial observation or when a single source tool gives clearer data. | Combined evidence summary, source statuses, artifact. | `browser_artifact`; source tools for deeper reads. |
-| `browser_artifact` | Read/search/sample local browser artifacts safely. | A browser tool returned `saved.path`, output is large, or sensitive evidence must be inspected locally with redaction controls. | Do not re-run expensive browser capture just to inspect already saved evidence. Do not set `redact:false` unless explicitly needed. | Text/json/search/sample snippets, next offsets, privacy metadata. | Continue targeted reads with narrower offsets/jsonPath/query. |
+| `browser_artifact` | Read/search/sample local browser artifacts safely, including bounded multi-artifact search. | A browser tool returned `saved.path`, output is large, sensitive evidence must be inspected locally with redaction controls, or evidence must be searched across an explicit bounded artifact set. | Do not re-run expensive browser capture just to inspect already saved evidence. Do not set `redact:false` unless explicitly needed. Do not use multi-search without explicit `paths` or bounded `root`/`glob` plus limits. | Text/json/search/sample snippets, next offsets, privacy metadata, bounded grouped cross-artifact matches. | Continue targeted reads with narrower offsets/jsonPath/query or reduce the multi-search scope to one artifact. |
 | `browser_download` | Trigger or wait for browser downloads and return local file path. | Need a stable Chrome download id/path via selector click, media extraction, or direct URL. | Do not script ad-hoc clicks when the task outcome is a downloaded file. | Download id/state/path, target metadata, artifact envelope. | Use `browser_artifact` or normal file tools on the local path. |
 | `browser_upload` | Upload local files through a page file chooser. | User explicitly approved exact absolute file paths and selector points to file input/chooser. | Do not use without `confirm:true`; do not use `browser_execute` to bypass upload confirmation. | Upload result, file count, selector, bridge metadata. | `browser_wait` and re-observe page state. |
 
+| `browser_command` | Canonical native bridge command execution surface. | Need explicit bridge command objects such as `tabs`, `management`, `cdp`, or `persistent_cdp`, with stable protocol validation and command-mode artifacts. | Do not use for page JavaScript, uploads that require `browser_upload`, or long waits already covered by canonical typed tools. | Command result, target/newTabs metadata, artifact, operation metadata. | `browser_observe`, `browser_wait`, `browser_artifact`. |
+
+## Execute/command split boundary
+
+TODO 245 is completed.
+
+- `browser_execute` is JavaScript-only.
+- `browser_command` is the canonical bridge-command-only surface.
+- JSON-string command promotion is no longer part of the documented tool surface.
+
 ## Scoped Web follow-up tools
+
+Web Security follow-up tools are visible when the capability profile allows them. Default profile is `security`; set `PI_BROWSER_TOOL_PROFILE=core` before `/reload` to hide them from daily automation sessions.
 
 | Tool | Purpose | Use when | Do not use when | Primary output/evidence | Follow-up |
 |---|---|---|---|---|---|
@@ -52,7 +102,7 @@ Primary inputs are the tool parameters shown in `docs/generated/browser-tool-con
 
 ## Boundary rules
 
-- If the task is page perception, start with the smallest observation tool that returns structured text; use screenshots only for visual proof.
+- If the task is page perception, start with the smallest observation mode that returns structured text; use screenshots only for visual proof.
 - If the task is page action, use `browser_execute` plus `browser_wait`, not fixed click/type tools.
 - If the task is request mutation, use `browser_http_replay` as the primitive before specialized fuzzers or bridges; browser_http_replay as the primitive is the default boundary for focused request variants.
 - If the task is broad Web Security automation, first capture baseline scope and evidence; scanners/fuzzers are follow-up layers.

@@ -29,6 +29,16 @@ const specFiles = [
 	"08-cookie-jwt-redaction.md",
 	"09-sqli-probe-vs-bridge.md",
 	"10-multi-session-lease-conflict.md",
+	"11-jshook-runtime-hook-targets.md",
+	"12-jshook-source-map-artifact.md",
+	"13-jshook-storage-evidence.md",
+	"14-jshook-replay-not-intercept.md",
+	"15-jshook-canvas-observation.md",
+	"16-scan-high-entropy-summary.md",
+	"17-debugger-evidence-workflow.md",
+	"18-debugger-script-provenance.md",
+	"19-debugger-pause-lifecycle.md",
+	"20-debugger-navigation-recovery.md",
 ];
 
 for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "result-schema.json", "results/README.md", ...specFiles]) {
@@ -51,6 +61,12 @@ for (const file of specFiles) {
 	assert(text.includes("browser_"), `${file} must name relevant browser tools`);
 	assert(!/https?:\/\//i.test(text), `${file} must not depend on external HTTP(S) URLs`);
 	assert(!/sk_live_|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|xox[baprs]-/i.test(text), `${file} contains secret-like material`);
+}
+
+for (const file of specFiles.filter((file) => file.includes("jshook"))) {
+	const text = specTexts.get(file) || "";
+	assert(text.includes("## Capability closure classification"), `${file} must classify jshook capability closure`);
+	assert(text.includes("must not introduce") || text.includes("must not create"), `${file} must prohibit new public tool creation`);
 }
 
 const manifest = readJson(path.join("evals", "browser-workflows", "manifest.json"));
@@ -102,6 +118,19 @@ const requiredFixtures = [
 	"cookies.json",
 	"path-fuzz-routes.json",
 	"sqli-request.txt",
+	"jshook-runtime-sinks.html",
+	"jshook-source-map.html",
+	"jshook/bundle.js",
+	"jshook/bundle.js.map",
+	"jshook-storage.html",
+	"jshook-replay.html",
+	"jshook-canvas.html",
+	"scan-high-entropy.html",
+	"debugger-evidence.html",
+	"debugger-provenance.html",
+	"debugger/provenance-helper.js",
+	"debugger-pause.html",
+	"debugger-navigation.html",
 ];
 
 for (const file of requiredFixtures) {

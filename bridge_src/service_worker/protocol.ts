@@ -85,6 +85,8 @@ type PiProtocolSchema = JsonRecord & {
     ],
     "hook": [
       "hook.list_sessions",
+      "hook.list_targets",
+      "hook.install_targets",
       "hook.install",
       "hook.status",
       "hook.collect",
@@ -406,6 +408,14 @@ type PiProtocolSchema = JsonRecord & {
         "selector",
         "files"
       ]
+    },
+    "hook.list_targets": {
+      "domain": "hook",
+      "tabScoped": false
+    },
+    "hook.install_targets": {
+      "domain": "hook",
+      "tabScoped": true
     }
   },
   "errorCodes": {
@@ -507,7 +517,7 @@ type PiProtocolSchema = JsonRecord & {
     "CONTENT_EXTRACTION_FAILED": {
       "category": "tool.content",
       "retryable": false,
-      "summary": "browser_content extraction did not return structured content data."
+      "summary": "browser_observe content extraction did not return structured content data."
     },
     "CROSS_ORIGIN_IFRAME": {
       "category": "runtime.frame",
@@ -543,6 +553,41 @@ type PiProtocolSchema = JsonRecord & {
       "category": "runtime.internal",
       "retryable": false,
       "summary": "Unexpected internal runtime or tool failure."
+    },
+    "MATURE_BRIDGE_LAUNCHER_NOT_FOUND": {
+      "category": "tool.security",
+      "retryable": false,
+      "summary": "External mature bridge launcher was not found."
+    },
+    "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT": {
+      "category": "tool.security",
+      "retryable": true,
+      "summary": "External mature bridge launcher probe timed out."
+    },
+    "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED": {
+      "category": "tool.security",
+      "retryable": false,
+      "summary": "External mature bridge launcher probe failed."
+    },
+    "MATURE_BRIDGE_LAUNCH_FAILED": {
+      "category": "tool.security",
+      "retryable": false,
+      "summary": "External mature bridge process failed to start."
+    },
+    "MATURE_BRIDGE_PROCESS_TIMEOUT": {
+      "category": "tool.security",
+      "retryable": true,
+      "summary": "External mature bridge process timed out."
+    },
+    "MATURE_BRIDGE_TARGET_REQUIRED": {
+      "category": "tool.security",
+      "retryable": false,
+      "summary": "External mature bridge requires an explicit scoped target or request input."
+    },
+    "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED": {
+      "category": "tool.security",
+      "retryable": false,
+      "summary": "External mature bridge requires explicit template or selector input."
     },
     "INVALID_BROWSER_COMMAND": {
       "category": "driver.command",
@@ -894,6 +939,229 @@ type PiProtocolSchema = JsonRecord & {
             ]
           }
         ]
+      },
+      "browser_hook": {
+        "domain": "hook",
+        "parameters": [
+          "action",
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "sessionId"
+        ],
+        "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions",
+        "actions": [
+          {
+            "action": "listTargets",
+            "command": "hook.list_targets",
+            "aliases": [
+              "listTargets",
+              "targets",
+              "targetList"
+            ]
+          },
+          {
+            "action": "installTargets",
+            "command": "hook.install_targets",
+            "aliases": [
+              "installTargets",
+              "targetInstall"
+            ]
+          },
+          {
+            "action": "listSessions",
+            "command": "hook.list_sessions",
+            "aliases": [
+              "listSessions",
+              "sessions"
+            ]
+          },
+          {
+            "action": "install",
+            "command": "hook.install",
+            "aliases": [
+              "install"
+            ]
+          },
+          {
+            "action": "status",
+            "command": "hook.status",
+            "aliases": [
+              "status"
+            ]
+          },
+          {
+            "action": "collect",
+            "command": "hook.collect",
+            "aliases": [
+              "collect"
+            ]
+          },
+          {
+            "action": "clear",
+            "command": "hook.clear",
+            "aliases": [
+              "clear"
+            ]
+          },
+          {
+            "action": "clearBuffer",
+            "command": "hook.clear_buffer",
+            "aliases": [
+              "clearBuffer"
+            ]
+          },
+          {
+            "action": "pause",
+            "command": "hook.pause",
+            "aliases": [
+              "pause"
+            ]
+          },
+          {
+            "action": "resume",
+            "command": "hook.resume",
+            "aliases": [
+              "resume"
+            ]
+          },
+          {
+            "action": "uninstall",
+            "command": "hook.uninstall",
+            "aliases": [
+              "uninstall"
+            ]
+          },
+          {
+            "action": "evaluate",
+            "command": "hook.evaluate",
+            "aliases": [
+              "evaluate"
+            ]
+          },
+          {
+            "action": "addEventListener",
+            "command": "hook.addEventListener",
+            "aliases": [
+              "addEventListener"
+            ]
+          },
+          {
+            "action": "removeEventListener",
+            "command": "hook.removeEventListener",
+            "aliases": [
+              "removeEventListener"
+            ]
+          },
+          {
+            "action": "performance",
+            "command": "hook.getPerformanceEntries",
+            "aliases": [
+              "performance",
+              "getPerformanceEntries"
+            ]
+          }
+        ]
+      },
+      "browser_frame": {
+        "domain": "frame",
+        "parameters": [
+          "action",
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars"
+        ],
+        "actionDescription": "list | evaluate | addNewDocumentScript | removeNewDocumentScript",
+        "actions": [
+          {
+            "action": "list",
+            "command": "frame.list",
+            "aliases": [
+              "list",
+              "frames"
+            ]
+          },
+          {
+            "action": "evaluate",
+            "command": "frame.evaluate",
+            "aliases": [
+              "evaluate"
+            ]
+          },
+          {
+            "action": "addNewDocumentScript",
+            "command": "frame.addNewDocumentScript",
+            "aliases": [
+              "addNewDocumentScript",
+              "addScript"
+            ]
+          },
+          {
+            "action": "removeNewDocumentScript",
+            "command": "frame.removeNewDocumentScript",
+            "aliases": [
+              "removeNewDocumentScript",
+              "removeScript"
+            ]
+          }
+        ]
+      }
+    },
+    "nativeCommandTools": {
+      "browser_evidence": {
+        "domain": "evidence",
+        "command": "evidence.collect",
+        "parameters": [
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "sessionId",
+          "eventTypes",
+          "includeHook",
+          "includeNetwork",
+          "includePerformance"
+        ],
+        "artifactPrefix": "evidence"
+      },
+      "browser_screenshot": {
+        "domain": "screenshot",
+        "command": "screenshot.capture",
+        "parameters": [
+          "tabId",
+          "outputPath",
+          "timeoutMs",
+          "maxChars",
+          "format",
+          "quality",
+          "captureBeyondViewport",
+          "fallback"
+        ],
+        "artifactPrefix": "screenshot"
+      },
+      "browser_observe_html": {
+        "domain": "html",
+        "displayName": "browser_observe (mode=html)",
+        "command": "html.get",
+        "parameters": [
+          "selector",
+          "htmlMode",
+          "params",
+          "tabId",
+          "detailLevel",
+          "outputPath",
+          "timeoutMs",
+          "maxChars"
+        ],
+        "artifactPrefix": "observe-html"
       }
     },
     "transferTools": {

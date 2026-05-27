@@ -20,7 +20,7 @@ The dispatcher cannot be split like service worker helpers because both supporte
 - The CDP fallback fetches and evaluates one source string.
 - MAIN-world page execution must not depend on service worker `importScripts`, extension module state, or a multi-file page import graph.
 
-The long-term split point is TODO 190: convert the dispatcher into an independently built page bundle with a stable output filename. Until then, internal changes inside `hook_dispatcher.js` must preserve the single-file IIFE boundary.
+The current boundary remains a single self-contained page bundle even after TODO 190 gave it an independently built output file. Internal changes inside `hook_dispatcher.js` must preserve the single-file IIFE boundary until a future explicit multi-file injection design proves that `chrome.scripting.executeScript({ files })` and the CDP source-eval fallback stay behaviorally identical.
 
 ## Locked invariants
 
@@ -35,6 +35,6 @@ The long-term split point is TODO 190: convert the dispatcher into an independen
 
 ## Contract gates
 
-- `tests/contracts/check-bridge-files.mjs` locks the injection filename, service worker exclusion, self-contained page-bundle form, and this boundary document.
+- `tests/contracts/check-bridge-files.mjs` locks the injection filename, service worker exclusion, self-contained page-bundle form, emitted source maps, and this boundary document.
 - `tests/contracts/check-page-scripts.mjs` locks page-script self-containment and absence of background-only APIs.
 - `tests/contracts/check-pi-browser-bridge.mjs` keeps VM behavior coverage for session strict-match, collect no self-noise, monotonic sequence, listener cleanup, and redact pattern budgets.

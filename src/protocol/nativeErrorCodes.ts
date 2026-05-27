@@ -98,7 +98,7 @@ export const nativeErrorCodes = {
   "CONTENT_EXTRACTION_FAILED": {
     "category": "tool.content",
     "retryable": false,
-    "summary": "browser_content extraction did not return structured content data."
+    "summary": "browser_observe content extraction did not return structured content data."
   },
   "CROSS_ORIGIN_IFRAME": {
     "category": "runtime.frame",
@@ -134,6 +134,41 @@ export const nativeErrorCodes = {
     "category": "runtime.internal",
     "retryable": false,
     "summary": "Unexpected internal runtime or tool failure."
+  },
+  "MATURE_BRIDGE_LAUNCHER_NOT_FOUND": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "External mature bridge launcher was not found."
+  },
+  "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT": {
+    "category": "tool.security",
+    "retryable": true,
+    "summary": "External mature bridge launcher probe timed out."
+  },
+  "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "External mature bridge launcher probe failed."
+  },
+  "MATURE_BRIDGE_LAUNCH_FAILED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "External mature bridge process failed to start."
+  },
+  "MATURE_BRIDGE_PROCESS_TIMEOUT": {
+    "category": "tool.security",
+    "retryable": true,
+    "summary": "External mature bridge process timed out."
+  },
+  "MATURE_BRIDGE_TARGET_REQUIRED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "External mature bridge requires an explicit scoped target or request input."
+  },
+  "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "External mature bridge requires explicit template or selector input."
   },
   "INVALID_BROWSER_COMMAND": {
     "category": "driver.command",

@@ -38,9 +38,9 @@ export async function runReconProbe(options: ProbeOptions) {
 	const results = [];
 	for (const target of normalized.targets) {
 		try {
-			const cookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined;
+				const injectedBrowserCookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined;
 			const headers = { ...normalized.headers };
-			if (cookie) headers.Cookie = cookie;
+			if (injectedBrowserCookie) headers.Cookie = injectedBrowserCookie;
 			const sanitized = sanitizeFetchHeaders(headers);
 			const exchange = await fetchWithRedirects({ url: target, method: normalized.method, headers: sanitized.headers }, normalized);
 			const final = exchange.final;
@@ -62,7 +62,7 @@ export async function runReconProbe(options: ProbeOptions) {
 				headers: redactHeaders(final.headers),
 				headerNames: Object.keys(final.headers),
 				omittedRequestHeaderNames: sanitized.omittedHeaderNames,
-				cookiesBound: !!cookie,
+				cookiesBound: !!injectedBrowserCookie,
 				body: {
 					bytes: final.bodyBytes,
 					truncated: final.bodyTruncated,

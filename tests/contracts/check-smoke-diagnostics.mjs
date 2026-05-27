@@ -72,12 +72,22 @@ assert.equal(freeDiagnosis.health.ok, false, "free-port diagnostic must preserve
 const smoke = read("tests/smoke/smoke-browser.mjs");
 assert(smoke.includes("diagnoseBridgePortInUse") && smoke.includes('record("bridge.port"'), "smoke-browser must emit bridge.port diagnostics on bridge start conflicts");
 const isolatedSmoke = read("tests/smoke/smoke-browser-isolated.mjs");
+const scanSummarySmoke = read("tests/smoke/smoke-scan-summary.mjs");
+const debuggerEvidenceSmoke = read("tests/smoke/smoke-debugger-evidence.mjs");
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.scripts?.["smoke:browser:isolated"]?.includes("smoke-browser-isolated.mjs"), "package must expose isolated browser smoke");
+assert(pkg.scripts?.["smoke:browser:scan-summary"]?.includes("smoke-scan-summary.mjs"), "package must expose scan summary runtime smoke");
+assert(pkg.scripts?.["smoke:browser:debugger-evidence"]?.includes("smoke-debugger-evidence.mjs"), "package must expose debugger evidence runtime smoke");
 assert(isolatedSmoke.includes("--user-data-dir") && isolatedSmoke.includes("--load-extension") && isolatedSmoke.includes("PI_BROWSER_BRIDGE_PORT") && isolatedSmoke.includes("smoke-browser-isolated-results.json"), "isolated smoke must launch a temporary Chrome profile, patch a temporary extension port, and write an artifact");
+assert(scanSummarySmoke.includes("scan-high-entropy.html") && scanSummarySmoke.includes("summarizeScanData") && scanSummarySmoke.includes("smoke-browser-scan-summary-results.json"), "scan summary smoke must use the local high-entropy fixture, summarize scan output, and write a dedicated artifact");
+assert(debuggerEvidenceSmoke.includes("debugger-evidence.html") && debuggerEvidenceSmoke.includes("Debugger.enable") && debuggerEvidenceSmoke.includes("Debugger.getScriptSource") && debuggerEvidenceSmoke.includes("smoke-browser-debugger-evidence-results.json"), "debugger evidence smoke must use the local debugger fixture, collect debugger evidence, and write a dedicated artifact");
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
 	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);
 }
+assert(read("AI_INSTALL.md").includes("npm run smoke:browser:scan-summary"), "AI_INSTALL.md must document scan summary runtime smoke");
+assert(read("README.md").includes("npm run smoke:browser:scan-summary"), "README.md must document scan summary runtime smoke");
+assert(read("AI_INSTALL.md").includes("npm run smoke:browser:debugger-evidence"), "AI_INSTALL.md must document debugger evidence runtime smoke");
+assert(read("README.md").includes("npm run smoke:browser:debugger-evidence"), "README.md must document debugger evidence runtime smoke");
 
 console.log("smoke diagnostics contract ok");

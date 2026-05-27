@@ -13,7 +13,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, bounded claim replay validation, and outputPath artifacts for follow-up evidence."],
 		parameters: Type.Object({
 			...sharedWebSecurityBrowserSessionParams("Timeout in milliseconds for browser-session cookie collection."),
-			url: Type.Optional(Type.String({ description: "URL used when bindBrowserSession collects browser cookies." })),
+			url: Type.Optional(Type.String({ description: "URL used when bindBrowserSession collects browser cookies for HTTP request injection." })),
 			cookie: Type.Optional(Type.String({ description: "Single Cookie header, Set-Cookie line, or name=value string." })),
 			cookies: Type.Optional(Type.Any({ description: "Cookie header string, array of strings, or browser-cookie-like objects with name/value." })),
 			setCookie: Type.Optional(Type.String({ description: "Single Set-Cookie header line." })),
@@ -28,7 +28,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 			maxSecretCandidates: Type.Optional(Type.Number({ description: "Maximum HMAC secret candidates to test; default 10000, hard-capped at 100000." })),
 			claimMutations: Type.Optional(Type.Any({ description: "Claims to merge into decoded JWT/JWE/session payloads when generating a mutated token." })),
 			claimReplay: Type.Optional(Type.Any({ description: "Optional bounded replay check for generated claim mutations. Supports url, method, headers, body/bodyBase64, cookieName, matchStatus, maxCases, followRedirects, timeoutMs, and maxBodyBytes." })),
-			...browserCookieBindingParams("Collect browser cookies for url using the connected browser session; default false.", { includeCookieMode: false }),
+			...browserCookieBindingParams("Collect browser cookies for URL-scoped HTTP request injection using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<CookieAnalyzeToolParams>(params), ctx, {
@@ -39,7 +39,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 				run: runCookieAnalyze,
 				details: (result) => ({ inputCount: result.inputCount, tokenCount: result.tokenCount, claimReplayCount: result.claimReplayCount }),
 				distill: summarizeCookieAnalyzeData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

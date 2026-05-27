@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { distilledJsonResult, distilledTextResult } from "../../src/tools/resultMiddleware.ts";
@@ -50,12 +52,54 @@ const scan = summarizeScanData({
 	node_count: 4,
 	iframe_notes: [{ src: "about:blank", accessible: true }],
 }, [{ id: 1 }, { id: 2 }]);
-assert.deepEqual(Object.keys(scan).sort(), ["actionables", "contentChars", "headings", "iframe_notes", "interactive", "lineCount", "list_hints", "node_count", "readyState", "tabs_count", "textPreview", "text_only", "title", "top_layer", "truncated", "url"].sort(), "check-summaries scan.keys: summary fields must stay stable");
+assert.deepEqual(Object.keys(scan).sort(), ["actionables", "artifact_hints", "contentChars", "focus", "headings", "iframe_notes", "interactive", "lineCount", "list_hints", "node_count", "page", "readyState", "summaryVersion", "tabs_count", "textPreview", "text_only", "title", "top_layer", "truncated", "url"].sort(), "check-summaries scan.keys: summary fields must stay stable");
+assert.equal(scan.summaryVersion, 2, "check-summaries scan.version: high-entropy scan summary must expose version 2");
 assert.equal(scan.tabs_count, 2);
+assert.equal(scan.page.tabs_count, 2, "check-summaries scan.page: compact page manifest must retain tab count");
 assert.equal(scan.interactive.length, 2);
 assert.equal(scan.headings.length, 1);
 assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: GA-style actionables table must be exposed");
 assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
+assert.equal(scan.artifact_hints.jsonPaths.actionables, "data.actionables", "check-summaries scan.artifactHints: scan summary must provide precise actionables jsonPath");
+
+const richScan = summarizeScanData({
+	url: "https://example.test/checkout",
+	title: "Checkout",
+	readyState: "complete",
+	content: "<h1>Checkout</h1>\nStatus: payment required\n<button>Pay now</button>\n<input name=card value=4111111111111111>\n20 items in cart",
+	node_count: 40,
+	truncated: true,
+	actionables: [
+		{ index: 0, tag: "input", role: "textbox", action: "card", label: "4111111111111111", text: "4111111111111111", selector: "#card", point: { x: 100, y: 200 }, hitOk: true, editable: true, disabled: false, priority: 1200 },
+		{ index: 1, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, hitOk: true, clickable: true, disabled: false, priority: 1500 },
+		{ index: 2, tag: "button", role: "button", action: "cancel", label: "Cancel", selector: "#cancel", point: { x: 260, y: 260 }, hitOk: false, clickable: true, hitTarget: { tag: "div", id: "modal" }, priority: 800 },
+	],
+	list_hints: [{ selector: "main > div.cart > div.item", itemCount: 20, hiddenCount: 17, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] }],
+}, [{ id: 1 }], { maxChars: 12_000 });
+assert.equal(richScan.focus.primary_actions.length >= 2, true, "check-summaries scan.primaryActions: compact high-signal actions must be exposed");
+assert.equal(richScan.focus.primary_actions[0].jsonPath.startsWith("data.actionables["), true, "check-summaries scan.primaryActions.path: action summaries must carry artifact jsonPath");
+assert.equal(JSON.stringify(richScan.focus.primary_actions).includes("4111111111111111"), false, "check-summaries scan.primaryActions.redactValue: editable summaries must not expose raw input values");
+assert.equal(richScan.focus.forms[0].fields.length, 1, "check-summaries scan.forms: editable controls must be summarized as form fields");
+assert.equal(richScan.focus.lists[0].more.length, 2, "check-summaries scan.lists: repeated list hints must preserve representative hidden samples");
+assert.equal(richScan.focus.text_signals.some((item) => /payment|required|items/i.test(item)), true, "check-summaries scan.textSignals: high-signal status/list lines must replace shallow textPreview dependence");
+const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));
+try {
+	const scanEnvelope = parseToolText(await distilledTextResult("scan text", {
+		toolName: "browser_observe",
+		command: "scan",
+		detailLevel: "summary",
+		maxChars: 12_000,
+		ctx: { cwd: scanTmp },
+		fallbackName: "scan-summary.json",
+		summary: richScan,
+		artifactValue: { data: { content: "x".repeat(9_000), actionables: [{ selector: "#pay" }], list_hints: [] } },
+	}));
+	assert.ok(scanEnvelope.saved?.path && existsSync(scanEnvelope.saved.path), "check-summaries scan.artifact: large scan result must save raw artifact");
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("mode=json jsonPath=data.actionables")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at actionables jsonPath");
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("mode=json jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
+} finally {
+	await rm(scanTmp, { recursive: true, force: true });
+}
 
 const html = summarizeHtmlSnapshot("<html><head><title>T</title></head><body><form><input><button>Go</button></form><a href='/'>Home</a></body></html>", { selector: "body", mode: "outer" });
 assert.deepEqual(Object.keys(html).sort(), ["chars", "counts", "mode", "original_bytes", "original_length", "selector", "textChars", "textPreview", "titles", "truncated"].sort(), "check-summaries html.keys: summary fields must stay stable");
@@ -200,7 +244,7 @@ assert.equal(JSON.stringify(replaySummary).includes("sid=secret"), false, "check
 const replayEnvelope = parseToolText(await distilledJsonResult(replaySummary, { toolName: "browser_http_replay", command: "http.replay", detailLevel: "summary", maxChars: 6_000, fallbackName: "replay.json", distill: () => replaySummary }));
 assert.equal(replayEnvelope.diagnostics.entryCount, undefined, "check-summaries envelope.diagnostics.replay: unrelated network fields must not be invented");
 assert.equal(replayEnvelope.limits.requestCount, undefined, "check-summaries envelope.limits.replay: absent limits must remain absent");
-const contentEnvelope = parseToolText(await distilledTextResult("# T", { toolName: "browser_content", command: "content", detailLevel: "summary", maxChars: 3_000, fallbackName: "content.json", summary: { url: "https://example.test", markdownChars: 3, empty: true } }));
+const contentEnvelope = parseToolText(await distilledTextResult("# T", { toolName: "browser_observe", command: "content", detailLevel: "summary", maxChars: 3_000, fallbackName: "content.json", summary: { url: "https://example.test", markdownChars: 3, empty: true } }));
 assert.equal(contentEnvelope.target.url, "https://example.test", "check-summaries envelope.target.content: URL must be promoted to target metadata");
 assert.equal(contentEnvelope.diagnostics.warnings.includes("empty_result"), true, "check-summaries envelope.diagnostics.content: empty extraction must be diagnosable");
 

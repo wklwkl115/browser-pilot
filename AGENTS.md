@@ -56,6 +56,9 @@
 ## Sync & Verification
 
 - Tool additions or material changes must update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts when affected.
+- Document structure rules live in `docs/document-structure.md`. When changing archive/roadmap/todo/current index blocks or archive file layout, run `npm run docs:sync-indexes` before `npm run check`.
 - After code or contract changes run `npm run check` in this extension.
+- For fast local iteration, use the narrowest grouped gate first when sufficient: `npm run check:all:bridge`, `npm run check:all:package`, `npm run check:all:contracts`; keep `npm run check` as the final full gate.
+- When a structured local verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`.
 - When touching global skill text, run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`.
 - After runtime reload for new/enhanced tools, run bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts; summarize artifact paths.

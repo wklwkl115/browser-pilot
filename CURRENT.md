@@ -2,127 +2,251 @@
 
 ## 当前状态
 
-- 当前主链路：`browser_tabs list` / `browser_tabs switch|create` -> 显式 `tabId` -> `browser_scan` / `browser_content` / `browser_html` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
+- 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
+- 当前主链路：`browser_tabs list` / `browser_tabs switch|create` -> 显式 `tabId` -> `browser_observe mode=scan|content|html|text|tabs` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
+- 已冻结下一阶段工具面治理计划：`docs/tool-surface-consolidation-plan.md`。该计划是 TODO 244-249 的执行合同；实现前不得按口头讨论临时改 schema、工具名或文档口径。
+- 已完成方向：`browser_observe` 已成为观察层 canonical surface；`browser_execute` / `browser_command` 已拆分完成；recovery hints、bounded artifact multi-search、tool-level progress、explicit snapshots/operation metadata、Web Security capability profiles 已落地。
 - 当前设计方向：单包分层，优先保留 Pi-native 浏览器态执行层；通用解析优先成熟依赖；成熟漏洞引擎仅以同包内可选 bridge 接入，不在核心工具里追平外部 CLI。
-- 下一阶段核心遵循文件：`NEXT_PHASE.md`。执行工具边界治理、统一输出诊断、Web Security 内部 primitive 抽取、schema builder 收敛、ACI eval 前，先按该文件更新本文件中的具体决策与验证计划。
-- TODO 200-215 工程治理期已完成；后续新增能力必须先在本文件补决策、边界文档、契约与验证计划。
-- 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化恢复为 `browser_tabs` first + 显式 `tabId`。
+- TODO 200-215 工程治理期已完成；后续新增能力、公开工具变更、bridge 协议变更、工具注册条件变更必须先在本文件和 `docs/tool-surface-consolidation-plan.md` 补决策、边界文档、契约与验证计划。
+- 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
 - 已移除历史动作拆分工具：`browser_query`、`browser_click`、`browser_type`、`browser_dom_snapshot`、`browser_dom_click`、`browser_dom_type`；不要恢复为默认工具面。
-- 修改协议/工具后先跑：`npm run check`。真实浏览器 smoke 只在需要验证 reload 后 runtime 时执行。
+- 修改协议/工具后先跑：`npm run check`。如需按故障域局部回归，使用 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。真实浏览器 smoke 只在需要验证 reload 后 runtime 时执行。
 
-## 当前执行：Workstreams A-E 收尾完成
+## 已完成归档摘要（241-249）
 
-决策：`NEXT_PHASE.md` Workstreams A-E 当前主线已完成。A-D 完成工具边界治理、输出诊断 envelope、Web Security 内部 primitive 抽取与 schema builder 收敛；E 完成 static/manual realistic ACI eval suite。收尾摘要见 `WORKSTREAMS_A_E_SUMMARY.md`。后续新增行为、runner/server 或 runtime eval 必须先按 `ROADMAP.md` 开新阶段并更新本文件。
+- 241：完成 jshookmcp 能力原生吸收闭环；只吸收能力模型与证据路径，不新增 `browser_sources` / `browser_debugger` / `browser_intercept` / `browser_storage` / `browser_canvas`；闭环账本见 `docs/jshookmcp-native-absorption.md`。
+- 242：完成 `browser_scan` high-entropy summary v2；默认摘要升级为 Scan Manifest v2，新增 `artifact_hints` 精确导航，并补本地 eval、fixture、contracts、`smoke:browser:scan-summary`。
+- 243：完成 Debugger evidence workflow RFC/eval 收口；现有 `browser_execute` + `persistent_cdp` 已能稳定产出 debugger evidence，剩余缺口收缩为 page-authored provenance 与 pause/breakpoint/step 生命周期，继续保持 RFC-only。
+- 244-249：完成工具面治理主链收口；`browser_observe` 成为观察层 canonical surface，`browser_execute` / `browser_command` 拆分完成，recovery hints、bounded artifact multi-search、tool-level progress、explicit snapshots/operation metadata、Web Security capability profiles 全部落地并通过 `npm run check`。
+- 详细过程、证据与边界已迁入 `ARCHIVE.md`；本文件不再保留 241-249 的逐项长记录。
 
-边界：
+## 工具面治理执行原则（TODO 244-249，计划冻结）
 
-- 已新增 `src/tools/webSecurity/shared/requestTemplate.ts` 承载 raw/captured request parsing 与 `buildReplayRequest`。
-- 已新增 `src/tools/webSecurity/shared/har.ts` 承载 HAR entry selection、safe URL filtering 与 HAR dependency graph。
-- 新增 `src/tools/webSecurity/shared/baseline.ts` 承载 baseline strategy、status/body match、response delta/classifier、nearest baseline 与 HTTP baseline cluster helper。
-- `shared/replay.ts` 保留 replay variable、sequence、mutation、send replay request 等编排 helper，并 re-export 兼容入口。
-- `webSecurityCore.ts` 继续导出 `buildReplayRequest`、`parseRawHttpRequest`；现有 imports 可小步迁移但不要求一次性改所有调用方。
-- `fuzzPaths`、`fuzzVhosts`、`fuzzParams`、`httpReplay`、`cookieAnalyze` 只迁移重复 baseline/delta 计算；保留原输出字段名和值语义。
-- 新增 `src/tools/webSecurity/browserNative/crawlExtractors.ts` 承载 HTML/JS URL 抽取、manifest/service-worker/source-map hints、form inventory、OpenAPI/Swagger parsing、passive GraphQL schema parsing、source-map archive details 与 service-worker cache/version summary。
-- `crawl.ts` 保留 crawl orchestration、fetch、browser cookie binding、active GraphQL POST probe、artifact root lifecycle、queue/scope/depth/maxPages 控制与结果组装。
-- 新增 `src/tools/webSecurity/browserNative/oastWorkerManager.ts` 承载 callback OAST session artifact path/state lock、state load/update/save、worker process spawn/stop、session refresh/list/info/event filtering/wait helpers。
-- `callbackOast.ts` 保留 raw option normalization、HTTP/HTTPS/DNS trigger packet/request logic、action dispatch 与 callable result shape。
-- 新增 register-layer schema builder 只能返回同等 TypeBox field object；不得泛化描述或合并不同语义的 tool-specific 字段。
-- 已完成：`browserCookieBindingParams(description, options)` 替换重复的 `bindBrowserSession` / `cookieMode` 参数定义；不同描述保持调用点显式传入，非 `cookieMode` 工具显式 `includeCookieMode:false`。
-- 已完成：`harReplayParams({ harDescription, harPathDescription })` 替换 `httpReplay` / `sqlmapBridge` / `nucleiBridge` 的 `har` / `harPath` / `harEntryIndex` / `harUrlPattern` / `harMaxEntries` 定义；HAR 对象与路径描述保持调用点显式传入，bounded safe-regex 文案逐字保留。
-- 已完成：`rawRequestParams({...descriptions})` 替换 `sqliProbe` / `sqlmapBridge` / `nucleiBridge` 的 `url` / `baseUrl` / `rawRequest` / `request` / `method` / `headers` / `body` / `bodyBase64` / `mutations` / `defaultScheme` 定义；每个差异描述保持调用点显式传入，暂不迁移 `httpReplay`、`fuzzParams`、`templateCheck` 的特殊 raw request 语义。
-- 已完成：`requestSequenceParams({ requestsDescription, sequenceDescription })` 替换 `httpReplay` / `sqlmapBridge` / `nucleiBridge` 的 `requests` / `sequence` 定义；每个工具的 replay/bridge-specific 描述保持调用点显式传入，不迁移非 sequence 工具。
-- 已完成：`boundedExecutionParams({ timeoutSecondsDescription })` 替换 `sqlmapBridge` / `nucleiBridge` 的 `timeoutSeconds` 定义；保留 sqlmap/nuclei per-request timeout 描述差异，不迁移 `timeoutMs`、`maxBodyBytes`、redirect、rate-limit、case/candidate/page 等语义不同字段。
-- 已完成：`redirectControlParams({ followRedirectsDescription, maxRedirectsDescription })` 与 `rateLimitPerSecondParam(description)` 替换当前已显式暴露 `followRedirects` / `maxRedirects` / `rateLimitPerSecond` 的工具字段；每个工具的 default true/default false/replay determinism/stable matching/nuclei CLI `-rl` 描述保持调用点显式传入。
-- 已完成：`maxCasesParam(description)` / `maxCandidatesParam(description)` / `maxDepthParam(description)` / `maxPagesParam(description)` / `maxTemplatesParam(description)` 替换当前已显式暴露对应字段的工具；保留 fuzz params、SQLi、crawl、fuzz paths/vhosts、template 的 default/hard-cap 与业务语义，不迁移 SQLi 专属 union/extract/baseline、cookie/OAST、nuclei/sqlmap CLI retries/concurrency/bulkSize 等单工具或工具特定字段。
-- 收尾决策：不实现 `targetScopeParams()`；`url` / `urls` / `paths` / `defaultScheme` / `ports` / `schemes` 在 recon、crawl、fuzz、replay、template、nuclei 中分别承载 seed/base/FUZZ/candidate/raw request/template expansion 等不同语义，抽象会降低工具描述精度。
-- 收尾决策：不实现 `artifactResultParams()`；`detailLevel` / `outputPath` / `maxChars` 已由 `sharedTabScopedToolParams()`、`sharedWebSecurityParams()`、`sharedWebSecurityBrowserSessionParams()`、`sharedWebSecurityResultParams()` 覆盖，再抽会制造重复共享入口。
-
-Workstream E 当前完成状态：
-
-- 已创建 `evals/browser-workflows/`。
-- 已覆盖 `NEXT_PHASE.md` 的 10 个 realistic ACI eval tasks。
-- 已拆分为 10 个独立 spec 文件，每个 eval 记录目标、fixture、推荐工具序列、成功条件、关键 artifact/diagnostics 证据、失败恢复点与评估指标。
-- 已补 `spec-template.md`、`fixtures/README.md`、synthetic local fixtures、`manifest.json`、`manual-result-template.json`、`result-schema.json`、`results/README.md`、`future-runner.md`。
-- 已新增 `tests/contracts/check-eval-workflows.mjs` 与 `check:eval-workflows`，并接入 `npm run check`。
-- `package.json` 已把 `evals/` 纳入 package files，`check-package-files` 锁定 eval specs/fixtures 被打包。
-
-Workstream E 边界：
-
-- 当前 suite 是静态 ACI eval 规范、fixture、manifest 与手工结果 schema 体系，不新增 callable tool。
-- 不启动浏览器、不启动 fixture server、不访问外部网络、不执行 sqlmap/nuclei/OAST。
-- `manifest.json` 声明 `externalNetwork:false`、`runsBrowser:false`、`runsScanners:false`；`future-runner.md` 冻结后续 runner/server 必须单独设计并显式 opt-in。
-
-验证计划：
-
-- `npm run check:eval-workflows`
-- `npm run check:package`
-- `npm run check:tools`
-- `npm run check`
-
-## 工程治理期执行原则（TODO 200-215，已完成）
-
-- 能力冻结：除阻断性 bugfix 外，不新增 callable tool、不新增默认扫描/自动化决策流、不扩大默认网络/文件/外部进程行为；新增能力必须由后续 TODO 显式解除冻结并给出迁移/回滚边界。
-- 稳定优先：所有改动必须保持工具名、参数 schema、错误码、summary/artifact envelope、runtime smoke 证据链兼容，除非 TODO 明确迁移并提供回滚。
-- 本地优先：质量门禁、依赖审计、发布验收、runtime fixtures 均先做本地脚本；不引入 GitHub Actions、Dependabot、Sentry、SonarQube、自动 registry 发布作为当前主线。
-- 风险导向：测试补强优先覆盖多浏览器、MV3 重启、pending cleanup、长等待、network/hook/transfer 证据保真；不追求固定覆盖率数字。
-- 审计优先：错误、artifact、redaction、发布包、协议生成都要可复现、可追踪、可本地验证；禁止 silent fallback、模糊默认和只靠文档声明的完成状态。
+- 计划合同：`docs/tool-surface-consolidation-plan.md` 是 TODO 244-249 的唯一执行合同。实现时只允许收敛该文档，不允许创建平行计划或临时口径。
+- 能力完整：不得通过风险分级、任务分类、站点判断或默认禁用削弱 Web 安全能力；可见工具面缩减只能通过显式 profile/config，并且必须可诊断、可启用。
+- 语义单例：迁移期允许 wrapper，但每个 wrapper 必须有退出步骤；不能长期保留两个 canonical callable surfaces。
+- 原子组合：不新增 `browser_orchestrate`、target resolver、desired-state coordinator、自动选择 tab、自动选择观察 mode、自动 scanner 策略器。
+- 证据优先：observe、command、progress、multi-search、snapshot、operation metadata 都必须保留 final envelope 和 artifact evidence；stream/progress 不能替代最终结果。
+- 可恢复诊断：recovery hints 只做工具+参数级 nextActions，不自动执行，不吞原始错误码，不提供漏洞利用策略。
+- 失效显式：cache/snapshot/lease/queue/operation 冲突都必须带 target、selectionVersion、stale/conflict reason；禁止 silent fallback。
+- 完成标准：每个 TODO 完成时必须同步 `CURRENT.md`、`ROADMAP.md`、`docs/tool-boundaries.md`、README、CHANGELOG、generated docs、全局 skill（如影响运行时选择）、contracts/evals，并运行对应 check；不能只完成代码或只完成文档。
 
 ## 当前执行队列
 
-### TODO 216: 原生多 browser session / 并发路由
+当前无进行中的主线改造队列；新增能力或重大变更前，先在本文件补决策、边界、契约与验证计划。
 
-状态：阶段 1-6 已完成；runtime smoke 已通过；跨 Pi 进程 bridge 端口争用修复已完成。
+## 已完成：TODO 257-261 维护入口 / 协议单源收口 / 单测扩面 / mature bridge 预检诊断 / 文档去重
 
-决策：
+状态：已完成并通过 `npm run check`。
 
-- 在 `pi-browser-tools` 侧原生支持多并发、多 browser session 接入；OMO 只是调用方，不作为浏览器隔离模型前置依赖。
-- 对外高级参数命名为 `browserSessionId`；普通 agent 不应手写，后续由调用上下文自动解析；显式参数仅用于调试、测试、编排和接管。
-- 先做内部 `default` session 迁移，保持现有工具行为和旧测试兼容，再开放多 session API。
-- 全局 tab inventory 继续记录真实 browser client/tab 事实；`selectedClient`、`defaultSessionId`、`latestSessionId`、`selectionVersion` 迁入 browser session state。
-- `browser_tabs selectBrowser/switch` 只影响当前 browser session，不再作为全局唯一选中状态。
-- 新 session 初始为空；调用方必须显式 `create` 或 `attachTab`，不自动继承主 agent tab，不自动创建 `about:blank`。
-- 同一个真实 tab 可被多个 session 只读共享；写操作必须取得 tab lease；`pick/upload/focus/switch` 等真实 UI 操作走全局 UI lock。
-- Session id 由系统生成稳定 uuid；调用方可传 `name` 便于诊断；显式指定完整 `browserSessionId` 仅用于测试/调试。
-- 写操作先按保守边界分类：`browser_execute`、导航类 `browser_wait`、`tabs switch/create/close`、`browser_upload`、点击型 `browser_download`、`hook install/uninstall`、`network start/clear` 需要写 lease 或 UI lock。
-- 读操作先包括：`browser_scan`、`browser_html`、`browser_content`、`browser_screenshot`、`network list/get/body/status`、`browser_evidence`、`browser_artifact`。
-- Lease 冲突立即返回 `TAB_LEASE_CONFLICT`；不隐式等待。后续如需要等待，单独增加显式 wait-for-lease 能力。
-- Session 生命周期先采用手动 close；断线状态保留到 server stop，不做 TTL 自动清理，避免后台证据丢失。
-- `browserSessionId` schema 暴露分两阶段：阶段 1 不对外暴露，只迁移内部 `default`；阶段 2 全工具统一暴露高级参数。
+结果：
+
+- 新增 `docs/maintainer-map.md`，把 `index.ts -> driver -> toolRegistry/register -> bridge_src -> tests` 的维护入口、改动落点和验证顺序固定为单一入口图。
+- `bridge/native_command_schema.json` 新增 mature bridge 结构化错误码：`MATURE_BRIDGE_LAUNCHER_NOT_FOUND`、`MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT`、`MATURE_BRIDGE_LAUNCHER_PROBE_FAILED`、`MATURE_BRIDGE_LAUNCH_FAILED`、`MATURE_BRIDGE_PROCESS_TIMEOUT`、`MATURE_BRIDGE_TARGET_REQUIRED`、`MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED`，并已通过 `npm run sync:protocol` 同步到 runtime / Node / generated docs。
+- `src/tools/webSecurity/shared/matureBridge.ts` 成为 mature bridge launcher probe / process timeout / failure record 的单点 helper；`sqlmapBridge.ts` / `nucleiBridge.ts` 已接入共享预检诊断，不再各自散落 launcher 探测逻辑。
+- `browser_sqlmap_bridge` 现在会在缺少 target、launcher 不存在、probe timeout、process timeout 时返回稳定结构化错误；`browser_nuclei_bridge` 额外在模板选择缺失时前移失败，而不是晚到执行阶段。
+- `normalizeError` 已补 mature bridge recovery nextActions；README 已补 maintainer map 入口和 mature bridge 诊断口径；protocol/contracts/unit tests 已同步。
+- 新增 unit tests：`capabilityProfile`、`webSecurity/shared/diagnostics`、`webSecurity/shared/matureBridge`、`errors-advanced` 的 mature bridge recovery 分支；contracts 已覆盖 shared mature bridge 边界和 sqlmap/nuclei preflight 失败断言。
+
+验证：
+
+- 已通过：`npm run sync:protocol`
+- 已通过：`npm run docs:generate`
+- 已通过：`npm run test:unit`
+- 已通过：`npm run check:web-security`
+- 已通过：`npm run check`
+
+已完成的本轮治理收口：
+
+- 工具注册已从 `registerTools.ts` 手工逐个调用收敛为 `src/tools/toolRegistry.ts` 声明式 registry；core/security 分组与 capability profile gating 统一由 registry 维护，`registerTools.ts` 只负责遍历组合。
+- 文档索引同步已从 `scripts/sync-doc-indexes.mjs` 的固定阶段号/固定文件名硬编码改为基于 `docs/archive/*.md` 自动收集 summary/full 配对生成 `ARCHIVE.md` / `ROADMAP.md` 入口；`check-doc-structure` 也同步改成按目录配对校验。
+- CI 已扩展为分层 jobs 入口：contracts/unit/package/doc-structure/full-check 为默认链，runtime smoke/release smoke 改为显式环境变量启用的 opt-in jobs，避免继续只有单一串行 job；本地 `npm run check` 也已改为共享 grouped runner（`scripts/run-check-groups.mjs`），并已让 `.github/workflows/check.yml` 直接复用 `check:all:bridge / package / contracts`，避免本地与 CI 校验链分叉；CI 共享 setup/build 已抽到 `.github/actions/setup-node-build`，grouped runner 也支持 `--json` 结构化摘要输出。
+
+当前范围：
+
+- 维护入口：新增维护者代码流向图，明确 `index.ts -> driver -> toolRegistry/register -> bridge_src -> tests` 的唯一入口。
+- 协议单源收口：继续锁定 `hook / frame / html / screenshot / evidence` 的 metadata 消费和 drift contracts，不改变公开 command/tool 名称。
+- unit test 扩面：补 `capabilityProfile`、WebSecurity diagnostics、mature bridge launcher 诊断等纯逻辑测试，并继续保持 runtime smoke 为 opt-in。
+- mature bridge 预检诊断：前移 `sqlmap` / `nuclei` 的 launcher 不存在、探测超时、模板选择缺失等失败，并返回稳定错误码、nextActions 与本地 artifact 指引。
+- 文档去重：压缩 `README` / `CURRENT` / `ROADMAP` / `ARCHIVE` 的重复描述，只保留单一事实源与互链入口。
 
 边界：
 
-- 不恢复历史动作拆分工具，不新增 orchestration coordinator。
-- 不把 OMO task/call_omo_agent 作为浏览器 session 的实现前提。
-- 第一阶段不要求 Pi/OMO 已提供 tool invocation identity；无上下文时解析到 `default` session。
-- 不依赖 prompt 要求 agent 手写 `browserSessionId` 作为隔离机制。
+- 不新增公开 `browser_*` 工具，不修改外部 callable tool 名称。
+- 不修改公开 bridge command 名称；如新增结构化错误码，只允许用于 mature bridge 诊断并同步 schema/generated docs/contracts。
+- 继续保持生成 metadata 驱动 command/tool metadata，执行路径与 summary/artifact 语义不做无关改造。
+- test 扩面优先纯逻辑与本地 bounded fixture，不把默认浏览器 smoke 接回主检查链。
+- 不引入新的 Web 扩展包或策略型 orchestration 抽象。
 
-实施顺序：
+## 已完成：TODO 250-256 build/test/doc governance follow-up（首版落地）
 
-1. 已完成：新增 `BrowserSessionRegistry`，内置 `default` session，把现有全局选择状态迁入 session state，外部行为不变。
-2. 已完成第一段：`BrowserTabSessionRouter` / `BrowserBridgeServer` 当前经内部 `default` session 计算 fallback target；后续扩展为显式多 session 入参。
-3. 已完成：工具 schema 增加可选 `browserSessionId`，并统一经 resolver 传入 server；普通路径默认 `default`。
-4. 已完成：增加 session 管理动作 `listSessions`、`createSession`、`selectSession`、`closeSession`、`attachTab`、`detachTab`、`leaseTab`、`releaseTab`。
-5. 已完成：真实 tab 写 lease 与全局 UI lock 基础能力已接入；`browser_execute`、写类 native command、`switch`、`pick`、`upload` 进入冲突检测；per `(browserSessionId, tabId)` 写命令队列已接入并在 snapshot 暴露深度。
-6. 已完成：distilled result envelope 记录 `browserSessionId`，native evidence/wait/network/hook 等经共享 result middleware 输出 session 维度；artifact 原始值中 tab-scoped bridge result 保留 `target.browserSessionId`。session hash 路径分区暂不需要。
-7. 接入 Pi tool invocation context 后，把自动 session 分派接入 resolver。
+状态：已完成并通过 `npm run check`。本组只收口工程治理、构建/测试/文档维护流程，不改变现有 callable tool 名称、schema、运行时能力边界或安全策略。
 
-补充修复：
+结果：
 
-- 已完成：Node bridge 启动时在 `18765-18784` 选择首个空闲端口，避免第二个 Pi 进程因 `EADDRINUSE` 进入 `browser:error`。
-- 已完成：浏览器扩展 service worker 扫描同一端口范围并同时连接多个 Pi bridge server，不再只连 `18765`。
-- 已完成：tab sync fan-out 到所有 open bridge sockets，多个 Pi 对话窗口共享同一扩展时都能收到 tabs_update。
+- `verify:bridge:dist` 已取代 `check` 隐式重建；`check:bridge:build` 改为只读验证当前 dist，dist 缺失时要求先执行 `npm run build:bridge`。
+- `test:unit` 已建立并接入 `npm run check`；当前基于 Node `node:test` 覆盖 `shared/http.ts`、`shared/replay.ts`、`shared/requestTemplate.ts`、`browserNative/sqliProbe.ts`、`toolAdapter.ts`。
+- `scripts/build-bridge.mjs` 已对 service worker entry 试开 tree-shaking。
+- browser cookie binding 文案已统一收口为“HTTP request header injection”；保留外部参数名 `bindBrowserSession`，不夸大为浏览器网络栈 replay。
+- build-manifest 模块清单已改为 metadata-only 命名，并显式标记 `metadataOnlyModuleLists:true`。
+- 已补 `docs/hook-dispatcher-multi-file-evaluation.md`，明确多文件注入仍是 RFC-only 评估，不直接改 runtime。
+- 已新增 `.github/workflows/check.yml`，PR/push 默认执行 `npm ci -> npm run build:bridge -> npm run check`。
 
-验证计划：
+修正后的长期口径：
 
-- 已通过：每阶段运行 `npm run check`。
-- 已通过：合同测试覆盖默认 session 兼容、多 session 独立 selection、显式 `browserSessionId` 路由、空 session、attach/detach、写 lease 冲突、UI lock 冲突、artifact/evidence session 字段、同 session 同 tab 写队列。
-- 已通过：`npm run smoke:browser:isolated` 真实浏览器 smoke，覆盖两个 browser session 分别 execute/read、lease 冲突和 target.browserSessionId；artifact：`.pi/browser-artifacts/smoke-browser-isolated-results.json`。
+- `hook_dispatcher` 单文件边界真实存在，但“无 source map”结论已失效。
+- 当前测试不只依赖手动 smoke；contracts + fake fixtures + `test:unit` 已覆盖自动化回归面。
+- 文档漂移不再只是手动检查；本地 `npm run check` 和外部 CI merge gate 均已覆盖。
 
-- 已完成历史条目移入 `ARCHIVE.md`；后续建议与延后项移入 `ROADMAP.md`。
+边界：
+
+- 不把 `bindBrowserSession` 的文案修正扩展成“真实浏览器网络栈请求”承诺；若未来探索 CDP Fetch/Network interception，需另开 RFC/TODO。
+- 不因 tree-shaking 讨论回退当前 ESM import graph 或重引 ordered-concat 兼容路径。
+- 不把 build-manifest metadata-only 重命名简化成删除所有诊断字段；现阶段保留可审计模块清单。
+- 不把 README/AI_INSTALL/`docs/tool-boundaries.md`/仓库外全局 skill 改成全自动生成文件；解释性文档继续保留人工边界与审阅权。
+- 不引入默认 browser smoke 到 `npm run check`；runtime smoke 继续显式 opt-in。
+
+验证：
+
+- 已通过：`npm run build:bridge`
+- 已通过：`npm run test:unit`
+- 已通过：`npm run verify:bridge:dist`
+- 已通过：`npm run check`
+
+## 已完成：TODO 244 Observation surface consolidation / `browser_observe` canonical migration
+
+状态：已完成直接 cutover。执行合同与剩余 TODO 边界见 `docs/tool-surface-consolidation-plan.md`。
+
+决策：
+
+- 接受 `browser_observe` 合并观察层，目标是成为唯一 canonical observation tool。
+- 已完成：`browser_scan`、`browser_content`、`browser_html` 的能力已完整迁移到 `browser_observe` 的显式 mode；旧工具已移除。
+- `browser_screenshot` 和 `browser_frame` 不并入 `browser_observe`；它们分别是视觉证据和 frame/CDP context 管理。
+
+边界：
+
+- 不允许 `mode:"auto"`。
+- 不允许 selector miss 后自动 fallback 到其它 mode。
+- 不允许长期 alias 并存。
+- 不允许丢失 `SELECTOR_NOT_FOUND`、`INVALID_SELECTOR`、content `empty:true`、content timeout validation、durable navigation、native `html.get` 语义。
+
+计划参数与 mode contract：见 `docs/tool-surface-consolidation-plan.md` 的 TODO 244。
+
+验证：
+
+- `npm run docs:generate`
+- `npm run check:tools`
+- `npm run check:summaries`
+- `npm run check:content-pick`
+- `npm run check:scan`
+- `npm run check:tool-docs`
+- `npm run check`
+- runtime reload 后复用 `npm run smoke:browser:scan-summary` 作为 `browser_observe mode=scan` 验证。
+
+完成标准：
+
+- `browser_observe mode=scan|content|html|text|tabs` 覆盖当前三工具所有必要行为。
+- 已完成：旧三工具已删除，README/skill/contracts/generated docs 不再把它们呈现为 callable tools。
+- docs/generated/skill/README/contracts 不再把旧三工具呈现为 canonical callable tools。
+
+## 已完成：TODO 245 JavaScript execution and bridge command split
+
+状态：已完成。执行合同见 `docs/tool-surface-consolidation-plan.md`。
+
+结果：
+
+- `browser_execute` 已收敛为 JavaScript-only。
+- `browser_command` 已成为 bridge command object surface。
+- 工具层 JSON-string command promotion 已移出 documented callable semantics；命中 command-like JSON string 时显式返回 `browser_command` recovery hint。
+
+验证：
+
+- `npm run check:tools`
+- `tests/contracts/check-execute-tool.mjs`
+- `npm run check`
+
+## 已完成：TODO 246 Recovery hints and bounded artifact multi-search
+
+状态：已完成。执行合同见 `docs/tool-surface-consolidation-plan.md`。
+
+结果：
+
+- `normalizeError` / `compactError` 已输出 factual `diagnostics.nextActions` 与 `recovery`。
+- `browser_artifact` 已支持 bounded multi-artifact search：显式 `paths` 或受限 `root`/`glob`，并受 `maxFiles/maxBytes/maxMatchesPerFile/maxTotalMatches/maxChars` 约束。
+- 默认 redaction、safe regex 和 artifact root 边界保持不变。
+
+验证：
+
+- `npm run check:artifact`
+- `npm run check:errors`
+- `npm run check:token`
+- `npm run check:summaries`
+- `npm run check`
+
+## 已完成：TODO 247 Explicit progress and stream-ready evidence contract
+
+状态：阶段 1 已完成；stream 协议仍保持未启用，但合同已按 stream-ready 方向固定。执行合同见 `docs/tool-surface-consolidation-plan.md`。
+
+结果：
+
+- Web Security follow-up tools 已通过 shared shell 输出 Pi tool-level `_onUpdate` progress。
+- `browser_execute` / `browser_command` / `browser_observe` 已输出 operation metadata，final envelope 仍是唯一成功/失败权威。
+- progress 不绕过 resultMiddleware、privacy redaction、artifact 保存。
+
+验证：
+
+- `npm run check:web-security`
+- `npm run check:tools`
+- `npm run check`
+
+## 已完成：TODO 248 Explicit snapshots and operation metadata
+
+状态：已完成。执行合同见 `docs/tool-surface-consolidation-plan.md`。
+
+结果：
+
+- `browser_observe` 已为 structure/content/html/tabs 结果生成 explicit snapshot metadata，并强制 artifact-backed snapshot identity。
+- `browser_tabs action=snapshot` 已暴露 bridge snapshot、capability profile、active operations，以及按 `snapshotId` 查询 observation snapshot metadata。
+- stale snapshot 默认 fail closed，需 `allowExpired:true` 才返回旧 metadata。
+- operation metadata 只用于诊断，不做自动调度或抢占。
+
+验证：
+
+- `npm run check:tools`
+- `npm run check:content-pick`
+- `npm run check`
+
+## 已完成：TODO 249 Explicit Web Security capability profiles
+
+状态：已完成。执行合同见 `docs/tool-surface-consolidation-plan.md`。
+
+结果：
+
+- 同包 12 个 Web Security tools 保持不变。
+- 可见工具面已由显式 `PI_BROWSER_TOOL_PROFILE` 控制：默认 `security`，可设为 `core` 后 `/reload` 隐藏 Web Security follow-up tools。
+- disabled state 已通过 `browser_tabs action=snapshot` / `/browser-status` snapshot 暴露 capability profile 诊断。
+- generated docs 已区分 always-on 与 security profile tools。
+
+验证：
+
+- `npm run docs:generate`
+- `npm run check:tool-docs`
+- `npm run check`
+
+## 历史能力状态摘要（216 及更早）
+
+- TODO 216 原生多 browser session / 并发路由：已完成 1-6 阶段，含 session registry、显式 `browserSessionId` 路由、session 生命周期、tab lease/UI lock、per-session 写队列、artifact/evidence session 维度，以及跨 Pi 进程 bridge 端口争用修复。
+- TODO 200-215 工程治理期：已全部完成，包含支柱二 ESM/TS bundler 终态、协议单源、artifact/privacy、runtime fixtures、依赖审计、质量门禁、本地发布验收等；详细记录已迁入 `ARCHIVE.md`。
+- 当前 `CURRENT.md` 仅保留执行中的主链与最新完成组摘要；更早 TODO 的详细过程不再在本文件重复展开。
 
 ## 归档与路线入口
 
 - 历史完成项：`ARCHIVE.md`。
 - 后续路线/建议顺序：`ROADMAP.md`。
+
+
+
+
+

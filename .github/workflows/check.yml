@@ -1,0 +1,124 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      run_browser_smoke:
+        description: Run isolated browser smoke
+        required: false
+        default: false
+        type: boolean
+      run_release_smoke:
+        description: Run release acceptance smoke
+        required: false
+        default: false
+        type: boolean
+      run_rollback_smoke:
+        description: Run rollback smoke during release acceptance
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  contracts-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Run grouped bridge/unit/contracts gates
+        run: |
+          npm run check:all:bridge
+          npm run check:all:contracts
+
+  package-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Verify grouped package/docs gates and local acceptance
+        run: |
+          npm run check:all:package
+          npm run release:local
+
+  full-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - contracts-and-unit
+      - package-acceptance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Run full check gate
+        run: npm run check
+
+  browser-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_browser_smoke == true
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Run isolated browser smoke
+        env:
+          PI_BROWSER_CI_BROWSER_SMOKE: '1'
+          PI_BROWSER_SMOKE_CHROME: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+        run: npm run smoke:browser:isolated
+
+      - name: Upload browser smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-artifacts
+          path: .pi/browser-artifacts/**
+          if-no-files-found: ignore
+
+  release-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_release_smoke == true
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Run release acceptance smoke
+        env:
+          PI_BROWSER_CI_BROWSER_SMOKE: '1'
+          PI_BROWSER_CI_RELEASE_SMOKE: '1'
+          PI_BROWSER_CI_ROLLBACK_SMOKE: ${{ inputs.run_rollback_smoke && '1' || '0' }}
+          PI_BROWSER_SMOKE_CHROME: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+        run: npm run release:local:smoke
+
+      - name: Upload release smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-artifacts
+          path: .pi/browser-artifacts/**
+          if-no-files-found: ignore

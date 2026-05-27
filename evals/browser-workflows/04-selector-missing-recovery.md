@@ -14,14 +14,14 @@ Trigger a selector miss and recover with DOM evidence before retrying.
 
 - `browser_tabs`
 - `browser_wait`
-- `browser_html`
-- `browser_scan`
+- `browser_observe mode=html`
+- `browser_observe mode=scan`
 
 ## Expected tool sequence
 
 1. Attempt a bounded `browser_wait selector` for an absent selector.
 2. Use diagnostics from the timeout result.
-3. Inspect DOM with `browser_html` or `browser_scan`.
+3. Inspect DOM with `browser_observe mode=html` or `browser_observe mode=scan`.
 4. Retry with the corrected selector.
 5. Report the recovery path and evidence.
 

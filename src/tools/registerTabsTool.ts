@@ -42,17 +42,19 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		name: "browser_tabs",
 		label: "Browser Tabs",
 		description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Pi browser bridge.",
-		promptSnippet: "Control connected browser tabs and scoped browser sessions: list, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
+		promptSnippet: "Control connected browser tabs and scoped browser sessions: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
 		promptGuidelines: [
 			"Start automation with browser_tabs list; use switch only when you intentionally change the browser active tab.",
 			"Keep the target tabId and pass it explicitly to later tab-scoped browser_* calls.",
 		],
 		parameters: Type.Object({
-			action: Type.String({ description: "One of: list, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
+			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
 			browserSessionId: Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this unless managing explicit browser sessions." })),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			tabId: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: "Target tab id for switch/close; use browser_tabs list to identify it first." })),
+			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
+			allowExpired: Type.Optional(Type.Boolean({ description: "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata." })),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 			timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
@@ -65,7 +67,16 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
 				const browserSession = { browserSessionId: typeof params.browserSessionId === "string" ? params.browserSessionId : undefined };
-				if (action === "list") return jsonResult(await server.refreshTabs(timeoutMs, browserSession), { action });
+				if (action === "list") return jsonResult(await server.refreshTabs(timeoutMs, browserSession), { action, snapshot: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots().length });
+				if (action === "snapshot") {
+					if (typeof params.snapshotId === "string" && params.snapshotId.trim()) {
+						const snapshot = server.getObservationSnapshot(params.snapshotId);
+						if (!snapshot) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId was not found", { snapshotId: params.snapshotId, reason: "snapshot_not_found" });
+						if (snapshot.expired && params.allowExpired !== true) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId is stale; read the saved artifact explicitly or pass allowExpired:true", { snapshotId: snapshot.snapshotId, invalidatedReason: snapshot.invalidatedReason, saved: snapshot.saved, reason: "snapshot_expired" });
+						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, { action });
+					}
+					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, { action });
+				}
 				if (action === "listsessions") return jsonResult({ sessions: server.listBrowserSessions() }, { action });
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });
 				if (action === "selectsession") return jsonResult({ session: server.selectBrowserSession(params.browserSessionId || ""), snapshot: server.snapshot(browserSession) }, { action });

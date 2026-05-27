@@ -41,9 +41,15 @@ assert(schema.commands && typeof schema.commands === "object", "schema must defi
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
 assert(schema.toolMetadata?.nativeActionTools?.browser_wait?.actions?.some((item) => item.command === "wait.selector"), "schema must define browser_wait action metadata");
 assert(schema.toolMetadata?.nativeActionTools?.browser_network?.actions?.some((item) => item.command === "network.exportHar"), "schema must define browser_network action metadata");
+assert(schema.toolMetadata?.nativeActionTools?.browser_hook?.actions?.some((item) => item.command === "hook.install_targets"), "schema must define browser_hook action metadata");
+assert(schema.toolMetadata?.nativeActionTools?.browser_frame?.actions?.some((item) => item.command === "frame.addNewDocumentScript"), "schema must define browser_frame action metadata");
+assert(schema.toolMetadata?.nativeCommandTools?.browser_evidence?.command === "evidence.collect", "schema must define browser_evidence command metadata");
+assert(schema.toolMetadata?.nativeCommandTools?.browser_screenshot?.command === "screenshot.capture", "schema must define browser_screenshot command metadata");
+assert(schema.toolMetadata?.nativeCommandTools?.browser_observe_html?.command === "html.get", "schema must define browser_observe html command metadata");
 assert(schema.toolMetadata?.transferTools?.browser_download?.command === "transfer.download", "schema must define browser_download transfer metadata");
 assert(schema.toolMetadata?.transferTools?.browser_upload?.command === "transfer.upload", "schema must define browser_upload transfer metadata");
 assert(schema.errorCodes?.TAB_NOT_FOUND?.category === "driver.tab" && schema.errorCodes?.UPLOAD_REQUIRES_BROWSER_UPLOAD?.category === "tool.transfer", "schema must define generated error taxonomy");
+assert(schema.errorCodes?.MATURE_BRIDGE_LAUNCHER_NOT_FOUND?.category === "tool.security" && schema.errorCodes?.MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED?.category === "tool.security", "schema must define mature bridge diagnostic error taxonomy");
 
 const protocolSandbox = { self: {} };
 vm.runInNewContext(transformBridgeSourceForVm(readServiceWorkerSource("protocol"), "bridge_src/service_worker/protocol.ts"), protocolSandbox, { filename: "protocol.js" });
@@ -66,11 +72,19 @@ const protocolDoc = read("docs/generated/native-protocol.generated.md");
 for (const generated of [nodeProtocolSource, actionMetadataSource, errorCodesSource, read("bridge_src/service_worker/protocol.ts")]) assert(generated.startsWith("// Generated from bridge/native_command_schema.json. Do not edit by hand."), "protocol generated source must carry generated header");
 assert(!nodeProtocolSource.includes("readFileSync") && !nodeProtocolSource.includes("protocolSchemaPath"), "Node protocol validator must be generated with embedded schema, not runtime file reads");
 assert(actionMetadataSource.includes('"waitforselector": "wait.selector"') && actionMetadataSource.includes('"export": "network.exportHar"'), "native action metadata must generate wait/network aliases");
-assert(errorCodesSource.includes('"TAB_NOT_FOUND"') && errorCodesSource.includes('"UPLOAD_REQUIRES_BROWSER_UPLOAD"'), "native error codes must be generated from schema");
+assert(actionMetadataSource.includes('"installtargets": "hook.install_targets"') && actionMetadataSource.includes('"addscript": "frame.addNewDocumentScript"'), "native action metadata must generate hook/frame aliases");
+assert(actionMetadataSource.includes('export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;'), "native action metadata must export native command tool metadata");
+assert(actionMetadataSource.includes('export function metadataForNativeCommandTool(toolName: NativeCommandToolName)') && actionMetadataSource.includes('export function metadataForNativeTransferTool(toolName: NativeTransferToolName)'), "native action metadata must export typed metadata helper accessors");
+assert(errorCodesSource.includes('"TAB_NOT_FOUND"') && errorCodesSource.includes('"UPLOAD_REQUIRES_BROWSER_UPLOAD"') && errorCodesSource.includes('"MATURE_BRIDGE_LAUNCHER_NOT_FOUND"'), "native error codes must be generated from schema");
 assert(protocolDoc.includes("## Native commands") && protocolDoc.includes("## Tool metadata slice") && protocolDoc.includes("## Error codes") && protocolDoc.includes("README snippet"), "native protocol generated docs must include command/tool/error/doc sections");
+assert(protocolDoc.includes("browser_frame") && protocolDoc.includes("browser_evidence") && protocolDoc.includes("browser_screenshot") && protocolDoc.includes("browser_observe_html"), "native protocol docs must include migrated hook/frame/html/screenshot/evidence tool metadata rows");
 const actionCommands = read("src/tools/actionCommands.ts");
 assert(actionCommands.includes("commandForNativeToolAction") && !actionCommands.includes('waitforselector: "wait.selector"') && !actionCommands.includes('exporthar: "network.exportHar"'), "wait/network action mapping must come from generated metadata");
-assert(read("src/tools/registerNativeActionTools.ts").includes("nativeToolMetadata.nativeActionTools.browser_wait.actionDescription"), "native action tool descriptions must consume generated metadata");
+const nativeActionToolSource = read("src/tools/registerNativeActionTools.ts");
+assert(nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_wait.actionDescription") && nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_hook.actionDescription") && nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_frame.actionDescription"), "native action tool descriptions must consume generated metadata");
+assert(read("src/tools/registerEvidenceTool.ts").includes("nativeCommandToolMetadata.browser_evidence.command"), "browser_evidence must consume generated native command metadata");
+assert(read("src/tools/registerScreenshotTool.ts").includes("nativeCommandToolMetadata.browser_screenshot.command"), "browser_screenshot must consume generated native command metadata");
+assert(read("src/tools/observeRunners.ts").includes("nativeCommandToolMetadata.browser_observe_html.command"), "browser_observe html mode must consume generated native command metadata");
 assert(read("src/tools/transferValidation.ts").includes("nativeTransferToolMetadata.browser_upload.command"), "transfer validation must consume generated command metadata");
 assert(read("src/tools/registerTransferTools.ts").includes("nativeTransferToolMetadata.browser_download.artifactPrefix"), "transfer tools must consume generated artifact metadata");
 const structuredCodePatterns = [

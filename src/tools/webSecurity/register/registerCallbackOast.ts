@@ -59,7 +59,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 				run: runCallbackOast,
 				details: (result) => ({ action: result.action, sessionId: result.sessionId, eventCount: result.eventCount ?? result.count }),
 				distill: summarizeCallbackOastData,
-			});
+			}, _onUpdate);
 		},
 	});
 }

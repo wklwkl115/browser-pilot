@@ -22,11 +22,17 @@ export type ErrorTaxonomy = {
 	source: "schema" | "heuristic";
 };
 
+export type ErrorRecovery = {
+	summary?: string;
+	nextActions?: string[];
+};
+
 export type ErrorDiagnostics = {
 	scopes: string[];
 	target?: Record<string, unknown>;
 	session?: Record<string, unknown>;
 	pending?: Record<string, unknown>;
+	nextActions?: string[];
 };
 
 export type NormalizedError = {
@@ -35,6 +41,7 @@ export type NormalizedError = {
 	details: Record<string, unknown>;
 	taxonomy: ErrorTaxonomy;
 	diagnostics: ErrorDiagnostics;
+	recovery?: ErrorRecovery;
 	name?: string;
 };
 
@@ -129,8 +136,10 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>): E
 	if (Object.keys(session).length) scopes.push("session");
 	if (Object.keys(pending).length) scopes.push("pending");
 	if (firstDefined(details, ["recorder", "bodyAvailability", "bodyUnavailableReason"])) scopes.push("network");
-	if (firstDefined(details, ["path", "bytes", "maxBytes", "allowedRoot"])) scopes.push("artifact");
+	if (firstDefined(details, ["path", "bytes", "maxBytes", "allowedRoot", "fileCount", "root", "glob"])) scopes.push("artifact");
 	if (firstDefined(details, ["files", "files_count", "selector", "downloadId"])) scopes.push("transfer");
+	if (isRecord(details.operation)) scopes.push("operation");
+	if (isRecord(details.snapshot) || firstDefined(details, ["snapshotId", "invalidatedReason"])) scopes.push("snapshot");
 	if (String(details.domain || "").toLowerCase() === "websecurity") scopes.push("security");
 	return {
 		scopes: Array.from(new Set(scopes)),
@@ -140,17 +149,53 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>): E
 	};
 }
 
+function uniqueActions(actions: Array<string | undefined>): string[] {
+	return Array.from(new Set(actions.filter((item): item is string => !!item && item.trim())));
+}
+
+function recoveryForNormalized(code: string, details: Record<string, unknown>, taxonomy: ErrorTaxonomy): ErrorRecovery | undefined {
+	const selector = typeof details.selector === "string" ? details.selector : undefined;
+	const path = typeof details.path === "string" ? details.path : undefined;
+	const query = typeof details.query === "string" ? details.query : undefined;
+	const actions = uniqueActions([
+		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED", "BROWSER_NOT_FOUND"].includes(code) ? "browser_tabs action=list" : undefined,
+		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with explicit tabId" : undefined,
+		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe mode=scan|html" : undefined,
+		selector ? `verify selector=${selector} against the current DOM` : undefined,
+		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "browser_network action=list|body with a fresh recorder session" : undefined,
+		["ARTIFACT_PATH_REQUIRED", "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT", "ARTIFACT_TOO_LARGE", "ARTIFACT_SEARCH_QUERY_REQUIRED", "ARTIFACT_SEARCH_REGEX_INVALID", "ARTIFACT_SEARCH_REGEX_UNSAFE", "ARTIFACT_MULTI_SEARCH_MODE_INVALID"].includes(code) ? "browser_artifact mode=search|json|text with explicit path/paths and bounded limits" : undefined,
+		path ? `browser_artifact path=${path}` : undefined,
+		query && code.startsWith("ARTIFACT_SEARCH_") ? `retry browser_artifact search with query=${query}` : undefined,
+		["UPLOAD_CONFIRMATION_REQUIRED", "UPLOAD_REQUIRES_BROWSER_UPLOAD"].includes(code) ? "use browser_upload confirm:true with explicit absolute file paths" : undefined,
+		code === "DOWNLOAD_TARGET_REQUIRED" ? "use browser_download with explicit selector or url" : undefined,
+		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT", "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT", "MATURE_BRIDGE_PROCESS_TIMEOUT"].includes(code) ? "retry with explicit timeoutMs and tabId/browserSessionId" : undefined,
+		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=snapshot" : undefined,
+		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,
+		["MATURE_BRIDGE_LAUNCHER_NOT_FOUND", "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED", "MATURE_BRIDGE_LAUNCH_FAILED"].includes(code) ? "configure sqlmapPath/nucleiPath or the matching PI_*_PATH environment variable, then retry" : undefined,
+		code === "MATURE_BRIDGE_TARGET_REQUIRED" ? "use browser_http_replay or a direct url/rawRequest/request/HAR input before invoking the mature bridge" : undefined,
+		code === "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED" ? "supply explicit templatePaths/workflowPaths/templateIds/tags/severities/authors before invoking browser_nuclei_bridge" : undefined,
+	]);
+	if (!actions.length) return undefined;
+	return {
+		summary: taxonomy.retryable ? "Retry after verifying target, selector, timeout, or evidence inputs." : "Inspect the suggested follow-up action before retrying.",
+		nextActions: actions,
+	};
+}
+
 export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"): NormalizedError {
 	if (error instanceof Error) {
 		const extra = error as Error & { code?: unknown; details?: unknown };
 		const code = typeof extra.code === "string" && extra.code.trim() ? extra.code : fallbackCode;
 		const details = cleanDetails(extra.details);
+		const taxonomy = errorTaxonomyForCode(code, details);
+		const recovery = recoveryForNormalized(code, details, taxonomy);
 		return {
 			code,
 			message: error.message || code,
 			details,
-			taxonomy: errorTaxonomyForCode(code, details),
-			diagnostics: errorDiagnosticsFromDetails(details),
+			taxonomy,
+			diagnostics: { ...errorDiagnosticsFromDetails(details), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) },
+			recovery,
 			name: error.name || "Error",
 		};
 	}
@@ -170,10 +215,14 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 							: String(code);
 		const nestedDetails = cleanDetails(nested.details);
 		const details = cleanDetails({ ...nestedDetails, ...cleanDetails(error.details) });
-		return { code, message, details, taxonomy: errorTaxonomyForCode(code, details), diagnostics: errorDiagnosticsFromDetails(details), name: typeof error.name === "string" ? error.name : undefined };
+		const taxonomy = errorTaxonomyForCode(code, details);
+		const recovery = recoveryForNormalized(code, details, taxonomy);
+		return { code, message, details, taxonomy, diagnostics: { ...errorDiagnosticsFromDetails(details), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) }, recovery, name: typeof error.name === "string" ? error.name : undefined };
 	}
 	const details = {};
-	return { code: fallbackCode, message: String(error), details, taxonomy: errorTaxonomyForCode(fallbackCode, details), diagnostics: errorDiagnosticsFromDetails(details), name: "Error" };
+	const taxonomy = errorTaxonomyForCode(fallbackCode, details);
+	const recovery = recoveryForNormalized(fallbackCode, details, taxonomy);
+	return { code: fallbackCode, message: String(error), details, taxonomy, diagnostics: { ...errorDiagnosticsFromDetails(details), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) }, recovery, name: "Error" };
 }
 
 export function suppressErrorStack<T extends Error>(error: T): T {
@@ -198,6 +247,7 @@ export function compactError(error: unknown, fallbackCode = "INTERNAL_ERROR"): R
 		taxonomy: normalized.taxonomy,
 		diagnostics: normalized.diagnostics,
 		details: redactSensitiveValue(normalized.details),
+		recovery: normalized.recovery,
 		name: normalized.name,
 	};
 }
