@@ -25,6 +25,19 @@ on:
         type: boolean
 
 jobs:
+  lint-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + install + build
+        uses: ./.github/actions/setup-node-build
+
+      - name: Run static lint/boundary gates
+        run: npm run check:lint
+
   contracts-and-unit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -54,22 +67,6 @@ jobs:
         run: |
           npm run check:all:package
           npm run release:local
-
-  full-check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - contracts-and-unit
-      - package-acceptance
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node + install + build
-        uses: ./.github/actions/setup-node-build
-
-      - name: Run full check gate
-        run: npm run check
 
   browser-smoke:
     if: github.event_name == 'workflow_dispatch' && inputs.run_browser_smoke == true

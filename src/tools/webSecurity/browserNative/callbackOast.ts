@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import dgram from "node:dgram";
-import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager";
+import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, normalizeCallbackSessionId, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager";
 import { asString, isRecord, normalizeMethod, positiveInt } from "../shared/normalize";
-import { normalizeHeaders } from "../shared/http";
+import { assertAllowedTargetUrl, normalizeHeaders } from "../shared/http";
 import type { HeaderMap, RawCallbackOastOptions } from "../shared/types";
 
 type CallbackAction = "start" | "list" | "status" | "collect" | "clear" | "trigger" | "stop";
@@ -43,6 +43,7 @@ type NormalizedCallbackOastOptions = {
 	rejectUnauthorized: boolean;
 	maxEvents: number;
 	maxBodyBytes: number;
+	maxRuntimeMs: number;
 	afterSeq: number;
 	timeoutMs: number;
 };
@@ -74,7 +75,8 @@ function normalizeTriggerMode(value: unknown): "http" | "https" | "dns" {
 
 function normalizeCallbackOastOptions(options: RawCallbackOastOptions): NormalizedCallbackOastOptions {
 	const action = normalizeCallbackAction(options.action);
-	const sessionId = asString(options.sessionId)?.trim() || (action === "start" ? `oast-${randomUUID()}` : undefined);
+	const rawSessionId = asString(options.sessionId)?.trim() || (action === "start" ? `oast-${randomUUID()}` : undefined);
+	const sessionId = rawSessionId ? normalizeCallbackSessionId(rawSessionId) : undefined;
 	const bodyBase64 = asString(options.bodyBase64 ?? options.triggerBodyBase64);
 	return {
 		action,
@@ -109,8 +111,9 @@ function normalizeCallbackOastOptions(options: RawCallbackOastOptions): Normaliz
 		rejectUnauthorized: options.rejectUnauthorized === true,
 		maxEvents: Math.min(100_000, positiveInt(options.maxEvents, 1_000)),
 		maxBodyBytes: Math.min(10_000_000, positiveInt(options.maxBodyBytes, 64_000)),
+		maxRuntimeMs: Math.min(24 * 60 * 60 * 1000, Math.max(1_000, positiveInt(options.maxRuntimeMs, 60 * 60 * 1000))),
 		afterSeq: Math.max(0, positiveInt(options.afterSeq, 0)),
-		timeoutMs: Math.max(500, positiveInt(options.timeoutMs, 5_000)),
+		timeoutMs: Math.max(500, positiveInt(options.triggerTimeoutMs ?? options.timeoutMs, 5_000)),
 	};
 }
 
@@ -139,8 +142,9 @@ function buildDnsQuery(name: string, type = "A") {
 	return { id, packet: Buffer.concat([header, question]) };
 }
 
-function triggerHttpLike(url: string, options: { method: string; headers: HeaderMap; body?: Buffer | string; rejectUnauthorized: boolean }) {
-	return new Promise<Record<string, unknown>>((resolve, reject) => {
+async function triggerHttpLike(url: string, options: { method: string; headers: HeaderMap; body?: Buffer | string; rejectUnauthorized: boolean; allowPrivateTargets?: boolean }) {
+	await assertAllowedTargetUrl(url, { allowPrivateTargets: options.allowPrivateTargets, allowLoopback: true });
+	return await new Promise<Record<string, unknown>>((resolve, reject) => {
 		const target = new URL(url);
 		const lib = target.protocol === "https:" ? https : http;
 		const request = lib.request(target, { method: options.method, headers: options.headers, rejectUnauthorized: target.protocol === "https:" ? options.rejectUnauthorized : undefined }, (response) => {
@@ -193,7 +197,8 @@ async function triggerSession(state: CallbackSessionState, options: NormalizedCa
 		const headers = { ...options.headers };
 		const body = options.body ?? `${state.correlationId}`;
 		if (!headers["Content-Type"] && !headers["content-type"] && typeof body === "string") headers["Content-Type"] = "text/plain; charset=utf-8";
-		trigger = await triggerHttpLike(target, { method: options.method, headers, body, rejectUnauthorized: options.mode === "https" ? options.rejectUnauthorized : true });
+		const allowPrivateTargets = target === state.callbackUrl || target === state.httpsCallbackUrl;
+		trigger = await triggerHttpLike(target, { method: options.method, headers, body, rejectUnauthorized: options.mode === "https" ? options.rejectUnauthorized : true, allowPrivateTargets });
 	}
 	const after = await waitForState(state.sessionId, (current) => filterEvents(current, beforeSeq).length > 0 || current.listenerActive !== true, Math.max(1_000, options.timeoutMs));
 	const events = filterEvents(after, beforeSeq);

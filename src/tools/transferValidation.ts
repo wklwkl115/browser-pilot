@@ -1,9 +1,10 @@
-import { suppressErrorStack } from "../utils/errors";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
+import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
+import { suppressErrorStack } from "../utils/errors";
 
-export function codedTransferError(code: string, message: string, details: Record<string, unknown> = {}): Error {
+export function codedTransferError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): Error {
 	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
 	error.name = "TransferToolError";
 	error.code = code;

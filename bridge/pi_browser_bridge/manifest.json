@@ -16,7 +16,8 @@
     "management",
     "contentSettings",
     "downloads",
-    "webNavigation"
+    "webNavigation",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"

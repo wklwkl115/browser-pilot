@@ -54,6 +54,43 @@ type PiBrowserQueueRecord = { tail: Promise<unknown>; depth: number; pending: bo
 const piBrowserSessions = new Map<number, PiBrowserSessionRecord>();
 const piBrowserTabQueues = new Map<number, PiBrowserQueueRecord>();
 const PI_BROWSER_QUEUE_MAX_DEPTH = 64;
+const PI_BROWSER_RUNTIME_STATE_KEY = 'piBrowserRuntimeState';
+
+async function loadPiBrowserRuntimeStateMap(): Promise<Record<string, JsonRecord>> {
+  const session = chrome.storage?.session;
+  if (!session?.get) return {};
+  const raw = await session.get(PI_BROWSER_RUNTIME_STATE_KEY).catch(() => ({}));
+  const value = raw && typeof raw === 'object' ? (raw as JsonRecord)[PI_BROWSER_RUNTIME_STATE_KEY] : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, JsonRecord> : {};
+}
+function piBrowserRuntimeStateKey(kind: string, tabId: number, sessionId: string): string { return `${kind}:${Number(tabId)}:${String(sessionId || 'default')}`; }
+async function savePiBrowserRuntimeStateMap(map: Record<string, JsonRecord>): Promise<void> {
+  const session = chrome.storage?.session;
+  if (!session?.set) return;
+  await session.set({ [PI_BROWSER_RUNTIME_STATE_KEY]: map }).catch(() => {});
+}
+function currentPiBrowserWorkerBootId(): string {
+  const bridge = runtimeRecord(piBridgeInfo());
+  return typeof bridge.workerBootId === 'string' && bridge.workerBootId ? bridge.workerBootId : 'unknown';
+}
+async function rememberRuntimeSession(kind: string, tabId: number, sessionId: string, details: JsonRecord = {}): Promise<void> {
+  const map = await loadPiBrowserRuntimeStateMap();
+  map[piBrowserRuntimeStateKey(kind, tabId, sessionId)] = { kind, tabId: Number(tabId), sessionId: String(sessionId || 'default'), active: true, workerBootId: currentPiBrowserWorkerBootId(), updatedAt: Date.now(), details };
+  await savePiBrowserRuntimeStateMap(map);
+}
+async function forgetRuntimeSession(kind: string, tabId: number, sessionId: string): Promise<void> {
+  const map = await loadPiBrowserRuntimeStateMap();
+  delete map[piBrowserRuntimeStateKey(kind, tabId, sessionId)];
+  await savePiBrowserRuntimeStateMap(map);
+}
+async function findLostRuntimeSession(kind: string, tabId: number, sessionId: string): Promise<JsonRecord | undefined> {
+  const record = (await loadPiBrowserRuntimeStateMap())[piBrowserRuntimeStateKey(kind, tabId, sessionId)];
+  return record && record.active === true && record.workerBootId !== currentPiBrowserWorkerBootId() ? record : undefined;
+}
+function summarizeLostRuntimeSession(record: JsonRecord | undefined): JsonRecord | undefined {
+  if (!record) return undefined;
+  return { stateLost: true, previousWorkerBootId: record.workerBootId, updatedAt: record.updatedAt, kind: record.kind, tabId: record.tabId, sessionId: record.sessionId, details: runtimeRecord(record.details) };
+}
 
 function getPiBrowserQueueStats(tabId: unknown) {
   const q = piBrowserTabQueues.get(Number(tabId));
@@ -326,6 +363,6 @@ async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender,
     return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
   } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId }); }
 }
-export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, handlePiBrowser, handlePiBrowserImpl };
+export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl };
 // ESM module boundary marker for TODO 189
-export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, handlePiBrowser, handlePiBrowserImpl } };
+export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl } };

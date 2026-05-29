@@ -12,55 +12,8 @@ const STATE_LOCK_TIMEOUT_MS = 10_000;
 const STATE_LOCK_RETRY_MS = 25;
 const STATE_LOCK_STALE_MS = 30_000;
 const TEXTUAL_CONTENT_TYPE = /(?:^|[\s;/+.-])(text|json|xml|html|javascript|ecmascript|x-www-form-urlencoded|svg|graphql)(?:[\s;/+.-]|$)/i;
-const HTTPS_KEY_PEM = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC/TY4EGbXxmmzk
-SVbDJfiBwhvGM8NfZ6MkTnOXnwvO/DS9mZJo+yHltw7JIMF8XtT82NOlost5Rvgs
-+g4AdXixYWq7llaRD1Fr+rj8IeDFx0Kl8iqsJaypujmz7/hV0vNtp7r70DVBGvQ4
-7NSTqv8OJ3DRtQ34XAjxlSdzBlIavbo38OGiQBlKG3WcJC/Cx9asJBTslI/p5aUK
-XTZgJjIgI2nIdynIPQ4cRb3ZDCmvKsnnrBCGWPUnucwHb756nfirl7UUMBTNFRpT
-DEnjZcWLMpwbRIqtDPl+Lu3XBayfyiVgv8cTfPX3zONMuB6NyNGlUtZYwE8xSBiC
-4wH1VES9AgMBAAECggEALsXQBLmijg1TNWenAnSss1EZyFaMnK1yqmRSB863rOZm
-ILtFHEzWh1tADrXnCLkI+z8qVDOe6yqKcDi9JqiSF1B5r5680J+9qRh2lRLVaZXj
-+j3g6BEYC7F//TodbiJzKSra4UmRU7c64hYpjWdAEB5di7BoV4JtH1/38rwnY+j1
-pOlIYvSB7ywWWQca2j0P7BQNz7AFlKUQmQMh0bow5ytIxInOtQPNc0CTCESSoc1k
-ZMCBHHoyO4khwAR4JqdU5DxortpBWVn8NHXjMwFSJtrkqAsstvEIHlQ0JQ9aT/nj
-rVg9Dro3OYrRsyaLeZy3MuZ5drpn++HHYQtrt+YbIQKBgQD2FptCou+JZYXYFwzK
-63WQUXJ9OH7OOtQuZbNy958K8ZYGFICwnGOTTo0kivCPDFFmXhQiiJjY2WZ/TGCH
-XAA3kyvx88FTWsQkBNxzyaYAfP3HVnKyGZ6trhykgzrzomcoOtn8fTKKP2VforOs
-ucX3Mtj62yoqfRyw4ATDV8tYrQKBgQDHAg/CSSLOmx2x87i+KxyXUjPb6VJLnVcF
-eu3DG2SgLKPelNLFFCHYkao3JdZY7Tg01//8rIdf4gvtkGgVBAYISzKTVCZQmDca
-a9Z8KZLTQ4kLEvaxFonQlHtXLshDpyJWXYFbP0UoQ2ZFsxqmZ4kRNHPL5Oy/sALu
-neUHyWrOUQKBgGgUa5olW3Ya8B7SsOBp8ZEWQXvglxEWJINzFBB91lBEmRT9Ouh3
-XE4DHQLlmJSHuy22gIGSkEK2v/j7DqBxMs5OenmchJmCfA5X1/1IveLa+mKCl4Pn
-/gqq5wZVUmuUtlh3e5akROnfojpuj9tvvuCsKsT+SLkrrSTJunn7+c8JAoGARxL3
-ad4Q7lT74Ag5XMGs7mZPWyUTXSoOYEitDdeEsqf+xonEVNqB1AUCE7wRt6TRRB44
-sJc1qgrjU68VXRwYw3GH2JJfNL2IQIlvCt0WMRmXojrdnBV+lt3QxyxQHcldPBcd
-Eeeg3WZk6lOzGuczTs+644EZBMTp5yrBF2zaFmECgYEA1hohFB+Id0002VRHFf3w
-kmIzPwyPZI5fRSCEKqmBRcCbvV6/MopJIMj4rnocQFCriUDgELcq3mcFb5+mCCfi
-tvoQsLP7pfagfiK+cEKao1qeYt5BWPq7uaQyhuRAHOLqPXc0kfesASHYGUXfk0tN
-wVMKRtG7S8sdj72QTKhpdEQ=
------END PRIVATE KEY-----`;
-const HTTPS_CERT_PEM = `-----BEGIN CERTIFICATE-----
-MIIDCTCCAfGgAwIBAgIUQiKEBrKVqUSDT3e582do58qex+gwDQYJKoZIhvcNAQEL
-BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDUxODEzMTQyM1oXDTM2MDUx
-NTEzMTQyM1owFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
-AAOCAQ8AMIIBCgKCAQEAv02OBBm18Zps5ElWwyX4gcIbxjPDX2ejJE5zl58Lzvw0
-vZmSaPsh5bcOySDBfF7U/NjTpaLLeUb4LPoOAHV4sWFqu5ZWkQ9Ra/q4/CHgxcdC
-pfIqrCWsqbo5s+/4VdLzbae6+9A1QRr0OOzUk6r/Didw0bUN+FwI8ZUncwZSGr26
-N/DhokAZSht1nCQvwsfWrCQU7JSP6eWlCl02YCYyICNpyHcpyD0OHEW92QwpryrJ
-56wQhlj1J7nMB2++ep34q5e1FDAUzRUaUwxJ42XFizKcG0SKrQz5fi7t1wWsn8ol
-YL/HE3z198zjTLgejcjRpVLWWMBPMUgYguMB9VREvQIDAQABo1MwUTAdBgNVHQ4E
-FgQUeNqISWIBj9Sgi5g/Ow8U3Z6+r5UwHwYDVR0jBBgwFoAUeNqISWIBj9Sgi5g/
-Ow8U3Z6+r5UwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAIvmE
-lPDU6FrybEh0tAxnnBpGS1fjvgcuhlBVZQWy5D+hCGgZmsCwzmF1vC2nQMWWGx7/
-lnloroOmhsKdsZQIjrgC9B2XqppyxtRPUqzsPVS8202Ri/C/xfZP25hhxvt5wXxf
-4olw2OHGKkA8EeMywYkFL/j05YBKyN9ekYIMtDaNcvAVvaJdFEFG8D2PQUCvRiDo
-XwLdsYx8gNzXil2G2GTgA7ILoI/nXzf3ILoRP1EIUou5pqRdnshL5i/ZhhZUXC0k
-Hm8bLe667mPANwUjr1DMcmpsr0uUvw0zwSvSDvpxdGvsQnnYx0hLeP1yS56uIIrg
-y6MvYSdcdoVmQWD+RA==
------END CERTIFICATE-----`;
 
-const runtime = { httpServer: null, httpsServer: null, dnsServer: null, shuttingDown: false };
+const runtime = { httpServer: null, httpsServer: null, dnsServer: null, shuttingDown: false, maxRuntimeTimer: null };
 
 function asString(value) {
   return typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" ? String(value) : undefined;
@@ -131,12 +84,32 @@ async function stateLockExists(lockPath) {
   }
 }
 
+function readLockToken(value) {
+  return value && typeof value === "object" && !Array.isArray(value) && typeof value.token === "string" ? value.token : undefined;
+}
+
+async function loadLockToken(lockPath) {
+  try {
+    return readLockToken(JSON.parse(await readFile(lockPath, "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
 async function releaseStateLock(lockPath, token) {
   try {
     const parsed = JSON.parse(await readFile(lockPath, "utf8"));
     if (parsed.token !== token) return;
     await rm(lockPath, { force: true });
   } catch {}
+}
+
+async function removeLockIfUnchanged(lockPath, expectedToken) {
+  if (expectedToken) {
+    const currentToken = await loadLockToken(lockPath);
+    if (currentToken !== expectedToken) return;
+  }
+  await rm(lockPath, { force: true }).catch(() => {});
 }
 
 async function waitForStateLockBreaker(breakerPath, started) {
@@ -156,7 +129,8 @@ async function breakStaleStateLock(lockPath, breakerPath, started) {
     await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token }), "utf8");
     await handle.close();
     handle = undefined;
-    if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+    const staleToken = await loadLockToken(lockPath);
+    if (await isStaleStateLock(lockPath)) await removeLockIfUnchanged(lockPath, staleToken);
   } catch (error) {
     await handle?.close().catch(() => {});
     if (created) await rm(breakerPath, { force: true }).catch(() => {});
@@ -427,8 +401,16 @@ function dnsCallbackHost(state) {
   return `${state.correlationId}.${base}`.replace(/^\.+|\.+$/g, "");
 }
 
-function certificateInfo() {
-  const cert = new X509Certificate(HTTPS_CERT_PEM);
+async function httpsCredentialsFromState(state) {
+  const keyPath = asString(state.httpsKeyPath)?.trim();
+  const certPath = asString(state.httpsCertPath)?.trim();
+  if (!keyPath || !certPath) throw new Error("HTTPS_CERT_GENERATION_FAILED:httpsKeyPath/httpsCertPath missing from callback session state");
+  const [key, cert] = await Promise.all([readFile(keyPath, "utf8"), readFile(certPath, "utf8")]);
+  return { key, cert };
+}
+
+function certificateInfo(certPem) {
+  const cert = new X509Certificate(certPem);
   return {
     subject: cert.subject,
     issuer: cert.issuer,
@@ -461,7 +443,8 @@ async function start() {
   state.publicCallbackUrl = state.publicBaseUrl ? `${state.publicBaseUrl}${basePath}` : undefined;
 
   if (state.enableHttps === true) {
-    const httpsServer = https.createServer({ key: HTTPS_KEY_PEM, cert: HTTPS_CERT_PEM }, (req, res) => handleHttpRequest("https", req, res).catch(async (error) => {
+    const credentials = await httpsCredentialsFromState(state);
+    const httpsServer = https.createServer({ key: credentials.key, cert: credentials.cert }, (req, res) => handleHttpRequest("https", req, res).catch(async (error) => {
       await appendEvent({ protocol: "https", error: error instanceof Error ? error.message : String(error), matchedCorrelation: false });
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("callback listener error\n");
@@ -477,7 +460,7 @@ async function start() {
     state.httpsCallbackUrl = `${callbackBaseUrl("https", listenHost, httpsAddress.port)}${basePath}`;
     state.publicHttpsBaseUrl = asString(state.publicHttpsBaseUrl)?.replace(/\/+$/, "") || state.publicBaseUrl?.replace(/^http:/, "https:");
     state.publicHttpsCallbackUrl = state.publicHttpsBaseUrl ? `${state.publicHttpsBaseUrl}${basePath}` : undefined;
-    state.httpsCertificate = certificateInfo();
+    state.httpsCertificate = certificateInfo(credentials.cert);
   }
 
   if (state.enableDns === true) {
@@ -503,6 +486,8 @@ async function start() {
   state.recovered = false;
   state.ready = true;
   state.startedAt = state.startedAt || new Date().toISOString();
+  const maxRuntimeMs = positiveInt(state.maxRuntimeMs, 60 * 60 * 1000);
+  state.maxRuntimeMs = maxRuntimeMs;
   await updateState((current) => ({
     ...current,
     ...state,
@@ -512,6 +497,10 @@ async function start() {
     lastEventAt: current.lastEventAt,
     lastClearedAt: current.lastClearedAt,
   }));
+  if (runtime.maxRuntimeTimer) clearTimeout(runtime.maxRuntimeTimer);
+  runtime.maxRuntimeTimer = setTimeout(() => {
+    void shutdown("max_runtime_exceeded");
+  }, maxRuntimeMs);
 }
 
 async function shutdown(reason) {
@@ -521,6 +510,10 @@ async function shutdown(reason) {
     if (!server) return;
     await new Promise((resolve) => server.close(() => resolve()));
   };
+  if (runtime.maxRuntimeTimer) {
+    clearTimeout(runtime.maxRuntimeTimer);
+    runtime.maxRuntimeTimer = null;
+  }
   await Promise.all([close(runtime.httpServer), close(runtime.httpsServer), close(runtime.dnsServer)]).catch(() => {});
   try {
     await updateState((state) => {

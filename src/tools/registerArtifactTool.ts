@@ -1,11 +1,11 @@
 import { Type } from "typebox";
 import { normalizeArtifactMode } from "../utils/params";
 import { readBrowserArtifact } from "./artifactReader";
-import { inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter";
+import { defineBrowserTool, inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter";
 import type { ToolRegistrarContext } from "./toolShared";
 
 export function registerArtifactTool({ pi }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_artifact",
 		label: "Browser Artifact",
 		description: "Read, sample, search, or pick local artifact files produced by browser tools without loading the whole file, including bounded multi-artifact search.",
@@ -23,7 +23,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit artifact paths for bounded multi-artifact search mode." })),
 			root: Type.Optional(Type.String({ description: "Optional relative root under .pi/browser-artifacts for bounded multi-artifact search." })),
 			glob: Type.Optional(Type.String({ description: "Optional bounded glob for multi-artifact search, e.g. **/*.json" })),
-			mode: Type.Optional(Type.String({ description: "text | json | search | sample" })),
+			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("json"), Type.Literal("search"), Type.Literal("sample")], { description: "text | json | search | sample" })),
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; array offset for json arrays" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json" })),
 			maxChars: maxCharsParam(),

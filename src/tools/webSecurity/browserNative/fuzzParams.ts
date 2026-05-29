@@ -87,15 +87,22 @@ async function normalizeFuzzParamsOptions(options: FuzzParamsOptions): Promise<N
 export async function runFuzzParams(options: FuzzParamsOptions) {
 	const baseRequest = buildReplayRequest(options);
 	const normalized = await normalizeFuzzParamsOptions(options);
-	const cases = [] as Array<{ location: string; paramName: string; operation: string; valueLabel?: string; value?: unknown; contentTypeVariant?: string }>;
+	const limitedCases = [] as Array<{ location: string; paramName: string; operation: string; valueLabel?: string; value?: unknown; contentTypeVariant?: string }>;
+	let totalCaseCount = 0;
 	for (const location of normalized.locations) for (const paramName of normalized.paramNames) for (const operation of normalized.operations) {
 		const variants = location === "multipart" ? normalized.contentTypeVariants : [undefined];
 		for (const contentTypeVariant of variants) {
-			if (operation === "delete") cases.push({ location, paramName, operation, contentTypeVariant });
-			else for (const value of normalized.values) cases.push({ location, paramName, operation, valueLabel: value.label, value: value.value, contentTypeVariant });
+			if (operation === "delete") {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ location, paramName, operation, contentTypeVariant });
+				continue;
+			}
+			for (const value of normalized.values) {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ location, paramName, operation, valueLabel: value.label, value: value.value, contentTypeVariant });
+			}
 		}
 	}
-	const limitedCases = cases.slice(0, normalized.maxCases);
 	const baselineSent = await sendReplayLikeRequest(baseRequest, normalized);
 	const baselineFinal = baselineSent.exchange.final;
 	const baseline = { status: baselineFinal.status, title: extractTitle(baselineFinal.bodyText), bodyBytes: baselineFinal.bodyBytes, bodySha256: responseBodyHash(baselineFinal), location: redirectLocation(baselineFinal.status, baselineFinal.headers, baselineFinal.url), url: baselineFinal.url };
@@ -140,5 +147,5 @@ export async function runFuzzParams(options: FuzzParamsOptions) {
 	}
 	const matched = results.filter((item) => item.matched === true);
 	const parserClusters = clusterMultipartParserResults(results);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, valueCount: normalized.values.length, operations: normalized.operations, contentTypeVariants: normalized.contentTypeVariants, caseCount: limitedCases.length, requestCount: sent, matchedCount: matched.length, truncatedCases: cases.length - limitedCases.length, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, parserClusters, results, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, valueCount: normalized.values.length, operations: normalized.operations, contentTypeVariants: normalized.contentTypeVariants, caseCount: limitedCases.length, requestCount: sent, matchedCount: matched.length, truncatedCases: Math.max(0, totalCaseCount - limitedCases.length), matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, parserClusters, results, matched, failures };
 }

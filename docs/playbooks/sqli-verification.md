@@ -15,14 +15,14 @@ Use when a URL, captured request, parameter, header, cookie, JSON/form/multipart
 
 1. Capture or build the request through the request capture and replay playbook.
 2. Run a baseline replay with `browser_http_replay compareBaseline:true` when the request was captured from browser state.
-3. Run `browser_sqli_probe`:
+3. Run `browser_sqli`:
    - pass `url`, `rawRequest`, or captured `request`
    - set `paramNames` when known
    - set `locations`, `probeTypes`, `payloadMode`, `maxCases`, `timeoutMs`
    - set `bindBrowserSession:true` when browser cookies are needed
    - set `stopOnFirstMatch:true` for quick confirmation or false-positive reduction
    - set `outputPath` for evidence
-4. If the oracle is confirmed and deeper enumeration is explicitly useful, run `browser_sqlmap_bridge` with bounded `paramNames`, `technique`, `level`, `risk`, `timeoutMs`, and artifact output.
+4. If the oracle is confirmed and deeper enumeration is explicitly useful, run `browser_sqli {engine:"sqlmap"}` with bounded `paramNames`, `technique`, `level`, `risk`, `timeoutMs`, and artifact output.
 5. Read probe/sqlmap artifacts with `browser_artifact`; extract matched payload, response delta, DBMS hints, and request template.
 
 ## Evidence
@@ -43,10 +43,10 @@ Record:
 
 ## Pivot
 
-- No stable SQLi but parameter behavior changes -> `browser_fuzz_params`.
+- No stable SQLi but parameter behavior changes -> `browser_fuzz {mode:"param"}`.
 - WAF/rate-limit suspected -> reduce `maxCases`, split probe types, add `rateLimitPerSecond`, mark as inconclusive unless repeated.
 - Auth/CSRF expiry -> recapture request and replay with browser cookies.
-- UNION works but extraction is needed -> `browser_sqlmap_bridge` with narrow params.
+- UNION works but extraction is needed -> `browser_sqli {engine:"sqlmap"}` with narrow params.
 
 ## Stop
 

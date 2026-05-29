@@ -78,7 +78,6 @@ export class BrowserBridgePendingRequests {
 		for (const pending of Array.from(this.pending.values())) {
 			clearTimeout(pending.timer);
 			this.pending.delete(pending.id);
-			if (pending.tabId === undefined && pending.target?.source === "none") continue;
 			pending.reject(new BrowserBridgeError("BRIDGE_STOPPED", "Browser bridge stopped before request completed", { id: pending.id, tabId: pending.tabId, target: this.resolvedTarget(pending.target) }));
 		}
 	}

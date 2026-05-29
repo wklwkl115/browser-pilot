@@ -1,16 +1,13 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
 import { summarizeEvidenceData } from "./summaries/index";
-import { applyDefaultTimeout, artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
+import { applyDefaultTimeout, artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
+import { isRecord } from "../utils/params";
 
 export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_evidence",
 		label: "Browser Evidence",
 		description: "Aggregate native browser evidence from hook, network recorder, and performance entries.",

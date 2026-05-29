@@ -44,3 +44,24 @@ test("BrowserObservationSnapshotRegistry marks stale snapshots expired after sel
 	});
 	assert.equal(stale?.expired, true);
 });
+
+test("BrowserObservationSnapshotRegistry prunes TTL-expired snapshots on new writes", () => {
+	const registry = new BrowserObservationSnapshotRegistry();
+	const now = Date.now();
+	const expired = registry.create({
+		tabId: 1,
+		url: "https://old.example",
+		sourceMode: "scan",
+		capturedAt: now - 10_000,
+		ttlMs: 1_000,
+	});
+	registry.create({
+		tabId: 2,
+		url: "https://new.example",
+		sourceMode: "scan",
+		capturedAt: now,
+	});
+
+	assert.equal(registry.get(expired.snapshotId), undefined);
+	assert.equal(registry.list().length, 1);
+});

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BrowserCommandQueueRegistry } from "../../../src/driver/BrowserCommandQueueRegistry.ts";
+import { BrowserBridgeError } from "../../../src/driver/errors.ts";
 
 test("BrowserCommandQueueRegistry serializes commands per session/tab", async () => {
 	const queue = new BrowserCommandQueueRegistry();
@@ -27,5 +28,21 @@ test("BrowserCommandQueueRegistry serializes commands per session/tab", async ()
 	assert.equal(await first, "first");
 	assert.equal(await second, "second");
 	assert.deepEqual(events, ["first:start", "first:end", "second:start", "second:end"]);
+	assert.equal(queue.depth("s1", 1), 0);
+});
+
+test("BrowserCommandQueueRegistry rejects when queue depth reaches the configured limit", async () => {
+	const queue = new BrowserCommandQueueRegistry(1);
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => { release = resolve; });
+	const first = queue.enqueue("s1", 1, async () => {
+		await gate;
+		return "first";
+	});
+
+	await assert.rejects(queue.enqueue("s1", 1, async () => "second"), (error) => error instanceof BrowserBridgeError && error.code === "QUEUE_FULL");
+	assert.equal(queue.depth("s1", 1), 1);
+	release();
+	assert.equal(await first, "first");
 	assert.equal(queue.depth("s1", 1), 0);
 });

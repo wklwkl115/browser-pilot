@@ -23,9 +23,9 @@ Use when the task asks to inspect requests, replay an action, compare responses,
    - set `bindBrowserSession:true` only when cookies from the browser session are required
    - set `outputPath` for non-trivial evidence
 7. Apply one mutation class at a time through `browser_http_replay` or route to a specialized tool:
-   - params -> `browser_fuzz_params`
-   - SQLi -> `browser_sqli_probe`
-   - templates/exposures -> `browser_template_check`
+   - params -> `browser_fuzz {mode:"param"}`
+   - SQLi -> `browser_sqli`
+   - templates/exposures -> `browser_template`
 8. Read replay artifacts with `browser_artifact`.
 
 ## Evidence
@@ -38,7 +38,7 @@ Use when the task asks to inspect requests, replay an action, compare responses,
 ## Pivot
 
 - Mutation changes authorization outcome -> evidence/reporting playbook.
-- Parameter deltas appear but not classifiable -> `browser_fuzz_params` with small value set.
+- Parameter deltas appear but not classifiable -> `browser_fuzz {mode:"param"}` with small value set.
 - Time/error/boolean response appears -> SQLi verification playbook.
 - URL fetch/webhook/internal target field appears -> SSRF/OAST playbook.
 - Needs browser-rendered effect -> replay request, then re-observe page or hook/network evidence.

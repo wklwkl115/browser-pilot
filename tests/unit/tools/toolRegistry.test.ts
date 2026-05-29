@@ -8,7 +8,7 @@ import {
 
 test("toolRegistry exposes stable core and web-security registrar counts", () => {
 	assert.equal(CORE_BROWSER_TOOL_REGISTRARS.length, 14);
-	assert.equal(WEB_SECURITY_TOOL_REGISTRARS.length, 12);
+	assert.equal(WEB_SECURITY_TOOL_REGISTRARS.length, 7);
 });
 
 test("toolRegistry omits security registrars when securityToolsEnabled is false", () => {

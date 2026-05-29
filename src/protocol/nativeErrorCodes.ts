@@ -85,6 +85,11 @@ export const nativeErrorCodes = {
     "retryable": false,
     "summary": "Requested browser client was not found."
   },
+  "QUEUE_FULL": {
+    "category": "driver.queue",
+    "retryable": true,
+    "summary": "Browser command queue reached its configured depth limit."
+  },
   "BUFFER_OVERFLOW": {
     "category": "runtime.hook",
     "retryable": false,
@@ -139,6 +144,11 @@ export const nativeErrorCodes = {
     "category": "tool.security",
     "retryable": false,
     "summary": "External mature bridge launcher was not found."
+  },
+  "MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "Explicit mature bridge launcher overrides require an opt-in flag."
   },
   "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT": {
     "category": "tool.security",
@@ -209,6 +219,11 @@ export const nativeErrorCodes = {
     "category": "runtime.wait",
     "retryable": true,
     "summary": "Navigation wait timed out or failed before target state."
+  },
+  "PRIVATE_TARGET_BLOCKED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "Private, link-local, or metadata targets require explicit opt-in."
   },
   "NETWORK_IDLE_TIMEOUT": {
     "category": "runtime.wait",
@@ -294,6 +309,16 @@ export const nativeErrorCodes = {
     "category": "runtime.timeout",
     "retryable": true,
     "summary": "Generic runtime wait or command timeout."
+  },
+  "WAIT_TIMEOUT": {
+    "category": "driver.wait",
+    "retryable": true,
+    "summary": "Durable browser wait exceeded the total timeout budget."
+  },
+  "WAIT_STATE_LOST": {
+    "category": "driver.wait",
+    "retryable": true,
+    "summary": "Durable browser wait could not survive browser extension state loss or restart."
   },
   "WEBSOCKET_INVALID_INPUT": {
     "category": "bridge.ws",
@@ -394,6 +419,16 @@ export const nativeErrorCodes = {
     "category": "tool.transfer",
     "retryable": false,
     "summary": "browser_upload requires a selector."
+  },
+  "WORDLIST_PATH_BLOCKED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "Local wordlist paths must stay within allowed roots and bounded size."
+  },
+  "HTTPS_CERT_GENERATION_FAILED": {
+    "category": "tool.security",
+    "retryable": false,
+    "summary": "Callback HTTPS certificate generation failed or explicit certificate inputs were invalid."
   }
 } as const;
 

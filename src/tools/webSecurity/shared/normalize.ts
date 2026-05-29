@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
 
 export const DEFAULT_MAX_BODY_BYTES = 256_000;
 export const DEFAULT_TIMEOUT_MS = 15_000;
@@ -44,10 +45,41 @@ export function stringList(value: unknown): string[] {
 	return raw.map((item) => asString(item)?.trim() || "").filter(Boolean);
 }
 
+const WORDLIST_MAX_BYTES = 5 * 1024 * 1024;
+
+function wordlistPathError(message: string, details: Record<string, unknown>): Error {
+	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
+	error.name = "WordlistPathError";
+	error.code = "WORDLIST_PATH_BLOCKED";
+	error.details = details;
+	return error;
+}
+
+function allowedWordlistRoots(): string[] {
+	const cwd = path.resolve(process.cwd());
+	return [cwd, path.join(cwd, ".pi")];
+}
+
+function resolveScopedWordlistPath(filePath: string): string {
+	const resolved = path.resolve(filePath);
+	const allowedRoots = allowedWordlistRoots();
+	const allowed = allowedRoots.some((root) => resolved === root || resolved.startsWith(root.endsWith(path.sep) ? root : `${root}${path.sep}`));
+	if (!allowed) {
+		throw wordlistPathError("browser webSecurity wordlistPath must stay under the current working directory or .pi/", { path: filePath, resolved, allowedRoots });
+	}
+	return resolved;
+}
+
 export async function readWordlist(value: unknown): Promise<string[]> {
 	const filePath = asString(value)?.trim();
 	if (!filePath) return [];
-	const text = await readFile(filePath, "utf8");
+	const resolved = resolveScopedWordlistPath(filePath);
+	const info = await stat(resolved).catch((error: unknown) => {
+		throw wordlistPathError("browser webSecurity wordlistPath does not exist", { path: filePath, resolved, cause: error instanceof Error ? error.message : String(error) });
+	});
+	if (!info.isFile()) throw wordlistPathError("browser webSecurity wordlistPath must point to a regular file", { path: filePath, resolved });
+	if (info.size > WORDLIST_MAX_BYTES) throw wordlistPathError("browser webSecurity wordlistPath exceeds the bounded size limit", { path: filePath, resolved, bytes: info.size, maxBytes: WORDLIST_MAX_BYTES });
+	const text = await readFile(resolved, "utf8");
 	return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
 }
 

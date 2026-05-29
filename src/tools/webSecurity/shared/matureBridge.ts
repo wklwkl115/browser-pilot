@@ -1,4 +1,5 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
 import { suppressErrorStack } from "../../../utils/errors";
 import { redactWebSecurityDiagnosticValue } from "./diagnostics";
 
@@ -34,9 +35,10 @@ export type DetectMatureBridgeLauncherOptions = {
 	versionArgs: string[];
 	successPattern: RegExp;
 	probeTimeoutMs?: number;
+	allowLauncherOverride?: boolean;
 };
 
-export function matureBridgeToolError(code: string, message: string, details: Record<string, unknown> = {}): Error {
+export function matureBridgeToolError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): Error {
 	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
 	error.name = "MatureBridgeError";
 	error.code = code;
@@ -117,6 +119,9 @@ function failExplicitProbe(bridgeName: string, options: DetectMatureBridgeLaunch
 export function detectMatureBridgeLauncher(options: DetectMatureBridgeLauncherOptions): MatureBridgeLauncher {
 	const explicitPath = String(options.explicitPath || "").trim();
 	if (explicitPath) {
+		if (options.allowLauncherOverride !== true) {
+			throw matureBridgeToolError("MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED", `${options.bridgeName} explicit launcher overrides require allowLauncherOverride:true`, { bridgeName: options.bridgeName, source: "param", envPathVar: options.envPathVar, envArgsVar: options.envArgsVar });
+		}
 		const candidate = { command: explicitPath, preArgs: options.explicitArgs ?? [], source: "param" as const };
 		const attempt = probeCandidate(candidate, options);
 		if (attempt.matched) return candidate;
@@ -124,6 +129,9 @@ export function detectMatureBridgeLauncher(options: DetectMatureBridgeLauncherOp
 	}
 	const envPath = String(process.env[options.envPathVar] || "").trim();
 	if (envPath) {
+		if (options.allowLauncherOverride !== true) {
+			throw matureBridgeToolError("MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED", `${options.bridgeName} environment launcher overrides require allowLauncherOverride:true`, { bridgeName: options.bridgeName, source: "env", envPathVar: options.envPathVar, envArgsVar: options.envArgsVar });
+		}
 		const candidate = { command: envPath, preArgs: options.envArgs ?? [], source: "env" as const };
 		const attempt = probeCandidate(candidate, options);
 		if (attempt.matched) return candidate;

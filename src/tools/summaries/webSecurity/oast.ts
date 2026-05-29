@@ -28,6 +28,8 @@ export function summarizeCallbackOastData(value: unknown): Summary {
 		publicDnsCallbackHost: isRecord(value) ? value.publicDnsCallbackHost : undefined,
 		listenerActive: isRecord(value) ? value.listenerActive : undefined,
 		recovered: isRecord(value) ? value.recovered : undefined,
+		stopReason: isRecord(value) ? value.stopReason : undefined,
+		maxRuntimeMs: isRecord(value) ? value.maxRuntimeMs : undefined,
 		enabledProtocols: isRecord(value) ? value.enabledProtocols : undefined,
 		eventCount: events.length || (isRecord(value) ? value.eventCount : undefined),
 		nextSeq: isRecord(value) ? value.nextSeq : undefined,

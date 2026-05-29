@@ -2,17 +2,13 @@ import { Type } from "typebox";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { rejectUnsafeExecuteCommand } from "./transferValidation";
 import { summarizeGenericValue } from "./summaries/index";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
-
-function normalizeTabId(value: unknown): number | undefined {
-	const tabId = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
-	return Number.isInteger(tabId) && tabId > 0 ? tabId : undefined;
-}
+import { normalizeTabId } from "../utils/params";
 
 export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_command",
 		label: "Browser Command",
 		description: "Send a native bridge command object through the Pi browser bridge with stable validation and result envelopes.",

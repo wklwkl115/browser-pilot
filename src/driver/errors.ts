@@ -1,13 +1,14 @@
+import { type NativeErrorCode, isNativeErrorCode } from "../protocol/nativeErrorCodes";
 import { normalizeError } from "../utils/errors";
 
 export class BrowserBridgeError extends Error {
-	readonly code: string;
+	readonly code: NativeErrorCode;
 	readonly details: Record<string, unknown>;
 
-	constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+	constructor(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}) {
 		super(message);
 		this.name = "BrowserBridgeError";
-		this.code = code;
+		this.code = isNativeErrorCode(code) ? code : "INTERNAL_ERROR";
 		this.details = details;
 	}
 

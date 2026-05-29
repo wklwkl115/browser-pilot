@@ -15,6 +15,7 @@ export function summarizeTemplateCheckData(value: unknown): Summary {
 		targetCount: isRecord(value) ? value.targetCount : undefined,
 		templateCount: isRecord(value) ? value.templateCount : undefined,
 		requestCount: isRecord(value) ? value.requestCount : undefined,
+		truncatedRequests: isRecord(value) ? value.truncatedRequests : undefined,
 		matchedCount: matched.length,
 		resultCount: isRecord(value) ? value.resultCount : undefined,
 		rawResultCount: isRecord(value) ? value.rawResultCount : undefined,

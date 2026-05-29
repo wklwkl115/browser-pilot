@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import tls from "node:tls";
 import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, numericList, positiveInt, sha256Hex, stringList } from "./normalize";
 import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types";
@@ -10,6 +12,63 @@ export const FETCH_OMIT_HEADER_NAMES = new Set(["host", "content-length", "trans
 
 export type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };
 export type ResponseFingerprint = { status: number; title?: string; bodyBytes: number; bodySha256: string; location?: string };
+
+const METADATA_HOSTS = new Set(["169.254.169.254", "metadata.google.internal", "metadata.google.internal.", "metadata", "metadata.azure", "metadata.azure.internal"]);
+
+function privateTargetError(url: string, host: string, address: string, kind: string): Error {
+	const error = new Error(`Private or metadata target requires explicit allowPrivateTargets opt-in: ${url}`) as Error & { code?: string; details?: Record<string, unknown> };
+	error.name = "PrivateTargetBlocked";
+	error.code = "PRIVATE_TARGET_BLOCKED";
+	error.details = { url, host, address, kind };
+	return error;
+}
+
+function isLoopbackAddress(address: string): boolean {
+	return address === "127.0.0.1" || address === "::1" || /^127\./.test(address);
+}
+
+function isPrivateIpv4(address: string): boolean {
+	const parts = address.split(".").map((item) => Number(item));
+	if (parts.length !== 4 || parts.some((item) => !Number.isInteger(item) || item < 0 || item > 255)) return false;
+	return parts[0] === 10
+		|| (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+		|| (parts[0] === 192 && parts[1] === 168)
+		|| (parts[0] === 169 && parts[1] === 254);
+}
+
+function isPrivateIpv6(address: string): boolean {
+	const normalized = address.toLowerCase();
+	return normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:") || normalized === "::1";
+}
+
+export async function assertAllowedTargetUrl(url: string, options: { allowPrivateTargets?: boolean; allowLoopback?: boolean } = {}): Promise<void> {
+	const parsed = new URL(url);
+	const host = parsed.hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+	if (options.allowPrivateTargets) return;
+	if (METADATA_HOSTS.has(host)) throw privateTargetError(url, host, host, "metadata_host");
+	if (host === "localhost") {
+		if (options.allowLoopback === false) throw privateTargetError(url, host, host, "loopback_host");
+		return;
+	}
+	if (isIP(host)) {
+		if (isLoopbackAddress(host)) {
+			if (options.allowLoopback === false) throw privateTargetError(url, host, host, "loopback_ip");
+			return;
+		}
+		if ((isIP(host) === 4 && isPrivateIpv4(host)) || (isIP(host) === 6 && isPrivateIpv6(host))) throw privateTargetError(url, host, host, "private_ip_literal");
+		return;
+	}
+	const resolved = await lookup(host, { all: true, verbatim: true }).catch(() => []);
+	for (const item of resolved) {
+		const address = String(item.address || "");
+		if (!address) continue;
+		if (isLoopbackAddress(address)) {
+			if (options.allowLoopback === false) throw privateTargetError(url, host, address, "loopback_dns");
+			continue;
+		}
+		if ((item.family === 4 && isPrivateIpv4(address)) || (item.family === 6 && isPrivateIpv6(address))) throw privateTargetError(url, host, address, "private_dns");
+	}
+}
 
 export function normalizeHeaders(value: unknown): HeaderMap {
 	const out: HeaderMap = {};
@@ -348,7 +407,8 @@ export function redirectMethod(method: string, status: number): string {
 	return status === 303 || ((status === 301 || status === 302) && method !== "GET" && method !== "HEAD") ? "GET" : method;
 }
 
-export async function fetchSingle(request: FetchRequest, options: Required<Pick<WebFetchOptions, "timeoutMs" | "maxBodyBytes">>): Promise<FetchStep> {
+export async function fetchSingle(request: FetchRequest, options: Required<Pick<WebFetchOptions, "timeoutMs" | "maxBodyBytes">> & Pick<WebFetchOptions, "allowPrivateTargets">): Promise<FetchStep> {
+	await assertAllowedTargetUrl(request.url, { allowPrivateTargets: options.allowPrivateTargets, allowLoopback: true });
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), options.timeoutMs);
 	const startedAt = Date.now();
@@ -375,13 +435,14 @@ export async function fetchSingle(request: FetchRequest, options: Required<Pick<
 
 export async function fetchWithRedirects(request: FetchRequest, options: WebFetchOptions): Promise<FetchExchange> {
 	const followRedirects = options.followRedirects === true;
+	const allowPrivateTargets = options.allowPrivateTargets === true;
 	const maxRedirects = positiveInt(options.maxRedirects, followRedirects ? 5 : 0);
 	const timeoutMs = positiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS);
 	const maxBodyBytes = positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES);
 	const chain: FetchStep[] = [];
 	let current = { ...request };
 	for (let i = 0; i <= maxRedirects; i += 1) {
-		const step = await fetchSingle(current, { timeoutMs, maxBodyBytes });
+		const step = await fetchSingle(current, { timeoutMs, maxBodyBytes, allowPrivateTargets });
 		chain.push(step);
 		const nextUrl = followRedirects ? redirectLocation(step.status, step.headers, current.url) : undefined;
 		if (!nextUrl) break;
@@ -400,7 +461,7 @@ export async function fetchFaviconHash(url: string, headers: HeaderMap, options:
 	const faviconUrl = new URL("/favicon.ico", url).toString();
 	const sanitized = sanitizeFetchHeaders(headers);
 	try {
-		const icon = await fetchSingle({ url: faviconUrl, method: "GET", headers: sanitized.headers }, { timeoutMs: positiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS), maxBodyBytes: Math.min(256_000, positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES)) });
+		const icon = await fetchSingle({ url: faviconUrl, method: "GET", headers: sanitized.headers }, { timeoutMs: positiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS), maxBodyBytes: Math.min(256_000, positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES)), allowPrivateTargets: options.allowPrivateTargets === true });
 		const buffer = icon.bodyBase64 ? Buffer.from(icon.bodyBase64, "base64") : Buffer.from(icon.bodyText || "", "utf8");
 		return { url: faviconUrl, status: icon.status, contentType: contentTypeOf(icon.headers), bodyBytes: icon.bodyBytes, sha256: responseBodyHash(icon), mmh3: buffer.length ? shodanFaviconMmh3(buffer) : 0, simHash64: simHash64(buffer), bodyTruncated: icon.bodyTruncated };
 	} catch (error) {
@@ -408,9 +469,10 @@ export async function fetchFaviconHash(url: string, headers: HeaderMap, options:
 	}
 }
 
-export async function inspectTlsCertificate(url: string, timeoutMs: number): Promise<Record<string, unknown> | undefined> {
+export async function inspectTlsCertificate(url: string, timeoutMs: number, options: Pick<WebFetchOptions, "allowPrivateTargets"> = {}): Promise<Record<string, unknown> | undefined> {
 	const parsed = new URL(url);
 	if (parsed.protocol !== "https:") return undefined;
+	await assertAllowedTargetUrl(url, { allowPrivateTargets: options.allowPrivateTargets, allowLoopback: true });
 	return await new Promise((resolve) => {
 		const socket = tls.connect({ host: parsed.hostname, port: parsed.port ? Number(parsed.port) : 443, servername: parsed.hostname, rejectUnauthorized: false, timeout: timeoutMs }, () => {
 			const cert = socket.getPeerCertificate(true);

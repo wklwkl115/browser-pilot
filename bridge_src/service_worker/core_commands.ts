@@ -32,7 +32,7 @@ function normalizePiBrowserCreateTabUrl(value: unknown): { ok: true; url: string
   try { parsed = new URL(raw); }
   catch (_) { return { ok: false, error: 'tabs.create requires an absolute URL or about:blank', details: { url: value } }; }
   const protocol = parsed.protocol.toLowerCase();
-  if (protocol === 'javascript:') return { ok: false, error: 'tabs.create does not accept javascript: URLs; use browser_execute for JavaScript in an existing tab', details: { url: raw, protocol } };
+  if (protocol === 'javascript:' || protocol === 'data:') return { ok: false, error: 'tabs.create does not accept javascript: or data: URLs; use browser_execute for JavaScript in an existing tab', details: { url: raw, protocol } };
   return { ok: true, url: parsed.href };
 }
 
@@ -207,7 +207,7 @@ async function dispatchPiBridgeCommand(msg: PiBridgeCommand, sender: PiBridgeSen
 async function handleBatch(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
   const R: PiBridgeResponse[] = [];
   const resolve$N = (params: unknown): JsonRecord => JSON.parse(JSON.stringify(params || {}).replace(/"\$(\d+)\.([^"]+)"/g,
-    (_: string, i: string, path: string) => { let v: unknown = R[Number(i)]; for (const k of path.split('.')) v = coreRecord(v)[k]; return JSON.stringify(v); }));
+    (_: string, i: string, path: string) => { let v: unknown = R[Number(i)]; for (const k of path.split('.')) v = coreRecord(v)[k]; return JSON.stringify(v === undefined ? null : v); }));
   const detachCurrent = async () => {};
   try {
     const commands = Array.isArray(msg.commands) ? msg.commands as PiBridgeCommand[] : [];

@@ -248,16 +248,28 @@ async function normalizeSqliProbeOptions(options: SqliProbeOptions): Promise<Nor
 export async function runSqliProbe(options: SqliProbeOptions) {
 	const baseRequest = buildReplayRequest(options);
 	const normalized = await normalizeSqliProbeOptions(options);
-	const cases: SqliProbeCase[] = [];
+	const limitedCases: SqliProbeCase[] = [];
+	let totalCaseCount = 0;
 	for (const location of normalized.locations) {
 		for (const paramName of normalized.paramNames) {
-			if (normalized.probeTypes.includes("boolean")) for (const pair of normalized.booleanPairs) cases.push({ kind: "boolean", name: pair.name, location, paramName, truePayload: pair.truePayload, falsePayload: pair.falsePayload });
-			if (normalized.probeTypes.includes("error")) for (const payload of normalized.errorPayloads) cases.push({ kind: "error", name: payload, location, paramName, payload });
-			if (normalized.probeTypes.includes("time")) for (const payload of normalized.timePayloads) cases.push({ kind: "time", name: payload, location, paramName, payload });
-			if (normalized.probeTypes.includes("union")) for (const payload of normalized.unionPayloads) cases.push({ kind: "union", name: payload, location, paramName, payload });
+			if (normalized.probeTypes.includes("boolean")) for (const pair of normalized.booleanPairs) {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ kind: "boolean", name: pair.name, location, paramName, truePayload: pair.truePayload, falsePayload: pair.falsePayload });
+			}
+			if (normalized.probeTypes.includes("error")) for (const payload of normalized.errorPayloads) {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ kind: "error", name: payload, location, paramName, payload });
+			}
+			if (normalized.probeTypes.includes("time")) for (const payload of normalized.timePayloads) {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ kind: "time", name: payload, location, paramName, payload });
+			}
+			if (normalized.probeTypes.includes("union")) for (const payload of normalized.unionPayloads) {
+				totalCaseCount += 1;
+				if (limitedCases.length < normalized.maxCases) limitedCases.push({ kind: "union", name: payload, location, paramName, payload });
+			}
 		}
 	}
-	const limitedCases = cases.slice(0, normalized.maxCases);
 	const baselineResponses = [] as Array<Record<string, unknown>>;
 	let baselineFinal: FetchStep | undefined;
 	let baselineExchange: { chain: FetchStep[]; final: FetchStep } | undefined;
@@ -396,5 +408,5 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 	const oracleTypes = [...new Set(matched.map((item) => String(item.type || "unknown")))];
 	const dbmsFingerprints = [...new Set([...normalized.requestedDbms, ...baselineDbms, ...results.flatMap((item) => Array.isArray(item.dbms) ? item.dbms.map(String) : [])])];
 	columnHints = inferSqliColumnHints(results);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline: baselineResponses[baselineResponses.length - 1], baselineRepeats: normalized.baselineRepeats, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, probeTypes: normalized.probeTypes, payloadMode: normalized.payloadMode, dbmsPayloadPack: normalized.requestedDbms, caseCount: limitedCases.length + extraCaseCount, requestCount, matchedCount: matched.length, oracleTypes, dbmsFingerprints, columnHints, echoPositions, extractions, truncatedCases: cases.length - limitedCases.length, timeThresholdMs: normalized.timeThresholdMs, results, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseline: baselineResponses[baselineResponses.length - 1], baselineRepeats: normalized.baselineRepeats, locationCount: normalized.locations.length, paramCount: normalized.paramNames.length, probeTypes: normalized.probeTypes, payloadMode: normalized.payloadMode, dbmsPayloadPack: normalized.requestedDbms, caseCount: limitedCases.length + extraCaseCount, requestCount, matchedCount: matched.length, oracleTypes, dbmsFingerprints, columnHints, echoPositions, extractions, truncatedCases: Math.max(0, totalCaseCount - limitedCases.length), timeThresholdMs: normalized.timeThresholdMs, results, matched, failures };
 }

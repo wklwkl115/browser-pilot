@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../driver/errors";
 import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners";
-import { runTool, sharedTabScopedToolParams } from "./toolAdapter";
+import { defineBrowserTool, runTool, sharedTabScopedToolParams } from "./toolAdapter";
 import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
@@ -37,7 +37,7 @@ function validateObserveParams(mode: ObserveMode, params: ObserveToolParams): vo
 }
 
 export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_observe",
 		label: "Browser Observe",
 		description: "Observe browser tabs, simplified page structure, readable content, or exact HTML/text through an explicit observation mode.",
@@ -47,13 +47,13 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			"Use browser_observe mode=scan for structure/actionables, mode=content for readable Markdown, mode=html for exact HTML/text snapshots, mode=text for visible text-first observation, and mode=tabs when the target tab is unclear.",
 		],
 		parameters: Type.Object({
-			mode: Type.Optional(Type.String({ description: "scan | content | html | text | tabs. Default scan." })),
+			mode: Type.Optional(Type.Union([Type.Literal("scan"), Type.Literal("content"), Type.Literal("html"), Type.Literal("text"), Type.Literal("tabs")], { description: "scan | content | html | text | tabs. Default scan." })),
 			selector: Type.Optional(Type.String({ description: "content/html modes: CSS selector for a target readable root or exact HTML/text slice" })),
 			url: Type.Optional(Type.String({ description: "content mode only: optional URL to navigate to before extraction" })),
 			includeLinks: Type.Optional(Type.Boolean({ description: "content mode only: include Markdown links; default true" })),
 			maxNodes: Type.Optional(Type.Number({ description: "scan/text modes: maximum DOM nodes visited" })),
 			includeIframes: Type.Optional(Type.Boolean({ description: "scan/text modes: include same-origin iframe content" })),
-			htmlMode: Type.Optional(Type.String({ description: "html mode only: fragment | raw | text | inner | outer" })),
+			htmlMode: Type.Optional(Type.Union([Type.Literal("fragment"), Type.Literal("raw"), Type.Literal("text"), Type.Literal("inner"), Type.Literal("outer")], { description: "html mode only: fragment | raw | text | inner | outer" })),
 			params: Type.Optional(NativeCommandParamsSchema),
 			...sharedTabScopedToolParams(),
 		}),

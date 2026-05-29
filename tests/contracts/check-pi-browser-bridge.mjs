@@ -775,6 +775,41 @@ globalThis.__bridgeInfoTest = { isScriptable };`, sandbox, { filename: "bridge_i
 
 testBridgeInfoTracksAboutBlankTabs();
 
+function testBridgeInfoUsesTabScopedCspBypass() {
+	const updates = [];
+	const timers = [];
+	let now = 1_000;
+	const sandbox = {
+		chrome: {
+			runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0" }) },
+			declarativeNetRequest: {
+				updateSessionRules(input) { updates.push({ kind: "session", ...input }); return Promise.resolve(); },
+				updateDynamicRules(input) { updates.push({ kind: "dynamic", ...input }); return Promise.resolve(); },
+			},
+		},
+		navigator: { userAgent: "contract" },
+		Math,
+		Date: { now: () => now },
+		Number,
+		setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; },
+		console: { warn() {} },
+	};
+	vm.runInNewContext(`${bridgeInfo}
+globalThis.__bridgeInfoCspTest = { installCspBypassRule, enableCspBypassForTab };`, sandbox, { filename: "bridge_info.js" });
+	sandbox.__bridgeInfoCspTest.installCspBypassRule();
+	assert(updates.at(-1).kind === "session" && updates.at(-1).addRules.length === 0, "install must clear legacy global CSP bypass rules through session-scoped rules instead of adding one");
+	assert(sandbox.__bridgeInfoCspTest.enableCspBypassForTab(42, 1000) === true, "valid tab ids should enable scoped CSP bypass");
+	const scopedRule = updates.at(-1).addRules[0];
+	assert(scopedRule.condition.tabIds.length === 1 && scopedRule.condition.tabIds[0] === 42, "CSP bypass rule must be scoped to explicit tab ids");
+	assert(scopedRule.condition.resourceTypes.includes("main_frame") && scopedRule.condition.resourceTypes.includes("sub_frame"), "CSP bypass must stay limited to frame responses");
+	assert(sandbox.__bridgeInfoCspTest.enableCspBypassForTab("bad") === false, "invalid tab ids must not alter CSP bypass scope");
+	now = 3_000;
+	timers.at(-1).fn();
+	assert(updates.at(-1).addRules.length === 0, "CSP bypass tab scope must expire and remove the rule");
+}
+
+testBridgeInfoUsesTabScopedCspBypass();
+
 function testNetworkPatternMatchingIsBounded() {
 	const compiledPatterns = [];
 	class GuardedRegExp extends RegExp {
@@ -1173,6 +1208,7 @@ async function testRouterWsMalformedInputErrors() {
 		handleContentSettingsCommand: async () => ({ ok: true, data: {} }),
 		handlePiNativeBrowserCommand: async () => ({ ok: true, data: {} }),
 		isPiNativeBrowserCommand: () => false,
+		enableCspBypassForTab: () => {},
 		dispatchPiBridgeCommand: async () => ({ ok: true, data: {} }),
 		handleWsExec: async (data, socket) => { execRequests.push(data); socket.send(JSON.stringify({ type: "exec", id: data.id, code: data.code })); },
 		socket: { send(text) { sent.push(JSON.parse(text)); } },
@@ -1217,6 +1253,7 @@ async function testRouterNativeWsErrorFrames() {
 		handleContentSettingsCommand: async () => ({ ok: true, data: {} }),
 		handlePiNativeBrowserCommand: async () => ({ ok: false, error: "native boom", details: { cmd: "wait.selector" } }),
 		isPiNativeBrowserCommand: (cmd) => cmd === "wait.selector",
+		enableCspBypassForTab: () => {},
 		dispatchPiBridgeCommand: async (msg) => msg.cmd === "wait.selector" ? { ok: false, error: "native boom", details: { cmd: "wait.selector" } } : { ok: true, data: {} },
 		handleWsExec: async () => {},
 		socket: { send(text) { sent.push(JSON.parse(text)); } },

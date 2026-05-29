@@ -6,64 +6,36 @@ declare const chrome: {
   };
 };
 
-type BridgeRequest = Record<string, unknown> & { cmd?: string };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function errorName(error: unknown): string {
-  return error instanceof Error ? error.name : 'Error';
-}
-
-;(function(){ if (/streamlit/i.test(document.title)) return;
-
-// Remove meta CSP tags
-document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(e => e.remove());
-
-void chrome.runtime.sendMessage({ cmd: 'bridge_wake', url: location.href, title: document.title }).catch(() => {});
-
-// Indicator badge at bottom-right (userscript style)
-(function(){
-  if(window.self!==window.top)return;
-  const d=document.createElement('div');
-  d.id='pi-browser-bridge-ind';
-  d.innerText='pi_browser_bridge: 已连接';
-  d.style.cssText='position:fixed;bottom:8px;right:8px;background:#4CAF50;color:white;padding:4px 7px;border-radius:4px;font-size:11px;font-weight:bold;z-index:99999;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.2);opacity:0.5;';
-  d.addEventListener('click',()=>alert('Pi 浏览器桥已连接\nURL: '+location.href));
-  (document.body||document.documentElement).appendChild(d);
-})();
-
-new MutationObserver(muts => {
-  for (const m of muts) for (const n of m.addedNodes) {
-    if (n.nodeType !== 1) continue;
-    const node = n as Element;
-    if (node.id === TID || node.querySelector('#' + TID)) {
-      const el = node.id === TID ? node : node.querySelector('#' + TID);
-      if (el) handle(el);
+function scrubLegacyBridgeNode(root: ParentNode): void {
+  const selectors = [`#${TID}`];
+  for (const selector of selectors) {
+    for (const node of Array.from(root.querySelectorAll(selector))) {
+      if (!node || typeof (node as Element).remove !== "function") continue;
+      try {
+        (node as Element).remove();
+      } catch {}
     }
   }
-}).observe(document.documentElement, { childList: true, subtree: true });
-
-async function handle(el: Element): Promise<void> {
-  try {
-    const req = (el.textContent || '').trim() ? JSON.parse(el.textContent || '{}') as BridgeRequest : { cmd: 'cookies' };
-    const cmd = req.cmd || 'cookies';
-    let resp;
-    if (cmd === 'cookies') {
-      resp = await chrome.runtime.sendMessage({ cmd: 'cookies', url: req.url || location.href });
-    } else if (cmd === 'cdp') {
-      resp = await chrome.runtime.sendMessage({ cmd: 'cdp', method: req.method, params: req.params || {}, tabId: req.tabId });
-    } else if (cmd === 'batch') {
-      resp = await chrome.runtime.sendMessage({ cmd: 'batch', commands: req.commands, tabId: req.tabId });
-    } else if (cmd === 'tabs') {
-      resp = await chrome.runtime.sendMessage({ cmd: 'tabs', method: req.method, tabId: req.tabId });
-    } else {
-      resp = await chrome.runtime.sendMessage(req);
-    }
-    el.textContent = JSON.stringify(resp);
-  } catch (e) {
-    el.textContent = JSON.stringify({ ok: false, error_code: 'INTERNAL_ERROR', error: errorMessage(e), details: { name: errorName(e) } });
-  }
 }
+
+;(function PiBrowserContentWake() {
+  if (/streamlit/i.test(document.title)) return;
+
+  void chrome.runtime.sendMessage({ cmd: "bridge_wake", url: location.href, title: document.title }).catch(() => {});
+
+  if (document.documentElement) scrubLegacyBridgeNode(document.documentElement);
+
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        const element = node && typeof (node as Element).querySelector === "function" ? node as Element : null;
+        if (!element) continue;
+        if (element.id === TID) {
+          try { element.remove(); } catch {}
+          continue;
+        }
+        if (element.querySelector?.(`#${TID}`)) scrubLegacyBridgeNode(element);
+      }
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
 })();

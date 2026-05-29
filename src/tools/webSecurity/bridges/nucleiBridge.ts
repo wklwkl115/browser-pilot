@@ -25,6 +25,7 @@ export type NormalizedNucleiBridgeOptions = ReturnType<typeof normalizeReplayOpt
 	nucleiPath?: string;
 	nucleiArgs: string[];
 	extraArgs: string[];
+	allowLauncherOverride: boolean;
 	sequence: Array<{ input: unknown; source: string; label?: string }>;
 	directTargets: string[];
 	artifactRoot: string;
@@ -134,6 +135,7 @@ async function normalizeNucleiBridgeOptions(options: NucleiBridgeOptions): Promi
 		nucleiPath: asString(options.nucleiPath)?.trim(),
 		nucleiArgs: normalizeCliArgs(options.nucleiArgs),
 		extraArgs: normalizeCliArgs(options.extraArgs),
+		allowLauncherOverride: options.allowLauncherOverride === true,
 		sequence,
 		directTargets,
 		artifactRoot,
@@ -152,6 +154,7 @@ function detectLauncher(options: NormalizedNucleiBridgeOptions): NucleiLauncher 
 		autoCandidates: [{ command: "nuclei", preArgs: [], source: "auto" }],
 		versionArgs: ["-version"],
 		successPattern: /nuclei/i,
+		allowLauncherOverride: options.allowLauncherOverride,
 	});
 }
 

@@ -3,8 +3,9 @@ import type { BrowserBridgeExecutionResult } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
 import { buildScanScript } from "../scan/buildScanScript";
 import { compactError } from "../utils/errors";
+import { normalizeTabId } from "../utils/params";
 import { summarizeGenericValue } from "./summaries/index";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
@@ -24,11 +25,6 @@ type MonitorMetadata = {
 	beforeError?: Record<string, unknown>;
 	afterError?: Record<string, unknown>;
 };
-
-function normalizeTabId(value: unknown): number | undefined {
-	const tabId = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
-	return Number.isInteger(tabId) && tabId > 0 ? tabId : undefined;
-}
 
 function textLines(value: unknown): string[] {
 	return String(value || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -83,7 +79,7 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 }
 
 export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_execute",
 		label: "Browser Execute",
 		description: "Execute JavaScript in a connected real browser tab.",

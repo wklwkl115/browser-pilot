@@ -11,6 +11,7 @@ export type NormalizedTemplateCheckOptions = ReturnType<typeof normalizeReplayOp
 	templates: TemplateDefinition[];
 	rateLimitPerSecond: number;
 	delayMs: number;
+	maxRequests: number;
 };
 
 async function normalizeTemplateCheckOptions(options: TemplateCheckOptions): Promise<NormalizedTemplateCheckOptions> {
@@ -26,6 +27,7 @@ async function normalizeTemplateCheckOptions(options: TemplateCheckOptions): Pro
 		templates,
 		rateLimitPerSecond,
 		delayMs: rateLimitPerSecond > 0 ? Math.ceil(1000 / rateLimitPerSecond) : 0,
+		maxRequests: Math.min(10_000, positiveInt(options.maxRequests, 2_000)),
 	};
 }
 
@@ -46,9 +48,14 @@ export async function runTemplateCheck(options: TemplateCheckOptions) {
 	const results: Array<Record<string, unknown>> = [];
 	const failures: Array<Record<string, unknown>> = [];
 	let requestCount = 0;
+	let truncatedRequests = 0;
 	for (const baseUrl of normalized.baseTargets) {
 		for (const template of normalized.templates) {
 			for (const target of templateTargetsForBase(baseUrl, template, options.variables)) {
+				if (requestCount >= normalized.maxRequests) {
+					truncatedRequests += 1;
+					continue;
+				}
 				try {
 					const baseRequest = createTemplateRequest(options, normalized, template, target);
 					const replay = await sendReplayLikeRequest(baseRequest, normalized);
@@ -76,11 +83,11 @@ export async function runTemplateCheck(options: TemplateCheckOptions) {
 					failures.push({ templateId: template.id, url: target, error: error instanceof Error ? error.message : String(error) });
 				}
 				requestCount += 1;
-				if (normalized.delayMs > 0) await sleep(normalized.delayMs);
+				if (normalized.delayMs > 0 && requestCount < normalized.maxRequests) await sleep(normalized.delayMs);
 			}
 		}
 	}
 	const uniqueResults = dedupeTemplateResults(results);
 	const matched = uniqueResults.filter((item) => item.matched === true);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), targetCount: normalized.baseTargets.length, templateCount: normalized.templates.length, requestCount, matchedCount: matched.length, resultCount: uniqueResults.length, rawResultCount: results.length, deduplicatedResults: results.length - uniqueResults.length, templateIds: normalized.templates.map((item) => item.id), results: uniqueResults, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), targetCount: normalized.baseTargets.length, templateCount: normalized.templates.length, requestCount, matchedCount: matched.length, resultCount: uniqueResults.length, rawResultCount: results.length, deduplicatedResults: results.length - uniqueResults.length, truncatedRequests, maxRequests: normalized.maxRequests, templateIds: normalized.templates.map((item) => item.id), results: uniqueResults, matched, failures };
 }

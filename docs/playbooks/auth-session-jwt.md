@@ -35,7 +35,7 @@ Use when the task involves cookies, JWT/JWE/PASETO/session values, role or claim
 
 - JWT/JWE exposes public key, JWKS, JKU, KID, alg, weak secret, or unsigned behavior -> use focused mutation/replay.
 - Cookie controls request authorization -> replay affected endpoint with original and mutated/removed cookie.
-- Role/user/tenant ID appears in request body or URL, not token -> request capture and replay playbook, then `browser_fuzz_params` if needed.
+- Role/user/tenant ID appears in request body or URL, not token -> request capture and replay playbook, then `browser_fuzz {mode:"param"}` if needed.
 - Session value leads to SQL-like backend behavior -> SQLi verification playbook.
 
 ## Stop

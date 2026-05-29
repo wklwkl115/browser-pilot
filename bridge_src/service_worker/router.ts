@@ -1,5 +1,6 @@
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, bridgeError, isPiNativeBrowserCommand } from "./runtime";
+import { enableCspBypassForTab } from "./bridge_info";
 import { dispatchPiBridgeCommand, validatePiBridgeProtocolMessage } from "./core_commands";
 import { handleWsExec } from "./exec";
 import type { PiBridgeCommand, PiBridgeDict, PiBridgeResponse, PiBridgeWebSocketLike, PiBridgeWsEnvelope, PiChromeMessageSender } from "./types";
@@ -54,9 +55,11 @@ async function handlePiBridgeWsMessage(data: PiBridgeWsEnvelope, socket: PiBridg
       return;
     }
     const msg = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as PiBridgeCommand;
+    enableCspBypassForTab(msg.tabId);
     const res = await handlePiBridgeMessage(msg, {});
     sendPiBridgeWsCommandResult(socket, data.id, msg, res);
   } else if (typeof code === 'string') {
+    enableCspBypassForTab(data.tabId);
     await handleWsExec(data as PiBridgeWsEnvelope & { id: string | number; code: string }, socket);
   } else {
     sendPiBridgeWsInputError(socket, data.id, 'Unsupported message code type: ' + typeof code, { codeType: typeof code });

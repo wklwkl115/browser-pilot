@@ -1,3 +1,5 @@
+import { isRecord, toTabId } from "./records";
+
 export type DetailLevel = "summary" | "preview" | "full";
 export type ArtifactMode = "text" | "json" | "search" | "sample";
 
@@ -17,4 +19,10 @@ export function normalizeArtifactMode(value: unknown): ArtifactMode {
 	const mode = String(value || "text").trim().toLowerCase();
 	if (mode === "json" || mode === "search" || mode === "sample") return mode;
 	return "text";
+}
+
+export { isRecord };
+
+export function normalizeTabId(value: unknown): number | undefined {
+	return toTabId(value);
 }

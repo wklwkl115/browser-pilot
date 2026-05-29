@@ -1,13 +1,10 @@
 import { Type } from "typebox";
 import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript";
 import { summarizePickData } from "./summaries/index";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
 import { TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
+import { isRecord } from "../utils/params";
 
 function unwrapRuntimeEvaluateValue(result: unknown): unknown {
 	if (!isRecord(result)) return result;
@@ -67,7 +64,7 @@ async function cleanupPick(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 }
 
 export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_pick",
 		label: "Browser Pick",
 		description: "Interactively pick DOM elements in the real browser and return stable CSS selectors plus element summaries.",

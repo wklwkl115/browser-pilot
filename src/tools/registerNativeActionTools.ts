@@ -6,7 +6,7 @@ import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { nativeToolMetadata } from "../protocol/nativeActionMetadata";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
@@ -42,7 +42,7 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 		...sharedTabScopedToolParams(),
 		...(config.sessionIdDescription ? { sessionId: Type.Optional(Type.String({ description: config.sessionIdDescription })) } : {}),
 	};
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: config.name,
 		label: config.label,
 		description: config.description,

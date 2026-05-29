@@ -1,4 +1,4 @@
-import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp } from "./runtime";
+import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
 import { subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 import {
@@ -18,6 +18,11 @@ import {
 	rememberInterceptTranscript,
 } from "./intercept_model";
 import type { InterceptRule, InterceptSession, InterceptTranscriptEntry } from "./intercept_model";
+
+const rememberInterceptRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
+const forgetInterceptRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
+const findLostInterceptRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
+const summarizeLostInterceptRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 
 function asRecord(value: unknown): JsonRecord {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -93,6 +98,7 @@ async function enableInterceptSession(tabId: number, msg: PiBridgeCommand): Prom
 		session.active = true;
 		session.installedAt = Date.now();
 		rememberInterceptDiagnostic(session, { action: "install", maxTranscript: session.maxTranscript, stages: session.stages, subscriptionId });
+		await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 		return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "install_failed", error: errorText(error) });
@@ -109,6 +115,7 @@ async function disableInterceptSession(tabId: number, msg: PiBridgeCommand): Pro
 		session.active = false;
 		session.paused.clear();
 		rememberInterceptDiagnostic(session, { action: "uninstall" });
+		await forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "uninstall_failed", error: errorText(error) });
@@ -116,38 +123,43 @@ async function disableInterceptSession(tabId: number, msg: PiBridgeCommand): Pro
 	}
 }
 
-function handleInterceptStatus(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-	const session = getInterceptSession(tabId, defaultInterceptSessionId(msg));
-	if (!session) return { ok: true, data: { tabId, sessionId: defaultInterceptSessionId(msg), active: false, ruleCount: 0, pausedCount: 0, transcriptCount: 0 } };
+async function handleInterceptStatus(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+	const sessionId = defaultInterceptSessionId(msg);
+	const session = getInterceptSession(tabId, sessionId);
+	if (!session) {
+		const lost = summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId, sessionId));
+		return { ok: true, data: { tabId, sessionId, active: false, ruleCount: 0, pausedCount: 0, transcriptCount: 0, stateLost: !!lost, lostSession: lost } };
+	}
 	return { ok: true, data: interceptSessionSummary(session) };
 }
 
-function requireActiveInterceptSession(tabId: number, msg: PiBridgeCommand): { session?: InterceptSession; error?: PiBridgeResponse } {
+async function requireActiveInterceptSession(tabId: number, msg: PiBridgeCommand): Promise<{ session?: InterceptSession; error?: PiBridgeResponse }> {
 	const sessionId = defaultInterceptSessionId(msg);
 	const session = getInterceptSession(tabId, sessionId);
-	if (!session || !session.active) return { error: piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId, sessionId }) };
+	if (!session || !session.active) return { error: piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId, sessionId, lostSession: summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId, sessionId)) }) };
 	return { session };
 }
 
-function handleInterceptListRules(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+async function handleInterceptListRules(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	return { ok: true, data: { tabId, sessionId: session.sessionId, rules: interceptSessionSummary(session)?.rules || [], count: session.rules.length } };
 }
 
-function handleInterceptAddRule(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+async function handleInterceptAddRule(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const rule = normalizeInterceptRule(msg || {});
 	session.rules.push(rule);
 	rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
+	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 	return { ok: true, data: { tabId, sessionId: session.sessionId, rule } };
 }
 
-function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+async function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const ruleId = String(msg.ruleId || msg.rule_id || "").trim();
@@ -155,6 +167,7 @@ function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): PiBridg
 	const before = session.rules.length;
 	session.rules = session.rules.filter((rule: InterceptRule) => rule.ruleId !== ruleId);
 	rememberInterceptDiagnostic(session, { action: "remove_rule", ruleId, removed: before !== session.rules.length });
+	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
 	return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length } };
 }
 
@@ -197,8 +210,8 @@ async function applyMatchedInterceptRule(tabId: number, sessionId: string, reque
 	}
 }
 
-function handleInterceptCollect(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+async function handleInterceptCollect(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const afterSeq = Number(msg.afterSeq ?? msg.after_seq ?? 0);
@@ -250,7 +263,7 @@ function matchRule(session: ReturnType<typeof getInterceptSession>, params: Json
 }
 
 async function handleInterceptContinue(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
@@ -269,7 +282,7 @@ async function handleInterceptContinue(tabId: number, msg: PiBridgeCommand): Pro
 }
 
 async function handleInterceptFail(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
@@ -288,7 +301,7 @@ async function handleInterceptFail(tabId: number, msg: PiBridgeCommand): Promise
 }
 
 async function handleInterceptFulfill(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
-	const resolved = requireActiveInterceptSession(tabId, msg);
+	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
@@ -313,11 +326,11 @@ async function handleInterceptFulfill(tabId: number, msg: PiBridgeCommand): Prom
 export async function handlePiBrowserInterceptCommand(cmd: string, tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
 	if (cmd === "intercept.install") return await enableInterceptSession(tabId, msg);
 	if (cmd === "intercept.uninstall") return await disableInterceptSession(tabId, msg);
-	if (cmd === "intercept.status") return handleInterceptStatus(tabId, msg);
-	if (cmd === "intercept.listRules") return handleInterceptListRules(tabId, msg);
-	if (cmd === "intercept.addRule") return handleInterceptAddRule(tabId, msg);
-	if (cmd === "intercept.removeRule") return handleInterceptRemoveRule(tabId, msg);
-	if (cmd === "intercept.collect") return handleInterceptCollect(tabId, msg);
+	if (cmd === "intercept.status") return await handleInterceptStatus(tabId, msg);
+	if (cmd === "intercept.listRules") return await handleInterceptListRules(tabId, msg);
+	if (cmd === "intercept.addRule") return await handleInterceptAddRule(tabId, msg);
+	if (cmd === "intercept.removeRule") return await handleInterceptRemoveRule(tabId, msg);
+	if (cmd === "intercept.collect") return await handleInterceptCollect(tabId, msg);
 	if (cmd === "intercept.pause") return await recordInterceptPause(defaultInterceptSessionId(msg), tabId, asRecord(msg.params), { applyAuto: msg.autoApply !== false, timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
 	if (cmd === "intercept.continue") return await handleInterceptContinue(tabId, msg);
 	if (cmd === "intercept.fail") return await handleInterceptFail(tabId, msg);
@@ -332,6 +345,7 @@ export function cleanupInterceptSessionTab(tabId: number, reason?: string): Json
 		removed += 1;
 		for (const subscriptionId of session.cdpSubscriptions.splice(0)) unsubscribePiBrowserCdp(subscriptionId);
 		rememberInterceptDiagnostic(session, { action: "tab_cleanup", reason: reason || "tab_cleanup" });
+		void forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		piBrowserInterceptSessions.delete(key);
 	}
 	return { tabId: Number(tabId), removed, reason: reason || "tab_cleanup" };

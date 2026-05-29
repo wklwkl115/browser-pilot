@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -34,6 +34,7 @@ export type NormalizedCallbackSessionOptions = {
 	externalMetadata?: Record<string, unknown>;
 	maxEvents: number;
 	maxBodyBytes: number;
+	maxRuntimeMs: number;
 };
 
 const SESSION_ROOT = path.resolve(process.cwd(), ".pi", "browser-artifacts", "callback-oast-sessions");
@@ -41,6 +42,17 @@ const WORKER_PATH = fileURLToPath(new URL("./callbackOastWorker.mjs", import.met
 const STATE_LOCK_TIMEOUT_MS = 10_000;
 const STATE_LOCK_RETRY_MS = 25;
 const STATE_LOCK_STALE_MS = 30_000;
+const CALLBACK_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$/;
+const DEFAULT_CALLBACK_MAX_RUNTIME_MS = 60 * 60 * 1000;
+const OPENSSL_CERT_DAYS = 3650;
+
+function callbackToolError(code: string, message: string, details: Record<string, unknown> = {}): Error {
+	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
+	error.name = "CallbackOastError";
+	error.code = code;
+	error.details = details;
+	return error;
+}
 
 export function parseIpv4Address(value: string): [number, number, number, number] | undefined {
 	const parts = String(value || "").trim().split(".");
@@ -53,12 +65,95 @@ export function parseIpv4Address(value: string): [number, number, number, number
 	return octets.every((part) => part !== undefined) ? octets as [number, number, number, number] : undefined;
 }
 
+export function normalizeCallbackSessionId(value: unknown): string {
+	const sessionId = String(value || "").trim();
+	if (!CALLBACK_SESSION_ID_PATTERN.test(sessionId)) {
+		throw callbackToolError("INVALID_RULE", "browser_callback_oast sessionId must match ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$", { sessionId });
+	}
+	return sessionId;
+}
+
+function ensureSessionRootPath(targetPath: string): string {
+	const rootWithSep = SESSION_ROOT.endsWith(path.sep) ? SESSION_ROOT : `${SESSION_ROOT}${path.sep}`;
+	const resolved = path.resolve(targetPath);
+	if (resolved !== SESSION_ROOT && !resolved.startsWith(rootWithSep)) {
+		throw new Error(`browser_callback_oast resolved path escaped session root: ${resolved}`);
+	}
+	return resolved;
+}
+
+function isPathWithinSessionRoot(targetPath: string): boolean {
+	try {
+		ensureSessionRootPath(targetPath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function callbackRuntimeMs(value: unknown, fallback = DEFAULT_CALLBACK_MAX_RUNTIME_MS): number {
+	const raw = typeof value === "string" ? Number(value) : typeof value === "number" ? value : Number.NaN;
+	if (!Number.isFinite(raw) || raw <= 0) return fallback;
+	return Math.min(24 * 60 * 60 * 1000, Math.max(1_000, Math.floor(raw)));
+}
+
+function readLockToken(value: unknown): string | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) && typeof (value as { token?: unknown }).token === "string"
+		? String((value as { token?: string }).token)
+		: undefined;
+}
+
+async function loadLockToken(lockPath: string): Promise<string | undefined> {
+	try {
+		return readLockToken(JSON.parse(await readFile(lockPath, "utf8")));
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveHttpsKeyPath(artifactRoot: string): string {
+	return path.join(artifactRoot, "https.key.pem");
+}
+
+function resolveHttpsCertPath(artifactRoot: string): string {
+	return path.join(artifactRoot, "https.cert.pem");
+}
+
+function prepareHttpsCertificate(artifactRoot: string): { keyPath: string; certPath: string } {
+	const keyPath = resolveHttpsKeyPath(artifactRoot);
+	const certPath = resolveHttpsCertPath(artifactRoot);
+	const subjectAltName = "subjectAltName=DNS:localhost,IP:127.0.0.1";
+	const result = spawnSync("openssl", [
+		"req",
+		"-x509",
+		"-newkey",
+		"rsa:2048",
+		"-sha256",
+		"-nodes",
+		"-days",
+		String(OPENSSL_CERT_DAYS),
+		"-subj",
+		"/CN=localhost",
+		"-addext",
+		subjectAltName,
+		"-keyout",
+		keyPath,
+		"-out",
+		certPath,
+	], { encoding: "utf8", windowsHide: true });
+	if (result.error || result.status !== 0) {
+		const errorText = String(result.error?.message || result.stderr || result.stdout || "openssl req failed").trim();
+		throw callbackToolError("HTTPS_CERT_GENERATION_FAILED", `browser_callback_oast HTTPS certificate generation failed: ${errorText}`, { command: "openssl", keyPath, certPath, status: result.status ?? null });
+	}
+	return { keyPath, certPath };
+}
+
 export function sessionArtifactRoot(sessionId: string): string {
-	return path.join(SESSION_ROOT, sessionId);
+	return ensureSessionRootPath(path.join(SESSION_ROOT, normalizeCallbackSessionId(sessionId)));
 }
 
 export function sessionStatePath(sessionId: string): string {
-	return path.join(sessionArtifactRoot(sessionId), "state.json");
+	return ensureSessionRootPath(path.join(sessionArtifactRoot(sessionId), "state.json"));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -129,6 +224,14 @@ async function releaseStateLock(lockPath: string, token: string): Promise<void> 
 	} catch {}
 }
 
+async function removeLockIfUnchanged(lockPath: string, expectedToken?: string): Promise<void> {
+	if (expectedToken) {
+		const currentToken = await loadLockToken(lockPath);
+		if (currentToken !== expectedToken) return;
+	}
+	await rm(lockPath, { force: true }).catch(() => {});
+}
+
 export async function waitForStateLockBreaker(breakerPath: string, started: number): Promise<void> {
 	while (await stateLockExists(breakerPath)) {
 		if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`);
@@ -146,7 +249,8 @@ async function breakStaleStateLock(lockPath: string, breakerPath: string, starte
 		await handle.writeFile(JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString(), token }), "utf8");
 		await handle.close();
 		handle = undefined;
-		if (await isStaleStateLock(lockPath)) await rm(lockPath, { force: true }).catch(() => {});
+		const staleToken = await loadLockToken(lockPath);
+		if (await isStaleStateLock(lockPath)) await removeLockIfUnchanged(lockPath, staleToken);
 	} catch (error) {
 		await handle?.close().catch(() => {});
 		if (created) await rm(breakerPath, { force: true }).catch(() => {});
@@ -215,9 +319,17 @@ export async function updateSessionStateByPath(statePath: string, update: (state
 
 export async function loadSessionStateByPath(statePath: string): Promise<CallbackSessionState | undefined> {
 	try {
-		const raw = JSON.parse(await readFile(statePath, "utf8")) as Record<string, unknown>;
+		const resolvedStatePath = ensureSessionRootPath(statePath);
+		const raw = JSON.parse(await readFile(resolvedStatePath, "utf8")) as Record<string, unknown>;
 		if (!raw || typeof raw !== "object") return undefined;
-		return { ...(raw as Record<string, unknown>), sessionId: String(raw.sessionId || path.basename(path.dirname(statePath))), artifactRoot: String(raw.artifactRoot || path.dirname(statePath)), statePath };
+		const sessionId = normalizeCallbackSessionId(raw.sessionId || path.basename(path.dirname(resolvedStatePath)));
+		const artifactRoot = sessionArtifactRoot(sessionId);
+		return {
+			...(raw as Record<string, unknown>),
+			sessionId,
+			artifactRoot,
+			statePath: sessionStatePath(sessionId),
+		};
 	} catch {
 		return undefined;
 	}
@@ -253,7 +365,7 @@ export async function allSessionStates(): Promise<CallbackSessionState[]> {
 	const names = await readdir(SESSION_ROOT, { withFileTypes: true });
 	const states: CallbackSessionState[] = [];
 	for (const entry of names) {
-		if (!entry.isDirectory()) continue;
+		if (!entry.isDirectory() || !CALLBACK_SESSION_ID_PATTERN.test(entry.name)) continue;
 		const state = await refreshSessionState(await loadSessionStateByPath(path.join(SESSION_ROOT, entry.name, "state.json")));
 		if (state) states.push(state);
 	}
@@ -283,12 +395,14 @@ export function sessionInfo(state: CallbackSessionState) {
 		externalMetadata: state.externalMetadata,
 		startedAt: state.startedAt,
 		stoppedAt: state.stoppedAt,
+		stopReason: state.stopReason,
 		lastEventAt: state.lastEventAt,
 		listenerActive: state.listenerActive,
 		recovered: state.recovered,
 		workerPid: state.workerPid,
 		maxEvents: state.maxEvents,
 		maxBodyBytes: state.maxBodyBytes,
+		maxRuntimeMs: state.maxRuntimeMs,
 		eventCount: state.eventCount ?? (Array.isArray(state.events) ? state.events.length : 0),
 		nextSeq: state.nextSeq,
 		enabledProtocols: [state.callbackUrl ? "http" : undefined, state.httpsCallbackUrl ? "https" : undefined, state.dnsCallbackHost ? "dns" : undefined].filter(Boolean),
@@ -311,13 +425,18 @@ export async function waitForState(sessionId: string, predicate: (state: Callbac
 }
 
 export async function createCallbackSession(options: NormalizedCallbackSessionOptions) {
-	const sessionId = options.sessionId || `oast-${randomUUID()}`;
+	const sessionId = normalizeCallbackSessionId(options.sessionId || `oast-${randomUUID()}`);
 	if (options.enableDns === true && !parseIpv4Address(options.dnsResponseAddress)) throw new Error(`browser_callback_oast dnsResponseAddress must be a valid IPv4 address for DNS A-record responses: ${options.dnsResponseAddress}`);
-	const existing = await refreshSessionState(await loadSessionState(sessionId));
-	if (existing?.listenerActive) throw new Error(`browser_callback_oast session already exists: ${sessionId}`);
-	if (existing && !existing.listenerActive) await rm(existing.artifactRoot, { recursive: true, force: true }).catch(() => {});
 	const artifactRoot = sessionArtifactRoot(sessionId);
 	const statePath = sessionStatePath(sessionId);
+	const existing = await refreshSessionState(await loadSessionState(sessionId));
+	if (existing?.listenerActive) throw new Error(`browser_callback_oast session already exists: ${sessionId}`);
+	if (existing && !existing.listenerActive) {
+		if (!isPathWithinSessionRoot(existing.artifactRoot)) throw new Error(`browser_callback_oast session artifact root escaped callback session storage: ${existing.artifactRoot}`);
+		await rm(existing.artifactRoot, { recursive: true, force: true }).catch(() => {});
+	}
+	await mkdir(artifactRoot, { recursive: true });
+	const httpsMaterial = options.enableHttps ? prepareHttpsCertificate(artifactRoot) : undefined;
 	const state: CallbackSessionState = {
 		sessionId,
 		artifactRoot,
@@ -337,11 +456,14 @@ export async function createCallbackSession(options: NormalizedCallbackSessionOp
 		startedAt: new Date().toISOString(),
 		maxEvents: options.maxEvents,
 		maxBodyBytes: options.maxBodyBytes,
+		maxRuntimeMs: callbackRuntimeMs(options.maxRuntimeMs),
 		responseStatus: options.responseStatus,
 		responseBody: options.responseBody,
 		responseHeaders: options.responseHeaders,
 		enableHttps: options.enableHttps,
 		enableDns: options.enableDns,
+		httpsKeyPath: httpsMaterial?.keyPath,
+		httpsCertPath: httpsMaterial?.certPath,
 		externalMetadata: options.externalMetadata,
 		listenerActive: false,
 		ready: false,
@@ -363,7 +485,13 @@ export async function createCallbackSession(options: NormalizedCallbackSessionOp
 		closeSync(stderrFd);
 	}
 	const ready = await waitForState(sessionId, (current) => current.ready === true || typeof current.error === "string", 10_000);
-	if (typeof ready.error === "string") throw new Error(`browser_callback_oast worker failed: ${ready.error}`);
+	if (typeof ready.error === "string") {
+		if (options.enableHttps) {
+			await rm(resolveHttpsKeyPath(artifactRoot), { force: true }).catch(() => {});
+			await rm(resolveHttpsCertPath(artifactRoot), { force: true }).catch(() => {});
+		}
+		throw new Error(`browser_callback_oast worker failed: ${ready.error}`);
+	}
 	return ready;
 }
 

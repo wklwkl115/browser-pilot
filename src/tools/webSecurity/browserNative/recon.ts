@@ -10,6 +10,7 @@ export type NormalizedProbeOptions = {
 	maxRedirects: number;
 	timeoutMs: number;
 	maxBodyBytes: number;
+	allowPrivateTargets: boolean;
 	includeFaviconHash: boolean;
 	includeTlsCertificate: boolean;
 	bindBrowserSession: boolean;
@@ -26,6 +27,7 @@ function normalizeProbeOptions(options: ProbeOptions): NormalizedProbeOptions {
 		maxRedirects: positiveInt(options.maxRedirects, followRedirects ? 5 : 0),
 		timeoutMs: positiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS),
 		maxBodyBytes: positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES),
+		allowPrivateTargets: options.allowPrivateTargets === true,
 		includeFaviconHash: options.includeFaviconHash === true,
 		includeTlsCertificate: options.includeTlsCertificate === true,
 		bindBrowserSession: options.bindBrowserSession === true,
@@ -45,7 +47,7 @@ export async function runReconProbe(options: ProbeOptions) {
 			const exchange = await fetchWithRedirects({ url: target, method: normalized.method, headers: sanitized.headers }, normalized);
 			const final = exchange.final;
 			const favicon = normalized.includeFaviconHash ? await fetchFaviconHash(final.url, headers, normalized) : undefined;
-			const tlsCertificate = normalized.includeTlsCertificate ? await inspectTlsCertificate(final.url, normalized.timeoutMs) : undefined;
+			const tlsCertificate = normalized.includeTlsCertificate ? await inspectTlsCertificate(final.url, normalized.timeoutMs, { allowPrivateTargets: normalized.allowPrivateTargets }) : undefined;
 			const techHints = detectTechHints(final.headers, final.bodyText, final.setCookie);
 			const fingerprints = detectFingerprints(final.headers, final.bodyText, final.setCookie);
 			results.push({

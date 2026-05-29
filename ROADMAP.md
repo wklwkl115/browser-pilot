@@ -16,13 +16,14 @@
 10. Workstream E 后续如要执行真实 ACI eval，按 `evals/browser-workflows/future-runner.md` 另开 opt-in runner/fixture server：ephemeral port、local-only、无默认浏览器启动、无 scanner/OAST、结果写入 manual result schema。
 11. 发布/合并前继续复跑 `npm run quality:local`；需要 runtime 证据时复跑 `npm run smoke:browser:isolated`、`npm run smoke:browser:scan-summary`、`npm run smoke:browser:debugger-evidence` 或 `npm run release:local:smoke`。当前 `smoke:browser:scan-summary` 已用于验证 `browser_observe mode=scan`。
 12. `cross-tool evidence correlation metadata` 已完成：不扩公开工具面，已把 `operationId / snapshotId / requestId / waitId / listenerId / sessionId / selectionVersion / sourceMode` 统一上浮到 distilled envelope，并把 artifact-side correlation jsonPath 导航、workflow eval、sample result 与 `smoke:browser:correlation-chain` runtime smoke 一并补齐。
-13. 下阶段已冻结的新能力方向见 `docs/next-phase-web-reversing-and-security-primitives-plan.md`：
+13. 当前 active queue 是 MV3 runtime state recovery，执行合同见 `docs/mv3-runtime-state-recovery-plan.md`；先做 state store、restart fixtures、network/intercept recoverer，再推进 hook/ws/CDP 诊断硬化与 network/intercept artifact 增量证据。
+14. 下阶段已冻结的新能力方向见 `docs/next-phase-web-reversing-and-security-primitives-plan.md`：
    - 请求/响应拦截与热补丁原语（phase 1/2 已完成，执行合同：`docs/request-response-interception-and-hotpatch-plan.md`）
    - JS AST / 反混淆分析原语（phase 1 已完成，执行合同：`docs/js-ast-and-deobfuscation-primitives-plan.md`）
    - DOM 事件链 / sink-flow 分析辅助（phase 1 已完成，执行合同：`docs/dom-event-chain-and-sink-flow-plan.md`）
    - Wasm 逆向桥接（phase 1 已完成，执行合同：`docs/wasm-reversing-bridge-plan.md`）
    - Stateful WebSocket replay/fuzz primitives（phase 1 已完成，执行合同：`docs/stateful-websocket-replay-and-fuzz-plan.md`）
-   当前无新的 active queue；如需继续下一轮，建议先做新一轮 problem-area 评估，再决定是否开启 runtime/debug/trace 类新主线，或回到更高层的 eval / RFC-only 设计题。
+   新能力继续保持 RFC/eval-first；在 MV3 runtime state recovery 收口前，不建议开启新的 runtime/debug/trace 主线。
 
 ## 历史 TODO 复核结论
 

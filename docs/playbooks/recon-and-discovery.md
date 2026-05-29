@@ -13,16 +13,16 @@ Use for discovering status, redirects, headers, technology hints, known files, r
 ## Route
 
 1. Establish browser context when needed: `browser_tabs list` -> `browser_observe mode=scan` for current URL and visible app shape.
-2. Baseline small scope with `browser_recon_probe`:
+2. Baseline small scope with `browser_crawl {action:"fingerprint"}`:
    - use explicit `url`/`urls`/`paths`
    - include redirects, title, headers, tech hints, TLS/favicon only when useful
 3. Discover app surface with `browser_crawl`:
    - set `maxDepth`, `maxPages`, `sameOrigin`, `knownFiles`, `extractJs`, `outputPath`
    - use `bindBrowserSession:true` only when authenticated discovery needs browser cookies
-4. Discover hidden paths with `browser_fuzz_paths`:
+4. Discover hidden paths with `browser_fuzz {mode:"path"}`:
    - provide bounded `words`/`wordlistPath`, `extensions`, `appendSlash`, `filterBaseline:true`
    - set `maxCandidates`, `timeoutMs`, optional `rateLimitPerSecond`
-5. Discover virtual hosts only when Host routing is in scope: `browser_fuzz_vhosts` with explicit host candidates and baseline filtering.
+5. Discover virtual hosts only when Host routing is in scope: `browser_fuzz {mode:"vhost"}` with explicit host candidates and baseline filtering.
 6. Read saved results using `browser_artifact` with `jsonPath`, `pick`, or bounded search.
 
 ## Evidence
@@ -33,11 +33,11 @@ Use for discovering status, redirects, headers, technology hints, known files, r
 
 ## Pivot
 
-- Endpoint has parameters/forms -> request capture and replay playbook, then `browser_fuzz_params`.
+- Endpoint has parameters/forms -> request capture and replay playbook, then `browser_fuzz {mode:"param"}`.
 - Endpoint has SQL-like errors or DB behavior -> SQLi verification playbook.
 - Endpoint exposes tokens/cookies/JWKS/session values -> auth/session playbook.
 - Endpoint accepts URL/webhook/import/fetch fields -> SSRF/OAST playbook.
-- Endpoint matches exposure/config template -> `browser_template_check`.
+- Endpoint matches exposure/config template -> `browser_template`.
 
 ## Stop
 

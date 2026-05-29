@@ -18,6 +18,7 @@ type ClaimReplayConfig = {
 	maxBodyBytes: number;
 	matchStatus: number[];
 	maxCases: number;
+	allowPrivateTargets: boolean;
 	cookieName?: string;
 	browserCookie?: string;
 };
@@ -63,7 +64,7 @@ function serializeCookieMap(map: Map<string, string>): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
-function normalizeClaimReplay(value: Record<string, unknown>, fallbackUrl: unknown, fallbackTimeoutMs: unknown): ClaimReplayConfig {
+function normalizeClaimReplay(value: Record<string, unknown>, fallbackUrl: unknown, fallbackTimeoutMs: unknown, fallbackAllowPrivateTargets: unknown): ClaimReplayConfig {
 	const urlValue = value.url ?? fallbackUrl;
 	if (!urlValue) throw new Error("browser_cookie_analyze claimReplay requires claimReplay.url or top-level url");
 	const bodyBase64 = asString(value.bodyBase64);
@@ -78,6 +79,7 @@ function normalizeClaimReplay(value: Record<string, unknown>, fallbackUrl: unkno
 		maxBodyBytes: Math.min(DEFAULT_MAX_BODY_BYTES, positiveInt(value.maxBodyBytes, 64_000)),
 		matchStatus: numericList(value.matchStatus),
 		maxCases: Math.min(20, positiveInt(value.maxCases, 5)),
+		allowPrivateTargets: value.allowPrivateTargets === true || fallbackAllowPrivateTargets === true,
 		cookieName: asString(value.cookieName)?.trim() || undefined,
 	};
 }
@@ -98,7 +100,7 @@ async function normalizeCookieAnalyzeOptions(options: RawCookieAnalyzeOptions): 
 	const secrets = [...stringList(options.secretCandidates), ...stringList(options.secrets), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const maxSecretCandidates = Math.min(100_000, positiveInt(options.maxSecretCandidates, 10_000));
 	const limitedSecrets = [...new Set(secrets)].slice(0, maxSecretCandidates);
-	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, undefined) : undefined;
+	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, undefined, options.allowPrivateTargets) : undefined;
 	if (claimReplay && bindBrowserSession) claimReplay.browserCookie = await options.cookieProvider?.(claimReplay.url);
 	return {
 		samples,

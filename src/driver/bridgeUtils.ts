@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { recordValue, toTabId } from "../utils/records";
 import { DEFAULT_BROWSER_BRIDGE_PORT } from "./browserBridgeConfig";
 import type { BrowserTabInfo, BrowserTabSession } from "./types";
 
@@ -15,10 +16,7 @@ export function isOpen(ws: WebSocket | undefined): ws is WebSocket {
 	return !!ws && ws.readyState === WebSocket.OPEN;
 }
 
-export function toTabId(value: unknown): number | undefined {
-	const n = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
-	return Number.isInteger(n) && n > 0 ? n : undefined;
-}
+export { toTabId, recordValue };
 
 export function normalizeErrorMessage(error: unknown): string {
 	if (error instanceof Error) return error.message;
@@ -54,13 +52,23 @@ export function browserTabInfo(session: BrowserTabSession): BrowserTabInfo {
 	return info;
 }
 
-export function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+export function delay(ms: number, signal?: AbortSignal): Promise<void> {
+	const currentSignal = signal;
+	if (currentSignal?.aborted) return Promise.reject(currentSignal.reason ?? new Error("Aborted"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			currentSignal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			currentSignal?.removeEventListener("abort", onAbort);
+			reject(currentSignal?.reason ?? new Error("Aborted"));
+		};
+		currentSignal?.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
-export function recordValue(value: unknown): Record<string, unknown> | undefined {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
 
 export function tabSessionSummary(session: BrowserTabSession): Record<string, unknown> {
 	return {

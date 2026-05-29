@@ -45,7 +45,7 @@
 ## 07 bounded path fuzz baseline
 
 - Goal: run bounded path fuzzing against a local fixture and explain baseline filtering.
-- Starting tools: `browser_recon_probe`, `browser_fuzz_paths`, `browser_artifact`.
+- Starting tools: `browser_crawl {action:"fingerprint"}`, `browser_fuzz {mode:"path"}`, `browser_artifact`.
 - Success: fuzz scope is explicit, candidate count bounded, and baseline evidence is cited.
 - Recovery: reduce candidates or add filterBaseline/matchStatus controls.
 
@@ -59,7 +59,7 @@
 ## 09 sqli probe vs bridge
 
 - Goal: compare SQLi oracle probing with sqlmap bridge roles on a fixture request.
-- Starting tools: `browser_http_replay`, `browser_sqli_probe`, `browser_sqlmap_bridge`.
+- Starting tools: `browser_http_replay`, `browser_sqli`, `browser_sqli {engine:"sqlmap"}`.
 - Success: probe is used for oracle evidence; sqlmap bridge is used only for deeper explicit automation.
 - Recovery: replay raw request first if target/request template is ambiguous.
 

@@ -3,6 +3,7 @@ import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } fr
 import { BrowserBridgeError, errorToPlain } from "./errors";
 import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../protocol/nativeProtocol";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
+import { BrowserBridgeClientHeartbeat } from "./BrowserBridgeClientHeartbeat";
 import { BrowserBridgeHttpServer } from "./BrowserBridgeHttpServer";
 import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests";
@@ -30,11 +31,7 @@ type IncomingMessage = {
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 
-type CommandExecutionPlan = {
-	target?: BrowserBridgeTargetInfo;
-	tabId?: number;
-	accessMode: "read" | "write";
-};
+type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
 
 export class BrowserBridgeServer {
 	readonly host: string;
@@ -51,6 +48,7 @@ export class BrowserBridgeServer {
 	private readonly operations: BrowserOperationRegistry;
 	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
+	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private capabilityProfile: BrowserToolCapabilityProfileInfo = {
 		name: "core",
 		source: "default",
@@ -75,6 +73,7 @@ export class BrowserBridgeServer {
 		);
 		this.operations = new BrowserOperationRegistry();
 		this.observationSnapshots = new BrowserObservationSnapshotRegistry();
+		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws) => this.unregisterClient(ws));
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
 	}
 
@@ -87,10 +86,12 @@ export class BrowserBridgeServer {
 	}
 
 	async start(): Promise<void> {
-		return this.httpEndpoint.start();
+		await this.httpEndpoint.start();
+		this.startHeartbeat();
 	}
 
 	async stop(): Promise<void> {
+		this.stopHeartbeat();
 		this.pendingRequests.rejectAllStopped();
 		this.clients.clear();
 		this.browserSessions.clear();
@@ -339,7 +340,10 @@ export class BrowserBridgeServer {
 
 	private registerClient(ws: WebSocket): void {
 		this.clients.register(ws);
-		ws.on("message", (data) => this.handleClientMessage(ws, data.toString()).catch(() => {}));
+		ws.on("message", (data) => this.handleClientMessage(ws, data.toString()).catch((error) => {
+			console.error("[pi-browser-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
+		}));
+		ws.on("pong", () => this.clients.markPong(ws));
 		ws.on("close", () => this.unregisterClient(ws));
 		ws.on("error", () => this.unregisterClient(ws));
 	}
@@ -353,7 +357,10 @@ export class BrowserBridgeServer {
 	private async handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
 		let message: IncomingMessage;
 		try { message = JSON.parse(raw) as IncomingMessage; }
-		catch { return; }
+		catch (error) {
+			console.warn("[pi-browser-bridge] Invalid WebSocket message JSON", this.redactMessageError(error, raw));
+			return;
+		}
 
 		this.clients.markSeen(ws);
 		const type = String(message.type || "");
@@ -452,6 +459,18 @@ export class BrowserBridgeServer {
 		if (cmd.startsWith("network.") && ["network.start", "network.stop", "network.clear"].includes(cmd)) return "write";
 		if (cmd.startsWith("intercept.") && !["intercept.status", "intercept.listRules", "intercept.collect"].includes(cmd)) return "write";
 		return this.schemaDrivenCommandAccessMode(cmd, method);
+	}
+
+	private startHeartbeat(): void {
+		this.heartbeat.start();
+	}
+
+	private stopHeartbeat(): void {
+		this.heartbeat.stop();
+	}
+
+	private redactMessageError(error: unknown, raw: string): Record<string, unknown> {
+		return { error: errorToPlain(error), bytes: Buffer.byteLength(raw) };
 	}
 
 	private schemaDrivenCommandAccessMode(canonicalCmd: string, method: string): "read" | "write" {

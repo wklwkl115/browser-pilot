@@ -2,7 +2,7 @@
 // Loaded after network_model.js by background.js.
 
 import { chromeApi as chrome } from "./runtimeEnv";
-import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piWithTimeout, redactSensitive } from "./runtime";
+import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piWithTimeout, redactSensitive, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
 import { enablePiBrowserCdpDomains, releasePiBrowserCdpDomains, subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import { makeWaitId, normalizePiBrowserTimeoutMs } from "./wait_coordinator";
 import {
@@ -39,6 +39,11 @@ import {
 } from "./network_model";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
+
+const rememberNetworkRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
+const forgetNetworkRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
+const findLostNetworkRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
+const summarizeLostNetworkRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 
 type NetworkCommandResult = JsonRecord;
 type NetworkErrorResponse = PiBridgeResponse & { ok: false };
@@ -250,6 +255,7 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
     subscribePiBrowserCdp(tabId, events, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
     try { await cdpSendNetworkCommand(tabId, 'Page.setLifecycleEventsEnabled', { enabled:true }, 2000); } catch (e) { rememberNetworkError(recorder, 'Page.setLifecycleEventsEnabled', e); }
     recorder.active = true; recorder.startedAt = Date.now(); recorder.diagnostics.push({ t:Date.now(), action:'start', events, config:recorderPublicConfig(config) });
+    await rememberNetworkRuntimeSession('network', tabId, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
     return { ok:true, data:networkRecorderSummary(recorder) };
   } catch (e) {
     rememberNetworkError(recorder, 'start', e);
@@ -283,6 +289,7 @@ function cleanupNetworkRecorder(recorder: NetworkRecorder | null | undefined, re
   recorder.cdpRecord.cdpAttached = false;
   if (options.keepBuffer === false) clearNetworkRecorderBuffer(recorder);
   recorder.diagnostics.push({ t:Date.now(), action:'stop', reason:reason || 'stopped', keepBuffer:options.keepBuffer !== false });
+  void forgetNetworkRuntimeSession('network', recorder.tabId, recorder.sessionId);
   return { stopped:true, summary:networkRecorderSummary(recorder) };
 }
 async function stopNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
@@ -304,13 +311,16 @@ function cleanupNetworkRecorderTab(tabId: number, reason?: string): Array<{ sess
   }
   return out;
 }
-function requireNetworkRecorder(tabId: number, msg: PiBridgeCommand): NetworkRecorderLookup {
+async function requireNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise<NetworkRecorderLookup> {
   const recorder = getActiveNetworkRecorder(tabId, msg || {});
-  if (!recorder) return { error: piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, 'network recorder is not started', { tabId, sessionId:defaultNetworkSessionId(msg || {}) }) };
+  if (!recorder) {
+    const sessionId = defaultNetworkSessionId(msg || {});
+    return { error: piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, 'network recorder is not started', { tabId, sessionId, lostSession: summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession('network', tabId, sessionId)) }) };
+  }
   return { recorder };
 }
-function listNetworkRecorderEntries(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-  const found = requireNetworkRecorder(tabId, msg);
+async function listNetworkRecorderEntries(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const limit = numberInRange(msg.limit, 100, 0, 5000);
@@ -321,8 +331,8 @@ function listNetworkRecorderEntries(tabId: number, msg: PiBridgeCommand): PiBrid
   const nextOffset = offset + items.length < all.length ? offset + items.length : null;
   return { ok:true, data:{ tabId:Number(tabId), sessionId:recorder.sessionId, total:all.length, offset, limit, items, nextOffset, overflowCount:recorder.overflowCount } };
 }
-function getNetworkRecorderEntry(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-  const found = requireNetworkRecorder(tabId, msg);
+async function getNetworkRecorderEntry(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const id = String(msg.requestId || msg.request_id || msg.id || '');
@@ -331,8 +341,8 @@ function getNetworkRecorderEntry(tabId: number, msg: PiBridgeCommand): PiBridgeR
   if (!rec) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND || 'REQUEST_NOT_FOUND', 'network request not found', { tabId, sessionId:recorder.sessionId, requestId:id });
   return { ok:true, data:networkRecordClone(rec, { includeBody: msg.includeBody === true || msg.include_body === true }) };
 }
-function getNetworkRecorderBody(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-  const found = requireNetworkRecorder(tabId, msg);
+async function getNetworkRecorderBody(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const ref = String(msg.bodyRef || msg.body_ref || '');
@@ -366,8 +376,8 @@ function makeHarEntry(rec: NetworkRecord, body: NetworkBodyStoreEntry | null): J
     cache:{}, timings:{ blocked:-1, dns:-1, connect:-1, send:0, wait:-1, receive:-1, ssl:-1 }, serverIPAddress:rec.response?.remoteIPAddress, connection:String(rec.response?.connectionId || ''), _requestId:rec.requestId, _seq:rec.seq, _type:rec.type || rec.resourceType || '', _initiator:rec.initiator, _redirects:rec.redirects || [], _wsFrames:rec.wsFrames || [], _sseEvents:rec.sseEvents || [], _bodyRef:rec.bodyRef || null, _bodyError:rec.bodyError || null, _bodyAvailability:rec.bodyAvailability || (rec.bodyRef ? 'captured' : 'not_requested'), _bodyUnavailableReason:rec.bodyUnavailableReason || null
   };
 }
-function exportNetworkRecorderHar(tabId: number, msg: PiBridgeCommand): PiBridgeResponse {
-  const found = requireNetworkRecorder(tabId, msg);
+async function exportNetworkRecorderHar(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const includeBodies = msg.includeBody === true || msg.include_body === true || msg.includeBodies === true || msg.include_bodies === true;
@@ -439,7 +449,7 @@ function wakeNetworkWaits(recorder: NetworkRecorder | null | undefined, eventTyp
   }
 }
 async function waitNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
-  const found = requireNetworkRecorder(tabId, msg);
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const conditionRaw = msg.condition || msg.state || msg.event || 'response';
@@ -499,18 +509,22 @@ async function handleNetworkRecorderCommand(tabId: number, cmd: string, msg: PiB
     case 'network.stop': return await stopNetworkRecorder(tabId, msg || {});
     case 'network.status': {
       const recorder = getActiveNetworkRecorder(tabId, msg || {});
-      if (!recorder) return { ok:true, data:{ tabId:Number(tabId), sessionId:defaultNetworkSessionId(msg || {}), active:false, recorders:Array.from(piBrowserNetworkRecorders.values()).filter(r => Number(r.tabId) === Number(tabId)).map(networkRecorderSummary) } };
+      if (!recorder) {
+        const sessionId = defaultNetworkSessionId(msg || {});
+        const lost = summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession('network', tabId, sessionId));
+        return { ok:true, data:{ tabId:Number(tabId), sessionId, active:false, stateLost: !!lost, lostSession: lost, recorders:Array.from(piBrowserNetworkRecorders.values()).filter(r => Number(r.tabId) === Number(tabId)).map(networkRecorderSummary) } };
+      }
       return { ok:true, data:networkRecorderSummary(recorder) };
     }
     case 'network.clear': {
-      const found = requireNetworkRecorder(tabId, msg || {}); if (found.error) return found.error;
+      const found = await requireNetworkRecorder(tabId, msg || {}); if (found.error) return found.error;
       const cleared = clearNetworkRecorderBuffer(found.recorder);
       return { ok:true, data:{ ...networkRecorderSummary(found.recorder), cleared } };
     }
-    case 'network.list': return listNetworkRecorderEntries(tabId, msg || {});
-    case 'network.get': return getNetworkRecorderEntry(tabId, msg || {});
-    case 'network.body': return getNetworkRecorderBody(tabId, msg || {});
-    case 'network.exportHar': return exportNetworkRecorderHar(tabId, msg || {});
+    case 'network.list': return await listNetworkRecorderEntries(tabId, msg || {});
+    case 'network.get': return await getNetworkRecorderEntry(tabId, msg || {});
+    case 'network.body': return await getNetworkRecorderBody(tabId, msg || {});
+    case 'network.exportHar': return await exportNetworkRecorderHar(tabId, msg || {});
     case 'network.wait': return await waitNetworkRecorder(tabId, msg || {});
   }
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown network recorder command: ' + cmd, { cmd, tabId });

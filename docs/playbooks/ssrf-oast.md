@@ -35,7 +35,7 @@ Use when an app accepts URLs, webhooks, import/fetch fields, avatar/image/PDF ge
 
 - HTTP callback received -> confirm server-side fetch behavior; test method/header/body control only if scoped.
 - DNS callback only -> report blind DNS interaction or continue with HTTP callback if feasible.
-- No callback but response changes -> use `browser_http_replay` and `browser_fuzz_params` to isolate parser behavior.
+- No callback but response changes -> use `browser_http_replay` and `browser_fuzz {mode:"param"}` to isolate parser behavior.
 - XML body accepted -> consider XXE-shaped template check or custom replay payload.
 - URL parser discrepancy suspected -> test one mutation at a time and preserve baseline deltas.
 

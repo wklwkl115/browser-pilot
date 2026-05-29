@@ -13,15 +13,15 @@ Compare SQLi oracle probing with sqlmap bridge roles using a local fixture reque
 ## Allowed starting tools
 
 - `browser_http_replay`
-- `browser_sqli_probe`
-- `browser_sqlmap_bridge`
+- `browser_sqli`
+- `browser_sqli {engine:"sqlmap"}`
 - `browser_artifact`
 
 ## Expected tool sequence
 
 1. Replay or inspect the request template first if target ambiguity exists.
-2. Use `browser_sqli_probe` for bounded boolean/error/time/union oracle evidence.
-3. Use `browser_sqlmap_bridge` only as explicit deeper automation when scoped request evidence exists.
+2. Use `browser_sqli` for bounded boolean/error/time/union oracle evidence.
+3. Use `browser_sqli {engine:"sqlmap"}` only as explicit deeper automation when scoped request evidence exists.
 4. Preserve request/stdout/stderr artifacts when bridge is used.
 
 ## Success criteria

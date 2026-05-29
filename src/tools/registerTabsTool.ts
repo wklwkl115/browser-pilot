@@ -1,16 +1,12 @@
 import { Type } from "typebox";
-import { suppressErrorStack } from "../utils/errors";
+import { type NativeErrorCode } from "../protocol/nativeErrorCodes";
+import { BrowserBridgeError } from "../driver/errors";
 import { jsonResult } from "../utils/toolResult";
-import { runTool, toolTimeoutMs } from "./toolAdapter";
+import { defineBrowserTool, runTool, toolTimeoutMs } from "./toolAdapter";
 import type { ToolRegistrarContext } from "./toolShared";
 
-function tabsToolError(code: string, message: string, details: Record<string, unknown> = {}): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "BrowserTabsToolError";
-	error.code = code;
-	error.details = details;
-	suppressErrorStack(error);
-	return error;
+function tabsToolError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): BrowserBridgeError {
+	return new BrowserBridgeError(code, message, details);
 }
 
 function requireTabsActionTabId(action: string, value: unknown): number {
@@ -31,14 +27,14 @@ function normalizeCreateTabUrl(value: unknown): string {
 		throw tabsToolError("INVALID_TAB_URL", "browser_tabs create requires an absolute URL or about:blank", { url: value });
 	}
 	const protocol = parsed.protocol.toLowerCase();
-	if (protocol === "javascript:") {
-		throw tabsToolError("INVALID_TAB_URL", "browser_tabs create does not accept javascript: URLs; use browser_execute for JavaScript in an existing tab", { url: raw, protocol });
+	if (protocol === "javascript:" || protocol === "data:") {
+		throw tabsToolError("INVALID_TAB_URL", "browser_tabs create does not accept javascript: or data: URLs; use browser_execute for JavaScript in an existing tab", { url: raw, protocol });
 	}
 	return parsed.href;
 }
 
 export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_tabs",
 		label: "Browser Tabs",
 		description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Pi browser bridge.",

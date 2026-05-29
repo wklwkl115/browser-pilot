@@ -12,15 +12,10 @@ import {
 	registerCallbackOastTool,
 	registerCookieAnalyzeTool,
 	registerCrawlTool,
-	registerFuzzParamsTool,
-	registerFuzzPathsTool,
-	registerFuzzVhostsTool,
+	registerFuzzTool,
 	registerHttpReplayTool,
-	registerNucleiBridgeTool,
-	registerReconProbeTool,
-	registerSqlmapBridgeTool,
-	registerSqliProbeTool,
-	registerTemplateCheckTool,
+	registerSqliTool,
+	registerTemplateTool,
 } from "./registerWebSecurityTools";
 import type { ToolRegistrar } from "./toolShared";
 
@@ -42,17 +37,12 @@ export const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 ];
 
 export const WEB_SECURITY_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
-	registerReconProbeTool,
 	registerCrawlTool,
-	registerFuzzPathsTool,
-	registerFuzzVhostsTool,
-	registerSqliProbeTool,
-	registerSqlmapBridgeTool,
-	registerNucleiBridgeTool,
-	registerTemplateCheckTool,
+	registerFuzzTool,
+	registerSqliTool,
+	registerTemplateTool,
 	registerCallbackOastTool,
 	registerCookieAnalyzeTool,
-	registerFuzzParamsTool,
 	registerHttpReplayTool,
 ];
 

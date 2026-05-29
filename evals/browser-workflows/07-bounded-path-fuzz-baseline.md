@@ -12,14 +12,14 @@ Run bounded path fuzzing against a local fixture and explain baseline filtering 
 
 ## Allowed starting tools
 
-- `browser_recon_probe`
-- `browser_fuzz_paths`
+- `browser_crawl {action:"fingerprint"}`
+- `browser_fuzz {mode:"path"}`
 - `browser_artifact`
 
 ## Expected tool sequence
 
-1. Probe the base URL with `browser_recon_probe`.
-2. Run `browser_fuzz_paths` with an explicit bounded wordlist and candidate cap.
+1. Probe the base URL with `browser_crawl {action:"fingerprint"}`.
+2. Run `browser_fuzz {mode:"path"}` with an explicit bounded wordlist and candidate cap.
 3. Use `filterBaseline` or status/body filters when fallback noise appears.
 4. Cite matched candidates and baseline evidence.
 

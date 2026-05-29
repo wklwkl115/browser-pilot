@@ -1,6 +1,11 @@
-import { PI_BROWSER_ERROR_CODES, piBrowserError } from "./runtime";
-import { collectWsSessionTranscript, createWsSession, getWsSession, normalizeWsOpenConfig, piBrowserWsSessions, rememberWsTranscript, wsSessionId, wsSessionSummary, numberInRange, cleanupWsSessionsForTab } from "./ws_model";
+import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, piBrowserError, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
+import { collectWsSessionTranscript, createWsSession, getWsSession, normalizeWsOpenConfig, piBrowserWsSessions, rememberWsTranscript, wsSessionId, wsSessionSummary, numberInRange, cleanupWsSessionsForTab as cleanupWsSessionsForTabState } from "./ws_model";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+
+const rememberWsRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
+const forgetWsRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
+const findLostWsRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
+const summarizeLostWsRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
 
 function asRecord(value: unknown): JsonRecord {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -69,6 +74,20 @@ function requireOpenSession(tabId: number, msg: PiBridgeCommand) {
 	return { session };
 }
 
+function cleanupWsSocketListeners(session: ReturnType<typeof requireSession>): void {
+	if (!session) return;
+	const ws = session.ws as WebSocket | undefined;
+	if (!ws) return;
+	const listeners = asRecord(session.listeners);
+	const messageListener = listeners.messageListener as EventListener | undefined;
+	const closeListener = listeners.closeListener as EventListener | undefined;
+	const errorListener = listeners.errorListener as EventListener | undefined;
+	if (messageListener) { try { ws.removeEventListener("message", messageListener); } catch {} }
+	if (closeListener) { try { ws.removeEventListener("close", closeListener); } catch {} }
+	if (errorListener) { try { ws.removeEventListener("error", errorListener); } catch {} }
+	session.listeners = {};
+}
+
 async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
 	const config = normalizeWsOpenConfig(msg);
 	if (!config.url) return piBrowserError("WEBSOCKET_INVALID_INPUT", "ws.open requires explicit url", { cmd: msg.cmd, tabId, sessionId: config.sessionId, field: "url" });
@@ -90,11 +109,15 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 		session.state = session.state === "error" ? "error" : "closed";
 		session.closedAt = Date.now();
 		rememberWsTranscript(session, { event: "close", code: Number(event.code || 0), reason: String(event.reason || ""), wasClean: !!event.wasClean });
+		cleanupWsSocketListeners(session);
+		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 	};
 	const errorListener = () => {
 		session.lastError = session.lastError || "websocket error";
 		session.state = "error";
 		rememberWsTranscript(session, { event: "error", error: session.lastError, preview: previewText(session.lastError) });
+		cleanupWsSocketListeners(session);
+		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 	};
 	ws.addEventListener("message", messageListener);
 	ws.addEventListener("close", closeListener);
@@ -105,8 +128,10 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
+			cleanupWsSocketListeners(session);
 			try { ws.close(); } catch {}
 			piBrowserWsSessions.delete(String(session.key));
+			void forgetWsRuntimeSession("ws", tabId, config.sessionId);
 			resolve(piBrowserError("WEBSOCKET_OPEN_TIMEOUT", `ws open timed out after ${config.timeoutMs}ms`, { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url, timeoutMs: config.timeoutMs }));
 		}, config.timeoutMs);
 		const cleanup = () => {
@@ -121,13 +146,16 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 			session.state = "open";
 			session.openedAt = Date.now();
 			rememberWsTranscript(session, { event: "open" });
+			void rememberWsRuntimeSession("ws", tabId, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		};
 		const onOpenError = () => {
 			if (settled) return;
 			settled = true;
 			cleanup();
+			cleanupWsSocketListeners(session);
 			piBrowserWsSessions.delete(String(session.key));
+			void forgetWsRuntimeSession("ws", tabId, config.sessionId);
 			resolve(piBrowserError("WEBSOCKET_OPEN_FAILED", "ws open failed", { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url }));
 		};
 		ws.addEventListener("open", onOpen, { once: true });
@@ -276,6 +304,9 @@ async function closeWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeRes
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
+			session.state = "closed";
+			session.closedAt = Date.now();
+			cleanupWsSocketListeners(session);
 			try { ws.close(); } catch {}
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		}, timeoutMs);
@@ -283,23 +314,49 @@ async function closeWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeRes
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			void forgetWsRuntimeSession("ws", tabId, session.sessionId);
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		};
 		ws.addEventListener("close", onClose, { once: true });
 		try { ws.close(code, reason); }
-		catch { clearTimeout(timer); resolve({ ok: true, data: { session: wsSessionSummary(session) } }); }
+		catch { clearTimeout(timer); cleanupWsSocketListeners(session); void forgetWsRuntimeSession("ws", tabId, session.sessionId); resolve({ ok: true, data: { session: wsSessionSummary(session) } }); }
 	});
 }
 
 async function handlePiBrowserWsCommand(cmd: string, tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
 	if (cmd === "ws.open") return await openWs(tabId, msg);
-	if (cmd === "ws.status") return { ok: true, data: { session: wsSessionSummary(getWsSession(tabId, wsSessionId(msg)), wsSessionId(msg)) } };
+	if (cmd === "ws.status") {
+		const sessionId = wsSessionId(msg);
+		const session = getWsSession(tabId, sessionId);
+		const lost = summarizeLostWsRuntimeSession(await findLostWsRuntimeSession("ws", tabId, sessionId));
+		return { ok: true, data: { session: wsSessionSummary(session, sessionId), stateLost: !!lost, lostSession: lost } };
+	}
 	if (cmd === "ws.send") return await sendWs(tabId, msg);
 	if (cmd === "ws.replay") return await replayWs(tabId, msg);
 	if (cmd === "ws.wait") return await waitWs(tabId, msg);
 	if (cmd === "ws.collect") return collectWs(tabId, msg);
 	if (cmd === "ws.close") return await closeWs(tabId, msg);
 	return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `Unknown ws command: ${cmd}`, { cmd, tabId });
+}
+
+function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup") {
+	const cleanupState = typeof cleanupWsSessionsForTabState === "function"
+		? cleanupWsSessionsForTabState
+		: (_tabId: number, cleanupReason = "tab_cleanup") => {
+			let removed = 0;
+			const sessionIds: string[] = [];
+			for (const [key, session] of Array.from(piBrowserWsSessions.entries())) {
+				if (Number(session.tabId) !== Number(_tabId)) continue;
+				removed += 1;
+				sessionIds.push(String(session.sessionId || "default"));
+				try { (session.ws as { terminate?: () => void; close?: () => void } | undefined)?.terminate?.(); } catch {}
+				piBrowserWsSessions.delete(key);
+			}
+			return { tabId: _tabId, removed, reason: cleanupReason, sessionIds };
+		};
+	const result = cleanupState(tabId, reason);
+	for (const sessionId of Array.isArray(result.sessionIds) ? result.sessionIds : []) void forgetWsRuntimeSession("ws", tabId, String(sessionId || "default"));
+	return result;
 }
 
 export { handlePiBrowserWsCommand, cleanupWsSessionsForTab };

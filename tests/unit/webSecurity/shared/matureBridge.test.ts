@@ -21,6 +21,7 @@ test("detectMatureBridgeLauncher reports structured not-found diagnostics for ex
 		autoCandidates: [],
 		versionArgs: ["--version"],
 		successPattern: /sqlmap/i,
+		allowLauncherOverride: true,
 	}), (error: Error & { code?: string; details?: Record<string, unknown> }) => {
 		assert.equal(error.code, "MATURE_BRIDGE_LAUNCHER_NOT_FOUND");
 		assert.equal(error.details?.source, "param");
@@ -43,6 +44,21 @@ test("detectMatureBridgeLauncher returns auto candidate when version probe succe
 	assert.equal(launcher.source, "auto");
 });
 
+test("detectMatureBridgeLauncher requires explicit opt-in for launcher overrides", () => {
+	assert.throws(() => detectMatureBridgeLauncher({
+		bridgeName: "sqlmap",
+		explicitPath: process.execPath,
+		envPathVar: "PI_SQLMAP_PATH",
+		envArgsVar: "PI_SQLMAP_ARGS",
+		autoCandidates: [],
+		versionArgs: ["--version"],
+		successPattern: /node/i,
+	}), (error: Error & { code?: string }) => {
+		assert.equal(error.code, "MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED");
+		return true;
+	});
+});
+
 test("detectMatureBridgeLauncher falls back to auto candidates when env path is stale", () => {
 	const previousPath = process.env.PI_FAKE_FALLBACK_PATH;
 	const previousArgs = process.env.PI_FAKE_FALLBACK_ARGS;
@@ -57,6 +73,7 @@ test("detectMatureBridgeLauncher falls back to auto candidates when env path is 
 			autoCandidates: [{ command: process.execPath, preArgs: ["-e", "console.log('node-fixture fallback 1.0')"], source: "auto" }],
 			versionArgs: [],
 			successPattern: /node-fixture fallback/i,
+			allowLauncherOverride: true,
 		});
 		assert.equal(launcher.command, process.execPath);
 		assert.equal(launcher.source, "auto");

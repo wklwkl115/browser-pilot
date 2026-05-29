@@ -109,8 +109,8 @@
         "fixtures/path-fuzz-routes.json"
       ],
       "primaryTools": [
-        "browser_recon_probe",
-        "browser_fuzz_paths",
+        "browser_crawl",
+        "browser_fuzz",
         "browser_artifact"
       ],
       "evidence": [
@@ -141,8 +141,7 @@
       ],
       "primaryTools": [
         "browser_http_replay",
-        "browser_sqli_probe",
-        "browser_sqlmap_bridge"
+        "browser_sqli"
       ],
       "evidence": [
         "request-baseline",

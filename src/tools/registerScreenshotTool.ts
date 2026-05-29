@@ -1,12 +1,12 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
 import { resolveArtifactPath, saveDataUrl } from "./artifacts";
-import { inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter";
+import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
 export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_screenshot",
 		label: "Browser Screenshot",
 		description: "Native screenshot capture. Saves the image to disk by default and returns the file path.",

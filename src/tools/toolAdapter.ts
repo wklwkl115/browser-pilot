@@ -1,8 +1,11 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
 import type { BrowserActiveOperationInfo } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
+import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
 import type { DetailLevel } from "../utils/params";
+import { normalizeTabId } from "../utils/params";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
 import { stableJson } from "../utils/json";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
@@ -76,6 +79,76 @@ export type TrackedOperationHandle = {
 	finish: () => BrowserActiveOperationInfo | undefined;
 };
 
+type BrowserToolOperationResolver<TParams, TPrepared, TValue> = TValue | ((params: TParams, prepared: TPrepared) => TValue);
+
+type BrowserToolOperationConfig<TParams, TPrepared> = false | {
+	command: BrowserToolOperationResolver<TParams, TPrepared, string>;
+	tabId?: (params: TParams, prepared: TPrepared) => unknown;
+	initialProgress?: number;
+	phase?: BrowserActiveOperationInfo["phase"];
+	sourceMode?: BrowserToolOperationResolver<TParams, TPrepared, string | undefined>;
+	snapshotId?: BrowserToolOperationResolver<TParams, TPrepared, string | undefined>;
+};
+
+type BrowserToolErrorConfig<TParams> = {
+	map?: (error: unknown, params: TParams) => unknown;
+	result?: (error: unknown) => PiTextToolResult;
+};
+
+export type BrowserToolRunArgs<TParams, TPrepared> = {
+	server: BrowserBridgeServer;
+	params: TParams;
+	prepared: TPrepared;
+	ctx: ToolResultContext;
+	onUpdate: ToolOnUpdate;
+	timeoutMs: number;
+	maxChars: number;
+	browserSessionId?: string;
+	rawTabId: unknown;
+	tabId?: number;
+	handle?: TrackedOperationHandle;
+};
+
+type RunBrowserToolSpec<TParams extends Partial<StandardToolParams>, TPrepared, TResult> = {
+	ensureStarted: () => Promise<BrowserBridgeServer>;
+	toolName: string;
+	params: TParams;
+	ctx: ToolResultContext;
+	onUpdate?: ToolOnUpdate;
+	budgetName?: ToolResultBudgetName;
+	defaultTimeoutMs: number;
+	fallbackMaxChars?: number;
+	prepare?: (args: Omit<BrowserToolRunArgs<TParams, TPrepared>, "prepared" | "rawTabId" | "tabId" | "handle">) => Promise<TPrepared> | TPrepared;
+	operation?: BrowserToolOperationConfig<TParams, TPrepared>;
+	error?: BrowserToolErrorConfig<TParams>;
+	run: (args: BrowserToolRunArgs<TParams, TPrepared>) => Promise<TResult>;
+	finalize: (args: BrowserToolRunArgs<TParams, TPrepared> & { result: TResult; operation?: BrowserActiveOperationInfo }) => Promise<PiTextToolResult>;
+};
+
+type RunWebSecurityToolSpec<TParams extends StandardToolParams, TRunParams extends object, TResult> = {
+	ensureStarted: () => Promise<BrowserBridgeServer>;
+	params: TParams;
+	ctx: ToolResultContext;
+	onUpdate?: ToolOnUpdate;
+	toolName: ToolResultBudgetName;
+	command: string;
+	fallbackPrefix: string;
+	defaultMaxBodyBytes?: number;
+	defaultTimeoutMs?: number;
+	includeTimeout?: boolean;
+	includeCookieProvider?: boolean;
+	augmentParams?: (params: TParams) => Partial<TRunParams>;
+	createCookieProvider?: (params: TParams, timeoutMs: number) => unknown;
+	run: (params: TRunParams) => Promise<TResult>;
+	details: (result: TResult) => Record<string, unknown>;
+	distill: (result: TResult) => Record<string, unknown>;
+	error?: BrowserToolErrorConfig<TParams>;
+};
+
+export function defineBrowserTool(pi: ExtensionAPI, spec: Parameters<ExtensionAPI["registerTool"]>[0]) {
+	pi.registerTool(spec);
+	return spec;
+}
 
 export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
 	return Type.Optional(Type.Number({ description }));
@@ -133,7 +206,7 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 		const record = result as Record<string, unknown>;
 		if (typeof record.error_code === "string" && record.error_code) {
 			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
-			return errorResult(new BrowserBridgeError(record.error_code, typeof record.error === "string" ? record.error : options.defaultMessage, {
+			return errorResult(new BrowserBridgeError(record.error_code as NativeErrorCode, typeof record.error === "string" ? record.error : options.defaultMessage, {
 				...(options.includeCommandInDetails && options.command ? { command: options.command } : {}),
 				...resultDetails,
 			}));
@@ -258,4 +331,109 @@ export async function withTrackedOperation<T>(server: BrowserBridgeServer, meta:
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
 	}
+}
+
+function budgetedMaxChars<TParams extends Partial<StandardToolParams>>(params: TParams, budgetName: ToolResultBudgetName | undefined, fallbackMaxChars: number | undefined): number {
+	if (budgetName) return toolMaxChars(params as Pick<StandardToolParams, "maxChars">, budgetName);
+	return toolPositiveInt((params as { maxChars?: unknown }).maxChars, fallbackMaxChars ?? 50_000);
+}
+
+function resolveOperationValue<TParams, TPrepared, TValue>(value: BrowserToolOperationResolver<TParams, TPrepared, TValue> | undefined, params: TParams, prepared: TPrepared): TValue | undefined {
+	if (typeof value === "function") return (value as (params: TParams, prepared: TPrepared) => TValue)(params, prepared);
+	return value;
+}
+
+export async function runBrowserTool<TParams extends Partial<StandardToolParams>, TPrepared, TResult>(spec: RunBrowserToolSpec<TParams, TPrepared, TResult>): Promise<PiTextToolResult> {
+	const onError = (error: unknown) => {
+		const mapped = spec.error?.map ? spec.error.map(error, spec.params) : error;
+		return spec.error?.result ? spec.error.result(mapped) : errorResult(mapped);
+	};
+	return await runTool(async () => {
+		const server = await spec.ensureStarted();
+		const timeoutMs = toolTimeoutMs((spec.params as { timeoutMs?: unknown }).timeoutMs, spec.defaultTimeoutMs);
+		const maxChars = budgetedMaxChars(spec.params, spec.budgetName, spec.fallbackMaxChars);
+		const browserSessionId = typeof (spec.params as { browserSessionId?: unknown }).browserSessionId === "string"
+			? (spec.params as { browserSessionId?: string }).browserSessionId
+			: undefined;
+		const baseArgs = {
+			server,
+			params: spec.params,
+			ctx: spec.ctx,
+			onUpdate: spec.onUpdate,
+			timeoutMs,
+			maxChars,
+			browserSessionId,
+		} as Omit<BrowserToolRunArgs<TParams, TPrepared>, "prepared" | "rawTabId" | "tabId" | "handle">;
+		const prepared = spec.prepare ? await spec.prepare(baseArgs) : spec.params as unknown as TPrepared;
+		if (!spec.operation) {
+			const runArgs: BrowserToolRunArgs<TParams, TPrepared> = { ...baseArgs, prepared, rawTabId: undefined, tabId: undefined, handle: undefined };
+			const result = await spec.run(runArgs);
+			return await spec.finalize({ ...runArgs, result, operation: undefined });
+		}
+		const rawTabId = spec.operation.tabId?.(spec.params, prepared);
+		const tabId = normalizeTabId(rawTabId);
+		const command = resolveOperationValue(spec.operation.command, spec.params, prepared) || spec.toolName;
+		const sourceMode = resolveOperationValue(spec.operation.sourceMode, spec.params, prepared);
+		const snapshotId = resolveOperationValue(spec.operation.snapshotId, spec.params, prepared);
+		const { result, operation } = await withTrackedOperation(server, {
+			toolName: spec.toolName,
+			command,
+			browserSessionId,
+			tabId,
+			phase: spec.operation.phase ?? "running",
+			progress: spec.operation.initialProgress ?? 10,
+			queueDepth: server.queueDepth(browserSessionId, tabId),
+			leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+			...(sourceMode ? { sourceMode } : {}),
+			...(snapshotId ? { snapshotId } : {}),
+		}, spec.onUpdate, async (handle) => await spec.run({ ...baseArgs, prepared, rawTabId, tabId, handle }));
+		return await spec.finalize({ ...baseArgs, prepared, rawTabId, tabId, result, operation });
+	}, onError);
+}
+
+export async function runWebSecurityTool<TParams extends StandardToolParams & { maxBodyBytes?: unknown }, TRunParams extends object, TResult>(spec: RunWebSecurityToolSpec<TParams, TRunParams, TResult>): Promise<PiTextToolResult> {
+	return await runBrowserTool<TParams, TRunParams, TResult>({
+		ensureStarted: spec.ensureStarted,
+		toolName: spec.toolName,
+		budgetName: spec.toolName,
+		params: spec.params,
+		ctx: spec.ctx,
+		onUpdate: spec.onUpdate,
+		defaultTimeoutMs: spec.defaultTimeoutMs ?? 15_000,
+		operation: {
+			command: spec.command,
+			tabId: (params) => params.tabId,
+			initialProgress: 5,
+		},
+		error: spec.error,
+		prepare: ({ params, timeoutMs }) => {
+			const runParams = {
+				...params,
+				...(spec.augmentParams?.(params) || {}),
+			} as unknown as TRunParams & { timeoutMs?: number; maxBodyBytes?: number; cookieProvider?: unknown };
+			if (spec.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
+			if (spec.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, spec.defaultMaxBodyBytes);
+			if (spec.includeCookieProvider && spec.createCookieProvider) runParams.cookieProvider = spec.createCookieProvider(params, timeoutMs);
+			return runParams as TRunParams;
+		},
+		run: async ({ prepared, handle }) => {
+			await handle?.update({ progress: 35 });
+			const result = await spec.run(prepared);
+			await handle?.update({ progress: 85, details: spec.details(result) });
+			return result;
+		},
+		finalize: async ({ params, prepared, ctx, maxChars, operation, result }) => {
+			const resultDetails = spec.details(result);
+			return await jsonToolResult(result, params, ctx, {
+				toolName: spec.toolName,
+				command: spec.command,
+				maxChars,
+				fallbackName: artifactFallbackName(spec.fallbackPrefix),
+				details: { command: spec.command, ...resultDetails },
+				operation,
+				artifactValue: { ...(result as Record<string, unknown>), ...(operation ? { operation } : {}) },
+				distill: (value: unknown) => ({ ...spec.distill(value as TResult), ...(operation ? { operationId: operation.operationId, sourceMode: operation.sourceMode } : {}) }),
+			});
+		},
+	});
 }

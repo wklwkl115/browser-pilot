@@ -9,7 +9,8 @@
 - 当前设计方向：单包分层，优先保留 Pi-native 浏览器态执行层；通用解析优先成熟依赖；成熟漏洞引擎仅以同包内可选 bridge 接入，不在核心工具里追平外部 CLI。
 - 本轮已完成 `cross-tool evidence correlation metadata` 收口：不新增公开 `browser_*` 工具，在现有 distilled result envelope、artifact summary、workflow eval 与 runtime smoke 内补齐 `operationId`、`snapshotId`、`requestId`、`waitId`、`listenerId`、`sessionId`、`selectionVersion*`、`sourceMode` 等跨工具对账线索。
 - TODO 200-215 工程治理期已完成；后续新增能力、公开工具变更、bridge 协议变更、工具注册条件变更必须先在本文件和 `docs/tool-surface-consolidation-plan.md` 补决策、边界文档、契约与验证计划。
-- 下阶段 problem-area 规划已冻结到 `docs/next-phase-web-reversing-and-security-primitives-plan.md`；其中“请求/响应拦截与热补丁原语”phase 1/2、“JS AST / 反混淆分析原语”phase 1、“DOM 事件链 / sink-flow 分析辅助”phase 1、“Wasm 逆向桥接”phase 1 与“Stateful WebSocket replay/fuzz primitives” phase 1 均已完成并归档；当前无新的 active queue。
+- 下阶段 problem-area 规划已冻结到 `docs/next-phase-web-reversing-and-security-primitives-plan.md`；其中“请求/响应拦截与热补丁原语”phase 1/2、“JS AST / 反混淆分析原语”phase 1、“DOM 事件链 / sink-flow 分析辅助”phase 1、“Wasm 逆向桥接”phase 1 与“Stateful WebSocket replay/fuzz primitives” phase 1 均已完成并归档。
+- 当前 active queue：MV3 runtime state recovery，执行合同见 `docs/mv3-runtime-state-recovery-plan.md`。目标是把 Service Worker 重启后的 network/intercept/ws/CDP/hook 长生命周期状态丢失改为自动恢复或显式 `RUNTIME_STATE_*` 诊断；不新增公开工具，不恢复 orchestration。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
@@ -38,7 +39,16 @@
 
 ## 当前执行队列
 
-当前没有激活中的下阶段主线改造队列。
+### 激活工作流：MV3 runtime state recovery
+
+- 计划文档：`docs/mv3-runtime-state-recovery-plan.md`
+- 目标：将 MV3 Service Worker 重启后的模块级 Map 状态丢失，从隐性故障改成“可恢复配置状态”或“显式 `RUNTIME_STATE_LOST` / `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS`”。
+- 范围：`network`、`intercept`、`hook`、`ws`、`cdp`、`wait`、`queues`、`cspBypass` 的状态分级、持久化边界、recoverer、diagnostics、restart fixtures。
+- 严格边界：`chrome.storage.session` 只存结构元数据；Node artifact 存证据数据；不持久化 body/postData/cookie/auth/ws payload/raw script；hook 默认不自动 reinstall；ws 默认不自动 reconnect；不新增公开 `browser_*` 工具，不恢复 orchestration。
+- 第一批实现顺序：Phase 0 文档和失败基线 → Phase 1 `state_store.ts` → Phase 2 network recoverer → Phase 3 intercept recoverer → Phase 4 hook/ws/CDP 诊断硬化 → Phase 5 network/intercept artifact 增量证据。
+- 验证：每阶段至少跑 `npm run check:all:bridge`、`npm run check:lifecycle`、`npm run check:all:contracts`、`npm run check:doc-structure`；runtime closure 前跑 `npm run build:bridge`、`npm run check`、`npm run smoke:browser:isolated`。
+
+最近完成：第二轮深度缺陷修复批次已收口，覆盖 callback OAST `sessionId` 路径收口、动态 HTTPS 证书、stale-lock token 校验、`maxRuntimeMs` 生命周期上限、WebSecurity `wordlistPath` 本地边界、private/link-local/metadata target 默认阻断与 `allowPrivateTargets`、mature bridge `allowLauncherOverride`、MV3 restart state-loss 轻量持久化诊断、旧 content page-script DOM 命令通道移除、`javascript:`/`data:` 导航阻断、template/fuzz/sqli 上界、summary hard-cap、peer/CI/package/legacy bridge 收口；不新增公开 `browser_*` 工具，不引入策略型 orchestration，不削弱 WebSecurity 能力。
 
 ## 最近完成：Stateful WebSocket replay/fuzz primitives（phase 1）
 

@@ -57,7 +57,7 @@ export function registerBrowserCommands(pi: ExtensionAPI, server: BrowserBridgeS
 		handler: async (_args, ctx) => {
 			const target = bridgePath();
 			ctx.ui.notify(`Load unpacked Chrome extension from: ${target}`, "info");
-			ctx.ui.setEditorText(`安装浏览器桥：打开 chrome://extensions → 开发者模式 → 加载已解压的扩展程序 → ${target}`);
+			ctx.ui.setEditorText(`Install browser bridge: open chrome://extensions → Developer mode → Load unpacked → ${target}`);
 		},
 	});
 
@@ -84,7 +84,7 @@ export function registerBrowserCommands(pi: ExtensionAPI, server: BrowserBridgeS
 				const editorText = ctx.ui.getEditorText?.()?.trim() ?? "";
 				const explicitPath = parsed.path ? path.resolve(ctx.cwd || process.cwd(), parsed.path) : undefined;
 				if (!explicitPath && !editorText) {
-					ctx.ui.notify("Usage: /browser-js-ast [path] [--output file]，或先在编辑器中放入显式 JS 文本。", "warning");
+					ctx.ui.notify("Usage: /browser-js-ast [path] [--output file], or place explicit JS text in the editor first.", "warning");
 					return;
 				}
 				const result = explicitPath

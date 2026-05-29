@@ -10,6 +10,8 @@ export type BrowserBridgeClientInfo = {
 	workerStartedAt?: number;
 	connectedAt: number;
 	lastSeenAt: number;
+	lastPingAt?: number;
+	lastPongAt?: number;
 };
 
 export type BrowserTabSession = {
@@ -179,11 +181,11 @@ export type PendingRequest = {
 	reject: (error: Error) => void;
 };
 
-export type BrowserBridgeExecutionResult = {
+export type BrowserBridgeExecutionResult<TData = unknown, TNewTabs = unknown[]> = {
 	id: string;
 	acknowledged: boolean;
 	tabId?: number;
-	data?: unknown;
-	newTabs?: unknown[];
+	data?: TData;
+	newTabs?: TNewTabs;
 	target?: BrowserBridgeTargetInfo;
 };

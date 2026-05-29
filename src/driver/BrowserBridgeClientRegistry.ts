@@ -42,6 +42,26 @@ export class BrowserBridgeClientRegistry {
 		if (info) info.lastSeenAt = Date.now();
 	}
 
+	markPingSent(ws: WebSocket): void {
+		const info = this.clientInfo.get(ws);
+		if (info) info.lastPingAt = Date.now();
+	}
+
+	markPong(ws: WebSocket): void {
+		const info = this.clientInfo.get(ws);
+		if (info) {
+			const now = Date.now();
+			info.lastSeenAt = now;
+			info.lastPongAt = now;
+		}
+	}
+
+	staleClients(maxIdleMs: number, now = Date.now()): Array<{ ws: WebSocket; info: BrowserBridgeClientInfo; idleMs: number }> {
+		return Array.from(this.clientInfo.entries())
+			.map(([ws, info]) => ({ ws, info, idleMs: now - info.lastSeenAt }))
+			.filter(({ ws, idleMs }) => !CLOSED_STATES.has(ws.readyState as 2 | 3) && idleMs > maxIdleMs);
+	}
+
 	updateClientInfo(ws: WebSocket, bridgeOrExtension: unknown): void {
 		const current = this.clientInfo.get(ws);
 		if (!current || !bridgeOrExtension || typeof bridgeOrExtension !== "object" || Array.isArray(bridgeOrExtension)) return;

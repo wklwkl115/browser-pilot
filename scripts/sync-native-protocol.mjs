@@ -181,6 +181,8 @@ type CommandSpec = {
 type NativeCommandProtocolSchema = {
 	name: string;
 	version: string;
+	transport?: string;
+	envelope?: Record<string, unknown>;
 	domains: Record<string, string[]>;
 	aliases?: Record<string, string>;
 	commands: Record<string, CommandSpec>;

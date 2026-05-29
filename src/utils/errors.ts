@@ -1,4 +1,5 @@
 import { nativeErrorCodes } from "../protocol/nativeErrorCodes";
+import { isRecord } from "./records";
 import { redactSensitiveText, redactSensitiveValue } from "./redaction";
 
 export type ErrorTaxonomyDomain =
@@ -44,10 +45,6 @@ export type NormalizedError = {
 	recovery?: ErrorRecovery;
 	name?: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function stripStackFields(value: unknown, seen = new WeakSet<object>()): unknown {
 	if (value === null || value === undefined || typeof value !== "object") return value;
@@ -173,7 +170,7 @@ function recoveryForNormalized(code: string, details: Record<string, unknown>, t
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,
 		["MATURE_BRIDGE_LAUNCHER_NOT_FOUND", "MATURE_BRIDGE_LAUNCHER_PROBE_FAILED", "MATURE_BRIDGE_LAUNCH_FAILED"].includes(code) ? "configure sqlmapPath/nucleiPath or the matching PI_*_PATH environment variable, then retry" : undefined,
 		code === "MATURE_BRIDGE_TARGET_REQUIRED" ? "use browser_http_replay or a direct url/rawRequest/request/HAR input before invoking the mature bridge" : undefined,
-		code === "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED" ? "supply explicit templatePaths/workflowPaths/templateIds/tags/severities/authors before invoking browser_nuclei_bridge" : undefined,
+		code === "MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED" ? "supply explicit templatePaths/workflowPaths/templateIds/tags/severities/authors before invoking browser_template engine:nuclei" : undefined,
 	]);
 	if (!actions.length) return undefined;
 	return {

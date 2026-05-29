@@ -27,6 +27,17 @@ const SENSITIVE_FIELD_NAMES = new Set([
 	"pwd",
 	"apikey",
 	"credential",
+	"privatekey",
+	"privatepem",
+	"secretkey",
+	"sessiontoken",
+	"securitytoken",
+	"mfatoken",
+	"otptoken",
+	"totp",
+	"otp",
+	"xawssecuritytoken",
+	"xawsec2metadatatoken",
 ]);
 
 const BODY_FIELD_NAMES = new Set(["body", "requestbody", "responsebody"]);
@@ -51,10 +62,13 @@ function shouldRedactPayloadText(key: string, parentPayload: boolean): boolean {
 
 export function redactSensitiveText(text: string): string {
 	return text
-		.replace(/((?:^|[\r\n])\s*(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
-		.replace(/("(?:cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|secret|password|api[_-]?key|postData|payloadData|body)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
-		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|secret|password|api[_-]?key)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")
-		.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]");
+		.replace(/((?:^|[\r\n])\s*(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
+		.replace(/("(?:cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp|postData|payloadData|body)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
+		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")
+		.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+		.replace(/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]")
+		.replace(/([?&](?:token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|password|api[_-]?key|otp|totp)=)[^&#\s"'<>]+/gi, "$1[redacted]")
+		.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]");
 }
 
 export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(), parentPayload = false): unknown {

@@ -179,6 +179,7 @@ function installPiBrowserTransport(): boolean {
     installCspBypassRule();
     void probeAndConnectWS(true);
   });
+  installCspBypassRule();
   chrome.alarms.onAlarm.addListener(handlePiBrowserTransportAlarm);
   setBridgeWakeProbe(probeAndConnectWS);
   void probeAndConnectWS(true);

@@ -175,9 +175,18 @@ async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<
 	if (!explicit.length) throw new Error("browser_fuzz_paths requires paths, words, wordlist, or wordlistPath");
 	const extensions = stringList(options.extensions).map((item) => item.replace(/^\./, "")).filter(Boolean);
 	const appendSlash = options.appendSlash === true;
-	const candidates = [...new Set(explicit.flatMap((item) => candidateVariants(item, extensions, appendSlash)))];
 	const maxCandidates = Math.min(5_000, positiveInt(options.maxCandidates, 500));
-	const limitedCandidates = candidates.slice(0, maxCandidates);
+	const seenCandidates = new Set<string>();
+	const limitedCandidates: string[] = [];
+	let totalCandidates = 0;
+	for (const item of explicit) {
+		for (const candidate of candidateVariants(item, extensions, appendSlash)) {
+			if (seenCandidates.has(candidate)) continue;
+			seenCandidates.add(candidate);
+			totalCandidates += 1;
+			if (limitedCandidates.length < maxCandidates) limitedCandidates.push(candidate);
+		}
+	}
 	const recursive = options.recursive === true;
 	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);
 	const followRedirects = options.followRedirects === true;
@@ -185,7 +194,7 @@ async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<
 	return {
 		bases,
 		candidates: limitedCandidates,
-		truncatedCandidates: candidates.length - limitedCandidates.length,
+		truncatedCandidates: Math.max(0, totalCandidates - limitedCandidates.length),
 		method: normalizeMethod(options.method, "GET"),
 		baseHeaders: normalizeHeaders(options.headers),
 		followRedirects,

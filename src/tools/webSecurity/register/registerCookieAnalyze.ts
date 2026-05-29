@@ -27,7 +27,8 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 			wordlistPath: Type.Optional(Type.String({ description: "Local HMAC secret candidate wordlist file path; one entry per line." })),
 			maxSecretCandidates: Type.Optional(Type.Number({ description: "Maximum HMAC secret candidates to test; default 10000, hard-capped at 100000." })),
 			claimMutations: Type.Optional(Type.Any({ description: "Claims to merge into decoded JWT/JWE/session payloads when generating a mutated token." })),
-			claimReplay: Type.Optional(Type.Any({ description: "Optional bounded replay check for generated claim mutations. Supports url, method, headers, body/bodyBase64, cookieName, matchStatus, maxCases, followRedirects, timeoutMs, and maxBodyBytes." })),
+			claimReplay: Type.Optional(Type.Any({ description: "Optional bounded replay check for generated claim mutations. Supports url, method, headers, body/bodyBase64, cookieName, matchStatus, maxCases, followRedirects, timeoutMs, maxBodyBytes, and allowPrivateTargets." })),
+			allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow claimReplay requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures." })),
 			...browserCookieBindingParams("Collect browser cookies for URL-scoped HTTP request injection using the connected browser session; default false.", { includeCookieMode: false }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

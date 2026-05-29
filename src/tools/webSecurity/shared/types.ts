@@ -8,6 +8,7 @@ export type WebFetchOptions = {
 	maxRedirects?: number;
 	timeoutMs?: number;
 	maxBodyBytes?: number;
+	allowPrivateTargets?: boolean;
 };
 
 export type RawProbeOptions = WebFetchOptions & {
@@ -156,6 +157,7 @@ export type RawCookieAnalyzeOptions = {
 	maxSecretCandidates?: unknown;
 	claimMutations?: unknown;
 	claimReplay?: unknown;
+	allowPrivateTargets?: unknown;
 	bindBrowserSession?: unknown;
 	cookieProvider?: CookieProvider;
 };
@@ -189,6 +191,7 @@ export type RawTemplateCheckOptions = RawReplayOptions & {
 	variables?: unknown;
 	tech?: unknown;
 	maxTemplates?: unknown;
+	maxRequests?: unknown;
 	rateLimitPerSecond?: unknown;
 };
 
@@ -212,6 +215,7 @@ export type RawSqlmapBridgeOptions = RawReplayOptions & {
 	sqlmapPath?: unknown;
 	sqlmapArgs?: unknown;
 	extraArgs?: unknown;
+	allowLauncherOverride?: unknown;
 };
 
 export type RawNucleiBridgeOptions = RawReplayOptions & {
@@ -232,6 +236,7 @@ export type RawNucleiBridgeOptions = RawReplayOptions & {
 	nucleiPath?: unknown;
 	nucleiArgs?: unknown;
 	extraArgs?: unknown;
+	allowLauncherOverride?: unknown;
 };
 
 export type RawCallbackOastOptions = {
@@ -274,7 +279,9 @@ export type RawCallbackOastOptions = {
 	rejectUnauthorized?: unknown;
 	maxEvents?: unknown;
 	maxBodyBytes?: unknown;
+	maxRuntimeMs?: unknown;
 	afterSeq?: unknown;
+	triggerTimeoutMs?: unknown;
 	timeoutMs?: unknown;
 };
 

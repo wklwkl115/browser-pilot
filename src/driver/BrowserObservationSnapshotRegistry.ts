@@ -22,6 +22,7 @@ export class BrowserObservationSnapshotRegistry {
 	}
 
 	create(snapshot: Omit<BrowserObservationSnapshotInfo, "snapshotId" | "expired" | "ttlMs"> & { snapshotId?: string; ttlMs?: number }): BrowserObservationSnapshotInfo {
+		this.pruneExpiredByTtl();
 		const record: BrowserObservationSnapshotInfo = {
 			snapshotId: snapshot.snapshotId || randomUUID(),
 			browserSessionId: snapshot.browserSessionId,
@@ -45,8 +46,15 @@ export class BrowserObservationSnapshotRegistry {
 	}
 
 	list(currentSnapshot?: BrowserBridgeSnapshot): BrowserObservationSnapshotInfo[] {
+		this.pruneExpiredByTtl();
 		return Array.from(this.snapshots.values())
 			.map((record) => evaluateSnapshot(record, currentSnapshot))
 			.sort((a, b) => b.capturedAt - a.capturedAt || a.snapshotId.localeCompare(b.snapshotId));
+	}
+
+	private pruneExpiredByTtl(now = Date.now()): void {
+		for (const [snapshotId, record] of this.snapshots.entries()) {
+			if (now - record.capturedAt > record.ttlMs) this.snapshots.delete(snapshotId);
+		}
 	}
 }

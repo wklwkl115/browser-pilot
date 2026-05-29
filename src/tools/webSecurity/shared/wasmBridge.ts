@@ -12,6 +12,7 @@ export type WasmWatBridgeOptions = {
 	outputPath?: string;
 	processTimeoutMs?: number;
 	artifactRoot?: string;
+	allowLauncherOverride?: boolean;
 };
 
 export type WasmWatBridgeResult = WasmArtifactAnalysis & {
@@ -49,6 +50,7 @@ function detectWasmWatLauncher(options: WasmWatBridgeOptions): MatureBridgeLaunc
 		versionArgs: ["--version"],
 		successPattern: /(wasm2wat|wasm-tools|binaryen|wabt)/i,
 		probeTimeoutMs: options.processTimeoutMs,
+		allowLauncherOverride: options.allowLauncherOverride,
 	});
 }
 

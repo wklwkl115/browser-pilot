@@ -1,8 +1,6 @@
+import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
 import { suppressErrorStack } from "../utils/errors";
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
+import { recordValue } from "../utils/records";
 
 function withoutStackDetails(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(withoutStackDetails);
@@ -22,9 +20,9 @@ export function assertBridgeCommandSucceeded(result: { data?: unknown }, command
 	const nestedError = recordValue(data.error);
 	const rawDetails = recordValue(data.details) || {};
 	const nestedDetails = recordValue(nestedError?.details) || {};
-	const code = typeof data.error_code === "string" && data.error_code ? data.error_code
+	const code = (typeof data.error_code === "string" && data.error_code ? data.error_code
 		: typeof nestedError?.code === "string" && nestedError.code ? nestedError.code
-			: "BROWSER_COMMAND_FAILED";
+			: "BROWSER_COMMAND_FAILED") as NativeErrorCode;
 	const message = typeof nestedError?.message === "string" && nestedError.message ? nestedError.message
 		: typeof data.error === "string" && data.error ? data.error
 			: typeof data.message === "string" && data.message ? data.message

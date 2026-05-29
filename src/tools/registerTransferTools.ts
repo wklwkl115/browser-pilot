@@ -2,29 +2,25 @@ import { Type } from "typebox";
 import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
 import { summarizeTransferData } from "./summaries/index";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation";
-import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
-function sharedTransferParams() {
-	return sharedTabScopedToolParams();
-}
-
 export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_download",
 		label: "Browser Download",
 		description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads.",
 		promptSnippet: "Download via selector click, media selector extraction, or direct HTTP(S) URL; returns download id/path/state.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_download when the task needs a stable downloaded file path instead of scripting a click manually."],
 		parameters: Type.Object({
-			...sharedTransferParams(),
+			...sharedTabScopedToolParams(),
 			selector: Type.Optional(Type.String({ description: "CSS selector to click or inspect for media download." })),
 			url: Type.Optional(Type.String({ description: "Direct HTTP(S) URL to download via Chrome downloads API." })),
-			mode: Type.Optional(Type.String({ description: "click | media | url. Default click for selector, url when url is provided." })),
+			mode: Type.Optional(Type.Union([Type.Literal("click"), Type.Literal("media"), Type.Literal("url")], { description: "click | media | url. Default click for selector, url when url is provided." })),
 			index: Type.Optional(Type.Number({ description: "Zero-based match index when selector matches multiple elements; default 0." })),
 			filename: Type.Optional(Type.String({ description: "Optional suggested filename for direct URL or media mode. Chrome may still uniquify or adjust it." })),
-			conflictAction: Type.Optional(Type.String({ description: "Direct URL only: uniquify | overwrite | prompt." })),
+			conflictAction: Type.Optional(Type.Union([Type.Literal("uniquify"), Type.Literal("overwrite"), Type.Literal("prompt")], { description: "Direct URL only: uniquify | overwrite | prompt." })),
 			saveAs: Type.Optional(Type.Boolean({ description: "Direct URL only: ask Chrome to show Save As dialog; default false." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -51,14 +47,14 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 }
 
 export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) {
-	pi.registerTool({
+	defineBrowserTool(pi, {
 		name: "browser_upload",
 		label: "Browser Upload",
 		description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles.",
 		promptSnippet: "Click a file input/chooser selector and set absolute local file paths after explicit confirmation.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_upload only after the user explicitly approves the exact local file path(s); set confirm:true."],
 		parameters: Type.Object({
-			...sharedTransferParams(),
+			...sharedTabScopedToolParams(),
 			selector: Type.String({ description: "CSS selector for the file input, label, or button that opens the file chooser." }),
 			files: Type.Array(Type.String({ description: "Absolute local file path to upload." }), { description: "One or more absolute local file paths." }),
 			index: Type.Optional(Type.Number({ description: "Zero-based match index when selector matches multiple elements; default 0." })),

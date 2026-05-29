@@ -110,7 +110,21 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 		const compacted = compactSummaryValue(summary, limits) as DistilledSummary;
 		if (stableJson(compacted).length <= budget) return compacted;
 	}
-	return dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
+	const dropped = dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
+	if (stableJson(dropped).length <= budget) return dropped;
+	const minimalBase: DistilledSummary = {
+		summaryTruncatedToBudget: true,
+		summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summaryOmitted) ? dropped.summaryOmitted : []), ...Object.keys(summary)])),
+		keys: Object.keys(summary).slice(0, 40),
+	};
+	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
+	let previewChars = Math.max(0, Math.min(previewSource.length, budget));
+	while (previewChars >= 0) {
+		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
+		if (stableJson(candidate).length <= budget) return candidate;
+		previewChars = previewChars <= 32 ? -1 : Math.floor(previewChars * 0.75);
+	}
+	return { summaryTruncatedToBudget: true };
 }
 
 function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {

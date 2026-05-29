@@ -153,16 +153,18 @@ function collectWsSessionTranscript(session: WsSessionRecord, afterSeq: number, 
 
 function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup"): JsonRecord {
 	let removed = 0;
+	const sessionIds: string[] = [];
 	for (const [key, session] of Array.from(piBrowserWsSessions.entries())) {
 		if (Number(session.tabId) !== Number(tabId)) continue;
 		removed += 1;
+		sessionIds.push(String(session.sessionId || "default"));
 		try {
 			const ws = session.ws as { terminate?: () => void; close?: () => void } | undefined;
 			ws?.terminate?.();
 		} catch {}
 		piBrowserWsSessions.delete(key);
 	}
-	return { tabId, removed, reason };
+	return { tabId, removed, reason, sessionIds };
 }
 
 export { wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab };

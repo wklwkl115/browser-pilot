@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { Buffer } from "node:buffer";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline";
-import { TEXTUAL_CONTENT_TYPE, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
+import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
 import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types";
 
@@ -57,7 +57,8 @@ function summarizeTlsCertificate(socket: { getPeerCertificate?: (detailed?: bool
 	};
 }
 
-async function fetchSingleWithHost(request: { url: string; method: string; headers: HeaderMap; body?: string | Buffer }, hostHeader: string, options: Required<Pick<WebFetchOptions, "timeoutMs" | "maxBodyBytes">>, sniName?: string): Promise<VhostFetchStep> {
+async function fetchSingleWithHost(request: { url: string; method: string; headers: HeaderMap; body?: string | Buffer }, hostHeader: string, options: Required<Pick<WebFetchOptions, "timeoutMs" | "maxBodyBytes">> & Pick<WebFetchOptions, "allowPrivateTargets">, sniName?: string): Promise<VhostFetchStep> {
+	await assertAllowedTargetUrl(request.url, { allowPrivateTargets: options.allowPrivateTargets, allowLoopback: true });
 	const url = new URL(request.url);
 	const client = url.protocol === "https:" ? https : http;
 	const headers = { ...request.headers, Host: hostHeader };
@@ -142,7 +143,7 @@ async function fetchWithHostRedirects(request: { url: string; method: string; he
 	const chain: VhostFetchStep[] = [];
 	let current = { ...request };
 	for (let i = 0; i <= maxRedirects; i += 1) {
-		const step = await fetchSingleWithHost(current, hostHeader, { timeoutMs, maxBodyBytes }, sniName);
+		const step = await fetchSingleWithHost(current, hostHeader, { timeoutMs, maxBodyBytes, allowPrivateTargets: options.allowPrivateTargets === true }, sniName);
 		chain.push(step);
 		const nextUrl = followRedirects ? redirectLocation(step.status, step.headers, current.url) : undefined;
 		if (!nextUrl) break;
@@ -302,8 +303,15 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 	const results: Array<Record<string, unknown>> = [];
 	const failures: Array<Record<string, unknown>> = [];
 	let sent = 0;
+	let truncatedCandidates = 0;
 	for (const base of normalized.bases) {
-		const candidates = buildVhostCandidates(base, normalized).slice(0, normalized.maxCandidates);
+		const candidates: string[] = [];
+		let totalCandidates = 0;
+		for (const candidate of buildVhostCandidates(base, normalized)) {
+			totalCandidates += 1;
+			if (candidates.length < normalized.maxCandidates) candidates.push(candidate);
+		}
+		truncatedCandidates += Math.max(0, totalCandidates - candidates.length);
 		if (!candidates.length) throw new Error("browser_fuzz_vhosts requires hosts, words, wordlist, or wordlistPath");
 		const defaultBaselineHost = `__pi_vhost_baseline__.${new URL(base).hostname}`;
 		const baselineHosts = [...new Set([...normalized.baselineHosts, normalized.baselineHost || defaultBaselineHost].filter(Boolean))];
@@ -378,5 +386,5 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 	const matched = results.filter((item) => item.matched === true);
 	const clusters = clusterVhostResponses(results);
 	const baselineClusters = clusterBaselineFingerprints(baselineFingerprints);
-	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseCount: normalized.bases.length, requestCount: sent, matchedCount: matched.length, filterBaseline: normalized.filterBaseline, baselineStrategy: normalized.baselineStrategy, sniMode: normalized.sniMode, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, baselines, baselineClusters, clusters, results, matched, failures };
+	return { ok: failures.length === 0, generatedAt: new Date().toISOString(), baseCount: normalized.bases.length, requestCount: sent, matchedCount: matched.length, truncatedCandidates, filterBaseline: normalized.filterBaseline, baselineStrategy: normalized.baselineStrategy, sniMode: normalized.sniMode, matchStatus: normalized.matchStatus, filterStatus: normalized.filterStatus, filterBodyBytes: normalized.filterBodyBytes, baselines, baselineClusters, clusters, results, matched, failures };
 }

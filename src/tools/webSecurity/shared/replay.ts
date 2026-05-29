@@ -12,6 +12,7 @@ export type NormalizedReplayOptions = {
 	maxBodyBytes: number;
 	followRedirects: boolean;
 	maxRedirects: number;
+	allowPrivateTargets: boolean;
 	bindBrowserSession: boolean;
 	cookieMode: "merge" | "replace" | "preserve";
 	compareBaseline: boolean;
@@ -241,6 +242,7 @@ export function normalizeReplayOptions(options: ReplayOptions): NormalizedReplay
 		maxBodyBytes: positiveInt(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES),
 		followRedirects,
 		maxRedirects: positiveInt(options.maxRedirects, followRedirects ? 5 : 0),
+		allowPrivateTargets: options.allowPrivateTargets === true,
 		bindBrowserSession: options.bindBrowserSession === true,
 		cookieMode: cookieMode === "replace" ? "replace" : cookieMode === "preserve" ? "preserve" : "merge",
 		compareBaseline: options.compareBaseline === true,

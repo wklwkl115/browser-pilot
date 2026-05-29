@@ -136,6 +136,15 @@ function buildCdpScript(code: unknown): string {
   `);
 }
 
+function normalizeExecNavigationUrl(rawUrl: unknown): string {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) throw new Error('Navigation URL is required');
+  const parsed = new URL(raw, 'https://example.invalid');
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol === 'javascript:' || protocol === 'data:') throw new Error(`Blocked navigation protocol: ${protocol}`);
+  return raw;
+}
+
 async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown }, socket: PiWebSocketLike): Promise<void> {
   const tabId = data.tabId;
   console.log('[PI-BROWSER-WS] Exec request', data.id, 'on tab', tabId);
@@ -148,8 +157,9 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   const navMatch = codeText.match(/^(?:window\.)?location(?:\.href)?\s*=\s*(['"])(.*?)\1\s*;?$/);
   if (navMatch) {
     try {
-      await chrome.tabs.update(tabId, { url: navMatch[2] });
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { navigated: true, url: navMatch[2] } }));
+      const targetUrl = normalizeExecNavigationUrl(navMatch[2]);
+      await chrome.tabs.update(tabId, { url: targetUrl });
+      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { navigated: true, url: targetUrl } }));
     } catch (e) {
       socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
     }
@@ -158,9 +168,10 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   const gmOpenMatch = codeText.match(/^GM_openInTab\(\s*(['"])(.*?)\1\s*\)\s*;?$/);
   if (gmOpenMatch) {
     try {
-      const t = await chrome.tabs.create({ url: gmOpenMatch[2], active: true });
-      const newTabs = [{ id: t.id, tabId: t.id, url: t.url || gmOpenMatch[2], title: t.title || '' }];
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { opened: true, tabId: t.id, url: gmOpenMatch[2] }, newTabs }));
+      const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
+      const t = await chrome.tabs.create({ url: targetUrl, active: true });
+      const newTabs = [{ id: t.id, tabId: t.id, url: t.url || targetUrl, title: t.title || '' }];
+      socket.send(JSON.stringify({ type: 'result', id: data.id, result: { opened: true, tabId: t.id, url: targetUrl }, newTabs }));
     } catch (e) {
       socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
     }

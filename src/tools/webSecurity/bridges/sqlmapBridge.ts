@@ -29,6 +29,7 @@ export type NormalizedSqlmapBridgeOptions = ReturnType<typeof normalizeReplayOpt
 	sqlmapPath?: string;
 	sqlmapArgs: string[];
 	extraArgs: string[];
+	allowLauncherOverride: boolean;
 	sequence: Array<{ input: unknown; source: string; label?: string }>;
 	artifactRoot: string;
 	processTimeoutMs: number;
@@ -103,6 +104,7 @@ async function normalizeSqlmapBridgeOptions(options: SqlmapBridgeOptions): Promi
 		sqlmapPath: asString(options.sqlmapPath)?.trim(),
 		sqlmapArgs: normalizeSqlmapArgs(options.sqlmapArgs),
 		extraArgs: normalizeSqlmapArgs(options.extraArgs),
+		allowLauncherOverride: options.allowLauncherOverride === true,
 		sequence,
 		artifactRoot,
 		processTimeoutMs,
@@ -125,6 +127,7 @@ function detectLauncher(options: NormalizedSqlmapBridgeOptions): SqlmapLauncher 
 		],
 		versionArgs: ["--version"],
 		successPattern: /sqlmap/i,
+		allowLauncherOverride: options.allowLauncherOverride,
 	});
 }
 
