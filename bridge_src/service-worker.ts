@@ -11,6 +11,7 @@ import { __piBridgeModule_wait_selector } from "./service_worker/wait_selector";
 import { __piBridgeModule_wait } from "./service_worker/wait";
 import { __piBridgeModule_network_model } from "./service_worker/network_model";
 import { __piBridgeModule_network } from "./service_worker/network";
+import { __piBridgeModule_intercept } from "./service_worker/intercept";
 import { __piBridgeModule_hook } from "./service_worker/hook";
 import { __piBridgeModule_evidence } from "./service_worker/evidence";
 import { __piBridgeModule_frame } from "./service_worker/frame";
@@ -20,6 +21,8 @@ import { __piBridgeModule_transfer } from "./service_worker/transfer";
 import { __piBridgeModule_bridge_info } from "./service_worker/bridge_info";
 import { __piBridgeModule_core_commands } from "./service_worker/core_commands";
 import { __piBridgeModule_exec } from "./service_worker/exec";
+import { __piBridgeModule_ws_model } from "./service_worker/ws_model";
+import { __piBridgeModule_ws } from "./service_worker/ws";
 import { __piBridgeModule_router, installPiBridgeRouter } from "./service_worker/router";
 import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
 import { __piBridgeModule_transport, installPiBrowserTransport } from "./service_worker/transport";
@@ -42,6 +45,7 @@ export const serviceWorkerFoundationModuleGraph = [
 export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_network_model,
 	__piBridgeModule_network,
+	__piBridgeModule_intercept,
 	__piBridgeModule_hook,
 	__piBridgeModule_evidence,
 	__piBridgeModule_frame,
@@ -51,6 +55,8 @@ export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_bridge_info,
 	__piBridgeModule_core_commands,
 	__piBridgeModule_exec,
+	__piBridgeModule_ws_model,
+	__piBridgeModule_ws,
 ] as const;
 
 export const serviceWorkerStartupModuleGraph = [

@@ -15,14 +15,18 @@ import {
 	summarizeFuzzVhostsData,
 	summarizeGenericValue,
 	summarizeHtmlSnapshot,
+	summarizeDomFlowData,
 	summarizeHttpReplayData,
+	summarizeJsAstAnalysisData,
 	summarizeNetworkData,
 	summarizeNucleiBridgeData,
 	summarizeScanData,
 	summarizeSqlmapBridgeData,
 	summarizeSqliProbeData,
 	summarizeTemplateCheckData,
+	summarizeWasmArtifactData,
 	summarizeWebReconProbeData,
+	summarizeWsSessionData,
 } from "../../src/tools/summaries/index.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -32,7 +36,7 @@ const parseToolText = (result) => JSON.parse(result.content[0].text);
 
 function assertWebSecuritySummarySplit() {
 	const files = readdirSync(path.join(root, "src/tools/summaries/webSecurity")).filter((file) => file.endsWith(".ts")).sort();
-	assert.deepEqual(files, ["bridges.ts", "cookie.ts", "crawl.ts", "fuzz.ts", "index.ts", "oast.ts", "recon.ts", "replay.ts", "shared.ts", "sqli.ts", "template.ts"], "check-summaries webSecurity.split.files: summary layer must be split by capability family");
+	assert.deepEqual(files, ["bridges.ts", "cookie.ts", "crawl.ts", "domFlow.ts", "fuzz.ts", "index.ts", "jsAst.ts", "oast.ts", "recon.ts", "replay.ts", "shared.ts", "sqli.ts", "template.ts", "wasm.ts", "wasmBridge.ts", "ws.ts"], "check-summaries webSecurity.split.files: summary layer must be split by capability family");
 	const facade = read("src/tools/summaries/webSecurity.ts");
 	assert.ok(facade.includes('from "./webSecurity/index"'), "check-summaries webSecurity.facade: legacy webSecurity.ts must re-export the split index");
 	assert.ok(facade.split(/\r?\n/).length <= 5, "check-summaries webSecurity.facade.size: legacy webSecurity.ts must stay thin");
@@ -43,6 +47,102 @@ function assertWebSecuritySummarySplit() {
 }
 
 assertWebSecuritySummarySplit();
+
+const jsAstSummary = summarizeJsAstAnalysisData({
+	input: { mode: "path", path: "fixtures/js-ast-minified.js", fileName: "js-ast-minified.js", bytes: 123, privacy: { localOnly: true, artifactFirst: true } },
+	analysis: {
+		ok: true,
+		parser: "typescript",
+		sourceType: "module",
+		bytes: 123,
+		lines: 4,
+		parseDiagnostics: [],
+		summary: {
+			topLevel: { statementCount: 4, imports: 1, exports: 2, functions: 2, variables: 1, classes: 0 },
+			imports: { count: 1, truncated: false, entries: [{ kind: "default+named", from: "./dep.js", specifierCount: 3, localNames: ["x", "a", "beta"] }] },
+			exports: { count: 2, truncated: false, entries: [{ kind: "named", names: ["outer"] }, { kind: "default", name: "main" }] },
+			functions: { total: 2, truncated: false, entries: [{ name: "outer", kind: "function", params: 1, async: false, generator: false, topLevel: true, line: 1 }] },
+			suspicious: {
+				evalCalls: 1,
+				functionConstructorCalls: 1,
+				atobCalls: 1,
+				unescapeCalls: 1,
+				computedStringArrayAccessCount: 0,
+				longStringArrayCount: 0,
+				stringDecoderAliasCount: 1,
+				objectDispatchAccessCount: 1,
+				whileTrueCount: 0,
+				switchInLoopCount: 0,
+				stringArrayCandidates: { count: 1, truncated: false, entries: [{ name: "arr", length: 4, topLevel: true, sample: ["zero"], line: 1 }] },
+				decoderCallCandidates: { count: 1, truncated: false, entries: [{ callee: "alias", count: 2, sampleArgs: ["0"] }] },
+				objectDispatchCandidates: { count: 1, truncated: false, entries: [{ name: "dispatch", keyCount: 3, topLevel: true, line: 3 }] }
+			},
+			reduction: { applied: true, replacementCount: 2, preview: "const x='one'", truncated: false, examples: [{ from: "arr[1]", to: '"one"' }] }
+		}
+	}
+});
+assert.equal(jsAstSummary.sourceType, "module", "check-summaries jsAst.sourceType: JS AST summary must expose module/script kind");
+assert.equal(jsAstSummary.parseDiagnosticsCount, 0, "check-summaries jsAst.diagnostics: JS AST summary must expose parse diagnostics count");
+assert.equal(jsAstSummary.suspicious && typeof jsAstSummary.suspicious === "object", true, "check-summaries jsAst.suspicious: JS AST summary must expose suspicious facts");
+assert.equal(Array.isArray(jsAstSummary.nextActions), true, "check-summaries jsAst.nextActions: JS AST summary must suggest bounded artifact-first follow-up");
+
+const domFlowSummary = summarizeDomFlowData("hook.getNodeListeners", {
+	data: {
+		selector: "#pay",
+		node: { tagName: "BUTTON", id: "pay" },
+		listeners: [{ type: "click", useCapture: false, passive: true, once: false, handler: { url: "fixture.js", line: 12, column: 3, functionName: "onPay" } }],
+		count: 1,
+	}
+});
+assert.equal(domFlowSummary.selector, "#pay", "check-summaries domFlow.selector: DOM flow summary must preserve explicit selector");
+assert.equal(domFlowSummary.count, 1, "check-summaries domFlow.count: DOM flow summary must expose listener count");
+assert.equal(typeof domFlowSummary.listeners, "object", "check-summaries domFlow.listeners: DOM flow summary must expose compact listener table");
+const domFlowHints = summarizeDomFlowData("hook.getSinkHints", {
+	data: {
+		selector: "#pay",
+		node: { tagName: "BUTTON", id: "pay" },
+		hints: [{ kind: "inline-handler", eventType: "click", suspicious: true, detail: "innerHTML = value" }],
+		sinks: [{ selector: "#sink", innerHTML: "<span>paid</span>", text: "paid" }],
+		count: 1,
+	}
+});
+assert.equal(domFlowHints.selector, "#pay", "check-summaries domFlowHints.selector: sink-hint summary must preserve explicit selector");
+assert.equal(typeof domFlowHints.hints, "object", "check-summaries domFlowHints.hints: sink-hint summary must expose compact hint table");
+assert.equal(typeof domFlowHints.sinks, "object", "check-summaries domFlowHints.sinks: sink-hint summary must expose compact sink table");
+
+const wsSummary = summarizeWsSessionData("ws.collect", {
+	session: { sessionId: "ws-fixture", url: "ws://127.0.0.1:9999", state: "open", active: true, transcriptCount: 4, maxTranscript: 20 },
+	steps: [{ index: 0, sent: { seq: 2, preview: "ping" }, matched: { entry: { seq: 3, preview: '{"ok":true,"type":"pong"}' } } }],
+	events: [
+		{ seq: 1, event: "open" },
+		{ seq: 2, event: "send", direction: "outbound", bytes: 4, preview: "ping" },
+		{ seq: 3, event: "message", direction: "inbound", bytes: 24, preview: '{"ok":true,"type":"pong"}' },
+	],
+});
+assert.equal(wsSummary.sessionId, "ws-fixture", "check-summaries ws.sessionId: WS summary must expose session id");
+assert.equal(wsSummary.state, "open", "check-summaries ws.state: WS summary must expose session state");
+assert.equal(typeof wsSummary.events, "object", "check-summaries ws.events: WS summary must expose compact transcript table");
+assert.equal(typeof wsSummary.replaySteps, "object", "check-summaries ws.replaySteps: WS summary must expose compact replay-step table");
+assert.equal(Array.isArray(wsSummary.nextActions), true, "check-summaries ws.nextActions: WS summary must suggest bounded follow-up");
+
+const wasmSummary = summarizeWasmArtifactData({
+	input: { path: "fixtures/wasm-minimal.wasm", fileName: "wasm-minimal.wasm", bytes: 65, privacy: { localOnly: true, artifactFirst: true } },
+	analysis: {
+		ok: true,
+		format: "wasm",
+		version: 1,
+		sha256: "abc",
+		sectionCount: 3,
+		sections: [{ id: 2, name: "import", bytes: 11, offset: 10 }],
+		imports: [{ module: "env", name: "log", kind: "func" }],
+		exports: [{ name: "run", kind: "func", index: 1 }],
+		counts: { functions: 1, tables: 0, memories: 1, globals: 0, imports: 1, exports: 2 },
+	}
+});
+assert.equal(wasmSummary.format, "wasm", "check-summaries wasm.format: Wasm summary must expose format");
+assert.equal(wasmSummary.version, 1, "check-summaries wasm.version: Wasm summary must expose version");
+assert.equal(typeof wasmSummary.sections, "object", "check-summaries wasm.sections: Wasm summary must expose compact sections table");
+assert.equal(Array.isArray(wasmSummary.nextActions), true, "check-summaries wasm.nextActions: Wasm summary must suggest bounded artifact-first follow-up");
 
 const scan = summarizeScanData({
 	url: "https://example.test",
@@ -165,6 +265,7 @@ assert.equal(generic.tabId, 7, "check-summaries generic.metadata.tabId: bridge s
 assert.equal(generic.frameId, "main", "check-summaries generic.metadata.frameId: frame summaries must lift frameId");
 assert.equal(generic.count, 2, "check-summaries generic.metadata.count: count must be visible without opening nested data");
 assert.equal(generic.targetSource, "explicit", "check-summaries generic.metadata.target: target source must be visible");
+assert.equal(generic.selectionVersionAtDispatch, undefined, "check-summaries generic.metadata.selectionVersion: absent selection versions must stay absent");
 assert.equal(generic.data.type, "object", "check-summaries generic.data: data object must be summarized");
 assert.equal(generic.data.rows.count, 20, "check-summaries generic.array: arrays must expose count");
 assert.equal(generic.data.html.truncated, true, "check-summaries generic.string: large strings must be compacted");
@@ -247,5 +348,13 @@ assert.equal(replayEnvelope.limits.requestCount, undefined, "check-summaries env
 const contentEnvelope = parseToolText(await distilledTextResult("# T", { toolName: "browser_observe", command: "content", detailLevel: "summary", maxChars: 3_000, fallbackName: "content.json", summary: { url: "https://example.test", markdownChars: 3, empty: true } }));
 assert.equal(contentEnvelope.target.url, "https://example.test", "check-summaries envelope.target.content: URL must be promoted to target metadata");
 assert.equal(contentEnvelope.diagnostics.warnings.includes("empty_result"), true, "check-summaries envelope.diagnostics.content: empty extraction must be diagnosable");
+const correlationEnvelope = parseToolText(await distilledJsonResult({ ok: true, data: { requestId: "req-123", waitId: "wait-123", sourceMode: "scan" }, target: { source: "explicit", implicit: false, browserSessionId: "default", selectionVersionAtDispatch: 7, selectionVersionAtResolve: 8 } }, { toolName: "browser_execute", command: "javascript", detailLevel: "summary", maxChars: 4_000, fallbackName: "correlation.json", operation: { operationId: "op-123", snapshotId: "snap-123", sourceMode: "scan" } }));
+assert.equal(correlationEnvelope.correlation.operationId, "op-123", "check-summaries envelope.correlation.operationId: operationId must be promoted for cross-tool evidence linkage");
+assert.equal(correlationEnvelope.correlation.snapshotId, "snap-123", "check-summaries envelope.correlation.snapshotId: snapshotId must be promoted for cross-tool evidence linkage");
+assert.equal(correlationEnvelope.correlation.requestId, "req-123", "check-summaries envelope.correlation.requestId: requestId must be promoted for cross-tool evidence linkage");
+assert.equal(correlationEnvelope.correlation.waitId, "wait-123", "check-summaries envelope.correlation.waitId: waitId must be promoted for cross-tool evidence linkage");
+assert.equal(correlationEnvelope.target.selectionVersionAtDispatch, 7, "check-summaries envelope.target.selectionDispatch: selectionVersionAtDispatch must be promoted to target metadata");
+assert.equal(correlationEnvelope.target.selectionVersionAtResolve, 8, "check-summaries envelope.target.selectionResolve: selectionVersionAtResolve must be promoted to target metadata");
+assert.equal(correlationEnvelope.diagnostics.sourceMode, "scan", "check-summaries envelope.diagnostics.sourceMode: sourceMode must be diagnosable");
 
 console.log("summary contract ok");

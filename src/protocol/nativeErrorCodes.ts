@@ -295,6 +295,56 @@ export const nativeErrorCodes = {
     "retryable": true,
     "summary": "Generic runtime wait or command timeout."
   },
+  "WEBSOCKET_INVALID_INPUT": {
+    "category": "bridge.ws",
+    "retryable": false,
+    "summary": "WebSocket command input was invalid or incomplete."
+  },
+  "WEBSOCKET_SESSION_ALREADY_OPEN": {
+    "category": "bridge.ws",
+    "retryable": false,
+    "summary": "A WebSocket session with the same session id is already open."
+  },
+  "WEBSOCKET_SESSION_NOT_FOUND": {
+    "category": "bridge.ws",
+    "retryable": false,
+    "summary": "Requested WebSocket session was not found."
+  },
+  "WEBSOCKET_SESSION_NOT_OPEN": {
+    "category": "bridge.ws",
+    "retryable": false,
+    "summary": "Requested WebSocket session exists but is not open."
+  },
+  "WEBSOCKET_OPEN_FAILED": {
+    "category": "bridge.ws",
+    "retryable": true,
+    "summary": "WebSocket connection failed during open."
+  },
+  "WEBSOCKET_OPEN_TIMEOUT": {
+    "category": "bridge.ws",
+    "retryable": true,
+    "summary": "WebSocket open timed out before the connection became ready."
+  },
+  "WEBSOCKET_SEND_FAILED": {
+    "category": "bridge.ws",
+    "retryable": true,
+    "summary": "WebSocket send failed."
+  },
+  "WEBSOCKET_INVALID_MATCHER": {
+    "category": "bridge.ws",
+    "retryable": false,
+    "summary": "WebSocket wait matcher was unsafe or invalid."
+  },
+  "WEBSOCKET_WAIT_TIMEOUT": {
+    "category": "bridge.ws",
+    "retryable": true,
+    "summary": "WebSocket wait timed out before a matching inbound message arrived."
+  },
+  "WEBSOCKET_WAIT_ABORTED": {
+    "category": "bridge.ws",
+    "retryable": true,
+    "summary": "WebSocket wait aborted because the session closed or errored."
+  },
   "UNKNOWN_BROWSER_CLIENT": {
     "category": "driver.selection",
     "retryable": false,

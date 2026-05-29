@@ -7,3 +7,8 @@ export { summarizeSqlmapBridgeData, summarizeNucleiBridgeData } from "./bridges"
 export { summarizeCallbackOastData } from "./oast";
 export { summarizeTemplateCheckData } from "./template";
 export { summarizeHttpReplayData } from "./replay";
+export { summarizeJsAstAnalysisData } from "./jsAst";
+export { summarizeDomFlowData } from "./domFlow";
+export { summarizeWasmArtifactData } from "./wasm";
+export { summarizeWasmWatBridgeData } from "./wasmBridge";
+export { summarizeWsSessionData } from "./ws";

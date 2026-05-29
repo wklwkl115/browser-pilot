@@ -16,6 +16,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			"JSON path misses return explicit exists:false/notFound:true; pick results stay aligned one entry per requested path.",
 			"Use paths or bounded root/glob plus maxFiles/maxBytes/maxMatchesPerFile/maxTotalMatches for multi-artifact search; do not run unbounded search.",
 			"Keep maxChars small and request the next offset or a narrower jsonPath/query when more detail is needed.",
+			"When a previous tool returns correlation metadata, prefer browser_artifact mode=json with jsonPath like operation.operationId, snapshot.snapshotId, or data.requestId/data.waitId/data.listenerId before reading the whole artifact.",
 		],
 		parameters: Type.Object({
 			path: Type.Optional(Type.String({ description: "Artifact path returned by a browser tool, absolute or relative to cwd" })),

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "evalId": "26-wasm-wat-bridge",
+  "status": "passed",
+  "toolCallCount": 2,
+  "firstWrongToolChoice": "none",
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "The Wasm bridge returned bounded launcher metadata and a saved .wat artifact path.",
+      "Bridge output stayed artifact-first instead of inlining a large text dump.",
+      "Launcher/tool diagnostics remain the required recovery path when the local bridge is unavailable."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/wasm-minimal.wasm"
+    ],
+    "diagnostics": [
+      "This workflow remains mature-bridge-first and does not imply an in-repo Wasm decompiler.",
+      "When launcher detection fails, recover by installing/configuring a local bridge rather than fabricating WAT output."
+    ]
+  },
+  "notes": [
+    "This is an internal/mature-bridge-first Wasm path, not a new public browser tool.",
+    "The .wat output is evidence, not a claim of whole-site Wasm reverse automation."
+  ]
+}

@@ -215,19 +215,20 @@ export async function executeWebSecurityToolShell<TParams extends WebSecuritySha
 				if (config.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, config.defaultMaxBodyBytes);
 				if (config.includeCookieProvider) runParams.cookieProvider = createBrowserCookieProvider(ensureStarted, params, timeoutMs);
 				await handle.update({ progress: 35 });
-				const result = await config.run(runParams);
+				const result: TResult = await config.run(runParams);
 				await handle.update({ progress: 85, details: config.details(result) });
 				return result;
 			});
+			const resultDetails = config.details(result);
 			return await jsonToolResult(result, params, ctx, {
 				toolName: config.toolName,
 				command: config.command,
 				maxChars,
 				fallbackName: artifactFallbackName(config.fallbackPrefix),
-				details: { command: config.command, ...config.details(result) },
+				details: { command: config.command, ...resultDetails },
 				operation,
-				artifactValue: result,
-				distill: config.distill,
+				artifactValue: { ...(result as Record<string, unknown>), operation },
+				distill: (value: unknown) => ({ ...config.distill(value as TResult), operationId: operation.operationId, sourceMode: operation.sourceMode }),
 			});
 		} catch (error) {
 			throw webSecurityToolError(error, config);

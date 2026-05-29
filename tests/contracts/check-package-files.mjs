@@ -81,6 +81,7 @@ assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge 
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
+assert(packed.has("evals/browser-workflows/21-cross-tool-correlation-chain.md") && packed.has("evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json"), "npm package must include cross-tool correlation workflow eval spec and sample result");
 assert(![...packed].some((file) => file.startsWith(".pi/") || file.includes("/node_modules/")), "npm package must not include runtime artifacts or node_modules");
 const packedDist = [...packed].filter((file) => file.startsWith("bridge/pi_browser_bridge/dist/"));
 assert(packedDist.length > 5, "npm package must include generated dist runtime, not only dist/.gitignore");

@@ -314,7 +314,7 @@ export function replayInputOptions(input: unknown, parent: ReplayOptions): Repla
 	const common: ReplayOptions = { ...parent, url: undefined, rawRequest: undefined, request: undefined, body: undefined, bodyBase64: undefined, multipart: undefined, requests: undefined, sequence: undefined, har: undefined, harPath: undefined };
 	if (typeof input === "string") return { ...common, rawRequest: input };
 	if (isRecord(input) && isRecord(input.request) && (input.startedDateTime || input.response || input.time)) return { ...common, request: input.request, rawRequest: undefined, url: undefined };
-	if (isRecord(input)) return { ...common, ...input, cookieProvider: parent.cookieProvider, timeoutMs: input.timeoutMs ?? parent.timeoutMs, maxBodyBytes: input.maxBodyBytes ?? parent.maxBodyBytes, defaultScheme: input.defaultScheme ?? parent.defaultScheme, baseUrl: input.baseUrl ?? parent.baseUrl };
+	if (isRecord(input)) return { ...common, ...input, cookieProvider: parent.cookieProvider, timeoutMs: typeof input.timeoutMs === "number" ? input.timeoutMs : parent.timeoutMs, maxBodyBytes: typeof input.maxBodyBytes === "number" ? input.maxBodyBytes : parent.maxBodyBytes, defaultScheme: input.defaultScheme ?? parent.defaultScheme, baseUrl: input.baseUrl ?? parent.baseUrl };
 	throw new Error("Sequence entries must be raw request strings, captured request objects, HAR entries, or replay option objects");
 }
 

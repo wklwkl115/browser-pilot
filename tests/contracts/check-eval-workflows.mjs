@@ -39,6 +39,13 @@ const specFiles = [
 	"18-debugger-script-provenance.md",
 	"19-debugger-pause-lifecycle.md",
 	"20-debugger-navigation-recovery.md",
+	"21-cross-tool-correlation-chain.md",
+	"22-js-ast-artifact-summary.md",
+	"23-dom-flow-listener-chain.md",
+	"24-dom-flow-sink-hints.md",
+	"25-wasm-artifact-metadata.md",
+	"26-wasm-wat-bridge.md",
+	"27-websocket-session-transcript.md",
 ];
 
 for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "result-schema.json", "results/README.md", ...specFiles]) {
@@ -67,6 +74,11 @@ for (const file of specFiles.filter((file) => file.includes("jshook"))) {
 	const text = specTexts.get(file) || "";
 	assert(text.includes("## Capability closure classification"), `${file} must classify jshook capability closure`);
 	assert(text.includes("must not introduce") || text.includes("must not create"), `${file} must prohibit new public tool creation`);
+}
+
+const correlationSpec = specTexts.get("21-cross-tool-correlation-chain.md") || "";
+for (const requiredText of ["operationId", "snapshotId", "requestId", "waitId", "listenerId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "browser_artifact", "jsonPath"]) {
+	assert(correlationSpec.includes(requiredText), `21-cross-tool-correlation-chain.md must require correlation evidence: ${requiredText}`);
 }
 
 const manifest = readJson(path.join("evals", "browser-workflows", "manifest.json"));
@@ -131,6 +143,16 @@ const requiredFixtures = [
 	"debugger/provenance-helper.js",
 	"debugger-pause.html",
 	"debugger-navigation.html",
+	"js-ast-minified.js",
+	"js-ast-malformed.js",
+	"js-ast-reduction.js",
+	"js-ast-patterns.js",
+	"js-ast-constant-folding.js",
+	"js-ast-decoder-inline.js",
+	"js-ast-alias-propagation.js",
+	"js-ast-object-dispatch.js",
+	"dom-flow-listeners.html",
+	"ws-session-fixture.md",
 ];
 
 for (const file of requiredFixtures) {

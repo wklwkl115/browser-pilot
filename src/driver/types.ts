@@ -83,6 +83,7 @@ export type BrowserToolCapabilityProfileInfo = {
 	envVar: "PI_BROWSER_TOOL_PROFILE";
 	securityToolsEnabled: boolean;
 	enableHint: string;
+	warnings?: string[];
 };
 
 export type BrowserActiveOperationInfo = {

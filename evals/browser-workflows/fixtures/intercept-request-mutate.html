@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Intercept Request Mutation Fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Intercept Request Mutation Fixture</h1>
+    <p id="status" data-state="idle">Status: idle</p>
+    <button id="send-request" type="button">Send request</button>
+    <pre id="output">none</pre>
+  </main>
+  <script>
+    document.getElementById('send-request').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/intercept-request-mutate', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'x-fixture': 'request-mutate-original'
+          },
+          body: JSON.stringify({ source: 'original-body', count: 1 })
+        });
+        const text = await res.text();
+        document.getElementById('status').dataset.state = 'loaded';
+        document.getElementById('status').textContent = 'Status: loaded';
+        document.getElementById('output').textContent = text;
+      } catch (error) {
+        document.getElementById('status').dataset.state = 'error';
+        document.getElementById('status').textContent = 'Status: error';
+        document.getElementById('output').textContent = String(error && error.message ? error.message : error);
+      }
+    });
+  </script>
+</body>
+</html>

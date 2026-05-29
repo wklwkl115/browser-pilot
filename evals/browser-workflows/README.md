@@ -46,6 +46,8 @@ Each eval should define:
 - `18-debugger-script-provenance.md`
 - `19-debugger-pause-lifecycle.md`
 - `20-debugger-navigation-recovery.md`
+- `21-cross-tool-correlation-chain.md`
+- `27-websocket-session-transcript.md`
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 

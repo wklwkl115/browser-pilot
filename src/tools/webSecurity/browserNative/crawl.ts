@@ -114,9 +114,9 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 				...sourceMaps.map((sourceMapUrl) => ({ url: sourceMapUrl, kind: "source-map", source: "sourceMappingURL" })),
 			];
 			if (apiSpec) discoveryHints.push({ url: final.url, kind: String(apiSpec.kind || "api-spec"), source: "document" });
-			const scopedEndpointHints = discoveryHints.filter((endpoint) => inScope(endpoint.url, seedOrigins, sameOrigin));
+			const scopedEndpointHints = discoveryHints.filter((endpoint): endpoint is Record<string, unknown> & { url: string } => isRecord(endpoint) && typeof endpoint.url === "string" && inScope(endpoint.url, seedOrigins, sameOrigin));
 			for (const endpoint of [...scopedEndpointHints, ...forms.map((form) => ({ url: form.action, kind: "form", method: form.method, inputNames: form.inputNames })).filter((form) => inScope(form.url, seedOrigins, sameOrigin))]) {
-				endpoints.set(`${endpoint.kind}:${endpoint.method || ""}:${endpoint.url}`, { ...endpoint, sourceUrl: final.url });
+				endpoints.set(`${String(endpoint.kind || "endpoint")}:${typeof endpoint.method === "string" ? endpoint.method : ""}:${endpoint.url}`, { ...endpoint, sourceUrl: final.url });
 			}
 			if (next.depth < maxDepth) {
 				for (const link of links) if (inScope(link.url, seedOrigins, sameOrigin)) queue.push({ url: link.url, depth: next.depth + 1, source: final.url });

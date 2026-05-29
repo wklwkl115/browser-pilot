@@ -48,3 +48,25 @@ test("distilledTextResult summary mode emits compact artifact-guided output", as
 	assert.ok(text.includes("browser_observe"));
 	assert.ok(text.includes("summary") || text.includes("focus.primary_actions") || text.includes("truncated"));
 });
+
+test("distilledJsonResult summary mode promotes correlation metadata", async () => {
+	const result = await distilledJsonResult({
+		ok: true,
+		data: { requestId: "req-1", listenerId: "listener-1", sourceMode: "scan" },
+		target: { source: "explicit", implicit: false, browserSessionId: "default", selectionVersionAtDispatch: 3, selectionVersionAtResolve: 4 },
+	}, {
+		toolName: "browser_command",
+		command: "cdp",
+		maxChars: 4000,
+		fallbackName: "correlation.json",
+		detailLevel: "summary",
+		operation: { operationId: "op-1", snapshotId: "snap-1", sourceMode: "scan" },
+	});
+	const text = textOf(result);
+	assert.ok(text.includes('"correlation"'));
+	assert.ok(text.includes('"operationId": "op-1"'));
+	assert.ok(text.includes('"snapshotId": "snap-1"'));
+	assert.ok(text.includes('"requestId": "req-1"'));
+	assert.ok(text.includes('"selectionVersionAtDispatch": 3'));
+	assert.ok(text.includes('"selectionVersionAtResolve": 4'));
+});

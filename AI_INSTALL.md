@@ -202,6 +202,54 @@ npm run smoke:browser:scan-summary
 npm run smoke:browser:debugger-evidence
 ```
 
+验证 cross-tool correlation metadata 在 observe → execute → wait → artifact 链路里的 runtime 对账行为：
+
+```bash
+npm run smoke:browser:correlation-chain
+```
+
+验证 interception 自动 fulfill 规则路径的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:intercept-response
+```
+
+验证 interception `replaceScript` 路径的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:intercept-replace-script
+```
+
+验证 interception uninstall 后 fail-closed 行为的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:intercept-uninstall-fail-closed
+```
+
+验证 interception `continueRequest` 请求改写（method/header/body）在 send 前生效的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:intercept-request-mutate
+```
+
+验证 tab close 后 interception cleanup/fail-closed 诊断的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:intercept-tab-close-cleanup
+```
+
+验证不同 browser session 在同一 tab 上进行 interception 写操作时的 lease-conflict 证明：
+
+```bash
+npm run smoke:browser:intercept-lease-conflict
+```
+
+验证 WebSocket session/replay 的本地 runtime smoke：
+
+```bash
+npm run smoke:browser:websocket-session
+```
+
 WSL 调 Windows Edge 的已验证命令：
 
 ```bash
@@ -209,6 +257,7 @@ PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/m
 ```
 
 Chrome 在部分 Windows/WSL 组合下可能忽略 `--disable-extensions-except`，优先用上述 Edge 命令复现 isolated smoke。
+如果需要在 WSL 下跑 correlation chain runtime smoke，可直接套同样的 `PI_BROWSER_SMOKE_CHROME=...` 环境变量。
 
 如果 `127.0.0.1:18765-18784` 均被占用，smoke 会失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port` 诊断：
 
@@ -244,8 +293,11 @@ npm run smoke:browser:transfer
 2. 如果扩展未连接，检查端口、扩展是否启用、浏览器扩展是否重新加载。
 3. 如果 tab 不可用，先用 `browser_tabs list` 确认目标 tab。
 4. 如果命令超时，检查 `/browser-status` 的 pending 请求和目标页面是否阻塞。
-5. 如果 `browser_dom_snapshot` 返回空 viewport/nodes，先切换到目标 tab，确认页面可见后重试。
-6. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
+5. 如果要做 internal-only JS AST 摘要，执行 `/browser-js-ast [path] [--output file]`，或先把显式 JS 文本放进编辑器再执行 `/browser-js-ast`。
+6. 如果要做 internal-only Wasm 元数据/桥接摘要，执行 `/browser-wasm <path> [--wat] [--output file]`；`--wat` 依赖本地成熟桥接工具可用。
+7. 如果要做 internal-only WebSocket session/transcript 原语，执行 `/browser-ws open <url> [--session id] ...`、`/browser-ws send --text ...`、`/browser-ws replay --step ... [--steps-json '[...]']`、`/browser-ws wait ...`、`/browser-ws collect [--output file]`、`/browser-ws close`。
+8. 如果 `browser_dom_snapshot` 返回空 viewport/nodes，先切换到目标 tab，确认页面可见后重试。
+8. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
 7. 如果 `browser_download` 没有返回路径，重新加载浏览器扩展并确认 downloads 权限。
 8. 如果 `browser_upload` 返回 file access 错误，在扩展详情启用文件网址访问后重试。
 

@@ -35,6 +35,23 @@ try {
 	assert.equal(jsonArtifact.value.items.length, 5, "check-artifact json.value.items.length: expected window size 5");
 	assert.equal(jsonArtifact.value.nextOffset, 7, "check-artifact json.value.nextOffset: expected 7");
 
+	const correlationArtifactPath = path.join(tmp, ".pi", "browser-artifacts", "correlation.json");
+	await writeFile(correlationArtifactPath, JSON.stringify({
+		operation: { operationId: "op-77" },
+		snapshot: { snapshotId: "snap-77" },
+		target: { browserSessionId: "default", source: "explicit", implicit: false, selectionVersionAtDispatch: 7, selectionVersionAtResolve: 8 },
+		data: { requestId: "req-77", waitId: "wait-77", listenerId: "listener-77", sourceMode: "scan" },
+	}, null, 2), "utf8");
+	const correlationArtifact = await readBrowserArtifact({ path: correlationArtifactPath, mode: "json" }, { cwd: tmp });
+	assert.equal(correlationArtifact.summary.correlation.operationId, "op-77", "check-artifact json.correlation.operationId: artifact summary must expose operationId navigation hints");
+	assert.equal(correlationArtifact.summary.correlation.snapshotId, "snap-77", "check-artifact json.correlation.snapshotId: artifact summary must expose snapshotId navigation hints");
+	assert.equal(correlationArtifact.summary.correlation.requestId, "req-77", "check-artifact json.correlation.requestId: artifact summary must expose requestId navigation hints");
+	assert.equal(correlationArtifact.summary.correlation.waitId, "wait-77", "check-artifact json.correlation.waitId: artifact summary must expose waitId navigation hints");
+	assert.equal(correlationArtifact.summary.correlation.listenerId, "listener-77", "check-artifact json.correlation.listenerId: artifact summary must expose listenerId navigation hints");
+	assert.equal(correlationArtifact.summary.correlationPaths.operationId, "operation.operationId", "check-artifact json.correlation.path.operationId: artifact summary must expose operation jsonPath hint");
+	assert.equal(correlationArtifact.summary.correlationPaths.snapshotId, "snapshot.snapshotId", "check-artifact json.correlation.path.snapshotId: artifact summary must expose snapshot jsonPath hint");
+	assert.equal(correlationArtifact.summary.correlationPaths.requestId, "data.requestId", "check-artifact json.correlation.path.requestId: artifact summary must expose requestId jsonPath hint");
+
 	const pickArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", pick: ["items[0].requestId", "items[1].status"], limit: 4 }, { cwd: tmp });
 	assert.deepEqual(pickArtifact.value["items[0].requestId"], { exists: true, jsonPath: "items[0].requestId", value: "0" });
 	assert.deepEqual(pickArtifact.value["items[1].status"], { exists: true, jsonPath: "items[1].status", value: 200 });

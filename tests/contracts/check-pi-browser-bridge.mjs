@@ -87,7 +87,7 @@ assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["di
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
 
-const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"];
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 const background = serviceWorkerBridgeFiles.join(" ");
 const transport = readBridgeRuntimeFile("transport.js");
 const tabSync = readBridgeRuntimeFile("tab_sync.js");
@@ -160,7 +160,7 @@ const bridgeSchemaText = read("bridge/pi_browser_bridge/native_command_schema.js
 const rootSchema = JSON.parse(rootSchemaText);
 const schema = JSON.parse(bridgeSchemaText);
 assert(JSON.stringify(schema) === JSON.stringify(rootSchema), "bridge native_command_schema.json must be generated from root schema");
-for (const domain of ["core", "wait", "network", "hook", "frame", "html", "screenshot", "evidence", "transfer"]) {
+for (const domain of ["core", "wait", "network", "intercept", "hook", "frame", "html", "screenshot", "evidence", "transfer"]) {
 	assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
 }
 assert(schema.commands && typeof schema.commands === "object", "schema must define command specs");
@@ -195,7 +195,7 @@ assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"),
 assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTask"), "tab_sync.js must wrap async lifecycle tasks with rejection handling");
 assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 assert(/chrome\.tabs\.onRemoved\.addListener\(\(tabId\)\s*=>\s*\{\s*cleanupPiBrowserTab\(tabId,\s*['"]tab_removed['"]\)/s.test(tabSync), "tab removal must route through unified tab cleanup before sending tabs_update");
-assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, CDP refs, and network recorders for removed tabs");
+assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)") && runtime.includes("cleanupInterceptSessionTab(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, interception state, CDP refs, and network recorders for removed tabs");
 assert(
 	/function\s+cleanupTabWaits\s*\(\s*tabId\s*,\s*reason\s*,\s*options(?:\s*=\s*\{\})?\s*\)/.test(waitBridge)
 	&& waitBridge.includes("cleanupPiBrowserCdpTab(tabId, cleanupReason)")
@@ -218,6 +218,9 @@ assert(waitBridge.includes("wait.navigation immediate check failed") && waitBrid
 assert(hookBridge.includes("const explicitTab = msg && (msg.tabId !== undefined || msg.targetTabId !== undefined)") && hookBridge.includes("sessionEntries.length") && hookBridge.includes("callPagePiBrowser(tabId, 'hook.collect'"), "hook list/status/collect must respect explicit target scope and avoid read-only auto reinstall");
 assert(evidenceBridge.includes("callPagePiBrowser(tabId, 'hook.status'") && evidenceBridge.includes("callPagePiBrowser(tabId, 'hook.collect'"), "evidence hook collection must preserve read-only no-reinstall semantics");
 assert(networkBridge.includes("function cleanupNetworkRecorderTab(tabId, reason)") && networkBridge.includes("cleanupNetworkRecorder(recorder, reason || 'tab_cleanup', { keepBuffer:false })") && networkBridge.includes("piBrowserNetworkRecorders.delete(recorder.key)"), "network cleanup must stop and delete tab-scoped recorders on tab removal");
+const interceptBridge = readBridgeRuntimeFile("intercept.js");
+assert(interceptBridge.includes("normalizeInterceptRequestPatch") && interceptBridge.includes('"Fetch.continueRequest"') && interceptBridge.includes("mutationSummary") && !interceptBridge.includes("{ requestId, ...patch }"), "intercept continue path must normalize request mutation before Fetch.continueRequest and report mutationSummary instead of splatting raw patch");
+assert(interceptBridge.includes("session.stages.map") && interceptBridge.includes('requestStage: stage === "response" ? "Response" : "Request"'), "intercept install must support bounded request/response stage selection when enabling Fetch interception patterns");
 assert(networkBridge.includes("return getNetworkRecorder(tabId, sessionId);") && !networkBridge.includes("sessionId !== 'default' ? getNetworkRecorder(tabId, 'default')"), "network recorder lookup must not fall back from explicit sessionId to default");
 assert(networkBridge.includes("const nextOffset = offset + items.length < all.length ? offset + items.length : null"), "network.list must return null nextOffset on the final page");
 assert(networkBridge.includes("REQUEST_NOT_FOUND") && runtime.includes("REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND'"), "network.get missing request must use a dedicated REQUEST_NOT_FOUND error code");
@@ -369,6 +372,131 @@ async function testNetworkRecorderBodyEvidence() {
 }
 
 await testNetworkRecorderBodyEvidence();
+
+async function testInterceptSessionPrimitives() {
+	const sandbox = {
+		console,
+		setTimeout,
+		clearTimeout,
+		Date,
+		Math,
+		btoa: globalThis.btoa || ((text) => Buffer.from(String(text), "binary").toString("base64")),
+		unescape,
+		encodeURIComponent,
+		PI_BROWSER_ERROR_CODES: {
+			INTERNAL_ERROR: "INTERNAL_ERROR",
+			INVALID_RULE: "INVALID_RULE",
+			SESSION_NOT_FOUND: "SESSION_NOT_FOUND",
+			REQUEST_NOT_FOUND: "REQUEST_NOT_FOUND",
+		},
+		piBrowserError: (code, message, details) => ({ ok: false, error_code: code, error: message, details }),
+		redactSensitive: (value) => value,
+		piBrowserPersistentCdp: () => ({
+			send: async (_tabId, method, params) => ({ ok: true, data: { result: { method, ...params } } }),
+		}),
+		subscribePiBrowserCdp: (_tabId, _event, _handler) => "intercept-sub-1",
+		unsubscribePiBrowserCdp: () => true,
+		normalizePersistentPiBrowserResponse: (value) => value,
+	};
+	const interceptModelSource = readBridgeRuntimeFile("intercept_model.js");
+	const interceptSource = readBridgeRuntimeFile("intercept.js");
+	vm.runInNewContext(`${interceptModelSource}\n${interceptSource}\nglobalThis.__handlePiBrowserInterceptCommand = handlePiBrowserInterceptCommand; globalThis.__cleanupInterceptSessionTab = cleanupInterceptSessionTab; globalThis.__piBrowserInterceptSessions = piBrowserInterceptSessions;`, sandbox, { filename: "intercept.js" });
+	const install = await sandbox.__handlePiBrowserInterceptCommand("intercept.install", 41, { cmd: "intercept.install", tabId: 41, sessionId: "contract" });
+	assert(install.ok === true && install.data && install.data.active === true, `intercept.install must create an active session: ${JSON.stringify(install)}`);
+	const addRule = await sandbox.__handlePiBrowserInterceptCommand("intercept.addRule", 41, { cmd: "intercept.addRule", tabId: 41, sessionId: "contract", action: "fulfill", matcher: { urlContains: "/bundle.js", stage: "response" }, patch: { body: "patched" } });
+	assert(addRule.ok === true && addRule.data.rule.ruleId, "intercept.addRule must create a bounded rule");
+	const status = await sandbox.__handlePiBrowserInterceptCommand("intercept.status", 41, { cmd: "intercept.status", tabId: 41, sessionId: "contract" });
+	assert(status.ok === true && status.data.ruleCount === 1, "intercept.status must report rule count");
+	const listed = await sandbox.__handlePiBrowserInterceptCommand("intercept.listRules", 41, { cmd: "intercept.listRules", tabId: 41, sessionId: "contract" });
+	assert(listed.ok === true && listed.data.count === 1 && listed.data.rules[0].urlContains === "/bundle.js", "intercept.listRules must return structured rule summaries");
+	const paused = await sandbox.__handlePiBrowserInterceptCommand("intercept.pause", 41, { cmd: "intercept.pause", tabId: 41, sessionId: "contract", autoApply: false, params: { requestId: "req-1", request: { url: "https://example.test/bundle.js", method: "GET" }, resourceType: "Script", responseStatusCode: 200 } });
+	assert(paused.ok === true && paused.data.matchedRuleId === addRule.data.rule.ruleId, "intercept.pause must match explicit bounded rules");
+	const fulfilled = await sandbox.__handlePiBrowserInterceptCommand("intercept.fulfill", 41, { cmd: "intercept.fulfill", tabId: 41, sessionId: "contract", requestId: "req-1", responseCode: 200, body: "patched-script" });
+	assert(fulfilled.ok === true && fulfilled.data.fulfilled === true, "intercept.fulfill must resolve a paused request");
+	const collected = await sandbox.__handlePiBrowserInterceptCommand("intercept.collect", 41, { cmd: "intercept.collect", tabId: 41, sessionId: "contract" });
+	assert(collected.ok === true && collected.data.count >= 2, "intercept.collect must expose transcript evidence");
+	const removed = await sandbox.__handlePiBrowserInterceptCommand("intercept.removeRule", 41, { cmd: "intercept.removeRule", tabId: 41, sessionId: "contract", ruleId: addRule.data.rule.ruleId });
+	assert(removed.ok === true && removed.data.removed === true && removed.data.count === 0, "intercept.removeRule must remove existing rules");
+	const uninstall = await sandbox.__handlePiBrowserInterceptCommand("intercept.uninstall", 41, { cmd: "intercept.uninstall", tabId: 41, sessionId: "contract" });
+	assert(uninstall.ok === true && uninstall.data.uninstalled === true && uninstall.data.active === false, "intercept.uninstall must deactivate the target session");
+	const statusAfterUninstall = await sandbox.__handlePiBrowserInterceptCommand("intercept.status", 41, { cmd: "intercept.status", tabId: 41, sessionId: "contract" });
+	assert(statusAfterUninstall.ok === true && statusAfterUninstall.data.active === false, "intercept.status after uninstall must report inactive state");
+	const continueAfterUninstall = await sandbox.__handlePiBrowserInterceptCommand("intercept.continue", 41, { cmd: "intercept.continue", tabId: 41, sessionId: "contract", requestId: "req-1" });
+	assert(continueAfterUninstall.ok === false && continueAfterUninstall.error_code === "SESSION_NOT_FOUND", "intercept commands after uninstall must fail closed with SESSION_NOT_FOUND");
+	const cleanup = sandbox.__cleanupInterceptSessionTab(41, "contract_cleanup");
+	assert(cleanup.removed === 1 && sandbox.__piBrowserInterceptSessions.size === 0, "intercept cleanup must remove tab-scoped sessions");
+}
+
+await testInterceptSessionPrimitives();
+
+async function testWsSessionPrimitives() {
+	class FakeSocket {
+		static CONNECTING = 0;
+		static OPEN = 1;
+		static CLOSING = 2;
+		static CLOSED = 3;
+		url; protocols; readyState; sent; listeners;
+		constructor(url, protocols) {
+			this.url = url;
+			this.protocols = protocols;
+			this.readyState = FakeSocket.CONNECTING;
+			this.sent = [];
+			this.listeners = new Map();
+		}
+		addEventListener(type, listener) { const list = this.listeners.get(type) || []; list.push(listener); this.listeners.set(type, list); }
+		removeEventListener(type, listener) { const list = (this.listeners.get(type) || []).filter((item) => item !== listener); this.listeners.set(type, list); }
+		dispatch(type, event = {}) { for (const listener of this.listeners.get(type) || []) listener(event); }
+		send(data) { this.sent.push(data); }
+		close(code = 1000, reason = "") { this.readyState = FakeSocket.CLOSED; this.dispatch("close", { code, reason, wasClean: true }); }
+	}
+	const sandbox = {
+		console,
+		Date,
+		Math,
+		setTimeout,
+		clearTimeout,
+		TextEncoder,
+		TextDecoder,
+		Blob,
+		WebSocket: FakeSocket,
+		redactSensitive: (value) => value,
+		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE" },
+		piBrowserError: (code, message, details) => ({ ok: false, error_code: code, error: message, details }),
+	};
+	const wsModelSource = readBridgeRuntimeFile("ws_model.js");
+	const wsSource = readBridgeRuntimeFile("ws.js");
+	vm.runInNewContext(`${wsModelSource}\n${wsSource}\nglobalThis.__handlePiBrowserWsCommand = handlePiBrowserWsCommand; globalThis.__cleanupWsSessionsForTab = cleanupWsSessionsForTab; globalThis.__piBrowserWsSessions = piBrowserWsSessions;`, sandbox, { filename: "ws.js" });
+	const openPromise = sandbox.__handlePiBrowserWsCommand("ws.open", 51, { cmd: "ws.open", tabId: 51, sessionId: "contract", url: "ws://fixture/ws" });
+	const session = sandbox.__piBrowserWsSessions.get("51:contract");
+	assert(session, "ws.open must create a session record");
+	const socket = session.ws;
+	socket.readyState = FakeSocket.OPEN;
+	socket.dispatch("open", {});
+	const opened = await openPromise;
+	assert(opened.ok === true && opened.data.session.state === "open", "ws.open must report open state");
+	const sent = await sandbox.__handlePiBrowserWsCommand("ws.send", 51, { cmd: "ws.send", tabId: 51, sessionId: "contract", text: "ping" });
+	assert(sent.ok === true && sent.data.sent.preview === "ping", "ws.send must append outbound transcript");
+	const waitPromise = sandbox.__handlePiBrowserWsCommand("ws.wait", 51, { cmd: "ws.wait", tabId: 51, sessionId: "contract", contains: "pong", timeoutMs: 500 });
+	socket.dispatch("message", { data: '{"type":"pong"}' });
+	const waited = await waitPromise;
+	assert(waited.ok === true && waited.data.entry.event === "message", "ws.wait must resolve on matched inbound transcript");
+	const replayPromise = sandbox.__handlePiBrowserWsCommand("ws.replay", 51, { cmd: "ws.replay", tabId: 51, sessionId: "contract", steps: [{ text: "alpha", contains: "echo:alpha", timeoutMs: 200 }] });
+	socket.dispatch("message", { data: "echo:alpha" });
+	const replay = await replayPromise;
+	assert(replay.ok === true && replay.data.steps.length === 1, "ws.replay must execute explicit bounded sequence steps");
+	const replayFail = await sandbox.__handlePiBrowserWsCommand("ws.replay", 51, { cmd: "ws.replay", tabId: 51, sessionId: "contract", steps: [{ text: "beta", contains: "never-match", timeoutMs: 10 }] });
+	assert(replayFail.ok === false && replayFail.details.stepIndex === 0 && Array.isArray(replayFail.details.partialTranscript), "ws.replay failure must expose step index and partial transcript diagnostics");
+	const collected = await sandbox.__handlePiBrowserWsCommand("ws.collect", 51, { cmd: "ws.collect", tabId: 51, sessionId: "contract" });
+	assert(collected.ok === true && collected.data.count >= 3, "ws.collect must expose transcript evidence");
+	const unsafe = await sandbox.__handlePiBrowserWsCommand("ws.wait", 51, { cmd: "ws.wait", tabId: 51, sessionId: "contract", regex: "(a+)+$", timeoutMs: 50 });
+	assert(unsafe.ok === false && unsafe.error_code === "WEBSOCKET_INVALID_MATCHER", "ws.wait must reject unsafe regex matchers");
+	const closed = await sandbox.__handlePiBrowserWsCommand("ws.close", 51, { cmd: "ws.close", tabId: 51, sessionId: "contract" });
+	assert(closed.ok === true, "ws.close must resolve cleanly");
+	const cleanup = sandbox.__cleanupWsSessionsForTab(51, "contract_cleanup");
+	assert(cleanup.removed === 1 && sandbox.__piBrowserWsSessions.size === 0, "ws cleanup must remove tab-scoped sessions");
+}
+
+await testWsSessionPrimitives();
 
 async function testTransportSocketCleanupIdentity() {
 	const alarms = [];
@@ -1106,6 +1234,7 @@ await testRouterNativeWsErrorFrames();
 
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
+assert(serverSource.includes('cmd.startsWith("intercept.")') && serverSource.includes('["intercept.status", "intercept.listRules", "intercept.collect"]'), "driver commandAccessMode must route interception mutations through write-mode lease/queue semantics while keeping status/list/collect read-only");
 assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "server sendCommand must not accept free-form Record commands");
 
 const registerToolsSource = read("src/tools/registerTools.ts");
@@ -1315,7 +1444,7 @@ async function testHookReadOnlyScopeContracts() {
 	const sessions = new Map([[1, { session_id: "one", state: "INSTALLED" }], [2, { session_id: "two", state: "INSTALLED" }]]);
 	const queues = new Map([[1, {}], [2, {}]]);
 	const sandbox = {
-		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE", INVALID_SESSION: "INVALID_SESSION", INJECTION_FAILED: "INJECTION_FAILED", NO_SESSION: "NO_SESSION", NOT_INSTALLED: "NOT_INSTALLED" },
+		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE", INVALID_SESSION: "INVALID_SESSION", INJECTION_FAILED: "INJECTION_FAILED", NO_SESSION: "NO_SESSION", NOT_INSTALLED: "NOT_INSTALLED", INVALID_SELECTOR: "INVALID_SELECTOR", SELECTOR_NOT_FOUND: "SELECTOR_NOT_FOUND", INTERNAL_ERROR: "INTERNAL_ERROR" },
 		PI_BROWSER_HOOK_DISPATCHER_FILE: "hook_dispatcher.js",
 		piWithTimeout: async (value) => await value,
 		chrome: { scripting: { async executeScript() { return []; } } },
@@ -1329,6 +1458,8 @@ async function testHookReadOnlyScopeContracts() {
 		async ensurePiBrowserDispatcher(tabId) { return { ok: true, data: { tabId, method: "test" } }; },
 		cleanupWaitsForUninstall(tabId) { cleanups.push({ kind: "waits", tabId }); },
 		cleanupPiBrowserTab(tabId, reason) { cleanups.push({ kind: "tab", tabId, reason }); },
+		async collectNodeListeners(tabId, msg) { return { ok: true, data: { tabId, selector: msg.selector, node: { tagName: "BUTTON", id: "pay" }, listeners: [{ type: "click", useCapture: false, passive: false, once: false, handler: { url: "fixture.js", line: 12, column: 3, functionName: "onPay" } }], count: 1 } }; },
+		async collectNodeListenerChain(tabId, msg) { return { ok: true, data: { tabId, selector: msg.selector, node: { tagName: "BUTTON", id: "pay" }, chain: [{ index: 0, eventType: "click", flags: { capture: false, passive: false, once: false }, handler: { url: "fixture.js", line: 12, column: 3, functionName: "onPay" } }], count: 1 } }; },
 	};
 	vm.runInNewContext(`${hookBridge}\nglobalThis.handlePiBrowserHookCommand = handlePiBrowserHookCommand;`, sandbox, { filename: "hook.js" });
 	const scoped = await sandbox.handlePiBrowserHookCommand("hook.list_sessions", 2, { tabId: 2 });
@@ -1341,6 +1472,10 @@ async function testHookReadOnlyScopeContracts() {
 	assert(installCall && installCall.args.session_id === "two", "hook.install_targets must expand ids into hook.install targets and preserve session id");
 	const badTarget = await sandbox.handlePiBrowserHookCommand("hook.install_targets", 2, { targets: ["all"] });
 	assert(badTarget.ok === false && badTarget.error_code === "INVALID_RULE" && badTarget.details.supported.includes("console"), "hook.install_targets must reject strategy-like or unknown targets with supported ids");
+	const nodeListeners = await sandbox.handlePiBrowserHookCommand("hook.getNodeListeners", 2, { selector: "#pay", timeoutMs: 1000 });
+	assert(nodeListeners.ok === true && Array.isArray(nodeListeners.data?.listeners), "hook.getNodeListeners must return bounded listener facts for an explicit selector");
+	const listenerChain = await sandbox.handlePiBrowserHookCommand("hook.getListenerChain", 2, { selector: "#pay", timeoutMs: 1000 });
+	assert(listenerChain.ok === true && Array.isArray(listenerChain.data?.chain), "hook.getListenerChain must return compact node-to-handler chain evidence for an explicit selector");
 	await sandbox.handlePiBrowserHookCommand("hook.status", 2, { sessionId: "two", timeoutMs: 777 });
 	await sandbox.handlePiBrowserHookCommand("hook.collect", 2, { session_id: "two", limit: 5 });
 	await sandbox.handlePiBrowserHookCommand("hook.clear_buffer", 2, { sessionId: "two" });

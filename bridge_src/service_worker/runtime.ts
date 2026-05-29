@@ -6,11 +6,13 @@ import { waitForNetworkIdle } from "./wait_network_idle";
 import { waitForSelector } from "./wait_selector";
 import { cancelWait, cleanupPiBrowserPageListenersForTab, diagnosePiBrowser, waitForAll, waitForAny } from "./wait";
 import { cleanupNetworkRecorderTab, handleNetworkRecorderCommand } from "./network";
+import { cleanupInterceptSessionTab, handlePiBrowserInterceptCommand } from "./intercept";
 import { ensurePiBrowserDispatcher, handlePiBrowserHookCommand } from "./hook";
 import { handlePiBrowserEvidenceCommand } from "./evidence";
 import { handlePiBrowserFrameCommand } from "./frame";
 import { handlePiBrowserTransferCommand } from "./transfer";
 import { handlePiBrowserHtml } from "./html";
+import { cleanupWsSessionsForTab, handlePiBrowserWsCommand } from "./ws";
 import { captureScreenshotWithRetry } from "./screenshot";
 import { piBridgeInfo } from "./bridge_info";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender, PiNativeProtocolRuntime, PiPersistentCdpBridge } from "./types";
@@ -89,6 +91,8 @@ function cleanupPiBrowserTab(tabId: number, reason?: string) {
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
   try { cleanupNetworkRecorderTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, runtimeErrorPreview(e)); }
+  try { cleanupInterceptSessionTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-INTERCEPT] session cleanup failed', key, runtimeErrorPreview(e)); }
+  try { cleanupWsSessionsForTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-WS] session cleanup failed', key, runtimeErrorPreview(e)); }
   // Preserve the public cancellation path for tab teardown so queued callers,
   // diagnostics and static contract tests all see the same lifecycle entrypoint.
   // Literal contract: cancelWaitsForTab(tabId, 'tab_cleanup')
@@ -291,7 +295,9 @@ async function handlePiBrowser(msg: PiBridgeCommand, sender: PiBridgeSender): Pr
 async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender, cmd: string, tabId: number): Promise<PiBridgeResponse> {
   try {
     if (cmd.startsWith('hook.')) return await handlePiBrowserHookCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('intercept.')) return await handlePiBrowserInterceptCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('evidence.')) return await handlePiBrowserEvidenceCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('ws.')) return await handlePiBrowserWsCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('frame.')) return await handlePiBrowserFrameCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('transfer.')) return await handlePiBrowserTransferCommand(cmd, tabId, msg) as PiBridgeResponse;
     switch (cmd) {

@@ -571,6 +571,7 @@ try {
 } finally {
 	try { ws?.close(); } catch {}
 	try { ws2?.close(); } catch {}
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	await server.stop();
 }
 

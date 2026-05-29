@@ -8,14 +8,15 @@ const summaryPath = path.join(artifactDir, "check-groups-summary.json");
 const jsonMode = process.argv.includes("--json");
 
 const groups = {
+	src: ["check:src:types", "check:registry-drift"],
 	bridge: ["check:bridge"],
 	unit: ["test:unit"],
 	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
 	docs: ["check:tool-docs", "check:doc-structure", "check:boundaries"],
-	contracts: ["check:jshookmcp-closure", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows"],
+	contracts: ["check:jshookmcp-closure", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands"],
 };
 
-const defaultSequence = ["bridge", "unit", "package", "docs", "contracts"];
+const defaultSequence = ["src", "bridge", "unit", "package", "docs", "contracts"];
 const requested = process.argv.slice(2).filter((arg) => arg !== "--json");
 const sequence = requested.length ? requested : defaultSequence;
 const startedAt = new Date().toISOString();

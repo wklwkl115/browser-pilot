@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Intercept Script Loader Fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Intercept Script Loader Fixture</h1>
+    <p id="status" data-state="idle">Status: idle</p>
+    <button id="load-script" type="button">Load script</button>
+    <pre id="output">none</pre>
+  </main>
+  <script>
+    window.__INTERCEPT_SCRIPT_RESULT__ = 'unset';
+    document.getElementById('load-script').addEventListener('click', async () => {
+      const script = document.createElement('script');
+      script.src = '/assets/intercept-target.js';
+      script.onload = () => {
+        document.getElementById('status').dataset.state = 'loaded';
+        document.getElementById('status').textContent = 'Status: loaded';
+        document.getElementById('output').textContent = String(window.__INTERCEPT_SCRIPT_RESULT__ || 'unset');
+      };
+      script.onerror = () => {
+        document.getElementById('status').dataset.state = 'error';
+        document.getElementById('status').textContent = 'Status: error';
+        document.getElementById('output').textContent = 'script-error';
+      };
+      document.head.appendChild(script);
+    });
+  </script>
+</body>
+</html>

@@ -7,12 +7,15 @@
 - 已冻结下一阶段工具面治理计划：`docs/tool-surface-consolidation-plan.md`。该计划是 TODO 244-249 的执行合同；实现前不得按口头讨论临时改 schema、工具名或文档口径。
 - 已完成方向：`browser_observe` 已成为观察层 canonical surface；`browser_execute` / `browser_command` 已拆分完成；recovery hints、bounded artifact multi-search、tool-level progress、explicit snapshots/operation metadata、Web Security capability profiles 已落地。
 - 当前设计方向：单包分层，优先保留 Pi-native 浏览器态执行层；通用解析优先成熟依赖；成熟漏洞引擎仅以同包内可选 bridge 接入，不在核心工具里追平外部 CLI。
+- 本轮已完成 `cross-tool evidence correlation metadata` 收口：不新增公开 `browser_*` 工具，在现有 distilled result envelope、artifact summary、workflow eval 与 runtime smoke 内补齐 `operationId`、`snapshotId`、`requestId`、`waitId`、`listenerId`、`sessionId`、`selectionVersion*`、`sourceMode` 等跨工具对账线索。
 - TODO 200-215 工程治理期已完成；后续新增能力、公开工具变更、bridge 协议变更、工具注册条件变更必须先在本文件和 `docs/tool-surface-consolidation-plan.md` 补决策、边界文档、契约与验证计划。
+- 下阶段 problem-area 规划已冻结到 `docs/next-phase-web-reversing-and-security-primitives-plan.md`；其中“请求/响应拦截与热补丁原语”phase 1/2、“JS AST / 反混淆分析原语”phase 1、“DOM 事件链 / sink-flow 分析辅助”phase 1、“Wasm 逆向桥接”phase 1 与“Stateful WebSocket replay/fuzz primitives” phase 1 均已完成并归档；当前无新的 active queue。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
 - 已移除历史动作拆分工具：`browser_query`、`browser_click`、`browser_type`、`browser_dom_snapshot`、`browser_dom_click`、`browser_dom_type`；不要恢复为默认工具面。
 - 修改协议/工具后先跑：`npm run check`。如需按故障域局部回归，使用 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。真实浏览器 smoke 只在需要验证 reload 后 runtime 时执行。
+- 仓库收敛规则：`D:/Pi/agent/extensions/pi-browser-tools` 是唯一正式源码仓库；`.pi/public-export/` 仅保留为本地导出/归档产物，不得再作为并行开发仓库。
 
 ## 已完成归档摘要（241-249）
 
@@ -35,7 +38,115 @@
 
 ## 当前执行队列
 
-当前无进行中的主线改造队列；新增能力或重大变更前，先在本文件补决策、边界、契约与验证计划。
+当前没有激活中的下阶段主线改造队列。
+
+## 最近完成：Stateful WebSocket replay/fuzz primitives（phase 1）
+
+状态：已完成并进入归档。
+
+结果：
+
+- 已落 tab-scoped session/transcript model：`bridge_src/service_worker/ws_model.ts`。
+- 已落 internal/native `ws.open/status/send/replay/wait/collect/close` primitive：`bridge_src/service_worker/ws.ts`。
+- 已落 Node-side explicit helper/shell：`src/tools/webSecurity/shared/wsSession.ts`、`src/tools/webSecurity/shared/wsShell.ts`。
+- 已落 compact summary adapter：`src/tools/summaries/webSecurity/ws.ts`。
+- 已落 internal slash-command path：`/browser-ws`，输入保持显式且有界；不新增公开 `browser_*` 工具。
+- 已补 bounded replay、replay failure diagnostics（`stepIndex` / `lastSeq` / `partialSteps` / `partialTranscript`）与 partial transcript artifact。
+- 已补 eval/sample result：`evals/browser-workflows/27-websocket-session-transcript.md`、`evals/browser-workflows/results/27-websocket-session-transcript.result.json`。
+- 已补 opt-in runtime smoke：`tests/smoke/smoke-websocket-session.mjs`，真实浏览器 + 本地 `WebSocketServer` fixture 已通过。
+
+验证：
+
+- 已通过：`npm run test:unit`
+- 已通过：`npm run check:pi-browser-bridge`
+- 已通过：`npm run check:smoke-diagnostics`
+- 已通过：`npm run smoke:browser:websocket-session`
+- 已通过：`npm run check`
+
+## 已完成：DOM 事件链 / sink-flow 分析辅助（phase 1）
+
+状态：已完成并进入归档。
+
+结果：
+
+- 已在既有 `browser_hook` canonical surface 下落 internal/native actions：`getNodeListeners`、`getListenerChain`、`getSinkHints`。
+- 已落 selector-scoped listener/source/sink evidence 提取：`bridge_src/service_worker/dom_flow.ts`。
+- 已落 compact summary adapter：`src/tools/summaries/webSecurity/domFlow.ts`。
+- 已补本地 fixture / eval / sample result：`evals/browser-workflows/fixtures/dom-flow-listeners.html`、`evals/browser-workflows/23-dom-flow-listener-chain.md`、`evals/browser-workflows/results/23-dom-flow-listener-chain.result.json`、`evals/browser-workflows/24-dom-flow-sink-hints.md`、`evals/browser-workflows/results/24-dom-flow-sink-hints.result.json`。
+- 已保持 evidence-assist 边界：不新增公开 DOM-flow 工具，不承诺 full taint engine，不做 exploit judgement。
+
+验证：
+
+- 已通过：`npm run sync:protocol`
+- 已通过：`npm run docs:generate`
+- 已通过：`npm run test:unit`
+- 已通过：`npm run check:eval-workflows`
+- 已通过：`npm run check:browser-workflow-results`
+- 已通过：`npm run check:summaries`
+- 已通过：`npm run check:pi-browser-bridge`
+- 已通过：`npm run check`
+
+## 已完成：JS AST / 反混淆分析原语（phase 1）
+
+状态：已完成并进入归档。
+
+结果：
+
+- 已落 internal-only parse/summary/reduction helpers：`src/tools/webSecurity/shared/jsAst.ts`、`src/tools/webSecurity/shared/jsAstArtifact.ts`、`src/tools/webSecurity/shared/jsAstShell.ts`。
+- 已落 compact summary adapter：`src/tools/summaries/webSecurity/jsAst.ts`。
+- 已落 internal slash-command path：`/browser-js-ast`，输入必须是显式本地 JS 文本或本地文件路径；不新增公开 `browser_*` 工具。
+- 已覆盖 imports / exports / function inventory / 可疑模式摘要 / string-array / decoder / constant folding / alias propagation / object-dispatch readability reduction。
+- 已建立 artifact output convention：reduction payload 超阈值或显式 `outputPath` 时写 `.pi/browser-artifacts/`，summary 只回传 compact descriptor。
+- 已补 eval / sample result：`evals/browser-workflows/22-js-ast-artifact-summary.md`、`evals/browser-workflows/results/22-js-ast-artifact-summary.result.json`。
+
+验证：
+
+- 已通过：`npm run test:unit`
+- 已通过：`npm run check:eval-workflows`
+- 已通过：`npm run check:browser-workflow-results`
+- 已通过：`npm run check:browser-commands`
+- 已通过：`npm run check`
+
+## 已完成：请求/响应拦截与热补丁原语（phase 1）
+
+状态：已完成并通过 contracts / runtime smoke。
+
+结果：
+
+- 已新增 internal/native interception primitives：`intercept.install`、`intercept.uninstall`、`intercept.status`、`intercept.listRules`、`intercept.addRule`、`intercept.removeRule`、`intercept.collect`、`intercept.pause`、`intercept.continue`、`intercept.fail`、`intercept.fulfill`。
+- 已打通手工 fulfill、自动 fulfill 与 `replaceScript` 三条真实浏览器路径。
+- 已补 transcript / diagnostics / status / uninstall / fail-closed 行为，并维持不新增广义公开拦截工具的边界。
+- 已新增 opt-in runtime smoke：`npm run smoke:browser:intercept-response`、`npm run smoke:browser:intercept-replace-script`、`npm run smoke:browser:intercept-uninstall-fail-closed`。
+
+验证：
+
+- 已通过：`npm run check:protocol`
+- 已通过：`npm run check:pi-browser-bridge`
+- 已通过：`npm run check:smoke-diagnostics`
+- 已通过：`npm run check`
+- 已通过：`npm run smoke:browser:intercept-response`
+- 已通过：`npm run smoke:browser:intercept-replace-script`
+- 已通过：`npm run smoke:browser:intercept-uninstall-fail-closed`
+
+## 已完成：cross-tool evidence correlation metadata
+
+状态：已完成并通过 contracts / package / runtime smoke。
+
+结果：
+
+- distilled envelope 统一上浮 `operationId`、`snapshotId`、`requestId`、`waitId`、`listenerId`、`sessionId`、`selectionVersionAtDispatch/Resolve`、`sourceMode` 等对账字段。
+- `browser_wait` / `browser_network` / `browser_hook` / `browser_frame` / `browser_evidence` 等 native action 工具已补 tracked operation metadata，不再只有 observe/execute/command 容易对账。
+- `browser_artifact mode=json` 会从 artifact summary 中提取 correlation 线索并输出 `correlationPaths`，支持优先按 `jsonPath` 做定点读取。
+- 新增 `evals/browser-workflows/21-cross-tool-correlation-chain.md` 与 sample result `evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json`。
+- 新增 opt-in runtime smoke：`npm run smoke:browser:correlation-chain`；已验证 observe → execute → wait → artifact 的 targeted correlation jsonPath read。
+
+验证：
+
+- 已通过：`npm run test:unit`
+- 已通过：`npm run check:all:contracts`
+- 已通过：`npm run check:package`
+- 已通过：`npm run check`
+- 已通过：`npm run smoke:browser:correlation-chain`
 
 ## 已完成：TODO 257-261 维护入口 / 协议单源收口 / 单测扩面 / mature bridge 预检诊断 / 文档去重
 

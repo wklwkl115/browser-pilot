@@ -47,6 +47,7 @@ function auditUnavailable(result, auditJson) {
 	const text = `${result.message || ""}\n${result.stdout || ""}\n${result.stderr || ""}`;
 	if (result.timedOut || result.signal === "SIGTERM") return true;
 	if (auditJson?.error?.code && allowedAuditUnavailableCodes.has(String(auditJson.error.code))) return true;
+	if (/endpoint is being retired/i.test(text) || /security\/audits\/quick\s*-\s*Bad Request/i.test(text) || /audit endpoint returned an error/i.test(text)) return true;
 	return [...allowedAuditUnavailableCodes].some((code) => text.includes(code));
 }
 
@@ -77,7 +78,7 @@ async function main() {
 	assert.deepEqual(sortedObject(lockRoot.devDependencies), sortedObject(pkg.devDependencies), "package-lock devDependencies must match package.json");
 	assert.deepEqual(sortedObject(lockRoot.peerDependencies), sortedObject(pkg.peerDependencies), "package-lock peerDependencies must match package.json");
 	assert.deepEqual(sortedObject(lockRoot.peerDependenciesMeta), sortedObject(pkg.peerDependenciesMeta), "package-lock peerDependenciesMeta must match package.json");
-	assert.deepEqual(listProdDeps(pkg), ["js-yaml", "ws"], "production dependency allowlist drift: update TODO/README/CHANGELOG when changing runtime dependencies");
+	assert.deepEqual(listProdDeps(pkg), ["js-yaml", "typescript", "ws"], "production dependency allowlist drift: update TODO/README/CHANGELOG when changing runtime dependencies");
 
 	const lsResult = await execNpm(["ls", "--json", "--all"], { timeoutMs: 30_000 });
 	const lsJson = parseJsonOutput(lsResult);

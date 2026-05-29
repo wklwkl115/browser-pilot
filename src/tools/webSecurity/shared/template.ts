@@ -236,7 +236,11 @@ function evaluateDslMatcher(matcher: TemplateDslMatcher, final: FetchStep, heade
 	else if (type === "contains") matched = matcher.value !== undefined && text.includes(matcher.value);
 	else if (type === "equals") matched = matcher.value !== undefined && text === matcher.value;
 	if (matcher.negative) matched = !matched;
-	const regexDiagnostics = type === "regex" ? (matcher.regex || []).map((pattern) => ({ pattern, ...regexIssueFields(testTemplateRegex(pattern, "im", text)) })).filter((item) => item.regexIssue || item.regexInputTruncated) : [];
+	const regexDiagnostics = type === "regex"
+		? (matcher.regex || [])
+			.map((pattern) => ({ pattern, ...regexIssueFields(testTemplateRegex(pattern, "im", text)) }))
+			.filter((item) => ("regexIssue" in item) || ("regexInputTruncated" in item))
+		: [];
 	return { kind: `dsl:${type}`, matched, part, name: matcher.name, expected: matcher.status?.length ? matcher.status : matcher.words?.length ? matcher.words : (matcher.regex || []).length ? matcher.regex : matcher.value, negative: matcher.negative === true, ...(regexDiagnostics.length ? { regexDiagnostics } : {}) };
 }
 

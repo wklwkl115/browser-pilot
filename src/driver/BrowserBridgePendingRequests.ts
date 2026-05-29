@@ -28,10 +28,11 @@ export class BrowserBridgePendingRequests {
 		if (options.tabId !== undefined) payload.tabId = options.tabId;
 
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
+			const debugCodePreview = typeof code === "string" ? code.slice(0, 120) : JSON.stringify(code).slice(0, 120);
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
 				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
-				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));
+				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, debugCodePreview, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));
 			}, timeoutMs);
 			const pending: PendingRequest = { id, tabId: options.tabId, client: socket, createdAt: Date.now(), acked: false, target: options.target, timer, resolve, reject };
 			this.pending.set(id, pending);
@@ -74,11 +75,12 @@ export class BrowserBridgePendingRequests {
 	}
 
 	rejectAllStopped(): void {
-		for (const pending of this.pending.values()) {
+		for (const pending of Array.from(this.pending.values())) {
 			clearTimeout(pending.timer);
+			this.pending.delete(pending.id);
+			if (pending.tabId === undefined && pending.target?.source === "none") continue;
 			pending.reject(new BrowserBridgeError("BRIDGE_STOPPED", "Browser bridge stopped before request completed", { id: pending.id, tabId: pending.tabId, target: this.resolvedTarget(pending.target) }));
 		}
-		this.pending.clear();
 	}
 
 	private take(id: string): PendingRequest | undefined {

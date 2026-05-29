@@ -75,14 +75,14 @@ function requestBodyFromOptions(options: ReplayOptions, mutation: Record<string,
 }
 
 export function buildReplayRequest(options: ReplayOptions): ReplayRequest {
-	const raw = options.rawRequest !== undefined ? parseRawHttpRequest(options.rawRequest, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme }) : {};
+	const raw = options.rawRequest !== undefined ? parseRawHttpRequest(options.rawRequest, { baseUrl: options.baseUrl, defaultScheme: options.defaultScheme }) : undefined;
 	const captured = capturedRequestTemplate(options.request);
 	const mutation = isRecord(options.mutations) ? options.mutations : {};
-	const urlValue = mutation.url ?? options.url ?? raw.url ?? captured.url;
+	const urlValue = mutation.url ?? options.url ?? raw?.url ?? captured.url;
 	const url = absoluteUrl(urlValue, { baseUrl: options.baseUrl, scheme: options.defaultScheme });
-	const method = normalizeMethod(mutation.method ?? options.method ?? raw.method ?? captured.method, "GET");
-	const headers = { ...headersArrayToMap(captured.headers), ...normalizeHeaders(raw.headers), ...normalizeHeaders(options.headers), ...normalizeHeaders(mutation.headers) };
-	let body = requestBodyFromOptions(options, mutation) ?? raw.body ?? captured.body;
+	const method = normalizeMethod(mutation.method ?? options.method ?? raw?.method ?? captured.method, "GET");
+	const headers = { ...headersArrayToMap(captured.headers), ...normalizeHeaders(raw?.headers), ...normalizeHeaders(options.headers), ...normalizeHeaders(mutation.headers) };
+	let body = requestBodyFromOptions(options, mutation) ?? raw?.body ?? captured.body;
 	const multipart = buildMultipartBody(mutation.multipart ?? options.multipart);
 	if (multipart) {
 		body = multipart.body;

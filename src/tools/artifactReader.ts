@@ -371,10 +371,47 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 	return out;
 }
 
+function correlationValueAtPath(root: unknown, jsonPath: string): unknown {
+	const selected = getJsonPath(root, jsonPath);
+	return selected.exists ? selected.value : undefined;
+}
+
+function extractArtifactCorrelation(value: unknown): { correlation?: Record<string, unknown>; correlationPaths?: Record<string, string> } {
+	if (!value || typeof value !== "object") return {};
+	const pathCandidates: Record<string, string[]> = {
+		operationId: ["operation.operationId", "correlation.operationId", "operationId"],
+		snapshotId: ["snapshot.snapshotId", "correlation.snapshotId", "snapshotId"],
+		browserSessionId: ["target.browserSessionId", "browserSessionId", "data.browserSessionId"],
+		sessionId: ["data.sessionId", "sessionId", "data.session_id", "session_id"],
+		requestId: ["data.requestId", "requestId", "data.request_id", "request_id"],
+		waitId: ["data.waitId", "waitId", "data.wait_id", "wait_id"],
+		listenerId: ["data.listenerId", "listenerId", "data.listener_id", "listener_id"],
+		selectionVersionAtDispatch: ["target.selectionVersionAtDispatch", "selectionVersionAtDispatch"],
+		selectionVersionAtResolve: ["target.selectionVersionAtResolve", "selectionVersionAtResolve"],
+		sourceMode: ["data.sourceMode", "sourceMode"],
+		targetSource: ["target.source", "targetSource"],
+		targetImplicit: ["target.implicit", "targetImplicit"],
+	};
+	const correlation: Record<string, unknown> = {};
+	const correlationPaths: Record<string, string> = {};
+	for (const [key, candidates] of Object.entries(pathCandidates)) {
+		for (const jsonPath of candidates) {
+			const selected = correlationValueAtPath(value, jsonPath);
+			if (selected !== undefined && selected !== null && selected !== "") {
+				correlation[key] = selected;
+				correlationPaths[key] = jsonPath;
+				break;
+			}
+		}
+	}
+	return Object.keys(correlation).length ? { correlation, correlationPaths } : {};
+}
+
 function summarizeJsonValue(value: unknown, absPath: string, fileSize: number): Record<string, unknown> {
-	if (Array.isArray(value)) return { path: absPath, bytes: fileSize, type: "array", count: value.length };
-	if (value && typeof value === "object") return { path: absPath, bytes: fileSize, type: "object", keyCount: Object.keys(value).length, keys: Object.keys(value).slice(0, 40) };
-	return { path: absPath, bytes: fileSize, type: typeof value };
+	const correlation = extractArtifactCorrelation(value);
+	if (Array.isArray(value)) return { path: absPath, bytes: fileSize, type: "array", count: value.length, ...correlation };
+	if (value && typeof value === "object") return { path: absPath, bytes: fileSize, type: "object", keyCount: Object.keys(value).length, keys: Object.keys(value).slice(0, 40), ...correlation };
+	return { path: absPath, bytes: fileSize, type: typeof value, ...correlation };
 }
 
 function readJson(text: string, fileSize: number, absPath: string, params: BrowserArtifactParams) {

@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { rejectUnsafeExecuteCommand } from "./transferValidation";
+import { summarizeGenericValue } from "./summaries/index";
 import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
@@ -54,7 +55,8 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 					fallbackName: artifactFallbackName("command"),
 					details: { mode: "command" },
 					operation,
-					artifactValue: result,
+					artifactValue: { ...result, operation },
+					distill: (value) => ({ ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode }),
 				});
 			});
 		},

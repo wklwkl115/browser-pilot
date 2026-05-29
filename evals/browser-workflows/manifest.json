@@ -359,6 +359,125 @@
         "artifact",
         "RFC-only"
       ]
+    },
+    {
+      "id": "21-cross-tool-correlation-chain",
+      "spec": "21-cross-tool-correlation-chain.md",
+      "fixtures": [
+        "fixtures/interactive.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_wait",
+        "browser_network",
+        "browser_evidence",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "correlation",
+        "targeted-artifact-read",
+        "selection-version"
+      ]
+    },
+    {
+      "id": "22-js-ast-artifact-summary",
+      "spec": "22-js-ast-artifact-summary.md",
+      "fixtures": [
+        "fixtures/js-ast-minified.js",
+        "fixtures/js-ast-malformed.js",
+        "fixtures/js-ast-patterns.js",
+        "fixtures/js-ast-reduction.js"
+      ],
+      "primaryTools": [
+        "browser_artifact"
+      ],
+      "evidence": [
+        "ast-summary",
+        "parse-diagnostics",
+        "artifact-path"
+      ]
+    },
+    {
+      "id": "23-dom-flow-listener-chain",
+      "spec": "23-dom-flow-listener-chain.md",
+      "fixtures": [
+        "fixtures/dom-flow-listeners.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_hook",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "listener-facts",
+        "listener-chain",
+        "artifact-path"
+      ]
+    },
+    {
+      "id": "24-dom-flow-sink-hints",
+      "spec": "24-dom-flow-sink-hints.md",
+      "fixtures": [
+        "fixtures/dom-flow-listeners.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_hook",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "sink-hints",
+        "artifact-path",
+        "diagnostics"
+      ]
+    },
+    {
+      "id": "25-wasm-artifact-metadata",
+      "spec": "25-wasm-artifact-metadata.md",
+      "fixtures": [
+        "fixtures/wasm-minimal.wasm",
+        "fixtures/wasm-minimal.wat"
+      ],
+      "primaryTools": [
+        "browser_artifact"
+      ],
+      "evidence": [
+        "wasm-summary",
+        "artifact-path",
+        "diagnostics"
+      ]
+    },
+    {
+      "id": "26-wasm-wat-bridge",
+      "spec": "26-wasm-wat-bridge.md",
+      "fixtures": [
+        "fixtures/wasm-minimal.wasm"
+      ],
+      "primaryTools": [
+        "browser_artifact"
+      ],
+      "evidence": [
+        "wat-bridge",
+        "artifact-path",
+        "diagnostics"
+      ]
+    },
+    {
+      "id": "27-websocket-session-transcript",
+      "spec": "27-websocket-session-transcript.md",
+      "fixtures": [
+        "fixtures/ws-session-fixture.md"
+      ],
+      "primaryTools": [
+        "browser_artifact"
+      ],
+      "evidence": [
+        "ws-summary",
+        "matcher-diagnostics",
+        "artifact-path"
+      ]
     }
   ]
 }

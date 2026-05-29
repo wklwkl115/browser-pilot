@@ -98,7 +98,7 @@ async function normalizeCookieAnalyzeOptions(options: RawCookieAnalyzeOptions): 
 	const secrets = [...stringList(options.secretCandidates), ...stringList(options.secrets), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const maxSecretCandidates = Math.min(100_000, positiveInt(options.maxSecretCandidates, 10_000));
 	const limitedSecrets = [...new Set(secrets)].slice(0, maxSecretCandidates);
-	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, options.timeoutMs) : undefined;
+	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, undefined) : undefined;
 	if (claimReplay && bindBrowserSession) claimReplay.browserCookie = await options.cookieProvider?.(claimReplay.url);
 	return {
 		samples,
@@ -182,11 +182,11 @@ async function runClaimReplayChecks(samples: CookieSample[], results: Record<str
 export async function runCookieAnalyze(options: RawCookieAnalyzeOptions) {
 	const normalized = await normalizeCookieAnalyzeOptions(options);
 	if (!normalized.samples.length) throw new Error("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url");
-	const results = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
+	const results: Record<string, unknown>[] = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, source: sample.source, name: sample.name, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
 	const tokenResults = results.filter((item) => tokenCountOf(item) > 0);
-	const jwtResults = results.filter((item) => item.kind === "jwt");
-	const jweCount = results.filter((item) => item.kind === "jwe").length;
-	const pasetoCount = results.filter((item) => item.kind === "paseto").length;
+	const jwtResults = results.filter((item) => String(item.kind || "") === "jwt");
+	const jweCount = results.filter((item) => String(item.kind || "") === "jwe").length;
+	const pasetoCount = results.filter((item) => String(item.kind || "") === "paseto").length;
 	const sessionFormatCount = results.filter((item) => ["django", "flask", "rails"].includes(String(item.kind || ""))).length;
 	const verifiedJwtCount = jwtResults.filter((item) => tokenVerifiedOf(item)).length;
 	const verifiedTokenCount = tokenResults.filter((item) => tokenVerifiedOf(item)).length;

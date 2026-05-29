@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "evalId": "23-dom-flow-listener-chain",
+  "status": "passed",
+  "toolCallCount": 3,
+  "firstWrongToolChoice": "none",
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "Listener facts were extracted for the explicit selector and summarized compactly.",
+      "Handler source metadata included URL/line/column/function name for the selected listener.",
+      "Compact node-to-handler chain evidence stayed bounded and did not claim full taint tracking."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/dom-flow-listeners.html"
+    ],
+    "diagnostics": [
+      "The flow remained selector-scoped and artifact-first.",
+      "Selector miss/invalid cases must recover by narrowing the selector rather than broad DOM crawling."
+    ]
+  },
+  "notes": [
+    "This workflow extends existing browser_hook/browser_artifact evidence paths instead of introducing a new public DOM-flow tool.",
+    "The result is evidence assistance only, not a full dynamic taint engine or exploit-decider."
+  ]
+}

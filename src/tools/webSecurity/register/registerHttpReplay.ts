@@ -52,7 +52,10 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 				includeCookieProvider: true,
 				augmentParams: (current) => ({ followRedirects: resolveBooleanParam(current.followRedirects, false) }),
 				run: runHttpReplay,
-				details: (result) => ({ status: result.response?.status, stepCount: result.stepCount }),
+				details: (result) => ({
+					status: "response" in result && result.response && typeof result.response === "object" ? (result.response as { status?: unknown }).status : undefined,
+					stepCount: "stepCount" in result ? result.stepCount : undefined,
+				}),
 				distill: summarizeHttpReplayData,
 			}, _onUpdate);
 		},

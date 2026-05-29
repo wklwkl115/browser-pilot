@@ -117,3 +117,5 @@ Latest full validation passed. The esbuild direct-eval warning from `bridge_src/
 ## Next phase
 
 No mandatory A-E work remains. Future work should start from `ROADMAP.md` and update `CURRENT.md` before implementing new behavior.
+
+Current post-A-E follow-up now includes cross-tool evidence correlation metadata hardening: distilled envelopes expose `operationId` / `snapshotId` / `requestId` / `waitId` / `listenerId` / `selectionVersion*` / `sourceMode`, `browser_artifact` surfaces correlation hints plus `correlationPaths`, browser workflow evals now include `21-cross-tool-correlation-chain.md` plus a sample result record, and runtime smoke now includes `smoke:browser:correlation-chain` to keep the chain bounded and evidence-first without reintroducing orchestration.

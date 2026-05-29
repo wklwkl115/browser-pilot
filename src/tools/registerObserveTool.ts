@@ -58,14 +58,15 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			...sharedTabScopedToolParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			return await runTool(async () => {
+			return await runTool(async (): Promise<import("../utils/toolResult").PiTextToolResult> => {
+				const toolCtx = ctx ?? {};
 				const server = await ensureStarted();
 				const observeParams = params as ObserveToolParams;
 				const mode = normalizeObserveMode(observeParams.mode);
 				validateObserveParams(mode, observeParams);
-				if (mode === "scan" || mode === "text" || mode === "tabs") return await runScanObservation(server, observeParams, ctx, mode, _onUpdate);
-				if (mode === "content") return await runContentObservation(server, observeParams, ctx, _onUpdate);
-				return await runHtmlObservation(server, observeParams, ctx, _onUpdate);
+				if (mode === "scan" || mode === "text" || mode === "tabs") return await runScanObservation(server, observeParams, toolCtx, mode, _onUpdate);
+				if (mode === "content") return await runContentObservation(server, observeParams, toolCtx, _onUpdate);
+				return await runHtmlObservation(server, observeParams, toolCtx, _onUpdate);
 			}, observeErrorResult);
 		},
 	});

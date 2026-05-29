@@ -63,6 +63,27 @@ Use for:
 Use for:
 - detailed historical execution logs migrated out of `ARCHIVE.md`
 
+### `docs/playbooks/*.md`
+
+Use for:
+- task-specific browser/Web security execution playbooks
+- route steps, inputs, evidence requirements, pivots, and stop conditions
+
+Do not use for:
+- callable tool contracts
+- long payload catalogs or vulnerability encyclopedias
+- historical implementation logs
+
+### `docs/reference/*.md`
+
+Use for:
+- long-lived methodology maps, matrices, payload references, and report templates
+- material loaded on demand after a playbook selects the needed topic
+
+Do not use for:
+- short runtime routing instructions that belong in the global skill
+- generated callable tool contracts
+
 ## Naming rules
 
 - Summary archive: `docs/archive/<name>.md`

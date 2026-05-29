@@ -12,6 +12,9 @@
       "ES2022",
       "DOM",
       "WebWorker"
+    ],
+    "types": [
+      "node"
     ]
   },
   "include": [

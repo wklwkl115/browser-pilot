@@ -71,11 +71,11 @@ export class BrowserBridgeClientRegistry {
 	}
 
 	connectedClientsCount(): number {
-		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState)).length;
+		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState as 2 | 3)).length;
 	}
 
 	connectedClientInfos(): BrowserBridgeClientInfo[] {
-		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState)).map((ws) => this.clientInfo.get(ws)).filter((item): item is BrowserBridgeClientInfo => !!item);
+		return Array.from(this.clients).filter((ws) => !CLOSED_STATES.has(ws.readyState as 2 | 3)).map((ws) => this.clientInfo.get(ws)).filter((item): item is BrowserBridgeClientInfo => !!item);
 	}
 
 	info(ws: WebSocket): BrowserBridgeClientInfo | undefined {
@@ -88,7 +88,7 @@ export class BrowserBridgeClientRegistry {
 
 	findClient(id: string): { ws: WebSocket; info: BrowserBridgeClientInfo } | undefined {
 		for (const [ws, info] of this.clientInfo.entries()) {
-			if (CLOSED_STATES.has(ws.readyState)) continue;
+			if (CLOSED_STATES.has(ws.readyState as 2 | 3)) continue;
 			if (info.id === id || info.extensionId === id) return { ws, info };
 		}
 		return undefined;

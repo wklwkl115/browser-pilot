@@ -85,6 +85,9 @@ function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
 		tabs_count: Number(record.tabs_count || tabs.length || 0),
 		active_tab: record.active_tab,
 		browserSessionId: record.browserSessionId,
+		selectionVersion: record.selectionVersion,
+		selectionVersionAtDispatch: record.selectionVersionAtDispatch,
+		selectionVersionAtResolve: record.selectionVersionAtResolve,
 		tabs: tabs.slice(0, 20).map((tab) => isRecord(tab)
 			? {
 				tabId: tab.tabId ?? tab.id,
@@ -107,20 +110,29 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const resultParams = { ...params, outputPath };
 	if (mode === "tabs") {
 		const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
-		const tabsOnlyData = { tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId };
+		const tabsOnlyData = {
+			tabs_count: tabs.length,
+			tabs,
+			active_tab: bridge.defaultTabId,
+			browserSessionId: bridge.browserSessionId,
+			selectionVersion: bridge.selectionVersion,
+			selectionVersionAtDispatch: bridge.selectionVersion,
+			selectionVersionAtResolve: bridge.selectionVersion,
+		};
 		const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, undefined);
+		const trackedTabId = typeof tabId === "number" ? tabId : undefined;
 		const { result: toolResult, operation } = await withTrackedOperation(server, {
 			toolName: "browser_observe",
 			command: "scan.tabs",
 			browserSessionId,
-			tabId,
+			tabId: trackedTabId,
 			phase: "running",
 			progress: 10,
-			queueDepth: server.queueDepth(browserSessionId, tabId),
-			leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+			queueDepth: server.queueDepth(browserSessionId, trackedTabId),
+			leaseOwnerHash: server.leaseOwnerHash(browserSessionId, trackedTabId),
 			snapshotId: snapshotMeta.snapshotId,
 			sourceMode: "scan",
-		}, onUpdate, async (handle) => {
+		}, onUpdate, async (handle): Promise<import("../utils/toolResult").PiTextToolResult> => {
 			await handle.update({ progress: 80, details: { tabs_count: tabs.length } });
 			return await jsonToolResult(tabsOnlyData, resultParams, ctx, {
 				toolName: "browser_observe",
@@ -128,10 +140,10 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				maxChars,
 				fallbackName,
 				details: { mode: "tabs", sourceMode: "scan", sourceCommand: "tabs.list" },
-				operation: { snapshotId: snapshotMeta.snapshotId },
+				operation: { ...operation, snapshotId: snapshotMeta.snapshotId },
 				snapshot: snapshotMeta,
 				distill: (value) => summarizeObserveTabsData(value),
-				artifactValue: tabsOnlyData,
+				artifactValue: { ...tabsOnlyData, operation: { ...operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
 			});
 		});
 		return toolResult;
@@ -160,7 +172,14 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined);
-	const summary = withObservationMeta(summarizeScanData(data, tabs, { detailLevel: params.detailLevel, maxChars }), mode, "scan");
+	const summary = {
+		...withObservationMeta(summarizeScanData(data, tabs, { detailLevel: params.detailLevel, maxChars }), mode, "scan"),
+		browserSessionId: bridge.browserSessionId,
+		tabId,
+		selectionVersion: bridge.selectionVersion,
+		selectionVersionAtDispatch: bridge.selectionVersion,
+		selectionVersionAtResolve: bridge.selectionVersion,
+	};
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -170,7 +189,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId },
+		artifactValue: { ...observation, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta },
 	});
 }
 
@@ -216,7 +235,15 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 	const markdown = typeof data?.markdown === "string" ? data.markdown : "";
 	const meta = data ? { ...data, markdown: `[${markdown.length} chars]` } : undefined;
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "content", outputPath, typeof data?.url === "string" ? data.url : params.url);
-	const summary = withObservationMeta(summarizeContentData(data), "content", "content");
+	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
+	const summary = {
+		...withObservationMeta(summarizeContentData(data), "content", "content"),
+		browserSessionId: bridge.browserSessionId,
+		tabId,
+		selectionVersion: bridge.selectionVersion,
+		selectionVersionAtDispatch: bridge.selectionVersion,
+		selectionVersionAtResolve: bridge.selectionVersion,
+	};
 	return await textToolResult(markdown, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: params.url ? "navigate+content" : "content",
@@ -226,7 +253,7 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 		details: { mode: "content", sourceMode: "content", sourceCommand: "content_extract", url: params.url, selector: params.selector, navigation: result.navigationData, content: meta },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...result.result, navigation: result.navigationData },
+		artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },
 	});
 }
 
@@ -267,8 +294,16 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 	const html = typeof data?.html === "string" ? data.html : undefined;
 	const resultMeta = data ? { ...result, data: { ...data, html: html === undefined ? undefined : `[${html.length} chars]` } } : result;
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "html", outputPath, typeof data?.url === "string" ? data.url : undefined);
+	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	if (html !== undefined) {
-		const summary = withObservationMeta(summarizeHtmlSnapshot(html, data), "html", "html");
+		const summary = {
+			...withObservationMeta(summarizeHtmlSnapshot(html, data), "html", "html"),
+			browserSessionId: bridge.browserSessionId,
+			tabId,
+			selectionVersion: bridge.selectionVersion,
+			selectionVersionAtDispatch: bridge.selectionVersion,
+			selectionVersionAtResolve: bridge.selectionVersion,
+		};
 		return await textToolResult(html, resultParams, ctx, {
 			toolName: "browser_observe",
 			command: commandName,
@@ -278,7 +313,7 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 			details: { mode: "html", sourceMode: "html", sourceCommand: commandName, command: commandName, result: resultMeta },
 			operation,
 			snapshot: snapshotMeta,
-			artifactValue: result,
+			artifactValue: { ...result, operation, snapshot: snapshotMeta },
 		});
 	}
 	return await jsonToolResult(result, resultParams, ctx, {
@@ -290,6 +325,6 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode: "html", sourceMode: "html", sourceCommand: commandName, command: commandName },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: result,
+		artifactValue: { ...result, operation, snapshot: snapshotMeta },
 	});
 }

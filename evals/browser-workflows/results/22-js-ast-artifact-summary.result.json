@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "evalId": "22-js-ast-artifact-summary",
+  "status": "passed",
+  "toolCallCount": 2,
+  "firstWrongToolChoice": "none",
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "AST summary returned bounded imports/exports/function inventory from an explicit artifact path.",
+      "Suspicious-pattern summary included decoder alias, object-dispatch, and string-array signals.",
+      "Malformed JS fixture produced parse diagnostics with code/line/column instead of guessed structure."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/js-ast-minified.js",
+      "evals/browser-workflows/fixtures/js-ast-malformed.js",
+      "evals/browser-workflows/fixtures/js-ast-patterns.js",
+      "evals/browser-workflows/fixtures/js-ast-reduction.js"
+    ],
+    "diagnostics": [
+      "Input stayed artifact-first and explicit; no browser crawl or whole-site source workflow was required.",
+      "Reduction preview remained bounded and deterministic; large output was not inlined as a fake full deobfuscation result.",
+      "No new public browser tool was introduced; the workflow stayed within existing canonical surfaces and internal helpers."
+    ]
+  },
+  "notes": [
+    "This sample result documents an internal-first AST/deobfuscation workflow rather than a new callable browser tool.",
+    "Use explicit artifact paths or explicit JS text; do not hide fetch/discovery strategy inside the AST analysis layer."
+  ]
+}

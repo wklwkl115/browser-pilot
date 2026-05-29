@@ -149,8 +149,8 @@ export function errorDiagnosticsFromDetails(details: Record<string, unknown>): E
 	};
 }
 
-function uniqueActions(actions: Array<string | undefined>): string[] {
-	return Array.from(new Set(actions.filter((item): item is string => !!item && item.trim())));
+function uniqueActions(actions: Array<string | undefined | false>): string[] {
+	return Array.from(new Set(actions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)));
 }
 
 function recoveryForNormalized(code: string, details: Record<string, unknown>, taxonomy: ErrorTaxonomy): ErrorRecovery | undefined {

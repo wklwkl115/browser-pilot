@@ -57,7 +57,11 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 				includeTimeout: true,
 				includeCookieProvider: false,
 				run: runCallbackOast,
-				details: (result) => ({ action: result.action, sessionId: result.sessionId, eventCount: result.eventCount ?? result.count }),
+				details: (result) => ({
+					action: result.action,
+					sessionId: "sessionId" in result ? result.sessionId : undefined,
+					eventCount: "eventCount" in result ? result.eventCount : result.count,
+				}),
 				distill: summarizeCallbackOastData,
 			}, _onUpdate);
 		},

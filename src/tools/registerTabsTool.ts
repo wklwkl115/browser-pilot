@@ -81,14 +81,14 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });
 				if (action === "selectsession") return jsonResult({ session: server.selectBrowserSession(params.browserSessionId || ""), snapshot: server.snapshot(browserSession) }, { action });
 				if (action === "closesession") return jsonResult({ closed: server.closeBrowserSession(params.browserSessionId || ""), sessions: server.listBrowserSessions() }, { action });
-				if (action === "attachtab") return jsonResult({ tab: server.attachTabToBrowserSession(tabId, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: server.snapshot(browserSession) }, { action });
-				if (action === "detachtab") return jsonResult({ session: server.detachTabFromBrowserSession(tabId, browserSession) }, { action });
-				if (action === "leasetab") return jsonResult({ lease: server.leaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
-				if (action === "releasetab") return jsonResult({ released: server.releaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
+				if (action === "attachtab" && tabId !== undefined) return jsonResult({ tab: server.attachTabToBrowserSession(tabId, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: server.snapshot(browserSession) }, { action });
+				if (action === "detachtab" && tabId !== undefined) return jsonResult({ session: server.detachTabFromBrowserSession(tabId, browserSession) }, { action });
+				if (action === "leasetab" && tabId !== undefined) return jsonResult({ lease: server.leaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
+				if (action === "releasetab" && tabId !== undefined) return jsonResult({ released: server.releaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
 				if (action === "selectbrowser" || action === "browser" || action === "select") return jsonResult({ selected: server.selectBrowser(params.browserId || "", browserSession), snapshot: server.snapshot(browserSession) }, { action });
-				if (action === "switch") return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
+				if (action === "switch" && tabId !== undefined) return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
 				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, browserSession), { action });
-				if (action === "close") return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });
+				if (action === "close" && tabId !== undefined) return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });
 				throw new Error(`Unsupported browser_tabs action: ${params.action}`);
 			});
 		},

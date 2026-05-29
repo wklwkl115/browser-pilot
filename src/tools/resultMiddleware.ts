@@ -4,9 +4,17 @@ import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResu
 import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
 import { saveTextArtifact } from "./artifacts";
 import { asArray, isRecord } from "./summaries/common";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData } from "./summaries/index";
+import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData, summarizeWsSessionData } from "./summaries/index";
 
 export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
+
+export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
+	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
+	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
+	if (toolName === "browser_hook" && ["hook.getNodeListeners", "hook.getListenerChain", "hook.getSinkHints"].includes(String(command || ""))) return summarizeDomFlowData(String(command), value);
+	if (String(command || "").startsWith("ws.")) return summarizeWsSessionData(String(command || "ws"), isRecord(value) && value.data !== undefined ? value.data : value);
+	return summarizeGenericValue(value);
+}
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {
@@ -20,6 +28,7 @@ export type DistilledEnvelope = {
 	limits?: Record<string, unknown>;
 	privacy?: Record<string, unknown>;
 	nextActions?: string[];
+	correlation?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
@@ -54,12 +63,6 @@ type DistilledTextOptions = DistillBaseOptions & {
 	distill?: (text: string) => Record<string, unknown>;
 	artifactValue?: unknown;
 };
-
-export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
-	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
-	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
-	return summarizeGenericValue(value);
-}
 
 async function saveRawArtifact(options: DistillBaseOptions, raw: string): Promise<Record<string, unknown> | undefined> {
 	return await saveTextArtifact(options.ctx, options.outputPath, options.fallbackName, raw);
@@ -132,8 +135,8 @@ function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<stri
 function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
 	const summaryTarget = isRecord(summary.target) ? summary.target : {};
 	const target = {
-		...pickDefined(summary, ["browserId", "tabId", "frameId", "url", "origin", "targetSource", "targetImplicit"]),
-		...pickDefined(summaryTarget, ["browserSessionId", "browserId", "tabId", "frameId", "url", "origin", "source", "implicit", "selectionVersion"]),
+		...pickDefined(summary, ["browserId", "tabId", "frameId", "url", "origin", "targetSource", "targetImplicit", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
+		...pickDefined(summaryTarget, ["browserSessionId", "browserId", "tabId", "frameId", "url", "origin", "source", "implicit", "selectionVersion", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
 	};
 	if (options.browserSessionId !== undefined) target.browserSessionId = options.browserSessionId;
 	return Object.keys(target).length ? target : undefined;
@@ -148,7 +151,7 @@ function normalizedLimits(options: DistillBaseOptions, summary: DistilledSummary
 	return Object.keys(limits).length ? limits : undefined;
 }
 
-function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string, unknown>): Record<string, unknown> | undefined {
+function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): Record<string, unknown> | undefined {
 	const warnings: string[] = [];
 	const omitted = firstDefined(summary, ["summaryOmitted"]);
 	if (Array.isArray(omitted) && omitted.length) warnings.push(`summary_omitted:${omitted.join(",")}`);
@@ -157,7 +160,9 @@ function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string,
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) warnings.push("truncated");
 	if (saved?.path) warnings.push("raw_result_saved_to_artifact");
 	const diagnostics = {
-		...pickDefined(summary, ["ok", "error_code", "message", "bodyAvailability", "bodyUnavailableReason", "failureCount", "matchedCount", "entryCount", "source_count", "waitId", "sessionId", "requestId"]),
+		...pickDefined(summary, ["ok", "error_code", "message", "bodyAvailability", "bodyUnavailableReason", "failureCount", "matchedCount", "entryCount", "source_count", "waitId", "sessionId", "requestId", "listenerId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "sourceMode"]),
+		...pickDefined(operation || {}, ["operationId", "snapshotId", "sourceMode"]),
+		...pickDefined(snapshot || {}, ["snapshotId", "sourceMode"]),
 		...(warnings.length ? { warnings: Array.from(new Set(warnings)) } : {}),
 		...(saved ? { artifact: compactArtifactDescriptor(saved) } : {}),
 	};
@@ -173,7 +178,7 @@ function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false
 	};
 }
 
-function artifactReadActions(summary: DistilledSummary, saved?: Record<string, unknown>): string[] {
+function artifactReadActions(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): string[] {
 	if (!saved?.path) return [];
 	const path = String(saved.path);
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
@@ -182,12 +187,20 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `browser_artifact path=${path} mode=json jsonPath=${hint.jsonPath}` : undefined)
 		.filter((item): item is string => !!item)
 		.slice(0, 3);
-	return actions.length ? actions : [`browser_artifact path=${path} mode=json|text`];
+	const correlationPaths = [
+		{ key: "operationId", path: "operation.operationId", value: operation?.operationId },
+		{ key: "snapshotId", path: "snapshot.snapshotId", value: snapshot?.snapshotId },
+		{ key: "requestId", path: "data.requestId", value: summary.requestId },
+		{ key: "waitId", path: "data.waitId", value: summary.waitId },
+		{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
+	].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
+	for (const item of correlationPaths.slice(0, 3)) actions.push(`browser_artifact path=${path} mode=json jsonPath=${item.path}`);
+	return actions.length ? Array.from(new Set(actions)) : [`browser_artifact path=${path} mode=json|text`];
 }
 
-function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>): string[] | undefined {
+function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): string[] | undefined {
 	const actions: string[] = [];
-	actions.push(...artifactReadActions(summary, saved));
+	actions.push(...artifactReadActions(summary, saved, operation, snapshot));
 	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`browser_artifact offset=${String(summary.nextOffset)}`);
 	if (summary.bodyUnavailableReason) actions.push("browser_network body with a fresh recorder entry or recapture with captureBodies enabled");
 	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_observe mode=scan|html");
@@ -205,19 +218,27 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
 	const redactedSummary = redactSensitiveValue(summary) as DistilledSummary;
 	const fittedSummary = fitSummaryBudget(redactedSummary, budget);
+	const redactedOperation = options.operation ? redactSensitiveValue(options.operation) as Record<string, unknown> : undefined;
+	const redactedSnapshot = options.snapshot ? redactSensitiveValue(options.snapshot) as Record<string, unknown> : undefined;
+	const correlation = {
+		...pickDefined(redactedSummary, ["requestId", "waitId", "listenerId", "sessionId", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "sourceMode"]),
+		...pickDefined(redactedOperation || {}, ["operationId", "snapshotId", "sourceMode"]),
+		...pickDefined(redactedSnapshot || {}, ["snapshotId", "sourceMode"]),
+	};
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,
 		detailLevel: normalizeDetailLevel(options.detailLevel),
 		summary: fittedSummary,
-		diagnostics: normalizedDiagnostics(fittedSummary, saved),
+		diagnostics: normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot),
 		target: normalizedTarget(options, fittedSummary),
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw),
-		nextActions: normalizedNextActions(options, fittedSummary, saved),
-		operation: options.operation ? redactSensitiveValue(options.operation) as Record<string, unknown> : undefined,
-		snapshot: options.snapshot ? redactSensitiveValue(options.snapshot) as Record<string, unknown> : undefined,
+		nextActions: normalizedNextActions(options, fittedSummary, saved, redactedOperation, redactedSnapshot),
+		operation: redactedOperation,
+		snapshot: redactedSnapshot,
+		...(Object.keys(correlation).length ? { correlation } : {}),
 		saved,
 	});
 }

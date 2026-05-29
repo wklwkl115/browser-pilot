@@ -1,3 +1,28 @@
 .ace-tool/
 .pi/
 node_modules/
+
+# Local environment and secrets
+.env
+.env.*
+*.secret
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Build/test artifacts
+coverage/
+dist/
+build/
+target/
+*.tgz
+
+# Local scratch files
+log
+nul
+stored.txt
+
+# nested export repo must never be used as a second source tree
+/.pi/public-export/

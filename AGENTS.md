@@ -29,6 +29,20 @@
 - Parameters should be minimal, strongly typed, and enum-based where practical. Normalize loose input early; do not let `unknown`-heavy flows spread.
 - Outputs must be compact by default, structured, semantically named, token-efficient, optionally detailed, and non-leaking for cookies/tokens; full evidence belongs in artifacts.
 
+## Agent-First Tool Constitution
+
+- Public tools serve agent decision quality first, not implementer convenience.
+- Good atomicity means **low hidden dependency cost**. Do not make the agent guess undocumented prerequisite steps.
+- If a tool depends on prior state, expose it explicitly through params, handles, artifacts, or diagnostics.
+- Keep Core tools aligned to irreducible physical capabilities. Do not split them into strategy-shaped micro-tools.
+- WebSecurity tools may represent follow-up domains, but they must not rely on silent workflow assumptions.
+- Internalize only the cheapest deterministic prerequisite; do not hide expensive, risky, or escalation decisions inside a tool.
+- Keep **public surface thin, internal engines thick**. Prefer internal consolidation before public tool merges.
+- Do not merge public tools unless execution context, parameter model, error semantics, and recovery flow are truly shared.
+- Strategy belongs to skills and evals, not hidden tool chaining.
+- Every complex tool must fail with factual remediation: missing prerequisite, reusable handle/artifact, and next concrete action.
+- Any tool-surface consolidation requires eval proof that agent outcomes improve and recovery quality does not regress.
+
 ## Architecture Rules
 
 - Keep one Web package; prefer internal layering over parallel Web extensions unless explicitly required.

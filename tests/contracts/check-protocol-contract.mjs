@@ -36,7 +36,7 @@ const bridgeSchemaText = read("bridge/pi_browser_bridge/native_command_schema.js
 const rootSchema = JSON.parse(rootSchemaText);
 const schema = JSON.parse(bridgeSchemaText);
 assert(JSON.stringify(schema) === JSON.stringify(rootSchema), "bridge native_command_schema.json must be generated from root schema");
-for (const domain of ["core", "wait", "network", "hook", "frame", "html", "screenshot", "evidence", "transfer"]) assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
+for (const domain of ["core", "wait", "network", "intercept", "hook", "frame", "html", "screenshot", "evidence", "transfer", "ws"]) assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
 assert(schema.commands && typeof schema.commands === "object", "schema must define command specs");
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
 assert(schema.toolMetadata?.nativeActionTools?.browser_wait?.actions?.some((item) => item.command === "wait.selector"), "schema must define browser_wait action metadata");
@@ -50,6 +50,7 @@ assert(schema.toolMetadata?.transferTools?.browser_download?.command === "transf
 assert(schema.toolMetadata?.transferTools?.browser_upload?.command === "transfer.upload", "schema must define browser_upload transfer metadata");
 assert(schema.errorCodes?.TAB_NOT_FOUND?.category === "driver.tab" && schema.errorCodes?.UPLOAD_REQUIRES_BROWSER_UPLOAD?.category === "tool.transfer", "schema must define generated error taxonomy");
 assert(schema.errorCodes?.MATURE_BRIDGE_LAUNCHER_NOT_FOUND?.category === "tool.security" && schema.errorCodes?.MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED?.category === "tool.security", "schema must define mature bridge diagnostic error taxonomy");
+assert(schema.errorCodes?.WEBSOCKET_SESSION_NOT_FOUND?.category === "bridge.ws" && schema.errorCodes?.WEBSOCKET_WAIT_TIMEOUT?.category === "bridge.ws", "schema must define websocket diagnostic error taxonomy");
 
 const protocolSandbox = { self: {} };
 vm.runInNewContext(transformBridgeSourceForVm(readServiceWorkerSource("protocol"), "bridge_src/service_worker/protocol.ts"), protocolSandbox, { filename: "protocol.js" });

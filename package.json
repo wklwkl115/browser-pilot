@@ -18,6 +18,7 @@
     "build:bridge": "node scripts/build-bridge.mjs",
     "check:all": "node scripts/run-check-groups.mjs",
     "check:all:bridge": "node scripts/run-check-groups.mjs bridge unit",
+    "check:src:types": "tsc -p tsconfig.json",
     "check:all:package": "node scripts/run-check-groups.mjs package docs",
     "check:all:contracts": "node scripts/run-check-groups.mjs contracts",
     "verify:bridge:dist": "node tests/contracts/check-bridge-build.mjs",
@@ -31,6 +32,7 @@
     "check:doc-structure": "node tests/contracts/check-doc-structure.mjs",
     "test:unit": "node --test --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/unit/**/*.test.ts",
     "check:bridge": "npm run check:bridge:types && npm run check:bridge:build && npm run check:bridge:files && npm run check:protocol && npm run check:tools",
+    "check:registry-drift": "node tests/contracts/check-registry-drift.mjs",
     "check:scan": "node --no-warnings --experimental-strip-types tests/contracts/check-scan-script.mjs",
     "check:content-pick": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-content-pick.mjs",
     "check:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-tools.mjs && node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-transfer-runtime.mjs",
@@ -45,6 +47,8 @@
     "check:artifact": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-artifact-reader.mjs",
     "check:errors": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/contracts/check-errors.mjs",
     "check:eval-workflows": "node tests/contracts/check-eval-workflows.mjs",
+    "check:browser-workflow-results": "node tests/contracts/check-browser-workflow-results.mjs",
+    "check:browser-commands": "node tests/contracts/check-browser-commands.mjs",
     "check:jshookmcp-closure": "node tests/contracts/check-jshookmcp-closure.mjs",
     "smoke:browser": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs",
     "smoke:browser:transfer": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser.mjs --transfer",
@@ -56,6 +60,14 @@
     "smoke:browser:isolated": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-browser-isolated.mjs",
     "smoke:browser:scan-summary": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-scan-summary.mjs",
     "smoke:browser:debugger-evidence": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-debugger-evidence.mjs",
+    "smoke:browser:correlation-chain": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-correlation-chain.mjs",
+    "smoke:browser:intercept-response": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-response.mjs",
+    "smoke:browser:intercept-replace-script": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-replace-script.mjs",
+    "smoke:browser:intercept-uninstall-fail-closed": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-uninstall-fail-closed.mjs",
+    "smoke:browser:intercept-request-mutate": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-request-mutate.mjs",
+    "smoke:browser:intercept-tab-close-cleanup": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-tab-close-cleanup.mjs",
+    "smoke:browser:intercept-lease-conflict": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-intercept-lease-conflict.mjs",
+    "smoke:browser:websocket-session": "node --no-warnings --experimental-strip-types --import ./scripts/register-ts-extension-loader.mjs tests/smoke/smoke-websocket-session.mjs",
     "prepack": "node scripts/build-bridge.mjs --quiet",
     "check:package": "node tests/contracts/check-package-files.mjs",
     "check:deps": "node tests/contracts/check-dependencies.mjs",
@@ -63,6 +75,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
+    "typescript": "^6.0.3",
     "ws": "^8.18.0"
   },
   "peerDependencies": {
@@ -87,6 +100,9 @@
     ]
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.12.4",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.28.0",
     "typebox": "^1.0.55",
     "typescript": "^6.0.3"

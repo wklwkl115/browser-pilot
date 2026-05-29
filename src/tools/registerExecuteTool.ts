@@ -3,6 +3,7 @@ import type { BrowserBridgeExecutionResult } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
 import { buildScanScript } from "../scan/buildScanScript";
 import { compactError } from "../utils/errors";
+import { summarizeGenericValue } from "./summaries/index";
 import { artifactFallbackName, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
@@ -129,7 +130,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					fallbackName: artifactFallbackName("execute"),
 					details: { mode: "javascript", monitor: params.monitor === true },
 					operation,
-					artifactValue: jsResult,
+					artifactValue: { ...jsResult, operation },
+					distill: (value) => ({ ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode }),
 				});
 			});
 		},

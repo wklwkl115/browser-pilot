@@ -60,7 +60,7 @@ async function cleanupPick(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 			method: "Runtime.evaluate",
 			params: { expression: buildPickCleanupScript(pickId), awaitPromise: false, returnByValue: true, userGesture: true },
 			timeoutMs: PICK_CLEANUP_TIMEOUT_MS,
-		}, { browserSessionId, tabId, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000 });
+		}, { browserSessionId, tabId: tabId as string | number | undefined, timeoutMs: PICK_CLEANUP_TIMEOUT_MS + 1_000 });
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
@@ -97,7 +97,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					method: "Runtime.evaluate",
 					params: { expression: script, awaitPromise: true, returnByValue: true, userGesture: true },
 					timeoutMs: cdpTimeoutMs,
-				}, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs: cdpTimeoutMs + 1_000 });
+				}, { browserSessionId: params.browserSessionId, tabId: params.tabId as string | number | undefined, timeoutMs: cdpTimeoutMs + 1_000 });
 				let raw: unknown;
 				let timedOut = false;
 				if (params.focus === false) {

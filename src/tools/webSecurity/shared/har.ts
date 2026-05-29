@@ -152,8 +152,8 @@ export function buildHarDependencyGraph(sequence: Array<{ input: unknown; source
 			const previousResponse = harDependencyResponseInfo(items[fromIndex].input, previousRequest.url, options);
 			if (previousResponse.locationKey && currentUrl && previousResponse.locationKey === currentUrl) addEdge(fromIndex, toIndex, "redirect", { location: previousResponse.location });
 			if (currentReferer && previousUrl && previousUrl === currentReferer) addEdge(fromIndex, toIndex, "referer", { referer: currentRequest.referer || currentReferer });
-			const sharedCookies = previousResponse.cookies.filter((cookie) => cookie.name && currentCookies.has(String(cookie.name)) && (cookie.value === "" || currentCookies.get(String(cookie.name)) === cookie.value || currentCookies.get(String(cookie.name)) !== undefined));
-			if (sharedCookies.length) addEdge(fromIndex, toIndex, "cookie", { cookies: sharedCookies.map((cookie) => cookie.name).filter(Boolean) });
+			const sharedCookies = previousResponse.cookies.filter((cookie) => cookie?.name && currentCookies.has(String(cookie.name)) && (cookie.value === "" || currentCookies.get(String(cookie.name)) === cookie.value || currentCookies.get(String(cookie.name)) !== undefined));
+			if (sharedCookies.length) addEdge(fromIndex, toIndex, "cookie", { cookies: sharedCookies.map((cookie) => cookie?.name).filter(Boolean) });
 		}
 	}
 	const edgeTypeCounts: Record<string, number> = {};

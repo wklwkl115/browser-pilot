@@ -217,7 +217,7 @@ export const nativeToolMetadata = {
         "maxChars",
         "sessionId"
       ],
-      "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions",
+      "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions | getNodeListeners | getListenerChain | getSinkHints",
       "actions": [
         {
           "action": "listTargets",
@@ -328,6 +328,30 @@ export const nativeToolMetadata = {
             "performance",
             "getPerformanceEntries"
           ]
+        },
+        {
+          "action": "getNodeListeners",
+          "command": "hook.getNodeListeners",
+          "aliases": [
+            "getNodeListeners",
+            "listeners"
+          ]
+        },
+        {
+          "action": "getListenerChain",
+          "command": "hook.getListenerChain",
+          "aliases": [
+            "getListenerChain",
+            "listenerChain"
+          ]
+        },
+        {
+          "action": "getSinkHints",
+          "command": "hook.getSinkHints",
+          "aliases": [
+            "getSinkHints",
+            "sinkHints"
+          ]
         }
       ],
       "actionAliases": {
@@ -350,7 +374,13 @@ export const nativeToolMetadata = {
         "addeventlistener": "hook.addEventListener",
         "removeeventlistener": "hook.removeEventListener",
         "performance": "hook.getPerformanceEntries",
-        "getperformanceentries": "hook.getPerformanceEntries"
+        "getperformanceentries": "hook.getPerformanceEntries",
+        "getnodelisteners": "hook.getNodeListeners",
+        "listeners": "hook.getNodeListeners",
+        "getlistenerchain": "hook.getListenerChain",
+        "listenerchain": "hook.getListenerChain",
+        "getsinkhints": "hook.getSinkHints",
+        "sinkhints": "hook.getSinkHints"
       }
     },
     "browser_frame": {

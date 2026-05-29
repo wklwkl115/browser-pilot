@@ -36,6 +36,10 @@ function bridgeResultMetadata(value: Record<string, unknown>, data: unknown): Su
 		const item = payload[key] ?? value[key];
 		if (item !== undefined) out[key] = item;
 	}
+	for (const key of ["browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve"] as const) {
+		const item = target[key] ?? payload[key] ?? value[key];
+		if (item !== undefined) out[key] = item;
+	}
 	if (target.source !== undefined) out.targetSource = target.source;
 	if (target.implicit !== undefined) out.targetImplicit = target.implicit;
 	return out;

@@ -1,7 +1,7 @@
 import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig";
 import { BrowserBridgeError, errorToPlain } from "./errors";
-import { validateBridgeCommand } from "../protocol/nativeProtocol";
+import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../protocol/nativeProtocol";
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
 import { BrowserBridgeHttpServer } from "./BrowserBridgeHttpServer";
 import { buildBridgeTimeoutDiagnostics } from "./BrowserBridgeDiagnostics";
@@ -30,6 +30,12 @@ type IncomingMessage = {
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 
+type CommandExecutionPlan = {
+	target?: BrowserBridgeTargetInfo;
+	tabId?: number;
+	accessMode: "read" | "write";
+};
+
 export class BrowserBridgeServer {
 	readonly host: string;
 	readonly requestedPort: number;
@@ -46,10 +52,10 @@ export class BrowserBridgeServer {
 	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private capabilityProfile: BrowserToolCapabilityProfileInfo = {
-		name: "security",
+		name: "core",
 		source: "default",
 		envVar: "PI_BROWSER_TOOL_PROFILE",
-		securityToolsEnabled: true,
+		securityToolsEnabled: false,
 		enableHint: "PI_BROWSER_TOOL_PROFILE=security then /reload",
 	};
 
@@ -260,7 +266,8 @@ export class BrowserBridgeServer {
 		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.getTabs() });
-		return this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? this.commandAccessMode(validation.command) });
+		const plan = this.commandExecutionPlan(validation.command, target, options.accessMode);
+		return this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode });
 	}
 
 	setCapabilityProfile(profile: BrowserToolCapabilityProfileInfo): void {
@@ -381,7 +388,16 @@ export class BrowserBridgeServer {
 	}
 
 	private socketForBrowserSessionCommand(browserSessionId?: string): WebSocket {
-		return this.browserSessions.selectedOpenClient(this.browserSessions.get(browserSessionId)) ?? this.clients.requireExtensionClient();
+		const browserSession = this.browserSessions.get(browserSessionId);
+		const selected = this.browserSessions.selectedOpenClient(browserSession);
+		if (selected) return selected;
+		if (browserSession.id !== "default") {
+			throw new BrowserBridgeError("NO_BROWSER_EXTENSION", "Requested browser session has no selected browser extension client", {
+				browserSessionId: browserSession.id,
+				sessions: this.listBrowserSessions(),
+			});
+		}
+		return this.clients.requireExtensionClient();
 	}
 
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
@@ -401,11 +417,29 @@ export class BrowserBridgeServer {
 	}
 
 	private optionalExecutionTarget(command: BridgeCommand, browserSessionId?: string): BrowserBridgeTargetInfo | undefined {
-		const cmd = String(command.cmd || "");
 		const browserSession = this.browserSessions.get(browserSessionId);
-		if (cmd === "tabs" && (!command.method || command.method === "list" || command.method === "create")) return this.tabs.targetInfo("none", undefined, browserSession);
-		if (cmd === "management") return this.tabs.targetInfo("none", undefined, browserSession);
+		const currentSchema = getNativeCommandProtocolSchema();
+		const canonical = currentSchema.commands[String(command.cmd || "")]?.canonical || currentSchema.aliases?.[String(command.cmd || "")] || String(command.cmd || "");
+		const spec = currentSchema.commands[canonical];
+		if (!spec?.tabScoped) return this.tabs.targetInfo("none", undefined, browserSession);
 		return this.tabs.fallbackExecutionTarget(browserSessionId);
+	}
+
+	private commandExecutionPlan(command: BridgeCommand, target: BrowserBridgeTargetInfo | undefined, preferred?: "read" | "write"): CommandExecutionPlan {
+		const currentSchema = getNativeCommandProtocolSchema();
+		const canonical = currentSchema.commands[String(command.cmd || "")]?.canonical || currentSchema.aliases?.[String(command.cmd || "")] || String(command.cmd || "");
+		const spec = currentSchema.commands[canonical];
+		const method = String(command.method || command.action || spec?.defaultMethod || "").toLowerCase();
+		const tabId = target?.tabId;
+		if (!spec) return { target, tabId, accessMode: preferred ?? "read" };
+		const requiresTransportTab = spec.tabScoped || (canonical === "tabs" && ["switch", "close"].includes(method));
+		const noneTarget = !requiresTransportTab;
+		const write = preferred ?? this.commandAccessMode(command);
+		return {
+			target: noneTarget ? this.tabs.targetInfo("none", undefined, this.browserSessions.get(target?.browserSessionId)) : target,
+			tabId: noneTarget ? undefined : tabId,
+			accessMode: write,
+		};
 	}
 
 	private commandAccessMode(command: BridgeCommand): "read" | "write" {
@@ -416,7 +450,43 @@ export class BrowserBridgeServer {
 		if (cmd === "transfer.upload" || cmd === "transfer.download") return "write";
 		if (cmd.startsWith("hook.") && !["hook.status", "hook.collect", "hook.list_sessions", "hook.getPerformanceEntries", "hook.evaluate"].includes(cmd)) return "write";
 		if (cmd.startsWith("network.") && ["network.start", "network.stop", "network.clear"].includes(cmd)) return "write";
-		return "read";
+		if (cmd.startsWith("intercept.") && !["intercept.status", "intercept.listRules", "intercept.collect"].includes(cmd)) return "write";
+		return this.schemaDrivenCommandAccessMode(cmd, method);
+	}
+
+	private schemaDrivenCommandAccessMode(canonicalCmd: string, method: string): "read" | "write" {
+		const writeActions = new Set([
+			"tabs.switch",
+			"tabs.create",
+			"tabs.close",
+			"management.reload",
+			"management.disable",
+			"management.enable",
+			"wait.navigate",
+			"wait.navigateandwait",
+			"network.start",
+			"network.stop",
+			"network.clear",
+			"transfer.download",
+			"transfer.upload",
+			"hook.install_targets",
+			"hook.install",
+			"hook.clear",
+			"hook.clear_buffer",
+			"hook.pause",
+			"hook.resume",
+			"hook.uninstall",
+			"hook.addeventlistener",
+			"hook.removeeventlistener",
+			"frame.evaluate",
+			"frame.addnewdocumentscript",
+			"frame.removenewdocumentscript",
+		]);
+		if (canonicalCmd.startsWith("intercept.")) {
+			if (["intercept.status", "intercept.listRules", "intercept.collect"].includes(canonicalCmd)) return "read";
+			return "write";
+		}
+		return writeActions.has(`${canonicalCmd}.${method}`.toLowerCase()) || writeActions.has(canonicalCmd.toLowerCase()) ? "write" : "read";
 	}
 
 	private requireTabId(value: unknown): number {

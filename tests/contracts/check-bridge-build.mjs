@@ -40,7 +40,7 @@ for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 assert(read("bridge_src/page_scripts/content.ts").includes("import { TID } from \"../shared/protocol\""), "content page source must own an explicit shared TID import instead of ambient config.js");
 assert(!/\bimport\s+|\bimport\s*\(|\bimportScripts\s*\(|\bchrome\./.test(read("bridge_src/page_scripts/hook_dispatcher.ts")), "hook dispatcher page source must not import modules or call background-only Chrome APIs");
 assert(!/\bimport\s+|\bimport\s*\(|\bimportScripts\s*\(|\bchrome\./.test(read("bridge_src/page_scripts/disable_dialogs.ts")), "disable-dialogs page source must not import modules or call background-only Chrome APIs");
-for (const moduleName of ["runtime", "cdp", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "frame", "html", "screenshot", "transfer", "router", "tab_sync", "transport"]) {
+for (const moduleName of ["runtime", "cdp", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "frame", "html", "screenshot", "transfer", "ws_model", "ws", "router", "tab_sync", "transport"]) {
 	assert(existsSync(path.join(root, "bridge_src", "service_worker", `${moduleName}.ts`)), `bridge_src service worker module missing: ${moduleName}`);
 	assert(read("bridge_src/service-worker.ts").includes(`__piBridgeModule_${moduleName}`) && read("bridge_src/service-worker.ts").includes(`./service_worker/${moduleName}`), `service-worker entry must import module symbol ${moduleName}`);
 	assert(read(`bridge_src/service_worker/${moduleName}.ts`).includes(`export const __piBridgeModule_${moduleName}`), `service worker module must export explicit boundary symbol: ${moduleName}`);
@@ -74,7 +74,7 @@ for (const foundation of buildManifest.metadataOnlyServiceWorkerFoundationModule
 	if (!["config", "protocol", "patterns"].includes(foundation)) assert(/^import\s+/m.test(source), `TODO 197 foundation module must express dependencies through ESM imports: ${foundation}`);
 }
 const runtimeSource = read("bridge_src/service_worker/runtime.ts");
-const commandModules = ["network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec"];
+const commandModules = ["network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws"];
 assert.deepEqual(buildManifest.metadataOnlyServiceWorkerCommandModules, commandModules, "build manifest must record TODO 198 command ESM modules as metadata-only");
 for (const command of commandModules) {
 	const source = read(`bridge_src/service_worker/${command}.ts`);

@@ -7,4 +7,4 @@ export { summarizeNetworkData } from "./network";
 export { summarizePickData } from "./pick";
 export { summarizeScanData } from "./scan";
 export { summarizeTransferData } from "./transfer";
-export { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWebReconProbeData } from "./webSecurity/index";
+export { summarizeBrowserCrawlData, summarizeCallbackOastData, summarizeCookieAnalyzeData, summarizeDomFlowData, summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData, summarizeHttpReplayData, summarizeJsAstAnalysisData, summarizeNucleiBridgeData, summarizeSqlmapBridgeData, summarizeSqliProbeData, summarizeTemplateCheckData, summarizeWasmArtifactData, summarizeWasmWatBridgeData, summarizeWebReconProbeData, summarizeWsSessionData } from "./webSecurity/index";

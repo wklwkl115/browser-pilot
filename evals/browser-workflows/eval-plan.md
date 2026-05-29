@@ -139,3 +139,10 @@
 - Starting tools: `browser_tabs`, `browser_observe mode=scan`, `browser_execute`, `browser_wait`, `browser_artifact`.
 - Success: before/after state and stale-state diagnostics show whether navigation recovery remains RFC-only.
 - Recovery: re-open or re-observe the tab and record the insufficiency as RFC-only if lifecycle recovery is not clean.
+
+## 21 cross-tool correlation chain
+
+- Goal: verify that correlation metadata across observe/execute/wait/evidence/artifact is strong enough for targeted follow-up reads.
+- Starting tools: `browser_tabs`, `browser_observe mode=scan`, `browser_execute`, `browser_wait`, `browser_network`, `browser_evidence`, `browser_artifact`.
+- Success: the agent cites `operationId` / `snapshotId` / `requestId` / `waitId` / `listenerId` / `selectionVersion*` and uses narrow `browser_artifact` jsonPath reads before broad artifact inspection.
+- Recovery: if the first artifact read is too broad, retry with correlation jsonPaths such as `operation.operationId`, `snapshot.snapshotId`, or `data.requestId`.

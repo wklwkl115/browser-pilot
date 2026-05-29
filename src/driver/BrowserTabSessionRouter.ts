@@ -100,9 +100,12 @@ export class BrowserTabSessionRouter {
 				bridge: this.clients.info(ws),
 				client: ws,
 			});
-			const browserSession = this.browserSessions.defaultSession();
-			if (tab.active === true || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
-			this.setLatestSessionId(browserSession, id);
+			for (const browserSession of this.browserSessions.list()) {
+				const selected = this.browserSessions.selectedOpenClient(browserSession);
+				if (selected && selected !== ws) continue;
+				if (tab.active === true || !browserSession.defaultSessionId) this.setDefaultSessionId(browserSession, id);
+				this.setLatestSessionId(browserSession, id);
+			}
 		}
 		for (const [id, session] of this.sessions) {
 			if (!current.has(id) && session.client === ws && !session.disconnectedAt) session.disconnectedAt = now;
@@ -194,11 +197,12 @@ export class BrowserTabSessionRouter {
 		const browserSession = this.browserSession(browserSessionId);
 		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
 		const firstActive = scopeClient ? this.firstActiveSessionIdForClient(scopeClient, browserSessionId) : browserSession.id === DEFAULT_BROWSER_SESSION_ID ? this.firstActiveSessionId(browserSessionId) : undefined;
-		const isValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt && (!scopeClient || session.client === scopeClient);
+		const isDefaultValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt && (!scopeClient || session.client === scopeClient);
+		const isLatestValid = (session: BrowserTabSession | undefined) => !!session && !session.disconnectedAt;
 		const defaultSession = browserSession.defaultSessionId ? this.sessions.get(browserSession.defaultSessionId) : undefined;
-		if (!browserSession.defaultSessionId || !isValid(defaultSession)) this.setDefaultSessionId(browserSession, firstActive);
+		if (!browserSession.defaultSessionId || !isDefaultValid(defaultSession)) this.setDefaultSessionId(browserSession, firstActive);
 		const latestSession = browserSession.latestSessionId ? this.sessions.get(browserSession.latestSessionId) : undefined;
-		if (!browserSession.latestSessionId || !isValid(latestSession)) this.setLatestSessionId(browserSession, firstActive);
+		if (!browserSession.latestSessionId || !isLatestValid(latestSession)) this.setLatestSessionId(browserSession, firstActive);
 	}
 
 	private setDefaultSessionId(session: BrowserAutomationSession, id: string | undefined): void {
@@ -224,8 +228,8 @@ export class BrowserTabSessionRouter {
 
 	private preferredImplicitSessionId(candidates: BrowserTabSession[], browserSession: BrowserAutomationSession): string | undefined {
 		const live = candidates.filter((session) => !session.disconnectedAt);
-		return live.find((session) => session.active === true)?.id
-			?? live.find((session) => session.id === browserSession.latestSessionId)?.id
+		return live.find((session) => session.id === browserSession.latestSessionId)?.id
+			?? live.find((session) => session.active === true)?.id
 			?? live[0]?.id;
 	}
 

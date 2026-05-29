@@ -95,6 +95,19 @@ const schema = {
       "network.exportHar",
       "network.wait"
     ],
+    "intercept": [
+      "intercept.install",
+      "intercept.uninstall",
+      "intercept.status",
+      "intercept.listRules",
+      "intercept.addRule",
+      "intercept.removeRule",
+      "intercept.collect",
+      "intercept.pause",
+      "intercept.continue",
+      "intercept.fail",
+      "intercept.fulfill"
+    ],
     "hook": [
       "hook.list_sessions",
       "hook.list_targets",
@@ -110,7 +123,10 @@ const schema = {
       "hook.evaluate",
       "hook.addEventListener",
       "hook.removeEventListener",
-      "hook.getPerformanceEntries"
+      "hook.getPerformanceEntries",
+      "hook.getNodeListeners",
+      "hook.getListenerChain",
+      "hook.getSinkHints"
     ],
     "frame": [
       "frame.list",
@@ -130,6 +146,15 @@ const schema = {
     ],
     "evidence": [
       "evidence.collect"
+    ],
+    "ws": [
+      "ws.open",
+      "ws.status",
+      "ws.send",
+      "ws.replay",
+      "ws.wait",
+      "ws.collect",
+      "ws.close"
     ]
   },
   "commands": {
@@ -301,6 +326,70 @@ const schema = {
       "domain": "network",
       "tabScoped": true
     },
+    "intercept.install": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "notes": "optional stages/requestStages may restrict Fetch.enable patterns to request and/or response interception for bounded fixtures"
+    },
+    "intercept.uninstall": {
+      "domain": "intercept",
+      "tabScoped": true
+    },
+    "intercept.status": {
+      "domain": "intercept",
+      "tabScoped": true
+    },
+    "intercept.listRules": {
+      "domain": "intercept",
+      "tabScoped": true
+    },
+    "intercept.addRule": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "action"
+      ]
+    },
+    "intercept.removeRule": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "ruleId"
+      ]
+    },
+    "intercept.collect": {
+      "domain": "intercept",
+      "tabScoped": true
+    },
+    "intercept.pause": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "params"
+      ]
+    },
+    "intercept.continue": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "requestId"
+      ],
+      "notes": "patch may mutate url, method, headers, postData/body before send; body strings are UTF-8 base64-encoded for CDP Fetch.continueRequest.postData"
+    },
+    "intercept.fail": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "requestId"
+      ]
+    },
+    "intercept.fulfill": {
+      "domain": "intercept",
+      "tabScoped": true,
+      "required": [
+        "requestId"
+      ]
+    },
     "hook.list_sessions": {
       "domain": "hook",
       "tabScoped": false
@@ -363,6 +452,27 @@ const schema = {
       "domain": "hook",
       "tabScoped": true
     },
+    "hook.getNodeListeners": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "selector"
+      ]
+    },
+    "hook.getListenerChain": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "selector"
+      ]
+    },
+    "hook.getSinkHints": {
+      "domain": "hook",
+      "tabScoped": true,
+      "required": [
+        "selector"
+      ]
+    },
     "frame.list": {
       "domain": "frame",
       "tabScoped": true
@@ -399,6 +509,48 @@ const schema = {
     },
     "evidence.collect": {
       "domain": "evidence",
+      "tabScoped": true
+    },
+    "ws.open": {
+      "domain": "ws",
+      "tabScoped": true,
+      "required": [
+        "url"
+      ]
+    },
+    "ws.status": {
+      "domain": "ws",
+      "tabScoped": true
+    },
+    "ws.send": {
+      "domain": "ws",
+      "tabScoped": true,
+      "requiredAny": [
+        [
+          "text"
+        ],
+        [
+          "message"
+        ]
+      ]
+    },
+    "ws.replay": {
+      "domain": "ws",
+      "tabScoped": true,
+      "required": [
+        "steps"
+      ]
+    },
+    "ws.wait": {
+      "domain": "ws",
+      "tabScoped": true
+    },
+    "ws.collect": {
+      "domain": "ws",
+      "tabScoped": true
+    },
+    "ws.close": {
+      "domain": "ws",
       "tabScoped": true
     },
     "transfer.download": {
@@ -726,6 +878,56 @@ const schema = {
       "retryable": true,
       "summary": "Generic runtime wait or command timeout."
     },
+    "WEBSOCKET_INVALID_INPUT": {
+      "category": "bridge.ws",
+      "retryable": false,
+      "summary": "WebSocket command input was invalid or incomplete."
+    },
+    "WEBSOCKET_SESSION_ALREADY_OPEN": {
+      "category": "bridge.ws",
+      "retryable": false,
+      "summary": "A WebSocket session with the same session id is already open."
+    },
+    "WEBSOCKET_SESSION_NOT_FOUND": {
+      "category": "bridge.ws",
+      "retryable": false,
+      "summary": "Requested WebSocket session was not found."
+    },
+    "WEBSOCKET_SESSION_NOT_OPEN": {
+      "category": "bridge.ws",
+      "retryable": false,
+      "summary": "Requested WebSocket session exists but is not open."
+    },
+    "WEBSOCKET_OPEN_FAILED": {
+      "category": "bridge.ws",
+      "retryable": true,
+      "summary": "WebSocket connection failed during open."
+    },
+    "WEBSOCKET_OPEN_TIMEOUT": {
+      "category": "bridge.ws",
+      "retryable": true,
+      "summary": "WebSocket open timed out before the connection became ready."
+    },
+    "WEBSOCKET_SEND_FAILED": {
+      "category": "bridge.ws",
+      "retryable": true,
+      "summary": "WebSocket send failed."
+    },
+    "WEBSOCKET_INVALID_MATCHER": {
+      "category": "bridge.ws",
+      "retryable": false,
+      "summary": "WebSocket wait matcher was unsafe or invalid."
+    },
+    "WEBSOCKET_WAIT_TIMEOUT": {
+      "category": "bridge.ws",
+      "retryable": true,
+      "summary": "WebSocket wait timed out before a matching inbound message arrived."
+    },
+    "WEBSOCKET_WAIT_ABORTED": {
+      "category": "bridge.ws",
+      "retryable": true,
+      "summary": "WebSocket wait aborted because the session closed or errored."
+    },
     "UNKNOWN_BROWSER_CLIENT": {
       "category": "driver.selection",
       "retryable": false,
@@ -964,7 +1166,7 @@ const schema = {
           "maxChars",
           "sessionId"
         ],
-        "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions",
+        "actionDescription": "listTargets | installTargets | install | collect | status | clear | pause | resume | uninstall | evaluate | addEventListener | removeEventListener | performance | listSessions | getNodeListeners | getListenerChain | getSinkHints",
         "actions": [
           {
             "action": "listTargets",
@@ -1074,6 +1276,30 @@ const schema = {
             "aliases": [
               "performance",
               "getPerformanceEntries"
+            ]
+          },
+          {
+            "action": "getNodeListeners",
+            "command": "hook.getNodeListeners",
+            "aliases": [
+              "getNodeListeners",
+              "listeners"
+            ]
+          },
+          {
+            "action": "getListenerChain",
+            "command": "hook.getListenerChain",
+            "aliases": [
+              "getListenerChain",
+              "listenerChain"
+            ]
+          },
+          {
+            "action": "getSinkHints",
+            "command": "hook.getSinkHints",
+            "aliases": [
+              "getSinkHints",
+              "sinkHints"
             ]
           }
         ]

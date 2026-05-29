@@ -135,7 +135,8 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		}
 		const wrappedMessage = asString(railsMetadata.message);
 		const payload = wrappedMessage ? decodeRailsPayload(wrappedMessage, ["base64", "base64url"]) : { encoding: "raw", urlEncoded: false, text: undefined, json: undefined, binary: undefined };
-		const payloadBinary = isRecord(payload.binary) ? payload.binary : undefined;
+		const payloadRecord = payload as { binary?: unknown; encoding?: unknown; urlEncoded?: unknown; json?: unknown; text?: unknown };
+		const payloadBinary = isRecord(payloadRecord.binary) ? payloadRecord.binary : undefined;
 		const expiry = railsExpiryMetadata(railsMetadata.exp ?? railsMetadata.expires_at ?? railsMetadata.expiresAt);
 		return {
 			wrapper: "rails-metadata" as const,

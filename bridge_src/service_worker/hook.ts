@@ -3,6 +3,7 @@
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, PI_BROWSER_HOOK_DISPATCHER_FILE, callPagePiBrowser, callPagePiBrowserWithAutoReinstall, cleanupPiBrowserTab, getPiBrowserQueueStats, piBrowserError, piBrowserEval, piBrowserSessions, piBrowserTabQueues, piWithTimeout } from "./runtime";
 import { addEventListener, cleanupPiBrowserPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
+import { collectNodeListenerChain, collectNodeListeners, collectNodeSinkHints } from "./dom_flow";
 import { cleanupWaitsForUninstall } from "./wait_coordinator";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 
@@ -202,6 +203,9 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
     return res;
   }
   if (cmd === 'hook.evaluate') return await piBrowserEval(tabId, String(msg.expression || ''), msg.awaitPromise !== false, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
+  if (cmd === 'hook.getNodeListeners') return await collectNodeListeners(tabId, msg);
+  if (cmd === 'hook.getListenerChain') return await collectNodeListenerChain(tabId, msg);
+  if (cmd === 'hook.getSinkHints') return await collectNodeSinkHints(tabId, msg);
   if (cmd === 'hook.addEventListener') return await addEventListener(tabId, msg) as PiBridgeResponse;
   if (cmd === 'hook.removeEventListener') return await removeEventListener(tabId, msg) as PiBridgeResponse;
   if (cmd === 'hook.getPerformanceEntries') return await getPerformanceEntries(tabId, msg) as PiBridgeResponse;

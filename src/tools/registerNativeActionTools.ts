@@ -6,7 +6,7 @@ import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { nativeToolMetadata } from "../protocol/nativeActionMetadata";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
 import type { ToolRegistrarContext } from "./toolShared";
 
@@ -21,7 +21,7 @@ type ActionToolConfig = {
 	commandForAction: (action: string) => string;
 	timeoutForCommand?: (commandName: string) => number;
 	allowZeroTimeout?: boolean;
-	commandExecutor?: (server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
+	commandExecutor?: (server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, command: BridgeCommand, options: { browserSessionId?: string; tabId?: string | number; timeoutMs: number }) => Promise<BrowserBridgeExecutionResult>;
 	artifactPrefix: string;
 	budgetName: ToolResultBudgetName;
 	defaultDetailLevel?: DetailLevel;
@@ -61,9 +61,26 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 				const maxChars = toolMaxChars(params, config.budgetName);
 				const command = { ...body, cmd: commandName };
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const result = config.commandExecutor
-					? await config.commandExecutor(server, command, { browserSessionId, tabId, timeoutMs })
-					: await server.sendCommand(command, { browserSessionId, tabId, timeoutMs });
+				const normalizedTabId = typeof tabId === "string" ? Number(tabId) : typeof tabId === "number" ? tabId : undefined;
+				const trackedTabId = typeof normalizedTabId === "number" && Number.isInteger(normalizedTabId) && normalizedTabId > 0 ? normalizedTabId : undefined;
+				const resolvedTabId = tabId as string | number | undefined;
+				const { result, operation } = await withTrackedOperation(server, {
+					toolName: config.name,
+					command: commandName,
+					browserSessionId,
+					tabId: trackedTabId,
+					phase: "running",
+					progress: 10,
+					queueDepth: server.queueDepth(browserSessionId, trackedTabId),
+					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, trackedTabId),
+				}, _onUpdate, async (handle) => {
+					await handle.update({ progress: 45 });
+					const result = config.commandExecutor
+						? await config.commandExecutor(server, command, { browserSessionId, tabId: resolvedTabId, timeoutMs })
+						: await server.sendCommand(command, { browserSessionId, tabId: resolvedTabId, timeoutMs });
+					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
+					return result;
+				});
 				return await jsonToolResult(result, params, ctx, {
 					toolName: config.name,
 					budgetName: config.budgetName,
@@ -72,7 +89,8 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 					maxChars,
 					fallbackName: artifactFallbackName(config.artifactPrefix),
 					details: { command: commandName, action: params.action },
-					artifactValue: result,
+					operation,
+					artifactValue: { ...result, operation },
 				});
 			}, nativeActionErrorResult);
 		},

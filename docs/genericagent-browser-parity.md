@@ -2,10 +2,10 @@
 
 对照来源：
 
-- `C:/Users/HUAWEI/AppData/Local/Temp/GenericAgent/assets/tools_schema_cn.json`
-- `C:/Users/HUAWEI/AppData/Local/Temp/GenericAgent/ga.py`
-- `C:/Users/HUAWEI/AppData/Local/Temp/GenericAgent/simphtml.py`
-- `C:/Users/HUAWEI/AppData/Local/Temp/GenericAgent/TMWebDriver.py`
+- `<GenericAgent 临时目录>/assets/tools_schema_cn.json`
+- `<GenericAgent 临时目录>/ga.py`
+- `<GenericAgent 临时目录>/simphtml.py`
+- `<GenericAgent 临时目录>/TMWebDriver.py`
 
 ## 结论
 

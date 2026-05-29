@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "evalId": "25-wasm-artifact-metadata",
+  "status": "passed",
+  "toolCallCount": 2,
+  "firstWrongToolChoice": "none",
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "Wasm metadata summary returned header/version/hash/section facts from an explicit local artifact path.",
+      "Imports/exports/memory facts were extracted compactly without introducing a public Wasm browser tool.",
+      "Non-Wasm control input produced bounded diagnostics instead of guessed metadata."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/wasm-minimal.wasm",
+      "evals/browser-workflows/fixtures/wasm-minimal.wat"
+    ],
+    "diagnostics": [
+      "Input remained explicit and artifact-first; no whole-site Wasm discovery workflow was used.",
+      "This phase is metadata-first and does not promise an in-repo Wasm decompiler."
+    ]
+  },
+  "notes": [
+    "This workflow stays internal/mature-bridge-first and does not add a public Wasm browser tool.",
+    "Use explicit local Wasm artifacts; do not hide discovery/fetch strategy inside the Wasm analysis layer."
+  ]
+}

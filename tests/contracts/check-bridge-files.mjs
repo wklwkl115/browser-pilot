@@ -15,7 +15,7 @@ function assertBackgroundOrder(background, files, message) {
 
 const waitBridgeRuntimeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
 const networkBridgeRuntimeFiles = ["network_model.js", "network.js"];
-const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"];
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
@@ -102,7 +102,7 @@ for (const foundation of foundationModuleNames) {
 	assert(raw.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation source must export its module symbol: ${foundation}`);
 }
 const runtimeSourceRaw = read("bridge_src/service_worker/runtime.ts");
-assert(runtimeSourceRaw.includes("from \"./network\"") && runtimeSourceRaw.includes("handleNetworkRecorderCommand") && runtimeSourceRaw.includes("from \"./hook\"") && runtimeSourceRaw.includes("handlePiBrowserHookCommand"), "runtime must route TODO 198 command handlers through ESM imports");
+assert(runtimeSourceRaw.includes("from \"./network\"") && runtimeSourceRaw.includes("handleNetworkRecorderCommand") && runtimeSourceRaw.includes("from \"./hook\"") && runtimeSourceRaw.includes("handlePiBrowserHookCommand") && runtimeSourceRaw.includes("from \"./ws\"") && runtimeSourceRaw.includes("handlePiBrowserWsCommand"), "runtime must route TODO 198 command handlers through ESM imports");
 for (const legacyHandler of ["handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "handlePiBrowserEvidenceCommand", "handlePiBrowserFrameCommand", "handlePiBrowserTransferCommand", "handlePiBrowserHtml", "captureScreenshotWithRetry"]) {
 	assert(!runtimeSourceRaw.includes(`requireLegacyCommand('${legacyHandler}')`), `runtime must not route command handler through legacy global: ${legacyHandler}`);
 }
@@ -146,6 +146,11 @@ assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networ
 for (const forbidden of ["const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES", "function normalizeNetworkRecorderConfig", "function storeNetworkBody", "function truncateBase64Body"]) assert(!networkRuntime.includes(forbidden), `network.js must not re-absorb model helper: ${forbidden}`);
 for (const forbidden of ["chrome.debugger.sendCommand", "function handleNetworkRecorderCdpEvent", "function handleNetworkRecorderCommand"]) assert(!networkModel.includes(forbidden), `network_model.js must not own runtime command logic: ${forbidden}`);
 assert(networkModel.split(/\r?\n/).length <= 450 && networkRuntime.split(/\r?\n/).length <= 550, "network recorder bridge files must stay below the split-file health threshold");
+const wsModel = readServiceWorkerSource("ws_model.js");
+const wsRuntime = readServiceWorkerSource("ws.js");
+assert(wsModel.includes("const piBrowserWsSessions = new Map") && wsModel.includes("function createWsSession") && wsModel.includes("function wsSessionSummary"), "ws_model.js must own websocket session state/transcript helpers");
+assert(wsRuntime.includes("async function handlePiBrowserWsCommand") || wsRuntime.includes("function handlePiBrowserWsCommand"), "ws.js must own websocket command dispatch");
+assert(!wsRuntime.includes("const piBrowserWsSessions = new Map"), "ws.js must not re-absorb websocket model state");
 
 const forbiddenNaming = [/TMWD/i, /TMWebDriver/i, /GABrowser/i, /GA_BROWSER/, /__GA/, /__ga/, /gaBrowser/, /gaPersistent/, /BrowserPro/, /browserPro/, /native_hook_dispatcher/, /tmwd_cdp_bridge/];
 for (const file of serviceWorkerBridgeFiles) {

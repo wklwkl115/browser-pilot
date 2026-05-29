@@ -127,10 +127,10 @@ function decryptDirectJwe(jwe: NonNullable<ReturnType<typeof parseJwe>>, secrets
 		for (const candidate of secretByteCandidates(secrets[i])) {
 			if (candidate.bytes.length !== spec.keyBytes) continue;
 			try {
-				const decipher = createDecipheriv(spec.cipher, candidate.bytes, iv);
+				const decipher = createDecipheriv(spec.cipher, candidate.bytes, iv) as ReturnType<typeof createDecipheriv> & { setAAD(aad: Buffer): void; setAuthTag(tag: Buffer): void };
 				decipher.setAAD(Buffer.from(jwe.parts[0], "utf8"));
 				decipher.setAuthTag(tag);
-				let plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+				let plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]) as Buffer;
 				if (jwe.zip === "DEF") plaintext = inflateDeflate(plaintext);
 				const decoded = decodePrintableJsonValue(plaintext);
 				matches.push({ index: i, secret: secrets[i], secretSha256: sha256Hex(secrets[i]), keySource: candidate.source, payload: decoded.json ?? decoded.text, plaintextBytes: plaintext.length });
@@ -152,9 +152,9 @@ function encryptDirectJwe(header: Record<string, unknown>, payload: Record<strin
 	let plaintext = Buffer.from(JSON.stringify(payload), "utf8");
 	if (asString(header.zip) === "DEF") plaintext = deflateRawSync(plaintext);
 	const iv = randomBytes(12);
-	const cipher = createCipheriv(spec.cipher, key, iv);
+	const cipher = createCipheriv(spec.cipher, key, iv) as ReturnType<typeof createCipheriv> & { setAAD(aad: Buffer): void; getAuthTag(): Buffer };
 	cipher.setAAD(Buffer.from(protectedHeader, "utf8"));
-	const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+	const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]) as Buffer;
 	const tag = cipher.getAuthTag();
 	return `${protectedHeader}..${base64UrlEncode(iv)}.${base64UrlEncode(ciphertext)}.${base64UrlEncode(tag)}`;
 }
@@ -559,8 +559,8 @@ export async function analyzeCookieSample(sample: CookieSample, secrets: string[
 		const token: Record<string, unknown> = {
 			format: "rails",
 			mode: "signed",
-			payload: rails.decoded.json ?? rails.decoded.text ?? rails.decoded.binary,
-			binary: rails.decoded.binary,
+			payload: rails.decoded.json ?? rails.decoded.text ?? ((rails.decoded as { binary?: unknown }).binary),
+			binary: (rails.decoded as { binary?: unknown }).binary,
 			encoding: rails.decoded.encoding,
 			urlEncoded: rails.decoded.urlEncoded,
 			signature: { present: true, algorithmSupported: true, testedSecretCandidateCount: rails.testedSecretCandidateCount, verified: rails.matches.length > 0, matches: rails.matches },

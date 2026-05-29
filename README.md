@@ -5,18 +5,21 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 ## 职责划分
 
 - 安装、环境变量、浏览器扩展加载、reload、check/smoke、排障：见 `AI_INSTALL.md`。
+- `.pi/public-export/` 仅允许作为本地导出/归档产物，不能作为第二开发仓库或第二真源；当前唯一正式源码仓库是本目录。
 - Pi 正式使用场景、工具选择、输出风格、诊断约定：见全局 skill `D:/Pi/agent/skills/pi-browser-tools/SKILL.md`。
+- 多步骤安全测试方法论：见 `docs/playbooks/README.md`；信号到工具路线映射见 `docs/reference/web-security-methodology-map.md`。
 - 本 README 只作为项目入口、工具清单和维护入口。
 
 ## 工具边界
 
 - 语义单例与选择边界：见 `docs/tool-boundaries.md`。
 - 工具面治理计划：见 `docs/tool-surface-consolidation-plan.md`。该文件冻结 TODO 244-249：`browser_observe` 观察层合并、`browser_execute`/`browser_command` 拆分、recovery hints、bounded artifact multi-search、progress/streaming、explicit snapshots/operation metadata、Web Security capability profiles。
+- 下阶段 Web Reversing / 安全原语规划：见 `docs/next-phase-web-reversing-and-security-primitives-plan.md`。当前“请求/响应拦截与热补丁原语”phase 1/2、“JS AST / 反混淆分析原语” phase 1、“DOM 事件链 / sink-flow 分析辅助” phase 1、“Wasm 逆向桥接” phase 1 与 “Stateful WebSocket replay/fuzz primitives” phase 1 均已完成。其余方向仍只作为规划文档，不代表这些能力已成为 callable tool。
 - 当前主链路：`browser_tabs` 定位目标 → `browser_observe mode=scan|content|html|text|tabs` / `browser_screenshot` / `browser_frame` 观察 → `browser_execute` / `browser_command` / `browser_wait` 执行与等待 → `browser_network` / `browser_hook` / `browser_evidence` 取证 → `browser_artifact` 读取大证据。
 - TODO 244-249 已完成：观察层已收敛到 `browser_observe`；`browser_execute` 已收敛为 JavaScript-only；`browser_command` 成为 bridge command surface；errors 带 factual recovery hints；`browser_artifact` 支持 bounded multi-artifact search；长 Web follow-up 工具支持 tool-level progress；`browser_observe`/`browser_tabs snapshot` 暴露 explicit snapshot 与 operation metadata；Web Security 可见工具面由显式 profile 控制。
 - Web Security 工具只作为 scoped follow-up：先观察/捕获/重放基线，再按需要使用 recon/crawl/fuzz/template/cookie/SQLi/OAST/bridge 工具。默认 profile 为 `security`；如需缩减日常可见工具面，设置 `PI_BROWSER_TOOL_PROFILE=core` 后 `/reload`。
 - jshookmcp 研究只作为能力发现来源；本包不迁移其源码、MCP 架构、工具名、schema、payload、fixture 或文档文本；TODO 241 闭环账本见 `docs/jshookmcp-native-absorption.md`。
-- 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。
+- 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。下阶段深水区能力规划也必须先走 internal primitive / bridge / artifact-first 路线，不能直接把 problem area 变成公开大工具。
 
 ## 工具清单
 
@@ -78,12 +81,17 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `/browser-status`：查看 bridge server、扩展连接、tabs、pending 请求。
 - `/browser-install`：输出浏览器扩展安装路径。
 - `/browser-reload`：请求浏览器扩展 reload 并等待重连。
+- `/browser-js-ast [path] [--output file]`：运行 internal-only JS AST / 反混淆摘要；输入必须是显式本地文件路径或编辑器中的显式 JS 文本，不新增公开工具面。
+- `/browser-wasm <path> [--wat] [--output file]`：运行 internal-only Wasm 元数据摘要；`--wat` 时走成熟本地桥接生成 `.wat` artifact，不新增公开工具面。
+- `/browser-ws open <url> [--session id] [--header Name:Value] [--protocol value] | send --text text | replay --step text [--step '{"text":...,"contains":...}'] [--steps-json '[...]'] | wait [--contains text|--regex pattern] | collect [--output file] | close`：运行 internal-only WebSocket session/transcript primitive；输入必须显式且有界，不新增公开工具面。
 
 ## Token 预算约定
 
 - 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope；summary envelope 保持 `tool/command/browserSessionId/detailLevel/summary/saved` 兼容，并可附加 `diagnostics/target/limits/privacy/nextActions` 作为恢复线索；summary/full/details/error content 默认脱敏 cookie/token/authorization/body/postData/websocket payload，敏感完整证据改写入本地 artifact 并返回 `saved.path`。
 - `outputPath` 与自动落盘 artifact 优先保存可复原的原始调用 envelope / `artifactValue`；保存结果带 `privacy.classification:"local_raw_evidence"`、默认根目录 `.pi/browser-artifacts/`、`localOnly:true` 与手动清理提示；`browser_observe` 的 scan/content/html/text 模式返回仍可保持紧凑文本/summary，但 artifact 不再只保存截断纯文本。
 - 通用 bridge summary 会上浮 `browserSessionId`、`tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 browser session/tab/frame 对账，无需打开完整 artifact；需要原始敏感字段时只用 `browser_artifact redact:false` 对本地路径做定点读取，不把 artifact 上传外部服务。
+- 下一步增强优先沿现有工具面补“cross-tool evidence correlation metadata”：在 distilled envelope 中继续统一 `operationId`、`snapshotId`、`sourceMode`、`selectionVersionAtDispatch/Resolve` 等对账线索，帮助 agent 把 observe → execute/command → wait → network/hook/evidence → artifact 串起来；不新增重叠公开工具，也不做黑盒自动编排。
+- `browser_artifact` 的 JSON summary 现在会尽量上浮 artifact 内已有的 `operationId`、`snapshotId`、`requestId`、`waitId`、`listenerId`、`browserSessionId`、`selectionVersion*` 等对账线索，并给出 `correlationPaths`；优先按这些 `jsonPath` 做定点读取，不要一上来整份打开。
 - 操作流程保持 GA-style：`browser_observe mode=scan` 观察页面 → `browser_execute` 执行定制 JS/CDP → `browser_wait` 等待 → 再 `browser_observe mode=scan|html` / `browser_execute` 复查；长 wait 成功后检查 `supervisor` 元数据，若返回 `WAIT_STATE_LOST` 则重新观察页面/网络证据。
 - 复杂站点优先在单段脚本内完成定位、可见性判断、点击/输入和结果读取，避免拆成固定 selector 动作工具。
 
@@ -184,7 +192,23 @@ npm run smoke:browser:transfer
 
 `npm run smoke:browser:debugger-evidence` 使用独占临时扩展目录和本地 `debugger-evidence.html` fixture，验证 `persistent_cdp` 驱动的 `Debugger.enable`、`Runtime.evaluate` payload/exception evidence、`Debugger.getScriptSource` 以及 detach/disable cleanup；结果写 `.pi/browser-artifacts/smoke-browser-debugger-evidence-results.json`，详细证据写 `.pi/browser-artifacts/debugger-evidence-smoke-artifact-<ts>.json`。
 
-当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload，以及 scan summary v2 的高信号摘要/精准 artifact 导航和 debugger evidence workflow 的 Phase 1/2 runtime evidence。
+`npm run smoke:browser:correlation-chain` 使用独占临时扩展目录和本地 `interactive.html` fixture，验证 observe → execute → wait → artifact 这条链路里的 `operationId`、`snapshotId`、`waitId`、`selectionVersion*` 是否在 summary/preview 与 artifact jsonPath 中稳定可对账；结果写 `.pi/browser-artifacts/smoke-browser-correlation-chain-results.json`。
+
+`npm run smoke:browser:intercept-response` 使用独占临时扩展目录和本地 `intercept-response.html` fixture，验证 interception primitive 的 install/addRule/auto-applied fulfill/collect/status/uninstall 路径与 fulfilled response transcript；结果写 `.pi/browser-artifacts/smoke-browser-intercept-response-results.json`。
+
+`npm run smoke:browser:intercept-replace-script` 使用独占临时扩展目录和本地 `intercept-script-loader.html` fixture，验证 interception primitive 的 `replaceScript` 路径：页面动态加载目标 JS 资源时，规则命中后自动替换脚本正文，页面最终运行 patched script；结果写 `.pi/browser-artifacts/smoke-browser-intercept-replace-script-results.json`。
+
+`npm run smoke:browser:intercept-uninstall-fail-closed` 使用独占临时扩展目录和本地 `intercept-response.html` fixture，验证 interception primitive 在 `intercept.uninstall` 后的 fail-closed 行为：旧规则不再生效、后续命令返回 `SESSION_NOT_FOUND`、页面重新拿到原始服务端响应；结果写 `.pi/browser-artifacts/smoke-browser-intercept-uninstall-fail-closed-results.json`。
+
+`npm run smoke:browser:intercept-request-mutate` 使用独占临时扩展目录和本地 `intercept-request-mutate.html` fixture，验证 interception primitive 的 `continueRequest` 请求改写路径：规则命中后在 send 前改写 method/header/body，服务端回显 patched request；结果写 `.pi/browser-artifacts/smoke-browser-intercept-request-mutate-results.json`。
+
+`npm run smoke:browser:intercept-tab-close-cleanup` 使用独占临时扩展目录和本地 `intercept-response.html` fixture，验证 tab close 后 interception cleanup/fail-closed 诊断：tab 关闭后旧 session 不再可 collect/use；结果写 `.pi/browser-artifacts/smoke-browser-intercept-tab-close-cleanup-results.json`。
+
+`npm run smoke:browser:intercept-lease-conflict` 使用独占临时扩展目录和本地 `intercept-response.html` fixture，验证不同 browser session 在同一 tab 上进行 interception 写操作时会命中 `TAB_LEASE_CONFLICT`，并在释放 lease 后恢复可安装；结果写 `.pi/browser-artifacts/smoke-browser-intercept-lease-conflict-results.json`。
+
+`npm run smoke:browser:websocket-session` 使用独占临时扩展目录和本地 `WebSocketServer` fixture，验证 internal/native `ws.open` / `ws.send` / `ws.wait` / `ws.replay` / `ws.collect` / `ws.close` 路径，以及 replay failure 的 `stepIndex` / `partialTranscript` 诊断；结果写 `.pi/browser-artifacts/smoke-browser-websocket-session-results.json`。
+
+当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload，以及 scan summary v2 的高信号摘要/精准 artifact 导航、debugger evidence workflow 的 Phase 1/2 runtime evidence，cross-tool correlation chain 的 runtime evidence，interception auto-fulfill 路径的 runtime evidence，`replaceScript` 路径的 runtime evidence，uninstall fail-closed 路径的 runtime evidence，以及 request-mutate / tab-close-cleanup / lease-conflict 路径的 runtime evidence。
 
 `bridge/native_command_schema.json` 是命令协议单一事实来源。修改协议后执行：
 

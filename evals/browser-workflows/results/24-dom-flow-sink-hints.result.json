@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "evalId": "24-dom-flow-sink-hints",
+  "status": "passed",
+  "toolCallCount": 3,
+  "firstWrongToolChoice": "none",
+  "recoveredAfterFailure": false,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "Heuristic sink hints were extracted for the explicit selector and summarized compactly.",
+      "Hints referenced observable sink facts and handler/source evidence instead of exploit judgement.",
+      "The workflow stayed selector-scoped and did not claim full dynamic taint tracking."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/dom-flow-listeners.html"
+    ],
+    "diagnostics": [
+      "Hints remained heuristic and bounded.",
+      "Selector miss/invalid cases must recover by narrowing the selector rather than broad DOM crawling."
+    ]
+  },
+  "notes": [
+    "This workflow extends existing browser_hook/browser_artifact evidence paths instead of introducing a new public DOM-flow tool.",
+    "The result is evidence assistance only, not a full taint engine or exploit-decider."
+  ]
+}
