@@ -1,4 +1,5 @@
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
+import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, redactConfig } from "./state_store";
 import { subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 import {
@@ -17,7 +18,7 @@ import {
 	rememberInterceptDiagnostic,
 	rememberInterceptTranscript,
 } from "./intercept_model";
-import type { InterceptRule, InterceptSession, InterceptTranscriptEntry } from "./intercept_model";
+import type { InterceptPhase, InterceptRule, InterceptSession, InterceptTranscriptEntry } from "./intercept_model";
 
 const rememberInterceptRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
 const forgetInterceptRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
@@ -99,6 +100,8 @@ async function enableInterceptSession(tabId: number, msg: PiBridgeCommand): Prom
 		session.installedAt = Date.now();
 		rememberInterceptDiagnostic(session, { action: "install", maxTranscript: session.maxTranscript, stages: session.stages, subscriptionId });
 		await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+		// Persist config for state recovery
+		try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' }); } catch (_) {}
 		return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "install_failed", error: errorText(error) });
@@ -116,6 +119,8 @@ async function disableInterceptSession(tabId: number, msg: PiBridgeCommand): Pro
 		session.paused.clear();
 		rememberInterceptDiagnostic(session, { action: "uninstall" });
 		await forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
+		// Forget persisted state on explicit uninstall
+		try { await forgetState('intercept', `${Number(tabId)}:${session.sessionId}`); } catch (_) {}
 		return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "uninstall_failed", error: errorText(error) });
@@ -155,6 +160,8 @@ async function handleInterceptAddRule(tabId: number, msg: PiBridgeCommand): Prom
 	session.rules.push(rule);
 	rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
 	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+	// Update persisted state
+	try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId }); } catch (_) {}
 	return { ok: true, data: { tabId, sessionId: session.sessionId, rule } };
 }
 
@@ -168,6 +175,8 @@ async function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): P
 	session.rules = session.rules.filter((rule: InterceptRule) => rule.ruleId !== ruleId);
 	rememberInterceptDiagnostic(session, { action: "remove_rule", ruleId, removed: before !== session.rules.length });
 	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+	// Update persisted state
+	try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId }); } catch (_) {}
 	return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length } };
 }
 
@@ -346,10 +355,47 @@ export function cleanupInterceptSessionTab(tabId: number, reason?: string): Json
 		for (const subscriptionId of session.cdpSubscriptions.splice(0)) unsubscribePiBrowserCdp(subscriptionId);
 		rememberInterceptDiagnostic(session, { action: "tab_cleanup", reason: reason || "tab_cleanup" });
 		void forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
+		// Forget persisted state on tab cleanup
+		try { void forgetState('intercept', key); } catch (_) {}
 		piBrowserInterceptSessions.delete(key);
 	}
 	return { tabId: Number(tabId), removed, reason: reason || "tab_cleanup" };
 }
+
+// --- Startup recovery registration ---
+registerRecovery(async (results) => {
+	const result = await recoverState('intercept', {
+		validateTab: true,
+		recover: async (record) => {
+			const tabId = record.tabId;
+			const config = record.config as { stages?: InterceptPhase[]; maxTranscript?: number; rules?: InterceptRule[] } | undefined;
+			if (!tabId || !config) return { recovered: false, historyLost: true, reason: 'missing tabId or config' };
+			const sessionId = record.sessionId || 'default';
+			const key = `${Number(tabId)}:${sessionId}`;
+			// Don't overwrite an existing active session
+			if (piBrowserInterceptSessions.has(key)) return { recovered: false, historyLost: true, reason: 'session already exists' };
+			try {
+				const session = createInterceptSession(tabId, { sessionId, maxTranscript: config.maxTranscript ?? 200, stages: config.stages ?? ['request'] });
+				if (config.rules) session.rules = config.rules;
+				piBrowserInterceptSessions.set(key, session);
+				// Re-enable Fetch domain
+				const patterns = session.stages.map((stage) => ({ urlPattern: "*", requestStage: stage === "response" ? "Response" : "Request" }));
+				await interceptCdpSend(tabId, "Fetch.enable", { patterns });
+				const subscriptionId = subscribePiBrowserCdp(tabId, "Fetch.requestPaused", interceptPauseHandler(tabId, session.sessionId));
+				if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);
+				session.active = true;
+				session.installedAt = Date.now();
+				rememberInterceptDiagnostic(session, { action: "recovered", historyLost: true, previousWorkerBootId: record.workerBootId, ruleCount: session.rules.length });
+				console.log('[PI-BROWSER-INTERCEPT] Recovered intercept session', key, 'historyLost=true');
+				return { recovered: true, historyLost: true };
+			} catch (error) {
+				console.warn('[PI-BROWSER-INTERCEPT] Failed to recover intercept session', key, error);
+				return { recovered: false, historyLost: true, reason: error instanceof Error ? error.message : String(error) };
+			}
+		},
+	});
+	results.push(result);
+});
 
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_intercept = {

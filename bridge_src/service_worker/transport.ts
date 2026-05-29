@@ -3,11 +3,13 @@ import { chromeApi as chrome } from "./runtimeEnv";
 import { installCspBypassRule, isScriptable, piBridgeInfo } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
 import { handlePiBridgeWsMessage } from "./router";
+import { runStartupRecovery } from "./state_store";
 import { installPiBrowserTabSync } from "./tab_sync";
 import type { PiChromeAlarm, PiChromeTab } from "./types";
 
 let primaryPort = PI_BROWSER_BRIDGE_PORT;
 const sockets = new Map<number, WebSocket>();
+let startupRecoveryDone = false;
 const WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 const WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
 const WS_RECONNECT_INITIAL_MS = 1000;
@@ -142,6 +144,11 @@ function connectWS(port: number = PI_BROWSER_BRIDGE_PORT): void {
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
     console.log('[PI-BROWSER-WS] Connected!', port);
     scheduleKeepalive();
+    // Run startup recovery once before first ext_ready
+    if (!startupRecoveryDone) {
+      startupRecoveryDone = true;
+      try { await runStartupRecovery(); } catch (e) { console.warn('[PI-BROWSER-WS] Startup recovery failed', e); }
+    }
     const tabs = (await chrome.tabs.query({}) as PiChromeTab[]).filter((t: PiChromeTab) => isScriptable(t.url));
     if (sockets.get(port) !== socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({

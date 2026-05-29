@@ -18,6 +18,16 @@ function read(rel) {
 	return readFileSync(path.join(root, rel), "utf8");
 }
 
+// Shared state_store stubs for VM sandboxes that load network/intercept/ws/hook modules
+const stateStoreStubs = {
+	registerRecovery: () => {},
+	persistState: async () => {},
+	forgetState: async () => {},
+	recoverState: async () => ({ kind: "", recovered: [], lost: [], diagnostics: [] }),
+	RECOVERY_CODES: { RECOVERED: "RUNTIME_STATE_RECOVERED", RECOVERED_WITH_HISTORY_LOSS: "RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS", LOST: "RUNTIME_STATE_LOST" },
+	redactConfig: (value) => value,
+};
+
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
@@ -157,6 +167,7 @@ function createNetworkRuntime() {
 		normalizePersistentPiBrowserResponse: (value) => value,
 		piWithTimeout: async (promise) => await promise,
 		chrome: { debugger: { sendCommand: async () => ({}) } },
+		...stateStoreStubs,
 	};
 	vm.runInNewContext(networkSource, sandbox, { filename: "runtime-fixture-network.js" });
 	function emit(method, params = {}) {
@@ -293,6 +304,7 @@ function createWaitHookRuntime() {
 		waitForNetworkIdle: async () => ({ ok: true, data: { idle: true } }),
 		waitForNavigation: async () => ({ ok: true, data: { url: "https://fixture.test" } }),
 		waitForSelector: async (_tabId, msg) => ({ ok: true, data: { selector: msg.selector || "#ready" } }),
+		...stateStoreStubs,
 	};
 	vm.runInNewContext(`${waitSource}\nglobalThis.__waitFixture = { piBrowserWaits, dispatchPiBrowserWait, cleanupPiBrowserPageListenersForTab };`, sandbox, { filename: "runtime-fixture-wait.js" });
 	sandbox.addEventListener = sandbox.addEventListener;

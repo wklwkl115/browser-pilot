@@ -3,6 +3,7 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piWithTimeout, redactSensitive, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
+import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, redactConfig } from "./state_store";
 import { enablePiBrowserCdpDomains, releasePiBrowserCdpDomains, subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import { makeWaitId, normalizePiBrowserTimeoutMs } from "./wait_coordinator";
 import {
@@ -37,7 +38,7 @@ import {
   truncateBase64Body,
   truncateStringByBytes,
 } from "./network_model";
-import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, NetworkRecorderConfig } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
 
 const rememberNetworkRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
@@ -256,6 +257,8 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
     try { await cdpSendNetworkCommand(tabId, 'Page.setLifecycleEventsEnabled', { enabled:true }, 2000); } catch (e) { rememberNetworkError(recorder, 'Page.setLifecycleEventsEnabled', e); }
     recorder.active = true; recorder.startedAt = Date.now(); recorder.diagnostics.push({ t:Date.now(), action:'start', events, config:recorderPublicConfig(config) });
     await rememberNetworkRuntimeSession('network', tabId, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
+    // Persist config for state recovery
+    try { await persistState('network', networkRecorderKey(tabId, config.sessionId), redactConfig(recorderPublicConfig(config)), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' }); } catch (_) {}
     return { ok:true, data:networkRecorderSummary(recorder) };
   } catch (e) {
     rememberNetworkError(recorder, 'start', e);
@@ -299,6 +302,8 @@ async function stopNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise
   const keepBuffer = msg.keepBuffer !== false && msg.keep_buffer !== false && msg.clear !== true;
   const result = cleanupNetworkRecorder(recorder, String(msg.reason || 'stop'), { keepBuffer });
   if (!keepBuffer || msg.remove === true) piBrowserNetworkRecorders.delete(recorder.key);
+  // Forget persisted state on explicit stop
+  try { await forgetState('network', networkRecorderKey(tabId, sessionId)); } catch (_) {}
   return { ok:true, data:{ ...result.summary, stopped:true, keepBuffer } };
 }
 function cleanupNetworkRecorderTab(tabId: number, reason?: string): Array<{ sessionId: string; recorderId: string }> {
@@ -307,6 +312,8 @@ function cleanupNetworkRecorderTab(tabId: number, reason?: string): Array<{ sess
     if (Number(recorder.tabId) !== Number(tabId)) continue;
     cleanupNetworkRecorder(recorder, reason || 'tab_cleanup', { keepBuffer:false });
     piBrowserNetworkRecorders.delete(recorder.key);
+    // Forget persisted state on tab cleanup
+    try { void forgetState('network', recorder.key); } catch (_) {}
     out.push({ sessionId:recorder.sessionId, recorderId:recorder.recorderId });
   }
   return out;
@@ -529,6 +536,44 @@ async function handleNetworkRecorderCommand(tabId: number, cmd: string, msg: PiB
   }
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown network recorder command: ' + cmd, { cmd, tabId });
 }
+
+// --- Startup recovery registration ---
+registerRecovery(async (results) => {
+  const result = await recoverState('network', {
+    validateTab: true,
+    recover: async (record) => {
+      const tabId = record.tabId;
+      const config = record.config as NetworkRecorderConfig | undefined;
+      if (!tabId || !config) return { recovered: false, historyLost: true, reason: 'missing tabId or config' };
+      const key = networkRecorderKey(tabId, config.sessionId || 'default');
+      // Don't overwrite an existing active recorder
+      if (piBrowserNetworkRecorders.has(key)) return { recovered: false, historyLost: true, reason: 'recorder already exists' };
+      try {
+        const recorder = createNetworkRecorder(tabId, config);
+        recorder.recoveredAt = Date.now();
+        recorder.historyLost = true;
+        piBrowserNetworkRecorders.set(key, recorder);
+        await enablePiBrowserCdpDomains(recorder.cdpRecord, ['Network', 'Page']);
+        const events = [
+          'Network.requestWillBeSent','Network.requestWillBeSentExtraInfo','Network.responseReceived','Network.responseReceivedExtraInfo','Network.dataReceived','Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed',
+          'Network.webSocketCreated','Network.webSocketWillSendHandshakeRequest','Network.webSocketHandshakeResponseReceived','Network.webSocketFrameSent','Network.webSocketFrameReceived','Network.webSocketFrameError','Network.webSocketClosed','Network.eventSourceMessageReceived',
+          'Page.frameNavigated','Page.loadEventFired','Page.domContentEventFired','Page.lifecycleEvent','Page.frameStoppedLoading'
+        ];
+        subscribePiBrowserCdp(tabId, events, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+        recorder.active = true;
+        recorder.startedAt = Date.now();
+        recorder.diagnostics.push({ t: Date.now(), action: 'recovered', historyLost: true, previousWorkerBootId: record.workerBootId });
+        console.log('[PI-BROWSER-NET] Recovered network recorder', key, 'historyLost=true');
+        return { recovered: true, historyLost: true };
+      } catch (error) {
+        console.warn('[PI-BROWSER-NET] Failed to recover network recorder', key, error);
+        return { recovered: false, historyLost: true, reason: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+  results.push(result);
+});
+
 export { cdpSendNetworkCommand, maybeCaptureNetworkBody, appendBounded, handleNetworkRecorderCdpEvent, startNetworkRecorder, clearNetworkRecorderBuffer, cleanupNetworkRecorder, stopNetworkRecorder, cleanupNetworkRecorderTab, requireNetworkRecorder, listNetworkRecorderEntries, getNetworkRecorderEntry, getNetworkRecorderBody, makeHarEntry, exportNetworkRecorderHar, networkWaitMatches, finishNetworkRecorderWait, wakeNetworkWaits, waitNetworkRecorder, handleNetworkRecorderCommand };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_network = { name: "network", symbols: { cdpSendNetworkCommand, maybeCaptureNetworkBody, appendBounded, handleNetworkRecorderCdpEvent, startNetworkRecorder, clearNetworkRecorderBuffer, cleanupNetworkRecorder, stopNetworkRecorder, cleanupNetworkRecorderTab, requireNetworkRecorder, listNetworkRecorderEntries, getNetworkRecorderEntry, getNetworkRecorderBody, makeHarEntry, exportNetworkRecorderHar, networkWaitMatches, finishNetworkRecorderWait, wakeNetworkWaits, waitNetworkRecorder, handleNetworkRecorderCommand } };

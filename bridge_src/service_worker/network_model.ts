@@ -235,7 +235,7 @@ function rememberNetworkError(recorder: NetworkRecorder | null | undefined, wher
 function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): JsonRecord | null {
   if (!recorder) return null;
   const activeWaits = Array.from(recorder.waits.values()).map(w => ({ waitId:w.waitId, condition:w.condition, age_ms:Date.now()-w.createdAt, criteria:redactSensitive(w.criteria || {}), lastMatchSeq:w.lastMatchSeq || 0 }));
-  return {
+  const summary: JsonRecord = {
     tabId:recorder.tabId, sessionId:recorder.sessionId, recorderId:recorder.recorderId, active:!!recorder.active,
     createdAt:recorder.createdAt, startedAt:recorder.startedAt, stoppedAt:recorder.stoppedAt, age_ms:Date.now()-(recorder.startedAt || recorder.createdAt),
     entries:recorder.entries.length, requestCount:recorder.byRequestId.size, bodyCount:recorder.bodyStore.size, pendingBodyCount:recorder.pendingBodyCount,
@@ -244,6 +244,9 @@ function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): J
     cdp:{ subscriptions:(recorder.cdpRecord.cdpSubscriptions || []).slice(), domains:Array.from(recorder.cdpRecord.cdpDomains || []), attached:!!recorder.cdpRecord.cdpAttached, refs:diagnosePiBrowserCdpDomainRefs(recorder.tabId).filter(r => (r.holders || []).some(h => h.holderId === recorder.cdpRecord.key)) },
     config:recorderPublicConfig(recorder.config), diagnostics:recorder.diagnostics.slice(-20)
   };
+  if (recorder.recoveredAt) summary.recoveredAt = recorder.recoveredAt;
+  if (recorder.historyLost) summary.historyLost = true;
+  return summary;
 }
 function ensureNetworkEntry(recorder: NetworkRecorder, requestId: unknown): NetworkRecord {
   const normalizedRequestId = String(requestId || makeWaitId(recorder.tabId, 'network_request'));

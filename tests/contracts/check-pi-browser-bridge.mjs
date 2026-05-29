@@ -71,6 +71,16 @@ for (const file of requiredBridgeFiles) {
 	assert(existsSync(path.join(bridge, file)), `missing bridge file: ${file}`);
 }
 
+// Shared state_store stubs for VM sandboxes that load network/intercept modules
+const stateStoreStubs = {
+	registerRecovery: () => {},
+	persistState: async () => {},
+	forgetState: async () => {},
+	recoverState: async () => ({ kind: "", recovered: [], lost: [], diagnostics: [] }),
+	RECOVERY_CODES: { RECOVERED: "RUNTIME_STATE_RECOVERED", RECOVERED_WITH_HISTORY_LOSS: "RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS", LOST: "RUNTIME_STATE_LOST" },
+	redactConfig: (value) => value,
+};
+
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.version === "0.3.0", "package version must be 0.3.0");
 assert(pkg.keywords?.includes("pi-package"), "package must declare pi-package keyword");
@@ -317,6 +327,7 @@ async function testNetworkRecorderBodyEvidence() {
 		normalizePersistentPiBrowserResponse: (value) => value,
 		piWithTimeout: async (promise) => await promise,
 		chrome: { debugger: { sendCommand: async () => ({}) } },
+		...stateStoreStubs,
 	};
 	vm.runInNewContext(networkBridge, sandbox, { filename: "network.js" });
 	const emit = (requestId, type, mimeType, postData) => {
@@ -397,6 +408,7 @@ async function testInterceptSessionPrimitives() {
 		subscribePiBrowserCdp: (_tabId, _event, _handler) => "intercept-sub-1",
 		unsubscribePiBrowserCdp: () => true,
 		normalizePersistentPiBrowserResponse: (value) => value,
+		...stateStoreStubs,
 	};
 	const interceptModelSource = readBridgeRuntimeFile("intercept_model.js");
 	const interceptSource = readBridgeRuntimeFile("intercept.js");
@@ -462,6 +474,7 @@ async function testWsSessionPrimitives() {
 		redactSensitive: (value) => value,
 		PI_BROWSER_ERROR_CODES: { INVALID_RULE: "INVALID_RULE" },
 		piBrowserError: (code, message, details) => ({ ok: false, error_code: code, error: message, details }),
+		...stateStoreStubs,
 	};
 	const wsModelSource = readBridgeRuntimeFile("ws_model.js");
 	const wsSource = readBridgeRuntimeFile("ws.js");
@@ -820,7 +833,7 @@ function testNetworkPatternMatchingIsBounded() {
 			super(pattern, flags);
 		}
 	}
-	const sandbox = { RegExp: GuardedRegExp, TextEncoder, AbortController, console };
+	const sandbox = { RegExp: GuardedRegExp, TextEncoder, AbortController, console, ...stateStoreStubs };
 	vm.runInNewContext(`${patternsBridge}
 ${networkBridge}
 globalThis.__networkPatternTest = { matchNetworkPattern, makeNetworkRecorderFilter };`, sandbox, { filename: "network-patterns.js" });
@@ -1497,6 +1510,7 @@ async function testHookReadOnlyScopeContracts() {
 		cleanupPiBrowserTab(tabId, reason) { cleanups.push({ kind: "tab", tabId, reason }); },
 		async collectNodeListeners(tabId, msg) { return { ok: true, data: { tabId, selector: msg.selector, node: { tagName: "BUTTON", id: "pay" }, listeners: [{ type: "click", useCapture: false, passive: false, once: false, handler: { url: "fixture.js", line: 12, column: 3, functionName: "onPay" } }], count: 1 } }; },
 		async collectNodeListenerChain(tabId, msg) { return { ok: true, data: { tabId, selector: msg.selector, node: { tagName: "BUTTON", id: "pay" }, chain: [{ index: 0, eventType: "click", flags: { capture: false, passive: false, once: false }, handler: { url: "fixture.js", line: 12, column: 3, functionName: "onPay" } }], count: 1 } }; },
+		...stateStoreStubs,
 	};
 	vm.runInNewContext(`${hookBridge}\nglobalThis.handlePiBrowserHookCommand = handlePiBrowserHookCommand;`, sandbox, { filename: "hook.js" });
 	const scoped = await sandbox.handlePiBrowserHookCommand("hook.list_sessions", 2, { tabId: 2 });

@@ -2,6 +2,7 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, PI_BROWSER_HOOK_DISPATCHER_FILE, callPagePiBrowser, callPagePiBrowserWithAutoReinstall, cleanupPiBrowserTab, getPiBrowserQueueStats, piBrowserError, piBrowserEval, piBrowserSessions, piBrowserTabQueues, piWithTimeout } from "./runtime";
+import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
 import { addEventListener, cleanupPiBrowserPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
 import { collectNodeListenerChain, collectNodeListeners, collectNodeSinkHints } from "./dom_flow";
 import { cleanupWaitsForUninstall } from "./wait_coordinator";
@@ -163,7 +164,11 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
       install_fingerprint: data.install_fingerprint !== undefined ? String(data.install_fingerprint) : (args.install_fingerprint ? String(args.install_fingerprint) : undefined),
       install_args: args,
       expanded_targets: expandedTargets
-    }); }
+    });
+    // Persist hook session metadata for state recovery
+    const sessionId = String(data.session_id || args.session_id || 'default');
+    try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId, sessionId, recoveryPolicy: 'manual' }); } catch (_) {}
+    }
     return res;
   }
   if (cmd === 'hook.status') {
@@ -199,6 +204,9 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
       }
       cleanupWaitsForUninstall(tabId);
       cleanupPiBrowserTab(tabId, 'hook_uninstall');
+      // Forget persisted hook state on uninstall
+      const sessionId = localSession?.session_id ? String(localSession.session_id) : 'default';
+      try { await forgetState('hook', `${Number(tabId)}:${sessionId}`); } catch (_) {}
     }
     return res;
   }
@@ -211,6 +219,45 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
   if (cmd === 'hook.getPerformanceEntries') return await getPerformanceEntries(tabId, msg) as PiBridgeResponse;
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser hook command: ' + cmd, { cmd });
 }
+
+// --- Startup recovery registration ---
+// Hook recovery is status-only: check if dispatcher still exists on the page.
+// If it does, rebuild session metadata. If not, mark as lost. Never auto-reinstall.
+registerRecovery(async (results) => {
+  const result = await recoverState('hook', {
+    validateTab: true,
+    recover: async (record) => {
+      const tabId = record.tabId;
+      if (!tabId) return { recovered: false, historyLost: true, reason: 'missing tabId' };
+      const sessionId = record.sessionId || 'default';
+      const key = Number(tabId);
+      // Don't overwrite existing session
+      if (piBrowserSessions.has(key)) return { recovered: false, historyLost: true, reason: 'session already exists' };
+      try {
+        // Check if dispatcher still exists on the page
+        const ping = await callPagePiBrowser(tabId, 'hook.status', { session_id: sessionId }).catch(() => null);
+        if (ping && ping.ok) {
+          const data = (ping.data && typeof ping.data === 'object') ? ping.data as JsonRecord : {};
+          piBrowserSessions.set(key, {
+            session_id: String(data.session_id || sessionId),
+            state: String(data.state || 'INSTALLED'),
+            installed_at: String(data.installed_at || ''),
+            targets: (record.config as JsonRecord)?.targets,
+            install_fingerprint: data.install_fingerprint !== undefined ? String(data.install_fingerprint) : undefined,
+          });
+          console.log('[PI-BROWSER-HOOK] Recovered hook session metadata', key, sessionId);
+          return { recovered: true, historyLost: false };
+        }
+        // Dispatcher not found on page - mark as lost
+        return { recovered: false, historyLost: true, reason: 'dispatcher not found on page' };
+      } catch (error) {
+        return { recovered: false, historyLost: true, reason: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+  results.push(result);
+});
+
 export { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand };
 // ESM module boundary marker for TODO 189
 export const __piBridgeModule_hook = { name: "hook", symbols: { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand } };

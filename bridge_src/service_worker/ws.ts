@@ -1,4 +1,5 @@
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, piBrowserError, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
+import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
 import { collectWsSessionTranscript, createWsSession, getWsSession, normalizeWsOpenConfig, piBrowserWsSessions, rememberWsTranscript, wsSessionId, wsSessionSummary, numberInRange, cleanupWsSessionsForTab as cleanupWsSessionsForTabState } from "./ws_model";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 
@@ -111,6 +112,7 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 		rememberWsTranscript(session, { event: "close", code: Number(event.code || 0), reason: String(event.reason || ""), wasClean: !!event.wasClean });
 		cleanupWsSocketListeners(session);
 		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
+		void forgetState('ws', `${Number(tabId)}:${session.sessionId}`);
 	};
 	const errorListener = () => {
 		session.lastError = session.lastError || "websocket error";
@@ -118,6 +120,7 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 		rememberWsTranscript(session, { event: "error", error: session.lastError, preview: previewText(session.lastError) });
 		cleanupWsSocketListeners(session);
 		void forgetWsRuntimeSession("ws", tabId, session.sessionId);
+		void forgetState('ws', `${Number(tabId)}:${session.sessionId}`);
 	};
 	ws.addEventListener("message", messageListener);
 	ws.addEventListener("close", closeListener);
@@ -147,6 +150,8 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 			session.openedAt = Date.now();
 			rememberWsTranscript(session, { event: "open" });
 			void rememberWsRuntimeSession("ws", tabId, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
+			// Persist WS config for state recovery (no transcript, no auto-reconnect)
+			try { void persistState('ws', `${Number(tabId)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'diagnosticOnly' }); } catch (_) {}
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		};
 		const onOpenError = () => {
@@ -358,6 +363,20 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup") {
 	for (const sessionId of Array.isArray(result.sessionIds) ? result.sessionIds : []) void forgetWsRuntimeSession("ws", tabId, String(sessionId || "default"));
 	return result;
 }
+
+// --- Startup recovery registration ---
+// WS recovery is diagnostic-only: report lost sessions with config summary.
+// Do not auto-reconnect WebSocket sessions after restart.
+registerRecovery(async (results) => {
+	const result = await recoverState('ws', {
+		validateTab: true,
+		recover: async (record) => {
+			// WS sessions cannot be recovered - just report as lost with config
+			return { recovered: false, historyLost: true, reason: 'WebSocket sessions are not auto-recovered after restart' };
+		},
+	});
+	results.push(result);
+});
 
 export { handlePiBrowserWsCommand, cleanupWsSessionsForTab };
 // ESM module boundary marker for TODO 189

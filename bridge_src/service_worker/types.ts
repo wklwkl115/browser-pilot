@@ -237,6 +237,8 @@ export type NetworkRecorder = JsonRecord & {
   createdAt: number;
   startedAt: number;
   stoppedAt: number;
+  recoveredAt?: number;
+  historyLost?: boolean;
   config: NetworkRecorderConfig;
   filter: NetworkRecorderConfig["filter"];
   cdpRecord: PiBrowserWaitRecord;

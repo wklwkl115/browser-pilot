@@ -188,6 +188,9 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `PRIVATE_TARGET_BLOCKED` | security | tool.security | no | schema | `src/tools/webSecurity/shared/http.ts` |
 | `QUEUE_FULL` | driver | driver.queue | yes | schema | `src/driver/BrowserCommandQueueRegistry.ts` |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
+| `RUNTIME_STATE_LOST` | native | runtime.recovery | yes | schema |  |
+| `RUNTIME_STATE_RECOVERED` | native | runtime.recovery | yes | schema |  |
+| `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS` | native | runtime.recovery | yes | schema |  |
 | `SAFETY_BLOCKED` | transfer | runtime.transfer | no | schema |  |
 | `SCRIPT_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `SELECTOR_NOT_FOUND` | page | runtime.selector | yes | schema |  |

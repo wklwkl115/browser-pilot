@@ -891,6 +891,21 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": true,
       "summary": "Durable browser wait could not survive browser extension state loss or restart."
     },
+    "RUNTIME_STATE_RECOVERED": {
+      "category": "runtime.recovery",
+      "retryable": true,
+      "summary": "Configuration/session metadata was restored without evidence loss."
+    },
+    "RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS": {
+      "category": "runtime.recovery",
+      "retryable": true,
+      "summary": "Configuration/rules were restored, but volatile runtime evidence was lost."
+    },
+    "RUNTIME_STATE_LOST": {
+      "category": "runtime.recovery",
+      "retryable": true,
+      "summary": "Runtime state cannot be safely reconstructed; caller must rebuild explicitly."
+    },
     "WEBSOCKET_INVALID_INPUT": {
       "category": "bridge.ws",
       "retryable": false,

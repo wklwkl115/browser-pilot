@@ -39,14 +39,27 @@
 
 ## 当前执行队列
 
-### 激活工作流：MV3 runtime state recovery
+### 已完成：MV3 runtime state recovery（Phase 1-5）
 
-- 计划文档：`docs/mv3-runtime-state-recovery-plan.md`
-- 目标：将 MV3 Service Worker 重启后的模块级 Map 状态丢失，从隐性故障改成“可恢复配置状态”或“显式 `RUNTIME_STATE_LOST` / `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS`”。
-- 范围：`network`、`intercept`、`hook`、`ws`、`cdp`、`wait`、`queues`、`cspBypass` 的状态分级、持久化边界、recoverer、diagnostics、restart fixtures。
-- 严格边界：`chrome.storage.session` 只存结构元数据；Node artifact 存证据数据；不持久化 body/postData/cookie/auth/ws payload/raw script；hook 默认不自动 reinstall；ws 默认不自动 reconnect；不新增公开 `browser_*` 工具，不恢复 orchestration。
-- 第一批实现顺序：Phase 0 文档和失败基线 → Phase 1 `state_store.ts` → Phase 2 network recoverer → Phase 3 intercept recoverer → Phase 4 hook/ws/CDP 诊断硬化 → Phase 5 network/intercept artifact 增量证据。
-- 验证：每阶段至少跑 `npm run check:all:bridge`、`npm run check:lifecycle`、`npm run check:all:contracts`、`npm run check:doc-structure`；runtime closure 前跑 `npm run build:bridge`、`npm run check`、`npm run smoke:browser:isolated`。
+状态：已完成并通过 `npm run check`。
+
+结果：
+
+- 已落 `state_store.ts` 基础模块：`RuntimeStateRecord` 类型、TTL（24h）、per-kind cap（50）、redaction、diagnostics、idempotent persist/forget。
+- 已落 network recoverer：persist recorder config at start/reconfigure/stop；recover recorder config and CDP subscriptions；mark `recoveredAt/historyLost` in status/list/export diagnostics。
+- 已落 intercept recoverer：persist install config/stages/rules；recover with `Fetch.disable` then `Fetch.enable` and rule reinstall；report `pausedLost:true` after restart。
+- 已落 hook diagnostics：status-only recovery；no auto reinstall；persist install args/session metadata。
+- 已落 WS diagnostics：config-only lost diagnostics；no auto reconnect；persist session config。
+- 已补 `RUNTIME_STATE_RECOVERED` / `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS` / `RUNTIME_STATE_LOST` error codes 到 native error taxonomy。
+- 已同步 protocol、generated docs、contracts。
+- `piBridgeInfo()` 和 `ext_ready` 已包含 `runtimeRecovery` 摘要。
+- 启动恢复流程已集成到 `transport.ts`，在首次 `ext_ready` 前自动运行。
+
+验证：
+
+- 已通过：`npm run build:bridge`
+- 已通过：`npm run check`
+- 已通过：`npm run docs:generate`
 
 最近完成：第二轮深度缺陷修复批次已收口，覆盖 callback OAST `sessionId` 路径收口、动态 HTTPS 证书、stale-lock token 校验、`maxRuntimeMs` 生命周期上限、WebSecurity `wordlistPath` 本地边界、private/link-local/metadata target 默认阻断与 `allowPrivateTargets`、mature bridge `allowLauncherOverride`、MV3 restart state-loss 轻量持久化诊断、旧 content page-script DOM 命令通道移除、`javascript:`/`data:` 导航阻断、template/fuzz/sqli 上界、summary hard-cap、peer/CI/package/legacy bridge 收口；不新增公开 `browser_*` 工具，不引入策略型 orchestration，不削弱 WebSecurity 能力。
 

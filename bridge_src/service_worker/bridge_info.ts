@@ -1,6 +1,7 @@
 // bridge_info.js - shared bridge metadata and tab helpers.
 
 import { chromeApi as chrome } from "./runtimeEnv";
+import { getRuntimeRecoverySummary } from "./state_store";
 
 const PI_BROWSER_WORKER_STARTED_AT = Date.now();
 const PI_BROWSER_WORKER_BOOT_ID = [
@@ -11,6 +12,7 @@ const PI_BROWSER_WORKER_BOOT_ID = [
 
 function piBridgeInfo() {
   const manifest = chrome.runtime.getManifest();
+  const recovery = getRuntimeRecoverySummary();
   return {
     id: chrome.runtime.id,
     name: manifest.name,
@@ -18,7 +20,14 @@ function piBridgeInfo() {
     manifestVersion: manifest.version,
     userAgent: navigator.userAgent,
     workerBootId: PI_BROWSER_WORKER_BOOT_ID,
-    workerStartedAt: PI_BROWSER_WORKER_STARTED_AT
+    workerStartedAt: PI_BROWSER_WORKER_STARTED_AT,
+    runtimeRecovery: recovery ? {
+      ranAt: recovery.ranAt,
+      recovered: recovery.totals.recovered,
+      recoveredWithHistoryLoss: recovery.totals.recoveredWithHistoryLoss,
+      lost: recovery.totals.lost,
+      byKind: recovery.totals.byKind,
+    } : null,
   };
 }
 
