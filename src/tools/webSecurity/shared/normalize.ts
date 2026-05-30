@@ -102,14 +102,6 @@ export function base64UrlEncode(value: string | Buffer): string {
 	return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export function tryJson(text: string): unknown | undefined {
-	try {
-		return JSON.parse(text);
-	} catch {
-		return undefined;
-	}
-}
-
 export function printableText(buffer: Buffer): string | undefined {
 	const text = buffer.toString("utf8");
 	return /^[\x09\x0a\x0d\x20-\x7e\u0080-\uffff]*$/.test(text) ? text : undefined;

@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { createCodedError } from "../../../utils/codedError";
+import { isRecord } from "../../../utils/records";
 import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, type ToolOnUpdate } from "../../toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "../../toolShared";
 import type { EnsureStarted } from "../../toolShared";
@@ -14,10 +15,6 @@ const STRING_LIKE_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Boolea
 const STRING_LIKE_ARRAY_SCHEMA = Type.Array(STRING_LIKE_SCHEMA);
 const STRING_OR_STRING_ARRAY_SCHEMA = Type.Union([Type.String(), Type.Array(Type.String())]);
 const STRING_OR_NUMBER_OR_LIST_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Array(Type.Union([Type.String(), Type.Number()]))]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function provided(value: unknown): boolean {
 	if (value === undefined || value === null) return false;

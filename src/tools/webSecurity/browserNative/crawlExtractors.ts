@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { asString, isRecord, sha256Hex, stringList, tryJson } from "../shared/normalize";
+import { tryJson } from "../../../utils/json";
+import { asString, isRecord, sha256Hex, stringList } from "../shared/normalize";
 
 export function normalizeUrlForVisit(url: string): string {
 	const parsed = new URL(url);

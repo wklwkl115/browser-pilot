@@ -2,6 +2,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
+import { tryJson } from "../utils/json";
+import { isRecord } from "../utils/records";
 export { asPositiveInt } from "../utils/params";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
@@ -18,16 +20,12 @@ export type ToolRegistrar = (context: ToolRegistrarContext) => void;
 export function parseMaybeCommand(script: string): BridgeCommand | undefined {
 	const trimmed = script.trim();
 	if (!trimmed.startsWith("{")) return undefined;
-	try {
-		const parsed = JSON.parse(trimmed) as unknown;
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as Record<string, unknown>).cmd === "string" ? parsed as BridgeCommand : undefined;
-	} catch {
-		return undefined;
-	}
+	const parsed = tryJson(trimmed);
+	return isRecord(parsed) && typeof parsed.cmd === "string" ? parsed as BridgeCommand : undefined;
 }
 
 export function objectParam(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+	return isRecord(value) ? { ...value } : {};
 }
 
 export const NativeStringList = Type.Array(Type.String());

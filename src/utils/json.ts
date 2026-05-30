@@ -1,5 +1,13 @@
 const DEFAULT_MAX_CHARS = 50_000;
 
+export function tryJson(text: string): unknown | undefined {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+}
+
 export function stableJson(value: unknown, spaces = 2): string {
 	const ancestors: unknown[] = [];
 	return JSON.stringify(value, function (this: unknown, _key, item) {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isRecord } from "../utils/records";
 import { BrowserBridgeError } from "./errors";
 import type { BrowserBridgeServer } from "./BrowserBridgeServer";
 import type { BrowserBridgeExecutionResult } from "./types";
@@ -34,10 +35,6 @@ type WaitSupervisorState = {
 	historyLost: boolean;
 	leases: WaitLeaseSummary[];
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function waitTimeoutMs(value: unknown, fallback: number, allowZero = false): number {
 	const n = Number(value);

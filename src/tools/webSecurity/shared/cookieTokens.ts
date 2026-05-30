@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { deflateRawSync, inflateRawSync, inflateSync } from "node:zlib";
-import { asString, base64UrlDecode, base64UrlEncode, isRecord, printableText, sha256Hex, tryJson } from "./normalize";
+import { tryJson } from "../../../utils/json";
+import { asString, base64UrlDecode, base64UrlEncode, isRecord, printableText, sha256Hex } from "./normalize";
 import { createRailsCookieTokenFns } from "./railsCookieTokens";
 
 type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };

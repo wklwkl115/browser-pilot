@@ -376,7 +376,7 @@ export class BrowserBridgeServer {
 			this.browserSessions.selectClient(this.browserSessions.defaultSession(), ws);
 			this.clients.updateClientInfo(ws, message.bridge || message.extension);
 			this.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
-			if (type === "ext_ready") this.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.clients.info(ws), message.bridge && typeof message.bridge === "object" && !Array.isArray(message.bridge) ? message.bridge as Record<string, unknown> : undefined);
+			if (type === "ext_ready") this.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.clients.info(ws), recordValue(message.bridge));
 			return;
 		}
 		if (type === "ack") {

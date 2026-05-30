@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createCipheriv, createDecipheriv, createHmac, pbkdf2, randomBytes } from "node:crypto";
-import { asString, base64UrlDecode, base64UrlEncode, isRecord, sha256Hex, tryJson } from "./normalize";
+import { tryJson } from "../../../utils/json";
+import { asString, base64UrlDecode, base64UrlEncode, isRecord, sha256Hex } from "./normalize";
 
 type SecretMatch = Record<string, unknown>;
 type SignatureVariant = {

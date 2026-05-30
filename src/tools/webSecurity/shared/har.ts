@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createCodedError } from "../../../utils/codedError";
+import { tryJson } from "../../../utils/json";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
 import { absoluteUrl, headersArrayToMap, parseSetCookieLine } from "./http";
 import { asString, isRecord, normalizeHeaderName, positiveInt } from "./normalize";
@@ -36,7 +37,11 @@ function compileHarUrlMatcher(patternText: string): (url: string) => boolean {
 export async function harEntriesFromOptions(options: ReplayOptions): Promise<Array<Record<string, unknown>>> {
 	let har = options.har;
 	const path = asString(options.harPath)?.trim();
-	if (path) har = JSON.parse(await readFile(path, "utf8"));
+	if (path) {
+		const parsed = tryJson(await readFile(path, "utf8"));
+		if (parsed === undefined) throw harInputError("harPath must contain valid JSON", { harPath: path });
+		har = parsed;
+	}
 	if (!isRecord(har)) return [];
 	const entries = isRecord(har.log) && Array.isArray(har.log.entries) ? har.log.entries.filter(isRecord) : [];
 	let selected = entries;

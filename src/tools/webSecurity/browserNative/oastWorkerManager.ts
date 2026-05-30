@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
 import { createCodedError } from "../../../utils/codedError";
+import { isRecord } from "../shared/normalize";
 import type { HeaderMap } from "../shared/types";
 
 export type CallbackSessionState = Record<string, unknown> & {
@@ -98,9 +99,7 @@ function callbackRuntimeMs(value: unknown, fallback = DEFAULT_CALLBACK_MAX_RUNTI
 }
 
 function readLockToken(value: unknown): string | undefined {
-	return value && typeof value === "object" && !Array.isArray(value) && typeof (value as { token?: unknown }).token === "string"
-		? String((value as { token?: string }).token)
-		: undefined;
+	return isRecord(value) && typeof value.token === "string" ? String(value.token) : undefined;
 }
 
 async function loadLockToken(lockPath: string): Promise<string | undefined> {

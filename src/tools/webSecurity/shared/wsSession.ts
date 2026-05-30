@@ -3,8 +3,8 @@ import { Buffer } from "node:buffer";
 import { WebSocket, type ClientOptions, type RawData } from "ws";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
 import { createCodedError } from "../../../utils/codedError";
+import { tryJson } from "../../../utils/json";
 import { isSafeRegexPattern, unsafeRegexReason } from "../../../utils/safeRegex";
-import { tryJson } from "./normalize";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
 export type WsTranscriptEvent = "open" | "send" | "message" | "close" | "error";

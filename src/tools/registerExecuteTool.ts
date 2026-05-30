@@ -3,7 +3,9 @@ import type { BrowserBridgeExecutionResult } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
 import { buildScanScript } from "../scan/buildScanScript";
 import { compactError } from "../utils/errors";
+import { tryJson } from "../utils/json";
 import { normalizeTabId } from "../utils/params";
+import { isRecord } from "../utils/records";
 import { summarizeGenericValue } from "./summaries/index";
 import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
@@ -39,12 +41,8 @@ function diffScanContent(before: unknown, after: unknown): { changed: number; to
 function detectCommandLikeScript(script: string): boolean {
 	const trimmed = script.trim();
 	if (!trimmed.startsWith("{")) return false;
-	try {
-		const parsed = JSON.parse(trimmed) as unknown;
-		return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as Record<string, unknown>).cmd === "string";
-	} catch {
-		return false;
-	}
+	const parsed = tryJson(trimmed);
+	return isRecord(parsed) && typeof parsed.cmd === "string";
 }
 
 async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {

@@ -6,6 +6,7 @@ import { BrowserBridgeError } from "../driver/errors";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
 import type { DetailLevel } from "../utils/params";
 import { normalizeTabId } from "../utils/params";
+import { isRecord } from "../utils/records";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
 import { stableJson } from "../utils/json";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
@@ -201,11 +202,12 @@ export async function runTool(handler: () => Promise<PiTextToolResult>, onError:
 
 export function bridgeNestedErrorResult(error: unknown, options: { command?: string; defaultMessage: string; includeCommandInDetails?: boolean }): PiTextToolResult {
 	const details = error && typeof error === "object" && "details" in error ? (error as { details?: unknown }).details : undefined;
-	const result = details && typeof details === "object" && !Array.isArray(details) ? (details as Record<string, unknown>).result : undefined;
-	if (result && typeof result === "object" && !Array.isArray(result)) {
-		const record = result as Record<string, unknown>;
+	const detailsRecord = isRecord(details) ? details : undefined;
+	const result = detailsRecord?.result;
+	if (isRecord(result)) {
+		const record = result;
 		if (typeof record.error_code === "string" && record.error_code) {
-			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
+			const resultDetails = isRecord(record.details) ? record.details : {};
 			return errorResult(new BrowserBridgeError(normalizeNativeErrorCode(record.error_code), typeof record.error === "string" ? record.error : options.defaultMessage, {
 				...(options.includeCommandInDetails && options.command ? { command: options.command } : {}),
 				...resultDetails,
@@ -291,7 +293,7 @@ async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserAct
 function attachOperationToError(error: unknown, operation: BrowserActiveOperationInfo): unknown {
 	if (!error || typeof error !== "object") return error;
 	const record = error as { details?: unknown };
-	const details = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
+	const details = isRecord(record.details) ? record.details : {};
 	record.details = { ...details, operation: compactOperationForEnvelope(operation) };
 	return error;
 }

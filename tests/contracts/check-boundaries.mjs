@@ -20,6 +20,33 @@ assert(existsSync(path.join(root, "tests", "smoke", "smoke-browser.mjs")), "brow
 assert(existsSync(path.join(root, "tests", "release", "release-local-acceptance.mjs")), "local release acceptance must live under tests/release/");
 
 const pkg = JSON.parse(read("package.json"));
+
+const normalizeRel = (file) => file.replace(/\\/g, "/");
+const helperRoots = [
+	"src/utils/records.ts",
+	"src/tools/summaries/common.ts",
+	"src/tools/webSecurity/shared/normalize.ts",
+	"src/protocol/nativeProtocol.ts",
+];
+const generatedHelperRoots = new Set(["src/protocol/nativeProtocol.ts"]);
+const helperRootSet = new Set(helperRoots);
+const helperDefinitionMatches = walk("src", (file) => file.endsWith(".ts"))
+	.map(normalizeRel)
+	.filter((file) => /\bfunction isRecord\b|\bconst isRecord\b|\bfunction recordValue\b|\bconst recordValue\b/.test(read(file)));
+for (const file of helperDefinitionMatches) {
+	const text = read(file);
+	if (/\bfunction isRecord\b|\bconst isRecord\b/.test(text)) assert(helperRootSet.has(file), `${file} must not define local isRecord outside authorized helper roots`);
+	if (/\bfunction recordValue\b|\bconst recordValue\b/.test(text)) assert(file === "src/utils/records.ts", `${file} must not define local recordValue outside src/utils/records.ts`);
+}
+const restrictedInlineObjectGuardMatches = walk("src", (file) => file.endsWith(".ts") || file.endsWith(".mjs"))
+	.map(normalizeRel)
+	.filter((file) => !helperRootSet.has(file) && !generatedHelperRoots.has(file))
+	.filter((file) => /typeof [A-Za-z0-9_$.]+ === "object" && !Array\.isArray\([A-Za-z0-9_$.]+\)/.test(read(file)));
+assert.deepEqual(restrictedInlineObjectGuardMatches.sort(), [
+	"src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
+	"src/tools/webSecurity/register/shared.ts",
+], "inline object-guard pattern must stay constrained to explicit boundary helpers or reviewed exceptions");
+assert(!read("src/utils/params.ts").includes("function normalizeTabId") || read("src/utils/params.ts").includes("return toTabId(value);"), "normalizeTabId must remain a thin compatibility alias if retained");
 const scriptText = Object.values(pkg.scripts || {}).map(String).join("\n").replace(/\\/g, "/");
 for (const file of contractFiles) {
 	assert(scriptText.includes(`tests/contracts/${file}`), `${file} must be reachable from package.json scripts`);

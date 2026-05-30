@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import yaml from "js-yaml";
+import { tryJson } from "../../../utils/json";
 import { SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
 import { absoluteUrl, extractTitle, normalizeHeaders, parseSetCookieLine, redirectLocation, responseBodyHash } from "./http";
 import { asString, isRecord, numericList, positiveInt, stringList } from "./normalize";
@@ -81,9 +82,15 @@ export function applyTemplateVars(text: string, vars: Record<string, string>): s
 function parseTemplateFileContent(text: string, path: string): unknown {
 	const trimmed = text.trim();
 	if (!trimmed) return [];
-	if (trimmed.startsWith("{") || trimmed.startsWith("[")) return JSON.parse(trimmed);
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+		const parsed = tryJson(trimmed);
+		if (parsed === undefined) throw new Error(`Invalid JSON template content in ${path}`);
+		return parsed;
+	}
 	if (/\.ya?ml$/i.test(path) || /^[A-Za-z0-9_-]+\s*:/.test(trimmed)) return yaml.load(trimmed) ?? [];
-	return JSON.parse(trimmed);
+	const parsed = tryJson(trimmed);
+	if (parsed === undefined) throw new Error(`Invalid template content in ${path}; expected JSON or YAML`);
+	return parsed;
 }
 
 export function normalizeDslMatchers(value: unknown): TemplateDslMatcher[] {

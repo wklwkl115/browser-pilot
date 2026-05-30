@@ -120,6 +120,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ALREADY_INSTALLED` | native | runtime.lifecycle | no | schema |  |
 | `AMBIGUOUS_DOWNLOAD` | transfer | runtime.transfer | no | schema |  |
 | `AMBIGUOUS_TAB_ID` | driver | driver.tab | no | schema | `src/driver/BrowserTabSessionRouter.ts` |
+| `ARTIFACT_JSON_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_MULTI_SEARCH_MODE_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_REQUIRED` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |

@@ -227,7 +227,7 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 	if (data?.ok === false) {
 		const code = normalizeNativeErrorCode(data.error_code, "CONTENT_EXTRACTION_FAILED");
 		const message = typeof data.error === "string" ? data.error : "content extraction failed";
-		const details = data.details && typeof data.details === "object" && !Array.isArray(data.details) ? data.details as Record<string, unknown> : {};
+		const details = isRecord(data.details) ? data.details : {};
 		throw new BrowserBridgeError(code, message, { command: "browser_observe", mode: "content", ...details });
 	}
 	const markdown = typeof data?.markdown === "string" ? data.markdown : "";

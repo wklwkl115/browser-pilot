@@ -1,5 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { isRecord } from "../utils/records";
 import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types";
 
 type RuntimeRecoveryBridgeInfo = {
@@ -12,10 +13,6 @@ type RuntimeRecoveryBridgeInfo = {
 	name?: unknown;
 	version?: unknown;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function artifactRoot(cwd = process.cwd()): string {
 	return path.resolve(cwd, ".pi", "browser-artifacts", "runtime-recovery");

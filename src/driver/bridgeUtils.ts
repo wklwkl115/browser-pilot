@@ -41,9 +41,7 @@ export function bridgeResultFailure(data: unknown): { message: string; details: 
 	const message = typeof record.error === "string" && record.error ? record.error
 		: typeof record.message === "string" && record.message ? record.message
 			: "Browser bridge command failed";
-	const details = record.details && typeof record.details === "object" && !Array.isArray(record.details)
-		? record.details as Record<string, unknown>
-		: {};
+	const details = recordValue(record.details) || {};
 	return { message, details };
 }
 

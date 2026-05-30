@@ -1,5 +1,6 @@
 import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS } from "../../scan/noiseRules.ts";
 import { truncateText } from "../../utils/json";
+import { recordValue } from "../../utils/records";
 import type { Summary } from "./common";
 
 const NOISE_CLASS_PATTERN = BROWSER_NOISE_CLASS_PATTERNS.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
@@ -41,10 +42,6 @@ function stripHtml(html: string): string {
 		.replace(/<[^>]+>/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-	return !!value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 function numberValue(...values: unknown[]): number | undefined {

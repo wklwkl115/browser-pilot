@@ -186,7 +186,11 @@ function normalizeHeaders(value) {
 }
 
 async function loadState() {
-  return JSON.parse(await readFile(statePath, "utf8"));
+  try {
+    return JSON.parse(await readFile(statePath, "utf8"));
+  } catch (error) {
+    throw new Error(`callbackOastWorker state file is invalid JSON: ${error?.message || String(error)}`);
+  }
 }
 
 async function saveStateUnlocked(state) {

@@ -1,8 +1,9 @@
 import path from "node:path";
 import { createCodedError } from "../../../utils/codedError";
+import { tryJson } from "../../../utils/json";
 import { saveTextArtifact } from "../../artifacts";
 import { artifactFallbackName } from "../../toolAdapter";
-import { parseCommandArgs } from "./normalize";
+import { isRecord, parseCommandArgs } from "./normalize";
 import { closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, type ReplayWsSequenceStep, type WsTranscriptEntry } from "./wsSession";
 import { summarizeWsSessionData } from "../../summaries/webSecurity/ws";
 
@@ -173,8 +174,8 @@ export function parseBrowserWsArgs(args: unknown): WsShellParams {
 
 function parseReplayStep(value: string): ReplayWsSequenceStep {
 	const parsed = safeJsonValue(value);
-	if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-		const rec = parsed as Record<string, unknown>;
+	if (isRecord(parsed)) {
+		const rec = parsed;
 		if (typeof rec.text !== "string" || !rec.text.length) throw wsShellInputError("/browser-ws replay step JSON requires text", { field: "text" });
 		return {
 			text: rec.text,
@@ -193,11 +194,7 @@ function parseReplayStepsJson(value: string): ReplayWsSequenceStep[] {
 }
 
 function safeJsonValue(value: string): unknown {
-	try {
-		return JSON.parse(value);
-	} catch {
-		return undefined;
-	}
+	return tryJson(value);
 }
 
 export function transcriptLastSeq(events: WsTranscriptEntry[] | undefined): number {

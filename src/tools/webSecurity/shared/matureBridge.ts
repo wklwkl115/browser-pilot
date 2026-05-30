@@ -2,6 +2,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
 import { createCodedError } from "../../../utils/codedError";
 import { redactWebSecurityDiagnosticValue } from "./diagnostics";
+import { isRecord } from "./normalize";
 
 export type MatureBridgeLauncherSource = "param" | "env" | "auto";
 
@@ -178,7 +179,7 @@ export function matureBridgeFailureRecord(error: unknown): Record<string, unknow
 		return {
 			code: typeof extra.code === "string" ? extra.code : undefined,
 			error: error.message,
-			details: redactWebSecurityDiagnosticValue(extra.details && typeof extra.details === "object" && !Array.isArray(extra.details) ? extra.details : undefined),
+			details: redactWebSecurityDiagnosticValue(isRecord(extra.details) ? extra.details : undefined),
 		};
 	}
 	return { error: String(error) };

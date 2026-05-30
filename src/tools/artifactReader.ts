@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { tryJson } from "../utils/json";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex";
 import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy";
@@ -21,6 +22,7 @@ export type ArtifactReaderErrorCode =
 	| "ARTIFACT_SEARCH_REGEX_UNSAFE"
 	| "ARTIFACT_SEARCH_REGEX_INVALID"
 	| "ARTIFACT_MULTI_SEARCH_MODE_INVALID"
+	| "ARTIFACT_JSON_INVALID"
 	| "ARTIFACT_TOO_LARGE";
 
 export class ArtifactReaderError extends Error {
@@ -424,7 +426,8 @@ function summarizeJsonValue(value: unknown, absPath: string, fileSize: number): 
 }
 
 function readJson(text: string, fileSize: number, absPath: string, params: BrowserArtifactParams) {
-	const parsed = JSON.parse(text) as unknown;
+	const parsed = tryJson(text);
+	if (parsed === undefined) throw new ArtifactReaderError("ARTIFACT_JSON_INVALID", "Artifact JSON content is invalid", { path: absPath, bytes: fileSize });
 	if (Array.isArray(params.pick) && params.pick.length) {
 		const entries = params.pick.map((item) => {
 			const selected = getJsonPath(parsed, item);
