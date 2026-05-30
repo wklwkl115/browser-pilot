@@ -39,6 +39,15 @@ assert(JSON.stringify(schema) === JSON.stringify(rootSchema), "bridge native_com
 for (const domain of ["core", "wait", "network", "intercept", "hook", "frame", "html", "screenshot", "evidence", "transfer", "ws"]) assert(Array.isArray(schema.domains?.[domain]), `schema missing native domain: ${domain}`);
 assert(schema.commands && typeof schema.commands === "object", "schema must define command specs");
 for (const command of Object.values(schema.domains).flat()) assert(schema.commands[command], `schema domains command missing spec: ${command}`);
+for (const [name, spec] of Object.entries(schema.commands)) {
+	const commandSpec = spec;
+	if (commandSpec.accessMode !== undefined) assert(["read", "write"].includes(commandSpec.accessMode), `schema accessMode must be read|write: ${name}`);
+	if (commandSpec.methodSpecs && typeof commandSpec.methodSpecs === "object") {
+		for (const [method, methodSpec] of Object.entries(commandSpec.methodSpecs)) {
+			if (methodSpec && typeof methodSpec === "object" && methodSpec.accessMode !== undefined) assert(["read", "write"].includes(methodSpec.accessMode), `schema method accessMode must be read|write: ${name}.${method}`);
+		}
+	}
+}
 assert(schema.toolMetadata?.nativeActionTools?.browser_wait?.actions?.some((item) => item.command === "wait.selector"), "schema must define browser_wait action metadata");
 assert(schema.toolMetadata?.nativeActionTools?.browser_network?.actions?.some((item) => item.command === "network.exportHar"), "schema must define browser_network action metadata");
 assert(schema.toolMetadata?.nativeActionTools?.browser_hook?.actions?.some((item) => item.command === "hook.install_targets"), "schema must define browser_hook action metadata");

@@ -7,6 +7,7 @@
 - 当前工程治理补充队列：`TODO 250-256 build/test/doc governance follow-up`，首版实现已落地；修正版问题清单、边界、执行顺序、已完成项与 CI 自动化口径见 `CURRENT.md`
 - 当前新增执行合同：`Web Security affordance / validation / recovery 收口`（保持原子窄工具，不引入固定工作流）；执行顺序、边界、验证计划见 `CURRENT.md`
 - 当前新增执行合同：`共享 helper 去重 / parse 策略 / 防漂移治理`（聚焦 `isRecord`、`recordValue`、内联 object-guard 与核心 `JSON.parse` 热点，不处理生成文件）；执行顺序、授权根、验证计划见 `CURRENT.md`
+- 当前新增执行合同：`bridge runtime hardening / command access schema / silent-catch governance`（聚焦 H-001/H-005 的 driver 问题、H-003/H-004 的 MV3/runtime 问题以及 H-002 的分类 catch 治理，不扩公开工具面）；实施顺序、分类规则与验证计划见 `CURRENT.md`
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`
 - 下阶段深水区能力规划：`docs/next-phase-web-reversing-and-security-primitives-plan.md`

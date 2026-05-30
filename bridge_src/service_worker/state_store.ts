@@ -191,13 +191,15 @@ async function loadAll(): Promise<Record<string, RuntimeStateRecord>> {
     if (value && typeof value === "object" && !Array.isArray(value)) {
       return value as Record<string, RuntimeStateRecord>;
     }
-  } catch {
+  } catch (error) {
+    console.warn("[PI-BROWSER-STATE] Storage read failed", error instanceof Error ? error.message : error);
     // Storage read failure - return empty
   }
   return {};
 }
 
 let lastStorageWriteError: string | null = null;
+const writeChains = new Map<RuntimeStateKind, Promise<StateStoreWriteResult>>();
 
 async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<StateStoreWriteResult> {
   const session = chrome.storage?.session;
@@ -276,6 +278,17 @@ function makeRecord<TConfig>(
   };
 }
 
+function enqueueKindWrite(kind: RuntimeStateKind, task: () => Promise<StateStoreWriteResult>): Promise<StateStoreWriteResult> {
+  const previous = writeChains.get(kind) || Promise.resolve({ ok: true } as StateStoreWriteResult);
+  const next = previous
+    .catch(() => ({ ok: true } as StateStoreWriteResult))
+    .then(task);
+  writeChains.set(kind, next.catch(() => ({ ok: false } as StateStoreWriteResult)));
+  return next.finally(() => {
+    if (writeChains.get(kind) === next || writeChains.get(kind) === undefined) writeChains.delete(kind);
+  });
+}
+
 async function persist<TConfig>(
   kind: RuntimeStateKind,
   key: string,
@@ -288,26 +301,30 @@ async function persist<TConfig>(
     diagnostics?: Array<Record<string, unknown>>;
   } = {}
 ): Promise<StateStoreWriteResult> {
-  const map = await loadAll();
-  const sk = stateKey(kind, key);
-  const existing = map[sk];
-  const record = makeRecord(kind, key, redactConfig(config) as TConfig, {
-    ...opts,
-    generation: opts.generation ?? (existing ? existing.generation + 1 : 0),
-    diagnostics: Array.isArray(opts.diagnostics) ? [...opts.diagnostics] : undefined,
+  return await enqueueKindWrite(kind, async () => {
+    const map = await loadAll();
+    const sk = stateKey(kind, key);
+    const existing = map[sk];
+    const record = makeRecord(kind, key, redactConfig(config) as TConfig, {
+      ...opts,
+      generation: opts.generation ?? (existing ? existing.generation + 1 : 0),
+      diagnostics: Array.isArray(opts.diagnostics) ? [...opts.diagnostics] : undefined,
+    });
+    map[sk] = record as RuntimeStateRecord;
+    await pruneMissingTabs(map);
+    const saved = await saveAll(pruneRecords(map));
+    return { ...saved, generation: record.generation };
   });
-  map[sk] = record as RuntimeStateRecord;
-  await pruneMissingTabs(map);
-  const saved = await saveAll(pruneRecords(map));
-  return { ...saved, generation: record.generation };
 }
 
 async function forget(kind: RuntimeStateKind, key: string): Promise<StateStoreWriteResult> {
-  const map = await loadAll();
-  const sk = stateKey(kind, key);
-  if (!(sk in map)) return { ok: true };
-  delete map[sk];
-  return await saveAll(map);
+  return await enqueueKindWrite(kind, async () => {
+    const map = await loadAll();
+    const sk = stateKey(kind, key);
+    if (!(sk in map)) return { ok: true };
+    delete map[sk];
+    return await saveAll(map);
+  });
 }
 
 async function get(kind: RuntimeStateKind, key: string): Promise<RuntimeStateRecord | undefined> {
@@ -324,7 +341,8 @@ async function tabExists(tabId: number): Promise<boolean> {
   try {
     const tab = await chrome.tabs.get(tabId);
     return !!tab;
-  } catch {
+  } catch (error) {
+    console.warn("[PI-BROWSER-STATE] tabExists lookup failed", tabId, error instanceof Error ? error.message : error);
     return false;
   }
 }

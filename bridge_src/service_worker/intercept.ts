@@ -107,7 +107,9 @@ async function enableInterceptSession(tabId: number, msg: PiBridgeCommand): Prom
 			const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 			if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
 			if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
-		} catch (_) {}
+		} catch (error) {
+			console.warn('[PI-BROWSER-INTERCEPT] Failed to persist intercept session state', session.sessionId, error);
+		}
 		return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "install_failed", error: errorText(error) });
@@ -126,7 +128,7 @@ async function disableInterceptSession(tabId: number, msg: PiBridgeCommand): Pro
 		rememberInterceptDiagnostic(session, { action: "uninstall" });
 		await forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		// Forget persisted state on explicit uninstall
-		try { await forgetState('intercept', `${Number(tabId)}:${session.sessionId}`); } catch (_) {}
+		try { await forgetState('intercept', `${Number(tabId)}:${session.sessionId}`); } catch (error) { console.warn('[PI-BROWSER-INTERCEPT] Failed to forget intercept session state', session.sessionId, error); }
 		return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "uninstall_failed", error: errorText(error) });
@@ -170,7 +172,9 @@ async function handleInterceptAddRule(tabId: number, msg: PiBridgeCommand): Prom
 		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
 		if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
-	} catch (_) {}
+	} catch (error) {
+		console.warn('[PI-BROWSER-INTERCEPT] Failed to persist intercept session rules', session.sessionId, error);
+	}
 	return { ok: true, data: { tabId, sessionId: session.sessionId, rule, generation: session.stateGeneration } };
 }
 
@@ -188,7 +192,9 @@ async function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): P
 		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
 		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
 		if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
-	} catch (_) {}
+	} catch (error) {
+		console.warn('[PI-BROWSER-INTERCEPT] Failed to persist intercept session rules after removal', session.sessionId, error);
+	}
 	return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length, generation: session.stateGeneration } };
 }
 
@@ -389,7 +395,7 @@ export function cleanupInterceptSessionTab(tabId: number, reason?: string): Json
 		rememberInterceptDiagnostic(session, { action: "tab_cleanup", reason: reason || "tab_cleanup" });
 		void forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
 		// Forget persisted state on tab cleanup
-		try { void forgetState('intercept', key); } catch (_) {}
+		void forgetState('intercept', key).catch((error) => console.warn('[PI-BROWSER-INTERCEPT] Failed to forget intercept state during tab cleanup', key, error));
 		piBrowserInterceptSessions.delete(key);
 	}
 	return { tabId: Number(tabId), removed, reason: reason || "tab_cleanup" };
@@ -416,7 +422,7 @@ registerRecovery(async (results) => {
 				session.stateGeneration = Number(record.generation || 0);
 				piBrowserInterceptSessions.set(key, session);
 				const patterns = session.stages.map((stage) => ({ urlPattern: "*", requestStage: stage === "response" ? "Response" : "Request" }));
-				try { await interceptCdpSend(tabId, "Fetch.disable", {}); } catch (_) {}
+				try { await interceptCdpSend(tabId, "Fetch.disable", {}); } catch (error) { console.warn('[PI-BROWSER-INTERCEPT] Failed to disable Fetch before recovery re-enable', key, error); }
 				await interceptCdpSend(tabId, "Fetch.enable", { patterns });
 				const subscriptionId = subscribePiBrowserCdp(tabId, "Fetch.requestPaused", interceptPauseHandler(tabId, session.sessionId));
 				if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);

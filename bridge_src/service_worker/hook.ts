@@ -167,7 +167,7 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
     });
     // Persist hook session metadata for state recovery
     const sessionId = String(data.session_id || args.session_id || 'default');
-    try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId, sessionId, recoveryPolicy: 'manual' }); } catch (_) {}
+    try { await persistState('hook', `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId, sessionId, recoveryPolicy: 'manual' }); } catch (error) { console.warn('[PI-BROWSER-HOOK] Failed to persist hook session state', sessionId, error); }
     }
     return res;
   }
@@ -206,7 +206,7 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
       cleanupPiBrowserTab(tabId, 'hook_uninstall');
       // Forget persisted hook state on uninstall
       const sessionId = localSession?.session_id ? String(localSession.session_id) : 'default';
-      try { await forgetState('hook', `${Number(tabId)}:${sessionId}`); } catch (_) {}
+      try { await forgetState('hook', `${Number(tabId)}:${sessionId}`); } catch (error) { console.warn('[PI-BROWSER-HOOK] Failed to forget hook session state', sessionId, error); }
     }
     return res;
   }

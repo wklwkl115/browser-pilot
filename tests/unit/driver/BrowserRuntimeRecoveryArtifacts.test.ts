@@ -14,7 +14,7 @@ test("BrowserRuntimeRecoveryArtifacts writes runtime recovery and network/interc
 		{ workerBootId: "boot-1", runtimeRecovery: { ranAt: Date.now(), recovered: 1, recoveredWithHistoryLoss: 2, lost: 3, byKind: { network: { recovered: 1, lost: 0 } } } },
 	);
 	artifacts.recordCommandResult(
-		{ cmd: "network.status" },
+		{ cmd: "network.stop" },
 		{ id: "1", acknowledged: true, tabId: 9, data: { generation: 4, recoveredAt: 123, historyLost: true, stateLost: false } },
 		{ browserSessionId: "default", target: { browserSessionId: "default", tabId: 9, source: "explicit", implicit: false, selectionVersionAtDispatch: 1 }, snapshot: { browserSessionId: "default", host: "127.0.0.1", port: 1, running: true, connectedClients: 1, extensionConnected: true, extension: { id: "browser-1", extensionId: "ext-1", workerBootId: "boot-2", connectedAt: Date.now(), lastSeenAt: Date.now() }, clients: [], selectionVersion: 1, tabs: [], pending: [] } },
 	);
@@ -42,7 +42,7 @@ test("BrowserRuntimeRecoveryArtifacts writes runtime recovery and network/interc
 	const interceptEvent = JSON.parse(interceptLog.trim().split("\n")[0]);
 	assert.equal(runtimeEvent.type, "runtimeRecovery");
 	assert.equal(runtimeEvent.runtimeRecovery.lost, 3);
-	assert.equal(networkEvent.command, "network.status");
+	assert.equal(networkEvent.command, "network.stop");
 	assert.equal(networkEvent.generation, 4);
 	assert.equal(networkEvent.historyLost, true);
 	assert.equal(interceptEvent.command, "intercept.collect");

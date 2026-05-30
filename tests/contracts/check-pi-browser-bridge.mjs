@@ -792,11 +792,13 @@ testBridgeInfoTracksAboutBlankTabs();
 
 function testBridgeInfoUsesTabScopedCspBypass() {
 	const updates = [];
-	const timers = [];
+	const alarms = [];
+	const alarmListeners = [];
 	let now = 1_000;
 	const sandbox = {
 		chrome: {
 			runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0" }) },
+			alarms: { create(name, info) { alarms.push({ name, ...info }); }, clear() { return true; }, onAlarm: { addListener(listener) { alarmListeners.push(listener); } } },
 			declarativeNetRequest: {
 				updateSessionRules(input) { updates.push({ kind: "session", ...input }); return Promise.resolve(); },
 				updateDynamicRules(input) { updates.push({ kind: "dynamic", ...input }); return Promise.resolve(); },
@@ -806,7 +808,6 @@ function testBridgeInfoUsesTabScopedCspBypass() {
 		Math,
 		Date: { now: () => now },
 		Number,
-		setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; },
 		console: { warn() {} },
 	};
 	vm.runInNewContext(`${bridgeInfo}
@@ -818,8 +819,9 @@ globalThis.__bridgeInfoCspTest = { installCspBypassRule, enableCspBypassForTab }
 	assert(scopedRule.condition.tabIds.length === 1 && scopedRule.condition.tabIds[0] === 42, "CSP bypass rule must be scoped to explicit tab ids");
 	assert(scopedRule.condition.resourceTypes.includes("main_frame") && scopedRule.condition.resourceTypes.includes("sub_frame"), "CSP bypass must stay limited to frame responses");
 	assert(sandbox.__bridgeInfoCspTest.enableCspBypassForTab("bad") === false, "invalid tab ids must not alter CSP bypass scope");
+	assert(alarms.at(-1).name === "pi-browser-csp-bypass-prune", "CSP bypass cleanup must schedule an MV3 alarm");
 	now = 3_000;
-	timers.at(-1).fn();
+	alarmListeners.at(-1)({ name: "pi-browser-csp-bypass-prune" });
 	assert(updates.at(-1).addRules.length === 0, "CSP bypass tab scope must expire and remove the rule");
 }
 
@@ -1286,7 +1288,8 @@ await testRouterNativeWsErrorFrames();
 
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
-assert(serverSource.includes('cmd.startsWith("intercept.")') && serverSource.includes('["intercept.status", "intercept.listRules", "intercept.collect"]'), "driver commandAccessMode must route interception mutations through write-mode lease/queue semantics while keeping status/list/collect read-only");
+assert(serverSource.includes('methodAccessMode') && serverSource.includes('spec.accessMode'), "driver command access mode must come from protocol schema metadata");
+assert(!serverSource.includes('schemaDrivenCommandAccessMode') && !serverSource.includes('cmd.startsWith("intercept.")'), "driver must not keep local write-command hardcoded routing once schema accessMode exists");
 assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "server sendCommand must not accept free-form Record commands");
 
 const registerToolsSource = read("src/tools/registerTools.ts");

@@ -9,12 +9,13 @@ export type BridgeCommand = {
 type CommandSpec = {
 	domain?: string;
 	tabScoped?: boolean;
+	accessMode?: "read" | "write";
 	methods?: string[];
 	defaultMethod?: string;
 	methodRequired?: boolean;
 	required?: string[];
 	requiredAny?: string[][];
-	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny">>;
+	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny" | "accessMode">>;
 	canonical?: string;
 	notes?: string;
 };
@@ -163,11 +164,13 @@ const schema = {
   "commands": {
     "bridge_wake": {
       "domain": "core",
-      "tabScoped": false
+      "tabScoped": false,
+      "accessMode": "read"
     },
     "tabs": {
       "domain": "core",
       "tabScoped": false,
+      "accessMode": "read",
       "methods": [
         "list",
         "switch",
@@ -179,9 +182,14 @@ const schema = {
         "switch": {
           "required": [
             "tabId"
-          ]
+          ],
+          "accessMode": "write"
+        },
+        "create": {
+          "accessMode": "write"
         },
         "close": {
+          "accessMode": "write",
           "requiredAny": [
             [
               "targetTabId"
@@ -199,6 +207,7 @@ const schema = {
     "management": {
       "domain": "core",
       "tabScoped": false,
+      "accessMode": "read",
       "methods": [
         "list",
         "reload",
@@ -206,47 +215,58 @@ const schema = {
         "enable"
       ],
       "methodSpecs": {
+        "reload": {
+          "accessMode": "write"
+        },
         "disable": {
           "required": [
             "extId"
-          ]
+          ],
+          "accessMode": "write"
         },
         "enable": {
           "required": [
             "extId"
-          ]
+          ],
+          "accessMode": "write"
         }
       }
     },
     "cookies": {
       "domain": "core",
-      "tabScoped": false
+      "tabScoped": false,
+      "accessMode": "read"
     },
     "cdp": {
       "domain": "core",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "method"
       ]
     },
     "persistent_cdp": {
       "domain": "core",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "batch": {
       "domain": "core",
       "tabScoped": false,
+      "accessMode": "write",
       "required": [
         "commands"
       ]
     },
     "contentSettings": {
       "domain": "core",
-      "tabScoped": false
+      "tabScoped": false,
+      "accessMode": "read"
     },
     "wait.navigate": {
       "domain": "wait",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "url"
       ]
@@ -254,101 +274,124 @@ const schema = {
     "wait.navigateAndWait": {
       "domain": "wait",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "url"
       ]
     },
     "wait.navigation": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "wait.loadState": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "wait.networkIdle": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "wait.selector": {
       "domain": "wait",
       "tabScoped": true,
+      "accessMode": "read",
       "required": [
         "selector"
       ]
     },
     "wait.any": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "wait.all": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "wait.cancel": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "wait.diagnose": {
       "domain": "wait",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.start": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "network.stop": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "network.status": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.clear": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "network.list": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.get": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.body": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.exportHar": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "network.wait": {
       "domain": "network",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "intercept.install": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "notes": "optional stages/requestStages may restrict Fetch.enable patterns to request and/or response interception for bounded fixtures"
     },
     "intercept.uninstall": {
       "domain": "intercept",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "intercept.status": {
       "domain": "intercept",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "intercept.listRules": {
       "domain": "intercept",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "intercept.addRule": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "action"
       ]
@@ -356,17 +399,20 @@ const schema = {
     "intercept.removeRule": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "ruleId"
       ]
     },
     "intercept.collect": {
       "domain": "intercept",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "intercept.pause": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "params"
       ]
@@ -374,6 +420,7 @@ const schema = {
     "intercept.continue": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "requestId"
       ],
@@ -382,6 +429,7 @@ const schema = {
     "intercept.fail": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "requestId"
       ]
@@ -389,50 +437,61 @@ const schema = {
     "intercept.fulfill": {
       "domain": "intercept",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "requestId"
       ]
     },
     "hook.list_sessions": {
       "domain": "hook",
-      "tabScoped": false
+      "tabScoped": false,
+      "accessMode": "read"
     },
     "hook.install": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "hook.status": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "hook.collect": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "hook.clear": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "write",
       "canonical": "hook.clear_buffer"
     },
     "hook.clear_buffer": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "hook.pause": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "hook.resume": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "hook.uninstall": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "hook.evaluate": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "read",
       "required": [
         "expression"
       ]
@@ -440,6 +499,7 @@ const schema = {
     "hook.addEventListener": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "eventType"
       ]
@@ -447,17 +507,20 @@ const schema = {
     "hook.removeEventListener": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "listenerId"
       ]
     },
     "hook.getPerformanceEntries": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "hook.getNodeListeners": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "read",
       "required": [
         "selector"
       ]
@@ -465,6 +528,7 @@ const schema = {
     "hook.getListenerChain": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "read",
       "required": [
         "selector"
       ]
@@ -472,17 +536,20 @@ const schema = {
     "hook.getSinkHints": {
       "domain": "hook",
       "tabScoped": true,
+      "accessMode": "read",
       "required": [
         "selector"
       ]
     },
     "frame.list": {
       "domain": "frame",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "frame.evaluate": {
       "domain": "frame",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "frameId",
         "expression"
@@ -491,6 +558,7 @@ const schema = {
     "frame.addNewDocumentScript": {
       "domain": "frame",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "source"
       ]
@@ -498,36 +566,43 @@ const schema = {
     "frame.removeNewDocumentScript": {
       "domain": "frame",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "identifier"
       ]
     },
     "html.get": {
       "domain": "html",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "screenshot.capture": {
       "domain": "screenshot",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "evidence.collect": {
       "domain": "evidence",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "ws.open": {
       "domain": "ws",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "url"
       ]
     },
     "ws.status": {
       "domain": "ws",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "ws.send": {
       "domain": "ws",
       "tabScoped": true,
+      "accessMode": "write",
       "requiredAny": [
         [
           "text"
@@ -540,25 +615,30 @@ const schema = {
     "ws.replay": {
       "domain": "ws",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "steps"
       ]
     },
     "ws.wait": {
       "domain": "ws",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "ws.collect": {
       "domain": "ws",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "read"
     },
     "ws.close": {
       "domain": "ws",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     },
     "transfer.download": {
       "domain": "transfer",
       "tabScoped": true,
+      "accessMode": "write",
       "requiredAny": [
         [
           "selector"
@@ -571,6 +651,7 @@ const schema = {
     "transfer.upload": {
       "domain": "transfer",
       "tabScoped": true,
+      "accessMode": "write",
       "required": [
         "selector",
         "files"
@@ -578,11 +659,13 @@ const schema = {
     },
     "hook.list_targets": {
       "domain": "hook",
-      "tabScoped": false
+      "tabScoped": false,
+      "accessMode": "read"
     },
     "hook.install_targets": {
       "domain": "hook",
-      "tabScoped": true
+      "tabScoped": true,
+      "accessMode": "write"
     }
   },
   "errorCodes": {

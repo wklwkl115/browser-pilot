@@ -13,6 +13,7 @@
 - 当前 active queue：MV3 runtime state recovery，执行合同见 `docs/mv3-runtime-state-recovery-plan.md`。目标是把 Service Worker 重启后的 network/intercept/ws/CDP/hook 长生命周期状态丢失改为自动恢复或显式 `RUNTIME_STATE_*` 诊断；不新增公开工具，不恢复 orchestration。
 - 当前并行收口队列：Web Security affordance / validation / recovery。目标是补齐 follow-up affordance、运行时参数校验、恢复提示透传与高频 schema 收敛，降低 agent 在原子工具之间的接缝猜测成本；不新增公开工具，不做跨工具自动调用，不把 nextActions 变成单一路径 workflow。
 - 当前新增治理队列：共享 helper 去重 / parse 策略 / 防漂移治理。目标是收敛 `isRecord` / `recordValue` 重复定义、减少 `src/` 内联 object-guard、统一核心 `JSON.parse` 热点策略，并用 contract 防止新代码继续漂移；不处理生成文件，不做大规模无收益 rename/alias 清扫。
+- 当前新增治理队列：bridge runtime hardening / command access schema / silent-catch governance。目标是修复 pending request 脆弱初始化顺序、为 runtime state store 增加串行写保护、把 CSP bypass TTL 清理从 `setTimeout` 收口到 MV3 可靠机制、将 bridge command `accessMode` 下沉到 protocol schema 单源，并按良性/可恢复/关键失败三类治理 bridge 侧静默 catch。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
@@ -184,6 +185,102 @@ Workstream C：防漂移治理
 - 24 处内联 object-guard 收敛或明确白名单化；
 - 5 处核心 parse 热点改成统一策略；
 - 新增 contract 能阻止同类重复再次进入仓库。
+
+### 计划中：bridge runtime hardening / command access schema / silent-catch governance
+
+状态：计划冻结，待实现。该治理项聚焦 driver / service worker runtime 的高价值稳定性债务，不扩公开工具面，不重写 bridge 能力边界。
+
+问题核查结论：
+
+- H-001：`src/driver/BrowserBridgeServer.ts` 当前存在 command access mode 的本地硬编码与 schema 混合判定；新写命令若未同步收口，存在错误降级为 `read` 的风险。
+- H-002：`bridge_src/` 内存在大量静默 catch；不是每一处都危险，但 storage / file I/O / CDP / DNR / recovery 主路径失败目前可见性不足。
+- H-003：`bridge_src/service_worker/state_store.ts` 的 `persist()` / `forget()` 仍是 `load -> mutate -> save` 异步窗口，并发时有 lost update 风险。
+- H-004：`bridge_src/service_worker/bridge_info.ts` 用 `setTimeout` 清理 CSP bypass TTL；在 MV3 suspend/resume 模型下不可靠。
+- H-005：`src/driver/BrowserBridgePendingRequests.ts` 在 timer 闭包中先引用 `pending` 再声明，当前虽然被 `Math.max(100, ...)` 间接保护，但属于脆弱写法。
+
+目标：
+
+- 收口 runtime state / command access / CSP cleanup 的确定性行为。
+- 把 command access mode 改为 protocol schema 单源，不继续在 server 里维护本地写命令名单。
+- 把 bridge 侧静默 catch 变成可诊断、可分级的失败处理，而不是机械吞没。
+
+实施顺序：
+
+1. H-005：`PendingRequest` 声明顺序修复
+2. H-003：state store per-kind promise chain 写锁
+3. H-004：CSP bypass TTL 从 `setTimeout` 改为 `chrome.alarms`
+4. H-001：`accessMode` 下沉到 protocol schema
+5. H-002：按分类治理静默 catch
+
+Workstream A：确定性小修（H-005 / H-003 / H-004）
+
+- H-005 文件：`src/driver/BrowserBridgePendingRequests.ts`
+  - 把 `const pending` 提前到 `setTimeout()` 之前；保留现有 timeout 下界逻辑。
+- H-003 文件：`bridge_src/service_worker/state_store.ts`
+  - 增加 per-kind promise chain；`persist()` / `forget()` 都通过串行写入口。
+- H-004 文件：`bridge_src/service_worker/bridge_info.ts`
+  - 用 `chrome.alarms` 替代 `setTimeout` 作为 TTL 到期唤醒机制；保留 `activeCspBypassTabIds()` + `syncCspBypassRule()` 作为真正收敛逻辑。
+
+Workstream B：command access schema 化（H-001）
+
+- 目标文件：
+  - `bridge/native_command_schema.json`
+  - `scripts/sync-native-protocol.mjs`
+  - generated protocol outputs
+  - `src/driver/BrowserBridgeServer.ts`
+- 实施项：
+  1. 为 command / methodSpec 增加 `accessMode: read | write`。
+  2. `BrowserBridgeServer` 删除本地 `writeActions`/命令名单，统一从 schema 查 access mode。
+  3. 保留极少数 target planning 逻辑，但不再保留写命令语义硬编码。
+
+Workstream C：静默 catch 分类治理（H-002）
+
+- 只做分类治理，不做 100+ catch 的机械替换。
+- A 类：预期良性
+  - tab 已关闭
+  - ws 已断开
+  - best-effort cleanup
+  - 允许保留 `catch {}`，但必须加注释说明故意忽略
+- B 类：应可见
+  - `chrome.storage*`
+  - file I/O
+  - CDP domain subscribe/unsubscribe
+  - DNR / CSP bypass rule 更新
+  - recovery 主路径失败
+  - 改为 `console.warn(...)`
+- C 类：关键路径
+  - persist / restore 主链
+  - install/uninstall 核心失败
+  - 应上抛或返回 structured error
+
+明确非目标：
+
+- 不扩公开 `browser_*` 工具面。
+- 不借 H-001 顺手调整 protocol 其他字段或命名语义。
+- 不把 H-002 变成一次性全仓大改；只先处理 runtime 主路径。
+- 不把 state store 写锁直接做成全局单锁；优先 per-kind。
+
+验证计划：
+
+- `npm run check:bridge`
+- `npm run check:runtime-fixtures`
+- `npm run check:smoke-diagnostics`
+- `npm run check:protocol`（H-001 后）
+- `npm run check`
+
+文档同步要求：
+
+- 同步 `CURRENT.md`、`TODO.md`、`CHANGELOG.md`。
+- H-001 完成后同步 generated protocol docs。
+- 若维护入口发生变化，再同步 `docs/maintainer-map.md`。
+
+最终判定标准：
+
+- PendingRequest 初始化顺序不再依赖时序保护。
+- state store 并发写不再可能覆盖彼此更新。
+- CSP bypass TTL 清理不再依赖 MV3 不可靠 `setTimeout`。
+- command access mode 单源来自 protocol schema。
+- 关键 runtime catch 不再无声吞没，至少具备可诊断性。
 
 ### 已完成：MV3 runtime state recovery（Phase 1-5）
 

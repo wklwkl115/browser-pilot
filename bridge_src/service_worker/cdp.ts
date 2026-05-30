@@ -162,8 +162,8 @@ async function piPersistentCdpAttach(tabId: number, options: PiCdpOptions = {}):
     // Enable Page/Runtime domains immediately. Without this, Chrome may return only
     // the main frame from Page.getFrameTree until domains are explicitly enabled,
     // which breaks iframe-targeted evaluation in fresh persistent sessions.
-    try { await piPersistentCdpSend(tabId, 'Page.enable', {}, { name }); } catch (_) {}
-    try { await piPersistentCdpSend(tabId, 'Runtime.enable', {}, { name }); } catch (_) {}
+    try { await piPersistentCdpSend(tabId, 'Page.enable', {}, { name }); } catch (error) { console.warn('[PI-BROWSER-CDP] Failed to enable Page domain after attach', key, error); }
+    try { await piPersistentCdpSend(tabId, 'Runtime.enable', {}, { name }); } catch (error) { console.warn('[PI-BROWSER-CDP] Failed to enable Runtime domain after attach', key, error); }
     return piCdpOk({ sessionKey: key, tabId, name, reused: false, attachedAt: rec.attachedAt });
   } catch (e) {
     const msg = cdpErrorMessage(e);
@@ -316,7 +316,7 @@ async function piPersistentCdpAddNewDocumentScript(tabId: number, source: unknow
     worldName: options?.worldName !== undefined ? String(options.worldName || '') : undefined
   };
   piPersistentCdpNewDocumentScripts.set(rec.key, rec);
-  try { await piCdpPersistNewDocumentScript(rec); } catch {}
+  try { await piCdpPersistNewDocumentScript(rec); } catch (error) { console.warn('[PI-BROWSER-CDP] Failed to persist new-document script state', rec.key, error); }
   return piCdpOk({ identifier, sessionKey, cdpSessionName: cdpOptions.name, tabId:Number(tabId), method: rec.method, detached: cdpOptions.persistent !== true });
 }
 
@@ -343,13 +343,13 @@ async function piPersistentCdpRemoveNewDocumentScript(tabId: number, identifier:
     // idempotent cleanup; arbitrary unknown ids still return SCRIPT_NOT_FOUND above.
     if (/(no\s+script|script.*(not\s*found|does\s*not\s*exist|given\s+id)|identifier.*(not\s*found|does\s*not\s*exist))/i.test(msg)) {
       piPersistentCdpNewDocumentScripts.delete(key);
-      try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch {}
+      try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch (error) { console.warn('[PI-BROWSER-CDP] Failed to forget already-removed new-document script state', key, error); }
       return piCdpOk({ identifier:id, removed:false, alreadyRemoved:true, sessionKey:known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method, error:msg });
     }
     return resp;
   }
   piPersistentCdpNewDocumentScripts.delete(key);
-  try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch {}
+  try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch (error) { console.warn('[PI-BROWSER-CDP] Failed to forget new-document script state after removal', key, error); }
   return piCdpOk({ identifier:id, removed:true, alreadyRemoved:false, sessionKey:cdpRecord(resp.data).sessionKey || known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method });
 }
 

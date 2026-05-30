@@ -449,24 +449,18 @@ export class BrowserBridgeServer {
 		if (!spec) return { target, tabId, accessMode: preferred ?? "read" };
 		const requiresTransportTab = spec.tabScoped || (canonical === "tabs" && ["switch", "close"].includes(method));
 		const noneTarget = !requiresTransportTab;
-		const write = preferred ?? this.commandAccessMode(command);
+		const accessMode = preferred ?? this.commandAccessMode(spec, method);
 		return {
 			target: noneTarget ? this.tabs.targetInfo("none", undefined, this.browserSessions.get(target?.browserSessionId)) : target,
 			tabId: noneTarget ? undefined : tabId,
-			accessMode: write,
+			accessMode,
 		};
 	}
 
-	private commandAccessMode(command: BridgeCommand): "read" | "write" {
-		const cmd = String(command.cmd || "");
-		const method = String(command.method || command.action || "").toLowerCase();
-		if (cmd === "tabs" && ["switch", "create", "close"].includes(method)) return "write";
-		if (cmd === "wait.navigate" || cmd === "wait.navigateAndWait") return "write";
-		if (cmd === "transfer.upload" || cmd === "transfer.download") return "write";
-		if (cmd.startsWith("hook.") && !["hook.status", "hook.collect", "hook.list_sessions", "hook.getPerformanceEntries", "hook.evaluate"].includes(cmd)) return "write";
-		if (cmd.startsWith("network.") && ["network.start", "network.stop", "network.clear"].includes(cmd)) return "write";
-		if (cmd.startsWith("intercept.") && !["intercept.status", "intercept.listRules", "intercept.collect"].includes(cmd)) return "write";
-		return this.schemaDrivenCommandAccessMode(cmd, method);
+	private commandAccessMode(spec: { accessMode?: "read" | "write"; methodSpecs?: Record<string, { accessMode?: "read" | "write" }> }, method: string): "read" | "write" {
+		const methodAccessMode = spec.methodSpecs?.[method]?.accessMode;
+		if (methodAccessMode === "read" || methodAccessMode === "write") return methodAccessMode;
+		return spec.accessMode === "write" ? "write" : "read";
 	}
 
 	private startHeartbeat(): void {
@@ -479,41 +473,6 @@ export class BrowserBridgeServer {
 
 	private redactMessageError(error: unknown, raw: string): Record<string, unknown> {
 		return { error: errorToPlain(error), bytes: Buffer.byteLength(raw) };
-	}
-
-	private schemaDrivenCommandAccessMode(canonicalCmd: string, method: string): "read" | "write" {
-		const writeActions = new Set([
-			"tabs.switch",
-			"tabs.create",
-			"tabs.close",
-			"management.reload",
-			"management.disable",
-			"management.enable",
-			"wait.navigate",
-			"wait.navigateandwait",
-			"network.start",
-			"network.stop",
-			"network.clear",
-			"transfer.download",
-			"transfer.upload",
-			"hook.install_targets",
-			"hook.install",
-			"hook.clear",
-			"hook.clear_buffer",
-			"hook.pause",
-			"hook.resume",
-			"hook.uninstall",
-			"hook.addeventlistener",
-			"hook.removeeventlistener",
-			"frame.evaluate",
-			"frame.addnewdocumentscript",
-			"frame.removenewdocumentscript",
-		]);
-		if (canonicalCmd.startsWith("intercept.")) {
-			if (["intercept.status", "intercept.listRules", "intercept.collect"].includes(canonicalCmd)) return "read";
-			return "write";
-		}
-		return writeActions.has(`${canonicalCmd}.${method}`.toLowerCase()) || writeActions.has(canonicalCmd.toLowerCase()) ? "write" : "read";
 	}
 
 	private requireTabId(value: unknown): number {

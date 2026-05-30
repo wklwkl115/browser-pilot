@@ -206,7 +206,9 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
       const persisted = await persistState('network', networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' });
       if (persisted.generation !== undefined) recorder.stateGeneration = Number(persisted.generation);
       if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t:Date.now(), action:'persist_failed', error:persisted.error });
-    } catch (_) {}
+    } catch (error) {
+      console.warn('[PI-BROWSER-NET] Failed to persist recorder state during reconfigure', config.sessionId, error);
+    }
     return { ok:true, data:{ ...networkRecorderSummary(recorder), reconfigured:true } };
   }
   if (recorder && recorder.active) return piBrowserError(PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED, 'network recorder already started', { tabId, sessionId:config.sessionId });
@@ -227,7 +229,9 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
       const persisted = await persistState('network', networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' });
       if (persisted.generation !== undefined) recorder.stateGeneration = Number(persisted.generation);
       if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t:Date.now(), action:'persist_failed', error:persisted.error });
-    } catch (_) {}
+    } catch (error) {
+      console.warn('[PI-BROWSER-NET] Failed to persist recorder state during start', config.sessionId, error);
+    }
     return { ok:true, data:networkRecorderSummary(recorder) };
   } catch (e) {
     rememberNetworkError(recorder, 'start', e);
@@ -272,7 +276,7 @@ async function stopNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise
   const result = cleanupNetworkRecorder(recorder, String(msg.reason || 'stop'), { keepBuffer });
   if (!keepBuffer || msg.remove === true) piBrowserNetworkRecorders.delete(recorder.key);
   // Forget persisted state on explicit stop
-  try { await forgetState('network', networkRecorderKey(tabId, sessionId)); } catch (_) {}
+  try { await forgetState('network', networkRecorderKey(tabId, sessionId)); } catch (error) { console.warn('[PI-BROWSER-NET] Failed to forget recorder state on stop', sessionId, error); }
   return { ok:true, data:{ ...result.summary, stopped:true, keepBuffer } };
 }
 function cleanupNetworkRecorderTab(tabId: number, reason?: string): Array<{ sessionId: string; recorderId: string }> {
@@ -282,7 +286,7 @@ function cleanupNetworkRecorderTab(tabId: number, reason?: string): Array<{ sess
     cleanupNetworkRecorder(recorder, reason || 'tab_cleanup', { keepBuffer:false });
     piBrowserNetworkRecorders.delete(recorder.key);
     // Forget persisted state on tab cleanup
-    try { void forgetState('network', recorder.key); } catch (_) {}
+    void forgetState('network', recorder.key).catch((error) => console.warn('[PI-BROWSER-NET] Failed to forget recorder state during tab cleanup', recorder.key, error));
     out.push({ sessionId:recorder.sessionId, recorderId:recorder.recorderId });
   }
   return out;

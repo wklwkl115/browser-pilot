@@ -31,6 +31,7 @@ function generateBridgeProtocolTs() {
 type PiCommandSpec = JsonRecord & {
   domain?: string;
   tabScoped?: boolean;
+  accessMode?: 'read' | 'write';
   methods?: string[];
   defaultMethod?: string;
   methodRequired?: boolean;
@@ -169,12 +170,13 @@ function generateNodeProtocolTs() {
 type CommandSpec = {
 	domain?: string;
 	tabScoped?: boolean;
+	accessMode?: "read" | "write";
 	methods?: string[];
 	defaultMethod?: string;
 	methodRequired?: boolean;
 	required?: string[];
 	requiredAny?: string[][];
-	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny">>;
+	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny" | "accessMode">>;
 	canonical?: string;
 	notes?: string;
 };

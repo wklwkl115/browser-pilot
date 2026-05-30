@@ -401,7 +401,7 @@ export type PiChromeApi = {
   downloads: PiChromeDownloads;
   cookies: { getAll(details: JsonRecord): Promise<PiChromeCookie[]> };
   management: { getAll(): Promise<Array<JsonRecord & { id?: string; name?: string; enabled?: boolean; type?: string; version?: string }>>; setEnabled(id: string, enabled: boolean): Promise<void> };
-  alarms: { create(name: string, alarmInfo: JsonRecord): void; onAlarm: PiChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
+  alarms: { create(name: string, alarmInfo: JsonRecord): void; clear?(name: string): Promise<boolean> | boolean; onAlarm: PiChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
   storage?: { session?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> } };
   contentSettings?: Record<string, { set(details: JsonRecord): Promise<void> }>;
   declarativeNetRequest: { updateDynamicRules(rules: JsonRecord): Promise<void>; updateSessionRules?: (rules: JsonRecord) => Promise<void> };

@@ -29,6 +29,10 @@ const stateStoreStubs = {
 	redactConfig: (value) => value,
 };
 
+async function flushMicrotasks(turns = 2) {
+	for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function createSessionStorage(shared) {
 	return {
 		async get(key) {
@@ -878,6 +882,35 @@ async function testRuntimeRecoveryContracts(diagnostics) {
 	};
 }
 
+async function testStateStoreSerializesConcurrentWrites(diagnostics) {
+	const storageState = {};
+	const sandbox = {
+		console,
+		setTimeout,
+		clearTimeout,
+		chrome: {
+			storage: {
+				session: {
+					async get(key) { await new Promise((resolve) => setTimeout(resolve, 0)); return { [key]: storageState[key] }; },
+					async set(value) { await new Promise((resolve) => setTimeout(resolve, 0)); Object.assign(storageState, value); },
+				},
+			},
+			tabs: { async get(tabId) { return { id: tabId }; } },
+		},
+		PI_BROWSER_WORKER_BOOT_ID: 'state-store-fixture',
+	};
+	vm.runInNewContext(`${stateStoreSource}
+globalThis.__stateStoreFixture = { persist, getAll };`, sandbox, { filename: 'runtime-fixture-state-store-serialize.js' });
+	await Promise.all([
+		sandbox.__stateStoreFixture.persist('network', 'one', { sessionId: 'one' }, { tabId: 1 }),
+		sandbox.__stateStoreFixture.persist('network', 'two', { sessionId: 'two' }, { tabId: 2 }),
+	]);
+	await flushMicrotasks();
+	const records = await sandbox.__stateStoreFixture.getAll('network');
+	assert.equal(records.length, 2, 'state_store must preserve concurrent writes for the same kind');
+	diagnostics.stateStore = { networkRecords: records.length };
+}
+
 async function main() {
 	const diagnostics = { startedAt: new Date().toISOString() };
 	const temp = await mkdtemp(path.join(os.tmpdir(), "pi-runtime-fixtures-"));
@@ -889,6 +922,7 @@ async function main() {
 		await testScreenshotFallbackFixture(diagnostics);
 		await testTransferDownloadUploadFixture(diagnostics);
 		await testCallbackWorkerStateFixture(diagnostics);
+		await testStateStoreSerializesConcurrentWrites(diagnostics);
 		await testRuntimeRecoveryContracts(diagnostics);
 		await mkdir(artifactDir, { recursive: true });
 		await rm(failureArtifact, { force: true });

@@ -151,7 +151,9 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 			rememberWsTranscript(session, { event: "open" });
 			void rememberWsRuntimeSession("ws", tabId, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
 			// Persist WS config for state recovery (no transcript, no auto-reconnect)
-			try { void persistState('ws', `${Number(tabId)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'diagnosticOnly' }); } catch (_) {}
+			void persistState('ws', `${Number(tabId)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'diagnosticOnly' }).catch((error) => {
+				console.warn('[PI-BROWSER-WS] Failed to persist websocket session state', session.sessionId, error);
+			});
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		};
 		const onOpenError = () => {
