@@ -112,7 +112,7 @@ async function handlePiBrowserTransportAlarm(alarm: PiChromeAlarm) {
   if (alarm.name === 'pi-browser-ws-keepalive') {
     const openSockets = getPiBrowserTransportSockets();
     for (const socket of openSockets) {
-      try { socket.send('{"type":"ping"}'); } catch (_) { cleanupTransportSocket(socket, 'keepalive-send'); }
+      try { socket.send('{"type":"ping"}'); } catch (error) { console.warn('[PI-BROWSER-WS] Keepalive ping failed', error); cleanupTransportSocket(socket, 'keepalive-send'); }
     }
     if (openSockets.length) scheduleKeepalive();
     else await probeAndConnectWS(false);

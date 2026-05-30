@@ -125,10 +125,10 @@ function releasePiBrowserCdpDomains(record: PiBrowserWaitRecord | null | undefin
   for (const domain of unique.reverse()) {
     const key = piBrowserCdpDomainKey(tabId, domain);
     const ref = piBrowserCdpDomainRefs.get(key);
-    if (!ref) { try { record.cdpDomains?.delete(domain); } catch (_) {} continue; }
+    if (!ref) { try { record.cdpDomains?.delete(domain); } catch (_) { /* best-effort cdp domain set cleanup */ } continue; }
     if (ref.holders.delete(holderId)) { ref.count = Math.max(0, ref.count - 1); released += 1; }
     else ref.count = Math.max(0, ref.holders.size);
-    try { record.cdpDomains?.delete(domain); } catch (_) {}
+    try { record.cdpDomains?.delete(domain); } catch (_) { /* best-effort cdp domain set cleanup */ }
     if (ref.count === 0 || ref.holders.size === 0) {
       ref.count = 0;
       if (schedulePiBrowserCdpDomainDisable(ref, reason, holderId, 'disable')) disabled += 1;
@@ -186,7 +186,7 @@ function subscribePiBrowserCdp(tabId: number, event: string | string[], handler:
 function unsubscribePiBrowserCdp(subscriptionId: string): boolean {
   const rec = piBrowserCdpSubscriptions.get(subscriptionId);
   if (!rec) return false;
-  try { chrome.debugger.onEvent.removeListener(rec.handler); } catch (_) {}
+  try { chrome.debugger.onEvent.removeListener(rec.handler); } catch (error) { console.warn('[PI-BROWSER-WAIT] Failed to remove debugger event listener', subscriptionId, error); }
   piBrowserCdpSubscriptions.delete(subscriptionId);
   const set = piBrowserCdpTabRefs.get(Number(rec.tabId));
   if (set) { set.delete(subscriptionId); if (!set.size) piBrowserCdpTabRefs.delete(Number(rec.tabId)); }

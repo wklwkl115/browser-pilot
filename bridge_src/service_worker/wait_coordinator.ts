@@ -142,10 +142,10 @@ function shouldAbortWaitCleanupReason(reason?: string): boolean {
 }
 function clearWait(record: PiBrowserWaitRecord | null | undefined, reason?: string): void {
   if (!record || record.status === 'cleaned') return;
-  if (shouldAbortWaitCleanupReason(reason)) { try { record.abortController?.abort(reason || 'cleaned'); } catch (_) {} }
-  for (const t of record.timers.splice(0)) { try { clearTimeout(t); } catch (_) {} }
-  for (const item of record.listeners.splice(0)) { try { item.remove(); } catch (_) {} }
-  for (const sid of record.cdpSubscriptions.splice(0)) { try { unsubscribePiBrowserCdp(sid); } catch (_) {} }
+  if (shouldAbortWaitCleanupReason(reason)) { try { record.abortController?.abort(reason || 'cleaned'); } catch (_) { /* best-effort abort during wait cleanup */ } }
+  for (const t of record.timers.splice(0)) { try { clearTimeout(t); } catch (_) { /* best-effort timer cleanup */ } }
+  for (const item of record.listeners.splice(0)) { try { item.remove(); } catch (_) { /* best-effort listener cleanup */ } }
+  for (const sid of record.cdpSubscriptions.splice(0)) { try { unsubscribePiBrowserCdp(sid); } catch (error) { console.warn('[PI-BROWSER-WAIT] Failed to unsubscribe CDP wait subscription', sid, error); } }
   releasePiBrowserCdpDomains(record, Array.from(record.cdpDomains || []), reason || 'cleaned');
   if (record.cdpAttached) record.cdpAttached = false;
   record.status = reason || record.status || 'cleaned';
@@ -171,7 +171,7 @@ function cleanupTabWaits(tabId: unknown, reason?: string, options: CleanupTabWai
     if (!isWaitRecordForTab(r, tabId)) continue;
     orphaned += 1;
     try { r.abortController?.abort(cleanupReason); aborted += 1; } catch (_) {}
-    try { clearWait(r, cleanupReason); cleaned += 1; } catch (_) { try { piBrowserWaits.delete(key); cleaned += 1; } catch (__) {} }
+    try { clearWait(r, cleanupReason); cleaned += 1; } catch (error) { console.warn('[PI-BROWSER-WAIT] Failed to clear orphaned wait record', key, error); try { piBrowserWaits.delete(key); cleaned += 1; } catch (__) { /* best-effort orphan registry cleanup */ } }
   }
   if (opts.includeCdp !== false) cleanupPiBrowserCdpTab(tabId, cleanupReason);
   cleanupEventSubscriptionsForTab(tabId);

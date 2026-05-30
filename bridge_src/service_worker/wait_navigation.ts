@@ -35,7 +35,7 @@ async function navigatePiBrowser(tabId: number, msg: PiBridgeCommand): Promise<P
   if (chrome.tabs?.update) return { ok: true, data: await chrome.tabs.update(tabId, { url }) };
   await chrome.debugger.attach({ tabId }, '1.3');
   try { const result = await chrome.debugger.sendCommand({ tabId }, 'Page.navigate', { url }); await chrome.debugger.detach({ tabId }); return { ok: true, data: result }; }
-  catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (_) {} throw e; }
+  catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (detachError) { console.warn('[PI-BROWSER-WAIT] Failed to detach debugger after Page.navigate error', tabId, detachError); } throw e; }
 }
 
 async function navigateAndWait(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
@@ -100,7 +100,9 @@ async function waitForNavigation(tabId: number, msg: PiBridgeCommand): Promise<P
       const resultResult = asRecord(result.result);
       const currentUrl = dataRuntimeResult.value || resultResult.value || null;
       if (currentUrl) record.diagnostics.push({ source:'Runtime.evaluate', currentUrl });
-    } catch (_) {}
+    } catch (error) {
+      console.warn('[PI-BROWSER-WAIT] wait.navigation probe Runtime.evaluate failed', tabId, error);
+    }
   }
   return await new Promise<PiBridgeResponse>(resolve => {
     let completed = false;
@@ -141,7 +143,7 @@ async function waitForNavigation(tabId: number, msg: PiBridgeCommand): Promise<P
     record.timers.push(pollHandle);
     void checkCurrent('initial');
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) finish(false, 'abort', {}, PI_BROWSER_ERROR_CODES.CANCELLED, 'waitForNavigation cancelled'); };
-    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
+    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) { /* best-effort abort listener registration */ }
     const onTabsUpdated = (changedTabId: number, changeInfo: JsonRecord, updatedTab: PiChromeTab) => {
       if (Number(changedTabId) !== Number(tabId)) return;
       const url = changeInfo?.url || updatedTab?.url || lastUrl;
@@ -164,12 +166,12 @@ async function waitForNavigation(tabId: number, msg: PiBridgeCommand): Promise<P
       chrome.webNavigation.onHistoryStateUpdated?.addListener(onSameDocument);
       chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSameDocument);
       record.listeners.push({ remove: () => {
-        try { chrome.webNavigation.onBeforeNavigate?.removeListener(onBeforeNavigate); } catch (_) {}
-        try { chrome.webNavigation.onCommitted?.removeListener(onCommitted); } catch (_) {}
-        try { chrome.webNavigation.onCompleted?.removeListener(onCompleted); } catch (_) {}
-        try { chrome.webNavigation.onErrorOccurred?.removeListener(onErrorOccurred); } catch (_) {}
-        try { chrome.webNavigation.onHistoryStateUpdated?.removeListener(onSameDocument); } catch (_) {}
-        try { chrome.webNavigation.onReferenceFragmentUpdated?.removeListener(onSameDocument); } catch (_) {}
+        try { chrome.webNavigation.onBeforeNavigate?.removeListener(onBeforeNavigate); } catch (_) { /* best-effort webNavigation listener cleanup */ }
+        try { chrome.webNavigation.onCommitted?.removeListener(onCommitted); } catch (_) { /* best-effort webNavigation listener cleanup */ }
+        try { chrome.webNavigation.onCompleted?.removeListener(onCompleted); } catch (_) { /* best-effort webNavigation listener cleanup */ }
+        try { chrome.webNavigation.onErrorOccurred?.removeListener(onErrorOccurred); } catch (_) { /* best-effort webNavigation listener cleanup */ }
+        try { chrome.webNavigation.onHistoryStateUpdated?.removeListener(onSameDocument); } catch (_) { /* best-effort webNavigation listener cleanup */ }
+        try { chrome.webNavigation.onReferenceFragmentUpdated?.removeListener(onSameDocument); } catch (_) { /* best-effort webNavigation listener cleanup */ }
       } });
     } else record.diagnostics.push({ warning:'chrome.webNavigation unavailable; using tabs/CDP listeners only' });
     enablePiBrowserCdpDomains(record, ['Page']).then(() => {
@@ -214,7 +216,7 @@ async function waitForLoadState(tabId: number, msg: PiBridgeCommand): Promise<Pi
   return await new Promise<PiBridgeResponse>(resolve => {
     const complete = (res: PiBridgeResponse): void => resolve(res);
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, 'CANCELLED', waitAbortMessage(record), { targetState })); };
-    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
+    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) { /* best-effort abort listener registration */ }
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.loadState timed out', { timeout_ms: timeoutMs, targetState, last_error: record.lastError, events: record.cdpEvents.slice(-50) })), timeoutMs);
     record.timers.push(timeoutHandle);
     enablePiBrowserCdpDomains(record, ['Page']).then(() => {

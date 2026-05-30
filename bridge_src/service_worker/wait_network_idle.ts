@@ -58,12 +58,12 @@ async function waitForNetworkIdle(tabId: number, msg: PiBridgeCommand): Promise<
   if (timeoutMs === 0) return finishPiBrowserWait(record, true, { state:'network_idle', idle_ms:0, inflight:0, immediate:true });
   await attachDebuggerForWait(record, ['Network']).catch((e: unknown) => { record.lastError = e instanceof Error ? e.message : String(e); });
   return await new Promise<PiBridgeResponse>(resolve => {
-    const complete = (res: PiBridgeResponse) => { try { if (idleTimer) clearTimeout(idleTimer); } catch (_) {} resolve(res); };
+    const complete = (res: PiBridgeResponse) => { try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { /* best-effort idle timer cleanup */ } resolve(res); };
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, 'CANCELLED', waitAbortMessage(record), { inflight:Array.from(inflight.values()) })); };
-    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
+    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) { /* best-effort abort listener registration */ }
     const armIdle = () => {
       maybeExpireLongPolling();
-      try { if (idleTimer) clearTimeout(idleTimer); } catch (_) {}
+      try { if (idleTimer) clearTimeout(idleTimer); } catch (_) { /* best-effort idle timer cleanup */ }
       if (inflight.size <= maxInflight) idleTimer = setTimeout(() => complete(finishPiBrowserWait(record, true, { state: 'network_idle', idle_ms: idleMs, inflight: inflight.size, ignored: ignored.slice(-100), events: record.cdpEvents.slice(-50) })), idleMs);
     };
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.networkIdle timed out', { timeout_ms: timeoutMs, idle_ms: idleMs, inflight: Array.from(inflight.values()), ignored: ignored.slice(-100), events: record.cdpEvents.slice(-50), last_error: record.lastError })), timeoutMs);

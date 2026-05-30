@@ -267,7 +267,7 @@ async function piBrowserEval(tabId: number, expression: string, awaitPromise = t
     const exceptionDetails = runtimeRecord(resultRecord.exceptionDetails);
     if (resultRecord.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || 'Runtime.evaluate failed', exceptionDetails);
     return { ok: true, data: runtimeRecord(resultRecord.result).value };
-  } catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (_) {} throw e; }
+  } catch (e) { try { await chrome.debugger.detach({ tabId }); } catch (detachError) { console.warn('[PI-BROWSER] Failed to detach debugger after Runtime.evaluate fallback', tabId, runtimeErrorPreview(detachError)); } throw e; }
 }
 /** @returns {Promise<PiBridgeResponse>} */
 async function callPagePiBrowser(tabId: number, command: string, args: unknown, options: PiBridgeCommand = {}): Promise<PiBridgeResponse> {

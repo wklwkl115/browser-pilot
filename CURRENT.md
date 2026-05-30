@@ -14,6 +14,7 @@
 - 当前并行收口队列：Web Security affordance / validation / recovery。目标是补齐 follow-up affordance、运行时参数校验、恢复提示透传与高频 schema 收敛，降低 agent 在原子工具之间的接缝猜测成本；不新增公开工具，不做跨工具自动调用，不把 nextActions 变成单一路径 workflow。
 - 当前新增治理队列：共享 helper 去重 / parse 策略 / 防漂移治理。目标是收敛 `isRecord` / `recordValue` 重复定义、减少 `src/` 内联 object-guard、统一核心 `JSON.parse` 热点策略，并用 contract 防止新代码继续漂移；不处理生成文件，不做大规模无收益 rename/alias 清扫。
 - 当前新增治理队列：bridge runtime hardening / command access schema / silent-catch governance。目标是修复 pending request 脆弱初始化顺序、为 runtime state store 增加串行写保护、把 CSP bypass TTL 清理从 `setTimeout` 收口到 MV3 可靠机制、将 bridge command `accessMode` 下沉到 protocol schema 单源，并按良性/可恢复/关键失败三类治理 bridge 侧静默 catch。
+- H-002 第二批静默 catch 治理已冻结：聚焦 wait/cdp/ws/network/intercept/transport/runtime 的 cleanup 可见化与 recovery 主路径诊断；DOM probing、selector 容错、serialization fallback、best-effort removeListener/clearTimeout 保持 A 类保留，不做机械式全量替换。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
@@ -281,6 +282,96 @@ Workstream C：静默 catch 分类治理（H-002）
 - CSP bypass TTL 清理不再依赖 MV3 不可靠 `setTimeout`。
 - command access mode 单源来自 protocol schema。
 - 关键 runtime catch 不再无声吞没，至少具备可诊断性。
+
+### 计划中：H-002 第二批静默 catch 分类治理
+
+状态：计划冻结，待实现；本批次只处理高收益 cleanup / recovery 主路径，不把 bridge 里的所有 `catch {}` 一次性扫平。
+
+问题核查结论：
+
+- `bridge_src/service_worker/` 仍有大量 catch；总量高，但必须按价值分层处理。
+- 第二批最值得治理的是：`wait_*` / `wait_cdp` / `ws` / `network` / `intercept` / `transport` / `runtime` 中的 cleanup、detach、subscription release、runtime recovery 可见性。
+- `exec/html/dom_flow/patterns/network_model` 中大量 catch 属于 selector probing、serialization fallback、regex 容错或 best-effort cleanup，不作为本批次主战场。
+
+目标：
+
+- 提高 wait / cdp / ws / network / intercept 的 cleanup 与恢复失败可见性。
+- 让关键资源释放失败至少可通过 `console.warn` 诊断，而不是完全吞没。
+- 保持 best-effort DOM/selector/序列化容错的低噪音边界。
+
+第二批实施顺序：
+
+1. wait/navigation/cdp cleanup 可见化
+2. ws 生命周期剩余静默点
+3. network / intercept / hook 订阅与状态 forget 边界
+4. transport / runtime 次关键 cleanup
+5. transfer listener cleanup 仅在必要时补轻量可见性
+
+第二批范围：
+
+- P1：
+  - `bridge_src/service_worker/wait_navigation.ts`
+  - `bridge_src/service_worker/wait_cdp.ts`
+  - `bridge_src/service_worker/wait_coordinator.ts`
+  - `bridge_src/service_worker/wait_network_idle.ts`
+  - `bridge_src/service_worker/ws.ts`
+- P2：
+  - `bridge_src/service_worker/network.ts`
+  - `bridge_src/service_worker/intercept.ts`
+  - `bridge_src/service_worker/transport.ts`
+  - `bridge_src/service_worker/runtime.ts`
+  - `bridge_src/service_worker/hook.ts`
+- 暂缓：
+  - `core_commands.ts`
+  - `dom_flow.ts`
+  - `html.ts`
+  - `exec.ts`
+  - `network_model.ts`
+  - `patterns.ts`
+
+分类规则：
+
+- A 类：保留吞没
+  - `removeEventListener`
+  - `disconnect()`
+  - `clearTimeout/clearInterval`
+  - selector / DOM probing 局部兼容
+  - serialization fallback
+  - regex compile fallback
+  - `close()/terminate()` during teardown
+- B 类：提升为 `console.warn`
+  - `chrome.debugger.detach`
+  - `unsubscribePiBrowserCdp`
+  - `chrome.storage*`
+  - runtime `forget/persist`
+  - DNR / CSP bypass rule 更新
+  - recovery / restart repair 主路径
+- C 类：必要时 structured error
+  - install / attach / recover / persist 主链中断路径
+
+明确非目标：
+
+- 不做“131 处 catch 全改”。
+- 不把 selector/serialization/regex fallback 统一升级为 warn。
+- 不借 H-002 第二批改公开工具 contract。
+
+验证计划：
+
+- `npm run check:bridge`
+- `npm run check:runtime-fixtures`
+- `npm run check:smoke-diagnostics`
+- `npm run check`
+
+文档同步要求：
+
+- 同步 `CURRENT.md`、`TODO.md`、`CHANGELOG.md`。
+- 若治理批次完成，再把阶段结果压缩迁入 `ARCHIVE.md`。
+
+最终判定标准：
+
+- wait/cdp/ws/network/intercept 的关键 cleanup 失败至少可见；
+- best-effort catch 继续保留但不扩散；
+- 日志噪音可控，不引入新公开行为漂移。
 
 ### 已完成：MV3 runtime state recovery（Phase 1-5）
 
