@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import tls from "node:tls";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
+import { createCodedError } from "../../../utils/codedError";
 import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, numericList, positiveInt, sha256Hex, stringList } from "./normalize";
 import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types";
 
@@ -16,11 +18,11 @@ export type ResponseFingerprint = { status: number; title?: string; bodyBytes: n
 const METADATA_HOSTS = new Set(["169.254.169.254", "metadata.google.internal", "metadata.google.internal.", "metadata", "metadata.azure", "metadata.azure.internal"]);
 
 function privateTargetError(url: string, host: string, address: string, kind: string): Error {
-	const error = new Error(`Private or metadata target requires explicit allowPrivateTargets opt-in: ${url}`) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "PrivateTargetBlocked";
-	error.code = "PRIVATE_TARGET_BLOCKED";
-	error.details = { url, host, address, kind };
-	return error;
+	return createCodedError({ name: "PrivateTargetBlocked", code: "PRIVATE_TARGET_BLOCKED" as Extract<NativeErrorCode, "PRIVATE_TARGET_BLOCKED">, message: `Private or metadata target requires explicit allowPrivateTargets opt-in: ${url}`, details: { url, host, address, kind }, suppressStack: false });
+}
+
+function httpInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "HttpInputError", code: "INVALID_RULE" as Extract<NativeErrorCode, "INVALID_RULE">, message, details, suppressStack: false });
 }
 
 function isLoopbackAddress(address: string): boolean {
@@ -111,20 +113,20 @@ function responseHeadersToMap(headers: Headers): { headers: HeaderMap; setCookie
 
 export function absoluteUrl(input: unknown, options: { baseUrl?: unknown; scheme?: unknown } = {}): string {
 	const raw = asString(input)?.trim();
-	if (!raw) throw new Error("A URL is required");
+	if (!raw) throw httpInputError("A URL is required", { field: "url" });
 	try {
 		return new URL(raw).toString();
 	} catch {}
 	const base = asString(options.baseUrl)?.trim();
 	if (base) return new URL(raw, absoluteUrl(base, { scheme: options.scheme })).toString();
 	if (/^[A-Za-z0-9.-]+(?::\d+)?(?:\/.*)?$/.test(raw)) return new URL(`${defaultScheme(options.scheme)}://${raw}`).toString();
-	throw new Error(`Invalid URL: ${raw}`);
+	throw httpInputError(`Invalid URL: ${raw}`, { url: raw });
 }
 
 export function normalizeProbeTargets(options: Pick<ProbeOptions, "url" | "urls" | "paths" | "ports" | "schemes" | "defaultScheme">): string[] {
 	const rawTargets = Array.isArray(options.urls) ? [...options.urls] : options.urls !== undefined ? [options.urls] : [];
 	if (options.url !== undefined) rawTargets.unshift(options.url);
-	if (!rawTargets.length) throw new Error("browser_recon_probe requires url or urls");
+	if (!rawTargets.length) throw httpInputError("url or urls is required", { field: "url|urls" });
 	const paths = Array.isArray(options.paths) ? options.paths : options.paths !== undefined ? [options.paths] : [];
 	const schemes = stringList(options.schemes).map((item) => item.toLowerCase()).filter((item) => item === "http" || item === "https");
 	const ports = numericList(options.ports).filter((port) => port > 0 && port <= 65_535);

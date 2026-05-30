@@ -1,7 +1,7 @@
 // hook.js - Pi browser native hook/session commands.
 
 import { chromeApi as chrome } from "./runtimeEnv";
-import { PI_BROWSER_ERROR_CODES, PI_BROWSER_HOOK_DISPATCHER_FILE, callPagePiBrowser, callPagePiBrowserWithAutoReinstall, cleanupPiBrowserTab, getPiBrowserQueueStats, piBrowserError, piBrowserEval, piBrowserSessions, piBrowserTabQueues, piWithTimeout } from "./runtime";
+import { PI_BROWSER_ERROR_CODES, PI_BROWSER_HOOK_DISPATCHER_FILE, callPagePiBrowser, cleanupPiBrowserTab, getPiBrowserQueueStats, piBrowserError, piBrowserEval, piBrowserSessions, piBrowserTabQueues, piWithTimeout } from "./runtime";
 import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery, redactConfig } from "./state_store";
 import { addEventListener, cleanupPiBrowserPageListenersForTab, getPerformanceEntries, removeEventListener } from "./wait";
 import { collectNodeListenerChain, collectNodeListeners, collectNodeSinkHints } from "./dom_flow";
@@ -177,9 +177,9 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
     return res;
   }
   if (cmd === 'hook.collect') return await callPagePiBrowser(tabId, 'hook.collect', { ...piBrowserHookSessionArgs(msg), since_seq: msg.since_seq, limit: msg.limit, event_types: msg.event_types, timeout_ms: msg.timeout_ms, min_count: msg.min_count }, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === 'hook.clear_buffer') return (await callPagePiBrowserWithAutoReinstall(tabId, 'hook.clear_buffer', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.clear_buffer returned no response', { cmd });
-  if (cmd === 'hook.pause') return (await callPagePiBrowserWithAutoReinstall(tabId, 'hook.pause', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.pause returned no response', { cmd });
-  if (cmd === 'hook.resume') return (await callPagePiBrowserWithAutoReinstall(tabId, 'hook.resume', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.resume returned no response', { cmd });
+  if (cmd === 'hook.clear_buffer') return (await callPagePiBrowser(tabId, 'hook.clear_buffer', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.clear_buffer returned no response', { cmd });
+  if (cmd === 'hook.pause') return (await callPagePiBrowser(tabId, 'hook.pause', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.pause returned no response', { cmd });
+  if (cmd === 'hook.resume') return (await callPagePiBrowser(tabId, 'hook.resume', piBrowserHookSessionArgs(msg))) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'hook.resume returned no response', { cmd });
   if (cmd === 'hook.uninstall') {
     const requestedSessionId = piBrowserHookSessionId(msg);
     const localSession = piBrowserSessions.get(Number(tabId));

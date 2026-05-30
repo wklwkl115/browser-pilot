@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { BrowserBridgeError, errorToPlain } from "../../src/driver/errors.ts";
+import { normalizeNativeErrorCode } from "../../src/protocol/nativeErrorCodes.ts";
 import { validateBridgeCommand } from "../../src/protocol/nativeProtocol.ts";
 import { assertBridgeCommandSucceeded } from "../../src/tools/bridgeResultValidation.ts";
 import { ArtifactReaderError } from "../../src/tools/artifactReader.ts";
@@ -23,6 +24,10 @@ function assertNormalized(value, label) {
 	assert.equal(value.diagnostics && typeof value.diagnostics === "object" && !Array.isArray(value.diagnostics), true, `${label}: diagnostics must be object`);
 	assert.equal(Array.isArray(value.diagnostics.scopes), true, `${label}: diagnostics.scopes must be array`);
 }
+
+assert.equal(normalizeNativeErrorCode("BRIDGE_TIMEOUT"), "BRIDGE_TIMEOUT", "normalizeNativeErrorCode must preserve known native codes");
+assert.equal(normalizeNativeErrorCode("NOT_A_REAL_CODE"), "INTERNAL_ERROR", "normalizeNativeErrorCode must fall back for unknown codes");
+assert.equal(normalizeNativeErrorCode("NOT_A_REAL_CODE", "BROWSER_COMMAND_FAILED"), "BROWSER_COMMAND_FAILED", "normalizeNativeErrorCode must honor explicit fallback codes");
 
 const bridgeError = new BrowserBridgeError("BRIDGE_TIMEOUT", "timed out", { id: "1", pendingCount: 1 });
 const bridgePlain = errorToPlain(bridgeError);
@@ -126,6 +131,13 @@ assert.ok(webSecurityPlain.diagnostics.scopes.includes("security"), "webSecurity
 const webSecurityResult = errorResult(webSecurityError);
 for (const secret of ["web-secret", "web-cookie", "web-token"]) assert.equal(JSON.stringify(webSecurityResult).includes(secret), false, `webSecurity error must redact ${secret}`);
 assert.equal(JSON.stringify(webSecurityResult).includes("stack"), false, "webSecurity error result must not include stack");
+
+const validatorRecovery = normalizeError(new BrowserBridgeError("INVALID_RULE", "invalid param combo", { recovery: { summary: "remove path-mode fields", nextActions: ["switch to mode=param", "remove paths"] } }));
+assert.equal(validatorRecovery.recovery?.summary, "remove path-mode fields", "existing structured recovery summary must be preserved");
+assert.equal(validatorRecovery.recovery?.nextActions?.includes("remove paths"), true, "existing structured recovery nextActions must be preserved");
+const mergedRecovery = normalizeError(new BrowserBridgeError("TAB_NOT_FOUND", "missing tab", { recovery: { nextActions: ["custom follow-up"] }, target: { tabId: 3 } }));
+assert.equal(mergedRecovery.recovery?.nextActions?.includes("custom follow-up"), true, "existing recovery actions must survive merge with generated recovery");
+assert.equal(mergedRecovery.recovery?.nextActions?.includes("browser_tabs action=list"), true, "generated recovery actions must merge with existing recovery");
 
 const stacklessError = suppressErrorStack(new Error("stackless"));
 assert.equal(Object.hasOwn(stacklessError, "stack"), false, "suppressErrorStack must remove configurable own stack fields");

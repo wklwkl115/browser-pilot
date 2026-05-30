@@ -31,6 +31,8 @@ This reference maps common web-security signals to Pi Browser tool routes. Use p
 ## Anti-patterns
 
 - Using `browser_execute` page `fetch` instead of `browser_http_replay` for request mutation.
+- Treating summary `nextActions` as a mandatory workflow instead of bounded possible/common follow-ups.
+- Assuming crawl can synthesize a production-grade `rawRequest`; capture real request templates from `browser_network`, HAR, or explicit request objects.
 - Running broad fuzzing without explicit scope, bounds, baseline filtering, and output artifact.
 - Mixing `browser_fuzz` modes without explicit `mode` when one focused path/vhost/param route is sufficient.
 - Reporting decoded JWT claims without server acceptance of a mutated/replayed token.

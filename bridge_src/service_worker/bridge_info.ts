@@ -1,18 +1,20 @@
 // bridge_info.js - shared bridge metadata and tab helpers.
 
-import { chromeApi as chrome } from "./runtimeEnv";
-import { getRuntimeRecoverySummary } from "./state_store";
-
-const PI_BROWSER_WORKER_STARTED_AT = Date.now();
-const PI_BROWSER_WORKER_BOOT_ID = [
-  chrome.runtime.id || 'pi-browser-bridge',
-  PI_BROWSER_WORKER_STARTED_AT,
-  Math.random().toString(36).slice(2, 10)
-].join(':');
+import { PI_BROWSER_WORKER_BOOT_ID, PI_BROWSER_WORKER_STARTED_AT, chromeApi as chrome } from "./runtimeEnv";
 
 function piBridgeInfo() {
   const manifest = chrome.runtime.getManifest();
-  const recovery = getRuntimeRecoverySummary();
+  const recovery = (globalThis as typeof globalThis & {
+    __PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__?: {
+      ranAt?: number;
+      totals?: {
+        recovered?: number;
+        recoveredWithHistoryLoss?: number;
+        lost?: number;
+        byKind?: Record<string, { recovered: number; lost: number }>;
+      };
+    } | null;
+  }).__PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__;
   return {
     id: chrome.runtime.id,
     name: manifest.name,
@@ -23,10 +25,10 @@ function piBridgeInfo() {
     workerStartedAt: PI_BROWSER_WORKER_STARTED_AT,
     runtimeRecovery: recovery ? {
       ranAt: recovery.ranAt,
-      recovered: recovery.totals.recovered,
-      recoveredWithHistoryLoss: recovery.totals.recoveredWithHistoryLoss,
-      lost: recovery.totals.lost,
-      byKind: recovery.totals.byKind,
+      recovered: recovery.totals?.recovered || 0,
+      recoveredWithHistoryLoss: recovery.totals?.recoveredWithHistoryLoss || 0,
+      lost: recovery.totals?.lost || 0,
+      byKind: recovery.totals?.byKind || {},
     } : null,
   };
 }

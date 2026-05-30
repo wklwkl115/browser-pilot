@@ -21,12 +21,31 @@ function read(rel) {
 // Shared state_store stubs for VM sandboxes that load network/intercept/ws/hook modules
 const stateStoreStubs = {
 	registerRecovery: () => {},
-	persistState: async () => {},
-	forgetState: async () => {},
+	persistState: async () => ({ ok: true, generation: 0 }),
+	forgetState: async () => ({ ok: true }),
+	getState: async () => undefined,
 	recoverState: async () => ({ kind: "", recovered: [], lost: [], diagnostics: [] }),
 	RECOVERY_CODES: { RECOVERED: "RUNTIME_STATE_RECOVERED", RECOVERED_WITH_HISTORY_LOSS: "RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS", LOST: "RUNTIME_STATE_LOST" },
 	redactConfig: (value) => value,
 };
+
+function createSessionStorage(shared) {
+	return {
+		async get(key) {
+			return { [key]: shared[key] };
+		},
+		async set(value) {
+			Object.assign(shared, value);
+		},
+	};
+}
+
+function installRealStateStore(sandbox, storageState, bootId) {
+	sandbox.chrome = sandbox.chrome || {};
+	sandbox.chrome.storage = { session: createSessionStorage(storageState) };
+	sandbox.PI_BROWSER_WORKER_BOOT_ID = bootId;
+	vm.runInNewContext(`${stateStoreSource}\nglobalThis.persistState = persist; globalThis.forgetState = forget; globalThis.getState = get; globalThis.getAllState = getAll; globalThis.recoverState = recover; globalThis.runStartupRecovery = runStartupRecovery; globalThis.registerRecovery = registerRecovery; globalThis.redactConfig = redactConfig; globalThis.RECOVERY_CODES = RECOVERY_CODES; globalThis.__stateStoreFixture = { persist, forget, get, getAll, recover, diagnostics, runStartupRecovery, registerRecovery, getRuntimeRecoverySummary };`, sandbox, { filename: "runtime-fixture-state-store.js" });
+}
 
 function stripBridgeSource(text) {
 	return text
@@ -37,7 +56,8 @@ function stripBridgeSource(text) {
 		.replace(/^export function /gm, "function ")
 		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\n\/\/ ESM module boundary marker(?: for TODO 189)?\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/^export const __piBridgeModule_[\s\S]*?;\s*$/gm, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
 
@@ -50,9 +70,13 @@ function readServiceWorkerSource(name) {
 }
 
 const patternsSource = readServiceWorkerSource("patterns");
+const stateStoreSource = readServiceWorkerSource("state_store");
+const cdpSource = readServiceWorkerSource("cdp");
 const networkSource = `${patternsSource}\n${readServiceWorkerSource("network_model")}\n${readServiceWorkerSource("network")}`;
 const waitSource = `${patternsSource}\n${readServiceWorkerSource("wait_cdp")}\n${readServiceWorkerSource("wait_coordinator")}\n${readServiceWorkerSource("wait_navigation")}\n${readServiceWorkerSource("wait_network_idle")}\n${readServiceWorkerSource("wait_selector")}\n${readServiceWorkerSource("wait")}`;
 const hookSource = readServiceWorkerSource("hook");
+const wsSource = `${readServiceWorkerSource("ws_model")}\n${readServiceWorkerSource("ws")}`;
+const interceptSource = `${readServiceWorkerSource("intercept_model")}\n${readServiceWorkerSource("intercept")}`;
 const frameSource = readServiceWorkerSource("frame");
 const screenshotSource = readServiceWorkerSource("screenshot");
 const transferSource = readServiceWorkerSource("transfer");
@@ -510,6 +534,350 @@ async function testCallbackWorkerStateFixture(diagnostics) {
 	}
 }
 
+function createRecoveryNetworkRuntime(storageState, bootId, existingTabs = new Set([9])) {
+	const cdpCalls = [];
+	const subscriptions = [];
+	const sandbox = {
+		console,
+		TextEncoder,
+		AbortController,
+		setTimeout,
+		clearTimeout,
+		setInterval,
+		clearInterval,
+		atob: globalThis.atob || ((text) => Buffer.from(String(text), "base64").toString("binary")),
+		btoa: globalThis.btoa || ((text) => Buffer.from(String(text), "binary").toString("base64")),
+		PI_BROWSER_ERROR_CODES: {
+			INTERNAL_ERROR: "INTERNAL_ERROR",
+			NETWORK_RECORDER_NOT_STARTED: "NETWORK_RECORDER_NOT_STARTED",
+			NETWORK_RECORDER_TIMEOUT: "NETWORK_RECORDER_TIMEOUT",
+			BODY_UNAVAILABLE: "BODY_UNAVAILABLE",
+			REQUEST_NOT_FOUND: "REQUEST_NOT_FOUND",
+			INVALID_RULE: "INVALID_RULE",
+			ALREADY_INSTALLED: "ALREADY_INSTALLED",
+			CANCELLED: "CANCELLED",
+			TIMEOUT: "TIMEOUT",
+		},
+		piBrowserError: (code, message, details = {}) => ({ ok: false, error_code: code, error: message, details }),
+		redactSensitive: (value) => value,
+		makeWaitId: (_tabId, prefix) => `${prefix || "id"}-${Math.random().toString(36).slice(2)}`,
+		normalizePiBrowserTimeoutMs: (msg, fallback) => Number(msg?.timeoutMs ?? msg?.timeout_ms ?? fallback),
+		enablePiBrowserCdpDomains: async (record, domains) => { record.cdpDomains = new Set(domains); record.cdpAttached = true; return { mode: "fixture", domains }; },
+		releasePiBrowserCdpDomains: () => ({ released: 0, disabled: 0 }),
+		diagnosePiBrowserCdpDomainRefs: () => [],
+		subscribePiBrowserCdp: (tabId, events, handler, record) => {
+			const id = `net-sub-${subscriptions.length + 1}`;
+			subscriptions.push({ id, tabId, events, handler });
+			record.cdpSubscriptions.push(id);
+			return id;
+		},
+		unsubscribePiBrowserCdp: (id) => {
+			const index = subscriptions.findIndex((item) => item.id === id);
+			if (index >= 0) subscriptions.splice(index, 1);
+			return true;
+		},
+		piBrowserPersistentCdp: () => ({
+			send: async (_tabId, method, params, options) => {
+				cdpCalls.push({ method, params, options });
+				return { ok: true, data: { result: {} } };
+			},
+		}),
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piWithTimeout: async (promise) => await promise,
+		chrome: {
+			debugger: { sendCommand: async () => ({}) },
+			tabs: { get: async (tabId) => existingTabs.has(Number(tabId)) ? { id: Number(tabId), url: "https://fixture.test" } : (() => { throw new Error("missing tab"); })() },
+		},
+		rememberRuntimeSession: async () => {},
+		forgetRuntimeSession: async () => {},
+		findLostRuntimeSession: async () => undefined,
+		summarizeLostRuntimeSession: () => undefined,
+	};
+	installRealStateStore(sandbox, storageState, bootId);
+	vm.runInNewContext(`${networkSource}\nglobalThis.__networkRecoveryFixture = { handleNetworkRecorderCommand, piBrowserNetworkRecorders, ensureNetworkEntry };`, sandbox, { filename: `runtime-recovery-network-${bootId}.js` });
+	return { sandbox, cdpCalls, subscriptions };
+}
+
+function createRecoveryInterceptRuntime(storageState, bootId, existingTabs = new Set([41])) {
+	const cdpCalls = [];
+	const subscriptions = [];
+	const sandbox = {
+		console,
+		setTimeout,
+		clearTimeout,
+		PI_BROWSER_ERROR_CODES: {
+			SESSION_NOT_FOUND: "SESSION_NOT_FOUND",
+			INVALID_RULE: "INVALID_RULE",
+			REQUEST_NOT_FOUND: "REQUEST_NOT_FOUND",
+			INTERNAL_ERROR: "INTERNAL_ERROR",
+		},
+		piBrowserError: (code, message, details = {}) => ({ ok: false, error_code: code, error: message, details }),
+		redactSensitive: (value) => value,
+		piBrowserPersistentCdp: () => ({
+			send: async (_tabId, method, params, options) => {
+				cdpCalls.push({ method, params, options });
+				return { ok: true, data: { result: {} } };
+			},
+		}),
+		normalizePersistentPiBrowserResponse: (value) => value,
+		subscribePiBrowserCdp: (tabId, event, handler) => {
+			const id = `int-sub-${subscriptions.length + 1}`;
+			subscriptions.push({ id, tabId, event, handler });
+			return id;
+		},
+		unsubscribePiBrowserCdp: () => true,
+		chrome: {
+			tabs: { get: async (tabId) => existingTabs.has(Number(tabId)) ? { id: Number(tabId), url: "https://fixture.test" } : (() => { throw new Error("missing tab"); })() },
+		},
+		rememberRuntimeSession: async () => {},
+		forgetRuntimeSession: async () => {},
+		findLostRuntimeSession: async () => undefined,
+		summarizeLostRuntimeSession: () => undefined,
+	};
+	installRealStateStore(sandbox, storageState, bootId);
+	vm.runInNewContext(`${interceptSource}\nglobalThis.__interceptRecoveryFixture = { handlePiBrowserInterceptCommand, piBrowserInterceptSessions };`, sandbox, { filename: `runtime-recovery-intercept-${bootId}.js` });
+	return { sandbox, cdpCalls, subscriptions };
+}
+
+function createRecoveryHookRuntime(storageState, bootId, hookStatusOk = true, existingTabs = new Set([12])) {
+	const sandbox = {
+		console,
+		Date,
+		Math,
+		AbortController,
+		setTimeout,
+		clearTimeout,
+		setInterval,
+		clearInterval,
+		PI_BROWSER_ERROR_CODES: {
+			INVALID_RULE: "INVALID_RULE",
+			TIMEOUT: "TIMEOUT",
+			CANCELLED: "CANCELLED",
+			NO_SESSION: "NO_SESSION",
+			NOT_INSTALLED: "NOT_INSTALLED",
+			INVALID_SESSION: "INVALID_SESSION",
+			INTERNAL_ERROR: "INTERNAL_ERROR",
+			EVENT_SUBSCRIPTION_FAILED: "EVENT_SUBSCRIPTION_FAILED",
+		},
+		PI_BROWSER_HOOK_DISPATCHER_FILE: "dist/hook_dispatcher.js",
+		piBrowserError: (code, message, details = {}) => ({ ok: false, error_code: code, error: message, details }),
+		piWithTimeout: async (value) => await value,
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => ({ send: async () => ({ ok: true, data: { result: {} } }) }),
+		chrome: {
+			runtime: { getURL: (file) => `chrome-extension://fixture/${file}` },
+			scripting: { async executeScript() { return [{ result: true }]; } },
+			debugger: { async sendCommand() { return {}; }, async getTargets() { return []; } },
+			tabs: { get: async (tabId) => existingTabs.has(Number(tabId)) ? { id: Number(tabId), url: "https://fixture.test", title: "Fixture" } : (() => { throw new Error("missing tab"); })() },
+		},
+		piBrowserSessions: new Map(),
+		piBrowserTabQueues: new Map(),
+		getPiBrowserQueueStats: () => ({ pending: false, depth: 0, last_cmd: null }),
+		callPagePiBrowser: async (_tabId, command, args) => {
+			if (command === "hook.status") return hookStatusOk
+				? { ok: true, data: { state: "INSTALLED", session_id: args?.session_id || "hook-fixture", dispatcher_version: "fixture", install_epoch: 1 } }
+				: { ok: false, error_code: "NO_SESSION", error: "missing" };
+			return { ok: true, data: {} };
+		},
+		piBrowserEval: async () => ({ ok: true, data: { matched: true } }),
+		collectNodeListeners: async () => ({ ok: true, data: {} }),
+		collectNodeListenerChain: async () => ({ ok: true, data: {} }),
+		collectNodeSinkHints: async () => ({ ok: true, data: {} }),
+		addEventListener: async () => ({ ok: true, data: {} }),
+		removeEventListener: async () => ({ ok: true, data: {} }),
+		getPerformanceEntries: async () => ({ ok: true, data: {} }),
+		cleanupPiBrowserPageListenersForTab: async () => ({ ok: true, data: {} }),
+		cleanupWaitsForUninstall: () => {},
+		cleanupPiBrowserTab: () => {},
+	};
+	installRealStateStore(sandbox, storageState, bootId);
+	vm.runInNewContext(`${hookSource}\nglobalThis.__hookRecoveryFixture = { handlePiBrowserHookCommand, piBrowserSessions };`, sandbox, { filename: `runtime-recovery-hook-${bootId}.js` });
+	return { sandbox };
+}
+
+function createRecoveryWsRuntime(storageState, runtimeState, bootId, existingTabs = new Set([51])) {
+	class FixtureWebSocket {
+		constructor(url) {
+			this.url = url;
+			this.readyState = 0;
+			this.listeners = new Map();
+			setTimeout(() => {
+				this.readyState = 1;
+				this.dispatch("open", { type: "open" });
+			}, 0);
+		}
+		addEventListener(type, listener, options = {}) {
+			const list = this.listeners.get(type) || [];
+			list.push({ listener, once: options.once === true });
+			this.listeners.set(type, list);
+		}
+		removeEventListener(type, listener) {
+			const list = this.listeners.get(type) || [];
+			this.listeners.set(type, list.filter((entry) => entry.listener !== listener));
+		}
+		dispatch(type, event) {
+			const list = [...(this.listeners.get(type) || [])];
+			for (const entry of list) {
+				entry.listener(event);
+				if (entry.once) this.removeEventListener(type, entry.listener);
+			}
+		}
+		send() {}
+		close(code = 1000, reason = "") {
+			this.readyState = 3;
+			this.dispatch("close", { code, reason, wasClean: true, type: "close" });
+		}
+	}
+	const sandbox = {
+		console,
+		setTimeout,
+		clearTimeout,
+		TextEncoder,
+		TextDecoder,
+		WebSocket: FixtureWebSocket,
+		PI_BROWSER_ERROR_CODES: {
+			WEBSOCKET_INVALID_INPUT: "WEBSOCKET_INVALID_INPUT",
+			WEBSOCKET_SESSION_ALREADY_OPEN: "WEBSOCKET_SESSION_ALREADY_OPEN",
+			WEBSOCKET_SESSION_NOT_FOUND: "WEBSOCKET_SESSION_NOT_FOUND",
+			WEBSOCKET_SESSION_NOT_OPEN: "WEBSOCKET_SESSION_NOT_OPEN",
+			WEBSOCKET_OPEN_FAILED: "WEBSOCKET_OPEN_FAILED",
+			WEBSOCKET_OPEN_TIMEOUT: "WEBSOCKET_OPEN_TIMEOUT",
+			WEBSOCKET_SEND_FAILED: "WEBSOCKET_SEND_FAILED",
+			WEBSOCKET_WAIT_ABORTED: "WEBSOCKET_WAIT_ABORTED",
+			WEBSOCKET_WAIT_TIMEOUT: "WEBSOCKET_WAIT_TIMEOUT",
+			WEBSOCKET_INVALID_MATCHER: "WEBSOCKET_INVALID_MATCHER",
+		},
+		piBrowserError: (code, message, details = {}) => ({ ok: false, error_code: code, error: message, details }),
+		redactSensitive: (value) => value,
+		chrome: { tabs: { get: async (tabId) => existingTabs.has(Number(tabId)) ? { id: Number(tabId), url: "https://fixture.test" } : (() => { throw new Error("missing tab"); })() } },
+		rememberRuntimeSession: async (kind, tabId, sessionId, details = {}) => {
+			runtimeState[`${kind}:${Number(tabId)}:${String(sessionId || "default")}`] = { kind, tabId: Number(tabId), sessionId: String(sessionId || "default"), active: true, workerBootId: bootId, updatedAt: Date.now(), details };
+		},
+		forgetRuntimeSession: async (kind, tabId, sessionId) => { delete runtimeState[`${kind}:${Number(tabId)}:${String(sessionId || "default")}`]; },
+		findLostRuntimeSession: async (kind, tabId, sessionId) => {
+			const record = runtimeState[`${kind}:${Number(tabId)}:${String(sessionId || "default")}`];
+			return record && record.workerBootId !== bootId ? record : undefined;
+		},
+		summarizeLostRuntimeSession: (record) => record ? { stateLost: true, previousWorkerBootId: record.workerBootId, updatedAt: record.updatedAt, sessionId: record.sessionId, tabId: record.tabId, details: record.details } : undefined,
+	};
+	installRealStateStore(sandbox, storageState, bootId);
+	vm.runInNewContext(`${wsSource}\nglobalThis.__wsRecoveryFixture = { handlePiBrowserWsCommand, runStartupRecovery };`, sandbox, { filename: `runtime-recovery-ws-${bootId}.js` });
+	return { sandbox };
+}
+
+function createRecoveryCdpRuntime(storageState, bootId, existingTabs = new Set([66])) {
+	const debuggerCalls = [];
+	const sandbox = {
+		console,
+		self: null,
+		setTimeout,
+		clearTimeout,
+		chrome: {
+			tabs: { get: async (tabId) => existingTabs.has(Number(tabId)) ? { id: Number(tabId), url: "https://fixture.test" } : (() => { throw new Error("missing tab"); })() },
+			debugger: {
+				attach: async () => {},
+				detach: async () => {},
+				sendCommand: async (_target, method) => {
+					debuggerCalls.push(method);
+					if (method === "Page.addScriptToEvaluateOnNewDocument") return { identifier: "script-1" };
+					if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "root", url: "https://fixture.test" } } };
+					return {};
+				},
+				onDetach: { addListener() {} },
+			},
+		},
+		normalizePersistentPiBrowserResponse: (value) => value,
+	};
+	sandbox.self = sandbox;
+	installRealStateStore(sandbox, storageState, bootId);
+	vm.runInNewContext(`${cdpSource}\nglobalThis.__cdpRecoveryFixture = { piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, runStartupRecovery };`, sandbox, { filename: `runtime-recovery-cdp-${bootId}.js` });
+	return { sandbox, debuggerCalls };
+}
+
+async function testRuntimeRecoveryContracts(diagnostics) {
+	const storageState = {};
+	const netBootA = createRecoveryNetworkRuntime(storageState, "boot-a", new Set([9]));
+	const startedEmpty = await netBootA.sandbox.__networkRecoveryFixture.handleNetworkRecorderCommand(9, "network.start", { sessionId: "recovery-empty", captureBodies: true, storePostData: true, maxPostDataBytes: 321 });
+	assert.equal(startedEmpty.ok, true);
+	const startedCaptured = await netBootA.sandbox.__networkRecoveryFixture.handleNetworkRecorderCommand(9, "network.start", { sessionId: "recovery-captured", captureBodies: true, storePostData: true, maxPostDataBytes: 654 });
+	assert.equal(startedCaptured.ok, true);
+	const capturedRecorder = netBootA.sandbox.__networkRecoveryFixture.piBrowserNetworkRecorders.get("9:recovery-captured");
+	assert(capturedRecorder, "network recovery fixture must create captured recorder");
+	const capturedEntry = netBootA.sandbox.__networkRecoveryFixture.ensureNetworkEntry(capturedRecorder, "req-1");
+	capturedEntry.request = { url: "https://fixture.test/api", method: "POST", headers: {}, hasPostData: true };
+	capturedEntry.phase = "finished";
+	capturedEntry.finishedAt = Date.now();
+	capturedRecorder.entries.push(capturedEntry);
+	const stateRecord = await netBootA.sandbox.getState("network", "9:recovery-captured");
+	assert.equal(stateRecord.config.storePostData, true, "network persisted config must preserve raw recorder fields for recovery");
+	const netBootB = createRecoveryNetworkRuntime(storageState, "boot-b", new Set([9]));
+	const networkRecovery = await netBootB.sandbox.runStartupRecovery();
+	assert.equal(networkRecovery.totals.recoveredWithHistoryLoss >= 2, true, "network recovery must report history loss for recovered recorders");
+	const recoveredEmpty = await netBootB.sandbox.__networkRecoveryFixture.handleNetworkRecorderCommand(9, "network.status", { sessionId: "recovery-empty" });
+	assert.equal(recoveredEmpty.data.historyLost, true);
+	assert.equal(recoveredEmpty.data.recoveredAt !== undefined, true);
+	assert.equal(recoveredEmpty.data.generation !== undefined, true);
+	assert(netBootB.cdpCalls.some((call) => call.method === "Network.enable" && call.params?.maxPostDataSize === 321), "network recovery must restore Network.enable maxPostDataSize for persisted config");
+	assert(netBootB.cdpCalls.some((call) => call.method === "Page.setLifecycleEventsEnabled"), "network recovery must restore lifecycle events");
+	assert.equal(netBootB.sandbox.__networkRecoveryFixture.piBrowserNetworkRecorders.get("9:recovery-captured").entries.length, 0, "network recovery must not preserve old volatile entries");
+
+	const interceptBootA = createRecoveryInterceptRuntime(storageState, "boot-a", new Set([41]));
+	const installedIntercept = await interceptBootA.sandbox.__interceptRecoveryFixture.handlePiBrowserInterceptCommand("intercept.install", 41, { cmd: "intercept.install", sessionId: "contract", stages: ["request", "response"] });
+	assert.equal(installedIntercept.ok, true);
+	await interceptBootA.sandbox.__interceptRecoveryFixture.handlePiBrowserInterceptCommand("intercept.addRule", 41, { cmd: "intercept.addRule", sessionId: "contract", matcher: { urlContains: "/api" }, action: "continue" });
+	const interceptBootB = createRecoveryInterceptRuntime(storageState, "boot-b", new Set([41]));
+	const interceptRecovery = await interceptBootB.sandbox.runStartupRecovery();
+	assert.equal(interceptRecovery.totals.recoveredWithHistoryLoss >= 1, true, "intercept recovery must report history loss");
+	assert(interceptBootB.cdpCalls.some((call) => call.method === "Fetch.disable"), "intercept recovery must disable Fetch before re-enable");
+	const recoveredIntercept = await interceptBootB.sandbox.__interceptRecoveryFixture.handlePiBrowserInterceptCommand("intercept.status", 41, { cmd: "intercept.status", sessionId: "contract" });
+	assert.equal(recoveredIntercept.data.pausedLost, true);
+	assert.equal(recoveredIntercept.data.historyLost, true);
+	const lostPaused = await interceptBootB.sandbox.__interceptRecoveryFixture.handlePiBrowserInterceptCommand("intercept.continue", 41, { cmd: "intercept.continue", sessionId: "contract", requestId: "stale-1" });
+	assert.equal(lostPaused.ok, false);
+	assert.equal(lostPaused.error_code, "RUNTIME_STATE_LOST", "stale paused intercept requests must fail with runtime state lost");
+	assert.equal(lostPaused.details.pausedLost, true);
+
+	const hookBootA = createRecoveryHookRuntime(storageState, "boot-a", true, new Set([12]));
+	const hookInstalled = await hookBootA.sandbox.__hookRecoveryFixture.handlePiBrowserHookCommand("hook.install", 12, { sessionId: "hook-fixture", targets: { console: true } });
+	assert.equal(hookInstalled.ok, true);
+	const hookBootB = createRecoveryHookRuntime(storageState, "boot-b", true, new Set([12]));
+	const hookRecovered = await hookBootB.sandbox.runStartupRecovery();
+	assert.equal(hookRecovered.totals.recovered >= 1, true, "hook recovery must rebuild metadata only when dispatcher still exists");
+	const hookBootC = createRecoveryHookRuntime(storageState, "boot-c", false, new Set([12]));
+	const hookLost = await hookBootC.sandbox.runStartupRecovery();
+	assert.equal(hookLost.totals.lost >= 1, true, "hook recovery must mark missing dispatcher as lost without reinstall");
+
+	const wsRuntimeState = {};
+	const wsBootA = createRecoveryWsRuntime(storageState, wsRuntimeState, "boot-a", new Set([51]));
+	const wsOpened = await wsBootA.sandbox.__wsRecoveryFixture.handlePiBrowserWsCommand("ws.open", 51, { cmd: "ws.open", tabId: 51, sessionId: "ws-contract", url: "ws://fixture/ws", timeoutMs: 1000 });
+	assert.equal(wsOpened.ok, true);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	const wsBootB = createRecoveryWsRuntime(storageState, wsRuntimeState, "boot-b", new Set([51]));
+	const wsRecovery = await wsBootB.sandbox.runStartupRecovery();
+	assert.equal(wsRecovery.totals.lost >= 1, true, "ws recovery must report diagnostic-only lost sessions");
+	const wsStatus = await wsBootB.sandbox.__wsRecoveryFixture.handlePiBrowserWsCommand("ws.status", 51, { cmd: "ws.status", tabId: 51, sessionId: "ws-contract" });
+	assert.equal(wsStatus.data.stateLost, true, "ws.status after restart must expose explicit lost diagnostics");
+
+	const cdpBootA = createRecoveryCdpRuntime(storageState, "boot-a", new Set([66]));
+	const added = await cdpBootA.sandbox.__cdpRecoveryFixture.piPersistentCdpAddNewDocumentScript(66, "window.__piNds = 1;", { persistent: true, name: "new_document", runImmediately: true });
+	assert.equal(added.ok, true);
+	const cdpBootB = createRecoveryCdpRuntime(storageState, "boot-b", new Set([66]));
+	const cdpRecovery = await cdpBootB.sandbox.runStartupRecovery();
+	assert.equal(cdpRecovery.totals.lost >= 1, true, "cdp recovery must mark raw new-document scripts as lost");
+	const removeLost = await cdpBootB.sandbox.__cdpRecoveryFixture.piPersistentCdpRemoveNewDocumentScript(66, "script-1", { persistent: true, name: "new_document" });
+	assert.equal(removeLost.ok, false);
+	assert.equal(removeLost.error?.code || removeLost.error_code, "RUNTIME_STATE_LOST", "new-document script removal after restart must return runtime state lost");
+
+	diagnostics.runtimeRecovery = {
+		networkRecovered: networkRecovery.totals.recoveredWithHistoryLoss,
+		interceptRecovered: interceptRecovery.totals.recoveredWithHistoryLoss,
+		hookRecovered: hookRecovered.totals.recovered,
+		hookLost: hookLost.totals.lost,
+		wsLost: wsRecovery.totals.lost,
+		cdpLost: cdpRecovery.totals.lost,
+	};
+}
+
 async function main() {
 	const diagnostics = { startedAt: new Date().toISOString() };
 	const temp = await mkdtemp(path.join(os.tmpdir(), "pi-runtime-fixtures-"));
@@ -521,6 +889,7 @@ async function main() {
 		await testScreenshotFallbackFixture(diagnostics);
 		await testTransferDownloadUploadFixture(diagnostics);
 		await testCallbackWorkerStateFixture(diagnostics);
+		await testRuntimeRecoveryContracts(diagnostics);
 		await mkdir(artifactDir, { recursive: true });
 		await rm(failureArtifact, { force: true });
 		await writeFile(path.join(artifactDir, "runtime-fixtures-summary.json"), `${JSON.stringify({ ok: true, ...sanitize(diagnostics), finishedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");

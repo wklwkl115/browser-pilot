@@ -64,5 +64,10 @@ export function summarizeSqliProbeData(value: unknown): Summary {
 			{ key: "param", value: (failure) => failure.paramName },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"use browser_http_replay with confirmed payloads to verify reproducibility and preserve baseline-vs-mutated evidence",
+			"use browser_sqli engine=sqlmap with the same scoped request template when deeper bounded automation is explicitly needed",
+			"save or read response artifacts for manual review when extraction, DBMS hints, or UNION evidence need confirmation",
+		],
 	};
 }

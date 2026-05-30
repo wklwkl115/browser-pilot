@@ -9,7 +9,7 @@ const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
 const WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS = 50;
 const DEFAULT_WAIT_TIMEOUT_MS = 35_000;
 const WAIT_TIMEOUT_CODES = new Set(["TIMEOUT", "NAVIGATION_TIMEOUT", "SELECTOR_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "NETWORK_RECORDER_TIMEOUT"]);
-const SUPERVISED_WAIT_COMMANDS = new Set(["wait.navigation", "wait.loadState", "wait.networkIdle", "wait.selector", "wait.any", "wait.all"]);
+const SUPERVISED_WAIT_COMMANDS = new Set(["wait.navigation", "wait.loadState", "wait.networkIdle", "wait.selector", "wait.any", "wait.all", "network.wait"]);
 
 type WaitLeaseSummary = {
 	attempt: number;

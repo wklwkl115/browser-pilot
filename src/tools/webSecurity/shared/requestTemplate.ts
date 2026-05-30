@@ -1,8 +1,13 @@
 import { Buffer } from "node:buffer";
+import { createCodedError } from "../../../utils/codedError";
 import { absoluteUrl, headersArrayToMap, normalizeHeaders, setHeaderCaseInsensitive } from "./http";
 import { buildMultipartBody } from "./multipart";
 import { asString, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod } from "./normalize";
 import type { HeaderMap, ReplayOptions, ReplayRequest } from "./types";
+
+function requestTemplateError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "RequestTemplateError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
 
 function appendRawHeader(headers: HeaderMap, rawName: string, rawValue: string): string {
 	const name = rawName.trim();
@@ -20,7 +25,7 @@ function appendRawHeader(headers: HeaderMap, rawName: string, rawValue: string):
 
 export function parseRawHttpRequest(rawValue: unknown, options: { baseUrl?: unknown; defaultScheme?: unknown } = {}) {
 	const raw = asString(rawValue);
-	if (!raw) throw new Error("rawRequest must be a non-empty string");
+	if (!raw) throw requestTemplateError("rawRequest must be a non-empty string", { field: "rawRequest" });
 	const split = raw.match(/\r?\n\r?\n/);
 	const splitAt = split?.index ?? -1;
 	const separatorLength = split?.[0]?.length ?? 0;
@@ -29,7 +34,7 @@ export function parseRawHttpRequest(rawValue: unknown, options: { baseUrl?: unkn
 	const lines = head.split("\n").filter(Boolean);
 	const requestLine = lines.shift() || "";
 	const match = requestLine.match(/^(\S+)\s+(\S+)(?:\s+HTTP\/\d(?:\.\d)?)?$/i);
-	if (!match) throw new Error("rawRequest first line must be: METHOD path HTTP/1.1");
+	if (!match) throw requestTemplateError("rawRequest first line must be: METHOD path HTTP/1.1", { requestLine });
 	const headers: HeaderMap = {};
 	let lastName = "";
 	for (const line of lines) {

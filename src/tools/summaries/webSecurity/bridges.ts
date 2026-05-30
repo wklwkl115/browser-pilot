@@ -67,6 +67,11 @@ export function summarizeSqlmapBridgeData(value: unknown): Summary {
 			{ key: "source", value: (item) => item.source },
 			{ key: "error", value: (item) => item.error },
 		], 10),
+		nextActions: [
+			"read stdout, stderr, or request artifacts with browser_artifact before broadening sqlmap scope",
+			"use browser_http_replay to verify a specific vulnerable request variant outside the mature bridge",
+			"narrow paramNames, technique, level, risk, or target sequence before rerunning deeper SQLi automation",
+		],
 	};
 }
 export function summarizeNucleiBridgeData(value: unknown): Summary {
@@ -144,5 +149,10 @@ export function summarizeNucleiBridgeData(value: unknown): Summary {
 			{ key: "source", value: (item) => item.source },
 			{ key: "error", value: (item) => item.error },
 		], 10),
+		nextActions: [
+			"read nuclei stdout, stderr, or jsonl artifacts with browser_artifact before widening template scope",
+			"use browser_http_replay to manually verify a matched request or extracted exposure path",
+			"narrow templatePaths, workflowPaths, templateIds, tags, severities, or authors before rerunning nuclei",
+		],
 	};
 }

@@ -41,7 +41,11 @@ export type InterceptSession = JsonRecord & {
 	active: boolean;
 	createdAt: number;
 	installedAt?: number;
+	recoveredAt?: number;
 	lastEventAt?: number;
+	historyLost?: boolean;
+	pausedLost?: boolean;
+	stateGeneration?: number;
 	stages: InterceptPhase[];
 	rules: InterceptRule[];
 	transcript: InterceptTranscriptEntry[];
@@ -242,7 +246,11 @@ export function interceptSessionSummary(session: InterceptSession | null | undef
 		active: session.active,
 		createdAt: session.createdAt,
 		installedAt: session.installedAt,
+		recoveredAt: session.recoveredAt,
 		lastEventAt: session.lastEventAt,
+		historyLost: session.historyLost === true,
+		pausedLost: session.pausedLost === true,
+		generation: session.stateGeneration,
 		ruleCount: session.rules.length,
 		pausedCount: session.paused.size,
 		transcriptCount: session.transcript.length,

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeBrowserCrawlData, summarizeWebReconProbeData } from "../../summaries/index";
 import { runBrowserCrawl, runReconProbe } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type WebSecuritySharedToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, type WebSecuritySharedToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 import type { RawCrawlOptions, RawProbeOptions } from "../shared/types";
 
@@ -13,14 +13,14 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		label: "Browser Crawl",
 		description: "Collect scoped Web metadata through bounded fingerprint probing or recursive crawl for links, forms, known files, JS endpoints, OpenAPI/GraphQL, source maps, service workers, and response evidence.",
 		promptSnippet: "Collect scoped Web metadata through fingerprint probing or recursive crawl with structured evidence artifacts.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_crawl with explicit scope and bounds. action:crawl is the default recursive discovery mode; action:fingerprint is the smaller baseline mode before fuzzing or deeper checks."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_crawl with explicit scope and bounds. action:crawl is the default recursive discovery mode; action:fingerprint is the smaller baseline mode before fuzzing or deeper checks.", "HTTP target execution uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
 		parameters: Type.Object({
 			action: Type.Optional(Type.Union([Type.Literal("crawl"), Type.Literal("fingerprint")], { description: "Collection mode (default: crawl). crawl: recursive discovery; fingerprint: single-shot metadata." })),
 			...sharedWebSecurityParams(),
 			url: Type.Optional(Type.String({ description: "Single seed URL or host. Host-only input uses defaultScheme." })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Bounded list of seed URLs or hosts." })),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Optional seed paths to resolve against each target URL." })),
-			headers: Type.Optional(Type.Any({ description: "Optional request headers object." })),
+			headers: headerRecordParam("Optional request headers object."),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
 			method: Type.Optional(Type.String({ description: "fingerprint mode only: HTTP method for probing; default GET." })),
 			ports: Type.Optional(Type.Array(Type.Number(), { description: "fingerprint mode only: optional ports to apply to each target URL." })),
@@ -42,6 +42,7 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const current = normalizeWebSecurityToolParams<CrawlUnifiedToolParams>(params);
 			const action = String(current.action || "crawl").toLowerCase() === "fingerprint" ? "fingerprint" : "crawl";
+			validateCrawlParams(action, current);
 			if (action === "fingerprint") {
 				return executeWebSecurityToolShell(ensureStarted, current, ctx, {
 					toolName: "browser_crawl",

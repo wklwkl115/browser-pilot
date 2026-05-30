@@ -176,6 +176,7 @@ type CommandSpec = {
 	requiredAny?: string[][];
 	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny">>;
 	canonical?: string;
+	notes?: string;
 };
 
 type NativeCommandProtocolSchema = {
@@ -194,7 +195,7 @@ export type BridgeCommandValidation =
 	| { ok: true; command: BridgeCommand; spec: CommandSpec; canonicalCmd: string }
 	| { ok: false; error: string; details: Record<string, unknown> };
 
-const schema = ${schemaText} as NativeCommandProtocolSchema;
+const schema = ${schemaText} as const satisfies NativeCommandProtocolSchema;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
@@ -330,6 +331,10 @@ export type NativeErrorCode = keyof typeof nativeErrorCodes;
 
 export function isNativeErrorCode(value: string): value is NativeErrorCode {
 	return Object.hasOwn(nativeErrorCodes, value);
+}
+
+export function normalizeNativeErrorCode(value: unknown, fallback: NativeErrorCode = "INTERNAL_ERROR"): NativeErrorCode {
+	return typeof value === "string" && isNativeErrorCode(value) ? value : fallback;
 }
 `;
 }

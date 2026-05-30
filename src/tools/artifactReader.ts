@@ -14,11 +14,20 @@ export const MAX_MULTI_ARTIFACT_BYTES = 8 * 1024 * 1024;
 export const MAX_MULTI_ARTIFACT_MATCHES_PER_FILE = 20;
 export const MAX_MULTI_ARTIFACT_TOTAL_MATCHES = 100;
 
+export type ArtifactReaderErrorCode =
+	| "ARTIFACT_PATH_REQUIRED"
+	| "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT"
+	| "ARTIFACT_SEARCH_QUERY_REQUIRED"
+	| "ARTIFACT_SEARCH_REGEX_UNSAFE"
+	| "ARTIFACT_SEARCH_REGEX_INVALID"
+	| "ARTIFACT_MULTI_SEARCH_MODE_INVALID"
+	| "ARTIFACT_TOO_LARGE";
+
 export class ArtifactReaderError extends Error {
-	readonly code: string;
+	readonly code: ArtifactReaderErrorCode;
 	readonly details: Record<string, unknown>;
 
-	constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+	constructor(code: ArtifactReaderErrorCode, message: string, details: Record<string, unknown> = {}) {
 		super(message);
 		this.name = "ArtifactReaderError";
 		this.code = code;

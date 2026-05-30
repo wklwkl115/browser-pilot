@@ -9,6 +9,7 @@
 ## Guiding Constraints
 
 - 保持 Brain-Hand Separation：工具只暴露能力、证据和恢复信息，不替 agent 做策略判断。
+- 对 follow-up affordance 的新增只允许是 `possible/common follow-ups`、显式参数校验和结构化 recovery；不得把 affordance 实现成固定 workflow、自动跨工具调用、自动 mode/engine/action 升级，或伪造中间请求模板。
 - 保持 Semantic Singularity：同类能力只保留一个 canonical 工具；发现重叠先改描述/边界，不急于新增或删除工具。
 - 保持 Atomic Composability：优先增强 `browser_execute`、`browser_http_replay`、`browser_artifact`、wait/state/evidence 面。
 - 保持 Recoverable Diagnostics：失败结果必须可诊断、可复现、可恢复；长输出走 artifact。
@@ -94,6 +95,8 @@ Do not remove existing `tool`, `command`, `browserSessionId`, `detailLevel`, `su
 1. Add small internal helpers in `resultMiddleware` for `diagnostics`, `target`, `limits`, `privacy`, `nextActions` normalization.
 2. Reuse existing `webSecurityToolError`, `ArtifactReaderError`, bridge nested errors; do not create a parallel error hierarchy.
 3. Extend high-impact summaries first: network/hook/evidence/html/content/artifact/httpReplay/fuzz/sqli.
+4. 当 summary 增加 `nextActions` 时，保持 additive、并列、非命令式；顶层 envelope 可以提升 summary hints，但不能把它们收窄成唯一下一步。
+5. Validation 只拒绝无效参数组合和缺失输入源，不做隐式修正、不静默忽略无关字段。
 4. Standardize actionable errors for: no tab, selector missing, lease conflict, timeout, unsafe regex, artifact path outside root, replay target missing.
 5. Keep raw sensitive data in artifacts only; default model-facing output remains redacted.
 

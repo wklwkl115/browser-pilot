@@ -16,6 +16,7 @@ type CommandSpec = {
 	requiredAny?: string[][];
 	methodSpecs?: Record<string, Pick<CommandSpec, "required" | "requiredAny">>;
 	canonical?: string;
+	notes?: string;
 };
 
 type NativeCommandProtocolSchema = {
@@ -780,6 +781,11 @@ const schema = {
       "retryable": false,
       "summary": "Tool rule or mode combination is invalid."
     },
+    "INVALID_TIMEOUT": {
+      "category": "tool.validation",
+      "retryable": false,
+      "summary": "Tool timeout parameter is invalid."
+    },
     "INVALID_SELECTOR": {
       "category": "runtime.selector",
       "retryable": false,
@@ -1492,7 +1498,7 @@ const schema = {
       }
     }
   }
-} as NativeCommandProtocolSchema;
+} as const satisfies NativeCommandProtocolSchema;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);

@@ -27,6 +27,7 @@ async function checkWebSecurityRegisterFacadeFiles() {
 	const shared = await readFile(new URL("../../src/tools/webSecurity/register/shared.ts", import.meta.url), "utf8");
 	const diagnostics = await readFile(new URL("../../src/tools/webSecurity/shared/diagnostics.ts", import.meta.url), "utf8");
 	assert.ok(shared.includes("runWebSecurityToolAdapter") && shared.includes("createBrowserCookieProvider") && shared.includes("executeWebSecurityToolShell = runWebSecurityTool") && shared.includes('cmd: "cookies"'), "webSecurity shared shell must centralize adapter routing, cookie binding, and the compatibility alias");
+	assert.ok(shared.includes("validateCrawlParams") && shared.includes("validateFuzzParams") && shared.includes("validateSqliParams") && shared.includes("validateTemplateParams") && shared.includes("validateOastParams") && shared.includes("validateHttpReplayParams"), "webSecurity shared shell must centralize runtime validation helpers");
 	assert.ok(shared.includes("webSecurityToolError") && shared.includes("error: { map: (error) => webSecurityToolError"), "webSecurity shared shell must wrap tool failures before generic formatting");
 	assert.ok(diagnostics.includes('domain: "webSecurity"') && diagnostics.includes("redactWebSecurityDiagnosticValue") && diagnostics.includes("suppressErrorStack"), "webSecurity diagnostics helper must create a domain envelope, redact sensitive details, and suppress stacks");
 }
@@ -45,6 +46,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 		const text = await readFile(new URL(`../../src/tools/webSecurity/register/${file}`, import.meta.url), "utf8");
 		assert.ok(text.includes("executeWebSecurityToolShell(ensureStarted"), `${file} must execute through the shared WebSecurity shell`);
 		assert.ok(/normalizeWebSecurityToolParams<|normalizeWebSecurityToolParams\(/.test(text), `${file} must normalize loose tool params before execution`);
+		if (/registerCrawl|registerFuzz|registerHttpReplay|registerSqli|registerTemplate|registerCallbackOast/.test(file)) assert.ok(/validate[A-Za-z]+Params\(/.test(text), `${file} must apply shared runtime validation before execution`);
 		assert.equal(/server\.sendCommand|server\.executeJavaScript|BrowserBridgeServer|bridge_src|chrome\./.test(text), false, `${file} must not call base browser driver/runtime directly`);
 		assert.equal(text.includes("browserCookiesToHeader"), false, `${file} must not own cookie binding; shared shell owns cookie provider`);
 	}
@@ -57,6 +59,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 	assert.equal((webSecurityRegistryBlock.match(/register[A-Za-z]+Tool/g) || []).filter((line) => /Crawl|Fuzz|Sqli|Template|Callback|Cookie|Http/.test(line)).length, 7, "toolRegistry must compose exactly the 7 explicit WebSecurity tool registrations");
 	assert.ok(sourceFiles.toolRegistry.includes("WEB_SECURITY_TOOL_REGISTRARS") && sourceFiles.toolRegistry.includes("resolveBrowserToolRegistrars"), "toolRegistry must expose the WebSecurity registrar group and resolver");
 	assert.ok(sourceFiles.registerShared.includes("webSecurityToolError(error") && sourceFiles.diagnostics.includes("WebSecurityToolError"), "shared shell must delegate failure envelope creation to WebSecurity diagnostics");
+	assert.ok(sourceFiles.diagnostics.includes("...(normalized.recovery ? { recovery: normalized.recovery } : {})"), "webSecurity diagnostics must preserve structured recovery in the domain envelope");
 	const sensitive = new Error("Authorization: Bearer secret\nCookie: sid=abc");
 	sensitive.name = "FixtureSensitiveError";
 	sensitive.details = { Cookie: "sid=abc", nested: { authorization: "Bearer secret", safe: "kept" }, stack: "hidden" };

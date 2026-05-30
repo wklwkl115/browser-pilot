@@ -4,6 +4,8 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
+import { createCodedError } from "../../../utils/codedError";
 import type { HeaderMap } from "../shared/types";
 
 export type CallbackSessionState = Record<string, unknown> & {
@@ -46,12 +48,10 @@ const CALLBACK_SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z
 const DEFAULT_CALLBACK_MAX_RUNTIME_MS = 60 * 60 * 1000;
 const OPENSSL_CERT_DAYS = 3650;
 
-function callbackToolError(code: string, message: string, details: Record<string, unknown> = {}): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "CallbackOastError";
-	error.code = code;
-	error.details = details;
-	return error;
+type CallbackOastToolError = Error & { code: Extract<NativeErrorCode, "INVALID_RULE" | "HTTPS_CERT_GENERATION_FAILED">; details: Record<string, unknown> };
+
+function callbackToolError(code: Extract<NativeErrorCode, "INVALID_RULE" | "HTTPS_CERT_GENERATION_FAILED">, message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "CallbackOastError", code, message, details, suppressStack: false }) as CallbackOastToolError;
 }
 
 export function parseIpv4Address(value: string): [number, number, number, number] | undefined {

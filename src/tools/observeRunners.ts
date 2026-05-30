@@ -3,8 +3,9 @@ import { BrowserBridgeError } from "../driver/errors";
 import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
-import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
+import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
 import { buildScanScript } from "../scan/buildScanScript";
+import { createCodedError } from "../utils/codedError";
 import { isRecord, normalizeTabId } from "../utils/params";
 import { resolveArtifactPath } from "./artifacts";
 import { assertBridgeCommandSucceeded } from "./bridgeResultValidation";
@@ -35,11 +36,15 @@ export type ObserveToolParams = {
 	params?: unknown;
 };
 
-function contentTimeoutError(message: string, value: unknown): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.code = "INVALID_TIMEOUT";
-	error.details = { timeoutMs: value, minTimeoutMs: MIN_CONTENT_TIMEOUT_MS };
-	return error;
+type ObserveRunnerError = Error & { code: "INVALID_TIMEOUT"; details: Record<string, unknown> };
+
+function contentTimeoutError(message: string, value: unknown): ObserveRunnerError {
+	return createCodedError({
+		name: "ObserveRunnerError",
+		code: "INVALID_TIMEOUT",
+		message,
+		details: { timeoutMs: value, minTimeoutMs: MIN_CONTENT_TIMEOUT_MS },
+	}) as ObserveRunnerError;
 }
 
 export function normalizeContentTimeoutMs(value: unknown): number {
@@ -220,7 +225,7 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 	});
 	const data = result.result.data as Record<string, unknown> | undefined;
 	if (data?.ok === false) {
-		const code = (typeof data.error_code === "string" ? data.error_code : "CONTENT_EXTRACTION_FAILED") as NativeErrorCode;
+		const code = normalizeNativeErrorCode(data.error_code, "CONTENT_EXTRACTION_FAILED");
 		const message = typeof data.error === "string" ? data.error : "content extraction failed";
 		const details = data.details && typeof data.details === "object" && !Array.isArray(data.details) ? data.details as Record<string, unknown> : {};
 		throw new BrowserBridgeError(code, message, { command: "browser_observe", mode: "content", ...details });

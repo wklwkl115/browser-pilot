@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createCodedError } from "../../../utils/codedError";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
 import { absoluteUrl, headersArrayToMap, parseSetCookieLine } from "./http";
 import { asString, isRecord, normalizeHeaderName, positiveInt } from "./normalize";
@@ -9,6 +10,10 @@ export const MAX_HAR_URL_MATCH_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;
 export const MAX_HAR_FILTER_CANDIDATE_ENTRIES = 10_000;
 
 type HarDependencyUrlOptions = Pick<ReplayOptions, "baseUrl" | "defaultScheme">;
+
+function harInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "HarInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
 
 function boundedHarUrlText(url: string): string {
 	return url.length > MAX_HAR_URL_MATCH_CHARS ? url.slice(0, MAX_HAR_URL_MATCH_CHARS) : url;
@@ -38,7 +43,7 @@ export async function harEntriesFromOptions(options: ReplayOptions): Promise<Arr
 	const maxEntries = Math.min(100, positiveInt(options.harMaxEntries, options.harEntryIndex !== undefined ? 1 : 20));
 	if (options.harEntryIndex !== undefined) {
 		const index = typeof options.harEntryIndex === "number" ? options.harEntryIndex : Number(options.harEntryIndex);
-		if (!Number.isInteger(index) || index < 0) throw new Error("harEntryIndex must be a zero-based integer");
+		if (!Number.isInteger(index) || index < 0) throw harInputError("harEntryIndex must be a zero-based integer", { harEntryIndex: options.harEntryIndex });
 		selected = entries[index] ? [entries[index]] : [];
 	}
 	const patternText = asString(options.harUrlPattern)?.trim();

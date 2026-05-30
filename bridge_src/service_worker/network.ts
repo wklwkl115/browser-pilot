@@ -1,53 +1,19 @@
 // network.js - Pi browser native Network recorder CDP event, lifecycle and command runtime.
 // Loaded after network_model.js by background.js.
-
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piWithTimeout, redactSensitive, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
-import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, redactConfig } from "./state_store";
+import { persist as persistState, forget as forgetState, recover as recoverState, registerRecovery } from "./state_store";
 import { enablePiBrowserCdpDomains, releasePiBrowserCdpDomains, subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import { makeWaitId, normalizePiBrowserTimeoutMs } from "./wait_coordinator";
-import {
-  classifyNetworkBodyError,
-  createNetworkRecorder,
-  defaultNetworkSessionId,
-  deleteNetworkBodyForRecord,
-  ensureNetworkEntry,
-  getActiveNetworkRecorder,
-  getNetworkRecorder,
-  networkBodyMimeDecision,
-  estimateStringBytes,
-  getHeaderValue,
-  networkRecordClone,
-  networkCriterionMatchesText,
-  networkRecordMatchesList,
-  networkRecordSummary,
-  networkRecorderKey,
-  networkRecorderSummary,
-  headersObjectToArray,
-  numberInRange,
-  piBrowserNetworkRecorders,
-  pruneNetworkRecorder,
-  recorderPublicConfig,
-  rememberNetworkError,
-  setNetworkBodyAvailability,
-  setNetworkWaitNotifier,
-  storeNetworkBody,
-  networkSseEventMatches,
-  networkWsFrameMatches,
-  normalizeNetworkRecorderConfig,
-  truncateBase64Body,
-  truncateStringByBytes,
-} from "./network_model";
-import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, NetworkRecorderConfig } from "./types";
+import { classifyNetworkBodyError, createNetworkRecorder, defaultNetworkSessionId, deleteNetworkBodyForRecord, ensureNetworkEntry, getActiveNetworkRecorder, getNetworkRecorder, networkBodyMimeDecision, estimateStringBytes, getHeaderValue, networkRecordClone, networkCriterionMatchesText, networkRecordMatchesList, networkRecordSummary, networkRecorderKey, networkRecorderSummary, headersObjectToArray, numberInRange, piBrowserNetworkRecorders, pruneNetworkRecorder, recorderPublicConfig, rememberNetworkError, setNetworkBodyAvailability, setNetworkWaitNotifier, storeNetworkBody, networkSseEventMatches, networkWsFrameMatches, normalizeNetworkRecorderConfig, truncateBase64Body, truncateStringByBytes } from "./network_model";
+import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
 
 const rememberNetworkRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
 const forgetNetworkRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostNetworkRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostNetworkRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
-
 type NetworkCommandResult = JsonRecord;
-type NetworkErrorResponse = PiBridgeResponse & { ok: false };
 type NetworkRecorderLookup = { recorder: NetworkRecorder; error?: never } | { recorder?: never; error: PiBridgeResponse };
 type HarContent = JsonRecord & {
   text?: string;
@@ -57,7 +23,6 @@ type HarContent = JsonRecord & {
   _bodyAvailability?: string;
   _bodyUnavailableReason?: string | null;
 };
-
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
@@ -67,6 +32,7 @@ function errorText(error: unknown): string {
 }
 
 setNetworkWaitNotifier(wakeNetworkWaits);
+const NETWORK_RECORDER_EVENTS = ['Network.requestWillBeSent','Network.requestWillBeSentExtraInfo','Network.responseReceived','Network.responseReceivedExtraInfo','Network.dataReceived','Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed','Network.webSocketCreated','Network.webSocketWillSendHandshakeRequest','Network.webSocketHandshakeResponseReceived','Network.webSocketFrameSent','Network.webSocketFrameReceived','Network.webSocketFrameError','Network.webSocketClosed','Network.eventSourceMessageReceived','Page.frameNavigated','Page.loadEventFired','Page.domContentEventFired','Page.lifecycleEvent','Page.frameStoppedLoading'];
 
 async function cdpSendNetworkCommand(tabId: number, method: string, params: JsonRecord = {}, timeoutMs?: number): Promise<NetworkCommandResult> {
   const cdp = piBrowserPersistentCdp();
@@ -236,6 +202,11 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
     recorder.config = config; recorder.filter = config.filter;
     if (config.clearOnStart) clearNetworkRecorderBuffer(recorder);
     recorder.diagnostics.push({ t:Date.now(), action:'reconfigure', config:recorderPublicConfig(config) });
+    try {
+      const persisted = await persistState('network', networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' });
+      if (persisted.generation !== undefined) recorder.stateGeneration = Number(persisted.generation);
+      if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t:Date.now(), action:'persist_failed', error:persisted.error });
+    } catch (_) {}
     return { ok:true, data:{ ...networkRecorderSummary(recorder), reconfigured:true } };
   }
   if (recorder && recorder.active) return piBrowserError(PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED, 'network recorder already started', { tabId, sessionId:config.sessionId });
@@ -248,17 +219,15 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
       try { await cdpSendNetworkCommand(tabId, 'Network.enable', { maxPostDataSize: config.maxPostDataBytes }, 2000); }
       catch (e) { rememberNetworkError(recorder, 'Network.enable.maxPostDataSize', e); }
     }
-    const events = [
-      'Network.requestWillBeSent','Network.requestWillBeSentExtraInfo','Network.responseReceived','Network.responseReceivedExtraInfo','Network.dataReceived','Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed',
-      'Network.webSocketCreated','Network.webSocketWillSendHandshakeRequest','Network.webSocketHandshakeResponseReceived','Network.webSocketFrameSent','Network.webSocketFrameReceived','Network.webSocketFrameError','Network.webSocketClosed','Network.eventSourceMessageReceived',
-      'Page.frameNavigated','Page.loadEventFired','Page.domContentEventFired','Page.lifecycleEvent','Page.frameStoppedLoading'
-    ];
-    subscribePiBrowserCdp(tabId, events, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+    subscribePiBrowserCdp(tabId, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
     try { await cdpSendNetworkCommand(tabId, 'Page.setLifecycleEventsEnabled', { enabled:true }, 2000); } catch (e) { rememberNetworkError(recorder, 'Page.setLifecycleEventsEnabled', e); }
-    recorder.active = true; recorder.startedAt = Date.now(); recorder.diagnostics.push({ t:Date.now(), action:'start', events, config:recorderPublicConfig(config) });
+    recorder.active = true; recorder.startedAt = Date.now(); recorder.diagnostics.push({ t:Date.now(), action:'start', events:NETWORK_RECORDER_EVENTS, config:recorderPublicConfig(config) });
     await rememberNetworkRuntimeSession('network', tabId, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
-    // Persist config for state recovery
-    try { await persistState('network', networkRecorderKey(tabId, config.sessionId), redactConfig(recorderPublicConfig(config)), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' }); } catch (_) {}
+    try {
+      const persisted = await persistState('network', networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: 'auto' });
+      if (persisted.generation !== undefined) recorder.stateGeneration = Number(persisted.generation);
+      if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t:Date.now(), action:'persist_failed', error:persisted.error });
+    } catch (_) {}
     return { ok:true, data:networkRecorderSummary(recorder) };
   } catch (e) {
     rememberNetworkError(recorder, 'start', e);
@@ -543,8 +512,9 @@ registerRecovery(async (results) => {
     validateTab: true,
     recover: async (record) => {
       const tabId = record.tabId;
-      const config = record.config as NetworkRecorderConfig | undefined;
-      if (!tabId || !config) return { recovered: false, historyLost: true, reason: 'missing tabId or config' };
+      const configRecord = record.config as JsonRecord | undefined;
+      if (!tabId || !configRecord) return { recovered: false, historyLost: true, reason: 'missing tabId or config' };
+      const config = normalizeNetworkRecorderConfig(configRecord);
       const key = networkRecorderKey(tabId, config.sessionId || 'default');
       // Don't overwrite an existing active recorder
       if (piBrowserNetworkRecorders.has(key)) return { recovered: false, historyLost: true, reason: 'recorder already exists' };
@@ -552,17 +522,18 @@ registerRecovery(async (results) => {
         const recorder = createNetworkRecorder(tabId, config);
         recorder.recoveredAt = Date.now();
         recorder.historyLost = true;
+        recorder.stateGeneration = Number(record.generation || 0);
         piBrowserNetworkRecorders.set(key, recorder);
         await enablePiBrowserCdpDomains(recorder.cdpRecord, ['Network', 'Page']);
-        const events = [
-          'Network.requestWillBeSent','Network.requestWillBeSentExtraInfo','Network.responseReceived','Network.responseReceivedExtraInfo','Network.dataReceived','Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed',
-          'Network.webSocketCreated','Network.webSocketWillSendHandshakeRequest','Network.webSocketHandshakeResponseReceived','Network.webSocketFrameSent','Network.webSocketFrameReceived','Network.webSocketFrameError','Network.webSocketClosed','Network.eventSourceMessageReceived',
-          'Page.frameNavigated','Page.loadEventFired','Page.domContentEventFired','Page.lifecycleEvent','Page.frameStoppedLoading'
-        ];
-        subscribePiBrowserCdp(tabId, events, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+        if (config.storePostData) {
+          try { await cdpSendNetworkCommand(tabId, 'Network.enable', { maxPostDataSize: config.maxPostDataBytes }, 2000); }
+          catch (e) { rememberNetworkError(recorder, 'Network.enable.maxPostDataSize', e); }
+        }
+        subscribePiBrowserCdp(tabId, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+        try { await cdpSendNetworkCommand(tabId, 'Page.setLifecycleEventsEnabled', { enabled:true }, 2000); } catch (e) { rememberNetworkError(recorder, 'Page.setLifecycleEventsEnabled', e); }
         recorder.active = true;
         recorder.startedAt = Date.now();
-        recorder.diagnostics.push({ t: Date.now(), action: 'recovered', historyLost: true, previousWorkerBootId: record.workerBootId });
+        recorder.diagnostics.push({ t: Date.now(), action: 'recovered', historyLost: true, previousWorkerBootId: record.workerBootId, generation: record.generation });
         console.log('[PI-BROWSER-NET] Recovered network recorder', key, 'historyLost=true');
         return { recovered: true, historyLost: true };
       } catch (error) {

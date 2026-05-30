@@ -63,5 +63,10 @@ export function summarizeBrowserCrawlData(value: unknown): Summary {
 			{ key: "url", value: (failure) => failure.url },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"use browser_fuzz mode=path with discovered routes or endpoint paths for bounded path discovery",
+			"use browser_template with discovered hosts, paths, or API surfaces for exposure or nuclei follow-up checks",
+			"capture live request templates with browser_network or HAR before browser_http_replay, browser_fuzz mode=param, or browser_sqli",
+		],
 	};
 }

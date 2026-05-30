@@ -92,7 +92,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
-				if (!params.script) throw new Error("browser_execute requires script");
+				if (!params.script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script", { toolName: "browser_execute" });
 				if (detectCommandLikeScript(params.script)) {
 					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { toolName: "browser_execute", recovery: { useTool: "browser_command" } });
 				}

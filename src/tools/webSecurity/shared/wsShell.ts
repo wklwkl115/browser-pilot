@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createCodedError } from "../../../utils/codedError";
 import { saveTextArtifact } from "../../artifacts";
 import { artifactFallbackName } from "../../toolAdapter";
 import { parseCommandArgs } from "./normalize";
@@ -35,10 +36,14 @@ export type WsShellResult = {
 	saved?: { path: string; chars: number; bytes: number; privacy: Record<string, unknown> };
 };
 
+function wsShellInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "WsShellInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 function asAction(value: unknown): WsShellAction {
 	const normalized = String(value || "status").trim().toLowerCase();
 	if (["open", "status", "send", "replay", "wait", "collect", "close"].includes(normalized)) return normalized as WsShellAction;
-	throw new Error(`Unsupported ws shell action: ${String(value)}`);
+	throw wsShellInputError(`Unsupported ws shell action: ${String(value)}`, { action: value });
 }
 
 function asString(value: unknown): string | undefined {
@@ -56,12 +61,12 @@ function parseHeaderArgs(value: unknown): Record<string, string> {
 		const token = tokens[index];
 		if (token === "--header" || token === "-H") {
 			const next = tokens[index + 1];
-			if (!next || !next.includes(":")) throw new Error("/browser-ws --header requires Name:Value");
+			if (!next || !next.includes(":")) throw wsShellInputError("/browser-ws --header requires Name:Value", { flag: token });
 			index += 1;
 			const splitAt = next.indexOf(":");
 			const name = next.slice(0, splitAt).trim();
 			const headerValue = next.slice(splitAt + 1).trim();
-			if (!name) throw new Error("/browser-ws header name must be non-empty");
+			if (!name) throw wsShellInputError("/browser-ws header name must be non-empty", { flag: token });
 			out[name] = headerValue;
 		}
 	}
@@ -133,12 +138,12 @@ export function parseBrowserWsArgs(args: unknown): WsShellParams {
 			case "--url": params.url = next; index += 1; break;
 			case "--text": params.text = next; index += 1; break;
 			case "--steps-json":
-				if (!next) throw new Error("/browser-ws --steps-json requires a JSON array");
+				if (!next) throw wsShellInputError("/browser-ws --steps-json requires a JSON array", { flag: token });
 				params.steps = parseReplayStepsJson(next);
 				index += 1;
 				break;
 			case "--step":
-				if (!next) throw new Error("/browser-ws --step requires explicit text or JSON");
+				if (!next) throw wsShellInputError("/browser-ws --step requires explicit text or JSON", { flag: token });
 				params.steps = [...(params.steps || []), parseReplayStep(next)];
 				index += 1;
 				break;
@@ -153,12 +158,12 @@ export function parseBrowserWsArgs(args: unknown): WsShellParams {
 			case "--output": params.outputPath = next; index += 1; break;
 			case "--protocol": params.protocols = [...(params.protocols || []), String(next || "")]; index += 1; break;
 			case "--header":
-				if (!next) throw new Error("/browser-ws --header requires Name:Value");
+				if (!next) throw wsShellInputError("/browser-ws --header requires Name:Value", { flag: token });
 				params.headers = { ...(params.headers || {}), ...parseHeaderArgs(`--header ${JSON.stringify(next)}`) };
 				index += 1;
 				break;
 			default:
-				throw new Error(`Unsupported /browser-ws flag: ${token}`);
+				throw wsShellInputError(`Unsupported /browser-ws flag: ${token}`, { flag: token });
 		}
 	}
 	if (positionals.length) params.action = asAction(positionals[0]);
@@ -170,7 +175,7 @@ function parseReplayStep(value: string): ReplayWsSequenceStep {
 	const parsed = safeJsonValue(value);
 	if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 		const rec = parsed as Record<string, unknown>;
-		if (typeof rec.text !== "string" || !rec.text.length) throw new Error("/browser-ws replay step JSON requires text");
+		if (typeof rec.text !== "string" || !rec.text.length) throw wsShellInputError("/browser-ws replay step JSON requires text", { field: "text" });
 		return {
 			text: rec.text,
 			contains: typeof rec.contains === "string" ? rec.contains : undefined,
@@ -183,7 +188,7 @@ function parseReplayStep(value: string): ReplayWsSequenceStep {
 
 function parseReplayStepsJson(value: string): ReplayWsSequenceStep[] {
 	const parsed = safeJsonValue(value);
-	if (!Array.isArray(parsed)) throw new Error("/browser-ws --steps-json requires a JSON array");
+	if (!Array.isArray(parsed)) throw wsShellInputError("/browser-ws --steps-json requires a JSON array", { field: "steps-json" });
 	return parsed.map((item) => parseReplayStep(JSON.stringify(item)));
 }
 

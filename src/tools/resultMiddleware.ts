@@ -212,15 +212,16 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 	return actions.length ? Array.from(new Set(actions)) : [`browser_artifact path=${path} mode=json|text`];
 }
 
-function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): string[] | undefined {
+function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = []): string[] | undefined {
 	const actions: string[] = [];
+	actions.push(...summaryHintActions);
 	actions.push(...artifactReadActions(summary, saved, operation, snapshot));
 	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`browser_artifact offset=${String(summary.nextOffset)}`);
 	if (summary.bodyUnavailableReason) actions.push("browser_network body with a fresh recorder entry or recapture with captureBodies enabled");
 	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_observe mode=scan|html");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or read the saved artifact by offset/jsonPath");
 	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
-	return actions.length ? Array.from(new Set(actions)).slice(0, 5) : undefined;
+	return actions.length ? Array.from(new Set(actions)).slice(0, 7) : undefined;
 }
 
 function sanitizeDistilledEnvelope(envelope: DistilledEnvelope): DistilledEnvelope {
@@ -231,7 +232,12 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
 	const redactedSummary = redactSensitiveValue(summary) as DistilledSummary;
-	const fittedSummary = fitSummaryBudget(redactedSummary, budget);
+	const summaryHintActions = Array.isArray(redactedSummary.nextActions)
+		? redactedSummary.nextActions.filter((item): item is string => typeof item === "string")
+		: [];
+	const summaryForFitting = { ...redactedSummary };
+	delete summaryForFitting.nextActions;
+	const fittedSummary = fitSummaryBudget(summaryForFitting, budget);
 	const redactedOperation = options.operation ? redactSensitiveValue(options.operation) as Record<string, unknown> : undefined;
 	const redactedSnapshot = options.snapshot ? redactSensitiveValue(options.snapshot) as Record<string, unknown> : undefined;
 	const correlation = {
@@ -249,7 +255,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		target: normalizedTarget(options, fittedSummary),
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw),
-		nextActions: normalizedNextActions(options, fittedSummary, saved, redactedOperation, redactedSnapshot),
+		nextActions: normalizedNextActions(options, fittedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),

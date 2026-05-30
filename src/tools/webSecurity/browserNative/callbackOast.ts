@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
+import { createCodedError } from "../../../utils/codedError";
 import https from "node:https";
 import dgram from "node:dgram";
 import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, normalizeCallbackSessionId, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager";
@@ -48,11 +49,15 @@ type NormalizedCallbackOastOptions = {
 	timeoutMs: number;
 };
 
+function callbackOastInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "CallbackOastInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 function normalizeCallbackAction(value: unknown): CallbackAction {
 	const action = String(value || "start").trim().toLowerCase();
 	if (!action || value === undefined || value === null) return "start";
 	if (action === "start" || action === "list" || action === "status" || action === "collect" || action === "clear" || action === "trigger" || action === "stop") return action;
-	throw new Error(`Unsupported browser_callback_oast action: ${action}`);
+	throw callbackOastInputError(`Unsupported browser_callback_oast action: ${action}`, { action });
 }
 
 function callbackPort(value: unknown): number {
@@ -120,10 +125,10 @@ function normalizeCallbackOastOptions(options: RawCallbackOastOptions): Normaliz
 function dnsQuestionLabels(name: string) {
 	const labels = String(name || "").trim().replace(/\.+$/, "").split(".").filter(Boolean).map((part, index) => ({ index, bytes: Buffer.from(part, "utf8") }));
 	for (const label of labels) {
-		if (label.bytes.length > 63) throw new Error(`browser_callback_oast dns query label ${label.index + 1} exceeds 63 bytes (${label.bytes.length})`);
+		if (label.bytes.length > 63) throw callbackOastInputError(`browser_callback_oast dns query label ${label.index + 1} exceeds 63 bytes (${label.bytes.length})`, { index: label.index, bytes: label.bytes.length });
 	}
 	const wireLength = labels.reduce((sum, label) => sum + 1 + label.bytes.length, 1);
-	if (wireLength > 255) throw new Error(`browser_callback_oast dns query name exceeds 255 bytes (${wireLength})`);
+	if (wireLength > 255) throw callbackOastInputError(`browser_callback_oast dns query name exceeds 255 bytes (${wireLength})`, { wireLength });
 	return labels.map((label) => label.bytes);
 }
 
@@ -186,14 +191,14 @@ async function triggerSession(state: CallbackSessionState, options: NormalizedCa
 	let trigger: Record<string, unknown>;
 	if (options.mode === "dns") {
 		target = options.target || options.queryName || asString(state.dnsCallbackHost);
-		if (!target) throw new Error("browser_callback_oast trigger dns requires dns listener metadata or queryName/target");
+		if (!target) throw callbackOastInputError("browser_callback_oast trigger dns requires dns listener metadata or queryName/target", { mode: options.mode, field: "target|queryName" });
 		const resolverHost = options.resolverHost || (String(state.dnsListenHost || "127.0.0.1") === "0.0.0.0" ? "127.0.0.1" : String(state.dnsListenHost || "127.0.0.1"));
 		const resolverPort = options.resolverPort || callbackPort(state.dnsPort);
-		if (!resolverPort) throw new Error("browser_callback_oast trigger dns requires resolverPort or an active dns listener");
+		if (!resolverPort) throw callbackOastInputError("browser_callback_oast trigger dns requires resolverPort or an active dns listener", { mode: options.mode, field: "resolverPort" });
 		trigger = await triggerDnsQuery(target, resolverHost, resolverPort, options.queryType, options.timeoutMs);
 	} else {
 		target = options.target || asString(options.mode === "https" ? state.httpsCallbackUrl : state.callbackUrl);
-		if (!target) throw new Error(`browser_callback_oast trigger ${options.mode} requires a target URL or an active ${options.mode.toUpperCase()} listener`);
+		if (!target) throw callbackOastInputError(`browser_callback_oast trigger ${options.mode} requires a target URL or an active ${options.mode.toUpperCase()} listener`, { mode: options.mode, field: "target" });
 		const headers = { ...options.headers };
 		const body = options.body ?? `${state.correlationId}`;
 		if (!headers["Content-Type"] && !headers["content-type"] && typeof body === "string") headers["Content-Type"] = "text/plain; charset=utf-8";
@@ -215,9 +220,9 @@ export async function runCallbackOast(options: RawCallbackOastOptions) {
 		const sessions = await allSessionStates();
 		return { ok: true, action: normalized.action, count: sessions.length, activeCount: sessions.filter((session) => session.listenerActive === true).length, sessions: sessions.map(sessionInfo) };
 	}
-	if (!normalized.sessionId) throw new Error(`browser_callback_oast action ${normalized.action} requires sessionId`);
+	if (!normalized.sessionId) throw callbackOastInputError(`browser_callback_oast action ${normalized.action} requires sessionId`, { action: normalized.action, field: "sessionId" });
 	const session = await refreshSessionState(await loadSessionState(normalized.sessionId));
-	if (!session) throw new Error(`browser_callback_oast unknown sessionId: ${normalized.sessionId}`);
+	if (!session) throw callbackOastInputError(`browser_callback_oast unknown sessionId: ${normalized.sessionId}`, { sessionId: normalized.sessionId });
 	if (normalized.action === "status") return { ok: true, action: normalized.action, ...sessionInfo(session) };
 	if (normalized.action === "collect") {
 		const events = filterEvents(session, normalized.afterSeq);
@@ -237,5 +242,5 @@ export async function runCallbackOast(options: RawCallbackOastOptions) {
 		const events = Array.isArray(stopped.events) ? stopped.events : [];
 		return { ok: true, action: normalized.action, ...sessionInfo(stopped), count: events.length, events };
 	}
-	throw new Error(`Unsupported browser_callback_oast action: ${normalized.action}`);
+	throw callbackOastInputError(`Unsupported browser_callback_oast action: ${normalized.action}`, { action: normalized.action });
 }

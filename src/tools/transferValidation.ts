@@ -2,15 +2,10 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
 import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
-import { suppressErrorStack } from "../utils/errors";
+import { createCodedError } from "../utils/codedError";
 
 export function codedTransferError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "TransferToolError";
-	error.code = code;
-	error.details = details;
-	suppressErrorStack(error);
-	return error;
+	return createCodedError({ name: "TransferToolError", code, message, details });
 }
 
 export function asUploadFiles(value: unknown): string[] {

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeCallbackOastData } from "../../summaries/index";
 import { runCallbackOast } from "../../webSecurityCore";
-import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, type CallbackOastToolParams } from "./shared";
+import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, validateOastParams, headerRecordParam, type CallbackOastToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 
 export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -10,7 +10,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 		label: "Browser Callback OAST",
 		description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata.",
 		promptSnippet: "Start, inspect, trigger, collect, clear, or stop callback listener sessions for SSRF, blind injection, and deserialization evidence.",
-		promptGuidelines: ["Use browser_callback_oast to create callback URLs/hosts, trigger and collect correlated HTTP/HTTPS/DNS callbacks, keep maxEvents/maxBodyBytes bounded, and archive persisted callback evidence artifacts."],
+		promptGuidelines: ["Use browser_callback_oast to create callback URLs/hosts, trigger and collect correlated HTTP/HTTPS/DNS callbacks, keep maxEvents/maxBodyBytes bounded, and archive persisted callback evidence artifacts.", "HTTP target execution for callback trigger helpers uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
 		parameters: Type.Object({
 			action: Type.Optional(Type.Union([Type.Literal("start"), Type.Literal("list"), Type.Literal("status"), Type.Literal("collect"), Type.Literal("clear"), Type.Literal("trigger"), Type.Literal("stop")], { description: "start | list | status | collect | clear | trigger | stop. Default start." })),
 			sessionId: Type.Optional(Type.String({ description: "Logical callback listener session id. Required for status/collect/clear/trigger/stop." })),
@@ -22,7 +22,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			correlationId: Type.Optional(Type.String({ description: "Correlation id to embed in generated callback URLs/hosts; default random." })),
 			responseStatus: Type.Optional(Type.Number({ description: "HTTP/HTTPS status returned by the callback listener; default 200." })),
 			responseBody: Type.Optional(Type.String({ description: "HTTP/HTTPS response body returned by the callback listener; default ok." })),
-			responseHeaders: Type.Optional(Type.Any({ description: "HTTP/HTTPS response headers returned by the callback listener." })),
+			responseHeaders: headerRecordParam("HTTP/HTTPS response headers returned by the callback listener."),
 			enableHttps: Type.Optional(Type.Boolean({ description: "Also start a local HTTPS callback listener with a self-signed certificate." })),
 			httpsPort: Type.Optional(Type.Number({ description: "Local HTTPS listen port; default 0 chooses an ephemeral port." })),
 			enableDns: Type.Optional(Type.Boolean({ description: "Also start a local UDP DNS callback listener." })),
@@ -35,7 +35,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			mode: Type.Optional(Type.Union([Type.Literal("http"), Type.Literal("https"), Type.Literal("dns")], { description: "trigger only: http | https | dns. Default http." })),
 			target: Type.Optional(Type.String({ description: "trigger only: explicit target URL or DNS name; otherwise the current session callback URL/host is used." })),
 			method: Type.Optional(Type.String({ description: "trigger only: HTTP/HTTPS method; default POST." })),
-			requestHeaders: Type.Optional(Type.Any({ description: "trigger only: HTTP/HTTPS request headers." })),
+			requestHeaders: headerRecordParam("trigger only: HTTP/HTTPS request headers."),
 			body: Type.Optional(Type.String({ description: "trigger only: HTTP/HTTPS text body." })),
 			bodyBase64: Type.Optional(Type.String({ description: "trigger only: HTTP/HTTPS base64 body for binary-ish payloads." })),
 			queryName: Type.Optional(Type.String({ description: "trigger only: DNS query name override; aliases target for dns mode." })),
@@ -51,7 +51,10 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			...sharedWebSecurityResultParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			return executeWebSecurityToolShell(ensureStarted, normalizeWebSecurityToolParams<CallbackOastToolParams>(params), ctx, {
+			const current = normalizeWebSecurityToolParams<CallbackOastToolParams>(params);
+			const action = String(current.action || "start").toLowerCase();
+			validateOastParams(action, current);
+			return executeWebSecurityToolShell(ensureStarted, current, ctx, {
 				toolName: "browser_callback_oast",
 				command: "web.callback_oast",
 				fallbackPrefix: "callback-oast",

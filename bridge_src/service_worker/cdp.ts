@@ -1,4 +1,5 @@
 import { chromeApi as chrome } from "./runtimeEnv";
+import { RECOVERY_CODES, forget as forgetState, get as getState, persist as persistState, registerRecovery, recover as recoverState } from "./state_store";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender } from "./types";
 
 type PiCdpResponse = PiBridgeResponse<JsonRecord>;
@@ -34,6 +35,32 @@ function piCdpKnownNewDocumentIdentifiers(tabId: unknown, name?: string): string
   return Array.from(piPersistentCdpNewDocumentScripts.values())
     .filter(rec => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name))
     .map(rec => rec.identifier);
+}
+function piCdpStateStoreKey(tabId: unknown, name: unknown, identifier: unknown): string {
+  return `new_document:${piCdpNewDocumentScriptKey(tabId, name, identifier)}`;
+}
+async function piCdpPersistNewDocumentScript(rec: PiCdpNewDocumentScript): Promise<void> {
+  await persistState('cdp', piCdpStateStoreKey(rec.tabId, rec.cdpSessionName, rec.identifier), {
+    tabId: rec.tabId,
+    identifier: rec.identifier,
+    cdpSessionName: rec.cdpSessionName,
+    method: rec.method,
+    runImmediately: rec.runImmediately,
+    includeCommandLineAPI: rec.includeCommandLineAPI,
+    worldName: rec.worldName,
+  }, {
+    tabId: rec.tabId,
+    sessionId: String(rec.cdpSessionName || 'new_document'),
+    recoveryPolicy: 'diagnosticOnly',
+  });
+}
+async function piCdpForgetNewDocumentScriptState(tabId: unknown, name: unknown, identifier: unknown): Promise<void> {
+  await forgetState('cdp', piCdpStateStoreKey(tabId, name, identifier));
+}
+async function piCdpLostNewDocumentScriptState(tabId: unknown, name: unknown, identifier: unknown): Promise<unknown> {
+  const record = await getState('cdp', piCdpStateStoreKey(tabId, name, identifier));
+  if (!record) return undefined;
+  return record.workerBootId !== undefined ? record : undefined;
 }
 function piCdpError(code: string, message: unknown, details: unknown = {}): PiCdpResponse {
   const safeDetails = (details && typeof details === 'object') ? details as JsonRecord : (details === undefined ? {} : { raw: details });
@@ -289,6 +316,7 @@ async function piPersistentCdpAddNewDocumentScript(tabId: number, source: unknow
     worldName: options?.worldName !== undefined ? String(options.worldName || '') : undefined
   };
   piPersistentCdpNewDocumentScripts.set(rec.key, rec);
+  try { await piCdpPersistNewDocumentScript(rec); } catch {}
   return piCdpOk({ identifier, sessionKey, cdpSessionName: cdpOptions.name, tabId:Number(tabId), method: rec.method, detached: cdpOptions.persistent !== true });
 }
 
@@ -299,6 +327,10 @@ async function piPersistentCdpRemoveNewDocumentScript(tabId: number, identifier:
   const key = piCdpNewDocumentScriptKey(tabId, cdpOptions.name, id);
   const known = piPersistentCdpNewDocumentScripts.get(key);
   if (!known) {
+    const lost = await piCdpLostNewDocumentScriptState(tabId, cdpOptions.name, id);
+    if (lost) {
+      return piCdpError(RECOVERY_CODES.LOST, 'new document script state was lost after service worker restart', { tabId:Number(tabId), identifier:id, cdpSessionName:String(cdpOptions.name), knownIdentifiers:piCdpKnownNewDocumentIdentifiers(tabId, String(cdpOptions.name)), historyLost:true, nextAction:'re-add the new-document script with frame.addNewDocumentScript' });
+    }
     return piCdpError('SCRIPT_NOT_FOUND', 'new document script identifier is not registered', { tabId:Number(tabId), identifier:id, cdpSessionName:String(cdpOptions.name), knownIdentifiers:piCdpKnownNewDocumentIdentifiers(tabId, String(cdpOptions.name)) });
   }
   const method = 'Page.removeScriptToEvaluateOnNewDocument';
@@ -311,11 +343,13 @@ async function piPersistentCdpRemoveNewDocumentScript(tabId: number, identifier:
     // idempotent cleanup; arbitrary unknown ids still return SCRIPT_NOT_FOUND above.
     if (/(no\s+script|script.*(not\s*found|does\s*not\s*exist|given\s+id)|identifier.*(not\s*found|does\s*not\s*exist))/i.test(msg)) {
       piPersistentCdpNewDocumentScripts.delete(key);
+      try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch {}
       return piCdpOk({ identifier:id, removed:false, alreadyRemoved:true, sessionKey:known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method, error:msg });
     }
     return resp;
   }
   piPersistentCdpNewDocumentScripts.delete(key);
+  try { await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id); } catch {}
   return piCdpOk({ identifier:id, removed:true, alreadyRemoved:false, sessionKey:cdpRecord(resp.data).sessionKey || known.sessionKey, cdpSessionName:known.cdpSessionName, tabId:Number(tabId), method });
 }
 
@@ -356,6 +390,18 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
     if (rec.tabId === source.tabId) piPersistentCdpSessions.delete(key);
   }
+});
+
+registerRecovery(async (results) => {
+  const result = await recoverState('cdp', {
+    validateTab: true,
+    recover: async () => ({
+      recovered: false,
+      historyLost: true,
+      reason: 'raw new-document script source is not persisted; explicit frame.addNewDocumentScript is required',
+    }),
+  });
+  results.push(result);
 });
 
 const piPersistentCdpBridge = {

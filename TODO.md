@@ -5,6 +5,8 @@
 - 当前架构工作流：`MV3 runtime state recovery` 已冻结执行合同，见 `docs/mv3-runtime-state-recovery-plan.md`；目标是把 Service Worker 重启后的长生命周期状态丢失改为可恢复或显式失败，不新增公开工具面
 - 已完成架构工作流：`TODO 244-249 tool surface consolidation`，完整执行合同见 `docs/tool-surface-consolidation-plan.md`
 - 当前工程治理补充队列：`TODO 250-256 build/test/doc governance follow-up`，首版实现已落地；修正版问题清单、边界、执行顺序、已完成项与 CI 自动化口径见 `CURRENT.md`
+- 当前新增执行合同：`Web Security affordance / validation / recovery 收口`（保持原子窄工具，不引入固定工作流）；执行顺序、边界、验证计划见 `CURRENT.md`
+- 当前新增执行合同：`共享 helper 去重 / parse 策略 / 防漂移治理`（聚焦 `isRecord`、`recordValue`、内联 object-guard 与核心 `JSON.parse` 热点，不处理生成文件）；执行顺序、授权根、验证计划见 `CURRENT.md`
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`
 - 下阶段深水区能力规划：`docs/next-phase-web-reversing-and-security-primitives-plan.md`

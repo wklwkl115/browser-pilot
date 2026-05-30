@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { BrowserBridgeError } from "../driver/errors";
 import type { BridgeCommand } from "../protocol/nativeProtocol";
 import { rejectUnsafeExecuteCommand } from "./transferValidation";
 import { summarizeGenericValue } from "./summaries/index";
@@ -23,7 +24,7 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = toolMaxChars(params, "browser_command");
-				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new Error("browser_command requires command object");
+				if (!params.command || typeof params.command !== "object" || Array.isArray(params.command)) throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { toolName: "browser_command" });
 				const command = params.command as BridgeCommand;
 				rejectUnsafeExecuteCommand(command);
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;

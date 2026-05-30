@@ -766,6 +766,11 @@ type PiProtocolSchema = JsonRecord & {
       "retryable": false,
       "summary": "Tool rule or mode combination is invalid."
     },
+    "INVALID_TIMEOUT": {
+      "category": "tool.validation",
+      "retryable": false,
+      "summary": "Tool timeout parameter is invalid."
+    },
     "INVALID_SELECTOR": {
       "category": "runtime.selector",
       "retryable": false,

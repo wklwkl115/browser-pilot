@@ -54,5 +54,10 @@ export function summarizeCallbackOastData(value: unknown): Summary {
 			{ key: "bodyBytes", value: (event) => isRecord(event.body) ? event.body.bytes : event.queryBytes },
 			{ key: "remote", value: (event) => event.remoteAddress },
 		], 30),
+		nextActions: [
+			"inject the generated callback URL or host through browser_http_replay or browser_execute, then collect bounded callback evidence",
+			"read callback artifacts or rerun collect with afterSeq when event details need manual confirmation",
+			"stop or clear idle callback sessions after evidence is preserved to keep listener state bounded",
+		],
 	};
 }

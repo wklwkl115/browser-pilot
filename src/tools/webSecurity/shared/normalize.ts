@@ -2,6 +2,8 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
+import { createCodedError } from "../../../utils/codedError";
 
 export const DEFAULT_MAX_BODY_BYTES = 256_000;
 export const DEFAULT_TIMEOUT_MS = 15_000;
@@ -25,9 +27,13 @@ export function defaultScheme(value: unknown): "http" | "https" {
 	return String(value || "https").toLowerCase() === "http" ? "http" : "https";
 }
 
+function normalizeInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "NormalizeInputError", code: "INVALID_RULE" as Extract<NativeErrorCode, "INVALID_RULE">, message, details, suppressStack: false });
+}
+
 export function normalizeMethod(value: unknown, fallback = "GET"): string {
 	const method = String(value || fallback).trim().toUpperCase();
-	if (!/^[A-Z][A-Z0-9_-]{0,31}$/.test(method)) throw new Error(`Invalid HTTP method: ${String(value)}`);
+	if (!/^[A-Z][A-Z0-9_-]{0,31}$/.test(method)) throw normalizeInputError(`Invalid HTTP method: ${String(value)}`, { method: value });
 	return method;
 }
 
@@ -48,11 +54,7 @@ export function stringList(value: unknown): string[] {
 const WORDLIST_MAX_BYTES = 5 * 1024 * 1024;
 
 function wordlistPathError(message: string, details: Record<string, unknown>): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "WordlistPathError";
-	error.code = "WORDLIST_PATH_BLOCKED";
-	error.details = details;
-	return error;
+	return createCodedError({ name: "WordlistPathError", code: "WORDLIST_PATH_BLOCKED" as Extract<NativeErrorCode, "WORDLIST_PATH_BLOCKED">, message, details, suppressStack: false });
 }
 
 function allowedWordlistRoots(): string[] {
@@ -156,8 +158,8 @@ export function parseCommandArgs(value: unknown): string[] {
 		}
 		current += char;
 	}
-	if (escaped) throw new Error("Command args end with an unfinished escape sequence");
-	if (quote) throw new Error(`Command args contain an unclosed ${quote} quote`);
+	if (escaped) throw normalizeInputError("Command args end with an unfinished escape sequence", { input });
+	if (quote) throw normalizeInputError(`Command args contain an unclosed ${quote} quote`, { input, quote });
 	if (current) args.push(current);
 	return args;
 }

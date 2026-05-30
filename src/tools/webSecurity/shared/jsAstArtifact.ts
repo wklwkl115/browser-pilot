@@ -4,11 +4,17 @@ import { analyzeJavaScriptSource, type JsAstAnalysis, type JsAstAnalysisOptions 
 
 export const JS_AST_MAX_INPUT_BYTES = 2 * 1024 * 1024;
 
+export type JsAstArtifactErrorCode =
+	| "JS_AST_INPUT_CONFLICT"
+	| "JS_AST_INPUT_REQUIRED"
+	| "JS_AST_INPUT_NOT_FILE"
+	| "JS_AST_INPUT_TOO_LARGE";
+
 export class JsAstArtifactError extends Error {
-	readonly code: string;
+	readonly code: JsAstArtifactErrorCode;
 	readonly details: Record<string, unknown>;
 
-	constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+	constructor(code: JsAstArtifactErrorCode, message: string, details: Record<string, unknown> = {}) {
 		super(message);
 		this.name = "JsAstArtifactError";
 		this.code = code;

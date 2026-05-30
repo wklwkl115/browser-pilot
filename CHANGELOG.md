@@ -1,5 +1,7 @@
 # Changelog
 
+- 规划 Web Security affordance / validation / recovery 收口：冻结实现边界为“补 agent-first 接缝信息而非引入固定 workflow”。下一轮仅允许补并列 `possible/common follow-ups`、集中式参数组合校验、已有 `recovery` 透传与高频 schema 收敛；明确禁止工具内部自动串联 `crawl -> fuzz -> sqli`、自动升级 mode/engine/action、或从 crawl 伪造请求模板。同步 `CURRENT.md`、`TODO.md`、`NEXT_PHASE.md`、README 记录执行合同与非目标。
+
 - 完成 TODO 197 service worker 基础层真实 ESM 迁移：`config/protocol/patterns/cdp/runtime/wait_*` 通过 ESM import/export 进入 dist bundle，`build-manifest.json` 记录 `foundationImported` 与 foundation/legacy 清单；本组 `@ts-nocheck` 清零，新增 `runtimeEnv.ts`/`types.ts` 基础类型边界，contracts 锁定 foundation 不再文本拼接。
 ## Unreleased
 

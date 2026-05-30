@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { BrowserBridgeError } from "../driver/errors";
 import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript";
 import { summarizePickData } from "./summaries/index";
 import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
@@ -9,7 +10,7 @@ import { isRecord } from "../utils/params";
 function unwrapRuntimeEvaluateValue(result: unknown): unknown {
 	if (!isRecord(result)) return result;
 	const data = isRecord(result.data) ? result.data : result;
-	if (data.exceptionDetails) throw new Error(`browser_pick Runtime.evaluate failed: ${JSON.stringify(data.exceptionDetails)}`);
+	if (data.exceptionDetails) throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", `browser_pick Runtime.evaluate failed: ${JSON.stringify(data.exceptionDetails)}`, { command: "browser_pick", exceptionDetails: data.exceptionDetails });
 	const remote = isRecord(data.result) ? data.result : data;
 	if (remote.value !== undefined) return remote.value;
 	if (remote.unserializableValue !== undefined) return remote.unserializableValue;
@@ -79,7 +80,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
 				const message = String(params.message || "").trim();
-				if (!message) throw new Error("browser_pick requires message");
+				if (!message) throw new BrowserBridgeError("INVALID_RULE", "browser_pick requires message", { toolName: "browser_pick" });
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 120_000);
 				const maxChars = toolMaxChars(params, "browser_pick");

@@ -40,5 +40,10 @@ export function summarizeTemplateCheckData(value: unknown): Summary {
 			{ key: "url", value: (failure) => failure.url },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"use browser_http_replay to verify matched responses or extracted values with a focused baseline request",
+			"use browser_template engine=nuclei with explicit template selection when built-in checks indicate deeper coverage is useful",
+			"read saved artifacts or rerun with narrower target/template scope when matcher results need manual confirmation",
+		],
 	};
 }

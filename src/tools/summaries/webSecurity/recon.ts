@@ -30,5 +30,10 @@ export function summarizeWebReconProbeData(value: unknown): Summary {
 			{ key: "tls", value: (item) => isRecord(item.tlsCertificate) ? item.tlsCertificate.fingerprint256 || item.tlsCertificate.error : undefined },
 			{ key: "preview", value: (item) => bodyPreview(item.body) || item.error },
 		], 20),
+		nextActions: [
+			"use browser_crawl for bounded same-origin discovery when fingerprint results show interesting pages or APIs",
+			"use browser_template for exposure checks against discovered hosts, redirects, or technology hints",
+			"capture or replay specific requests with browser_network or browser_http_replay before deeper fuzzing or SQLi checks",
+		],
 	};
 }

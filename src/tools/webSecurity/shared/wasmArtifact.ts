@@ -5,11 +5,19 @@ import path from "node:path";
 export const WASM_MAGIC = Buffer.from([0x00, 0x61, 0x73, 0x6d]);
 export const WASM_MAX_INPUT_BYTES = 8 * 1024 * 1024;
 
+export type WasmArtifactErrorCode =
+	| "WASM_LEB128_INVALID"
+	| "WASM_TRUNCATED"
+	| "WASM_INPUT_NOT_FILE"
+	| "WASM_INPUT_TOO_LARGE"
+	| "WASM_TOO_SMALL"
+	| "WASM_MAGIC_INVALID";
+
 export class WasmArtifactError extends Error {
-	readonly code: string;
+	readonly code: WasmArtifactErrorCode;
 	readonly details: Record<string, unknown>;
 
-	constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+	constructor(code: WasmArtifactErrorCode, message: string, details: Record<string, unknown> = {}) {
 		super(message);
 		this.name = "WasmArtifactError";
 		this.code = code;

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
 import type { BrowserActiveOperationInfo } from "../driver/types";
 import { BrowserBridgeError } from "../driver/errors";
-import type { NativeErrorCode } from "../protocol/nativeErrorCodes";
+import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
 import type { DetailLevel } from "../utils/params";
 import { normalizeTabId } from "../utils/params";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
@@ -206,7 +206,7 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 		const record = result as Record<string, unknown>;
 		if (typeof record.error_code === "string" && record.error_code) {
 			const resultDetails = record.details && typeof record.details === "object" && !Array.isArray(record.details) ? record.details as Record<string, unknown> : {};
-			return errorResult(new BrowserBridgeError(record.error_code as NativeErrorCode, typeof record.error === "string" ? record.error : options.defaultMessage, {
+			return errorResult(new BrowserBridgeError(normalizeNativeErrorCode(record.error_code), typeof record.error === "string" ? record.error : options.defaultMessage, {
 				...(options.includeCommandInDetails && options.command ? { command: options.command } : {}),
 				...resultDetails,
 			}));

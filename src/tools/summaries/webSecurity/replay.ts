@@ -69,5 +69,10 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 			{ key: "error", value: (step) => step.error },
 		], 20),
 		redirects: isRecord(value) && Array.isArray(value.redirects) ? value.redirects.length : 0,
+		nextActions: [
+			"use browser_fuzz mode=param, browser_sqli, or browser_template only after narrowing the replay target and preserving a baseline request",
+			"read saved replay artifacts or rerun with compareBaseline:true when response deltas need manual confirmation",
+			"keep replay mutations narrow and explicit instead of widening into broad fuzzing when one request variant is enough",
+		],
 	};
 }

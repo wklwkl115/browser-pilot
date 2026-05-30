@@ -11,6 +11,7 @@ import { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry";
 import { BrowserLeaseRegistry } from "./BrowserLeaseRegistry";
 import { BrowserObservationSnapshotRegistry } from "./BrowserObservationSnapshotRegistry";
 import { BrowserOperationRegistry } from "./BrowserOperationRegistry";
+import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts";
 import { BrowserSessionRegistry } from "./BrowserSessionRegistry";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter";
 import { bridgeResultFailure, delay, normalizePort, recordValue, toTabId } from "./bridgeUtils";
@@ -47,6 +48,7 @@ export class BrowserBridgeServer {
 	private readonly pendingRequests: BrowserBridgePendingRequests;
 	private readonly operations: BrowserOperationRegistry;
 	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
+	private readonly runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private capabilityProfile: BrowserToolCapabilityProfileInfo = {
@@ -73,6 +75,7 @@ export class BrowserBridgeServer {
 		);
 		this.operations = new BrowserOperationRegistry();
 		this.observationSnapshots = new BrowserObservationSnapshotRegistry();
+		this.runtimeRecoveryArtifacts = new BrowserRuntimeRecoveryArtifacts();
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws) => this.unregisterClient(ws));
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
 	}
@@ -326,16 +329,20 @@ export class BrowserBridgeServer {
 		if (!this.running) throw new BrowserBridgeError("BRIDGE_NOT_RUNNING", "Browser bridge server is not running", { port: this.port });
 		const tabId = toTabId(options.tabId);
 		const target = options.target ?? this.tabs.targetInfo(tabId !== undefined ? "explicit" : "none", tabId, this.browserSessions.get(options.browserSessionId));
+		const recordResult = (promise: Promise<BrowserBridgeExecutionResult>) => promise.then((result) => {
+			this.runtimeRecoveryArtifacts.recordCommandResult(code, result, { browserSessionId: options.browserSessionId, target, snapshot: this.snapshot({ browserSessionId: options.browserSessionId }) });
+			return result;
+		});
 		if (tabId !== undefined) {
 			const browserSession = this.browserSessions.get(options.browserSessionId);
 			const tab = this.requireLiveTabSession(tabId, browserSession.id);
 			if (options.accessMode === "write") {
-				return this.queues.enqueue(browserSession.id, tabId, async () => await this.leases.withAutoTabLease(browserSession.id, tab, () => this.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target })));
+				return recordResult(this.queues.enqueue(browserSession.id, tabId, async () => await this.leases.withAutoTabLease(browserSession.id, tab, () => this.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target }))));
 			}
-			return this.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target });
+			return recordResult(this.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target }));
 		}
 		const socket = this.socketForBrowserSessionCommand(options.browserSessionId);
-		return this.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target });
+		return recordResult(this.pendingRequests.send(socket, code, { tabId, timeoutMs: options.timeoutMs, target }));
 	}
 
 	private registerClient(ws: WebSocket): void {
@@ -369,6 +376,7 @@ export class BrowserBridgeServer {
 			this.browserSessions.selectClient(this.browserSessions.defaultSession(), ws);
 			this.clients.updateClientInfo(ws, message.bridge || message.extension);
 			this.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
+			if (type === "ext_ready") this.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.clients.info(ws), message.bridge && typeof message.bridge === "object" && !Array.isArray(message.bridge) ? message.bridge as Record<string, unknown> : undefined);
 			return;
 		}
 		if (type === "ack") {

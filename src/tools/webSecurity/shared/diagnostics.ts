@@ -1,3 +1,4 @@
+import { createCodedError } from "../../../utils/codedError";
 import { normalizeError, suppressErrorStack } from "../../../utils/errors";
 
 export type WebSecurityErrorEnvelopeConfig = {
@@ -28,21 +29,26 @@ export function redactWebSecurityDiagnosticValue(value: unknown, seen = new Weak
 	return out;
 }
 
+type WebSecurityToolErrorRecord = Error & { code: string; details: Record<string, unknown> };
+
 export function webSecurityToolError(error: unknown, config: WebSecurityErrorEnvelopeConfig): Error {
 	const normalized = normalizeError(error);
-	const wrapped = new Error(redactWebSecurityDiagnosticText(normalized.message)) as Error & { code?: string; details?: Record<string, unknown> };
-	wrapped.name = "WebSecurityToolError";
-	wrapped.code = normalized.code;
-	wrapped.details = {
-		domain: "webSecurity",
-		toolName: config.toolName,
-		command: config.command,
-		cause: {
-			code: normalized.code,
-			message: redactWebSecurityDiagnosticText(normalized.message),
-			name: normalized.name,
-			details: redactWebSecurityDiagnosticValue(normalized.details),
+	return suppressErrorStack(createCodedError({
+		name: "WebSecurityToolError",
+		code: normalized.code,
+		message: redactWebSecurityDiagnosticText(normalized.message),
+		details: {
+			domain: "webSecurity",
+			toolName: config.toolName,
+			command: config.command,
+			...(normalized.recovery ? { recovery: normalized.recovery } : {}),
+			cause: {
+				code: normalized.code,
+				message: redactWebSecurityDiagnosticText(normalized.message),
+				name: normalized.name,
+				details: redactWebSecurityDiagnosticValue(normalized.details),
+			},
 		},
-	};
-	return suppressErrorStack(wrapped);
+		suppressStack: false,
+	}) as WebSecurityToolErrorRecord);
 }

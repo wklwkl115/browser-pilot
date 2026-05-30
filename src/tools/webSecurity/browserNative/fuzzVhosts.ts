@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { Buffer } from "node:buffer";
+import { createCodedError } from "../../../utils/codedError";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline";
 import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
@@ -16,6 +17,10 @@ type VhostResponseFingerprint = ReturnType<typeof responseFingerprint> & {
 	tlsSerialNumber?: string;
 };
 type VhostBaselineFingerprint = VhostResponseFingerprint & { host: string; sniName?: string; clusterKey: string };
+
+function fuzzVhostsInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "FuzzVhostsInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
 
 function isIpLikeHost(hostname: string): boolean {
 	return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname === "localhost" || hostname.includes(":");
@@ -312,7 +317,7 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 			if (candidates.length < normalized.maxCandidates) candidates.push(candidate);
 		}
 		truncatedCandidates += Math.max(0, totalCandidates - candidates.length);
-		if (!candidates.length) throw new Error("browser_fuzz_vhosts requires hosts, words, wordlist, or wordlistPath");
+		if (!candidates.length) throw fuzzVhostsInputError("browser_fuzz_vhosts requires hosts, words, wordlist, or wordlistPath", { field: "hosts|words|wordlist|wordlistPath" });
 		const defaultBaselineHost = `__pi_vhost_baseline__.${new URL(base).hostname}`;
 		const baselineHosts = [...new Set([...normalized.baselineHosts, normalized.baselineHost || defaultBaselineHost].filter(Boolean))];
 		const currentBaselines: VhostBaselineFingerprint[] = [];

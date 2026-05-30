@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createCodedError } from "../../../utils/codedError";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster } from "../shared/baseline";
 import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
@@ -169,10 +170,14 @@ type NormalizedFuzzPathsOptions = {
 	delayMs: number;
 };
 
+function fuzzPathsInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "FuzzPathsInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 async function normalizeFuzzPathsOptions(options: RawFuzzPathsOptions): Promise<NormalizedFuzzPathsOptions> {
 	const bases = normalizeProbeTargets({ url: options.url, urls: options.urls, defaultScheme: options.defaultScheme });
 	const explicit = [...stringList(options.paths), ...stringList(options.words), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
-	if (!explicit.length) throw new Error("browser_fuzz_paths requires paths, words, wordlist, or wordlistPath");
+	if (!explicit.length) throw fuzzPathsInputError("browser_fuzz_paths requires paths, words, wordlist, or wordlistPath", { field: "paths|words|wordlist|wordlistPath" });
 	const extensions = stringList(options.extensions).map((item) => item.replace(/^\./, "")).filter(Boolean);
 	const appendSlash = options.appendSlash === true;
 	const maxCandidates = Math.min(5_000, positiveInt(options.maxCandidates, 500));

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http";
 import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize";
+import { createCodedError } from "../../../utils/codedError";
 import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template";
 import { harEntriesFromOptions } from "./har";
 import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types";
@@ -24,6 +25,10 @@ export type NormalizedReplayOptions = {
 };
 
 export { buildReplayRequest, parseRawHttpRequest } from "./requestTemplate";
+
+function replayInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "ReplayInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
 
 export function requestContentType(headers: HeaderMap): string {
 	const found = Object.entries(headers).find(([name]) => normalizeHeaderName(name) === "content-type");
@@ -119,9 +124,9 @@ function setJsonPath(root: unknown, path: string, value: unknown) {
 		const part = parts[i];
 		const next = parts[i + 1];
 		if (typeof part === "number") {
-			if (!Array.isArray(current)) throw new Error(`JSON path expects array at ${String(part)}`);
+			if (!Array.isArray(current)) throw replayInputError(`JSON path expects array at ${String(part)}`, { path, part });
 		} else if (!isRecord(current) && !Array.isArray(current)) {
-			throw new Error(`JSON path expects object at ${part}`);
+			throw replayInputError(`JSON path expects object at ${part}`, { path, part });
 		}
 		let child = getOwnJsonProperty(current, part);
 		if (child === undefined || child === null) {
@@ -132,9 +137,9 @@ function setJsonPath(root: unknown, path: string, value: unknown) {
 	}
 	const last = parts[parts.length - 1];
 	if (typeof last === "number") {
-		if (!Array.isArray(current)) throw new Error(`JSON path expects array at ${String(last)}`);
+		if (!Array.isArray(current)) throw replayInputError(`JSON path expects array at ${String(last)}`, { path, part: last });
 	} else if (!isRecord(current) && !Array.isArray(current)) {
-		throw new Error(`JSON path expects object at ${last}`);
+		throw replayInputError(`JSON path expects object at ${last}`, { path, part: last });
 	}
 	setOwnJsonProperty(current, last, value);
 }
@@ -207,17 +212,17 @@ export function mutateParamRequest(base: ReplayRequest, location: string, paramN
 			try {
 				parsed = JSON.parse(body);
 			} catch (error) {
-				throw new Error(`Invalid JSON request body; cannot mutate JSON parameter ${paramName}: ${error instanceof Error ? error.message : String(error)}`);
+				throw replayInputError(`Invalid JSON request body; cannot mutate JSON parameter ${paramName}: ${error instanceof Error ? error.message : String(error)}`, { location, paramName });
 			}
 		}
-		if (!isRecord(parsed) && !Array.isArray(parsed)) throw new Error(`JSON request body must be an object or array to mutate JSON parameter ${paramName}`);
+		if (!isRecord(parsed) && !Array.isArray(parsed)) throw replayInputError(`JSON request body must be an object or array to mutate JSON parameter ${paramName}`, { location, paramName });
 		if (operation === "delete") deleteJsonPath(parsed, paramName);
 		else setJsonPath(parsed, paramName, parseFuzzParamValue(value));
 		request.body = JSON.stringify(parsed);
 		if (!requestContentType(request.headers)) request.headers["Content-Type"] = "application/json";
 		return request;
 	}
-	throw new Error(`Unsupported parameter fuzz location: ${location}`);
+	throw replayInputError(`Unsupported parameter fuzz location: ${location}`, { location, paramName, operation });
 }
 
 export function replayVariableMap(value: unknown): Record<string, string> {
@@ -317,7 +322,7 @@ export function replayInputOptions(input: unknown, parent: ReplayOptions): Repla
 	if (typeof input === "string") return { ...common, rawRequest: input };
 	if (isRecord(input) && isRecord(input.request) && (input.startedDateTime || input.response || input.time)) return { ...common, request: input.request, rawRequest: undefined, url: undefined };
 	if (isRecord(input)) return { ...common, ...input, cookieProvider: parent.cookieProvider, timeoutMs: typeof input.timeoutMs === "number" ? input.timeoutMs : parent.timeoutMs, maxBodyBytes: typeof input.maxBodyBytes === "number" ? input.maxBodyBytes : parent.maxBodyBytes, defaultScheme: input.defaultScheme ?? parent.defaultScheme, baseUrl: input.baseUrl ?? parent.baseUrl };
-	throw new Error("Sequence entries must be raw request strings, captured request objects, HAR entries, or replay option objects");
+	throw replayInputError("Sequence entries must be raw request strings, captured request objects, HAR entries, or replay option objects", { inputType: typeof input });
 }
 
 export async function replaySequenceInputs(options: ReplayOptions): Promise<Array<{ input: unknown; source: string; label?: string }>> {

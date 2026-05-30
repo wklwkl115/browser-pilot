@@ -101,4 +101,5 @@ Web Security follow-up tools are visible when the capability profile allows them
 - If the task is page action, use `browser_execute` plus `browser_wait`, not fixed click/type tools.
 - If the task is request mutation, use `browser_http_replay` as the primitive before specialized fuzzers or bridges; browser_http_replay as the primitive is the default boundary for focused request variants.
 - If the task is broad Web Security automation, first capture baseline scope and evidence; scanners/fuzzers are follow-up layers.
+- Web Security follow-up affordance stays additive only: `nextActions` are possible/common follow-ups and recovery hints, not a fixed workflow, not automatic cross-tool execution, and not a request-template synthesis layer.
 - If output is large or sensitive, preserve it as an artifact and inspect with `browser_artifact`.

@@ -4,8 +4,7 @@
 // so that service-worker restarts can recover configuration-only state while failing
 // closed for volatile runtime data (buffers, transcripts, paused requests).
 
-import { chromeApi as chrome } from "./runtimeEnv";
-import { piBridgeInfo } from "./bridge_info";
+import { chromeApi as chrome, PI_BROWSER_WORKER_BOOT_ID } from "./runtimeEnv";
 import type { JsonRecord } from "./types";
 
 // --- Constants ---
@@ -69,6 +68,20 @@ type StateStoreDiagnostics = {
   byKind: Record<string, number>;
   oldestUpdatedAt: number | null;
   newestUpdatedAt: number | null;
+  lastStorageWriteError?: string | null;
+};
+
+type StateStoreWriteResult = { ok: boolean; error?: string; generation?: number };
+
+type RuntimeRecoverySummary = {
+  ranAt: number;
+  results: RecoveryResult[];
+  totals: {
+    recovered: number;
+    recoveredWithHistoryLoss: number;
+    lost: number;
+    byKind: Record<string, { recovered: number; lost: number }>;
+  };
 };
 
 // Sensitive field names that must be redacted from persisted config.
@@ -88,41 +101,69 @@ const SENSITIVE_KEYS = new Set([
   "refreshtoken",
   "refresh_token",
   "bearer",
+  "body",
+  "bodybase64",
+  "body_base64",
+  "postdata",
+  "post_data",
+  "payloaddata",
+  "payload",
+  "text",
+  "value",
+  "content",
+  "source",
+  "script",
+  "expression",
+  "html",
+]);
+
+const DIRECT_PAYLOAD_KEYS = new Set([
+  "body",
+  "postdata",
+  "payloaddata",
+  "payload",
+  "source",
+  "script",
+  "expression",
+  "html",
+  "text",
+  "value",
+  "content",
 ]);
 
 function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEYS.has(key.toLowerCase().replace(/[_-]/g, ""));
 }
 
-function redactConfig(value: unknown, depth = 0): unknown {
+function normalizeRedactionKey(key: string): string {
+  return key.toLowerCase().replace(/[_-]/g, "");
+}
+
+function redactConfig(value: unknown, depth = 0, parentKey = ""): unknown {
   if (value == null) return value;
+  const normalizedParent = normalizeRedactionKey(parentKey);
   if (typeof value === "string") {
-    // Redact long strings that might be tokens/keys
+    if (parentKey && isSensitiveKey(parentKey)) return "[REDACTED]";
+    if (DIRECT_PAYLOAD_KEYS.has(normalizedParent)) return "[REDACTED]";
     if (value.length > 256) return "[REDACTED_LONG]";
     return value;
   }
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value !== "object") return "[REDACTED]";
   if (depth > 6) return "[REDACTED_DEPTH]";
-  if (Array.isArray(value)) return value.map((v) => redactConfig(v, depth + 1));
+  if (Array.isArray(value)) return value.map((v) => redactConfig(v, depth + 1, parentKey));
   const out: JsonRecord = {};
   for (const [k, v] of Object.entries(value as JsonRecord)) {
-    if (isSensitiveKey(k)) {
-      out[k] = "[REDACTED]";
-    } else {
-      out[k] = redactConfig(v, depth + 1);
-    }
+    if (isSensitiveKey(k)) out[k] = "[REDACTED]";
+    else out[k] = redactConfig(v, depth + 1, k);
   }
   return out;
 }
 
 function currentBootId(): string {
-  try {
-    const info = piBridgeInfo();
-    return typeof info.workerBootId === "string" ? info.workerBootId : "unknown";
-  } catch {
-    return "unknown";
-  }
+  return typeof PI_BROWSER_WORKER_BOOT_ID === "string" && PI_BROWSER_WORKER_BOOT_ID
+    ? PI_BROWSER_WORKER_BOOT_ID
+    : "unknown";
 }
 
 function now(): number {
@@ -131,6 +172,12 @@ function now(): number {
 
 function stateKey(kind: RuntimeStateKind, key: string): string {
   return `${kind}:${key}`;
+}
+
+function runtimeRecoveryGlobal() {
+  return globalThis as typeof globalThis & {
+    __PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__?: RuntimeRecoverySummary | null;
+  };
 }
 
 // --- Storage I/O ---
@@ -150,13 +197,18 @@ async function loadAll(): Promise<Record<string, RuntimeStateRecord>> {
   return {};
 }
 
-async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<void> {
+let lastStorageWriteError: string | null = null;
+
+async function saveAll(map: Record<string, RuntimeStateRecord>): Promise<StateStoreWriteResult> {
   const session = chrome.storage?.session;
-  if (!session?.set) return;
+  if (!session?.set) return { ok: true };
   try {
     await session.set({ [STORAGE_KEY]: map });
-  } catch {
-    // Storage write failure - logged in diagnostics, does not block primary action
+    lastStorageWriteError = null;
+    return { ok: true };
+  } catch (error) {
+    lastStorageWriteError = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: lastStorageWriteError };
   }
 }
 
@@ -167,19 +219,16 @@ function pruneRecords(map: Record<string, RuntimeStateRecord>): Record<string, R
   const byKind = new Map<string, Array<[string, RuntimeStateRecord]>>();
 
   for (const [key, record] of Object.entries(map)) {
-    // TTL expiry
     if (record.updatedAt < cutoff) {
       delete map[key];
       continue;
     }
-    // Group by kind for cap enforcement
     const entries = byKind.get(record.kind) || [];
     entries.push([key, record]);
     byKind.set(record.kind, entries);
   }
 
-  // Per-kind cap: keep newest 50
-  for (const [kind, entries] of byKind) {
+  for (const [, entries] of byKind) {
     if (entries.length <= MAX_KIND_RECORDS) continue;
     entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt);
     for (const [key] of entries.slice(MAX_KIND_RECORDS)) {
@@ -187,6 +236,14 @@ function pruneRecords(map: Record<string, RuntimeStateRecord>): Record<string, R
     }
   }
 
+  return map;
+}
+
+async function pruneMissingTabs(map: Record<string, RuntimeStateRecord>): Promise<Record<string, RuntimeStateRecord>> {
+  for (const [key, record] of Object.entries(map)) {
+    if (record.tabId == null) continue;
+    if (!(await tabExists(record.tabId))) delete map[key];
+  }
   return map;
 }
 
@@ -230,24 +287,27 @@ async function persist<TConfig>(
     recoveryPolicy?: RecoveryPolicy;
     diagnostics?: Array<Record<string, unknown>>;
   } = {}
-): Promise<void> {
+): Promise<StateStoreWriteResult> {
   const map = await loadAll();
   const sk = stateKey(kind, key);
   const existing = map[sk];
-  const record = makeRecord(kind, key, config, {
+  const record = makeRecord(kind, key, redactConfig(config) as TConfig, {
     ...opts,
     generation: opts.generation ?? (existing ? existing.generation + 1 : 0),
+    diagnostics: Array.isArray(opts.diagnostics) ? [...opts.diagnostics] : undefined,
   });
   map[sk] = record as RuntimeStateRecord;
-  await saveAll(pruneRecords(map));
+  await pruneMissingTabs(map);
+  const saved = await saveAll(pruneRecords(map));
+  return { ...saved, generation: record.generation };
 }
 
-async function forget(kind: RuntimeStateKind, key: string): Promise<void> {
+async function forget(kind: RuntimeStateKind, key: string): Promise<StateStoreWriteResult> {
   const map = await loadAll();
   const sk = stateKey(kind, key);
-  if (!(sk in map)) return;
+  if (!(sk in map)) return { ok: true };
   delete map[sk];
-  await saveAll(map);
+  return await saveAll(map);
 }
 
 async function get(kind: RuntimeStateKind, key: string): Promise<RuntimeStateRecord | undefined> {
@@ -284,10 +344,8 @@ async function recover(
     const key = record.key;
     const sk = stateKey(kind, key);
 
-    // Skip records from current boot (not lost)
     if (record.workerBootId === bootId) continue;
 
-    // Tab existence check
     if (opts.validateTab && record.tabId != null) {
       const exists = await tabExists(record.tabId);
       if (!exists) {
@@ -301,12 +359,10 @@ async function recover(
       }
     }
 
-    // Attempt recovery
     if (opts.recover) {
       try {
         const recovery = await opts.recover(record);
         if (recovery.recovered) {
-          // Update record with current boot ID and recoveredAt
           const map = await loadAll();
           const existing = map[sk];
           if (existing) {
@@ -337,18 +393,17 @@ async function recover(
         });
       }
     } else {
-      // No recover function - diagnostic only
       result.recovered.push({
         key,
         config: record.config,
         code: RECOVERY_CODES.RECOVERED_WITH_HISTORY_LOSS,
       });
-      // Update boot ID so we don't re-report
       const map = await loadAll();
       const existing = map[sk];
       if (existing) {
         existing.workerBootId = bootId;
         existing.recoveredAt = now();
+        existing.updatedAt = now();
         await saveAll(map);
       }
     }
@@ -375,6 +430,7 @@ async function diagnostics(): Promise<StateStoreDiagnostics> {
     byKind,
     oldestUpdatedAt: oldest,
     newestUpdatedAt: newest,
+    lastStorageWriteError,
   };
 }
 
@@ -406,25 +462,12 @@ function summarizeRecovery(results: RecoveryResult[]): {
   return { recovered, recoveredWithHistoryLoss, lost, byKind };
 }
 
-// Re-export for use by recoverers
 function getRecoveryCodes() {
   return RECOVERY_CODES;
 }
 
-// --- Startup recovery summary ---
-
-type RuntimeRecoverySummary = {
-  ranAt: number;
-  results: RecoveryResult[];
-  totals: {
-    recovered: number;
-    recoveredWithHistoryLoss: number;
-    lost: number;
-    byKind: Record<string, { recovered: number; lost: number }>;
-  };
-};
-
 let lastRecoverySummary: RuntimeRecoverySummary | null = null;
+runtimeRecoveryGlobal().__PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__ = null;
 
 type RecoveryRegistrar = (results: RecoveryResult[]) => Promise<void>;
 
@@ -449,6 +492,7 @@ async function runStartupRecovery(): Promise<RuntimeRecoverySummary> {
     totals: summarizeRecovery(results),
   };
   lastRecoverySummary = summary;
+  runtimeRecoveryGlobal().__PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__ = summary;
   if (summary.totals.recovered + summary.totals.recoveredWithHistoryLoss + summary.totals.lost > 0) {
     console.log(
       "[PI-BROWSER-STATE] Startup recovery complete",
@@ -473,6 +517,7 @@ export {
   type RecoveryResult,
   type RecoveryResultEntry,
   type StateStoreDiagnostics,
+  type StateStoreWriteResult,
   type RuntimeRecoverySummary,
   makeRecord,
   persist,

@@ -195,6 +195,11 @@ export const nativeErrorCodes = {
     "retryable": false,
     "summary": "Tool rule or mode combination is invalid."
   },
+  "INVALID_TIMEOUT": {
+    "category": "tool.validation",
+    "retryable": false,
+    "summary": "Tool timeout parameter is invalid."
+  },
   "INVALID_SELECTOR": {
     "category": "runtime.selector",
     "retryable": false,
@@ -451,4 +456,8 @@ export type NativeErrorCode = keyof typeof nativeErrorCodes;
 
 export function isNativeErrorCode(value: string): value is NativeErrorCode {
 	return Object.hasOwn(nativeErrorCodes, value);
+}
+
+export function normalizeNativeErrorCode(value: unknown, fallback: NativeErrorCode = "INTERNAL_ERROR"): NativeErrorCode {
+	return typeof value === "string" && isNativeErrorCode(value) ? value : fallback;
 }

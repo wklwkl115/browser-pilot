@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createCodedError } from "../../../utils/codedError";
 import { compactStep, extractTitle, responseBodyHash, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http";
 import { asString, isRecord, positiveInt, sleep, splitWords, stringList } from "../shared/normalize";
 import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay";
@@ -206,13 +207,17 @@ function sqliResponseRecord(final: FetchStep, exchange: { chain: FetchStep[]; fi
 	};
 }
 
+function sqliProbeInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "SqliProbeInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 async function normalizeSqliProbeOptions(options: SqliProbeOptions): Promise<NormalizedSqliProbeOptions> {
 	const baseRequest = buildReplayRequest(options);
 	const locations = inferFuzzParamLocations(baseRequest, options.locations);
-	if (!locations.length) throw new Error("browser_sqli_probe requires locations or an inferable query/json/form request");
+	if (!locations.length) throw sqliProbeInputError("browser_sqli_probe requires locations or an inferable query/json/form request", { field: "locations" });
 	const explicitParamNames = stringList(options.paramNames);
 	const paramNames = explicitParamNames.length ? explicitParamNames : existingParamNames(baseRequest, locations);
-	if (!paramNames.length) throw new Error("browser_sqli_probe requires paramNames or existing request parameters");
+	if (!paramNames.length) throw sqliProbeInputError("browser_sqli_probe requires paramNames or existing request parameters", { field: "paramNames" });
 	const probeTypes = sqliProbeTypes(options.probeTypes);
 	const payloadMode = String(options.payloadMode || "append").toLowerCase() === "replace" ? "replace" : "append";
 	const requestedDbms = selectedSqlDbms(options.dbms);
@@ -279,7 +284,7 @@ export async function runSqliProbe(options: SqliProbeOptions) {
 		baselineExchange = sent.exchange;
 		baselineResponses.push(sqliResponseRecord(sent.exchange.final, sent.exchange));
 	}
-	if (!baselineFinal || !baselineExchange) throw new Error("browser_sqli_probe could not establish baseline response");
+	if (!baselineFinal || !baselineExchange) throw createCodedError({ name: "SqliProbeRuntimeError", code: "TIMEOUT", message: "browser_sqli_probe could not establish baseline response", details: { phase: "baseline" }, suppressStack: false });
 	const baselineFingerprint = responseFingerprint(baselineFinal);
 	const baselineError = hasSqlError(baselineFinal.bodyText);
 	const baselineDbms = detectSqlDbms(baselineFinal.bodyText);

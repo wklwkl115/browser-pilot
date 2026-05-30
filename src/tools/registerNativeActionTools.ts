@@ -128,6 +128,9 @@ export function registerNetworkTool(context: ToolRegistrarContext) {
 		commandForAction: networkCommandForAction,
 		budgetName: "browser_network",
 		allowZeroTimeout: true,
+		commandExecutor: async (server, command, options) => command.cmd === "network.wait"
+			? await executeBrowserWaitWithSupervisor(server, command, options)
+			: await server.sendCommand(command, options),
 		timeoutForCommand: (commandName) => commandName.endsWith(".wait") || commandName.endsWith(".list") || commandName.endsWith(".body") || commandName.endsWith(".exportHar") ? DEFAULT_OBSERVATION_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS,
 		artifactPrefix: "network-result",
 	});

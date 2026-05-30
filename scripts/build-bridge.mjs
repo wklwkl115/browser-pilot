@@ -9,7 +9,7 @@ const distDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
 const serviceWorkerBuildMode = "esm-import-graph";
 const targetServiceWorkerBuildMode = "esm-import-graph";
 const metadataOnlyServiceWorkerFoundationModules = [
-	"config", "protocol", "patterns", "cdp", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait",
+	"config", "protocol", "patterns", "cdp", "state_store", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait",
 ];
 const metadataOnlyServiceWorkerCommandModules = [
 	"network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws",

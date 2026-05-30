@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createCodedError } from "../../../utils/codedError";
 import { responseReplayDelta } from "../shared/baseline";
 import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
@@ -59,6 +60,10 @@ function addCookieSamples(out: CookieSample[], value: unknown, source: string, s
 	}
 }
 
+function cookieAnalyzeInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "CookieAnalyzeInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 function serializeCookieMap(map: Map<string, string>): string | undefined {
 	const pairs = Array.from(map.entries()).map(([name, value]) => `${name}=${value}`);
 	return pairs.length ? pairs.join("; ") : undefined;
@@ -66,7 +71,7 @@ function serializeCookieMap(map: Map<string, string>): string | undefined {
 
 function normalizeClaimReplay(value: Record<string, unknown>, fallbackUrl: unknown, fallbackTimeoutMs: unknown, fallbackAllowPrivateTargets: unknown): ClaimReplayConfig {
 	const urlValue = value.url ?? fallbackUrl;
-	if (!urlValue) throw new Error("browser_cookie_analyze claimReplay requires claimReplay.url or top-level url");
+	if (!urlValue) throw cookieAnalyzeInputError("browser_cookie_analyze claimReplay requires claimReplay.url or top-level url", { field: "claimReplay.url|url" });
 	const bodyBase64 = asString(value.bodyBase64);
 	return {
 		url: absoluteUrl(urlValue, { scheme: "https" }),
@@ -183,7 +188,7 @@ async function runClaimReplayChecks(samples: CookieSample[], results: Record<str
 
 export async function runCookieAnalyze(options: RawCookieAnalyzeOptions) {
 	const normalized = await normalizeCookieAnalyzeOptions(options);
-	if (!normalized.samples.length) throw new Error("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url");
+	if (!normalized.samples.length) throw cookieAnalyzeInputError("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url", { fields: ["cookie", "cookies", "setCookie", "setCookies", "jwt", "jwts", "values", "bindBrowserSession+url"] });
 	const results: Record<string, unknown>[] = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, source: sample.source, name: sample.name, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
 	const tokenResults = results.filter((item) => tokenCountOf(item) > 0);
 	const jwtResults = results.filter((item) => String(item.kind || "") === "jwt");

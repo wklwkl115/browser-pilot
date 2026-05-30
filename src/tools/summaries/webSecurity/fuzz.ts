@@ -68,6 +68,11 @@ export function summarizeFuzzPathsData(value: unknown): Summary {
 			{ key: "url", value: (failure) => failure.url },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"use browser_http_replay with matched URLs to verify path findings with focused baseline comparison or header/body mutations",
+			"use browser_template with matched paths or hosts for built-in exposure checks or nuclei follow-up",
+			"use browser_fuzz mode=path with recursive:true and bounded maxDepth when matched directories suggest deeper route structure",
+		],
 	};
 }
 export function summarizeFuzzVhostsData(value: unknown): Summary {
@@ -133,6 +138,11 @@ export function summarizeFuzzVhostsData(value: unknown): Summary {
 			{ key: "host", value: (failure) => failure.host },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"use browser_http_replay with the matched Host header to verify vhost-specific behavior or baseline deltas",
+			"use browser_crawl action=fingerprint against matched hosts to inspect redirects, TLS, and tech hints per virtual host",
+			"use browser_template with matched hosts for bounded exposure or nuclei follow-up checks",
+		],
 	};
 }
 export function summarizeFuzzParamsData(value: unknown): Summary {
@@ -198,5 +208,10 @@ export function summarizeFuzzParamsData(value: unknown): Summary {
 			{ key: "contentTypeVariant", value: (failure) => failure.contentTypeVariant },
 			{ key: "error", value: (failure) => failure.error },
 		], 10),
+		nextActions: [
+			"pass the original request template to browser_sqli for bounded SQLi probing on interesting parameters or locations",
+			"use browser_http_replay with narrow parameter mutations to verify parser, validation, or authorization deltas",
+			"use browser_template with the same request scope when parameter behavior suggests exposure or framework-specific checks",
+		],
 	};
 }

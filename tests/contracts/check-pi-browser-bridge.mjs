@@ -38,7 +38,8 @@ function stripBridgeSource(text) {
 		.replace(/^export function /gm, "function ")
 		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-		.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\n\/\/ ESM module boundary marker(?: for TODO 189)?\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/^export const __piBridgeModule_[\s\S]*?;\s*$/gm, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
 
@@ -74,8 +75,9 @@ for (const file of requiredBridgeFiles) {
 // Shared state_store stubs for VM sandboxes that load network/intercept modules
 const stateStoreStubs = {
 	registerRecovery: () => {},
-	persistState: async () => {},
-	forgetState: async () => {},
+	persistState: async () => ({ ok: true, generation: 0 }),
+	forgetState: async () => ({ ok: true }),
+	getState: async () => undefined,
 	recoverState: async () => ({ kind: "", recovered: [], lost: [], diagnostics: [] }),
 	RECOVERY_CODES: { RECOVERED: "RUNTIME_STATE_RECOVERED", RECOVERED_WITH_HISTORY_LOSS: "RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS", LOST: "RUNTIME_STATE_LOST" },
 	redactConfig: (value) => value,
@@ -97,7 +99,7 @@ assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["di
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
 
-const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 const background = serviceWorkerBridgeFiles.join(" ");
 const transport = readBridgeRuntimeFile("transport.js");
 const tabSync = readBridgeRuntimeFile("tab_sync.js");
@@ -131,7 +133,7 @@ assert(
 assert(waitBridgeFiles.at(-1) === "wait.js", "wait bridge bundle must keep wait.js as the final facade/dispatch script");
 assert(waitBridgeFiles[0] === "wait_cdp.js" && waitBridgeFiles[1] === "wait_coordinator.js" && waitBridgeFiles.at(-1) === "wait.js", "wait helper modules must load before wait.js in VM fixtures");
 assert(background.indexOf("runtime.js") < background.indexOf("wait_cdp.js") && background.indexOf("wait_cdp.js") < background.indexOf("wait_coordinator.js") && background.indexOf("wait_coordinator.js") < background.indexOf("wait_navigation.js") && background.indexOf("wait_navigation.js") < background.indexOf("wait_network_idle.js") && background.indexOf("wait_network_idle.js") < background.indexOf("wait_selector.js") && background.indexOf("wait_selector.js") < background.indexOf("wait.js"), "background.js must load wait helper modules before final wait.js facade");
-for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
+for (const file of ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "router.js", "tab_sync.js", "transport.js"]) {
 	assert(background.includes(file), `background.js must import ${file}`);
 }
 assert(background.indexOf("config.js") < background.indexOf("transport.js"), "background.js must load config.js before transport.js");
@@ -1350,6 +1352,7 @@ async function testCdpAliasReleaseAndFrameOptions() {
 		console,
 		setTimeout,
 		clearTimeout,
+		...stateStoreStubs,
 		chrome: {
 			tabs: { async update() {} },
 			debugger: {
@@ -1399,6 +1402,7 @@ async function testCdpNewDocumentScriptLifecycleContract() {
 		console,
 		setTimeout,
 		clearTimeout,
+		...stateStoreStubs,
 		chrome: {
 			tabs: { async update() {} },
 			debugger: {

@@ -137,12 +137,12 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BRIDGE_STOPPED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
 | `BRIDGE_TIMEOUT` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
 | `BROWSER_COMMAND_FAILED` | driver | driver.command | no | schema | `src/driver/BrowserBridgeServer.ts`, `src/tools/bridgeResultValidation.ts` |
-| `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/pageScriptEvaluation.ts` |
+| `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/pageScriptEvaluation.ts`, `src/tools/registerPickTool.ts` |
 | `BROWSER_EXTENSION_RECONNECT_TIMEOUT` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeServer.ts` |
 | `BROWSER_NOT_FOUND` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `BUFFER_OVERFLOW` | native | runtime.hook | no | schema |  |
 | `CANCELLED` | native | runtime.wait | yes | schema |  |
-| `CONTENT_EXTRACTION_FAILED` | tool | tool.content | no | schema | `src/tools/observeRunners.ts` |
+| `CONTENT_EXTRACTION_FAILED` | tool | tool.content | no | schema |  |
 | `CROSS_ORIGIN_IFRAME` | page | runtime.frame | no | schema |  |
 | `DETACH_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `DOWNLOAD_TARGET_REQUIRED` | transfer | tool.transfer | no | schema | `src/tools/transferValidation.ts` |
@@ -155,15 +155,15 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `FRAME_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `HTTPS_CERT_GENERATION_FAILED` | security | tool.security | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
-| `INTERNAL_ERROR` | native | runtime.internal | no | schema | `src/driver/errors.ts` |
+| `INTERNAL_ERROR` | native | runtime.internal | no | schema |  |
 | `INVALID_BROWSER_COMMAND` | protocol | driver.command | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_BROWSER_ID` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
-| `INVALID_RULE` | tool | tool.validation | no | schema | `src/tools/registerExecuteTool.ts`, `src/tools/registerObserveTool.ts`, `src/tools/registerTabsTool.ts`, `src/tools/transferValidation.ts` |
+| `INVALID_RULE` | tool | tool.validation | no | schema | `src/tools/registerCommandTool.ts`, `src/tools/registerExecuteTool.ts`, `src/tools/registerObserveTool.ts`, `src/tools/registerPickTool.ts`, `src/tools/registerTabsTool.ts`, `src/tools/transferValidation.ts`, `src/tools/webSecurity/browserNative/callbackOast.ts`, `src/tools/webSecurity/browserNative/cookieAnalyze.ts`, `src/tools/webSecurity/browserNative/fuzzParams.ts`, `src/tools/webSecurity/browserNative/fuzzPaths.ts`, `src/tools/webSecurity/browserNative/fuzzVhosts.ts`, `src/tools/webSecurity/browserNative/httpReplay.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts`, `src/tools/webSecurity/browserNative/templateCheck.ts`, `src/tools/webSecurity/register/shared.ts`, `src/tools/webSecurity/shared/har.ts`, `src/tools/webSecurity/shared/http.ts`, `src/tools/webSecurity/shared/normalize.ts`, `src/tools/webSecurity/shared/replay.ts`, `src/tools/webSecurity/shared/requestTemplate.ts`, `src/tools/webSecurity/shared/wsShell.ts` |
 | `INVALID_SELECTOR` | page | runtime.selector | no | schema | `bridge_src/service_worker/transfer.ts` |
 | `INVALID_SESSION` | native | runtime.session | no | schema |  |
 | `INVALID_TAB_ID` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_TAB_URL` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
-| `INVALID_TIMEOUT` | tool | tool.validation | yes | heuristic | `src/tools/observeRunners.ts` |
+| `INVALID_TIMEOUT` | tool | tool.validation | no | schema | `src/tools/observeRunners.ts` |
 | `MATURE_BRIDGE_LAUNCHER_NOT_FOUND` | security | tool.security | no | schema |  |
 | `MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED` | security | tool.security | no | schema |  |
 | `MATURE_BRIDGE_LAUNCHER_PROBE_FAILED` | security | tool.security | no | schema |  |
@@ -203,7 +203,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserLeaseRegistry.ts` |
 | `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/BrowserBridgeServer.ts` |
-| `TIMEOUT` | native | runtime.timeout | yes | schema |  |
+| `TIMEOUT` | native | runtime.timeout | yes | schema | `src/tools/webSecurity/browserNative/sqliProbe.ts` |
 | `UI_LOCK_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserLeaseRegistry.ts` |
 | `UNKNOWN_ACTION` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `UNKNOWN_BROWSER_CLIENT` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeClientRegistry.ts` |

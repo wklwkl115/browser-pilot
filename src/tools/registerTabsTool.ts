@@ -85,7 +85,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "switch" && tabId !== undefined) return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
 				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, browserSession), { action });
 				if (action === "close" && tabId !== undefined) return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });
-				throw new Error(`Unsupported browser_tabs action: ${params.action}`);
+				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});
 		},
 	});

@@ -18,6 +18,8 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - 当前主链路：`browser_tabs` 定位目标 → `browser_observe mode=scan|content|html|text|tabs` / `browser_screenshot` / `browser_frame` 观察 → `browser_execute` / `browser_command` / `browser_wait` 执行与等待 → `browser_network` / `browser_hook` / `browser_evidence` 取证 → `browser_artifact` 读取大证据。
 - TODO 244-249 已完成：观察层已收敛到 `browser_observe`；`browser_execute` 已收敛为 JavaScript-only；`browser_command` 成为 bridge command surface；errors 带 factual recovery hints；`browser_artifact` 支持 bounded multi-artifact search；长 Web follow-up 工具支持 tool-level progress；`browser_observe`/`browser_tabs snapshot` 暴露 explicit snapshot 与 operation metadata；Web Security 可见工具面由显式 profile 控制。
 - Web Security 工具只作为 scoped follow-up：先观察/捕获/重放基线，再按需要使用 recon/crawl/fuzz/template/cookie/SQLi/OAST/bridge 工具。默认 profile 为 `security`；如需缩减日常可见工具面，设置 `PI_BROWSER_TOOL_PROFILE=core` 后 `/reload`。
+- Web Security affordance 只补接缝信息，不引入固定 workflow：工具可以返回并列 `possible/common follow-ups`、参数校验和结构化 recovery，但不会自动串联 `crawl -> fuzz -> sqli`、不会自动升级 mode/engine/action，也不会伪造请求模板。
+- Web Security follow-up 工具的 HTTP 目标执行默认由 Node.js `fetch` 直接发起，而不是经浏览器桥；`bindBrowserSession:true` 仅用于可选注入浏览器 cookies，不改变请求发起位置。
 - jshookmcp 研究只作为能力发现来源；本包不迁移其源码、MCP 架构、工具名、schema、payload、fixture 或文档文本；TODO 241 闭环账本见 `docs/jshookmcp-native-absorption.md`。
 - 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。下阶段深水区能力规划也必须先走 internal primitive / bridge / artifact-first 路线，不能直接把 problem area 变成公开大工具。
 
@@ -82,7 +84,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## Token 预算约定
 
-- 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope；summary envelope 保持 `tool/command/browserSessionId/detailLevel/summary/saved` 兼容，并可附加 `diagnostics/target/limits/privacy/nextActions` 作为恢复线索；summary/full/details/error content 默认脱敏 cookie/token/authorization/body/postData/websocket payload，敏感完整证据改写入本地 artifact 并返回 `saved.path`。
+- 默认 `detailLevel:"summary"` 使用确定性预算裁剪和表格化数组，减少重复 JSON key；`preview` 同样返回 compact envelope；summary envelope 保持 `tool/command/browserSessionId/detailLevel/summary/saved` 兼容，并可附加 `diagnostics/target/limits/privacy/nextActions` 作为恢复线索；其中 `nextActions` 仅表示 follow-up affordance / recovery hints，不表示工具将自动执行这些步骤。summary/full/details/error content 默认脱敏 cookie/token/authorization/body/postData/websocket payload，敏感完整证据改写入本地 artifact 并返回 `saved.path`。
 - `outputPath` 与自动落盘 artifact 优先保存可复原的原始调用 envelope / `artifactValue`；保存结果带 `privacy.classification:"local_raw_evidence"`、默认根目录 `.pi/browser-artifacts/`、`localOnly:true` 与手动清理提示；`browser_observe` 的 scan/content/html/text 模式返回仍可保持紧凑文本/summary，但 artifact 不再只保存截断纯文本。
 - 通用 bridge summary 会上浮 `browserSessionId`、`tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 browser session/tab/frame 对账，无需打开完整 artifact；需要原始敏感字段时只用 `browser_artifact redact:false` 对本地路径做定点读取，不把 artifact 上传外部服务。
 - 下一步增强优先沿现有工具面补“cross-tool evidence correlation metadata”：在 distilled envelope 中继续统一 `operationId`、`snapshotId`、`sourceMode`、`selectionVersionAtDispatch/Resolve` 等对账线索，帮助 agent 把 observe → execute/command → wait → network/hook/evidence → artifact 串起来；不新增重叠公开工具，也不做黑盒自动编排。

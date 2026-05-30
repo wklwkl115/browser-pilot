@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createCodedError } from "../../../utils/codedError";
 import { compactStep, extractTitle, normalizeHeaders, normalizeProbeTargets, responseBodyHash } from "../shared/http";
 import { asString, normalizeMethod, positiveInt, sleep } from "../shared/normalize";
 import { buildReplayRequest, normalizeReplayOptions, requestContentType, sendReplayLikeRequest } from "../shared/replay";
@@ -14,11 +15,15 @@ export type NormalizedTemplateCheckOptions = ReturnType<typeof normalizeReplayOp
 	maxRequests: number;
 };
 
+function templateCheckInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "TemplateCheckInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 async function normalizeTemplateCheckOptions(options: TemplateCheckOptions): Promise<NormalizedTemplateCheckOptions> {
 	const rawOrCaptured = options.rawRequest !== undefined || options.request !== undefined;
 	const baseTargets = rawOrCaptured ? [buildReplayRequest(options).url] : normalizeProbeTargets({ url: options.url, urls: options.urls, paths: options.paths, defaultScheme: options.defaultScheme });
 	const templates = (await loadTemplateDefinitions(options)).slice(0, Math.min(1_000, positiveInt(options.maxTemplates, 100)));
-	if (!templates.length) throw new Error("browser_template_check requires built-in templateIds, templates, or templatePath with at least one template");
+	if (!templates.length) throw templateCheckInputError("browser_template_check requires built-in templateIds, templates, or templatePath with at least one template", { field: "templateIds|templates|templatePath" });
 	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);
 	return {
 		...normalizeReplayOptions(options),

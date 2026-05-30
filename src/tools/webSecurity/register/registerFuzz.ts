@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData } from "../../summaries/index";
 import { runFuzzParams, runFuzzPaths, runFuzzVhosts } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, type WebSecuritySharedToolParams } from "./shared";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared";
 import type { ToolRegistrarContext } from "../../toolShared";
 import type { RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions } from "../shared/types";
 
@@ -13,7 +13,7 @@ export function registerFuzzTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		label: "Browser Fuzz",
 		description: "Run bounded path, vhost, or parameter fuzzing against explicit scoped HTTP targets with baseline filtering, clustering, response deltas, and evidence artifacts.",
 		promptSnippet: "Run bounded path, vhost, or parameter fuzzing against explicit scoped HTTP targets with structured evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz only with explicit target scope and bounded candidates. Choose mode:path for routes/files, mode:vhost for Host header discovery, or mode:param for query/JSON/form/multipart/header parameters."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_fuzz only with explicit target scope and bounded candidates. Choose mode:path for routes/files, mode:vhost for Host header discovery, or mode:param for query/JSON/form/multipart/header parameters.", "HTTP target execution uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
 		parameters: Type.Object({
 			mode: Type.Optional(Type.Union([Type.Literal("path"), Type.Literal("vhost"), Type.Literal("param")], { description: "Fuzz dimension (default: path). path: URL segments/files/routes; vhost: Host header candidates; param: request parameters." })),
 			...sharedWebSecurityParams(),
@@ -24,15 +24,15 @@ export function registerFuzzTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			wordlist: Type.Optional(Type.Array(Type.String(), { description: "Inline candidate wordlist; aliases words/values." })),
 			wordlistPath: Type.Optional(Type.String({ description: "Optional local wordlist file path; one entry per line." })),
 			method: Type.Optional(Type.String({ description: "HTTP method; default GET in path/vhost modes, override request method in param mode." })),
-			headers: Type.Optional(Type.Any({ description: "Optional request headers object or overrides." })),
+			headers: headerRecordParam("Optional request headers object or overrides."),
 			defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
 			...redirectControlParams({
 				followRedirectsDescription: "Follow redirects. path/vhost/param modes default false for stable matching except explicit current-mode overrides.",
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",
 			}),
-			matchStatus: Type.Optional(Type.Any({ description: "Optional status matcher list/string." })),
-			filterStatus: Type.Optional(Type.Any({ description: "Optional status filter list/string." })),
-			filterBodyBytes: Type.Optional(Type.Any({ description: "Optional body byte-size filter list/string for noisy baselines." })),
+			matchStatus: stringNumberOrListParam("Optional status matcher list/string."),
+			filterStatus: stringNumberOrListParam("Optional status filter list/string."),
+			filterBodyBytes: stringNumberOrListParam("Optional body byte-size filter list/string for noisy baselines."),
 			...rateLimitPerSecondParam("Sequential request rate cap per second; default unlimited sequential."),
 			...browserCookieBindingParams("Inject browser cookies into outgoing HTTP request headers; default false.", { includeCookieMode: false }),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "path mode only: explicit candidate paths/routes to request." })),
@@ -56,7 +56,7 @@ export function registerFuzzTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			body: Type.Optional(Type.String({ description: "param mode only: text request body override." })),
 			bodyBase64: Type.Optional(Type.String({ description: "param mode only: base64 request body override for binary-ish payloads." })),
 			mutations: Type.Optional(Type.Any({ description: "param mode only: base mutation object with url, method, headers, body, bodyBase64, or multipart." })),
-			locations: Type.Optional(Type.Any({ description: "param mode only: parameter locations: query, json, form, multipart, header, or all." })),
+			locations: stringOrStringArrayParam("param mode only: parameter locations: query, json, form, multipart, header, or all."),
 			paramNames: Type.Optional(Type.Array(Type.String(), { description: "param mode only: parameter names to fuzz." })),
 			values: Type.Optional(Type.Array(Type.String(), { description: "param mode only: candidate values to assign to each parameter." })),
 			jsonValues: Type.Optional(Type.Any({ description: "param mode only: JSON values for JSON or multipart parameter fuzzing." })),
@@ -66,7 +66,8 @@ export function registerFuzzTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const current = normalizeWebSecurityToolParams<FuzzToolParams>(params);
-			const mode = String(current.mode || "path").toLowerCase();
+			const mode = String(current.mode || "path").toLowerCase() === "vhost" ? "vhost" : String(current.mode || "path").toLowerCase() === "param" ? "param" : "path";
+			validateFuzzParams(mode, current);
 			if (mode === "vhost") {
 				return executeWebSecurityToolShell(ensureStarted, current, ctx, {
 					toolName: "browser_fuzz",

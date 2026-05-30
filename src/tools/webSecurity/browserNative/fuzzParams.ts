@@ -1,3 +1,4 @@
+import { createCodedError } from "../../../utils/codedError";
 import { matchesStatusBodyResult, responseChangeDelta, responseDeltaClassifier } from "../shared/baseline";
 import { compactStep, extractTitle, redirectLocation, responseBodyHash } from "../shared/http";
 import { multipartContentTypeVariants } from "../shared/multipart";
@@ -49,20 +50,24 @@ function clusterMultipartParserResults(results: Array<Record<string, unknown>>):
 	return Array.from(clusters.values()).sort((a, b) => b.count - a.count).slice(0, 50);
 }
 
+function fuzzParamsInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "FuzzParamsInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 async function normalizeFuzzParamsOptions(options: FuzzParamsOptions): Promise<NormalizedFuzzParamsOptions> {
 	const baseRequest = buildReplayRequest(options);
 	const locations = inferFuzzParamLocations(baseRequest, options.locations);
-	if (!locations.length) throw new Error("browser_fuzz_params requires locations or an inferable query/json/form request");
+	if (!locations.length) throw fuzzParamsInputError("browser_fuzz_params requires locations or an inferable query/json/form request", { field: "locations" });
 	const explicitParamNames = stringList(options.paramNames);
 	const paramNames = explicitParamNames.length ? explicitParamNames : existingParamNames(baseRequest, locations);
-	if (!paramNames.length) throw new Error("browser_fuzz_params requires paramNames or existing request parameters");
+	if (!paramNames.length) throw fuzzParamsInputError("browser_fuzz_params requires paramNames or existing request parameters", { field: "paramNames" });
 	const stringValues = [...stringList(options.values), ...stringList(options.words), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const jsonValues = Array.isArray(options.jsonValues) ? options.jsonValues : options.jsonValues !== undefined ? [options.jsonValues] : [];
 	const values = [...stringValues.map((value) => ({ label: value, value })), ...jsonValues.map((value) => ({ label: typeof value === "string" ? value : JSON.stringify(value), value }))];
 	const operations = stringList(options.operations).flatMap((item) => item.split(/[,\s]+/)).map((item) => item.toLowerCase()).filter((item) => ["set", "add", "delete"].includes(item));
 	const selectedOperations = operations.length ? [...new Set(operations)] : ["set"];
 	const selectedContentTypeVariants = multipartContentTypeVariants(options.contentTypeVariants);
-	if (!values.length && selectedOperations.some((operation) => operation !== "delete")) throw new Error("browser_fuzz_params requires values, jsonValues, words, wordlist, or wordlistPath for set/add operations");
+	if (!values.length && selectedOperations.some((operation) => operation !== "delete")) throw fuzzParamsInputError("browser_fuzz_params requires values, jsonValues, words, wordlist, or wordlistPath for set/add operations", { field: "values|jsonValues|words|wordlist|wordlistPath", operations: selectedOperations });
 	const maxCases = Math.min(5_000, positiveInt(options.maxCases, 500));
 	const matchStatus = numericList(options.matchStatus);
 	const filterStatus = numericList(options.filterStatus);

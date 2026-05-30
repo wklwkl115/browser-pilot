@@ -66,5 +66,10 @@ export function summarizeCookieAnalyzeData(value: unknown): Summary {
 			{ key: "mutation", value: (item) => tokenMutation(item) },
 			{ key: "replay", value: (item) => isRecord(item.claimReplay) && isRecord(item.claimReplay.mutated) ? item.claimReplay.mutated.status : isRecord(item.claimReplay) ? item.claimReplay.error : undefined },
 		], 30),
+		nextActions: [
+			"use browser_http_replay or bounded claimReplay settings to verify whether mutated tokens or cookies are accepted by the target",
+			"read saved artifacts when token structure, verification output, or replay deltas need manual confirmation",
+			"capture browser cookies with bindBrowserSession only when a URL-scoped cookie collection step is explicitly needed",
+		],
 	};
 }

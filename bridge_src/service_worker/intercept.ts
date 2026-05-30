@@ -98,10 +98,16 @@ async function enableInterceptSession(tabId: number, msg: PiBridgeCommand): Prom
 		if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);
 		session.active = true;
 		session.installedAt = Date.now();
+		session.recoveredAt = undefined;
+		session.historyLost = false;
+		session.pausedLost = false;
 		rememberInterceptDiagnostic(session, { action: "install", maxTranscript: session.maxTranscript, stages: session.stages, subscriptionId });
 		await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
-		// Persist config for state recovery
-		try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' }); } catch (_) {}
+		try {
+			const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
+			if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
+			if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
+		} catch (_) {}
 		return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
 	} catch (error) {
 		rememberInterceptDiagnostic(session, { action: "install_failed", error: errorText(error) });
@@ -160,9 +166,12 @@ async function handleInterceptAddRule(tabId: number, msg: PiBridgeCommand): Prom
 	session.rules.push(rule);
 	rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
 	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
-	// Update persisted state
-	try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId }); } catch (_) {}
-	return { ok: true, data: { tabId, sessionId: session.sessionId, rule } };
+	try {
+		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
+		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
+		if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
+	} catch (_) {}
+	return { ok: true, data: { tabId, sessionId: session.sessionId, rule, generation: session.stateGeneration } };
 }
 
 async function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
@@ -175,9 +184,12 @@ async function handleInterceptRemoveRule(tabId: number, msg: PiBridgeCommand): P
 	session.rules = session.rules.filter((rule: InterceptRule) => rule.ruleId !== ruleId);
 	rememberInterceptDiagnostic(session, { action: "remove_rule", ruleId, removed: before !== session.rules.length });
 	await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
-	// Update persisted state
-	try { await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, redactConfig({ stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }), { tabId, sessionId: session.sessionId }); } catch (_) {}
-	return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length } };
+	try {
+		const persisted = await persistState('intercept', `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: 'auto' });
+		if (persisted.generation !== undefined) session.stateGeneration = Number(persisted.generation);
+		if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
+	} catch (_) {}
+	return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length, generation: session.stateGeneration } };
 }
 
 async function applyMatchedInterceptRule(tabId: number, sessionId: string, requestId: string, params: JsonRecord, timeoutMs?: unknown): Promise<PiBridgeResponse | null> {
@@ -236,6 +248,10 @@ async function handleInterceptCollect(tabId: number, msg: PiBridgeCommand): Prom
 			total: session.transcript.length,
 			rules: interceptSessionSummary(session)?.rules || [],
 			pausedCount: session.paused.size,
+			historyLost: session.historyLost === true,
+			pausedLost: session.pausedLost === true,
+			recoveredAt: session.recoveredAt,
+			generation: session.stateGeneration,
 			diagnostics: session.diagnostics.slice(-20),
 		},
 	};
@@ -271,13 +287,30 @@ function matchRule(session: ReturnType<typeof getInterceptSession>, params: Json
 	return session.rules.find((rule) => interceptRuleMatches(rule, candidate));
 }
 
+function interceptPausedRequestMissingError(session: InterceptSession, msg: PiBridgeCommand, tabId: number, requestId: string): PiBridgeResponse {
+	if (session.pausedLost === true || session.historyLost === true) {
+		return piBrowserError(RECOVERY_CODES.LOST, "intercept paused request state was lost after service worker restart", {
+			cmd: msg.cmd,
+			tabId,
+			sessionId: session.sessionId,
+			requestId,
+			pausedLost: true,
+			historyLost: session.historyLost === true,
+			recoveredAt: session.recoveredAt,
+			generation: session.stateGeneration,
+			nextAction: "reinstall intercept rules or retry with a new paused request",
+		});
+	}
+	return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
+}
+
 async function handleInterceptContinue(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
 	const resolved = await requireActiveInterceptSession(tabId, msg);
 	if (resolved.error) return resolved.error;
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
 	if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.continue requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
-	if (!session.paused.has(requestId)) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
+	if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
 	const normalized = normalizeInterceptRequestPatch(msg.patch);
 	try {
 		await interceptCdpSend(tabId, "Fetch.continueRequest", { requestId, ...normalized.cdpPatch }, msg.timeoutMs ?? msg.timeout_ms);
@@ -296,7 +329,7 @@ async function handleInterceptFail(tabId: number, msg: PiBridgeCommand): Promise
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
 	if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fail requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
-	if (!session.paused.has(requestId)) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
+	if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
 	const errorReason = String(msg.errorReason || msg.error_reason || "Failed");
 	try {
 		await interceptCdpSend(tabId, "Fetch.failRequest", { requestId, errorReason }, msg.timeoutMs ?? msg.timeout_ms);
@@ -315,7 +348,7 @@ async function handleInterceptFulfill(tabId: number, msg: PiBridgeCommand): Prom
 	const session = resolved.session!;
 	const requestId = String(msg.requestId || msg.request_id || "").trim();
 	if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fulfill requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
-	if (!session.paused.has(requestId)) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
+	if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
 	const responseCode = Number(msg.responseCode ?? msg.response_code ?? 200);
 	const responsePhrase = String(msg.responsePhrase || msg.response_phrase || "OK");
 	const rawBody = String(msg.body || "");
@@ -377,15 +410,19 @@ registerRecovery(async (results) => {
 			try {
 				const session = createInterceptSession(tabId, { sessionId, maxTranscript: config.maxTranscript ?? 200, stages: config.stages ?? ['request'] });
 				if (config.rules) session.rules = config.rules;
+				session.recoveredAt = Date.now();
+				session.historyLost = true;
+				session.pausedLost = true;
+				session.stateGeneration = Number(record.generation || 0);
 				piBrowserInterceptSessions.set(key, session);
-				// Re-enable Fetch domain
 				const patterns = session.stages.map((stage) => ({ urlPattern: "*", requestStage: stage === "response" ? "Response" : "Request" }));
+				try { await interceptCdpSend(tabId, "Fetch.disable", {}); } catch (_) {}
 				await interceptCdpSend(tabId, "Fetch.enable", { patterns });
 				const subscriptionId = subscribePiBrowserCdp(tabId, "Fetch.requestPaused", interceptPauseHandler(tabId, session.sessionId));
 				if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);
 				session.active = true;
 				session.installedAt = Date.now();
-				rememberInterceptDiagnostic(session, { action: "recovered", historyLost: true, previousWorkerBootId: record.workerBootId, ruleCount: session.rules.length });
+				rememberInterceptDiagnostic(session, { action: "recovered", historyLost: true, pausedLost: true, previousWorkerBootId: record.workerBootId, ruleCount: session.rules.length, generation: record.generation });
 				console.log('[PI-BROWSER-INTERCEPT] Recovered intercept session', key, 'historyLost=true');
 				return { recovered: true, historyLost: true };
 			} catch (error) {

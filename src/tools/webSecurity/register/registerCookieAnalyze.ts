@@ -10,7 +10,7 @@ export function registerCookieAnalyzeTool({ pi, ensureStarted }: ToolRegistrarCo
 		label: "Browser Cookie Analyze",
 		description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed or encrypted session values with decoding, signature/decryption checks, claim mutation generation, claim replay validation, browser-session cookie binding, and Rails AES-GCM/AES-CBC/direct-key evidence.",
 		promptSnippet: "Analyze cookies/JWT/session values, verify signing or decryption candidates, generate claim-mutation tokens, validate claim replays, and store structured evidence.",
-		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, bounded claim replay validation, and outputPath artifacts for follow-up evidence."],
+		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_cookie_analyze for cookie/JWT/JWE/PASETO/session decoding, signature or decryption candidate checks, Rails AES-GCM/AES-CBC/direct-key evidence, claim mutation generation, browser-session cookie collection, bounded claim replay validation, and outputPath artifacts for follow-up evidence.", "HTTP target execution for optional claim replay uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
 		parameters: Type.Object({
 			...sharedWebSecurityBrowserSessionParams("Timeout in milliseconds for browser-session cookie collection."),
 			url: Type.Optional(Type.String({ description: "URL used when bindBrowserSession collects browser cookies for HTTP request injection." })),

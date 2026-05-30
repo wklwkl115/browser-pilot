@@ -2,6 +2,7 @@ import { __piBridgeModule_config } from "./service_worker/config";
 import { __piBridgeModule_protocol } from "./service_worker/protocol";
 import { __piBridgeModule_patterns } from "./service_worker/patterns";
 import { __piBridgeModule_cdp } from "./service_worker/cdp";
+import { __piBridgeModule_state_store } from "./service_worker/state_store";
 import { __piBridgeModule_runtime } from "./service_worker/runtime";
 import { __piBridgeModule_wait_cdp } from "./service_worker/wait_cdp";
 import { __piBridgeModule_wait_coordinator } from "./service_worker/wait_coordinator";
@@ -33,6 +34,7 @@ export const serviceWorkerFoundationModuleGraph = [
 	__piBridgeModule_protocol,
 	__piBridgeModule_patterns,
 	__piBridgeModule_cdp,
+	__piBridgeModule_state_store,
 	__piBridgeModule_runtime,
 	__piBridgeModule_wait_cdp,
 	__piBridgeModule_wait_coordinator,

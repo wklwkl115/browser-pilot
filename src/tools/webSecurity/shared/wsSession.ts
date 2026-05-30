@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import { Buffer } from "node:buffer";
 import { WebSocket, type ClientOptions, type RawData } from "ws";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
+import { createCodedError } from "../../../utils/codedError";
 import { isSafeRegexPattern, unsafeRegexReason } from "../../../utils/safeRegex";
 import { tryJson } from "./normalize";
 
@@ -130,11 +132,20 @@ const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
 const DEFAULT_MAX_TRANSCRIPT = 200;
 
-function wsShellError(message: string, code: string, details: Record<string, unknown> = {}): Error & { code: string; details: Record<string, unknown> } {
-	const error = new Error(message) as Error & { code: string; details: Record<string, unknown> };
-	error.code = code;
-	error.details = details;
-	return error;
+type WsSessionErrorCode = Extract<NativeErrorCode,
+	| "WEBSOCKET_INVALID_INPUT"
+	| "WEBSOCKET_SESSION_ALREADY_OPEN"
+	| "WEBSOCKET_SESSION_NOT_FOUND"
+	| "WEBSOCKET_SESSION_NOT_OPEN"
+	| "WEBSOCKET_OPEN_FAILED"
+	| "WEBSOCKET_OPEN_TIMEOUT"
+	| "WEBSOCKET_SEND_FAILED"
+	| "WEBSOCKET_WAIT_ABORTED"
+	| "WEBSOCKET_WAIT_TIMEOUT"
+	| "WEBSOCKET_INVALID_MATCHER">;
+
+function wsShellError(message: string, code: WsSessionErrorCode, details: Record<string, unknown> = {}): Error & { code: WsSessionErrorCode; details: Record<string, unknown> } {
+	return createCodedError({ name: "WsShellError", code, message, details, suppressStack: false }) as Error & { code: WsSessionErrorCode; details: Record<string, unknown> };
 }
 
 function sessionKey(sessionId: unknown): string {

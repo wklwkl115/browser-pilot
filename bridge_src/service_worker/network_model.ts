@@ -213,7 +213,7 @@ function createNetworkRecorder(tabId: unknown, config: NetworkRecorderConfig): N
     active:false, createdAt:Date.now(), startedAt:0, stoppedAt:0, config, filter:config.filter,
     cdpRecord:makeNetworkCdpRecord(tabId, sessionId), entries:[], byRequestId:new Map(), bodyStore:new Map(), bodyByRequestId:new Map(), waits:new Map(), seqBase:piBrowserNetworkEntrySeq,
     counters:{ request:0, requestExtraInfo:0, response:0, responseExtraInfo:0, data:0, finished:0, failed:0, servedFromCache:0, webSocket:0, sse:0, page:0, bodyCaptured:0, bodyErrors:0, waitsResolved:0, waitsTimedOut:0, waitsCancelled:0 },
-    overflowCount:0, bodyOverflowCount:0, lastErrors:[], diagnostics:[], lifecycleEvents:[], lastEventAt:0, pendingBodyCount:0
+    overflowCount:0, bodyOverflowCount:0, lastErrors:[], diagnostics:[], lifecycleEvents:[], lastEventAt:0, pendingBodyCount:0, stateGeneration:0
   };
   return recorder;
 }
@@ -246,6 +246,7 @@ function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): J
   };
   if (recorder.recoveredAt) summary.recoveredAt = recorder.recoveredAt;
   if (recorder.historyLost) summary.historyLost = true;
+  if (Number.isFinite(Number(recorder.stateGeneration))) summary.generation = Number(recorder.stateGeneration);
   return summary;
 }
 function ensureNetworkEntry(recorder: NetworkRecorder, requestId: unknown): NetworkRecord {

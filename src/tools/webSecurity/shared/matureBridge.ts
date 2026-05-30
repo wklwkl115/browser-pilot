@@ -1,6 +1,6 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { suppressErrorStack } from "../../../utils/errors";
+import { createCodedError } from "../../../utils/codedError";
 import { redactWebSecurityDiagnosticValue } from "./diagnostics";
 
 export type MatureBridgeLauncherSource = "param" | "env" | "auto";
@@ -38,12 +38,10 @@ export type DetectMatureBridgeLauncherOptions = {
 	allowLauncherOverride?: boolean;
 };
 
+type MatureBridgeToolErrorRecord = Error & { code: NativeErrorCode; details: Record<string, unknown> };
+
 export function matureBridgeToolError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): Error {
-	const error = new Error(message) as Error & { code?: string; details?: Record<string, unknown> };
-	error.name = "MatureBridgeError";
-	error.code = code;
-	error.details = { domain: "webSecurity", ...details };
-	return suppressErrorStack(error);
+	return createCodedError({ name: "MatureBridgeError", code, message, details: { domain: "webSecurity", ...details } }) as MatureBridgeToolErrorRecord;
 }
 
 function previewText(text: string, maxChars = 400): string | undefined {

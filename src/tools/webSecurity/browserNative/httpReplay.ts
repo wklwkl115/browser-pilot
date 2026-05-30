@@ -1,4 +1,5 @@
 import { responseReplayDelta } from "../shared/baseline";
+import { createCodedError } from "../../../utils/codedError";
 import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http";
 import { asString, isRecord, positiveInt, stringList } from "../shared/normalize";
 import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, sendReplayLikeRequest } from "../shared/replay";
@@ -87,6 +88,10 @@ function baseMultipartDescriptor(value: unknown): Record<string, unknown> | unde
 	return next;
 }
 
+function httpReplayInputError(message: string, details: Record<string, unknown> = {}): Error {
+	return createCodedError({ name: "HttpReplayInputError", code: "INVALID_RULE", message, details, suppressStack: false });
+}
+
 function normalizeMatrixFileDescriptor(template: Record<string, unknown>, fieldName: string, value: unknown): Record<string, unknown> {
 	if (isRecord(value)) return { ...template, ...value, name: fieldName };
 	return { ...template, name: fieldName, content: typeof value === "string" ? value : JSON.stringify(value) };
@@ -98,9 +103,9 @@ function buildMultipartFileFieldMatrixSequence(options: ReplayOptions) {
 	if (!multipart || !isRecord(source) || !isRecord(source.fileFieldMatrix)) return undefined;
 	const matrix = source.fileFieldMatrix;
 	const baseMutations = isRecord(options.mutations) ? options.mutations : {};
-	if (baseMutations.multipart !== undefined) throw new Error("browser_http_replay multipart.fileFieldMatrix cannot be combined with mutations.multipart");
+	if (baseMutations.multipart !== undefined) throw httpReplayInputError("browser_http_replay multipart.fileFieldMatrix cannot be combined with mutations.multipart", { field: "multipart.fileFieldMatrix|mutations.multipart" });
 	const baseFiles = Array.isArray(multipart.files) ? multipart.files.filter(isRecord) : [];
-	if (baseFiles.length !== 1) throw new Error("browser_http_replay multipart.fileFieldMatrix requires exactly one template file in multipart.files");
+	if (baseFiles.length !== 1) throw httpReplayInputError("browser_http_replay multipart.fileFieldMatrix requires exactly one template file in multipart.files", { fileCount: baseFiles.length });
 	const template = { ...baseFiles[0] };
 	const templateFieldName = asString(template.name)?.trim() || "file";
 	const fieldNames = stringList(matrix.fieldNames).length ? stringList(matrix.fieldNames) : [templateFieldName];
@@ -219,7 +224,7 @@ async function executeReplaySequence(sequence: Array<{ input: unknown; source: s
 export async function runHttpReplay(options: ReplayOptions) {
 	const explicitSequence = await replaySequenceInputs(options);
 	if (explicitSequence.length && isRecord(options.multipart) && isRecord(options.multipart.fileFieldMatrix)) {
-		throw new Error("browser_http_replay multipart.fileFieldMatrix is only supported for direct single-request replay inputs; remove requests/sequence/HAR or enumerate the steps explicitly");
+		throw httpReplayInputError("browser_http_replay multipart.fileFieldMatrix is only supported for direct single-request replay inputs; remove requests/sequence/HAR or enumerate the steps explicitly", { field: "multipart.fileFieldMatrix", sequenceLength: explicitSequence.length });
 	}
 	const normalized = normalizeReplayOptions(options);
 	const multipartMatrix = explicitSequence.length ? undefined : buildMultipartFileFieldMatrixSequence(options);

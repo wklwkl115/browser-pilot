@@ -26,6 +26,7 @@ export type ErrorTaxonomy = {
 export type ErrorRecovery = {
 	summary?: string;
 	nextActions?: string[];
+	[key: string]: unknown;
 };
 
 export type ErrorDiagnostics = {
@@ -150,6 +151,17 @@ function uniqueActions(actions: Array<string | undefined | false>): string[] {
 	return Array.from(new Set(actions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)));
 }
 
+function mergeRecoveries(primary: ErrorRecovery | undefined, secondary: ErrorRecovery | undefined): ErrorRecovery | undefined {
+	if (!primary) return secondary;
+	if (!secondary) return primary;
+	const nextActions = uniqueActions([...(primary.nextActions || []), ...(secondary.nextActions || [])]);
+	return {
+		...secondary,
+		...primary,
+		...(nextActions.length ? { nextActions } : {}),
+	};
+}
+
 function recoveryForNormalized(code: string, details: Record<string, unknown>, taxonomy: ErrorTaxonomy): ErrorRecovery | undefined {
 	const selector = typeof details.selector === "string" ? details.selector : undefined;
 	const path = typeof details.path === "string" ? details.path : undefined;
@@ -185,7 +197,9 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 		const code = typeof extra.code === "string" && extra.code.trim() ? extra.code : fallbackCode;
 		const details = cleanDetails(extra.details);
 		const taxonomy = errorTaxonomyForCode(code, details);
-		const recovery = recoveryForNormalized(code, details, taxonomy);
+		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
+		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
+		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
 		return {
 			code,
 			message: error.message || code,
@@ -213,7 +227,9 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 		const nestedDetails = cleanDetails(nested.details);
 		const details = cleanDetails({ ...nestedDetails, ...cleanDetails(error.details) });
 		const taxonomy = errorTaxonomyForCode(code, details);
-		const recovery = recoveryForNormalized(code, details, taxonomy);
+		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
+		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
+		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
 		return { code, message, details, taxonomy, diagnostics: { ...errorDiagnosticsFromDetails(details), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) }, recovery, name: typeof error.name === "string" ? error.name : undefined };
 	}
 	const details = {};
