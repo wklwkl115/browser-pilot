@@ -40,4 +40,4 @@
    - popup/HUD 后续演进
    - 更高层 orchestration/tooling 回归（当前已撤回）
 
-这些不是“遗漏未完成 bug”，而是**明确延后或保持未激活**的 future work；需要新需求时再开新 TODO/RFC，不建议重新塞回当前执行队列。历史压缩后的阶段归档见：`docs/archive/bridge-esm-history.md`、`docs/archive/governance-history.md`、`docs/archive/orchestration-history.md`；逐条详档见对应 `*.full.md` 文件。
+这些不是“遗漏未完成 bug”，而是**明确延后或保持未激活**的 future work；需要新需求时再开新 TODO/RFC，不建议重新塞回当前执行队列。历史压缩后的阶段归档见：`docs/archive/bridge-esm-history.md`、`docs/archive/governance-history.md`、`docs/archive/orchestration-history.md`、`docs/archive/tmwd-cdp-bridge-legacy.md`；逐条详档见对应 `*.full.md` 文件。

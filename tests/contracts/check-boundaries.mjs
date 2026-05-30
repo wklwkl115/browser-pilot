@@ -79,6 +79,8 @@ for (const file of ["index.ts", ...walk("src", (file) => file.endsWith(".ts")), 
 	assert(!text.includes("tmwd_cdp_bridge"), `${file} must not reference legacy tmwd bridge`);
 }
 
-assert(existsSync(path.join(root, "bridge", "tmwd_cdp_bridge", "README.md")), "legacy bridge must carry an explicit README marker");
-assert(read("bridge/tmwd_cdp_bridge/README.md").includes("Legacy reference"), "legacy bridge README must mark the directory as reference-only");
+assert(!existsSync(path.join(root, "bridge", "tmwd_cdp_bridge")), "legacy bridge source directory must not remain under bridge/");
+assert(existsSync(path.join(root, "docs", "archive", "tmwd-cdp-bridge-legacy.md")), "legacy bridge archive summary must exist under docs/archive/");
+assert(existsSync(path.join(root, "docs", "archive", "tmwd-cdp-bridge-legacy.full.md")), "legacy bridge archive detail must exist under docs/archive/");
+assert(read("docs/archive/tmwd-cdp-bridge-legacy.md").includes("唯一正式运行入口") && read("docs/archive/tmwd-cdp-bridge-legacy.full.md").includes("git 历史"), "legacy bridge archive docs must explain runtime boundary and historical retrieval path");
 console.log("boundary contract ok");

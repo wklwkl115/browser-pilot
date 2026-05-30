@@ -45,6 +45,7 @@
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
 - 已撤回 orchestration / target resolver / profile isolation历史摘要见 `docs/archive/orchestration-history.md`
+- Tmwd Cdp Bridge Legacy历史摘要见 `docs/archive/tmwd-cdp-bridge-legacy.md`
 - 更细历史拆分建议与仍保持 future-facing 的非激活项见 `docs/archive-history-compression-plan.md`。
 
 ## 详细历史记录已迁出
@@ -54,7 +55,6 @@
 - `docs/archive/bridge-esm-history.full.md`
 - `docs/archive/governance-history.full.md`
 - `docs/archive/orchestration-history.full.md`
+- `docs/archive/tmwd-cdp-bridge-legacy.full.md`
 
 主 `ARCHIVE.md` 只保留阶段摘要与入口索引，避免继续膨胀。
-
-- 仓库收敛：历史上曾存在 `.pi/public-export/pi-browser-tools` 独立副本仓库；其缺失实现与 tests/evals 已回灌到正式源码树，之后外层仓库作为唯一真源，导出目录不再承担开发职责。

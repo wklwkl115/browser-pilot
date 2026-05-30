@@ -3,7 +3,7 @@
 ## 方向
 
 - `bridge/pi_browser_bridge/` 是 Pi 原生桥的唯一运行入口。
-- `bridge/tmwd_cdp_bridge/` 只作为迁移参考资产保留，不再由 Pi 工具加载。
+- `tmwd_cdp_bridge` 已迁出工作树源码目录，只在 `docs/archive/tmwd-cdp-bridge-legacy.md` / `.full.md` 中保留归档说明；历史源码通过 git 历史查看，不再由 Pi 工具加载。
 - 从 GA 同步能力时，先迁移到原生命令域：`wait`、`network`、`hook`、`frame`、`html`、`screenshot`。
 
 ## 流程
@@ -18,4 +18,4 @@
 
 - 不把 `browser_pro.*` 作为新能力主入口。
 - 不把 GA/TMWD 命名复制进 `bridge/pi_browser_bridge/`。
-- 不从 Pi 运行时直接加载 `bridge/tmwd_cdp_bridge/`。
+- 不从 Pi 运行时直接加载任何 `tmwd_cdp_bridge` legacy 资产；需要历史参考时只查阅归档文档或 git 历史。
