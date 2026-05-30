@@ -198,7 +198,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `SELECTOR_TIMEOUT` | page | runtime.selector | yes | schema |  |
 | `SEND_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `SESSION_LIMIT` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `SESSION_NOT_FOUND` | native | runtime.session | yes | schema |  |
+| `SESSION_NOT_FOUND` | native | runtime.session | yes | schema | `src/driver/BrowserSessionRegistry.ts` |
 | `TAB_CRASHED` | page | runtime.tab | yes | schema |  |
 | `TAB_ID_CONFLICT` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |

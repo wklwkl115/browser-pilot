@@ -259,5 +259,5 @@ registerRecovery(async (results) => {
 });
 
 export { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_hook = { name: "hook", symbols: { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand } };

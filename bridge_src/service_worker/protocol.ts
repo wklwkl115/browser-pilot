@@ -1672,5 +1672,5 @@ type PiProtocolSchema = JsonRecord & {
   global.PiNativeProtocol = protocol;
 })(typeof self !== 'undefined' ? self : globalThis);
 export const PiNativeProtocol = (globalThis as typeof globalThis & { PiNativeProtocol?: unknown }).PiNativeProtocol;
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_protocol = { name: "protocol", symbols: { PiNativeProtocol } };

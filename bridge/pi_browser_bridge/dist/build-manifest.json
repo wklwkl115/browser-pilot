@@ -1,0 +1,88 @@
+{
+  "generated": true,
+  "generatedBy": "scripts/build-bridge.mjs",
+  "runtimeSwitched": true,
+  "manifestTarget": "dist/service-worker.js",
+  "serviceWorkerBuildMode": "esm-import-graph",
+  "targetServiceWorkerBuildMode": "esm-import-graph",
+  "orderedConcatenation": false,
+  "foundationImported": true,
+  "commandImported": true,
+  "startupImported": true,
+  "metadataOnlyModuleLists": true,
+  "entries": [
+    {
+      "name": "service-worker",
+      "source": "bridge_src/service-worker.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/service-worker.js"
+    },
+    {
+      "name": "content",
+      "source": "bridge_src/page_scripts/content.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/content.js"
+    },
+    {
+      "name": "hook-dispatcher",
+      "source": "bridge_src/page_scripts/hook_dispatcher.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/hook_dispatcher.js"
+    },
+    {
+      "name": "disable-dialogs",
+      "source": "bridge_src/page_scripts/disable_dialogs.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/disable_dialogs.js"
+    }
+  ],
+  "metadataOnlyServiceWorkerFoundationModules": [
+    "config",
+    "protocol",
+    "patterns",
+    "cdp",
+    "state_store",
+    "runtime",
+    "wait_cdp",
+    "wait_coordinator",
+    "wait_navigation",
+    "wait_network_idle",
+    "wait_selector",
+    "wait"
+  ],
+  "metadataOnlyServiceWorkerCommandModules": [
+    "network_model",
+    "network_events",
+    "network",
+    "hook",
+    "evidence",
+    "frame",
+    "html",
+    "screenshot",
+    "transfer",
+    "bridge_info",
+    "core_commands",
+    "exec",
+    "ws_model",
+    "ws"
+  ],
+  "metadataOnlyServiceWorkerStartupModules": [
+    "router",
+    "tab_sync",
+    "transport"
+  ],
+  "metadataOnlyLegacyServiceWorkerModules": [],
+  "pageScriptEntries": [
+    {
+      "name": "content",
+      "source": "bridge_src/page_scripts/content.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/content.js"
+    },
+    {
+      "name": "hook-dispatcher",
+      "source": "bridge_src/page_scripts/hook_dispatcher.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/hook_dispatcher.js"
+    },
+    {
+      "name": "disable-dialogs",
+      "source": "bridge_src/page_scripts/disable_dialogs.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/disable_dialogs.js"
+    }
+  ]
+}

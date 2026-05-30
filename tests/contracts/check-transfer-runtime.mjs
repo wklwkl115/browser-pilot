@@ -18,7 +18,7 @@ const transferSource = transformSync(readFileSync(path.join(root, "bridge_src", 
 	.replace(/^export function /gm, "function ")
 	.replace(/^export class /gm, "class ")
 	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_transfer[\s\S]*?;\s*$/, ""), { loader: "ts", target: "chrome120", sourcefile: "bridge_src/service_worker/transfer.ts" }).code;
+	.replace(/\r?\n\/\/ ESM module (?:boundary marker for TODO 189|metadata)\r?\nexport const __piBridgeModule_transfer[\s\S]*?;\s*$/, ""), { loader: "ts", target: "chrome120", sourcefile: "bridge_src/service_worker/transfer.ts" }).code;
 
 function assertErrorCode(error, code) {
 	assert.equal(error?.code, code);

@@ -1,5 +1,6 @@
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import { DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig";
 import { BrowserBridgeError } from "./errors";
 import { isAllowedBridgeOrigin, normalizeErrorMessage } from "./bridgeUtils";
 
@@ -23,16 +24,20 @@ export class BrowserBridgeHttpServer {
 	readonly portRangeEnd: number;
 	private activePort: number;
 	private readonly onConnection: (ws: WebSocket) => void;
+	private readonly maxConnections: number;
 	private httpServer?: http.Server;
 	private wss?: WebSocketServer;
 	private starting?: Promise<void>;
 
-	constructor(host: string, port: number, onConnection: (ws: WebSocket) => void, options: { portRangeEnd?: number } = {}) {
+	constructor(host: string, port: number, onConnection: (ws: WebSocket) => void, options: { portRangeEnd?: number; maxConnections?: number } = {}) {
 		this.host = host;
 		this.requestedPort = port;
 		this.portRangeEnd = options.portRangeEnd && options.portRangeEnd >= port ? options.portRangeEnd : port;
 		this.activePort = port;
 		this.onConnection = onConnection;
+		const configuredMax = Number(process.env.PI_BROWSER_BRIDGE_MAX_CONNECTIONS ?? options.maxConnections);
+		const fallback = Math.max(8, (this.portRangeEnd - port + 1) * 4 || DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END - port + 1);
+		this.maxConnections = Number.isFinite(configuredMax) && configuredMax > 0 ? Math.floor(configuredMax) : fallback;
 	}
 
 	get port(): number {
@@ -50,11 +55,15 @@ export class BrowserBridgeHttpServer {
 		return this.starting;
 	}
 
+	private activeConnectionCount(): number {
+		return this.wss ? this.wss.clients.size : 0;
+	}
+
 	private createServer(): { server: http.Server; wss: WebSocketServer } {
 		const server = http.createServer((req, res) => {
 			if (req.url === "/health" || req.url === "/") {
 				res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-				res.end(JSON.stringify({ ok: true, name: "pi-browser-tools", port: this.port }));
+				res.end(JSON.stringify({ ok: true, name: "pi-browser-tools", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections }));
 				return;
 			}
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -65,6 +74,11 @@ export class BrowserBridgeHttpServer {
 		server.on("upgrade", (req, socket, head) => {
 			if (!isAllowedBridgeOrigin(req.headers.origin)) {
 				socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+				socket.destroy();
+				return;
+			}
+			if (wss.clients.size >= this.maxConnections) {
+				socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + JSON.stringify({ ok: false, error: "Browser bridge connection limit reached", maxConnections: this.maxConnections, activeConnections: wss.clients.size }));
 				socket.destroy();
 				return;
 			}

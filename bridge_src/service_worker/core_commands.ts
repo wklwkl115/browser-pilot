@@ -256,5 +256,5 @@ async function handleBatch(msg: PiBridgeCommand, sender: PiBridgeSender): Promis
   }
 }
 export { setBridgeWakeProbe, handleBridgeWake, normalizePiBrowserCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, piBrowserCookiePartitionIdentity, piBrowserCookieIdentity, mergePiBrowserCookies, normalizePiBrowserCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validatePiBridgeProtocolMessage, dispatchPiBridgeCommand, handleBatch };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_core_commands = { name: "core_commands", symbols: { setBridgeWakeProbe, handleBridgeWake, normalizePiBrowserCreateTabUrl, handleTabsCommand, handleManagementCommand, handleContentSettingsCommand, piBrowserCookiePartitionIdentity, piBrowserCookieIdentity, mergePiBrowserCookies, normalizePiBrowserCookieUrl, handleCookies, handleCDP, handlePersistentCDP, validatePiBridgeProtocolMessage, dispatchPiBridgeCommand, handleBatch } };

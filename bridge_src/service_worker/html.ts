@@ -81,5 +81,5 @@ async function handlePiBrowserHtml(tabId: number, msg: PiBridgeCommand): Promise
   return data && data.ok === true ? data : { ok: true, data: res.data };
 }
 export { handlePiBrowserHtml };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_html = { name: "html", symbols: { handlePiBrowserHtml } };

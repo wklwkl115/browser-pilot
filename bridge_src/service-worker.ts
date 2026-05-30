@@ -11,6 +11,7 @@ import { __piBridgeModule_wait_network_idle } from "./service_worker/wait_networ
 import { __piBridgeModule_wait_selector } from "./service_worker/wait_selector";
 import { __piBridgeModule_wait } from "./service_worker/wait";
 import { __piBridgeModule_network_model } from "./service_worker/network_model";
+import { __piBridgeModule_network_events } from "./service_worker/network_events";
 import { __piBridgeModule_network } from "./service_worker/network";
 import { __piBridgeModule_intercept } from "./service_worker/intercept";
 import { __piBridgeModule_hook } from "./service_worker/hook";
@@ -46,6 +47,7 @@ export const serviceWorkerFoundationModuleGraph = [
 
 export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_network_model,
+	__piBridgeModule_network_events,
 	__piBridgeModule_network,
 	__piBridgeModule_intercept,
 	__piBridgeModule_hook,

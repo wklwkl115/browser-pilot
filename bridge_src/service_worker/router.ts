@@ -30,7 +30,7 @@ function installPiBridgeRouter() {
 function sendPiBridgeWsCommandResult(socket: PiBridgeWebSocketLike, id: string | number, msg: PiBridgeCommand, res: PiBridgeResponse) {
   const result = res.data ?? res.results ?? res;
   if (isPiNativeBrowserCommand(msg.cmd)) socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res }));
-  else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error }));
+  else socket.send(JSON.stringify({ type: res.ok ? 'result' : 'error', id, result, error: res.error ?? res.message }));
 }
 
 /** @param {PiBridgeWebSocketLike} socket @param {string | number} id @param {string} error @param {PiBridgeDict=} details */
@@ -66,5 +66,5 @@ async function handlePiBridgeWsMessage(data: PiBridgeWsEnvelope, socket: PiBridg
   }
 }
 export { installPiBridgeRouter, handlePiBridgeMessage, sendPiBridgeWsCommandResult, sendPiBridgeWsInputError, handlePiBridgeWsMessage };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_router = { name: "router", symbols: { installPiBridgeRouter, validatePiBridgeProtocolMessage, handlePiBridgeMessage, sendPiBridgeWsCommandResult, sendPiBridgeWsInputError, handlePiBridgeWsMessage } };

@@ -197,13 +197,13 @@ function redactSensitive(value: unknown, depth = 0, seen?: WeakSet<object>): unk
 }
 /** @returns {PiBridgeResponse} */
 function piBrowserError(error_code: string, message: unknown, details?: unknown): PiBridgeResponse {
-  const text = redactSensitive(message || String(error_code || 'ERROR'));
+  const text = String(redactSensitive(message || String(error_code || 'ERROR')));
   return { ok: false, error_code, error: text, details: runtimeRecord(redactSensitive(details || {})) };
 }
 /** @returns {PiBridgeResponse} */
 function bridgeError(error_code: string | undefined, message: unknown, details?: unknown): PiBridgeResponse {
   const code = error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR;
-  const text = redactSensitive(message || String(code));
+  const text = String(redactSensitive(message || String(code)));
   const baseDetails = (details && typeof details === 'object') ? details : (details === undefined ? {} : { raw: details });
   return { ok: false, error_code: code, error: text, details: runtimeRecord(redactSensitive(baseDetails)) };
 }
@@ -364,5 +364,5 @@ async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender,
   } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId }); }
 }
 export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl } };

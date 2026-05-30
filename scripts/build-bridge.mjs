@@ -12,7 +12,7 @@ const metadataOnlyServiceWorkerFoundationModules = [
 	"config", "protocol", "patterns", "cdp", "state_store", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait",
 ];
 const metadataOnlyServiceWorkerCommandModules = [
-	"network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws",
+	"network_model", "network_events", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws",
 ];
 const metadataOnlyServiceWorkerStartupModules = [
 	"router", "tab_sync", "transport",

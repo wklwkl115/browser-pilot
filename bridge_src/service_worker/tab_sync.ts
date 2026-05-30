@@ -77,5 +77,5 @@ function installPiBrowserTabSync(deps: PiBrowserTabSyncTransport | undefined = u
   return true;
 }
 export { setPiBrowserTabSyncTransport, requirePiBrowserTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installPiBrowserTabSync };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_tab_sync = { name: "tab_sync", symbols: { setPiBrowserTabSyncTransport, requirePiBrowserTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installPiBrowserTabSync } };

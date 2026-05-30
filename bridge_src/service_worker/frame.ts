@@ -52,5 +52,5 @@ async function handlePiBrowserFrameCommand(cmd: string, tabId: number, msg: PiBr
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser frame command: ' + cmd, { cmd });
 }
 export { handlePiBrowserFrameCommand };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_frame = { name: "frame", symbols: { handlePiBrowserFrameCommand } };

@@ -131,6 +131,8 @@ const DEFAULT_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
 const DEFAULT_MAX_TRANSCRIPT = 200;
+const WS_SESSION_RETAIN_CLOSED_MS = 5 * 60_000;
+const WS_SESSION_MAX_RETAINED_TERMINAL = 128;
 
 type WsSessionErrorCode = Extract<NativeErrorCode,
 	| "WEBSOCKET_INVALID_INPUT"
@@ -199,6 +201,7 @@ function rememberTranscript(session: WsSessionRecord, entry: Omit<WsTranscriptEn
 	if (session.transcript.length > session.maxTranscript) session.transcript.splice(0, session.transcript.length - session.maxTranscript);
 	session.lastEventAt = nowIso();
 	session.emitter.emit("entry", item);
+	pruneTerminalWsSessions();
 	return item;
 }
 
@@ -224,6 +227,7 @@ function statusFromSession(session: WsSessionRecord | undefined | null, sessionI
 }
 
 function requireSession(sessionId: unknown): WsSessionRecord {
+	pruneTerminalWsSessions();
 	const key = sessionKey(sessionId);
 	const session = wsSessions.get(key);
 	if (!session) throw wsShellError(`WebSocket session not found: ${key}`, "WEBSOCKET_SESSION_NOT_FOUND", { sessionId: key });
@@ -259,7 +263,27 @@ function createWebSocket(url: string, headers: Record<string, string>, protocols
 	return new WebSocket(url, options);
 }
 
+function pruneTerminalWsSessions(now = Date.now()): void {
+	const retained: Array<{ sessionId: string; closedAt: number }> = [];
+	for (const [sessionId, session] of wsSessions) {
+		if (session.state === "open" || session.state === "opening") continue;
+		const closedAt = session.closedAt ? Date.parse(session.closedAt) : session.lastEventAt ? Date.parse(session.lastEventAt) : session.createdAt ? Date.parse(session.createdAt) : now;
+		if (Number.isFinite(closedAt) && now - closedAt >= WS_SESSION_RETAIN_CLOSED_MS) {
+			wsSessions.delete(sessionId);
+			continue;
+		}
+		retained.push({ sessionId, closedAt: Number.isFinite(closedAt) ? closedAt : now });
+	}
+	const overflow = retained.length - WS_SESSION_MAX_RETAINED_TERMINAL;
+	if (overflow <= 0) return;
+	retained
+		.sort((a, b) => a.closedAt - b.closedAt || a.sessionId.localeCompare(b.sessionId))
+		.slice(0, overflow)
+		.forEach((item) => wsSessions.delete(item.sessionId));
+}
+
 export async function openWsSession(params: OpenWsSessionParams): Promise<WsSessionStatus> {
+	pruneTerminalWsSessions();
 	const sessionId = sessionKey(params.sessionId);
 	const url = String(params.url || "").trim();
 	if (!url) throw wsShellError("WebSocket open requires an explicit url", "WEBSOCKET_INVALID_INPUT", { sessionId, field: "url" });
@@ -520,8 +544,16 @@ export async function closeWsSession(params: CloseWsSessionParams): Promise<WsSe
 }
 
 export function statusWsSession(sessionId?: string): WsSessionStatus {
+	pruneTerminalWsSessions();
 	const normalized = sessionKey(sessionId);
 	return statusFromSession(wsSessions.get(normalized), normalized);
+}
+
+export function wsSessionDiagnostics(): { total: number; opening: number; open: number; closed: number; error: number } {
+	pruneTerminalWsSessions();
+	const counts = { total: wsSessions.size, opening: 0, open: 0, closed: 0, error: 0 };
+	for (const session of wsSessions.values()) counts[session.state] += 1;
+	return counts;
 }
 
 export async function cleanupWsSessionsForTests(): Promise<void> {

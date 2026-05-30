@@ -60,7 +60,7 @@ function stripBridgeSource(text) {
 		.replace(/^export function /gm, "function ")
 		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-		.replace(/\r?\n\/\/ ESM module boundary marker(?: for TODO 189)?\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\n\/\/ ESM module (?:boundary marker(?: for TODO 189)?|metadata)\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/^export const __piBridgeModule_[\s\S]*?;\s*$/gm, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
@@ -76,7 +76,7 @@ function readServiceWorkerSource(name) {
 const patternsSource = readServiceWorkerSource("patterns");
 const stateStoreSource = readServiceWorkerSource("state_store");
 const cdpSource = readServiceWorkerSource("cdp");
-const networkSource = `${patternsSource}\n${readServiceWorkerSource("network_model")}\n${readServiceWorkerSource("network")}`;
+const networkSource = `${patternsSource}\n${readServiceWorkerSource("network_model")}\n${readServiceWorkerSource("network_events")}\n${readServiceWorkerSource("network")}`;
 const waitSource = `${patternsSource}\n${readServiceWorkerSource("wait_cdp")}\n${readServiceWorkerSource("wait_coordinator")}\n${readServiceWorkerSource("wait_navigation")}\n${readServiceWorkerSource("wait_network_idle")}\n${readServiceWorkerSource("wait_selector")}\n${readServiceWorkerSource("wait")}`;
 const hookSource = readServiceWorkerSource("hook");
 const wsSource = `${readServiceWorkerSource("ws_model")}\n${readServiceWorkerSource("ws")}`;

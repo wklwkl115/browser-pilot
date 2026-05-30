@@ -168,5 +168,5 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup"): JsonRec
 }
 
 export { wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_ws_model = { name: "ws_model", symbols: { piBrowserWsSessions, PI_BROWSER_WS_DEFAULT_SESSION_ID, PI_BROWSER_WS_DEFAULT_MAX_TRANSCRIPT, wsSessionId, wsSessionKey, numberInRange, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab } };

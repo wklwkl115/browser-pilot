@@ -234,7 +234,7 @@ export class BrowserTabSessionRouter {
 	}
 
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {
-		return browserSessionId ? this.browserSessions.get(browserSessionId) : this.browserSessions.selectedSession();
+		return browserSessionId ? this.browserSessions.require(browserSessionId) : this.browserSessions.selectedSession();
 	}
 
 	private firstActiveSessionId(browserSessionId?: string): string | undefined {

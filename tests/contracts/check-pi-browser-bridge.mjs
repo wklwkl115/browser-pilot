@@ -38,7 +38,7 @@ function stripBridgeSource(text) {
 		.replace(/^export function /gm, "function ")
 		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
-		.replace(/\r?\n\/\/ ESM module boundary marker(?: for TODO 189)?\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\n\/\/ ESM module (?:boundary marker(?: for TODO 189)?|metadata)\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/^export const __piBridgeModule_[\s\S]*?;\s*$/gm, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
@@ -113,7 +113,7 @@ const waitBridgeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.
 const waitBridge = readBridgeBundle(waitBridgeFiles);
 const hookBridge = readBridgeRuntimeFile("hook.js");
 const evidenceBridge = readBridgeRuntimeFile("evidence.js");
-const networkBridge = readBridgeBundle(["network_model.js", "network.js"]);
+const networkBridge = readBridgeBundle(["network_model.js", "network_events.js", "network.js"]);
 const patternsBridge = readBridgeRuntimeFile("patterns.js");
 const hookDispatcher = readBridgeRuntimeFile("hook_dispatcher.js");
 const coreCommands = readBridgeRuntimeFile("core_commands.js");

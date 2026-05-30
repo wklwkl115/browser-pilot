@@ -4,6 +4,7 @@
 - 归档 legacy `tmwd_cdp_bridge`：删除 `bridge/tmwd_cdp_bridge/` 工作树源码副本，不再通过 npm/package 分发该遗留桥；新增 `docs/archive/tmwd-cdp-bridge-legacy.md` 与 `.full.md` 记录归档决策、风险、边界与 git 历史取回方式，`docs/asset-sync.md` 与 contracts 同步更新。
 - 规划 bridge runtime hardening / command access schema / silent-catch governance：冻结 H-005 `PendingRequest` 初始化顺序修复、H-003 state store per-kind 写锁、H-004 CSP bypass TTL 从 `setTimeout` 收口到 MV3 可靠机制、H-001 command `accessMode` 下沉 protocol schema 单源，以及 H-002 对 bridge 侧静默 catch 的 A/B/C 分类治理；同步 `CURRENT.md` 与 `TODO.md` 记录实施顺序、非目标与验证计划。
 - 规划 H-002 第二批静默 catch 分类治理：范围限定在 wait/cdp/ws/network/intercept/transport/runtime 的 cleanup 与 recovery 主路径；selector probing、serialization fallback、regex fallback、best-effort removeListener/clearTimeout 保持 A 类保留，不做机械全量替换。同步 `CURRENT.md` 与 `TODO.md` 记录优先级与暂缓范围。
+- 规划 M-001 ~ M-011 中严重度工程债收口：冻结执行顺序为 M-003 bridge response error 类型收窄、M-008 session registry 禁止隐式创建、M-005 wsSession 终态清理/上限、M-011 bridge WebSocket 连接数上限、M-002 network recorder 事件分支拆分、M-001 BrowserBridgeServer 继续拆薄、M-006 toolAdapter 去双重断言与原地错误改写、M-010 network model 摆脱 `JsonRecord` 基类，以及 M-004 去除 TODO 189 口径遗留；M-007/M-009 作为已由 H-001 关闭的问题归档，不重复改代码。同步 `CURRENT.md` 与 `TODO.md` 记录边界与验证计划。
 
 - 完成 TODO 197 service worker 基础层真实 ESM 迁移：`config/protocol/patterns/cdp/runtime/wait_*` 通过 ESM import/export 进入 dist bundle，`build-manifest.json` 记录 `foundationImported` 与 foundation/legacy 清单；本组 `@ts-nocheck` 清零，新增 `runtimeEnv.ts`/`types.ts` 基础类型边界，contracts 锁定 foundation 不再文本拼接。
 ## Unreleased

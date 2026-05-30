@@ -381,5 +381,5 @@ registerRecovery(async (results) => {
 });
 
 export { handlePiBrowserWsCommand, cleanupWsSessionsForTab };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_ws = { name: "ws", symbols: { handlePiBrowserWsCommand, cleanupWsSessionsForTab } };

@@ -110,7 +110,7 @@ export type BrowserToolRunArgs<TParams, TPrepared> = {
 	handle?: TrackedOperationHandle;
 };
 
-type RunBrowserToolSpec<TParams extends Partial<StandardToolParams>, TPrepared, TResult> = {
+type RunBrowserToolSpec<TParams extends Partial<StandardToolParams>, TPrepared extends TParams = TParams, TResult = unknown> = {
 	ensureStarted: () => Promise<BrowserBridgeServer>;
 	toolName: string;
 	params: TParams;
@@ -291,10 +291,18 @@ async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserAct
 }
 
 function attachOperationToError(error: unknown, operation: BrowserActiveOperationInfo): unknown {
-	if (!error || typeof error !== "object") return error;
-	const record = error as { details?: unknown };
-	const details = isRecord(record.details) ? record.details : {};
-	record.details = { ...details, operation: compactOperationForEnvelope(operation) };
+	const operationDetails = { operation: compactOperationForEnvelope(operation) };
+	if (error instanceof BrowserBridgeError) {
+		return new BrowserBridgeError(error.code, error.message, { ...error.details, ...operationDetails });
+	}
+	if (error instanceof Error) {
+		const details = isRecord((error as Error & { details?: unknown }).details) ? ((error as Error & { details?: Record<string, unknown> }).details || {}) : {};
+		return Object.assign(new Error(error.message), {
+			name: error.name,
+			cause: error,
+			details: { ...details, ...operationDetails },
+		});
+	}
 	return error;
 }
 
@@ -345,7 +353,7 @@ function resolveOperationValue<TParams, TPrepared, TValue>(value: BrowserToolOpe
 	return value;
 }
 
-export async function runBrowserTool<TParams extends Partial<StandardToolParams>, TPrepared, TResult>(spec: RunBrowserToolSpec<TParams, TPrepared, TResult>): Promise<PiTextToolResult> {
+export async function runBrowserTool<TParams extends Partial<StandardToolParams>, TPrepared extends TParams = TParams, TResult = unknown>(spec: RunBrowserToolSpec<TParams, TPrepared, TResult>): Promise<PiTextToolResult> {
 	const onError = (error: unknown) => {
 		const mapped = spec.error?.map ? spec.error.map(error, spec.params) : error;
 		return spec.error?.result ? spec.error.result(mapped) : errorResult(mapped);
@@ -366,7 +374,7 @@ export async function runBrowserTool<TParams extends Partial<StandardToolParams>
 			maxChars,
 			browserSessionId,
 		} as Omit<BrowserToolRunArgs<TParams, TPrepared>, "prepared" | "rawTabId" | "tabId" | "handle">;
-		const prepared = spec.prepare ? await spec.prepare(baseArgs) : spec.params as unknown as TPrepared;
+		const prepared = spec.prepare ? await spec.prepare(baseArgs) : (spec.params as TPrepared);
 		if (!spec.operation) {
 			const runArgs: BrowserToolRunArgs<TParams, TPrepared> = { ...baseArgs, prepared, rawTabId: undefined, tabId: undefined, handle: undefined };
 			const result = await spec.run(runArgs);
@@ -394,7 +402,7 @@ export async function runBrowserTool<TParams extends Partial<StandardToolParams>
 }
 
 export async function runWebSecurityTool<TParams extends StandardToolParams & { maxBodyBytes?: unknown }, TRunParams extends object, TResult>(spec: RunWebSecurityToolSpec<TParams, TRunParams, TResult>): Promise<PiTextToolResult> {
-	return await runBrowserTool<TParams, TRunParams, TResult>({
+	return await runBrowserTool<TParams, TParams, TResult>({
 		ensureStarted: spec.ensureStarted,
 		toolName: spec.toolName,
 		budgetName: spec.toolName,
@@ -409,18 +417,18 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 		},
 		error: spec.error,
 		prepare: ({ params, timeoutMs }) => {
-			const runParams = {
+			const runParams: Record<string, unknown> = {
 				...params,
 				...(spec.augmentParams?.(params) || {}),
-			} as unknown as TRunParams & { timeoutMs?: number; maxBodyBytes?: number; cookieProvider?: unknown };
+			};
 			if (spec.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
 			if (spec.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, spec.defaultMaxBodyBytes);
 			if (spec.includeCookieProvider && spec.createCookieProvider) runParams.cookieProvider = spec.createCookieProvider(params, timeoutMs);
-			return runParams as TRunParams;
+			return runParams as TParams;
 		},
 		run: async ({ prepared, handle }) => {
 			await handle?.update({ progress: 35 });
-			const result = await spec.run(prepared);
+			const result = await spec.run(prepared as unknown as TRunParams);
 			await handle?.update({ progress: 85, details: spec.details(result) });
 			return result;
 		},

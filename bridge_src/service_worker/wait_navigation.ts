@@ -240,5 +240,5 @@ async function waitForLoadState(tabId: number, msg: PiBridgeCommand): Promise<Pi
 }
 // CDP contract literal: 'Network.enable'
 export { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_wait_navigation = { name: "wait_navigation", symbols: { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState } };

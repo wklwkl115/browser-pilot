@@ -14,16 +14,19 @@ function assertBackgroundOrder(background, files, message) {
 }
 
 const waitBridgeRuntimeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
-const networkBridgeRuntimeFiles = ["network_model.js", "network.js"];
+const networkBridgeRuntimeFiles = ["network_model.js", "network_events.js", "network.js"];
 const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")
 		.replace(/^import\s+[^;]+;\r?\n/gm, "")
 		.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
+		.replace(/^export async function /gm, "async function ")
+		.replace(/^export function /gm, "function ")
+		.replace(/^export class /gm, "class ")
 		.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
 		.replace(/\s+as\s+any/g, "")
-		.replace(/\r?\n\/\/ ESM module boundary marker(?: for TODO 189)?\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+		.replace(/\r?\n\/\/ ESM module (?:boundary marker(?: for TODO 189)?|metadata)\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 		.replace(/^export const __piBridgeModule_[\s\S]*?;\s*$/gm, "")
 		.replace(/\r?\nexport \{\};\s*$/, "");
 }
@@ -143,10 +146,12 @@ for (const forbidden of ["async function waitForNavigation", "async function wai
 for (const forbidden of ["async function waitForNavigation", "async function waitForNetworkIdle", "function compileNetworkIdleFilter", "function loadStateSatisfied"]) assert(!waitSelector.includes(forbidden), `wait_selector.js must not own navigation/networkIdle business logic: ${forbidden}`);
 assert([waitCdp, waitCoordinator, waitNavigation, waitNetworkIdle, waitSelector, waitRuntime].every((source) => source.split(/\r?\n/).length <= 450), "wait split files must each stay below the TODO 183 health threshold");
 assert(networkModel.includes("function normalizeNetworkRecorderConfig") && networkModel.includes("function storeNetworkBody") && /const\s+piBrowserNetworkRecorders\s*=\s*new Map/.test(networkModel), "network_model.js must own recorder state/config/body storage helpers");
-assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networkRuntime.includes("function handleNetworkRecorderCdpEvent") && networkRuntime.includes("async function handleNetworkRecorderCommand"), "network.js must own CDP events, lifecycle, and command dispatch");
+const networkEvents = readServiceWorkerSource("network_events.js");
+assert(networkRuntime.includes("async function cdpSendNetworkCommand") && networkRuntime.includes("async function handleNetworkRecorderCommand"), "network.js must own lifecycle and command dispatch");
+assert(networkEvents.includes("function piNetworkHandleRecorderCdpEvent") && networkEvents.includes("async function piNetworkMaybeCaptureBody"), "network_events.js must own recorder CDP event decoding and body capture branching");
 for (const forbidden of ["const PI_BROWSER_NETWORK_DEFAULT_MAX_ENTRIES", "function normalizeNetworkRecorderConfig", "function storeNetworkBody", "function truncateBase64Body"]) assert(!networkRuntime.includes(forbidden), `network.js must not re-absorb model helper: ${forbidden}`);
 for (const forbidden of ["chrome.debugger.sendCommand", "function handleNetworkRecorderCdpEvent", "function handleNetworkRecorderCommand"]) assert(!networkModel.includes(forbidden), `network_model.js must not own runtime command logic: ${forbidden}`);
-assert(networkModel.split(/\r?\n/).length <= 450 && networkRuntime.split(/\r?\n/).length <= 550, "network recorder bridge files must stay below the split-file health threshold");
+assert(networkModel.split(/\r?\n/).length <= 450 && networkEvents.split(/\r?\n/).length <= 450 && networkRuntime.split(/\r?\n/).length <= 550, "network recorder bridge files must stay below the split-file health threshold");
 const wsModel = readServiceWorkerSource("ws_model.js");
 const wsRuntime = readServiceWorkerSource("ws.js");
 assert(wsModel.includes("const piBrowserWsSessions = new Map") && wsModel.includes("function createWsSession") && wsModel.includes("function wsSessionSummary"), "ws_model.js must own websocket session state/transcript helpers");

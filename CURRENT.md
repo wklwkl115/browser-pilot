@@ -15,6 +15,8 @@
 - 当前新增治理队列：共享 helper 去重 / parse 策略 / 防漂移治理。目标是收敛 `isRecord` / `recordValue` 重复定义、减少 `src/` 内联 object-guard、统一核心 `JSON.parse` 热点策略，并用 contract 防止新代码继续漂移；不处理生成文件，不做大规模无收益 rename/alias 清扫。
 - 当前新增治理队列：bridge runtime hardening / command access schema / silent-catch governance。目标是修复 pending request 脆弱初始化顺序、为 runtime state store 增加串行写保护、把 CSP bypass TTL 清理从 `setTimeout` 收口到 MV3 可靠机制、将 bridge command `accessMode` 下沉到 protocol schema 单源，并按良性/可恢复/关键失败三类治理 bridge 侧静默 catch。
 - H-002 第二批静默 catch 治理已冻结：聚焦 wait/cdp/ws/network/intercept/transport/runtime 的 cleanup 可见化与 recovery 主路径诊断；DOM probing、selector 容错、serialization fallback、best-effort removeListener/clearTimeout 保持 A 类保留，不做机械式全量替换。
+- 当前新增治理队列：M-001 ~ M-011 中严重度工程债收口。目标是继续压缩 driver / service worker 的结构性负担，修复 session / websocket / adapter / 类型边界问题，并清掉 TODO 189 遗留标记口径；不新增公开工具，不改变协议语义，不回退已完成的 H-001/H-005 收口。
+- 本轮执行顺序冻结为：M-003 `PiBridgeResponse.error` 类型收敛 → M-008 `BrowserSessionRegistry.get()` 禁止隐式创建 session → M-005 `wsSession` 终态会话清理/保留上限 → M-011 bridge WebSocket 连接数上限 → M-002 `network.ts` 事件处理拆分 → M-001 `BrowserBridgeServer` 进一步拆薄 → M-006 `toolAdapter.ts` 去除高风险双重断言/原地错误改写 → M-010 network model 摆脱 `JsonRecord` 基类 → M-004 移除 TODO 189 口径的 ESM 边界标记遗留；M-007/M-009 已由 H-001 schema 单源化关闭，只做文档归档不重复改代码。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
@@ -186,6 +188,49 @@ Workstream C：防漂移治理
 - 24 处内联 object-guard 收敛或明确白名单化；
 - 5 处核心 parse 热点改成统一策略；
 - 新增 contract 能阻止同类重复再次进入仓库。
+
+### 计划中：M-001 ~ M-011 中严重度工程债收口
+
+状态：待实现，作为当前工程治理收口批次继续执行；保持单包、单分支、单协议单源，不新增公开 `browser_*` 工具。
+
+问题核查结论：
+
+- M-001：`src/driver/BrowserBridgeServer.ts` 仍承载命令规划、client message 路由、session 解析与多 registry 协调，facade 仍偏厚。
+- M-002：`bridge_src/service_worker/network.ts` 事件生命周期逻辑过密，`handleNetworkRecorderCdpEvent()` 可维护性不足。
+- M-003：`bridge_src/service_worker/types.ts` 的 `PiBridgeResponse.error` 仍是过宽联合，削弱类型判别与调用点约束。
+- M-004：service worker 源内仍遗留 `TODO 189` 口径的 ESM module boundary marker 注释/契约表述，应改为稳定维护语义。
+- M-005：`src/tools/webSecurity/shared/wsSession.ts` 对 closed/error 会话缺少常规路径 prune/retention 上限。
+- M-006：`src/tools/toolAdapter.ts` 仍有高风险 `as unknown as` 双重断言与原地错误对象改写。
+- M-007：写命令列表与 schema 重复已由 H-001 关闭。
+- M-008：`src/driver/BrowserSessionRegistry.ts#get()` 仍会在 miss 时隐式创建 session。
+- M-009：intercept access mode 重复处理已由 H-001 关闭。
+- M-010：network model 核心类型仍大量以 `JsonRecord` 作基类。
+- M-011：`src/driver/BrowserBridgeHttpServer.ts` 尚无 WebSocket 连接数上限。
+
+实施顺序：
+
+1. M-003：收窄 `PiBridgeResponse.error` 到稳定 bridge error 载荷联合。
+2. M-008：为 session registry 区分 `require/getIfExists/create` 语义，禁止 `get()` 隐式创建。
+3. M-005：为 Node-side ws session 增加终态保留 TTL / 上限 / 显式 prune。
+4. M-011：为 bridge HTTP/WS server 增加有界连接上限与拒绝诊断。
+5. M-002：将 network recorder 的 CDP 事件分支拆到内部 helper 模块，压缩 `network.ts`。
+6. M-001：继续把 `BrowserBridgeServer` 收敛为更薄 facade，抽离命令规划与 client message 路由。
+7. M-006：去除 `toolAdapter.ts` 双重断言与原地错误对象改写。
+8. M-010：将 network model 核心类型改为显式结构类型，不再用 `JsonRecord` 作为基类。
+9. M-004：移除 TODO 189 口径的边界标记/契约文本，改为稳定 ESM module metadata 语义。
+
+验证计划：
+
+- `npm run test:unit`
+- `npm run check:bridge`
+- `npm run check:protocol`
+- `npm run check:runtime-fixtures`
+- `npm run check`
+
+文档同步要求：
+
+- 同步 `CURRENT.md`、`TODO.md`、`CHANGELOG.md`。
+- 若修改 bridge ESM 边界口径或 service worker build contracts，同步 `docs/bridge-esm-bundler-plan.md`、`tests/contracts/check-bridge-build.mjs`、`tests/contracts/check-bridge-files.mjs` 与相关 runtime fixture stripping 规则。
 
 ### 计划中：bridge runtime hardening / command access schema / silent-catch governance
 
@@ -713,6 +758,7 @@ Workstream C：静默 catch 分类治理（H-002）
 
 - 历史完成项：`ARCHIVE.md`。
 - 后续路线/建议顺序：`ROADMAP.md`。
+
 
 
 

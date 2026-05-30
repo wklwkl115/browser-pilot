@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { WebSocketServer } from "ws";
-import { cleanupWsSessionsForTests, closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, waitWsSession } from "../../../../src/tools/webSecurity/shared/wsSession.ts";
+import { cleanupWsSessionsForTests, closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, wsSessionDiagnostics } from "../../../../src/tools/webSecurity/shared/wsSession.ts";
 
 const HOST = "127.0.0.1";
 
@@ -91,6 +91,27 @@ test("wsSession rejects unsafe regex matcher", async () => {
 			assert.equal(error.code, "WEBSOCKET_INVALID_MATCHER");
 			return true;
 		});
+	} finally {
+		await cleanupWsSessionsForTests();
+		await fixture.close();
+	}
+});
+
+test("wsSession retains closed session briefly for status/collect and exposes diagnostics", async () => {
+	const fixture = await createFixtureServer();
+	try {
+		await openWsSession({ sessionId: "retained", url: fixture.url, timeoutMs: 2_000, maxTranscript: 20 });
+		await sendWsSession({ sessionId: "retained", text: "ping" });
+		await waitWsSession({ sessionId: "retained", contains: "pong", timeoutMs: 2_000 });
+		await closeWsSession({ sessionId: "retained", timeoutMs: 2_000 });
+		const status = statusWsSession("retained");
+		assert.equal(status.exists, true);
+		assert.equal(["closed", "error"].includes(String(status.state)), true);
+		const collected = collectWsSession({ sessionId: "retained", afterSeq: 0, limit: 20 });
+		assert.equal(collected.events.length >= 3, true);
+		const diagnostics = wsSessionDiagnostics();
+		assert.equal(diagnostics.total >= 1, true);
+		assert.equal(diagnostics.closed + diagnostics.error >= 1, true);
 	} finally {
 		await cleanupWsSessionsForTests();
 		await fixture.close();

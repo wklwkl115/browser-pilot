@@ -6,12 +6,19 @@ export type PiBridgeErrorPayload = {
   details?: JsonRecord;
 };
 
+export type PiBridgeErrorRecord = JsonRecord & PiBridgeErrorPayload & {
+  name?: string;
+  stack?: string;
+  error?: string;
+  error_code?: string;
+};
+
 export type PiBridgeResponse<T = unknown> = {
   ok: boolean;
   data?: T;
   result?: T;
   results?: unknown;
-  error?: PiBridgeErrorPayload | string | unknown;
+  error?: string | PiBridgeErrorRecord;
   error_code?: string;
   message?: string;
   details?: JsonRecord;
@@ -95,7 +102,7 @@ export type NetworkStringList = Array<string | number | boolean>;
 export type NetworkFilterDecision = { match: boolean; reason: string };
 export type NetworkBodyMimeDecision = NetworkFilterDecision & { availability?: string; mimeType?: string };
 export type NetworkHeaders = JsonRecord;
-export type NetworkRequestRecord = JsonRecord & {
+export type NetworkRequestRecord = {
   url?: string;
   method?: string;
   headers?: NetworkHeaders;
@@ -103,8 +110,12 @@ export type NetworkRequestRecord = JsonRecord & {
   postData?: string;
   postDataTruncated?: boolean;
   postDataOriginalLength?: number;
+  mixedContentType?: unknown;
+  initialPriority?: unknown;
+  referrerPolicy?: unknown;
+  [key: string]: unknown;
 };
-export type NetworkResponseRecord = JsonRecord & {
+export type NetworkResponseRecord = {
   url?: string;
   status?: number;
   statusText?: string;
@@ -114,8 +125,18 @@ export type NetworkResponseRecord = JsonRecord & {
   fromServiceWorker?: boolean;
   remoteIPAddress?: string;
   connectionId?: string | number;
+  charset?: string;
+  connectionReused?: boolean;
+  remotePort?: unknown;
+  fromDiskCache?: boolean;
+  fromPrefetchCache?: boolean;
+  encodedDataLength?: unknown;
+  securityState?: string;
+  securityDetails?: unknown;
+  timing?: unknown;
+  [key: string]: unknown;
 };
-export type NetworkBodyStoreEntry = JsonRecord & {
+export type NetworkBodyStoreEntry = {
   bodyRef: string;
   requestId: string;
   tabId: number;
@@ -129,10 +150,13 @@ export type NetworkBodyStoreEntry = JsonRecord & {
   createdAt: number;
   bodyAvailability?: string;
   bodyUnavailableReason?: string | null;
+  status?: number;
+  url?: string;
+  [key: string]: unknown;
 };
-export type NetworkDataStats = JsonRecord & { encodedDataLength?: number; dataLength?: number; chunks?: number };
-export type NetworkFrameRecord = JsonRecord & { payloadData?: string; eventName?: string; eventId?: string; data?: string; method?: string; opcode?: number };
-export type NetworkRecord = JsonRecord & {
+export type NetworkDataStats = { encodedDataLength?: number; dataLength?: number; chunks?: number; [key: string]: unknown };
+export type NetworkFrameRecord = { payloadData?: string; eventName?: string; eventId?: string; data?: string; method?: string; opcode?: number; t?: number; payloadTruncated?: boolean; dataTruncated?: boolean; originalLength?: number; [key: string]: unknown };
+export type NetworkRecord = {
   id: string;
   requestId: string;
   tabId: number;
@@ -181,13 +205,14 @@ export type NetworkRecord = JsonRecord & {
   webSocketClosedAt?: number;
   webSocketError?: unknown;
   overflow?: number;
+  [key: string]: unknown;
 };
-export type NetworkRecorderCounters = JsonRecord & Record<
+export type NetworkRecorderCounters = Record<
   | "request" | "requestExtraInfo" | "response" | "responseExtraInfo" | "data" | "finished" | "failed" | "servedFromCache"
   | "webSocket" | "sse" | "page" | "bodyCaptured" | "bodyErrors" | "waitsResolved" | "waitsTimedOut" | "waitsCancelled",
   number
 >;
-export type NetworkRecorderConfig = JsonRecord & {
+export type NetworkRecorderConfig = {
   sessionId: string;
   maxEntries: number;
   maxAgeMs: number;
@@ -212,8 +237,9 @@ export type NetworkRecorderConfig = JsonRecord & {
   storePostData: boolean;
   createdFrom: unknown;
   filter: (rec: NetworkRecord, phase: string) => NetworkFilterDecision;
+  [key: string]: unknown;
 };
-export type NetworkRecorderWait = JsonRecord & {
+export type NetworkRecorderWait = {
   waitId: string;
   condition: string;
   criteria: JsonRecord;
@@ -227,8 +253,9 @@ export type NetworkRecorderWait = JsonRecord & {
   timeoutHandle?: ReturnType<typeof setTimeout>;
   intervalHandle?: ReturnType<typeof setInterval>;
   abortHandler?: () => void;
+  [key: string]: unknown;
 };
-export type NetworkRecorder = JsonRecord & {
+export type NetworkRecorder = {
   tabId: number;
   sessionId: string;
   key: string;
@@ -257,6 +284,7 @@ export type NetworkRecorder = JsonRecord & {
   lifecycleEvents: unknown[];
   lastEventAt: number;
   pendingBodyCount: number;
+  [key: string]: unknown;
 };
 export type NetworkWaitNotifier = (recorder: NetworkRecorder, eventType: string, rec: NetworkRecord | null) => void;
 

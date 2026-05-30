@@ -25,7 +25,7 @@ const stripBridgeSource = (text) => text
 	.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
 	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
 	.replace(/\s+as\s+any/g, "")
-	.replace(/\r?\n\/\/ ESM module boundary marker for TODO 189\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+	.replace(/\r?\n\/\/ ESM module (?:boundary marker for TODO 189|metadata)\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 assert.equal(existsSync(path.join(bridge, "manifest.json")), true, "native bridge manifest must exist");

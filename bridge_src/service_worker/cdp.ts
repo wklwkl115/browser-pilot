@@ -64,7 +64,7 @@ async function piCdpLostNewDocumentScriptState(tabId: unknown, name: unknown, id
 }
 function piCdpError(code: string, message: unknown, details: unknown = {}): PiCdpResponse {
   const safeDetails = (details && typeof details === 'object') ? details as JsonRecord : (details === undefined ? {} : { raw: details });
-  return { ok: false, error: { code, message: message || String(code || 'ERROR'), details: safeDetails } };
+  return { ok: false, error: { code, message: String(message || code || 'ERROR'), details: safeDetails } };
 }
 function piCdpRawError(e: unknown): JsonRecord { return cdpRawError(e); }
 function piCdpAugmentDebuggerEvidence(method: string, data: JsonRecord): JsonRecord {
@@ -423,5 +423,5 @@ const cdpGlobal = self as typeof self & { PiPersistentCdp?: unknown; piPersisten
 cdpGlobal.PiPersistentCdp = piPersistentCdpBridge;
 cdpGlobal.piPersistentCdpBridge = piPersistentCdpBridge;
 export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };

@@ -15,7 +15,7 @@ async function safePiBrowserEvidence(label: string, task: () => Promise<PiBridge
   try {
     const result = await task();
     const error = evidenceRecord(result?.error);
-    return result && result.ok === false ? { ok: false, source: label, error_code: String(result.error_code || error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: result.error || result.message || error.message || 'evidence source failed', details: result.details || evidenceRecord(error.details) } : { ok: true, source: label, data: result?.data !== undefined ? result.data : result };
+    return result && result.ok === false ? { ok: false, source: label, error_code: String(result.error_code || error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: typeof result.error === 'string' ? result.error : String(result.message || error.message || 'evidence source failed'), details: result.details || evidenceRecord(error.details) } : { ok: true, source: label, data: result?.data !== undefined ? result.data : result };
   } catch (e) {
     return { ok: false, source: label, error_code: PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, error: evidenceErrorMessage(e), details: { name: e instanceof Error ? e.name : 'Error' } };
   }
@@ -58,5 +58,5 @@ async function handlePiBrowserEvidenceCommand(cmd: string, tabId: number, msg: P
   return { ok: true, data: out };
 }
 export { PI_BROWSER_EVIDENCE_EVENT_TYPES, safePiBrowserEvidence, handlePiBrowserEvidenceCommand };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_evidence = { name: "evidence", symbols: { PI_BROWSER_EVIDENCE_EVENT_TYPES, safePiBrowserEvidence, handlePiBrowserEvidenceCommand } };

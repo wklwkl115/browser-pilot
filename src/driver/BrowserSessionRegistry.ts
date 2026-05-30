@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
+import { BrowserBridgeError } from "./errors";
 import { isOpen } from "./bridgeUtils";
 import type { BrowserAutomationSession, BrowserBridgeClientInfo } from "./types";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
@@ -25,11 +26,11 @@ export class BrowserSessionRegistry {
 	}
 
 	selectedSession(): BrowserAutomationSession {
-		return this.get(this.selectedSessionId);
+		return this.require(this.selectedSessionId);
 	}
 
 	selectSession(sessionId: string): BrowserAutomationSession {
-		const session = this.get(sessionId);
+		const session = this.require(sessionId);
 		this.selectedSessionId = session.id;
 		session.lastSeenAt = Date.now();
 		return session;
@@ -63,23 +64,22 @@ export class BrowserSessionRegistry {
 		return Array.from(this.sessions.values()).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 	}
 
-	get(sessionId = this.selectedSessionId): BrowserAutomationSession {
+	require(sessionId = this.selectedSessionId): BrowserAutomationSession {
 		const id = String(sessionId || this.selectedSessionId || DEFAULT_BROWSER_SESSION_ID).trim() || DEFAULT_BROWSER_SESSION_ID;
 		if (id === DEFAULT_BROWSER_SESSION_ID) return this.ensureDefaultSession();
 		const session = this.sessions.get(id);
-		if (session) {
-			session.lastSeenAt = Date.now();
-			return session;
-		}
-		const now = Date.now();
-		const created: BrowserAutomationSession = {
-			id: id || randomUUID(),
-			createdAt: now,
-			lastSeenAt: now,
-			selectionVersion: 0,
-		};
-		this.sessions.set(created.id, created);
-		return created;
+		if (!session) throw new BrowserBridgeError("SESSION_NOT_FOUND", "Requested browser session was not found", { browserSessionId: id, sessions: this.list().map((item) => ({ id: item.id, name: item.name })) });
+		session.lastSeenAt = Date.now();
+		return session;
+	}
+
+	getIfExists(sessionId = this.selectedSessionId): BrowserAutomationSession | undefined {
+		const id = String(sessionId || this.selectedSessionId || DEFAULT_BROWSER_SESSION_ID).trim() || DEFAULT_BROWSER_SESSION_ID;
+		if (id === DEFAULT_BROWSER_SESSION_ID) return this.ensureDefaultSession();
+		const session = this.sessions.get(id);
+		if (!session) return undefined;
+		session.lastSeenAt = Date.now();
+		return session;
 	}
 
 	selectClient(session: BrowserAutomationSession, ws: WebSocket | undefined): void {

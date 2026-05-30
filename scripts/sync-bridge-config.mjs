@@ -35,7 +35,7 @@ const PI_BROWSER_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
 `;
 writeFileSync(legacyBridgeConfigPath, bridgeConfig, "utf8");
 
-const serviceWorkerConfig = `${bridgeConfig}// ESM module boundary marker for TODO 189
+const serviceWorkerConfig = `${bridgeConfig}// ESM module metadata
 export { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_PORT_RANGE_END, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL };
 export const __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_PORT_RANGE_END, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL } };
 `;

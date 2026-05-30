@@ -251,5 +251,5 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   }
 }
 export { buildExecScript, buildPageScript, buildCdpScript, handleWsExec };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_exec = { name: "exec", symbols: { buildExecScript, buildPageScript, buildCdpScript, handleWsExec } };

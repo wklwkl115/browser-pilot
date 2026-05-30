@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { toolMaxChars, toolPositiveInt, toolTimeoutMs } from "../../../src/tools/toolAdapter.ts";
+import { BrowserBridgeError } from "../../../src/driver/errors.ts";
+import { toolMaxChars, toolPositiveInt, toolTimeoutMs, withTrackedOperation } from "../../../src/tools/toolAdapter.ts";
 
 test("toolAdapter uses tool budget as default max chars", () => {
 	assert.equal(toolMaxChars({}, "browser_artifact"), 8000);
@@ -15,4 +16,37 @@ test("toolAdapter normalizes positive integers with fallback", () => {
 test("toolAdapter supports allowZero timeout probes", () => {
 	assert.equal(toolTimeoutMs(0, 15000, { allowZero: true }), 0);
 	assert.equal(toolTimeoutMs(undefined, 15000), 15000);
+});
+
+test("withTrackedOperation preserves BrowserBridgeError and appends operation details", async () => {
+	const operations = new Map<string, Record<string, unknown>>();
+	const server = {
+		beginOperation(meta: Record<string, unknown>) {
+			const operation = { operationId: "op-1", startedAt: Date.now(), updatedAt: Date.now(), ...meta };
+			operations.set("op-1", operation);
+			return operation as any;
+		},
+		updateOperation(operationId: string, patch: Record<string, unknown>) {
+			const current = operations.get(operationId);
+			if (!current) return undefined;
+			const next = { ...current, ...patch, updatedAt: Date.now() };
+			operations.set(operationId, next);
+			return next as any;
+		},
+		finishOperation(operationId: string) {
+			return operations.get(operationId) as any;
+		},
+	} as any;
+	await assert.rejects(
+		() => withTrackedOperation(server, { toolName: "browser_wait", phase: "running" }, undefined, async () => {
+			throw new BrowserBridgeError("WAIT_TIMEOUT", "timed out", { original: true });
+		}),
+		(error: unknown) => {
+			assert.ok(error instanceof BrowserBridgeError);
+			assert.equal(error.code, "WAIT_TIMEOUT");
+			assert.equal((error as BrowserBridgeError).details.original, true);
+			assert.equal(typeof (error as BrowserBridgeError).details.operation, "object");
+			return true;
+		},
+	);
 });

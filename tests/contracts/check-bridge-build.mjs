@@ -43,7 +43,7 @@ assert(!/\bimport\s+|\bimport\s*\(|\bimportScripts\s*\(|\bchrome\./.test(read("b
 for (const moduleName of ["runtime", "cdp", "state_store", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait", "network_model", "network", "hook", "frame", "html", "screenshot", "transfer", "ws_model", "ws", "router", "tab_sync", "transport"]) {
 	assert(existsSync(path.join(root, "bridge_src", "service_worker", `${moduleName}.ts`)), `bridge_src service worker module missing: ${moduleName}`);
 	assert(read("bridge_src/service-worker.ts").includes(`__piBridgeModule_${moduleName}`) && read("bridge_src/service-worker.ts").includes(`./service_worker/${moduleName}`), `service-worker entry must import module symbol ${moduleName}`);
-	assert(read(`bridge_src/service_worker/${moduleName}.ts`).includes(`export const __piBridgeModule_${moduleName}`), `service worker module must export explicit boundary symbol: ${moduleName}`);
+	assert(read(`bridge_src/service_worker/${moduleName}.ts`).includes(`export const __piBridgeModule_${moduleName}`), `service worker module must export explicit module metadata symbol: ${moduleName}`);
 }
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", ".gitignore")), "dist must declare generated-file boundary");
 assert(read("bridge/pi_browser_bridge/dist/.gitignore").includes("!.gitignore"), "dist .gitignore must keep only the generated-file marker tracked");
@@ -70,23 +70,24 @@ assert.deepEqual(buildManifest.metadataOnlyServiceWorkerFoundationModules, ["con
 for (const foundation of buildManifest.metadataOnlyServiceWorkerFoundationModules) {
 	const source = read(`bridge_src/service_worker/${foundation}.ts`);
 	assert(!source.includes("@ts-nocheck"), `TODO 197 foundation module must be type-checked: ${foundation}`);
-	assert(source.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation module must keep explicit module boundary: ${foundation}`);
+	assert(source.includes(`export const __piBridgeModule_${foundation}`), `TODO 197 foundation module must keep explicit module metadata: ${foundation}`);
 	if (!["config", "protocol", "patterns"].includes(foundation)) assert(/^import\s+/m.test(source), `TODO 197 foundation module must express dependencies through ESM imports: ${foundation}`);
 }
 const runtimeSource = read("bridge_src/service_worker/runtime.ts");
-const commandModules = ["network_model", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws"];
+const commandModules = ["network_model", "network_events", "network", "hook", "evidence", "frame", "html", "screenshot", "transfer", "bridge_info", "core_commands", "exec", "ws_model", "ws"];
 assert.deepEqual(buildManifest.metadataOnlyServiceWorkerCommandModules, commandModules, "build manifest must record TODO 198 command ESM modules as metadata-only");
 for (const command of commandModules) {
 	const source = read(`bridge_src/service_worker/${command}.ts`);
 	assert(!source.includes("@ts-nocheck"), `TODO 198 command module must be type-checked: ${command}`);
 	assert(/^import\s+/m.test(source), `TODO 198 command module must express dependencies through ESM imports: ${command}`);
-	assert(source.includes(`export const __piBridgeModule_${command}`), `TODO 198 command module must keep explicit module boundary: ${command}`);
+	assert(source.includes(`export const __piBridgeModule_${command}`), `TODO 198 command module must keep explicit module metadata: ${command}`);
 }
 const coreCommandsSource = read("bridge_src/service_worker/core_commands.ts");
 const routerSource = read("bridge_src/service_worker/router.ts");
 assert(coreCommandsSource.includes("async function dispatchPiBridgeCommand") && coreCommandsSource.includes("await dispatchPiBridgeCommand(validation.command, sender)") && !coreCommandsSource.includes("handlePiBridgeMessage(c, sender)"), "TODO 198 batch must use command-layer dispatch helper instead of router side effects");
 assert(routerSource.includes("dispatchPiBridgeCommand(validation.command, sender)") && !routerSource.includes("if (msg.cmd === 'cookies')"), "TODO 198 router must delegate command dispatch to the command-layer helper");
 assert(runtimeSource.includes("from \"./network\"") && runtimeSource.includes("handleNetworkRecorderCommand") && runtimeSource.includes("from \"./hook\"") && runtimeSource.includes("handlePiBrowserHookCommand"), "TODO 198 runtime must call command modules through ESM imports");
+assert(read("bridge_src/service-worker.ts").includes("./service_worker/network_events") && read("bridge_src/service-worker.ts").includes("__piBridgeModule_network_events"), "service-worker entry must import network_events through the ESM graph");
 for (const legacyHandler of ["handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "handlePiBrowserEvidenceCommand", "handlePiBrowserFrameCommand", "handlePiBrowserTransferCommand", "handlePiBrowserHtml", "captureScreenshotWithRetry"]) {
 	assert(!runtimeSource.includes(`requireLegacyCommand('${legacyHandler}')`), `runtime must not route command handler through legacy global: ${legacyHandler}`);
 }
@@ -98,7 +99,7 @@ for (const startup of startupModules) {
 	const source = read(`bridge_src/service_worker/${startup}.ts`);
 	assert(!source.includes("@ts-nocheck"), `TODO 199 startup module must be type-checked: ${startup}`);
 	assert(/^import\s+/m.test(source), `TODO 199 startup module must express dependencies through ESM imports: ${startup}`);
-	assert(source.includes(`export const __piBridgeModule_${startup}`), `TODO 199 startup module must keep explicit module boundary: ${startup}`);
+	assert(source.includes(`export const __piBridgeModule_${startup}`), `TODO 199 startup module must keep explicit module metadata: ${startup}`);
 }
 
 const bundle = read("bridge/pi_browser_bridge/dist/service-worker.js");

@@ -118,5 +118,5 @@ const isScriptable = (url: unknown): boolean => {
   return !!text && (/^https?:/.test(text) || text === 'about:blank');
 };
 export { PI_BROWSER_WORKER_STARTED_AT, PI_BROWSER_WORKER_BOOT_ID, piBridgeInfo, installCspBypassRule, enableCspBypassForTab, isScriptable };
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_bridge_info = { name: "bridge_info", symbols: { PI_BROWSER_WORKER_STARTED_AT, PI_BROWSER_WORKER_BOOT_ID, piBridgeInfo, installCspBypassRule, enableCspBypassForTab, isScriptable } };

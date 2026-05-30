@@ -440,7 +440,7 @@ registerRecovery(async (results) => {
 	results.push(result);
 });
 
-// ESM module boundary marker for TODO 189
+// ESM module metadata
 export const __piBridgeModule_intercept = {
 	name: "intercept",
 	symbols: {

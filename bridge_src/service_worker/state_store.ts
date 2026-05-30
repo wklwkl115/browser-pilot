@@ -556,7 +556,7 @@ export {
   SCHEMA_VERSION,
   STORAGE_KEY,
 };
-// ESM module boundary marker
+// ESM module metadata
 export const __piBridgeModule_state_store = {
   name: "state_store",
   symbols: {

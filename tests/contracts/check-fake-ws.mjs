@@ -450,24 +450,26 @@ try {
 		assert.equal(error.code, "NO_TAB");
 		return true;
 	});
-	server.selectBrowser(secondBrowserId, { browserSessionId: "scoped-secondary" });
+	const scopedSecondary = server.createBrowserSession("scoped-secondary");
+	server.selectBrowser(secondBrowserId, { browserSessionId: scopedSecondary.id });
 	assert.equal(server.snapshot().extension?.id, firstBrowserId, "scoped selectBrowser must not replace the default browser session selection");
-	assert.equal(server.snapshot({ browserSessionId: "scoped-secondary" }).extension?.id, secondBrowserId, "scoped snapshot must expose scoped browser selection");
-	const heldLease = server.leaseTab(607, { browserSessionId: "scoped-secondary" });
-	assert.equal(heldLease.browserSessionId, "scoped-secondary");
-	server.selectBrowser(secondBrowserId, { browserSessionId: "lease-contender" });
-	await assert.rejects(server.executeJavaScript("return 'lease-conflict'", { browserSessionId: "lease-contender", tabId: 607, timeoutMs: 1_000 }), (error) => {
+	assert.equal(server.snapshot({ browserSessionId: scopedSecondary.id }).extension?.id, secondBrowserId, "scoped snapshot must expose scoped browser selection");
+	const heldLease = server.leaseTab(607, { browserSessionId: scopedSecondary.id });
+	assert.equal(heldLease.browserSessionId, scopedSecondary.id);
+	const leaseContender = server.createBrowserSession("lease-contender");
+	server.selectBrowser(secondBrowserId, { browserSessionId: leaseContender.id });
+	await assert.rejects(server.executeJavaScript("return 'lease-conflict'", { browserSessionId: leaseContender.id, tabId: 607, timeoutMs: 1_000 }), (error) => {
 		assert.equal(error.code, "TAB_LEASE_CONFLICT");
 		return true;
 	});
-	server.releaseTab(607, { browserSessionId: "scoped-secondary" });
-	server.acquireUiLock("scoped-secondary", "fixture");
-	assert.throws(() => server.acquireUiLock("lease-contender", "fixture"), (error) => {
+	server.releaseTab(607, { browserSessionId: scopedSecondary.id });
+	server.acquireUiLock(scopedSecondary.id, "fixture");
+	assert.throws(() => server.acquireUiLock(leaseContender.id, "fixture"), (error) => {
 		assert.equal(error.code, "UI_LOCK_CONFLICT");
 		return true;
 	});
-	server.releaseUiLock("scoped-secondary");
-	const explicitSessionPromise = server.executeJavaScript("return 'scoped-secondary-607'", { browserSessionId: "scoped-secondary", tabId: 607, timeoutMs: 1_000 });
+	server.releaseUiLock(scopedSecondary.id);
+	const explicitSessionPromise = server.executeJavaScript("return 'scoped-secondary-607'", { browserSessionId: scopedSecondary.id, tabId: 607, timeoutMs: 1_000 });
 	const explicitSessionOutbound = await nextJson(ws2, "explicit browser session duplicate tab outbound");
 	assert.equal(explicitSessionOutbound.tabId, 607);
 	await assertNoJson(ws, 50, "explicit browserSessionId dispatch must not use default browser selection");
@@ -475,7 +477,7 @@ try {
 	sendJson(ws2, { type: "result", id: explicitSessionOutbound.id, result: "scoped-secondary-607" });
 	const explicitSessionResult = await explicitSessionPromise;
 	assert.equal(explicitSessionResult.data, "scoped-secondary-607");
-	assert.equal(explicitSessionResult.target.browserSessionId, "scoped-secondary");
+	assert.equal(explicitSessionResult.target.browserSessionId, scopedSecondary.id);
 	server.selectBrowser(firstBrowserId);
 	ws2.close();
 	ws2 = undefined;
