@@ -71,6 +71,7 @@
     "check:browser-commands": "node tests/contracts/runtime/check-browser-commands.mjs",
     "check:jshookmcp-closure": "node tests/contracts/tools/check-jshookmcp-closure.mjs",
     "check:distiller-coverage": "tsx tests/contracts/drift/check-distiller-coverage.mjs",
+    "check:output-schema-conformance": "tsx tests/contracts/drift/check-output-schema-conformance.mjs",
     "check:tool-parameter-contract": "tsx tests/contracts/drift/check-tool-parameter-contract.mjs",
     "check:tool-parameter-framework-validation": "node tests/contracts/drift/check-tool-parameter-framework-validation.mjs",
     "check:mcp-parameter-contract": "tsx tests/contracts/tools/check-mcp-parameter-contract.mjs",
