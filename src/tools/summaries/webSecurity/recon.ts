@@ -1,4 +1,4 @@
-import { bodyPreview, fingerprintPreview, hostOf, increment, isRecord, resultItems, summaryTable, techPreview, topCounts, type Summary } from "./shared";
+import { bodyPreview, fingerprintPreview, hostOf, increment, isRecord, resultItems, summaryTable, techPreview, topCounts, type Summary } from "./shared.js";
 
 export function summarizeWebReconProbeData(value: unknown): Summary {
 	const items = resultItems(value);

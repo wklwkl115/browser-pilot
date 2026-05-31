@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import yaml from "js-yaml";
-import { tryJson } from "../../../utils/json";
-import { SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
-import { absoluteUrl, extractTitle, normalizeHeaders, parseSetCookieLine, redirectLocation, responseBodyHash } from "./http";
-import { asString, isRecord, numericList, positiveInt, stringList } from "./normalize";
-import type { FetchStep, HeaderMap, TemplateCheckOptions } from "./types";
+import { tryJson } from "../../../utils/json.js";
+import { SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex.js";
+import { absoluteUrl, extractTitle, normalizeHeaders, parseSetCookieLine, redirectLocation, responseBodyHash } from "./http.js";
+import { asString, isRecord, numericList, positiveInt, stringList } from "./normalize.js";
+import type { FetchStep, HeaderMap, TemplateCheckOptions } from "./types.js";
 
 export type TemplateDslMatcher = {
 	type: string;
@@ -264,9 +264,11 @@ export function jsonPathParts(path: string): Array<string | number> {
 }
 
 function jsonPathValue(root: unknown, path: string): unknown {
-	let current: any = root;
+	let current: unknown = root;
 	for (const part of jsonPathParts(path.replace(/^\$\.?/, ""))) {
-		current = current?.[part as any];
+		if (Array.isArray(current) && typeof part === "number") current = current[part];
+		else if (isRecord(current) && typeof part === "string") current = current[part];
+		else return undefined;
 		if (current === undefined || current === null) return current;
 	}
 	return current;

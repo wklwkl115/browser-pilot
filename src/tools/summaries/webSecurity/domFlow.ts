@@ -1,4 +1,4 @@
-import { increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common";
+import { increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
 
 function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];

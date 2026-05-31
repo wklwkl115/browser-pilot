@@ -84,7 +84,7 @@ Only pursue Option B after explicit proof for:
 ## Required proof before implementation
 
 - update `TODO.md` / `CURRENT.md` with the chosen design
-- extend `tests/contracts/check-bridge-files.mjs`
-- extend `tests/contracts/check-page-scripts.mjs`
+- extend `tests/contracts/protocol/check-bridge-files.mjs`
+- extend `tests/contracts/runtime/check-page-scripts.mjs`
 - add bounded local fixture smoke that exercises both injection paths
 - document artifact/evidence implications in README/AI_INSTALL if behavior changes

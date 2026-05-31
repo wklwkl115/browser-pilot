@@ -1,11 +1,11 @@
 import path from "node:path";
-import { createCodedError } from "../../../utils/codedError";
-import { tryJson } from "../../../utils/json";
-import { saveTextArtifact } from "../../artifacts";
-import { artifactFallbackName } from "../../toolAdapter";
-import { isRecord, parseCommandArgs } from "./normalize";
-import { closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, type ReplayWsSequenceStep, type WsTranscriptEntry } from "./wsSession";
-import { summarizeWsSessionData } from "../../summaries/webSecurity/ws";
+import { createCodedError } from "../../../utils/codedError.js";
+import { tryJson } from "../../../utils/json.js";
+import { saveTextArtifact } from "../../artifacts.js";
+import { artifactFallbackName } from "../../toolAdapter.js";
+import { isRecord, parseCommandArgs } from "./normalize.js";
+import { closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, type ReplayWsSequenceStep, type WsTranscriptEntry } from "./wsSession.js";
+import { summarizeWsSessionData } from "../../summaries/webSecurity/ws.js";
 
 export type WsShellContext = { cwd?: string } | undefined;
 

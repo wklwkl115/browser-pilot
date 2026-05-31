@@ -2,8 +2,8 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { createCodedError } from "../../../utils/codedError";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
+import { createCodedError } from "../../../utils/codedError.js";
 
 export const DEFAULT_MAX_BODY_BYTES = 256_000;
 export const DEFAULT_TIMEOUT_MS = 15_000;

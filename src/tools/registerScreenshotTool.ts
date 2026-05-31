@@ -1,9 +1,9 @@
 import { Type } from "typebox";
-import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
-import { resolveArtifactPath, saveDataUrl } from "./artifacts";
-import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
+import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
+import { resolveArtifactPath, saveDataUrl } from "./artifacts.js";
+import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -12,7 +12,7 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 		description: "Native screenshot capture. Saves the image to disk by default and returns the file path.",
 		promptSnippet: "Capture a screenshot of the target browser tab and save it as an artifact file.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_screenshot when visual state is required; prefer browser_observe mode=scan|html|content for text."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			...sharedTabScopedToolParams({ includeDetailLevel: false, outputPathDescription: "Output image path; defaults to .pi/browser-artifacts", maxCharsDescription: "Maximum metadata characters returned" }),
 			format: Type.Optional(Type.String({ description: "png | jpeg | webp" })),
 			quality: Type.Optional(Type.Number({ description: "JPEG/WebP quality" })),

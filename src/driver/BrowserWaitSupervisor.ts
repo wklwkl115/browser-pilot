@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { isRecord } from "../utils/records";
-import { BrowserBridgeError } from "./errors";
-import type { BrowserBridgeServer } from "./BrowserBridgeServer";
-import type { BrowserBridgeExecutionResult } from "./types";
-import type { BridgeCommand } from "../protocol/nativeProtocol";
+import { isRecord } from "../utils/records.js";
+import { BrowserBridgeError } from "./errors.js";
+import type { BrowserBridgeServer } from "./BrowserBridgeServer.js";
+import type { BrowserBridgeExecutionResult } from "./types.js";
+import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
+const WAIT_LEASE_BRIDGE_EPSILON_MS = 25;
 const WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS = 50;
+const WAIT_RECONNECT_BUDGET_MAX_MS = 10_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 35_000;
 const WAIT_TIMEOUT_CODES = new Set(["TIMEOUT", "NAVIGATION_TIMEOUT", "SELECTOR_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "NETWORK_RECORDER_TIMEOUT"]);
 const SUPERVISED_WAIT_COMMANDS = new Set(["wait.navigation", "wait.loadState", "wait.networkIdle", "wait.selector", "wait.any", "wait.all", "network.wait"]);
@@ -124,8 +126,20 @@ function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> 
 	};
 }
 
+export function computeBridgeGraceMs(remainingMs: number): number {
+	if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 0;
+	return Math.max(0, Math.min(WAIT_LEASE_BRIDGE_GRACE_MS, Math.max(50, Math.floor(remainingMs * 0.2))));
+}
+
+export function computeReconnectBudgetMs(remainingMs: number): number {
+	if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 0;
+	const scaledBudget = Math.max(50, Math.floor(remainingMs * 0.2));
+	return Math.max(0, Math.min(WAIT_RECONNECT_BUDGET_MAX_MS, scaledBudget, Math.floor(remainingMs)));
+}
+
 async function waitForReconnect(server: BrowserBridgeServer, previousClientId: string | undefined, remainingMs: number): Promise<void> {
-	const timeoutMs = Math.max(250, Math.min(10_000, remainingMs));
+	const timeoutMs = computeReconnectBudgetMs(remainingMs);
+	if (timeoutMs <= 0) throw new BrowserBridgeError("BROWSER_EXTENSION_RECONNECT_TIMEOUT", "Browser extension reconnect budget expired", { previousClientId, remainingMs, reconnectBudgetMs: timeoutMs });
 	await server.waitForExtensionReconnect(previousClientId, timeoutMs);
 }
 
@@ -173,7 +187,8 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 		delete immediateCommand.timeout_ms;
 		delete immediateCommand.timeout;
 		try {
-			const result = await server.sendCommand(immediateCommand, { ...options, timeoutMs: WAIT_LEASE_BRIDGE_GRACE_MS });
+			const immediateGraceMs = computeBridgeGraceMs(Math.max(1, totalTimeoutMs || WAIT_LEASE_BRIDGE_GRACE_MS));
+			const result = await server.sendCommand(immediateCommand, { ...options, timeoutMs: immediateGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
 			const afterBootId = workerBootIdFromResult(result) ?? currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "success" });
@@ -201,7 +216,8 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 		delete leaseCommand.timeout_ms;
 		delete leaseCommand.timeout;
 		try {
-			const result = await server.sendCommand(leaseCommand, { ...options, timeoutMs: leaseMs + WAIT_LEASE_BRIDGE_GRACE_MS });
+			const bridgeGraceMs = computeBridgeGraceMs(remainingMs);
+			const result = await server.sendCommand(leaseCommand, { ...options, timeoutMs: leaseMs + bridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
 			const afterBootId = workerBootIdFromResult(result) ?? currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			const completedAt = Date.now();
@@ -254,7 +270,8 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServ
 		const deadline = startedAt + totalTimeoutMs;
 		const waitUntil = waitUntilForNavigateAndWait(command);
 		const navigationTimeoutMs = Math.min(totalTimeoutMs, WAIT_LEASE_MAX_MS);
-		const navigation = await server.sendCommand({ ...command, cmd: "wait.navigate", timeoutMs: navigationTimeoutMs }, { ...options, timeoutMs: navigationTimeoutMs + WAIT_LEASE_BRIDGE_GRACE_MS });
+		const navigationBridgeGraceMs = computeBridgeGraceMs(totalTimeoutMs);
+		const navigation = await server.sendCommand({ ...command, cmd: "wait.navigate", timeoutMs: navigationTimeoutMs }, { ...options, timeoutMs: navigationTimeoutMs + navigationBridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
 		const remainingMs = deadline - Date.now();
 		if (remainingMs <= 0) {
 			const state: WaitSupervisorState = {

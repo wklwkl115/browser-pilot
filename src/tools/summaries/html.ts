@@ -1,7 +1,7 @@
-import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS } from "../../scan/noiseRules.ts";
-import { truncateText } from "../../utils/json";
-import { recordValue } from "../../utils/records";
-import type { Summary } from "./common";
+import { BROWSER_NOISE_ATTRIBUTE_NAMES, BROWSER_NOISE_ATTRIBUTE_PREFIXES, BROWSER_NOISE_CLASS_PATTERNS } from "../../scan/noiseRules.js";
+import { truncateText } from "../../utils/json.js";
+import { recordValue } from "../../utils/records.js";
+import type { Summary } from "./common.js";
 
 const NOISE_CLASS_PATTERN = BROWSER_NOISE_CLASS_PATTERNS.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const NOISE_ATTR_PATTERN = [...BROWSER_NOISE_ATTRIBUTE_NAMES, ...BROWSER_NOISE_ATTRIBUTE_PREFIXES.map((prefix) => `${prefix}(?:-[\\w:-]+)?`)]

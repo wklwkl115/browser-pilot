@@ -14,19 +14,19 @@ export type {
 	SqliProbeOptions,
 	TemplateCheckOptions,
 	WebFetchOptions,
-} from "./webSecurity/shared/types";
+} from "./webSecurity/shared/types.js";
 
-export { browserCookiesToHeader, normalizeHeaders, normalizeProbeTargets } from "./webSecurity/shared/http";
-export { buildReplayRequest, parseRawHttpRequest } from "./webSecurity/shared/replay";
-export { runReconProbe } from "./webSecurity/browserNative/recon";
-export { runBrowserCrawl } from "./webSecurity/browserNative/crawl";
-export { runCookieAnalyze } from "./webSecurity/browserNative/cookieAnalyze";
-export { runFuzzPaths } from "./webSecurity/browserNative/fuzzPaths";
-export { runFuzzVhosts } from "./webSecurity/browserNative/fuzzVhosts";
-export { runFuzzParams } from "./webSecurity/browserNative/fuzzParams";
-export { runSqliProbe } from "./webSecurity/browserNative/sqliProbe";
-export { runTemplateCheck } from "./webSecurity/browserNative/templateCheck";
-export { runSqlmapBridge } from "./webSecurity/bridges/sqlmapBridge";
-export { runNucleiBridge } from "./webSecurity/bridges/nucleiBridge";
-export { runCallbackOast } from "./webSecurity/browserNative/callbackOast";
-export { runHttpReplay } from "./webSecurity/browserNative/httpReplay";
+export { browserCookiesToHeader, normalizeHeaders, normalizeProbeTargets } from "./webSecurity/shared/http.js";
+export { buildReplayRequest, parseRawHttpRequest } from "./webSecurity/shared/replay.js";
+export { runReconProbe } from "./webSecurity/browserNative/recon.js";
+export { runBrowserCrawl } from "./webSecurity/browserNative/crawl.js";
+export { runCookieAnalyze } from "./webSecurity/browserNative/cookieAnalyze.js";
+export { runFuzzPaths } from "./webSecurity/browserNative/fuzzPaths.js";
+export { runFuzzVhosts } from "./webSecurity/browserNative/fuzzVhosts.js";
+export { runFuzzParams } from "./webSecurity/browserNative/fuzzParams.js";
+export { runSqliProbe } from "./webSecurity/browserNative/sqliProbe.js";
+export { runTemplateCheck } from "./webSecurity/browserNative/templateCheck.js";
+export { runSqlmapBridge } from "./webSecurity/bridges/sqlmapBridge.js";
+export { runNucleiBridge } from "./webSecurity/bridges/nucleiBridge.js";
+export { runCallbackOast } from "./webSecurity/browserNative/callbackOast.js";
+export { runHttpReplay } from "./webSecurity/browserNative/httpReplay.js";

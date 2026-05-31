@@ -1,7 +1,7 @@
 import { WebSocket } from "ws";
-import { recordValue, toTabId } from "../utils/records";
-import { DEFAULT_BROWSER_BRIDGE_PORT } from "./browserBridgeConfig";
-import type { BrowserTabInfo, BrowserTabSession } from "./types";
+import { recordValue, toTabId } from "../utils/records.js";
+import { DEFAULT_BROWSER_BRIDGE_PORT } from "./browserBridgeConfig.js";
+import type { BrowserTabInfo, BrowserTabSession } from "./types.js";
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const CLOSED_STATES = new Set([WebSocket.CLOSED, WebSocket.CLOSING]);

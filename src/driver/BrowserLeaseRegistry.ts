@@ -1,13 +1,42 @@
 import { randomUUID } from "node:crypto";
-import { BrowserBridgeError } from "./errors";
-import type { BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types";
+import { BrowserBridgeError } from "./errors.js";
+import type { BrowserReleasedTabLeaseInfo, BrowserReleasedUiLockInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
+
+const DEFAULT_TAB_LEASE_TTL_MS = 30 * 60_000;
+const DEFAULT_UI_LOCK_TTL_MS = 5 * 60_000;
+
+type SweepExpiredResult = {
+	releasedLeases: BrowserReleasedTabLeaseInfo[];
+	releasedUiLocks: BrowserReleasedUiLockInfo[];
+};
 
 export class BrowserLeaseRegistry {
 	private readonly tabLeases = new Map<string, BrowserTabLeaseInfo>();
 	private uiLock?: BrowserUiLockInfo;
+	private readonly tabLeaseTtlMs: number;
+	private readonly uiLockTtlMs: number;
+
+	constructor(options: { tabLeaseTtlMs?: number; uiLockTtlMs?: number } = {}) {
+		this.tabLeaseTtlMs = Math.max(1, Math.floor(options.tabLeaseTtlMs ?? DEFAULT_TAB_LEASE_TTL_MS));
+		this.uiLockTtlMs = Math.max(1, Math.floor(options.uiLockTtlMs ?? DEFAULT_UI_LOCK_TTL_MS));
+	}
 
 	listTabLeases(): BrowserTabLeaseInfo[] {
 		return Array.from(this.tabLeases.values()).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+	}
+
+	peekTabLease(tab: BrowserTabSession | { id: string }): BrowserTabLeaseInfo | undefined {
+		const lease = this.tabLeases.get(this.tabKey(tab));
+		return lease ? { ...lease } : undefined;
+	}
+
+	touchTabLease(browserSessionId: string, tab: BrowserTabSession, now = Date.now()): BrowserTabLeaseInfo | undefined {
+		const key = this.tabKey(tab);
+		const existing = this.tabLeases.get(key);
+		if (!existing || existing.browserSessionId !== browserSessionId) return undefined;
+		const touched = { ...existing, lastSeenAt: now };
+		this.tabLeases.set(key, touched);
+		return touched;
 	}
 
 	leaseTab(browserSessionId: string, tab: BrowserTabSession, explicit: boolean): BrowserTabLeaseInfo {
@@ -42,6 +71,33 @@ export class BrowserLeaseRegistry {
 		}
 	}
 
+	releaseLeasesForTabSessions(tabSessionIds: string[], reason: "ttl" | "disconnect"): BrowserReleasedTabLeaseInfo[] {
+		const targetIds = new Set(tabSessionIds);
+		if (!targetIds.size) return [];
+		const released: BrowserReleasedTabLeaseInfo[] = [];
+		for (const [key, lease] of this.tabLeases.entries()) {
+			if (!targetIds.has(lease.tabSessionId)) continue;
+			this.tabLeases.delete(key);
+			released.push({ ...lease, releaseReason: reason });
+		}
+		return released.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+	}
+
+	sweepExpired(now: number): SweepExpiredResult {
+		const releasedLeases: BrowserReleasedTabLeaseInfo[] = [];
+		for (const [key, lease] of this.tabLeases.entries()) {
+			if (now - lease.lastSeenAt <= this.tabLeaseTtlMs) continue;
+			this.tabLeases.delete(key);
+			releasedLeases.push({ ...lease, releaseReason: "ttl" });
+		}
+		const releasedUiLocks: BrowserReleasedUiLockInfo[] = [];
+		if (this.uiLock && now - this.uiLock.lastSeenAt > this.uiLockTtlMs) {
+			releasedUiLocks.push({ ...this.uiLock, releaseReason: "ttl" });
+			this.uiLock = undefined;
+		}
+		return { releasedLeases, releasedUiLocks };
+	}
+
 	acquireUiLock(browserSessionId: string, toolName: string): BrowserUiLockInfo {
 		const now = Date.now();
 		if (this.uiLock && this.uiLock.browserSessionId !== browserSessionId) {
@@ -53,12 +109,26 @@ export class BrowserLeaseRegistry {
 		return this.uiLock;
 	}
 
+	touchUiLock(browserSessionId: string, now = Date.now()): BrowserUiLockInfo | undefined {
+		if (!this.uiLock || this.uiLock.browserSessionId !== browserSessionId) return undefined;
+		this.uiLock = { ...this.uiLock, lastSeenAt: now };
+		return this.uiLock;
+	}
+
 	releaseUiLock(browserSessionId: string): BrowserUiLockInfo | undefined {
 		if (!this.uiLock || this.uiLock.browserSessionId !== browserSessionId) return undefined;
 		const released = this.uiLock;
 		if (released.count <= 1) this.uiLock = undefined;
 		else this.uiLock = { ...released, count: released.count - 1, lastSeenAt: Date.now() };
 		return released;
+	}
+
+	releaseUiLocksForBrowserSessions(browserSessionIds: string[], reason: "ttl" | "disconnect"): BrowserReleasedUiLockInfo[] {
+		if (!this.uiLock) return [];
+		if (!browserSessionIds.includes(this.uiLock.browserSessionId)) return [];
+		const released = { ...this.uiLock, releaseReason: reason };
+		this.uiLock = undefined;
+		return [released];
 	}
 
 	uiLockInfo(): BrowserUiLockInfo | undefined {
@@ -70,7 +140,7 @@ export class BrowserLeaseRegistry {
 		this.uiLock = undefined;
 	}
 
-	private tabKey(tab: BrowserTabSession): string {
+	private tabKey(tab: BrowserTabSession | { id: string }): string {
 		return tab.id;
 	}
 }

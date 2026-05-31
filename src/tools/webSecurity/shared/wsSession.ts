@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
 import { Buffer } from "node:buffer";
 import { WebSocket, type ClientOptions, type RawData } from "ws";
-import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { createCodedError } from "../../../utils/codedError";
-import { tryJson } from "../../../utils/json";
-import { isSafeRegexPattern, unsafeRegexReason } from "../../../utils/safeRegex";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { tryJson } from "../../../utils/json.js";
+import { isSafeRegexPattern, unsafeRegexReason } from "../../../utils/safeRegex.js";
 
 export type WsSessionState = "opening" | "open" | "closed" | "error";
 export type WsTranscriptEvent = "open" | "send" | "message" | "close" | "error";

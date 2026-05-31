@@ -1,4 +1,4 @@
-import { stableJson } from "./json";
+import { stableJson } from "./json.js";
 
 const REDACTED = "[redacted]";
 const REDACTED_BODY = "[redacted body]";

@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { isRecord } from "../utils/records";
-import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types";
+import { isRecord } from "../utils/records.js";
+import type { BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types.js";
 
 type RuntimeRecoveryBridgeInfo = {
 	runtimeRecovery?: unknown;

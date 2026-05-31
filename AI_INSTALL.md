@@ -2,6 +2,8 @@
 
 本 SOP 只覆盖项目安装、浏览器桥安装、环境配置、reload、验证和排障。正式使用方式由全局 skill `D:/Pi/agent/skills/pi-browser-tools/SKILL.md` 负责。
 
+发布入口说明：Pi runtime 继续通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 使用 `dist/` 编译产物。
+
 ## 适用路径
 
 - 项目目录：`D:/Pi/agent/extensions/pi-browser-tools`
@@ -65,6 +67,7 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 项目静态与契约验证（脚本位于 `tests/contracts/`）：
 
 ```bash
+npm run build
 npm run check
 npm run check:all:bridge
 npm run check:all:package
@@ -77,7 +80,7 @@ npm run check:all:contracts
 npm run quality:local
 ```
 
-该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/run-check-groups.mjs` 聚合 bridge/unit、package/docs、contracts 三组，可按故障域单独运行 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这三组入口。需要结构化回归摘要时可运行 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
+该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；当前 `prepack` 会先执行 `npm run build` 生成 outer `dist/`，再 quiet build bridge dist。成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/run-check-groups.mjs` 聚合 bridge/unit、package/docs、contracts 三组，可按故障域单独运行 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这三组入口。需要结构化回归摘要时可运行 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
 
 
 
@@ -88,7 +91,7 @@ npm run quality:local
 npm run check:deps
 ```
 
-该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。
+该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `@modelcontextprotocol/sdk`、`js-yaml`、`typebox`、`typescript`、`ws`、`zod`：其中 `typebox`/`typescript`/`zod` 被源码运行路径直接消费，不应机械移动到 devDependencies。
 
 依赖升级记录必须包含：升级范围、兼容性风险、回滚方式、`npm run check`、`npm pack --dry-run --json`，必要时附 `npm run smoke:browser:isolated` artifact。错误统计只落本地 artifact，不发送 cookie/token/网络正文到外部服务。
 
@@ -103,7 +106,7 @@ npm run check:tool-docs
 
 生成产物为 `docs/generated/browser-tool-contract.generated.md`，来源是实际工具注册元数据、`bridge/native_command_schema.json` 和源码结构化错误码；其中 `Structured error taxonomy` 表列出公开 code、domain、category、retryable 与来源；不要手工编辑生成文件。文档结构规范见 `docs/document-structure.md`；修改 archive/roadmap/todo 入口或历史归档索引后先运行 `npm run docs:sync-indexes && npm run check`。
 
-Native 协议单源为 `bridge/native_command_schema.json`。修改该文件后先执行 `npm run sync:protocol`，再执行 `npm run check:protocol`；脚本会生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`。这些生成文件禁止手改，`check:protocol` 会捕获 drift、schema 副本不一致、wait/network/transfer metadata 漂移和错误码漏项。
+Native 协议单源为 `bridge/native_command_schema.json`。修改该文件后先执行 `npm run sync:protocol`，再执行 `npm run check:protocol`；脚本会生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`。这些生成文件禁止手改，`check:protocol` 会捕获 drift、schema 副本不一致、wait/network/transfer metadata 漂移和错误码漏项。仓库已接入 `lefthook` pre-commit：当 schema 变更时会自动执行 `npm run sync:protocol` 并 stage 生成产物；首次安装依赖后会通过 `npm run prepare` 自动安装 hook。
 
 错误 taxonomy 与诊断契约（已纳入 `npm run check`）：
 

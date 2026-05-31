@@ -1,7 +1,7 @@
-export { registerCrawlTool } from "./registerCrawl";
-export { registerFuzzTool } from "./registerFuzz";
-export { registerSqliTool } from "./registerSqli";
-export { registerTemplateTool } from "./registerTemplate";
-export { registerCallbackOastTool } from "./registerCallbackOast";
-export { registerCookieAnalyzeTool } from "./registerCookieAnalyze";
-export { registerHttpReplayTool } from "./registerHttpReplay";
+export { registerCrawlTool } from "./registerCrawl.js";
+export { registerFuzzTool } from "./registerFuzz.js";
+export { registerSqliTool } from "./registerSqli.js";
+export { registerTemplateTool } from "./registerTemplate.js";
+export { registerCallbackOastTool } from "./registerCallbackOast.js";
+export { registerCookieAnalyzeTool } from "./registerCookieAnalyze.js";
+export { registerHttpReplayTool } from "./registerHttpReplay.js";

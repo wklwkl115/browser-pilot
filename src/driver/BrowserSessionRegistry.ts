@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import { BrowserBridgeError } from "./errors";
-import { isOpen } from "./bridgeUtils";
-import type { BrowserAutomationSession, BrowserBridgeClientInfo } from "./types";
-import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
+import { BrowserBridgeError } from "./errors.js";
+import { isOpen } from "./bridgeUtils.js";
+import type { BrowserAutomationSession, BrowserBridgeClientInfo } from "./types.js";
+import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
 
 export const DEFAULT_BROWSER_SESSION_ID = "default";
 

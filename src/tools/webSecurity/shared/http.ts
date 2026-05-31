@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import tls from "node:tls";
-import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { createCodedError } from "../../../utils/codedError";
-import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, numericList, positiveInt, sha256Hex, stringList } from "./normalize";
-import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, numericList, positiveInt, sha256Hex, stringList } from "./normalize.js";
+import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types.js";
 
 export const TEXTUAL_CONTENT_TYPE = /(?:^|[\s;/+.-])(text|json|xml|html|javascript|ecmascript|x-www-form-urlencoded|svg|graphql)(?:[\s;/+.-]|$)/i;
 export const REDACTED_HEADER_NAMES = new Set(["authorization", "cookie", "proxy-authorization", "set-cookie", "x-api-key", "x-auth-token", "x-csrf-token", "x-xsrf-token"]);

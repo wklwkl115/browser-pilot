@@ -1,4 +1,4 @@
-import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common";
+import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
 
 export function summarizePickData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };

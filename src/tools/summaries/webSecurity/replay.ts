@@ -1,4 +1,4 @@
-import { asArray, bodyPreview, isRecord, summaryTable, type Summary } from "./shared";
+import { asArray, bodyPreview, isRecord, summaryTable, type Summary } from "./shared.js";
 
 export function summarizeHttpReplayData(value: unknown): Summary {
 	const request = isRecord(value) && isRecord(value.request) ? value.request : {};

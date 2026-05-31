@@ -1,9 +1,9 @@
 import { WebSocket } from "ws";
-import { BrowserBridgeError } from "./errors";
-import { browserTabInfo, isOpen, tabSessionSummary, toTabId } from "./bridgeUtils";
-import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types";
-import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry";
-import { DEFAULT_BROWSER_SESSION_ID, type BrowserSessionRegistry } from "./BrowserSessionRegistry";
+import { BrowserBridgeError } from "./errors.js";
+import { browserTabInfo, isOpen, tabSessionSummary, toTabId } from "./bridgeUtils.js";
+import type { BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeTargetInfo, BrowserBridgeTargetSource, BrowserTabInfo, BrowserTabSession } from "./types.js";
+import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
+import { DEFAULT_BROWSER_SESSION_ID, type BrowserSessionRegistry } from "./BrowserSessionRegistry.js";
 
 const DISCONNECTED_SESSION_RETENTION_MS = 5 * 60_000;
 const MAX_DISCONNECTED_SESSION_HISTORY = 128;

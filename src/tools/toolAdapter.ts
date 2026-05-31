@@ -1,17 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
-import type { BrowserActiveOperationInfo } from "../driver/types";
-import { BrowserBridgeError } from "../driver/errors";
-import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
-import type { DetailLevel } from "../utils/params";
-import { normalizeTabId } from "../utils/params";
-import { isRecord } from "../utils/records";
-import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult";
-import { stableJson } from "../utils/json";
-import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
-import { distilledJsonResult, distilledTextResult } from "./resultMiddleware";
-import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import type { BrowserActiveOperationInfo } from "../driver/types.js";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import type { DetailLevel } from "../utils/params.js";
+import { normalizeTabId } from "../utils/params.js";
+import { isRecord } from "../utils/records.js";
+import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult.js";
+import { stableJson } from "../utils/json.js";
+import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
+import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
+import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 
 export type ToolResultContext = { cwd?: string } | undefined;
 

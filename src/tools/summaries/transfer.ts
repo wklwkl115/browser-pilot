@@ -1,5 +1,5 @@
-import type { Summary } from "./common";
-import { isRecord } from "./common";
+import type { Summary } from "./common.js";
+import { isRecord } from "./common.js";
 
 function maybeString(value: unknown): string | undefined {
 	return typeof value === "string" && value ? value : undefined;

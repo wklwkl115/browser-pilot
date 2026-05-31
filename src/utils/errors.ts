@@ -1,6 +1,6 @@
-import { nativeErrorCodes } from "../protocol/nativeErrorCodes";
-import { isRecord } from "./records";
-import { redactSensitiveText, redactSensitiveValue } from "./redaction";
+import { nativeErrorCodes } from "../protocol/nativeErrorCodes.js";
+import { isRecord } from "./records.js";
+import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
 
 export type ErrorTaxonomyDomain =
 	| "driver"

@@ -1,10 +1,10 @@
 import path from "node:path";
-import { saveTextArtifact } from "../../artifacts";
-import { artifactFallbackName } from "../../toolAdapter";
-import { summarizeWasmArtifactData } from "../../summaries/webSecurity/wasm";
-import { summarizeWasmWatBridgeData } from "../../summaries/webSecurity/wasmBridge";
-import { analyzeWasmArtifact } from "./wasmArtifact";
-import { runWasmWatBridge } from "./wasmBridge";
+import { saveTextArtifact } from "../../artifacts.js";
+import { artifactFallbackName } from "../../toolAdapter.js";
+import { summarizeWasmArtifactData } from "../../summaries/webSecurity/wasm.js";
+import { summarizeWasmWatBridgeData } from "../../summaries/webSecurity/wasmBridge.js";
+import { analyzeWasmArtifact } from "./wasmArtifact.js";
+import { runWasmWatBridge } from "./wasmBridge.js";
 
 export type WasmShellContext = { cwd?: string } | undefined;
 

@@ -1,4 +1,4 @@
-import { asArray, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared";
+import { asArray, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeBrowserCrawlData(value: unknown): Summary {
 	const pages = isRecord(value) ? asArray(value.pages).filter(isRecord) : [];

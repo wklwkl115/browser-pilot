@@ -1,6 +1,6 @@
-import { compactError } from "./errors";
-import { jsonPreview, stableJson, truncateText } from "./json";
-import { redactSensitiveValue } from "./redaction";
+import { compactError } from "./errors.js";
+import { jsonPreview, stableJson, truncateText } from "./json.js";
+import { redactSensitiveValue } from "./redaction.js";
 
 export type PiTextToolResult = {
 	content: Array<{ type: "text"; text: string }>;

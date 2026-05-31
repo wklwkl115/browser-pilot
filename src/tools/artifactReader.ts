@@ -2,10 +2,10 @@ import { createReadStream } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
-import { tryJson } from "../utils/json";
-import { asPositiveInt, normalizeArtifactMode } from "../utils/params";
-import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex";
-import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy";
+import { tryJson } from "../utils/json.js";
+import { asPositiveInt, normalizeArtifactMode } from "../utils/params.js";
+import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex.js";
+import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy.js";
 
 export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
 export const MAX_ARTIFACT_SEARCH_REGEX_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;

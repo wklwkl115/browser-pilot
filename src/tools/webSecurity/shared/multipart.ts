@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { setHeaderCaseInsensitive } from "./http";
-import { asString, isRecord, stringList } from "./normalize";
-import type { HeaderMap } from "./types";
+import { setHeaderCaseInsensitive } from "./http.js";
+import { asString, isRecord, stringList } from "./normalize.js";
+import type { HeaderMap } from "./types.js";
 
 export type MultipartPart = { name: string; filename?: string; contentType?: string; body: Buffer };
 

@@ -2,8 +2,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-export function recordValue<T extends Record<string, unknown> = Record<string, unknown>>(value: unknown): T | undefined {
-	return isRecord(value) ? value as T : undefined;
+export function recordValue(value: unknown): Record<string, unknown> | undefined {
+	return isRecord(value) ? value : undefined;
 }
 
 export function toTabId(value: unknown): number | undefined {

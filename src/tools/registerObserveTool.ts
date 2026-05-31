@@ -1,9 +1,9 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../driver/errors";
-import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners";
-import { defineBrowserTool, runTool, sharedTabScopedToolParams } from "./toolAdapter";
-import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners.js";
+import { defineBrowserTool, runTool, sharedTabScopedToolParams } from "./toolAdapter.js";
+import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 const OBSERVE_MODES = new Set<ObserveMode>(["scan", "content", "html", "text", "tabs"]);
 
@@ -46,7 +46,7 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			TAB_SCOPED_TOOL_GUIDELINE,
 			"Use browser_observe mode=scan for structure/actionables, mode=content for readable Markdown, mode=html for exact HTML/text snapshots, mode=text for visible text-first observation, and mode=tabs when the target tab is unclear.",
 		],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			mode: Type.Optional(Type.Union([Type.Literal("scan"), Type.Literal("content"), Type.Literal("html"), Type.Literal("text"), Type.Literal("tabs")], { description: "scan | content | html | text | tabs. Default scan." })),
 			selector: Type.Optional(Type.String({ description: "content/html modes: CSS selector for a target readable root or exact HTML/text slice" })),
 			url: Type.Optional(Type.String({ description: "content mode only: optional URL to navigate to before extraction" })),
@@ -58,7 +58,7 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			...sharedTabScopedToolParams(),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			return await runTool(async (): Promise<import("../utils/toolResult").PiTextToolResult> => {
+			return await runTool(async (): Promise<import("../utils/toolResult.js").PiTextToolResult> => {
 				const toolCtx = ctx ?? {};
 				const server = await ensureStarted();
 				const observeParams = params as ObserveToolParams;

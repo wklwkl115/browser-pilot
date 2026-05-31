@@ -1,4 +1,4 @@
-import { artifactPath, asArray, bridgeArtifacts, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared";
+import { artifactPath, asArray, bridgeArtifacts, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeSqlmapBridgeData(value: unknown): Summary {
 	const runs = isRecord(value) ? asArray(value.runs).filter(isRecord) : [];

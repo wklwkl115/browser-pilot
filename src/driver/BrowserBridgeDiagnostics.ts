@@ -1,4 +1,4 @@
-import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types";
+import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo } from "./types.js";
 
 export function buildBridgeTimeoutDiagnostics(snapshot: BrowserBridgeSnapshot, tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo): Record<string, unknown> {
 	return {

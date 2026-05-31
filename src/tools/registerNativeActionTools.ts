@@ -1,14 +1,14 @@
 import { Type } from "typebox";
-import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor";
-import type { BrowserBridgeExecutionResult } from "../driver/types";
-import type { DetailLevel } from "../utils/params";
-import type { BridgeCommand } from "../protocol/nativeProtocol";
-import { nativeToolMetadata } from "../protocol/nativeActionMetadata";
-import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands";
-import { defaultResultBudget, type ToolResultBudgetName } from "./budgets";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
-import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
+import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor.js";
+import type { BrowserBridgeExecutionResult } from "../driver/types.js";
+import type { DetailLevel } from "../utils/params.js";
+import type { BridgeCommand } from "../protocol/nativeProtocol.js";
+import { nativeToolMetadata } from "../protocol/nativeActionMetadata.js";
+import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
+import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 type ActionToolConfig = {
 	name: string;
@@ -48,7 +48,7 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 		description: config.description,
 		promptSnippet: config.promptSnippet,
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, config.promptGuideline],
-		parameters: Type.Object(parameterProperties),
+		parameters: strictToolParameters(parameterProperties),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
 				const server = await ensureStarted();

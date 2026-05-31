@@ -1,4 +1,4 @@
-import { asArray, hostOf, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared";
+import { asArray, hostOf, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeFuzzPathsData(value: unknown): Summary {
 	const matched = isRecord(value) ? asArray(value.matched).filter(isRecord) : [];

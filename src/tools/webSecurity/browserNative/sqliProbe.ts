@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { createCodedError } from "../../../utils/codedError";
-import { compactStep, extractTitle, responseBodyHash, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http";
-import { asString, isRecord, positiveInt, sleep, splitWords, stringList } from "../shared/normalize";
-import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay";
-import type { FetchStep, SqliProbeOptions } from "../shared/types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { compactStep, extractTitle, responseBodyHash, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http.js";
+import { asString, isRecord, positiveInt, sleep, splitWords, stringList } from "../shared/normalize.js";
+import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay.js";
+import type { FetchStep, SqliProbeOptions } from "../shared/types.js";
 
 const DEFAULT_SQLI_BOOLEAN_PAIRS = [
 	{ name: "single-quote-and", truePayload: "' AND 1=1--", falsePayload: "' AND 1=2--" },

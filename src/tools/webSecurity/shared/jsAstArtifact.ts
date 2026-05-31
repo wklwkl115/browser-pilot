@@ -1,6 +1,6 @@
 import { stat, readFile } from "node:fs/promises";
 import path from "node:path";
-import { analyzeJavaScriptSource, type JsAstAnalysis, type JsAstAnalysisOptions } from "./jsAst";
+import { analyzeJavaScriptSource, type JsAstAnalysis, type JsAstAnalysisOptions } from "./jsAst.js";
 
 export const JS_AST_MAX_INPUT_BYTES = 2 * 1024 * 1024;
 

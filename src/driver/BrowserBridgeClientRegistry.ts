@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { BrowserBridgeError } from "./errors";
-import { CLOSED_STATES, isOpen } from "./bridgeUtils";
-import type { BrowserBridgeClientInfo } from "./types";
+import { BrowserBridgeError } from "./errors.js";
+import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
+import type { BrowserBridgeClientInfo } from "./types.js";
 
 export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();

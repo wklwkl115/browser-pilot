@@ -1,10 +1,10 @@
 import { Type } from "typebox";
-import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata";
-import { summarizeTransferData } from "./summaries/index";
-import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
+import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata.js";
+import { summarizeTransferData } from "./summaries/index.js";
+import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -13,7 +13,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 		description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads.",
 		promptSnippet: "Download via selector click, media selector extraction, or direct HTTP(S) URL; returns download id/path/state.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_download when the task needs a stable downloaded file path instead of scripting a click manually."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			...sharedTabScopedToolParams(),
 			selector: Type.Optional(Type.String({ description: "CSS selector to click or inspect for media download." })),
 			url: Type.Optional(Type.String({ description: "Direct HTTP(S) URL to download via Chrome downloads API." })),
@@ -53,7 +53,7 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 		description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles.",
 		promptSnippet: "Click a file input/chooser selector and set absolute local file paths after explicit confirmation.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_upload only after the user explicitly approves the exact local file path(s); set confirm:true."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			...sharedTabScopedToolParams(),
 			selector: Type.String({ description: "CSS selector for the file input, label, or button that opens the file chooser." }),
 			files: Type.Array(Type.String({ description: "Absolute local file path to upload." }), { description: "One or more absolute local file paths." }),

@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
-import type { BridgeCommand } from "../protocol/nativeProtocol";
-import { tryJson } from "../utils/json";
-import { isRecord } from "../utils/records";
-export { asPositiveInt } from "../utils/params";
+import { Type, type TSchema } from "typebox";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import type { BridgeCommand } from "../protocol/nativeProtocol.js";
+import { tryJson } from "../utils/json.js";
+import { isRecord } from "../utils/records.js";
+export { asPositiveInt } from "../utils/params.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
 export const DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000;
@@ -36,6 +36,23 @@ export const TAB_ID_DESCRIPTION = "Target tab id. For automation, pass explicitl
 export const DETAIL_LEVEL_DESCRIPTION = "summary | preview | full; summary is default to reduce token usage";
 export const OUTPUT_PATH_DESCRIPTION = "Optional artifact output path for full raw results";
 export const MAX_CHARS_DESCRIPTION = "Maximum characters returned to the model";
+
+function enumLiteralSchemas<const TValue extends readonly [string, string, ...string[]]>(values: TValue): [TSchema, TSchema, ...TSchema[]] {
+	return values.map((value) => Type.Literal(value)) as unknown as [TSchema, TSchema, ...TSchema[]];
+}
+
+export function strictToolParameters<T extends Record<string, TSchema>>(properties: T) {
+	return Type.Object(properties, { additionalProperties: false });
+}
+
+export function enumParam<const TValue extends readonly [string, string, ...string[]]>(values: TValue, description: string) {
+	return Type.Optional(Type.Union(enumLiteralSchemas(values), { description }));
+}
+
+export function enumOrEnumArrayParam<const TValue extends readonly [string, string, ...string[]]>(values: TValue, description: string) {
+	const valueUnion = Type.Union(enumLiteralSchemas(values));
+	return Type.Optional(Type.Union([valueUnion, Type.Array(valueUnion)], { description }));
+}
 
 export function optionalTargetTabId(description = TAB_ID_DESCRIPTION) {
 	return Type.Optional(Type.Union([Type.Number(), Type.String()], { description }));

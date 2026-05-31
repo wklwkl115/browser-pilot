@@ -1,6 +1,6 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { browserArtifactPrivacyMetadata } from "./artifactPrivacy";
+import { browserArtifactPrivacyMetadata } from "./artifactPrivacy.js";
 
 export function resolveArtifactPath(ctx: { cwd?: string } | undefined, requested: string | undefined, fallbackName: string): string {
 	const base = ctx?.cwd || process.cwd();

@@ -1,20 +1,14 @@
-import { stableJson } from "../utils/json";
-import { normalizeDetailLevel, type DetailLevel } from "../utils/params";
-import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult";
-import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy";
-import { saveTextArtifact } from "./artifacts";
-import { asArray, isRecord } from "./summaries/common";
-import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData, summarizeWsSessionData } from "./summaries/index";
+import { stableJson } from "../utils/json.js";
+import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
+import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult.js";
+import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPrivacy.js";
+import { saveTextArtifact } from "./artifacts.js";
+import { distillValue } from "./distillerRegistry.js";
+import { asArray, isRecord } from "./summaries/common.js";
+import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index.js";
 
-export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index";
-
-export function distillValue(toolName: string, command: string | undefined, value: unknown): Record<string, unknown> {
-	if (toolName === "browser_evidence" || command === "evidence.collect") return summarizeEvidenceData(isRecord(value) && value.data !== undefined ? value.data : value);
-	if (toolName === "browser_network" || String(command || "").startsWith("network.")) return summarizeNetworkData(isRecord(value) && value.data !== undefined ? value.data : value);
-	if (toolName === "browser_hook" && ["hook.getNodeListeners", "hook.getListenerChain", "hook.getSinkHints"].includes(String(command || ""))) return summarizeDomFlowData(String(command), value);
-	if (String(command || "").startsWith("ws.")) return summarizeWsSessionData(String(command || "ws"), isRecord(value) && value.data !== undefined ? value.data : value);
-	return summarizeGenericValue(value);
-}
+export { distillValue } from "./distillerRegistry.js";
+export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index.js";
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {

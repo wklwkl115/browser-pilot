@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { BrowserBridgeError } from "./errors";
-import { DEFAULT_TIMEOUT_MS, normalizeErrorMessage } from "./bridgeUtils";
-import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types";
+import { BrowserBridgeError } from "./errors.js";
+import { DEFAULT_TIMEOUT_MS, normalizeErrorMessage } from "./bridgeUtils.js";
+import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types.js";
 
 type TimeoutDiagnostics = (tabId: number | undefined, timeoutMs: number, acked: boolean, target?: BrowserBridgeTargetInfo) => Record<string, unknown>;
 type ResolveTarget = (target: BrowserBridgeTargetInfo | undefined) => BrowserBridgeTargetInfo | undefined;
@@ -29,6 +29,7 @@ export class BrowserBridgePendingRequests {
 
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			const debugCodePreview = typeof code === "string" ? code.slice(0, 120) : JSON.stringify(code).slice(0, 120);
+			let timer!: NodeJS.Timeout;
 			const pending: PendingRequest = {
 				id,
 				tabId: options.tabId,
@@ -36,11 +37,11 @@ export class BrowserBridgePendingRequests {
 				createdAt: Date.now(),
 				acked: false,
 				target: options.target,
-				timer: undefined as unknown as NodeJS.Timeout,
+				timer,
 				resolve,
 				reject,
 			};
-			const timer = setTimeout(() => {
+			timer = setTimeout(() => {
 				this.pending.delete(id);
 				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
 				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, debugCodePreview, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));

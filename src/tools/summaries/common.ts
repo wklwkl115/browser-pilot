@@ -1,4 +1,4 @@
-import { truncateText } from "../../utils/json";
+import { truncateText } from "../../utils/json.js";
 
 export type Summary = Record<string, unknown>;
 export type CountItem = { key: string; count: number };

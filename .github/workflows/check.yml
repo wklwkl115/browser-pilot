@@ -38,6 +38,10 @@ jobs:
       - name: Run static lint/boundary gates
         run: npm run check:lint
 
+      - name: Run ESLint (baseline, non-blocking)
+        run: npm run lint
+        continue-on-error: true
+
   contracts-and-unit:
     runs-on: ubuntu-latest
     timeout-minutes: 30

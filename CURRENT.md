@@ -13,10 +13,16 @@
 - 当前 active queue：MV3 runtime state recovery，执行合同见 `docs/mv3-runtime-state-recovery-plan.md`。目标是把 Service Worker 重启后的 network/intercept/ws/CDP/hook 长生命周期状态丢失改为自动恢复或显式 `RUNTIME_STATE_*` 诊断；不新增公开工具，不恢复 orchestration。
 - 当前并行收口队列：Web Security affordance / validation / recovery。目标是补齐 follow-up affordance、运行时参数校验、恢复提示透传与高频 schema 收敛，降低 agent 在原子工具之间的接缝猜测成本；不新增公开工具，不做跨工具自动调用，不把 nextActions 变成单一路径 workflow。
 - 当前新增治理队列：共享 helper 去重 / parse 策略 / 防漂移治理。目标是收敛 `isRecord` / `recordValue` 重复定义、减少 `src/` 内联 object-guard、统一核心 `JSON.parse` 热点策略，并用 contract 防止新代码继续漂移；不处理生成文件，不做大规模无收益 rename/alias 清扫。
+- 共享 helper 当前进展：`src/utils/records.ts` 已去除泛型 `recordValue<T>()` 的不安全断言，`src/tools/webSecurity/shared/replay.ts` 与 `src/tools/webSecurity/shared/template.ts` 已清零 `as any`。
+- Phase 1 当前进展：`src/` 内 `Type.Any()` 与 `as any` 已清零；Web Security register 层的高频开放对象输入已改为 `Type.Object({}, { additionalProperties:true })`、显式联合类型或记录类型，继续由运行时 Zod 校验收口复杂结构。
+- Phase 3 当前进展：已完成低风险半步迁移。仓库 scripts 已从 `--experimental-strip-types` 迁到 `tsx` 运行 TypeScript/MJS 测试与 smoke，不改 `index.ts` / `pi.extensions` 源码入口；`npm run test:unit`、`check:web-security`、`check:fake-ws`、`check:lifecycle`、`check:page-scripts`、`check:runtime-fixtures`、`check:bridge`、`check` 均已通过。
+- Phase 3 进一步进展：已补 `tsconfig.build.json`，Node ESM 相对导入已切到 `.js` 后缀，`tsc -p tsconfig.build.json` 可成功生成 outer `dist/`。npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 已切到编译产物，同时保留 Pi runtime 的 `pi.extensions:["./index.ts"]` 源码入口；废弃 `register-ts-extension-loader.mjs` / `ts-extension-loader.mjs` 已删除；`npm run build`、`npm run check:package`、`npm run check:bridge`、`npm run check` 已通过。
 - 当前新增治理队列：bridge runtime hardening / command access schema / silent-catch governance。目标是修复 pending request 脆弱初始化顺序、为 runtime state store 增加串行写保护、把 CSP bypass TTL 清理从 `setTimeout` 收口到 MV3 可靠机制、将 bridge command `accessMode` 下沉到 protocol schema 单源，并按良性/可恢复/关键失败三类治理 bridge 侧静默 catch。
 - H-002 第二批静默 catch 治理已冻结：聚焦 wait/cdp/ws/network/intercept/transport/runtime 的 cleanup 可见化与 recovery 主路径诊断；DOM probing、selector 容错、serialization fallback、best-effort removeListener/clearTimeout 保持 A 类保留，不做机械式全量替换。
 - 当前新增治理队列：M-001 ~ M-011 中严重度工程债收口。目标是继续压缩 driver / service worker 的结构性负担，修复 session / websocket / adapter / 类型边界问题，并清掉 TODO 189 遗留标记口径；不新增公开工具，不改变协议语义，不回退已完成的 H-001/H-005 收口。
 - 本轮执行顺序冻结为：M-003 `PiBridgeResponse.error` 类型收敛 → M-008 `BrowserSessionRegistry.get()` 禁止隐式创建 session → M-005 `wsSession` 终态会话清理/保留上限 → M-011 bridge WebSocket 连接数上限 → M-002 `network.ts` 事件处理拆分 → M-001 `BrowserBridgeServer` 进一步拆薄 → M-006 `toolAdapter.ts` 去除高风险双重断言/原地错误改写 → M-010 network model 摆脱 `JsonRecord` 基类 → M-004 移除 TODO 189 口径的 ESM 边界标记遗留；M-007/M-009 已由 H-001 schema 单源化关闭，只做文档归档不重复改代码。
+- 当前激活项：仅做 M-001 深拆 `BrowserBridgeServer`。目标是把 command dispatch / payload transport / client message routing 从 facade 中拆到独立 driver 模块，保留 public API、错误语义、lease/queue/session 行为与现有 contracts，不顺手改工具面或 runtime 协议。
+- M-001 当前进展：已完成第一轮深拆。新增 `src/driver/BrowserBridgeCommandService.ts` 承载 command validation / target planning / payload transport，新增 `src/driver/BrowserBridgeClientMessageService.ts` 承载 WS client register/unregister/message route；`BrowserBridgeServer.ts` 收敛为约 343 行 facade，继续保留 session/tab public API。同步修复 H-005 风格问题：`src/driver/BrowserBridgePendingRequests.ts` 去除先引用后赋值的 timer/pending 脆弱写法。验证已通过 `npm run check:src:types`、`npm run test:unit`、`npm run check:fake-ws`、`npm run check:lifecycle`、`npm run check:bridge`、`npm run docs:generate`。
 - 已撤回 `browser_orchestrate` / orchestration coordinator / target resolver 工具面；默认浏览器自动化保持 `browser_tabs` first + 显式 `tabId`，观察层已由 `browser_observe` 承载。
 - 后续仍保持能力完整性：不新增工具层安全闸；安全边界继续由 Pi 平台/安全层负责；新增高层状态管理必须先证明比显式 tab 流程更低模型负担。
 - Web 执行面已进入当前工具清单：`browser_recon_probe`、`browser_crawl`、`browser_fuzz_paths`、`browser_fuzz_vhosts`、`browser_sqli_probe`、`browser_sqlmap_bridge`、`browser_nuclei_bridge`、`browser_template_check`、`browser_callback_oast`、`browser_cookie_analyze`、`browser_fuzz_params`、`browser_http_replay`。
@@ -48,7 +54,29 @@
 
 ### 进行中：Web Security affordance / validation / recovery 收口
 
-状态：待实现，作为当前并行治理收口；保持现有 callable tool surface 与 capability profile，不新增公开 `browser_*` 工具。
+状态：部分完成。已完成第 7 项（增量替换高频 Type.Any()）的运行时验证迁移；第 1-6 项已验证为已存在或无需修改；保持现有 callable tool surface 与 capability profile，不新增公开 `browser_*` 工具。
+
+已完成项：
+
+1. ✅ 修复 `src/tools/webSecurity/shared/http.ts` 中过时错误文案 - 已验证为工具无关的参数化错误消息。
+2. ✅ 为 7 个 Web Security register 工具补共享 guideline - 所有工具已包含 "HTTP target execution uses Node.js fetch directly" guideline。
+3. ✅ 在 `resultMiddleware` 中上浮 `summary.nextActions` - `normalizedNextActions` 函数已实现此功能（第 215-225 行）。
+4. ✅ 为 Web Security summary 层补 `nextActions` - 所有 summary 文件（crawl/fuzz/sqli/template/oast/cookie/replay/bridges）已包含并列 follow-up 提示。
+5. ✅ 在 `shared.ts` 集中新增 validator - 所有 6 个 validator 函数已存在并正常工作。
+6. ✅ 透传已有 `details.recovery` - `normalizeError()` 和 `webSecurityToolError()` 已实现 recovery 合并与透传。
+7. ✅ 增量替换高频 `Type.Any()` - 为 4 个关键工具（`browser_http_replay`、`browser_fuzz`、`browser_cookie_analyze`、`browser_template`）添加运行时验证：
+   - 使用 Zod schema 验证复杂对象参数（`request`、`multipart`、`mutations`、`variables`、`jsonValues`、`cookies`、`claimMutations`、`templates`、`tech`）
+   - 通过 `validateOptionalParams` 中间件在 execute 函数中进行验证
+   - 保持 MCP 协议兼容性（TypeBox schema 未修改）
+   - 新增 `TemplatesSchema` 和 `TechHintsSchema` 到 `src/validation/schemas.ts`
+   - 更新依赖白名单添加 `@modelcontextprotocol/sdk`
+
+验证结果：
+
+- ✅ TypeScript 类型检查通过
+- ✅ 单元测试全部通过（210 个测试，0 失败）
+- ✅ 所有 contracts 检查通过
+- ✅ 文档已重新生成
 
 目标：
 
@@ -215,6 +243,9 @@ Workstream C：防漂移治理
 4. M-011：为 bridge HTTP/WS server 增加有界连接上限与拒绝诊断。
 5. M-002：将 network recorder 的 CDP 事件分支拆到内部 helper 模块，压缩 `network.ts`。
 6. M-001：继续把 `BrowserBridgeServer` 收敛为更薄 facade，抽离命令规划与 client message 路由。
+   - 当前子范围冻结为：抽出 `command service` 与 `client service` 两类 driver helper；保留 session/tab public methods 在 facade 层。
+   - 不改变 `BrowserBridgeServer` 对外方法名、参数、返回结构或错误码。
+   - 至少维持 `check-fake-ws`、`check-lifecycle`、`test:unit`、`check:bridge`、`check` 绿灯。
 7. M-006：去除 `toolAdapter.ts` 双重断言与原地错误对象改写。
 8. M-010：将 network model 核心类型改为显式结构类型，不再用 `JsonRecord` 作为基类。
 9. M-004：移除 TODO 189 口径的边界标记/契约文本，改为稳定 ESM module metadata 语义。
@@ -230,7 +261,91 @@ Workstream C：防漂移治理
 文档同步要求：
 
 - 同步 `CURRENT.md`、`TODO.md`、`CHANGELOG.md`。
-- 若修改 bridge ESM 边界口径或 service worker build contracts，同步 `docs/bridge-esm-bundler-plan.md`、`tests/contracts/check-bridge-build.mjs`、`tests/contracts/check-bridge-files.mjs` 与相关 runtime fixture stripping 规则。
+- 若修改 bridge ESM 边界口径或 service worker build contracts，同步 `docs/bridge-esm-bundler-plan.md`、`tests/contracts/protocol/check-bridge-build.mjs`、`tests/contracts/protocol/check-bridge-files.mjs` 与相关 runtime fixture stripping 规则。
+
+### 已完成：架构与工程化设计改进执行合同
+
+状态：已完成并落地。执行源为 `docs/architecture-design-improvements-plan.md`；`.plan/architecture-design-improvements.md` 仅保留为讨论输入，不再作为 source of truth。
+
+结果：
+
+- 已新增 `src/tools/distillerRegistry.ts` 与 `src/tools/summaries/registerBuiltinDistillers.ts`，把 `resultMiddleware` fallback 摘要分发改为注册表；`registerTools.ts` 显式初始化，direct-import contracts 也能稳定拿到内建 distiller。
+- 已新增 `tests/contracts/drift/check-distiller-coverage.mjs`，coverage 只覆盖 central fallback 路径，不误伤调用点级 `distill`。
+- `BrowserBridgeCommandService.ts` 已为 write-path 增加复合不变量前置断言，并在 queued closure 内二次复核。
+- `BrowserLeaseRegistry.ts` 已增加 `peek/touch/sweepExpired/releaseLeasesForTabSessions/releaseUiLocksForBrowserSessions`；`BrowserBridgeClientMessageService.ts` 与 `BrowserBridgeClientHeartbeat.ts` 已打通 disconnect cleanup + TTL sweep；`BrowserBridgeServer.ts` 输出结构化 lease cleanup 日志。
+- `BrowserWaitSupervisor.ts` 已改为动态 bridge grace / reconnect budget，并新增 `tests/unit/driver/BrowserWaitSupervisor.test.ts`。
+- 已引入 `lefthook`、`lefthook.yml` 与 `package.json prepare`，schema 改动时 pre-commit 自动执行 `npm run sync:protocol` 并 stage 生成产物；CI `check:protocol` 继续兜底。
+- `tests/contracts/` 已重组为 `protocol/`、`tools/`、`runtime/`、`drift/` 四类，并同步更新 `package.json`、`scripts/run-check-groups.mjs` 与文档引用。
+- 已新增 `tsconfig.base.json`，`tsconfig.json` / `tsconfig.build.json` / `tsconfig.bridge-src.json` 统一走 `extends`；已新增 `docs/driver-architecture.md` 固化 facade/service/registry 矩阵与 tab 三态状态机。
+
+最终判定：
+
+- 7 个主工作流均已落地；后续只剩常规维护与归档，无挂起尾项。
+
+### 已完成：工具层参数契约执行合同
+
+状态：已完成并落地。执行源为 `docs/tool-parameter-contract-plan.md`；`.plan/tool-parameter-contract.md` 仅保留为讨论输入，不再作为 source of truth。
+
+目标：
+
+- 在不扩公开 `browser_*` 工具面、不改变既有 TypeBox-外层 / Zod-内层 分工的前提下，完成 3 个必做工作流：
+  1. 顶层未知参数名响亮拒绝（Gap A）
+  2. 裸字符串枚举收口为显式枚举契约（Gap B）
+  3. `browser_sqli` 的复杂对象 Zod 内层校验补齐，并核对 `browser_crawl` 无漏项（Gap C 窄）
+- 保持现有错误面：复用 `INVALID_BROWSER_COMMAND` / `INVALID_RULE`，必要时只补 `details`，不新增参数错误码族。
+- 预设/profile 工效学方向移出本合同，后续另立 RFC，不与本轮参数可靠性修复耦合。
+
+现状边界：
+
+- TypeBox 外层已由框架 execute 前的 `Value.Convert + Check` 覆盖严格标量。
+- Zod 内层已在 `fuzz/httpReplay/template/cookieAnalyze` 落地复杂对象校验，且已按 `.strict()` / `.passthrough()` / `z.record()` 做来源分级。
+- 因此本合同不做复杂对象 schema 回迁 TypeBox，只补真实缺口。
+
+实施顺序：
+
+1. W0 前置确认：框架未知键行为夹具（决定 Gap A 走 `additionalProperties:false` 还是 inspector）
+2. W1 顶层未知参数名收口（schema helper 或 inspector 二选一）
+3. W2 枚举型参数收口：`cookieMode`、`payloadMode`、`defaultScheme`、`locations`、`probeTypes`、`baselineStrategy`、`sniMode`、`knownFiles`，并补扫同类裸字符串枚举
+4. W3 `browser_sqli` 补 `request/mutations` 的 Zod 校验，并核对 `browser_crawl`
+5. W4 保持现有错误码，只在必要时补 `details`
+6. W5 可选收尾：机制 clamp 留痕
+
+验证计划：
+
+- W1/W2：`npm run check:tools && npm run check:web-security`
+- W3：`npm run check:web-security && npm run test:unit`
+- W4：`npm run check:errors`
+- W5：`npm run check:summaries && npm run check:errors`
+- 最终门禁：`npm run check`、`npm run quality:local`
+
+文档同步要求：
+
+- 至少同步 `CURRENT.md`、`TODO.md`、`CHANGELOG.md`
+- 按范围同步 `README.md`、`docs/maintainer-map.md`、`docs/tool-boundaries.md`
+- 文档结构索引块变更时执行 `npm run docs:sync-indexes`
+
+最终判定标准：
+
+- Gap A：顶层未知参数名能响亮失败
+- Gap B：已确认裸字符串枚举缺口全部收口
+- Gap C：`browser_sqli` 已补齐 `request/mutations` 的 Zod 校验，`browser_crawl` 已完成核对
+- 继续保持 TypeBox-外层 / Zod-内层 分工，不引入双源 schema 漂移
+- 未新增参数错误码族
+- `npm run quality:local` 通过
+
+结果：
+
+- 已新增 `src/tools/toolShared.ts` 的 `strictToolParameters()`、`enumParam()`、`enumOrEnumArrayParam()`，并将主 tool surface 与 WebSecurity register 主链的顶层参数对象收口到 `additionalProperties:false`。
+- 已新增 `tests/contracts/drift/check-tool-parameter-framework-validation.mjs`，独立验证 Pi 框架链路中 `Value.Convert + Check` 的关键行为：`"true" -> true`、`"30" -> 30`、`additionalProperties:false` 有效、Literal union 非法值会在框架层响亮失败。
+- WebSecurity register 层已新增共享枚举 helper：`webSecurityDefaultSchemeParam`、`webSecurityCookieModeParam`、`fuzzLocationParam`、`sqliProbeTypesParam`。
+- 已收口枚举缺口：`cookieMode`、`payloadMode`、`defaultScheme`、`locations`、`probeTypes`、`baselineStrategy`、`sniMode`、`knownFiles`。
+- `registerSqli.ts` 已补齐 `validateOptionalParams(HttpRequestSchema/FuzzMutationsSchema, ...)`；`registerCrawl.ts` 已核对为无额外复杂对象 Zod 缺口。
+- 已新增 `tests/contracts/drift/check-tool-parameter-contract.mjs`，并接入 grouped contracts 门禁。
+- 保持现有错误面：继续复用 `INVALID_BROWSER_COMMAND` / `INVALID_RULE`，未新增参数错误码族，也未把复杂对象 schema 从 Zod 全量迁回 TypeBox。
+
+最终判定：
+
+- Gap A、Gap B、Gap C 三个主工作流均已落地；当前只剩后续常规维护，不再保留 active queue。
 
 ### 计划中：bridge runtime hardening / command access schema / silent-catch governance
 
@@ -677,7 +792,7 @@ Workstream C：静默 catch 分类治理（H-002）
 验证：
 
 - `npm run check:tools`
-- `tests/contracts/check-execute-tool.mjs`
+- `tests/contracts/tools/check-execute-tool.mjs`
 - `npm run check`
 
 ## 已完成：TODO 246 Recovery hints and bounded artifact multi-search

@@ -158,7 +158,7 @@ Implementation steps:
 Verification:
 
 - `npm run check:tools`
-- `tests/contracts/check-execute-tool.mjs` update for JS-only monitor envelope.
+- `tests/contracts/tools/check-execute-tool.mjs` update for JS-only monitor envelope.
 - Native command contract coverage for `browser_command`.
 - Runtime smoke covering JS action and CDP command separately.
 

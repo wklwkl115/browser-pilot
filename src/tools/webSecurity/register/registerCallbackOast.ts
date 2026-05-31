@@ -1,8 +1,9 @@
 import { Type } from "typebox";
-import { summarizeCallbackOastData } from "../../summaries/index";
-import { runCallbackOast } from "../../webSecurityCore";
-import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, validateOastParams, headerRecordParam, type CallbackOastToolParams } from "./shared";
-import type { ToolRegistrarContext } from "../../toolShared";
+import { summarizeCallbackOastData } from "../../summaries/index.js";
+import { runCallbackOast } from "../../webSecurityCore.js";
+import { executeWebSecurityToolShell, sharedWebSecurityResultParams, normalizeWebSecurityToolParams, validateOastParams, headerRecordParam, type CallbackOastToolParams } from "./shared.js";
+import type { ToolRegistrarContext } from "../../toolShared.js";
+import { strictToolParameters } from "../../toolShared.js";
 
 export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	pi.registerTool({
@@ -11,7 +12,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 		description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata.",
 		promptSnippet: "Start, inspect, trigger, collect, clear, or stop callback listener sessions for SSRF, blind injection, and deserialization evidence.",
 		promptGuidelines: ["Use browser_callback_oast to create callback URLs/hosts, trigger and collect correlated HTTP/HTTPS/DNS callbacks, keep maxEvents/maxBodyBytes bounded, and archive persisted callback evidence artifacts.", "HTTP target execution for callback trigger helpers uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			action: Type.Optional(Type.Union([Type.Literal("start"), Type.Literal("list"), Type.Literal("status"), Type.Literal("collect"), Type.Literal("clear"), Type.Literal("trigger"), Type.Literal("stop")], { description: "start | list | status | collect | clear | trigger | stop. Default start." })),
 			sessionId: Type.Optional(Type.String({ description: "Logical callback listener session id. Required for status/collect/clear/trigger/stop." })),
 			listenHost: Type.Optional(Type.String({ description: "Local listen host; default 127.0.0.1. Use 0.0.0.0 to listen on all interfaces." })),
@@ -31,7 +32,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			dnsBaseDomain: Type.Optional(Type.String({ description: "Generated DNS callback base domain used for dnsCallbackHost, e.g. oast.test." })),
 			publicDnsBaseDomain: Type.Optional(Type.String({ description: "Optional externally reachable DNS base domain used for publicDnsCallbackHost." })),
 			dnsResponseAddress: Type.Optional(Type.String({ description: "IPv4 address returned for A queries handled by the local DNS listener; default 127.0.0.1." })),
-			externalMetadata: Type.Optional(Type.Any({ description: "Optional external tunnel/provider metadata stored with the session and returned in status/list results." })),
+			externalMetadata: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional external tunnel/provider metadata stored with the session and returned in status/list results." })),
 			mode: Type.Optional(Type.Union([Type.Literal("http"), Type.Literal("https"), Type.Literal("dns")], { description: "trigger only: http | https | dns. Default http." })),
 			target: Type.Optional(Type.String({ description: "trigger only: explicit target URL or DNS name; otherwise the current session callback URL/host is used." })),
 			method: Type.Optional(Type.String({ description: "trigger only: HTTP/HTTPS method; default POST." })),

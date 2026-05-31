@@ -2,12 +2,12 @@ import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http";
-import { asString, isRecord, parseCommandArgs, positiveInt, stringList } from "../shared/normalize";
-import { describeTextArtifact } from "../shared/artifacts";
-import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge";
-import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay";
-import type { NucleiBridgeOptions, ReplayRequest } from "../shared/types";
+import { mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http.js";
+import { asString, isRecord, parseCommandArgs, positiveInt, stringList } from "../shared/normalize.js";
+import { describeTextArtifact } from "../shared/artifacts.js";
+import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge.js";
+import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay.js";
+import type { NucleiBridgeOptions, ReplayRequest } from "../shared/types.js";
 
 export type NormalizedNucleiBridgeOptions = ReturnType<typeof normalizeReplayOptions> & {
 	templatePaths: string[];

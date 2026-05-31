@@ -1,4 +1,4 @@
-import { commandForNativeToolAction } from "../protocol/nativeActionMetadata";
+import { commandForNativeToolAction } from "../protocol/nativeActionMetadata.js";
 
 export function waitCommandForAction(action: string): string {
 	return commandForNativeToolAction("browser_wait", action);

@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { createCodedError } from "../../../utils/codedError";
-import { tryJson } from "../../../utils/json";
-import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex";
-import { absoluteUrl, headersArrayToMap, parseSetCookieLine } from "./http";
-import { asString, isRecord, normalizeHeaderName, positiveInt } from "./normalize";
-import type { ReplayOptions } from "./types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { tryJson } from "../../../utils/json.js";
+import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex.js";
+import { absoluteUrl, headersArrayToMap, parseSetCookieLine } from "./http.js";
+import { asString, isRecord, normalizeHeaderName, positiveInt } from "./normalize.js";
+import type { ReplayOptions } from "./types.js";
 
 export const MAX_HAR_URL_PATTERN_CHARS = SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS;
 export const MAX_HAR_URL_MATCH_CHARS = SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS;

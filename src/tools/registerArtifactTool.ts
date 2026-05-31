@@ -1,8 +1,9 @@
 import { Type } from "typebox";
-import { normalizeArtifactMode } from "../utils/params";
-import { readBrowserArtifact } from "./artifactReader";
-import { defineBrowserTool, inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter";
-import type { ToolRegistrarContext } from "./toolShared";
+import { normalizeArtifactMode } from "../utils/params.js";
+import { readBrowserArtifact } from "./artifactReader.js";
+import { defineBrowserTool, inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
+import { strictToolParameters } from "./toolShared.js";
 
 export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -18,7 +19,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			"Keep maxChars small and request the next offset or a narrower jsonPath/query when more detail is needed.",
 			"When a previous tool returns correlation metadata, prefer browser_artifact mode=json with jsonPath like operation.operationId, snapshot.snapshotId, or data.requestId/data.waitId/data.listenerId before reading the whole artifact.",
 		],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			path: Type.Optional(Type.String({ description: "Artifact path returned by a browser tool, absolute or relative to cwd" })),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit artifact paths for bounded multi-artifact search mode." })),
 			root: Type.Optional(Type.String({ description: "Optional relative root under .pi/browser-artifacts for bounded multi-artifact search." })),

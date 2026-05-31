@@ -1,13 +1,13 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { createCodedError } from "../../../utils/codedError";
+import { createCodedError } from "../../../utils/codedError.js";
 import https from "node:https";
 import dgram from "node:dgram";
-import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, normalizeCallbackSessionId, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager";
-import { asString, isRecord, normalizeMethod, positiveInt } from "../shared/normalize";
-import { assertAllowedTargetUrl, normalizeHeaders } from "../shared/http";
-import type { HeaderMap, RawCallbackOastOptions } from "../shared/types";
+import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, normalizeCallbackSessionId, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager.js";
+import { asString, isRecord, normalizeMethod, positiveInt } from "../shared/normalize.js";
+import { assertAllowedTargetUrl, normalizeHeaders } from "../shared/http.js";
+import type { HeaderMap, RawCallbackOastOptions } from "../shared/types.js";
 
 type CallbackAction = "start" | "list" | "status" | "collect" | "clear" | "trigger" | "stop";
 

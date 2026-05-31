@@ -13,7 +13,7 @@
 
 ## Design Principles
 
-- Brain-Hand Separation: tools expose perception and execution; agents keep judgment, planning, and proof construction.
+- Brain-Hand Separation: tools expose perception and execution; agents keep strategic judgment, planning, and proof construction. The line is not computation versus judgment — tools should encode deterministic mechanical expertise and provide sensible, visible, overridable defaults. What belongs to the agent is context-dependent strategic choice; what belongs in the tool is reliable domain knowledge that does not depend on task context and can be audited, overridden, and improved independently.
 - Semantic Singularity: one capability class has one canonical tool. Names, schemas, and descriptions must have clear non-overlapping boundaries.
 - Atomic Composability: prefer Unix-like primitives and programmable surfaces over black-box workflows or excessive micro-tools.
 - Recoverable Diagnostics: optimize for feedback loops. Return structured high-signal summaries, actionable errors, observable state, idempotent/replayable operations, and artifact evidence.
@@ -56,6 +56,7 @@
 ## Anti-Patterns
 
 - Tools that decide strategy for the agent or hide uncertainty behind broad if/else logic.
+- Zero-opinion tools with no mechanical expertise or defaults, forcing agents to spend attention on deterministic decisions better encoded as auditable, overridable tool behavior.
 - Duplicate or overlapping tools, namespace drift, and capability sprawl.
 - Swiss-army workflow tools that cannot be diagnosed, replayed, or composed.
 - Excessive fragmentation that makes tool choice the task.

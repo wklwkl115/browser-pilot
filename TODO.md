@@ -10,10 +10,13 @@
 - 当前新增执行合同：`bridge runtime hardening / command access schema / silent-catch governance`（聚焦 H-001/H-005 的 driver 问题、H-003/H-004 的 MV3/runtime 问题以及 H-002 的分类 catch 治理，不扩公开工具面）；实施顺序、分类规则与验证计划见 `CURRENT.md`
 - 当前新增执行合同：`H-002 第二批静默 catch 分类治理`（聚焦 wait/cdp/ws/network/intercept/transport/runtime 的高收益 cleanup 与 recovery 主路径，不做全仓机械替换）；分层清单、暂缓范围与验证计划见 `CURRENT.md`
 - 当前新增执行合同：`M-001 ~ M-011 中严重度工程债收口`（按 M-003 → M-008 → M-005 → M-011 → M-002 → M-001 → M-006 → M-010 → M-004 顺序执行；M-007/M-009 仅归档为已由 H-001 关闭）；边界、非目标与验证计划见 `CURRENT.md`
+- 当前激活子项：`M-001 深拆 BrowserBridgeServer`（只拆 facade 内 command/client 协调逻辑，不改对外 API/协议语义）；第一轮已完成 `BrowserBridgeCommandService` / `BrowserBridgeClientMessageService` 拆分与 `BrowserBridgePendingRequests` 脆弱初始化顺序修复，后续剩余边界与验证计划见 `CURRENT.md`
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`
 - 下阶段深水区能力规划：`docs/next-phase-web-reversing-and-security-primitives-plan.md`
 - 最近完成的下阶段执行合同：`docs/stateful-websocket-replay-and-fuzz-plan.md`
 - 当前新增执行合同：`docs/mv3-runtime-state-recovery-plan.md`
+- 最近完成执行合同：`docs/architecture-design-improvements-plan.md`（已完成 distiller 注册化、tab 三态复合不变量、租约 TTL/断连清理、wait 超时预算硬化、protocol sync pre-commit、contracts 分目录与单测扩面、tsconfig base / driver 架构文档；结果见 `CURRENT.md` 与后续归档）
+- 最近完成执行合同：`docs/tool-parameter-contract-plan.md`（已完成顶层未知参数名收口、裸字符串枚举收口、`browser_sqli` Zod 内层校验补齐、框架未知键行为夹具验证；保持 TypeBox-外层 / Zod-内层 分工，不新增参数错误码族）
 - 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`
 维护规则：新增能力、重大架构变更、成熟替代/bridge 引入、既有工具实质变更，先更新 `CURRENT.md` 中的决策、边界、契约与验证计划；完成后迁入 `ARCHIVE.md`，后续项进入 `ROADMAP.md`。

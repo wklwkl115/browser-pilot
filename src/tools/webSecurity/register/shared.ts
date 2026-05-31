@@ -1,13 +1,13 @@
 import { Type } from "typebox";
-import { createCodedError } from "../../../utils/codedError";
-import { isRecord } from "../../../utils/records";
-import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, type ToolOnUpdate } from "../../toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "../../toolShared";
-import type { EnsureStarted } from "../../toolShared";
-import { browserCookiesToHeader } from "../../webSecurityCore";
-import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawCrawlOptions, RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions, RawNucleiBridgeOptions, RawProbeOptions, RawReplayOptions, RawSqliProbeOptions, RawSqlmapBridgeOptions, RawTemplateCheckOptions } from "../shared/types";
-import type { ToolResultBudgetName } from "../../budgets";
-import { webSecurityToolError } from "../shared/diagnostics";
+import { createCodedError } from "../../../utils/codedError.js";
+import { isRecord } from "../../../utils/records.js";
+import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, type ToolOnUpdate } from "../../toolAdapter.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, enumOrEnumArrayParam, enumParam } from "../../toolShared.js";
+import type { EnsureStarted } from "../../toolShared.js";
+import { browserCookiesToHeader } from "../../webSecurityCore.js";
+import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawCrawlOptions, RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions, RawNucleiBridgeOptions, RawProbeOptions, RawReplayOptions, RawSqliProbeOptions, RawSqlmapBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
+import type { ToolResultBudgetName } from "../../budgets.js";
+import { webSecurityToolError } from "../shared/diagnostics.js";
 
 export { TAB_SCOPED_TOOL_GUIDELINE };
 
@@ -15,6 +15,9 @@ const STRING_LIKE_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Boolea
 const STRING_LIKE_ARRAY_SCHEMA = Type.Array(STRING_LIKE_SCHEMA);
 const STRING_OR_STRING_ARRAY_SCHEMA = Type.Union([Type.String(), Type.Array(Type.String())]);
 const STRING_OR_NUMBER_OR_LIST_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Array(Type.Union([Type.String(), Type.Number()]))]);
+const OPEN_OBJECT_SCHEMA = Type.Object({}, { additionalProperties: true });
+const STRING_OR_OPEN_OBJECT_SCHEMA = Type.Union([Type.String(), OPEN_OBJECT_SCHEMA]);
+const STRING_OR_OPEN_OBJECT_ARRAY_SCHEMA = Type.Array(STRING_OR_OPEN_OBJECT_SCHEMA);
 
 function provided(value: unknown): boolean {
 	if (value === undefined || value === null) return false;
@@ -76,12 +79,30 @@ function hasTemplateSelection(value: unknown): boolean {
 	return anyProvided(value, ["templatePaths", "workflowPaths", "templateIds", "tags", "severities", "authors"]);
 }
 
+export { enumParam, enumOrEnumArrayParam };
+
 export function headerRecordParam(description: string) {
 	return Type.Optional(Type.Record(Type.String(), Type.Union([STRING_LIKE_SCHEMA, STRING_LIKE_ARRAY_SCHEMA]), { description }));
 }
 
 export function stringOrStringArrayParam(description: string) {
 	return Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())], { description }));
+}
+
+export function webSecurityDefaultSchemeParam(description = "http | https for host-only input; default https.") {
+	return enumParam(["http", "https"], description);
+}
+
+export function webSecurityCookieModeParam(description = "merge | replace | preserve for browser cookie injection into HTTP requests; default merge.") {
+	return enumParam(["merge", "replace", "preserve"], description);
+}
+
+export function fuzzLocationParam(description: string) {
+	return enumOrEnumArrayParam(["query", "json", "form", "multipart", "header", "all"], description);
+}
+
+export function sqliProbeTypesParam(description: string) {
+	return enumOrEnumArrayParam(["boolean", "error", "time", "union", "all"], description);
 }
 
 export function stringNumberOrListParam(description: string) {
@@ -113,13 +134,13 @@ export function sharedWebSecurityParams() {
 export function browserCookieBindingParams(bindBrowserSessionDescription: string, options: { includeCookieMode?: boolean } = {}) {
 	return {
 		bindBrowserSession: Type.Optional(Type.Boolean({ description: bindBrowserSessionDescription })),
-		...(options.includeCookieMode === false ? {} : { cookieMode: Type.Optional(Type.String({ description: "merge | replace | preserve for browser cookie injection into HTTP requests; default merge." })) }),
+		...(options.includeCookieMode === false ? {} : { cookieMode: webSecurityCookieModeParam("merge | replace | preserve for browser cookie injection into HTTP requests; default merge.") }),
 	};
 }
 
 export function harReplayParams(options: { harDescription: string; harPathDescription: string }) {
 	return {
-		har: Type.Optional(Type.Any({ description: options.harDescription })),
+		har: Type.Optional(Type.Object({}, { additionalProperties: true, description: options.harDescription })),
 		harPath: Type.Optional(Type.String({ description: options.harPathDescription })),
 		harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
 		harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
@@ -132,15 +153,15 @@ export function rawRequestParams(options: { urlDescription: string; rawRequestDe
 		...(config.includeUrl === false ? {} : { url: Type.Optional(Type.String({ description: options.urlDescription })) }),
 		baseUrl: Type.Optional(Type.String({ description: "Base URL for relative raw request targets." })),
 		rawRequest: Type.Optional(Type.String({ description: options.rawRequestDescription })),
-		request: Type.Optional(Type.Any({ description: options.requestDescription })),
+		request: Type.Optional(Type.Object({}, { additionalProperties: true, description: options.requestDescription })),
 	};
 	const overrideParams = {
 		method: Type.Optional(Type.String({ description: "Override HTTP method." })),
 		headers: Type.Optional(Type.Record(Type.String(), Type.Union([STRING_LIKE_SCHEMA, STRING_LIKE_ARRAY_SCHEMA]), { description: options.headersDescription })),
 		body: Type.Optional(Type.String({ description: "Text request body override." })),
 		bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
-		mutations: Type.Optional(Type.Any({ description: options.mutationsDescription })),
-		defaultScheme: Type.Optional(Type.String({ description: "http | https for host-only input; default https." })),
+		mutations: Type.Optional(Type.Object({}, { additionalProperties: true, description: options.mutationsDescription })),
+		defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 	};
 	if (config.section === "target") return targetParams;
 	if (config.section === "overrides") return overrideParams;
@@ -149,8 +170,8 @@ export function rawRequestParams(options: { urlDescription: string; rawRequestDe
 
 export function requestSequenceParams(options: { requestsDescription: string; sequenceDescription: string }) {
 	return {
-		requests: Type.Optional(Type.Array(Type.Any(), { description: options.requestsDescription })),
-		sequence: Type.Optional(Type.Array(Type.Any(), { description: options.sequenceDescription })),
+		requests: Type.Optional(Type.Array(STRING_OR_OPEN_OBJECT_SCHEMA, { description: options.requestsDescription })),
+		sequence: Type.Optional(Type.Array(STRING_OR_OPEN_OBJECT_SCHEMA, { description: options.sequenceDescription })),
 	};
 }
 

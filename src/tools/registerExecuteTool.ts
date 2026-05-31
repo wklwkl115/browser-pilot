@@ -1,15 +1,15 @@
 import { Type } from "typebox";
-import type { BrowserBridgeExecutionResult } from "../driver/types";
-import { BrowserBridgeError } from "../driver/errors";
-import { buildScanScript } from "../scan/buildScanScript";
-import { compactError } from "../utils/errors";
-import { tryJson } from "../utils/json";
-import { normalizeTabId } from "../utils/params";
-import { isRecord } from "../utils/records";
-import { summarizeGenericValue } from "./summaries/index";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
+import type { BrowserBridgeExecutionResult } from "../driver/types.js";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { buildScanScript } from "../scan/buildScanScript.js";
+import { compactError } from "../utils/errors.js";
+import { tryJson } from "../utils/json.js";
+import { normalizeTabId } from "../utils/params.js";
+import { isRecord } from "../utils/records.js";
+import { summarizeGenericValue } from "./summaries/index.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 type MonitorScanResult = {
 	ok: boolean;
@@ -83,7 +83,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 		description: "Execute JavaScript in a connected real browser tab.",
 		promptSnippet: "Execute JavaScript in a real browser tab.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_execute for precise browser actions; return explicit values from async JavaScript."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			script: Type.String({ description: "JavaScript source." }),
 			...sharedTabScopedToolParams(),
 			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),

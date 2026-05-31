@@ -1,9 +1,9 @@
-import { responseReplayDelta } from "../shared/baseline";
-import { createCodedError } from "../../../utils/codedError";
-import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http";
-import { asString, isRecord, positiveInt, stringList } from "../shared/normalize";
-import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, sendReplayLikeRequest } from "../shared/replay";
-import type { FetchStep, ReplayOptions, ReplayRequest } from "../shared/types";
+import { responseReplayDelta } from "../shared/baseline.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { compactStep, extractTitle, mergeCookieHeaders, redactHeaders, responseBodyHash, responseFingerprint, setCookieHeader } from "../shared/http.js";
+import { asString, isRecord, positiveInt, stringList } from "../shared/normalize.js";
+import { applyReplayVariables, buildHarDependencyGraph, buildReplayRequest, cookieHeaderFromSetCookie, extractReplayVariables, normalizeReplayOptions, normalizeReplayVariableScope, replayInputOptions, replaySequenceInputs, replayStepExtractors, sendReplayLikeRequest } from "../shared/replay.js";
+import type { FetchStep, ReplayOptions, ReplayRequest } from "../shared/types.js";
 
 function clusterReplayResponses(steps: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
 	const clusters = new Map<string, { status?: unknown; title?: unknown; bodyBytes?: unknown; bodySha256?: unknown; location?: unknown; count: number; okCount: number; sampleSteps: Array<number | string> }>();

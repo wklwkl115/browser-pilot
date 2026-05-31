@@ -1,5 +1,5 @@
-import { truncateText } from "../../utils/json";
-import { isRecord, type Summary } from "./common";
+import { truncateText } from "../../utils/json.js";
+import { isRecord, type Summary } from "./common.js";
 
 const SAMPLE_LIMIT = 5;
 const KEY_LIMIT = 40;

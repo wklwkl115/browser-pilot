@@ -32,3 +32,36 @@ test("BrowserLeaseRegistry enforces UI lock ownership", () => {
 	leases.releaseUiLock("session-a");
 	assert.equal(leases.uiLockInfo(), undefined);
 });
+
+test("BrowserLeaseRegistry exposes peek/touch and sweeps expired state", () => {
+	const leases = new BrowserLeaseRegistry({ tabLeaseTtlMs: 100, uiLockTtlMs: 100 });
+	const tab = fakeTab();
+	const leased = leases.leaseTab("session-a", tab, true);
+	leases.acquireUiLock("session-a", "browser_pick");
+	assert.equal(leases.peekTabLease(tab)?.id, leased.id);
+	leases.touchTabLease("session-a", tab, leased.createdAt + 50);
+	leases.touchUiLock("session-a", leased.createdAt + 50);
+	const early = leases.sweepExpired(leased.createdAt + 120);
+	assert.equal(early.releasedLeases.length, 0);
+	assert.equal(early.releasedUiLocks.length, 0);
+	const late = leases.sweepExpired(leased.createdAt + 151);
+	assert.equal(late.releasedLeases.length, 1);
+	assert.equal(late.releasedLeases[0].releaseReason, "ttl");
+	assert.equal(late.releasedUiLocks.length, 1);
+	assert.equal(late.releasedUiLocks[0].releaseReason, "ttl");
+});
+
+test("BrowserLeaseRegistry releases lease and ui lock state for disconnected sessions", () => {
+	const leases = new BrowserLeaseRegistry();
+	const tab = fakeTab();
+	leases.leaseTab("session-a", tab, true);
+	leases.acquireUiLock("session-a", "browser_pick");
+	const releasedLeases = leases.releaseLeasesForTabSessions([tab.id], "disconnect");
+	const releasedUiLocks = leases.releaseUiLocksForBrowserSessions(["session-a"], "disconnect");
+	assert.equal(releasedLeases.length, 1);
+	assert.equal(releasedLeases[0].releaseReason, "disconnect");
+	assert.equal(releasedUiLocks.length, 1);
+	assert.equal(releasedUiLocks[0].releaseReason, "disconnect");
+	assert.equal(leases.peekTabLease(tab), undefined);
+	assert.equal(leases.uiLockInfo(), undefined);
+});

@@ -1,6 +1,6 @@
-import { BrowserBridgeError } from "../driver/errors";
-import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
-import type { BrowserBridgeExecutionResult } from "../driver/types";
+import { BrowserBridgeError } from "../driver/errors.js";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import type { BrowserBridgeExecutionResult } from "../driver/types.js";
 
 function runtimeExceptionMessage(data: Record<string, unknown>): string | undefined {
 	const exceptionDetails = data.exceptionDetails;

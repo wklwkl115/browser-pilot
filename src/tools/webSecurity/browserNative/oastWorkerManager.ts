@@ -4,10 +4,10 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { createCodedError } from "../../../utils/codedError";
-import { isRecord } from "../shared/normalize";
-import type { HeaderMap } from "../shared/types";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { isRecord } from "../shared/normalize.js";
+import type { HeaderMap } from "../shared/types.js";
 
 export type CallbackSessionState = Record<string, unknown> & {
 	sessionId: string;

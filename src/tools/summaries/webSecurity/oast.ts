@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared";
+import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeCallbackOastData(value: unknown): Summary {
 	const events = isRecord(value) ? asArray(value.events).filter(isRecord) : [];

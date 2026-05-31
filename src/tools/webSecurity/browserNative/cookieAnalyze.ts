@@ -1,10 +1,10 @@
 import { Buffer } from "node:buffer";
-import { createCodedError } from "../../../utils/codedError";
-import { responseReplayDelta } from "../shared/baseline";
-import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http";
-import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
-import { analyzeCookieSample, tokenCountOf, tokenFormatOf, tokenMutationToken, tokenVerifiedOf } from "../shared/cookieTokens";
-import type { RawCookieAnalyzeOptions } from "../shared/types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { responseReplayDelta } from "../shared/baseline.js";
+import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http.js";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
+import { analyzeCookieSample, tokenCountOf, tokenFormatOf, tokenMutationToken, tokenVerifiedOf } from "../shared/cookieTokens.js";
+import type { RawCookieAnalyzeOptions } from "../shared/types.js";
 
 type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };
 

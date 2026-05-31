@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared";
+import { asArray, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeCookieAnalyzeData(value: unknown): Summary {
 	const results = resultItems(value);

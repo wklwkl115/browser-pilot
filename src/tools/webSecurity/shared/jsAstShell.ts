@@ -1,8 +1,8 @@
 import path from "node:path";
-import { artifactFallbackName } from "../../toolAdapter";
-import { summarizeJsAstAnalysisData } from "../../summaries/webSecurity/jsAst";
-import { analyzeJavaScriptArtifactInput, type JsAstArtifactAnalysis, type JsAstArtifactInput } from "./jsAstArtifact";
-import { saveTextArtifact } from "../../artifacts";
+import { artifactFallbackName } from "../../toolAdapter.js";
+import { summarizeJsAstAnalysisData } from "../../summaries/webSecurity/jsAst.js";
+import { analyzeJavaScriptArtifactInput, type JsAstArtifactAnalysis, type JsAstArtifactInput } from "./jsAstArtifact.js";
+import { saveTextArtifact } from "../../artifacts.js";
 
 export type JsAstShellContext = { cwd?: string } | undefined;
 

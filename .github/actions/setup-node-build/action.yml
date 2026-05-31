@@ -13,6 +13,10 @@ runs:
       shell: bash
       run: npm ci
 
+    - name: Build outer dist
+      shell: bash
+      run: npm run build
+
     - name: Build bridge dist
       shell: bash
       run: npm run build:bridge

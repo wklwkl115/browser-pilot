@@ -20,6 +20,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - Web Security 工具只作为 scoped follow-up：先观察/捕获/重放基线，再按需要使用 recon/crawl/fuzz/template/cookie/SQLi/OAST/bridge 工具。默认 profile 为 `security`；如需缩减日常可见工具面，设置 `PI_BROWSER_TOOL_PROFILE=core` 后 `/reload`。
 - Web Security affordance 只补接缝信息，不引入固定 workflow：工具可以返回并列 `possible/common follow-ups`、参数校验和结构化 recovery，但不会自动串联 `crawl -> fuzz -> sqli`、不会自动升级 mode/engine/action，也不会伪造请求模板。
 - Web Security follow-up 工具的 HTTP 目标执行默认由 Node.js `fetch` 直接发起，而不是经浏览器桥；`bindBrowserSession:true` 仅用于可选注入浏览器 cookies，不改变请求发起位置。
+- 参数契约当前采用双层模式：顶层工具参数由 TypeBox + 框架 `Value.Convert + Check` 保护，复杂对象继续由既有 Zod `validateOptionalParams()` 保护；本仓库不会把复杂对象 schema 全量迁回 TypeBox。
 - jshookmcp 研究只作为能力发现来源；本包不迁移其源码、MCP 架构、工具名、schema、payload、fixture 或文档文本；TODO 241 闭环账本见 `docs/jshookmcp-native-absorption.md`。
 - 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。下阶段深水区能力规划也必须先走 internal primitive / bridge / artifact-first 路线，不能直接把 problem area 变成公开大工具。
 
@@ -114,6 +115,7 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 ## 维护入口
 
 - 当前状态与执行队列：`CURRENT.md`
+- Node 发布入口当前同时区分源码入口与分发入口：Pi runtime 仍通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 则指向 `dist/` 编译产物。
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`
 - 兼容 TODO 入口：`TODO.md`
@@ -122,14 +124,16 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - 最终全量 smoke 结果：`.pi/browser-artifacts/final-smoke/results.json`
 - 全局 skill 验证：`PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`
 - 维护者入口图：`docs/maintainer-map.md`
-- 生成器/loader：`scripts/`
+- 生成器/build/check 脚本：`scripts/`
 - 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`
 - 协议单源设计：`docs/protocol-single-source-plan.md`
 - 生成 native 协议契约文档：`docs/generated/native-protocol.generated.md`
 - Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
 - Tool Registry / Adapter 边界：`src/tools/toolRegistry.ts` 只维护工具注册顺序与 capability profile 分组；`src/tools/toolAdapter.ts` 只放共享参数、timeout/maxChars、错误包装、result middleware 与 artifact fallback；各 `register*Tool.ts` 仍保留 schema 组合和领域逻辑。
+- driver 架构与三态状态机矩阵：`docs/driver-architecture.md`
 
 ```bash
+npm run build            # 生成 outer dist/（index.ts + src/** + mcp/**）
 npm run check
 npm run check:all:bridge   # bridge + unit 分组门禁
 npm run check:all:package  # package + docs 分组门禁
@@ -169,11 +173,13 @@ npm run smoke:browser:transfer
 
 `npm run check:errors` 锁定错误归一化契约：`normalizeError` / `compactError` 保留 `code/message/details/name`，追加紧凑 `taxonomy` 与 `diagnostics`；覆盖 driver/tool/native/page/CDP/network/transfer/security/artifact/protocol 分类、nested bridge/native response、ArtifactReader、transfer、WebSecurity、stack strip、secret redaction 和 circular details。
 
-`bridge/native_command_schema.json` 是 native command 协议单一事实来源。修改后运行 `npm run sync:protocol`，生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`；这些生成文件禁止手改。`npm run check:protocol` 会检查 drift、root/bridge schema 一致、runtime/Node validator、wait/network/hook/frame/html/screenshot/evidence/transfer metadata 消费与错误码表覆盖。
+`bridge/native_command_schema.json` 是 native command 协议单一事实来源。修改后运行 `npm run sync:protocol`，生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`；这些生成文件禁止手改。`npm run check:protocol` 会检查 drift、root/bridge schema 一致、runtime/Node validator、wait/network/hook/frame/html/screenshot/evidence/transfer metadata 消费与错误码表覆盖。仓库同时提供 `lefthook.yml` + `prepare` 自动安装的 pre-commit hook：当 `bridge/native_command_schema.json` 变更时会自动执行 `npm run sync:protocol` 并 stage 生成产物；CI 的 `check:protocol` 仍保留为最终兜底。
 
 `src/tools/toolRegistry.ts` 是声明式工具注册表：core/security registrars 的顺序与 capability profile 分组在这里维护，`registerTools.ts` 只遍历注册表，不再手工逐个调用。`tests/unit/tools/toolRegistry.test.ts` 与 contracts 共同锁定 registry 数量、顺序、唯一性和 security gating。`src/tools/toolAdapter.ts` 是注册层共享中间层：`sharedTabScopedToolParams`、`runTool`、`jsonToolResult/textToolResult`、`bridgeNestedErrorResult`、`artifactFallbackName` 等由 `check:tools`、`check:web-security` 与 `check:tool-docs` 锁定。新增或修改工具时先更新 registry，再复用这些基础样板，不把 WebSecurity/cookie/transfer/native command 的领域逻辑上移到 adapter。
 
-`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 现已通过 `scripts/run-check-groups.mjs` 拆成 bridge/unit、package/docs、contracts 三组，可按故障域局部复跑。
+`src/tools/distillerRegistry.ts` 是 fallback 摘要分发的唯一注册表：`registerBuiltinDistillers()` 在 runtime 与 direct-import contract 两条路径都会初始化，避免新增 fallback 摘要器时静默退回 `summarizeGenericValue()`。对应 drift contract 为 `npm run check:distiller-coverage`。
+
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `@modelcontextprotocol/sdk`、`js-yaml`、`typebox`、`typescript`、`ws`、`zod`：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 现已通过 `scripts/run-check-groups.mjs` 拆成 bridge/unit、package/docs、contracts 三组，可按故障域局部复跑。
 
 `BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
 

@@ -1,6 +1,6 @@
-import { compactStep, detectFingerprints, detectTech, detectTechHints, extractTitle, fetchFaviconHash, fetchWithRedirects, inspectTlsCertificate, normalizeHeaders, normalizeProbeTargets, redactHeaders, responseBodyHash, sanitizeFetchHeaders } from "../shared/http";
-import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, normalizeMethod, positiveInt } from "../shared/normalize";
-import type { CookieProvider, HeaderMap, ProbeOptions } from "../shared/types";
+import { compactStep, detectFingerprints, detectTech, detectTechHints, extractTitle, fetchFaviconHash, fetchWithRedirects, inspectTlsCertificate, normalizeHeaders, normalizeProbeTargets, redactHeaders, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, normalizeMethod, positiveInt } from "../shared/normalize.js";
+import type { CookieProvider, HeaderMap, ProbeOptions } from "../shared/types.js";
 
 export type NormalizedProbeOptions = {
 	targets: string[];

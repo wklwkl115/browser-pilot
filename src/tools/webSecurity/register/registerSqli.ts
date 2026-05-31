@@ -1,9 +1,12 @@
 import { Type } from "typebox";
-import { summarizeSqlmapBridgeData, summarizeSqliProbeData } from "../../summaries/index";
-import { runSqlmapBridge, runSqliProbe } from "../../webSecurityCore";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateSqliParams, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared";
-import type { ToolRegistrarContext } from "../../toolShared";
-import type { RawSqlmapBridgeOptions, RawSqliProbeOptions } from "../shared/types";
+import { summarizeSqlmapBridgeData, summarizeSqliProbeData } from "../../summaries/index.js";
+import { runSqlmapBridge, runSqliProbe } from "../../webSecurityCore.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, webSecurityDefaultSchemeParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
+import type { ToolRegistrarContext } from "../../toolShared.js";
+import { strictToolParameters } from "../../toolShared.js";
+import type { RawSqlmapBridgeOptions, RawSqliProbeOptions } from "../shared/types.js";
+import { validateOptionalParams } from "../../../validation/middleware.js";
+import { HttpRequestSchema, FuzzMutationsSchema } from "../../../validation/schemas.js";
 
 type SqliToolParams = WebSecuritySharedToolParams & RawSqliProbeOptions & RawSqlmapBridgeOptions & { engine?: unknown };
 
@@ -14,7 +17,7 @@ export function registerSqliTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts.",
 		promptSnippet: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with structured evidence.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_sqli from a captured or raw request template for SQLi oracle evidence. engine:builtin is the default lightweight probe path; engine:sqlmap is the deeper mature bridge path.", "HTTP target execution uses Node.js fetch directly, not the browser bridge; requests originate from the Node.js process with optional browser-session cookie injection."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			engine: Type.Optional(Type.Union([Type.Literal("builtin"), Type.Literal("sqlmap")], { description: "Detection engine (default: builtin). builtin: lightweight probes; sqlmap: external binary." })),
 			...sharedWebSecurityBrowserSessionParams("Process timeout in milliseconds; default 120000 for engine:sqlmap, per-request timeout for engine:builtin."),
 			maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum response body bytes stored per request before truncation; default 128000." })),
@@ -34,12 +37,17 @@ export function registerSqliTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				requestsDescription: "engine:sqlmap only: request sequence entries: raw request strings, captured requests, HAR entries, or replay option objects. Each selected entry is sent to sqlmap as a separate target.",
 				sequenceDescription: "engine:sqlmap only: alias for requests; each selected entry is sent to sqlmap as a separate target.",
 			}),
-			locations: stringOrStringArrayParam("engine:builtin only: parameter locations: query, json, form, header, or all. Default inferred from template."),
+			locations: fuzzLocationParam("engine:builtin only: parameter locations: query, json, form, header, or all. Default inferred from template."),
 			paramNames: Type.Optional(Type.Array(Type.String(), { description: "Optional parameter names to probe or pass to sqlmap -p." })),
-			probeTypes: stringOrStringArrayParam("engine:builtin only: probe families: boolean, error, time, union, or all. Default all."),
-			payloadMode: Type.Optional(Type.String({ description: "engine:builtin only: append | replace. Default append." })),
+			probeTypes: sqliProbeTypesParam("engine:builtin only: probe families: boolean, error, time, union, or all. Default all."),
+			payloadMode: enumParam(["append", "replace"], "engine:builtin only: append | replace. Default append."),
 			dbms: stringOrStringArrayParam("Optional DBMS payload pack or sqlmap --dbms hint: mysql, postgresql, sqlite, mssql, oracle, or combinations."),
-			booleanPayloadPairs: Type.Optional(Type.Any({ description: "engine:builtin only: boolean payload pairs as objects with truePayload/falsePayload or strings separated by ||, =>, or comma." })),
+			booleanPayloadPairs: Type.Optional(Type.Union([
+				Type.String(),
+				Type.Array(Type.String()),
+				Type.Object({}, { additionalProperties: true }),
+				Type.Array(Type.Object({}, { additionalProperties: true })),
+			], { description: "engine:builtin only: boolean payload pairs as objects with truePayload/falsePayload or strings separated by ||, =>, or comma." })),
 			errorPayloads: Type.Optional(Type.Array(Type.String(), { description: "engine:builtin only: error oracle payloads." })),
 			timePayloads: Type.Optional(Type.Array(Type.String(), { description: "engine:builtin only: time oracle payloads." })),
 			unionPayloads: Type.Optional(Type.Array(Type.String(), { description: "engine:builtin only: union/order payloads." })),
@@ -83,6 +91,8 @@ export function registerSqliTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			const current = normalizeWebSecurityToolParams<SqliToolParams>(params);
 			const engine = String(current.engine || "builtin").toLowerCase() === "sqlmap" ? "sqlmap" : "builtin";
 			validateSqliParams(engine, current);
+			if (current.request !== undefined) validateOptionalParams(HttpRequestSchema, current.request);
+			if (current.mutations !== undefined) validateOptionalParams(FuzzMutationsSchema, current.mutations);
 			if (engine === "sqlmap") {
 				return executeWebSecurityToolShell(ensureStarted, current, ctx, {
 					toolName: "browser_sqli",

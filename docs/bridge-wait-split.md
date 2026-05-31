@@ -5,8 +5,8 @@ This document freezes the current `bridge/pi_browser_bridge/wait.js` dependency 
 ## Current loader and test boundary
 
 - Service worker loader after TODO 183: `config.js -> protocol.js -> patterns.js -> cdp.js -> runtime.js -> wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js -> network_model.js -> network.js -> ... -> transport.js`.
-- `tests/contracts/check-pi-browser-bridge.mjs` executes wait code through `waitBridgeFiles`. That bundle now contains `wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js`; future wait subfiles must be prepended there in the same order as `background.js`.
-- `tests/contracts/check-bridge-files.mjs` owns the service worker script order contract and keeps `wait.js` as the final wait facade/dispatch script.
+- `tests/contracts/protocol/check-pi-browser-bridge.mjs` executes wait code through `waitBridgeFiles`. That bundle now contains `wait_cdp.js -> wait_coordinator.js -> wait_navigation.js -> wait_network_idle.js -> wait_selector.js -> wait.js`; future wait subfiles must be prepended there in the same order as `background.js`.
+- `tests/contracts/protocol/check-bridge-files.mjs` owns the service worker script order contract and keeps `wait.js` as the final wait facade/dispatch script.
 
 ## Current staged split status
 

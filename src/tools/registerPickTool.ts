@@ -1,11 +1,11 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../driver/errors";
-import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript";
-import { summarizePickData } from "./summaries/index";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter";
-import { TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
-import { isRecord } from "../utils/params";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript.js";
+import { summarizePickData } from "./summaries/index.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
+import { isRecord } from "../utils/params.js";
 
 function unwrapRuntimeEvaluateValue(result: unknown): unknown {
 	if (!isRecord(result)) return result;
@@ -71,7 +71,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		description: "Interactively pick DOM elements in the real browser and return stable CSS selectors plus element summaries.",
 		promptSnippet: "Ask the user to click elements in the browser; returns CSS selectors for selected elements.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_pick when the user needs to identify a specific visible element; it blocks until click/Enter/Escape/timeout."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			message: Type.String({ description: "Instruction shown to the user in the page picker overlay" }),
 			...sharedTabScopedToolParams({ timeoutDescription: "Interactive picker timeout in milliseconds" }),
 			multiple: Type.Optional(Type.Boolean({ description: "Allow Cmd/Ctrl+click multi-select; default true" })),

@@ -1,4 +1,4 @@
-import { suppressErrorStack } from "./errors";
+import { suppressErrorStack } from "./errors.js";
 
 export type CodedError<Code extends string = string> = Error & {
 	code: Code;

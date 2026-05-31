@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http";
-import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart";
-import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize";
-import { createCodedError } from "../../../utils/codedError";
-import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template";
-import { harEntriesFromOptions } from "./har";
-import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types";
+import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
+import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart.js";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template.js";
+import { harEntriesFromOptions } from "./har.js";
+import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types.js";
 
 export type NormalizedReplayOptions = {
 	timeoutMs: number;
@@ -24,7 +24,7 @@ export type NormalizedReplayOptions = {
 	cookieProvider?: CookieProvider;
 };
 
-export { buildReplayRequest, parseRawHttpRequest } from "./requestTemplate";
+export { buildReplayRequest, parseRawHttpRequest } from "./requestTemplate.js";
 
 function replayInputError(message: string, details: Record<string, unknown> = {}): Error {
 	return createCodedError({ name: "ReplayInputError", code: "INVALID_RULE", message, details, suppressStack: false });
@@ -57,15 +57,22 @@ function hasOwnJsonProperty(value: unknown, key: string | number): boolean {
 }
 
 function getOwnJsonProperty(value: unknown, key: string | number): unknown {
-	return hasOwnJsonProperty(value, key) ? (value as any)[key as any] : undefined;
+	if (!hasOwnJsonProperty(value, key)) return undefined;
+	if (Array.isArray(value) && typeof key === "number") return value[key];
+	if (isRecord(value) && typeof key === "string") return value[key];
+	return undefined;
 }
 
 function setOwnJsonProperty(target: unknown, key: string | number, value: unknown) {
-	if (typeof key === "number" || hasOwnJsonProperty(target, key)) {
-		(target as any)[key as any] = value;
+	if (Array.isArray(target) && typeof key === "number") {
+		target[key] = value;
 		return;
 	}
-	Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+	if (isRecord(target) && typeof key === "string") {
+		target[key] = value;
+		return;
+	}
+	Object.defineProperty(target as object, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 function createJsonContainer(next: string | number): Record<string, unknown> | unknown[] {
@@ -119,7 +126,7 @@ export function parseFuzzParamValue(value: unknown): unknown {
 
 function setJsonPath(root: unknown, path: string, value: unknown) {
 	const parts = jsonPathParts(path);
-	let current: any = root;
+	let current: unknown = root;
 	for (let i = 0; i < parts.length - 1; i += 1) {
 		const part = parts[i];
 		const next = parts[i + 1];
@@ -146,7 +153,7 @@ function setJsonPath(root: unknown, path: string, value: unknown) {
 
 function deleteJsonPath(root: unknown, path: string) {
 	const parts = jsonPathParts(path);
-	let current: any = root;
+	let current: unknown = root;
 	for (let i = 0; i < parts.length - 1; i += 1) {
 		const part = parts[i];
 		if (!hasOwnJsonProperty(current, part)) return;
@@ -156,7 +163,7 @@ function deleteJsonPath(root: unknown, path: string) {
 	const last = parts[parts.length - 1];
 	if (!hasOwnJsonProperty(current, last)) return;
 	if (Array.isArray(current) && typeof last === "number") current.splice(last, 1);
-	else if (current && typeof current === "object") delete current[last as any];
+	else if (isRecord(current) && typeof last === "string") delete current[last];
 }
 
 export function mutateParamRequest(base: ReplayRequest, location: string, paramName: string, value: unknown, operation = "set", contentTypeVariant = "normal"): ReplayRequest {
@@ -315,7 +322,7 @@ export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {
 	return pairs.length ? pairs.join("; ") : undefined;
 }
 
-export { buildHarDependencyGraph, harDependencyRequestInfo, harDependencyResponseInfo, harEntriesFromOptions, harHeaderValues, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS } from "./har";
+export { buildHarDependencyGraph, harDependencyRequestInfo, harDependencyResponseInfo, harEntriesFromOptions, harHeaderValues, MAX_HAR_FILTER_CANDIDATE_ENTRIES, MAX_HAR_URL_MATCH_CHARS, MAX_HAR_URL_PATTERN_CHARS } from "./har.js";
 
 export function replayInputOptions(input: unknown, parent: ReplayOptions): ReplayOptions {
 	const common: ReplayOptions = { ...parent, url: undefined, rawRequest: undefined, request: undefined, body: undefined, bodyBase64: undefined, multipart: undefined, requests: undefined, sequence: undefined, har: undefined, harPath: undefined };

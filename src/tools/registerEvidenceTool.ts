@@ -1,10 +1,10 @@
 import { Type } from "typebox";
-import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
-import { summarizeEvidenceData } from "./summaries/index";
-import { applyDefaultTimeout, artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter";
-import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE } from "./toolShared";
-import type { ToolRegistrarContext } from "./toolShared";
-import { isRecord } from "../utils/params";
+import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
+import { summarizeEvidenceData } from "./summaries/index.js";
+import { applyDefaultTimeout, artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
+import { isRecord } from "../utils/params.js";
 
 export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -13,7 +13,7 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 		description: "Aggregate native browser evidence from hook, network recorder, and performance entries.",
 		promptSnippet: "Collect native browser evidence across network/dom/console/error/storage/websocket/crypto/dom_sinks.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_evidence when a single evidence bundle is needed; write large bundles to outputPath."],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			params: Type.Optional(NativeCommandParamsSchema),
 			...sharedTabScopedToolParams(),
 			sessionId: Type.Optional(Type.String({ description: "Network recorder session id" })),

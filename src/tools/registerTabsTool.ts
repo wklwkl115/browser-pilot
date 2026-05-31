@@ -1,9 +1,10 @@
 import { Type } from "typebox";
-import { type NativeErrorCode } from "../protocol/nativeErrorCodes";
-import { BrowserBridgeError } from "../driver/errors";
-import { jsonResult } from "../utils/toolResult";
-import { defineBrowserTool, runTool, toolTimeoutMs } from "./toolAdapter";
-import type { ToolRegistrarContext } from "./toolShared";
+import { type NativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { jsonResult } from "../utils/toolResult.js";
+import { defineBrowserTool, runTool, toolTimeoutMs } from "./toolAdapter.js";
+import { strictToolParameters } from "./toolShared.js";
+import type { ToolRegistrarContext } from "./toolShared.js";
 
 function tabsToolError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): BrowserBridgeError {
 	return new BrowserBridgeError(code, message, details);
@@ -43,7 +44,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			"Start automation with browser_tabs list; use switch only when you intentionally change the browser active tab.",
 			"Keep the target tabId and pass it explicitly to later tab-scoped browser_* calls.",
 		],
-		parameters: Type.Object({
+		parameters: strictToolParameters({
 			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
 			browserSessionId: Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this unless managing explicit browser sessions." })),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),

@@ -1,5 +1,5 @@
-import { responseDistance } from "./http";
-import type { ResponseFingerprint } from "./http";
+import { responseDistance } from "./http.js";
+import type { ResponseFingerprint } from "./http.js";
 
 export const DEFAULT_BASELINE_CLUSTER_BODY_DELTA = 96;
 

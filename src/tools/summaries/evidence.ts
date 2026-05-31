@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, topCounts, type Summary } from "./common";
+import { asArray, increment, isRecord, topCounts, type Summary } from "./common.js";
 
 export function summarizeEvidenceData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };

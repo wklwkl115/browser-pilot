@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared";
+import { asArray, increment, isRecord, resultItems, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeSqliProbeData(value: unknown): Summary {
 	const matched = isRecord(value) ? asArray(value.matched).filter(isRecord) : [];

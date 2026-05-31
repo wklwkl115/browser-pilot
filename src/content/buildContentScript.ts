@@ -1,4 +1,4 @@
-import { BROWSER_NOISE_SELECTORS } from "../scan/noiseRules.ts";
+import { BROWSER_NOISE_SELECTORS } from "../scan/noiseRules.js";
 
 export type BrowserContentOptions = {
 	selector?: string;

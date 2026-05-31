@@ -1,0 +1,11 @@
+pre-commit:
+  commands:
+    sync-protocol:
+      glob: "bridge/native_command_schema.json"
+      run: npm run sync:protocol && git add bridge/pi_browser_bridge/native_command_schema.json bridge_src/service_worker/protocol.ts src/protocol/nativeProtocol.ts src/protocol/nativeActionMetadata.ts src/protocol/nativeErrorCodes.ts docs/generated/native-protocol.generated.md
+    # Baseline ESLint on staged sources. Warn-only today (exits 0) → non-blocking;
+    # starts blocking only for rules later ratcheted to "error". Loads type info,
+    # so expect a few seconds — move to a pre-push hook if it drags on commits.
+    lint:
+      glob: "*.{ts,js,mjs,cjs}"
+      run: npx eslint {staged_files}

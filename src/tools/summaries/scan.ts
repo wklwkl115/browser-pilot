@@ -1,4 +1,4 @@
-import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common";
+import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
 
 export type ScanSummaryOptions = {
 	detailLevel?: unknown;

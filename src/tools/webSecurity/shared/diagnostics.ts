@@ -1,5 +1,5 @@
-import { createCodedError } from "../../../utils/codedError";
-import { normalizeError, suppressErrorStack } from "../../../utils/errors";
+import { createCodedError } from "../../../utils/codedError.js";
+import { normalizeError, suppressErrorStack } from "../../../utils/errors.js";
 
 export type WebSecurityErrorEnvelopeConfig = {
 	toolName: string;

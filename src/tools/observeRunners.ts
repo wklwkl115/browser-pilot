@@ -1,18 +1,18 @@
-import { buildContentScript } from "../content/buildContentScript";
-import { BrowserBridgeError } from "../driver/errors";
-import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor";
-import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
-import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata";
-import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
-import { buildScanScript } from "../scan/buildScanScript";
-import { createCodedError } from "../utils/codedError";
-import { isRecord, normalizeTabId } from "../utils/params";
-import { resolveArtifactPath } from "./artifacts";
-import { assertBridgeCommandSucceeded } from "./bridgeResultValidation";
-import { evaluatePageScriptDirect } from "./pageScriptEvaluation";
-import { summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index";
-import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter";
-import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared";
+import { buildContentScript } from "../content/buildContentScript.js";
+import { BrowserBridgeError } from "../driver/errors.js";
+import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor.js";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
+import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import { buildScanScript } from "../scan/buildScanScript.js";
+import { createCodedError } from "../utils/codedError.js";
+import { isRecord, normalizeTabId } from "../utils/params.js";
+import { resolveArtifactPath } from "./artifacts.js";
+import { assertBridgeCommandSucceeded } from "./bridgeResultValidation.js";
+import { evaluatePageScriptDirect } from "./pageScriptEvaluation.js";
+import { summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
+import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter.js";
+import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared.js";
 
 export const DEFAULT_CONTENT_TIMEOUT_MS = 35_000;
 export const MIN_CONTENT_TIMEOUT_MS = 100;
@@ -130,7 +130,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			leaseOwnerHash: server.leaseOwnerHash(browserSessionId, trackedTabId),
 			snapshotId: snapshotMeta.snapshotId,
 			sourceMode: "scan",
-		}, onUpdate, async (handle): Promise<import("../utils/toolResult").PiTextToolResult> => {
+		}, onUpdate, async (handle): Promise<import("../utils/toolResult.js").PiTextToolResult> => {
 			await handle.update({ progress: 80, details: { tabs_count: tabs.length } });
 			return await jsonToolResult(tabsOnlyData, resultParams, ctx, {
 				toolName: "browser_observe",

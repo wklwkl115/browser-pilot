@@ -1,8 +1,8 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes";
-import { createCodedError } from "../../../utils/codedError";
-import { redactWebSecurityDiagnosticValue } from "./diagnostics";
-import { isRecord } from "./normalize";
+import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
+import { createCodedError } from "../../../utils/codedError.js";
+import { redactWebSecurityDiagnosticValue } from "./diagnostics.js";
+import { isRecord } from "./normalize.js";
 
 export type MatureBridgeLauncherSource = "param" | "env" | "auto";
 

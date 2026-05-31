@@ -6,4 +6,4 @@ export {
 	registerHttpReplayTool,
 	registerSqliTool,
 	registerTemplateTool,
-} from "./webSecurity/register/index";
+} from "./webSecurity/register/index.js";

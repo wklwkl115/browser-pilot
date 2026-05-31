@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common";
+import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common.js";
 
 function safeUrlHost(url: unknown): string {
 	try { return new URL(String(url || "")).host; }

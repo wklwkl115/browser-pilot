@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BrowserBridgeSnapshot, BrowserObservationSnapshotInfo } from "./types";
+import type { BrowserBridgeSnapshot, BrowserObservationSnapshotInfo } from "./types.js";
 
 const DEFAULT_SNAPSHOT_TTL_MS = 5 * 60_000;
 

@@ -1,5 +1,5 @@
-import { textPreview, type Summary } from "../common";
-import { isRecord } from "../common";
+import { textPreview, type Summary } from "../common.js";
+import { isRecord } from "../common.js";
 
 export function summarizeWasmWatBridgeData(value: unknown): Summary {
 	const root = isRecord(value) ? value : {};

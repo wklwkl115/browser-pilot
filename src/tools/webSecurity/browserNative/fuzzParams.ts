@@ -1,10 +1,10 @@
-import { createCodedError } from "../../../utils/codedError";
-import { matchesStatusBodyResult, responseChangeDelta, responseDeltaClassifier } from "../shared/baseline";
-import { compactStep, extractTitle, redirectLocation, responseBodyHash } from "../shared/http";
-import { multipartContentTypeVariants } from "../shared/multipart";
-import { isRecord, numericList, positiveInt, readWordlist, sleep, stringList } from "../shared/normalize";
-import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay";
-import type { FuzzParamsOptions } from "../shared/types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { matchesStatusBodyResult, responseChangeDelta, responseDeltaClassifier } from "../shared/baseline.js";
+import { compactStep, extractTitle, redirectLocation, responseBodyHash } from "../shared/http.js";
+import { multipartContentTypeVariants } from "../shared/multipart.js";
+import { isRecord, numericList, positiveInt, readWordlist, sleep, stringList } from "../shared/normalize.js";
+import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay.js";
+import type { FuzzParamsOptions } from "../shared/types.js";
 
 type NormalizedFuzzParamsOptions = ReturnType<typeof normalizeReplayOptions> & {
 	locations: string[];

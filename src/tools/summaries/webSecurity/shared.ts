@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common";
+import { asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
 
 export { asArray, increment, isRecord, summaryTable, textPreview, topCounts, type Summary };
 

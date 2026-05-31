@@ -1,6 +1,6 @@
-import { textPreview, type Summary, summaryTable } from "../common";
-import type { JsAstArtifactAnalysis } from "../../webSecurity/shared/jsAstArtifact";
-import { isRecord } from "../common";
+import { textPreview, type Summary, summaryTable } from "../common.js";
+import type { JsAstArtifactAnalysis } from "../../webSecurity/shared/jsAstArtifact.js";
+import { isRecord } from "../common.js";
 
 function diagnosticsPreview(value: unknown): Record<string, unknown>[] {
 	if (!Array.isArray(value)) return [];

@@ -64,12 +64,20 @@ export type BrowserTabLeaseInfo = {
 	lastSeenAt: number;
 };
 
+export type BrowserReleasedTabLeaseInfo = BrowserTabLeaseInfo & {
+	releaseReason: "ttl" | "disconnect";
+};
+
 export type BrowserUiLockInfo = {
 	browserSessionId: string;
 	toolName: string;
 	createdAt: number;
 	lastSeenAt: number;
 	count: number;
+};
+
+export type BrowserReleasedUiLockInfo = BrowserUiLockInfo & {
+	releaseReason: "ttl" | "disconnect";
 };
 
 export type BrowserCommandQueueInfo = {

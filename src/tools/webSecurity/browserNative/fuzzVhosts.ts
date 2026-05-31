@@ -1,11 +1,11 @@
 import http from "node:http";
 import https from "node:https";
 import { Buffer } from "node:buffer";
-import { createCodedError } from "../../../utils/codedError";
-import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline";
-import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
-import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
-import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline.js";
+import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
+import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
+import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types.js";
 
 type TlsCertificateSummary = Record<string, unknown>;
 type VhostFetchStep = FetchStep & { tlsCertificate?: TlsCertificateSummary };

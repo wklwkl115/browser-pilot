@@ -1,9 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, type MatureBridgeLauncher } from "./matureBridge";
-import { describeTextArtifact } from "./artifacts";
-import { analyzeWasmArtifact, type WasmArtifactAnalysis } from "./wasmArtifact";
+import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, type MatureBridgeLauncher } from "./matureBridge.js";
+import { describeTextArtifact } from "./artifacts.js";
+import { analyzeWasmArtifact, type WasmArtifactAnalysis } from "./wasmArtifact.js";
 
 export type WasmWatBridgeOptions = {
 	path: string;

@@ -60,7 +60,7 @@ async function patchExtensionPort(extensionDir, bridgePort) {
 	await writeFile(serviceWorkerPath, source, "utf8");
 }
 function startNodeSmoke(env) {
-	const child = spawn(process.execPath, ["--no-warnings", "--experimental-strip-types", "--import", "./scripts/register-ts-extension-loader.mjs", "tests/smoke/smoke-browser.mjs"], {
+	const child = spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["tsx", "tests/smoke/smoke-browser.mjs"], {
 			cwd: root,
 			env: { ...process.env, ...env },
 			stdio: ["ignore", "pipe", "pipe"],

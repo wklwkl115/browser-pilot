@@ -1,4 +1,4 @@
-import { isRecord, toTabId } from "./records";
+import { isRecord, toTabId } from "./records.js";
 
 export type DetailLevel = "summary" | "preview" | "full";
 export type ArtifactMode = "text" | "json" | "search" | "sample";

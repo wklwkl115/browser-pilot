@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { BrowserBridgeServer } from "./src/driver/BrowserBridgeServer";
-import { resolveBrowserToolCapabilityProfile } from "./src/tools/capabilityProfile";
-import { registerBrowserCommands } from "./src/tools/commands";
-import { registerBrowserTools } from "./src/tools/registerTools";
+import { BrowserBridgeServer } from "./src/driver/BrowserBridgeServer.js";
+import { resolveBrowserToolCapabilityProfile } from "./src/tools/capabilityProfile.js";
+import { registerBrowserCommands } from "./src/tools/commands.js";
+import { registerBrowserTools } from "./src/tools/registerTools.js";
 
 type SessionUiContext = {
 	ui: {

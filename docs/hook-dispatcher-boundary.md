@@ -35,6 +35,6 @@ The current boundary remains a single self-contained page bundle even after TODO
 
 ## Contract gates
 
-- `tests/contracts/check-bridge-files.mjs` locks the injection filename, service worker exclusion, self-contained page-bundle form, emitted source maps, and this boundary document.
-- `tests/contracts/check-page-scripts.mjs` locks page-script self-containment and absence of background-only APIs.
-- `tests/contracts/check-pi-browser-bridge.mjs` keeps VM behavior coverage for session strict-match, collect no self-noise, monotonic sequence, listener cleanup, and redact pattern budgets.
+- `tests/contracts/protocol/check-bridge-files.mjs` locks the injection filename, service worker exclusion, self-contained page-bundle form, emitted source maps, and this boundary document.
+- `tests/contracts/runtime/check-page-scripts.mjs` locks page-script self-containment and absence of background-only APIs.
+- `tests/contracts/protocol/check-pi-browser-bridge.mjs` keeps VM behavior coverage for session strict-match, collect no self-noise, monotonic sequence, listener cleanup, and redact pattern budgets.

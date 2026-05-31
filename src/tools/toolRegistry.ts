@@ -1,13 +1,13 @@
-import { registerArtifactTool } from "./registerArtifactTool";
-import { registerCommandTool } from "./registerCommandTool";
-import { registerEvidenceTool } from "./registerEvidenceTool";
-import { registerExecuteTool } from "./registerExecuteTool";
-import { registerFrameTool, registerHookTool, registerNetworkTool, registerWaitTool } from "./registerNativeActionTools";
-import { registerObserveTool } from "./registerObserveTool";
-import { registerPickTool } from "./registerPickTool";
-import { registerScreenshotTool } from "./registerScreenshotTool";
-import { registerTabsTool } from "./registerTabsTool";
-import { registerDownloadTool, registerUploadTool } from "./registerTransferTools";
+import { registerArtifactTool } from "./registerArtifactTool.js";
+import { registerCommandTool } from "./registerCommandTool.js";
+import { registerEvidenceTool } from "./registerEvidenceTool.js";
+import { registerExecuteTool } from "./registerExecuteTool.js";
+import { registerFrameTool, registerHookTool, registerNetworkTool, registerWaitTool } from "./registerNativeActionTools.js";
+import { registerObserveTool } from "./registerObserveTool.js";
+import { registerPickTool } from "./registerPickTool.js";
+import { registerScreenshotTool } from "./registerScreenshotTool.js";
+import { registerTabsTool } from "./registerTabsTool.js";
+import { registerDownloadTool, registerUploadTool } from "./registerTransferTools.js";
 import {
 	registerCallbackOastTool,
 	registerCookieAnalyzeTool,
@@ -16,8 +16,8 @@ import {
 	registerHttpReplayTool,
 	registerSqliTool,
 	registerTemplateTool,
-} from "./registerWebSecurityTools";
-import type { ToolRegistrar } from "./toolShared";
+} from "./registerWebSecurityTools.js";
+import type { ToolRegistrar } from "./toolShared.js";
 
 export const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerTabsTool,

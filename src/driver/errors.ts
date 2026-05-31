@@ -1,5 +1,5 @@
-import { type NativeErrorCode, normalizeNativeErrorCode } from "../protocol/nativeErrorCodes";
-import { normalizeError } from "../utils/errors";
+import { type NativeErrorCode, normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import { normalizeError } from "../utils/errors.js";
 
 export class BrowserBridgeError extends Error {
 	readonly code: NativeErrorCode;

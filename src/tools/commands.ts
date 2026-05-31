@@ -2,11 +2,11 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer";
-import { stableJson } from "../utils/json";
-import { runJsAstShell } from "./webSecurity/shared/jsAstShell";
-import { runWasmShell } from "./webSecurity/shared/wasmShell";
-import { parseBrowserWsArgs, runWsShell } from "./webSecurity/shared/wsShell";
+import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import { stableJson } from "../utils/json.js";
+import { runJsAstShell } from "./webSecurity/shared/jsAstShell.js";
+import { runWasmShell } from "./webSecurity/shared/wasmShell.js";
+import { parseBrowserWsArgs, runWsShell } from "./webSecurity/shared/wsShell.js";
 
 type EnsureStarted = () => Promise<BrowserBridgeServer>;
 

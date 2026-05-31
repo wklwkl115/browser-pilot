@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { BrowserActiveOperationInfo } from "./types";
+import type { BrowserActiveOperationInfo } from "./types.js";
 
 function ownerHash(value: string | undefined): string | undefined {
 	if (!value) return undefined;

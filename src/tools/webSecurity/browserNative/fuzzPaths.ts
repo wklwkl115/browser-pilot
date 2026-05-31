@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { createCodedError } from "../../../utils/codedError";
-import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster } from "../shared/baseline";
-import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http";
-import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize";
-import type { CookieProvider, HeaderMap, RawFuzzPathsOptions } from "../shared/types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster } from "../shared/baseline.js";
+import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
+import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
+import type { CookieProvider, HeaderMap, RawFuzzPathsOptions } from "../shared/types.js";
 
 const MAX_FUZZ_DEPTH = 5;
 const BASELINE_REQUEST_BUDGET_PER_ROOT = 1_000;

@@ -1,9 +1,9 @@
 import { mkdtemp, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { detectApiSpec, detectGraphqlSchema, endpointKindFor, extractAttributeUrls, extractForms, extractKnownFileUrls, extractManifestUrls, extractScriptSources, extractServiceWorkerCacheRoutes, extractServiceWorkerUrls, extractServiceWorkerVersionSummary, extractSourceMapUrls, extractStringUrls, inScope, knownFilePaths, normalizeUrlForVisit, parseSourceMapDetails, shouldProbeGraphqlIntrospection } from "./crawlExtractors";
-import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseBodyHash, sanitizeFetchHeaders } from "../shared/http";
-import { isRecord, positiveInt } from "../shared/normalize";
-import type { CrawlOptions, HeaderMap, WebFetchOptions } from "../shared/types";
+import { detectApiSpec, detectGraphqlSchema, endpointKindFor, extractAttributeUrls, extractForms, extractKnownFileUrls, extractManifestUrls, extractScriptSources, extractServiceWorkerCacheRoutes, extractServiceWorkerUrls, extractServiceWorkerVersionSummary, extractSourceMapUrls, extractStringUrls, inScope, knownFilePaths, normalizeUrlForVisit, parseSourceMapDetails, shouldProbeGraphqlIntrospection } from "./crawlExtractors.js";
+import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
+import { isRecord, positiveInt } from "../shared/normalize.js";
+import type { CrawlOptions, HeaderMap, WebFetchOptions } from "../shared/types.js";
 
 const GRAPHQL_INTROSPECTION_QUERY = "query PiBrowserToolsIntrospection { __schema { queryType { name } mutationType { name } subscriptionType { name } types { name fields { name args { name } } } } }";
 

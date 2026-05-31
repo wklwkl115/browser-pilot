@@ -46,7 +46,7 @@
 - [x] 性质判定：小成本验证体验修复；目标是让 `npm run smoke:browser` 在 `127.0.0.1:18765` 被占用时返回可执行诊断，而不是只暴露裸 `EADDRINUSE`。
 - [x] 实现：新增 `tests/smoke/smokePortDiagnostics.mjs`；smoke 启动失败时区分 `agent_occupies`、`orphan_socket`、`unknown_owner`，尽量输出 PID、进程名、命令行、health 探测，并写入 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` 记录。
 - [x] 文档：已更新 `AI_INSTALL.md` 和 README 维护入口，说明本地 smoke 与常驻 agent/bridge 互斥；脚本只诊断，不自动 kill 用户进程。
-- [x] 契约：新增 `tests/contracts/check-smoke-diagnostics.mjs` 并接入 `npm run check`，锁定分类语义、artifact step 名和文档 reason。
+- [x] 契约：新增 `tests/contracts/runtime/check-smoke-diagnostics.mjs` 并接入 `npm run check`，锁定分类语义、artifact step 名和文档 reason。
 - [x] 验证：`check-smoke-diagnostics` 模拟占用端口与空闲端口两种场景；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 已通过；未引入 puppeteer/playwright。
 
 ## 186. Bridge ambient/global 类型收紧（支柱二前置）
@@ -125,7 +125,7 @@
 - [x] 性质判定：package-portability blocker；manifest 已指向 `bridge/pi_browser_bridge/dist/**`，因此 npm package、干净 checkout 的安装路径必须有可运行 dist runtime，不能只依赖本地已有 build 产物。
 - [x] 事实复核：`npm pack --dry-run --json` 修复前只包含 `bridge/pi_browser_bridge/dist/.gitignore`，缺少 `dist/service-worker.js`、`dist/content.js`、`dist/hook_dispatcher.js`、`dist/disable_dialogs.js`、source map 与 `build-manifest.json`；根因是 generated dist 目录内 `.gitignore` 被 npm 继承且无 package include/prepack 边界。
 - [x] 实现决策：采用 package-portable 方案：`prepack` 运行 `node scripts/build-bridge.mjs --quiet`，`package.json.files` 明确包含 `bridge/`、`bridge_src/`、`scripts/`、`tests/`、`src/`、`docs/` 等发布边界，`build:bridge` 生成 dist `.npmignore` 覆盖 dist `.gitignore` 的 npm 打包语义；无私有绝对路径，不要求用户手动 build 才能加载扩展。
-- [x] 契约：新增 `tests/contracts/check-package-files.mjs` 并接入 `check:package` / `npm run check`；契约解析 `npm pack --dry-run --json`，强制包内包含 manifest 指向的 service worker/content/disable-dialogs dist、hook dispatcher、source maps、build manifest、manifest、native schema、bridge source 和 build script，禁止只包含 `dist/.gitignore` 的坏状态。
+- [x] 契约：新增 `tests/contracts/drift/check-package-files.mjs` 并接入 `check:package` / `npm run check`；契约解析 `npm pack --dry-run --json`，强制包内包含 manifest 指向的 service worker/content/disable-dialogs dist、hook dispatcher、source maps、build manifest、manifest、native schema、bridge source 和 build script，禁止只包含 `dist/.gitignore` 的坏状态。
 - [x] 验证：`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run build:bridge"` 通过；`npm pack --dry-run --json` 修复后包内包含 207 个文件与完整 dist runtime；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check:package"` 通过；`cmd.exe /c "cd /d D:\Pi\agent\extensions\pi-browser-tools\pi-browser-tools-bridge-refactor-todos && npm run check"` 通过。
 
 ## 196. 支柱二终态设计修正：从“拼接兼容 bundle”转为真实 ESM 依赖图

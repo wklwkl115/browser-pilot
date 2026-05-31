@@ -11,7 +11,7 @@
 ## 204. 支柱五：本地并发、生命周期与泄漏验证
 
 - [x] 性质判定：风险导向测试增强，不追求固定覆盖率数字，不引入 Playwright/Puppeteer 作为默认依赖。
-- [x] 覆盖范围：新增 `tests/contracts/check-lifecycle.mjs` fake WebSocket fixture，覆盖多浏览器同数值 `tabId`、`selectBrowser`、WS 断连/重连、MV3 service worker restart、pending request cleanup、tab command queue、wait/network/hook 长任务。
+- [x] 覆盖范围：新增 `tests/contracts/runtime/check-lifecycle.mjs` fake WebSocket fixture，覆盖多浏览器同数值 `tabId`、`selectBrowser`、WS 断连/重连、MV3 service worker restart、pending request cleanup、tab command queue、wait/network/hook 长任务。
 - [x] Artifact：失败时写入 `.pi/browser-artifacts/lifecycle-fixture-failure.json`，包含 bridge snapshot、pending、target selection、listener/CDP/network recorder 状态；cookie/token/authorization/body/postData 等字段按字段名脱敏，不泄漏正文。
 - [x] 契约：本地 fixture 使用真实 `BrowserBridgeServer`、`BrowserWaitSupervisor` 与 fake WebSocket 行为断言复现生命周期问题；未用源码字符串检查替代行为断言。
 - [x] 验证：新增 `check:lifecycle` 并纳入 `npm run check`/`quality:local`；isolated smoke 仍保持单独手动运行。
@@ -79,7 +79,7 @@
 ## 212. 支柱五：可重放 runtime fixture 库
 
 - [x] 性质判定：本地可复现测试资产建设，减少复杂行为只能靠真实浏览器 smoke 发现的问题；不新增 callable tool，不引入浏览器自动化重依赖。
-- [x] 覆盖：新增 `tests/contracts/check-runtime-fixtures.mjs`，覆盖 network body/postData/HAR 与 WebSocket frames、hook session/listener cleanup、wait immediate selector 状态、transfer direct/click download 与 upload、frame evaluate、screenshot visible-tab fallback、callback worker state file 与 stale lock recovery；MV3 restart/lease 继续由 `check:lifecycle` 的 fake WebSocket supervisor fixture 覆盖。
+- [x] 覆盖：新增 `tests/contracts/runtime/check-runtime-fixtures.mjs`，覆盖 network body/postData/HAR 与 WebSocket frames、hook session/listener cleanup、wait immediate selector 状态、transfer direct/click download 与 upload、frame evaluate、screenshot visible-tab fallback、callback worker state file 与 stale lock recovery；MV3 restart/lease 继续由 `check:lifecycle` 的 fake WebSocket supervisor fixture 覆盖。
 - [x] 形式：使用本地 HTTP/WS fixture、fake Chrome/CDP API、可重放 bridge envelopes；未引入 Playwright/Puppeteer。
 - [x] Artifact：成功摘要写 `.pi/browser-artifacts/fixtures/runtime-fixtures-summary.json`，失败诊断写 `.pi/browser-artifacts/fixtures/runtime-fixtures-failure.json`；临时输入写测试临时目录，callback session 结束后清理，诊断按字段名脱敏 cookie/token/authorization/body/postData/payloadData。
 - [x] 验证：新增 `check:runtime-fixtures` 并纳入 `npm run check` / `quality:local`；已运行 `npm run check:runtime-fixtures`，最终门禁继续以全量 `npm run check` 与 `npm run quality:local` 复核。

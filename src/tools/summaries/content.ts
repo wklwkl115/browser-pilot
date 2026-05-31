@@ -1,5 +1,5 @@
-import { truncateText } from "../../utils/json";
-import { asArray, isRecord, type Summary } from "./common";
+import { truncateText } from "../../utils/json.js";
+import { asArray, isRecord, type Summary } from "./common.js";
 
 export function summarizeContentData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };

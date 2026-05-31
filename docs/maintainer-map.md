@@ -7,13 +7,16 @@
 ## 运行链路
 
 1. `index.ts`
-   - 扩展入口
+   - 扩展源码入口（Pi runtime 通过 `pi.extensions:["./index.ts"]` 加载）
    - 启动 `BrowserBridgeServer`
    - 解析 capability profile
    - 注册 Pi commands 与 `browser_*` tools
+   - 发布产物入口对应 `dist/index.js`
 
 2. `src/driver/*`
    - `BrowserBridgeServer.ts`：thin facade
+   - `BrowserBridgeCommandService.ts`：command validation / target planning / payload transport
+   - `BrowserBridgeClientMessageService.ts`：WS client register/unregister/message route
    - `BrowserBridgeHttpServer.ts`：HTTP/WS 接入
    - `BrowserBridgeClientRegistry.ts`：浏览器扩展 client
    - `BrowserTabSessionRouter.ts`：tab / browser session / implicit target 路由
@@ -21,9 +24,10 @@
    - `BrowserWaitSupervisor.ts`：长 wait supervisor
    - `BrowserObservationSnapshotRegistry.ts` / `BrowserOperationRegistry.ts`：snapshot / operation metadata
 
-3. `src/tools/toolRegistry.ts` → `src/tools/registerTools.ts`
+3. `src/tools/toolRegistry.ts` → `src/tools/registerTools.ts` → `src/tools/distillerRegistry.ts`
    - `toolRegistry.ts`：唯一工具注册顺序与 profile gating
    - `registerTools.ts`：只遍历 registrar，不放领域逻辑
+   - `distillerRegistry.ts`：fallback 摘要分发注册表；runtime 与 direct-import contract 共用初始化路径
 
 4. `src/tools/register*.ts`
    - callable tool schema、prompt 文案、tool shell
@@ -55,11 +59,12 @@
 
 ### 改 callable tool schema / 描述 / summary / artifact
 - 先看：`src/tools/register*.ts`、`src/tools/summaries/*`
+- 若改 fallback 摘要分发：同时看 `src/tools/distillerRegistry.ts`、`src/tools/summaries/registerBuiltinDistillers.ts`
 - 若是 native command tool：同时看 `src/protocol/nativeActionMetadata.ts`
 - 同步：README、CHANGELOG、contracts、必要时全局 skill
 
 ### 改 tab/session/queue/lease/wait 行为
-- 先看：`src/driver/*`
+- 先看：`src/driver/*` 与 `docs/driver-architecture.md`
 - 再看：对应 tool register 与 contracts
 - 若涉及 MV3 生命周期：同时看 `bridge_src/service_worker/*`
 
@@ -89,6 +94,7 @@
 2. 协议改动
    - `npm run sync:protocol`
    - `npm run check:protocol`
+   - 提交前确认 `lefthook` 已通过 `prepare` 安装；schema 改动时 pre-commit 会自动 sync + stage 生成产物
 
 3. 最终门禁
    - `npm run check`

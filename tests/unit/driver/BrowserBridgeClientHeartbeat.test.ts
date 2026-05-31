@@ -20,14 +20,16 @@ test("BrowserBridgeClientHeartbeat pings live clients and terminates stale clien
 	const stale = fakeSocket();
 	registry.register(fresh);
 	const staleInfo = registry.register(stale);
-	staleInfo.lastSeenAt = Date.now() - 90_000;
+	const now = Date.now();
+	staleInfo.lastSeenAt = now - 90_000;
 	const staleClients: WebSocket[] = [];
-	const heartbeat = new BrowserBridgeClientHeartbeat(registry, (ws) => staleClients.push(ws));
+	const ticks: number[] = [];
+	const heartbeat = new BrowserBridgeClientHeartbeat(registry, (ws) => staleClients.push(ws), { onTick: (tickNow) => ticks.push(tickNow) });
 
 	const originalWarn = console.warn;
 	console.warn = () => {};
 	try {
-		heartbeat.probe();
+		heartbeat.probe(now);
 	} finally {
 		console.warn = originalWarn;
 	}
@@ -36,4 +38,5 @@ test("BrowserBridgeClientHeartbeat pings live clients and terminates stale clien
 	assert.equal(registry.info(fresh)?.lastPingAt !== undefined, true);
 	assert.equal(stale.terminated, true);
 	assert.deepEqual(staleClients, [stale]);
+	assert.deepEqual(ticks, [now]);
 });

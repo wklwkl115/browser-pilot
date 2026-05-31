@@ -77,7 +77,7 @@
 - [x] 范围：`src/tools/toolShared.ts`、`src/tools/toolAdapter.ts`、`src/driver/types.ts`、`BrowserBridgeServer.ts`、`BrowserTabSessionRouter.ts`、`src/driver/orchestration/*`、tool contracts、generated docs、README/skill 文案。
 - [x] 关键设计：`target` 是 tool schema，不进入 `bridge/native_command_schema.json`；支持 `tabId/browserId/orchestrationId/sessionTag/tabRole`，预留 `windowId/groupId/profileId/requireOwned`；`tabId` 与 `target.tabId` 或 command body `tabId` 冲突必须结构化失败；无 `orchestrationId` 的 `sessionTag/tabRole` 只能在唯一匹配时解析，否则 `TARGET_AMBIGUOUS`。
 - [x] 预期产出：新增 `docs/browser-target-resolver.md`，覆盖目标/非目标、覆盖工具清单、TypeBox schema 草案、解析优先级、冲突规则、driver resolver API 草案、错误码/diagnostics 与 TODO 224 输入条件；`docs/browser-orchestration-next-roadmap.md` 与 README 已指向该设计。
-- [x] Contract：`tests/contracts/check-protocol-contract.mjs` 断言 native command schema 不暴露 tool-level logical target fields：`target/sessionTag/tabRole/orchestrationId/profileId/groupId/requireOwned`。
+- [x] Contract：`tests/contracts/protocol/check-protocol-contract.mjs` 断言 native command schema 不暴露 tool-level logical target fields：`target/sessionTag/tabRole/orchestrationId/profileId/groupId/requireOwned`。
 - [x] 验收条件：`npm run check:protocol`、`npm run check:tools`、`npm run check:tool-docs` 已通过；本项不实现 runtime target resolver，不修改 callable tool schemas，不更新 skill 为当前能力。
 - [x] 风险/回滚：风险是破坏现有 `tabId` 兼容或引入静默 fallback；回滚为继续只使用 legacy `tabId`。
 
@@ -234,7 +234,7 @@
 
 - [x] 优先级：P3；依赖：无；本项不替代 TODO 234-237 的 orchestration/runtime 证据，只补强 isolated smoke 自举体验。
 - [x] 目标：消除缺少 `bridge/pi_browser_bridge/dist/build-manifest.json` 时的脆弱前置条件，让 isolated smoke 更接近一键 gate。
-- [x] 范围：`tests/smoke/isolatedSmokePreflight.mjs`、`tests/smoke/smoke-browser-isolated.mjs`、`tests/contracts/check-smoke-diagnostics.mjs`、release diagnostics 与维护文档。
+- [x] 范围：`tests/smoke/isolatedSmokePreflight.mjs`、`tests/smoke/smoke-browser-isolated.mjs`、`tests/contracts/runtime/check-smoke-diagnostics.mjs`、release diagnostics 与维护文档。
 - [x] 决策：启动前显式检查 `dist/build-manifest.json`、manifest 指向的 dist runtime 与 `dist/hook_dispatcher.js`；当前工作树 bridge 缺 dist 时默认自动执行 `node scripts/build-bridge.mjs --quiet`，`PI_BROWSER_SMOKE_AUTO_BUILD=0` 可关闭自动 build 并稳定返回 `preflight.reason:"autobuild_disabled"`、`missingPaths` 与 `npm run build:bridge` 修复提示；不得静默跳过 build/runtime 校验。
 - [x] 契约：`check-smoke-diagnostics.mjs` 现在用临时 fixture 真实验证缺 dist + auto-build disabled / enabled 两条路径，并锁定 isolated/release artifact 的 `preflight` diagnostics。
 - [x] 验收条件：缺少 dist 时 smoke 给出确定性可复现结果；`npm run check` 通过；针对缺少 `build-manifest.json` 的最小 isolated smoke 回归通过。

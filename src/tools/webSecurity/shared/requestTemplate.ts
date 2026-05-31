@@ -1,9 +1,9 @@
 import { Buffer } from "node:buffer";
-import { createCodedError } from "../../../utils/codedError";
-import { absoluteUrl, headersArrayToMap, normalizeHeaders, setHeaderCaseInsensitive } from "./http";
-import { buildMultipartBody } from "./multipart";
-import { asString, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod } from "./normalize";
-import type { HeaderMap, ReplayOptions, ReplayRequest } from "./types";
+import { createCodedError } from "../../../utils/codedError.js";
+import { absoluteUrl, headersArrayToMap, normalizeHeaders, setHeaderCaseInsensitive } from "./http.js";
+import { buildMultipartBody } from "./multipart.js";
+import { asString, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod } from "./normalize.js";
+import type { HeaderMap, ReplayOptions, ReplayRequest } from "./types.js";
 
 function requestTemplateError(message: string, details: Record<string, unknown> = {}): Error {
 	return createCodedError({ name: "RequestTemplateError", code: "INVALID_RULE", message, details, suppressStack: false });
