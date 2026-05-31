@@ -31,6 +31,7 @@ import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProf
 import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
 import { registerBrowserResultResource, listResources, clearResourceStore } from "./resourceStore.js";
 import { readBrowserResultResource } from "./resourceReader.js";
+import { resolveIngressHandles } from "./handleResolver.js";
 
 // ─── Bridge lifecycle ───────────────────────────────────────────────────────
 
@@ -100,10 +101,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		};
 	}
 
+	// Phase 6: Resolve browser-result:// handle strings in declared fields before
+	// TypeBox validation. Handles are expanded to their typed JSON payloads;
+	// diagnostics echo handle meta (not payload). Kind mismatch / expired / not
+	// found return structured errors.
+	const handleResult = await resolveIngressHandles(name, args ?? {});
+	if (!handleResult.ok) {
+		return {
+			content: [{ type: "text" as const, text: `Handle resolution error [${handleResult.code}]: ${handleResult.error}` }],
+			isError: true,
+		};
+	}
+
 	// Validate and coerce args via TypeBox before reaching tool execute.
-	// This replicates the Pi framework's Value.Convert + Check behavior so
-	// MCP callers get the same coercion and rejection semantics.
-	const validation = validateMcpToolArgs(def.parameters, args ?? {});
+	// Uses handle-expanded args so TypeBox sees the real payload, not the URI.
+	const validation = validateMcpToolArgs(def.parameters, handleResult.args);
 	if (!validation.ok) {
 		return {
 			content: [{ type: "text" as const, text: validation.error }],
