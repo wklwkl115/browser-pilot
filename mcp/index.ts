@@ -83,23 +83,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
 		throw new Error(`${hookResult.code}: ${hookResult.error}`);
 	}
+
+	// Phase 8: capability-gated browser_artifact retirement.
+	// The server declares resources:{} capability. Clients that have completed
+	// initialize (clientCaps != null) are modern MCP clients that support
+	// resources/read for artifact access. For those clients, omit browser_artifact
+	// from tools/list. Pre-initialize or legacy clients keep it.
+	// Override: set PI_BROWSER_MCP_KEEP_ARTIFACT=1 to always expose browser_artifact.
+	const clientCaps = server.getClientCapabilities();
+	const keepArtifact = process.env["PI_BROWSER_MCP_KEEP_ARTIFACT"] === "1";
+	const clientIsModern = clientCaps != null;
+	const visibleTools = (!keepArtifact && clientIsModern)
+		? toolDefs.filter((def) => def.name !== "browser_artifact")
+		: toolDefs;
+
 	const response = ({
-	tools: toolDefs.map((def) => {
-		const distillerDef = getDistillerDefinition(def.name);
-		return {
-			name: def.name,
-			description: def.description,
-			// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
-			inputSchema: (def.parameters ?? { type: "object" }) as any,
-			// outputSchema declared only for tools with an explicit DistillerDefinition.
-			// Clients that support structuredContent will receive the distilled summary.
-			outputSchema: distillerDef?.summarySchema as any,
-			// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
-			annotations: TOOL_ANNOTATIONS[def.name],
-		};
-	}),
+		tools: visibleTools.map((def) => {
+			const distillerDef = getDistillerDefinition(def.name);
+			return {
+				name: def.name,
+				description: def.description,
+				// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
+				inputSchema: (def.parameters ?? { type: "object" }) as any,
+				// outputSchema declared only for tools with an explicit DistillerDefinition.
+				// Clients that support structuredContent will receive the distilled summary.
+				outputSchema: distillerDef?.summarySchema as any,
+				// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
+				annotations: TOOL_ANNOTATIONS[def.name],
+			};
+		}),
 	});
-	emitLog(ctx, Date.now() - ctx.startedAt, "ok");
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { toolCount: visibleTools.length, resourcesCapable: clientIsModern });
 	return response;
 });
 

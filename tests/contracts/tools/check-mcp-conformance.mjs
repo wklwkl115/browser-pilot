@@ -76,6 +76,13 @@ assert(validationSrc.includes("export function validateMcpToolArgs"), "mcp/valid
 assert(validationSrc.includes("McpValidationResult"), "mcp/validation.ts must export McpValidationResult type");
 assert(validationSrc.includes("ok: true") && validationSrc.includes("ok: false"), "McpValidationResult must discriminate ok:true/false");
 
+// ── Phase 8: browser_artifact capability-gated retirement ────────────────────
+
+assert(indexSrc.includes("browser_artifact"), "mcp/index.ts Phase 8 must reference browser_artifact by name");
+assert(indexSrc.includes("visibleTools"), "mcp/index.ts Phase 8 must define visibleTools filtered list");
+assert(indexSrc.includes("PI_BROWSER_MCP_KEEP_ARTIFACT"), "mcp/index.ts Phase 8 must support opt-out via PI_BROWSER_MCP_KEEP_ARTIFACT env var");
+assert(indexSrc.includes("clientIsModern"), "mcp/index.ts Phase 8 must use modern-client heuristic for retirement decision");
+
 // ── Phase 5: nextActions adapter transformation ───────────────────────────────
 
 assert(indexSrc.includes("browser_artifact path="), "mcp/index.ts Phase 5 must detect browser_artifact path= in nextActions");
