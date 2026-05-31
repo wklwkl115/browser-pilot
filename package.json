@@ -79,6 +79,7 @@
     "check:mcp-tools-list": "tsx tests/contracts/tools/check-mcp-tools-list.mjs",
     "check:mcp-resources": "tsx tests/contracts/tools/check-mcp-resources.mjs",
     "check:mcp-ingress-handles": "tsx tests/contracts/tools/check-mcp-ingress-handles.mjs",
+    "check:mcp-middleware": "tsx tests/contracts/tools/check-mcp-middleware.mjs",
     "smoke:browser": "tsx tests/smoke/smoke-browser.mjs",
     "smoke:browser:transfer": "tsx tests/smoke/smoke-browser.mjs --transfer",
     "check": "npm run check:all",

@@ -32,6 +32,7 @@ import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
 import { registerBrowserResultResource, listResources, clearResourceStore } from "./resourceStore.js";
 import { readBrowserResultResource } from "./resourceReader.js";
 import { resolveIngressHandles } from "./handleResolver.js";
+import { runHooks, emitLog, timingLogHook, registerHook } from "./middleware.js";
 
 // ─── Bridge lifecycle ───────────────────────────────────────────────────────
 
@@ -62,6 +63,10 @@ registerBrowserTools(adapter, bridgeServer, ensureStarted, {
 
 const toolDefs = adapter.getTools();
 
+// ─── Protocol middleware setup ──────────────────────────────────────────────
+
+registerHook("on_log", timingLogHook);
+
 // ─── Build MCP server ───────────────────────────────────────────────────────
 
 const server = new Server(
@@ -71,7 +76,14 @@ const server = new Server(
 
 // tools/list ─────────────────────────────────────────────────────────────────
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+	const ctx = { method: "tools/list", startedAt: Date.now() };
+	const hookResult = await runHooks("on_list_tools", ctx, null);
+	if (!hookResult.pass) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
+		throw new Error(`${hookResult.code}: ${hookResult.error}`);
+	}
+	const response = ({
 	tools: toolDefs.map((def) => {
 		const distillerDef = getDistillerDefinition(def.name);
 		return {
@@ -86,15 +98,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 			annotations: TOOL_ANNOTATIONS[def.name],
 		};
 	}),
-}));
+	});
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok");
+	return response;
+});
 
 // tools/call ─────────────────────────────────────────────────────────────────
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const { name, arguments: args } = request.params;
+	const ctx = { method: "tools/call", toolName: name, startedAt: Date.now() };
+
+	// Run on_call_tool hooks (auth/profile/rate-limit checks)
+	const hookResult = await runHooks("on_call_tool", ctx, request.params);
+	if (!hookResult.pass) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
+		return {
+			content: [{ type: "text" as const, text: `${hookResult.code}: ${hookResult.error}` }],
+			isError: true,
+		};
+	}
+
 	const def = toolDefs.find((t) => t.name === name);
 
 	if (!def) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: "TOOL_NOT_FOUND" });
 		return {
 			content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
 			isError: true,
@@ -232,6 +260,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			? [...result.content, resourceLink]
 			: result.content;
 
+		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
 		return {
 			content,
 			...(structuredContent != null ? { structuredContent } : {}),
@@ -239,6 +268,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message });
 		return {
 			content: [{ type: "text" as const, text: message }],
 			isError: true,
@@ -274,10 +304,18 @@ server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
 
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 	const uri = request.params.uri;
+	const ctx = { method: "resources/read", startedAt: Date.now() };
+	const hookResult = await runHooks("on_read_resource", ctx, request.params);
+	if (!hookResult.pass) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
+		throw new Error(`${hookResult.code}: ${hookResult.error}`);
+	}
 	const result = await readBrowserResultResource(uri);
 	if (!result.ok) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: result.code });
 		throw new Error(`${result.code}: ${result.error}`);
 	}
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok");
 	return {
 		contents: [result.content],
 	};
