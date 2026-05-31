@@ -21,6 +21,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - Web Security affordance 只补接缝信息，不引入固定 workflow：工具可以返回并列 `possible/common follow-ups`、参数校验和结构化 recovery，但不会自动串联 `crawl -> fuzz -> sqli`、不会自动升级 mode/engine/action，也不会伪造请求模板。
 - Web Security follow-up 工具的 HTTP 目标执行默认由 Node.js `fetch` 直接发起，而不是经浏览器桥；`bindBrowserSession:true` 仅用于可选注入浏览器 cookies，不改变请求发起位置。
 - 参数契约当前采用双层模式：顶层工具参数由 TypeBox + 框架 `Value.Convert + Check` 保护，复杂对象继续由既有 Zod `validateOptionalParams()` 保护；本仓库不会把复杂对象 schema 全量迁回 TypeBox。
+- MCP 标准化 + 渐进式披露执行合同：见 `docs/mcp-standardization-progressive-disclosure-plan.md`。MCP 路必须先补 TypeBox 等价参数校验与 conformance，再分阶段落 `structuredContent`、resources 与 typed handle；不得把顶层参数契约迁到 Zod，也不得新增公开 `browser_*` 工具。
 - jshookmcp 研究只作为能力发现来源；本包不迁移其源码、MCP 架构、工具名、schema、payload、fixture 或文档文本；TODO 241 闭环账本见 `docs/jshookmcp-native-absorption.md`。
 - 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。下阶段深水区能力规划也必须先走 internal primitive / bridge / artifact-first 路线，不能直接把 problem area 变成公开大工具。
 

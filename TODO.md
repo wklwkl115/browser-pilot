@@ -8,6 +8,7 @@
 - 当前新增执行合同：`Web Security affordance / validation / recovery 收口`（保持原子窄工具，不引入固定工作流）；执行顺序、边界、验证计划见 `CURRENT.md`
 - 当前新增执行合同：`共享 helper 去重 / parse 策略 / 防漂移治理`（聚焦 `isRecord`、`recordValue`、内联 object-guard 与核心 `JSON.parse` 热点，不处理生成文件）；执行顺序、授权根、验证计划见 `CURRENT.md`
 - 当前新增执行合同：`bridge runtime hardening / command access schema / silent-catch governance`（聚焦 H-001/H-005 的 driver 问题、H-003/H-004 的 MV3/runtime 问题以及 H-002 的分类 catch 治理，不扩公开工具面）；实施顺序、分类规则与验证计划见 `CURRENT.md`
+- 当前新增执行合同：`docs/mcp-standardization-progressive-disclosure-plan.md`（MCP 标准化 + 渐进式披露；先补 MCP 参数契约与 conformance，再分阶段落 structuredContent / resources / typed handle；不迁移 TypeBox 顶层契约到 Zod，不新增公开 `browser_*` 工具）
 - 最近完成执行合同：`docs/lint-debt-ratchet-plan.md`（已清零 ESLint `0 errors / 172 warnings / 56 files` 基线债务，将合同内规则族从 `warn` 收紧为 `error`，并移除 CI `npm run lint` 的 `continue-on-error`；未引入格式化器，未开启额外 `no-unsafe-*` / `no-explicit-any`，未做全仓 `eslint . --fix`）
 - 当前新增执行合同：`H-002 第二批静默 catch 分类治理`（聚焦 wait/cdp/ws/network/intercept/transport/runtime 的高收益 cleanup 与 recovery 主路径，不做全仓机械替换）；分层清单、暂缓范围与验证计划见 `CURRENT.md`
 - 当前新增执行合同：`M-001 ~ M-011 中严重度工程债收口`（按 M-003 → M-008 → M-005 → M-011 → M-002 → M-001 → M-006 → M-010 → M-004 顺序执行；M-007/M-009 仅归档为已由 H-001 关闭）；边界、非目标与验证计划见 `CURRENT.md`
