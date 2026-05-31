@@ -15,6 +15,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
 	ListToolsRequestSchema,
 	CallToolRequestSchema,
+	ListResourcesRequestSchema,
+	ListResourceTemplatesRequestSchema,
+	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
 
@@ -26,6 +29,8 @@ import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
 import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
 import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
+import { registerBrowserResultResource, listResources, clearResourceStore } from "./resourceStore.js";
+import { readBrowserResultResource } from "./resourceReader.js";
 
 // ─── Bridge lifecycle ───────────────────────────────────────────────────────
 
@@ -60,7 +65,7 @@ const toolDefs = adapter.getTools();
 
 const server = new Server(
 	{ name: "pi-browser-tools", version: "1.0.0" },
-	{ capabilities: { tools: {} } },
+	{ capabilities: { tools: {}, resources: {} } },
 );
 
 // tools/list ─────────────────────────────────────────────────────────────────
@@ -143,21 +148,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		// the compatible text. Extract the summary from the existing DistilledEnvelope
 		// text (which is already the distilled JSON). Pi adapter path is unchanged.
 		let structuredContent: Record<string, unknown> | undefined;
-		if (distillerDef && !result.terminate) {
+		let resourceLink: { type: "resource_link"; uri: string; name: string; mimeType?: string } | undefined;
+
+		if (!result.terminate) {
 			try {
 				const text = result.content[0]?.text ?? "";
 				const envelope = JSON.parse(text) as Record<string, unknown>;
-				const summary = envelope.summary;
-				if (summary != null && typeof summary === "object" && !Array.isArray(summary)) {
-					structuredContent = summary as Record<string, unknown>;
+
+				// Extract structuredContent from summary (for distiller-backed tools).
+				if (distillerDef) {
+					const summary = envelope.summary;
+					if (summary != null && typeof summary === "object" && !Array.isArray(summary)) {
+						structuredContent = summary as Record<string, unknown>;
+					}
+				}
+
+				// Register a resource_link for saved artifacts so clients can use
+				// resources/read instead of browser_artifact. URI never exposes local path.
+				const saved = envelope.saved as Record<string, unknown> | undefined;
+				if (saved?.path && typeof saved.path === "string") {
+					const resourceUri = registerBrowserResultResource({
+						kind: "raw-result",
+						artifactPath: saved.path,
+						name: `${name} result`,
+						description: `Raw result from ${name} call`,
+						mime: typeof saved.mime === "string" ? saved.mime : "application/json",
+						bytes: typeof saved.bytes === "number" ? saved.bytes : undefined,
+						immutable: true,
+					});
+					resourceLink = {
+						type: "resource_link" as const,
+						uri: resourceUri,
+						name: `${name} artifact`,
+						mimeType: typeof saved.mime === "string" ? saved.mime : "application/json",
+					};
 				}
 			} catch {
-				// Best-effort: non-JSON result (e.g. error response) — skip structuredContent.
+				// Best-effort: non-JSON result (e.g. error response) — skip.
 			}
 		}
 
+		const content = resourceLink
+			? [...result.content, resourceLink]
+			: result.content;
+
 		return {
-			content: result.content,
+			content,
 			...(structuredContent != null ? { structuredContent } : {}),
 			isError: result.terminate === true,
 		};
@@ -168,6 +204,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			isError: true,
 		};
 	}
+});
+
+// resources/list ─────────────────────────────────────────────────────────────
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+	resources: listResources().map((r) => ({
+		uri: r.uri,
+		name: r.name,
+		description: r.description,
+		mimeType: r.mime,
+	})),
+}));
+
+// resources/templates/list ────────────────────────────────────────────────────
+
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+	resourceTemplates: [
+		{
+			uriTemplate: "browser-result://{id}",
+			name: "Browser tool result",
+			description: "Raw or distilled result from a browser tool call. Supports ?mode=text|json|search|sample&offset=&limit=&jsonPath=&search=",
+			mimeType: "text/plain",
+		},
+	],
+}));
+
+// resources/read ──────────────────────────────────────────────────────────────
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+	const uri = request.params.uri;
+	const result = await readBrowserResultResource(uri);
+	if (!result.ok) {
+		throw new Error(`${result.code}: ${result.error}`);
+	}
+	return {
+		contents: [result.content],
+	};
 });
 
 // ─── Start ──────────────────────────────────────────────────────────────────
@@ -183,6 +256,7 @@ async function main(): Promise<void> {
 			void (async () => {
 				await server.close();
 				await bridgeServer.stop();
+				clearResourceStore();
 				process.exit(0);
 			})();
 		});

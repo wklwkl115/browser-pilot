@@ -23,8 +23,8 @@ const adapterSrc = read("mcp/adapter.ts");
 
 // ── Capabilities ─────────────────────────────────────────────────────────────
 
-// Must NOT claim capabilities that aren't implemented yet
-assert(!indexSrc.includes("resources: {"), "mcp/index.ts must not declare resources capability before Phase 4");
+// Phase 4: resources capability must be declared (Phase 4+ only)
+assert(indexSrc.includes("resources: {}"), "mcp/index.ts must declare resources capability (Phase 4)");
 assert(!indexSrc.includes("prompts: {"), "mcp/index.ts must not declare prompts capability before it is implemented");
 
 // tools capability must be declared (already present from initial setup)
