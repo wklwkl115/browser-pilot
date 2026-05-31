@@ -25,6 +25,7 @@ import { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
 import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
+import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
 
 // ─── Bridge lifecycle ───────────────────────────────────────────────────────
 
@@ -65,14 +66,20 @@ const server = new Server(
 // tools/list ─────────────────────────────────────────────────────────────────
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-	tools: toolDefs.map((def) => ({
-		name: def.name,
-		description: def.description,
-		// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
-		inputSchema: (def.parameters ?? { type: "object" }) as any,
-		// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
-		annotations: TOOL_ANNOTATIONS[def.name],
-	})),
+	tools: toolDefs.map((def) => {
+		const distillerDef = getDistillerDefinition(def.name);
+		return {
+			name: def.name,
+			description: def.description,
+			// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
+			inputSchema: (def.parameters ?? { type: "object" }) as any,
+			// outputSchema declared only for tools with an explicit DistillerDefinition.
+			// Clients that support structuredContent will receive the distilled summary.
+			outputSchema: distillerDef?.summarySchema as any,
+			// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
+			annotations: TOOL_ANNOTATIONS[def.name],
+		};
+	}),
 }));
 
 // tools/call ─────────────────────────────────────────────────────────────────
@@ -102,6 +109,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const progressToken = request.params._meta?.progressToken;
 	let progressCount = 0;
 
+	const distillerDef = getDistillerDefinition(name);
+
 	try {
 		const result: ExtensionToolResult = await def.execute(
 			String(progressToken ?? `mcp-call-${name}`),
@@ -130,8 +139,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			undefined, // ctx — no editor UI in MCP context
 		);
 
+		// For tools with a declared outputSchema, include structuredContent alongside
+		// the compatible text. Extract the summary from the existing DistilledEnvelope
+		// text (which is already the distilled JSON). Pi adapter path is unchanged.
+		let structuredContent: Record<string, unknown> | undefined;
+		if (distillerDef && !result.terminate) {
+			try {
+				const text = result.content[0]?.text ?? "";
+				const envelope = JSON.parse(text) as Record<string, unknown>;
+				const summary = envelope.summary;
+				if (summary != null && typeof summary === "object" && !Array.isArray(summary)) {
+					structuredContent = summary as Record<string, unknown>;
+				}
+			} catch {
+				// Best-effort: non-JSON result (e.g. error response) — skip structuredContent.
+			}
+		}
+
 		return {
 			content: result.content,
+			...(structuredContent != null ? { structuredContent } : {}),
 			isError: result.terminate === true,
 		};
 	} catch (error) {

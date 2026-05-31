@@ -40,6 +40,15 @@ assert(indexSrc.includes("ListToolsRequestSchema") && indexSrc.includes("CallToo
 // inputSchema must be the TypeBox-generated schema (passed through directly)
 assert(indexSrc.includes("def.parameters"), "mcp/index.ts tools/list must reference def.parameters for inputSchema");
 
+// ── outputSchema / structuredContent (Phase 3) ───────────────────────────────
+
+// For tools with DistillerDefinition, outputSchema must appear in tools/list
+assert(indexSrc.includes("getDistillerDefinition"), "mcp/index.ts must import getDistillerDefinition for outputSchema");
+assert(indexSrc.includes("distillerDef?.summarySchema"), "mcp/index.ts tools/list must include outputSchema from summarySchema");
+// structuredContent must be extracted from distilled envelope for spike tools
+assert(indexSrc.includes("structuredContent"), "mcp/index.ts tools/call must include structuredContent for distilled tools");
+assert(indexSrc.includes("envelope.summary"), "mcp/index.ts must extract summary field from distilled envelope JSON");
+
 // ── Validation before execute ─────────────────────────────────────────────────
 
 // Validation must happen before def.execute, not after
