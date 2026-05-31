@@ -76,6 +76,12 @@ assert(validationSrc.includes("export function validateMcpToolArgs"), "mcp/valid
 assert(validationSrc.includes("McpValidationResult"), "mcp/validation.ts must export McpValidationResult type");
 assert(validationSrc.includes("ok: true") && validationSrc.includes("ok: false"), "McpValidationResult must discriminate ok:true/false");
 
+// ── Phase 5: nextActions adapter transformation ───────────────────────────────
+
+assert(indexSrc.includes("browser_artifact path="), "mcp/index.ts Phase 5 must detect browser_artifact path= in nextActions");
+assert(indexSrc.includes("resources/read uri="), "mcp/index.ts Phase 5 must replace with resources/read uri= in nextActions");
+assert(indexSrc.includes("adaptedNextActions"), "mcp/index.ts Phase 5 must produce adaptedNextActions for MCP callers");
+
 // ── Adapter still collects tool definitions ───────────────────────────────────
 
 assert(adapterSrc.includes("registerTool") && adapterSrc.includes("getTools"), "mcp/adapter.ts must implement registerTool + getTools collection");

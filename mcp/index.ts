@@ -117,7 +117,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const distillerDef = getDistillerDefinition(name);
 
 	try {
-		const result: ExtensionToolResult = await def.execute(
+		let result: ExtensionToolResult = await def.execute(
 			String(progressToken ?? `mcp-call-${name}`),
 			validation.args,
 			undefined, // signal — MCP transport manages connection lifecycle
@@ -182,6 +182,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 						name: `${name} artifact`,
 						mimeType: typeof saved.mime === "string" ? saved.mime : "application/json",
 					};
+
+					// Phase 5: nextActions adapter transformation.
+					// Replace core-generated browser_artifact path=<localPath> entries with
+					// MCP resources/read uri=<browser-result://...> equivalents. Pi adapter
+					// path keeps the original browser_artifact entries unchanged.
+					const nextActions = Array.isArray(envelope.nextActions) ? envelope.nextActions : [];
+					const localPath = saved.path;
+					const adaptedNextActions = nextActions.map((action) => {
+						if (typeof action !== "string") return action;
+						if (action.startsWith(`browser_artifact path=${localPath}`)) {
+							// Preserve any trailing query options (mode=json jsonPath=...)
+							const suffix = action.slice(`browser_artifact path=${localPath}`.length).trim();
+							const queryPart = suffix ? `&${suffix.replace(/\s+/g, "&")}` : "";
+							return `resources/read uri=${resourceUri}${queryPart}`;
+						}
+						if (action.startsWith("browser_artifact path=")) {
+							// Different path — only adapt our registered artifact
+							return action;
+						}
+						return action;
+					});
+					if (adaptedNextActions.some((a, i) => a !== nextActions[i])) {
+						// Re-serialize the text with adapted nextActions only if something changed.
+						result = {
+							...result,
+							content: [{ type: "text" as const, text: JSON.stringify({ ...envelope, nextActions: adaptedNextActions }) }],
+						};
+					}
 				}
 			} catch {
 				// Best-effort: non-JSON result (e.g. error response) — skip.
