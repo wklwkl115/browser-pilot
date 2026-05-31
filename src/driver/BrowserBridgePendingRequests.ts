@@ -29,7 +29,11 @@ export class BrowserBridgePendingRequests {
 
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			const debugCodePreview = typeof code === "string" ? code.slice(0, 120) : JSON.stringify(code).slice(0, 120);
-			let timer!: NodeJS.Timeout;
+			const timer: NodeJS.Timeout = setTimeout(() => {
+				this.pending.delete(id);
+				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
+				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, debugCodePreview, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));
+			}, timeoutMs);
 			const pending: PendingRequest = {
 				id,
 				tabId: options.tabId,
@@ -41,12 +45,6 @@ export class BrowserBridgePendingRequests {
 				resolve,
 				reject,
 			};
-			timer = setTimeout(() => {
-				this.pending.delete(id);
-				const state = pending.acked ? "ACK received, script may still be running" : "no ACK, message may not have been delivered";
-				reject(new BrowserBridgeError("BRIDGE_TIMEOUT", `No browser response in ${timeoutMs}ms (${state})`, { id, debugCodePreview, ...this.timeoutDiagnostics(options.tabId, timeoutMs, pending.acked, pending.target) }));
-			}, timeoutMs);
-			pending.timer = timer;
 			this.pending.set(id, pending);
 			try {
 				socket.send(JSON.stringify(payload));

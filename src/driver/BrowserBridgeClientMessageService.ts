@@ -39,7 +39,7 @@ export class BrowserBridgeClientMessageService {
 
 	registerClient(ws: WebSocket): void {
 		this.deps.clients.register(ws);
-		ws.on("message", (data) => this.handleClientMessage(ws, data.toString()).catch((error) => {
+		ws.on("message", (data) => void this.handleClientMessage(ws, data.toString()).catch((error) => {
 			console.error("[pi-browser-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
 		}));
 		ws.on("pong", () => this.deps.clients.markPong(ws));

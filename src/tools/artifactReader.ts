@@ -338,7 +338,7 @@ function parseJsonPath(jsonPath: string): Array<string | number> {
 	const tokens: Array<string | number> = [];
 	for (const part of normalized.split(".")) {
 		if (!part) continue;
-		const re = /([^\[\]]+)|\[(\d+)\]/g;
+		const re = /([^[]+)|\[(\d+)\]/g;
 		let match: RegExpExecArray | null;
 		while ((match = re.exec(part))) tokens.push(match[1] !== undefined ? match[1] : Number(match[2]));
 	}

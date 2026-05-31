@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
-import { compactStep, extractTitle, responseBodyHash, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http.js";
+import { compactStep, extractTitle, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http.js";
 import { asString, isRecord, positiveInt, sleep, splitWords, stringList } from "../shared/normalize.js";
 import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay.js";
 import type { FetchStep, SqliProbeOptions } from "../shared/types.js";
@@ -183,7 +183,9 @@ function existingParamValue(request: { url: string; headers: Record<string, stri
 		try {
 			const parsed = JSON.parse(body);
 			return isRecord(parsed) && parsed[paramName] !== undefined ? String(parsed[paramName]) : "";
-		} catch {}
+		} catch {
+			/* best-effort json body parameter extraction */
+		}
 	}
 	return "";
 }

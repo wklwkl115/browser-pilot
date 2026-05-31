@@ -71,7 +71,11 @@ function syncCspBypassRule() {
 }
 
 function clearCspBypassAlarm() {
-  try { chrome.alarms.clear?.(CSP_BYPASS_ALARM); } catch (_) { /* best-effort alarm clear */ }
+  try {
+    void chrome.alarms.clear?.(CSP_BYPASS_ALARM);
+  } catch (_error) {
+    /* best-effort alarm clear */
+  }
 }
 
 function scheduleCspBypassAlarm(now = Date.now()) {

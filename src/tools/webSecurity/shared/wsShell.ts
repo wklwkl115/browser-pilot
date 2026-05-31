@@ -1,9 +1,10 @@
 import path from "node:path";
 import { createCodedError } from "../../../utils/codedError.js";
 import { tryJson } from "../../../utils/json.js";
+import { isRecord } from "../../../utils/records.js";
 import { saveTextArtifact } from "../../artifacts.js";
 import { artifactFallbackName } from "../../toolAdapter.js";
-import { isRecord, parseCommandArgs } from "./normalize.js";
+import { parseCommandArgs } from "./normalize.js";
 import { closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, type ReplayWsSequenceStep, type WsTranscriptEntry } from "./wsSession.js";
 import { summarizeWsSessionData } from "../../summaries/webSecurity/ws.js";
 
@@ -45,14 +46,6 @@ function asAction(value: unknown): WsShellAction {
 	const normalized = String(value || "status").trim().toLowerCase();
 	if (["open", "status", "send", "replay", "wait", "collect", "close"].includes(normalized)) return normalized as WsShellAction;
 	throw wsShellInputError(`Unsupported ws shell action: ${String(value)}`, { action: value });
-}
-
-function asString(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const text = value.trim();
-		return text || undefined;
-	}
-	return undefined;
 }
 
 function parseHeaderArgs(value: unknown): Record<string, string> {

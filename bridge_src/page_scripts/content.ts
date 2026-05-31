@@ -13,7 +13,9 @@ function scrubLegacyBridgeNode(root: ParentNode): void {
       if (!node || typeof (node as Element).remove !== "function") continue;
       try {
         (node as Element).remove();
-      } catch {}
+      } catch {
+        /* best-effort legacy node cleanup */
+      }
     }
   }
 }
@@ -31,7 +33,9 @@ function scrubLegacyBridgeNode(root: ParentNode): void {
         const element = node && typeof (node as Element).querySelector === "function" ? node as Element : null;
         if (!element) continue;
         if (element.id === TID) {
-          try { element.remove(); } catch {}
+          try { element.remove(); } catch {
+            /* best-effort mutation cleanup */
+          }
           continue;
         }
         if (element.querySelector?.(`#${TID}`)) scrubLegacyBridgeNode(element);

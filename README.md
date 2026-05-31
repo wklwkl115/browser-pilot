@@ -61,7 +61,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `webSecurityCore.ts` 只作为兼容 re-export 层，不注册工具、不依赖 `BrowserBridgeServer`/`ensureStarted`/bridge runtime；`toolRegistry.ts` 维护声明式工具注册表，`registerTools.ts` 只消费注册表并组合入口，不直接导入实现层。
 - WebSecurity 响应摘要按能力族拆入 `src/tools/summaries/webSecurity`，共享脱敏、artifact 与表格裁剪 helper，summary 只做压缩展示，完整证据继续走 artifact
 - `npm run check:web-security` 锁定 register/browserNative/bridges/shared 分层、cookie/HAR/raw-request/artifact/browser-native adapter、domain failure envelope 与 sqlmap/nuclei bridge artifact/timeout 边界。
-- `.github/workflows/check.yml` 现直接复用 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts` 与 `npm run check:lint`，并把 Node 安装/依赖安装/build 抽到 `.github/actions/setup-node-build`，确保 CI 与本地 grouped runner 入口一致。
+- `.github/workflows/check.yml` 现直接复用 `npm run lint`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts` 与 `npm run check:lint`，并把 Node 安装/依赖安装/build 抽到 `.github/actions/setup-node-build`；ESLint 债务规则已 ratchet 为阻断错误，`check:lint` 仍只承担 boundary/page-script contracts 语义。
 - 这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案
 
 ## Bridge JS 内部边界

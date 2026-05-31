@@ -38,9 +38,8 @@ jobs:
       - name: Run static lint/boundary gates
         run: npm run check:lint
 
-      - name: Run ESLint (baseline, non-blocking)
+      - name: Run ESLint
         run: npm run lint
-        continue-on-error: true
 
   contracts-and-unit:
     runs-on: ubuntu-latest

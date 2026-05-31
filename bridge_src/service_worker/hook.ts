@@ -187,16 +187,11 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
       return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SESSION, 'hook.uninstall sessionId does not match the installed tab session', { tabId, session_id: requestedSessionId, current_session_id: localSession.session_id });
     }
     const res = await callPagePiBrowser(tabId, 'hook.uninstall', piBrowserHookSessionArgs(msg));
-    let listenerCleanup = null;
     const shouldCleanup = res && (res.ok || res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
     if (shouldCleanup) {
-      try {
-        listenerCleanup = typeof cleanupPiBrowserPageListenersForTab === 'function'
-          ? await (cleanupPiBrowserPageListenersForTab as (...args: unknown[]) => Promise<PiBridgeResponse>)(tabId, 'hook_uninstall', msg.timeoutMs || msg.timeout_ms || 5000)
-          : { ok:true, data:{ tabId:Number(tabId), skipped:true, warning:'page listener cleanup helper unavailable' } };
-      } catch (e) {
-        listenerCleanup = piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, 'hook.uninstall page listener cleanup failed', { tabId, reason:e instanceof Error ? e.message : String(e) });
-      }
+      const listenerCleanup: PiBridgeResponse | { ok: true; data: { tabId: number; skipped: true; warning: string } } | null = typeof cleanupPiBrowserPageListenersForTab === 'function'
+        ? await (cleanupPiBrowserPageListenersForTab as (...args: unknown[]) => Promise<PiBridgeResponse>)(tabId, 'hook_uninstall', msg.timeoutMs || msg.timeout_ms || 5000).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, 'hook.uninstall page listener cleanup failed', { tabId, reason:e instanceof Error ? e.message : String(e) }))
+        : { ok:true, data:{ tabId:Number(tabId), skipped:true, warning:'page listener cleanup helper unavailable' } };
       const hookResponse = /** @type {PiBridgeResponse} */ (res);
       if (hookResponse && typeof hookResponse === 'object') {
         if (hookResponse.ok && hookResponse.data && typeof hookResponse.data === 'object') (hookResponse.data as JsonRecord).listener_cleanup = listenerCleanup?.data || listenerCleanup;

@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createCodedError } from "../../../utils/codedError.js";
 import { compactStep, extractTitle, normalizeHeaders, normalizeProbeTargets, responseBodyHash } from "../shared/http.js";
-import { asString, normalizeMethod, positiveInt, sleep } from "../shared/normalize.js";
+import { normalizeMethod, positiveInt, sleep } from "../shared/normalize.js";
 import { buildReplayRequest, normalizeReplayOptions, requestContentType, sendReplayLikeRequest } from "../shared/replay.js";
 import { dedupeTemplateResults, evaluateTemplateMatcher, loadTemplateDefinitions, templateTargetsForBase, type TemplateDefinition } from "../shared/template.js";
 import type { ReplayRequest, TemplateCheckOptions } from "../shared/types.js";

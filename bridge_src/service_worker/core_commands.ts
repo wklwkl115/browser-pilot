@@ -246,7 +246,11 @@ async function handleBatch(msg: PiBridgeCommand, sender: PiBridgeSender): Promis
         }
       } catch (e) {
         R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: c && c.cmd, method: c && c.method, tabId: c && c.tabId, raw: coreErrorDetails(e) }));
-        try { await detachCurrent(); } catch (_) {}
+        try {
+          await detachCurrent();
+        } catch (_error) {
+          /* best-effort detach after batch command failure */
+        }
       }
     }
     await detachCurrent();

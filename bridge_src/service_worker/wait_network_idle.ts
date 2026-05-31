@@ -30,7 +30,7 @@ function compileNetworkIdleFilter(msg: PiBridgeCommand): (req: NetworkIdleReques
     const method = String(req.method || 'GET').toUpperCase();
     if (includeUrl.length && !matchAny(url, includeUrl)) return { track:false, reason:'not_included' };
     if (ignoreUrl.length && matchAny(url, ignoreUrl)) return { track:false, reason:'ignored_url' };
-    const scheme = (url.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/) || [,''])[1].toLowerCase();
+    const scheme = (url.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/) || [undefined, ''])[1].toLowerCase();
     if (scheme && ignoreSchemes.has(scheme)) return { track:false, reason:'ignored_scheme' };
     if (resourceTypes.size && !resourceTypes.has(type)) return { track:false, reason:'resource_type_not_included' };
     if (ignoreResourceTypes.has(type)) return { track:false, reason:'ignored_resource_type' };

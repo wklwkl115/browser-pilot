@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeSqlmapBridgeData, summarizeSqliProbeData } from "../../summaries/index.js";
 import { runSqlmapBridge, runSqliProbe } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, webSecurityDefaultSchemeParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxCasesParam, rawRequestParams, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateSqliParams, sqliProbeTypesParam, fuzzLocationParam, enumParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import type { RawSqlmapBridgeOptions, RawSqliProbeOptions } from "../shared/types.js";

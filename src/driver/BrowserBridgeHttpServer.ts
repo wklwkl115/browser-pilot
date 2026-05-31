@@ -99,8 +99,16 @@ export class BrowserBridgeHttpServer {
 				this.wss = wss;
 				return;
 			} catch (error) {
-				try { wss.close(); } catch {}
-				try { server.close(); } catch {}
+				try {
+					wss.close();
+				} catch {
+					/* best-effort websocket server close after listen failure */
+				}
+				try {
+					server.close();
+				} catch {
+					/* best-effort http server close after listen failure */
+				}
 				lastError = error;
 				if (!isAddressInUse(error)) break;
 			}
@@ -111,7 +119,11 @@ export class BrowserBridgeHttpServer {
 	async stop(): Promise<void> {
 		await new Promise<void>((resolve) => {
 			if (!this.wss && !this.httpServer) { resolve(); return; }
-			try { this.wss?.close(); } catch {}
+			try {
+				this.wss?.close();
+			} catch {
+				/* best-effort websocket server close during stop */
+			}
 			const server = this.httpServer;
 			this.wss = undefined;
 			this.httpServer = undefined;

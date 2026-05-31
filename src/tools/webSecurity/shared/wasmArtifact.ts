@@ -152,10 +152,6 @@ function skipImportDesc(buffer: Buffer, offset: number, kind: WasmImportFact["ki
 	return cursor;
 }
 
-function skipExportPayload(buffer: Buffer, offset: number): number {
-	return readVarUint(buffer, offset + 1).next;
-}
-
 function parseImportSection(buffer: Buffer): WasmImportFact[] {
 	const imports: WasmImportFact[] = [];
 	let cursor = 0;

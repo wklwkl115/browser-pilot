@@ -65,12 +65,6 @@ function callbackPort(value: unknown): number {
 	return Number.isInteger(raw) && raw >= 0 && raw <= 65_535 ? raw : 0;
 }
 
-function callbackPath(basePath: string, correlationId: string): string {
-	const withSlash = basePath.startsWith("/") ? basePath : `/${basePath}`;
-	if (withSlash.includes("{{correlationId}}")) return withSlash.replaceAll("{{correlationId}}", encodeURIComponent(correlationId));
-	return withSlash.endsWith("/") ? `${withSlash}${encodeURIComponent(correlationId)}` : `${withSlash}/${encodeURIComponent(correlationId)}`;
-}
-
 function normalizeTriggerMode(value: unknown): "http" | "https" | "dns" {
 	const mode = String(value || "").toLowerCase();
 	if (mode === "https") return "https";

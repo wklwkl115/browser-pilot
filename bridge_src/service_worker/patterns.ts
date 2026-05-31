@@ -19,7 +19,11 @@ function matchNetworkPattern(url: unknown, pattern: unknown): boolean {
   const needle = String(pattern || '');
   if (!needle) return false;
   if (isSafeNetworkRegexPattern(needle)) {
-    try { return new RegExp(needle).test(haystack); } catch (_) {}
+    try {
+      return new RegExp(needle).test(haystack);
+    } catch (_error) {
+      /* fallback to substring match for invalid regex */
+    }
   }
   if (needle.length > PI_BROWSER_NETWORK_MAX_PATTERN_CHARS) return false;
   return haystack.includes(needle);

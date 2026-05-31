@@ -123,7 +123,9 @@ function cleanupPiBrowserTab(tabId: number, reason?: string) {
   const cleanupReason = reason || 'tab_cleanup';
   try {
     const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId, cleanupReason);
-    if (pageCleanup && typeof (pageCleanup as Promise<unknown>).catch === 'function') (pageCleanup as Promise<unknown>).catch((e: unknown) => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, runtimeErrorPreview(e)));
+    if ((pageCleanup as Promise<unknown> | undefined)?.catch) {
+      void (pageCleanup as Promise<unknown>).catch((e: unknown) => console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, runtimeErrorPreview(e)));
+    }
   } catch (e) { console.warn('[PI-BROWSER] page listener cleanup failed', key, cleanupReason, runtimeErrorPreview(e)); }
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
@@ -278,8 +280,6 @@ async function callPagePiBrowser(tabId: number, command: string, args: unknown, 
 
 /** @returns {Promise<PiBridgeResponse|null>} */
 async function reinstallPiBrowserSession(tabId: number): Promise<PiBridgeResponse | null> {
-  const attempted_recovery = true;
-
   const sess = piBrowserSessions.get(tabId);
   if (!sess) return null;
   const injected = await ensurePiBrowserDispatcher(tabId);

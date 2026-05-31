@@ -115,10 +115,12 @@ async function main(): Promise<void> {
 
 	// Graceful shutdown
 	for (const sig of ["SIGINT", "SIGTERM"] as const) {
-		process.on(sig, async () => {
-			await server.close();
-			await bridgeServer.stop();
-			process.exit(0);
+		process.on(sig, () => {
+			void (async () => {
+				await server.close();
+				await bridgeServer.stop();
+				process.exit(0);
+			})();
 		});
 	}
 }

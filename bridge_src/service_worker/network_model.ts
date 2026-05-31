@@ -4,7 +4,7 @@ import { matchNetworkPattern } from "./patterns";
 import { redactSensitive } from "./runtime";
 import { diagnosePiBrowserCdpDomainRefs } from "./wait_cdp";
 import { makeWaitId } from "./wait_coordinator";
-import type { JsonRecord, PiBridgeCommand, PiBrowserWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderWait, NetworkStringList, NetworkWaitNotifier } from "./types";
+import type { JsonRecord, PiBridgeCommand, PiBrowserWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkStringList, NetworkWaitNotifier } from "./types";
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -218,7 +218,7 @@ function createNetworkRecorder(tabId: unknown, config: NetworkRecorderConfig): N
   return recorder;
 }
 function recorderPublicConfig(config: NetworkRecorderConfig | null | undefined): unknown {
-  const { filter, ...rest } = config || {};
+  const { filter: _filter, ...rest } = config || {};
   return redactSensitive(rest);
 }
 function getNetworkRecorder(tabId: unknown, sessionId: unknown): NetworkRecorder | null { return piBrowserNetworkRecorders.get(networkRecorderKey(tabId, sessionId || 'default')) || null; }
@@ -356,7 +356,6 @@ function networkRecordClone(rec: NetworkRecord, options: { includeBody?: boolean
 function storeNetworkBody(recorder: NetworkRecorder, rec: NetworkRecord, bodyResult: JsonRecord | null | undefined): void {
   const body = String(bodyResult?.body ?? '');
   const base64Encoded = !!bodyResult?.base64Encoded;
-  const rawBytes = base64Encoded ? Math.ceil(body.length * 3 / 4) : estimateStringBytes(body);
   const trunc = base64Encoded
     ? truncateBase64Body(body, recorder.config.maxBodyBytes)
     : truncateStringByBytes(body, recorder.config.maxBodyBytes);

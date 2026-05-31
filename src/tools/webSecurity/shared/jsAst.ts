@@ -340,7 +340,7 @@ function collectImportFacts(sourceFile: ts.SourceFile, options: Required<JsAstAn
 		const from = textOfModuleSpecifier(statement.moduleSpecifier) || "<unknown>";
 		const clause = statement.importClause;
 		if (!clause) {
-			facts.push({ kind: "side-effect", from, specifierCount: 0, localNames: [] }) || [];
+			facts.push({ kind: "side-effect", from, specifierCount: 0, localNames: [] });
 			continue;
 		}
 		const localNames: string[] = [];

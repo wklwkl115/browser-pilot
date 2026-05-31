@@ -34,7 +34,11 @@ export class BrowserBridgeClientHeartbeat {
 		for (const { ws, info, idleMs } of this.clients.staleClients(CLIENT_STALE_TIMEOUT_MS, now)) {
 			console.warn("[pi-browser-bridge] Closing stale WebSocket client", { clientId: info.id, extensionId: info.extensionId, idleMs, staleTimeoutMs: CLIENT_STALE_TIMEOUT_MS });
 			this.onStale(ws);
-			try { ws.terminate(); } catch {}
+			try {
+				ws.terminate();
+			} catch {
+				/* best-effort stale client termination */
+			}
 		}
 		for (const [ws, info] of this.clients.entries()) {
 			if (ws.readyState !== WebSocket.OPEN) continue;
@@ -44,7 +48,11 @@ export class BrowserBridgeClientHeartbeat {
 			} catch (error) {
 				console.warn("[pi-browser-bridge] WebSocket heartbeat ping failed", { clientId: info.id, extensionId: info.extensionId, error: errorToPlain(error) });
 				this.onStale(ws);
-				try { ws.terminate(); } catch {}
+				try {
+					ws.terminate();
+				} catch {
+					/* best-effort failed-ping termination */
+				}
 			}
 		}
 	}

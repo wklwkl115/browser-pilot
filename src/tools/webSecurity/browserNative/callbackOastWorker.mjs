@@ -101,7 +101,9 @@ async function releaseStateLock(lockPath, token) {
     const parsed = JSON.parse(await readFile(lockPath, "utf8"));
     if (parsed.token !== token) return;
     await rm(lockPath, { force: true });
-  } catch {}
+  } catch {
+    /* best-effort state lock release */
+  }
 }
 
 async function removeLockIfUnchanged(lockPath, expectedToken) {
@@ -134,8 +136,8 @@ async function breakStaleStateLock(lockPath, breakerPath, started) {
   } catch (error) {
     await handle?.close().catch(() => {});
     if (created) await rm(breakerPath, { force: true }).catch(() => {});
-    if (error?.code !== "EEXIST") throw error;
-    if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`);
+    if (error?.code !== "EEXIST") throw new Error(`Failed to acquire callback OAST state lock breaker: ${breakerPath}`, { cause: error });
+    if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`, { cause: error });
   } finally {
     if (created) await releaseStateLock(breakerPath, token);
   }
@@ -161,9 +163,9 @@ async function withStateLock(fn) {
     } catch (error) {
       await handle?.close().catch(() => {});
       if (created) await rm(lockPath, { force: true }).catch(() => {});
-      if (error?.code !== "EEXIST") throw error;
+      if (error?.code !== "EEXIST") throw new Error(`Failed to acquire callback OAST state lock: ${lockPath}`, { cause: error });
       if (await isStaleStateLock(lockPath)) await breakStaleStateLock(lockPath, breakerPath, started);
-      else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`);
+      else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`, { cause: error });
       await sleep(STATE_LOCK_RETRY_MS);
       continue;
     }
@@ -189,7 +191,7 @@ async function loadState() {
   try {
     return JSON.parse(await readFile(statePath, "utf8"));
   } catch (error) {
-    throw new Error(`callbackOastWorker state file is invalid JSON: ${error?.message || String(error)}`);
+    throw new Error(`callbackOastWorker state file is invalid JSON: ${error?.message || String(error)}`, { cause: error });
   }
 }
 
@@ -527,7 +529,9 @@ async function shutdown(reason) {
       state.stopReason = reason;
       return state;
     });
-  } catch {}
+  } catch {
+    /* best-effort state update during shutdown */
+  }
   process.exit(0);
 }
 
@@ -542,7 +546,9 @@ process.on("uncaughtException", async (error) => {
       state.stoppedAt = new Date().toISOString();
       return state;
     });
-  } catch {}
+  } catch {
+    /* best-effort crash state update */
+  }
   process.exit(1);
 });
 

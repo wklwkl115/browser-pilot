@@ -45,7 +45,7 @@ function sinkHintsExpression(selector: string): string {
 		}
 		const hints = [];
 		for (const [name, value] of Object.entries(attrs)) {
-			if (value) hints.push({ kind: 'inline-handler', eventType: name.replace(/^on/, ''), detail: value.slice(0, 240), suspicious: /innerHTML|outerHTML|insertAdjacentHTML|document\.write/i.test(value) });
+			if (value) hints.push({ kind: 'inline-handler', eventType: name.replace(/^on/, ''), detail: value.slice(0, 240), suspicious: /innerHTML|outerHTML|insertAdjacentHTML|document.write/i.test(value) });
 		}
 		if (/pay|submit|login|continue|checkout/i.test(text)) hints.push({ kind: 'actionable-node', eventType: 'click', detail: text.slice(0, 120), suspicious: sinks.length > 0 });
 		return { ok:true, node: { tagName: node.tagName || '', id: node.id || '', text: text.slice(0, 240) }, sinks, hints };

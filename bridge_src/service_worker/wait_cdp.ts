@@ -139,7 +139,7 @@ function releasePiBrowserCdpDomains(record: PiBrowserWaitRecord | null | undefin
 function forceReleasePiBrowserCdpDomainsForTab(tabId: unknown, reason?: string) {
   let released = 0;
   let disabled = 0;
-  for (const [key, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
+  for (const [, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
     if (Number(ref.tabId) !== Number(tabId)) continue;
     const holders = Array.from(ref.holders.values()).map(holder => ({ holderId:holder.holderId, waitId:holder.waitId, kind:holder.kind }));
     released += ref.count || holders.length;

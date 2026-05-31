@@ -1,5 +1,5 @@
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
-import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery, redactConfig } from "./state_store";
+import { persist as persistState, forget as forgetState, recover as recoverState, RECOVERY_CODES, registerRecovery } from "./state_store";
 import { subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 import {

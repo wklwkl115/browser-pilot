@@ -1668,7 +1668,7 @@ function matchNetworkPattern(url, pattern) {
   if (isSafeNetworkRegexPattern(needle)) {
     try {
       return new RegExp(needle).test(haystack);
-    } catch (_) {
+    } catch (_error) {
     }
   }
   if (needle.length > PI_BROWSER_NETWORK_MAX_PATTERN_CHARS) return false;
@@ -2236,7 +2236,7 @@ async function piPersistentCdpAttach(tabId2, options = {}) {
         if (name !== "default") piPersistentCdpSessions.set(key, existing);
         return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
       }
-      for (const [k, rec] of piPersistentCdpSessions.entries()) {
+      for (const [, rec] of piPersistentCdpSessions.entries()) {
         if (rec && rec.tabId === tabId2) {
           rec.lastUsed = piCdpNow();
           piPersistentCdpSessions.set(key, rec);
@@ -2446,7 +2446,7 @@ async function handlePersistentCdpCommand(msg, sender) {
   if (action === "releaseIdle") return await piPersistentCdpReleaseIdle(msg.maxIdleMs);
   return piCdpError("UNKNOWN_ACTION", "unknown persistent CDP action: " + action, { action });
 }
-chromeApi.debugger.onDetach.addListener((source, reason) => {
+chromeApi.debugger.onDetach.addListener((source, _reason) => {
   if (!source || !source.tabId) return;
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
     if (rec.tabId === source.tabId) piPersistentCdpSessions.delete(key);
@@ -2637,7 +2637,7 @@ function releasePiBrowserCdpDomains(record, domains, reason) {
 function forceReleasePiBrowserCdpDomainsForTab(tabId2, reason) {
   let released = 0;
   let disabled = 0;
-  for (const [key, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
+  for (const [, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
     if (Number(ref.tabId) !== Number(tabId2)) continue;
     const holders = Array.from(ref.holders.values()).map((holder) => ({ holderId: holder.holderId, waitId: holder.waitId, kind: holder.kind }));
     released += ref.count || holders.length;
@@ -2849,12 +2849,12 @@ function cleanupPiBrowserOrphanWaits(reason, maxAgeMs) {
     if (limit >= 0 && age < limit) continue;
     try {
       record.abortController?.abort(reason || "orphan_cleanup");
-    } catch (_) {
+    } catch (_error) {
     }
     try {
       clearWait(record, reason || "orphan_cleanup");
       cleaned += 1;
-    } catch (_) {
+    } catch (_error) {
     }
   }
   if (cleaned) rememberPiBrowserCdpCleanup({ reason: reason || "orphan_cleanup", orphan_waits: cleaned });
@@ -2867,11 +2867,11 @@ try {
     self.addEventListener("unhandledrejection", () => {
       try {
         cleanupPiBrowserOrphanWaits("unhandledRejection", 0);
-      } catch (_) {
+      } catch (_error) {
       }
     });
   }
-} catch (_) {
+} catch (_error) {
 }
 var piBrowserWaitSeq = 0;
 var PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS = 3e4;
@@ -2921,7 +2921,7 @@ function registerWait(tabId2, kind, criteria = {}) {
   try {
     abortController.signal.addEventListener("abort", onAbort, { once: true });
     record.listeners.push({ remove: () => abortController.signal.removeEventListener("abort", onAbort) });
-  } catch (_) {
+  } catch (_error) {
   }
   return record;
 }
@@ -2984,12 +2984,12 @@ function cleanupTabWaits(tabId2, reason, options = {}) {
     try {
       r.abortController?.abort(cleanupReason);
       aborted += 1;
-    } catch (_) {
+    } catch (_error) {
     }
     try {
       clearWait(r, cleanupReason);
       cleaned += 1;
-    } catch (_) {
+    } catch (_error) {
     }
     if (wasMissingKey) orphaned += 1;
   }
@@ -2999,7 +2999,7 @@ function cleanupTabWaits(tabId2, reason, options = {}) {
     try {
       r.abortController?.abort(cleanupReason);
       aborted += 1;
-    } catch (_) {
+    } catch (_error) {
     }
     try {
       clearWait(r, cleanupReason);
@@ -3009,7 +3009,7 @@ function cleanupTabWaits(tabId2, reason, options = {}) {
       try {
         piBrowserWaits.delete(key);
         cleaned += 1;
-      } catch (__) {
+      } catch (_cleanupError) {
       }
     }
   }
@@ -3069,7 +3069,7 @@ function compileNetworkIdleFilter(msg) {
     const method = String(req.method || "GET").toUpperCase();
     if (includeUrl.length && !matchAny(url, includeUrl)) return { track: false, reason: "not_included" };
     if (ignoreUrl.length && matchAny(url, ignoreUrl)) return { track: false, reason: "ignored_url" };
-    const scheme = (url.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/) || [, ""])[1].toLowerCase();
+    const scheme = (url.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/) || [void 0, ""])[1].toLowerCase();
     if (scheme && ignoreSchemes.has(scheme)) return { track: false, reason: "ignored_scheme" };
     if (resourceTypes.size && !resourceTypes.has(type)) return { track: false, reason: "resource_type_not_included" };
     if (ignoreResourceTypes.has(type)) return { track: false, reason: "ignored_resource_type" };
@@ -3336,7 +3336,7 @@ async function waitForSelector(tabId2, msg) {
     try {
       record.abortController.signal.addEventListener("abort", failIfAbort, { once: true });
       record.listeners.push({ remove: () => record.abortController.signal.removeEventListener("abort", failIfAbort) });
-    } catch (_) {
+    } catch (_error) {
     }
     const triggerTick = (reason, observedEpoch) => {
       if (completed) return;
@@ -3349,7 +3349,7 @@ async function waitForSelector(tabId2, msg) {
         pendingTick = true;
         return;
       }
-      tick(reason || "trigger");
+      void tick(reason || "trigger");
     };
     const bindingName = "__piBrowserSelectorSignal_" + String(record.waitId || Date.now()).replace(/[^A-Za-z0-9_$]/g, "_");
     const bindingCleanupKey = String(selector) + "|" + state + "|" + bindingName;
@@ -3361,10 +3361,10 @@ async function waitForSelector(tabId2, msg) {
       if (!addResp || addResp.ok === false) throw new Error(String(selectorRecord(addResp?.error).message || addResp?.message || addResp?.error || "Runtime.addBinding failed"));
       const subId = subscribePiBrowserCdp(tabId2, "Runtime.bindingCalled", (_source, _method, params) => {
         if (completed || params?.name !== bindingName) return;
-        let payload = {};
+        let payload;
         try {
           payload = selectorRecord(JSON.parse(String(params.payload || "{}")));
-        } catch (_) {
+        } catch (_error) {
           payload = { raw: params.payload };
         }
         const nextEpoch = Number(payload.mutationTick || payload.epoch || 0);
@@ -3422,17 +3422,17 @@ async function waitForSelector(tabId2, msg) {
         try {
           if (cdp.send) void cdp.send(tabId2, "Runtime.evaluate", { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: "selector_binding_cleanup", timeoutMs: 1e3 }).catch(() => {
           });
-        } catch (_) {
+        } catch (_error) {
         }
         try {
           if (cdp.send) void cdp.send(tabId2, "Runtime.removeBinding", { name: bindingName }, { persistent: true, name: "selector_binding_remove", timeoutMs: 1e3 }).catch(() => {
           });
-        } catch (_) {
+        } catch (_error) {
         }
       } });
       return true;
     };
-    installBindingObserver().catch((e) => {
+    void installBindingObserver().catch((e) => {
       record.diagnostics.push({ t: Date.now(), warning: "runtime_binding_observer_unavailable_poll_fallback_active", bindingName, error: selectorErrorMessage(e) });
     });
     const armPoll = () => {
@@ -3770,8 +3770,8 @@ async function waitForLoadState(tabId2, msg) {
     }
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.loadState timed out", { timeout_ms: timeoutMs, targetState, last_error: record.lastError, events: record.cdpEvents.slice(-50) })), timeoutMs);
     record.timers.push(timeoutHandle);
-    enablePiBrowserCdpDomains(record, ["Page"]).then(() => {
-      const sub = subscribePiBrowserCdp(tabId2, ["Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], async (_source, method, params) => {
+    void enablePiBrowserCdpDomains(record, ["Page"]).then(() => {
+      const sub = subscribePiBrowserCdp(tabId2, ["Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], (_source, method, params) => {
         recordWaitEvent(record, { method, name: params.name, frameId: params.frameId });
         if (targetState === "domcontentloaded" && (method === "Page.domContentEventFired" || params.name === "DOMContentLoaded") || (targetState === "load" || targetState === "complete") && (method === "Page.loadEventFired" || params.name === "load" || method === "Page.frameStoppedLoading")) {
           complete(finishPiBrowserWait(record, true, { state: targetState, method, params, cdp: true }));
@@ -3823,11 +3823,11 @@ async function waitForAny(tabId2, msg) {
     if (record) {
       try {
         record.abortController?.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         clearWait(record, reason || PI_BROWSER_ERROR_CODES.CANCELLED);
-      } catch (_) {
+      } catch (_error) {
       }
     }
   };
@@ -3839,7 +3839,7 @@ async function waitForAny(tabId2, msg) {
           losers.push(i);
           c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
         }
-      } catch (_) {
+      } catch (_error) {
       }
       cleanupChildRecord(i, reason || PI_BROWSER_ERROR_CODES.CANCELLED);
     });
@@ -3882,7 +3882,7 @@ async function waitForAll(tabId2, msg) {
     controllers.forEach((c, i) => {
       try {
         if (i !== exceptIndex && !c.signal.aborted) c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
-      } catch (_) {
+      } catch (_error) {
       }
     });
   };
@@ -3942,7 +3942,7 @@ async function cancelWait(tabId2, msg) {
     if (r) {
       try {
         r.abortController?.abort("cancelled");
-      } catch (_) {
+      } catch (_error) {
       }
       clearWait(r, "cancelled");
       cancelled_count = 1;
@@ -4065,7 +4065,7 @@ async function getPerformanceEntries(tabId2, msg) {
   }
   return { ok: true, data: { entries: [], entryType, nameContains, count: 0, explicit_entry_type: hasEntryType, note: "PerformanceObserver performance.getEntriesByType Runtime.evaluate unavailable" } };
 }
-async function diagnosePiBrowser(tabId2, msg) {
+async function diagnosePiBrowser(tabId2, _msg) {
   const tab = await chromeApi.tabs.get(tabId2).catch((e) => ({ error: waitErrorMessage(e) }));
   const status = await callPagePiBrowser(tabId2, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
   const cdp = piBrowserPersistentCdp();
@@ -4419,7 +4419,7 @@ function createNetworkRecorder(tabId2, config) {
   return recorder;
 }
 function recorderPublicConfig(config) {
-  const { filter, ...rest } = config || {};
+  const { filter: _filter, ...rest } = config || {};
   return redactSensitive(rest);
 }
 function getNetworkRecorder(tabId2, sessionId) {
@@ -4615,7 +4615,6 @@ function networkRecordClone(rec, options = {}) {
 function storeNetworkBody(recorder, rec, bodyResult) {
   const body = String(bodyResult?.body ?? "");
   const base64Encoded = !!bodyResult?.base64Encoded;
-  const rawBytes = base64Encoded ? Math.ceil(body.length * 3 / 4) : estimateStringBytes(body);
   const trunc = base64Encoded ? truncateBase64Body(body, recorder.config.maxBodyBytes) : truncateStringByBytes(body, recorder.config.maxBodyBytes);
   const bodyRef = rec.bodyRef || "body_" + recorder.recorderId + "_" + ++piBrowserNetworkBodySeq;
   const stored = { bodyRef, requestId: rec.requestId, tabId: rec.tabId, sessionId: rec.sessionId, base64Encoded, body: trunc.value, bodyTruncated: !!trunc.truncated, originalLength: trunc.originalLength, bytes: trunc.bytes, mimeType: rec.response?.mimeType || "", status: rec.response?.status, url: rec.request?.url || "", createdAt: Date.now() };
@@ -4924,7 +4923,7 @@ function cleanupNetworkRecorder(recorder, reason, options = {}) {
   for (const sid of Array.from(recorder.cdpRecord.cdpSubscriptions || [])) {
     try {
       unsubscribePiBrowserCdp(sid);
-    } catch (_) {
+    } catch (_error) {
     }
   }
   recorder.cdpRecord.cdpSubscriptions = [];
@@ -5107,16 +5106,16 @@ function finishNetworkRecorderWait(recorder, wait, ok, errorCode, message, detai
   wait.done = true;
   try {
     clearTimeout(wait.timeoutHandle);
-  } catch (_) {
+  } catch (_error) {
   }
   try {
     clearInterval(wait.intervalHandle);
-  } catch (_) {
+  } catch (_error) {
   }
   if (wait.abortHandler) {
     try {
       wait.abortController?.signal?.removeEventListener("abort", wait.abortHandler);
-    } catch (_) {
+    } catch (_error) {
     }
   }
   recorder.waits.delete(wait.waitId);
@@ -5188,7 +5187,7 @@ async function waitNetworkRecorder(tabId2, msg) {
     wait.abortHandler = () => finishNetworkRecorderWait(recorder, wait, false, PI_BROWSER_ERROR_CODES.CANCELLED, "network.wait cancelled", { criteria: redactSensitive(criteria) });
     try {
       abortController.signal.addEventListener("abort", wait.abortHandler, { once: true });
-    } catch (_) {
+    } catch (_error) {
     }
     wait.timeoutHandle = setTimeout(() => finishNetworkRecorderWait(recorder, wait, false, PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_TIMEOUT, "network.wait timed out", { timeout_ms: timeoutMs, criteria: redactSensitive(criteria), lastEntries: recorder.entries.slice(-20).map((r) => networkRecordSummary(r)) }), timeoutMs);
     if (condition === "idle" || condition === "count") wait.intervalHandle = setInterval(() => {
@@ -6304,14 +6303,9 @@ async function handlePiBrowserHookCommand(cmd, tabId2, msg) {
       return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SESSION, "hook.uninstall sessionId does not match the installed tab session", { tabId: tabId2, session_id: requestedSessionId, current_session_id: localSession.session_id });
     }
     const res2 = await callPagePiBrowser(tabId2, "hook.uninstall", piBrowserHookSessionArgs(msg));
-    let listenerCleanup = null;
     const shouldCleanup = res2 && (res2.ok || res2.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res2.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
     if (shouldCleanup) {
-      try {
-        listenerCleanup = typeof cleanupPiBrowserPageListenersForTab === "function" ? await cleanupPiBrowserPageListenersForTab(tabId2, "hook_uninstall", msg.timeoutMs || msg.timeout_ms || 5e3) : { ok: true, data: { tabId: Number(tabId2), skipped: true, warning: "page listener cleanup helper unavailable" } };
-      } catch (e) {
-        listenerCleanup = piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, "hook.uninstall page listener cleanup failed", { tabId: tabId2, reason: e instanceof Error ? e.message : String(e) });
-      }
+      const listenerCleanup = typeof cleanupPiBrowserPageListenersForTab === "function" ? await cleanupPiBrowserPageListenersForTab(tabId2, "hook_uninstall", msg.timeoutMs || msg.timeout_ms || 5e3).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, "hook.uninstall page listener cleanup failed", { tabId: tabId2, reason: e instanceof Error ? e.message : String(e) })) : { ok: true, data: { tabId: Number(tabId2), skipped: true, warning: "page listener cleanup helper unavailable" } };
       const hookResponse = (
         /** @type {PiBridgeResponse} */
         res2
@@ -6599,7 +6593,7 @@ function piTransferWaitDownloadComplete(id, timeoutMs) {
       clearTimeout(timer);
       try {
         chromeApi.downloads.onChanged.removeListener(onChanged);
-      } catch (_) {
+      } catch (_error) {
       }
     };
     const finishFromSearch = async () => {
@@ -6616,10 +6610,13 @@ function piTransferWaitDownloadComplete(id, timeoutMs) {
       }
       return false;
     };
-    const onChanged = async (delta) => {
+    const onChanged = (delta) => {
       if (!delta || Number(delta.id) !== Number(id)) return;
-      if (delta.state && (delta.state.current === "complete" || delta.state.current === "interrupted")) await finishFromSearch();
-      else if (delta.filename) await finishFromSearch();
+      if (delta.state && (delta.state.current === "complete" || delta.state.current === "interrupted")) {
+        void finishFromSearch();
+      } else if (delta.filename) {
+        void finishFromSearch();
+      }
     };
     const tick = async () => {
       if (await finishFromSearch()) return;
@@ -6628,7 +6625,9 @@ function piTransferWaitDownloadComplete(id, timeoutMs) {
         reject(new Error("Timed out after " + timeoutMs + "ms waiting for download " + id));
         return;
       }
-      timer = setTimeout(tick, 250);
+      timer = setTimeout(() => {
+        void tick();
+      }, 250);
     };
     chromeApi.downloads.onChanged.addListener(onChanged);
     tick().catch((error) => {
@@ -6648,7 +6647,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
     clearTimeout(timer);
     try {
       chromeApi.downloads.onCreated.removeListener(onCreated2);
-    } catch (_) {
+    } catch (_error) {
     }
   };
   const finishResolve = (value) => {
@@ -6667,7 +6666,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
     const normalized = piTransferDownloadItem(item);
     try {
       if (matcher && !matcher(normalized)) return;
-    } catch (_) {
+    } catch (_error) {
       return;
     }
     finishResolve(normalized);
@@ -6675,7 +6674,9 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
   const promise = new Promise((resolve, reject) => {
     resolvePromise = resolve;
     rejectPromise = reject;
-    timer = setTimeout(() => finishReject(new Error("Timed out after " + timeoutMs + "ms waiting for download start")), timeoutMs);
+    timer = setTimeout(() => {
+      finishReject(new Error("Timed out after " + timeoutMs + "ms waiting for download start"));
+    }, timeoutMs);
     chromeApi.downloads.onCreated.addListener(onCreated2);
   });
   return {
@@ -6750,7 +6751,9 @@ function piTransferWaitDownloadForPageEvent(event, startedAt, timeoutMs) {
         reject(new Error("Timed out after " + timeoutMs + "ms waiting for tab download " + (event && event.url || "")));
         return;
       }
-      timer = setTimeout(tick, 250);
+      timer = setTimeout(() => {
+        void tick();
+      }, 250);
     };
     tick().catch((error) => {
       cleanup();
@@ -6934,7 +6937,7 @@ function piTransferFileChooserEvent(tabId2, timeoutMs) {
       clearTimeout(timer);
       if (subscriptionId) unsubscribePiBrowserCdp(subscriptionId);
     };
-    let subscriptionId = subscribePiBrowserCdp(tabId2, "Page.fileChooserOpened", (_source, _method, params) => {
+    const subscriptionId = subscribePiBrowserCdp(tabId2, "Page.fileChooserOpened", (_source, _method, params) => {
       cleanup();
       resolve(asRecord7(params));
     }, { waitId: "transfer-upload", kind: "upload", cdpSubscriptions: [] });
@@ -7217,9 +7220,9 @@ function unsafeMatcherReason(pattern) {
 }
 function normalizePayload(data2) {
   const encoder = new TextEncoder();
-  let text = "";
-  let bytes = 0;
+  let text;
   let binary = false;
+  let bytes;
   if (typeof data2 === "string") {
     text = data2;
     bytes = encoder.encode(text).length;
@@ -7569,7 +7572,7 @@ function cleanupWsSessionsForTab2(tabId2, reason = "tab_cleanup") {
 registerRecovery(async (results) => {
   const result2 = await recover("ws", {
     validateTab: true,
-    recover: async (record) => {
+    recover: async (_record) => {
       return { recovered: false, historyLost: true, reason: "WebSocket sessions are not auto-recovered after restart" };
     }
   });
@@ -7730,8 +7733,8 @@ function syncCspBypassRule() {
 }
 function clearCspBypassAlarm() {
   try {
-    chromeApi.alarms.clear?.(CSP_BYPASS_ALARM);
-  } catch (_) {
+    void chromeApi.alarms.clear?.(CSP_BYPASS_ALARM);
+  } catch (_error) {
   }
 }
 function scheduleCspBypassAlarm(now2 = Date.now()) {
@@ -7895,7 +7898,9 @@ function cleanupPiBrowserTab(tabId2, reason) {
   const cleanupReason = reason || "tab_cleanup";
   try {
     const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId2, cleanupReason);
-    if (pageCleanup && typeof pageCleanup.catch === "function") pageCleanup.catch((e) => console.warn("[PI-BROWSER] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(e)));
+    if (pageCleanup?.catch) {
+      void pageCleanup.catch((e) => console.warn("[PI-BROWSER] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(e)));
+    }
   } catch (e) {
     console.warn("[PI-BROWSER] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(e));
   }
@@ -8066,7 +8071,6 @@ async function callPagePiBrowser(tabId2, command, args, options = {}) {
   return res2.ok ? runtimeRecord(res2.data) : res2;
 }
 async function reinstallPiBrowserSession(tabId2) {
-  const attempted_recovery = true;
   const sess = piBrowserSessions.get(tabId2);
   if (!sess) return null;
   const injected = await ensurePiBrowserDispatcher(tabId2);
@@ -8406,7 +8410,7 @@ async function handleBatch(msg, sender) {
         R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, coreErrorMessage(e), { cmd: c && c.cmd, method: c && c.method, tabId: c && c.tabId, raw: coreErrorDetails(e) }));
         try {
           await detachCurrent();
-        } catch (_) {
+        } catch (_error) {
         }
       }
     }
@@ -8653,7 +8657,7 @@ async function handleWsExec(data, socket) {
       try {
         const t = await chromeApi.tabs.get(id);
         newTabs.push({ id: t.id, url: t.url, title: t.title });
-      } catch (_) {
+      } catch (_error) {
       }
     }
     const finalRes = res && typeof res === "object" ? res : {};
@@ -8681,7 +8685,7 @@ async function handlePiBridgeMessage(msg, sender) {
 function installPiBridgeRouter() {
   if (piBridgeRouterInstalled) return false;
   chromeApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    handlePiBridgeMessage(msg, sender).then(sendResponse);
+    void handlePiBridgeMessage(msg, sender).then(sendResponse);
     return true;
   });
   piBridgeRouterInstalled = true;
@@ -8702,7 +8706,7 @@ async function handlePiBridgeWsMessage(data2, socket2) {
     try {
       const p = JSON.parse(code);
       if (p && typeof p === "object" && !Array.isArray(p) && typeof p.cmd === "string") code = p;
-    } catch (_) {
+    } catch (_error) {
     }
   }
   if (typeof code === "object" && code !== null) {

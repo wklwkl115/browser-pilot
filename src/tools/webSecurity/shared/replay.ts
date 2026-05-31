@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, redirectLocation, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
+import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
 import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize.js";
 import { createCodedError } from "../../../utils/codedError.js";
@@ -46,7 +46,7 @@ export function inferFuzzParamLocations(request: ReplayRequest, explicit: unknow
 	const contentType = requestContentType(request.headers).toLowerCase();
 	if (body.trim()) {
 		if (contentType.includes("multipart/form-data")) out.add("multipart");
-		if (contentType.includes("json") || /^[\s\r\n]*[\[{]/.test(body)) out.add("json");
+		if (contentType.includes("json") || /^[\s\r\n]*[[{]/.test(body)) out.add("json");
 		if (contentType.includes("x-www-form-urlencoded") || /^[^=]+=[\s\S]*/.test(body)) out.add("form");
 	}
 	return Array.from(out);
@@ -101,12 +101,16 @@ export function existingParamNames(request: ReplayRequest, locations: string[]):
 	if (locations.includes("multipart") && request.body !== undefined) {
 		try {
 			for (const part of parseMultipartBody(request.body, requestContentType(request.headers)).parts) names.add(part.name);
-		} catch {}
+		} catch {
+			/* best-effort multipart parameter inference */
+		}
 	}
 	if (locations.includes("json") && body) {
 		try {
 			for (const key of collectJsonParamPaths(JSON.parse(body))) names.add(key);
-		} catch {}
+		} catch {
+			/* best-effort json parameter inference */
+		}
 	}
 	if (locations.includes("header")) for (const key of Object.keys(request.headers)) if (!FETCH_OMIT_HEADER_NAMES.has(normalizeHeaderName(key))) names.add(key);
 	return Array.from(names);
@@ -116,10 +120,12 @@ export function parseFuzzParamValue(value: unknown): unknown {
 	if (typeof value !== "string") return value;
 	const trimmed = value.trim();
 	if (!trimmed) return value;
-	if (/^(?:true|false|null)$/i.test(trimmed) || /^-?\d+(?:\.\d+)?$/.test(trimmed) || /^[\[{]/.test(trimmed)) {
+	if (/^(?:true|false|null)$/i.test(trimmed) || /^-?\d+(?:\.\d+)?$/.test(trimmed) || /^[[{]/.test(trimmed)) {
 		try {
 			return JSON.parse(trimmed);
-		} catch {}
+		} catch {
+			/* fall back to raw string when fuzzy value is not valid JSON */
+		}
 	}
 	return value;
 }

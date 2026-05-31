@@ -219,8 +219,8 @@ async function waitForLoadState(tabId: number, msg: PiBridgeCommand): Promise<Pi
     try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) { /* best-effort abort listener registration */ }
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.loadState timed out', { timeout_ms: timeoutMs, targetState, last_error: record.lastError, events: record.cdpEvents.slice(-50) })), timeoutMs);
     record.timers.push(timeoutHandle);
-    enablePiBrowserCdpDomains(record, ['Page']).then(() => {
-      const sub = subscribePiBrowserCdp(tabId, ['Page.lifecycleEvent','Page.domContentEventFired','Page.loadEventFired','Page.frameStoppedLoading'], async (_source, method, params) => {
+    void enablePiBrowserCdpDomains(record, ['Page']).then(() => {
+      const sub = subscribePiBrowserCdp(tabId, ['Page.lifecycleEvent','Page.domContentEventFired','Page.loadEventFired','Page.frameStoppedLoading'], (_source, method, params) => {
         recordWaitEvent(record, { method, name: params.name, frameId: params.frameId });
         if ((targetState === 'domcontentloaded' && (method === 'Page.domContentEventFired' || params.name === 'DOMContentLoaded')) || ((targetState === 'load' || targetState === 'complete') && (method === 'Page.loadEventFired' || params.name === 'load' || method === 'Page.frameStoppedLoading'))) {
           complete(finishPiBrowserWait(record, true, { state: targetState, method, params, cdp: true }));

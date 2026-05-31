@@ -175,7 +175,7 @@ async function piPersistentCdpAttach(tabId: number, options: PiCdpOptions = {}):
         if (name !== 'default') piPersistentCdpSessions.set(key, existing);
         return piCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
       }
-      for (const [k, rec] of piPersistentCdpSessions.entries()) {
+      for (const [, rec] of piPersistentCdpSessions.entries()) {
         if (rec && rec.tabId === tabId) {
           rec.lastUsed = piCdpNow();
           piPersistentCdpSessions.set(key, rec);
@@ -385,7 +385,7 @@ async function handlePersistentCdpCommand(msg: PiBridgeCommand, sender: PiBridge
   return piCdpError('UNKNOWN_ACTION', 'unknown persistent CDP action: ' + action, { action });
 }
 
-chrome.debugger.onDetach.addListener((source, reason) => {
+chrome.debugger.onDetach.addListener((source, _reason) => {
   if (!source || !source.tabId) return;
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
     if (rec.tabId === source.tabId) piPersistentCdpSessions.delete(key);

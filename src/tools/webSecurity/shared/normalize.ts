@@ -104,7 +104,7 @@ export function base64UrlEncode(value: string | Buffer): string {
 
 export function printableText(buffer: Buffer): string | undefined {
 	const text = buffer.toString("utf8");
-	return /^[\x09\x0a\x0d\x20-\x7e\u0080-\uffff]*$/.test(text) ? text : undefined;
+	return /^[\t\n\r\x20-\x7e\u0080-\uffff]*$/.test(text) ? text : undefined;
 }
 
 export function splitWords(value: unknown): string[] {

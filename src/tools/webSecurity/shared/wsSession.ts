@@ -290,7 +290,11 @@ export async function openWsSession(params: OpenWsSessionParams): Promise<WsSess
 	const existing = wsSessions.get(sessionId);
 	if (existing && (existing.state === "open" || existing.state === "opening")) throw wsShellError(`WebSocket session already open: ${sessionId}`, "WEBSOCKET_SESSION_ALREADY_OPEN", { sessionId, url: existing.url, state: existing.state });
 	if (existing) {
-		try { existing.ws.terminate(); } catch {}
+		try {
+			existing.ws.terminate();
+		} catch {
+			/* best-effort prior websocket shell session termination */
+		}
 		wsSessions.delete(sessionId);
 	}
 	const timeoutMs = positiveInt(params.timeoutMs, DEFAULT_OPEN_TIMEOUT_MS, 100, 120_000);
@@ -350,7 +354,11 @@ export async function openWsSession(params: OpenWsSessionParams): Promise<WsSess
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
-			try { ws.terminate(); } catch {}
+			try {
+				ws.terminate();
+			} catch {
+				/* best-effort websocket shell termination after open timeout */
+			}
 			wsSessions.delete(sessionId);
 			reject(wsShellError(`WebSocket open timed out after ${timeoutMs}ms`, "WEBSOCKET_OPEN_TIMEOUT", { sessionId, url, timeoutMs }));
 		}, timeoutMs);
@@ -527,7 +535,11 @@ export async function closeWsSession(params: CloseWsSessionParams): Promise<WsSe
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
-			try { session.ws.terminate(); } catch {}
+			try {
+				session.ws.terminate();
+			} catch {
+				/* best-effort websocket shell termination during close timeout */
+			}
 			resolve();
 		}, timeoutMs);
 		const onClose = () => {
@@ -561,7 +573,11 @@ export async function cleanupWsSessionsForTests(): Promise<void> {
 	for (const session of sessions) {
 		try {
 			if (session.state === "open" || session.state === "opening") {
-				try { session.ws.terminate(); } catch {}
+				try {
+					session.ws.terminate();
+				} catch {
+					/* best-effort websocket shell termination during test cleanup */
+				}
 			}
 		} finally {
 			wsSessions.delete(session.sessionId);

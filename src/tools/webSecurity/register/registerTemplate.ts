@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeNucleiBridgeData, summarizeTemplateCheckData } from "../../summaries/index.js";
 import { runNucleiBridge, runTemplateCheck } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, webSecurityDefaultSchemeParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, webSecurityDefaultSchemeParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import type { RawNucleiBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";

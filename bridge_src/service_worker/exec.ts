@@ -235,7 +235,12 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
     chrome.tabs.onCreated.removeListener(onCreated);
     const newTabs: JsonRecord[] = [];
     for (const id of newTabIds) {
-      try { const t = await chrome.tabs.get(id); newTabs.push({ id: t.id, url: t.url, title: t.title }); } catch (_) {}
+      try {
+        const t = await chrome.tabs.get(id);
+        newTabs.push({ id: t.id, url: t.url, title: t.title });
+      } catch (_error) {
+        /* best-effort new tab metadata read */
+      }
     }
     const finalRes = res && typeof res === 'object' ? res as JsonRecord : {};
     if (finalRes.ok) {

@@ -78,8 +78,17 @@ function cleanupPiBrowserOrphanWaits(reason?: string, maxAgeMs?: unknown): numbe
     const age = now - Number(record.createdAt || now);
     if (!record || record.status === 'cleaned') continue;
     if (limit >= 0 && age < limit) continue;
-    try { record.abortController?.abort(reason || 'orphan_cleanup'); } catch (_) {}
-    try { clearWait(record, reason || 'orphan_cleanup'); cleaned += 1; } catch (_) {}
+    try {
+      record.abortController?.abort(reason || 'orphan_cleanup');
+    } catch (_error) {
+      /* best-effort orphan wait abort */
+    }
+    try {
+      clearWait(record, reason || 'orphan_cleanup');
+      cleaned += 1;
+    } catch (_error) {
+      /* best-effort orphan wait cleanup */
+    }
   }
   if (cleaned) rememberPiBrowserCdpCleanup({ reason: reason || 'orphan_cleanup', orphan_waits: cleaned });
   return cleaned;
@@ -88,9 +97,17 @@ try {
   const waitGlobal = self as typeof self & { __piBrowserUnhandledRejectionCleanupInstalled?: boolean };
   if (typeof self !== 'undefined' && self.addEventListener && !waitGlobal.__piBrowserUnhandledRejectionCleanupInstalled) {
     waitGlobal.__piBrowserUnhandledRejectionCleanupInstalled = true;
-    self.addEventListener('unhandledrejection', () => { try { cleanupPiBrowserOrphanWaits('unhandledRejection', 0); } catch (_) {} });
+    self.addEventListener('unhandledrejection', () => {
+      try {
+        cleanupPiBrowserOrphanWaits('unhandledRejection', 0);
+      } catch (_error) {
+        /* best-effort orphan wait cleanup on unhandled rejection */
+      }
+    });
   }
-} catch (_) {}
+} catch (_error) {
+  /* best-effort unhandled rejection cleanup bootstrap */
+}
 let piBrowserWaitSeq = 0;
 const PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS = 30000;
 function normalizePiBrowserTimeoutMs(msg: PiBridgeCommand | null | undefined, fallback = PI_BROWSER_DEFAULT_WAIT_TIMEOUT_MS): number {
@@ -124,7 +141,12 @@ function registerWait(tabId: number, kind: string, criteria: PiBridgeCommand = {
   // lifecycle identity: key: waitKey(tabId, record.waitId)
   piBrowserWaits.register(record);
   const onAbort = () => { record.status = 'cancelled'; };
-  try { abortController.signal.addEventListener('abort', onAbort, { once: true }); record.listeners.push({ remove: () => abortController.signal.removeEventListener('abort', onAbort) }); } catch (_) {}
+  try {
+    abortController.signal.addEventListener('abort', onAbort, { once: true });
+    record.listeners.push({ remove: () => abortController.signal.removeEventListener('abort', onAbort) });
+  } catch (_error) {
+    /* best-effort wait abort listener registration */
+  }
   return record;
 }
 function recordWaitEvent(record: PiBrowserWaitRecord, event?: JsonRecord): void {
@@ -162,16 +184,42 @@ function cleanupTabWaits(tabId: unknown, reason?: string, options: CleanupTabWai
   let orphaned = 0;
   for (const r of records) {
     const wasMissingKey = !r.key || piBrowserWaits.get(r.key) !== r;
-    try { r.abortController?.abort(cleanupReason); aborted += 1; } catch (_) {}
-    try { clearWait(r, cleanupReason); cleaned += 1; } catch (_) {}
+    try {
+      r.abortController?.abort(cleanupReason);
+      aborted += 1;
+    } catch (_error) {
+      /* best-effort tab wait abort */
+    }
+    try {
+      clearWait(r, cleanupReason);
+      cleaned += 1;
+    } catch (_error) {
+      /* best-effort tab wait cleanup */
+    }
     if (wasMissingKey) orphaned += 1;
   }
   // Defensive second pass: clear any wait inserted or left behind while tab cleanup was running.
   for (const [key, r] of Array.from(piBrowserWaits.entries())) {
     if (!isWaitRecordForTab(r, tabId)) continue;
     orphaned += 1;
-    try { r.abortController?.abort(cleanupReason); aborted += 1; } catch (_) {}
-    try { clearWait(r, cleanupReason); cleaned += 1; } catch (error) { console.warn('[PI-BROWSER-WAIT] Failed to clear orphaned wait record', key, error); try { piBrowserWaits.delete(key); cleaned += 1; } catch (__) { /* best-effort orphan registry cleanup */ } }
+    try {
+      r.abortController?.abort(cleanupReason);
+      aborted += 1;
+    } catch (_error) {
+      /* best-effort orphan wait abort */
+    }
+    try {
+      clearWait(r, cleanupReason);
+      cleaned += 1;
+    } catch (error) {
+      console.warn('[PI-BROWSER-WAIT] Failed to clear orphaned wait record', key, error);
+      try {
+        piBrowserWaits.delete(key);
+        cleaned += 1;
+      } catch (_cleanupError) {
+        /* best-effort orphan registry cleanup */
+      }
+    }
   }
   if (opts.includeCdp !== false) cleanupPiBrowserCdpTab(tabId, cleanupReason);
   cleanupEventSubscriptionsForTab(tabId);

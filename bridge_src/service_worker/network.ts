@@ -109,7 +109,13 @@ function cleanupNetworkRecorder(recorder: NetworkRecorder | null | undefined, re
   recorder.active = false;
   recorder.stoppedAt = Date.now();
   for (const wait of Array.from(recorder.waits.values())) finishNetworkRecorderWait(recorder, wait, false, PI_BROWSER_ERROR_CODES.CANCELLED, 'network recorder stopped', { reason:reason || 'stopped' });
-  for (const sid of Array.from(recorder.cdpRecord.cdpSubscriptions || [])) { try { unsubscribePiBrowserCdp(sid); } catch (_) {} }
+  for (const sid of Array.from(recorder.cdpRecord.cdpSubscriptions || [])) {
+    try {
+      unsubscribePiBrowserCdp(sid);
+    } catch (_error) {
+      /* best-effort network recorder CDP subscription cleanup */
+    }
+  }
   recorder.cdpRecord.cdpSubscriptions = [];
   releasePiBrowserCdpDomains(recorder.cdpRecord, Array.from(recorder.cdpRecord.cdpDomains || []), reason || 'network_recorder_stop');
   recorder.cdpRecord.cdpAttached = false;
@@ -254,9 +260,23 @@ function networkWaitMatches(recorder: NetworkRecorder, wait: Pick<NetworkRecorde
 function finishNetworkRecorderWait(recorder: NetworkRecorder, wait: NetworkRecorderWait, ok: boolean, errorCode?: string | null, message?: string | null, details: JsonRecord = {}): void {
   if (!wait || wait.done) return;
   wait.done = true;
-  try { clearTimeout(wait.timeoutHandle); } catch (_) {}
-  try { clearInterval(wait.intervalHandle); } catch (_) {}
-  if (wait.abortHandler) { try { wait.abortController?.signal?.removeEventListener('abort', wait.abortHandler); } catch (_) {} }
+  try {
+    clearTimeout(wait.timeoutHandle);
+  } catch (_error) {
+    /* best-effort network wait timeout cleanup */
+  }
+  try {
+    clearInterval(wait.intervalHandle);
+  } catch (_error) {
+    /* best-effort network wait interval cleanup */
+  }
+  if (wait.abortHandler) {
+    try {
+      wait.abortController?.signal?.removeEventListener('abort', wait.abortHandler);
+    } catch (_error) {
+      /* best-effort network wait abort listener cleanup */
+    }
+  }
   recorder.waits.delete(wait.waitId);
   const elapsed_ms = Date.now() - wait.createdAt;
   if (ok) {
@@ -324,7 +344,11 @@ async function waitNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promise
     const abortController = msg.abortController || new AbortController();
     const wait: NetworkRecorderWait = { waitId, condition, criteria, createdAt:Date.now(), resolve, abortController, done:false, idleMs:numberInRange(msg.idleMs ?? msg.idle_ms, 500, 50, Math.max(50, timeoutMs || 300000)), count:numberInRange(msg.count ?? msg.minCount ?? msg.min_count, 1, 1, 1000000), lastMatchSeq:0 };
     wait.abortHandler = () => finishNetworkRecorderWait(recorder, wait, false, PI_BROWSER_ERROR_CODES.CANCELLED, 'network.wait cancelled', { criteria:redactSensitive(criteria) });
-    try { abortController.signal.addEventListener('abort', wait.abortHandler, { once:true }); } catch (_) {}
+    try {
+      abortController.signal.addEventListener('abort', wait.abortHandler, { once:true });
+    } catch (_error) {
+      /* best-effort network wait abort listener registration */
+    }
     wait.timeoutHandle = setTimeout(() => finishNetworkRecorderWait(recorder, wait, false, PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_TIMEOUT, 'network.wait timed out', { timeout_ms:timeoutMs, criteria:redactSensitive(criteria), lastEntries:recorder.entries.slice(-20).map((r: NetworkRecord) => networkRecordSummary(r)) }), timeoutMs);
     if (condition === 'idle' || condition === 'count') wait.intervalHandle = setInterval(() => {
       const m = immediateMatch();

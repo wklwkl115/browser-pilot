@@ -5,7 +5,7 @@ import { isIP } from "node:net";
 import tls from "node:tls";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
-import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, normalizeMethod, numericList, positiveInt, sha256Hex, stringList } from "./normalize.js";
+import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, numericList, positiveInt, sha256Hex, stringList } from "./normalize.js";
 import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types.js";
 
 export const TEXTUAL_CONTENT_TYPE = /(?:^|[\s;/+.-])(text|json|xml|html|javascript|ecmascript|x-www-form-urlencoded|svg|graphql)(?:[\s;/+.-]|$)/i;
@@ -116,7 +116,9 @@ export function absoluteUrl(input: unknown, options: { baseUrl?: unknown; scheme
 	if (!raw) throw httpInputError("A URL is required", { field: "url" });
 	try {
 		return new URL(raw).toString();
-	} catch {}
+	} catch {
+		/* fall through to baseUrl/host-only resolution */
+	}
 	const base = asString(options.baseUrl)?.trim();
 	if (base) return new URL(raw, absoluteUrl(base, { scheme: options.scheme })).toString();
 	if (/^[A-Za-z0-9.-]+(?::\d+)?(?:\/.*)?$/.test(raw)) return new URL(`${defaultScheme(options.scheme)}://${raw}`).toString();
@@ -245,7 +247,9 @@ async function readBodyLimited(response: Response, maxBytes: number): Promise<{ 
 			truncated = true;
 			try {
 				await reader.cancel();
-			} catch {}
+			} catch {
+				/* best-effort stream reader cancellation after truncation */
+			}
 			break;
 		}
 	}
@@ -293,8 +297,12 @@ function murmurHash3_32(buffer: Buffer, seed = 0): number {
 	let tail = 0;
 	const offset = blockCount * 4;
 	switch (buffer.length & 3) {
-		case 3: tail ^= buffer[offset + 2] << 16;
-		case 2: tail ^= buffer[offset + 1] << 8;
+		case 3:
+			tail ^= buffer[offset + 2] << 16;
+			// falls through
+		case 2:
+			tail ^= buffer[offset + 1] << 8;
+			// falls through
 		case 1:
 			tail ^= buffer[offset];
 			tail = Math.imul(tail, c1);

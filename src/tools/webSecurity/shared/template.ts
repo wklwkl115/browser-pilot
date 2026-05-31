@@ -317,7 +317,9 @@ export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: Fet
 		try {
 			const value = jsonPathValue(JSON.parse(final.bodyText), extractor.jsonPath || "$");
 			if (value !== undefined) out.push({ name: extractor.name || extractor.jsonPath, type, part: "body", jsonPath: extractor.jsonPath, value, values: Array.isArray(value) ? value : [value] });
-		} catch {}
+		} catch {
+			/* best-effort json extractor */
+		}
 		return out;
 	}
 	for (const pattern of extractor.regex || []) {

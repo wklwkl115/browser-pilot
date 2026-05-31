@@ -35,9 +35,9 @@ function unsafeMatcherReason(pattern: unknown): string | undefined {
 
 function normalizePayload(data: unknown): { text: string; bytes: number; binary: boolean; json?: unknown } {
 	const encoder = new TextEncoder();
-	let text = "";
-	let bytes = 0;
+	let text: string;
 	let binary = false;
+	let bytes: number;
 	if (typeof data === "string") {
 		text = data;
 		bytes = encoder.encode(text).length;
@@ -83,9 +83,27 @@ function cleanupWsSocketListeners(session: ReturnType<typeof requireSession>): v
 	const messageListener = listeners.messageListener as EventListener | undefined;
 	const closeListener = listeners.closeListener as EventListener | undefined;
 	const errorListener = listeners.errorListener as EventListener | undefined;
-	if (messageListener) { try { ws.removeEventListener("message", messageListener); } catch {} }
-	if (closeListener) { try { ws.removeEventListener("close", closeListener); } catch {} }
-	if (errorListener) { try { ws.removeEventListener("error", errorListener); } catch {} }
+	if (messageListener) {
+		try {
+			ws.removeEventListener("message", messageListener);
+		} catch {
+			/* best-effort websocket message listener cleanup */
+		}
+	}
+	if (closeListener) {
+		try {
+			ws.removeEventListener("close", closeListener);
+		} catch {
+			/* best-effort websocket close listener cleanup */
+		}
+	}
+	if (errorListener) {
+		try {
+			ws.removeEventListener("error", errorListener);
+		} catch {
+			/* best-effort websocket error listener cleanup */
+		}
+	}
 	session.listeners = {};
 }
 
@@ -95,7 +113,11 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 	const existing = getWsSession(tabId, config.sessionId);
 	if (existing && (existing.state === "opening" || existing.state === "open")) return piBrowserError("WEBSOCKET_SESSION_ALREADY_OPEN", "ws session already open", { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: existing.url, state: existing.state });
 	if (existing) {
-		try { (existing.ws as WebSocket | undefined)?.close(); } catch {}
+		try {
+			(existing.ws as WebSocket | undefined)?.close();
+		} catch {
+			/* best-effort prior websocket session close */
+		}
 		piBrowserWsSessions.delete(String(existing.key || ""));
 	}
 	const session = createWsSession(tabId, config);
@@ -132,7 +154,11 @@ async function openWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResp
 			if (settled) return;
 			settled = true;
 			cleanupWsSocketListeners(session);
-			try { ws.close(); } catch {}
+			try {
+				ws.close();
+			} catch {
+				/* best-effort websocket close after open timeout */
+			}
 			piBrowserWsSessions.delete(String(session.key));
 			void forgetWsRuntimeSession("ws", tabId, config.sessionId);
 			resolve(piBrowserError("WEBSOCKET_OPEN_TIMEOUT", `ws open timed out after ${config.timeoutMs}ms`, { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url, timeoutMs: config.timeoutMs }));
@@ -314,7 +340,11 @@ async function closeWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeRes
 			session.state = "closed";
 			session.closedAt = Date.now();
 			cleanupWsSocketListeners(session);
-			try { ws.close(); } catch {}
+			try {
+				ws.close();
+			} catch {
+				/* best-effort websocket close during timeout-driven shutdown */
+			}
 			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
 		}, timeoutMs);
 		const onClose = () => {
@@ -356,7 +386,11 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup") {
 				if (Number(session.tabId) !== Number(_tabId)) continue;
 				removed += 1;
 				sessionIds.push(String(session.sessionId || "default"));
-				try { (session.ws as { terminate?: () => void; close?: () => void } | undefined)?.terminate?.(); } catch {}
+				try {
+					(session.ws as { terminate?: () => void; close?: () => void } | undefined)?.terminate?.();
+				} catch {
+					/* best-effort websocket termination during tab cleanup */
+				}
 				piBrowserWsSessions.delete(key);
 			}
 			return { tabId: _tabId, removed, reason: cleanupReason, sessionIds };
@@ -372,7 +406,7 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup") {
 registerRecovery(async (results) => {
 	const result = await recoverState('ws', {
 		validateTab: true,
-		recover: async (record) => {
+		recover: async (_record) => {
 			// WS sessions cannot be recovered - just report as lost with config
 			return { recovered: false, historyLost: true, reason: 'WebSocket sessions are not auto-recovered after restart' };
 		},

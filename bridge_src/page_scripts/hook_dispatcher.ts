@@ -35,7 +35,6 @@ declare global {
   type XhrWithMeta = XMLHttpRequest & { __pi_browser_meta?: XhrMeta };
   type MutationSample = HookRecord & { type?: string; added_count?: number; removed_count?: number };
 
-  const hookWindow = window as Window & typeof globalThis & { __PI_BROWSER_HOOKS__?: HookApi };
   function asRecord(value: unknown): HookRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as HookRecord : {}; }
   function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
   function errorName(error: unknown): string { return error instanceof Error ? error.name : 'Error'; }
@@ -48,7 +47,9 @@ declare global {
       if (typeof existingPiBrowser.uninstall === 'function') {
         existingPiBrowser.uninstall({ force: true, reason: 'dispatcher_upgrade', next_version: VERSION });
       }
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort dispatcher upgrade uninstall */
+    }
   }
   const DEFAULT_BUFFER_SIZE = 1000;
   const ERROR_CODES = {
@@ -128,7 +129,11 @@ declare global {
     const pattern = String(raw == null ? '' : raw);
     if (!pattern || pattern.length > PI_BROWSER_HOOK_REDACT_MAX_PATTERN_CHARS) return null;
     if (isSafeHookRedactRegexPattern(pattern)) {
-      try { return { pattern, mode: 'regex', regex: new RegExp(pattern, 'gi') }; } catch (_) {}
+      try {
+        return { pattern, mode: 'regex', regex: new RegExp(pattern, 'gi') };
+      } catch (_error) {
+        /* fall through to literal redaction pattern */
+      }
     }
     try { return { pattern, mode: 'literal', regex: new RegExp(escapeRegExpLiteral(pattern), 'gi') }; } catch (_) { return null; }
   }
@@ -152,16 +157,34 @@ declare global {
     if (t === 'string') return redactText(v);
     if (t === 'number' || t === 'boolean' || t === 'bigint') return v;
     if (t === 'undefined') return undefined;
-    if (t === 'function') return '[Function' + ((v as Function).name ? ':' + (v as Function).name : '') + ']';
+    if (t === 'function') {
+      const functionLike = v as { name?: string };
+      return '[Function' + (functionLike.name ? ':' + functionLike.name : '') + ']';
+    }
     const maxDepth = numericOption('max_clone_depth', 10, 1, 50);
     if ((depth || 0) >= maxDepth) return '[MaxDepth]';
     seen = seen || (typeof WeakSet !== 'undefined' ? new WeakSet() : null);
     if (typeof v !== 'object' || v === null) return String(v);
-    if (seen) { if (seen.has(v)) return '[Circular]'; try { seen.add(v); } catch (_) {} }
+    if (seen) {
+      if (seen.has(v)) return '[Circular]';
+      try {
+        seen.add(v);
+      } catch (_error) {
+        /* best-effort circular tracking */
+      }
+    }
     if (typeof ArrayBuffer !== 'undefined' && v instanceof ArrayBuffer) return { kind: 'ArrayBuffer', byteLength: v.byteLength };
     if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(v)) { const view = v as ArrayBufferView & { length?: number }; return { kind: view.constructor && view.constructor.name || 'TypedArray', byteLength: view.byteLength, length: view.length }; }
     if (typeof Blob !== 'undefined' && v instanceof Blob) return { kind: 'Blob', size: v.size, type: v.type };
-    if (typeof FormData !== 'undefined' && v instanceof FormData) { const keys: string[] = []; try { v.forEach((_, k) => keys.push(String(k))); } catch (_) {} return { kind: 'FormData', keys }; }
+    if (typeof FormData !== 'undefined' && v instanceof FormData) {
+      const keys: string[] = [];
+      try {
+        v.forEach((_, k) => keys.push(String(k)));
+      } catch (_error) {
+        /* best-effort FormData key enumeration */
+      }
+      return { kind: 'FormData', keys };
+    }
     if (v instanceof Error) return redactClone(serializeError(v), (depth || 0) + 1, seen);
     const maxItems = numericOption('max_array_items', 100, 1, 10000);
     const maxKeys = numericOption('max_object_keys', 100, 1, 10000);
@@ -226,7 +249,11 @@ declare global {
   function storageKeys(storage: Storage | null | undefined): string[] {
     const keys: string[] = [];
     if (!storage) return keys;
-    try { for (let i = 0; i < storage.length; i += 1) keys.push(String(storage.key(i))); } catch (_) {}
+    try {
+      for (let i = 0; i < storage.length; i += 1) keys.push(String(storage.key(i)));
+    } catch (_error) {
+      /* best-effort storage key enumeration */
+    }
     return keys;
   }
   function elementRef(node: unknown): HookRecord | null {
@@ -268,7 +295,7 @@ declare global {
   let origWebSocket: typeof window.WebSocket | null = null;
   let origStorage: StorageOriginal | null = null;
   let origCookieDescriptor: CookieDescriptor | null = null;
-  let origCrypto: { subtle: HookFunctionRecord; getRandomValues: Crypto['getRandomValues'] | null } = { subtle: {}, getRandomValues: null };
+  const origCrypto: { subtle: HookFunctionRecord; getRandomValues: Crypto['getRandomValues'] | null } = { subtle: {}, getRandomValues: null };
   let origDomSinks: HookRecord = {};
   let xpathTimer: ReturnType<typeof setTimeout> | null = null;
   let xpathPollMs = 0;
@@ -278,7 +305,7 @@ declare global {
   let eventNotifyQueue: HookEvent[] = [];
   let eventNotifyTimer: ReturnType<typeof setTimeout> | null = null;
   let errorHandlers: Array<[keyof WindowEventMap, EventListener]> = [];
-  let hookWrappers: { xhr: HookFunctionRecord; fetch: typeof window.fetch | null; websocket: typeof window.WebSocket | null; console: HookFunctionRecord; storage: HookFunctionRecord; cookie: unknown; crypto: HookFunctionRecord; domSinks: HookRecord } = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
+  const hookWrappers: { xhr: HookFunctionRecord; fetch: typeof window.fetch | null; websocket: typeof window.WebSocket | null; console: HookFunctionRecord; storage: HookFunctionRecord; cookie: unknown; crypto: HookFunctionRecord; domSinks: HookRecord } = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
   let perfStats: Record<string, PerfBucket> = {};
   let redactMatchers: RedactMatcher[] | null = null;
   function resetDiagnostics(): void { cleanup_warnings = []; residue_signatures = []; }
@@ -289,7 +316,9 @@ declare global {
     residue_signatures = [];
     try {
       if (typeof window.fetch === 'function' && isPiWrapperSource(Function.prototype.toString.call(window.fetch))) addResidueSignature('fetch');
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort fetch residue detection */
+    }
     try {
       if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype && typeof XMLHttpRequest.prototype.open === 'function') {
         const s1 = Function.prototype.toString.call(XMLHttpRequest.prototype.open);
@@ -297,24 +326,34 @@ declare global {
         if (isPiWrapperSource(s1)) addResidueSignature('xhr.open');
         if (isPiWrapperSource(s2)) addResidueSignature('xhr.send');
       }
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort XHR residue detection */
+    }
     try {
       if (typeof window.WebSocket === 'function' && /WrappedWebSocket|websocket\.open|__PI_BROWSER_HOOKS__/i.test(Function.prototype.toString.call(window.WebSocket))) addResidueSignature('WebSocket');
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort websocket residue detection */
+    }
     try {
       if (typeof Storage !== 'undefined' && Storage.prototype && typeof Storage.prototype.setItem === 'function') {
         const s = Function.prototype.toString.call(Storage.prototype.setItem);
         if (isPiWrapperSource(s)) addResidueSignature('storage.setItem');
       }
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort storage residue detection */
+    }
     try {
       const consoleRecord = console as unknown as Record<string, unknown>;
       ['log','warn','error','info','debug'].forEach(level => {
         try {
           if (typeof consoleRecord[level] === 'function' && isPiWrapperSource(Function.prototype.toString.call(consoleRecord[level]))) addResidueSignature('console.' + level);
-        } catch (_) {}
+        } catch (_error) {
+          /* best-effort console residue detection */
+        }
       });
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort console residue bootstrap */
+    }
   }
 
   function perfBucket(name: string): PerfBucket {
@@ -349,7 +388,9 @@ declare global {
   function notifyOverflow(event: HookEvent): void {
     try {
       window.postMessage({ __pi_browser_overflow__: true, dropped_events: overflow, buffer_capacity: buffer_size, buffer_used: buffer_count, event_type: event && event.type, seq: event && event.seq }, '*');
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort overflow notification */
+    }
   }
   function bufferSnapshot(): HookEvent[] {
     const out: HookEvent[] = [];
@@ -358,7 +399,12 @@ declare global {
   }
   function scheduleTimer(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
     const t = setTimeout(fn, ms);
-    try { const timer = t as unknown as { unref?: () => void }; if (timer && typeof timer.unref === 'function') timer.unref(); } catch (_) {}
+    try {
+      const timer = t as unknown as { unref?: () => void };
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    } catch (_error) {
+      /* best-effort timer unref */
+    }
     return t;
   }
   function clearEventNotifyTimer(): void { if (eventNotifyTimer) { clearTimeout(eventNotifyTimer); eventNotifyTimer = null; } }
@@ -369,10 +415,19 @@ declare global {
     try {
       if (options && options.batch_post_message) window.postMessage({ __pi_browser_event__: true, event_batch: batch, count: batch.length }, '*');
       else batch.forEach(event => window.postMessage({ __pi_browser_event__: true, event }, '*'));
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort batched event notification */
+    }
   }
   function notifyEvent(event: HookEvent): void {
-    if (!(options && options.batch_post_message)) { try { window.postMessage({ __pi_browser_event__: true, event }, '*'); } catch (_) {} return; }
+    if (!(options && options.batch_post_message)) {
+      try {
+        window.postMessage({ __pi_browser_event__: true, event }, '*');
+      } catch (_error) {
+        /* best-effort single event notification */
+      }
+      return;
+    }
     eventNotifyQueue.push(event);
     const maxEvents = numericOption('batch_max_events', 50, 1, 10000);
     const flushMs = numericOption('batch_flush_ms', 25, 0, 60000);
@@ -419,9 +474,9 @@ declare global {
     if (!targets.network || origXHR || typeof XMLHttpRequest === 'undefined') return;
     origXHR = { open: XMLHttpRequest.prototype.open, send: XMLHttpRequest.prototype.send };
     const originalXhr = origXHR;
-    const openWrapper = function(this: XhrWithMeta, method: string, url: string | URL): void {
+    const openWrapper = function(this: XhrWithMeta, method: string, url: string | URL, ...rest: [boolean?, string?, string?]): void {
       this.__pi_browser_meta = { method: String(method || 'GET').toUpperCase(), url: String(url || ''), t0: Date.now() };
-      (originalXhr.open as unknown as HookCallable).apply(this, Array.from(arguments));
+      (originalXhr.open as unknown as HookCallable).apply(this, [method, url, ...rest]);
     };
     hookWrappers.xhr.open = openWrapper as HookCallable;
     XMLHttpRequest.prototype.open = openWrapper as typeof XMLHttpRequest.prototype.open;
@@ -433,7 +488,7 @@ declare global {
         response_type: this.responseType || '', response_url: this.responseURL || meta.url
       }));
       this.addEventListener('error', () => push('network.error', { transport: 'xhr', url: meta.url, error: 'XHR failed' }));
-      (originalXhr.send as unknown as HookCallable).apply(this, Array.from(arguments));
+      (originalXhr.send as typeof XMLHttpRequest.prototype.send).call(this, body);
     };
     hookWrappers.xhr.send = sendWrapper as HookCallable;
     XMLHttpRequest.prototype.send = sendWrapper as typeof XMLHttpRequest.prototype.send;
@@ -478,7 +533,13 @@ declare global {
     WrappedWebSocket.prototype = NativeWebSocket.prototype;
     Object.setPrototypeOf(WrappedWebSocket, NativeWebSocket);
     const nativeWebSocketRecord = NativeWebSocket as unknown as Record<string, unknown>;
-    ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(k => { try { Object.defineProperty(WrappedWebSocket, k, { value: nativeWebSocketRecord[k], enumerable: true }); } catch (_) {} });
+    ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(k => {
+      try {
+        Object.defineProperty(WrappedWebSocket, k, { value: nativeWebSocketRecord[k], enumerable: true });
+      } catch (_error) {
+        /* best-effort websocket static constant mirror */
+      }
+    });
     const wrappedCtor = WrappedWebSocket as unknown as typeof window.WebSocket;
     hookWrappers.websocket = wrappedCtor;
     window.WebSocket = wrappedCtor;
@@ -489,9 +550,9 @@ declare global {
     ['log','warn','error','info','debug'].forEach(level => {
       if (typeof consoleRecord[level] !== 'function') return;
       origConsole[level] = consoleRecord[level];
-      hookWrappers.console[level] = function() {
-        push('console.' + level, { args: Array.from(arguments).map(x => safeString(x, 1024)), stack: stackForEvent() });
-        return origConsole[level].apply(console, Array.from(arguments));
+      hookWrappers.console[level] = function(...args: unknown[]) {
+        push('console.' + level, { args: args.map(x => safeString(x, 1024)), stack: stackForEvent() });
+        return origConsole[level].apply(console, args);
       };
       consoleRecord[level] = hookWrappers.console[level];
     });
@@ -581,7 +642,7 @@ declare global {
     if (typeof nativeWrite === 'function') {
       origDomSinks.documentWrite = nativeWrite;
       document.write = function(...text: string[]): void {
-        push('dom.sink.call', { sink: 'document.write', value: Array.from(arguments).map(x => safeString(String(x), 1024)), stack: stackForEvent() });
+        push('dom.sink.call', { sink: 'document.write', value: text.map(x => safeString(String(x), 1024)), stack: stackForEvent() });
         return nativeWrite.apply(document, text);
       };
     }
@@ -612,7 +673,9 @@ declare global {
     try {
       const snapshot = getter.call(document);
       push('cookies.snapshot', { names: cookieNames(snapshot), count: cookieNames(snapshot).length, value: redactCookieValue(snapshot) });
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort cookie snapshot */
+    }
   }
   function hookStorage(): void {
     if (!targets.storage || origStorage || typeof Storage === 'undefined') return;
@@ -622,8 +685,16 @@ declare global {
     };
     const originalStorage = origStorage;
     function storageKind(self: unknown): string {
-      try { if (self === window.localStorage) return 'localStorage'; } catch (_) {}
-      try { if (self === window.sessionStorage) return 'sessionStorage'; } catch (_) {}
+      try {
+        if (self === window.localStorage) return 'localStorage';
+      } catch (_error) {
+        /* best-effort localStorage identity check */
+      }
+      try {
+        if (self === window.sessionStorage) return 'sessionStorage';
+      } catch (_error) {
+        /* best-effort sessionStorage identity check */
+      }
       return 'Storage';
     }
     const setItemWrapper = function(this: Storage, key: string, value: string): void {
@@ -651,8 +722,16 @@ declare global {
     };
     hookWrappers.storage.clear = clearWrapper as HookCallable;
     proto.clear = clearWrapper;
-    try { push('storage.snapshot', { storage: 'localStorage', keys: storageKeys(window.localStorage) }); } catch (_) {}
-    try { push('storage.snapshot', { storage: 'sessionStorage', keys: storageKeys(window.sessionStorage) }); } catch (_) {}
+    try {
+      push('storage.snapshot', { storage: 'localStorage', keys: storageKeys(window.localStorage) });
+    } catch (_error) {
+      /* best-effort localStorage snapshot */
+    }
+    try {
+      push('storage.snapshot', { storage: 'sessionStorage', keys: storageKeys(window.sessionStorage) });
+    } catch (_error) {
+      /* best-effort sessionStorage snapshot */
+    }
   }
   function hookCrypto(): void {
     if (!targets.crypto || !window.crypto) return;
@@ -664,7 +743,9 @@ declare global {
           if (!origCrypto.getRandomValues || array === null) return array;
           return origCrypto.getRandomValues(array as ArrayBufferView<ArrayBuffer>) as T;
         };
-      } catch (_) {}
+      } catch (_error) {
+        /* best-effort getRandomValues hook install */
+      }
     }
     const subtle = window.crypto.subtle;
     if (!subtle) return;
@@ -673,8 +754,7 @@ declare global {
       if (origCrypto.subtle[name] || typeof subtleRecord[name] !== 'function') return;
       origCrypto.subtle[name] = subtleRecord[name].bind(subtle) as HookCallable;
       try {
-        subtleRecord[name] = function() {
-          const args = Array.from(arguments);
+        subtleRecord[name] = function(...args: unknown[]) {
           push('crypto.subtle.' + name, {
             algorithm: describeAlgorithm(args[0]),
             key: describeKey(args[1]),
@@ -684,7 +764,9 @@ declare global {
           });
           return origCrypto.subtle[name].apply(subtle, args);
         };
-      } catch (_) {}
+      } catch (_error) {
+        /* best-effort subtle crypto hook install */
+      }
     });
   }
   function checkXPaths(): void {
@@ -867,9 +949,22 @@ declare global {
       Storage.prototype.key = origStorage.key; origStorage = null; hookWrappers.storage = {};
     }
     if (origCookieDescriptor) { Object.defineProperty(origCookieDescriptor.proto, 'cookie', origCookieDescriptor.desc); origCookieDescriptor = null; }
-    Object.keys(origCrypto.subtle).forEach(k => { try { if (window.crypto && window.crypto.subtle) (window.crypto.subtle as unknown as HookFunctionRecord)[k] = origCrypto.subtle[k]; } catch (_) {} });
+    Object.keys(origCrypto.subtle).forEach(k => {
+      try {
+        if (window.crypto && window.crypto.subtle) (window.crypto.subtle as unknown as HookFunctionRecord)[k] = origCrypto.subtle[k];
+      } catch (_error) {
+        /* best-effort subtle crypto restore */
+      }
+    });
     origCrypto.subtle = {};
-    if (origCrypto.getRandomValues) { try { window.crypto.getRandomValues = origCrypto.getRandomValues; } catch (_) {} origCrypto.getRandomValues = null; }
+    if (origCrypto.getRandomValues) {
+      try {
+        window.crypto.getRandomValues = origCrypto.getRandomValues;
+      } catch (_error) {
+        /* best-effort getRandomValues restore */
+      }
+      origCrypto.getRandomValues = null;
+    }
     Object.keys(origDomSinks).forEach(k => {
       const item = origDomSinks[k] as DomSinkDescriptor | undefined;
       if (item && item.proto && item.prop && item.desc) Object.defineProperty(item.proto, item.prop, item.desc);

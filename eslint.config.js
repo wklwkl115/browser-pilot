@@ -3,10 +3,9 @@
 //   - src/ + index.ts  → Node.js   (tsconfig.json)
 //   - bridge_src/       → WebWorker (tsconfig.bridge-src.json)
 //
-// First-rollout posture: WARN-ONLY and focused on the correctness debt class
-// the project has been hardening by hand (empty catches, floating promises,
-// unused bindings). The noisier type-checked families (no-unsafe-*) are left
-// off initially and can be ratcheted on once the warn backlog is burned down.
+// Ratcheted posture: the historical warning backlog is burned down, and the
+// enabled debt rules now block regressions. Broader type-checked families and
+// @typescript-eslint/no-explicit-any remain outside this rule set.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
@@ -88,10 +87,9 @@ export default tseslint.config(
 		files: ["**/*.{js,mjs,cjs}"],
 		languageOptions: { globals: { ...globals.node, ...globals.browser, chrome: "readonly" } },
 	},
-	// ─── Baseline backlog: WARN-only, non-blocking. ───
-	// Every rule that currently fires is set to "warn" so `npm run lint` exits 0 —
-	// the baseline is established without breaking anything. As each category is
-	// burned down, ratchet it to "error" so future regressions block.
+	// ─── Ratcheted debt rules: blocking. ───
+	// These are the historical backlog families that have been cleared and now
+	// run as errors. Broader strict-type rules remain intentionally out of scope.
 	//
 	// Core ESLint rules (no type info needed) — apply to all source.
 	{
@@ -99,15 +97,15 @@ export default tseslint.config(
 			// no-empty ignores blocks containing a comment, so the existing
 			// `/* best-effort ... */` catches already pass — only truly-bare
 			// `catch (_) {}` get flagged. (Matches the silent-catch hardening style.)
-			"no-empty": ["warn", { allowEmptyCatch: false }],
-			"no-fallthrough": "warn",
-			"no-sparse-arrays": "warn",
-			"no-control-regex": "warn",
-			"no-useless-escape": "warn",
-			"no-useless-assignment": "warn",
-			"preserve-caught-error": "warn",
-			"prefer-const": "warn",
-			"prefer-rest-params": "warn",
+			"no-empty": ["error", { allowEmptyCatch: false }],
+			"no-fallthrough": "error",
+			"no-sparse-arrays": "error",
+			"no-control-regex": "error",
+			"no-useless-escape": "error",
+			"no-useless-assignment": "error",
+			"preserve-caught-error": "error",
+			"prefer-const": "error",
+			"prefer-rest-params": "error",
 		},
 	},
 	// typescript-eslint rules — scoped to .ts (all of which are project-bound above,
@@ -116,14 +114,14 @@ export default tseslint.config(
 		files: ["**/*.ts"],
 		rules: {
 			"@typescript-eslint/no-unused-vars": [
-				"warn",
+				"error",
 				{ argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
 			],
-			"@typescript-eslint/no-unused-expressions": "warn",
-			"@typescript-eslint/no-unsafe-function-type": "warn",
+			"@typescript-eslint/no-unused-expressions": "error",
+			"@typescript-eslint/no-unsafe-function-type": "error",
 			// Async-safety class — highest-value, likely real bugs. Type-aware.
-			"@typescript-eslint/no-floating-promises": "warn",
-			"@typescript-eslint/no-misused-promises": "warn",
+			"@typescript-eslint/no-floating-promises": "error",
+			"@typescript-eslint/no-misused-promises": "error",
 			// Deferred for the first pass (noisy on the unknown-heavy param code).
 			"@typescript-eslint/no-explicit-any": "off",
 		},

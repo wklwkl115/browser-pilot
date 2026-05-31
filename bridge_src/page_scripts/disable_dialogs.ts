@@ -16,14 +16,19 @@
       (document.body || document.documentElement).appendChild(d);
       setTimeout(() => { d.style.opacity = '0'; }, 3000);
       setTimeout(() => { d.remove(); }, 3600);
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort toast rendering */
+    }
   }
-  function promptAcceptedValue(args: IArguments): string {
+  function promptAcceptedValue(args: unknown[]): string {
     return args.length > 1 ? String(args[1]) : '';
   }
   window.alert = function(msg?: unknown): void { toast('alert', msg); };
   window.confirm = function(msg?: string): boolean { toast('confirm', msg); return true; };
-  window.prompt = function(msg?: string, _def?: string): string { toast('prompt', msg); return promptAcceptedValue(arguments); };
+  window.prompt = function(...args: unknown[]): string {
+    toast('prompt', args[0]);
+    return promptAcceptedValue(args);
+  };
 })();
 
 export {};

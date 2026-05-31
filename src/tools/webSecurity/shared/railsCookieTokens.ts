@@ -39,7 +39,9 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 		try {
 			const decoded = decodeURIComponent(value);
 			if (decoded !== value) candidates.push({ text: decoded, urlEncoded: true });
-		} catch {}
+		} catch {
+			/* best-effort rails URL decoding */
+		}
 		return candidates;
 	}
 
@@ -316,7 +318,9 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 					decrypted ||= unwrapRailsEncryptedPlaintext(plaintext);
 					matches.push({ index: i, secret: secrets[i], secretSha256: sha256Hex(secrets[i]), keySource: variant.keySource, keyLength: variant.keyLength, derivation: variant.derivation, digest: variant.digest, salt: variant.salt, cipher: variant.cipher, plaintextBytes: plaintext.length });
 					break;
-				} catch {}
+				} catch {
+					/* best-effort rails encrypted token decryption candidate probe */
+				}
 			}
 		}
 		return {
@@ -387,7 +391,9 @@ export function createRailsCookieTokenFns(helpers: RailsTokenHelpers) {
 						signedKeyLength: signedMatch.keyLength,
 					});
 					break;
-				} catch {}
+				} catch {
+					/* best-effort rails legacy CBC decryption candidate probe */
+				}
 			}
 		}
 		return {

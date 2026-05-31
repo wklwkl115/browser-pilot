@@ -13,11 +13,8 @@ export { TAB_SCOPED_TOOL_GUIDELINE };
 
 const STRING_LIKE_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
 const STRING_LIKE_ARRAY_SCHEMA = Type.Array(STRING_LIKE_SCHEMA);
-const STRING_OR_STRING_ARRAY_SCHEMA = Type.Union([Type.String(), Type.Array(Type.String())]);
-const STRING_OR_NUMBER_OR_LIST_SCHEMA = Type.Union([Type.String(), Type.Number(), Type.Array(Type.Union([Type.String(), Type.Number()]))]);
 const OPEN_OBJECT_SCHEMA = Type.Object({}, { additionalProperties: true });
 const STRING_OR_OPEN_OBJECT_SCHEMA = Type.Union([Type.String(), OPEN_OBJECT_SCHEMA]);
-const STRING_OR_OPEN_OBJECT_ARRAY_SCHEMA = Type.Array(STRING_OR_OPEN_OBJECT_SCHEMA);
 
 function provided(value: unknown): boolean {
 	if (value === undefined || value === null) return false;

@@ -49,7 +49,11 @@ function secretByteCandidates(secret: string): Array<{ source: string; bytes: Bu
 	if (/^[a-f0-9]+$/i.test(secret) && secret.length % 2 === 0) add("hex", Buffer.from(secret, "hex"));
 	if (/^[A-Za-z0-9_-]+$/.test(secret)) add("base64url", base64UrlDecode(secret));
 	if (/^[A-Za-z0-9+/=]+$/.test(secret) && secret.length % 4 !== 1) {
-		try { add("base64", Buffer.from(secret, "base64")); } catch {}
+		try {
+			add("base64", Buffer.from(secret, "base64"));
+		} catch {
+			/* best-effort base64 secret decoding */
+		}
 	}
 	return out;
 }
@@ -136,7 +140,9 @@ function decryptDirectJwe(jwe: NonNullable<ReturnType<typeof parseJwe>>, secrets
 				const decoded = decodePrintableJsonValue(plaintext);
 				matches.push({ index: i, secret: secrets[i], secretSha256: sha256Hex(secrets[i]), keySource: candidate.source, payload: decoded.json ?? decoded.text, plaintextBytes: plaintext.length });
 				break;
-			} catch {}
+			} catch {
+				/* best-effort direct JWE decryption candidate probe */
+			}
 		}
 	}
 	return { supported: true, matches, testedSecretCandidateCount: secrets.length };
@@ -586,7 +592,9 @@ export async function analyzeCookieSample(sample: CookieSample, secrets: string[
 	try {
 		const decoded = decodeURIComponent(sample.value);
 		if (decoded !== sample.value) add("url", decoded);
-	} catch {}
+	} catch {
+		/* best-effort URL decoding for opaque cookie sample */
+	}
 	if (/^[A-Za-z0-9+/_=-]{8,}$/.test(sample.value)) {
 		for (const encoding of ["base64url", "base64"] as const) {
 			const buffer = encoding === "base64url" ? base64UrlDecode(sample.value) : Buffer.from(sample.value, "base64");

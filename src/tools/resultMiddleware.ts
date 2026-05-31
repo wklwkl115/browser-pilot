@@ -5,10 +5,10 @@ import { containsSensitiveEvidence, redactSensitiveValue } from "./artifactPriva
 import { saveTextArtifact } from "./artifacts.js";
 import { distillValue } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
-import { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index.js";
+import { summarizeHtmlSnapshot } from "./summaries/index.js";
 
 export { distillValue } from "./distillerRegistry.js";
-export { summarizeEvidenceData, summarizeGenericValue, summarizeHtmlSnapshot, summarizeNetworkData, summarizeScanData } from "./summaries/index.js";
+export { summarizeHtmlSnapshot } from "./summaries/index.js";
 
 export type DistilledSummary = Record<string, unknown>;
 export type DistilledEnvelope = {

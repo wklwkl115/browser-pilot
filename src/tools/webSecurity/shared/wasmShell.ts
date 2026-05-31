@@ -1,6 +1,4 @@
 import path from "node:path";
-import { saveTextArtifact } from "../../artifacts.js";
-import { artifactFallbackName } from "../../toolAdapter.js";
 import { summarizeWasmArtifactData } from "../../summaries/webSecurity/wasm.js";
 import { summarizeWasmWatBridgeData } from "../../summaries/webSecurity/wasmBridge.js";
 import { analyzeWasmArtifact } from "./wasmArtifact.js";

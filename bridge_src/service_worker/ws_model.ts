@@ -161,7 +161,9 @@ function cleanupWsSessionsForTab(tabId: number, reason = "tab_cleanup"): JsonRec
 		try {
 			const ws = session.ws as { terminate?: () => void; close?: () => void } | undefined;
 			ws?.terminate?.();
-		} catch {}
+		} catch {
+			/* best-effort websocket termination during session cleanup */
+		}
 		piBrowserWsSessions.delete(key);
 	}
 	return { tabId, removed, reason, sessionIds };

@@ -220,7 +220,9 @@ async function releaseStateLock(lockPath: string, token: string): Promise<void> 
 		const parsed = JSON.parse(await readFile(lockPath, "utf8")) as Record<string, unknown>;
 		if (parsed.token !== token) return;
 		await rm(lockPath, { force: true });
-	} catch {}
+	} catch {
+		/* best-effort state lock release */
+	}
 }
 
 async function removeLockIfUnchanged(lockPath: string, expectedToken?: string): Promise<void> {
@@ -253,8 +255,8 @@ async function breakStaleStateLock(lockPath: string, breakerPath: string, starte
 	} catch (error) {
 		await handle?.close().catch(() => {});
 		if (created) await rm(breakerPath, { force: true }).catch(() => {});
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-		if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`);
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw new Error(`Failed to acquire callback OAST state lock breaker: ${breakerPath}`, { cause: error });
+		if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock breaker: ${breakerPath}`, { cause: error });
 	} finally {
 		if (created) await releaseStateLock(breakerPath, token);
 	}
@@ -280,9 +282,9 @@ async function withStateLock<T>(filePath: string, fn: () => Promise<T>): Promise
 		} catch (error) {
 			await handle?.close().catch(() => {});
 			if (created) await rm(lockPath, { force: true }).catch(() => {});
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw new Error(`Failed to acquire callback OAST state lock: ${lockPath}`, { cause: error });
 			if (await isStaleStateLock(lockPath)) await breakStaleStateLock(lockPath, breakerPath, started);
-			else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`);
+			else if (Date.now() - started >= STATE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for callback OAST state lock: ${lockPath}`, { cause: error });
 			await sleep(STATE_LOCK_RETRY_MS);
 			continue;
 		}
@@ -499,7 +501,9 @@ export async function stopSession(state: CallbackSessionState) {
 	if (isPidAlive(pid)) {
 		try {
 			process.kill(Number(pid), "SIGTERM");
-		} catch {}
+		} catch {
+			/* best-effort worker shutdown signal */
+		}
 	}
 	try {
 		return await waitForState(state.sessionId, (current) => current.listenerActive !== true, 10_000);

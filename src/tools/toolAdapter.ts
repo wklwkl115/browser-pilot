@@ -432,7 +432,7 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 			await handle?.update({ progress: 85, details: spec.details(result) });
 			return result;
 		},
-		finalize: async ({ params, prepared, ctx, maxChars, operation, result }) => {
+		finalize: async ({ params, ctx, maxChars, operation, result }) => {
 			const resultDetails = spec.details(result);
 			return await jsonToolResult(result, params, ctx, {
 				toolName: spec.toolName,

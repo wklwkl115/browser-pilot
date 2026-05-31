@@ -153,7 +153,11 @@ function piTransferWaitDownloadComplete(id: unknown, timeoutMs: number): Promise
     let timer: ReturnType<typeof setTimeout> | undefined;
     const cleanup = () => {
       clearTimeout(timer);
-      try { chrome.downloads.onChanged.removeListener(onChanged); } catch (_) {}
+      try {
+        chrome.downloads.onChanged.removeListener(onChanged);
+      } catch (_error) {
+        /* best-effort download change listener cleanup */
+      }
     };
     const finishFromSearch = async () => {
       const item = await piTransferSearchDownload(id);
@@ -161,15 +165,20 @@ function piTransferWaitDownloadComplete(id: unknown, timeoutMs: number): Promise
       if (item && item.state === 'interrupted') { cleanup(); reject(new Error('Download ' + id + ' failed: ' + (item.error || 'interrupted'))); return true; }
       return false;
     };
-    const onChanged = async (delta: JsonRecord & { id?: number; state?: { current?: string }; filename?: unknown }) => {
+    const onChanged = (delta: JsonRecord & { id?: number; state?: { current?: string }; filename?: unknown }) => {
       if (!delta || Number(delta.id) !== Number(id)) return;
-      if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) await finishFromSearch();
-      else if (delta.filename) await finishFromSearch();
+      if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
+        void finishFromSearch();
+      } else if (delta.filename) {
+        void finishFromSearch();
+      }
     };
     const tick = async () => {
       if (await finishFromSearch()) return;
       if (Date.now() >= deadline) { cleanup(); reject(new Error('Timed out after ' + timeoutMs + 'ms waiting for download ' + id)); return; }
-      timer = setTimeout(tick, 250);
+      timer = setTimeout(() => {
+        void tick();
+      }, 250);
     };
     chrome.downloads.onChanged.addListener(onChanged);
     tick().catch((error) => { cleanup(); reject(error); });
@@ -183,7 +192,11 @@ function piTransferDownloadCreatedWatcher(timeoutMs: number, matcher?: (item: Tr
   let rejectPromise: (reason?: unknown) => void = () => {};
   const cleanup = () => {
     clearTimeout(timer);
-    try { chrome.downloads.onCreated.removeListener(onCreated); } catch (_) {}
+    try {
+      chrome.downloads.onCreated.removeListener(onCreated);
+    } catch (_error) {
+      /* best-effort download creation listener cleanup */
+    }
   };
   const finishResolve = (value: TransferDownloadSummary | null) => {
     if (settled) return;
@@ -199,14 +212,19 @@ function piTransferDownloadCreatedWatcher(timeoutMs: number, matcher?: (item: Tr
   };
   const onCreated = (item: PiChromeDownloadItem) => {
     const normalized = piTransferDownloadItem(item);
-    try { if (matcher && !matcher(normalized)) return; }
-    catch (_) { return; }
+    try {
+      if (matcher && !matcher(normalized)) return;
+    } catch (_error) {
+      return;
+    }
     finishResolve(normalized);
   };
   const promise = new Promise<TransferDownloadSummary | null>((resolve, reject) => {
     resolvePromise = resolve;
     rejectPromise = reject;
-    timer = setTimeout(() => finishReject(new Error('Timed out after ' + timeoutMs + 'ms waiting for download start')), timeoutMs);
+    timer = setTimeout(() => {
+      finishReject(new Error('Timed out after ' + timeoutMs + 'ms waiting for download start'));
+    }, timeoutMs);
     chrome.downloads.onCreated.addListener(onCreated);
   });
   return {
@@ -249,11 +267,21 @@ function piTransferWaitDownloadForPageEvent(event: TransferPageDownloadEvent, st
       if (item && item.state === 'complete') { cleanup(); resolve(item); return; }
       if (item && item.state === 'interrupted') { cleanup(); reject(new Error('Download ' + item.id + ' failed: ' + (item.error || 'interrupted'))); return; }
       if (item && item.id != null) {
-        try { const completed = await piTransferWaitDownloadComplete(item.id, Math.max(100, deadline - Date.now())); cleanup(); resolve(completed); return; }
-        catch (error) { cleanup(); reject(error); return; }
+        try {
+          const completed = await piTransferWaitDownloadComplete(item.id, Math.max(100, deadline - Date.now()));
+          cleanup();
+          resolve(completed);
+          return;
+        } catch (error) {
+          cleanup();
+          reject(error);
+          return;
+        }
       }
       if (Date.now() >= deadline) { cleanup(); reject(new Error('Timed out after ' + timeoutMs + 'ms waiting for tab download ' + (event && event.url || ''))); return; }
-      timer = setTimeout(tick, 250);
+      timer = setTimeout(() => {
+        void tick();
+      }, 250);
     };
     tick().catch((error) => { cleanup(); reject(error); });
   });
@@ -441,7 +469,7 @@ function piTransferFileChooserEvent(tabId: number, timeoutMs: number): Promise<J
       clearTimeout(timer);
       if (subscriptionId) unsubscribePiBrowserCdp(subscriptionId);
     };
-    let subscriptionId = subscribePiBrowserCdp(tabId, 'Page.fileChooserOpened', (_source, _method, params) => {
+    const subscriptionId = subscribePiBrowserCdp(tabId, 'Page.fileChooserOpened', (_source, _method, params) => {
       cleanup();
       resolve(asRecord(params));
     }, { waitId: 'transfer-upload', kind: 'upload', cdpSubscriptions: [] });

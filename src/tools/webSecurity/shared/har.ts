@@ -75,7 +75,9 @@ function normalizeHarDependencyUrl(value: unknown, options: HarDependencyUrlOpti
 		const parsed = new URL(absoluteUrl(raw, { baseUrl: options.baseUrl, scheme: options.defaultScheme }));
 		parsed.hash = "";
 		return parsed.toString();
-	} catch {}
+	} catch {
+		/* fall through to HAR fallback base */
+	}
 	try {
 		const parsed = new URL(raw, HAR_DEPENDENCY_FALLBACK_BASE);
 		parsed.hash = "";
@@ -93,7 +95,9 @@ function resolveHarDependencyUrl(value: unknown, requestUrl?: string, options: H
 			const parsed = new URL(raw, requestUrl);
 			parsed.hash = "";
 			return parsed.toString();
-		} catch {}
+		} catch {
+			/* fall back to HAR dependency normalization */
+		}
 	}
 	return normalizeHarDependencyUrl(raw, options);
 }

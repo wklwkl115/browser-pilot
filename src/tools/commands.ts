@@ -47,7 +47,11 @@ export function registerBrowserCommands(pi: ExtensionAPI, server: BrowserBridgeS
 	pi.registerCommand("browser-status", {
 		description: "Show Pi browser bridge status and connected tabs",
 		handler: async (_args, ctx) => {
-			try { await ensureStarted(); } catch {}
+			try {
+				await ensureStarted();
+			} catch {
+				/* best-effort bridge startup for browser-status */
+			}
 			ctx.ui.notify(stableJson(server.snapshot()), server.snapshot().extensionConnected ? "info" : "warning");
 		},
 	});

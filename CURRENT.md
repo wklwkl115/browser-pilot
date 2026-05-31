@@ -347,6 +347,34 @@ Workstream C：防漂移治理
 
 - Gap A、Gap B、Gap C 三个主工作流均已落地；当前只剩后续常规维护，不再保留 active queue。
 
+### 已完成：ESLint 遗留债务 Ratchet 执行合同
+
+状态：已完成并归档。执行源为 `docs/lint-debt-ratchet-plan.md`；`.plan/lint-debt-ratchet.md` 仅保留为讨论输入，不再作为 source of truth。
+
+完成结果：
+
+- 执行前基线 `npx eslint . -f json` 为 `0 errors / 172 warnings / 56 files`；当前 `npm run lint` 为 `0 errors / 0 warnings`。
+- 已清零本合同内全部规则族：`no-empty`、`@typescript-eslint/no-unused-vars`、`@typescript-eslint/no-misused-promises`、`@typescript-eslint/no-floating-promises`、`preserve-caught-error`、`prefer-rest-params`、`prefer-const`、`no-useless-*`、`no-fallthrough`、`no-sparse-arrays`、`no-unused-expressions`、`no-control-regex`、`no-unsafe-function-type`。
+- `eslint.config.js` 中对应规则已从 `warn` 收紧为 `error`；`@typescript-eslint/no-explicit-any` 仍保持本合同外。
+- `.github/workflows/check.yml` 中 `Run ESLint` 已移除 `continue-on-error: true`，CI ESLint 转为阻断。
+- `lefthook.yml` staged lint 已改为 `npx eslint --no-warn-ignored {staged_files}`，保持 pre-commit 可用性。
+- `check:lint` 仍只承担 boundary / page-script contracts 语义，未改造成 ESLint debt gate。
+
+边界保持：
+
+- 未引入 Prettier / Biome / 其他格式化器。
+- 未开启额外 `no-unsafe-*` 家族；仅处理基线已有的 `@typescript-eslint/no-unsafe-function-type`，未把 `@typescript-eslint/no-explicit-any` 纳入本轮。
+- 未执行全仓 `eslint . --fix`，未通过新增 ignore / disable 机械压平告警。
+
+验证结果：
+
+- ✅ `npm run lint`
+- ✅ `npm run check:all:bridge`
+- ✅ `npm run check:web-security`
+- ✅ `npm run test:unit`
+- ✅ `npm run check`
+- ✅ `npm run quality:local`
+
 ### 计划中：bridge runtime hardening / command access schema / silent-catch governance
 
 状态：计划冻结，待实现。该治理项聚焦 driver / service worker runtime 的高价值稳定性债务，不扩公开工具面，不重写 bridge 能力边界。
@@ -873,10 +901,3 @@ Workstream C：静默 catch 分类治理（H-002）
 
 - 历史完成项：`ARCHIVE.md`。
 - 后续路线/建议顺序：`ROADMAP.md`。
-
-
-
-
-
-
-

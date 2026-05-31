@@ -158,7 +158,12 @@ async function waitForSelector(tabId: number, msg: PiBridgeCommand): Promise<PiB
     const clearPollTimer = () => { if (timerHandle) { clearTimeout(timerHandle); const idx = record.timers.indexOf(timerHandle); if (idx >= 0) record.timers.splice(idx, 1); timerHandle = null; } };
     const complete = (res: PiBridgeResponse) => { if (completed) return; completed = true; clearPollTimer(); resolve(res); };
     const failIfAbort = () => { if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.CANCELLED || 'CANCELLED', waitAbortMessage(record), { selector:String(selector), state })); };
-    try { record.abortController.signal.addEventListener('abort', failIfAbort, { once:true }); record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) }); } catch (_) {}
+    try {
+      record.abortController.signal.addEventListener('abort', failIfAbort, { once:true });
+      record.listeners.push({ remove: () => record.abortController.signal.removeEventListener('abort', failIfAbort) });
+    } catch (_error) {
+      /* best-effort selector abort listener registration */
+    }
     const triggerTick = (reason: string, observedEpoch?: unknown): void => {
       if (completed) return;
       const numericEpoch = Number(observedEpoch);
@@ -167,7 +172,7 @@ async function waitForSelector(tabId: number, msg: PiBridgeCommand): Promise<PiB
       record.last_selector_tick_reason = reason || 'poll';
       clearPollTimer();
       if (inFlight) { pendingTick = true; return; }
-      tick(reason || 'trigger');
+      void tick(reason || 'trigger');
     };
     const bindingName = '__piBrowserSelectorSignal_' + String(record.waitId || Date.now()).replace(/[^A-Za-z0-9_$]/g, '_');
     const bindingCleanupKey = String(selector) + '|' + state + '|' + bindingName;
@@ -179,8 +184,12 @@ async function waitForSelector(tabId: number, msg: PiBridgeCommand): Promise<PiB
       if (!addResp || addResp.ok === false) throw new Error(String(selectorRecord(addResp?.error).message || addResp?.message || addResp?.error || 'Runtime.addBinding failed'));
       const subId = subscribePiBrowserCdp(tabId, 'Runtime.bindingCalled', (_source, _method, params) => {
         if (completed || params?.name !== bindingName) return;
-        let payload: JsonRecord = {};
-        try { payload = selectorRecord(JSON.parse(String(params.payload || '{}'))); } catch (_) { payload = { raw: params.payload }; }
+        let payload!: JsonRecord;
+        try {
+          payload = selectorRecord(JSON.parse(String(params.payload || '{}')));
+        } catch (_error) {
+          payload = { raw: params.payload };
+        }
         const nextEpoch = Number(payload.mutationTick || payload.epoch || 0);
         recordWaitEvent(record, { kind:'selector_binding', reason:payload.reason || 'binding', mutationTick:nextEpoch, payload });
         record.diagnostics.push({ t:Date.now(), reason:'runtime_binding_called', mutationTick:nextEpoch, bindingName });
@@ -233,12 +242,20 @@ async function waitForSelector(tabId: number, msg: PiBridgeCommand): Promise<PiB
       record.diagnostics.push({ t:Date.now(), reason:'runtime_binding_observer_installed', bindingName, mutationTick:evalData?.mutationTick });
       record.listeners.push({ remove: () => {
         const cleanupExpr = `(() => { const key=${JSON.stringify(bindingCleanupKey)}; const rec=window.__piBrowserSelectorObserverInstalled&&window.__piBrowserSelectorObserverInstalled[key]; if (rec&&typeof rec.cleanup==='function') rec.cleanup(); return true; })()`;
-        try { if (cdp.send) void cdp.send(tabId, 'Runtime.evaluate', { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: 'selector_binding_cleanup', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
-        try { if (cdp.send) void cdp.send(tabId, 'Runtime.removeBinding', { name: bindingName }, { persistent: true, name: 'selector_binding_remove', timeoutMs: 1000 }).catch(() => {}); } catch (_) {}
+        try {
+          if (cdp.send) void cdp.send(tabId, 'Runtime.evaluate', { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: 'selector_binding_cleanup', timeoutMs: 1000 }).catch(() => {});
+        } catch (_error) {
+          /* best-effort selector binding observer cleanup */
+        }
+        try {
+          if (cdp.send) void cdp.send(tabId, 'Runtime.removeBinding', { name: bindingName }, { persistent: true, name: 'selector_binding_remove', timeoutMs: 1000 }).catch(() => {});
+        } catch (_error) {
+          /* best-effort selector binding removal */
+        }
       } });
       return true;
     };
-    installBindingObserver().catch((e: unknown) => {
+    void installBindingObserver().catch((e: unknown) => {
       record.diagnostics.push({ t:Date.now(), warning:'runtime_binding_observer_unavailable_poll_fallback_active', bindingName, error:selectorErrorMessage(e) });
     });
     const armPoll = () => {

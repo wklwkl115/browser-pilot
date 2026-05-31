@@ -1,6 +1,5 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../driver/errors.js";
-import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
 import { summarizeGenericValue } from "./summaries/index.js";
 import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";

@@ -1,7 +1,7 @@
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, callPagePiBrowser, getPiBrowserQueueStats, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piBrowserSessions } from "./runtime";
 import { diagnosePiBrowserCdpCleanupHistory, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpSubscriptions } from "./wait_cdp";
-import { cancelWaitsForTab, clearWait, cleanupTabWaits, finishPiBrowserWait, makeWaitId, normalizePiBrowserTimeoutMs, piBrowserWaits, waitAbortMessage, waitKey } from "./wait_coordinator";
+import { cancelWaitsForTab, clearWait, makeWaitId, normalizePiBrowserTimeoutMs, piBrowserWaits, waitKey } from "./wait_coordinator";
 import { navigateAndWait, waitForLoadState, waitForNavigation } from "./wait_navigation";
 import { waitForNetworkIdle } from "./wait_network_idle";
 import { waitForSelector } from "./wait_selector";
@@ -32,14 +32,29 @@ async function waitForAny(tabId: number, msg: PiBridgeCommand): Promise<PiBridge
     const childKey = waitKey(tabId, childWaitIds[i]);
     const record = piBrowserWaits.get(childKey);
     if (record) {
-      try { record.abortController?.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {}
-      try { clearWait(record, reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {}
+      try {
+        record.abortController?.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
+      } catch (_error) {
+        /* best-effort child wait abort */
+      }
+      try {
+        clearWait(record, reason || PI_BROWSER_ERROR_CODES.CANCELLED);
+      } catch (_error) {
+        /* best-effort child wait cleanup */
+      }
     }
   };
   const cleanup = (reason?: string, keepIndex?: number) => {
     controllers.forEach((c: AbortController, i: number) => {
       if (i === keepIndex) return;
-      try { if (!c.signal.aborted) { losers.push(i); c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } } catch (_) {}
+      try {
+        if (!c.signal.aborted) {
+          losers.push(i);
+          c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
+        }
+      } catch (_error) {
+        /* best-effort sibling wait abort */
+      }
       cleanupChildRecord(i, reason || PI_BROWSER_ERROR_CODES.CANCELLED);
     });
   };
@@ -73,7 +88,15 @@ async function waitForAll(tabId: number, msg: PiBridgeCommand): Promise<PiBridge
   const failFast = msg.failFast !== false && msg.fail_fast !== false;
   const children = waits.map((w: WaitChild, i: number) => ({ index:i, kind:w?.kind || w?.type || w?.cmd || 'selector', timeout_ms: normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs) }));
   const controllers = waits.map(() => new AbortController());
-  const cleanup = (reason?: string, exceptIndex = -1) => { controllers.forEach((c, i) => { try { if (i !== exceptIndex && !c.signal.aborted) c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED); } catch (_) {} }); };
+  const cleanup = (reason?: string, exceptIndex = -1) => {
+    controllers.forEach((c, i) => {
+      try {
+        if (i !== exceptIndex && !c.signal.aborted) c.abort(reason || PI_BROWSER_ERROR_CODES.CANCELLED);
+      } catch (_error) {
+        /* best-effort fail-fast abort */
+      }
+    });
+  };
   const deadline = Date.now() + parentTimeoutMs;
   let failureIndex = -1;
   const toResult = (settled: SettledWait, i: number): PiBridgeResponse => {
@@ -118,7 +141,18 @@ async function dispatchPiBrowserWait(tabId: number, msg: PiBridgeCommand, kind: 
 async function cancelWait(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const waitId = msg.waitId || msg.wait_id;
   let cancelled_count = 0;
-  if (waitId) { const r = piBrowserWaits.get(waitKey(tabId, waitId)); if (r) { try { r.abortController?.abort('cancelled'); } catch (_) {} clearWait(r, 'cancelled'); cancelled_count = 1; } }
+  if (waitId) {
+    const r = piBrowserWaits.get(waitKey(tabId, waitId));
+    if (r) {
+      try {
+        r.abortController?.abort('cancelled');
+      } catch (_error) {
+        /* best-effort explicit wait cancellation */
+      }
+      clearWait(r, 'cancelled');
+      cancelled_count = 1;
+    }
+  }
   else cancelled_count = cancelWaitsForTab(tabId, 'cancelled');
   return { ok: true, data: { cancelled: cancelled_count, cancelled_count, waitId: waitId || null, pending: Array.from(piBrowserWaits.values()).filter(r => Number(r.tabId) === Number(tabId)).map(r => ({ waitId:r.waitId, kind:r.kind, age_ms:Date.now()-r.createdAt })) } };
 }
@@ -235,7 +269,7 @@ async function getPerformanceEntries(tabId: number, msg: PiBridgeCommand): Promi
   return { ok: true, data: { entries: [], entryType, nameContains, count: 0, explicit_entry_type: hasEntryType, note: 'PerformanceObserver performance.getEntriesByType Runtime.evaluate unavailable' } };
 }
 
-async function diagnosePiBrowser(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+async function diagnosePiBrowser(tabId: number, _msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const tab = await chrome.tabs.get(tabId).catch((e: unknown) => ({ error: waitErrorMessage(e) }));
   const status = await callPagePiBrowser(tabId, 'hook.status', {}).catch((e: unknown) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
   const cdp = piBrowserPersistentCdp();

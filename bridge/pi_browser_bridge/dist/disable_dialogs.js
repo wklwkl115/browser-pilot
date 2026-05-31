@@ -33,7 +33,7 @@
         setTimeout(() => {
           d.remove();
         }, 3600);
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function promptAcceptedValue(args) {
@@ -46,9 +46,9 @@
       toast("confirm", msg);
       return true;
     };
-    window.prompt = function(msg, _def) {
-      toast("prompt", msg);
-      return promptAcceptedValue(arguments);
+    window.prompt = function(...args) {
+      toast("prompt", args[0]);
+      return promptAcceptedValue(args);
     };
   })();
 })();

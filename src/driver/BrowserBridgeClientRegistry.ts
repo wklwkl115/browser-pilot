@@ -30,7 +30,11 @@ export class BrowserBridgeClientRegistry {
 
 	clear(): void {
 		for (const client of this.clients) {
-			try { client.close(); } catch {}
+			try {
+				client.close();
+			} catch {
+				/* best-effort client close during registry clear */
+			}
 		}
 		this.clients.clear();
 		this.clientInfo.clear();

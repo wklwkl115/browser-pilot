@@ -19,7 +19,7 @@ async function handlePiBridgeMessage(msg: PiBridgeCommand, sender: PiChromeMessa
 function installPiBridgeRouter() {
   if (piBridgeRouterInstalled) return false;
   chrome.runtime.onMessage.addListener((msg: unknown, sender: PiChromeMessageSender, sendResponse: (response: unknown) => void) => {
-    handlePiBridgeMessage(msg as PiBridgeCommand, sender).then(sendResponse);
+    void handlePiBridgeMessage(msg as PiBridgeCommand, sender).then(sendResponse);
     return true;
   });
   piBridgeRouterInstalled = true;
@@ -46,7 +46,9 @@ async function handlePiBridgeWsMessage(data: PiBridgeWsEnvelope, socket: PiBridg
     try {
       const p: unknown = JSON.parse(code);
       if (p && typeof p === 'object' && !Array.isArray(p) && typeof (p as PiBridgeDict).cmd === 'string') code = p;
-    } catch (_) {}
+    } catch (_error) {
+      /* best-effort command envelope parse */
+    }
   }
   if (typeof code === 'object' && code !== null) {
     const codeObj = code as PiBridgeDict & { cmd?: unknown; tabId?: unknown };

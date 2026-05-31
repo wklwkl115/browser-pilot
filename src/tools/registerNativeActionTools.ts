@@ -5,7 +5,7 @@ import type { DetailLevel } from "../utils/params.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { nativeToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
-import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
+import type { ToolResultBudgetName } from "./budgets.js";
 import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";

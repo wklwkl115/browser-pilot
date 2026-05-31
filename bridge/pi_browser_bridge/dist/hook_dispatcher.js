@@ -5,7 +5,6 @@
   ;
   (function PiBrowserHookDispatcher() {
     "use strict";
-    const hookWindow = window;
     function asRecord(value) {
       return value && typeof value === "object" && !Array.isArray(value) ? value : {};
     }
@@ -23,7 +22,7 @@
         if (typeof existingPiBrowser.uninstall === "function") {
           existingPiBrowser.uninstall({ force: true, reason: "dispatcher_upgrade", next_version: VERSION });
         }
-      } catch (_) {
+      } catch (_error) {
       }
     }
     const DEFAULT_BUFFER_SIZE = 1e3;
@@ -136,7 +135,7 @@
       if (isSafeHookRedactRegexPattern(pattern)) {
         try {
           return { pattern, mode: "regex", regex: new RegExp(pattern, "gi") };
-        } catch (_) {
+        } catch (_error) {
         }
       }
       try {
@@ -169,7 +168,10 @@
       if (t === "string") return redactText(v);
       if (t === "number" || t === "boolean" || t === "bigint") return v;
       if (t === "undefined") return void 0;
-      if (t === "function") return "[Function" + (v.name ? ":" + v.name : "") + "]";
+      if (t === "function") {
+        const functionLike = v;
+        return "[Function" + (functionLike.name ? ":" + functionLike.name : "") + "]";
+      }
       const maxDepth = numericOption("max_clone_depth", 10, 1, 50);
       if ((depth || 0) >= maxDepth) return "[MaxDepth]";
       seen = seen || (typeof WeakSet !== "undefined" ? /* @__PURE__ */ new WeakSet() : null);
@@ -178,7 +180,7 @@
         if (seen.has(v)) return "[Circular]";
         try {
           seen.add(v);
-        } catch (_) {
+        } catch (_error) {
         }
       }
       if (typeof ArrayBuffer !== "undefined" && v instanceof ArrayBuffer) return { kind: "ArrayBuffer", byteLength: v.byteLength };
@@ -191,7 +193,7 @@
         const keys2 = [];
         try {
           v.forEach((_, k) => keys2.push(String(k)));
-        } catch (_) {
+        } catch (_error) {
         }
         return { kind: "FormData", keys: keys2 };
       }
@@ -269,7 +271,7 @@
       if (!storage) return keys;
       try {
         for (let i = 0; i < storage.length; i += 1) keys.push(String(storage.key(i)));
-      } catch (_) {
+      } catch (_error) {
       }
       return keys;
     }
@@ -311,7 +313,7 @@
     let origWebSocket = null;
     let origStorage = null;
     let origCookieDescriptor = null;
-    let origCrypto = { subtle: {}, getRandomValues: null };
+    const origCrypto = { subtle: {}, getRandomValues: null };
     let origDomSinks = {};
     let xpathTimer = null;
     let xpathPollMs = 0;
@@ -321,7 +323,7 @@
     let eventNotifyQueue = [];
     let eventNotifyTimer = null;
     let errorHandlers = [];
-    let hookWrappers = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
+    const hookWrappers = { xhr: {}, fetch: null, websocket: null, console: {}, storage: {}, cookie: null, crypto: {}, domSinks: {} };
     let perfStats = {};
     let redactMatchers = null;
     function resetDiagnostics() {
@@ -343,7 +345,7 @@
       residue_signatures = [];
       try {
         if (typeof window.fetch === "function" && isPiWrapperSource(Function.prototype.toString.call(window.fetch))) addResidueSignature("fetch");
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         if (typeof XMLHttpRequest !== "undefined" && XMLHttpRequest.prototype && typeof XMLHttpRequest.prototype.open === "function") {
@@ -352,28 +354,28 @@
           if (isPiWrapperSource(s1)) addResidueSignature("xhr.open");
           if (isPiWrapperSource(s2)) addResidueSignature("xhr.send");
         }
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         if (typeof window.WebSocket === "function" && /WrappedWebSocket|websocket\.open|__PI_BROWSER_HOOKS__/i.test(Function.prototype.toString.call(window.WebSocket))) addResidueSignature("WebSocket");
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         if (typeof Storage !== "undefined" && Storage.prototype && typeof Storage.prototype.setItem === "function") {
           const s = Function.prototype.toString.call(Storage.prototype.setItem);
           if (isPiWrapperSource(s)) addResidueSignature("storage.setItem");
         }
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         const consoleRecord = console;
         ["log", "warn", "error", "info", "debug"].forEach((level) => {
           try {
             if (typeof consoleRecord[level] === "function" && isPiWrapperSource(Function.prototype.toString.call(consoleRecord[level]))) addResidueSignature("console." + level);
-          } catch (_) {
+          } catch (_error) {
           }
         });
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function perfBucket(name) {
@@ -411,7 +413,7 @@
     function notifyOverflow(event) {
       try {
         window.postMessage({ __pi_browser_overflow__: true, dropped_events: overflow, buffer_capacity: buffer_size, buffer_used: buffer_count, event_type: event && event.type, seq: event && event.seq }, "*");
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function bufferSnapshot() {
@@ -424,7 +426,7 @@
       try {
         const timer = t;
         if (timer && typeof timer.unref === "function") timer.unref();
-      } catch (_) {
+      } catch (_error) {
       }
       return t;
     }
@@ -441,14 +443,14 @@
       try {
         if (options && options.batch_post_message) window.postMessage({ __pi_browser_event__: true, event_batch: batch, count: batch.length }, "*");
         else batch.forEach((event) => window.postMessage({ __pi_browser_event__: true, event }, "*"));
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function notifyEvent(event) {
       if (!(options && options.batch_post_message)) {
         try {
           window.postMessage({ __pi_browser_event__: true, event }, "*");
-        } catch (_) {
+        } catch (_error) {
         }
         return;
       }
@@ -509,9 +511,9 @@
       if (!targets.network || origXHR || typeof XMLHttpRequest === "undefined") return;
       origXHR = { open: XMLHttpRequest.prototype.open, send: XMLHttpRequest.prototype.send };
       const originalXhr = origXHR;
-      const openWrapper = function(method, url) {
+      const openWrapper = function(method, url, ...rest) {
         this.__pi_browser_meta = { method: String(method || "GET").toUpperCase(), url: String(url || ""), t0: Date.now() };
-        originalXhr.open.apply(this, Array.from(arguments));
+        originalXhr.open.apply(this, [method, url, ...rest]);
       };
       hookWrappers.xhr.open = openWrapper;
       XMLHttpRequest.prototype.open = openWrapper;
@@ -528,7 +530,7 @@
           response_url: this.responseURL || meta.url
         }));
         this.addEventListener("error", () => push("network.error", { transport: "xhr", url: meta.url, error: "XHR failed" }));
-        originalXhr.send.apply(this, Array.from(arguments));
+        originalXhr.send.call(this, body);
       };
       hookWrappers.xhr.send = sendWrapper;
       XMLHttpRequest.prototype.send = sendWrapper;
@@ -579,7 +581,7 @@
       ["CONNECTING", "OPEN", "CLOSING", "CLOSED"].forEach((k) => {
         try {
           Object.defineProperty(WrappedWebSocket, k, { value: nativeWebSocketRecord[k], enumerable: true });
-        } catch (_) {
+        } catch (_error) {
         }
       });
       const wrappedCtor = WrappedWebSocket;
@@ -592,9 +594,9 @@
       ["log", "warn", "error", "info", "debug"].forEach((level) => {
         if (typeof consoleRecord[level] !== "function") return;
         origConsole[level] = consoleRecord[level];
-        hookWrappers.console[level] = function() {
-          push("console." + level, { args: Array.from(arguments).map((x) => safeString(x, 1024)), stack: stackForEvent() });
-          return origConsole[level].apply(console, Array.from(arguments));
+        hookWrappers.console[level] = function(...args) {
+          push("console." + level, { args: args.map((x) => safeString(x, 1024)), stack: stackForEvent() });
+          return origConsole[level].apply(console, args);
         };
         consoleRecord[level] = hookWrappers.console[level];
       });
@@ -698,7 +700,7 @@
       if (typeof nativeWrite === "function") {
         origDomSinks.documentWrite = nativeWrite;
         document.write = function(...text) {
-          push("dom.sink.call", { sink: "document.write", value: Array.from(arguments).map((x) => safeString(String(x), 1024)), stack: stackForEvent() });
+          push("dom.sink.call", { sink: "document.write", value: text.map((x) => safeString(String(x), 1024)), stack: stackForEvent() });
           return nativeWrite.apply(document, text);
         };
       }
@@ -732,7 +734,7 @@
       try {
         const snapshot = getter.call(document);
         push("cookies.snapshot", { names: cookieNames(snapshot), count: cookieNames(snapshot).length, value: redactCookieValue(snapshot) });
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function hookStorage() {
@@ -749,11 +751,11 @@
       function storageKind(self) {
         try {
           if (self === window.localStorage) return "localStorage";
-        } catch (_) {
+        } catch (_error) {
         }
         try {
           if (self === window.sessionStorage) return "sessionStorage";
-        } catch (_) {
+        } catch (_error) {
         }
         return "Storage";
       }
@@ -784,11 +786,11 @@
       proto.clear = clearWrapper;
       try {
         push("storage.snapshot", { storage: "localStorage", keys: storageKeys(window.localStorage) });
-      } catch (_) {
+      } catch (_error) {
       }
       try {
         push("storage.snapshot", { storage: "sessionStorage", keys: storageKeys(window.sessionStorage) });
-      } catch (_) {
+      } catch (_error) {
       }
     }
     function hookCrypto() {
@@ -801,7 +803,7 @@
             if (!origCrypto.getRandomValues || array === null) return array;
             return origCrypto.getRandomValues(array);
           };
-        } catch (_) {
+        } catch (_error) {
         }
       }
       const subtle = window.crypto.subtle;
@@ -811,8 +813,7 @@
         if (origCrypto.subtle[name] || typeof subtleRecord[name] !== "function") return;
         origCrypto.subtle[name] = subtleRecord[name].bind(subtle);
         try {
-          subtleRecord[name] = function() {
-            const args = Array.from(arguments);
+          subtleRecord[name] = function(...args) {
             push("crypto.subtle." + name, {
               algorithm: describeAlgorithm(args[0]),
               key: describeKey(args[1]),
@@ -822,7 +823,7 @@
             });
             return origCrypto.subtle[name].apply(subtle, args);
           };
-        } catch (_) {
+        } catch (_error) {
         }
       });
     }
@@ -1125,14 +1126,14 @@
       Object.keys(origCrypto.subtle).forEach((k) => {
         try {
           if (window.crypto && window.crypto.subtle) window.crypto.subtle[k] = origCrypto.subtle[k];
-        } catch (_) {
+        } catch (_error) {
         }
       });
       origCrypto.subtle = {};
       if (origCrypto.getRandomValues) {
         try {
           window.crypto.getRandomValues = origCrypto.getRandomValues;
-        } catch (_) {
+        } catch (_error) {
         }
         origCrypto.getRandomValues = null;
       }
