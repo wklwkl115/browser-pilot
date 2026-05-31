@@ -19,6 +19,7 @@ import {
 import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
 
 import { McpExtensionAdapter } from "./adapter.js";
+import { validateMcpToolArgs } from "./validation.js";
 import { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
@@ -84,12 +85,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		};
 	}
 
+	// Validate and coerce args via TypeBox before reaching tool execute.
+	// This replicates the Pi framework's Value.Convert + Check behavior so
+	// MCP callers get the same coercion and rejection semantics.
+	const validation = validateMcpToolArgs(def.parameters, args ?? {});
+	if (!validation.ok) {
+		return {
+			content: [{ type: "text" as const, text: validation.error }],
+			isError: true,
+		};
+	}
+
+	const progressToken = request.params._meta?.progressToken;
+	let progressCount = 0;
+
 	try {
 		const result: ExtensionToolResult = await def.execute(
-			String(request.params._meta?.progressToken ?? `mcp-${Date.now()}`),
-			args ?? {},
+			String(progressToken ?? `mcp-call-${name}`),
+			validation.args,
 			undefined, // signal — MCP transport manages connection lifecycle
-			undefined, // onUpdate — could map to MCP notifications in future
+			progressToken != null
+				? async (update) => {
+						// Map streaming updates to MCP progress notifications when the
+						// caller supplied a progressToken. Best-effort: ignore send errors
+						// (connection may have closed before the tool finishes).
+						const text = update.content.map((c) => c.text).join(" ").slice(0, 200);
+						await server
+							.notification({
+								method: "notifications/progress",
+								params: {
+									progressToken,
+									progress: ++progressCount,
+									message: text || undefined,
+								},
+							})
+							.catch(() => {
+								/* best-effort */
+							});
+					}
+				: undefined,
 			undefined, // ctx — no editor UI in MCP context
 		);
 
