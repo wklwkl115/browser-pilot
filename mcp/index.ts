@@ -20,6 +20,7 @@ import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
 
 import { McpExtensionAdapter } from "./adapter.js";
 import { validateMcpToolArgs } from "./validation.js";
+import { TOOL_ANNOTATIONS } from "./toolAnnotations.js";
 import { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
@@ -69,6 +70,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 		description: def.description,
 		// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
 		inputSchema: (def.parameters ?? { type: "object" }) as any,
+		// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
+		annotations: TOOL_ANNOTATIONS[def.name],
 	})),
 }));
 

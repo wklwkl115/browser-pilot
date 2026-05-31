@@ -17,6 +17,8 @@ assert.equal(pkg.types, "./dist/index.d.ts", "package types must point to dist/i
 assert.equal(pkg.bin?.["pi-browser-mcp"], "./dist/mcp/bin.js", "package mcp bin must point to dist/mcp/bin.js");
 assert.equal(pkg.exports?.["."]?.import, "./dist/index.js", "package exports import must point to dist/index.js");
 assert.equal(pkg.exports?.["."]?.types, "./dist/index.d.ts", "package exports types must point to dist/index.d.ts");
+assert.equal(pkg.exports?.["./mcp"]?.import, "./dist/mcp/adapter.js", "package exports must expose ./mcp library entry (adapter)");
+assert.equal(pkg.exports?.["./mcp"]?.types, "./dist/mcp/adapter.d.ts", "package exports ./mcp types must point to dist/mcp/adapter.d.ts");
 assert.equal(pkg.scripts?.["check:package"], "node tests/contracts/drift/check-package-files.mjs", "package file contract must be exposed as check:package");
 assert.equal(pkg.scripts?.["check:all"], "node scripts/run-check-groups.mjs", "check:all must route grouped validation through the shared runner");
 assert.equal(pkg.scripts?.["check:all:bridge"], "node scripts/run-check-groups.mjs bridge unit", "check:all:bridge must expose bridge+unit grouped validation");
