@@ -220,6 +220,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     const tag = el.tagName;
     const role = String(roleOf(el) || '').toLowerCase();
     if (tag === 'A' || tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'LABEL' || tag === 'VIDEO') return true;
+    if (tag === 'CANVAS' && (el.onclick || el.getAttribute('onclick') || el.getAttribute('aria-label') || el.getAttribute('title') || (style && style.cursor === 'pointer'))) return true;
     if (['button','link','menuitem','tab','checkbox','radio','switch','option'].includes(role)) return true;
     if (el.onclick || el.getAttribute('onclick') || el.getAttribute('tabindex') !== null) return true;
     if (frameworkHandlers(el).some(name => FRAMEWORK_ACTION_RE.test(name))) return true;
@@ -295,7 +296,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     let scanned = 0;
     for (const el of source) {
       if (++scanned > Math.min(options.maxNodes, 4000)) break;
-      if (!el || el.nodeType !== Node.ELEMENT_NODE || SKIP.has(el.tagName) || isIgnored(el) || isHidden(el)) continue;
+      if (!el || el.nodeType !== Node.ELEMENT_NODE || (SKIP.has(el.tagName) && el.tagName !== 'CANVAS') || isIgnored(el) || isHidden(el)) continue;
       const style = getComputedStyle(el);
       const handlers = frameworkHandlers(el);
       const action = actionNameOf(el);
@@ -336,6 +337,19 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       }
     }
     return hints.sort((a, b) => b.hiddenCount - a.hiddenCount || b.itemCount - a.itemCount).slice(0, 12);
+  }
+  function collectCanvasRegions(root) {
+    if (!root || !root.querySelectorAll) return [];
+    const canvases = Array.from(root.querySelectorAll('canvas'));
+    const out = [];
+    for (const el of canvases) {
+      if (!el || isIgnored(el) || isHidden(el)) continue;
+      const visible = visibleInfo(el);
+      if (!visible.inViewport) continue;
+      const label = clean(el.getAttribute('aria-label') || el.getAttribute('title') || el.id || 'canvas region', 120);
+      out.push({ index: out.length, tag: 'canvas', role: el.getAttribute('role') || 'img', action: label, label, selector: selectorFor(el), point: visible.point, rect: visible.rect, hitOk: visible.hitOk, clickable: clickable(el, getComputedStyle(el)) });
+    }
+    return out.slice(0, 12);
   }
   function resetOutputBudget() { outputChars = 0; truncated = false; }
   function cleanLineText(text, remaining) {
@@ -451,6 +465,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
   const scanRoot = topRoot || document.body || document.documentElement;
   const actionables = collectActionables(scanRoot);
   const list_hints = collectListHints(scanRoot);
+  const canvas_regions = collectCanvasRegions(scanRoot);
   let content;
   if (options.textOnly) {
     resetOutputBudget();
@@ -475,7 +490,8 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     iframe_notes: iframeNotes,
     top_layer: topRoot ? { tag: topRoot.tagName.toLowerCase(), id: topRoot.id || '', class: cleanClassValue(topRoot.className || '').slice(0, 120) } : null,
     actionables,
-    list_hints
+    list_hints,
+    canvas_regions
   };
 })()`;
 }

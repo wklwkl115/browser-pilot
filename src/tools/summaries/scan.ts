@@ -1,8 +1,11 @@
 import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
+import { buildDomEntityFromScanActionable, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../abml/entity.js";
+import { registerRefDescriptor } from "../../../mcp/resourceStore.js";
 
 export type ScanSummaryOptions = {
 	detailLevel?: unknown;
 	maxChars?: number;
+	entityContext?: Partial<ScanEntityContext>;
 };
 
 type Limits = {
@@ -295,7 +298,54 @@ function limitSets(options: ScanSummaryOptions): Limits[] {
 	];
 }
 
-function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Limits, omitted: string[] = []): Summary {
+function scanEntityContext(item: Record<string, unknown>, options: ScanSummaryOptions): ScanEntityContext {
+	const context = options.entityContext || {};
+	const url = context.url ?? stringField(item.url);
+	return {
+		browserSessionId: context.browserSessionId ?? stringField(item.browserSessionId),
+		tabId: context.tabId ?? numberField(item.tabId),
+		url,
+		observationId: context.observationId ?? stringField(item.observationId) ?? `scan:${url || "unknown"}`,
+		capturedAt: context.capturedAt ?? numberField(item.capturedAt) ?? Date.now(),
+	};
+}
+
+function stringField(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : undefined;
+}
+
+function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[] } {
+	const context = scanEntityContext(item, options);
+	const actionables = asArray(item.actionables).filter(isRecord);
+	const listHints = asArray(item.list_hints).filter(isRecord);
+	const canvasRegions = asArray(item.canvas_regions).filter(isRecord);
+	const actionEntities = dedupeEntities(actionables.map((node) => {
+		const built = buildDomEntityFromScanActionable(node, context);
+		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
+		return withRegisteredRef(built.entity, refId);
+	}));
+	const visualRegions = dedupeEntities((canvasRegions.length ? canvasRegions : actionables.filter((node) => String(node.tag || "").toLowerCase() === "canvas"))
+		.map((node) => {
+			const built = buildVisionRegionFromCanvasActionable(node, context);
+			const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
+			return withRegisteredRef(built.entity, refId);
+		}));
+	const listEntities = dedupeEntities(listHints.map((node, index) => {
+		const built = buildRegionEntityFromListHint(node, context, index);
+		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || `list-${index}` });
+		return withRegisteredRef(built.entity, refId);
+	}));
+	const entities = dedupeEntities([...actionEntities, ...listEntities, ...visualRegions]);
+	const primaryEntities = actionEntities.filter((entity) => entity.hints?.jsonPath && String(entity.hints.jsonPath).startsWith("data.actionables[")).slice(0, 10);
+	return { entities, primaryEntities, listEntities, visualRegions };
+}
+
+function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Limits, options: ScanSummaryOptions, omitted: string[] = []): Summary {
 	const content = typeof item.content === "string" ? item.content : "";
 	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	const actionables = asArray(item.actionables).filter(isRecord);
@@ -303,13 +353,19 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 	const primaryActions = selectPrimaryActions(actionables, limits.primaryActions);
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const headings = headingSignals(lines, limits.headings);
+	const scanEntities = buildScanEntities(item, options);
+	const actionEntityByPath = new Map(scanEntities.entities.map((entity) => [String(entity.hints?.jsonPath || ""), entity]));
+	const primaryActionsWithEntities = primaryActions.map((action) => ({ ...action, ...(actionEntityByPath.get(String(action.jsonPath || "")) ? { entity: actionEntityByPath.get(String(action.jsonPath || "")) } : {}) }));
 	const focus: Record<string, unknown> = {
 		top_layer: item.top_layer,
-		primary_actions: primaryActions,
+		primary_actions: primaryActionsWithEntities,
 		forms: summarizeForms(actionables, 2),
 		lists: summarizeLists(listHints, limits.lists),
 		headings,
 		text_signals: textSignals(lines, actionNames, limits.textSignals),
+		primary_entities: scanEntities.primaryEntities,
+		list_entities: scanEntities.listEntities.slice(0, limits.lists),
+		visual_regions: scanEntities.visualRegions.slice(0, 4),
 	};
 	return {
 		summaryVersion: 2,
@@ -373,8 +429,8 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 	const sets = limitSets(options);
 	for (const [index, limits] of sets.entries()) {
 		const omitted = index === 0 ? [] : ["interactive", "textPreview", "legacyRows"];
-		const summary = buildSummary(item, tabs, limits, omitted);
+		const summary = buildSummary(item, tabs, limits, options, omitted);
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
-	return buildSummary(item, tabs, sets[sets.length - 1], ["interactive", "textPreview", "legacyRows"]);
+	return buildSummary(item, tabs, sets[sets.length - 1], options, ["interactive", "textPreview", "legacyRows"]);
 }

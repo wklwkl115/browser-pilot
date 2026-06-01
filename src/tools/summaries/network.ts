@@ -46,6 +46,27 @@ function networkRows(items: unknown[]) {
 	], 20);
 }
 
+const MAX_HTTP_REQUEST_HINTS = 10;
+
+function requestEntryHints(entries: unknown[], entriesPath: string | undefined) {
+	if (!entriesPath) return [];
+	const reads: Array<{ label: string; jsonPath: string; kind: string; count: number }> = [];
+	for (let index = 0; index < entries.length && reads.length < MAX_HTTP_REQUEST_HINTS; index += 1) {
+		const raw = entries[index];
+		if (!isRecord(raw)) continue;
+		const request = isRecord(raw.request) ? raw.request : raw;
+		if (request.url === undefined && request.method === undefined) continue;
+		const requestId = raw.requestId ?? raw._requestId ?? raw.id ?? index;
+		reads.push({
+			label: `request ${String(requestId)}`,
+			jsonPath: isRecord(raw.request) ? `${entriesPath}[${index}].request` : `${entriesPath}[${index}]`,
+			kind: "http-request",
+			count: 1,
+		});
+	}
+	return reads;
+}
+
 export function summarizeNetworkData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };
 	const diagnostics = isRecord(data.diagnostics) ? data.diagnostics : undefined;
@@ -106,8 +127,12 @@ export function summarizeNetworkData(data: unknown): Summary {
 		bodyAvailability: data.bodyAvailability ?? data._bodyAvailability,
 		bodyUnavailableReason: data.bodyUnavailableReason ?? data._bodyUnavailableReason,
 		...(data.bodyRef ? { url: data.url, status: data.status, mimeType: data.mimeType } : {}),
-		// Layer-1 hint: full entries array (untruncated) lives at the container key
-		// normalizeEntries() actually drew from, so the jsonPath always matches the raw artifact.
-		...(entriesPath ? artifactHints([{ label: "all network entries", jsonPath: entriesPath, kind: "network-entry", count: entries.length }]) : {}),
+		// Layer-1 hints: full entries array plus bounded per-entry request handles.
+		// Per-entry http-request handles let MCP callers pass captured requests directly
+		// into browser_sqli/browser_http_replay/browser_fuzz without hand-copying JSON.
+		...(entriesPath ? artifactHints([
+			{ label: "all network entries", jsonPath: entriesPath, kind: "network-entry", count: entries.length },
+			...requestEntryHints(entries, entriesPath),
+		]) : {}),
 	};
 }

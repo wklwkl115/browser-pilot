@@ -61,7 +61,7 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 				fallbackPrefix: "callback-oast",
 				includeTimeout: false,
 				includeCookieProvider: false,
-				augmentParams: (input) => ({ timeoutMs: input.triggerTimeoutMs ?? input.timeoutMs }),
+				augmentParams: (input) => ({ timeoutMs: typeof input.triggerTimeoutMs === "number" ? input.triggerTimeoutMs : input.timeoutMs }),
 				run: runCallbackOast,
 				details: (result) => ({
 					action: result.action,

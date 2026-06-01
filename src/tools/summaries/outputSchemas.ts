@@ -36,6 +36,33 @@ const SummaryTableSchema = Type.Object({
 }, { additionalProperties: true });
 const OptionalSummaryTable = Type.Optional(SummaryTableSchema);
 const SamplesArray = Type.Optional(Type.Array(LooseObject));
+export const EntityStateSchema = Type.Object({
+	visible: Type.Boolean(),
+	occluded: Type.Boolean(),
+	disabled: Type.Boolean(),
+	focused: Type.Boolean(),
+	checked: Type.Optional(Type.Boolean()),
+	expanded: Type.Optional(Type.Boolean()),
+	editable: Type.Boolean(),
+	inViewport: Type.Boolean(),
+}, { additionalProperties: true });
+export const EntityLocatorSchema = Type.Object({ by: Type.String() }, { additionalProperties: true });
+export const EntityGeometrySchema = Type.Object({
+	box: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { additionalProperties: true })),
+	point: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() }, { additionalProperties: true })),
+}, { additionalProperties: true });
+export const EntitySchema = Type.Object({
+	ref: Type.String(),
+	kind: Type.String(),
+	role: Type.String(),
+	name: Type.Optional(Type.String()),
+	value: Type.Optional(Type.String()),
+	state: EntityStateSchema,
+	source: Type.String(),
+	locators: Type.Optional(Type.Array(EntityLocatorSchema)),
+	geometry: Type.Optional(EntityGeometrySchema),
+	hints: Type.Optional(LooseObject),
+}, { additionalProperties: true });
 
 // ── browser_evidence summary schema ──────────────────────────────────────────
 //
@@ -97,4 +124,76 @@ export const HookDomFlowSummarySchema = Type.Object({
 	items: Type.Optional(Type.Array(DomFlowRowSchema)),
 	total: Type.Optional(AnyValue),
 	truncated: Type.Optional(AnyValue),
+}, { additionalProperties: true });
+
+export const MemorySummarySchema = Type.Object({
+	action: Type.String(),
+	ok: Type.Optional(Type.Boolean()),
+	scopeKind: Type.Optional(Type.String()),
+	scopeKey: Type.Optional(Type.String()),
+	query: Type.Optional(Type.String()),
+	id: Type.Optional(Type.String()),
+	uri: Type.Optional(Type.String()),
+	mode: Type.Optional(Type.String()),
+	count: Type.Optional(Type.Number()),
+	superseded: Type.Optional(Type.Number()),
+	supersedeCandidates: Type.Optional(Type.Number()),
+	entryCount: Type.Optional(Type.Number()),
+	error: Type.Optional(Type.String()),
+}, { additionalProperties: true });
+
+export const ScanSummarySchema = Type.Object({
+	summaryVersion: Type.Number(),
+	url: Type.Optional(AnyValue),
+	title: Type.Optional(AnyValue),
+	readyState: Type.Optional(AnyValue),
+	text_only: Type.Optional(AnyValue),
+	contentChars: Type.Number(),
+	lineCount: Type.Number(),
+	truncated: Type.Optional(AnyValue),
+	node_count: Type.Optional(AnyValue),
+	iframe_notes: Type.Optional(AnyValue),
+	top_layer: Type.Optional(AnyValue),
+	tabs_count: Type.Number(),
+	page: Type.Object({
+		contentChars: Type.Number(),
+		lineCount: Type.Number(),
+		node_count: Type.Optional(AnyValue),
+		truncated: Type.Optional(AnyValue),
+		tabs_count: Type.Number(),
+	}, { additionalProperties: true }),
+	focus: Type.Object({
+		top_layer: Type.Optional(AnyValue),
+		primary_actions: Type.Array(Type.Object({
+			i: Type.Number(),
+			k: Type.String(),
+			name: Type.String(),
+			jsonPath: Type.String(),
+			sel: Type.Optional(Type.String()),
+			at: Type.Optional(Type.Array(Type.Number())),
+			ok: Type.Optional(Type.Boolean()),
+			flags: Type.Optional(Type.Array(Type.String())),
+			why: Type.Optional(Type.String()),
+			count: Type.Optional(Type.Number()),
+			coveredBy: Type.Optional(LooseObject),
+			entity: Type.Optional(EntitySchema),
+		}, { additionalProperties: true })),
+		forms: Type.Array(LooseObject),
+		lists: Type.Array(LooseObject),
+		headings: Type.Array(Type.String()),
+		text_signals: Type.Array(Type.String()),
+		primary_entities: Type.Array(EntitySchema),
+		list_entities: Type.Array(EntitySchema),
+		visual_regions: Type.Optional(Type.Array(EntitySchema)),
+	}, { additionalProperties: true }),
+	artifact_hints: Type.Object({
+		jsonPaths: Type.Record(Type.String(), Type.String()),
+		preferredReads: Type.Array(LooseObject),
+	}, { additionalProperties: true }),
+	list_hints: SummaryTableSchema,
+	actionables: SummaryTableSchema,
+	interactive: Type.Array(Type.String()),
+	headings: Type.Array(Type.String()),
+	textPreview: Type.String(),
+	summaryOmitted: Type.Optional(Type.Array(Type.String())),
 }, { additionalProperties: true });

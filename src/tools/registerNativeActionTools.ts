@@ -5,6 +5,7 @@ import type { DetailLevel } from "../utils/params.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { nativeToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
+import { readFrameEntities } from "../abml/verbs/frameRuntime.js";
 import type { ToolResultBudgetName } from "./budgets.js";
 import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
@@ -161,6 +162,27 @@ export function registerFrameTool(context: ToolRegistrarContext) {
 		promptGuideline: "Use browser_frame for cross-frame work instead of guessing iframe DOM access.",
 		actionDescription: nativeToolMetadata.nativeActionTools.browser_frame.actionDescription,
 		commandForAction: frameCommandForAction,
+		commandExecutor: async (server, command, options) => {
+			const result = await server.sendCommand(command, options);
+			if ((command.cmd === "frame.list" || command.cmd === "frame.evaluate") && result.data && typeof result.data === "object") {
+				const tabId = typeof result.tabId === "number" ? result.tabId : typeof options.tabId === "number" ? options.tabId : typeof command.tabId === "number" ? command.tabId : undefined;
+				const commandOptions = command.options && typeof command.options === "object" ? command.options as Record<string, unknown> : undefined;
+				if (tabId) {
+					const frames = await readFrameEntities(server, { browserSessionId: options.browserSessionId, tabId, observationId: `frame-list:${tabId}`, depth: typeof commandOptions?.depth === "number" ? commandOptions.depth : undefined }).catch(() => undefined);
+					if (frames) {
+						const frameId = typeof command.frameId === "string" ? command.frameId : undefined;
+						result.data = {
+							...(result.data as Record<string, unknown>),
+							entities: frameId ? frames.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId) : frames.entities,
+							entityCount: frameId ? frames.entities.filter((entity) => entity.hints?.frameId === frameId || entity.value === frameId).length : frames.entities.length,
+							frameCount: frames.frames.length,
+							abmlIntegrated: true,
+						};
+					}
+				}
+			}
+			return result;
+		},
 		budgetName: "browser_frame",
 		artifactPrefix: "frame-result",
 		defaultDetailLevel: "preview",

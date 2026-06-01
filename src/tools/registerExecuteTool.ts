@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import type { BrowserBridgeExecutionResult } from "../driver/types.js";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { buildScanScript } from "../scan/buildScanScript.js";
+import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { compactError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { normalizeTabId } from "../utils/params.js";
@@ -15,6 +16,7 @@ type MonitorScanResult = {
 	ok: boolean;
 	content?: string;
 	error?: Record<string, unknown>;
+	source?: "abml-read" | "legacy-scan";
 };
 
 type MonitorMetadata = {
@@ -26,6 +28,8 @@ type MonitorMetadata = {
 	top_change?: string;
 	beforeError?: Record<string, unknown>;
 	afterError?: Record<string, unknown>;
+	beforeSource?: "abml-read" | "legacy-scan";
+	afterSource?: "abml-read" | "legacy-scan";
 };
 
 function textLines(value: unknown): string[] {
@@ -47,9 +51,16 @@ function detectCommandLikeScript(script: string): boolean {
 
 async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
 	try {
+		const runtime = createBrowserAbmlIntegration(server, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, maxChars: 50_000 });
+		const abml = await runtime.readStructure({ browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, maxChars: 50_000 });
+		if (abml?.ok && abml.data && typeof abml.data === "object") {
+			const summary = (abml.data as Record<string, unknown>).summary as Record<string, unknown> | undefined;
+			const content = typeof summary?.textPreview === "string" ? summary.textPreview : JSON.stringify(abml.entities ?? [], null, 2);
+			return { ok: true, content, source: "abml-read" };
+		}
 		const result = await server.executeJavaScript(scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
 		const content = (result.data as Record<string, unknown> | undefined)?.content;
-		return { ok: true, content: typeof content === "string" ? content : undefined };
+		return { ok: true, content: typeof content === "string" ? content : undefined, source: "legacy-scan" };
 	} catch (error) {
 		return { ok: false, error: compactError(error, "MONITOR_SCAN_FAILED") };
 	}
@@ -72,6 +83,8 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 			...diff,
 			beforeError: before.error,
 			afterError: after.error,
+			beforeSource: before.source,
+			afterSource: after.source,
 		},
 	};
 }
@@ -125,7 +138,20 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					details: { mode: "javascript", monitor: params.monitor === true },
 					operation,
 					artifactValue: { ...jsResult, operation },
-					distill: (value) => ({ ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode }),
+					distill: (value) => {
+						const base = { ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode } as Record<string, unknown>;
+						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
+						if (monitor) {
+							base.monitorSource = {
+								before: monitor.beforeSource,
+								after: monitor.afterSource,
+								changed: monitor.changed,
+								top_change: monitor.top_change,
+								abmlIntegrated: monitor.beforeSource === "abml-read" || monitor.afterSource === "abml-read",
+							};
+						}
+						return base;
+					},
 				});
 			});
 		},

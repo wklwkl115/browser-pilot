@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
+import { tryJson } from "../../../utils/json.js";
 import { isRecord } from "../shared/normalize.js";
 import type { HeaderMap } from "../shared/types.js";
 
@@ -103,11 +104,8 @@ function readLockToken(value: unknown): string | undefined {
 }
 
 async function loadLockToken(lockPath: string): Promise<string | undefined> {
-	try {
-		return readLockToken(JSON.parse(await readFile(lockPath, "utf8")));
-	} catch {
-		return undefined;
-	}
+	const parsed = tryJson(await readFile(lockPath, "utf8"));
+	return readLockToken(parsed);
 }
 
 function resolveHttpsKeyPath(artifactRoot: string): string {

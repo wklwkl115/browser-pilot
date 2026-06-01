@@ -12,6 +12,7 @@ export const TOOL_RESULT_BUDGETS = {
 	browser_evidence: 12_000,
 	browser_screenshot: 20_000,
 	browser_artifact: 8_000,
+	browser_memory: 8_000,
 	browser_crawl: 12_000,
 	browser_fuzz: 12_000,
 	browser_sqli: 12_000,

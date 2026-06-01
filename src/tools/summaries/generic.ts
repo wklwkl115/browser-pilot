@@ -32,7 +32,7 @@ function bridgeResultMetadata(value: Record<string, unknown>, data: unknown): Su
 	const payload = isRecord(data) ? data : {};
 	const target = isRecord(value.target) ? value.target : {};
 	const out: Summary = {};
-	for (const key of ["tabId", "frameId", "sessionId", "requestId", "waitId", "listenerId", "count", "total", "nextOffset"] as const) {
+	for (const key of ["tabId", "frameId", "sessionId", "requestId", "waitId", "listenerId", "count", "total", "nextOffset", "frameCount", "entityCount", "abmlIntegrated"] as const) {
 		const item = payload[key] ?? value[key];
 		if (item !== undefined) out[key] = item;
 	}

@@ -2,6 +2,7 @@ import { buildContentScript } from "../content/buildContentScript.js";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import { buildScanScript } from "../scan/buildScanScript.js";
@@ -149,6 +150,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
 	const scanScript = buildScanScript({ textOnly: mode === "text", maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
+	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
 	const { result: observation, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -162,32 +164,56 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	}, onUpdate, async (handle) => {
 		await handle.update({ progress: 40 });
 		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "scan_extract" });
-		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
-		return result;
+		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
+		const abmlRead = await abml.readStructure({ browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
+		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
+		return { result, abmlRead };
 	});
-	const data = observation.data as Record<string, unknown> | undefined;
-	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.data, null, 2);
+	const data = observation.result.data as Record<string, unknown> | undefined;
+	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined);
-	const summary = {
-		...withObservationMeta(summarizeScanData(data, tabs, { detailLevel: params.detailLevel, maxChars }), mode, "scan"),
+	const baseSummary: Record<string, unknown> = {
+		...withObservationMeta(summarizeScanData(data, tabs, {
+			detailLevel: params.detailLevel,
+			maxChars,
+			entityContext: {
+				browserSessionId: bridge.browserSessionId,
+				tabId,
+				url: typeof data?.url === "string" ? data.url : undefined,
+				observationId: snapshotMeta.snapshotId,
+				capturedAt: snapshotMeta.capturedAt,
+			},
+		}), mode, "scan"),
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		selectionVersion: bridge.selectionVersion,
 		selectionVersionAtDispatch: bridge.selectionVersion,
 		selectionVersionAtResolve: bridge.selectionVersion,
 	};
+	const summary = observation.abmlRead?.ok === true
+		? {
+			...baseSummary,
+			abmlIntegrated: true,
+			focus: {
+				...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
+				primary_entities: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region").slice(0, 10),
+				list_entities: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
+				visual_regions: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
+			},
+		}
+		: { ...baseSummary, abmlIntegrated: false };
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta },
+		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, abml: observation.abmlRead },
 	});
 }
 

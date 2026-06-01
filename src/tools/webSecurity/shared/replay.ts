@@ -4,6 +4,7 @@ import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, saniti
 import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize.js";
 import { createCodedError } from "../../../utils/codedError.js";
+import { tryJson } from "../../../utils/json.js";
 import { applyTemplateVars, evaluateDslExtractor, jsonPathParts, normalizeDslExtractors } from "./template.js";
 import { harEntriesFromOptions } from "./har.js";
 import type { CookieProvider, FetchStep, HeaderMap, ReplayOptions, ReplayRequest } from "./types.js";
@@ -106,10 +107,9 @@ export function existingParamNames(request: ReplayRequest, locations: string[]):
 		}
 	}
 	if (locations.includes("json") && body) {
-		try {
-			for (const key of collectJsonParamPaths(JSON.parse(body))) names.add(key);
-		} catch {
-			/* best-effort json parameter inference */
+		const parsed = tryJson(body);
+		if (parsed !== undefined) {
+			for (const key of collectJsonParamPaths(parsed)) names.add(key);
 		}
 	}
 	if (locations.includes("header")) for (const key of Object.keys(request.headers)) if (!FETCH_OMIT_HEADER_NAMES.has(normalizeHeaderName(key))) names.add(key);
@@ -121,11 +121,8 @@ export function parseFuzzParamValue(value: unknown): unknown {
 	const trimmed = value.trim();
 	if (!trimmed) return value;
 	if (/^(?:true|false|null)$/i.test(trimmed) || /^-?\d+(?:\.\d+)?$/.test(trimmed) || /^[[{]/.test(trimmed)) {
-		try {
-			return JSON.parse(trimmed);
-		} catch {
-			/* fall back to raw string when fuzzy value is not valid JSON */
-		}
+		const parsed = tryJson(trimmed);
+		if (parsed !== undefined) return parsed;
 	}
 	return value;
 }

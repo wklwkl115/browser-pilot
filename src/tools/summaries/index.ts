@@ -4,6 +4,7 @@ export { summarizeEvidenceData } from "./evidence.js";
 export { summarizeGenericValue } from "./generic.js";
 export { summarizeHtmlSnapshot } from "./html.js";
 export { summarizeNetworkData } from "./network.js";
+export { summarizeMemoryResult } from "./memory.js";
 export { summarizePickData } from "./pick.js";
 export { summarizeScanData } from "./scan.js";
 export { summarizeTransferData } from "./transfer.js";

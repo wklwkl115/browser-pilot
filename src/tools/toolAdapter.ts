@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { BrowserActiveOperationInfo } from "../driver/types.js";
-import { BrowserBridgeError } from "../driver/errors.js";
+import { BrowserBridgeError, errorToPlain } from "../driver/errors.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import type { DetailLevel } from "../utils/params.js";
 import { normalizeTabId } from "../utils/params.js";
@@ -126,7 +126,7 @@ type RunBrowserToolSpec<TParams extends Partial<StandardToolParams>, TPrepared e
 	finalize: (args: BrowserToolRunArgs<TParams, TPrepared> & { result: TResult; operation?: BrowserActiveOperationInfo }) => Promise<PiTextToolResult>;
 };
 
-type RunWebSecurityToolSpec<TParams extends StandardToolParams, TRunParams extends object, TResult> = {
+type RunWebSecurityToolSpec<TParams extends StandardToolParams, TRunParams extends TParams, TResult> = {
 	ensureStarted: () => Promise<BrowserBridgeServer>;
 	params: TParams;
 	ctx: ToolResultContext;
@@ -192,11 +192,11 @@ export function targetTabId(params: Pick<StandardToolParams, "tabId">, body?: Re
 	return params.tabId ?? body?.tabId;
 }
 
-export async function runTool(handler: () => Promise<PiTextToolResult>, onError: (error: unknown) => PiTextToolResult = errorResult): Promise<PiTextToolResult> {
+export async function runTool(handler: () => Promise<PiTextToolResult>, onError: (error: unknown) => PiTextToolResult | Promise<PiTextToolResult> = errorResult): Promise<PiTextToolResult> {
 	try {
 		return await handler();
 	} catch (error) {
-		return onError(error);
+		return await onError(error);
 	}
 }
 
@@ -297,11 +297,9 @@ function attachOperationToError(error: unknown, operation: BrowserActiveOperatio
 	}
 	if (error instanceof Error) {
 		const details = isRecord((error as Error & { details?: unknown }).details) ? ((error as Error & { details?: Record<string, unknown> }).details || {}) : {};
-		return Object.assign(new Error(error.message), {
-			name: error.name,
-			cause: error,
-			details: { ...details, ...operationDetails },
-		});
+		const plain = errorToPlain(error);
+		const code = typeof plain.code === "string" && plain.code ? normalizeNativeErrorCode(plain.code) : "INTERNAL_ERROR";
+		return new BrowserBridgeError(code, error.message, { ...details, ...operationDetails, causeName: error.name });
 	}
 	return error;
 }
@@ -401,8 +399,8 @@ export async function runBrowserTool<TParams extends Partial<StandardToolParams>
 	}, onError);
 }
 
-export async function runWebSecurityTool<TParams extends StandardToolParams & { maxBodyBytes?: unknown }, TRunParams extends object, TResult>(spec: RunWebSecurityToolSpec<TParams, TRunParams, TResult>): Promise<PiTextToolResult> {
-	return await runBrowserTool<TParams, TParams, TResult>({
+export async function runWebSecurityTool<TParams extends StandardToolParams & { maxBodyBytes?: unknown }, TRunParams extends TParams, TResult>(spec: RunWebSecurityToolSpec<TParams, TRunParams, TResult>): Promise<PiTextToolResult> {
+	return await runBrowserTool<TParams, TRunParams, TResult>({
 		ensureStarted: spec.ensureStarted,
 		toolName: spec.toolName,
 		budgetName: spec.toolName,
@@ -424,11 +422,11 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 			if (spec.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
 			if (spec.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, spec.defaultMaxBodyBytes);
 			if (spec.includeCookieProvider && spec.createCookieProvider) runParams.cookieProvider = spec.createCookieProvider(params, timeoutMs);
-			return runParams as TParams;
+			return runParams as TRunParams;
 		},
 		run: async ({ prepared, handle }) => {
 			await handle?.update({ progress: 35 });
-			const result = await spec.run(prepared as unknown as TRunParams);
+			const result = await spec.run(prepared);
 			await handle?.update({ progress: 85, details: spec.details(result) });
 			return result;
 		},

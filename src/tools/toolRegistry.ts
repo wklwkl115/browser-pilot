@@ -4,6 +4,7 @@ import { registerEvidenceTool } from "./registerEvidenceTool.js";
 import { registerExecuteTool } from "./registerExecuteTool.js";
 import { registerFrameTool, registerHookTool, registerNetworkTool, registerWaitTool } from "./registerNativeActionTools.js";
 import { registerObserveTool } from "./registerObserveTool.js";
+import { registerMemoryTool } from "./registerMemoryTool.js";
 import { registerPickTool } from "./registerPickTool.js";
 import { registerScreenshotTool } from "./registerScreenshotTool.js";
 import { registerTabsTool } from "./registerTabsTool.js";
@@ -34,6 +35,7 @@ export const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerFrameTool,
 	registerScreenshotTool,
 	registerArtifactTool,
+	registerMemoryTool,
 ];
 
 export const WEB_SECURITY_TOOL_REGISTRARS: readonly ToolRegistrar[] = [

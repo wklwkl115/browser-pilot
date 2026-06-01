@@ -244,7 +244,7 @@ export type CookieAnalyzeToolParams = WebSecuritySharedToolParams & RawCookieAna
 export type FuzzParamsToolParams = WebSecuritySharedToolParams & RawFuzzParamsOptions;
 export type HttpReplayToolParams = WebSecuritySharedToolParams & RawReplayOptions;
 
-type WebSecurityShellConfig<TParams extends WebSecuritySharedToolParams, TRunParams extends object, TResult> = {
+type WebSecurityShellConfig<TParams extends WebSecuritySharedToolParams, TRunParams extends TParams, TResult> = {
 	toolName: ToolResultBudgetName;
 	command: string;
 	fallbackPrefix: string;
@@ -333,7 +333,7 @@ function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSe
 
 export type WebSecurityToolContext = { cwd?: string };
 
-export async function runWebSecurityTool<TParams extends WebSecuritySharedToolParams, TRunParams extends object, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>, onUpdate?: ToolOnUpdate) {
+export async function runWebSecurityTool<TParams extends WebSecuritySharedToolParams, TRunParams extends TParams, TResult>(ensureStarted: EnsureStarted, params: TParams, ctx: WebSecurityToolContext | undefined, config: WebSecurityShellConfig<TParams, TRunParams, TResult>, onUpdate?: ToolOnUpdate) {
 	return await runWebSecurityToolAdapter<TParams, TRunParams, TResult>({
 		ensureStarted,
 		params,

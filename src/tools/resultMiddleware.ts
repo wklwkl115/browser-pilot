@@ -6,6 +6,7 @@ import { saveTextArtifact } from "./artifacts.js";
 import { distillValue } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
+import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
 
 export { distillValue } from "./distillerRegistry.js";
 export { summarizeHtmlSnapshot } from "./summaries/index.js";
@@ -21,6 +22,8 @@ export type DistilledEnvelope = {
 	target?: Record<string, unknown>;
 	limits?: Record<string, unknown>;
 	privacy?: Record<string, unknown>;
+	entities?: Array<Record<string, unknown>>;
+	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
@@ -48,6 +51,8 @@ type DistillBaseOptions = {
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
 	artifactThreshold?: number;
+	entities?: Array<Record<string, unknown>>;
+	error?: Record<string, unknown>;
 };
 
 type DistilledJsonOptions = DistillBaseOptions & {
@@ -143,6 +148,25 @@ function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<stri
 	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
 }
 
+function envelopeEntities(summary: DistilledSummary, explicit?: Array<Record<string, unknown>>): Array<Record<string, unknown>> | undefined {
+	if (Array.isArray(explicit) && explicit.length) return explicit;
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	const candidates = [
+		...asArray(focus?.primary_entities),
+		...asArray(focus?.list_entities),
+		...asArray(focus?.visual_regions),
+	].filter((item) => isRecord(item));
+	return candidates.length ? candidates.slice(0, 12) as Array<Record<string, unknown>> : undefined;
+}
+
+function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
+	if (explicit && Object.keys(explicit).length) return explicit;
+	if (summary.failed === true || typeof summary.error_code === "string") {
+		return pickDefined(summary, ["failed", "error_code", "message", "recovery"]);
+	}
+	return undefined;
+}
+
 function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
 	const summaryTarget = isRecord(summary.target) ? summary.target : {};
 	const target = {
@@ -191,11 +215,10 @@ function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false
 
 function artifactReadActions(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): string[] {
 	if (!saved?.path) return [];
-	const path = String(saved.path);
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
 	const preferredReads = asArray(hints?.preferredReads).filter(isRecord);
 	const actions = preferredReads
-		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `browser_artifact path=${path} mode=json jsonPath=${hint.jsonPath}` : undefined)
+		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `read_saved_artifact jsonPath=${hint.jsonPath}` : undefined)
 		.filter((item): item is string => !!item)
 		.slice(0, 3);
 	const correlationPaths = [
@@ -205,18 +228,30 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 		{ key: "waitId", path: "data.waitId", value: summary.waitId },
 		{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
 	].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
-	for (const item of correlationPaths.slice(0, 3)) actions.push(`browser_artifact path=${path} mode=json jsonPath=${item.path}`);
-	return actions.length ? Array.from(new Set(actions)) : [`browser_artifact path=${path} mode=json|text`];
+	for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact jsonPath=${item.path}`);
+	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json|text"];
 }
 
 function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = []): string[] | undefined {
 	const actions: string[] = [];
-	actions.push(...summaryHintActions);
+	const entities = envelopeEntities(summary, options.entities);
+	actions.push(...summaryHintActions.filter((item) => !item.includes("path=")));
 	actions.push(...artifactReadActions(summary, saved, operation, snapshot));
-	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`browser_artifact offset=${String(summary.nextOffset)}`);
-	if (summary.bodyUnavailableReason) actions.push("browser_network body with a fresh recorder entry or recapture with captureBodies enabled");
-	if (summary.empty === true || summary.notFound === true) actions.push("narrow selector/jsonPath or re-observe with browser_observe mode=scan|html");
-	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or read the saved artifact by offset/jsonPath");
+	if (entities?.length) {
+		const first = entities.find((entity) => typeof entity.ref === "string") || entities[0];
+		const ref = typeof first?.ref === "string" ? first.ref : undefined;
+		const kind = typeof first?.kind === "string" ? first.kind : undefined;
+		if (ref) {
+			actions.push(`read(${ref})`);
+			if (kind === "control" || kind === "element") actions.push(`click(${ref})`);
+			if (kind === "region") actions.push(`inspect(${ref})`);
+			if (kind === "frame") actions.push(`frame(${ref})`);
+		}
+	}
+	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`read_saved_artifact offset=${String(summary.nextOffset)}`);
+	if (summary.bodyUnavailableReason) actions.push("inspect network body with a fresh recorder entry or recapture with captureBodies enabled");
+	if (summary.empty === true || summary.notFound === true) actions.push("narrow the target ref/filter or re-read with mode=scan|html");
+	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or inspect the saved artifact by jsonPath/offset");
 	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
 	return actions.length ? Array.from(new Set(actions)).slice(0, 7) : undefined;
 }
@@ -242,6 +277,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...pickDefined(redactedOperation || {}, ["operationId", "snapshotId", "sourceMode"]),
 		...pickDefined(redactedSnapshot || {}, ["snapshotId", "sourceMode"]),
 	};
+	const entities = envelopeEntities(redactedSummary, options.entities);
+	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
 		command: options.command,
@@ -252,7 +289,9 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		target: normalizedTarget(options, fittedSummary),
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw),
-		nextActions: normalizedNextActions(options, fittedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
+		...(entities ? { entities } : {}),
+		...(error ? { error } : {}),
+		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),
@@ -271,12 +310,15 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	let saved: Record<string, unknown> | undefined;
 	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
-		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
+		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await saveRawArtifact(options, raw);
-			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
+			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
-		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return {
+			content: [{ type: "text", text: stableJson(envelope) }],
+			details: { ...(options.details || {}), saved },
+		};
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
@@ -296,12 +338,15 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	let saved: Record<string, unknown> | undefined;
 	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
-		let envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
+		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
 			saved = await saveRawArtifact(options, raw);
-			envelope = responseEnvelope(options, summary, saved, sensitiveRaw);
+			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
-		return jsonResult(envelope, { ...(options.details || {}), saved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return {
+			content: [{ type: "text", text: stableJson(envelope) }],
+			details: { ...(options.details || {}), saved },
+		};
 	}
 	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
