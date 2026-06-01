@@ -81,6 +81,7 @@
     "check:mcp-ingress-handles": "tsx tests/contracts/tools/check-mcp-ingress-handles.mjs",
     "check:mcp-middleware": "tsx tests/contracts/tools/check-mcp-middleware.mjs",
     "check:mcp-e2e": "tsx tests/contracts/tools/check-mcp-e2e.mjs",
+    "check:mcp-structured-envelope": "tsx tests/contracts/tools/check-mcp-structured-envelope.mjs",
     "smoke:browser": "tsx tests/smoke/smoke-browser.mjs",
     "smoke:browser:transfer": "tsx tests/smoke/smoke-browser.mjs --transfer",
     "check": "npm run check:all",
