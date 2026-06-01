@@ -11,10 +11,47 @@
  * - Resources expire after TTL_MS (default 1 hour); pruneExpired() is
  *   called on registration to keep memory bounded.
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { statSync, readFileSync } from "node:fs";
 
 export const RESOURCE_URI_SCHEME = "browser-result";
 const TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Cheap change-detection token from a single stat: `${size}-${mtimeMs}`.
+ * Detects rename/rewrite/external-edit without reading content — correct
+ * strength for an immutable, atomically-written (temp+rename) artifact store.
+ * Returns undefined if the path can't be stat'd (caller leaves etag unset).
+ */
+export function computeEtag(artifactPath: string): string | undefined {
+	try {
+		const s = statSync(artifactPath);
+		return `${s.size}-${Math.floor(s.mtimeMs)}`;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Full content hash (sha256). Only used for small, security-sensitive
+ * `http-request` ingress templates — never on the raw-result hot path.
+ */
+function computeContentHash(artifactPath: string): string | undefined {
+	try {
+		return createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * True if the artifact on disk still matches the etag recorded at registration.
+ * A mismatch means the file was rewritten/replaced under the handle (staleness).
+ */
+export function isResourceFresh(resource: BrowserResultResource): boolean {
+	if (!resource.etag) return true; // etag couldn't be computed at register time — don't block
+	return computeEtag(resource.artifactPath) === resource.etag;
+}
 
 export type ResourceKind =
 	| "raw-result"
@@ -67,6 +104,7 @@ export function registerBrowserResultResource(params: {
 	name: string;
 	description?: string;
 	section?: string;
+	jsonPath?: string;
 	mime?: string;
 	bytes?: number;
 	immutable?: boolean;
@@ -77,14 +115,21 @@ export function registerBrowserResultResource(params: {
 	const id = randomUUID();
 	const uri = makeUri(id);
 	const now = Date.now();
+	// etag (cheap stat) for all kinds; content hash only for security-sensitive
+	// http-request ingress templates (small files, content identity matters).
+	const etag = computeEtag(params.artifactPath);
+	const hash = params.kind === "http-request" ? computeContentHash(params.artifactPath) : undefined;
 	const resource: BrowserResultResource = {
 		id,
 		uri,
 		kind: params.kind,
 		artifactPath: params.artifactPath,
 		section: params.section,
+		jsonPath: params.jsonPath,
 		mime: params.mime,
 		bytes: params.bytes,
+		hash,
+		etag,
 		immutable: params.immutable ?? true,
 		createdAt: now,
 		expiresAt: now + TTL_MS,

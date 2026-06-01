@@ -17,7 +17,8 @@
  * - Handle resolution CANNOT auto-select targets or chain to other tools.
  */
 import { readFile } from "node:fs/promises";
-import { resolveResourceUri, RESOURCE_URI_SCHEME } from "./resourceStore.js";
+import { createHash } from "node:crypto";
+import { resolveResourceUri, isResourceFresh, RESOURCE_URI_SCHEME } from "./resourceStore.js";
 import { HANDLE_ACCEPTING_FIELDS } from "./handleFields.js";
 import type { ResourceKind } from "./resourceStore.js";
 
@@ -74,6 +75,28 @@ export async function resolveIngressHandles(
 		let payload: unknown;
 		try {
 			const raw = await readFile(resource.artifactPath, "utf8");
+
+			// Staleness / integrity: the artifact under this handle must match what
+			// was captured at registration. For http-request templates we recorded a
+			// content sha256; verify it against the bytes we just read. If no hash was
+			// available, fall back to the stat-based etag freshness check.
+			if (resource.hash) {
+				const actual = createHash("sha256").update(raw).digest("hex");
+				if (actual !== resource.hash) {
+					return {
+						ok: false,
+						error: `Handle content changed since capture (etag/hash mismatch): ${uri}`,
+						code: "HANDLE_ETAG_MISMATCH",
+					};
+				}
+			} else if (!isResourceFresh(resource)) {
+				return {
+					ok: false,
+					error: `Handle content changed since capture (etag mismatch): ${uri}`,
+					code: "HANDLE_ETAG_MISMATCH",
+				};
+			}
+
 			const parsed = JSON.parse(raw) as unknown;
 			// Unwrap DistilledEnvelope if present — use raw value or inner data
 			if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {

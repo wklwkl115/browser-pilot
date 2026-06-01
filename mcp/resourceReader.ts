@@ -12,7 +12,7 @@
  *   jsonPath — JSON path for json mode
  *   search  — search query for search mode
  */
-import { resolveResourceUri } from "./resourceStore.js";
+import { resolveResourceUri, isResourceFresh } from "./resourceStore.js";
 import { readBrowserArtifact, ArtifactReaderError } from "../src/tools/artifactReader.js";
 
 export type McpResourceContent = {
@@ -36,6 +36,16 @@ export async function readBrowserResultResource(uri: string): Promise<McpResourc
 			ok: false,
 			error: `Resource not found or expired: ${uri}`,
 			code: "RESOURCE_NOT_FOUND",
+		};
+	}
+
+	// Staleness: the artifact under this handle was rewritten/replaced since
+	// registration (e.g. a later same-tool call reused the fallback path).
+	if (!isResourceFresh(resource)) {
+		return {
+			ok: false,
+			error: `Resource is stale (artifact changed since it was captured): ${uri}`,
+			code: "RESOURCE_STALE",
 		};
 	}
 
