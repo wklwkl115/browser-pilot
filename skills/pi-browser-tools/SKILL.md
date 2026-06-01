@@ -130,6 +130,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
 | Timeout | re-observe; `browser_wait action=diagnose`; narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
+| Resource `stale`/`etag mismatch` on read | artifact changed under the handle — re-capture to mint a fresh `browser-result://`/`pi-ref://` URI; never retry the old one |
 | Tool not in list | `browser_tool_discovery {revealGroup}` |
 | Mature bridge fail | explicit target/template/path; inspect stdout/stderr artifacts |
 | Upload/download blocked | dedicated transfer tool + valid selector/path/mode + confirmation |
