@@ -1,0 +1,152 @@
+import { stat } from "node:fs/promises";
+import type { DistilledEnvelope } from "../resultMiddleware.js";
+import type { MemoryIndex, MemoryIndexEntry, MemoryScopeKind } from "./types.js";
+import { readMemoryIndex } from "./indexStore.js";
+import { resolveMemoryPath } from "./paths.js";
+import { normalizeOriginKeyFromUrl } from "./origin.js";
+import { routeByTokens, situationTokens } from "./routing.js";
+
+// Tools that never carry a single page origin worth surfacing memory against, or
+// where surfacing would be self-referential noise.
+const SKIP_TOOLS = new Set(["browser_memory", "browser_tabs"]);
+// Read-only/observational tools still surface RECALL hints, but never trigger the
+// record nudge: merely looking at a page is not a reusable accomplishment worth
+// crystallizing into an SOP — only acting on it is.
+const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_wait", "browser_frame", "browser_pick", "browser_artifact", "browser_tool_discovery"]);
+const SCOPE_ORDER: Record<MemoryScopeKind, number> = { origin: 0, task: 1, project: 2 };
+const MAX_HINTS = 3;
+
+const EMPTY_INDEX: MemoryIndex = { schemaVersion: 1, generatedAt: "", entries: [], byScope: {}, routing: {} };
+
+// Origins already nudged to record this process, keyed by `${cwd}::${origin}`.
+// Bounds the write-side nudge to once per uncovered origin per session so a
+// declined suggestion does not nag on every subsequent durable result.
+const recordSuggested = new Set<string>();
+
+// Test hook: clear session-scoped record-suggestion memory.
+export function __resetMemoryAutoSurfaceState(): void {
+	recordSuggested.clear();
+}
+
+// Read the derived index fresh on every call. The file is tiny and tool results
+// are agent-paced, so a single read is cheaper than the staleness it removes:
+// a process-lifetime cache made freshly recorded memory invisible until restart.
+// When no index.json exists no memory was ever recorded — return empty without
+// materializing the file (avoids creating .pi/browser-memory/ for non-users).
+export async function loadMemoryIndex(cwd?: string): Promise<MemoryIndex> {
+	const indexPath = resolveMemoryPath(cwd, "index.json");
+	const exists = await stat(indexPath).then(() => true).catch(() => false);
+	if (!exists) return EMPTY_INDEX;
+	return await readMemoryIndex(cwd);
+}
+
+function collectStrings(record: Record<string, unknown> | undefined, keys: string[]): string[] {
+	if (!record) return [];
+	const out: string[] = [];
+	for (const key of keys) {
+		const value = record[key];
+		if (typeof value === "string" && value) out.push(value);
+	}
+	return out;
+}
+
+function pageContext(envelope: DistilledEnvelope): { origin?: string; url?: string; haystack: string } {
+	const urls = [
+		...collectStrings(envelope.summary, ["url"]),
+		...collectStrings(envelope.target, ["url"]),
+		...collectStrings(envelope.snapshot, ["url"]),
+	];
+	const titles = [
+		...collectStrings(envelope.summary, ["title"]),
+		...collectStrings(envelope.target, ["title"]),
+		...collectStrings(envelope.snapshot, ["title"]),
+	];
+	let origin: string | undefined;
+	let originUrl: string | undefined;
+	for (const url of urls) {
+		try { origin = normalizeOriginKeyFromUrl(url); originUrl = url; break; } catch { /* try next url */ }
+	}
+	const haystack = [...urls, ...titles].join(" \n ").toLowerCase();
+	return { origin, url: originUrl, haystack };
+}
+
+function entryMatches(entry: MemoryIndexEntry, origin: string | undefined, routed: Map<string, number>): boolean {
+	if (entry.status !== "active") return false;
+	// origin scope is origin-bound: exact normalized-origin match only.
+	if (entry.scopeKind === "origin") return !!origin && entry.scopeKey === origin;
+	// task/project scope keys are not URL-derivable; route them via the L1 index —
+	// surface when the entry's routing tokens overlap the current page's tokens
+	// (token-boundary correct, unlike the previous substring scan).
+	return (routed.get(entry.id) ?? 0) >= 1;
+}
+
+// A durable, citable evidence path already present on the result — exactly what
+// `browser_memory record` needs as an evidenceRef. Its presence also gates the
+// nudge hint when one is available — evidence is optional, but citing it is handy.
+function durableEvidencePath(envelope: DistilledEnvelope): string | undefined {
+	const saved = envelope.saved;
+	if (saved && typeof saved.path === "string" && saved.path) return saved.path;
+	const snapshotSaved = envelope.snapshot?.saved as Record<string, unknown> | undefined;
+	if (snapshotSaved && typeof snapshotSaved.path === "string" && snapshotSaved.path) return snapshotSaved.path;
+	return undefined;
+}
+
+function recallHint(scopeKind: MemoryScopeKind, scopeKey: string, sop: number, fact: number, topTitle: string): string {
+	// Always emit scopeKind: recallMemory's exact-scope match requires both
+	// scopeKind and scopeKey, so a scopeKey-only hint resolves to zero cards. Name
+	// the top entry so the agent can judge relevance before recalling.
+	return `relevant memory: browser_memory action=recall scopeKind=${scopeKind} scopeKey=${scopeKey} (${sop} SOPs, ${fact} facts) top: "${topTitle}"`;
+}
+
+function recordHint(url: string, evidencePath: string | undefined): string {
+	const evidence = evidencePath ? ` evidenceRefs=["${evidencePath}"]` : "";
+	return `record candidate: if you finished a reusable task here, crystallize it — browser_memory action=record kind=sop scopeKind=origin url=${url}${evidence}`;
+}
+
+export async function appendMemoryAutoSurface(options: { cwd?: string; envelope: DistilledEnvelope }): Promise<DistilledEnvelope> {
+	if (process.env["PI_BROWSER_MEMORY_AUTOSURFACE"] === "0") return options.envelope;
+	const { envelope } = options;
+	if (SKIP_TOOLS.has(envelope.tool)) return options.envelope;
+	if (envelope.summary?.mode === "tabs") return options.envelope;
+	const { origin, url, haystack } = pageContext(envelope);
+	if (!origin && !haystack) return options.envelope;
+	const index = await loadMemoryIndex(options.cwd);
+
+	const nextActions = Array.isArray(envelope.nextActions) ? [...envelope.nextActions] : [];
+	const before = nextActions.length;
+
+	// Recall side: surface memory relevant to the current page. task/project scope
+	// is routed through the L1 index by token overlap with the page's tokens.
+	const routed = routeByTokens(index.routing, situationTokens(haystack));
+	const matched = index.entries.filter((entry) => entryMatches(entry, origin, routed));
+	const groups = new Map<string, { scopeKind: MemoryScopeKind; scopeKey: string; sop: number; fact: number; topTitle: string }>();
+	for (const entry of matched) {
+		const key = `${entry.scopeKind}:${entry.scopeKey}`;
+		// index.entries is sorted newest-first, so the first seen per group is its top.
+		const group = groups.get(key) ?? { scopeKind: entry.scopeKind, scopeKey: entry.scopeKey, sop: 0, fact: 0, topTitle: entry.title };
+		if (entry.kind === "sop") group.sop += 1; else group.fact += 1;
+		groups.set(key, group);
+	}
+	const ordered = [...groups.values()]
+		.sort((a, b) => (SCOPE_ORDER[a.scopeKind] - SCOPE_ORDER[b.scopeKind]) || a.scopeKey.localeCompare(b.scopeKey))
+		.slice(0, MAX_HINTS);
+	for (const group of ordered) {
+		const hint = recallHint(group.scopeKind, group.scopeKey, group.sop, group.fact, group.topTitle);
+		if (!nextActions.includes(hint)) nextActions.push(hint);
+	}
+
+	// Record side: when this origin has no SOP/fact yet, nudge crystallization once
+	// per origin per session after a "doing" tool — GA-style, evidence is optional,
+	// so a successful task can be crystallized without a saved artifact. This is the
+	// write-loop ignition the recall side alone cannot start.
+	if (origin && url && !NON_SALIENT_RECORD_TOOLS.has(envelope.tool)) {
+		const originCovered = index.entries.some((entry) => entry.scopeKind === "origin" && entry.scopeKey === origin && entry.status === "active");
+		const recordKey = `${options.cwd || ""}::${origin}`;
+		if (!originCovered && !recordSuggested.has(recordKey)) {
+			recordSuggested.add(recordKey);
+			nextActions.push(recordHint(url, durableEvidencePath(envelope)));
+		}
+	}
+
+	return nextActions.length > before ? { ...envelope, nextActions } : options.envelope;
+}
