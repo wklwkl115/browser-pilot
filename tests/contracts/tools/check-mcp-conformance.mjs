@@ -48,6 +48,10 @@ assert(indexSrc.includes("distillerDef?.summarySchema"), "mcp/index.ts tools/lis
 // structuredContent must be extracted from distilled envelope for spike tools
 assert(indexSrc.includes("structuredContent"), "mcp/index.ts tools/call must include structuredContent for distilled tools");
 assert(indexSrc.includes("envelope.summary"), "mcp/index.ts must extract summary field from distilled envelope JSON");
+// MCP spec: structuredContent MUST conform to outputSchema. Budget-fitting can
+// drop required fields, so emission MUST be gated on Value.Check against the schema.
+assert(indexSrc.includes("Value.Check(distillerDef.summarySchema"),
+	"mcp/index.ts must gate structuredContent on Value.Check(summarySchema) so it never emits non-conforming structuredContent");
 
 // ── Validation before execute ─────────────────────────────────────────────────
 
@@ -64,6 +68,18 @@ assert(validatePos < executePos, "validateMcpToolArgs must be called BEFORE def.
 
 // Execute must receive validation.args (coerced), not raw args
 assert(callHandler.includes("validation.args"), "def.execute must receive validation.args (coerced), not raw args");
+
+// ── No silent paths: every tools/call early-return logs (plan §2) ─────────────
+// Each isError early return in the call handler must be paired with an emitLog so
+// no degradation/rejection path is silent.
+{
+	const callBody = callHandler;
+	const isErrorReturns = (callBody.match(/isError:\s*true/g) || []).length;
+	const emitLogCalls = (callBody.match(/emitLog\(/g) || []).length;
+	assert(emitLogCalls >= isErrorReturns,
+		`tools/call must log every error path: found ${isErrorReturns} isError returns but only ${emitLogCalls} emitLog calls`);
+	assert(callBody.includes("INVALID_PARAMS"), "tools/call validation-reject branch must log INVALID_PARAMS");
+}
 
 // ── Progress / onUpdate mapping ───────────────────────────────────────────────
 

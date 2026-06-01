@@ -20,6 +20,7 @@ import {
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
+import { Value } from "typebox/value";
 
 import { McpExtensionAdapter } from "./adapter.js";
 import { validateMcpToolArgs } from "./validation.js";
@@ -149,6 +150,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	// found return structured errors.
 	const handleResult = await resolveIngressHandles(name, args ?? {});
 	if (!handleResult.ok) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: handleResult.code });
 		return {
 			content: [{ type: "text" as const, text: `Handle resolution error [${handleResult.code}]: ${handleResult.error}` }],
 			isError: true,
@@ -159,6 +161,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	// Uses handle-expanded args so TypeBox sees the real payload, not the URI.
 	const validation = validateMcpToolArgs(def.parameters, handleResult.args);
 	if (!validation.ok) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: "INVALID_PARAMS" });
 		return {
 			content: [{ type: "text" as const, text: validation.error }],
 			isError: true,
@@ -210,9 +213,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				const envelope = JSON.parse(text) as Record<string, unknown>;
 
 				// Extract structuredContent from summary (for distiller-backed tools).
+				// MCP spec: structuredContent MUST conform to the declared outputSchema.
+				// The distilled summary can be budget-fitted (compacted/truncated) into a
+				// minimal shape that drops required fields. Validate against summarySchema
+				// before emitting; if it no longer conforms, omit structuredContent and
+				// degrade gracefully to text-only rather than violate the spec.
 				if (distillerDef) {
 					const summary = envelope.summary;
-					if (summary != null && typeof summary === "object" && !Array.isArray(summary)) {
+					if (
+						summary != null &&
+						typeof summary === "object" &&
+						!Array.isArray(summary) &&
+						Value.Check(distillerDef.summarySchema, summary)
+					) {
 						structuredContent = summary as Record<string, unknown>;
 					}
 				}
