@@ -12,7 +12,7 @@
  *   jsonPath — JSON path for json mode
  *   search  — search query for search mode
  */
-import { resolveResourceUri, isResourceFresh } from "./resourceStore.js";
+import { resolveRefUriDetailed, resolveResourceUri, isResourceFresh } from "./resourceStore.js";
 import { readBrowserArtifact, ArtifactReaderError } from "../src/tools/artifactReader.js";
 
 export type McpResourceContent = {
@@ -30,7 +30,11 @@ export type McpResourceReadResult =
  * Accepts optional query parameters to control mode, offset, limit, jsonPath, search.
  */
 export async function readBrowserResultResource(uri: string): Promise<McpResourceReadResult> {
-	const resource = resolveResourceUri(uri);
+	let resource = resolveResourceUri(uri);
+	if (!resource && uri.startsWith("pi-ref://")) {
+		const resolved = resolveRefUriDetailed(uri);
+		if (resolved.ok && resolved.ref.resourceUri) resource = resolveResourceUri(resolved.ref.resourceUri);
+	}
 	if (!resource) {
 		return {
 			ok: false,

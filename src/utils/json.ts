@@ -8,6 +8,14 @@ export function tryJson(text: string): unknown | undefined {
 	}
 }
 
+export function parseJsonOrThrow<T = unknown>(text: string, context: string): T {
+	try {
+		return JSON.parse(text) as T;
+	} catch (error) {
+		throw new Error(`${context}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+	}
+}
+
 export function stableJson(value: unknown, spaces = 2): string {
 	const ancestors: unknown[] = [];
 	return JSON.stringify(value, function (this: unknown, _key, item) {

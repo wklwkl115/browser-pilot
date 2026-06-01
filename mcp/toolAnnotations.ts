@@ -63,6 +63,9 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
 	// Reads or searches a saved artifact file. Pure read.
 	browser_artifact: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 
+	// Local browser memory recall/read/validate plus evidence-gated record.
+	browser_memory: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+
 	// Downloads a file from the browser to the local filesystem. Writes locally.
 	browser_download: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 

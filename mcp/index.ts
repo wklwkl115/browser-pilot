@@ -18,6 +18,8 @@ import {
 	ListResourcesRequestSchema,
 	ListResourceTemplatesRequestSchema,
 	ReadResourceRequestSchema,
+	ListPromptsRequestSchema,
+	GetPromptRequestSchema,
 	McpError,
 	ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -32,9 +34,13 @@ import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
 import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
 import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
-import { registerBrowserResultResource, listResources, clearResourceStore, type ResourceKind } from "./resourceStore.js";
+import { registerBrowserResultResource, listResources, clearResourceStore, resolveRefUriDetailed, type ResourceKind } from "./resourceStore.js";
 import { RESOURCE_KINDS } from "./structuredEnvelopeSchema.js";
 import { readBrowserResultResource } from "./resourceReader.js";
+import { listMemoryResources, memoryResourceTemplates, resolveBrowserResultEvidence } from "./memoryResourceStore.js";
+import { readMemoryResource } from "./memoryResourceReader.js";
+import { getBrowserPrompt, listBrowserPrompts } from "./prompts.js";
+import { MCP_DISCOVERY_TOOL_NAME, isMcpToolVisible, resolveMcpToolVisibilityOptions, visibleMcpTools } from "./toolVisibility.js";
 
 const RESOURCE_KIND_SET = new Set<string>(RESOURCE_KINDS);
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,6 +74,7 @@ const adapter = new McpExtensionAdapter();
 
 registerBrowserTools(adapter, bridgeServer, ensureStarted, {
 	securityToolsEnabled: capabilityProfile.securityToolsEnabled,
+	memoryEvidenceResolver: resolveBrowserResultEvidence,
 });
 
 const toolDefs = adapter.getTools();
@@ -80,8 +87,30 @@ registerHook("on_log", timingLogHook);
 
 const server = new Server(
 	{ name: "pi-browser-tools", version: "1.0.0" },
-	{ capabilities: { tools: {}, resources: {} } },
+	{ capabilities: { tools: { listChanged: true }, resources: {}, prompts: {} } },
 );
+
+const mcpToolVisibilityOptions = resolveMcpToolVisibilityOptions();
+const revealedToolGroups = new Set<string>();
+let lastToolsListSignature = "";
+
+function currentVisibleTools() {
+	return visibleMcpTools(toolDefs, { ...mcpToolVisibilityOptions, revealedGroups: [...revealedToolGroups] });
+}
+
+async function notifyToolListChangedIfNeeded(): Promise<void> {
+	const nextSignature = currentVisibleTools().map((def) => def.name).join("\n");
+	if (nextSignature === lastToolsListSignature) return;
+	lastToolsListSignature = nextSignature;
+	await server.sendToolListChanged();
+}
+
+function parsePromptArguments(value: unknown): Record<string, string | undefined> {
+	if (!isRecord(value)) return {};
+	const result: Record<string, string | undefined> = {};
+	for (const [key, raw] of Object.entries(value)) result[key] = typeof raw === "string" ? raw : raw == null ? undefined : String(raw);
+	return result;
+}
 
 // ─── Protocol hook call sites (Residual D / Phase 7) ─────────────────────────
 
@@ -123,18 +152,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 		throw new Error(`${hookResult.code}: ${hookResult.error}`);
 	}
 
-	// Phase 8: capability-gated browser_artifact retirement.
-	// The server declares resources:{} capability. Clients that have completed
-	// initialize (clientCaps != null) are modern MCP clients that support
-	// resources/read for artifact access. For those clients, omit browser_artifact
-	// from tools/list. Pre-initialize or legacy clients keep it.
-	// Override: set PI_BROWSER_MCP_KEEP_ARTIFACT=1 to always expose browser_artifact.
+	// Phase 8: capability-gated browser_artifact retirement remains controlled by
+	// PI_BROWSER_MCP_KEEP_ARTIFACT through resolveMcpToolVisibilityOptions().
+	// Phase 9: optional compact/minimal MCP visibility uses a discovery helper;
+	// listChanged:true is declared and notifications are emitted only when the
+	// discovery helper reveals an additional group during the session.
 	const clientCaps = server.getClientCapabilities();
-	const keepArtifact = process.env["PI_BROWSER_MCP_KEEP_ARTIFACT"] === "1";
-	const clientIsModern = clientCaps != null;
-	const visibleTools = (!keepArtifact && clientIsModern)
-		? toolDefs.filter((def) => def.name !== "browser_artifact")
-		: toolDefs;
+	const visibleTools = currentVisibleTools();
+	lastToolsListSignature = visibleTools.map((def) => def.name).join("\n");
 
 	const response = ({
 		tools: visibleTools.map((def) => {
@@ -152,7 +177,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			};
 		}),
 	});
-	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { toolCount: visibleTools.length, resourcesCapable: clientIsModern });
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { toolCount: visibleTools.length, resourcesCapable: clientCaps != null, visibilityProfile: mcpToolVisibilityOptions.profile });
 	return response;
 });
 
@@ -172,12 +197,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		};
 	}
 
-	const def = toolDefs.find((t) => t.name === name);
+	const def = name === MCP_DISCOVERY_TOOL_NAME
+		? currentVisibleTools().find((t) => t.name === name)
+		: toolDefs.find((t) => t.name === name && isMcpToolVisible(t.name, mcpToolVisibilityOptions.keepArtifact, mcpToolVisibilityOptions.profile, revealedToolGroups));
 
 	if (!def) {
 		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: "TOOL_NOT_FOUND" });
 		return {
-			content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+			content: [{ type: "text" as const, text: `Unknown or currently hidden tool: ${name}` }],
 			isError: true,
 		};
 	}
@@ -238,6 +265,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				: undefined,
 			undefined, // ctx — no editor UI in MCP context
 		);
+
+		if (name === MCP_DISCOVERY_TOOL_NAME && typeof validation.args.revealGroup === "string") {
+			const revealGroup = validation.args.revealGroup;
+			if (revealGroup === "all") {
+				for (const group of ["core", "state", "observe", "action", "evidence", "artifact", "web-security"]) revealedToolGroups.add(group);
+			} else {
+				revealedToolGroups.add(revealGroup);
+			}
+			await notifyToolListChangedIfNeeded().catch(() => {
+				/* best-effort: client may have disconnected before the list_changed notification */
+			});
+		}
 
 		// For tools with a declared outputSchema, include structuredContent alongside
 		// the compatible text. Extract the summary from the existing DistilledEnvelope
@@ -316,7 +355,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 							immutable: true,
 						});
 						resourceLinks.push({ type: "resource_link" as const, uri: sectionUri, name: label, description: `Section ${pr.jsonPath} of ${name} result`, mimeType: "application/json" });
-						sections.push({ name: label, kind, handle: sectionUri, ...(typeof pr.count === "number" ? { count: pr.count } : {}) });
+						const dataSliceHandle = resolveRefUriDetailed(`pi-ref://data-slice/${sectionUri.split("://")[1]}`).ok ? `pi-ref://data-slice/${sectionUri.split("://")[1]}` : sectionUri;
+						sections.push({ name: label, kind, handle: dataSliceHandle, ...(typeof pr.count === "number" ? { count: pr.count } : {}) });
 					}
 					if (sections.length) {
 						nextEnvelope = { ...nextEnvelope, sections };
@@ -334,6 +374,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 							// Preserve any trailing query options (mode=json jsonPath=...)
 							const suffix = action.slice(`browser_artifact path=${localPath}`.length).trim();
 							const queryPart = suffix ? `&${suffix.replace(/\s+/g, "&")}` : "";
+							return `resources/read uri=${resourceUri}${queryPart}`;
+						}
+						if (action.startsWith("read_saved_artifact")) {
+							const suffix = action.slice("read_saved_artifact".length).trim();
+							const queryPart = suffix ? `?${suffix.replace(/\s+/g, "&")}` : "";
 							return `resources/read uri=${resourceUri}${queryPart}`;
 						}
 						return action;
@@ -375,15 +420,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	}
 });
 
+// prompts/list ───────────────────────────────────────────────────────────────
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+	const ctx = { method: "prompts/list", startedAt: Date.now() };
+	const hookResult = await runHooks("on_list_prompts", ctx, null);
+	if (!hookResult.pass) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
+		throw new Error(`${hookResult.code}: ${hookResult.error}`);
+	}
+	const response = { prompts: listBrowserPrompts() };
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { promptCount: response.prompts.length });
+	return response;
+});
+
+// prompts/get ────────────────────────────────────────────────────────────────
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+	const ctx = { method: "prompts/get", startedAt: Date.now() };
+	const hookResult = await runHooks("on_get_prompt", ctx, request.params);
+	if (!hookResult.pass) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
+		throw new McpError(ErrorCode.InvalidRequest, `${hookResult.code}: ${hookResult.error}`);
+	}
+	const prompt = getBrowserPrompt(request.params.name, parsePromptArguments(request.params.arguments), toolDefs);
+	if (!prompt) {
+		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: "PROMPT_NOT_FOUND" });
+		throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${request.params.name}`);
+	}
+	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { promptName: request.params.name });
+	return prompt;
+});
+
 // resources/list ─────────────────────────────────────────────────────────────
 
 server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-	resources: listResources().map((r) => ({
-		uri: r.uri,
-		name: r.name,
-		description: r.description,
-		mimeType: r.mime,
-	})),
+	resources: [
+		...listResources().map((r) => ({ uri: r.uri, name: r.name, description: r.description, mimeType: r.mime })),
+		...(await listMemoryResources(process.cwd())).map((r) => ({ uri: r.uri, name: r.name, description: r.description, mimeType: r.mime })),
+	],
 }));
 
 // resources/templates/list ────────────────────────────────────────────────────
@@ -396,6 +471,7 @@ server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
 			description: "Raw or distilled result from a browser tool call. Supports ?mode=text|json|search|sample&offset=&limit=&jsonPath=&search=",
 			mimeType: "text/plain",
 		},
+		...memoryResourceTemplates(),
 	],
 }));
 
@@ -409,7 +485,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: hookResult.code });
 		throw new Error(`${hookResult.code}: ${hookResult.error}`);
 	}
-	const result = await readBrowserResultResource(uri);
+	const result = uri.startsWith("browser-memory://")
+		? await readMemoryResource(uri, process.cwd())
+		: await readBrowserResultResource(uri);
 	if (!result.ok) {
 		emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: result.code });
 		throw new Error(`${result.code}: ${result.error}`);

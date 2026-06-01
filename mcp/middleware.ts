@@ -33,6 +33,8 @@ type HookRegistry = {
 	on_initialize: MiddlewareHook[];
 	on_list_tools: MiddlewareHook[];
 	on_call_tool: MiddlewareHook[];
+	on_list_prompts: MiddlewareHook[];
+	on_get_prompt: MiddlewareHook[];
 	on_read_resource: MiddlewareHook[];
 	on_message: MiddlewareHook[];
 	on_log: LoggingHook[];
@@ -42,6 +44,8 @@ const hooks: HookRegistry = {
 	on_initialize: [],
 	on_list_tools: [],
 	on_call_tool: [],
+	on_list_prompts: [],
+	on_get_prompt: [],
 	on_read_resource: [],
 	on_message: [],
 	on_log: [],

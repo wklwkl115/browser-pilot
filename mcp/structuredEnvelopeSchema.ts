@@ -30,6 +30,20 @@ export const RESOURCE_KINDS = [
 	"artifact-slice",
 ] as const;
 
+export const REF_KINDS = [
+	"element",
+	"control",
+	"text",
+	"media",
+	"ax",
+	"region",
+	"frame",
+	"network-entry",
+	"event",
+	"signal",
+	"data-slice",
+] as const;
+
 const ResourceKindSchema = Type.Union(RESOURCE_KINDS.map((k) => Type.Literal(k)));
 
 /** A Layer-1 section handle advertised in the envelope. */
@@ -37,7 +51,7 @@ export const SectionSchema = Type.Object(
 	{
 		name: Type.String(),
 		kind: ResourceKindSchema,
-		handle: Type.Optional(Type.String({ description: "browser-result:// URI for this section" })),
+		handle: Type.Optional(Type.String({ description: "browser-result:// or pi-ref://data-slice URI for this section" })),
 		count: Type.Optional(Type.Number()),
 	},
 	{ additionalProperties: true },
@@ -56,6 +70,8 @@ export const StructuredEnvelopeSchema = Type.Object(
 		target: Type.Optional(Loose),
 		limits: Type.Optional(Loose),
 		privacy: Type.Optional(Loose),
+		entities: Type.Optional(Type.Array(Loose)),
+		error: Type.Optional(Loose),
 		nextActions: Type.Optional(Type.Array(Type.String())),
 		correlation: Type.Optional(Loose),
 		operation: Type.Optional(Loose),

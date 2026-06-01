@@ -1,12 +1,12 @@
 /**
- * MCP ingress handle resolver.
+ * MCP ingress handle/ref resolver.
  *
- * Resolves browser-result:// URI handle strings in tool arguments to their
- * typed JSON payloads before TypeBox validation runs. This is the "two-stage"
- * validation pipeline from the Phase 6 contract:
+ * Resolves browser-result:// and pi-ref:// handle strings in tool arguments to
+ * their typed JSON payloads before TypeBox validation runs. This is the
+ * two-stage validation pipeline:
  *
  *   1. Detect handle strings in declared handle-accepting fields.
- *   2. Resolve resource: kind/etag/ttl/session/redaction checks.
+ *   2. Resolve resource/ref: kind/etag/ttl/session/redaction checks.
  *   3. Read and parse the artifact JSON.
  *   4. Return expanded args — TypeBox validation runs on the expansion.
  *
@@ -14,21 +14,26 @@
  * - Only declared handle-accepting fields are resolved (HANDLE_ACCEPTING_FIELDS side-table).
  * - kind mismatch, expired, not found, redaction conflict all return structured errors.
  * - Diagnostics include handle meta but NOT the payload content.
- * - Handle resolution CANNOT auto-select targets or chain to other tools.
+ * - Handle/ref resolution CANNOT auto-select targets or chain to other tools.
  */
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { resolveResourceUri, isResourceFresh, RESOURCE_URI_SCHEME } from "./resourceStore.js";
+import { decideRefAccess } from "../src/abml/refPolicy.js";
+import { normalizeAbmlError } from "../src/abml/errors.js";
+import { redactSensitiveValue } from "../src/utils/redaction.js";
+import { resolveRefUriDetailed, RESOURCE_URI_SCHEME, PI_REF_URI_SCHEME } from "./resourceStore.js";
 import { HANDLE_ACCEPTING_FIELDS } from "./handleFields.js";
+import { getJsonPath } from "./jsonPath.js";
 import type { ResourceKind } from "./resourceStore.js";
 
 export type HandleResolutionResult =
 	| { ok: true; args: Record<string, unknown>; diagnostics: Record<string, unknown>[] }
 	| { ok: false; error: string; code: string };
 
-/** Return true if a value looks like a browser-result:// URI handle string. */
+/** Return true if a value looks like a browser-result:// or pi-ref:// handle string. */
 function isHandleString(value: unknown): value is string {
-	return typeof value === "string" && value.startsWith(`${RESOURCE_URI_SCHEME}://`);
+	return typeof value === "string"
+		&& (value.startsWith(`${RESOURCE_URI_SCHEME}://`) || value.startsWith(`${PI_REF_URI_SCHEME}://`));
 }
 
 /**
@@ -53,43 +58,85 @@ export async function resolveIngressHandles(
 		if (!isHandleString(value)) continue;
 
 		const uri = value;
-		const resource = resolveResourceUri(uri);
-
-		if (!resource) {
+		const resolved = resolveRefUriDetailed(uri);
+		if (!resolved.ok) {
 			return {
 				ok: false,
-				error: `Handle not found or expired: ${uri}`,
+				error: resolved.error,
+				code: resolved.code,
+			};
+		}
+		const record = resolved.ref;
+
+		if (record.resourceKind !== decl.expectKind) {
+			return {
+				ok: false,
+				error: `Handle kind mismatch: expected ${decl.expectKind}, got ${record.resourceKind || record.descriptor.kind} for ${uri}`,
+				code: "HANDLE_KIND_MISMATCH",
+			};
+		}
+
+		if (!record.artifactPath) {
+			return {
+				ok: false,
+				error: `Handle is not backed by a readable artifact: ${uri}`,
 				code: "HANDLE_NOT_FOUND",
 			};
 		}
 
-		if (resource.kind !== decl.expectKind) {
+		const sameSessionContext = {
+			browserSessionId: typeof args.browserSessionId === "string" ? args.browserSessionId : (record.browserSessionId ?? record.descriptor.owner.browserSessionId),
+			tabId: typeof args.tabId === "number" ? args.tabId : record.descriptor.owner.tabId,
+			topLevelOrigin: record.descriptor.owner.topLevelOrigin,
+			now: Date.now(),
+			requestedRedaction: "default" as const,
+			explicitSensitiveAccess: false,
+		};
+		const access = decideRefAccess(record.descriptor, sameSessionContext, {
+			resourceFound: true,
+			resourceExpired: false,
+			// http-request section refs rely on selected-slice content hash; unrelated
+			// whole-artifact etag drift must not fail them before slice-hash verification.
+			etagMatches: record.hash ? true : record.fresh !== false,
+			sensitive: record.redaction === "disabled",
+		});
+		if (!access.ok) {
+			const abml = normalizeAbmlError({ code: access.code, message: access.reason });
 			return {
 				ok: false,
-				error: `Handle kind mismatch: expected ${decl.expectKind}, got ${resource.kind} for ${uri}`,
-				code: "HANDLE_KIND_MISMATCH",
+				error: abml.message,
+				code: abml.code,
 			};
 		}
 
 		// Read and parse the artifact as JSON
 		let payload: unknown;
 		try {
-			const raw = await readFile(resource.artifactPath, "utf8");
+			const raw = await readFile(record.artifactPath, "utf8");
+			const parsed = JSON.parse(raw) as unknown;
+			const selected = record.jsonPath ? getJsonPath(parsed, record.jsonPath) : { exists: true, value: parsed };
+			if (!selected.exists) {
+				return {
+					ok: false,
+					error: `Handle jsonPath not found: ${record.jsonPath || "$"}`,
+					code: "HANDLE_READ_ERROR",
+				};
+			}
 
 			// Staleness / integrity: the artifact under this handle must match what
 			// was captured at registration. For http-request templates we recorded a
-			// content sha256; verify it against the bytes we just read. If no hash was
-			// available, fall back to the stat-based etag freshness check.
-			if (resource.hash) {
-				const actual = createHash("sha256").update(raw).digest("hex");
-				if (actual !== resource.hash) {
+			// content sha256; section resources hash the selected jsonPath slice so
+			// unrelated raw artifact changes do not invalidate a stable request handle.
+			if (record.hash) {
+				const actual = createHash("sha256").update(JSON.stringify(selected.value)).digest("hex");
+				if (actual !== record.hash) {
 					return {
 						ok: false,
 						error: `Handle content changed since capture (etag/hash mismatch): ${uri}`,
 						code: "HANDLE_ETAG_MISMATCH",
 					};
 				}
-			} else if (!isResourceFresh(resource)) {
+			} else if (record.fresh === false) {
 				return {
 					ok: false,
 					error: `Handle content changed since capture (etag mismatch): ${uri}`,
@@ -97,15 +144,14 @@ export async function resolveIngressHandles(
 				};
 			}
 
-			const parsed = JSON.parse(raw) as unknown;
 			// Unwrap DistilledEnvelope if present — use raw value or inner data
-			if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
-				const rec = parsed as Record<string, unknown>;
-				// Prefer the raw request data if wrapped in an envelope
-				payload = rec.data ?? rec.request ?? rec.value ?? parsed;
+			if (selected.value != null && typeof selected.value === "object" && !Array.isArray(selected.value)) {
+				const rec = selected.value as Record<string, unknown>;
+				payload = rec.data ?? rec.request ?? rec.value ?? selected.value;
 			} else {
-				payload = parsed;
+				payload = selected.value;
 			}
+			if (access.mode === "redacted") payload = redactSensitiveValue(payload);
 		} catch (err) {
 			return {
 				ok: false,
@@ -119,11 +165,13 @@ export async function resolveIngressHandles(
 		// Echo handle diagnostics — NOT the payload content
 		diagnostics.push({
 			handle: uri,
-			kind: resource.kind,
-			etag: resource.etag,
-			createdAt: resource.createdAt,
-			bytes: resource.bytes,
+			kind: record.resourceKind,
+			jsonPath: record.jsonPath,
+			etag: record.etag,
+			createdAt: record.createdAt,
+			bytes: record.bytes,
 			resolved: true,
+			redaction: access.mode === "redacted" ? "default" : "disabled",
 		});
 	}
 
