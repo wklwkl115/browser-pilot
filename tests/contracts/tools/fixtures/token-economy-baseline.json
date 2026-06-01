@@ -1,0 +1,26 @@
+{
+  "proxy": "chars/stableJson",
+  "note": "n=3 guardrail; layer0 = stableJson(envelope.summary)",
+  "fixtures": [
+    {
+      "name": "browser_evidence",
+      "rawChars": 3112,
+      "layer0Chars": 1471,
+      "ratio": 0.4727
+    },
+    {
+      "name": "browser_network",
+      "rawChars": 7404,
+      "layer0Chars": 6238,
+      "ratio": 0.8425
+    },
+    {
+      "name": "browser_hook",
+      "rawChars": 5067,
+      "layer0Chars": 2646,
+      "ratio": 0.5222
+    }
+  ],
+  "medianRatio": 0.5222,
+  "maxRatio": 0.8425
+}
