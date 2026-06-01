@@ -120,7 +120,8 @@ function topLevelKeys(objectText) {
 function parameterKeys(block, file) {
 	const paramsIndex = block.indexOf("parameters:");
 	if (paramsIndex >= 0) {
-		const objectCall = block.indexOf("Type.Object", paramsIndex);
+		const strictCall = block.indexOf("strictToolParameters(", paramsIndex);
+		const objectCall = strictCall >= 0 ? strictCall : block.indexOf("Type.Object", paramsIndex);
 		const objectStart = block.indexOf("{", objectCall);
 		const objectEnd = objectStart >= 0 ? findMatching(block, objectStart) : -1;
 		if (objectEnd > objectStart) {
