@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Billing Frame</title>
+</head>
+<body>
+  <section>
+    <h2>Billing Panel</h2>
+    <button id="frame-pay" type="button">Pay inside frame</button>
+    <p id="frame-status">frame-idle</p>
+  </section>
+  <script>
+    document.getElementById('frame-pay').addEventListener('click', () => {
+      document.getElementById('frame-status').textContent = 'frame-paid';
+    });
+  </script>
+</body>
+</html>

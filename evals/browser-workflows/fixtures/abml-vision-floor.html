@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ABML vision floor fixture</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 24px; }
+    #scene { border: 1px solid #999; display: block; margin-bottom: 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Vision floor fixture</h1>
+  <canvas id="scene" width="320" height="160" aria-label="Synthetic visual scene"></canvas>
+  <p id="vision-status">vision-idle</p>
+  <script>
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0a84ff';
+    ctx.fillRect(24, 80, 96, 36);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Pay', 48, 104);
+    canvas.addEventListener('click', () => {
+      document.getElementById('vision-status').textContent = 'vision-clicked';
+    });
+  </script>
+</body>
+</html>

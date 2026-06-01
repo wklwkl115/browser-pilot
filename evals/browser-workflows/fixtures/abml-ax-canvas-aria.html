@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ABML AX canvas+ARIA fixture</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 24px; }
+    #scene { border: 1px solid #999; display: block; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h1>AX canvas fixture</h1>
+  <canvas id="scene" width="320" height="160" aria-label="Synthetic checkout scene"></canvas>
+  <div id="aria-controls">
+    <button id="canvas-pay" aria-label="Pay now">Pay</button>
+    <div role="textbox" id="canvas-editor" contenteditable="true" aria-label="Comment box"></div>
+    <div role="status" id="canvas-status">idle</div>
+  </div>
+  <script>
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Canvas checkout', 20, 40);
+    ctx.fillStyle = '#0a84ff';
+    ctx.fillRect(24, 80, 96, 36);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('Pay', 48, 104);
+    document.getElementById('canvas-pay').addEventListener('click', () => {
+      document.getElementById('canvas-status').textContent = 'paid';
+    });
+  </script>
+</body>
+</html>
