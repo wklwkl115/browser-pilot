@@ -59,7 +59,13 @@ const PI_BROWSER_RUNTIME_STATE_KEY = 'piBrowserRuntimeState';
 async function loadPiBrowserRuntimeStateMap(): Promise<Record<string, JsonRecord>> {
   const session = chrome.storage?.session;
   if (!session?.get) return {};
-  const raw = await session.get(PI_BROWSER_RUNTIME_STATE_KEY).catch(() => ({}));
+  let raw: unknown;
+  try {
+    raw = await session.get(PI_BROWSER_RUNTIME_STATE_KEY);
+  } catch (error) {
+    console.warn('[PI-BROWSER-STATE] Failed to load runtime state map', runtimeErrorPreview(error));
+    return {};
+  }
   const value = raw && typeof raw === 'object' ? (raw as JsonRecord)[PI_BROWSER_RUNTIME_STATE_KEY] : undefined;
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, JsonRecord> : {};
 }
@@ -67,7 +73,11 @@ function piBrowserRuntimeStateKey(kind: string, tabId: number, sessionId: string
 async function savePiBrowserRuntimeStateMap(map: Record<string, JsonRecord>): Promise<void> {
   const session = chrome.storage?.session;
   if (!session?.set) return;
-  await session.set({ [PI_BROWSER_RUNTIME_STATE_KEY]: map }).catch(() => {});
+  try {
+    await session.set({ [PI_BROWSER_RUNTIME_STATE_KEY]: map });
+  } catch (error) {
+    console.warn('[PI-BROWSER-STATE] Failed to save runtime state map', runtimeErrorPreview(error));
+  }
 }
 function currentPiBrowserWorkerBootId(): string {
   const bridge = runtimeRecord(piBridgeInfo());

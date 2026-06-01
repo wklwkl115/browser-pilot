@@ -356,7 +356,13 @@ async function closeWs(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeRes
 		};
 		ws.addEventListener("close", onClose, { once: true });
 		try { ws.close(code, reason); }
-		catch { clearTimeout(timer); cleanupWsSocketListeners(session); void forgetWsRuntimeSession("ws", tabId, session.sessionId); resolve({ ok: true, data: { session: wsSessionSummary(session) } }); }
+		catch (error) {
+			console.warn('[PI-BROWSER-WS] ws.close failed during explicit close', session.sessionId, error);
+			clearTimeout(timer);
+			cleanupWsSocketListeners(session);
+			void forgetWsRuntimeSession("ws", tabId, session.sessionId);
+			resolve({ ok: true, data: { session: wsSessionSummary(session) } });
+		}
 	});
 }
 

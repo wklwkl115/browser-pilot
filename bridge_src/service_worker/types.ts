@@ -6,19 +6,21 @@ export type PiBridgeErrorPayload = {
   details?: JsonRecord;
 };
 
-export type PiBridgeErrorRecord = JsonRecord & PiBridgeErrorPayload & {
+export type PiBridgeErrorRecord = PiBridgeErrorPayload & {
   name?: string;
   stack?: string;
   error?: string;
   error_code?: string;
 };
 
+export type PiBridgeResponseError = string | PiBridgeErrorRecord;
+
 export type PiBridgeResponse<T = unknown> = {
   ok: boolean;
   data?: T;
   result?: T;
   results?: unknown;
-  error?: string | PiBridgeErrorRecord;
+  error?: PiBridgeResponseError;
   error_code?: string;
   message?: string;
   details?: JsonRecord;
@@ -212,6 +214,99 @@ export type NetworkRecorderCounters = Record<
   | "webSocket" | "sse" | "page" | "bodyCaptured" | "bodyErrors" | "waitsResolved" | "waitsTimedOut" | "waitsCancelled",
   number
 >;
+export type NetworkRecorderActiveWaitSummary = {
+  waitId: string;
+  condition: string;
+  age_ms: number;
+  criteria: JsonRecord;
+  lastMatchSeq: number;
+};
+export type NetworkRecorderSummary = {
+  tabId: number;
+  sessionId: string;
+  recorderId: string;
+  active: boolean;
+  createdAt: number;
+  startedAt: number;
+  stoppedAt: number;
+  age_ms: number;
+  entries: number;
+  requestCount: number;
+  bodyCount: number;
+  pendingBodyCount: number;
+  maxEntries: number;
+  maxAgeMs: number;
+  maxBodyBytes: number;
+  overflowCount: number;
+  bodyOverflowCount: number;
+  counters: NetworkRecorderCounters;
+  lastErrors: unknown[];
+  lifecycleEvents: unknown[];
+  activeWaits: NetworkRecorderActiveWaitSummary[];
+  activeWaitCount: number;
+  cdp: { subscriptions: string[]; domains: string[]; attached: boolean; refs: JsonRecord[] };
+  config: unknown;
+  diagnostics: unknown[];
+  recoveredAt?: number;
+  historyLost?: true;
+  generation?: number;
+};
+export type NetworkClearResult = { entries: number; bodies: number };
+export type NetworkRecordSummary = {
+  id: string;
+  requestId: string;
+  seq: number;
+  tabId: number;
+  sessionId: string;
+  request: NetworkRequestRecord;
+  response?: NetworkResponseRecord | null;
+  createdAt: number;
+  updatedAt: number;
+  wallTime?: number | null;
+  timestamp?: number | null;
+  fromCache: boolean;
+  bodyRef?: string | null;
+  bodyPreview?: string | null;
+  bodyTruncated?: boolean;
+  bodyError?: string | null;
+  bodyPending?: boolean;
+  bodyAvailability?: string;
+  bodyUnavailableReason?: string | null;
+  [key: string]: unknown;
+};
+export type NetworkRecordSnapshot = NetworkRecordSummary;
+export type NetworkHarContent = {
+  size: number;
+  mimeType: string;
+  compression: number;
+  text?: string;
+  encoding?: string;
+  _bodyRef?: string;
+  _bodyTruncated?: boolean;
+  _bodyAvailability?: string;
+  _bodyUnavailableReason?: string | null;
+};
+export type NetworkHarEntry = {
+  startedDateTime: string;
+  time: number;
+  request: JsonRecord;
+  response: JsonRecord & { content: NetworkHarContent };
+  cache: JsonRecord;
+  timings: JsonRecord;
+  serverIPAddress?: string;
+  connection?: string;
+  _requestId: string;
+  _seq: number;
+  _type: string;
+  _initiator: unknown;
+  _redirects: unknown[];
+  _wsFrames: NetworkFrameRecord[];
+  _sseEvents: NetworkFrameRecord[];
+  _bodyRef: string | null;
+  _bodyError: string | null;
+  _bodyAvailability: string;
+  _bodyUnavailableReason: string | null;
+};
 export type NetworkRecorderConfig = {
   sessionId: string;
   maxEntries: number;

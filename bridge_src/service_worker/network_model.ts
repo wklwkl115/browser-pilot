@@ -4,7 +4,7 @@ import { matchNetworkPattern } from "./patterns";
 import { redactSensitive } from "./runtime";
 import { diagnosePiBrowserCdpDomainRefs } from "./wait_cdp";
 import { makeWaitId } from "./wait_coordinator";
-import type { JsonRecord, PiBridgeCommand, PiBrowserWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderConfig, NetworkStringList, NetworkWaitNotifier } from "./types";
+import type { JsonRecord, PiBridgeCommand, PiBrowserWaitRecord, NetworkBodyMimeDecision, NetworkBodyStoreEntry, NetworkFilterDecision, NetworkFrameRecord, NetworkRecord, NetworkRecordSnapshot, NetworkRecordSummary, NetworkRecorder, NetworkRecorderConfig, NetworkRecorderSummary, NetworkStringList, NetworkWaitNotifier } from "./types";
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -232,10 +232,10 @@ function rememberNetworkError(recorder: NetworkRecorder | null | undefined, wher
   recorder.lastErrors.push(redactSensitive(item));
   if (recorder.lastErrors.length > 50) recorder.lastErrors.splice(0, recorder.lastErrors.length - 50);
 }
-function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): JsonRecord | null {
+function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): NetworkRecorderSummary | null {
   if (!recorder) return null;
-  const activeWaits = Array.from(recorder.waits.values()).map(w => ({ waitId:w.waitId, condition:w.condition, age_ms:Date.now()-w.createdAt, criteria:redactSensitive(w.criteria || {}), lastMatchSeq:w.lastMatchSeq || 0 }));
-  const summary: JsonRecord = {
+  const activeWaits = Array.from(recorder.waits.values()).map(w => ({ waitId:w.waitId, condition:w.condition, age_ms:Date.now()-w.createdAt, criteria:asRecord(redactSensitive(w.criteria || {})), lastMatchSeq:w.lastMatchSeq || 0 }));
+  const summary: NetworkRecorderSummary = {
     tabId:recorder.tabId, sessionId:recorder.sessionId, recorderId:recorder.recorderId, active:!!recorder.active,
     createdAt:recorder.createdAt, startedAt:recorder.startedAt, stoppedAt:recorder.stoppedAt, age_ms:Date.now()-(recorder.startedAt || recorder.createdAt),
     entries:recorder.entries.length, requestCount:recorder.byRequestId.size, bodyCount:recorder.bodyStore.size, pendingBodyCount:recorder.pendingBodyCount,
@@ -332,12 +332,13 @@ function networkSseEventMatches(event: NetworkFrameRecord, criterion: unknown): 
   }
   return networkCriterionMatchesText([event.eventName, event.eventId, event.data].join('\n'), criterion);
 }
-function networkRecordSummary(rec: NetworkRecord, options: { includeDetails?: boolean; includeBody?: boolean } = {}): JsonRecord {
+function networkRecordSummary(rec: NetworkRecord, options: { includeDetails?: boolean; includeBody?: boolean } = {}): NetworkRecordSummary {
   options = options || {};
-  const out: JsonRecord = {
-    id:rec.id, requestId:rec.requestId, seq:rec.seq, tabId:rec.tabId, sessionId:rec.sessionId, url:rec.request?.url || '', method:rec.request?.method || '', type:rec.type || rec.resourceType || '', phase:rec.phase,
+  const out: NetworkRecordSummary = {
+    ...rec,
+    id:rec.id, requestId:rec.requestId, seq:rec.seq, tabId:rec.tabId, sessionId:rec.sessionId, type:rec.type || rec.resourceType || '', phase:rec.phase,
     status:rec.response?.status, statusText:rec.response?.statusText, mimeType:rec.response?.mimeType, protocol:rec.response?.protocol,
-    fromCache:!!rec.fromCache, fromServiceWorker:!!rec.response?.fromServiceWorker, failed:!!rec.failed, errorText:rec.errorText || null, canceled:!!rec.canceled, blockedReason:rec.blockedReason || null,
+    fromCache:!!rec.fromCache, fromServiceWorker:!!rec.response?.fromServiceWorker, failed:rec.failed, errorText:rec.errorText || null, canceled:!!rec.canceled, blockedReason:rec.blockedReason || null,
     createdAt:rec.createdAt, updatedAt:rec.updatedAt, wallTime:rec.wallTime, timestamp:rec.timestamp, encodedDataLength:rec.data?.encodedDataLength || 0, dataLength:rec.data?.dataLength || 0,
     bodyRef:rec.bodyRef || null, bodyPreview:rec.bodyPreview || null, bodyTruncated:!!rec.bodyTruncated, bodyError:rec.bodyError || null, bodyPending:!!rec.bodyPending,
     bodyAvailability:rec.bodyAvailability || (rec.bodyRef ? 'captured' : 'not_requested'), bodyUnavailableReason:rec.bodyUnavailableReason || null,
@@ -345,13 +346,13 @@ function networkRecordSummary(rec: NetworkRecord, options: { includeDetails?: bo
     redirects:(rec.redirects || []).length, wsFrameCount:(rec.wsFrames || []).length, sseEventCount:(rec.sseEvents || []).length
   };
   if (options.includeDetails) Object.assign(out, networkRecordClone(rec, { includeBody: options.includeBody }));
-  return asRecord(redactSensitive(out));
+  return redactSensitive(out) as NetworkRecordSummary;
 }
-function networkRecordClone(rec: NetworkRecord, options: { includeBody?: boolean } = {}): JsonRecord {
+function networkRecordClone(rec: NetworkRecord, options: { includeBody?: boolean } = {}): NetworkRecordSnapshot {
   options = options || {};
-  const clone = JSON.parse(JSON.stringify(rec || {})) as JsonRecord;
+  const clone = JSON.parse(JSON.stringify(rec || {})) as NetworkRecord;
   if (!options.includeBody) delete clone.body;
-  return asRecord(redactSensitive(clone));
+  return redactSensitive(clone) as NetworkRecordSnapshot;
 }
 function storeNetworkBody(recorder: NetworkRecorder, rec: NetworkRecord, bodyResult: JsonRecord | null | undefined): void {
   const body = String(bodyResult?.body ?? '');

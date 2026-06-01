@@ -930,6 +930,96 @@ var __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDG
         "retryable": true,
         "summary": "Selector wait timed out."
       },
+      "REF_NOT_FOUND": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "ABML ref was not found."
+      },
+      "REF_STALE": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "ABML ref is stale."
+      },
+      "REF_AMBIGUOUS": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "ABML ref resolved ambiguously."
+      },
+      "REF_SCOPE_VIOLATION": {
+        "category": "abml.session",
+        "retryable": true,
+        "summary": "ABML ref scope does not match the current session, tab, or origin."
+      },
+      "HANDLE_NOT_FOUND": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "Referenced handle was not found."
+      },
+      "HANDLE_EXPIRED": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "Referenced handle expired."
+      },
+      "HANDLE_KIND_MISMATCH": {
+        "category": "abml.input",
+        "retryable": false,
+        "summary": "Referenced handle kind does not match the expected kind."
+      },
+      "HANDLE_ETAG_MISMATCH": {
+        "category": "abml.ref",
+        "retryable": true,
+        "summary": "Referenced handle etag does not match the current artifact."
+      },
+      "PRIVACY_BLOCKED": {
+        "category": "abml.privacy",
+        "retryable": false,
+        "summary": "Requested access is blocked by ABML privacy policy."
+      },
+      "ACTIONABILITY_TIMEOUT": {
+        "category": "abml.actionability",
+        "retryable": true,
+        "summary": "Target did not satisfy actionability predicates before timeout."
+      },
+      "TARGET_OCCLUDED": {
+        "category": "abml.actionability",
+        "retryable": true,
+        "summary": "Target is occluded and cannot receive events."
+      },
+      "TARGET_DISABLED": {
+        "category": "abml.actionability",
+        "retryable": true,
+        "summary": "Target is disabled."
+      },
+      "TARGET_NOT_EDITABLE": {
+        "category": "abml.actionability",
+        "retryable": false,
+        "summary": "Target is not editable."
+      },
+      "BACKEND_UNAVAILABLE": {
+        "category": "abml.backend",
+        "retryable": true,
+        "summary": "Required backend is unavailable."
+      },
+      "CROSS_ORIGIN_BLOCKED": {
+        "category": "abml.backend",
+        "retryable": false,
+        "summary": "Requested operation is blocked by cross-origin frame boundaries."
+      },
+      "VERIFY_FAILED": {
+        "category": "abml.verification",
+        "retryable": true,
+        "summary": "Post-action verification failed."
+      },
+      "VERIFY_INCONCLUSIVE": {
+        "category": "abml.verification",
+        "retryable": true,
+        "summary": "Post-action verification was inconclusive."
+      },
+      "INVALID_INPUT": {
+        "category": "abml.input",
+        "retryable": false,
+        "summary": "Input is invalid."
+      },
       "SESSION_NOT_FOUND": {
         "category": "runtime.session",
         "retryable": true,
@@ -1094,6 +1184,61 @@ var __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDG
         "category": "tool.security",
         "retryable": false,
         "summary": "Callback HTTPS certificate generation failed or explicit certificate inputs were invalid."
+      },
+      "MEMORY_ACTION_UNSUPPORTED": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory action is unsupported."
+      },
+      "UNSUPPORTED_SCOPE_KIND": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory v1 only supports scopeKind=origin."
+      },
+      "MEMORY_SCOPE_REQUIRED": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory requires scopeKey or url for the selected scope."
+      },
+      "MEMORY_EVIDENCE_REQUIRED": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory requires at least one durable readable evidence reference."
+      },
+      "MEMORY_EVIDENCE_UNREADABLE": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory evidence could not be read."
+      },
+      "MEMORY_EVIDENCE_STALE": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory evidence is stale."
+      },
+      "MEMORY_EVIDENCE_UNRESOLVABLE": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory evidence handle could not be resolved."
+      },
+      "MEMORY_SECRET_DETECTED": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory payload contains blocked or sensitive content."
+      },
+      "MEMORY_SCHEMA_INVALID": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser_memory payload or persisted entry schema is invalid."
+      },
+      "MEMORY_ENTRY_NOT_FOUND": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "Requested browser_memory entry was not found."
+      },
+      "MEMORY_RESOURCE_STALE": {
+        "category": "tool.memory",
+        "retryable": false,
+        "summary": "browser-memory resource is stale."
       }
     },
     "toolMetadata": {
@@ -4437,7 +4582,7 @@ function rememberNetworkError(recorder, where, error, extra = null) {
 }
 function networkRecorderSummary(recorder) {
   if (!recorder) return null;
-  const activeWaits = Array.from(recorder.waits.values()).map((w) => ({ waitId: w.waitId, condition: w.condition, age_ms: Date.now() - w.createdAt, criteria: redactSensitive(w.criteria || {}), lastMatchSeq: w.lastMatchSeq || 0 }));
+  const activeWaits = Array.from(recorder.waits.values()).map((w) => ({ waitId: w.waitId, condition: w.condition, age_ms: Date.now() - w.createdAt, criteria: asRecord2(redactSensitive(w.criteria || {})), lastMatchSeq: w.lastMatchSeq || 0 }));
   const summary = {
     tabId: recorder.tabId,
     sessionId: recorder.sessionId,
@@ -4564,13 +4709,12 @@ function networkSseEventMatches(event, criterion) {
 function networkRecordSummary(rec, options = {}) {
   options = options || {};
   const out = {
+    ...rec,
     id: rec.id,
     requestId: rec.requestId,
     seq: rec.seq,
     tabId: rec.tabId,
     sessionId: rec.sessionId,
-    url: rec.request?.url || "",
-    method: rec.request?.method || "",
     type: rec.type || rec.resourceType || "",
     phase: rec.phase,
     status: rec.response?.status,
@@ -4579,7 +4723,7 @@ function networkRecordSummary(rec, options = {}) {
     protocol: rec.response?.protocol,
     fromCache: !!rec.fromCache,
     fromServiceWorker: !!rec.response?.fromServiceWorker,
-    failed: !!rec.failed,
+    failed: rec.failed,
     errorText: rec.errorText || null,
     canceled: !!rec.canceled,
     blockedReason: rec.blockedReason || null,
@@ -4604,13 +4748,13 @@ function networkRecordSummary(rec, options = {}) {
     sseEventCount: (rec.sseEvents || []).length
   };
   if (options.includeDetails) Object.assign(out, networkRecordClone(rec, { includeBody: options.includeBody }));
-  return asRecord2(redactSensitive(out));
+  return redactSensitive(out);
 }
 function networkRecordClone(rec, options = {}) {
   options = options || {};
   const clone = JSON.parse(JSON.stringify(rec || {}));
   if (!options.includeBody) delete clone.body;
-  return asRecord2(redactSensitive(clone));
+  return redactSensitive(clone);
 }
 function storeNetworkBody(recorder, rec, bodyResult) {
   const body = String(bodyResult?.body ?? "");
@@ -7526,7 +7670,8 @@ async function closeWs(tabId2, msg) {
     ws.addEventListener("close", onClose, { once: true });
     try {
       ws.close(code, reason);
-    } catch {
+    } catch (error) {
+      console.warn("[PI-BROWSER-WS] ws.close failed during explicit close", session.sessionId, error);
       clearTimeout(timer);
       cleanupWsSocketListeners(session);
       void forgetWsRuntimeSession("ws", tabId2, session.sessionId);
@@ -7829,7 +7974,13 @@ var PI_BROWSER_RUNTIME_STATE_KEY = "piBrowserRuntimeState";
 async function loadPiBrowserRuntimeStateMap() {
   const session = chromeApi.storage?.session;
   if (!session?.get) return {};
-  const raw = await session.get(PI_BROWSER_RUNTIME_STATE_KEY).catch(() => ({}));
+  let raw;
+  try {
+    raw = await session.get(PI_BROWSER_RUNTIME_STATE_KEY);
+  } catch (error) {
+    console.warn("[PI-BROWSER-STATE] Failed to load runtime state map", runtimeErrorPreview(error));
+    return {};
+  }
   const value = raw && typeof raw === "object" ? raw[PI_BROWSER_RUNTIME_STATE_KEY] : void 0;
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -7839,8 +7990,11 @@ function piBrowserRuntimeStateKey(kind, tabId2, sessionId) {
 async function savePiBrowserRuntimeStateMap(map) {
   const session = chromeApi.storage?.session;
   if (!session?.set) return;
-  await session.set({ [PI_BROWSER_RUNTIME_STATE_KEY]: map }).catch(() => {
-  });
+  try {
+    await session.set({ [PI_BROWSER_RUNTIME_STATE_KEY]: map });
+  } catch (error) {
+    console.warn("[PI-BROWSER-STATE] Failed to save runtime state map", runtimeErrorPreview(error));
+  }
 }
 function currentPiBrowserWorkerBootId() {
   const bridge = runtimeRecord(piBridgeInfo());

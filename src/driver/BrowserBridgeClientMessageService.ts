@@ -6,6 +6,7 @@ import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserLeaseRegistry } from "./BrowserLeaseRegistry.js";
 import { errorToPlain } from "./errors.js";
+import { parseJsonOrThrow } from "../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
 
 type IncomingMessage = {
@@ -63,7 +64,7 @@ export class BrowserBridgeClientMessageService {
 	async handleClientMessage(ws: WebSocket, raw: string): Promise<void> {
 		let message: IncomingMessage;
 		try {
-			message = JSON.parse(raw) as IncomingMessage;
+			message = parseJsonOrThrow<IncomingMessage>(raw, "Invalid WebSocket message JSON");
 		} catch (error) {
 			console.warn("[pi-browser-bridge] Invalid WebSocket message JSON", this.redactMessageError(error, raw));
 			return;

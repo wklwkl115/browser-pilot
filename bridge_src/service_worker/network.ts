@@ -7,23 +7,16 @@ import { enablePiBrowserCdpDomains, releasePiBrowserCdpDomains, subscribePiBrows
 import { makeWaitId, normalizePiBrowserTimeoutMs } from "./wait_coordinator";
 import { appendBounded, asRecord, errorText, piNetworkHandleRecorderCdpEvent, piNetworkMaybeCaptureBody } from "./network_events";
 import { classifyNetworkBodyError, createNetworkRecorder, defaultNetworkSessionId, getActiveNetworkRecorder, getNetworkRecorder, estimateStringBytes, getHeaderValue, networkRecordClone, networkCriterionMatchesText, networkRecordMatchesList, networkRecordSummary, networkRecorderKey, networkRecorderSummary, headersObjectToArray, numberInRange, piBrowserNetworkRecorders, recorderPublicConfig, rememberNetworkError, normalizeNetworkRecorderConfig, truncateBase64Body, truncateStringByBytes, networkSseEventMatches, networkWsFrameMatches, setNetworkWaitNotifier } from "./network_model";
-import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
+import type { JsonRecord, NetworkClearResult, NetworkHarContent, NetworkHarEntry, NetworkRecorderSummary, PiBridgeCommand, PiBridgeResponse } from "./types";
 import type { NetworkBodyStoreEntry, NetworkFrameRecord, NetworkRecord, NetworkRecorder, NetworkRecorderWait } from "./network_model";
 
 const rememberNetworkRuntimeSession = typeof rememberRuntimeSession === "function" ? rememberRuntimeSession : async () => {};
 const forgetNetworkRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostNetworkRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostNetworkRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
-type NetworkCommandResult = JsonRecord;
+type NetworkCommandResult = Record<string, unknown>;
 type NetworkRecorderLookup = { recorder: NetworkRecorder; error?: never } | { recorder?: never; error: PiBridgeResponse };
-type HarContent = JsonRecord & {
-  text?: string;
-  encoding?: string;
-  _bodyRef?: string;
-  _bodyTruncated?: boolean;
-  _bodyAvailability?: string;
-  _bodyUnavailableReason?: string | null;
-};
+type HarContent = NetworkHarContent;
 setNetworkWaitNotifier(wakeNetworkWaits);
 const NETWORK_RECORDER_EVENTS = ['Network.requestWillBeSent','Network.requestWillBeSentExtraInfo','Network.responseReceived','Network.responseReceivedExtraInfo','Network.dataReceived','Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed','Network.webSocketCreated','Network.webSocketWillSendHandshakeRequest','Network.webSocketHandshakeResponseReceived','Network.webSocketFrameSent','Network.webSocketFrameReceived','Network.webSocketFrameError','Network.webSocketClosed','Network.eventSourceMessageReceived','Page.frameNavigated','Page.loadEventFired','Page.domContentEventFired','Page.lifecycleEvent','Page.frameStoppedLoading'];
 
@@ -90,7 +83,7 @@ async function startNetworkRecorder(tabId: number, msg: PiBridgeCommand): Promis
     return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'network.start failed', { tabId, sessionId:config.sessionId, error:errorText(e) });
   }
 }
-function clearNetworkRecorderBuffer(recorder: NetworkRecorder | null | undefined): JsonRecord {
+function clearNetworkRecorderBuffer(recorder: NetworkRecorder | null | undefined): NetworkClearResult {
   if (!recorder) return { entries:0, bodies:0 };
   const entries = recorder.entries.length;
   const bodies = recorder.bodyStore.size;
@@ -103,7 +96,7 @@ function clearNetworkRecorderBuffer(recorder: NetworkRecorder | null | undefined
   recorder.diagnostics.push({ t:Date.now(), action:'clear', entries, bodies });
   return { entries, bodies };
 }
-function cleanupNetworkRecorder(recorder: NetworkRecorder | null | undefined, reason?: string, options: { keepBuffer?: boolean } = {}): { stopped: boolean; summary?: JsonRecord | null } {
+function cleanupNetworkRecorder(recorder: NetworkRecorder | null | undefined, reason?: string, options: { keepBuffer?: boolean } = {}): { stopped: boolean; summary?: NetworkRecorderSummary | null } {
   if (!recorder) return { stopped:false };
   options = options || {};
   recorder.active = false;
@@ -197,7 +190,7 @@ async function getNetworkRecorderBody(tabId: number, msg: PiBridgeCommand): Prom
   }
   return { ok:true, data:redactSensitive(out) };
 }
-function makeHarEntry(rec: NetworkRecord, body: NetworkBodyStoreEntry | null): JsonRecord {
+function makeHarEntry(rec: NetworkRecord, body: NetworkBodyStoreEntry | null): NetworkHarEntry {
   const startedDateTime = rec.wallTime ? new Date(rec.wallTime * 1000).toISOString() : new Date(rec.createdAt || Date.now()).toISOString();
   const requestHeaders = headersObjectToArray(rec.request?.headers || rec.requestExtraInfo?.headers || {});
   const responseHeaders = headersObjectToArray(rec.response?.headers || rec.responseExtraInfo?.headers || {});
