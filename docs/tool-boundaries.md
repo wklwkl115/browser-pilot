@@ -11,7 +11,8 @@ Primary inputs are the tool parameters shown in `docs/generated/browser-tool-con
 3. Act with `browser_execute`, `browser_command`, `browser_upload`, `browser_download`, or `browser_wait`.
 4. Capture evidence with `browser_network`, `browser_hook`, `browser_evidence`.
 5. Read large or sensitive evidence with `browser_artifact`.
-6. Use Web Security tools only after baseline observation and explicit scoped inputs.
+6. If a task succeeded and durable evidence exists, use `browser_memory` to persist or recall local reusable SOP/facts.
+7. Use Web Security tools only after baseline observation and explicit scoped inputs.
 
 ## jshookmcp capability migration boundary
 
@@ -55,6 +56,8 @@ Hard rules:
 
 ## Runtime browser tools
 
+ABML surface note: current public callable surface remains the documented `browser_*` tools. Internal ABML refs and verb-like hints (`pi-ref://...`, `read(...)`, `click(...)`, `frame(...)`, `read_saved_artifact ...`) are envelope/runtime semantics and recovery affordances, not additional public Pi tool registrations. Current real smoke/eval evidence supports keeping ABML in this internal role for now.
+
 | Tool | Purpose | Use when | Do not use when | Primary output/evidence | Follow-up |
 |---|---|---|---|---|---|
 | `browser_tabs` | Manage connected browsers, tabs, advanced browser sessions, and explicit runtime/snapshot diagnostics. | Start automation, list tabs, create/switch/close tabs, inspect capability profile, inspect active operations, or read explicit observation snapshot metadata. | Do not use as a page action primitive or to infer page content. Do not switch unless intentionally changing active tab. | Tab list, browser ids, session snapshot, capability profile, active operations, explicit observation snapshots. | Pass explicit `tabId` to tab-scoped tools. |
@@ -68,6 +71,7 @@ Hard rules:
 | `browser_hook` | Install and collect page-side event hooks. | Need DOM/console/error/storage/websocket/crypto/dom_sinks or custom listener evidence across actions. | Do not use when passive network recorder or simple DOM scan is enough. | Hook sessions, event buffer, listener/performance data. | `browser_evidence`, `browser_artifact`, `browser_execute`. |
 | `browser_evidence` | Aggregate hook, network, and performance evidence. | Need one compact proof bundle from already configured evidence sources. | Do not use as a replacement for initial observation or when a single source tool gives clearer data. | Combined evidence summary, source statuses, artifact. | `browser_artifact`; source tools for deeper reads. |
 | `browser_artifact` | Read/search/sample local browser artifacts safely, including bounded multi-artifact search. | A browser tool returned `saved.path`, output is large, sensitive evidence must be inspected locally with redaction controls, or evidence must be searched across an explicit bounded artifact set. | Do not re-run expensive browser capture just to inspect already saved evidence. Do not set `redact:false` unless explicitly needed. Do not use multi-search without explicit `paths` or bounded `root`/`glob` plus limits. | Text/json/search/sample snippets, next offsets, privacy metadata, bounded grouped cross-artifact matches. | Continue targeted reads with narrower offsets/jsonPath/query or reduce the multi-search scope to one artifact. |
+| `browser_memory` | Record, recall, read, or validate local browser memory entries with evidence-gated persistence. | A browser task succeeded and durable evidence exists; later similar origin-scoped tasks need bounded recall before acting. | Do not use without explicit durable evidence for `record`/`validate`. Do not expect repo export/promote, task/project scopes, or embeddings in v1. | Local memory cards, entry handles, derived index, bounded body reads through `browser-memory://...`. | `browser_artifact`, `browser_observe`, and targeted `browser_memory read` by id/URI. |
 | `browser_download` | Trigger or wait for browser downloads and return local file path. | Need a stable Chrome download id/path via selector click, media extraction, or direct URL. | Do not script ad-hoc clicks when the task outcome is a downloaded file. | Download id/state/path, target metadata, artifact envelope. | Use `browser_artifact` or normal file tools on the local path. |
 | `browser_upload` | Upload local files through a page file chooser. | User explicitly approved exact absolute file paths and selector points to file input/chooser. | Do not use without `confirm:true`; do not use `browser_execute` to bypass upload confirmation. | Upload result, file count, selector, bridge metadata. | `browser_wait` and re-observe page state. |
 

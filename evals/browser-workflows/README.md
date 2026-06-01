@@ -47,7 +47,14 @@ Each eval should define:
 - `19-debugger-pause-lifecycle.md`
 - `20-debugger-navigation-recovery.md`
 - `21-cross-tool-correlation-chain.md`
+- `22-js-ast-artifact-summary.md`
+- `23-dom-flow-listener-chain.md`
+- `24-dom-flow-sink-hints.md`
+- `25-wasm-artifact-metadata.md`
+- `26-wasm-wat-bridge.md`
 - `27-websocket-session-transcript.md`
+- `28-mcp-network-request-handle.md`
+- `29-mcp-middleware-coverage.md`
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 

@@ -311,12 +311,83 @@ MCP 返回 URI，不返回本地绝对路径；本地 path 只保留在 server d
 
 ### Phase 9：Stretch：无 deferral host fallback / prompts
 
-仅 RFC，不进入当前合同交付。
+状态：已完成。保持不新增公开 `browser_*` 工具；新增 MCP-only discovery helper 不进入 Pi browser tool surface。
 
-候选：
-- server dynamic list + lightweight discovery tool。
-- slash command → MCP prompts。
-- `skillful-mcp` 仅作理念参考，不照搬接口。
+交付：
+- `tools.listChanged:true` 与 `sendToolListChanged()` 成对落地；仅 discovery reveal 导致同一 session 内可见列表变化时发送通知。
+- 新增 MCP-only `browser_tool_discovery` lightweight discovery helper；默认列出工具分组与名称，`revealGroup` 可在 compact/minimal visibility profile 下展开后续 `tools/list`。
+- 新增 `PI_BROWSER_MCP_TOOL_VISIBILITY=full|compact|minimal`；默认 `full` 保持原有工具可见性，`PI_BROWSER_MCP_DISCOVERY=0` 可关闭 discovery helper。
+- 新增 prompts capability 与静态 prompts catalog：`browser-first-observe`、`browser-evidence-capture`、`browser-web-security-scope`、`browser-artifact-read`。
+- `skillful-mcp` 仅作理念参考，未复制接口。
+
+验证：
+- `check:mcp-list-changed`
+- `check:mcp-prompts`
+- `check:mcp-dynamic-tools`
+- `check:mcp-e2e`
+- `npm run check`
+
+### Phase 10：延后问题实际解决：typed request handles / prompt hooks / token economy
+
+状态：已完成。前置 eval 已完成并已转为 passing sample results：
+- `28-mcp-network-request-handle`：当前 network raw-result 可读，但缺 per-entry `kind:http-request` typed handle，导致 `browser_sqli.request` / `browser_http_replay.request` 仍需手动 JSON 重构。
+- `29-mcp-middleware-coverage`：`on_message` 确认为 fallback-only；不做 transport wrapper，改补显式 prompt handler hooks。
+
+范围：只改 MCP adapter / resource / middleware / contracts；不新增 Pi 公开 `browser_*` 工具，不改变 Pi adapter 输出，不引入 scanner/workflow 自动化。
+
+#### Phase 10A：network per-entry `http-request` 子资源
+
+状态：已完成。
+
+目标：让 bounded network entries 以 typed `browser-result://...` handle 直接进入 MCP ingress resolution。
+
+交付：
+- network summary / artifact hints 为 top-N request entries 暴露 `kind:"http-request"` preferredReads，jsonPath 指向单条 request 对象。
+- MCP section resource 注册保留 entry `kind:http-request`、etag 与 sha256 内容 hash。
+- `resources/read` 可读取 per-entry request；`resolveIngressHandles()` 可将该 URI 展开为 `browser_sqli.request` / `browser_http_replay.request` / `browser_fuzz.request` 输入。
+- 默认只注册 bounded top-N / preferred request entries；全量仍通过 raw artifact + jsonPath 手动读取。
+
+验证：
+- 扩展 `check:mcp-sections`：network artifact -> `http-request` section URI。
+- 扩展 `check:mcp-ingress-handles`：section URI -> `browser_sqli.request` 成功展开。
+- 扩展 `check:mcp-etag`：per-entry request stale / hash mismatch negative case。
+- 将 `28-mcp-network-request-handle` sample result 从 `blocked/insufficient` 更新为 passing evidence。
+
+#### Phase 10B：prompt middleware hooks
+
+状态：已完成。
+
+目标：保持 `on_message` fallback-only，同时让 registered prompt paths 也进入显式 outer-ring hooks。
+
+交付：
+- middleware hook names 增加 `on_list_prompts`、`on_get_prompt`。
+- `prompts/list` 调用 `on_list_prompts`，`prompts/get` 调用 `on_get_prompt`。
+- hook reject 路径有 `emitLog()`，unknown prompt 继续返回 `InvalidParams`。
+- 文档明确：registered methods 不经过 fallback `on_message`；transport wrapper 不进入本轮。
+
+验证：
+- 扩展 `check:mcp-middleware` 覆盖 prompt hooks。
+- 将 `29-mcp-middleware-coverage` sample result 从 promptHookCoverage=gap 更新为 covered。
+- `check:mcp-prompts` 保持通过。
+
+#### Phase 10C：token economy eval 扩样本
+
+状态：已完成。
+
+目标：把 3-fixture guardrail 扩成更可信的 deterministic 非回归评估。
+
+交付：
+- `check-token-economy.mjs` fixtures 扩到 8–12 个 deterministic 本地样本：scan、network、hook、evidence、web-security crawl/fuzz/sqli/replay、large sensitive artifact。
+- hard gate：每个 fixture `layer0 < raw`。
+- soft guardrail：median ratio 不超过 baseline 阈值；p90/max 先作为 diagnostics 输出。
+- 写入 `.pi/browser-artifacts/token-economy-summary.json`。
+
+验证：
+- `npm run check:token-economy -- --update` 明确更新 baseline。
+- `npm run check:token-economy`
+- `npm run check:all:contracts`
+
+执行结果：10A -> 10B -> 10C 已完成。10A 闭合 typed request handle 功能，10B 闭合 prompt middleware 覆盖，10C 将 token 经济基线扩为 9 个 deterministic fixtures 并输出 `.pi/browser-artifacts/token-economy-summary.json`。
 
 ## 6. 成功度量
 

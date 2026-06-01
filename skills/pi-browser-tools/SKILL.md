@@ -9,6 +9,9 @@ compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connecte
 
 Live browser operation via `browser_*` tools. HOW only — methodology and route index. For depth, follow the Index.
 
+Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
+Current conclusion: real smoke/eval evidence shows this internal ABML layer already strengthens the existing public surface; there is still no evidence that a task is blocked solely because public ABML verb tools are absent.
+
 ## Loop
 
 1. `browser_tabs list` → keep `tabId`; pass it to every tab-scoped call.
@@ -18,6 +21,17 @@ Live browser operation via `browser_*` tools. HOW only — methodology and route
 5. Report: `tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
 `browser_tabs create` opens a tab; `switch` only to intentionally change the active one. Omit `browserSessionId` unless juggling concurrent sessions. Default `detailLevel:"summary"`.
+
+Memory is a Loop bookend: on a known/repeat origin `browser_memory recall` before step 2 and apply any SOP; on task success with durable evidence `browser_memory record` at step 5. See Memory.
+
+## Memory
+
+Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. Two kinds: `sop` = a reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). Recall and record are default habits — the store stays empty until you record.
+
+- **Recall (task start):** before acting on a repeat/known origin — or whenever a result's `nextActions` shows a `relevant memory: … top:"…"` hint (it names the top entry, so judge relevance first) — `browser_memory {action:"recall", url|scopeKey}`, or `query="keywords"` to route across scopes via the L1 token index. Cards come ranked and carry `updatedAt` (judge staleness); when one clearly dominates its **body is inlined** — apply it directly, no extra read. Following a `relevant memory:` hint is not optional. Device/variant subdomains (`m.`/`mobile.`/`app.`) share the apex site's memory.
+- **Read** other cards' bodies on demand: `browser_memory {action:"read", id|uri}` (bounded; `offset`/`limit`/`jsonPath`).
+- **Record (crystallize on success):** the moment a multi-step task succeeds, crystallize it — `browser_memory {action:"record", kind:"sop"|"fact", scopeKind:"origin", url, title, triggers, body}`. You hold the trajectory; distill it yourself. Make it reusable: a verb-y `title`; `triggers` = the keywords you'd search by (site name, task, key UI words — these drive recall); a HOW-only `body` of numbered steps with **exact selectors / inputs / waits**, no secrets. **Evidence is optional** (`evidenceRefs` is provenance — add a saved artifact path if handy, never withhold a good SOP for lack of one). Prefer `origin` scope. A `record candidate:` hint means the origin has no SOP yet — act on it when the task was reusable. Recording auto-dedups near-identical SOPs and returns `duplicateCandidates` for merely-similar ones — supersede those, don't pile up copies.
+- **Self-heal:** if a recalled SOP no longer works (page changed), just re-`record` a corrected version — it supersedes the old one. No upkeep, no scoring.
 
 ## Routes
 
@@ -49,19 +63,23 @@ Live browser operation via `browser_*` tools. HOW only — methodology and route
 | OAST callback proof | `browser_callback_oast start` → inject/`trigger` (`triggerTimeoutMs`) → `collect` → `stop` |
 | Cookie/JWT/JWE/PASETO/Rails session | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; bounded claim replay) |
 | Reveal hidden tool group | `browser_tool_discovery {revealGroup}` |
+| Local browser memory | `browser_memory {action:"recall"}` → `browser_memory {action:"read"}` |
 
 ## Read results
 
 Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.
 
-- **MCP client** → `resources/read uri=browser-result://…` with `mode=text|json|search|sample` + `offset`/`limit`/`jsonPath`/`search`. Take URIs from `resource_link`/`sections`/`nextActions`.
+- **MCP client** → `resources/read uri=browser-result://…` or `resources/read uri=pi-ref://data-slice/...` with `mode=text|json|search|sample` + `offset`/`limit`/`jsonPath`/`search`. Take URIs from `resource_link`/`sections`/`nextActions`.
+- **Browser memory** → `resources/read uri=browser-memory://…` or `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
 - **Direct / non-MCP** (or `PI_BROWSER_MCP_KEEP_ARTIFACT=1`) → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search`.
+- `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture”; MCP clients map that to `resources/read`, direct callers map it to `browser_artifact`.
 
 ## Tool visibility
 
 Web-security tools are hidden by default under compact/minimal profiles.
 
 - `browser_tool_discovery {group?, revealGroup?, includeDescriptions?}` — groups: `core state observe action evidence artifact web-security`. `revealGroup` exposes a group in later `tools/list`.
+- `browser_memory {action:"record"|"recall"|"read"|"validate"}` — local-only browser memory under `.pi/browser-memory/`; `record/validate` require durable evidence such as saved artifact path, `browser-result://...`, or non-stale snapshot-backed artifact. Local scopes `origin|task|project` are supported; repo export/promote is not.
 - Env: `PI_BROWSER_MCP_TOOL_VISIBILITY=full|compact|minimal` · `PI_BROWSER_MCP_DISCOVERY=0` disables the helper · `PI_BROWSER_MCP_KEEP_ARTIFACT=1` keeps `browser_artifact`.
 
 ## Bounds (set before expansive routes)
@@ -73,7 +91,7 @@ Web-security tools are hidden by default under compact/minimal profiles.
 - Launcher overrides (`sqlmapPath`/`nucleiPath`/`PI_*_PATH`) → `allowLauncherOverride:true`.
 - `wordlistPath` limited to CWD or `.pi/`.
 - `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab).
-- `nextActions` are suggestions, not a mandatory pipeline. Do not fabricate request templates when a captured/HAR request is required.
+- `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint, which you should recall before continuing. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action
 
@@ -101,7 +119,7 @@ Click:
 
 `browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from failing step.
 
-Do not invent tools `browser_intercept`/`browser_ws`/`browser_sources`/`browser_debugger`/`browser_storage`/`browser_canvas`. `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file/transcript slash commands, not public tools.
+Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file/transcript slash commands, not a public browser tool surface.
 
 ## Recovery
 

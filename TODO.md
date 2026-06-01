@@ -1,24 +1,14 @@
 # TODO
+
 当前 TODO 入口已拆分：
-- 当前状态与执行队列：`CURRENT.md`（当前无新的激活主线；最近完成项含浏览器桥接工程债修复批次、cross-tool evidence correlation metadata、interception phase 1/2、JS AST / 反混淆 phase 1、DOM 事件链 / sink-flow phase 1、Wasm 逆向桥接 phase 1 与 Stateful WebSocket replay/fuzz primitives phase 1）
-- 当前执行组：`TODO 257-261 维护入口 / 协议单源收口 / 单测扩面 / mature bridge 预检诊断 / 文档去重` 已完成；结果、边界与验证记录见 `CURRENT.md` 与 `ARCHIVE.md`
-- 当前架构工作流：`MV3 runtime state recovery` 已冻结执行合同，见 `docs/mv3-runtime-state-recovery-plan.md`；目标是把 Service Worker 重启后的长生命周期状态丢失改为可恢复或显式失败，不新增公开工具面
-- 已完成架构工作流：`TODO 244-249 tool surface consolidation`，完整执行合同见 `docs/tool-surface-consolidation-plan.md`
-- 当前工程治理补充队列：`TODO 250-256 build/test/doc governance follow-up`，首版实现已落地；修正版问题清单、边界、执行顺序、已完成项与 CI 自动化口径见 `CURRENT.md`
-- 当前新增执行合同：`Web Security affordance / validation / recovery 收口`（保持原子窄工具，不引入固定工作流）；执行顺序、边界、验证计划见 `CURRENT.md`
-- 当前新增执行合同：`共享 helper 去重 / parse 策略 / 防漂移治理`（聚焦 `isRecord`、`recordValue`、内联 object-guard 与核心 `JSON.parse` 热点，不处理生成文件）；执行顺序、授权根、验证计划见 `CURRENT.md`
-- 当前新增执行合同：`bridge runtime hardening / command access schema / silent-catch governance`（聚焦 H-001/H-005 的 driver 问题、H-003/H-004 的 MV3/runtime 问题以及 H-002 的分类 catch 治理，不扩公开工具面）；实施顺序、分类规则与验证计划见 `CURRENT.md`
-- 当前新增执行合同：`docs/mcp-standardization-progressive-disclosure-plan.md`（MCP 标准化 + 渐进式披露；先补 MCP 参数契约与 conformance，再分阶段落 structuredContent / resources / typed handle；不迁移 TypeBox 顶层契约到 Zod，不新增公开 `browser_*` 工具）
-- 最近完成执行合同：`docs/lint-debt-ratchet-plan.md`（已清零 ESLint `0 errors / 172 warnings / 56 files` 基线债务，将合同内规则族从 `warn` 收紧为 `error`，并移除 CI `npm run lint` 的 `continue-on-error`；未引入格式化器，未开启额外 `no-unsafe-*` / `no-explicit-any`，未做全仓 `eslint . --fix`）
-- 当前新增执行合同：`H-002 第二批静默 catch 分类治理`（聚焦 wait/cdp/ws/network/intercept/transport/runtime 的高收益 cleanup 与 recovery 主路径，不做全仓机械替换）；分层清单、暂缓范围与验证计划见 `CURRENT.md`
-- 当前新增执行合同：`M-001 ~ M-011 中严重度工程债收口`（按 M-003 → M-008 → M-005 → M-011 → M-002 → M-001 → M-006 → M-010 → M-004 顺序执行；M-007/M-009 仅归档为已由 H-001 关闭）；边界、非目标与验证计划见 `CURRENT.md`
-- 当前激活子项：`M-001 深拆 BrowserBridgeServer`（只拆 facade 内 command/client 协调逻辑，不改对外 API/协议语义）；第一轮已完成 `BrowserBridgeCommandService` / `BrowserBridgeClientMessageService` 拆分与 `BrowserBridgePendingRequests` 脆弱初始化顺序修复，后续剩余边界与验证计划见 `CURRENT.md`
-- 历史完成归档：`ARCHIVE.md`
-- 后续路线与建议：`ROADMAP.md`
-- 下阶段深水区能力规划：`docs/next-phase-web-reversing-and-security-primitives-plan.md`
-- 最近完成的下阶段执行合同：`docs/stateful-websocket-replay-and-fuzz-plan.md`
-- 当前新增执行合同：`docs/mv3-runtime-state-recovery-plan.md`
-- 最近完成执行合同：`docs/architecture-design-improvements-plan.md`（已完成 distiller 注册化、tab 三态复合不变量、租约 TTL/断连清理、wait 超时预算硬化、protocol sync pre-commit、contracts 分目录与单测扩面、tsconfig base / driver 架构文档；结果见 `CURRENT.md` 与后续归档）
-- 最近完成执行合同：`docs/tool-parameter-contract-plan.md`（已完成顶层未知参数名收口、裸字符串枚举收口、`browser_sqli` Zod 内层校验补齐、框架未知键行为夹具验证；保持 TypeBox-外层 / Zod-内层 分工，不新增参数错误码族）
-- 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`
-维护规则：新增能力、重大架构变更、成熟替代/bridge 引入、既有工具实质变更，先更新 `CURRENT.md` 中的决策、边界、契约与验证计划；完成后迁入 `ARCHIVE.md`，后续项进入 `ROADMAP.md`。
+
+- 当前状态与执行队列：`CURRENT.md`。
+- 当前激活项：ABML（Agent Browser Modeling Language）执行落地，执行 TODO 见 `docs/abml-execution-plan.md`；设计源见 `docs/unified-browser-modeling-language-plan.md`；P1 规格见 `docs/abml-p1-spec.md`。当前只允许 P1 纯函数/契约测试落地，P1 gate 通过前不得改 ref registry/runtime。 
+- 当前无剩余工程债 backlog；future-facing 项只保留在 `ROADMAP.md`。
+- 最近完成整理合同：`docs/current-todo-unification-plan.md`（已统一核查并整理非 MCP 当前/待办/归档队列，消除重复“当前”口径）。
+- 最近完成执行合同：`docs/mcp-standardization-progressive-disclosure-plan.md` Phase 10。
+- 历史完成归档：`ARCHIVE.md`。
+- 后续路线与建议：`ROADMAP.md`。
+- 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`。
+
+维护规则：新增能力、重大架构变更、成熟替代/bridge 引入、既有工具实质变更，先更新 `CURRENT.md` 中的决策、边界、契约与验证计划；执行细分任务放入对应 `docs/*execution-plan.md`；完成后迁入 `ARCHIVE.md`，后续项进入 `ROADMAP.md`。

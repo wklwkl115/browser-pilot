@@ -477,6 +477,63 @@
         "matcher-diagnostics",
         "artifact-path"
       ]
+    },
+    {
+      "id": "28-mcp-network-request-handle",
+      "spec": "28-mcp-network-request-handle.md",
+      "fixtures": [
+        "fixtures/mcp-network-request-artifact.json"
+      ],
+      "primaryTools": [
+        "browser_network",
+        "browser_artifact",
+        "browser_sqli",
+        "browser_http_replay"
+      ],
+      "evidence": [
+        "http-request",
+        "browser-result",
+        "ingress resolution"
+      ]
+    },
+    {
+      "id": "29-mcp-middleware-coverage",
+      "spec": "29-mcp-middleware-coverage.md",
+      "fixtures": [
+        "fixtures/mcp-middleware-coverage.json"
+      ],
+      "primaryTools": [
+        "browser_artifact"
+      ],
+      "evidence": [
+        "on_message",
+        "on_list_tools",
+        "on_call_tool",
+        "on_read_resource"
+      ]
+    },
+    {
+      "id": "30-abml-internal-routing-evidence",
+      "spec": "30-abml-internal-routing-evidence.md",
+      "fixtures": [
+        "fixtures/interactive.html",
+        "fixtures/abml-frame-same-origin.html",
+        "fixtures/abml-frame-child.html",
+        "fixtures/abml-vision-floor.html",
+        "fixtures/abml-ax-canvas-aria.html"
+      ],
+      "primaryTools": [
+        "browser_observe",
+        "browser_execute",
+        "browser_frame",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "abml-internal-routing",
+        "monitor-comparison",
+        "frame-entities",
+        "vision-regions"
+      ]
     }
   ]
 }

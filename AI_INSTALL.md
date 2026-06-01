@@ -254,6 +254,7 @@ npm run smoke:browser:intercept-lease-conflict
 
 ```bash
 npm run smoke:browser:websocket-session
+npm run smoke:browser:memory
 ```
 
 WSL 调 Windows Edge 的已验证命令：
