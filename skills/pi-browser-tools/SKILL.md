@@ -76,7 +76,7 @@ Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/se
 
 ## Tool visibility
 
-Web-security tools are hidden by default under compact/minimal profiles.
+All `browser_*` tools — including web-security — are first-class and exposed by default. They are only narrowed if you opt in: `PI_BROWSER_MCP_TOOL_VISIBILITY=compact|minimal` (presentation) or `PI_BROWSER_TOOL_PROFILE=core` (unregisters web-security). In those modes use `browser_tool_discovery` to reveal a group.
 
 - `browser_tool_discovery {group?, revealGroup?, includeDescriptions?}` — groups: `core state observe action evidence artifact web-security`. `revealGroup` exposes a group in later `tools/list`.
 - `browser_memory {action:"record"|"recall"|"read"|"validate"}` — local-only browser memory under `.pi/browser-memory/`; `record/validate` require durable evidence such as saved artifact path, `browser-result://...`, or non-stale snapshot-backed artifact. Local scopes `origin|task|project` are supported; repo export/promote is not.

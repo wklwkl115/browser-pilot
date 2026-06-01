@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveBrowserToolCapabilityProfile } from "../../../src/tools/capabilityProfile.ts";
 
-test("capabilityProfile defaults to core when env var is absent", () => {
+test("capabilityProfile defaults to the full security surface when env var is absent", () => {
 	const profile = resolveBrowserToolCapabilityProfile({});
-	assert.equal(profile.name, "core");
+	assert.equal(profile.name, "security");
 	assert.equal(profile.source, "default");
-	assert.equal(profile.securityToolsEnabled, false);
+	assert.equal(profile.securityToolsEnabled, true);
 });
 
 test("capabilityProfile enables core-only tool surface when env var is core", () => {
@@ -24,9 +24,9 @@ test("capabilityProfile enables security only for recognized security aliases", 
 	}
 });
 
-test("capabilityProfile falls back unknown values to core with warning", () => {
+test("capabilityProfile falls back unknown values to the full security surface with warning", () => {
 	const profile = resolveBrowserToolCapabilityProfile({ PI_BROWSER_TOOL_PROFILE: "unknown-value" });
-	assert.equal(profile.name, "core");
-	assert.equal(profile.securityToolsEnabled, false);
+	assert.equal(profile.name, "security");
+	assert.equal(profile.securityToolsEnabled, true);
 	assert.equal(Array.isArray(profile.warnings), true);
 });

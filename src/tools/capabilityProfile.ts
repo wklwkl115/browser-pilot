@@ -16,17 +16,18 @@ type ProcessEnvLike = Record<string, string | undefined>;
 
 function normalizeProfileName(value: unknown): { name: BrowserToolCapabilityProfileName; recognized: boolean } {
 	const text = String(value || "").trim().toLowerCase();
-	if (!text) return { name: "core", recognized: true };
+	// All tools are first-class by default: an unset profile enables the full
+	// surface (incl. web-security). Opt OUT explicitly with PI_BROWSER_TOOL_PROFILE=core.
 	if (text === "core") return { name: "core", recognized: true };
-	if (text === "security" || text === "default" || text === "full" || text === "ctf") return { name: "security", recognized: true };
-	return { name: "core", recognized: false };
+	if (!text || text === "security" || text === "default" || text === "full" || text === "ctf") return { name: "security", recognized: true };
+	return { name: "security", recognized: false };
 }
 
 export function resolveBrowserToolCapabilityProfile(env: ProcessEnvLike = process.env): BrowserToolCapabilityProfile {
 	const raw = env[PROFILE_ENV_VAR];
 	const normalized = normalizeProfileName(raw);
 	const warnings = raw && raw.trim() && !normalized.recognized
-		? [`Unrecognized ${PROFILE_ENV_VAR}=${raw}; falling back to core profile.`]
+		? [`Unrecognized ${PROFILE_ENV_VAR}=${raw}; defaulting to the full security profile (set ${PROFILE_ENV_VAR}=core to narrow).`]
 		: undefined;
 	return {
 		name: normalized.name,
