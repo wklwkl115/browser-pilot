@@ -1,6 +1,6 @@
 # Pi Browser Tools SOP：安装与环境配置
 
-本 SOP 只覆盖项目安装、浏览器桥安装、环境配置、reload、验证和排障。正式使用方式由全局 skill `D:/Pi/agent/skills/pi-browser-tools/SKILL.md` 负责。
+本 SOP 只覆盖项目安装、浏览器桥安装、环境配置、reload、验证和排障。正式使用方式由 skill 负责。skill 源在仓库内 `skills/pi-browser-tools/SKILL.md`（版本管理的单一来源），部署到全局 `D:/Pi/agent/skills/pi-browser-tools/SKILL.md` 供 Pi 加载。
 
 发布入口说明：Pi runtime 继续通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 使用 `dist/` 编译产物。
 
@@ -8,7 +8,8 @@
 
 - 项目目录：`D:/Pi/agent/extensions/pi-browser-tools`
 - 浏览器扩展目录：`D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge`
-- 全局 Pi skill：`D:/Pi/agent/skills/pi-browser-tools/SKILL.md`
+- skill 源（仓库内，单一来源）：`skills/pi-browser-tools/SKILL.md`
+- 全局 Pi skill 加载路径（部署目标）：`D:/Pi/agent/skills/pi-browser-tools/SKILL.md`
 
 ## 安装依赖
 
@@ -60,7 +61,7 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 
 - 修改 Pi extension TypeScript 后：在当前 Pi 会话执行 `/reload`，或新开会话。
 - 修改浏览器扩展文件后：执行 `/browser-reload`，或在浏览器扩展页点击重新加载。
-- 修改全局 skill 后：执行 `/reload`，或新开 Pi 会话。
+- 修改 skill 后：直接编辑仓库内 `skills/pi-browser-tools/SKILL.md`（全局加载路径是指向它的目录 junction，改动即时生效），然后执行 `/reload`，或新开 Pi 会话。
 
 ## 验证
 
@@ -175,11 +176,13 @@ PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/m
 
 `release:local` 在 clean cwd 中执行 `npm pack --dry-run --json` 与实际 pack，解包检查 manifest dist 路径、dist runtime、native schema 和 build manifest，并把当前 tarball、上一成功 tarball、摘要保存在 `.pi/browser-artifacts/release-acceptance/`。`release:local:smoke` 额外加载当前解包扩展跑 full isolated smoke，并加载上一包跑最小 tabs/wait/execute 回滚 smoke。最终报告附：`release-acceptance-summary.json`、`current/pi-browser-tools-0.3.0.tgz`、`last-successful/release-metadata.json`、当前/回滚 smoke artifact；失败时查看 summary 的 `failureDiagnostics.packFiles/buildManifest/chromeProfile/bridgePort/smokeArtifact`。CI 如需显式启用这些 runtime 门禁，使用 `PI_BROWSER_CI_BROWSER_SMOKE=1`、`PI_BROWSER_CI_RELEASE_SMOKE=1`、`PI_BROWSER_CI_ROLLBACK_SMOKE=1`。CI setup/build 共享步骤已抽到 `.github/actions/setup-node-build`。
 
-全局 skill 变更后按 skill-creator 要求验证：
+skill 变更后按 skill-creator 要求验证（全局路径是指向仓库源的 junction，二者等价）：
 
 ```bash
-PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools
+PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools
 ```
+
+> 全局加载路径 `D:/Pi/agent/skills/pi-browser-tools` 是指向仓库 `skills/pi-browser-tools` 的目录 junction。若仓库被移动/重新克隆，需重建：`cmd /c mklink /J "D:\Pi\agent\skills\pi-browser-tools" "D:\Pi\agent\extensions\pi-browser-tools\skills\pi-browser-tools"`。
 
 真实浏览器 smoke（可选，需浏览器扩展已连接，且端口未被其它 bridge 占用）：
 

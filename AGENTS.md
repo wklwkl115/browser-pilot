@@ -75,5 +75,5 @@
 - After code or contract changes run `npm run check` in this extension.
 - For fast local iteration, use the narrowest grouped gate first when sufficient: `npm run check:all:bridge`, `npm run check:all:package`, `npm run check:all:contracts`; keep `npm run check` as the final full gate.
 - When a structured local verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`.
-- When touching global skill text, run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`.
+- The `pi-browser-tools` skill source lives in-repo at `skills/pi-browser-tools/SKILL.md`; the global load path `D:/Pi/agent/skills/pi-browser-tools` is a directory junction to it. When touching skill text, edit the repo file and run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools`.
 - After runtime reload for new/enhanced tools, run bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts; summarize artifact paths.
