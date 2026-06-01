@@ -6,7 +6,7 @@
 
 为 `pi-browser-tools` 增加本地学习/记忆层：任务成功后由 agent 显式提交已验证经验；后续相同 origin 的浏览器任务可先 recall 相关 SOP/facts，减少错误动作。
 
-v1 只做本地、证据门控、显式召回、极小自动提示；不做 repo promote、不做 embeddings；`task/project` 仅做 local-only scope，不做 curated/export 流程。
+v1 只做本地、显式召回、极小自动提示与可选 provenance evidence；不做 repo promote、不做 embeddings；`task/project` 仅做 local-only scope，不做 curated/export 流程。
 
 ## 最终分析与执行口径
 
@@ -52,7 +52,7 @@ v1 只做本地、证据门控、显式召回、极小自动提示；不做 repo
 - `url?`: 用于归一化 origin
 - `query?`: recall 关键词
 - `title?`, `triggers?`, `body?`: `record/validate` payload
-- `evidenceRefs?`: `record/validate` 必填，数组，支持：
+- `evidenceRefs?`: `record/validate` 可选 provenance，数组，支持：
   - `{kind:"artifact", path}` 或直接 saved path string
   - `{kind:"browser-result", uri}` 或 `browser-result://...`
   - `{kind:"snapshot", snapshotId}`
@@ -75,7 +75,7 @@ v1 只做本地、证据门控、显式召回、极小自动提示；不做 repo
 必需错误码：
 
 - `MEMORY_ACTION_UNSUPPORTED`
-- `UNSUPPORTED_SCOPE_KIND`
+- `UNSUPPORTED_SCOPE_KIND`（保留 taxonomy 预留码；当前实现支持 `origin|task|project`，正常路径不抛此码）
 - `MEMORY_SCOPE_REQUIRED`
 - `MEMORY_EVIDENCE_REQUIRED`
 - `MEMORY_EVIDENCE_UNREADABLE`
@@ -246,7 +246,7 @@ evidenceRefs:
 - 所有 JSON.parse 走 `parseJsonOrThrow()`；如触发 boundary contract，更新允许根。
 - 不在 core memory 模块 import `mcp/*`。
 
-验证：unit tests 覆盖 origin、slug、frontmatter roundtrip、index derive、secret scan、durable evidence gate、atomic write。
+验证：unit tests 覆盖 origin、slug、frontmatter roundtrip、index derive、secret scan、optional provenance evidence、atomic write。
 
 ### W2. `browser_memory` tool
 

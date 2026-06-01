@@ -2,7 +2,7 @@
 
 **日期**: 2026-05-31  
 **阶段**: Phase 1 - 类型安全加固  
-**状态**: ✅ 核心完成 (80%)
+**状态**: ⚠️ 历史阶段记录（已过时）
 
 ---
 
@@ -78,27 +78,11 @@
 
 ---
 
-## 待完成工作 (Task #3)
+## 当前说明
 
-### 剩余 4 个高风险工具迁移
-
-1. **browser_http_replay** (src/tools/webSecurity/registerHttpReplayTool.ts)
-   - 验证: request, mutations, multipart
-   - 预计工作量: 30 分钟
-
-2. **browser_fuzz** (src/tools/webSecurity/registerFuzzTool.ts)
-   - 验证: mutations, jsonValues
-   - 预计工作量: 30 分钟
-
-3. **browser_cookie_analyze** (src/tools/webSecurity/registerCookieAnalyzeTool.ts)
-   - 验证: cookies, claimMutations
-   - 预计工作量: 30 分钟
-
-4. **browser_template** (src/tools/webSecurity/registerTemplateTool.ts)
-   - 验证: templates, variables
-   - 预计工作量: 30 分钟
-
-**总预计时间**: 2 小时
+本文件只保留当时的阶段性实施记录，**不是当前状态 source of truth**。
+当前实际状态以 `CURRENT.md`、源码、tests 与命令输出为准。
+该阶段中提到的剩余迁移项已在后续批次完成，不应再据此判断当前 backlog。
 
 ---
 
@@ -106,8 +90,8 @@
 
 | 指标 | 目标 | 当前 | 状态 |
 |------|------|------|------|
-| Type.Any() 使用次数 | 0 | 14 (减少 1) | 🟡 进行中 |
-| `as any` 使用次数 | 0 | 10+ | 🔴 未开始 |
+| Type.Any() 使用次数 | 0 | 历史快照，已过时 | 仅供归档 |
+| `as any` 使用次数 | 0 | 历史快照，已过时 | 仅供归档 |
 | 单元测试覆盖率 | 75% | 未知 | 🔴 未测量 |
 | TypeScript 严格模式 | ✅ | ✅ | ✅ 完成 |
 | 验证层测试通过率 | 100% | 100% (67/67) | ✅ 完成 |
@@ -123,10 +107,9 @@
 - ✅ 添加运行时参数验证
 - ✅ 统一错误处理（BrowserBridgeError）
 
-### 待解决
-- 🔴 剩余 14 处 `Type.Any()` 使用
-- 🔴 10+ 处 `as any` 类型断言
-- 🔴 `src/utils/records.ts` 中的不安全 `recordValue<T>()`
+### 历史待解决项（已过时）
+- 当时记录的剩余 `Type.Any()` / `as any` 数字仅代表该阶段快照。
+- 当前是否仍存在类型债，必须以源码搜索与 contracts 为准。
 
 ---
 
@@ -144,15 +127,13 @@
 
 ---
 
-## 下一步行动
+## 当前建议
 
-1. **立即**: 迁移 browser_http_replay 工具
-2. **接下来**: 迁移 browser_fuzz 工具
-3. **然后**: 迁移 browser_cookie_analyze 工具
-4. **最后**: 迁移 browser_template 工具
-5. **验证**: 运行完整测试套件 (npm run check:all:bridge)
-
-**预计完成时间**: 2 小时内完成 Phase 1 所有工作
+如需查看当前真实欠债或执行队列，请改读：
+- `CURRENT.md`
+- `TODO.md`
+- `ROADMAP.md`
+- 相关 contracts / tests / command output
 
 ---
 

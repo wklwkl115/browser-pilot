@@ -1193,7 +1193,7 @@ var __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDG
       "UNSUPPORTED_SCOPE_KIND": {
         "category": "tool.memory",
         "retryable": false,
-        "summary": "browser_memory v1 only supports scopeKind=origin."
+        "summary": "browser_memory scopeKind is unsupported."
       },
       "MEMORY_SCOPE_REQUIRED": {
         "category": "tool.memory",

@@ -23,6 +23,7 @@ import {
 	McpError,
 	ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { Tool as McpTool, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 
@@ -43,9 +44,32 @@ import { getBrowserPrompt, listBrowserPrompts } from "./prompts.js";
 import { MCP_DISCOVERY_TOOL_NAME, isMcpToolVisible, resolveMcpToolVisibilityOptions, visibleMcpTools } from "./toolVisibility.js";
 
 const RESOURCE_KIND_SET = new Set<string>(RESOURCE_KINDS);
+type McpToolSchema = McpTool["inputSchema"] & Record<string, unknown>;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
+
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isToolSchemaProperties(value: unknown): value is Record<string, object> {
+	return isRecord(value) && Object.values(value).every((item) => !!item && typeof item === "object" && !Array.isArray(item));
+}
+
+function isMcpToolSchema(value: unknown): value is McpToolSchema {
+	if (!isRecord(value) || value.type !== "object") return false;
+	if (value.$schema !== undefined && typeof value.$schema !== "string") return false;
+	if (value.properties !== undefined && !isToolSchemaProperties(value.properties)) return false;
+	if (value.required !== undefined && !isStringArray(value.required)) return false;
+	return true;
+}
+
+function normalizeMcpToolSchema(value: unknown): McpToolSchema | undefined {
+	return isMcpToolSchema(value) ? value : undefined;
+}
+
 import { resolveIngressHandles } from "./handleResolver.js";
 import { runHooks, emitLog, timingLogHook, registerHook } from "./middleware.js";
 
@@ -161,22 +185,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 	const visibleTools = currentVisibleTools();
 	lastToolsListSignature = visibleTools.map((def) => def.name).join("\n");
 
-	const response = ({
-		tools: visibleTools.map((def) => {
+	const response: ListToolsResult = {
+		tools: visibleTools.map((def): McpTool => {
 			const distillerDef = getDistillerDefinition(def.name);
+			const inputSchema = normalizeMcpToolSchema(def.parameters) ?? { type: "object" };
+			const outputSchema = normalizeMcpToolSchema(distillerDef?.summarySchema);
 			return {
 				name: def.name,
 				description: def.description,
 				// TypeBox Type.Object outputs standard JSON Schema — pass through directly.
-				inputSchema: (def.parameters ?? { type: "object" }) as any,
+				inputSchema,
 				// outputSchema declared only for tools with an explicit DistillerDefinition.
 				// Clients that support structuredContent will receive the distilled summary.
-				outputSchema: distillerDef?.summarySchema as any,
+				...(outputSchema ? { outputSchema } : {}),
 				// Informational hints for MCP clients (UIs, hosts). Not security boundaries.
 				annotations: TOOL_ANNOTATIONS[def.name],
 			};
 		}),
-	});
+	};
 	emitLog(ctx, Date.now() - ctx.startedAt, "ok", { toolCount: visibleTools.length, resourcesCapable: clientCaps != null, visibilityProfile: mcpToolVisibilityOptions.profile });
 	return response;
 });

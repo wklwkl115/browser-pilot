@@ -4,7 +4,7 @@
 
 - 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
 - 当前主链路：`browser_tabs list` / `browser_tabs switch|create` -> 显式 `tabId` -> `browser_observe mode=scan|content|html|text|tabs` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
-- 当前工具边界：不恢复 `browser_orchestrate` / target resolver；除已冻结但未实施的 `browser_memory` v1 执行合同外，不新增公开 `browser_*` 工具；MCP-only 能力不进入 Pi adapter 工具面。
+- 当前工具边界：不恢复 `browser_orchestrate` / target resolver；除已冻结的 future RFC/执行合同外，不新增公开 `browser_*` 工具；MCP-only 能力不进入 Pi adapter 工具面。
 - jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：只吸收能力模型与证据路径，不新增被拒绝的公开工具 `browser_sources` / `browser_debugger` / `browser_intercept` / `browser_storage` / `browser_canvas`。
 - 修改协议/工具后先跑 `npm run check`；局部回归优先 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。
 - 仓库单一源码根：`D:/Pi/agent/extensions/pi-browser-tools` 是唯一正式源码仓库；`.pi/public-export/` 仅作本地导出/归档产物。
@@ -32,7 +32,7 @@
 | M-007 写命令列表与 schema 重复 | 已由 H-001 关闭 | access mode 已来自 protocol schema。 |
 | M-008 session registry 隐式创建 | 已完成 | `BrowserSessionRegistry.require/getIfExists/create` 已拆分，miss 会 `SESSION_NOT_FOUND`。 |
 | M-009 intercept access mode 重复 | 已由 H-001 关闭 | access mode 已 schema 单源。 |
-| M-010 network model 摆脱 `JsonRecord` 基类 | 待做 | `network.ts` / `network_model.ts` 仍大量使用 `JsonRecord`。 |
+| M-010 network model 摆脱 `JsonRecord` 基类 | 已按 core-only 收口完成 | `network.ts` / `network_model.ts` 已为 summary/clear/HAR 主链补显式类型；低层输入归一化仍允许保留 `JsonRecord`。 |
 | M-011 bridge WebSocket 连接数上限 | 已完成 | `BrowserBridgeHttpServer` 已有 `PI_BROWSER_BRIDGE_MAX_CONNECTIONS` / 503 拒绝与单测。 |
 
 本轮完成结果：
@@ -55,7 +55,7 @@
 - MCP 标准化 + 渐进式披露 Phase -1 -> Phase 10 已完成；eval 28/29 已改为 passed，token economy 已扩到 9 fixtures。
 - MV3 runtime state recovery Phase 1-5 已完成；`state_store`、network/intercept recoverer、hook/ws/CDP diagnostics、runtime recovery error codes 与 contracts 已落地。
 - Web Security affordance / validation / recovery 收口已完成：summary `nextActions`、集中 validator、recovery 透传、Type.Any 高频迁移均已落地。
-- bridge runtime hardening broad 计划已完成 H-001/H-003/H-004/H-005；剩余 H-002 已单列 backlog。
+- bridge runtime hardening broad 计划已完成 H-001/H-003/H-004/H-005；H-002 targeted 可见化也已按收窄边界完成，剩余 silent catch 仅保留 A 类 best-effort cleanup/probing。
 - 工具面治理、架构与工程化设计改进、工具层参数契约、ESLint debt ratchet、cross-tool correlation metadata、JS AST、DOM flow、Wasm、Stateful WS 等均为已完成归档项。
 
 ## 后续路线

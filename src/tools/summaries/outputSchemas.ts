@@ -20,7 +20,7 @@ import { Type } from "typebox";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
-const AnyValue = Type.Any();
+const UnknownValue = Type.Unknown();
 const LooseObject = Type.Object({}, { additionalProperties: true });
 
 // topCounts() returns {key,count}[] — not a plain Record<string,number>.
@@ -30,7 +30,7 @@ const CountsArray = Type.Optional(Type.Array(CountItemSchema));
 // summaryTable() returns { columns, rows, count } — a column/row table, not raw objects.
 const SummaryTableSchema = Type.Object({
 	columns: Type.Array(Type.String()),
-	rows: Type.Array(Type.Array(AnyValue)),
+	rows: Type.Array(Type.Array(UnknownValue)),
 	count: Type.Number(),
 	truncated: Type.Optional(Type.Number()),
 }, { additionalProperties: true });
@@ -70,21 +70,21 @@ export const EntitySchema = Type.Object({
 // Sensitive: sources may contain DOM/screenshot handles; redaction is upstream.
 
 const EvidenceSourceSummarySchema = Type.Object({
-	ok: Type.Optional(AnyValue),
-	error_code: Type.Optional(AnyValue),
+	ok: Type.Optional(UnknownValue),
+	error_code: Type.Optional(UnknownValue),
 	events: Type.Optional(Type.Number()),
 	// topCounts() returns an array of {key, count} objects, not a plain Record.
-	eventTypes: Type.Optional(AnyValue),
+	eventTypes: Type.Optional(UnknownValue),
 	items: Type.Optional(Type.Number()),
 	entries: Type.Optional(Type.Number()),
-	count: Type.Optional(AnyValue),
-	total: Type.Optional(AnyValue),
+	count: Type.Optional(UnknownValue),
+	total: Type.Optional(UnknownValue),
 }, { additionalProperties: true });
 
 export const EvidenceSummarySchema = Type.Object({
-	tabId: Type.Optional(AnyValue),
-	collected_at: Type.Optional(AnyValue),
-	event_types: Type.Optional(AnyValue),
+	tabId: Type.Optional(UnknownValue),
+	collected_at: Type.Optional(UnknownValue),
+	event_types: Type.Optional(UnknownValue),
 	source_count: Type.Number({ description: "Number of evidence source types captured" }),
 	sources: Type.Record(Type.String(), EvidenceSourceSummarySchema),
 }, { additionalProperties: true });
@@ -95,7 +95,7 @@ export const EvidenceSummarySchema = Type.Object({
 
 export const NetworkSummarySchema = Type.Object({
 	entryCount: Type.Optional(Type.Number({ description: "Total entries captured in this recording" })),
-	total: Type.Optional(AnyValue),
+	total: Type.Optional(UnknownValue),
 	// topCounts() returns {key,count}[] arrays — not plain Record<string,number>.
 	statusCounts: CountsArray,
 	methodCounts: CountsArray,
@@ -104,9 +104,9 @@ export const NetworkSummarySchema = Type.Object({
 	// networkRows() returns summaryTable SummaryTable objects.
 	failed: OptionalSummaryTable,
 	samples: OptionalSummaryTable,
-	tabId: Type.Optional(AnyValue),
-	sessionId: Type.Optional(AnyValue),
-	active: Type.Optional(AnyValue),
+	tabId: Type.Optional(UnknownValue),
+	sessionId: Type.Optional(UnknownValue),
+	active: Type.Optional(UnknownValue),
 }, { additionalProperties: true });
 
 // ── browser_hook (DOM-flow) summary schema ────────────────────────────────────
@@ -122,8 +122,8 @@ export const HookDomFlowSummarySchema = Type.Object({
 	rows: SamplesArray,
 	sinkHints: SamplesArray,
 	items: Type.Optional(Type.Array(DomFlowRowSchema)),
-	total: Type.Optional(AnyValue),
-	truncated: Type.Optional(AnyValue),
+	total: Type.Optional(UnknownValue),
+	truncated: Type.Optional(UnknownValue),
 }, { additionalProperties: true });
 
 export const MemorySummarySchema = Type.Object({
@@ -144,26 +144,26 @@ export const MemorySummarySchema = Type.Object({
 
 export const ScanSummarySchema = Type.Object({
 	summaryVersion: Type.Number(),
-	url: Type.Optional(AnyValue),
-	title: Type.Optional(AnyValue),
-	readyState: Type.Optional(AnyValue),
-	text_only: Type.Optional(AnyValue),
+	url: Type.Optional(UnknownValue),
+	title: Type.Optional(UnknownValue),
+	readyState: Type.Optional(UnknownValue),
+	text_only: Type.Optional(UnknownValue),
 	contentChars: Type.Number(),
 	lineCount: Type.Number(),
-	truncated: Type.Optional(AnyValue),
-	node_count: Type.Optional(AnyValue),
-	iframe_notes: Type.Optional(AnyValue),
-	top_layer: Type.Optional(AnyValue),
+	truncated: Type.Optional(UnknownValue),
+	node_count: Type.Optional(UnknownValue),
+	iframe_notes: Type.Optional(UnknownValue),
+	top_layer: Type.Optional(UnknownValue),
 	tabs_count: Type.Number(),
 	page: Type.Object({
 		contentChars: Type.Number(),
 		lineCount: Type.Number(),
-		node_count: Type.Optional(AnyValue),
-		truncated: Type.Optional(AnyValue),
+		node_count: Type.Optional(UnknownValue),
+		truncated: Type.Optional(UnknownValue),
 		tabs_count: Type.Number(),
 	}, { additionalProperties: true }),
 	focus: Type.Object({
-		top_layer: Type.Optional(AnyValue),
+		top_layer: Type.Optional(UnknownValue),
 		primary_actions: Type.Array(Type.Object({
 			i: Type.Number(),
 			k: Type.String(),
