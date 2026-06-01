@@ -47,6 +47,18 @@ assert.deepEqual(restrictedInlineObjectGuardMatches.sort(), [
 	"src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
 	"src/tools/webSecurity/register/shared.ts",
 ], "inline object-guard pattern must stay constrained to explicit boundary helpers or reviewed exceptions");
+const allowedJsonParseRoots = new Set([
+	"src/utils/json.ts",
+	"src/tools/webSecurity/bridges/nucleiBridge.ts",
+	"src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
+	"src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+	"src/tools/webSecurity/browserNative/sqliProbe.ts",
+	"src/tools/webSecurity/shared/replay.ts",
+]);
+const jsonParseMatches = walk("src", (file) => file.endsWith(".ts") || file.endsWith(".mjs"))
+	.map(normalizeRel)
+	.filter((file) => /\bJSON\.parse\s*\(/.test(read(file)));
+assert.deepEqual(jsonParseMatches.sort(), Array.from(allowedJsonParseRoots).sort(), "JSON.parse usage in src/ must stay constrained to reviewed parse roots; prefer shared helpers elsewhere");
 assert(!read("src/utils/params.ts").includes("function normalizeTabId") || read("src/utils/params.ts").includes("return toTabId(value);"), "normalizeTabId must remain a thin compatibility alias if retained");
 const scriptText = Object.values(pkg.scripts || {}).map(String).join("\n").replace(/\\/g, "/");
 for (const file of contractFiles) {

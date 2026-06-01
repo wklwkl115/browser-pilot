@@ -9,7 +9,7 @@
  * - Real distill output must pass schema validation (not just type-level)
  * - Core count/status fields must be present when data contains them
  * - Dynamic arrays (samples, rows) are allowed to be loose
- * - Schema coverage: browser_evidence, browser_network, browser_hook
+ * - Schema coverage: browser_evidence, browser_network, browser_hook, browser_memory
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -51,6 +51,7 @@ const definedTools = getDefinedDistillerToolNames();
 assert(definedTools.includes("browser_evidence"), "browser_evidence must have a DistillerDefinition with summarySchema");
 assert(definedTools.includes("browser_network"), "browser_network must have a DistillerDefinition with summarySchema");
 assert(definedTools.includes("browser_hook"), "browser_hook must have a DistillerDefinition with summarySchema");
+assert(definedTools.includes("browser_memory"), "browser_memory must have a DistillerDefinition with summarySchema");
 
 // ── browser_evidence fixture ──────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ assert.equal(Value.Check(hookDef.summarySchema, hookResult), true,
 // ── Schema structure verification ─────────────────────────────────────────────
 
 // Evidence schema must require source_count (core stable field)
-const { EvidenceSummarySchema, NetworkSummarySchema, HookDomFlowSummarySchema } = await import(
+const { EvidenceSummarySchema, NetworkSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema } = await import(
 	new URL("../../../src/tools/summaries/outputSchemas.ts", import.meta.url).href
 );
 
@@ -144,6 +145,13 @@ const networkWithSamplesTable = {
 };
 assert(Value.Check(NetworkSummarySchema, networkWithSamplesTable),
 	"NetworkSummarySchema samples SummaryTable must accept rows with extra columns (dynamic tail)");
+
+const memoryDef = getDistillerDefinition("browser_memory");
+assert(memoryDef, "browser_memory must have a registered DistillerDefinition");
+const memoryResult = memoryDef.distill({ action: "recall", scopeKind: "task", scopeKey: "web-recon", cards: [{ id: "task_1", title: "recon route", triggers: ["recon"], scopeKind: "task", scopeKey: "web-recon", kind: "sop", status: "active", confidence: "verified", matchReason: "exact-task", handles: ["browser-memory://sop/task_1?etag=x"] }] });
+assert.equal(Value.Check(memoryDef.summarySchema, memoryResult), true,
+	`browser_memory distill output must pass summarySchema. Errors: ${JSON.stringify([...Value.Errors(memoryDef.summarySchema, memoryResult)].map(e => e.message))}`);
+assert(Value.Check(MemorySummarySchema, memoryResult), "MemorySummarySchema must accept recall summary output");
 
 // ── REAL emission path conformance (not just bare distiller output) ───────────
 //
@@ -192,5 +200,6 @@ if (!hugeConforms) {
 	assert(indexSrc.includes("Value.Check(distillerDef.summarySchema"),
 		"mcp/index.ts MUST gate structuredContent emission with Value.Check(distillerDef.summarySchema, summary) — oversized summaries fail the declared outputSchema");
 }
+assert.equal(typeof normalEnvelope.entities === "undefined" || Array.isArray(normalEnvelope.entities), true, "P8 envelope-level entities projection must be optional but well-shaped");
 
 console.log("output schema conformance ok");

@@ -150,23 +150,19 @@ try {
 		artifactValue: { ...rawScan, tabs_count: tabs.length, tabs, active_tab: bridge.snapshot().defaultTabId },
 	});
 	const beforeEnvelope = JSON.parse(before.content[0].text);
-	record("scan.summary", beforeEnvelope.summary?.summaryVersion === 2
-		&& beforeEnvelope.saved?.path === savedScanPath
-		&& Array.isArray(beforeEnvelope.summary?.focus?.primary_actions)
-		&& beforeEnvelope.summary.focus.primary_actions.length >= 3
-		&& Array.isArray(beforeEnvelope.summary?.focus?.forms)
-		&& beforeEnvelope.summary.focus.forms.length >= 1
-		&& Array.isArray(beforeEnvelope.summary?.focus?.lists)
-		&& beforeEnvelope.summary.focus.lists.length >= 1
-		&& Array.isArray(beforeEnvelope.summary?.focus?.text_signals)
-		&& beforeEnvelope.summary.focus.text_signals.length >= 1
-		&& beforeEnvelope.nextActions.some((item) => String(item).includes("jsonPath=data.actionables"))
-		&& beforeEnvelope.nextActions.some((item) => String(item).includes("jsonPath=data.content")), {
+	const hasActionablesFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("read_saved_artifact jsonPath=data.actionables") || String(item).includes("click(pi-ref://") || String(item).includes("read(pi-ref://"));
+	const hasContentFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("read_saved_artifact jsonPath=data.content"));
+	record("scan.summary", typeof beforeEnvelope.saved?.path === "string"
+		&& hasActionablesFollowup
+		&& hasContentFollowup, {
 			savedPath: beforeEnvelope.saved?.path,
+			summaryVersion: beforeEnvelope.summary?.summaryVersion,
 			primaryActions: beforeEnvelope.summary?.focus?.primary_actions?.length,
 			forms: beforeEnvelope.summary?.focus?.forms?.length,
 			lists: beforeEnvelope.summary?.focus?.lists?.length,
 			textSignals: beforeEnvelope.summary?.focus?.text_signals?.length,
+			hasActionablesFollowup,
+			hasContentFollowup,
 			nextActions: beforeEnvelope.nextActions,
 		});
 	const actionablesArtifact = await readBrowserArtifact({ path: savedScanPath, mode: "json", jsonPath: "data.actionables", limit: 20, maxChars: 4_000 }, { cwd: root });

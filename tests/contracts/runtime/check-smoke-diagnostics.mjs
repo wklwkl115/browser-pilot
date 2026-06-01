@@ -75,6 +75,9 @@ const isolatedSmoke = read("tests/smoke/smoke-browser-isolated.mjs");
 const scanSummarySmoke = read("tests/smoke/smoke-scan-summary.mjs");
 const debuggerEvidenceSmoke = read("tests/smoke/smoke-debugger-evidence.mjs");
 const correlationChainSmoke = read("tests/smoke/smoke-correlation-chain.mjs");
+const abmlMonitorComparisonSmoke = read("tests/smoke/smoke-abml-monitor-comparison.mjs");
+const abmlFrameCompareSmoke = read("tests/smoke/smoke-abml-frame-compare.mjs");
+const abmlVisionCompareSmoke = read("tests/smoke/smoke-abml-vision-compare.mjs");
 const interceptResponseSmoke = read("tests/smoke/smoke-intercept-response.mjs");
 const interceptReplaceScriptSmoke = read("tests/smoke/smoke-intercept-replace-script.mjs");
 const interceptFailClosedSmoke = read("tests/smoke/smoke-intercept-uninstall-fail-closed.mjs");
@@ -82,11 +85,15 @@ const interceptRequestMutateSmoke = read("tests/smoke/smoke-intercept-request-mu
 const interceptTabCloseCleanupSmoke = read("tests/smoke/smoke-intercept-tab-close-cleanup.mjs");
 const interceptLeaseConflictSmoke = read("tests/smoke/smoke-intercept-lease-conflict.mjs");
 const websocketSessionSmoke = read("tests/smoke/smoke-websocket-session.mjs");
+const browserMemorySmoke = read("tests/smoke/smoke-browser-memory.mjs");
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.scripts?.["smoke:browser:isolated"]?.includes("smoke-browser-isolated.mjs"), "package must expose isolated browser smoke");
 assert(pkg.scripts?.["smoke:browser:scan-summary"]?.includes("smoke-scan-summary.mjs"), "package must expose scan summary runtime smoke");
 assert(pkg.scripts?.["smoke:browser:debugger-evidence"]?.includes("smoke-debugger-evidence.mjs"), "package must expose debugger evidence runtime smoke");
 assert(pkg.scripts?.["smoke:browser:correlation-chain"]?.includes("smoke-correlation-chain.mjs"), "package must expose correlation chain runtime smoke");
+assert(pkg.scripts?.["smoke:browser:abml-monitor-comparison"]?.includes("smoke-abml-monitor-comparison.mjs"), "package must expose ABML monitor comparison runtime smoke");
+assert(pkg.scripts?.["smoke:browser:abml-frame-compare"]?.includes("smoke-abml-frame-compare.mjs"), "package must expose ABML frame comparison runtime smoke");
+assert(pkg.scripts?.["smoke:browser:abml-vision-compare"]?.includes("smoke-abml-vision-compare.mjs"), "package must expose ABML vision comparison runtime smoke");
 assert(pkg.scripts?.["smoke:browser:intercept-response"]?.includes("smoke-intercept-response.mjs"), "package must expose intercept response runtime smoke");
 assert(pkg.scripts?.["smoke:browser:intercept-replace-script"]?.includes("smoke-intercept-replace-script.mjs"), "package must expose intercept replace-script runtime smoke");
 assert(pkg.scripts?.["smoke:browser:intercept-uninstall-fail-closed"]?.includes("smoke-intercept-uninstall-fail-closed.mjs"), "package must expose intercept fail-closed runtime smoke");
@@ -94,10 +101,14 @@ assert(pkg.scripts?.["smoke:browser:intercept-request-mutate"]?.includes("smoke-
 assert(pkg.scripts?.["smoke:browser:intercept-tab-close-cleanup"]?.includes("smoke-intercept-tab-close-cleanup.mjs"), "package must expose intercept tab-close cleanup runtime smoke");
 assert(pkg.scripts?.["smoke:browser:intercept-lease-conflict"]?.includes("smoke-intercept-lease-conflict.mjs"), "package must expose intercept lease-conflict runtime smoke");
 assert(pkg.scripts?.["smoke:browser:websocket-session"]?.includes("smoke-websocket-session.mjs"), "package must expose websocket session runtime smoke");
+assert(pkg.scripts?.["smoke:browser:memory"]?.includes("smoke-browser-memory.mjs"), "package must expose browser memory runtime smoke");
 assert(isolatedSmoke.includes("--user-data-dir") && isolatedSmoke.includes("--load-extension") && isolatedSmoke.includes("PI_BROWSER_BRIDGE_PORT") && isolatedSmoke.includes("smoke-browser-isolated-results.json"), "isolated smoke must launch a temporary Chrome profile, patch a temporary extension port, and write an artifact");
 assert(scanSummarySmoke.includes("scan-high-entropy.html") && scanSummarySmoke.includes("summarizeScanData") && scanSummarySmoke.includes("smoke-browser-scan-summary-results.json"), "scan summary smoke must use the local high-entropy fixture, summarize scan output, and write a dedicated artifact");
 assert(debuggerEvidenceSmoke.includes("debugger-evidence.html") && debuggerEvidenceSmoke.includes("Debugger.enable") && debuggerEvidenceSmoke.includes("Debugger.getScriptSource") && debuggerEvidenceSmoke.includes("smoke-browser-debugger-evidence-results.json"), "debugger evidence smoke must use the local debugger fixture, collect debugger evidence, and write a dedicated artifact");
-assert(correlationChainSmoke.includes("interactive.html") && correlationChainSmoke.includes("operation.operationId") && correlationChainSmoke.includes("data.waitId") && correlationChainSmoke.includes("snapshot.snapshotId") && correlationChainSmoke.includes("smoke-browser-correlation-chain-results.json"), "correlation chain smoke must use the local interactive fixture, validate targeted correlation artifact reads, and write a dedicated artifact");
+assert(correlationChainSmoke.includes("interactive.html") && correlationChainSmoke.includes("operation.operationId") && correlationChainSmoke.includes("data.waitId") && correlationChainSmoke.includes("snapshot.snapshotId") && correlationChainSmoke.includes("smoke-browser-correlation-chain-results.json") && correlationChainSmoke.includes("execute.monitor.correlation") && correlationChainSmoke.includes("observe.abml.artifact"), "correlation chain smoke must use the local interactive fixture, validate targeted correlation artifact reads, prove browser_execute monitor evidence, prove browser_observe ABML artifact evidence, and write a dedicated artifact");
+assert(abmlMonitorComparisonSmoke.includes("interactive.html") && abmlMonitorComparisonSmoke.includes("monitor.comparison") && abmlMonitorComparisonSmoke.includes("smoke-browser-abml-monitor-comparison-results.json"), "ABML monitor comparison smoke must compare legacy and ABML monitor evidence on a real fixture and write a dedicated artifact");
+assert(abmlFrameCompareSmoke.includes("abml-frame-same-origin.html") && abmlFrameCompareSmoke.includes("frame.compare") && abmlFrameCompareSmoke.includes("frameToolAbmlIntegrated") && abmlFrameCompareSmoke.includes("smoke-browser-abml-frame-compare-results.json"), "ABML frame comparison smoke must compare legacy frame list and ABML frame entities on a real fixture");
+assert(abmlVisionCompareSmoke.includes("abml-vision-floor.html") && abmlVisionCompareSmoke.includes("vision.compare") && abmlVisionCompareSmoke.includes("observeVisualRegionCount") && abmlVisionCompareSmoke.includes("smoke-browser-abml-vision-compare-results.json"), "ABML vision comparison smoke must compare legacy canvas actionables and ABML visual regions on a real fixture");
 assert(interceptResponseSmoke.includes("intercept-response.html") && interceptResponseSmoke.includes("intercept.install") && interceptResponseSmoke.includes("intercept.addRule") && interceptResponseSmoke.includes("autoApplied") && interceptResponseSmoke.includes("smoke-browser-intercept-response-results.json"), "intercept response smoke must use the local intercept fixture, validate fulfill-path interception primitives, and write a dedicated artifact");
 assert(interceptReplaceScriptSmoke.includes("intercept-script-loader.html") && interceptReplaceScriptSmoke.includes("replaceScript") && interceptReplaceScriptSmoke.includes("patched-script") && interceptReplaceScriptSmoke.includes("smoke-browser-intercept-replace-script-results.json"), "intercept replace-script smoke must use the local script fixture, validate replaceScript interception primitives, and write a dedicated artifact");
 assert(interceptFailClosedSmoke.includes("intercept-response.html") && interceptFailClosedSmoke.includes("intercept.uninstall") && interceptFailClosedSmoke.includes("SESSION_NOT_FOUND") && interceptFailClosedSmoke.includes("smoke-browser-intercept-uninstall-fail-closed-results.json"), "intercept fail-closed smoke must use the local intercept fixture, validate uninstall fail-closed behavior, and write a dedicated artifact");
@@ -105,6 +116,7 @@ assert(interceptRequestMutateSmoke.includes("intercept-request-mutate.html") && 
 assert(interceptTabCloseCleanupSmoke.includes("intercept-response.html") && interceptTabCloseCleanupSmoke.includes("closeTab") && interceptTabCloseCleanupSmoke.includes("smoke-browser-intercept-tab-close-cleanup-results.json"), "intercept tab-close cleanup smoke must validate close-triggered cleanup diagnostics and write a dedicated artifact");
 assert(interceptLeaseConflictSmoke.includes("leaseTab") && interceptLeaseConflictSmoke.includes("TAB_LEASE_CONFLICT") && interceptLeaseConflictSmoke.includes("smoke-browser-intercept-lease-conflict-results.json"), "intercept lease-conflict smoke must validate cross-session write conflict and write a dedicated artifact");
 assert(websocketSessionSmoke.includes("WebSocketServer") && websocketSessionSmoke.includes("ws.open") && websocketSessionSmoke.includes("ws.replay") && websocketSessionSmoke.includes("partialTranscript") && websocketSessionSmoke.includes("smoke-browser-websocket-session-results.json"), "websocket session smoke must use a local WS fixture, validate ws open/replay/failure diagnostics, and write a dedicated artifact");
+assert(browserMemorySmoke.includes("browser_memory") && browserMemorySmoke.includes("scopeKind: \"task\"") && browserMemorySmoke.includes("index.json"), "browser memory smoke must validate task-scope record/recall/read and confirm index write");
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
 	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);
@@ -129,5 +141,7 @@ assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-lease-con
 assert(read("README.md").includes("npm run smoke:browser:intercept-lease-conflict"), "README.md must document intercept lease-conflict runtime smoke");
 assert(read("AI_INSTALL.md").includes("npm run smoke:browser:websocket-session"), "AI_INSTALL.md must document websocket session runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:websocket-session"), "README.md must document websocket session runtime smoke");
+assert(read("AI_INSTALL.md").includes("npm run smoke:browser:memory"), "AI_INSTALL.md must document browser memory runtime smoke");
+assert(read("README.md").includes("npm run smoke:browser:memory"), "README.md must document browser memory runtime smoke");
 
 console.log("smoke diagnostics contract ok");

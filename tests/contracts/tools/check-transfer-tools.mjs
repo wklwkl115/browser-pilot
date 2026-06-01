@@ -12,7 +12,7 @@ const stripBridgeSource = (text) => text
 	.replace(/^export\s+\{[^}]+\};\r?\n/gm, "")
 	.replace(/^export const (?!__piBridgeModule_)([A-Za-z0-9_$]+)\s*=/gm, "const $1 =")
 	.replace(/\s+as\s+any/g, "")
-	.replace(/\r?\n\/\/ ESM module (?:boundary marker for TODO 189|metadata)\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
+	.replace(/\r?\n\/\/ ESM module metadata\r?\nexport const __piBridgeModule_[\s\S]*?;\s*$/, "")
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const transfer = stripBridgeSource(read("bridge_src/service_worker/transfer.ts"));
 new Function(transformSync(transfer, { loader: "ts", target: "chrome120", sourcefile: "bridge_src/service_worker/transfer.ts" }).code);

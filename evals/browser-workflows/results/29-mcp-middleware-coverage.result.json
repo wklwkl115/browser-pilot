@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "evalId": "29-mcp-middleware-coverage",
+  "status": "passed",
+  "toolCallCount": 0,
+  "firstWrongToolChoice": null,
+  "recoveredAfterFailure": true,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "not-applicable",
+  "evidence": {
+    "summary": [
+      "Registered MCP methods use explicit outer-ring hooks; fallback on_message only covers unknown request/notification methods.",
+      "tools/list, tools/call, resources/read, prompts/list, and prompts/get now have explicit hooks.",
+      "The eval does not justify a transport wrapper because registered handler coverage is complete through explicit call sites."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/mcp-middleware-coverage.json",
+      "tests/contracts/tools/check-mcp-middleware.mjs",
+      "tests/contracts/tools/check-mcp-prompts.mjs"
+    ],
+    "diagnostics": [
+      "transportWrapperNeeded=false",
+      "promptHookCoverage=covered",
+      "on_message=fallback-only"
+    ]
+  },
+  "notes": [
+    "on_list_prompts and on_get_prompt are implemented as explicit middleware hook call sites.",
+    "on_message remains documented and tested as fallback-only for unknown requests/notifications."
+  ]
+}

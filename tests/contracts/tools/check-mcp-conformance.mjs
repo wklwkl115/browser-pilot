@@ -25,7 +25,8 @@ const adapterSrc = read("mcp/adapter.ts");
 
 // Phase 4: resources capability must be declared (Phase 4+ only)
 assert(indexSrc.includes("resources: {}"), "mcp/index.ts must declare resources capability (Phase 4)");
-assert(!indexSrc.includes("prompts: {"), "mcp/index.ts must not declare prompts capability before it is implemented");
+assert(indexSrc.includes("prompts: {}"), "mcp/index.ts must declare prompts capability with Phase 9 prompts implemented");
+assert(indexSrc.includes("ListPromptsRequestSchema") && indexSrc.includes("GetPromptRequestSchema"), "mcp/index.ts must handle prompts/list and prompts/get");
 
 // tools capability must be declared (already present from initial setup)
 assert(indexSrc.includes("capabilities:") && indexSrc.includes("tools:"), "mcp/index.ts must declare tools capability");
@@ -36,6 +37,7 @@ assert(indexSrc.includes("capabilities:") && indexSrc.includes("tools:"), "mcp/i
 assert(!indexSrc.includes("McpServer"), "mcp/index.ts must not use high-level McpServer (forces Zod on tool params)");
 assert(!indexSrc.includes("registerTool("), "mcp/index.ts must use low-level Server + explicit ListTools/CallTool handlers");
 assert(indexSrc.includes("ListToolsRequestSchema") && indexSrc.includes("CallToolRequestSchema"), "mcp/index.ts must use low-level ListTools/CallTool request schemas");
+assert(indexSrc.includes("tools: { listChanged: true }") && indexSrc.includes("sendToolListChanged"), "Phase 9 dynamic tools/list must declare listChanged and emit the paired notification");
 
 // inputSchema must be the TypeBox-generated schema (passed through directly)
 assert(indexSrc.includes("def.parameters"), "mcp/index.ts tools/list must reference def.parameters for inputSchema");
@@ -97,13 +99,14 @@ assert(validationSrc.includes("ok: true") && validationSrc.includes("ok: false")
 assert(indexSrc.includes("browser_artifact"), "mcp/index.ts Phase 8 must reference browser_artifact by name");
 assert(indexSrc.includes("visibleTools"), "mcp/index.ts Phase 8 must define visibleTools filtered list");
 assert(indexSrc.includes("PI_BROWSER_MCP_KEEP_ARTIFACT"), "mcp/index.ts Phase 8 must support opt-out via PI_BROWSER_MCP_KEEP_ARTIFACT env var");
-assert(indexSrc.includes("clientIsModern"), "mcp/index.ts Phase 8 must use modern-client heuristic for retirement decision");
+assert(indexSrc.includes("resolveMcpToolVisibilityOptions") && indexSrc.includes("keepArtifact"), "mcp/index.ts Phase 8 must route browser_artifact retirement through MCP visibility options");
+assert(indexSrc.includes("memoryEvidenceResolver: resolveBrowserResultEvidence"), "mcp/index.ts must inject browser-result evidence resolver into registerBrowserTools for browser_memory");
 
 // ── Phase 5: nextActions adapter transformation ───────────────────────────────
 
-assert(indexSrc.includes("browser_artifact path="), "mcp/index.ts Phase 5 must detect browser_artifact path= in nextActions");
-assert(indexSrc.includes("resources/read uri="), "mcp/index.ts Phase 5 must replace with resources/read uri= in nextActions");
-assert(indexSrc.includes("adaptedNextActions"), "mcp/index.ts Phase 5 must produce adaptedNextActions for MCP callers");
+assert(indexSrc.includes("browser_artifact path=") || indexSrc.includes("read_saved_artifact"), "mcp/index.ts must detect core nextActions that need MCP resource adaptation");
+assert(indexSrc.includes("resources/read uri="), "mcp/index.ts Phase 5/P8 must replace with resources/read uri= in nextActions");
+assert(indexSrc.includes("adaptedNextActions"), "mcp/index.ts Phase 5/P8 must produce adaptedNextActions for MCP callers");
 
 // ── Adapter still collects tool definitions ───────────────────────────────────
 

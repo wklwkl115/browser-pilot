@@ -64,7 +64,7 @@ assert(toolAdapterSource.includes("withTrackedOperation") && toolAdapterSource.i
 
 const registeredTools = registeredToolNames("src/tools");
 for (const name of [
-	"browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_pick", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_screenshot", "browser_artifact",
+	"browser_tabs", "browser_command", "browser_execute", "browser_observe", "browser_pick", "browser_download", "browser_upload", "browser_wait", "browser_network", "browser_hook", "browser_evidence", "browser_frame", "browser_screenshot", "browser_artifact", "browser_memory",
 	"browser_crawl", "browser_fuzz", "browser_sqli", "browser_template", "browser_callback_oast", "browser_cookie_analyze", "browser_http_replay",
 ]) assert(registeredTools.has(name), `tool not registered: ${name}`);
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type", "browser_recon_probe", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_fuzz_params", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check"]) {

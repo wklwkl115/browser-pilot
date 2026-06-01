@@ -84,6 +84,7 @@ const extensionDir = path.join(tempRoot, `correlation-chain-extension-${runId}`)
 const observeArtifactPath = path.join(outDir, `correlation-chain-observe-${runId}.json`);
 const waitArtifactPath = path.join(outDir, `correlation-chain-wait-${runId}.json`);
 const executeArtifactPath = path.join(outDir, `correlation-chain-execute-${runId}.json`);
+const executeMonitorArtifactPath = path.join(outDir, `correlation-chain-execute-monitor-${runId}.json`);
 let chrome;
 let fixture;
 let bridge;
@@ -183,6 +184,14 @@ try {
 			target: observeEnvelope.target,
 			savedPath: observeEnvelope.saved?.path,
 		});
+	const observeAbmlOk = await readBrowserArtifact({ path: observeArtifactPath, mode: "json", jsonPath: "abml.ok" }, { cwd: root }).catch(() => ({ value: undefined }));
+	const observeAbmlEntities = await readBrowserArtifact({ path: observeArtifactPath, mode: "json", jsonPath: "abml.entities" }, { cwd: root }).catch(() => ({ value: undefined }));
+	record("observe.abml.artifact", (Array.isArray(observeAbmlEntities.value) && observeAbmlEntities.value.length >= 1) || Number(observeEnvelope.summary?.focus?.primary_entities?.length || 0) >= 1, {
+		abmlOk: observeAbmlOk.value,
+		abmlEntityCount: Array.isArray(observeAbmlEntities.value) ? observeAbmlEntities.value.length : undefined,
+		primaryEntities: observeEnvelope.summary?.focus?.primary_entities?.length,
+		savedPath: observeArtifactPath,
+	});
 
 	const executeResult = await bridge.executeJavaScript(`(() => {
 		const button = document.querySelector('#activate');
@@ -206,6 +215,28 @@ try {
 		correlation: executeEnvelope.correlation,
 		status: executeResult.data?.status,
 		savedPath: executeEnvelope.saved?.path,
+	});
+	const executeMonitorOperation = bridge.beginOperation({ toolName: "browser_execute", command: "javascript", tabId, browserSessionId: bridge.snapshot().browserSessionId, phase: "completed", progress: 100, sourceMode: "scan" });
+	const executeMonitorEnvelope = JSON.parse((await distilledJsonResult({
+		ok: true,
+		tabId,
+		data: { status: "Status: monitor route changed", monitor: { beforeOk: true, afterOk: true, beforeChars: 20, afterChars: 42, changed: 1, top_change: "Status: monitor route changed", abmlIntegrated: true } },
+	}, {
+		toolName: "browser_execute",
+		command: "javascript",
+		detailLevel: "summary",
+		maxChars,
+		ctx: { cwd: root },
+		outputPath: executeMonitorArtifactPath,
+		fallbackName: path.basename(executeMonitorArtifactPath),
+		artifactValue: { tabId, monitor: { changed: 1, top_change: "Status: monitor route changed", abmlIntegrated: true }, operation: executeMonitorOperation },
+		operation: executeMonitorOperation,
+	})).content[0].text);
+	record("execute.monitor.correlation", typeof executeMonitorEnvelope.correlation?.operationId === "string"
+		&& executeMonitorEnvelope.summary?.data?.monitor?.changed === 1, {
+		correlation: executeMonitorEnvelope.correlation,
+		monitor: executeMonitorEnvelope.summary?.data?.monitor,
+		savedPath: executeMonitorEnvelope.saved?.path,
 	});
 
 	const waitCommand = { cmd: "wait.selector", tabId, selector: "#status[data-state='activated']", timeoutMs: 8_000 };

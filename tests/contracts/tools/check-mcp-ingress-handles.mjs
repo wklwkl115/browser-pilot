@@ -108,6 +108,24 @@ assert(!hasIngressHandles("browser_tabs", { request: uri }), "hasIngressHandles 
 assert.equal(getExpectedHandleKind("browser_sqli", "request"), "http-request", "getExpectedHandleKind must return http-request for sqli.request");
 assert.equal(getExpectedHandleKind("browser_sqli", "url"), undefined, "getExpectedHandleKind must return undefined for non-handle field");
 
+// 8. Section http-request handle resolves only the selected jsonPath slice
+const networkArtifactPath = path.join(tmpDir, `mcp-network-section-${process.pid}.json`);
+writeFileSync(networkArtifactPath, JSON.stringify({ entries: [
+	{ requestId: "r1", request: { url: "https://target.example.com/static.js", method: "GET" } },
+	{ requestId: "r2", request: { url: "https://target.example.com/item?id=42", method: "GET", headers: { accept: "application/json" } } },
+] }), "utf8");
+const sectionUri = registerBrowserResultResource({
+	kind: "http-request",
+	artifactPath: networkArtifactPath,
+	jsonPath: "entries[1].request",
+	name: "captured request r2",
+	mime: "application/json",
+});
+const sectionResolved = await resolveIngressHandles("browser_sqli", { request: sectionUri, engine: "builtin" });
+assert(sectionResolved.ok, `section handle resolution must succeed: ${sectionResolved.ok ? "" : sectionResolved.error}`);
+assert.equal(sectionResolved.args.request.url, "https://target.example.com/item?id=42", "section handle must expand the selected request slice");
+assert.equal(sectionResolved.diagnostics[0].jsonPath, "entries[1].request", "diagnostic must include section jsonPath without payload");
+
 // Cleanup
 clearResourceStore();
 console.log("mcp ingress handles ok");

@@ -25,6 +25,7 @@ assert(schemaSrc.includes("sections:"), "envelope schema must include a sections
 
 const middlewareSrc = read("src/tools/resultMiddleware.ts");
 assert(middlewareSrc.includes("sections?:"), "DistilledEnvelope must declare an optional sections field");
+assert(middlewareSrc.includes("entities?:") && middlewareSrc.includes("error?:"), "DistilledEnvelope must declare optional entities/error fields for P8");
 
 // ── Runtime conformance against the REAL emission path ────────────────────────
 
@@ -78,8 +79,9 @@ assert(!Value.Check(StructuredEnvelopeSchema, { tool: "x", summary: {} }), "enve
 
 // 4. SectionSchema shape.
 assert(Value.Check(SectionSchema, { name: "failed entries", kind: "network-entry", handle: "browser-result://abc", count: 3 }), "valid section must pass SectionSchema");
+assert(Value.Check(SectionSchema, { name: "failed entries", kind: "network-entry", handle: "pi-ref://data-slice/abc", count: 3 }), "pi-ref data-slice section handles must also pass SectionSchema");
 assert(!Value.Check(SectionSchema, { name: "x", kind: "not-a-kind" }), "SectionSchema must reject unknown kind");
-const withSections = { ...network, sections: [{ name: "entries", kind: "network-entry", handle: "browser-result://x", count: 2 }] };
-assert(Value.Check(StructuredEnvelopeSchema, withSections), "envelope with a sections array must conform");
+const withSections = { ...network, sections: [{ name: "entries", kind: "network-entry", handle: "pi-ref://data-slice/x", count: 2 }], entities: [{ ref: "pi-ref://control/x", kind: "control", role: "button" }], error: { code: "REF_STALE", category: "ref", message: "stale" } };
+assert(Value.Check(StructuredEnvelopeSchema, withSections), "envelope with sections/entities/error must conform");
 
 console.log("mcp structured envelope ok");

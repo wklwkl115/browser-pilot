@@ -3,7 +3,7 @@
  *
  * Verifies:
  * - Hook names match the contract (on_initialize, on_list_tools, on_call_tool,
- *   on_read_resource, on_message, on_log)
+ *   on_list_prompts, on_get_prompt, on_read_resource, on_message, on_log)
  * - Hook execution order is fixed (auth first, logging last)
  * - Pass-through: no-op hooks do not block requests
  * - Short-circuit: failing hook blocks the request
@@ -25,6 +25,8 @@ const middlewareSrc = read("mcp/middleware.ts");
 assert(middlewareSrc.includes("on_initialize"), "middleware must define on_initialize hook");
 assert(middlewareSrc.includes("on_list_tools"), "middleware must define on_list_tools hook");
 assert(middlewareSrc.includes("on_call_tool"), "middleware must define on_call_tool hook");
+assert(middlewareSrc.includes("on_list_prompts"), "middleware must define on_list_prompts hook");
+assert(middlewareSrc.includes("on_get_prompt"), "middleware must define on_get_prompt hook");
 assert(middlewareSrc.includes("on_read_resource"), "middleware must define on_read_resource hook");
 assert(middlewareSrc.includes("on_message"), "middleware must define on_message hook");
 assert(middlewareSrc.includes("on_log"), "middleware must define on_log logging hook");
@@ -39,6 +41,8 @@ const indexSrc = read("mcp/index.ts");
 assert(indexSrc.includes("runHooks(\"on_list_tools\""), "mcp/index.ts must call on_list_tools hook");
 assert(indexSrc.includes("runHooks(\"on_call_tool\""), "mcp/index.ts must call on_call_tool hook");
 assert(indexSrc.includes("runHooks(\"on_read_resource\""), "mcp/index.ts must call on_read_resource hook");
+assert(indexSrc.includes("runHooks(\"on_list_prompts\""), "mcp/index.ts must call on_list_prompts hook");
+assert(indexSrc.includes("runHooks(\"on_get_prompt\""), "mcp/index.ts must call on_get_prompt hook");
 assert(indexSrc.includes("timingLogHook"), "mcp/index.ts must register timingLogHook");
 assert(indexSrc.includes("emitLog"), "mcp/index.ts must emit log events");
 

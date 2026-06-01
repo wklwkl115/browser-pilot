@@ -2,7 +2,7 @@
  * MCP resources contract (Phase 4).
  *
  * Verifies:
- * - Resource store generates opaque browser-result:// URIs (no local path in URI)
+ * - Resource stores generate opaque browser-result:// and browser-memory:// URIs (no local path in URI)
  * - URI parsing and resolution are consistent
  * - resources/list, resources/templates/list, resources/read handlers present in mcp/index.ts
  * - resource_link injection present for saved artifacts
@@ -35,9 +35,15 @@ assert(storeSrc.includes("export function resolveResourceUri"), "resourceStore.t
 const readerSrc = read("mcp/resourceReader.ts");
 assert(readerSrc.includes("resolveResourceUri"), "resourceReader.ts must use resolveResourceUri to get artifact path");
 assert(readerSrc.includes("readBrowserArtifact"), "resourceReader.ts must delegate to readBrowserArtifact");
-// resourceReader.ts uses resource.artifactPath internally but must not return it
-assert(readerSrc.includes("resolveResourceUri"), "resourceReader.ts must use resolveResourceUri to get artifact path");
 assert(!readerSrc.includes("return.*artifactPath"), "resourceReader.ts must not return artifactPath to MCP callers");
+
+const memoryStoreSrc = read("mcp/memoryResourceStore.ts");
+assert(memoryStoreSrc.includes("browser-memory"), "memoryResourceStore.ts must use 'browser-memory' URI scheme");
+assert(memoryStoreSrc.includes("resolveBrowserResultEvidence"), "memoryResourceStore.ts must expose browser-result evidence resolver for browser_memory");
+assert(!memoryStoreSrc.includes("uri: filePath"), "memoryResourceStore.ts must not expose local file paths in URIs");
+
+const memoryReaderSrc = read("mcp/memoryResourceReader.ts");
+assert(memoryReaderSrc.includes("readBrowserMemoryResource"), "memoryResourceReader.ts must delegate to readBrowserMemoryResource");
 
 const indexSrc = read("mcp/index.ts");
 assert(indexSrc.includes("resources: {}"), "mcp/index.ts must declare resources capability");
@@ -49,6 +55,8 @@ assert(indexSrc.includes("resource_link"), "mcp/index.ts must include resource_l
 assert(!indexSrc.includes("saved.path") || indexSrc.includes("registerBrowserResultResource"),
 	"mcp/index.ts must not expose saved.path to client — only URI via registerBrowserResultResource");
 assert(indexSrc.includes("clearResourceStore"), "mcp/index.ts must clear resource store on shutdown");
+assert(indexSrc.includes("listMemoryResources") && indexSrc.includes("readMemoryResource"), "mcp/index.ts must merge browser-memory resources into list/read");
+assert(indexSrc.includes("memoryResourceTemplates"), "mcp/index.ts must expose browser-memory resource templates");
 
 // ── Runtime behavior: URI contract ───────────────────────────────────────────
 

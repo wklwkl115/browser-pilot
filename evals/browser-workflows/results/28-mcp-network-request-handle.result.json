@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "evalId": "28-mcp-network-request-handle",
+  "status": "passed",
+  "toolCallCount": 0,
+  "firstWrongToolChoice": null,
+  "recoveredAfterFailure": true,
+  "artifactSufficiency": "sufficient",
+  "scopedFollowUpDiscipline": "passed",
+  "evidence": {
+    "summary": [
+      "Synthetic network artifact contains a clear SQLi candidate at details.entries[1].request.",
+      "Network summaries now emit bounded per-entry artifact_hints.preferredReads with kind=http-request.",
+      "MCP section resources preserve jsonPath, etag, and selected-slice sha256 so browser_sqli.request can consume a browser-result:// http-request handle directly."
+    ],
+    "artifacts": [
+      "evals/browser-workflows/fixtures/mcp-network-request-artifact.json",
+      "tests/contracts/tools/check-mcp-sections.mjs",
+      "tests/contracts/tools/check-mcp-ingress-handles.mjs",
+      "tests/contracts/tools/check-mcp-etag.mjs"
+    ],
+    "diagnostics": [
+      "typedHandleAvailability=http-request-entry",
+      "desiredKind=http-request",
+      "manualJsonReconstructionRequired=false"
+    ]
+  },
+  "notes": [
+    "The runtime contract proves a network section URI with kind=http-request resolves through MCP ingress handle resolution for browser_sqli.request.",
+    "The hash is scoped to the selected jsonPath slice: unrelated raw artifact changes do not invalidate the handle, but selected request changes return HANDLE_ETAG_MISMATCH."
+  ]
+}

@@ -1,15 +1,14 @@
 /**
  * MCP tools/list_changed contract (Residual E / Phase 8).
  *
- * Phase 8 retires browser_artifact DETERMINISTICALLY per client: visibility is
- * decided at each tools/list from getClientCapabilities(). A given client always
- * sees the same tool set within a session — the list never changes mid-session —
- * so no tools/list_changed notification is owed. Declaring listChanged:true would
- * be a FALSE capability (plan §4: "不能只为标准化虚报 capability").
+ * Phase 9 adds an explicit server-side dynamic-list path: compact/minimal MCP
+ * visibility exposes browser_tool_discovery, and calling it with revealGroup can
+ * change the visible tool set during the session.
  *
- * This contract locks that decision: we must NOT declare listChanged and must NOT
- * emit the notification. A future dynamic-list feature (Phase 9 stretch) must add
- * the capability AND the notification together — deliberately, not by accident.
+ * This contract locks the paired capability + behavior: if the server advertises
+ * tools.listChanged:true, it must send notifications/tools/list_changed when the
+ * discovery tool reveals a new group. The notification must not be accidental;
+ * it is tied to a concrete list transition.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,31 +23,48 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 // ── Source-level contracts ────────────────────────────────────────────────────
 
 const indexSrc = read("mcp/index.ts");
-assert(!indexSrc.includes("listChanged: true") && !indexSrc.includes("listChanged:true"),
-	"mcp/index.ts must NOT declare listChanged:true (retirement is deterministic per client — declaring it would be a false capability)");
-assert(!indexSrc.includes("sendToolListChanged") && !indexSrc.includes("sendResourceListChanged"),
-	"mcp/index.ts must NOT emit list_changed notifications (the tool set is stable per session)");
-// The capability object must still declare tools and resources (without listChanged).
-assert(indexSrc.includes("tools: {}") && indexSrc.includes("resources: {}"),
-	"mcp/index.ts must declare tools:{} and resources:{} (no listChanged sub-flag)");
+assert(indexSrc.includes("tools: { listChanged: true }") || indexSrc.includes("tools:{listChanged:true}"),
+	"mcp/index.ts must declare tools.listChanged:true only after Phase 9 dynamic visibility is implemented");
+assert(indexSrc.includes("sendToolListChanged") && indexSrc.includes("notifyToolListChangedIfNeeded"),
+	"mcp/index.ts must emit tools/list_changed through an explicit change detector");
+assert(!indexSrc.includes("sendResourceListChanged"),
+	"Phase 9 dynamic tool list must not imply resources/list_changed");
+assert(indexSrc.includes("MCP_DISCOVERY_TOOL_NAME") && indexSrc.includes("revealedToolGroups"),
+	"mcp/index.ts must tie dynamic list changes to the discovery tool reveal state");
 
 // ── Behavioral contract: server advertises no listChanged capability ──────────
 
 async function main() {
+	let notifications = 0;
 	const transport = new StdioClientTransport({
 		command: "npx",
 		args: ["tsx", path.join(root, "mcp", "index.ts")],
-		env: { ...process.env, PI_BROWSER_TOOL_PROFILE: "security" },
+		env: { ...process.env, PI_BROWSER_TOOL_PROFILE: "security", PI_BROWSER_MCP_TOOL_VISIBILITY: "minimal" },
 		cwd: root,
 	});
-	const client = new Client({ name: "mcp-list-changed-contract", version: "1.0.0" }, { capabilities: {} });
+	const client = new Client(
+		{ name: "mcp-list-changed-contract", version: "1.0.0" },
+		{ capabilities: {}, listChanged: { tools: { onChanged: () => { notifications += 1; } } } },
+	);
 	await client.connect(transport);
 	try {
 		const caps = client.getServerCapabilities();
-		assert(caps?.tools != null, "server must advertise tools capability");
-		assert(!caps.tools.listChanged, "server tools capability must NOT advertise listChanged");
+		assert(caps?.tools?.listChanged, "server tools capability must advertise listChanged for Phase 9 dynamic visibility");
 		assert(caps?.resources != null, "server must advertise resources capability");
 		assert(!caps.resources.listChanged, "server resources capability must NOT advertise listChanged");
+
+		const initial = await client.listTools();
+		const initialNames = new Set(initial.tools.map((tool) => tool.name));
+		assert(initialNames.has("browser_tool_discovery"), "minimal profile must expose browser_tool_discovery");
+		assert(!initialNames.has("browser_sqli"), "minimal profile must hide web-security tools before discovery reveal");
+
+		await client.callTool({ name: "browser_tool_discovery", arguments: { revealGroup: "web-security" } });
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		assert(notifications >= 1, "revealGroup must emit notifications/tools/list_changed");
+
+		const revealed = await client.listTools();
+		const revealedNames = new Set(revealed.tools.map((tool) => tool.name));
+		assert(revealedNames.has("browser_sqli"), "web-security reveal must make browser_sqli visible");
 		console.log("mcp list_changed ok");
 	} finally {
 		await client.close();

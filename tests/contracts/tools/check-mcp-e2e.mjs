@@ -18,7 +18,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 async function main() {
-	// Spawn the server in the security profile so all 21 tools register.
+	// Spawn the server in the security profile so all 22 tools register.
 	const transport = new StdioClientTransport({
 		command: "npx",
 		args: ["tsx", path.join(root, "mcp", "index.ts")],
@@ -32,18 +32,21 @@ async function main() {
 	try {
 		// ── Server capabilities ────────────────────────────────────────────────
 		const serverCaps = client.getServerCapabilities();
-		assert(serverCaps?.tools != null, "server must advertise tools capability");
+		assert(serverCaps?.tools?.listChanged === true, "server must advertise tools.listChanged for Phase 9 dynamic discovery");
 		assert(serverCaps?.resources != null, "server must advertise resources capability");
+		assert(serverCaps?.prompts != null, "server must advertise prompts capability");
 
 		// ── tools/list ──────────────────────────────────────────────────────────
 		const { tools } = await client.listTools();
 		const names = new Set(tools.map((t) => t.name));
 
-		// Modern client (declared capabilities) → browser_artifact retired (Phase 8).
+		// Modern client (declared capabilities) → browser_artifact retired (Phase 8),
+		// Phase 9 adds one lightweight discovery helper.
 		assert(!names.has("browser_artifact"), "browser_artifact must be retired for modern (capability-declaring) clients");
+		assert(names.has("browser_tool_discovery"), "Phase 9 discovery helper must be visible");
 
-		// Security profile = 21 tools - 1 retired = 20 visible to a modern client.
-		assert.equal(tools.length, 20, `modern security-profile client must see 20 tools (21 - browser_artifact), got ${tools.length}`);
+		// Security profile = 22 tools - 1 retired + 1 discovery helper = 22 visible.
+		assert.equal(tools.length, 22, `modern security-profile client must see 22 tools (22 - browser_artifact + discovery), got ${tools.length}`);
 
 		// All 7 security tools present.
 		for (const n of ["browser_crawl", "browser_fuzz", "browser_sqli", "browser_template", "browser_callback_oast", "browser_cookie_analyze", "browser_http_replay"]) {
@@ -68,6 +71,14 @@ async function main() {
 
 		// inputSchema is the TypeBox JSON Schema (additionalProperties:false on strict tools).
 		assert(sqli.inputSchema?.type === "object", "browser_sqli inputSchema must be a JSON Schema object");
+
+		// ── prompts/list + prompts/get ───────────────────────────────────────────
+		const { prompts } = await client.listPrompts();
+		assert(prompts.some((p) => p.name === "browser-first-observe"), "must expose browser-first-observe prompt");
+		assert(prompts.some((p) => p.name === "browser-web-security-scope"), "must expose browser-web-security-scope prompt");
+		const prompt = await client.getPrompt({ name: "browser-first-observe", arguments: { task: "inspect page" } });
+		assert(prompt.messages[0]?.content.type === "text", "prompt must return text content");
+		assert(prompt.messages[0].content.text.includes("browser_tabs"), "browser-first-observe prompt must mention browser_tabs");
 
 		// ── resources/templates/list ─────────────────────────────────────────────
 		const { resourceTemplates } = await client.listResourceTemplates();

@@ -42,11 +42,17 @@ test("distilledTextResult summary mode emits compact artifact-guided output", as
 		summary: {
 			artifact_hints: { preferredReads: [{ jsonPath: "focus.primary_actions" }] },
 			truncated: true,
+			focus: {
+				primary_entities: [{ ref: "pi-ref://control/pay", kind: "control", role: "button", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" }],
+			},
 		},
+		error: { code: "REF_STALE", category: "ref", message: "stale" },
 	});
 	const text = textOf(result);
 	assert.ok(text.includes("browser_observe"));
-	assert.ok(text.includes("summary") || text.includes("focus.primary_actions") || text.includes("truncated"));
+	assert.ok(text.includes("read(pi-ref://control/pay)") || text.includes("click(pi-ref://control/pay)"));
+	assert.ok(text.includes("\"entities\"") && text.includes("\"error\""));
+	assert.equal(text.includes("browser_artifact path="), false);
 });
 
 test("distilledJsonResult summary mode promotes correlation metadata", async () => {

@@ -46,6 +46,9 @@ const specFiles = [
 	"25-wasm-artifact-metadata.md",
 	"26-wasm-wat-bridge.md",
 	"27-websocket-session-transcript.md",
+	"28-mcp-network-request-handle.md",
+	"29-mcp-middleware-coverage.md",
+	"30-abml-internal-routing-evidence.md",
 ];
 
 for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "result-schema.json", "results/README.md", ...specFiles]) {
@@ -153,6 +156,8 @@ const requiredFixtures = [
 	"js-ast-object-dispatch.js",
 	"dom-flow-listeners.html",
 	"ws-session-fixture.md",
+	"mcp-network-request-artifact.json",
+	"mcp-middleware-coverage.json",
 ];
 
 for (const file of requiredFixtures) {

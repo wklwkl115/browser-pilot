@@ -29,6 +29,7 @@ assert(resultFiles.includes("24-dom-flow-sink-hints.result.json"), "browser work
 assert(resultFiles.includes("25-wasm-artifact-metadata.result.json"), "browser workflow results must include the Wasm artifact metadata sample");
 assert(resultFiles.includes("26-wasm-wat-bridge.result.json"), "browser workflow results must include the Wasm WAT bridge sample");
 assert(resultFiles.includes("27-websocket-session-transcript.result.json"), "browser workflow results must include the websocket session transcript sample");
+assert(resultFiles.includes("30-abml-internal-routing-evidence.result.json"), "browser workflow results must include the ABML internal routing evidence sample");
 
 const knownEvalIds = new Set(JSON.parse(read("evals/browser-workflows/manifest.json")).evals.map((entry) => entry.id));
 for (const file of resultFiles) {
@@ -58,6 +59,7 @@ const domFlowHints = readJsonAbs(path.join(resultsRoot, "24-dom-flow-sink-hints.
 const wasm = readJsonAbs(path.join(resultsRoot, "25-wasm-artifact-metadata.result.json"));
 const wasmWat = readJsonAbs(path.join(resultsRoot, "26-wasm-wat-bridge.result.json"));
 const ws = readJsonAbs(path.join(resultsRoot, "27-websocket-session-transcript.result.json"));
+const abmlRouting = readJsonAbs(path.join(resultsRoot, "30-abml-internal-routing-evidence.result.json"));
 assert.equal(correlation.status, "passed", "21-cross-tool-correlation-chain.result.json must record a passing sample result");
 assert.equal(correlation.scopedFollowUpDiscipline, "passed", "21-cross-tool-correlation-chain.result.json must preserve scoped follow-up discipline");
 assert.equal(correlation.artifactSufficiency, "sufficient", "21-cross-tool-correlation-chain.result.json must preserve artifact sufficiency");
@@ -95,5 +97,11 @@ assert(ws.evidence.summary.some((item) => /stepIndex|lastSeq|partial-step/i.test
 assert(ws.evidence.artifacts.some((item) => /ws-replay-failure/i.test(item)), "27-websocket-session-transcript.result.json must reference replay failure artifact paths");
 assert(ws.evidence.diagnostics.some((item) => /partialSteps|partialTranscript|stepIndex/i.test(item)), "27-websocket-session-transcript.result.json must preserve replay failure diagnostics evidence");
 assert(ws.notes.some((item) => /internal-first|public browser websocket fuzz tool|state machines/i.test(item)), "27-websocket-session-transcript.result.json must preserve websocket internal-first/no-public-tool boundary in notes");
+assert.equal(abmlRouting.status, "passed", "30-abml-internal-routing-evidence.result.json must record a passing sample result");
+assert.equal(abmlRouting.scopedFollowUpDiscipline, "passed", "30-abml-internal-routing-evidence.result.json must preserve scoped follow-up discipline");
+assert.equal(abmlRouting.artifactSufficiency, "sufficient", "30-abml-internal-routing-evidence.result.json must preserve artifact sufficiency");
+assert(abmlRouting.evidence.summary.some((item) => /ABML-backed primary entity|ABML-integrated monitor|frame entities|visual region/i.test(item)), "30-abml-internal-routing-evidence.result.json must mention internal ABML routing evidence in summary");
+assert(abmlRouting.evidence.diagnostics.some((item) => /sufficient for the exercised tasks|not show a task that is blocked solely/i.test(item)), "30-abml-internal-routing-evidence.result.json must preserve the current sufficiency conclusion");
+assert(abmlRouting.notes.some((item) => /internal substrate|migration\/replacement RFC|No evidence here justifies exposing new public/i.test(item)), "30-abml-internal-routing-evidence.result.json must preserve the no-public-verb conclusion in notes");
 
 console.log("browser workflow results contract ok");

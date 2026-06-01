@@ -1,26 +1,90 @@
 {
   "proxy": "chars/stableJson",
-  "note": "n=3 guardrail; layer0 = stableJson(envelope.summary)",
+  "note": "n=9 deterministic guardrail; layer0 = stableJson(envelope.summary)",
   "fixtures": [
     {
+      "id": "evidence-bundle",
       "name": "browser_evidence",
-      "rawChars": 3112,
-      "layer0Chars": 1471,
-      "ratio": 0.4727
+      "command": "evidence.collect",
+      "rawChars": 6481,
+      "layer0Chars": 1840,
+      "ratio": 0.2839,
+      "saved": false
     },
     {
+      "id": "network-list",
       "name": "browser_network",
-      "rawChars": 7404,
-      "layer0Chars": 6238,
-      "ratio": 0.8425
+      "command": "network.list",
+      "rawChars": 58523,
+      "layer0Chars": 6399,
+      "ratio": 0.1093,
+      "saved": true
     },
     {
+      "id": "hook-listeners",
       "name": "browser_hook",
+      "command": "hook.getNodeListeners",
       "rawChars": 5067,
       "layer0Chars": 2646,
-      "ratio": 0.5222
+      "ratio": 0.5222,
+      "saved": false
+    },
+    {
+      "id": "scan-summary",
+      "name": "browser_observe",
+      "command": "scan_extract",
+      "rawChars": 7745,
+      "layer0Chars": 1346,
+      "ratio": 0.1738,
+      "saved": false
+    },
+    {
+      "id": "web-crawl",
+      "name": "browser_crawl",
+      "command": "crawl",
+      "rawChars": 9835,
+      "layer0Chars": 171,
+      "ratio": 0.0174,
+      "saved": true
+    },
+    {
+      "id": "web-fuzz",
+      "name": "browser_fuzz",
+      "command": "fuzz.path",
+      "rawChars": 8832,
+      "layer0Chars": 244,
+      "ratio": 0.0276,
+      "saved": true
+    },
+    {
+      "id": "web-sqli",
+      "name": "browser_sqli",
+      "command": "sqli.builtin",
+      "rawChars": 5052,
+      "layer0Chars": 157,
+      "ratio": 0.0311,
+      "saved": true
+    },
+    {
+      "id": "http-replay",
+      "name": "browser_http_replay",
+      "command": "http.replay",
+      "rawChars": 2667,
+      "layer0Chars": 160,
+      "ratio": 0.06,
+      "saved": false
+    },
+    {
+      "id": "large-sensitive-artifact",
+      "name": "browser_cookie_analyze",
+      "command": "cookie.analyze",
+      "rawChars": 2552,
+      "layer0Chars": 155,
+      "ratio": 0.0607,
+      "saved": true
     }
   ],
-  "medianRatio": 0.5222,
-  "maxRatio": 0.8425
+  "medianRatio": 0.0607,
+  "p90Ratio": 0.5222,
+  "maxRatio": 0.5222
 }

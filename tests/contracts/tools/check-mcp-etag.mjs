@@ -19,8 +19,11 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 // ── Source-level contracts ────────────────────────────────────────────────────
 
 const storeSrc = read("mcp/resourceStore.ts");
-assert(storeSrc.includes("computeEtag"), "resourceStore.ts must compute an etag");
-assert(storeSrc.includes("statSync"), "etag must be stat-based (no content read on the hot path)");
+const freshnessSrc = read("mcp/resourceFreshness.ts");
+const fileFreshnessSrc = read("src/utils/fileFreshness.ts");
+assert(storeSrc.includes("computeEtag"), "resourceStore.ts must use computeEtag");
+assert(freshnessSrc.includes("computeEtag") || fileFreshnessSrc.includes("computeEtag"), "freshness helper must expose computeEtag");
+assert(fileFreshnessSrc.includes("statSync"), "etag must be stat-based (no content read on the hot path)");
 assert(storeSrc.includes("isResourceFresh"), "resourceStore.ts must export isResourceFresh");
 assert(storeSrc.includes('kind === "http-request"'), "content hash must be gated to http-request kind only");
 
@@ -77,6 +80,30 @@ writeFileSync(reqPath, JSON.stringify({ data: { url: "https://attacker.example/x
 const tampered = await resolveIngressHandles("browser_sqli", { request: reqUri, engine: "builtin" });
 assert(!tampered.ok, "tampered handle must fail resolution");
 assert.equal(tampered.code, "HANDLE_ETAG_MISMATCH", "tampered handle must return HANDLE_ETAG_MISMATCH");
+
+// 5. Section http-request hash is scoped to jsonPath: unrelated artifact changes
+// do not invalidate the selected request, but selected request changes do.
+const sectionPath = path.join(dir, "network.json");
+writeFileSync(sectionPath, JSON.stringify({ entries: [
+	{ request: { url: "https://t.example/a", method: "GET" } },
+	{ request: { url: "https://t.example/b", method: "POST", body: "x=1" } },
+], meta: "before" }), "utf8");
+const sectionUri = registerBrowserResultResource({ kind: "http-request", artifactPath: sectionPath, jsonPath: "entries[1].request", name: "section req" });
+const sectionFresh = await resolveIngressHandles("browser_sqli", { request: sectionUri });
+assert(sectionFresh.ok, "fresh section handle must resolve");
+writeFileSync(sectionPath, JSON.stringify({ entries: [
+	{ request: { url: "https://t.example/a", method: "GET" } },
+	{ request: { url: "https://t.example/b", method: "POST", body: "x=1" } },
+], meta: "after" }), "utf8");
+const unrelatedChange = await resolveIngressHandles("browser_sqli", { request: sectionUri });
+assert(unrelatedChange.ok, "unrelated changes outside the selected jsonPath must not invalidate a section http-request handle");
+writeFileSync(sectionPath, JSON.stringify({ entries: [
+	{ request: { url: "https://t.example/a", method: "GET" } },
+	{ request: { url: "https://t.example/b", method: "POST", body: "x=2" } },
+], meta: "after" }), "utf8");
+const sectionTampered = await resolveIngressHandles("browser_sqli", { request: sectionUri });
+assert(!sectionTampered.ok, "changes inside selected request jsonPath must invalidate section http-request handle");
+assert.equal(sectionTampered.code, "HANDLE_ETAG_MISMATCH", "selected request tamper must return HANDLE_ETAG_MISMATCH");
 
 clearResourceStore();
 console.log("mcp etag ok");

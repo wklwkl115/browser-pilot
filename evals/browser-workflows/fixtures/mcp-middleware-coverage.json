@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "description": "Expected MCP middleware coverage matrix for explicit handler hooks versus fallback on_message.",
+  "methods": [
+    { "method": "initialize", "expectedHook": "on_initialize", "registered": true, "status": "covered" },
+    { "method": "tools/list", "expectedHook": "on_list_tools", "registered": true, "status": "covered" },
+    { "method": "tools/call", "expectedHook": "on_call_tool", "registered": true, "status": "covered" },
+    { "method": "resources/read", "expectedHook": "on_read_resource", "registered": true, "status": "covered" },
+    { "method": "prompts/list", "expectedHook": "on_list_prompts", "registered": true, "status": "covered" },
+    { "method": "prompts/get", "expectedHook": "on_get_prompt", "registered": true, "status": "covered" },
+    { "method": "unknown/request", "expectedHook": "on_message", "registered": false, "status": "covered" },
+    { "method": "unknown/notification", "expectedHook": "on_message", "registered": false, "status": "covered" }
+  ],
+  "decision": {
+    "transportWrapperNeeded": false,
+    "recommendedNextStep": "Keep registered paths covered by explicit hooks and keep on_message fallback-only."
+  }
+}

@@ -173,6 +173,7 @@ const richScan = summarizeScanData({
 		{ index: 0, tag: "input", role: "textbox", action: "card", label: "4111111111111111", text: "4111111111111111", selector: "#card", point: { x: 100, y: 200 }, hitOk: true, editable: true, disabled: false, priority: 1200 },
 		{ index: 1, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, hitOk: true, clickable: true, disabled: false, priority: 1500 },
 		{ index: 2, tag: "button", role: "button", action: "cancel", label: "Cancel", selector: "#cancel", point: { x: 260, y: 260 }, hitOk: false, clickable: true, hitTarget: { tag: "div", id: "modal" }, priority: 800 },
+		{ index: 3, tag: "canvas", role: "img", action: "captcha board", label: "Canvas board", selector: "#canvas-board", point: { x: 320, y: 180 }, rect: { x: 260, y: 120, width: 120, height: 120 }, hitOk: true, clickable: true, disabled: false, priority: 900 },
 	],
 	list_hints: [{ selector: "main > div.cart > div.item", itemCount: 20, hiddenCount: 17, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] }],
 }, [{ id: 1 }], { maxChars: 12_000 });
@@ -182,6 +183,8 @@ assert.equal(JSON.stringify(richScan.focus.primary_actions).includes("4111111111
 assert.equal(richScan.focus.forms[0].fields.length, 1, "check-summaries scan.forms: editable controls must be summarized as form fields");
 assert.equal(richScan.focus.lists[0].more.length, 2, "check-summaries scan.lists: repeated list hints must preserve representative hidden samples");
 assert.equal(richScan.focus.text_signals.some((item) => /payment|required|items/i.test(item)), true, "check-summaries scan.textSignals: high-signal status/list lines must replace shallow textPreview dependence");
+assert.equal(Array.isArray(richScan.focus.visual_regions), true, "check-summaries scan.visualRegions: internal visual region projections must stay optional but available");
+assert.equal(richScan.focus.visual_regions[0]?.source, "vision", "check-summaries scan.visualRegions.source: canvas region projections must be sourced from vision");
 const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));
 try {
 	const scanEnvelope = parseToolText(await distilledTextResult("scan text", {
@@ -195,8 +198,8 @@ try {
 		artifactValue: { data: { content: "x".repeat(9_000), actionables: [{ selector: "#pay" }], list_hints: [] } },
 	}));
 	assert.ok(scanEnvelope.saved?.path && existsSync(scanEnvelope.saved.path), "check-summaries scan.artifact: large scan result must save raw artifact");
-	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("mode=json jsonPath=data.actionables")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at actionables jsonPath");
-	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("mode=json jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact jsonPath=data.actionables") || item.includes("click(pi-ref://") || item.includes("read(pi-ref://")), true, "check-summaries scan.nextActions: artifact or verb follow-up must point directly at actionables evidence");
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
 } finally {
 	await rm(scanTmp, { recursive: true, force: true });
 }
@@ -254,7 +257,7 @@ assert.equal(networkMissingBody.bodyAvailability, "expired", "check-summaries ne
 assert.equal(networkMissingBody.bodyUnavailableReason, "cdp_body_expired", "check-summaries network.bodyUnavailableReason: missing body reason must be surfaced");
 const networkEnvelope = parseToolText(await distilledJsonResult({ data: { requestId: "missing-body", url: "https://api.example.test/body", method: "POST", status: 200, bodyAvailability: "expired", bodyUnavailableReason: "cdp_body_expired" } }, { toolName: "browser_network", command: "network.body", detailLevel: "summary", maxChars: 4_000, fallbackName: "network-body.json" }));
 assert.equal(networkEnvelope.diagnostics.bodyUnavailableReason, "cdp_body_expired", "check-summaries envelope.diagnostics.network: body unavailable reason must be promoted");
-assert.equal(networkEnvelope.nextActions.some((item) => item.includes("browser_network body")), true, "check-summaries envelope.nextActions.network: network body recovery hint must be present");
+assert.equal(networkEnvelope.nextActions.some((item) => item.includes("inspect network body") || item.includes("read_saved_artifact")), true, "check-summaries envelope.nextActions.network: network body recovery hint must be present");
 const networkHar = summarizeNetworkData({ log: { entries: [{ _requestId: "5", request: { url: "https://api.example.test/har", method: "GET" }, response: { status: 200 }, _type: "Fetch" }] }, diagnostics: { tabId: 9, sessionId: "har", recorderId: "r2", active: true, entries: 1, bodyCount: 1, activeWaitCount: 0 } });
 assert.equal(networkHar.tabId, 9, "check-summaries network.har.tabId: HAR diagnostics tabId must be retained");
 assert.equal(networkHar.sessionId, "har", "check-summaries network.har.sessionId: HAR diagnostics sessionId must be retained");

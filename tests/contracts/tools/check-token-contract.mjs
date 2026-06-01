@@ -69,7 +69,7 @@ try {
 	assert.equal(previewEnvelope.diagnostics.warnings.includes("raw_result_saved_to_artifact"), true, "check-token distilledJsonResult.diagnostics: saved raw result must be diagnosable");
 	assert.equal(previewEnvelope.limits.maxChars, 1_500, "check-token distilledJsonResult.limits: envelope must surface response budget");
 	assert.equal(previewEnvelope.privacy.localOnly, true, "check-token distilledJsonResult.privacy: saved artifacts must expose local-only privacy metadata");
-	assert.ok(previewEnvelope.nextActions.some((item) => item.includes("browser_artifact")), "check-token distilledJsonResult.nextActions: saved artifacts must suggest browser_artifact follow-up");
+	assert.ok(previewEnvelope.nextActions.some((item) => item.includes("read_saved_artifact") || item.includes("read(pi-ref://") || item.includes("click(pi-ref://")), "check-token distilledJsonResult.nextActions: saved artifacts must suggest verb-style or artifact-read follow-up without leaking local paths");
 
 	const contentOutputPath = path.join(tmp, "content.json");
 	const contentArtifact = { ok: true, data: { markdown: "# T", url: "https://example.test", meta: { target: "main" } } };

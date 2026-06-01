@@ -4,7 +4,7 @@
  * Verifies that:
  * - All registered tools are exposed via McpExtensionAdapter.getTools()
  * - Each tool has annotations (readOnly/destructive/idempotent/openWorld hints)
- * - Core profile = 14 tools, security profile = 21 tools
+ * - Core profile = 15 tools, security profile = 22 tools
  * - Annotation table covers all registered tool names
  * - Security tools are the expected 7 names
  */
@@ -49,7 +49,7 @@ registerBrowserTools(coreAdapter, coreBridgePlaceholder, async () => coreBridgeP
 	securityToolsEnabled: false,
 });
 const coreTools = coreAdapter.getTools();
-assert.equal(coreTools.length, 14, `core profile must register exactly 14 tools, got ${coreTools.length}`);
+assert.equal(coreTools.length, 15, `core profile must register exactly 15 tools, got ${coreTools.length}`);
 
 // Security profile
 const secAdapter = new McpExtensionAdapter();
@@ -57,7 +57,7 @@ registerBrowserTools(secAdapter, coreBridgePlaceholder, async () => coreBridgePl
 	securityToolsEnabled: true,
 });
 const secTools = secAdapter.getTools();
-assert.equal(secTools.length, 21, `security profile must register exactly 21 tools, got ${secTools.length}`);
+assert.equal(secTools.length, 22, `security profile must register exactly 22 tools, got ${secTools.length}`);
 
 // ── Annotation coverage ───────────────────────────────────────────────────────
 
