@@ -18,6 +18,8 @@ import {
 	ListResourcesRequestSchema,
 	ListResourceTemplatesRequestSchema,
 	ReadResourceRequestSchema,
+	McpError,
+	ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionToolResult } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
@@ -80,6 +82,36 @@ const server = new Server(
 	{ name: "pi-browser-tools", version: "1.0.0" },
 	{ capabilities: { tools: {}, resources: {} } },
 );
+
+// ─── Protocol hook call sites (Residual D / Phase 7) ─────────────────────────
+
+// on_initialize fires when the client completes the initialize handshake.
+server.oninitialized = () => {
+	const ctx = { method: "initialize", startedAt: Date.now() };
+	void runHooks("on_initialize", ctx, server.getClientCapabilities())
+		.then((r) => emitLog(ctx, Date.now() - ctx.startedAt, r.pass ? "ok" : "error", r.pass ? undefined : { code: r.code }))
+		.catch(() => {
+			/* best-effort: initialization hooks must never break the handshake */
+		});
+};
+
+// on_message is the catch-all for methods with no registered handler. The MCP SDK
+// exposes no true per-message interceptor — fallback handlers fire ONLY for
+// unhandled methods, so registered methods (tools/*, resources/*) do NOT pass
+// through on_message. The fallback must still reject unknown methods.
+server.fallbackRequestHandler = async (request) => {
+	const ctx = { method: request.method, startedAt: Date.now() };
+	const r = await runHooks("on_message", ctx, request.params);
+	// An unhandled request is always an error outcome (either hook-blocked or method-not-found).
+	emitLog(ctx, Date.now() - ctx.startedAt, "error", { code: r.pass ? "METHOD_NOT_FOUND" : r.code });
+	if (!r.pass) throw new McpError(ErrorCode.InvalidRequest, `${r.code}: ${r.error}`);
+	throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${request.method}`);
+};
+server.fallbackNotificationHandler = async (notification) => {
+	const ctx = { method: notification.method, startedAt: Date.now() };
+	await runHooks("on_message", ctx, undefined);
+	// Unknown notifications are advisory; swallow after the hook (per JSON-RPC, no response).
+};
 
 // tools/list ─────────────────────────────────────────────────────────────────
 

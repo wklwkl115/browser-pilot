@@ -42,6 +42,14 @@ assert(indexSrc.includes("runHooks(\"on_read_resource\""), "mcp/index.ts must ca
 assert(indexSrc.includes("timingLogHook"), "mcp/index.ts must register timingLogHook");
 assert(indexSrc.includes("emitLog"), "mcp/index.ts must emit log events");
 
+// Residual D: on_initialize + on_message now have real call sites.
+assert(indexSrc.includes("server.oninitialized"), "mcp/index.ts must wire on_initialize to server.oninitialized");
+assert(indexSrc.includes("runHooks(\"on_initialize\""), "mcp/index.ts must call on_initialize hook from oninitialized");
+assert(indexSrc.includes("fallbackRequestHandler") && indexSrc.includes("fallbackNotificationHandler"), "mcp/index.ts must wire on_message via fallback request/notification handlers");
+assert(indexSrc.includes("runHooks(\"on_message\""), "mcp/index.ts must call on_message hook from the fallback handlers");
+// The fallback request handler must still reject unknown methods (not swallow to success).
+assert(indexSrc.includes("ErrorCode.MethodNotFound"), "fallbackRequestHandler must reject unknown methods with MethodNotFound");
+
 // ── Runtime behavior ──────────────────────────────────────────────────────────
 
 const { runHooks, registerHook, emitLog, clearHooks } = await import(
