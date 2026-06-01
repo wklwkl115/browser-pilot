@@ -71,7 +71,8 @@ function normalizeMcpToolSchema(value: unknown): McpToolSchema | undefined {
 }
 
 import { resolveIngressHandles } from "./handleResolver.js";
-import { runHooks, emitLog, timingLogHook, registerHook } from "./middleware.js";
+import { runHooks, emitLog, timingLogHook, registerHook, type MiddlewareContext } from "./middleware.js";
+import { resolveUsageLogOptions, createUsageLogHook } from "./usageLog.js";
 
 // ─── Bridge lifecycle ───────────────────────────────────────────────────────
 
@@ -106,6 +107,14 @@ const toolDefs = adapter.getTools();
 // ─── Protocol middleware setup ──────────────────────────────────────────────
 
 registerHook("on_log", timingLogHook);
+
+// Opt-in development usage logger (PI_BROWSER_USAGE_LOG). Persists one JSON line
+// per tool call for studying real agent usage; off by default, best-effort writes.
+const usageLogOptions = resolveUsageLogOptions();
+if (usageLogOptions.enabled) {
+	registerHook("on_log", createUsageLogHook(usageLogOptions));
+	console.error(`[pi-browser-mcp] usage logging → ${usageLogOptions.filePath}${usageLogOptions.raw ? " (raw args)" : ""}`);
+}
 
 // ─── Build MCP server ───────────────────────────────────────────────────────
 
@@ -211,7 +220,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const { name, arguments: args } = request.params;
-	const ctx = { method: "tools/call", toolName: name, startedAt: Date.now() };
+	const ctx: MiddlewareContext = { method: "tools/call", toolName: name, startedAt: Date.now(), ...(usageLogOptions.enabled ? { args } : {}) };
 
 	// Run on_call_tool hooks (auth/profile/rate-limit checks)
 	const hookResult = await runHooks("on_call_tool", ctx, request.params);
@@ -430,6 +439,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			? [...result.content, ...resourceLinks]
 			: result.content;
 
+		if (usageLogOptions.enabled) ctx.resultBytes = JSON.stringify(content).length;
 		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
 		return {
 			content,

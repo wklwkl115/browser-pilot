@@ -26,6 +26,7 @@ npm install
 - `PI_BROWSER_BRIDGE_PORT=18765`
 - `PI_BROWSER_BRIDGE_PORT_RANGE_END=18784`
 - `PI_BROWSER_TOOL_PROFILE=security`（默认；设为 `core` 可隐藏 Web Security follow-up tools）
+- `PI_BROWSER_USAGE_LOG`（开发期临时用法日志，默认关）：设为 `1` 写入 `.pi/usage/usage-YYYYMMDD.jsonl`，或设为某个 `.jsonl` 路径写到指定文件；每个工具调用一行 JSON（tool/args/result/ms/bytes，args 默认脱敏）。`PI_BROWSER_USAGE_LOG_RAW=1` 关闭脱敏（不建议）。仅挂在 `on_log` 中间件钩子上、best-effort 写入，不影响工具行为。
 
 如需改端口：
 

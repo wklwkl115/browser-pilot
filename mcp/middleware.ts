@@ -19,6 +19,10 @@ export type MiddlewareContext = {
 	method: string;
 	toolName?: string;
 	startedAt: number;
+	/** Raw tool args, captured for opt-in usage logging (redacted at log time). */
+	args?: unknown;
+	/** Serialized result size in bytes, for opt-in usage logging. */
+	resultBytes?: number;
 };
 
 export type MiddlewareResult =
