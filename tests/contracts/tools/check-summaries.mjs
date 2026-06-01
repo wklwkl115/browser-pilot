@@ -227,7 +227,8 @@ const network = summarizeNetworkData({ tabId: 7, sessionId: "s", items: [
 	{ requestId: "1", url: "https://api.example.test/users", method: "GET", status: 200, type: "Fetch" },
 	{ requestId: "2", url: "https://api.example.test/fail", method: "POST", status: 500, type: "Fetch", errorText: "boom" },
 ] });
-assert.deepEqual(Object.keys(network).sort(), ["active", "bodyAvailability", "bodyBytes", "bodyRef", "bodyTruncated", "bodyUnavailableReason", "condition", "entryCount", "event", "failed", "hostCounts", "methodCounts", "recorder", "samples", "sessionId", "statusCounts", "tabId", "total", "typeCounts", "waitId"].sort(), "check-summaries network.keys: summary fields must stay stable");
+assert.deepEqual(Object.keys(network).sort(), ["active", "artifact_hints", "bodyAvailability", "bodyBytes", "bodyRef", "bodyTruncated", "bodyUnavailableReason", "condition", "entryCount", "event", "failed", "hostCounts", "methodCounts", "recorder", "samples", "sessionId", "statusCounts", "tabId", "total", "typeCounts", "waitId"].sort(), "check-summaries network.keys: summary fields must stay stable");
+assert.equal(network.artifact_hints.preferredReads[0].jsonPath, "items", "check-summaries network.artifactHints: entries hint must point at the actual container key (items)");
 assert.equal(network.entryCount, 2);
 assert.equal(network.failed.count, 1);
 assert.deepEqual(network.failed.columns.slice(0, 4), ["requestId", "method", "status", "type"]);
@@ -276,7 +277,8 @@ const evidence = summarizeEvidenceData({ tabId: 9, collected_at: "now", event_ty
 	hook_events: { ok: true, data: { events: [{ type: "console.log" }, { type: "console.error" }, { type: "console.log" }], total_available: 3 } },
 	network_entries: { ok: true, data: { items: [{ id: 1 }, { id: 2 }], total: 2 } },
 } });
-assert.deepEqual(Object.keys(evidence).sort(), ["collected_at", "event_types", "source_count", "sources", "tabId"].sort(), "check-summaries evidence.keys: summary fields must stay stable");
+assert.deepEqual(Object.keys(evidence).sort(), ["artifact_hints", "collected_at", "event_types", "source_count", "sources", "tabId"].sort(), "check-summaries evidence.keys: summary fields must stay stable");
+assert.equal(evidence.artifact_hints.preferredReads[0].jsonPath, "sources", "check-summaries evidence.artifactHints: sources hint must point at the sources container");
 assert.equal(evidence.source_count, 3);
 assert.equal(evidence.sources.hook_status.state, "INSTALLED", "check-summaries evidence.hook_status.state: hook state must stay visible in summary");
 assert.equal(evidence.sources.hook_status.session_id, "summary-session", "check-summaries evidence.hook_status.session: hook session id must stay visible in summary");

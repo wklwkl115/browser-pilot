@@ -30,8 +30,14 @@ import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
 import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
 import { getDistillerDefinition } from "../src/tools/distillerRegistry.js";
-import { registerBrowserResultResource, listResources, clearResourceStore } from "./resourceStore.js";
+import { registerBrowserResultResource, listResources, clearResourceStore, type ResourceKind } from "./resourceStore.js";
+import { RESOURCE_KINDS } from "./structuredEnvelopeSchema.js";
 import { readBrowserResultResource } from "./resourceReader.js";
+
+const RESOURCE_KIND_SET = new Set<string>(RESOURCE_KINDS);
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
+}
 import { resolveIngressHandles } from "./handleResolver.js";
 import { runHooks, emitLog, timingLogHook, registerHook } from "./middleware.js";
 
@@ -205,7 +211,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		// the compatible text. Extract the summary from the existing DistilledEnvelope
 		// text (which is already the distilled JSON). Pi adapter path is unchanged.
 		let structuredContent: Record<string, unknown> | undefined;
-		let resourceLink: { type: "resource_link"; uri: string; name: string; mimeType?: string } | undefined;
+		const resourceLinks: Array<{ type: "resource_link"; uri: string; name: string; description?: string; mimeType?: string }> = [];
 
 		if (!result.terminate) {
 			try {
@@ -234,28 +240,62 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				// resources/read instead of browser_artifact. URI never exposes local path.
 				const saved = envelope.saved as Record<string, unknown> | undefined;
 				if (saved?.path && typeof saved.path === "string") {
+					const localPath = saved.path;
+					let nextEnvelope = envelope;
+					let envelopeChanged = false;
+
 					const resourceUri = registerBrowserResultResource({
 						kind: "raw-result",
-						artifactPath: saved.path,
+						artifactPath: localPath,
 						name: `${name} result`,
 						description: `Raw result from ${name} call`,
 						mime: typeof saved.mime === "string" ? saved.mime : "application/json",
 						bytes: typeof saved.bytes === "number" ? saved.bytes : undefined,
 						immutable: true,
 					});
-					resourceLink = {
+					resourceLinks.push({
 						type: "resource_link" as const,
 						uri: resourceUri,
 						name: `${name} artifact`,
 						mimeType: typeof saved.mime === "string" ? saved.mime : "application/json",
-					};
+					});
+
+					// Layer-1 section sub-resources (Residual C). The distiller advertises
+					// readable sub-collections via summary.artifact_hints.preferredReads, each
+					// with a jsonPath into the raw artifact. Register one section resource per
+					// hint (stored jsonPath; resourceReader already honors it) and advertise
+					// them as resource_links + envelope.sections.
+					const summary = isRecord(envelope.summary) ? envelope.summary : undefined;
+					const hints = summary && isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
+					const preferredReads = hints && Array.isArray(hints.preferredReads) ? hints.preferredReads : [];
+					const sections: Array<{ name: string; kind: string; handle: string; count?: number }> = [];
+					for (const pr of preferredReads) {
+						if (!isRecord(pr) || typeof pr.jsonPath !== "string") continue;
+						const label = typeof pr.label === "string" ? pr.label : pr.jsonPath;
+						const kind: ResourceKind = RESOURCE_KIND_SET.has(String(pr.kind)) ? (pr.kind as ResourceKind) : "artifact-slice";
+						const sectionUri = registerBrowserResultResource({
+							kind,
+							artifactPath: localPath,
+							jsonPath: pr.jsonPath,
+							section: label,
+							name: `${name}: ${label}`,
+							description: `Section ${pr.jsonPath} of ${name} result`,
+							mime: "application/json",
+							immutable: true,
+						});
+						resourceLinks.push({ type: "resource_link" as const, uri: sectionUri, name: label, description: `Section ${pr.jsonPath} of ${name} result`, mimeType: "application/json" });
+						sections.push({ name: label, kind, handle: sectionUri, ...(typeof pr.count === "number" ? { count: pr.count } : {}) });
+					}
+					if (sections.length) {
+						nextEnvelope = { ...nextEnvelope, sections };
+						envelopeChanged = true;
+					}
 
 					// Phase 5: nextActions adapter transformation.
 					// Replace core-generated browser_artifact path=<localPath> entries with
 					// MCP resources/read uri=<browser-result://...> equivalents. Pi adapter
 					// path keeps the original browser_artifact entries unchanged.
 					const nextActions = Array.isArray(envelope.nextActions) ? envelope.nextActions : [];
-					const localPath = saved.path;
 					const adaptedNextActions = nextActions.map((action) => {
 						if (typeof action !== "string") return action;
 						if (action.startsWith(`browser_artifact path=${localPath}`)) {
@@ -264,17 +304,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 							const queryPart = suffix ? `&${suffix.replace(/\s+/g, "&")}` : "";
 							return `resources/read uri=${resourceUri}${queryPart}`;
 						}
-						if (action.startsWith("browser_artifact path=")) {
-							// Different path — only adapt our registered artifact
-							return action;
-						}
 						return action;
 					});
 					if (adaptedNextActions.some((a, i) => a !== nextActions[i])) {
-						// Re-serialize the text with adapted nextActions only if something changed.
+						nextEnvelope = { ...nextEnvelope, nextActions: adaptedNextActions };
+						envelopeChanged = true;
+					}
+
+					if (envelopeChanged) {
 						result = {
 							...result,
-							content: [{ type: "text" as const, text: JSON.stringify({ ...envelope, nextActions: adaptedNextActions }) }],
+							content: [{ type: "text" as const, text: JSON.stringify(nextEnvelope) }],
 						};
 					}
 				}
@@ -283,8 +323,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			}
 		}
 
-		const content = resourceLink
-			? [...result.content, resourceLink]
+		const content = resourceLinks.length
+			? [...result.content, ...resourceLinks]
 			: result.content;
 
 		emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");

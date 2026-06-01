@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common.js";
+import { artifactHints, asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common.js";
 
 function safeUrlHost(url: unknown): string {
 	try { return new URL(String(url || "")).host; }
@@ -15,6 +15,20 @@ function normalizeEntries(data: Record<string, unknown>): unknown[] {
 	if (request && (isRecord(data.response) || data.type !== undefined || data.bodyRef !== undefined || data._requestId !== undefined)) return [data];
 	if (request) return [request];
 	return [];
+}
+
+/**
+ * The jsonPath of the array container normalizeEntries() drew from, so the
+ * Layer-1 section hint points at the exact same place in the raw artifact.
+ * Returns undefined for single-request / empty shapes (no stable array root).
+ */
+function entriesContainerPath(data: Record<string, unknown>): string | undefined {
+	const log = isRecord(data.log) ? data.log : undefined;
+	if (asArray(data.items).length) return "items";
+	if (asArray(data.entries).length) return "entries";
+	if (asArray(data.requests).length) return "requests";
+	if (asArray(log?.entries).length) return "log.entries";
+	return undefined;
 }
 
 function networkRows(items: unknown[]) {
@@ -61,6 +75,7 @@ export function summarizeNetworkData(data: unknown): Summary {
 	}
 	const total = data.total ?? (typeof data.entries === "number" ? data.entries : entries.length);
 	const entryCount = entries.length || (typeof data.entries === "number" ? data.entries : 0);
+	const entriesPath = entriesContainerPath(data);
 	return {
 		tabId: data.tabId ?? diagnostics?.tabId,
 		sessionId: data.sessionId ?? diagnostics?.sessionId,
@@ -91,5 +106,8 @@ export function summarizeNetworkData(data: unknown): Summary {
 		bodyAvailability: data.bodyAvailability ?? data._bodyAvailability,
 		bodyUnavailableReason: data.bodyUnavailableReason ?? data._bodyUnavailableReason,
 		...(data.bodyRef ? { url: data.url, status: data.status, mimeType: data.mimeType } : {}),
+		// Layer-1 hint: full entries array (untruncated) lives at the container key
+		// normalizeEntries() actually drew from, so the jsonPath always matches the raw artifact.
+		...(entriesPath ? artifactHints([{ label: "all network entries", jsonPath: entriesPath, kind: "network-entry", count: entries.length }]) : {}),
 	};
 }

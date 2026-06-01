@@ -32,3 +32,33 @@ export function summaryTable<T>(items: T[], columns: SummaryColumn<T>[], limit =
 	if (items.length > rows.length) table.truncated = items.length - rows.length;
 	return table;
 }
+
+export type ArtifactHintRead = { label: string; jsonPath: string; kind?: string; count?: number };
+export type ArtifactHints = {
+	artifact_hints: {
+		jsonPaths: Record<string, string>;
+		preferredReads: Array<{ label: string; jsonPath: string; kind?: string; count?: number }>;
+	};
+};
+
+/**
+ * Build the `artifact_hints` summary field — the single source of truth for which
+ * sub-collections of the RAW saved artifact are worth reading on demand. Pi's
+ * artifactReadActions() already consumes preferredReads to generate targeted
+ * `browser_artifact ... jsonPath=` nextActions; the MCP adapter consumes the same
+ * to register Layer-1 section sub-resources. jsonPaths are addressed against the
+ * raw saved artifact (which is flat — the distiller input keys sit at top level).
+ * Returns `undefined` when there are no resolvable sections (caller spreads nothing).
+ */
+export function artifactHints(reads: ArtifactHintRead[]): ArtifactHints | Record<string, never> {
+	const usable = reads.filter((r) => r.jsonPath);
+	if (!usable.length) return {};
+	const jsonPaths: Record<string, string> = {};
+	for (const r of usable) jsonPaths[r.label] = r.jsonPath;
+	return {
+		artifact_hints: {
+			jsonPaths,
+			preferredReads: usable.map((r) => ({ label: r.label, jsonPath: r.jsonPath, ...(r.kind ? { kind: r.kind } : {}), ...(r.count != null ? { count: r.count } : {}) })),
+		},
+	};
+}

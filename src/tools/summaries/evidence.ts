@@ -1,4 +1,4 @@
-import { asArray, increment, isRecord, topCounts, type Summary } from "./common.js";
+import { artifactHints, asArray, increment, isRecord, topCounts, type Summary } from "./common.js";
 
 export function summarizeEvidenceData(data: unknown): Summary {
 	if (!isRecord(data)) return { type: typeof data };
@@ -32,11 +32,14 @@ export function summarizeEvidenceData(data: unknown): Summary {
 		}
 		return [name, summary];
 	}));
+	const sourceCount = Object.keys(sources).length;
 	return {
 		tabId: data.tabId,
 		collected_at: data.collected_at,
 		event_types: data.event_types,
-		source_count: Object.keys(sources).length,
+		source_count: sourceCount,
 		sources: sourceSummary,
+		// Layer-1 hint: the full per-source evidence lives under `sources` in the raw artifact.
+		...(sourceCount ? artifactHints([{ label: "all evidence sources", jsonPath: "sources", kind: "evidence", count: sourceCount }]) : {}),
 	};
 }

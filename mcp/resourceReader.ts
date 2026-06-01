@@ -58,7 +58,9 @@ export async function readBrowserResultResource(uri: string): Promise<McpResourc
 		const result = await readBrowserArtifact(
 			{
 				path: resource.artifactPath,
-				mode: (query.mode as string) || "text",
+				// A section resource (stored jsonPath) defaults to json so it returns its slice;
+				// a whole-artifact resource defaults to text.
+				mode: (query.mode as string) || (resource.jsonPath ? "json" : "text"),
 				offset: query.offset != null ? Number(query.offset) : undefined,
 				limit: query.limit != null ? Number(query.limit) : undefined,
 				jsonPath: query.jsonPath || resource.jsonPath,

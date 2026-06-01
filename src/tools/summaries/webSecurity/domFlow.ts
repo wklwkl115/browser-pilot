@@ -1,4 +1,4 @@
-import { increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
+import { artifactHints, increment, isRecord, summaryTable, textPreview, topCounts, type Summary } from "../common.js";
 
 function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
@@ -74,8 +74,22 @@ function summarizeListenerChain(data: Record<string, unknown>): Summary {
 }
 
 export function summarizeDomFlowData(command: string, value: unknown): Summary {
-	const root = isRecord(value) && isRecord(value.data) ? value.data : isRecord(value) ? value : {};
-	if (command === "hook.getListenerChain") return summarizeListenerChain(root);
-	if (command === "hook.getSinkHints") return summarizeSinkHints(root);
-	return summarizeListenerCollection(root);
+	// Real saved artifacts are flat, but honor a defensive `data` wrapper if present
+	// so the Layer-1 jsonPath always addresses the raw artifact correctly.
+	const wrapped = isRecord(value) && isRecord(value.data);
+	const root = wrapped ? (value as Record<string, unknown>).data as Record<string, unknown> : isRecord(value) ? value : {};
+	const prefix = wrapped ? "data." : "";
+	if (command === "hook.getListenerChain") {
+		const summary = summarizeListenerChain(root);
+		return { ...summary, ...(asArray(root.chain).length ? artifactHints([{ label: "full listener chain", jsonPath: `${prefix}chain`, kind: "summary-section", count: asArray(root.chain).length }]) : {}) };
+	}
+	if (command === "hook.getSinkHints") {
+		const summary = summarizeSinkHints(root);
+		const reads = [];
+		if (asArray(root.hints).length) reads.push({ label: "all sink hints", jsonPath: `${prefix}hints`, kind: "summary-section", count: asArray(root.hints).length });
+		if (asArray(root.sinks).length) reads.push({ label: "all sinks", jsonPath: `${prefix}sinks`, kind: "summary-section", count: asArray(root.sinks).length });
+		return { ...summary, ...artifactHints(reads) };
+	}
+	const summary = summarizeListenerCollection(root);
+	return { ...summary, ...(asArray(root.listeners).length ? artifactHints([{ label: "all node listeners", jsonPath: `${prefix}listeners`, kind: "summary-section", count: asArray(root.listeners).length }]) : {}) };
 }
