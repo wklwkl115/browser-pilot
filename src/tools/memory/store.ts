@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText, memoryEntryDir, resolveMemoryPath } from "./paths.js";
-import { serializeMemoryEntry } from "./frontmatter.js";
+import { parseMemoryEntry, serializeMemoryEntry } from "./frontmatter.js";
 import { loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "./indexStore.js";
 import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "./types.js";
 import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs } from "./evidence.js";
@@ -145,7 +146,7 @@ export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEn
 	// When one card clearly dominates (sole match, or ≥2× the runner-up) inline its
 	// bounded body so the agent skips a follow-up read for the common case.
 	if (cards.length && (ranked.length === 1 || ranked[0].score >= 2 * (ranked[1]?.score ?? 0))) {
-		const body = await topBody(options.cwd, cards[0].id);
+		const body = await topBody(options.cwd, cards[0].id, cards[0].kind);
 		if (body) cards[0].body = body;
 	}
 	return cards;
@@ -154,10 +155,12 @@ export async function recallMemory(options: { cwd?: string; scopeKind?: MemoryEn
 const INLINE_BODY_MAX_LINES = 60;
 const INLINE_BODY_MAX_CHARS = 4_000;
 
-async function topBody(cwd: string | undefined, id: string): Promise<string | undefined> {
-	const entry = (await loadMemoryEntries(cwd)).find((item) => item.id === id);
-	if (!entry) return undefined;
-	const lines = entry.body.split(/\r?\n/);
+async function topBody(cwd: string | undefined, id: string, kind: MemoryEntry["kind"]): Promise<string | undefined> {
+	// Read just the one entry file for the dominant card (not the whole store).
+	const rel = path.join(memoryEntryDir(kind), `${id}.md`);
+	const text = await readFile(resolveMemoryPath(cwd, rel), "utf8").catch(() => undefined);
+	if (!text) return undefined;
+	const lines = parseMemoryEntry(text, rel).body.split(/\r?\n/);
 	let body = lines.slice(0, INLINE_BODY_MAX_LINES).join("\n");
 	if (body.length > INLINE_BODY_MAX_CHARS) body = `${body.slice(0, INLINE_BODY_MAX_CHARS)}…`;
 	else if (lines.length > INLINE_BODY_MAX_LINES) body = `${body}\n…`;

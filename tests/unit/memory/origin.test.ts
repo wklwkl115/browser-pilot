@@ -9,6 +9,10 @@ test("normalizeOriginKeyFromUrl folds device/variant subdomains into the apex", 
 	// only a single LEADING known prefix is stripped; other subdomains stay.
 	assert.equal(normalizeOriginKeyFromUrl("https://shop.www.site.com/"), "shop.www.site.com");
 	assert.equal(normalizeOriginKeyFromUrl("https://maps.google.com/"), "maps.google.com");
+	// two-label apex domains whose first label IS a prefix must NOT be mangled to a TLD.
+	for (const apex of ["app.com", "mobile.de", "m.me", "www.io"]) {
+		assert.equal(normalizeOriginKeyFromUrl(`https://${apex}/x`), apex, `${apex} must stay intact (not stripped to a bare TLD)`);
+	}
 });
 
 test("normalizeOriginKeyFromUrl drops port and lowercases host", () => {

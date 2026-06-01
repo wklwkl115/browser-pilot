@@ -21,8 +21,9 @@ export function normalizeOriginKeyFromUrl(url: string): string {
 	if (!host) throw createCodedError({ name: "MemoryOriginError", code: "MEMORY_SCHEMA_INVALID", message: "browser_memory url must have a hostname", details: { url } });
 	if (host === "localhost" || isIpv4(host) || isIpv6(host)) return host;
 	// Strip a single leading device/variant subdomain so the same site's mobile/app
-	// surface shares memory with its main one (m.site.com ↔ site.com). `app` is the
-	// loosest of these — a distinct app subdomain folds into the apex; acceptable for
-	// browser SOPs (same org/auth), tune SUBDOMAIN_PREFIXES if it ever misfires.
-	return host.replace(SUBDOMAIN_PREFIX_RE, "");
+	// surface shares memory with its main one (m.site.com ↔ site.com). Only strip
+	// when ≥2 labels remain, so two-label apex domains whose first label happens to
+	// be one of these (app.com, mobile.de, m.me) are NOT mangled to a bare TLD.
+	const stripped = host.replace(SUBDOMAIN_PREFIX_RE, "");
+	return stripped.includes(".") ? stripped : host;
 }

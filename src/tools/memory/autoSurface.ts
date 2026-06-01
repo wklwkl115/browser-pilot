@@ -20,7 +20,10 @@ const EMPTY_INDEX: MemoryIndex = { schemaVersion: 1, generatedAt: "", entries: [
 
 // Origins already nudged to record this process, keyed by `${cwd}::${origin}`.
 // Bounds the write-side nudge to once per uncovered origin per session so a
-// declined suggestion does not nag on every subsequent durable result.
+// declined suggestion does not nag on every subsequent durable result. Capped so
+// a long-lived server visiting many origins cannot grow it without bound (on
+// overflow it resets — a re-nudge after thousands of origins is harmless).
+const RECORD_SUGGESTED_CAP = 2000;
 const recordSuggested = new Set<string>();
 
 // Test hook: clear session-scoped record-suggestion memory.
@@ -143,6 +146,7 @@ export async function appendMemoryAutoSurface(options: { cwd?: string; envelope:
 		const originCovered = index.entries.some((entry) => entry.scopeKind === "origin" && entry.scopeKey === origin && entry.status === "active");
 		const recordKey = `${options.cwd || ""}::${origin}`;
 		if (!originCovered && !recordSuggested.has(recordKey)) {
+			if (recordSuggested.size >= RECORD_SUGGESTED_CAP) recordSuggested.clear();
 			recordSuggested.add(recordKey);
 			nextActions.push(recordHint(url, durableEvidencePath(envelope)));
 		}
