@@ -25,6 +25,7 @@ export type DistilledEnvelope = {
 	entities?: Array<Record<string, unknown>>;
 	// Disclosure layers lifted to envelope top-level so the budget squeeze on `summary`
 	// never hides them (gist = L0 page overview, outline = L1 container fold).
+	abmlIntegrated?: boolean;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
@@ -317,6 +318,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...pickDefined(redactedSnapshot || {}, ["snapshotId", "sourceMode"]),
 	};
 	const entities = envelopeEntities(redactedSummary, options.entities);
+	const abmlIntegrated = typeof redactedSummary.abmlIntegrated === "boolean" ? redactedSummary.abmlIntegrated : undefined;
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
@@ -331,6 +333,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw, allowRaw),
 		...(entities ? { entities } : {}),
+		...(abmlIntegrated !== undefined ? { abmlIntegrated } : {}),
 		...(gist ? { gist } : {}),
 		...(outline ? { outline } : {}),
 		...(error ? { error } : {}),

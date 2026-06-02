@@ -46,3 +46,26 @@ test("gist/outline survive the summary-budget squeeze (lifted from the uncompres
 	const outline = envelope.outline as Array<Record<string, unknown>> | undefined;
 	assert.ok(Array.isArray(outline) && outline![0]!.name === "Big group", "outline still present after budget squeeze");
 });
+
+test("abmlIntegrated + disclosure layers form a stable envelope contract under a tight budget", async () => {
+	// When AX merge is integrated, observe's envelope must expose abmlIntegrated + gist +
+	// outline + entities at the top level regardless of the summary budget — the "stable,
+	// not budget-squeezable" disclosure contract the tool consumer asked for.
+	const envelope = await envelopeFor({
+		abmlIntegrated: true,
+		focus: {
+			gist: { landmarks: ["main"], controlCount: 2, containerCount: 1 },
+			outline: [{ container: "radiogroup", name: "Crust", memberCount: 2, controlCount: 2, memberRefs: ["a", "b"] }],
+			primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "radio", name: "A", state: { checked: true } }],
+		},
+	}, 2_000);
+	assert.equal(envelope.abmlIntegrated, true, "abmlIntegrated surfaced at envelope top-level");
+	assert.equal(typeof envelope.gist, "object", "gist is an object");
+	assert.ok(Array.isArray(envelope.outline), "outline is an array");
+	assert.ok(Array.isArray(envelope.entities), "entities is an array");
+});
+
+test("abmlIntegrated:false is surfaced too (agent can tell AX merge did NOT apply)", async () => {
+	const envelope = await envelopeFor({ abmlIntegrated: false, focus: { primary_entities: [] } });
+	assert.equal(envelope.abmlIntegrated, false, "abmlIntegrated:false is visible, never omitted");
+});
