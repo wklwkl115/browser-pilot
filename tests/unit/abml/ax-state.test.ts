@@ -64,6 +64,26 @@ test("merge corrects a DOM-mislabeled control via AX (role mismatch still aligns
 	assert.equal((merged[0]!.state as Record<string, unknown>).checked, true, "AX checked propagates onto the corrected entity");
 });
 
+test("merge fuses a native input via coincident geometry despite mislabeled role + dirty class-name (Selenium case)", () => {
+	// The DOM scan mislabels a native <input type=radio> as a textbox, takes the CSS class
+	// as the name, and emits no checked. Old matching (hard role / name-conflict veto) left
+	// this unmerged → role stayed textbox, no checked, no stateSource. Box IoU recognizes it
+	// as the SAME element and AX corrects everything while the DOM selector stays actionable.
+	const domEntity = {
+		ref: "pi-ref://control/r", kind: "control", role: "textbox", name: "form-check-input",
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+		source: "dom", locators: [{ by: "css", value: "#my-radio-1" }], geometry: { box: { x: 40, y: 300, w: 16, h: 16 }, point: { x: 48, y: 308 } },
+	} as unknown as Parameters<typeof mergeDomAndAxEntities>[0][number];
+	const ax = buildAxEntityFromNode(axNode("radio", "Radio button 1", [{ name: "checked", value: { value: "true" } }], 15), ctx, { box: { x: 40, y: 301, w: 16, h: 16 }, point: { x: 48, y: 309 } });
+	const { merged, unmatchedAx } = mergeDomAndAxEntities([domEntity], [ax]);
+	assert.equal(unmatchedAx.length, 0, "coincident geometry fuses them — no leaked duplicate AX entity");
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0]!.role, "radio", "AX role corrects the textbox mislabel");
+	assert.equal((merged[0]!.state as Record<string, unknown>).checked, true, "AX checked fills the missing DOM state");
+	assert.deepEqual((merged[0]!.hints as Record<string, unknown>).stateSource, { checked: "ax" }, "control state is sourced from AX");
+	assert.equal(merged[0]!.locators?.some((l) => (l as Record<string, unknown>).value === "#my-radio-1"), true, "DOM selector preserved for actioning");
+});
+
 test("merge does NOT cross-link entities with conflicting names", () => {
 	// Same position, different accessible names → different elements. A conflicting name
 	// must veto the role-agnostic path, otherwise overlapping controls would cross-link.

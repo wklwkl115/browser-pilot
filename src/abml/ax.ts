@@ -290,13 +290,36 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 }
 
 const GEOMETRY_MATCH_RADIUS_PX = 24;
+const COINCIDENT_BOX_IOU = 0.8;
 
-// Score how strongly an AX entity aligns to a DOM entity. AX role is authoritative,
-// so DOM role is NOT required to agree: when name + geometry strongly agree, a role
-// mismatch is exactly the DOM-mislabel case we want to correct (e.g. a Vue radio the
-// DOM heuristic scanned as a textbox). Conflicting names veto the match; geometry
+function entityBox(entity: Entity | BuiltEntity["entity"]): { x: number; y: number; w: number; h: number } | undefined {
+	return entity.geometry?.box;
+}
+
+// Intersection-over-union of two boxes; ~1 means they cover the same element. Used as the
+// strongest alignment signal — far more discriminating than center distance, which can't
+// tell a dirty-name same element from a distinct control that merely sits nearby.
+function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: number; y: number; w: number; h: number }): number | undefined {
+	if (!a || !b) return undefined;
+	const ix = Math.max(a.x, b.x);
+	const iy = Math.max(a.y, b.y);
+	const ix2 = Math.min(a.x + a.w, b.x + b.w);
+	const iy2 = Math.min(a.y + a.h, b.y + b.h);
+	const intersection = Math.max(0, ix2 - ix) * Math.max(0, iy2 - iy);
+	const union = a.w * a.h + b.w * b.h - intersection;
+	return union > 0 ? intersection / union : undefined;
+}
+
+// Score how strongly an AX entity aligns to a DOM entity. AX role/state are authoritative.
+// Coincident geometry (near-identical box) is the strongest signal: it means the SAME
+// element, so a mislabeled DOM role and a dirty class-name "name" (a native <input
+// type=radio> scanned as a textbox named "form-check-input") must NOT block the match —
+// that is exactly the case AX exists to correct. Below that, a conflicting accessible name
+// vetoes the weaker name/geometry paths (overlapping-but-distinct controls); geometry
 // breaks ties (closer = higher). Returns undefined when there is no defensible match.
 function axMatchScore(dom: Entity, ax: BuiltEntity["entity"]): number | undefined {
+	const iou = boxIoU(entityBox(dom), entityBox(ax));
+	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return 120 + iou * 10; // same element, role/name-agnostic
 	const domName = entityName(dom);
 	const axName = entityName(ax);
 	if (domName !== undefined && axName !== undefined && domName !== axName) return undefined;
