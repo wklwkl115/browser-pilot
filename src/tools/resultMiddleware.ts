@@ -53,6 +53,14 @@ type DistillBaseOptions = {
 	artifactThreshold?: number;
 	entities?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
+	/**
+	 * Model-facing output redaction. Default (undefined/true) redacts
+	 * cookie/token/authorization/body values from the summary envelope. Set false
+	 * — via the tool's `redact:false` param — to emit raw values inline when the
+	 * caller explicitly needs what it just read (e.g. a token it fetched). The raw
+	 * local artifact is unaffected either way.
+	 */
+	redact?: boolean;
 };
 
 type DistilledJsonOptions = DistillBaseOptions & {
@@ -204,8 +212,17 @@ function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string,
 	return Object.keys(diagnostics).length ? diagnostics : undefined;
 }
 
-function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false): Record<string, unknown> | undefined {
+function normalizedPrivacy(saved?: Record<string, unknown>, sensitiveRaw = false, allowRaw = false): Record<string, unknown> | undefined {
 	const savedPrivacy = isRecord(saved?.privacy) ? saved.privacy : undefined;
+	if (allowRaw) {
+		// Caller opted out of redaction (redact:false) — surface that the model-facing
+		// output is unredacted so downstream readers don't assume default masking.
+		return {
+			...pickDefined(savedPrivacy || {}, ["classification", "localOnly"]),
+			redaction: "disabled",
+			...(sensitiveRaw ? { sensitiveEvidence: true } : {}),
+		};
+	}
 	if (!savedPrivacy && !sensitiveRaw) return undefined;
 	return {
 		...pickDefined(savedPrivacy || {}, ["classification", "localOnly", "redaction"]),
@@ -256,22 +273,24 @@ function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSu
 	return actions.length ? Array.from(new Set(actions)).slice(0, 7) : undefined;
 }
 
-function sanitizeDistilledEnvelope(envelope: DistilledEnvelope): DistilledEnvelope {
-	return redactSensitiveValue(envelope) as DistilledEnvelope;
+function sanitizeDistilledEnvelope(envelope: DistilledEnvelope, allowRaw = false): DistilledEnvelope {
+	return allowRaw ? envelope : redactSensitiveValue(envelope) as DistilledEnvelope;
 }
 
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, sensitiveRaw = false): DistilledEnvelope {
+	const allowRaw = options.redact === false;
+	const maybeRedact = <T>(value: T): T => (allowRaw ? value : redactSensitiveValue(value) as T);
 	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
-	const redactedSummary = redactSensitiveValue(summary) as DistilledSummary;
+	const redactedSummary = maybeRedact(summary) as DistilledSummary;
 	const summaryHintActions = Array.isArray(redactedSummary.nextActions)
 		? redactedSummary.nextActions.filter((item): item is string => typeof item === "string")
 		: [];
 	const summaryForFitting = { ...redactedSummary };
 	delete summaryForFitting.nextActions;
 	const fittedSummary = fitSummaryBudget(summaryForFitting, budget);
-	const redactedOperation = options.operation ? redactSensitiveValue(options.operation) as Record<string, unknown> : undefined;
-	const redactedSnapshot = options.snapshot ? redactSensitiveValue(options.snapshot) as Record<string, unknown> : undefined;
+	const redactedOperation = options.operation ? maybeRedact(options.operation) as Record<string, unknown> : undefined;
+	const redactedSnapshot = options.snapshot ? maybeRedact(options.snapshot) as Record<string, unknown> : undefined;
 	const correlation = {
 		...pickDefined(redactedSummary, ["requestId", "waitId", "listenerId", "sessionId", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "sourceMode"]),
 		...pickDefined(redactedOperation || {}, ["operationId", "snapshotId", "sourceMode"]),
@@ -288,7 +307,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		diagnostics: normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot),
 		target: normalizedTarget(options, fittedSummary),
 		limits: normalizedLimits(options, fittedSummary),
-		privacy: normalizedPrivacy(saved, sensitiveRaw),
+		privacy: normalizedPrivacy(saved, sensitiveRaw, allowRaw),
 		...(entities ? { entities } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
@@ -296,7 +315,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),
 		saved,
-	});
+	}, allowRaw);
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {
@@ -308,7 +327,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);
 	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
-	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	if (options.outputPath || (sensitiveRaw && options.redact !== false) || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
 		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
@@ -320,7 +339,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 			details: { ...(options.details || {}), saved },
 		};
 	}
-	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
+	if (level === "full" && ((sensitiveRaw && options.redact !== false) || raw.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
 		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
@@ -336,7 +355,7 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);
 	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
-	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	if (options.outputPath || (sensitiveRaw && options.redact !== false) || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
 	if (level === "summary" || level === "preview") {
 		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
@@ -348,7 +367,7 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 			details: { ...(options.details || {}), saved },
 		};
 	}
-	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
+	if (level === "full" && ((sensitiveRaw && options.redact !== false) || text.length > maxChars)) {
 		const fullSaved = saved || await saveRawArtifact(options, raw);
 		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}

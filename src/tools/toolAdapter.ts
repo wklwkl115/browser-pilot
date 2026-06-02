@@ -22,6 +22,7 @@ export type StandardToolParams = {
 	outputPath?: string;
 	timeoutMs?: number;
 	maxChars?: number;
+	redact?: boolean;
 };
 
 type SharedToolParamOptions = {
@@ -34,6 +35,7 @@ type SharedToolParamOptions = {
 	includeOutputPath?: boolean;
 	includeTimeout?: boolean;
 	includeMaxChars?: boolean;
+	includeRedact?: boolean;
 };
 
 type DistillFn = (value: unknown) => Record<string, unknown>;
@@ -163,6 +165,7 @@ export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) 
 	if (options.includeOutputPath !== false) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
 	if (options.includeTimeout !== false) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
 	if (options.includeMaxChars !== false) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION }));
+	if (options.includeRedact !== false) params.redact = Type.Optional(Type.Boolean({ description: "Redact cookie/token/authorization/body values from this tool's model-facing output; default true. Set false only when you explicitly need the raw value you just read (e.g. a token). The raw local artifact is unaffected." }));
 	return params;
 }
 
@@ -221,7 +224,7 @@ export function inlineJsonToolResult(value: unknown, details: Record<string, unk
 	return jsonResult(value, details, toolMaxChars(params, budgetName));
 }
 
-export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
+export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
 	const budgetName = options.budgetName ?? (options.toolName as ToolResultBudgetName);
 	return await distilledJsonResult(value, {
 		toolName: String(options.toolName),
@@ -238,10 +241,11 @@ export async function jsonToolResult(value: unknown, params: Pick<StandardToolPa
 		artifactValue: options.artifactValue,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
+		redact: params.redact,
 	});
 }
 
-export async function textToolResult(text: string, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars">, ctx: ToolResultContext, options: TextToolResultOptions): Promise<PiTextToolResult> {
+export async function textToolResult(text: string, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: ToolResultContext, options: TextToolResultOptions): Promise<PiTextToolResult> {
 	const budgetName = options.budgetName ?? (options.toolName as ToolResultBudgetName);
 	return await distilledTextResult(text, {
 		toolName: String(options.toolName),
@@ -259,6 +263,7 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		summary: options.summary,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
+		redact: params.redact,
 	});
 }
 

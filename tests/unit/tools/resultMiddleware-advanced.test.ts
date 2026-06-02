@@ -32,6 +32,35 @@ test("distilledJsonResult full mode redacts sensitive evidence", async () => {
 	assert.ok(text.includes("browser_command"));
 });
 
+test("distilledJsonResult redacts sensitive summary fields by default", async () => {
+	const result = await distilledJsonResult({ token: "supersecretvalue" }, {
+		toolName: "browser_execute",
+		command: "javascript",
+		maxChars: 4000,
+		fallbackName: "exec.json",
+		detailLevel: "summary",
+		distill: (value) => ({ token: (value as { token?: unknown }).token }),
+	});
+	const text = textOf(result);
+	assert.equal(text.includes("supersecretvalue"), false, "default must redact token-named fields");
+	assert.ok(text.includes("[redacted]"));
+});
+
+test("distilledJsonResult honors redact:false to surface the raw value inline", async () => {
+	const result = await distilledJsonResult({ token: "supersecretvalue" }, {
+		toolName: "browser_execute",
+		command: "javascript",
+		maxChars: 4000,
+		fallbackName: "exec.json",
+		detailLevel: "summary",
+		distill: (value) => ({ token: (value as { token?: unknown }).token }),
+		redact: false,
+	});
+	const text = textOf(result);
+	assert.ok(text.includes("supersecretvalue"), "redact:false must surface the raw value the caller asked for");
+	assert.ok(text.includes('"redaction": "disabled"'), "privacy must record that redaction was disabled");
+});
+
 test("distilledTextResult summary mode emits compact artifact-guided output", async () => {
 	const result = await distilledTextResult("hello", {
 		toolName: "browser_observe",
