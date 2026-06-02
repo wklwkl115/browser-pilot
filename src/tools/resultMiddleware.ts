@@ -23,6 +23,10 @@ export type DistilledEnvelope = {
 	limits?: Record<string, unknown>;
 	privacy?: Record<string, unknown>;
 	entities?: Array<Record<string, unknown>>;
+	// Disclosure layers lifted to envelope top-level so the budget squeeze on `summary`
+	// never hides them (gist = L0 page overview, outline = L1 container fold).
+	gist?: Record<string, unknown>;
+	outline?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -167,6 +171,22 @@ function envelopeEntities(summary: DistilledSummary, explicit?: Array<Record<str
 	return candidates.length ? candidates.slice(0, 12) as Array<Record<string, unknown>> : undefined;
 }
 
+// L0/L1 disclosure layers pulled from the (uncompressed) summary so they survive the
+// summary-budget squeeze — the agent always gets a cheap page overview + container fold.
+function envelopeGist(summary: DistilledSummary): Record<string, unknown> | undefined {
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	// Clone so the top-level copy never shares a reference with summary.focus.gist — when the
+	// summary isn't budget-compressed (small pages) a shared ref makes stableJson emit
+	// "[Circular]" for the second occurrence.
+	return isRecord(focus?.gist) ? JSON.parse(JSON.stringify(focus.gist)) as Record<string, unknown> : undefined;
+}
+
+function envelopeOutline(summary: DistilledSummary): Array<Record<string, unknown>> | undefined {
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	const outline = asArray(focus?.outline).filter(isRecord);
+	return outline.length ? JSON.parse(JSON.stringify(outline)) as Array<Record<string, unknown>> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -297,6 +317,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...pickDefined(redactedSnapshot || {}, ["snapshotId", "sourceMode"]),
 	};
 	const entities = envelopeEntities(redactedSummary, options.entities);
+	const gist = envelopeGist(redactedSummary);
+	const outline = envelopeOutline(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -309,6 +331,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw, allowRaw),
 		...(entities ? { entities } : {}),
+		...(gist ? { gist } : {}),
+		...(outline ? { outline } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,
