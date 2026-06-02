@@ -174,8 +174,18 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     const tag = el.tagName;
     if (tag === 'A') return 'link';
     if (tag === 'BUTTON') return 'button';
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return 'textbox';
-    if (tag === 'SELECT') return 'combobox';
+    if (tag === 'TEXTAREA') return 'textbox';
+    if (tag === 'INPUT') {
+      const t = String(el.type || '').toLowerCase();
+      if (t === 'radio') return 'radio';
+      if (t === 'checkbox') return 'checkbox';
+      if (t === 'button' || t === 'submit' || t === 'reset' || t === 'image') return 'button';
+      if (t === 'range') return 'slider';
+      if (t === 'number') return 'spinbutton';
+      if (t === 'search') return 'searchbox';
+      return 'textbox';
+    }
+    if (tag === 'SELECT') return el.multiple ? 'listbox' : 'combobox';
     return null;
   }
   function actionNameOf(el) {
@@ -305,7 +315,9 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       if (!isEditable && !isClickable) continue;
       const visible = visibleInfo(el);
       if (!visible.inViewport) continue;
-      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget };
+      const checkedAttr = el.getAttribute && el.getAttribute('aria-checked');
+      const checkedState = (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) ? !!el.checked : checkedAttr === 'true' ? true : checkedAttr === 'false' ? false : undefined;
+      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', ...(checkedState === undefined ? {} : { checked: checkedState }), handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget };
       item.priority = scoreActionable(item);
       out.push(item);
     }
