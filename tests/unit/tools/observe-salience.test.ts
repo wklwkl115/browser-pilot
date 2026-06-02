@@ -37,17 +37,20 @@ test("outline folds entities by AX container into largest-first groups with memb
 		source: "ax", hints: { containerRole, containerName },
 	});
 	const noContainer = { ref: "x", kind: "element", role: "link", name: "Home", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" };
+	const label = { ref: "lbl", kind: "text", role: "text", name: "Crust label", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "ax", hints: { containerRole: "radiogroup", containerName: "Crust" } };
 	const outline = buildEntityOutline([
+		label,
 		member("r1", "radiogroup", "Crust"),
 		member("r2", "radiogroup", "Crust"),
 		member("t1", "list", "Toppings"),
 		noContainer,
 	] as never[]);
 	assert.equal(outline.length, 2, "only entities with a container are grouped");
-	assert.equal(outline[0].container, "radiogroup", "largest group (2 members) first");
+	assert.equal(outline[0].container, "radiogroup", "largest group (3 members) first");
 	assert.equal(outline[0].name, "Crust");
-	assert.equal(outline[0].memberCount, 2);
-	assert.deepEqual(outline[0].memberRefs, ["r1", "r2"]);
+	assert.equal(outline[0].memberCount, 3, "total members incl. the non-control label");
+	assert.equal(outline[0].controlCount, 2, "only the 2 radios count as controls");
+	assert.deepEqual(outline[0].memberRefs, ["r1", "r2", "lbl"], "controls first, label/text last");
 	assert.equal(outline[1].container, "list");
 });
 
