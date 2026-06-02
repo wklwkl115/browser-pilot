@@ -265,6 +265,61 @@ incrementally updated, focused, honest about reachability. All of these are
 - **Far:** **causal plane** (hang network-entry/event refs on a control's subtree so
   "what happens if I click this" is navigable).
 
+## Long-term roadmap — perception depth (the kernel-layer direction, 2026-06-03)
+
+ABML is now a kernel perception layer (control-level truth: DOM+AX fusion, role/state/name,
+salience, seed container relations — validated). This is the multi-phase direction for
+covering complex web apps, **complementary** to the optimization roadmap above: that one is
+*mechanism* (diff/template/disclosure), this one is *semantic depth*.
+
+**Standing principle (set by the contract work — every layer obeys it):**
+1. **Stabilize the output contract first, then add a layer.** Each layer is additive,
+   surfaced at the envelope top-level, locked by a contract test. An agent can't rely on a
+   layer that the budget can hide — so disclosure stability gates new depth.
+2. **Reuse the cheapest existing source first** — AX relations/properties before any new
+   perception source.
+3. **Generic ARIA only — including the inference layer.** Patterns over ARIA structure, never
+   per-site/per-type `if` branches (the overfitting smell, per Non-goals).
+4. **Lower layers (P1/P2/P3) are load-bearing — no regression.** additive + unit-locked +
+   real-browser validated, the way P1-P3 were.
+
+### Phase R1 — Relationship-graph completion (nearest; reuses AX; highest ROI)
+`containerRole` is the seed; the rest mostly already exist in AX relations/properties — make
+them explicit typed relations on the entity:
+- labelledBy / describedBy (unify the AX/DOM label sources into one relation)
+- row / column / cell / columnheader (table/grid — AX exposes rowindex/colindex)
+- controls / owns / expandedTarget (combobox / menu / accordion — AX relations)
+- current / active-route (promote the existing aria-current *state* to a nav *relation*)
+- occludes / coveredBy (needs geometry — box overlap + z-order; pairs with vision region)
+
+### Phase R2 — Inference layer (semantic aggregation over the R1 graph)
+GENERIC structural patterns → semantic labels (NOT per-site/per-type branches):
+- intent labels: form+password+submit → "login", radiogroup set → "single-choice", search
+  landmark + inputs → "filter panel" (a pattern over ARIA structure, not a URL/site check)
+- relational facts: "this submit acts on form X", "this cell is in row 3" (from the R1 graph)
+- dependency facts: "disabled because a precondition is unmet" (needs R3 runtime events)
+
+### Phase R3 — Perception-source expansion (heaviest; independent sources, one at a time)
+- runtime events: post-action state diff, focus migration, menu-expand chains — reuse the
+  existing monitor/hook infra; **this unlocks R2 dependency inference**
+- network/API semantics: tables/pagination/submit endpoints behind controls — reuse the
+  existing network recorder; hang network/event refs on a control's subtree (the "causal
+  plane" above)
+- vision/layout + OCR: stays the on-demand floor / opaque-node expand per Non-goals — used
+  as the geometry source for occludes/coveredBy and for canvas/closed-shadow regions, **not**
+  a primary perception source
+
+### Where the current "low-value" leftovers belong (folded into a phase, not abandoned)
+- **iframe AX aggregation** → a piece of R3 perception completeness (multi-frame AX). Low ROI
+  alone, a building block once full perception is in scope.
+- **real-browser fixture smoke** → test/contract infrastructure; grows each phase as ABML
+  becomes more load-bearing (regression protection matters more for a kernel layer).
+- **artifact path tidy-up** → output-contract evolution; low-impact now (disclosure is at
+  envelope top-level), but tidy it **before** stacking relation/inference layers onto the output.
+
+**Sequencing:** R1 → R2 (inference needs the graph); R3 runtime events before R2 dependency
+facts; vision/OCR last. **Do not open a new layer until the current output contract is stable.**
+
 ## Verification
 
 - Unit: AX extraction maps the spectrum (widget/structure/landmark/live) with
