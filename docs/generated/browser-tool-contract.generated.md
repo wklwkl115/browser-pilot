@@ -139,7 +139,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BRIDGE_SEND_FAILED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
 | `BRIDGE_START_FAILED` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeHttpServer.ts` |
 | `BRIDGE_STOPPED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
-| `BRIDGE_TIMEOUT` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
+| `BRIDGE_TIMEOUT` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/webSecurity/shared/http.ts` |
 | `BROWSER_COMMAND_FAILED` | driver | driver.command | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/tools/bridgeResultValidation.ts` |
 | `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/pageScriptEvaluation.ts`, `src/tools/registerPickTool.ts` |
 | `BROWSER_EXTENSION_RECONNECT_TIMEOUT` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeServer.ts`, `src/driver/BrowserWaitSupervisor.ts` |
@@ -164,7 +164,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `HANDLE_NOT_FOUND` | unknown | abml.ref | yes | schema | `src/abml/refPolicy.ts`, `src/abml/verbs/streamRuntime.ts` |
 | `HTTPS_CERT_GENERATION_FAILED` | security | tool.security | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
-| `INTERNAL_ERROR` | native | runtime.internal | no | schema |  |
+| `INTERNAL_ERROR` | native | runtime.internal | no | schema | `src/tools/webSecurity/shared/http.ts` |
 | `INVALID_BROWSER_COMMAND` | protocol | driver.command | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/validation/middleware.ts` |
 | `INVALID_BROWSER_ID` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_INPUT` | unknown | abml.input | no | schema | `src/abml/verbs/pierceRuntime.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
@@ -227,7 +227,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_ID_CONFLICT` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeCommandService.ts` |
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserLeaseRegistry.ts` |
-| `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
+| `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/BrowserBridgeServer.ts`, `src/driver/errors.ts` |
 | `TARGET_DISABLED` | unknown | abml.actionability | yes | schema |  |
 | `TARGET_NOT_EDITABLE` | unknown | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
 | `TARGET_OCCLUDED` | unknown | abml.actionability | yes | schema |  |
