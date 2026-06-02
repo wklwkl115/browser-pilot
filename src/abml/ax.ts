@@ -265,27 +265,45 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	};
 }
 
+const GEOMETRY_MATCH_RADIUS_PX = 24;
+
+// Score how strongly an AX entity aligns to a DOM entity. AX role is authoritative,
+// so DOM role is NOT required to agree: when name + geometry strongly agree, a role
+// mismatch is exactly the DOM-mislabel case we want to correct (e.g. a Vue radio the
+// DOM heuristic scanned as a textbox). Conflicting names veto the match; geometry
+// breaks ties (closer = higher). Returns undefined when there is no defensible match.
+function axMatchScore(dom: Entity, ax: BuiltEntity["entity"]): number | undefined {
+	const domName = entityName(dom);
+	const axName = entityName(ax);
+	if (domName !== undefined && axName !== undefined && domName !== axName) return undefined;
+	const nameMatch = domName !== undefined && domName === axName;
+	const roleMatch = entityRole(dom) === entityRole(ax);
+	const dist = pointDistance(entityPoint(dom), entityPoint(ax));
+	const geomKnown = dist !== undefined;
+	const geomClose = dist !== undefined && dist <= GEOMETRY_MATCH_RADIUS_PX;
+	if (nameMatch && geomClose) return 100 - dist; // name + position: role-agnostic (corrects DOM mislabel)
+	if (roleMatch && geomClose) return 80 - dist; // role + position
+	if (roleMatch && nameMatch && !geomKnown) return 60; // role + name, geometry unknown
+	if (roleMatch && !geomKnown) return 40; // role only, geometry unknown
+	return undefined;
+}
+
 export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { merged: Entity[]; unmatchedAx: BuiltEntity[] } {
 	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
 	const used = new Set<number>();
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
 		const ax = axEntities[axIndex];
-		const axRoleName = entityRole(ax.entity);
-		const axNameValue = entityName(ax.entity);
-		const axPt = entityPoint(ax.entity);
-		let matchedIndex = -1;
+		let bestIndex = -1;
+		let bestScore = 0;
 		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			const dom = merged[domIndex]!;
-			if (entityRole(dom) !== axRoleName) continue;
-			const domNameValue = entityName(dom);
-			if (axNameValue && domNameValue && axNameValue !== domNameValue) continue;
-			const dist = pointDistance(entityPoint(dom), axPt);
-			if (dist !== undefined && dist > 24) continue;
-			matchedIndex = domIndex;
-			break;
+			const score = axMatchScore(merged[domIndex]!, ax.entity);
+			if (score !== undefined && score > bestScore) {
+				bestScore = score;
+				bestIndex = domIndex;
+			}
 		}
-		if (matchedIndex >= 0) {
-			merged[matchedIndex] = mergedEntity(merged[matchedIndex]!, ax.entity);
+		if (bestIndex >= 0) {
+			merged[bestIndex] = mergedEntity(merged[bestIndex]!, ax.entity);
 			used.add(axIndex);
 		}
 	}

@@ -46,3 +46,34 @@ test("merge propagates AX control state onto the aligned DOM entity (AX authorit
 	assert.deepEqual((e.hints as Record<string, unknown>).stateSource, { checked: "ax" }, "state source recorded as ax");
 	assert.deepEqual((e.hints as Record<string, unknown>).mergedSources, ["dom", "ax"]);
 });
+
+test("merge corrects a DOM-mislabeled control via AX (role mismatch still aligns on name+geometry)", () => {
+	// The DOM heuristic scanned a Vue radio as a textbox; AX knows it is a radio. Under the
+	// old hard role-equality match this would never align, so the mislabel + missing state
+	// survived. name + geometry now align them and AX role/state correct the DOM entity.
+	const domEntity = {
+		ref: "pi-ref://control/y", kind: "control", role: "textbox", name: "选项A",
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: true, inViewport: true },
+		source: "dom", locators: [], geometry: { point: { x: 200, y: 300 } },
+	} as unknown as Parameters<typeof mergeDomAndAxEntities>[0][number];
+	const ax = buildAxEntityFromNode(axNode("radio", "选项A", [{ name: "checked", value: { value: "true" } }], 12), ctx, { point: { x: 202, y: 301 } });
+	const { merged, unmatchedAx } = mergeDomAndAxEntities([domEntity], [ax]);
+	assert.equal(unmatchedAx.length, 0, "AX radio aligns to the mislabeled DOM entity instead of leaking as a new entity");
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0]!.role, "radio", "AX role corrects the DOM textbox mislabel");
+	assert.equal((merged[0]!.state as Record<string, unknown>).checked, true, "AX checked propagates onto the corrected entity");
+});
+
+test("merge does NOT cross-link entities with conflicting names", () => {
+	// Same position, different accessible names → different elements. A conflicting name
+	// must veto the role-agnostic path, otherwise overlapping controls would cross-link.
+	const domEntity = {
+		ref: "pi-ref://control/z", kind: "control", role: "textbox", name: "用户名",
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: true, inViewport: true },
+		source: "dom", locators: [], geometry: { point: { x: 50, y: 50 } },
+	} as unknown as Parameters<typeof mergeDomAndAxEntities>[0][number];
+	const ax = buildAxEntityFromNode(axNode("radio", "记住我", [{ name: "checked", value: { value: "true" } }], 13), ctx, { point: { x: 50, y: 50 } });
+	const { merged, unmatchedAx } = mergeDomAndAxEntities([domEntity], [ax]);
+	assert.equal(unmatchedAx.length, 1, "conflicting-name AX entity stays unmatched");
+	assert.equal(merged[0]!.role, "textbox", "DOM entity is left untouched");
+});
