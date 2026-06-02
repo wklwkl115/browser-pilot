@@ -79,6 +79,7 @@ test("merge fuses a native input via coincident geometry despite mislabeled role
 	assert.equal(unmatchedAx.length, 0, "coincident geometry fuses them — no leaked duplicate AX entity");
 	assert.equal(merged.length, 1);
 	assert.equal(merged[0]!.role, "radio", "AX role corrects the textbox mislabel");
+	assert.equal(merged[0]!.name, "Radio button 1", "AX accessible name replaces the dirty class-name");
 	assert.equal((merged[0]!.state as Record<string, unknown>).checked, true, "AX checked fills the missing DOM state");
 	assert.deepEqual((merged[0]!.hints as Record<string, unknown>).stateSource, { checked: "ax" }, "control state is sourced from AX");
 	assert.equal(merged[0]!.locators?.some((l) => (l as Record<string, unknown>).value === "#my-radio-1"), true, "DOM selector preserved for actioning");

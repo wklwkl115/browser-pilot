@@ -275,6 +275,7 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	return {
 		...base,
 		role: ax.role || base.role,
+		name: ax.name || base.name,
 		value: ax.value ?? base.value,
 		state: mergedState,
 		...(ax.structure || base.structure ? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } } : {}),
