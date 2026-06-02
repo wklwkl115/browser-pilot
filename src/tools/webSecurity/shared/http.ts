@@ -25,6 +25,24 @@ function httpInputError(message: string, details: Record<string, unknown> = {}):
 	return createCodedError({ name: "HttpInputError", code: "INVALID_RULE" as Extract<NativeErrorCode, "INVALID_RULE">, message, details, suppressStack: false });
 }
 
+/**
+ * Node's global fetch throws a bare TypeError("fetch failed") and hides the real
+ * reason (DNS/TLS/connection refused) on error.cause. Surface that cause — and
+ * distinguish a timeout abort — so callers get a diagnosable error instead of
+ * an opaque "fetch failed".
+ */
+function fetchFailureError(request: FetchRequest, error: unknown, aborted: boolean, timeoutMs: number): Error {
+	if (aborted) {
+		return createCodedError({ name: "HttpFetchTimeout", code: "BRIDGE_TIMEOUT" as Extract<NativeErrorCode, "BRIDGE_TIMEOUT">, message: `${request.method} ${request.url} timed out after ${timeoutMs}ms`, details: { url: request.url, method: request.method, timeoutMs }, suppressStack: false });
+	}
+	const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+	const causeMessage = cause instanceof Error ? cause.message : cause !== undefined ? String(cause) : undefined;
+	const causeCode = cause && typeof cause === "object" && "code" in cause ? String((cause as { code?: unknown }).code) : undefined;
+	const baseMessage = error instanceof Error ? error.message : String(error);
+	const message = causeMessage ? `${baseMessage}: ${causeMessage}` : baseMessage;
+	return createCodedError({ name: "HttpFetchFailed", code: "INTERNAL_ERROR" as Extract<NativeErrorCode, "INTERNAL_ERROR">, message: `fetch ${request.method} ${request.url} failed — ${message}`, details: { url: request.url, method: request.method, cause: causeMessage, causeCode }, suppressStack: false });
+}
+
 function isLoopbackAddress(address: string): boolean {
 	return address === "127.0.0.1" || address === "::1" || /^127\./.test(address);
 }
@@ -425,7 +443,12 @@ export async function fetchSingle(request: FetchRequest, options: Required<Pick<
 	try {
 		const init: RequestInit = { method: request.method, headers: request.headers, redirect: "manual", signal: controller.signal };
 		if (request.body !== undefined && request.method !== "GET" && request.method !== "HEAD") init.body = request.body as BodyInit;
-		const response = await fetch(request.url, init);
+		let response: Response;
+		try {
+			response = await fetch(request.url, init);
+		} catch (error) {
+			throw fetchFailureError(request, error, controller.signal.aborted, options.timeoutMs);
+		}
 		const { headers, setCookie } = responseHeadersToMap(response.headers);
 		const body = request.method === "HEAD" ? { bodyText: "", bodyBytes: 0, bodyTruncated: false } : await readBodyLimited(response, options.maxBodyBytes);
 		return {
