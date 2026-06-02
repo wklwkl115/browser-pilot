@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-const streamSrc = read("src/abml/stream.ts");
+const streamSrc = read("src/abml-core/stream.ts"); // pure-core kernel (re-export shim at src/abml/stream.ts)
 assert(streamSrc.includes("kind: \"network-entry\""), "stream plane must model network-entry entities");
 assert(streamSrc.includes("kind: \"event\""), "stream plane must model event entities");
 assert(streamSrc.includes("payloadHandle"), "stream plane entities must preserve payloadHandle for large evidence");

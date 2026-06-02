@@ -8,18 +8,25 @@ one-way dependency direction:
  (browser I/O)            (pure functions + types)
 ```
 
-- **PURE CORE** — zero browser / zero Node dependencies. Pure functions and types that *model*
-  a page: entities, refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping.
-  Portable, unit-testable without a browser, and the long-term candidate for an isolated
-  `@pi/abml-core` package. **15 files.**
-- **RUNTIME** — everything that talks to the live browser: imports `driver/`, `tools/`, `scan/`,
-  `resources/`, or `node:*`. Drives the pure core with real page data. **7 files.**
+- **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
+  functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
+  verb decisions, error shaping. Portable, unit-testable without a browser, and the long-term
+  candidate for an isolated `@pi/abml-core` package. **15 files.**
+- **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
+  `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
+  data. **7 files.**
+
+`src/abml/` also keeps **15 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
+`src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
+the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
 
 The boundary is **enforced by a contract test**, not by convention:
 `tests/contracts/drift/check-abml-core-boundary.mjs` (run via `npm run check:abml-core-boundary`,
 and inside `npm run check` under the `docs` group). The test holds the same lists below as the
-machine-readable manifest; **keep the two in sync** — if they diverge, or a new `src/abml/*.ts`
-file is added without classification, or a pure-core file imports a runtime layer, CI goes red.
+machine-readable manifest; **keep the two in sync** — if they diverge, or a new file is added to
+`src/abml-core/` or `src/abml/` without classification, or a pure-core file imports a runtime
+layer, or a shim goes missing, CI goes red.
 
 ## Pure core (15 — zero browser/Node deps)
 
@@ -69,12 +76,14 @@ otherwise move the would-be consumer to RUNTIME instead.
 
 ## Forward path
 
-This manifest + contract test is **phase 1** (boundary固化): zero code movement, zero behavior
-change — the kernel is now documented and CI-locked.
-
-- **Phase 2** (physical split): move the 15 pure-core files to `src/abml-core/`, leave the 7
-  runtime files in `src/abml/`, and keep thin re-export shims so every consumer's import path is
-  unchanged. The whitelist above becomes `abml-core`'s only outward dependency surface.
-- **Phase 3** (optional): extract `src/abml-core/` into a zero-runtime-dep workspace package
+- **Phase 1 — boundary固化 (done):** this manifest + contract test. Zero code movement, zero
+  behavior change — the kernel is documented and CI-locked.
+- **Phase 2 — physical split (done):** the 15 pure-core files now live in `src/abml-core/`; the 7
+  runtime files stay in `src/abml/`; thin re-export shims at the old pure-core paths keep every
+  consumer's import path unchanged. The whitelist above is now `abml-core`'s only outward
+  dependency surface (verified by the boundary test). No behavior change — `tsc` (both projects)
+  + `test:unit` (361) stay green.
+- **Phase 3 (optional):** extract `src/abml-core/` into a zero-runtime-dep workspace package
   `@pi/abml-core` (pure functions + types). Understanding the kernel then means reading one
-  dependency-free package.
+  dependency-free package, and the shims in `src/abml/` can re-export the package instead of a
+  relative path.

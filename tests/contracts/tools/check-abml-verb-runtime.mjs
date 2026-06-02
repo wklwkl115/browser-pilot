@@ -30,7 +30,7 @@ assert(runtimeSrc.includes("inspectVisionRegion") || read("src/abml/verbs/vision
 assert(!runtimeSrc.includes("catch {}"), "ABML runtime must not silently swallow core verb failures with empty catch blocks");
 assert(runtimeSrc.includes("transport: \"dom\" | \"cdp\"") && runtimeSrc.includes("domResult = undefined"), "ABML click runtime may explicitly downgrade DOM click failures into documented CDP fallback, not silent success");
 
-const routerSrc = read("src/abml/verbs/router.ts");
+const routerSrc = read("src/abml-core/verbs/router.ts"); // pure-core kernel (re-export shim at src/abml/verbs/router.ts)
 assert(routerSrc.includes("actionabilityFailure") && routerSrc.includes("verificationFailure"), "ABML router must expose unified actionability/verification failure helpers");
 assert(routerSrc.includes("BACKEND_UNAVAILABLE"), "ABML router must fail closed when a verb handler is missing");
 
