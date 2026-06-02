@@ -4,7 +4,7 @@ import type { Entity } from "../entity.js";
 import { normalizeAbmlError } from "../errors.js";
 import type { RefDescriptor } from "../types.js";
 import { buildAxEntityFromNode, boxModelToGeometry, isInterestingAxNode } from "../ax.js";
-import { registerRefDescriptor } from "../../../mcp/resourceStore.js";
+import { registerRefDescriptor } from "../../resources/resourceStore.js";
 import { recordValue } from "../../utils/records.js";
 
 export type AbmlPierceRuntimeServer = Pick<BrowserBridgeServer, "sendCommand">;

@@ -1,1 +1,1 @@
-export { computeEtag, computeContentHash, isFreshEtag } from "../src/utils/fileFreshness.js";
+export * from "../src/resources/resourceFreshness.js";

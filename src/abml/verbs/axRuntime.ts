@@ -1,7 +1,7 @@
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { isRecord } from "../../utils/records.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
-import { registerRefDescriptor } from "../../../mcp/resourceStore.js";
+import { registerRefDescriptor } from "../../resources/resourceStore.js";
 import type { Entity } from "../entity.js";
 import { buildAxEntityFromNode, boxModelToGeometry, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../ax.js";
 import type { BuiltEntity } from "../entity.js";

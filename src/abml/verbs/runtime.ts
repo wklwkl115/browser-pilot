@@ -6,7 +6,7 @@ import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { summarizeScanData } from "../../tools/summaries/scan.js";
 import { normalizeTabId } from "../../utils/params.js";
-import { resolveRefUriDetailed } from "../../../mcp/resourceStore.js";
+import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
 import type { Entity } from "../entity.js";
 import { mergeAxIntoDomEntities, readAxEntities } from "./axRuntime.js";
 import { actionabilitySpecForVerb, type AbmlActionVerb } from "../actionabilityModel.js";

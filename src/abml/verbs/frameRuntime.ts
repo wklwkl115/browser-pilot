@@ -1,4 +1,4 @@
-import { registerRefDescriptor } from "../../../mcp/resourceStore.js";
+import { registerRefDescriptor } from "../../resources/resourceStore.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import type { Entity } from "../entity.js";

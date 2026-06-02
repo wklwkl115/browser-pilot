@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveUsageLogOptions, buildUsageRecord, appendUsageRecord, createUsageLogHook } from "../../../mcp/usageLog.ts";
-import type { MiddlewareContext } from "../../../mcp/middleware.ts";
+import { resolveUsageLogOptions, buildUsageRecord, appendUsageRecord, createUsageLogHook } from "../../../src/frontend/usageLog.ts";
+import type { MiddlewareContext } from "../../../src/frontend/middleware.ts";
 
 const NOW = new Date("2026-06-02T12:34:56.789Z");
 

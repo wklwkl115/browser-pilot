@@ -1,6 +1,6 @@
 import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
 import { buildDomEntityFromScanActionable, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../abml/entity.js";
-import { registerRefDescriptor } from "../../../mcp/resourceStore.js";
+import { registerRefDescriptor } from "../../resources/resourceStore.js";
 
 export type ScanSummaryOptions = {
 	detailLevel?: unknown;

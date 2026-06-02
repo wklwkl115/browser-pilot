@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { registerBrowserResultResource } from "../../../mcp/resourceStore.js";
+import { registerBrowserResultResource } from "../../resources/resourceStore.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { saveDataUrl } from "../../tools/artifacts.js";

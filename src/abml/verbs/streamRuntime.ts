@@ -1,5 +1,5 @@
-import { readBrowserResultResource } from "../../../mcp/resourceReader.js";
-import { resolveRefUriDetailed } from "../../../mcp/resourceStore.js";
+import { readBrowserResultResource } from "../../resources/resourceReader.js";
+import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
 import { buildEventEntity, buildNetworkEntryEntity, createCaptureRef, mapCaptureState, type CaptureRefContext } from "../stream.js";
 import type { CaptureRef, RefDescriptor } from "../types.js";
 import { normalizeAbmlError } from "../errors.js";
