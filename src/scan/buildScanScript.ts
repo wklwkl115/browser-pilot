@@ -194,6 +194,8 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       const value = el.getAttribute(name);
       if (value) return clean(value, 120);
     }
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return ''; // form controls take their name from the associated label, never id/class
     const id = el.id || '';
     if (ACTIONABLE_RE.test(id)) return clean(id, 120);
     const cls = cleanClassValue(el.className && typeof el.className === 'object' ? el.className.baseVal || '' : el.className || '').split(/\s+/).find(part => ACTIONABLE_RE.test(part));
@@ -203,7 +205,16 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     const tag = el.tagName;
     const fromAttrs = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt') || el.getAttribute('placeholder') || el.getAttribute('data-e2e') || el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy'));
     if (fromAttrs) return clean(fromAttrs, 160);
-    if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.value) return clean(el.value, 160);
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      try {
+        const labels = el.labels;
+        if (labels && labels.length) {
+          const labelText = labels[0].innerText || labels[0].textContent || '';
+          if (labelText.trim()) return clean(labelText, 160);
+        }
+      } catch (_) {}
+      if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.value) return clean(el.value, 160);
+    }
     return clean(el.innerText || el.textContent || '', 160);
   }
   function editable(el) {
