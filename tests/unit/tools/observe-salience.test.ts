@@ -4,7 +4,7 @@
 // scan never surfaced (the W3C-ARIA case) leads the focus instead of sinking below noise.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildEntityOutline, entitySalienceRank, sortEntitiesBySalience } from "../../../src/tools/observeRunners.ts";
+import { buildEntityOutline, buildPageGist, entitySalienceRank, sortEntitiesBySalience } from "../../../src/tools/observeRunners.ts";
 
 function entity(kind: string, role: string, name: string, partialState: Record<string, unknown>): unknown {
 	return { ref: "r", kind, role, name, state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true, ...partialState }, source: "ax" };
@@ -49,4 +49,18 @@ test("outline folds entities by AX container into largest-first groups with memb
 	assert.equal(outline[0].memberCount, 2);
 	assert.deepEqual(outline[0].memberRefs, ["r1", "r2"]);
 	assert.equal(outline[1].container, "list");
+});
+
+test("gist summarizes landmarks, control counts and containers (L0)", () => {
+	const baseState = { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true };
+	const nav = { ref: "n", kind: "region", role: "navigation", name: "Primary", state: baseState, source: "ax", structure: { landmark: "navigation" } };
+	const main = { ref: "m", kind: "region", role: "main", name: "", state: baseState, source: "ax", structure: { landmark: "main" } };
+	const activeRadio = { ref: "r1", kind: "control", role: "radio", name: "A", state: { ...baseState, checked: true }, source: "ax", hints: { containerRole: "radiogroup", containerName: "Crust" } };
+	const uncheckedRadio = { ref: "r2", kind: "control", role: "radio", name: "B", state: { ...baseState, checked: false }, source: "ax", hints: { containerRole: "radiogroup", containerName: "Crust" } };
+	const gist = buildPageGist([nav, main, activeRadio, uncheckedRadio] as never[]);
+	assert.deepEqual(gist.landmarks, ["navigation", "main"]);
+	assert.equal(gist.controlCount, 2);
+	assert.equal(gist.statefulControlCount, 2);
+	assert.equal(gist.activeControlCount, 1);
+	assert.equal(gist.containerCount, 1, "both radios share the radiogroup:Crust container");
 });
