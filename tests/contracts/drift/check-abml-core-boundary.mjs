@@ -53,6 +53,9 @@ const RUNTIME = [
 	"verbs/runtime.ts",
 	"verbs/integration.ts",
 ];
+// Public barrel — the single kernel entry point ("@pi/abml-core in waiting"). Pure (re-exports
+// only the core modules); has no re-export shim because no prior consumer imported this path.
+const BARREL = "index.ts";
 
 // Cross-cutting modules a pure-core file MAY import. Each verified transitively pure (no
 // driver/tools/scan/resources/node in its own closure). Adding here requires re-verifying that.
@@ -81,8 +84,8 @@ function walk(baseDir, rel = "") {
 }
 assert.deepEqual(
 	walk(abmlCoreDir).sort(),
-	[...PURE_CORE].sort(),
-	"src/abml-core/ must contain exactly the PURE_CORE files (and docs/abml-kernel-manifest.md must match). A new/removed pure-core file changed the set — classify it.",
+	[...PURE_CORE, BARREL].sort(),
+	"src/abml-core/ must contain exactly the PURE_CORE files + index.ts barrel (and docs/abml-kernel-manifest.md must match). A new/removed pure-core file changed the set — classify it.",
 );
 assert.deepEqual(
 	walk(abmlDir).sort(),
@@ -123,7 +126,7 @@ function classifySpecifier(spec, fromCoreRel) {
 
 // --- The invariant: pure core imports only pure core + whitelisted pure cross-cutting ----------
 const violations = [];
-for (const fileRel of PURE_CORE) {
+for (const fileRel of [...PURE_CORE, BARREL]) {
 	const text = read(path.join(abmlCoreDir, fileRel));
 	for (const spec of importSources(text)) {
 		const c = classifySpecifier(spec, fileRel);
@@ -155,4 +158,4 @@ for (const fileRel of PURE_CORE) {
 }
 assert.deepEqual(shimIssues, [], `ABML shim contract violated:\n  - ${shimIssues.join("\n  - ")}`);
 
-console.log(`abml kernel boundary ok — ${PURE_CORE.length} pure-core files (src/abml-core), ${RUNTIME.length} runtime files (src/abml), ${PURE_CORE.length} re-export shims, ${PURE_CROSSCUTTING.size} whitelisted cross-cutting modules`);
+console.log(`abml kernel boundary ok — ${PURE_CORE.length} pure-core files + 1 barrel (src/abml-core), ${RUNTIME.length} runtime files (src/abml), ${PURE_CORE.length} re-export shims, ${PURE_CROSSCUTTING.size} whitelisted cross-cutting modules`);

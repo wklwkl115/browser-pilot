@@ -11,7 +11,7 @@ one-way dependency direction:
 - **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
   verb decisions, error shaping. Portable, unit-testable without a browser, and the long-term
-  candidate for an isolated `@pi/abml-core` package. **15 files.**
+  candidate for an isolated `@pi/abml-core` package. **15 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
   data. **7 files.**
@@ -74,6 +74,12 @@ otherwise move the would-be consumer to RUNTIME instead.
 | `utils/errors` | → `protocol/nativeErrorCodes`, `utils/records`, `utils/redaction` |
 | `protocol/nativeErrorCodes` | (no imports — generated) |
 
+## Kernel entry point
+
+`src/abml-core/index.ts` is the public barrel — `export *` of all 15 modules, the single place
+that shows everything the kernel exposes. It is the future package's entry point. It is additive:
+existing consumers still import individual modules through the `src/abml/` shims and are unchanged.
+
 ## Forward path
 
 - **Phase 1 — boundary固化 (done):** this manifest + contract test. Zero code movement, zero
@@ -83,7 +89,26 @@ otherwise move the would-be consumer to RUNTIME instead.
   consumer's import path unchanged. The whitelist above is now `abml-core`'s only outward
   dependency surface (verified by the boundary test). No behavior change — `tsc` (both projects)
   + `test:unit` (361) stay green.
-- **Phase 3 (optional):** extract `src/abml-core/` into a zero-runtime-dep workspace package
-  `@pi/abml-core` (pure functions + types). Understanding the kernel then means reading one
-  dependency-free package, and the shims in `src/abml/` can re-export the package instead of a
-  relative path.
+- **Phase 3 — package identity (partial, done):** the `index.ts` barrel gives the kernel one
+  readable entry point — the "understand the kernel by reading one self-contained unit" benefit —
+  at zero risk (additive, pure re-exports, CI-locked).
+
+  The remaining step — promoting `src/abml-core/` to a real **workspace package `@pi/abml-core`**
+  (so code can `import "@pi/abml-core"` by name) — is **deliberately deferred**, not blocked. This
+  repo is a single `private` package with a hard dependency allowlist (`check:deps` asserts
+  `package-lock` ⇆ `package.json` parity) and ships **unbundled ESM** (a bare `@pi/abml-core`
+  specifier would not resolve in `dist/` without a real `node_modules` entry). Making it a true
+  workspace therefore mutates root `package.json` (`workspaces`), regenerates `package-lock.json`,
+  and adds a published-artifact surface — outside the "safe / minimal / zero-risk" envelope this
+  decoupling has held to so far. When that promotion is wanted, the ready recipe is:
+
+  1. add `src/abml-core/package.json` → `{ "name": "@pi/abml-core", "private": true, "type":
+     "module", "main": "./index.ts", "sideEffects": false }` (zero `dependencies`);
+  2. add `"workspaces": ["src/abml-core"]` to root `package.json`; run `npm install`;
+  3. re-point the 15 `src/abml/` shims to `export * from "@pi/abml-core/<module>.js"` (or keep the
+     relative shims — both work);
+  4. either vendor the 5 whitelisted pure helpers into the package, or keep importing them
+     relatively (the package stays zero **third-party** deps either way — they are first-party pure
+     leaf utilities);
+  5. extend `check:deps` to cover the workspace lockfile entry, and `check:abml-core-boundary` to
+     assert the package has no `dependencies`.
