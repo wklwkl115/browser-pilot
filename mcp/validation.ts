@@ -19,6 +19,23 @@ export type McpValidationResult =
 	| { ok: false; error: string };
 
 /**
+ * When a strict (additionalProperties:false) object schema rejects an unknown
+ * top-level key, name the offending key(s) and list the accepted params so the
+ * caller can self-correct instead of guessing what "must not have additional
+ * properties" means. Computed directly from the schema/value so it does not
+ * depend on the validator's error-message wording.
+ */
+function describeUnknownProperties(schema: TSchema, value: unknown): string | undefined {
+	const s = schema as { additionalProperties?: unknown; properties?: Record<string, unknown> };
+	if (s.additionalProperties !== false || !s.properties || typeof value !== "object" || value === null) return undefined;
+	const accepted = Object.keys(s.properties);
+	const acceptedSet = new Set(accepted);
+	const unknown = Object.keys(value as Record<string, unknown>).filter((k) => !acceptedSet.has(k));
+	if (!unknown.length) return undefined;
+	return `unknown parameter${unknown.length > 1 ? "s" : ""} ${unknown.map((k) => `"${k}"`).join(", ")}; accepted: ${accepted.join(", ")}`;
+}
+
+/**
  * Validate and coerce MCP tool arguments against a TypeBox schema.
  *
  * Returns {ok:true, args} with coerced values on success, or
@@ -40,14 +57,15 @@ export function validateMcpToolArgs(
 
 		if (!Value.Check(tSchema, converted)) {
 			const errors = [...Value.Errors(tSchema, converted)];
-			const message = errors
+			const detail = errors
 				.slice(0, 5)
 				.map((e) => {
 					const loc = (e as unknown as Record<string, unknown>).instancePath || "/";
 					return `${String(loc)}: ${e.message}`;
 				})
 				.join("; ");
-			return { ok: false, error: `Invalid parameters — ${message}` };
+			const unknownNote = describeUnknownProperties(tSchema, converted);
+			return { ok: false, error: unknownNote ? `Invalid parameters — ${unknownNote}. ${detail}` : `Invalid parameters — ${detail}` };
 		}
 
 		return { ok: true, args: converted as Record<string, unknown> };
