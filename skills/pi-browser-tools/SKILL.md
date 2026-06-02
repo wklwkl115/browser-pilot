@@ -14,7 +14,7 @@ Current conclusion: real smoke/eval evidence shows this internal ABML layer alre
 
 ## Loop
 
-1. `browser_tabs list` → keep `tabId`; pass it to every tab-scoped call.
+1. `browser_tabs list` → note the target `tabId`. A `tabId` is **not stable** — it changes when the tab navigates/reloads — so don't cache it across navigations: omit `tabId` to act on the active tab, or re-read it from `browser_tabs` after navigating. Pass an explicit `tabId` mainly to disambiguate several open tabs. `TAB_NOT_FOUND` returns the live/current tab id in `recovery`.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
 4. Verify: `browser_wait` / re-observe / network|hook evidence / read artifact.

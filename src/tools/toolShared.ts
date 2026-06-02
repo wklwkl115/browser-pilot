@@ -34,8 +34,8 @@ export function objectParam(value: unknown): Record<string, unknown> {
 export const NativeStringList = Type.Array(Type.String());
 export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties: true });
 
-export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list or switch first, keep the target tabId, and pass that tabId explicitly to every tab-scoped browser_* call; omitted tabId uses the mutable selected/active tab fallback.";
-export const TAB_ID_DESCRIPTION = "Target tab id. For automation, pass explicitly after browser_tabs list/switch; omitted uses mutable selected/active tab fallback.";
+export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list/switch to pick a target tab. A tabId is NOT stable — it changes when the tab navigates, reloads, or is replaced — so do not cache one across navigations: re-read it from browser_tabs or the navigation result, or omit tabId to use the selected/active tab. Pass an explicit tabId mainly to disambiguate when several tabs are open.";
+export const TAB_ID_DESCRIPTION = "Target tab id. Not stable across navigation/reload — re-resolve via browser_tabs or omit to use the selected/active tab; pass explicitly mainly to disambiguate multiple open tabs.";
 export const DETAIL_LEVEL_DESCRIPTION = "summary | preview | full; summary is default to reduce token usage";
 export const OUTPUT_PATH_DESCRIPTION = "Optional artifact output path for full raw results";
 export const MAX_CHARS_DESCRIPTION = "Maximum characters returned to the model";

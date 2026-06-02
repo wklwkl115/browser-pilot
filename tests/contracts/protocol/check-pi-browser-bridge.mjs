@@ -1319,8 +1319,9 @@ assert(usesJsonDistillation(read("src/tools/registerPickTool.ts")), "browser_pic
 assert(usesJsonDistillation(read("src/tools/registerEvidenceTool.ts")), "browser_evidence must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerNativeActionTools.ts")), "browser_network must use result distillation middleware through native action tools");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
-assert(toolSource.includes("For automation, call browser_tabs list or switch first"), "tab-scoped tools must warn agents to list/switch before automation");
-assert(toolSource.includes("omitted tabId uses the mutable selected/active tab fallback"), "tabId fallback warning missing from tool prompts");
+assert(toolSource.includes("call browser_tabs list/switch to pick a target tab"), "tab-scoped tools must warn agents to list/switch before automation");
+assert(toolSource.includes("A tabId is NOT stable"), "tab-scoped tools must warn that a tabId is not stable across navigation");
+assert(toolSource.includes("omit tabId to use the selected/active tab"), "tabId fallback warning missing from tool prompts");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
 const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");

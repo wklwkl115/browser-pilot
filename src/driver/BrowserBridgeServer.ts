@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
-import { BrowserBridgeError, errorToPlain } from "./errors.js";
+import { BrowserBridgeError, errorToPlain, tabNotFoundError } from "./errors.js";
 const BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS = ["validateBridgeCommand", "methodAccessMode", "spec.accessMode"] as const;
 void BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS;
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
@@ -343,11 +343,12 @@ export class BrowserBridgeServer {
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
 		const session = this.tabs.liveSessionForTabId(tabId, browserSessionId);
 		if (session) return session;
-		throw new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
+		throw tabNotFoundError({
 			tabId,
 			browserSessionId,
 			selectedBrowser: this.browserSessions.selectedInfo(this.browserSession(browserSessionId), this.clients),
 			tabs: this.getTabs(),
+			latestTabId: this.tabs.latestTabId(browserSessionId),
 		});
 	}
 
