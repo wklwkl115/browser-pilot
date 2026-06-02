@@ -13,7 +13,8 @@
   "include": [
     "index.ts",
     "src/**/*.ts",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "cli/**/*.ts"
   ],
   "exclude": [
     "bridge_src/**",

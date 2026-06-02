@@ -76,6 +76,18 @@ export default tseslint.config(
 			globals: { ...globals.node },
 		},
 	},
+	// CLI sources — type-aware via the Node tsconfig (which includes cli/).
+	{
+		files: ["cli/**/*.ts"],
+		languageOptions: {
+			parser: tseslint.parser,
+			parserOptions: {
+				project: "./tsconfig.json",
+				tsconfigRootDir: import.meta.dirname,
+			},
+			globals: { ...globals.node },
+		},
+	},
 	// Page scripts run injected in the page DOM context, not the worker.
 	{
 		files: ["bridge_src/page_scripts/**/*.ts"],
