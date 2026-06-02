@@ -1,6 +1,6 @@
 import { defaultRefPolicyForKind } from "./refPolicy.js";
 import { isRecord } from "../utils/records.js";
-import type { BuiltEntity, Entity, EntityKind } from "./entity.js";
+import type { BuiltEntity, Entity, EntityKind, EntityState } from "./entity.js";
 import type { Locator } from "./types.js";
 
 export type AxTreeNode = Record<string, unknown>;
@@ -77,7 +77,7 @@ export function axName(node: AxTreeNode): string | undefined {
 }
 
 export function axValue(node: AxTreeNode): string | undefined {
-	return axValueText(node.value) || axValueText(axProperty(node, "value"));
+	return axValueText(node.value) || axValueText(axProperty(node, "value")) || axValueText(axProperty(node, "valuetext")) || axValueText(axProperty(node, "valuenow"));
 }
 
 export function axNodeId(node: AxTreeNode): string | undefined {
@@ -161,13 +161,20 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const focused = axPropertyBool(node, "focused") === true;
 	const expanded = axPropertyBool(node, "expanded");
 	const checked = axPropertyBool(node, "checked");
+	const selected = axPropertyBool(node, "selected");
+	const pressed = axPropertyBool(node, "pressed");
+	const currentText = axValueText(axProperty(node, "current"));
+	const current = currentText === undefined ? undefined : currentText === "false" ? false : currentText === "true" ? true : currentText;
 	const state = {
 		visible: node.hidden !== true && node.invisible !== true,
 		occluded: false,
 		disabled,
 		focused,
 		...(typeof checked === "boolean" ? { checked } : {}),
+		...(typeof selected === "boolean" ? { selected } : {}),
+		...(typeof pressed === "boolean" ? { pressed } : {}),
 		...(typeof expanded === "boolean" ? { expanded } : {}),
+		...(current !== undefined && current !== false ? { current } : {}),
 		editable: ["textbox", "searchbox", "combobox", "textarea", "spinbutton"].includes(role.toLowerCase()),
 		inViewport: Boolean(geometry?.point || geometry?.box),
 	};
@@ -225,16 +232,35 @@ function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number 
 	return Math.sqrt(dx * dx + dy * dy);
 }
 
+// AX is authoritative for control state (DOM input.checked lies under component
+// frameworks) and for role (DOM heuristics mis-label, e.g. radio/checkbox as
+// textbox). Propagating AX state onto the aligned DOM entity is the fix for
+// "aligned but the lying DOM state survived".
+const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded", "current"] as const;
+
 function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	const mergedLocators = dedupeLocators([...(base.locators || []), ...(ax.locators || [])]);
+	const mergedState: EntityState = { ...base.state };
+	const stateSource: Record<string, "ax"> = {};
+	for (const key of AX_AUTHORITATIVE_STATE) {
+		const axStateValue = (ax.state as Record<string, unknown>)[key];
+		if (axStateValue !== undefined) {
+			(mergedState as Record<string, unknown>)[key] = axStateValue;
+			stateSource[key] = "ax";
+		}
+	}
 	return {
 		...base,
+		role: ax.role || base.role,
+		value: ax.value ?? base.value,
+		state: mergedState,
 		locators: mergedLocators,
 		geometry: base.geometry || ax.geometry,
 		hints: {
 			...(base.hints || {}),
 			...(ax.hints || {}),
 			mergedSources: ["dom", "ax"],
+			...(Object.keys(stateSource).length ? { stateSource } : {}),
 		},
 	};
 }

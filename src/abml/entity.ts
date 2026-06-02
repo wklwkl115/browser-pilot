@@ -11,7 +11,10 @@ export type EntityState = {
 	disabled: boolean;
 	focused: boolean;
 	checked?: boolean;
+	selected?: boolean;
+	pressed?: boolean;
 	expanded?: boolean;
+	current?: boolean | string;
 	editable: boolean;
 	inViewport: boolean;
 };
