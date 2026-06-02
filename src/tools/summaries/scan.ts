@@ -135,6 +135,9 @@ function scoreAction(node: Record<string, unknown>): number {
 	if (node.disabled === true) score -= 250;
 	if (node.editable === true) score += 260;
 	if (node.clickable === true) score += 180;
+	const role = asText(node.role).toLowerCase();
+	if (["radio", "checkbox", "switch", "tab", "option", "slider", "spinbutton", "combobox", "listbox"].includes(role)) score += 220; // stateful form controls are high-value focus
+	if (typeof node.checked === "boolean") score += 140; // exposes a real checked/selected state
 	if (ACTION_INTENT_RE.test(text)) score += 350;
 	if (LOW_VALUE_ACTION_RE.test(text)) score -= 80;
 	const selector = asText(node.selector);
