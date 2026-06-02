@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { mergeCookieHeaders, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http.js";
-import { asString, isRecord, parseCommandArgs, positiveInt, stringList } from "../shared/normalize.js";
+import { asString, isRecord, parseCommandArgs, positiveInt, requestCwd, stringList } from "../shared/normalize.js";
 import { describeTextArtifact } from "../shared/artifacts.js";
 import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge.js";
 import { buildReplayRequest, normalizeReplayOptions, replayInputOptions, replaySequenceInputs } from "../shared/replay.js";
@@ -79,7 +79,7 @@ async function normalizeSqlmapBridgeOptions(options: SqlmapBridgeOptions): Promi
 			toolName: "browser_sqlmap_bridge",
 		});
 	}
-	const artifactBaseDir = path.resolve(process.cwd(), ".pi", "browser-artifacts");
+	const artifactBaseDir = path.resolve(requestCwd(options), ".pi", "browser-artifacts");
 	await mkdir(artifactBaseDir, { recursive: true });
 	const artifactRoot = await mkdtemp(path.join(artifactBaseDir, "sqlmap-bridge-"));
 	const processTimeoutMs = positiveInt(options.timeoutMs, 120_000);

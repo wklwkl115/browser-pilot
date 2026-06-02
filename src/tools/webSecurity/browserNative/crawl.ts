@@ -2,7 +2,7 @@ import { mkdtemp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { detectApiSpec, detectGraphqlSchema, endpointKindFor, extractAttributeUrls, extractForms, extractKnownFileUrls, extractManifestUrls, extractScriptSources, extractServiceWorkerCacheRoutes, extractServiceWorkerUrls, extractServiceWorkerVersionSummary, extractSourceMapUrls, extractStringUrls, inScope, knownFilePaths, normalizeUrlForVisit, parseSourceMapDetails, shouldProbeGraphqlIntrospection } from "./crawlExtractors.js";
 import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
-import { isRecord, positiveInt } from "../shared/normalize.js";
+import { isRecord, positiveInt, requestCwd } from "../shared/normalize.js";
 import type { CrawlOptions, HeaderMap, WebFetchOptions } from "../shared/types.js";
 
 const GRAPHQL_INTROSPECTION_QUERY = "query PiBrowserToolsIntrospection { __schema { queryType { name } mutationType { name } subscriptionType { name } types { name fields { name args { name } } } } }";
@@ -15,8 +15,8 @@ function normalizeCrawlSeeds(options: CrawlOptions): string[] {
 	return [...new Set(withKnown.map(normalizeUrlForVisit))];
 }
 
-function createCrawlArtifactRoot(): Promise<string> {
-	const artifactBaseDir = path.resolve(process.cwd(), ".pi", "browser-artifacts");
+function createCrawlArtifactRoot(cwd: string): Promise<string> {
+	const artifactBaseDir = path.resolve(cwd, ".pi", "browser-artifacts");
 	return mkdir(artifactBaseDir, { recursive: true }).then(() => mkdtemp(path.join(artifactBaseDir, "crawl-")));
 }
 
@@ -59,7 +59,7 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 	let artifactRoot: string | undefined;
 	const ensureArtifactRoot = async () => {
 		if (artifactRoot) return artifactRoot;
-		artifactRoot = await createCrawlArtifactRoot();
+		artifactRoot = await createCrawlArtifactRoot(requestCwd(options));
 		return artifactRoot;
 	};
 

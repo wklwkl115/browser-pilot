@@ -419,7 +419,7 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 			initialProgress: 5,
 		},
 		error: spec.error,
-		prepare: ({ params, timeoutMs }) => {
+		prepare: ({ params, timeoutMs, ctx }) => {
 			const runParams: Record<string, unknown> = {
 				...params,
 				...(spec.augmentParams?.(params) || {}),
@@ -427,6 +427,9 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 			if (spec.includeTimeout !== false) runParams.timeoutMs = timeoutMs;
 			if (spec.defaultMaxBodyBytes !== undefined) runParams.maxBodyBytes = toolPositiveInt(params.maxBodyBytes, spec.defaultMaxBodyBytes);
 			if (spec.includeCookieProvider && spec.createCookieProvider) runParams.cookieProvider = spec.createCookieProvider(params, timeoutMs);
+			// Propagate the caller cwd so request-scoped paths (nuclei/sqlmap/crawl/oast
+			// artifact + session roots) resolve under the caller's .pi/, not the daemon's.
+			if (ctx?.cwd) runParams.cwd = ctx.cwd;
 			return runParams as TRunParams;
 		},
 		run: async ({ prepared, handle }) => {

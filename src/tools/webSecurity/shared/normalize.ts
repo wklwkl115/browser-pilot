@@ -51,6 +51,17 @@ export function stringList(value: unknown): string[] {
 	return raw.map((item) => asString(item)?.trim() || "").filter(Boolean);
 }
 
+/**
+ * Request-scoped cwd: the caller's cwd when propagated onto run params (from the
+ * tool ctx — e.g. the CLI daemon forwards the caller cwd), else the process cwd.
+ * Lets request-scoped paths (artifact roots, session roots) resolve under the
+ * caller's .pi/ rather than the daemon's working directory.
+ */
+export function requestCwd(options: unknown): string {
+	const cwd = (options as { cwd?: unknown } | null | undefined)?.cwd;
+	return typeof cwd === "string" && cwd.trim() ? cwd : process.cwd();
+}
+
 const WORDLIST_MAX_BYTES = 5 * 1024 * 1024;
 
 function wordlistPathError(message: string, details: Record<string, unknown>): Error {
