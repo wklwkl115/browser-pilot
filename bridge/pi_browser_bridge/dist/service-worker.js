@@ -2353,7 +2353,14 @@ async function piPersistentCdpAttach(tabId2, options = {}) {
     return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: true, attachedAt: old.attachedAt });
   }
   if (piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS) {
-    return piCdpError("SESSION_LIMIT", "too many persistent CDP sessions", { max: PI_PERSISTENT_CDP_MAX_SESSIONS });
+    try {
+      await piPersistentCdpReleaseIdle(0);
+    } catch (error) {
+      console.warn("[PI-BROWSER-CDP] idle release before attach failed", error);
+    }
+    if (piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS) {
+      return piCdpError("SESSION_LIMIT", "too many persistent CDP sessions", { max: PI_PERSISTENT_CDP_MAX_SESSIONS });
+    }
   }
   try {
     if (options?.bringToFront) await chromeApi.tabs.update(tabId2, { active: true });
@@ -2577,6 +2584,20 @@ async function piPersistentCdpReleaseIdle(maxIdleMs) {
   }
   return piCdpOk({ released, skipped, remaining: piPersistentCdpSessions.size });
 }
+function cleanupPersistentCdpForTab(tabId2, reason) {
+  const target = Number(tabId2);
+  const removed = [];
+  for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
+    if (!rec || Number(rec.tabId) !== target) continue;
+    removed.push(key);
+    void piPersistentCdpDetachEntry(key).catch(() => piPersistentCdpSessions.delete(key));
+  }
+  for (const [key, rec] of Array.from(piPersistentCdpNewDocumentScripts.entries())) {
+    if (rec && Number(rec.tabId) === target) piPersistentCdpNewDocumentScripts.delete(key);
+  }
+  if (removed.length) console.log("[PI-BROWSER-CDP] released persistent sessions for tab", target, reason || "tab_cleanup", removed.length);
+  return { tabId: target, released: removed.length, sessionKeys: removed };
+}
 async function handlePersistentCdpCommand(msg, sender) {
   const tabId2 = Number(msg.tabId || sender?.tab?.id || 0);
   const action = msg.action || msg.method;
@@ -2626,7 +2647,7 @@ var piPersistentCdpBridge = {
 var cdpGlobal = self;
 cdpGlobal.PiPersistentCdp = piPersistentCdpBridge;
 cdpGlobal.piPersistentCdpBridge = piPersistentCdpBridge;
-var __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };
+var __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge } };
 
 // bridge_src/service_worker/wait_cdp.ts
 var piBrowserCdpSubscriptions = /* @__PURE__ */ new Map();
@@ -3621,6 +3642,11 @@ function errorText(error) {
 async function navigatePiBrowser(tabId2, msg) {
   const url = msg.url;
   if (!url) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.navigate requires url", {});
+  try {
+    new URL(String(url));
+  } catch {
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `wait.navigate requires a valid absolute URL (e.g. https://example.com); got ${JSON.stringify(String(url))}`, { url });
+  }
   cleanupTabWaits(tabId2, "navigate", { includeCdp: false, action: "navigate_cancel_waits" });
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
@@ -5141,9 +5167,12 @@ async function getNetworkRecorderBody(tabId2, msg) {
   const requestId = String(msg.requestId || msg.request_id || msg.id || "");
   const rec = requestId ? recorder.byRequestId.get(requestId) || recorder.entries.find((x) => String(x.id) === requestId || String(x.requestId) === requestId) : null;
   const bodyRef = ref || rec?.bodyRef || recorder.bodyByRequestId.get(requestId);
-  if (!bodyRef) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, "network body is unavailable", { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef: ref, bodyAvailability: rec?.bodyAvailability || "not_requested", bodyUnavailableReason: rec?.bodyUnavailableReason || (requestId ? "body_not_captured" : "missing_request_id"), bodyError: rec?.bodyError || null, request: rec ? networkRecordSummary(rec) : null });
+  if (!bodyRef) {
+    const reason = rec?.bodyUnavailableReason || (requestId ? "body_not_captured" : "missing_request_id");
+    return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, `network body is unavailable (${reason})`, { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef: ref, bodyAvailability: rec?.bodyAvailability || "not_requested", bodyUnavailableReason: reason, bodyError: rec?.bodyError || null, request: rec ? networkRecordSummary(rec) : null });
+  }
   const body = recorder.bodyStore.get(bodyRef);
-  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, "network body ref not found", { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef, bodyAvailability: "expired", bodyUnavailableReason: "body_ref_missing", request: rec ? networkRecordSummary(rec) : null });
+  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, "network body ref not found (body_ref_missing: the captured body was evicted from the recorder store; re-record with a fresh entry)", { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef, bodyAvailability: "expired", bodyUnavailableReason: "body_ref_missing", request: rec ? networkRecordSummary(rec) : null });
   const maxBytesRaw = msg.maxBytes ?? msg.max_bytes;
   let out = { ...body };
   if (maxBytesRaw !== void 0) {
@@ -8074,6 +8103,11 @@ function cleanupPiBrowserTab(tabId2, reason) {
     cleanupWsSessionsForTab2(tabId2, cleanupReason);
   } catch (e) {
     console.warn("[PI-BROWSER-WS] session cleanup failed", key, runtimeErrorPreview(e));
+  }
+  try {
+    cleanupPersistentCdpForTab(tabId2, cleanupReason);
+  } catch (e) {
+    console.warn("[PI-BROWSER-CDP] persistent session cleanup failed", key, runtimeErrorPreview(e));
   }
   const waits = cleanupReason === "tab_cleanup" ? { cleaned: cancelWaitsForTab(tabId2, "tab_cleanup"), orphaned: 0 } : cleanupTabWaits(tabId2, cleanupReason, { includeCdp: true, action: "tab_cleanup" });
   console.log("[PI-BROWSER] cleaned tab state", key, cleanupReason, { waits_cleaned: waits.cleaned, orphan_waits: waits.orphaned });

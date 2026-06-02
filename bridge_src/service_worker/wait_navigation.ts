@@ -24,6 +24,10 @@ function errorText(error: unknown): string {
 async function navigatePiBrowser(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const url = msg.url;
   if (!url) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'wait.navigate requires url', {});
+  // Validate before dispatch so a non-URL (e.g. a search keyword) returns a clear
+  // INVALID_RULE instead of leaking a raw CDP "-32000 Cannot navigate to invalid URL".
+  try { new URL(String(url)); }
+  catch { return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `wait.navigate requires a valid absolute URL (e.g. https://example.com); got ${JSON.stringify(String(url))}`, { url }); }
   cleanupTabWaits(tabId, 'navigate', { includeCdp: false, action: 'navigate_cancel_waits' });
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {

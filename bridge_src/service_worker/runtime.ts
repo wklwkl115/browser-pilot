@@ -13,6 +13,7 @@ import { handlePiBrowserFrameCommand } from "./frame";
 import { handlePiBrowserTransferCommand } from "./transfer";
 import { handlePiBrowserHtml } from "./html";
 import { cleanupWsSessionsForTab, handlePiBrowserWsCommand } from "./ws";
+import { cleanupPersistentCdpForTab } from "./cdp";
 import { captureScreenshotWithRetry } from "./screenshot";
 import { piBridgeInfo } from "./bridge_info";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender, PiNativeProtocolRuntime, PiPersistentCdpBridge } from "./types";
@@ -142,6 +143,7 @@ function cleanupPiBrowserTab(tabId: number, reason?: string) {
   try { cleanupNetworkRecorderTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-NET] recorder cleanup failed', key, runtimeErrorPreview(e)); }
   try { cleanupInterceptSessionTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-INTERCEPT] session cleanup failed', key, runtimeErrorPreview(e)); }
   try { cleanupWsSessionsForTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-WS] session cleanup failed', key, runtimeErrorPreview(e)); }
+  try { cleanupPersistentCdpForTab(tabId, cleanupReason); } catch (e) { console.warn('[PI-BROWSER-CDP] persistent session cleanup failed', key, runtimeErrorPreview(e)); }
   // Preserve the public cancellation path for tab teardown so queued callers,
   // diagnostics and static contract tests all see the same lifecycle entrypoint.
   // Literal contract: cancelWaitsForTab(tabId, 'tab_cleanup')

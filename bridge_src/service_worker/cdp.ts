@@ -152,7 +152,13 @@ async function piPersistentCdpAttach(tabId: number, options: PiCdpOptions = {}):
     return piCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: old.attachedAt });
   }
   if (piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS) {
-    return piCdpError('SESSION_LIMIT', 'too many persistent CDP sessions', { max: PI_PERSISTENT_CDP_MAX_SESSIONS });
+    // Long-running sessions accumulate persistent CDP attachments faster than
+    // tab-close cleanup releases them. Before hard-failing, opportunistically
+    // evict idle (non-pending, unlocked) sessions and retry the cap check once.
+    try { await piPersistentCdpReleaseIdle(0); } catch (error) { console.warn('[PI-BROWSER-CDP] idle release before attach failed', error); }
+    if (piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS) {
+      return piCdpError('SESSION_LIMIT', 'too many persistent CDP sessions', { max: PI_PERSISTENT_CDP_MAX_SESSIONS });
+    }
   }
   try {
     if (options?.bringToFront) await chrome.tabs.update(tabId, { active: true });
@@ -370,6 +376,27 @@ async function piPersistentCdpReleaseIdle(maxIdleMs?: unknown): Promise<PiCdpRes
   return piCdpOk({ released, skipped, remaining: piPersistentCdpSessions.size });
 }
 
+// Release every persistent CDP session bound to a tab. Invoked from the shared
+// tab-teardown path (chrome.tabs.onRemoved / navigation churn) so attachments do
+// not leak and fill PI_PERSISTENT_CDP_MAX_SESSIONS over a long session.
+// Synchronous by contract: piPersistentCdpDetachEntry removes each entry from the
+// map before its first await, so the map is drained for this tab by the time this
+// returns; the physical chrome.debugger.detach completes best-effort afterwards.
+function cleanupPersistentCdpForTab(tabId: number, reason?: string): JsonRecord {
+  const target = Number(tabId);
+  const removed: string[] = [];
+  for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
+    if (!rec || Number(rec.tabId) !== target) continue;
+    removed.push(key);
+    void piPersistentCdpDetachEntry(key).catch(() => piPersistentCdpSessions.delete(key));
+  }
+  for (const [key, rec] of Array.from(piPersistentCdpNewDocumentScripts.entries())) {
+    if (rec && Number(rec.tabId) === target) piPersistentCdpNewDocumentScripts.delete(key);
+  }
+  if (removed.length) console.log('[PI-BROWSER-CDP] released persistent sessions for tab', target, reason || 'tab_cleanup', removed.length);
+  return { tabId: target, released: removed.length, sessionKeys: removed };
+}
+
 async function handlePersistentCdpCommand(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiCdpResponse> {
   const tabId = Number(msg.tabId || sender?.tab?.id || 0);
   const action = msg.action || msg.method;
@@ -422,6 +449,6 @@ const piPersistentCdpBridge = {
 const cdpGlobal = self as typeof self & { PiPersistentCdp?: unknown; piPersistentCdpBridge?: unknown };
 cdpGlobal.PiPersistentCdp = piPersistentCdpBridge;
 cdpGlobal.piPersistentCdpBridge = piPersistentCdpBridge;
-export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge };
+export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge };
 // ESM module metadata
-export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, handlePersistentCdpCommand, piPersistentCdpBridge } };
+export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge } };

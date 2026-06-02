@@ -178,9 +178,12 @@ async function getNetworkRecorderBody(tabId: number, msg: PiBridgeCommand): Prom
   const requestId = String(msg.requestId || msg.request_id || msg.id || '');
   const rec = requestId ? (recorder.byRequestId.get(requestId) || recorder.entries.find(x => String(x.id) === requestId || String(x.requestId) === requestId)) : null;
   const bodyRef = ref || rec?.bodyRef || recorder.bodyByRequestId.get(requestId);
-  if (!bodyRef) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, 'network body is unavailable', { tabId, sessionId:recorder.sessionId, requestId, bodyRef:ref, bodyAvailability:rec?.bodyAvailability || 'not_requested', bodyUnavailableReason:rec?.bodyUnavailableReason || (requestId ? 'body_not_captured' : 'missing_request_id'), bodyError:rec?.bodyError || null, request:rec ? networkRecordSummary(rec) : null });
+  if (!bodyRef) {
+    const reason = rec?.bodyUnavailableReason || (requestId ? 'body_not_captured' : 'missing_request_id');
+    return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, `network body is unavailable (${reason})`, { tabId, sessionId:recorder.sessionId, requestId, bodyRef:ref, bodyAvailability:rec?.bodyAvailability || 'not_requested', bodyUnavailableReason:reason, bodyError:rec?.bodyError || null, request:rec ? networkRecordSummary(rec) : null });
+  }
   const body = recorder.bodyStore.get(bodyRef);
-  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, 'network body ref not found', { tabId, sessionId:recorder.sessionId, requestId, bodyRef, bodyAvailability:'expired', bodyUnavailableReason:'body_ref_missing', request:rec ? networkRecordSummary(rec) : null });
+  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, 'network body ref not found (body_ref_missing: the captured body was evicted from the recorder store; re-record with a fresh entry)', { tabId, sessionId:recorder.sessionId, requestId, bodyRef, bodyAvailability:'expired', bodyUnavailableReason:'body_ref_missing', request:rec ? networkRecordSummary(rec) : null });
   const maxBytesRaw = msg.maxBytes ?? msg.max_bytes;
   let out = { ...body };
   if (maxBytesRaw !== undefined) {
