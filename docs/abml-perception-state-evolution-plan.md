@@ -151,18 +151,49 @@ additive edits, no protocol/CDP/dependency change. The AX path generalizes for f
 the same `axPropertyBool`/`axProperty` reads any ARIA state, and `kindForAxRole`
 already maps the widget/structure/frame roles.
 
+## Multi-type real-agent validation (2026-06-02)
+
+A connected agent stress-tested the SHIPPING `browser_*` tools across 5 page types
+(form/exam, feed/list, doc/article, app/modal, dashboard/table) — the
+anti-overfitting acceptance set. It **independently arrived at the same fixes this
+plan specifies** (controls need `checked/selected/value/expanded/pressed/current/
+options`; structured `forms[]/lists[]/tables[]/toc[]`; `viewportOnly/mainOnly/
+excludeHidden`; screenshot visual summary + canvas/SVG data-source hints) — strong
+external validation. It was forced to hand-write JS on **all 5/5 pages** (reading
+state / re-assembling structure) — confirming the perception gap is **general, not
+form-specific**. Four reinforcements:
+
+1. **Mislabeling is worse than missing** — DOM scan tagged radio/checkbox as
+   `role:"textbox"`. Reading *wrong* (not just absent) violates "trustworthy" hardest;
+   the AX tree's role is correct → **AX is authoritative for role too**, not only state.
+2. **Verify must wait for the semantic state, not read once** — modal animation / SPA
+   async made an immediate post-action read mis-judge (`.modal.show` "not yet"). Verify
+   asserts the *expected semantic state is reached* (wait-for-state), not that an event
+   fired.
+3. **Application state ≠ URL state** — dashboard filter/sort live in the DOM/component
+   (`aria-sort`, `aria-expanded`, component state), not navigation; read from ARIA.
+4. **content vs scan → one affordance tree with ref anchors** — `content` reads docs
+   best but gives no anchors (headings lack selector/hash/ref); `scan` gives controls
+   but poor state/structure. The unified model gives every entity (incl. a heading) a
+   `pi-ref://` that is locatable/scrollable/actionable — the agent's proposed
+   `toc[]:{level,text,id,selector,href}` is "headings as actionable ref entities".
+
+This run replaces the single-fixture smoke as the concrete acceptance baseline.
+
 ## Pinned decisions
 
-1. AX authoritative; merge by default for interactive/structural entities; reuse
-   `readAxEntities`; one AX fetch per observe.
+1. AX authoritative for **role and state** (DOM heuristics mis-label, e.g.
+   radio/checkbox → textbox); merge by default for interactive/structural entities;
+   reuse `readAxEntities`; one AX fetch per observe.
 2. **No new `mode`; default, invisible enrichment**; depth under `detailLevel`.
 3. **Vocabulary defined across the full ARIA spectrum** (widget/structure/landmark/
    live), with `source` per field; implement by family, widget core first.
 4. **Relationships are general** container↔member + ARIA relations; `radiogroup` is
    one instance, not the template.
 5. Privacy: suppress sensitive-input values.
-6. Effect-verified actions (state/navigation/content/request) + DOM/AX disagreement
-   surfaced.
+6. Effect-verified actions — verification asserts the **expected semantic state is
+   reached** (wait-for-state; async/animation-safe; not a single immediate read),
+   across state/navigation/content/request; DOM/AX disagreement surfaced.
 7. **Generality over specialization: no site-specific or page-type-specific special
    casing**; generic focus only, never task-specific.
 
@@ -214,11 +245,12 @@ incrementally updated, focused, honest about reachability. All of these are
   bridge call.
 - Contract: extend `check-abml-scan-entities` / `check-abml-ax-runtime`;
   `check-output-schema-conformance`.
-- **Multi-type fixture suite (anti-overfitting acceptance):** article, feed/list,
-  table/dashboard, dialog/modal, multi-step app, AND a Vue/Element-UI exam — each
-  asserting correct semantic state, layered disclosure, and (where interactive)
-  effect-verified actions, **with no page JS, no misread, bounded tokens**. If the
-  model drifts toward forms, the non-form fixtures go red first.
+- **Multi-type fixture suite (anti-overfitting acceptance; baselined 2026-06-02 — see
+  Multi-type validation):** article, feed/list, table/dashboard, dialog/modal,
+  multi-step app, AND a Vue/Element-UI exam — each asserting correct semantic state,
+  layered disclosure, and (where interactive) **effect-verified actions that wait for
+  the expected state** (async/animation-safe), **with no page JS, no misread, bounded
+  tokens**. If the model drifts toward forms, the non-form fixtures go red first.
 
 ## Non-goals
 
