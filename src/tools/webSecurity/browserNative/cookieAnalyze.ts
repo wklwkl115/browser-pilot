@@ -30,6 +30,8 @@ type NormalizedCookieAnalyzeOptions = {
 	truncatedSecretCandidates: boolean;
 	claimMutations?: Record<string, unknown>;
 	claimReplay?: ClaimReplayConfig;
+	browserSessionAttempted?: boolean;
+	bindUrl?: string;
 };
 
 function addCookieHeaderSamples(out: CookieSample[], raw: string, source: string) {
@@ -96,23 +98,34 @@ async function normalizeCookieAnalyzeOptions(options: RawCookieAnalyzeOptions): 
 	addCookieSamples(samples, options.setCookie, "set-cookie", true);
 	addCookieSamples(samples, options.setCookies, "set-cookies", true);
 	for (const value of [...stringList(options.jwt), ...stringList(options.jwts), ...stringList(options.values)]) samples.push({ source: "value", value });
-	const bindBrowserSession = options.bindBrowserSession === true;
-	if (bindBrowserSession) {
-		const url = absoluteUrl(options.url, { scheme: "https" });
-		const browserCookie = await options.cookieProvider?.(url);
+	const hadExplicitSamples = samples.length > 0;
+	// Honor an explicit bindBrowserSession, but also treat a bare {url + tab/session}
+	// with no explicit cookie input as an implicit request to read the bound
+	// session's cookies — that is the obvious intent and avoids a confusing
+	// "requires cookie..." rejection when the agent already pointed us at a tab.
+	const wantsBrowserSession = options.bindBrowserSession === true
+		|| (options.bindBrowserSession !== false && !hadExplicitSamples && !!options.cookieProvider && options.url != null && String(options.url).trim() !== "");
+	let browserSessionAttempted = false;
+	let bindUrl: string | undefined;
+	if (wantsBrowserSession) {
+		bindUrl = absoluteUrl(options.url, { scheme: "https" });
+		browserSessionAttempted = true;
+		const browserCookie = await options.cookieProvider?.(bindUrl);
 		if (browserCookie) addCookieSamples(samples, browserCookie, "browser-session");
 	}
 	const secrets = [...stringList(options.secretCandidates), ...stringList(options.secrets), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const maxSecretCandidates = Math.min(100_000, positiveInt(options.maxSecretCandidates, 10_000));
 	const limitedSecrets = [...new Set(secrets)].slice(0, maxSecretCandidates);
 	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, undefined, options.allowPrivateTargets) : undefined;
-	if (claimReplay && bindBrowserSession) claimReplay.browserCookie = await options.cookieProvider?.(claimReplay.url);
+	if (claimReplay && wantsBrowserSession) claimReplay.browserCookie = await options.cookieProvider?.(claimReplay.url);
 	return {
 		samples,
 		limitedSecrets,
 		truncatedSecretCandidates: secrets.length > limitedSecrets.length,
 		claimMutations: isRecord(options.claimMutations) ? { ...options.claimMutations } : undefined,
 		claimReplay,
+		browserSessionAttempted,
+		bindUrl,
 	};
 }
 
@@ -188,7 +201,12 @@ async function runClaimReplayChecks(samples: CookieSample[], results: Record<str
 
 export async function runCookieAnalyze(options: RawCookieAnalyzeOptions) {
 	const normalized = await normalizeCookieAnalyzeOptions(options);
-	if (!normalized.samples.length) throw cookieAnalyzeInputError("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url", { fields: ["cookie", "cookies", "setCookie", "setCookies", "jwt", "jwts", "values", "bindBrowserSession+url"] });
+	if (!normalized.samples.length) {
+		if (normalized.browserSessionAttempted) {
+			throw cookieAnalyzeInputError(`browser_cookie_analyze found no cookies for ${normalized.bindUrl || options.url} in the bound browser session. The page may not be authenticated, the cookies may belong to a different origin, or the tab/session binding may be stale — navigate the bound tab to the target origin first, or pass an explicit cookie/cookies/setCookie value.`, { bindUrl: normalized.bindUrl, browserSessionAttempted: true, recovery: { retryable: true } });
+		}
+		throw cookieAnalyzeInputError("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url", { fields: ["cookie", "cookies", "setCookie", "setCookies", "jwt", "jwts", "values", "bindBrowserSession+url"] });
+	}
 	const results: Record<string, unknown>[] = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, source: sample.source, name: sample.name, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
 	const tokenResults = results.filter((item) => tokenCountOf(item) > 0);
 	const jwtResults = results.filter((item) => String(item.kind || "") === "jwt");
