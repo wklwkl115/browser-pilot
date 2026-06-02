@@ -127,6 +127,8 @@ function compactHitTarget(value: unknown): Record<string, unknown> | undefined {
 	return Object.keys(out).length ? out : undefined;
 }
 
+const GRAPHIC_TAGS = new Set(["path", "g", "svg", "use", "polygon", "circle", "rect", "ellipse", "line"]);
+
 function scoreAction(node: Record<string, unknown>): number {
 	let score = Number(node.priority || 0) * 0.4;
 	const text = `${asText(node.action)} ${asText(node.label)} ${asText(node.text)}`;
@@ -148,6 +150,7 @@ function scoreAction(node: Record<string, unknown>): number {
 	if (y !== undefined && y >= 0 && y < 900) score += 80;
 	if (y !== undefined && y > 1800) score -= 120;
 	score -= Math.min(100, cleanInlineText(node.label || node.text, 200).length / 4);
+	if (!asText(node.action) && !asText(node.label) && GRAPHIC_TAGS.has(asText(node.tag).toLowerCase())) score -= 300; // unnamed svg graphic primitives are not real action targets
 	return score;
 }
 
