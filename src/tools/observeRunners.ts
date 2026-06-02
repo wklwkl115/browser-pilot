@@ -2,6 +2,7 @@ import { buildContentScript } from "../content/buildContentScript.js";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import type { Entity } from "../abml/entity.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -59,6 +60,27 @@ export function normalizeContentTimeoutMs(value: unknown): number {
 
 function withObservationMeta(summary: Record<string, unknown>, mode: ObserveMode, sourceMode: "scan" | "content" | "html"): Record<string, unknown> {
 	return { mode, sourceMode, ...summary };
+}
+
+// Entity-level focus salience. The scan-side scoreAction (summaries/scan.ts) only ranks DOM
+// actionables; AX-only entities (appended after the DOM↔AX merge for nodes with no DOM match
+// — e.g. ARIA controls the scan never surfaced) bypass it and would otherwise sink to the
+// tail. This re-ranks the merged set so active/stateful controls lead primary_entities
+// regardless of source. Lower rank = higher priority; stable within a rank.
+export function entitySalienceRank(entity: Entity): number {
+	const s = entity.state;
+	if (s.checked === true || s.selected === true || s.pressed === true || (s.current !== undefined && s.current !== false)) return 0;
+	if (s.checked !== undefined || s.selected !== undefined || s.pressed !== undefined) return 1;
+	if (entity.kind === "control") return 2;
+	if (s.inViewport === true) return 3;
+	return 4;
+}
+
+export function sortEntitiesBySalience(entities: Entity[]): Entity[] {
+	return entities
+		.map((entity, index) => ({ entity, index }))
+		.sort((a, b) => entitySalienceRank(a.entity) - entitySalienceRank(b.entity) || a.index - b.index)
+		.map((item) => item.entity);
 }
 
 function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined) {
@@ -198,7 +220,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			abmlIntegrated: true,
 			focus: {
 				...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
-				primary_entities: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region").slice(0, 10),
+				primary_entities: sortEntitiesBySalience((observation.abmlRead.entities ?? []).filter((entity) => entity.kind !== "region")).slice(0, 10),
 				list_entities: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
 				visual_regions: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
 			},
