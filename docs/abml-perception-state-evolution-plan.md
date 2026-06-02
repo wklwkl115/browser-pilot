@@ -180,6 +180,34 @@ form-specific**. Four reinforcements:
 
 This run replaces the single-fixture smoke as the concrete acceptance baseline.
 
+## Real-browser validation (2026-06-03) — P1/P2/P3 verified end-to-end
+
+A connected-browser agent validated the implemented stack across four observe-only rounds
+(no hand-written JS except to capture ground-truth for failing items). Outcome: **P1/P2/P3
+shipped and verified on real pages.**
+
+- **Trustworthy (P1/P2) — the decisive proof.** On a component-lie fixture (`#native-checked-lie`:
+  DOM `input.checked=false` while the element is really checked), `browser_observe` returned
+  `checked:true` with `hints.mergedSources:["dom","ax"]` + `hints.stateSource:{checked:"ax"}` — the
+  AX-authoritative merge corrects the DOM lie end-to-end. This is the xuetangx root cause, mechanically solved.
+- **Focusable (P3 disclosure) — W3C ARIA radio page.** `envelope.gist` (6 landmarks / 62 controls /
+  8 containers) and `envelope.outline` (two radiogroups folded with member refs) reached the model;
+  entities carried `hints.containerRole/containerName`.
+- **Two non-bugs clarified:** native honest inputs correctly stay `source:dom` (DOM already right,
+  nothing for AX to correct); `stateSource` is intentionally a per-field object (`{checked:"ax"}`),
+  richer than a bare string — keep it.
+- **Deployment + budget fixes the rounds surfaced:** `src/` Node-layer changes need a host-process
+  restart (injected scan scripts do not); and the disclosure layers (gist/outline) are lifted to the
+  envelope top-level so the `summary` budget squeeze cannot hide them.
+
+Commits (this line): P1 `040f1df` · P2 `23cca68` · P3-1 `6e78f77` · P2.1 `9cbae15` · P2.2 `1df7183` ·
+P2.3 `39ec07d` · P2.1a `4242efb` · P2.4 `a317ce3` · P2.5 `6ff2fd4` · P2.6 `10140de` · P3-2 `2bcd603` ·
+P3-3 `2f5432b` · P3-4 `9d55524` · P3-5 `169d96a` · P3-6 `c4e60d2`. test:unit 359 green.
+
+Known remaining gap (not blocking): iframe AX is not aggregated — `readAxEntities` reads only the top
+frame's `getFullAXTree`, so controls inside an iframe (e.g. a Vant demo sandbox) do not enter the model.
+Independent, larger work (per-frame AX + coordinate alignment).
+
 ## Pinned decisions
 
 1. AX authoritative for **role and state** (DOM heuristics mis-label, e.g.
