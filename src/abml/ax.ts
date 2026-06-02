@@ -1,6 +1,6 @@
 import { defaultRefPolicyForKind } from "./refPolicy.js";
 import { isRecord } from "../utils/records.js";
-import type { BuiltEntity, Entity, EntityKind, EntityState } from "./entity.js";
+import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure } from "./entity.js";
 import type { Locator } from "./types.js";
 
 export type AxTreeNode = Record<string, unknown>;
@@ -150,8 +150,30 @@ export function boxModelToGeometry(model: unknown): { box?: { x: number; y: numb
 	};
 }
 
+const LANDMARK_ROLES = new Set(["banner", "navigation", "main", "complementary", "contentinfo", "search", "form", "region"]);
+
+// Structural / document-outline metadata from the AX tree (ARIA structure + landmark
+// spectrum). Authoritative like control state — DOM scan can approximate level/posinset
+// from tags but the AX tree resolves the computed ARIA values.
+function axStructure(node: AxTreeNode, role: string): EntityStructure | undefined {
+	const level = numberValue(axValueText(axProperty(node, "level")));
+	const setSize = numberValue(axValueText(axProperty(node, "setsize")));
+	const posInSet = numberValue(axValueText(axProperty(node, "posinset")));
+	const sortText = axValueText(axProperty(node, "sort"));
+	const landmark = LANDMARK_ROLES.has(role.toLowerCase()) ? role.toLowerCase() : undefined;
+	const structure: EntityStructure = {
+		...(level !== undefined ? { level } : {}),
+		...(setSize !== undefined ? { setSize } : {}),
+		...(posInSet !== undefined ? { posInSet } : {}),
+		...(sortText && sortText !== "none" ? { sort: sortText } : {}),
+		...(landmark ? { landmark } : {}),
+	};
+	return Object.keys(structure).length ? structure : undefined;
+}
+
 export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } }): BuiltEntity {
 	const role = axRole(node);
+	const structure = axStructure(node, role);
 	const name = axName(node);
 	const value = axValue(node);
 	const kind = kindForAxRole(role);
@@ -185,6 +207,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 			...(name ? { name } : {}),
 			...(value ? { value } : {}),
 			state,
+			...(structure ? { structure } : {}),
 			source: "ax",
 			locators,
 			...(geometry ? { geometry } : {}),
@@ -254,6 +277,7 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 		role: ax.role || base.role,
 		value: ax.value ?? base.value,
 		state: mergedState,
+		...(ax.structure || base.structure ? { structure: { ...(base.structure || {}), ...(ax.structure || {}) } } : {}),
 		locators: mergedLocators,
 		geometry: base.geometry || ax.geometry,
 		hints: {

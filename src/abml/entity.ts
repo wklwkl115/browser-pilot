@@ -19,6 +19,17 @@ export type EntityState = {
 	inViewport: boolean;
 };
 
+// Structural / document-outline metadata (ARIA structure + landmark spectrum). Distinct
+// from EntityState (interaction state): these describe where an entity sits in the
+// document, not whether it is checked/selected. Sourced from the AX tree.
+export type EntityStructure = {
+	level?: number; // aria-level — heading level / treeitem depth
+	setSize?: number; // aria-setsize — size of the set this item belongs to
+	posInSet?: number; // aria-posinset — 1-based position within that set
+	sort?: string; // aria-sort on a column header (ascending/descending/other)
+	landmark?: string; // landmark role (navigation/main/banner/contentinfo/complementary/search/form/region)
+};
+
 export type Entity = {
 	ref: string;
 	kind: EntityKind;
@@ -26,6 +37,7 @@ export type Entity = {
 	name?: string;
 	value?: string;
 	state: EntityState;
+	structure?: EntityStructure;
 	source: EntitySource;
 	locators?: Locator[];
 	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
