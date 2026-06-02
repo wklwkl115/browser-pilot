@@ -108,6 +108,7 @@
     "release:local": "node tests/release/release-local-acceptance.mjs",
     "release:local:smoke": "node tests/release/release-local-acceptance.mjs --smoke --rollback-smoke",
     "check:boundaries": "node tests/contracts/drift/check-boundaries.mjs",
+    "check:abml-core-boundary": "node tests/contracts/drift/check-abml-core-boundary.mjs",
     "smoke:browser:isolated": "tsx tests/smoke/smoke-browser-isolated.mjs",
     "smoke:browser:scan-summary": "tsx tests/smoke/smoke-scan-summary.mjs",
     "smoke:browser:debugger-evidence": "tsx tests/smoke/smoke-debugger-evidence.mjs",

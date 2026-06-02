@@ -12,7 +12,7 @@ const groups = {
 	bridge: ["check:bridge"],
 	unit: ["test:unit"],
 	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
-	docs: ["check:tool-docs", "check:doc-structure", "check:boundaries"],
+	docs: ["check:tool-docs", "check:doc-structure", "check:boundaries", "check:abml-core-boundary"],
 	contracts: ["check:jshookmcp-closure", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:abml-ax-smoke", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:mcp-parameter-contract", "check:mcp-conformance", "check:mcp-tools-list", "check:mcp-resources", "check:mcp-ingress-handles", "check:mcp-middleware", "check:mcp-e2e", "check:mcp-structured-envelope", "check:mcp-etag", "check:abml-ref-registry", "check:abml-scan-entities", "check:abml-scan-envelope", "check:abml-verb-runtime", "check:abml-ax-runtime", "check:abml-stream-plane", "check:abml-stream-runtime", "check:abml-p6p7-runtime", "check:abml-internal-integration", "check:mcp-sections", "check:mcp-list-changed", "check:mcp-prompts", "check:mcp-dynamic-tools", "check:mcp-memory", "check:memory-autosurface", "check:memory-lifecycle", "check:token-economy"],
 };
 

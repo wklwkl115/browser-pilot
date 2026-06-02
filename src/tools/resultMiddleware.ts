@@ -179,13 +179,13 @@ function envelopeGist(summary: DistilledSummary): Record<string, unknown> | unde
 	// Clone so the top-level copy never shares a reference with summary.focus.gist — when the
 	// summary isn't budget-compressed (small pages) a shared ref makes stableJson emit
 	// "[Circular]" for the second occurrence.
-	return isRecord(focus?.gist) ? JSON.parse(JSON.stringify(focus.gist)) as Record<string, unknown> : undefined;
+	return isRecord(focus?.gist) ? structuredClone(focus.gist) as Record<string, unknown> : undefined;
 }
 
 function envelopeOutline(summary: DistilledSummary): Array<Record<string, unknown>> | undefined {
 	const focus = isRecord(summary.focus) ? summary.focus : undefined;
 	const outline = asArray(focus?.outline).filter(isRecord);
-	return outline.length ? JSON.parse(JSON.stringify(outline)) as Array<Record<string, unknown>> : undefined;
+	return outline.length ? structuredClone(outline) as Array<Record<string, unknown>> : undefined;
 }
 
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
