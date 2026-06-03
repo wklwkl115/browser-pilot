@@ -77,6 +77,7 @@
     "check:mcp-parameter-contract": "tsx tests/contracts/tools/check-mcp-parameter-contract.mjs",
     "check:mcp-conformance": "node tests/contracts/tools/check-mcp-conformance.mjs",
     "check:mcp-tools-list": "tsx tests/contracts/tools/check-mcp-tools-list.mjs",
+    "check:cli-parity": "tsx tests/contracts/cli/check-cli-parity.mjs",
     "check:mcp-resources": "tsx tests/contracts/tools/check-mcp-resources.mjs",
     "check:mcp-ingress-handles": "tsx tests/contracts/tools/check-mcp-ingress-handles.mjs",
     "check:mcp-middleware": "tsx tests/contracts/tools/check-mcp-middleware.mjs",
