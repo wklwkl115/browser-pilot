@@ -131,7 +131,7 @@ assert.ok(pkg.scripts?.["check:abml-relation-graph"]?.includes("check-abml-relat
 assert.ok(pkg.scripts?.["smoke:browser:abml-relations"]?.includes("smoke-abml-relations.mjs"), "package must expose smoke:browser:abml-relations");
 
 const smokeSrc = readRepo("tests/smoke/smoke-abml-relations.mjs");
-assert.ok(smokeSrc.includes("abml-relations.html") && smokeSrc.includes("readAxEntities") && smokeSrc.includes("materializeRelations") && smokeSrc.includes("buildRelationSummary"), "relations smoke must drive the real runtime path against the fixture");
+assert.ok(smokeSrc.includes("abml-relations.html") && smokeSrc.includes("registerBrowserTools") && smokeSrc.includes('getTool("browser_observe")') && smokeSrc.includes("envelope.relations"), "relations smoke must drive the real browser_observe tool end-to-end and assert the envelope relations");
 const fixture = readRepo("evals/browser-workflows/fixtures/abml-relations.html");
 for (const marker of ["aria-labelledby", "aria-controls", "aria-expanded", "<th", "aria-current"]) {
 	assert.ok(fixture.includes(marker), `relations fixture must exercise ${marker}`);

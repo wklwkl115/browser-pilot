@@ -11,11 +11,9 @@ import { createServer as createNetServer } from "node:net";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
-import { readAxEntities, mergeAxIntoDomEntities } from "../../src/abml/verbs/axRuntime.ts";
-import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors } from "../../src/abml/relations.ts";
-import { summarizeScanData } from "../../src/tools/summaries/scan.ts";
-import { buildScanScript } from "../../src/scan/buildScanScript.ts";
-import { evaluatePageScriptDirect } from "../../src/tools/pageScriptEvaluation.ts";
+import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
+import { registerBrowserTools } from "../../src/tools/registerTools.ts";
+import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -113,22 +111,24 @@ try {
   const tabId = targetTab.tabId;
   await bridge.sendCommand({ cmd: "wait.loadState", tabId, state: "complete", timeoutMs: 10000 }, { tabId, timeoutMs: 12000 });
 
-  // Real runtime path: scan → DOM entities, AX read → entities + anchors, merge, materialize.
-  const rawScan = await evaluatePageScriptDirect(bridge, buildScanScript({ maxChars: 100000, maxNodes: 4000, includeIframes: true }), { tabId, timeoutMs: 10000, name: "scan_extract" });
-  const tabs = await bridge.refreshTabs(5000).catch(() => bridge.getTabs());
-  const scanSummary = summarizeScanData(rawScan.data, tabs, { detailLevel: "summary", maxChars: 12000, entityContext: { browserSessionId: bridge.snapshot().browserSessionId, tabId, url: fixtureUrl, observationId: "rel-smoke", capturedAt: Date.now() } });
-  const domEntities = [
-    ...(Array.isArray(scanSummary.focus?.primary_entities) ? scanSummary.focus.primary_entities : []),
-    ...(Array.isArray(scanSummary.focus?.list_entities) ? scanSummary.focus.list_entities : []),
-  ];
-  const { entities: axEntities, anchors } = await readAxEntities(bridge, { browserSessionId: bridge.snapshot().browserSessionId, tabId, observationId: "rel-smoke", url: fixtureUrl, capturedAt: Date.now(), timeoutMs: 10000 });
-  const merged = mergeAxIntoDomEntities(domEntities, axEntities);
-  // AX anchors + DOM-sourced derived anchors (currentIn from aria-current, occlusion from hit-test).
-  const allAnchors = [...anchors, ...deriveStateRelationAnchors(merged)];
-  const related = materializeRelations(merged, allAnchors);
-  const relations = buildRelationSummary(related);
+  // TRUE end-to-end: drive the registered browser_observe tool (the exact def.execute seam Pi-native
+  // and the CLI both call) and read the CONSUMER-FACING envelope — not the internal functions. This
+  // proves relations actually surface in the tool output an agent receives.
+  const profile = resolveBrowserToolCapabilityProfile();
+  bridge.setCapabilityProfile?.(profile);
+  const ensureStarted = async () => bridge; // already started above
+  const adapter = new ToolCollectingAdapter();
+  registerBrowserTools(adapter, bridge, ensureStarted, { securityToolsEnabled: profile.securityToolsEnabled });
+  const observe = adapter.getTool("browser_observe");
+  if (!observe) throw new Error("browser_observe not registered");
+  const browserSessionId = bridge.snapshot().browserSessionId;
+  const toolResult = await observe.execute("rel-smoke", { mode: "scan", tabId, browserSessionId, detailLevel: "detailed" }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+  const envelopeText = Array.isArray(toolResult.content) ? toolResult.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join("\n") : "";
+  const envelope = JSON.parse(envelopeText);
 
-  const summary = relations.summary;
+  // The agent-visible contract: relations live at the envelope TOP LEVEL (sibling to gist/outline),
+  // and entities carry their typed relations inline.
+  const summary = (envelope.relations && envelope.relations.summary) || {};
   const familiesPresent = {
     labelledBy: (summary.labelledBy ?? 0) > 0,
     describedBy: (summary.describedBy ?? 0) > 0,
@@ -139,10 +139,17 @@ try {
     currentIn: (summary.currentIn ?? 0) > 0, // batch 2: DOM-sourced aria-current
     occlusion: (summary.coveredBy ?? 0) > 0 && (summary.occludes ?? 0) > 0, // batch 2: hit-test
   };
-  const allTargetsAreRefs = related.every((entity) => (entity.relations ?? []).every((relation) => /^pi-ref:\/\//.test(String(relation.targetRef || ""))));
-  // Pass gate = every relation family this fixture exercises across AX + DOM-sourced derivation.
-  const corePass = Object.values(familiesPresent).every(Boolean) && allTargetsAreRefs;
-  record("relations.summary", corePass, { anchorCount: allAnchors.length, summary, familiesPresent, allTargetsAreRefs, sampleHighlights: relations.highlights.slice(0, 6) });
+  const entities = Array.isArray(envelope.entities) ? envelope.entities : [];
+  const entitiesWithRelations = entities.filter((e) => Array.isArray(e.relations) && e.relations.length).length;
+  const highlights = (envelope.relations && envelope.relations.highlights) || [];
+  const allTargetsAreRefs = [
+    ...entities.flatMap((e) => Array.isArray(e.relations) ? e.relations : []),
+    ...highlights,
+  ].every((r) => /^pi-ref:\/\//.test(String(r.targetRef || "")));
+  // Pass gate = the real observe envelope exposes abmlIntegrated + a populated top-level relations
+  // summary covering every family this fixture exercises, with entities carrying inline relations.
+  const corePass = envelope.abmlIntegrated === true && Object.values(familiesPresent).every(Boolean) && entitiesWithRelations > 0 && allTargetsAreRefs;
+  record("observe.envelope.relations", corePass, { abmlIntegrated: envelope.abmlIntegrated, summary, familiesPresent, entitiesWithRelations, allTargetsAreRefs, sampleHighlights: highlights.slice(0, 6) });
   result.ok = corePass;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
