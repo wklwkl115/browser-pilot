@@ -45,6 +45,7 @@
 
 ## 历史阶段摘要
 
+- 2026 06 02 Real Session Fixes Verification历史摘要见 `docs/archive/2026-06-02-real-session-fixes-verification.md`
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
 - 已撤回 orchestration / target resolver / profile isolation历史摘要见 `docs/archive/orchestration-history.md`
@@ -55,6 +56,7 @@
 
 逐条历史明细已迁到以下文件：
 
+- `docs/archive/2026-06-02-real-session-fixes-verification.full.md`
 - `docs/archive/bridge-esm-history.full.md`
 - `docs/archive/governance-history.full.md`
 - `docs/archive/orchestration-history.full.md`

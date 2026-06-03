@@ -1,254 +1,284 @@
 # CLI + Skill Frontend Migration Plan
 
-> Status: planning contract. Defines the accepted direction to make a `pi-browser`
-> CLI (+ Skill) the primary frontend and remove the MCP server shell. It does not
-> describe currently shipping behavior until implementation lands and generated
-> docs are updated. Supersedes the MCP-server frontend as the externally promoted
-> surface; the Pi-native extension entry (`index.ts`) is unchanged.
+> Status: ACTIVE execution contract.
+> Current shipping behavior remains **Pi-native entry (`index.ts`) + MCP shell (`mcp/`)**.
+> This document defines the migration work to land a `pi-browser` CLI (+ Skill) as the primary external frontend, then remove the MCP shell. It does **not** describe currently shipping behavior until implementation, contracts, generated docs, and current-facing docs are updated.
 
 ## Decision source
 
-User direction (2026-06-02): the MCP form underperforms in practice ("only good
-native in Pi"); the ideal form is **CLI + Skill**, which has a broader adapter
-surface than MCP. Confirmed decisions:
+User direction (2026-06-02): MCP underperforms in real use; preferred form is **CLI + Skill**. Confirmed product decisions:
 
-- **Remove `mcp/` entirely** (not "keep but demote").
-- **Daemon** supports both auto-start and explicit `start/stop/status`.
-- The Chrome extension + long-lived bridge layer stays (understood and required).
+- Remove `mcp/` entirely after replacement parity is green.
+- Keep the Chrome extension + long-lived bridge layer.
+- Support both daemon auto-start and explicit `start/stop/status`.
+- Keep the Pi-native extension entry (`index.ts`) unchanged.
 
-## Why CLI + Skill over MCP (motivation)
+## Goal
 
-- 22 tool schemas bloat the agent's context; `browser_tool_discovery` (a tool to
-  discover tools) is a symptom of a surface too large for the tool-list paradigm.
-- MCP results are token-heavy JSON; the server connection is flaky (it dropped
-  mid-session during real use).
-- Outside Pi, a generic MCP client gets only cold schemas — stripped of the
-  `promptSnippet`/`promptGuidelines`/Skill guidance layer that actually makes the
-  tools usable. What makes Pi good is that guidance layer, not MCP.
-- A CLI is consumable by any shell-capable agent + humans + CI + cron (a strict
-  superset of MCP clients), invoked via Bash with no tool-list bloat; the Skill is
-  the portable knowledge layer.
+Make `pi-browser` CLI + Skill the primary external frontend while preserving:
 
-## Governing principles
+- canonical `browser_*` tool capability set
+- current artifact/evidence/redaction behavior
+- Pi-native registration path
+- zero new runtime dependencies
 
-- **Frontend-agnostic core**: `registerBrowserTools(adapter, server, ensureStarted, opts)`
-  (`src/tools/registerTools.ts`) is the single seam every frontend consumes. Pi
-  host (`index.ts`) and the MCP server consume it today via a tool-collecting
-  adapter; the CLI client + daemon become the new consumers.
-- **Extract before delete**: reusable, non-MCP infra living under `mcp/` must be
-  relocated into the core, never lost. (See coupling map — this is larger than the
-  four files first assumed.)
-- **Zero new runtime deps**: enforced by `check-dependencies.mjs`. No
-  commander/yargs — hand-roll argv parsing driven by the existing TypeBox schemas;
-  reuse `validateToolArgs` for coercion/validation.
-- **No capability weakening**: the CLI exposes every registered tool (per
-  `PI_BROWSER_TOOL_PROFILE`); no MCP-style compact/minimal visibility (a CLI's
-  command list is not a context cost).
-- **Evidence/redaction unchanged**: tools still write artifacts under the caller's
-  `.pi/` and redact by default; `redact:false` opt-out preserved.
+## Fixed issues from plan review
 
-## Architecture
+This revision closes the gaps found in the first draft:
 
-```
-pi-browser <subcommand> [--flags]            (short-lived client)
-  ├─ in-process: registerBrowserTools(ToolCollectingAdapter) → flag specs + --help + argv→params
-  └─ POST /invoke {tool, params, cwd} ─► bridge daemon (long-lived)
-                                            ├─ owns BrowserBridgeServer (extension WS, ports 18765-18784)
-                                            ├─ registerBrowserTools(collector, server, ensureStarted, {profile, memoryEvidenceResolver})
-                                            ├─ loopback control HTTP server (own port, token-guarded)
-                                            └─ lockfile .pi/browser-daemon.json {pid, controlPort, token, bridgePort}
-```
+1. **No green-gap deletion.** Do **not** remove the MCP shell before CLI parity, replacement contracts, and current-facing docs are ready.
+2. **Caller cwd is explicit.** Request-scoped artifact/memory/wordlist/OAST/crawl/sqlmap/nuclei paths must flow from the CLI caller `cwd`, not daemon `process.cwd()`.
+3. **Daemon auto-start is local-process based.** Spawn with `process.execPath` + resolved local `dist/cli/bin.js`; do not shell out to `pi-browser` by bin name.
+4. **Daemon scope is explicit.** Use a **user-local singleton daemon**; do not store daemon lock state under the caller project `.pi/`.
+5. **Docs/contracts scope is explicit.** Current-facing docs must switch only when the behavior lands; historical docs may retain MCP history.
 
-Parsing/help is **local** (registration is cheap, no bridge start); only tool
-**execution** is delegated to the daemon (it holds the live browser). The client's
-`cwd` is forwarded in `/invoke` so artifacts land under the caller's `.pi/`, not
-the daemon's.
+## Current repo facts (verified before activation)
 
----
+- `mcp/` exists and `cli/` does not.
+- `package.json` still exposes `./mcp`, `pi-browser-mcp`, `mcp` scripts, and runtime dep `@modelcontextprotocol/sdk`.
+- Core/runtime importers already depend on shared infra under `mcp/` (`src/abml/verbs/*`, `src/tools/summaries/scan.ts`, memory tests, smoke tests).
+- Request-scoped path writers still use raw `process.cwd()` in at least:
+  - `src/tools/webSecurity/bridges/nucleiBridge.ts`
+  - `src/tools/webSecurity/bridges/sqlmapBridge.ts`
+  - `src/tools/webSecurity/browserNative/crawl.ts`
+  - `src/tools/webSecurity/browserNative/oastWorkerManager.ts`
+  - `src/tools/webSecurity/shared/normalize.ts`
+- Current-facing docs/skill still mention MCP-only behavior (`pi-browser-mcp`, `browser_tool_discovery`, `PI_BROWSER_MCP_*`).
 
-## Coupling map (discovered during reconnaissance — the load-bearing part)
+These facts are part of the execution scope; do not assume they are already solved.
 
-`mcp/` is NOT cleanly separable: several modules under it are shared infra the
-**core `src/` (and therefore the Pi extension) already depends on**. Naively
-deleting `mcp/` breaks Pi-native too. Classify every `mcp/` file:
+## Accepted migration decisions
 
-### A. Relocate to `src/frontend/` — frontend infra (rename, drop "Mcp")
+### 1. Frontend split
+
+Keep one tool core. Move reusable non-protocol frontend code out of `mcp/`:
+
+- frontend helpers → `src/frontend/`
+- ref/resource infra used by core → `src/resources/`
+- only the protocol shell stays delete-only until final cutover
+
+### 2. No hidden browser startup in CLI help/list paths
+
+CLI parsing/help/command registry must be local and cheap:
+
+- build subcommands from registered tool metadata
+- do **not** start `BrowserBridgeServer` for `--help`, local command lookup, or parity checks
+- tool execution only is delegated to the daemon
+
+### 3. Daemon scope contract
+
+The daemon is a **user-local singleton per user/profile**, not per caller cwd.
+
+- daemon control state/lockfile lives in a user-local state root
+- caller project `.pi/` remains for artifacts, memory, and evidence output only
+- `status` / `stop` address the singleton daemon
+- multiple projects can invoke the same daemon; per-call `cwd` decides artifact/memory roots
+
+### 4. Caller-cwd contract
+
+Every request-scoped path decision must use explicit caller `cwd`:
+
+- artifact output roots
+- browser memory roots
+- bounded wordlist path allowlists
+- sqlmap/nuclei/crawl temporary artifact dirs
+- callback OAST persisted session state
+
+`process.cwd()` may remain only for:
+
+- build/release/check scripts
+- process-global daemon state fallback
+- code paths that are truly process-global and not request-scoped
+
+### 5. Current-facing docs vs historical docs
+
+Current-facing docs must switch when behavior lands:
+
+- `README.md`
+- `AI_INSTALL.md`
+- `CLAUDE.md`
+- `skills/pi-browser-tools/SKILL.md`
+- `docs/browser-usage.md`
+- `docs/tool-boundaries.md`
+- `docs/generated/**`
+- `CURRENT.md`
+- `TODO.md`
+
+Historical docs may retain MCP history and are **not** migration blockers by themselves:
+
+- `CHANGELOG.md`
+- `ARCHIVE.md`
+- `docs/archive/**`
+- completed historical plan/docs such as `docs/mcp-standardization-progressive-disclosure-plan.md`
+
+### 6. No capability weakening
+
+- CLI exposes every registered tool allowed by `PI_BROWSER_TOOL_PROFILE`.
+- No compact/minimal visibility mode and no `browser_tool_discovery` replacement.
+- No MCP compatibility shim remains after cutover.
+
+## Coupling map
+
+### A. Relocate to `src/frontend/`
 
 | From | To | Rename / fix |
 |---|---|---|
-| `mcp/adapter.ts` | `src/frontend/toolCollector.ts` | class `McpExtensionAdapter` → `ToolCollectingAdapter` |
-| `mcp/validation.ts` | `src/frontend/validation.ts` | `validateMcpToolArgs`→`validateToolArgs`, `McpValidationResult`→`ToolValidationResult` |
-| `mcp/middleware.ts` | `src/frontend/middleware.ts` | `timingLogHook` log prefix `[pi-browser-mcp]`→`[pi-browser]` |
-| `mcp/usageLog.ts` | `src/frontend/usageLog.ts` | import `../src/utils/redaction.js`→`../utils/redaction.js` |
+| `mcp/adapter.ts` | `src/frontend/toolCollector.ts` | `McpExtensionAdapter` → `ToolCollectingAdapter` |
+| `mcp/validation.ts` | `src/frontend/validation.ts` | `validateMcpToolArgs` → `validateToolArgs`; `McpValidationResult` → `ToolValidationResult` |
+| `mcp/middleware.ts` | `src/frontend/middleware.ts` | log prefix `[pi-browser-mcp]` → `[pi-browser]` |
+| `mcp/usageLog.ts` | `src/frontend/usageLog.ts` | fix imports to `src/utils/...` |
 
-### B. Relocate to `src/resources/` — ref/resource infra USED BY CORE
+### B. Relocate to `src/resources/`
 
-These back the `pi-ref://` / `browser-result://` descriptor registry that
-`src/abml/verbs/*` and `src/tools/summaries/scan.ts` register into and the memory
-tool resolves. Shared, not MCP-only.
-
-| From | To | Import fixes after move |
+| From | To | Notes |
 |---|---|---|
-| `mcp/resourceStore.ts` | `src/resources/resourceStore.ts` | `../src/abml/{types,refPolicy}.js`→`../abml/...` |
-| `mcp/resourceReader.ts` | `src/resources/resourceReader.ts` | `../src/tools/artifactReader.js`→`../tools/artifactReader.js` |
-| `mcp/resourceFreshness.ts` | `src/resources/resourceFreshness.ts` | `../src/utils/fileFreshness.js`→`../utils/fileFreshness.js` |
-| `mcp/memoryResourceStore.ts` | `src/resources/memoryResourceStore.ts` | `../src/tools/memory/{paths,indexStore}.js`→`../tools/memory/...` |
-| `mcp/memoryResourceReader.ts` | `src/resources/memoryResourceReader.ts` | `../src/tools/memory/reader.js`→`../tools/memory/reader.js` |
+| `mcp/resourceStore.ts` | `src/resources/resourceStore.ts` | shared by ABML/runtime/tests |
+| `mcp/resourceReader.ts` | `src/resources/resourceReader.ts` | shared by stream/runtime reads |
+| `mcp/resourceFreshness.ts` | `src/resources/resourceFreshness.ts` | shared freshness helpers |
+| `mcp/memoryResourceStore.ts` | `src/resources/memoryResourceStore.ts` | keep `resolveBrowserResultEvidence` export |
+| `mcp/memoryResourceReader.ts` | `src/resources/memoryResourceReader.ts` | shared browser-memory resource reader |
 
-> `memoryResourceStore` exports `resolveBrowserResultEvidence` — the memory
-> evidence resolver. Pi's entry does not pass it, but a unit test exercises it and
-> the **daemon should pass it** to `registerBrowserTools` so `browser_memory`
-> evidence resolution does not regress.
+### C. Delete only after replacement parity is green
 
-### C. Delete — true MCP-protocol shell (nothing in core imports these)
+`mcp/index.ts`, `mcp/bin.ts`, `mcp/handleResolver.ts`, `mcp/handleFields.ts`, `mcp/jsonPath.ts`, `mcp/prompts.ts`, `mcp/structuredEnvelopeSchema.ts`, `mcp/toolAnnotations.ts`, `mcp/toolVisibility.ts`.
 
-`mcp/index.ts`, `mcp/bin.ts`, `mcp/handleResolver.ts`, `mcp/handleFields.ts`,
-`mcp/jsonPath.ts`, `mcp/prompts.ts`, `mcp/structuredEnvelopeSchema.ts`,
-`mcp/toolAnnotations.ts`, `mcp/toolVisibility.ts` → after A+B, `rm -r mcp/`.
+## Phase gates
 
-### Importers to repoint (verified)
+| Phase | Goal | Must stay true | Gate |
+|---|---|---|---|
+| P0 | activate plan + freeze scope | shipping behavior still MCP + Pi-native | `npm run check:doc-structure` |
+| P1 | shared infra relocation + cwd propagation | MCP shell still works | `check:src:types` + `test:unit` + targeted contracts |
+| P2 | CLI client + daemon | local help/list path does not start browser | build + frontend/CLI tests |
+| P3 | package/contracts cutover + MCP removal | replacement checks green before deletion | `npm run check` + `npm pack --dry-run --json` |
+| P4 | skill/docs/runtime verification | current-facing docs match shipped behavior | skill validate + smoke + `quality:local` |
 
-- **Core (`src/`, 8 files):** `src/abml/verbs/{ax,frame,pierce,stream,vision,}Runtime.ts` + `src/tools/summaries/scan.ts` — `../../../mcp/resourceStore.js`→`../../resources/resourceStore.js` (stream also `resourceReader`).
-- **Unit tests (5):** `tests/unit/abml/{frame,stream,pierce,vision}-runtime.test.ts`, `tests/unit/memory/evidenceResolve.test.ts` — `../../../mcp/resourceStore.ts`→`../../../src/resources/resourceStore.ts` (evidenceResolve also `memoryResourceStore`).
-- **`tests/unit/tools/frame-abml-integration.test.ts`** — `McpExtensionAdapter` from `mcp/adapter.ts` → `ToolCollectingAdapter` from `src/frontend/toolCollector.ts`. *(Was missing from the original plan.)*
-- **Smoke (2):** `tests/smoke/smoke-browser-memory.mjs`, `tests/smoke/smoke-abml-internal-tool-routing.mjs` — same adapter repoint.
-- **Move + repoint moved unit tests:** `tests/unit/mcp/{validation,usageLog}.test.ts` → `tests/unit/frontend/` (fix imports + `validateToolArgs` rename).
+## Execution phases
 
----
+### P0 · Activate plan and freeze migration scope
 
-## Contract & manifest surgery (MCP assumptions run deep)
+- [x] Promote this document to the active execution contract.
+- [x] Wire active queue references in `TODO.md` / `CURRENT.md` / `CLAUDE.md`.
+- [ ] Add a bounded migration drift contract for active code/tests/docs:
+  - patterns: `mcp/`, `dist/mcp`, `pi-browser-mcp`, `@modelcontextprotocol/sdk`, `browser_tool_discovery`, `PI_BROWSER_MCP_`
+  - exclude historical docs listed above
+- [ ] Record the final daemon state-root contract in code-facing docs before implementation begins.
 
-### Delete (14) — `tests/contracts/tools/check-mcp-*.mjs`
-`conformance, tools-list, resources, etag, sections, list-changed, prompts,
-ingress-handles, structured-envelope, dynamic-tools, e2e, middleware, memory,
-parameter-contract`.
+### P1 · Shared infra relocation and caller-cwd propagation
 
-### Keep (verified NOT to depend on `mcp/`)
-`check-memory-autosurface`, `check-memory-lifecycle`, `check-token-economy`,
-`check-jshookmcp-closure` — they drive the tool layer directly.
+- [ ] Move frontend helpers from `mcp/` to `src/frontend/`.
+- [ ] Move resource/ref infra from `mcp/` to `src/resources/`.
+- [ ] Repoint all verified core/test/smoke importers away from `mcp/*`.
+- [ ] Add/rename frontend unit tests:
+  - `tests/unit/frontend/validation.test.ts`
+  - `tests/unit/frontend/usageLog.test.ts`
+  - middleware unit coverage
+- [ ] Propagate caller `cwd` into every request-scoped path writer.
+- [ ] Remove MCP-only `browser_tool_discovery` references from active code paths once the tool is gone (for example `src/tools/memory/autoSurface.ts` and current-facing docs/skill).
+- [ ] Keep the MCP shell operational during this phase; no `rm -r mcp/` yet.
 
-### Re-create as frontend/CLI tests
-- Validation already covered by `tests/unit/frontend/validation.test.ts` (moved).
-- Add a frontend middleware unit test (replaces `check-mcp-middleware`).
-- Add `tests/contracts/cli/check-cli-parity.mjs` — every registered tool has a
-  subcommand + non-empty help; counts **15 core / 22 security** (mirror
-  `check-mcp-tools-list.mjs`'s assertions before deleting it).
+P1 gate:
 
-### `package.json`
-- `exports`: remove `"./mcp"`.
-- `bin`: `pi-browser-mcp`→`pi-browser` (`./dist/cli/bin.js`).
-- `scripts`: remove all `check:mcp-*` (14) and `"mcp": "tsx mcp/index.ts"`; add `check:cli-parity` (+ any cli checks).
-- `dependencies`: remove `@modelcontextprotocol/sdk` → allowlist becomes `["js-yaml","typebox","typescript","ws","zod"]`.
-- `files`: `"mcp/"`→`"cli/"`.
-- **Regenerate `package-lock.json`** (`npm install`) — `check-dependencies.mjs` asserts lockfile `dependencies` deep-equal `package.json` and runs `npm ls`.
+- `npm run check:src:types`
+- `npm run test:unit`
+- targeted bridge/contracts as needed for repointed imports
+- no active `src/**`, `index.ts`, `tests/**`, or smokes import shared infra from `mcp/*`
 
-### Config / contract files
-- `tsconfig.build.json` include: `"mcp/**/*.ts"`→`"cli/**/*.ts"`.
-- `tests/contracts/drift/check-dependencies.mjs` (allowlist assert): drop the SDK.
-- `tests/contracts/drift/check-package-files.mjs` (deep MCP asserts): bin
-  `pi-browser-mcp`→`pi-browser`/`dist/cli/bin.js`; remove `exports."./mcp"` asserts;
-  drop `"mcp"` from the tsx-scripts list; `distFiles`/packed asserts
-  `dist/mcp/{bin,index}.js`→`dist/cli/bin.js`.
-- `scripts/run-check-groups.mjs` `contracts` group: remove the 14 `check:mcp-*`;
-  keep memory/token-economy/jshook entries; add `check:cli-parity`.
-- `tests/contracts/protocol/check-pi-browser-bridge.mjs:1326-1327` skill grep:
-  `"browser_tabs list"`→`"pi-browser tabs list"`.
+### P2 · CLI client + daemon
 
----
+- [ ] Add `cli/flags.ts`.
+- [ ] Add `cli/render.ts`.
+- [ ] Add `cli/registry.ts` using `ToolCollectingAdapter` and local tool metadata only.
+- [ ] Add `cli/client.ts`.
+- [ ] Add `cli/daemon.ts` with loopback control server and `memoryEvidenceResolver: resolveBrowserResultEvidence`.
+- [ ] Add `cli/daemonControl.ts` with singleton discovery, stale detection, and auto-start.
+- [ ] Add `cli/index.ts` and `cli/bin.ts`.
+- [ ] Auto-start via `process.execPath` + resolved local CLI entry, not shell `pi-browser`.
+- [ ] Pass caller `cwd` on every `/invoke` and execute tools with `{ cwd, hasUI:false }`.
+- [ ] Define CLI exit codes and non-TTY/TTY rendering behavior.
 
-## New CLI (`cli/`, mirrors the old `mcp/` layout)
+P2 gate:
 
-- `cli/flags.ts` — TypeBox `parameters` (`.properties`/`.required`, `type`/`anyOf`/
-  `items`/`description`) → flag specs. `String/Number`→`--x <v>`; `Boolean`→
-  `--x`/`--no-x`; `Union([Literal…])`→`--x <enum>`; `Array`→repeatable; `Object`/
-  `Record`→`--x <json>`. Subcommand = tool minus `browser_`, `_`→`-`. Collect raw
-  argv → `validateToolArgs` (coerce/validate — do NOT re-implement coercion).
-  Support `--flag @file` and `--flag -` (stdin).
-- `cli/render.ts` — `--json`/non-TTY → raw envelope text; TTY → summary +
-  `nextActions` + artifact path + diagnostics; errors→stderr + `recovery`. Exit
-  codes 0 ok / 1 tool error / 2 usage / 3 daemon-unavailable. Zero-dep ANSI.
-- `cli/registry.ts` — `buildCliCommands({securityToolsEnabled})` via
-  `registerBrowserTools(new ToolCollectingAdapter(), placeholderServer, noopEnsureStarted, …)`
-  (pattern from `check-mcp-tools-list.mjs`). Profile via `resolveBrowserToolCapabilityProfile()`.
-- `cli/daemon.ts` — owns `BrowserBridgeServer` + lazy `ensureStarted` (copy the
-  closure from `index.ts`) + `registerBrowserTools(collector, server, ensureStarted,
-  {securityToolsEnabled, memoryEvidenceResolver: resolveBrowserResultEvidence})` +
-  usage-log hook + loopback `node:http` control server + lockfile + SIGINT/SIGTERM
-  teardown. Control endpoints (127.0.0.1, `x-pi-daemon-token`): `POST /invoke
-  {tool, params, cwd}`, `GET /status` (`server.snapshot()`), `POST /shutdown`.
-- `cli/daemonControl.ts` — `.pi/browser-daemon.json` `{pid, controlHost, controlPort,
-  token, bridgePort, startedAt, version}`; `findDaemon`/`ensureDaemon` (auto-start:
-  spawn detached `pi-browser daemon start`, poll `/status`)/`stopDaemon`; stale
-  detection (dead pid / failing status → respawn).
-- `cli/client.ts` — `ensureDaemon()`→`POST /invoke`→`render`.
-- `cli/index.ts` — dispatch `--help` / `<subcommand>` / `daemon start|stop|status`;
-  global flags `--json/--text`, `--detail-level`, `--max-chars`, `--timeout-ms`,
-  `--redact/--no-redact`, `--tab-id`, `--browser-session-id`, `--output-path`.
-- `cli/bin.ts` — `#!/usr/bin/env node` → `import "./index.js"`.
+- local `--help` / command parity path works without browser startup
+- CLI unit coverage for flags/render/daemon control
+- daemon lifecycle coverage
+- replacement parity contract exists and passes for core/security profiles
 
-## Skill + docs
+### P3 · Package/contracts cutover and MCP shell removal
 
-- `skills/pi-browser-tools/SKILL.md`: invocation examples → `pi-browser <cmd>`
-  (`browser_observe {mode:"scan"}`→`pi-browser observe --mode scan`); keep Loop /
-  Routes / Recovery / Memory; add an **Invocation** preamble (daemon auto-starts;
-  `--json` off-TTY; `--help`); drop the visibility/`browser_tool_discovery` section.
-- `CLAUDE.md` architecture (MCP layer → CLI + daemon) + Common Commands; `AI_INSTALL.md`,
-  `README.md`, `docs/browser-usage.md`, `docs/tool-boundaries.md`; add `docs/cli.md`;
-  regenerate `docs/generated/*`.
+- [ ] Replace `package.json` surface:
+  - remove `./mcp`
+  - `pi-browser-mcp` → `pi-browser`
+  - drop `mcp` scripts
+  - drop `@modelcontextprotocol/sdk`
+  - add CLI parity scripts/tests
+- [ ] Update `tsconfig.build.json` include from `mcp/**/*.ts` to `cli/**/*.ts`.
+- [ ] Replace/remove MCP-specific contracts and grouped check entries.
+- [ ] Update `check-package-files.mjs`, `check-dependencies.mjs`, `check-bridge-files.mjs`, `check-pi-browser-bridge.mjs`, and `scripts/run-check-groups.mjs`.
+- [ ] Add CLI/frontend replacement contracts (including bounded drift contract from P0).
+- [ ] Delete the MCP protocol shell files from `mcp/` only after all replacement checks are green.
+- [ ] Regenerate `package-lock.json` after dependency changes.
 
----
+P3 gate:
 
-## Sequencing (each commit green; the package contract dictates the order)
+- `npm run build`
+- `npm run check`
+- `npm pack --dry-run --json`
+- active code/tests/current-facing docs no longer depend on MCP-only names
 
-`check-package-files.mjs` asserts a **packed bin + lockfile consistency**, so the
-first fully-`npm run check`-green state must include the CLI build. Recommended
-commits:
+### P4 · Skill/docs switch and runtime verification
 
-1. **relocate + remove MCP shell** — A+B moves, repoint all core/test importers,
-   `rm -r mcp/` + delete 14 contract tests, `tsconfig.build`(drop mcp),
-   `run-check-groups`(drop mcp), `package.json`(drop `./mcp` export, mcp scripts,
-   SDK dep, `files`; **temporarily remove `bin`**), lockfile sync,
-   `check-dependencies`(allowlist), `check-package-files`(drop all mcp/bin/dist
-   asserts; do not yet require a bin). Gate: `tsc -p tsconfig.json` (excludes mcp),
-   `tsc -p tsconfig.bridge-src.json`, `npm run build`, `npm run test:unit`, and the
-   trimmed `npm run check`.
-2. **CLI client + daemon** — add `cli/`; `package.json` bin `pi-browser` + `files`
-   `cli/`; `tsconfig.build` add `cli/**`; `check-package-files` assert
-   `dist/cli/bin.js`; `check:cli-parity` + `run-check-groups`. Gate: full `npm run check`.
-3. **Skill + docs** — rewrite + regenerate + skill-grep contract update.
-4. **Tests + verify** — frontend middleware test, cli flag/render units, daemon
-   lifecycle test, live `tests/smoke/smoke-cli.mjs`; `npm run quality:local`.
+- [ ] Update `skills/pi-browser-tools/SKILL.md` to CLI invocation syntax.
+- [ ] Add `docs/cli.md`.
+- [ ] Update current-facing docs only after shipped behavior matches them:
+  - `README.md`
+  - `AI_INSTALL.md`
+  - `CLAUDE.md`
+  - `docs/browser-usage.md`
+  - `docs/tool-boundaries.md`
+  - `docs/generated/**`
+- [ ] Run skill validation.
+- [ ] Add and run live CLI smoke (`tests/smoke/smoke-cli.mjs`).
+- [ ] Archive the MCP frontend path as historical, not current behavior.
 
-(Commits 1–2 may be merged if preferred; the constraint is only that a
-`check`-green state never expects a bin/dist file that isn't built yet.)
+P4 gate:
 
-## Verification
+- `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools`
+- live browser smoke for `pi-browser tabs list`, `observe --mode scan`, `execute`, `cookie-analyze`
+- `npm run quality:local`
 
-- `tsc` (both) + `npm run build` + `npm run test:unit` + `npm run check` green.
-- Live browser: `pi-browser tabs list`, `pi-browser observe --mode scan`,
-  `pi-browser cookie-analyze --url … --bind-browser-session`,
-  `pi-browser execute --script … --no-redact`; confirm human + `--json` output,
-  exit codes, daemon auto-start, artifacts under the caller's `.pi/`.
-- `npm run quality:local` before merge.
+## Sequencing (green at every step)
+
+1. **Docs activation + scope freeze** — this document, `TODO.md`, `CURRENT.md`, `CLAUDE.md`.
+2. **Shared infra relocation + cwd propagation** — keep MCP shell alive.
+3. **CLI + daemon implementation** — still keep MCP shell alive while parity/tests land.
+4. **Package/contracts/docs cutover** — switch package/bin/contracts/current-facing docs, then delete MCP shell.
+5. **Runtime verification + archive cleanup**.
+
+There is intentionally **no** step that deletes `mcp/` before CLI parity and replacement contracts are green.
+
+## Verification matrix
+
+- P0: `npm run check:doc-structure`
+- P1: `npm run check:src:types` + `npm run test:unit`
+- P2: `npm run build` + CLI/frontend targeted tests
+- P3: `npm run check` + `npm pack --dry-run --json`
+- P4: skill validate + live smoke + `npm run quality:local`
 
 ## Non-goals
 
-- No change to `bridge_src/` (extension) or `bridge/native_command_schema.json`
-  (protocol untouched).
-- No new runtime dependency; no CLI framework.
-- No MCP compatibility shim left behind (the protocol shell is removed, not demoted).
-- No change to Pi-native registration (`index.ts`) beyond what the relocation
-  requires.
+- no change to `bridge_src/` or `bridge/native_command_schema.json`
+- no new runtime dependency / no CLI framework
+- no new public `browser_*` tools
+- no MCP compatibility shim left behind
+- no change to Pi-native `index.ts` behavior beyond import relocation
+- no current-facing doc claiming `pi-browser` exists before the implementation lands
 
-## Risks / notes
+## Current executable TODO queue
 
-- **Irreversible**: MCP removal deletes the only non-Pi structured frontend until
-  the CLI lands; do A+B (extract) fully before any deletion.
-- **Lockfile drift**: forgetting `npm install` after dropping the SDK fails
-  `check-dependencies` (lockfile vs package.json equality + `npm ls`).
-- **Hidden coupling** (above) is the main trap — `src/abml/verbs/*` and the memory
-  tool depend on the resource store that currently lives under `mcp/`.
-- The live `smoke-cli.mjs` only runs with a connected browser (CI-skipped, like the
-  other browser smokes).
-- New top-level `cli/` dir → add to `tsconfig.build.json` include and `package.json`
-  `files`; consider `npm run docs:sync-indexes` if a doc index references it.
+1. [x] Activate the migration plan in top-level docs.
+2. [ ] Add bounded migration drift contract and daemon scope contract.
+3. [ ] Relocate shared frontend/resources infra and repoint imports.
+4. [ ] Propagate caller `cwd` through every request-scoped path root.
+5. [ ] Implement CLI client + singleton daemon.
+6. [ ] Switch package/contracts/current-facing docs and remove MCP shell.
+7. [ ] Run skill validation, live CLI smoke, and `quality:local`.
