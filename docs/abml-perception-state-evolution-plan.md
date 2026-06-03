@@ -1,5 +1,7 @@
 # ABML — Agent-Native Page Model (Evolution Plan)
 
+*ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
+
 > Status: planning contract, **core feasibility verified by offline spike**.
 > Establishes the first principle for what the browser tools return to an agent, a
 > **generality principle** (ARIA full-spectrum as the design template — not any one

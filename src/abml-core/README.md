@@ -69,6 +69,10 @@ those shims. New code may import the barrel directly: `import { ... } from ".../
 
 ## Related docs
 
-- [`docs/abml-kernel-manifest.md`](../../docs/abml-kernel-manifest.md) — formal layer manifest + boundary spec + the workspace-package promotion recipe.
+The full ABML doc set + roles is mapped in
+[`docs/abml-kernel-manifest.md` → ABML documentation map](../../docs/abml-kernel-manifest.md#abml-documentation-map).
+The ones you will reach for most:
+
+- [`docs/abml-kernel-manifest.md`](../../docs/abml-kernel-manifest.md) — formal layer manifest + boundary spec + the workspace-package promotion recipe (and the doc map).
 - [`docs/abml-p1-spec.md`](../../docs/abml-p1-spec.md) — the AX-authoritative state spec.
 - [`docs/abml-perception-state-evolution-plan.md`](../../docs/abml-perception-state-evolution-plan.md) — the perception north-star + R1/R2/R3 semantic-depth roadmap.

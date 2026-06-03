@@ -28,6 +28,19 @@ machine-readable manifest; **keep the two in sync** — if they diverge, or a ne
 `src/abml-core/` or `src/abml/` without classification, or a pure-core file imports a runtime
 layer, or a shim goes missing, CI goes red.
 
+## ABML documentation map
+
+ABML is covered by a small, role-separated doc set. Start at the row that matches what you need;
+each doc links back here.
+
+| Doc | Role | Read it when |
+| --- | --- | --- |
+| [`src/abml-core/README.md`](../src/abml-core/README.md) | Kernel front door — onboarding + how to extend | you are working in the kernel code |
+| `docs/abml-kernel-manifest.md` (this) | Layer manifest + CI boundary spec + package-promotion recipe | you need the pure-core ⇄ runtime rule or the file classification |
+| [`docs/abml-p1-spec.md`](abml-p1-spec.md) | AX-authoritative state **language spec** (P1, REVIEWED) | you need the formal contract for entity state / pure-function behavior |
+| [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
+| [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
+
 ## Pure core (15 — zero browser/Node deps)
 
 | File | Role |

@@ -1,5 +1,7 @@
 # ABML 执行计划 / ABML Execution Plan
 
+*ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
+
 > 状态: ACTIVE TODO。  
 > 设计源: `docs/unified-browser-modeling-language-plan.md`。  
 > P1 规格源: `docs/abml-p1-spec.md`。  
