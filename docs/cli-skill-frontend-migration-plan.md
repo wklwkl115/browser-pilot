@@ -1,8 +1,11 @@
 # CLI + Skill Frontend Migration Plan
 
-> Status: ACTIVE execution contract.
-> Current shipping behavior remains **Pi-native entry (`index.ts`) + MCP shell (`mcp/`)**.
-> This document defines the migration work to land a `pi-browser` CLI (+ Skill) as the primary external frontend, then remove the MCP shell. It does **not** describe currently shipping behavior until implementation, contracts, generated docs, and current-facing docs are updated.
+> **Status: COMPLETE — landed 2026-06-03.** Shipping external frontends are now **Pi-native
+> entry (`index.ts`) + `pi-browser` CLI (`cli/`)**; the MCP shell (`mcp/`) was removed. P0–P4 all
+> landed and `npm run check` passes end to end (incl. `check:cli-parity`, `check:cli-migration-drift`),
+> the live-browser `npm run smoke:cli` passes, and Pi-native registers all 22 tools with zero mcp
+> imports. CLI usage: `docs/cli.md`. This document is retained as the historical execution record;
+> the checklist below reflects the completed state.
 
 ## Decision source
 
@@ -32,20 +35,20 @@ This revision closes the gaps found in the first draft:
 4. **Daemon scope is explicit.** Use a **user-local singleton daemon**; do not store daemon lock state under the caller project `.pi/`.
 5. **Docs/contracts scope is explicit.** Current-facing docs must switch only when the behavior lands; historical docs may retain MCP history.
 
-## Current repo facts (verified before activation)
+## Repo facts (post-migration, 2026-06-03)
 
-- `mcp/` exists and `cli/` does not.
-- `package.json` still exposes `./mcp`, `pi-browser-mcp`, `mcp` scripts, and runtime dep `@modelcontextprotocol/sdk`.
-- Core/runtime importers already depend on shared infra under `mcp/` (`src/abml/verbs/*`, `src/tools/summaries/scan.ts`, memory tests, smoke tests).
-- Request-scoped path writers still use raw `process.cwd()` in at least:
-  - `src/tools/webSecurity/bridges/nucleiBridge.ts`
-  - `src/tools/webSecurity/bridges/sqlmapBridge.ts`
-  - `src/tools/webSecurity/browserNative/crawl.ts`
-  - `src/tools/webSecurity/browserNative/oastWorkerManager.ts`
-  - `src/tools/webSecurity/shared/normalize.ts`
-- Current-facing docs/skill still mention MCP-only behavior (`pi-browser-mcp`, `browser_tool_discovery`, `PI_BROWSER_MCP_*`).
+The pre-activation facts below were the starting point; all are now resolved:
 
-These facts are part of the execution scope; do not assume they are already solved.
+- `cli/` exists (bin/client/daemon/daemonControl/flags/index/registry/render); `mcp/` was deleted.
+- `package.json` exposes only the `pi-browser` bin and the `.` export; `./mcp`, `pi-browser-mcp`,
+  `mcp`/`check:mcp-*` scripts, and `@modelcontextprotocol/sdk` are all removed (prod deps:
+  js-yaml/typebox/typescript/ws/zod).
+- Shared infra lives in `src/frontend/` + `src/resources/`; no active code imports `mcp/`
+  (locked by `check:cli-migration-drift`).
+- Request-scoped path writers thread the caller `cwd` (`requestCwd(options)` from the
+  `runWebSecurityTool` adapter): nucleiBridge, sqlmapBridge, crawl, and **oastWorkerManager**
+  (callback-OAST session root is now caller-cwd-rooted, not `process.cwd()`).
+- Current-facing docs/skill describe the CLI; MCP mentions remain only as historical notes.
 
 ## Accepted migration decisions
 
@@ -158,23 +161,23 @@ Historical docs may retain MCP history and are **not** migration blockers by the
 
 - [x] Promote this document to the active execution contract.
 - [x] Wire active queue references in `TODO.md` / `CURRENT.md` / `CLAUDE.md`.
-- [ ] Add a bounded migration drift contract for active code/tests/docs:
+- [x] Add a bounded migration drift contract for active code/tests/docs:
   - patterns: `mcp/`, `dist/mcp`, `pi-browser-mcp`, `@modelcontextprotocol/sdk`, `browser_tool_discovery`, `PI_BROWSER_MCP_`
   - exclude historical docs listed above
-- [ ] Record the final daemon state-root contract in code-facing docs before implementation begins.
+- [x] Record the final daemon state-root contract in code-facing docs before implementation begins.
 
 ### P1 · Shared infra relocation and caller-cwd propagation
 
-- [ ] Move frontend helpers from `mcp/` to `src/frontend/`.
-- [ ] Move resource/ref infra from `mcp/` to `src/resources/`.
-- [ ] Repoint all verified core/test/smoke importers away from `mcp/*`.
-- [ ] Add/rename frontend unit tests:
+- [x] Move frontend helpers from `mcp/` to `src/frontend/`.
+- [x] Move resource/ref infra from `mcp/` to `src/resources/`.
+- [x] Repoint all verified core/test/smoke importers away from `mcp/*`.
+- [x] Add/rename frontend unit tests:
   - `tests/unit/frontend/validation.test.ts`
   - `tests/unit/frontend/usageLog.test.ts`
   - middleware unit coverage
-- [ ] Propagate caller `cwd` into every request-scoped path writer.
-- [ ] Remove MCP-only `browser_tool_discovery` references from active code paths once the tool is gone (for example `src/tools/memory/autoSurface.ts` and current-facing docs/skill).
-- [ ] Keep the MCP shell operational during this phase; no `rm -r mcp/` yet.
+- [x] Propagate caller `cwd` into every request-scoped path writer.
+- [x] Remove MCP-only `browser_tool_discovery` references from active code paths once the tool is gone (for example `src/tools/memory/autoSurface.ts` and current-facing docs/skill).
+- [x] Keep the MCP shell operational during this phase; no `rm -r mcp/` yet.
 
 P1 gate:
 
@@ -185,16 +188,16 @@ P1 gate:
 
 ### P2 · CLI client + daemon
 
-- [ ] Add `cli/flags.ts`.
-- [ ] Add `cli/render.ts`.
-- [ ] Add `cli/registry.ts` using `ToolCollectingAdapter` and local tool metadata only.
-- [ ] Add `cli/client.ts`.
-- [ ] Add `cli/daemon.ts` with loopback control server and `memoryEvidenceResolver: resolveBrowserResultEvidence`.
-- [ ] Add `cli/daemonControl.ts` with singleton discovery, stale detection, and auto-start.
-- [ ] Add `cli/index.ts` and `cli/bin.ts`.
-- [ ] Auto-start via `process.execPath` + resolved local CLI entry, not shell `pi-browser`.
-- [ ] Pass caller `cwd` on every `/invoke` and execute tools with `{ cwd, hasUI:false }`.
-- [ ] Define CLI exit codes and non-TTY/TTY rendering behavior.
+- [x] Add `cli/flags.ts`.
+- [x] Add `cli/render.ts`.
+- [x] Add `cli/registry.ts` using `ToolCollectingAdapter` and local tool metadata only.
+- [x] Add `cli/client.ts`.
+- [x] Add `cli/daemon.ts` with loopback control server and `memoryEvidenceResolver: resolveBrowserResultEvidence`.
+- [x] Add `cli/daemonControl.ts` with singleton discovery, stale detection, and auto-start.
+- [x] Add `cli/index.ts` and `cli/bin.ts`.
+- [x] Auto-start via `process.execPath` + resolved local CLI entry, not shell `pi-browser`.
+- [x] Pass caller `cwd` on every `/invoke` and execute tools with `{ cwd, hasUI:false }`.
+- [x] Define CLI exit codes and non-TTY/TTY rendering behavior.
 
 P2 gate:
 
@@ -205,18 +208,18 @@ P2 gate:
 
 ### P3 · Package/contracts cutover and MCP shell removal
 
-- [ ] Replace `package.json` surface:
+- [x] Replace `package.json` surface:
   - remove `./mcp`
   - `pi-browser-mcp` → `pi-browser`
   - drop `mcp` scripts
   - drop `@modelcontextprotocol/sdk`
   - add CLI parity scripts/tests
-- [ ] Update `tsconfig.build.json` include from `mcp/**/*.ts` to `cli/**/*.ts`.
-- [ ] Replace/remove MCP-specific contracts and grouped check entries.
-- [ ] Update `check-package-files.mjs`, `check-dependencies.mjs`, `check-bridge-files.mjs`, `check-pi-browser-bridge.mjs`, and `scripts/run-check-groups.mjs`.
-- [ ] Add CLI/frontend replacement contracts (including bounded drift contract from P0).
-- [ ] Delete the MCP protocol shell files from `mcp/` only after all replacement checks are green.
-- [ ] Regenerate `package-lock.json` after dependency changes.
+- [x] Update `tsconfig.build.json` include from `mcp/**/*.ts` to `cli/**/*.ts`.
+- [x] Replace/remove MCP-specific contracts and grouped check entries.
+- [x] Update `check-package-files.mjs`, `check-dependencies.mjs`, `check-bridge-files.mjs`, `check-pi-browser-bridge.mjs`, and `scripts/run-check-groups.mjs`.
+- [x] Add CLI/frontend replacement contracts (including bounded drift contract from P0).
+- [x] Delete the MCP protocol shell files from `mcp/` only after all replacement checks are green.
+- [x] Regenerate `package-lock.json` after dependency changes.
 
 P3 gate:
 
@@ -227,18 +230,18 @@ P3 gate:
 
 ### P4 · Skill/docs switch and runtime verification
 
-- [ ] Update `skills/pi-browser-tools/SKILL.md` to CLI invocation syntax.
-- [ ] Add `docs/cli.md`.
-- [ ] Update current-facing docs only after shipped behavior matches them:
+- [x] Update `skills/pi-browser-tools/SKILL.md` to CLI invocation syntax.
+- [x] Add `docs/cli.md`.
+- [x] Update current-facing docs only after shipped behavior matches them:
   - `README.md`
   - `AI_INSTALL.md`
   - `CLAUDE.md`
   - `docs/browser-usage.md`
   - `docs/tool-boundaries.md`
   - `docs/generated/**`
-- [ ] Run skill validation.
-- [ ] Add and run live CLI smoke (`tests/smoke/smoke-cli.mjs`).
-- [ ] Archive the MCP frontend path as historical, not current behavior.
+- [x] Run skill validation.
+- [x] Add and run live CLI smoke (`tests/smoke/smoke-cli.mjs`).
+- [x] Archive the MCP frontend path as historical, not current behavior.
 
 P4 gate:
 
@@ -276,9 +279,9 @@ There is intentionally **no** step that deletes `mcp/` before CLI parity and rep
 ## Current executable TODO queue
 
 1. [x] Activate the migration plan in top-level docs.
-2. [ ] Add bounded migration drift contract and daemon scope contract.
-3. [ ] Relocate shared frontend/resources infra and repoint imports.
-4. [ ] Propagate caller `cwd` through every request-scoped path root.
-5. [ ] Implement CLI client + singleton daemon.
-6. [ ] Switch package/contracts/current-facing docs and remove MCP shell.
-7. [ ] Run skill validation, live CLI smoke, and `quality:local`.
+2. [x] Add bounded migration drift contract and daemon scope contract.
+3. [x] Relocate shared frontend/resources infra and repoint imports.
+4. [x] Propagate caller `cwd` through every request-scoped path root.
+5. [x] Implement CLI client + singleton daemon.
+6. [x] Switch package/contracts/current-facing docs and remove MCP shell.
+7. [x] Run skill validation, live CLI smoke, and `quality:local`.
