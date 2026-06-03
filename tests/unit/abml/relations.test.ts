@@ -3,20 +3,22 @@
 // and buildRelationSummary produces the budget-immune envelope disclosure. No browser.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { materializeRelations, buildRelationSummary, entityRelationKeys, type RelationAnchor } from "../../../src/abml-core/relations.ts";
+import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors, entityRelationKeys, type RelationAnchor } from "../../../src/abml-core/relations.ts";
 import type { Entity } from "../../../src/abml-core/entity.ts";
 
-function entity(ref: string, opts: { backendNodeId?: number; axNodeId?: string; relations?: Entity["relations"] } = {}): Entity {
+function entity(ref: string, opts: { backendNodeId?: number; axNodeId?: string; selector?: string; relations?: Entity["relations"]; state?: Partial<Entity["state"]>; hints?: Record<string, unknown> } = {}): Entity {
 	return {
 		ref,
 		kind: "control",
 		role: "button",
-		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true, ...(opts.state ?? {}) },
 		source: "ax",
 		...(opts.relations ? { relations: opts.relations } : {}),
 		hints: {
 			...(opts.backendNodeId !== undefined ? { backendNodeId: opts.backendNodeId } : {}),
 			...(opts.axNodeId !== undefined ? { axNodeId: opts.axNodeId } : {}),
+			...(opts.selector !== undefined ? { selector: opts.selector } : {}),
+			...(opts.hints ?? {}),
 		},
 	};
 }
@@ -108,4 +110,43 @@ test("buildRelationSummary returns an empty-but-present summary when no relation
 	const { summary, highlights } = buildRelationSummary([entity("pi-ref://control/a")]);
 	assert.deepEqual(summary, {});
 	assert.deepEqual(highlights, []);
+});
+
+test("deriveStateRelationAnchors builds currentIn from aria-current + stashed container key", () => {
+	const link = entity("pi-ref://control/products", { backendNodeId: 102, state: { current: "page" }, hints: { currentContainerKey: "b:100" } });
+	const nav = entity("pi-ref://element/nav", { backendNodeId: 100 });
+	const anchors = deriveStateRelationAnchors([link, nav]);
+	const currentIn = anchors.filter((a) => a.type === "currentIn");
+	assert.equal(currentIn.length, 1);
+	assert.equal(currentIn[0]?.sourceKey, "b:102");
+	assert.equal(currentIn[0]?.targetKey, "b:100");
+	const [out] = materializeRelations([link, nav], anchors);
+	assert.deepEqual(out.relations, [{ type: "currentIn", targetRef: "pi-ref://element/nav", source: "ax", confidence: "high", evidence: { current: "page" } }]);
+});
+
+test("deriveStateRelationAnchors skips currentIn when not current or container unknown", () => {
+	const noCurrent = entity("pi-ref://control/a", { backendNodeId: 1, hints: { currentContainerKey: "b:2" } });
+	const noContainer = entity("pi-ref://control/b", { backendNodeId: 3, state: { current: "page" } });
+	const falseCurrent = entity("pi-ref://control/c", { backendNodeId: 4, state: { current: false }, hints: { currentContainerKey: "b:5" } });
+	assert.equal(deriveStateRelationAnchors([noCurrent, noContainer, falseCurrent]).filter((a) => a.type === "currentIn").length, 0);
+});
+
+test("deriveStateRelationAnchors builds coveredBy/occludes from occlusion + selector match", () => {
+	const covered = entity("pi-ref://control/under", { selector: "#under", state: { occluded: true }, hints: { occluderSelector: "#overlay" } });
+	const overlay = entity("pi-ref://control/overlay", { selector: "#overlay" });
+	const anchors = deriveStateRelationAnchors([covered, overlay]);
+	assert.equal(anchors.filter((a) => a.type === "coveredBy").length, 1, "covered → coveredBy");
+	assert.equal(anchors.filter((a) => a.type === "occludes").length, 1, "overlay → occludes (inverse)");
+	const out = materializeRelations([covered, overlay], anchors);
+	const coveredOut = out.find((e) => e.ref === "pi-ref://control/under");
+	const overlayOut = out.find((e) => e.ref === "pi-ref://control/overlay");
+	assert.deepEqual(coveredOut?.relations, [{ type: "coveredBy", targetRef: "pi-ref://control/overlay", source: "geometry", confidence: "medium", evidence: { hitTest: true } }]);
+	assert.deepEqual(overlayOut?.relations, [{ type: "occludes", targetRef: "pi-ref://control/under", source: "geometry", confidence: "medium" }]);
+});
+
+test("occlusion relation drops when the occluder is not a scanned entity", () => {
+	const covered = entity("pi-ref://control/under", { selector: "#under", state: { occluded: true }, hints: { occluderSelector: "#unknown-overlay" } });
+	const anchors = deriveStateRelationAnchors([covered]);
+	const [out] = materializeRelations([covered], anchors);
+	assert.equal(out.relations, undefined, "no relation when the occluder selector matches no entity");
 });

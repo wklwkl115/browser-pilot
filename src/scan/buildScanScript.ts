@@ -279,6 +279,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     const inViewport = !!r && r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
     let hitOk = null;
     let hitTarget = null;
+    let occluderSelector = null;
     if (inViewport && document.elementFromPoint) {
       const points = [[0.5,0.5],[0.25,0.5],[0.75,0.5],[0.5,0.25],[0.5,0.75]];
       for (const pair of points) {
@@ -287,13 +288,16 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
         const hit = document.elementFromPoint(x, y);
         const ok = !hit || hit === el || el.contains(hit) || (hit.contains && hit.contains(el));
         if (!hitTarget && hit) hitTarget = { tag: hit.tagName ? hit.tagName.toLowerCase() : '', id: hit.id || '', class: cleanClassValue(hit.className || '').slice(0, 80), text: clean(hit.innerText || hit.textContent || '', 80) };
+        // The element that wins the center hit-test while NOT being us/our subtree is the occluder
+        // (the thing stacked on top). Capture a selector so the occludes/coveredBy relation can name it.
+        if (!ok && hit && !occluderSelector) occluderSelector = selectorFor(hit);
         if (ok) { hitOk = true; if (hit) hitTarget = { tag: hit.tagName ? hit.tagName.toLowerCase() : '', id: hit.id || '', class: cleanClassValue(hit.className || '').slice(0, 80), text: clean(hit.innerText || hit.textContent || '', 80) }; break; }
         hitOk = false;
       }
     }
     const rect = { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
     const point = { x: Math.round(Math.max(0, Math.min(vw - 1, r.left + r.width / 2))), y: Math.round(Math.max(0, Math.min(vh - 1, r.top + r.height / 2))) };
-    return { inViewport, hitOk, hitTarget, rect, point };
+    return { inViewport, hitOk, hitTarget, occluderSelector, rect, point };
   }
   function scoreActionable(item) {
     let score = 0;
@@ -328,7 +332,8 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       if (!visible.inViewport) continue;
       const checkedAttr = el.getAttribute && el.getAttribute('aria-checked');
       const checkedState = (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) ? !!el.checked : checkedAttr === 'true' ? true : checkedAttr === 'false' ? false : undefined;
-      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', ...(checkedState === undefined ? {} : { checked: checkedState }), handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget };
+      const currentAttr = el.getAttribute && el.getAttribute('aria-current');
+      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', ...(checkedState === undefined ? {} : { checked: checkedState }), ...(currentAttr ? { current: currentAttr } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
       item.priority = scoreActionable(item);
       out.push(item);
     }

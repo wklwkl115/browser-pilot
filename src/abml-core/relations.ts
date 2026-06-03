@@ -50,15 +50,18 @@ function typeRank(type: RelationType): number {
 	return idx === -1 ? TYPE_ORDER.length : idx;
 }
 
-// The node-id keys an entity answers to. AX-derived entities (the only valid relation
-// endpoints) carry hints.backendNodeId + hints.axNodeId; both register so an anchor keyed
-// by either resolves. DOM-only entities contribute nothing and silently drop as targets.
+// The keys an entity answers to, across the shared anchor key space:
+//   b:<backendDOMNodeId> · a:<axNodeId> — AX-derived endpoints (property/table/currentIn relations)
+//   s:<selector>          — DOM endpoints (occlusion relations match by CSS selector)
+// All of an entity's keys register so an anchor keyed by any of them resolves to its ref.
 export function entityRelationKeys(entity: Entity): string[] {
 	const keys: string[] = [];
 	const backend = entity.hints?.backendNodeId;
 	if (typeof backend === "number" && Number.isFinite(backend)) keys.push(`b:${backend}`);
 	const axNodeId = entity.hints?.axNodeId;
 	if (typeof axNodeId === "string" && axNodeId.trim()) keys.push(`a:${axNodeId.trim()}`);
+	const selector = entity.hints?.selector;
+	if (typeof selector === "string" && selector.trim()) keys.push(`s:${selector.trim()}`);
 	return keys;
 }
 
@@ -121,6 +124,29 @@ export function materializeRelations(entities: Entity[], anchors: RelationAnchor
 		if (!relations || !relations.length) return entity;
 		return { ...entity, relations: capRelations(dedupeRelations(relations)) };
 	});
+}
+
+// Relations derived from a merged entity's own scalar state + stashed keys — the DOM-sourced arm of
+// R1 (batch 2). currentIn: an aria-current entity → its owning nav/list container (key stashed from
+// the AX walk, since Chrome's getFullAXTree doesn't expose aria-current). coveredBy/occludes: an
+// occluded entity ↔ the element stacked on top (matched by selector via the page hit-test). These
+// feed the same materializeRelations pass; unresolved targets (occluder isn't a scanned entity) drop.
+export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[] {
+	const out: RelationAnchor[] = [];
+	for (const entity of entities) {
+		const sourceKey = entityRelationKeys(entity)[0];
+		if (!sourceKey) continue;
+		const containerKey = entity.hints?.currentContainerKey;
+		if (entity.state.current !== undefined && entity.state.current !== false && typeof containerKey === "string" && containerKey) {
+			out.push({ sourceKey, type: "currentIn", targetKey: containerKey, source: "ax", confidence: "high", evidence: { current: entity.state.current } });
+		}
+		const occluder = entity.hints?.occluderSelector;
+		if (entity.state.occluded === true && typeof occluder === "string" && occluder) {
+			out.push({ sourceKey, type: "coveredBy", targetKey: `s:${occluder}`, source: "geometry", confidence: "medium", evidence: { hitTest: true } });
+			out.push({ sourceKey: `s:${occluder}`, type: "occludes", targetKey: sourceKey, source: "geometry", confidence: "medium" });
+		}
+	}
+	return out;
 }
 
 export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" };

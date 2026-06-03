@@ -74,18 +74,19 @@ test("ax runtime derives table relations (cellOf/rowOf/columnOf/headerFor) + cel
 	assert.deepEqual(aliceCell?.entity.structure, { colIndex: 1, rowIndex: 2 }, "row/col context rides on the cell entity structure");
 });
 
-test("ax runtime promotes aria-current to a currentIn relation to the owning nav", async () => {
+test("ax runtime stashes the nearest nav/list container key for DOM-sourced currentIn", async () => {
+	// Chrome's getFullAXTree omits aria-current, so readAxEntities does NOT emit currentIn directly.
+	// It stashes hints.currentContainerKey; deriveStateRelationAnchors turns it into currentIn once the
+	// DOM scan supplies state.current (validated in relations.test.ts + the live smoke).
 	const server = makeAxTreeServer([
 		{ nodeId: "nav", backendDOMNodeId: 100, role: { value: "navigation" }, name: { value: "Breadcrumb" }, childIds: ["l1", "l2"] },
 		{ nodeId: "l1", backendDOMNodeId: 101, role: { value: "link" }, name: { value: "Home" } },
-		{ nodeId: "l2", backendDOMNodeId: 102, role: { value: "link" }, name: { value: "Products" }, properties: [{ name: "current", value: { value: "page" } }] },
+		{ nodeId: "l2", backendDOMNodeId: 102, role: { value: "link" }, name: { value: "Products" } },
 	]);
-	const { anchors } = await readAxEntities(server as any, { tabId: 1, observationId: "snap", url: "https://example.test/nav", timeoutMs: 5_000 });
-	const currentIn = anchors.filter((a) => a.type === "currentIn");
-	assert.equal(currentIn.length, 1, "only the aria-current item gets a currentIn relation");
-	assert.equal(currentIn[0]?.sourceKey, "b:102");
-	assert.equal(currentIn[0]?.targetKey, "b:100", "points at the owning navigation container");
-	assert.deepEqual(currentIn[0]?.evidence, { current: "page" });
+	const { entities, anchors } = await readAxEntities(server as any, { tabId: 1, observationId: "snap", url: "https://example.test/nav", timeoutMs: 5_000 });
+	assert.equal(anchors.filter((a) => a.type === "currentIn").length, 0, "currentIn is not emitted from AX (aria-current absent)");
+	const products = entities.find((e) => e.entity.hints?.backendNodeId === 102);
+	assert.equal(products?.entity.hints?.currentContainerKey, "b:100", "nearest nav ancestor stashed for currentIn derivation");
 });
 
 test("abml ax runtime appends unmatched AX entities and merges matching controls", () => {

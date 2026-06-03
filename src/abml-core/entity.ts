@@ -174,6 +174,11 @@ function actionEntityKind(node: Record<string, unknown>): EntityKind {
 function actionEntityState(node: Record<string, unknown>): EntityState {
 	const rect = geometryFromRect(node.rect)?.box;
 	const point = geometryPoint(node.point)?.point;
+	// aria-current (scan-sourced): Chrome's AX tree doesn't expose it, so the DOM scan is the
+	// authoritative source. Normalize the token ("false" → not current, "true" → boolean, else
+	// the token e.g. "page"/"step"). This also backfills the P1 state.current path on real pages.
+	const currentRaw = typeof node.current === "string" ? node.current.trim() : undefined;
+	const current = currentRaw === undefined || currentRaw === "" ? undefined : currentRaw === "false" ? false : currentRaw === "true" ? true : currentRaw;
 	return {
 		visible: node.visible !== false && Boolean(rect || point || node.hitOk !== undefined),
 		occluded: node.hitOk === false,
@@ -181,6 +186,7 @@ function actionEntityState(node: Record<string, unknown>): EntityState {
 		focused: node.focused === true,
 		...(typeof node.checked === "boolean" ? { checked: node.checked } : {}),
 		...(typeof node.expanded === "boolean" ? { expanded: node.expanded } : {}),
+		...(current !== undefined && current !== false ? { current } : {}),
 		editable: node.editable === true,
 		inViewport: node.inViewport !== false && Boolean(point || rect),
 	};
@@ -230,6 +236,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			jsonPath: `data.actionables[${Number(node.index ?? 0)}]`,
 			selector: stringValue(node.selector),
 			...(Array.isArray(node.handlers) && node.handlers.length ? { handlers: node.handlers } : {}),
+			// The element stacked on top at our center point when the hit-test failed — the occluder.
+			// Resolved to an entity ref (coveredBy/occludes) in relation derivation; harmless if unresolved.
+			...(node.hitOk === false && stringValue(node.occluderSelector) ? { occluderSelector: stringValue(node.occluderSelector) } : {}),
 		},
 	};
 	const capturedAt = context.capturedAt ?? Date.now();

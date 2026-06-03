@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { readAxEntities, mergeAxIntoDomEntities } from "../../src/abml/verbs/axRuntime.ts";
-import { materializeRelations, buildRelationSummary } from "../../src/abml/relations.ts";
+import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors } from "../../src/abml/relations.ts";
 import { summarizeScanData } from "../../src/tools/summaries/scan.ts";
 import { buildScanScript } from "../../src/scan/buildScanScript.ts";
 import { evaluatePageScriptDirect } from "../../src/tools/pageScriptEvaluation.ts";
@@ -123,7 +123,9 @@ try {
   ];
   const { entities: axEntities, anchors } = await readAxEntities(bridge, { browserSessionId: bridge.snapshot().browserSessionId, tabId, observationId: "rel-smoke", url: fixtureUrl, capturedAt: Date.now(), timeoutMs: 10000 });
   const merged = mergeAxIntoDomEntities(domEntities, axEntities);
-  const related = materializeRelations(merged, anchors);
+  // AX anchors + DOM-sourced derived anchors (currentIn from aria-current, occlusion from hit-test).
+  const allAnchors = [...anchors, ...deriveStateRelationAnchors(merged)];
+  const related = materializeRelations(merged, allAnchors);
   const relations = buildRelationSummary(related);
 
   const summary = relations.summary;
@@ -134,14 +136,13 @@ try {
     expandedTarget: (summary.expandedTarget ?? 0) > 0,
     table: (summary.cellOf ?? 0) > 0 && (summary.headerFor ?? 0) > 0,
     columnOf: (summary.columnOf ?? 0) > 0,
-    // currentIn is NOT in the pass gate: Chrome's Accessibility.getFullAXTree does not expose
-    // aria-current in node properties, so currentIn requires a DOM-sourced fallback (batch 2).
-    currentIn: (summary.currentIn ?? 0) > 0,
+    currentIn: (summary.currentIn ?? 0) > 0, // batch 2: DOM-sourced aria-current
+    occlusion: (summary.coveredBy ?? 0) > 0 && (summary.occludes ?? 0) > 0, // batch 2: hit-test
   };
   const allTargetsAreRefs = related.every((entity) => (entity.relations ?? []).every((relation) => /^pi-ref:\/\//.test(String(relation.targetRef || ""))));
-  // Pass gate = the relation families a real Chrome AX tree reliably exposes for this fixture.
-  const corePass = familiesPresent.labelledBy && familiesPresent.describedBy && familiesPresent.controls && familiesPresent.expandedTarget && familiesPresent.table && familiesPresent.columnOf && allTargetsAreRefs;
-  record("relations.summary", corePass, { anchorCount: anchors.length, summary, familiesPresent, allTargetsAreRefs, knownGap: { currentIn: "aria-current absent from getFullAXTree — DOM-sourced fallback deferred to batch 2" }, sampleHighlights: relations.highlights.slice(0, 5) });
+  // Pass gate = every relation family this fixture exercises across AX + DOM-sourced derivation.
+  const corePass = Object.values(familiesPresent).every(Boolean) && allTargetsAreRefs;
+  record("relations.summary", corePass, { anchorCount: allAnchors.length, summary, familiesPresent, allTargetsAreRefs, sampleHighlights: relations.highlights.slice(0, 6) });
   result.ok = corePass;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

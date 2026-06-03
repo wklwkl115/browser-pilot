@@ -140,30 +140,21 @@ function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: M
 	return anchors;
 }
 
-// currentIn: promote aria-current (already extracted into entity.state.current) from a scalar to
-// a relation pointing at the owning nav/list/menu container — the relational view of "where am I".
-function currentRelationAnchors(nodes: Array<Record<string, unknown>>, parentByChildId: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): RelationAnchor[] {
-	const anchors: RelationAnchor[] = [];
-	for (const node of nodes) {
-		const sourceKey = nodeRelationKey(node);
-		if (!sourceKey) continue;
-		const current = builtByKey.get(sourceKey)?.entity.state.current;
-		if (current === undefined || current === false) continue;
-		let cursor = node;
-		for (let depth = 0; depth < 24; depth += 1) {
-			const id = axNodeId(cursor);
-			if (!id) break;
-			const parent = parentByChildId.get(id);
-			if (!parent) break;
-			if (CURRENT_CONTAINER_ROLES.has(axRole(parent).toLowerCase())) {
-				const targetKey = nodeRelationKey(parent);
-				if (targetKey && targetKey !== sourceKey) anchors.push({ sourceKey, type: "currentIn", targetKey, source: "ax", confidence: "high", evidence: { current } });
-				break;
-			}
-			cursor = parent;
-		}
+// currentIn container: the nearest nav/list/menu ancestor's key. Stashed on every node's entity as
+// hints.currentContainerKey; the DOM-sourced derive step (deriveStateRelationAnchors) turns it into a
+// currentIn relation when the entity carries aria-current. We can't emit the relation here because
+// Chrome's getFullAXTree omits aria-current — the current *state* arrives from the DOM scan, post-merge.
+function nearestCurrentContainerKey(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): string | undefined {
+	let cursor = node;
+	for (let depth = 0; depth < 24; depth += 1) {
+		const id = axNodeId(cursor);
+		if (!id) return undefined;
+		const parent = parentByChildId.get(id);
+		if (!parent) return undefined;
+		if (CURRENT_CONTAINER_ROLES.has(axRole(parent).toLowerCase())) return nodeRelationKey(parent);
+		cursor = parent;
 	}
-	return anchors;
+	return undefined;
 }
 
 // AX relation properties (aria-labelledby/describedby/controls) reference the target *element*,
@@ -257,6 +248,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		const built = buildAxEntityFromNode(node, context, geometry);
 		const container = nearestContainer(node, parentByChildId);
 		if (container) built.entity.hints = { ...(built.entity.hints || {}), containerRole: container.role, ...(container.name ? { containerName: container.name } : {}) };
+		const currentContainerKey = nearestCurrentContainerKey(node, parentByChildId);
+		if (currentContainerKey) built.entity.hints = { ...(built.entity.hints || {}), currentContainerKey };
 		out.push(built);
 		const sourceKey = nodeRelationKey(node);
 		if (sourceKey) {
@@ -267,7 +260,6 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const rawAnchors = [
 		...propertyAnchors,
 		...tableRelationAnchors(nodes, nodeById, builtByKey),
-		...currentRelationAnchors(nodes, parentByChildId, builtByKey),
 	];
 	const anchors = resolveAnchorTargets(rawAnchors, builtByKey, nodeByBackend, nodeById);
 	return { entities: out, anchors };

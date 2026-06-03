@@ -41,5 +41,13 @@
       <li><a href="#products" aria-current="page">Products</a></li>
     </ol>
   </nav>
+
+  <!-- occlusion: an overlay button stacked on top of a content button (coveredBy / occludes),
+       plus a standalone button that is NOT covered (negative — must get no occlusion relation). -->
+  <div style="position: relative; height: 44px; margin-top: 16px;">
+    <button id="covered-btn" type="button" style="position: absolute; top: 0; left: 0; width: 220px; height: 40px;">Underneath button</button>
+    <button id="overlay-btn" type="button" style="position: absolute; top: 0; left: 0; width: 220px; height: 40px; z-index: 5;">Overlay button</button>
+  </div>
+  <button id="standalone-btn" type="button">Standalone (not covered)</button>
 </body>
 </html>

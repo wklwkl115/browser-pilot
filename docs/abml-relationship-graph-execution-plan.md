@@ -1,18 +1,27 @@
 # ABML Relationship Graph Execution Plan
 
-> Status: **batch 1 landed + live-verified (2026-06-03).** R1.0–R1.4 + R1.7 shipped and proven
-> against a real Chrome/Edge AX tree; R1.5 (currentIn) extraction landed but is **deferred** (real
-> finding: `Accessibility.getFullAXTree` does not expose `aria-current` in node properties, so
-> currentIn needs a DOM-sourced fallback); R1.6 (geometry occlusion) deferred to batch 2 as planned.
-> It does **not** add public `browser_abml_*` tools. ABML stays internal substrate.
+> Status: **COMPLETE — batch 1 + batch 2 landed + live-verified (2026-06-03).** All of R1.0–R1.7
+> shipped and proven against a real Chrome/Edge tree. It does **not** add public `browser_abml_*`
+> tools. ABML stays internal substrate.
 >
-> **Batch-1 outcome (live, abml-relations.html fixture):** labelledBy 2 · describedBy 1 · controls 1 ·
-> expandedTarget 1 · cellOf/rowOf 6 · columnOf 4 · headerFor 2 — all targets `pi-ref://`, summary at
-> envelope top-level (budget-immune). **Real-AX hardening:** aria-labelledby/describedby/controls
-> `relatedNodes` reference the target *element*, whose AX node is often a non-interesting `generic`
-> wrapper (text lives in a child StaticText) — so relation targets are redirected to the nearest
-> built descendant (`resolveAnchorTargets` in `axRuntime.ts`). Without this, labelledBy/describedBy
-> to plain-text targets silently drop. Contract: `check:abml-relation-graph`; smoke: `smoke:browser:abml-relations`.
+> **Live outcome (abml-relations.html fixture, all 8 families):** labelledBy 2 · describedBy 1 ·
+> controls 1 · expandedTarget 1 · cellOf/rowOf 6 · columnOf 4 · headerFor 2 · **currentIn 1 ·
+> coveredBy 1 · occludes 1** — every target a `pi-ref://`, summary at envelope top-level (budget-immune).
+>
+> **Real-AX/DOM hardening discovered during live validation:**
+> - aria-labelledby/describedby/controls `relatedNodes` reference the target *element*, whose AX node
+>   is often a non-interesting `generic` wrapper (text lives in a child StaticText) → relation targets
+>   are redirected to the nearest built descendant (`resolveAnchorTargets`). Without it, labelledBy/
+>   describedBy to plain-text targets silently drop.
+> - Chrome's `getFullAXTree` does **not** expose `aria-current` → currentIn (and the P1 `state.current`
+>   path) is **DOM-sourced**: the scan captures `aria-current`, `axRuntime` stashes the nav/list
+>   container key (`currentContainerKey`), and `deriveStateRelationAnchors` emits the relation post-merge.
+> - occlusion is **hit-test-sourced**: the scan records the element that wins the center hit-test when
+>   an actionable fails its own (the occluder selector); `deriveStateRelationAnchors` matches it to an
+>   entity by selector (`s:<selector>` key) → `coveredBy`/`occludes`. Unresolved occluders (not a scanned
+>   entity) drop — `state.occluded` still surfaces.
+>
+> Contract: `check:abml-relation-graph`; smoke: `smoke:browser:abml-relations`.
 
 ## 0. Baseline
 
@@ -260,47 +269,29 @@ Gate:
 - `npm run check:abml-relation-graph`
 - targeted APG combobox/accordion live smoke when network available.
 
-### R1.5 — current/active route relation — DEFERRED (real-AX finding)
+### R1.5 — current/active route relation — DONE (batch 2, DOM-sourced)
 
-Tasks:
+Done: Chrome/Edge do **not** expose `aria-current` in `Accessibility.getFullAXTree`, so this is
+DOM-sourced. `buildScanScript` reads `aria-current` → `actionEntityState` sets `state.current`
+(also backfills the latent P1 `state.current` gap on real pages); `axRuntime` stashes the nearest
+nav/list container key (`hints.currentContainerKey`); `deriveStateRelationAnchors` (pure) emits the
+`currentIn` relation after the merge, when an entity carries `state.current`. `state.current` scalar
+preserved. Live-verified (`currentIn 1` on the breadcrumb fixture).
 
-- Promote `aria-current` from scalar state into `currentIn` relation to owning nav/list/breadcrumb.
-- Preserve `state.current`.
+Gate: `npm run check:abml-relation-graph` + `smoke:browser:abml-relations`.
 
-**Status:** the `currentIn` extraction code landed (`currentRelationAnchors` walks the AX container
-chain and fires when `state.current` is set), but real-browser validation revealed Chrome/Edge
-**do not expose `aria-current` in `Accessibility.getFullAXTree` node properties** — so neither the
-`state.current` scalar (a latent P1 gap, only ever exercised synthetically) nor the `currentIn`
-relation populate from AX on a real page. Deferred to **batch 2**: source `aria-current` from the
-DOM scan (`buildScanScript`) and derive `currentIn` from the AX container of the matched entity.
-Not in the batch-1 smoke pass gate; the synthetic unit/contract cases keep the code path covered.
+### R1.6 — Geometry occlusion relations — DONE (batch 2, hit-test-sourced)
 
-Acceptance (batch 2):
+Done: rather than guess z-order through CSS, reuse the page hit-test the scan already runs.
+`buildScanScript`'s `visibleInfo` captures the element that wins the center `elementFromPoint`
+when an actionable fails its own hit-test (the occluder) as a selector; `actionEntityState` keeps
+`state.occluded` and stashes `hints.occluderSelector`. `deriveStateRelationAnchors` matches the
+occluder to an entity by selector (the `s:<selector>` key) → `coveredBy` (occluded → occluder) +
+`occludes` (inverse), `source:"geometry"`, `confidence:"medium"`. Bounded: an occluder that isn't a
+scanned entity drops the relation (but `state.occluded` still surfaces) — no CSS-stacking guesswork,
+no false positives on the standalone negative. Live-verified (`coveredBy 1` / `occludes 1`).
 
-- Breadcrumb/nav fixture: current item has `state.current` (DOM-sourced) and a `currentIn` target.
-- Envelope relation highlights include one current navigation relation.
-
-Gate:
-
-- `npm run check:abml-relation-graph`
-
-### R1.6 — Geometry occlusion relations
-
-Tasks:
-
-- Add geometry-only overlap relation builder for visible entities.
-- Materialize `occludes` / `coveredBy` when overlap and z-order/hit-test evidence are sufficient.
-- Keep confidence explicit; do not guess through CSS complexity.
-
-Acceptance:
-
-- Modal/sticky overlay fixture: covered button has `coveredBy` relation with geometry evidence.
-- False positives bounded by fixture negatives.
-
-Gate:
-
-- `npm run check:abml-relation-graph`
-- local smoke with modal fixture.
+Gate: `npm run check:abml-relation-graph` + `smoke:browser:abml-relations` (overlay + negative fixture).
 
 ### R1.7 — Integration, docs, and live validation
 

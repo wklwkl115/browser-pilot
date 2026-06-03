@@ -9,7 +9,7 @@ import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
 import type { Entity } from "../entity.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
-import { materializeRelations } from "../relations.js";
+import { materializeRelations, deriveStateRelationAnchors } from "../relations.js";
 import { actionabilitySpecForVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
 import { decideRefAccess } from "../refPolicy.js";
@@ -574,8 +574,11 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
 		const mergedEntities = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
-		// Materialize relation anchors → typed pi-ref edges only after the merge mints final refs.
-		const relatedEntities = axRead.anchors.length ? materializeRelations(mergedEntities, axRead.anchors) : mergedEntities;
+		// AX anchors (property/table) + DOM-sourced anchors derived from the merged entities'
+		// own state (currentIn from aria-current, occludes/coveredBy from the hit-test). Materialize
+		// to typed pi-ref edges only after the merge mints final refs.
+		const allAnchors = [...axRead.anchors, ...deriveStateRelationAnchors(mergedEntities)];
+		const relatedEntities = allAnchors.length ? materializeRelations(mergedEntities, allAnchors) : mergedEntities;
 		const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
 		const filtered = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
 		return {

@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readAxEntities, mergeAxIntoDomEntities } from "../../../src/abml/verbs/axRuntime.ts";
-import { materializeRelations, buildRelationSummary } from "../../../src/abml/relations.ts";
+import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors } from "../../../src/abml/relations.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -49,9 +49,12 @@ const fakeServer = {
 const { entities: axEntities, anchors } = await readAxEntities(fakeServer, { tabId: 1, observationId: "snap", url: "https://example.test/relations", timeoutMs: 5_000 });
 assert.ok(anchors.length > 0, "AX runtime must extract relation anchors");
 
-// DOM-less: every AX node becomes an appended entity with a minted pi-ref. Then materialize.
+// DOM-less: every AX node becomes an appended entity with a minted pi-ref. AX anchors (property/
+// table) + DOM-sourced derived anchors (currentIn from the synthetic aria-current + stashed
+// container; occlusion would come from scan state). Then materialize.
 const merged = mergeAxIntoDomEntities([], axEntities);
-const related = materializeRelations(merged, anchors);
+const stateAnchors = deriveStateRelationAnchors(merged);
+const related = materializeRelations(merged, [...anchors, ...stateAnchors]);
 
 function relationsOf(role, name) {
 	const entity = related.find((e) => e.role?.toLowerCase() === role && e.name === name);
@@ -66,7 +69,15 @@ assert.ok(typesOf("combobox", "Country").includes("expandedTarget"), "expanded c
 assert.ok(typesOf("textbox", "Email").includes("labelledBy"), "textbox → labelledBy (aria-labelledby)");
 assert.deepEqual(typesOf("cell", "Alice"), ["cellOf", "columnOf", "rowOf"], "data cell exposes table + row + column header context");
 assert.ok(typesOf("columnheader", "Name").includes("headerFor"), "column header → headerFor table");
-assert.ok(typesOf("link", "Products").includes("currentIn"), "aria-current link → currentIn nav");
+assert.ok(typesOf("link", "Products").includes("currentIn"), "aria-current link → currentIn nav (DOM-sourced derive)");
+
+// Occlusion (R1.6): occluded entity ↔ the element stacked on top, matched by selector via the
+// page hit-test. Hand-built (AX tree carries no occlusion); proves the geometry-relation derive.
+const occluded = { ref: "pi-ref://control/under", kind: "control", role: "button", name: "Under", state: { visible: true, occluded: true, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom", hints: { selector: "#under", occluderSelector: "#overlay" } };
+const overlay = { ref: "pi-ref://control/overlay", kind: "control", role: "button", name: "Overlay", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom", hints: { selector: "#overlay" } };
+const occRelated = materializeRelations([occluded, overlay], deriveStateRelationAnchors([occluded, overlay]));
+assert.deepEqual(occRelated.find((e) => e.ref === "pi-ref://control/under")?.relations?.map((r) => r.type), ["coveredBy"], "occluded entity → coveredBy occluder");
+assert.deepEqual(occRelated.find((e) => e.ref === "pi-ref://control/overlay")?.relations?.map((r) => r.type), ["occludes"], "occluder → occludes (inverse)");
 
 // No backend/AX node id leaks: every relation target is a materialized pi-ref://.
 for (const entity of related) {
@@ -103,6 +114,11 @@ assert.equal(envelope.relations.summary.tableCells, 2, "relations.summary.tableC
 // --- Static wiring: the runtime pipeline + live smoke + fixture + scripts stay in place --------
 const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
 assert.ok(runtimeSrc.includes("materializeRelations") && runtimeSrc.includes("relationCount"), "ABML read runtime must materialize relations after the merge and surface a relationCount");
+assert.ok(runtimeSrc.includes("deriveStateRelationAnchors"), "ABML read runtime must derive DOM-sourced (currentIn/occlusion) anchors post-merge");
+const axRuntimeSrc = readRepo("src/abml/verbs/axRuntime.ts");
+assert.ok(axRuntimeSrc.includes("currentContainerKey"), "axRuntime must stash currentContainerKey for DOM-sourced currentIn");
+const scanSrc = readRepo("src/scan/buildScanScript.ts");
+assert.ok(scanSrc.includes("aria-current") && scanSrc.includes("occluderSelector"), "scan must capture aria-current + the occluder selector");
 const observeSrc = readRepo("src/tools/observeRunners.ts");
 assert.ok(observeSrc.includes("buildRelationSummary") && observeSrc.includes("relations:"), "observe runner must surface focus.relations via buildRelationSummary");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
