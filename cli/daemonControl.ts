@@ -177,7 +177,28 @@ export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Prom
 	throw new Error("pi-browser daemon did not become ready in time");
 }
 
-/** Stop the singleton daemon if present. Returns true if one was addressed. */
+async function waitForPidDeath(pid: number, ms: number): Promise<boolean> {
+	const deadline = Date.now() + ms;
+	while (Date.now() < deadline) {
+		if (!isPidAlive(pid)) return true;
+		await delay(100);
+	}
+	return !isPidAlive(pid);
+}
+
+function tryKill(pid: number, signal: NodeJS.Signals): void {
+	try {
+		process.kill(pid, signal);
+	} catch {
+		/* already gone / not ours */
+	}
+}
+
+/**
+ * Stop the singleton daemon if present. Returns true if one was addressed.
+ * Escalates so a wedged daemon can't survive: graceful /shutdown → SIGTERM → SIGKILL.
+ * (A daemon whose SIGTERM handler blocks on a hung close() would otherwise orphan.)
+ */
 export async function stopDaemon(): Promise<boolean> {
 	const info = readLockfile();
 	if (!info) return false;
@@ -186,16 +207,11 @@ export async function stopDaemon(): Promise<boolean> {
 	} catch {
 		/* may already be down */
 	}
-	const deadline = Date.now() + 3_000;
-	while (Date.now() < deadline) {
-		await delay(100);
-		if (!isPidAlive(info.pid)) break;
-	}
-	if (isPidAlive(info.pid)) {
-		try {
-			process.kill(info.pid, "SIGTERM");
-		} catch {
-			/* best-effort */
+	if (!(await waitForPidDeath(info.pid, 3_000))) {
+		tryKill(info.pid, "SIGTERM");
+		if (!(await waitForPidDeath(info.pid, 2_000))) {
+			tryKill(info.pid, "SIGKILL");
+			await waitForPidDeath(info.pid, 2_000);
 		}
 	}
 	removeLockfile();

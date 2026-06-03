@@ -163,7 +163,13 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 			if (req.method === "POST" && pathname === "/shutdown") {
 				send(200, { ok: true });
 				setImmediate(() => {
-					void close().then(() => options.onShutdown?.());
+					// Fire onShutdown (process.exit for the foreground daemon) even if close()
+					// hangs on a slow bridge stop — a wedged close must never keep the daemon alive.
+					let done = false;
+					const finish = () => { if (done) return; done = true; options.onShutdown?.(); };
+					const force = setTimeout(finish, 1_500);
+					force.unref?.();
+					void close().then(() => { clearTimeout(force); finish(); }, () => { clearTimeout(force); finish(); });
 				});
 				return;
 			}

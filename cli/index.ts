@@ -72,7 +72,12 @@ async function runDaemonControl(action: string | undefined): Promise<number> {
 		const handle = await startDaemon({ onShutdown: () => process.exit(EXIT.ok) });
 		process.stderr.write(`[pi-browser] daemon listening on 127.0.0.1:${handle.controlPort}\n`);
 		for (const sig of ["SIGINT", "SIGTERM"] as const) {
-			process.on(sig, () => { void handle.close().then(() => process.exit(EXIT.ok)); });
+			process.on(sig, () => {
+				// Force-exit even if close() hangs, so a signalled daemon always terminates.
+				const force = setTimeout(() => process.exit(EXIT.ok), 1_500);
+				force.unref();
+				void handle.close().finally(() => process.exit(EXIT.ok));
+			});
 		}
 		await new Promise<never>(() => {}); // keep alive
 		return EXIT.ok; // unreachable
