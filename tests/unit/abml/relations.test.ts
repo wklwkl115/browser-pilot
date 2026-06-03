@@ -91,7 +91,7 @@ test("materialize preserves evidence and confidence", () => {
 	assert.deepEqual(outA.relations?.[0], { type: "cellOf", targetRef: "pi-ref://table/t", source: "ax", confidence: "medium", evidence: { rowIndex: 2, colIndex: 3 } });
 });
 
-test("buildRelationSummary counts by type, tableCells, and caps highlights", () => {
+test("buildRelationSummary counts semantic types + tableCells; omits per-type table-structural noise", () => {
 	const entities: Entity[] = [
 		entity("pi-ref://control/c", { relations: [{ type: "controls", targetRef: "pi-ref://r/1", source: "ax", confidence: "high" }] }),
 		entity("pi-ref://cell/1", { relations: [{ type: "cellOf", targetRef: "pi-ref://t/1", source: "ax", confidence: "high" }, { type: "rowOf", targetRef: "pi-ref://row/1", source: "ax", confidence: "high" }] }),
@@ -99,10 +99,13 @@ test("buildRelationSummary counts by type, tableCells, and caps highlights", () 
 	];
 	const { summary, highlights } = buildRelationSummary(entities);
 	assert.equal(summary.controls, 1);
-	assert.equal(summary.cellOf, 2);
-	assert.equal(summary.rowOf, 1);
+	// cellOf/rowOf/columnOf/headerFor are table-structural noise; omitted from per-type counts
+	assert.equal(summary.cellOf, undefined, "cellOf omitted from summary (encoded as tableCells)");
+	assert.equal(summary.rowOf, undefined, "rowOf omitted from summary");
 	assert.equal(summary.tableCells, 2, "two distinct cells with a cellOf relation");
+	// highlights only show semantic edges — table-structural excluded
 	assert.equal(highlights[0]?.type, "controls", "interaction edge leads the deterministic highlight order");
+	assert.equal(highlights.some((h) => h.type === "cellOf" || h.type === "rowOf"), false, "table-structural types excluded from highlights");
 	assert.ok(highlights.length <= 8);
 });
 

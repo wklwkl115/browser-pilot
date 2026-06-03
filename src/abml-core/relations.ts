@@ -168,18 +168,27 @@ export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[]
 export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" };
 export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[] };
 
-// Compact relation disclosure for the envelope top-level. `summary` counts edges by type
-// (plus tableCells = distinct cells with table context) and is always present when ABML is
-// integrated, even if empty — agents can rely on it surviving the summary budget squeeze.
-// `highlights` is a deterministic, capped sample.
+// Table-structural relation types are already encoded in `tableCells` (distinct cell count).
+// Their per-type counts add noise to the summary (a documentation page with 100 table cells
+// buries the combobox controls:4 under cellOf:100). Exclude from summary counts AND highlights;
+// the full table structure remains navigable via entity.relations[].
+const TABLE_STRUCTURAL_TYPES = new Set<RelationType>(["cellOf", "rowOf", "columnOf", "headerFor"]);
+
+// Compact relation disclosure for the envelope top-level. `summary` counts SEMANTIC edges by type
+// (controls/owns/expandedTarget/currentIn/labelledBy/describedBy/occludes/coveredBy) plus
+// `tableCells` (distinct table cells, the structural summary). Table-hierarchy per-type counts
+// (cellOf/rowOf/columnOf/headerFor) are omitted — they're noisy on documentation pages and
+// redundant with tableCells. Always present when abmlIntegrated; budget-immune.
+// `highlights` is a deterministic, capped sample of semantic (non-table-structural) edges.
 export function buildRelationSummary(entities: Entity[]): RelationSummary {
 	const summary: Record<string, number> = {};
 	const tableCellRefs = new Set<string>();
 	const highlights: RelationHighlight[] = [];
 	for (const entity of entities) {
 		for (const relation of entity.relations ?? []) {
-			summary[relation.type] = (summary[relation.type] ?? 0) + 1;
 			if (relation.type === "cellOf") tableCellRefs.add(entity.ref);
+			if (TABLE_STRUCTURAL_TYPES.has(relation.type)) continue; // encoded as tableCells below
+			summary[relation.type] = (summary[relation.type] ?? 0) + 1;
 			highlights.push({ type: relation.type, sourceRef: entity.ref, targetRef: relation.targetRef, source: relation.source });
 		}
 	}
@@ -190,5 +199,13 @@ export function buildRelationSummary(entities: Entity[]): RelationSummary {
 		if (a.sourceRef !== b.sourceRef) return a.sourceRef < b.sourceRef ? -1 : 1;
 		return a.targetRef < b.targetRef ? -1 : a.targetRef > b.targetRef ? 1 : 0;
 	});
-	return { summary, highlights: highlights.slice(0, MAX_HIGHLIGHTS) };
+	// Dedupe (type, sourceRef, targetRef) in case AX + DOM paths both resolve to the same edge.
+	const seen = new Set<string>();
+	const dedupedHighlights = highlights.filter((h) => {
+		const key = `${h.type}|${h.sourceRef}|${h.targetRef}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+	return { summary, highlights: dedupedHighlights.slice(0, MAX_HIGHLIGHTS) };
 }

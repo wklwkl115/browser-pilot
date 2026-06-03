@@ -90,7 +90,7 @@ for (const entity of related) {
 const summary = buildRelationSummary(related);
 assert.equal(summary.summary.controls, 1, "summary counts controls");
 assert.equal(summary.summary.labelledBy, 1, "summary counts labelledBy");
-assert.equal(summary.summary.cellOf, 2, "summary counts both table cells (header + data)");
+assert.equal(summary.summary.cellOf, undefined, "cellOf omitted from summary — encoded as tableCells");
 assert.equal(summary.summary.tableCells, 2, "tableCells = distinct cells with table context");
 assert.equal(summary.summary.currentIn, 1, "summary counts currentIn");
 assert.ok(Array.isArray(summary.highlights) && summary.highlights.length > 0, "highlights present");
@@ -108,7 +108,7 @@ const result = await distilledTextResult("body", {
 });
 const envelope = JSON.parse(result.content[0].text);
 assert.equal(typeof envelope.relations, "object", "relations surfaced at envelope top-level");
-assert.equal(envelope.relations.summary.cellOf, 2, "relations.summary.cellOf survives to the envelope");
+assert.equal(envelope.relations.summary.cellOf, undefined, "cellOf omitted from envelope summary — encoded as tableCells");
 assert.equal(envelope.relations.summary.tableCells, 2, "relations.summary.tableCells survives to the envelope");
 
 // --- Static wiring: the runtime pipeline + live smoke + fixture + scripts stay in place --------

@@ -172,25 +172,44 @@ function builtCurrentContainerKeys(node: Record<string, unknown>, parentByChildI
 // resolve. Redirect such targets to the nearest built descendant so labelledBy/describedBy/controls
 // reliably land on the entity that actually carries the name. Breadth-first, bounded.
 function nearestBuiltDescendantKey(node: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): string | undefined {
+	// BFS but prefer a built descendant that has a name over a nameless wrapper. LabelText/generic
+	// nodes are often nameless wrappers around the real text node — we want the child StaticText.
 	const queue: unknown[] = Array.isArray(node.childIds) ? [...node.childIds] : [];
+	let firstMatch: string | undefined;
 	let steps = 0;
 	while (queue.length && steps < 200) {
 		steps += 1;
 		const child = nodeById.get(String(queue.shift()));
 		if (!child) continue;
 		const key = nodeRelationKey(child);
-		if (key && builtByKey.has(key)) return key;
+		if (key && builtByKey.has(key)) {
+			const name = axName(child);
+			if (name) return key; // named entity — prefer immediately
+			if (!firstMatch) firstMatch = key; // nameless wrapper — remember but keep looking
+		}
 		if (Array.isArray(child.childIds)) for (const id of child.childIds) queue.push(id);
 	}
-	return undefined;
+	return firstMatch;
 }
 
 function resolveAnchorTargets(anchors: RelationAnchor[], builtByKey: Map<string, BuiltEntity>, nodeByBackend: Map<number, Record<string, unknown>>, nodeById: Map<string, Record<string, unknown>>): RelationAnchor[] {
 	const out: RelationAnchor[] = [];
 	for (const anchor of anchors) {
-		if (builtByKey.has(anchor.targetKey)) { out.push(anchor); continue; }
 		const match = /^b:(\d+)$/.exec(anchor.targetKey);
 		const node = match ? nodeByBackend.get(Number(match[1])) : undefined;
+		if (builtByKey.has(anchor.targetKey)) {
+			// For label relations (labelledBy/describedBy), the target should carry visible text — if the
+			// directly-built target is a nameless wrapper (e.g. LabelText whose text is in a StaticText
+			// child), prefer the named descendant so the agent can read the label. For structural targets
+			// (rowOf, cellOf, controls, etc.) a nameless entity is correct; don't redirect.
+			const isLabelRelation = anchor.type === "labelledBy" || anchor.type === "describedBy";
+			if (isLabelRelation && node && !axName(node)) {
+				const namedDescendant = nearestBuiltDescendantKey(node, nodeById, builtByKey);
+				if (namedDescendant) { out.push({ ...anchor, targetKey: namedDescendant }); continue; }
+			}
+			out.push(anchor);
+			continue;
+		}
 		const redirect = node ? nearestBuiltDescendantKey(node, nodeById, builtByKey) : undefined;
 		if (redirect) out.push({ ...anchor, targetKey: redirect });
 		// else drop: an unresolved target would be discarded in materialization anyway.
