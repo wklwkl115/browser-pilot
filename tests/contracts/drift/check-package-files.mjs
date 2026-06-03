@@ -91,6 +91,9 @@ for (const file of distFiles) {
 assert(packed.has("bridge/pi_browser_bridge/manifest.json"), "npm package must include extension manifest");
 assert(packed.has("dist/index.js") && packed.has("dist/index.d.ts"), "npm package must include outer dist entry and declarations");
 assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm package must include compiled cli dist entrypoints");
+// tsc does not emit .mjs to dist/. The callback-OAST worker is spawned from src/ even when
+// the daemon runs from dist (oastWorkerManager rewrites dist/src→src), so the .mjs must ship.
+assert(packed.has("src/tools/webSecurity/browserNative/callbackOastWorker.mjs"), "npm package must ship the callback-OAST worker .mjs (resolved from src/ by the dist build)");
 assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm package must include native command schema");
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
