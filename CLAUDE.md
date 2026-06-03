@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **pi-browser-tools** is a native Pi browser automation extension that provides real browser tab control, simplified DOM scanning (GA-style), JavaScript/CDP execution, evidence capture, network recording, file transfer, and a Web security testing tool layer — all backed by a Chrome extension service worker and a Node.js bridge server.
 
+## Active Execution Contract
+
+- Migration contract (now landed): `docs/cli-skill-frontend-migration-plan.md`
+- Current shipping external frontends are **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**. The MCP shell has been removed; CLI usage is documented in `docs/cli.md`.
+- `pi-browser` CLI is shipped: code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all landed. Remaining migration items are doc/archive cleanup only.
+- `docs/abml-execution-plan.md` is no longer the active queue; ABML remains an internal substrate / historical execution contract.
+
 ## Architecture
 
 ```
@@ -39,6 +46,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Frontend Migration Boundary
+
+The migration kept one tool core and swapped the external frontend layer (now complete):
+
+- reusable non-protocol frontend helpers live in `src/frontend/` (were in `mcp/`)
+- shared ref/resource infra used by core lives in `src/resources/` (was in `mcp/`)
+- request-scoped artifacts/memory/wordlists/temp roots use explicit caller `cwd`
+- the CLI daemon is a **user-local singleton** (`~/.pi/browser-daemon.json`), not a per-project daemon
+- `mcp/` was removed after CLI parity + replacement checks went green and the live-browser `smoke:cli` passed
+
 ### Protocol Single Source
 
 `bridge/native_command_schema.json` is the single source of truth for the native command protocol. After modifying it:
@@ -63,7 +80,7 @@ npm run build:bridge          # build extension dist from bridge_src/
 
 ### Type Check
 ```bash
-tsc -p tsconfig.json          # check src/ (Node.js code)
+tsc -p tsconfig.json             # check src/ (Node.js code)
 tsc -p tsconfig.bridge-src.json  # check bridge_src/ (extension code)
 ```
 
@@ -78,10 +95,10 @@ npm run quality:local         # build + check + pack dry-run (no browser)
 
 ### Tests
 ```bash
-npm run test:unit             # run all unit tests
-npm run check:bridge          # bridge types + build + files + protocol + tools
-npm run check:web-security    # web security layer boundaries
-npm run check:lifecycle       # multi-browser/tab/MV3 fixtures
+npm run test:unit              # run all unit tests
+npm run check:bridge           # bridge types + build + files + protocol + tools
+npm run check:web-security     # web security layer boundaries
+npm run check:lifecycle        # multi-browser/tab/MV3 fixtures
 npm run check:runtime-fixtures # network/hook/wait/transfer fixtures
 ```
 
@@ -110,6 +127,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `tests/contracts/` — contract tests (protocol, tools, boundaries)
 - `tests/smoke/` — browser smoke tests
 - `docs/generated/` — auto-generated protocol and tool contract docs
+- `docs/cli-skill-frontend-migration-plan.md` — active frontend migration execution contract
 
 ## Development Workflow
 
@@ -118,6 +136,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 3. **Changing protocol**: Edit `bridge/native_command_schema.json`, then `npm run sync:protocol`
 4. **Adding a tool**: Add registrar in `src/tools/toolRegistry.ts`, create `register*Tool.ts`, update tests
 5. **Before merging**: `npm run quality:local` (build + all checks + pack dry-run)
+6. **During the active frontend migration**: update `CURRENT.md` + `docs/cli-skill-frontend-migration-plan.md` before large frontend/package/contract moves
 
 ## TypeScript Configuration
 
