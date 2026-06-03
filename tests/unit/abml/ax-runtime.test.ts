@@ -86,7 +86,7 @@ test("ax runtime stashes the nearest nav/list container key for DOM-sourced curr
 	const { entities, anchors } = await readAxEntities(server as any, { tabId: 1, observationId: "snap", url: "https://example.test/nav", timeoutMs: 5_000 });
 	assert.equal(anchors.filter((a) => a.type === "currentIn").length, 0, "currentIn is not emitted from AX (aria-current absent)");
 	const products = entities.find((e) => e.entity.hints?.backendNodeId === 102);
-	assert.equal(products?.entity.hints?.currentContainerKey, "b:100", "nearest nav ancestor stashed for currentIn derivation");
+	assert.deepEqual(products?.entity.hints?.currentContainerKeys, ["b:100"], "built nav container chain stashed for currentIn derivation");
 });
 
 test("abml ax runtime appends unmatched AX entities and merges matching controls", () => {

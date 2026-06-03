@@ -1,5 +1,5 @@
 import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
-import { buildDomEntityFromScanActionable, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../abml/entity.js";
+import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../abml/entity.js";
 import { registerRefDescriptor } from "../../resources/resourceStore.js";
 
 export type ScanSummaryOptions = {
@@ -325,9 +325,11 @@ function numberField(value: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
-function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[] } {
+function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
 	const actionables = asArray(item.actionables).filter(isRecord);
+	const references = asArray(item.references).filter(isRecord);
+	const controlsPairs = asArray(item.controls_pairs).filter(isRecord);
 	const listHints = asArray(item.list_hints).filter(isRecord);
 	const canvasRegions = asArray(item.canvas_regions).filter(isRecord);
 	const actionEntities = dedupeEntities(actionables.map((node) => {
@@ -335,6 +337,20 @@ function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOp
 		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
 		return withRegisteredRef(built.entity, refId);
 	}));
+	// Minimal entities for aria-controls/owns targets (incl. hidden/collapsed) so those relations
+	// resolve. Deduped by selector against actionables (a visible target collapses to one entity).
+	const referencedEntities = references.map((node) => {
+		const built = buildReferencedTargetEntity(node, context);
+		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
+		return withRegisteredRef(built.entity, refId);
+	});
+	// Minimal entities for controls/owns SOURCE elements that were NOT in the actionable list
+	// (off-screen). Carries controlsSelectors/ownsSelectors hints for deriveStateRelationAnchors.
+	const controlsSourceEntities = controlsPairs.map((node) => {
+		const built = buildControlsSourceEntity(node, context);
+		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
+		return withRegisteredRef(built.entity, refId);
+	});
 	const visualRegions = dedupeEntities((canvasRegions.length ? canvasRegions : actionables.filter((node) => String(node.tag || "").toLowerCase() === "canvas"))
 		.map((node) => {
 			const built = buildVisionRegionFromCanvasActionable(node, context);
@@ -346,9 +362,27 @@ function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOp
 		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || `list-${index}` });
 		return withRegisteredRef(built.entity, refId);
 	}));
-	const entities = dedupeEntities([...actionEntities, ...listEntities, ...visualRegions]);
-	const primaryEntities = actionEntities.filter((entity) => entity.hints?.jsonPath && String(entity.hints.jsonPath).startsWith("data.actionables[")).slice(0, 10);
-	return { entities, primaryEntities, listEntities, visualRegions };
+	// Hidden/collapsed targets (aria-controls/owns) need their own entities since they're not in
+	// actionEntities. For visible targets that were also scanned as actionables, the actionable
+	// entity takes precedence via dedupeEntities; the referenced entity is redundant. Keep only
+	// referenced entities whose selector is NOT already covered by an actionable.
+	const actionableSelectors = new Set(actionEntities.map((e) => typeof e.hints?.selector === "string" ? e.hints.selector : null).filter(Boolean));
+	const referencedOnly = referencedEntities.filter((e) => typeof e.hints?.selector !== "string" || !actionableSelectors.has(e.hints.selector as string));
+	// controls-source entities: only include those whose selector is not already an actionable.
+	const controlsSourceOnly = controlsSourceEntities.filter((e) => typeof e.hints?.selector !== "string" || !actionableSelectors.has(e.hints.selector as string));
+	const entities = dedupeEntities([...actionEntities, ...referencedOnly, ...controlsSourceOnly, ...listEntities, ...visualRegions]);
+	const referencedSurvivors = [...referencedOnly, ...controlsSourceOnly].filter((ref) => entities.includes(ref));
+	const actionableCandidates = actionEntities.filter((entity) => entity.hints?.jsonPath && String(entity.hints.jsonPath).startsWith("data.actionables["));
+	// primary_entities is the ONLY DOM set that reaches the AX merge (runtime.ts), so an entity
+	// dropped here loses its chance to fuse with its AX twin. High-signal state — aria-current
+	// (currentIn) and active checked/selected/pressed — is exactly what the AX/relation layer needs,
+	// but page salience can cap it out on a large page. Pin those in beyond the top-N so the DOM
+	// state (e.g. the breadcrumb's aria-current, which AX never exposes) survives to the merge.
+	const isHighSignal = (entity: Entity) => (entity.state?.current !== undefined && entity.state.current !== false) || entity.state?.checked === true || entity.state?.selected === true || entity.state?.pressed === true;
+	const top = actionableCandidates.slice(0, 10);
+	const pinned = actionableCandidates.filter((entity) => isHighSignal(entity) && !top.includes(entity)).slice(0, 6);
+	const primaryEntities = [...top, ...pinned];
+	return { entities, primaryEntities, listEntities, visualRegions, referencedEntities: referencedSurvivors, controlsSources: controlsSourceOnly.filter((e) => entities.includes(e)) };
 }
 
 function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Limits, options: ScanSummaryOptions, omitted: string[] = []): Summary {
@@ -372,6 +406,7 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 		primary_entities: scanEntities.primaryEntities,
 		list_entities: scanEntities.listEntities.slice(0, limits.lists),
 		visual_regions: scanEntities.visualRegions.slice(0, 4),
+		referenced_entities: [...scanEntities.referencedEntities, ...scanEntities.controlsSources].slice(0, 40),
 	};
 	return {
 		summaryVersion: 2,

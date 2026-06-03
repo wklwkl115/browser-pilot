@@ -564,6 +564,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			...(Array.isArray(focus.primary_entities) ? focus.primary_entities : []),
 			...(Array.isArray(focus.list_entities) ? focus.list_entities : []),
 			...(Array.isArray(focus.visual_regions) ? focus.visual_regions : []),
+			...(Array.isArray(focus.referenced_entities) ? focus.referenced_entities : []),
 		].filter((item): item is Entity => isRecord(item));
 		const axRead = await readAxEntities(server, {
 			browserSessionId: target.browserSessionId,

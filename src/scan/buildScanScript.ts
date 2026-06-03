@@ -272,6 +272,24 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     }
     return parts.join(' > ');
   }
+  // Resolve an aria-controls/aria-owns idref list to target selectors, recording each target (even
+  // hidden/collapsed — e.g. a closed combobox listbox or accordion panel) so it can be emitted as a
+  // minimal entity and the controls/owns/expandedTarget relation can resolve. The AX tree omits
+  // ignored/collapsed targets, so the DOM scan is the reliable source for these.
+  function refTargets(el, attr, refElements) {
+    const v = el.getAttribute && el.getAttribute(attr);
+    if (!v) return [];
+    const out = [];
+    for (const id of String(v).split(/\s+/).filter(Boolean)) {
+      let target = null;
+      try { target = document.getElementById(id); } catch (_) { target = null; }
+      if (!target) continue;
+      const sel = selectorFor(target);
+      out.push(sel);
+      if (refElements && !refElements.has(sel)) refElements.set(sel, { selector: sel, role: roleOf(target), name: labelOf(target) || clean(target.innerText || target.textContent || '', 80) || '', hidden: isHidden(target) });
+    }
+    return out;
+  }
   function visibleInfo(el) {
     const r = el.getBoundingClientRect();
     const vw = Math.max(document.documentElement.clientWidth || 0, innerWidth || 0);
@@ -314,7 +332,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     if (area > Math.max(1, (innerWidth || 1) * (innerHeight || 1) * 0.25)) score -= 400;
     return score;
   }
-  function collectActionables(root) {
+  function collectActionables(root, refElements) {
     if (!root) return [];
     const source = root === document.body || root === document.documentElement ? Array.from(root.querySelectorAll('*')) : [root].concat(Array.from(root.querySelectorAll('*')));
     const out = [];
@@ -333,7 +351,10 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       const checkedAttr = el.getAttribute && el.getAttribute('aria-checked');
       const checkedState = (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) ? !!el.checked : checkedAttr === 'true' ? true : checkedAttr === 'false' ? false : undefined;
       const currentAttr = el.getAttribute && el.getAttribute('aria-current');
-      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', ...(checkedState === undefined ? {} : { checked: checkedState }), ...(currentAttr ? { current: currentAttr } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
+      const controlsSelectors = refTargets(el, 'aria-controls', refElements);
+      const ownsSelectors = refTargets(el, 'aria-owns', refElements);
+      const expandedAttr = el.getAttribute && el.getAttribute('aria-expanded');
+      const item = { index: out.length, selector: selectorFor(el), tag: el.tagName.toLowerCase(), role: roleOf(el), action, label: labelOf(el), text: clean(el.innerText || el.textContent || '', 120), clickable: isClickable, editable: isEditable, disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true', ...(checkedState === undefined ? {} : { checked: checkedState }), ...(currentAttr ? { current: currentAttr } : {}), ...(controlsSelectors.length ? { controlsSelectors } : {}), ...(ownsSelectors.length ? { ownsSelectors } : {}), ...((expandedAttr === 'true' || expandedAttr === 'false') && controlsSelectors.length ? { expandedTargetSelectors: controlsSelectors } : {}), handlers: handlers.slice(0, 6), rect: visible.rect, point: visible.point, hitOk: visible.hitOk, hitTarget: visible.hitTarget, ...(visible.hitOk === false && visible.occluderSelector ? { occluderSelector: visible.occluderSelector } : {}) };
       item.priority = scoreActionable(item);
       out.push(item);
     }
@@ -491,7 +512,36 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 
   const topRoot = topLayerRoot(document);
   const scanRoot = topRoot || document.body || document.documentElement;
-  const actionables = collectActionables(scanRoot);
+  // Collect aria-controls/aria-owns/aria-expanded pairings page-wide so the relation resolves even
+  // when the source element is scrolled off-screen and never made the actionable list. We record
+  // both the target (for entity building) AND a sourceSelector→targetSelectors map so the relation
+  // can be emitted without needing the source in primary_entities. Capped at 100 pairs.
+  function collectControlsPairs(root) {
+    if (!root) return { targets: [], pairs: [] };
+    const targetMap = new Map();
+    const pairs = [];
+    const all = Array.from((root === document.body || root === document.documentElement ? root : document).querySelectorAll('[aria-controls],[aria-owns]'));
+    for (const el of all) {
+      if (pairs.length >= 100) break;
+      const ctlSelectors = refTargets(el, 'aria-controls', targetMap);
+      const ownsSelectors = refTargets(el, 'aria-owns', targetMap);
+      const expandedAttr = el.getAttribute && el.getAttribute('aria-expanded');
+      if (!ctlSelectors.length && !ownsSelectors.length) continue;
+      pairs.push({
+        sourceSelector: selectorFor(el),
+        sourceRole: roleOf(el),
+        sourceName: labelOf(el) || clean(el.innerText || el.textContent || '', 60) || '',
+        ...(ctlSelectors.length ? { controlsSelectors: ctlSelectors } : {}),
+        ...(ownsSelectors.length ? { ownsSelectors } : {}),
+        ...((expandedAttr === 'true' || expandedAttr === 'false') && ctlSelectors.length ? { expandedTargetSelectors: ctlSelectors } : {}),
+      });
+    }
+    return { targets: Array.from(targetMap.values()), pairs };
+  }
+  const refElements = new Map();
+  const actionables = collectActionables(scanRoot, refElements);
+  const { targets: refTargetsList, pairs: controlsPairs } = collectControlsPairs(scanRoot);
+  const references = refTargetsList;
   const list_hints = collectListHints(scanRoot);
   const canvas_regions = collectCanvasRegions(scanRoot);
   let content;
@@ -518,6 +568,8 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     iframe_notes: iframeNotes,
     top_layer: topRoot ? { tag: topRoot.tagName.toLowerCase(), id: topRoot.id || '', class: cleanClassValue(topRoot.className || '').slice(0, 120) } : null,
     actionables,
+    references,
+    controls_pairs: controlsPairs,
     list_hints,
     canvas_regions
   };

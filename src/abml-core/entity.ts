@@ -239,6 +239,11 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			// The element stacked on top at our center point when the hit-test failed — the occluder.
 			// Resolved to an entity ref (coveredBy/occludes) in relation derivation; harmless if unresolved.
 			...(node.hitOk === false && stringValue(node.occluderSelector) ? { occluderSelector: stringValue(node.occluderSelector) } : {}),
+			// aria-controls / aria-owns / expanded target selectors (DOM-sourced so they resolve even when
+			// the target is collapsed/hidden — the AX tree omits those). Materialized by selector.
+			...(Array.isArray(node.controlsSelectors) && node.controlsSelectors.length ? { controlsSelectors: node.controlsSelectors } : {}),
+			...(Array.isArray(node.ownsSelectors) && node.ownsSelectors.length ? { ownsSelectors: node.ownsSelectors } : {}),
+			...(Array.isArray(node.expandedTargetSelectors) && node.expandedTargetSelectors.length ? { expandedTargetSelectors: node.expandedTargetSelectors } : {}),
 		},
 	};
 	const capturedAt = context.capturedAt ?? Date.now();
@@ -316,6 +321,102 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 			createdAt: capturedAt,
 			ttlMs: 5 * 60 * 1000,
 			stabilityScore: 0.7,
+		},
+	};
+}
+
+function referencedTargetKind(role: string): EntityKind {
+	const normalized = role.toLowerCase();
+	if (["button", "link", "checkbox", "radio", "switch", "tab", "combobox", "option", "textbox", "searchbox", "menuitem", "slider", "spinbutton"].includes(normalized)) return "control";
+	if (["region", "listbox", "menu", "menubar", "dialog", "list", "grid", "table", "navigation", "tabpanel", "group", "tree", "form"].includes(normalized)) return "region";
+	if (["heading", "text", "statictext"].includes(normalized)) return "text";
+	return "element";
+}
+
+// A minimal entity for an element that declares aria-controls/aria-owns (the relation source) but
+// is not in the actionable list (e.g. scrolled off-screen). Built from the controls_pairs scan
+// data; selector-keyed so it dedupes against an existing actionable if one is present.
+export function buildControlsSourceEntity(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+	const selector = stringValue(node.sourceSelector);
+	const role = stringValue(node.sourceRole) || "generic";
+	const name = stringValue(node.sourceName);
+	const locators: Locator[] = selector ? [{ by: "css", value: selector }] : [];
+	const kind = referencedTargetKind(role);
+	const entity: Omit<Entity, "ref"> = {
+		kind,
+		role,
+		...(name ? { name } : {}),
+		state: { visible: false, occluded: false, disabled: false, focused: false, editable: false, inViewport: false },
+		source: "dom",
+		locators,
+		hints: {
+			...(selector ? { selector } : {}),
+			controlsSourceOnly: true,
+			...(Array.isArray(node.controlsSelectors) && node.controlsSelectors.length ? { controlsSelectors: node.controlsSelectors } : {}),
+			...(Array.isArray(node.ownsSelectors) && node.ownsSelectors.length ? { ownsSelectors: node.ownsSelectors } : {}),
+			...(Array.isArray(node.expandedTargetSelectors) && node.expandedTargetSelectors.length ? { expandedTargetSelectors: node.expandedTargetSelectors } : {}),
+		},
+	};
+	const capturedAt = context.capturedAt ?? Date.now();
+	return {
+		entity,
+		descriptor: {
+			kind,
+			locators,
+			owner: {
+				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
+				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
+				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+			},
+			policy: defaultRefPolicyForKind(kind),
+			semantic: { role, ...(name ? { name } : {}) },
+			observationId: context.observationId,
+			documentEpoch: { url: context.url, capturedAt },
+			createdAt: capturedAt,
+			ttlMs: 5 * 60 * 1000,
+			stabilityScore: 0.4,
+		},
+	};
+}
+
+// A minimal entity for an element referenced by aria-controls/aria-owns (the relation target). It
+// is emitted even when hidden/collapsed — that is exactly the case the AX tree drops — so the
+// controls/owns/expandedTarget relation can resolve to a ref. Deduped by selector against scanned
+// actionables, so a visible target that is also scanned collapses to one entity.
+export function buildReferencedTargetEntity(node: Record<string, unknown>, context: ScanEntityContext): BuiltEntity {
+	const selector = stringValue(node.selector);
+	const role = stringValue(node.role) || "generic";
+	const name = stringValue(node.name);
+	const kind = referencedTargetKind(role);
+	const locators: Locator[] = selector ? [{ by: "css", value: selector }] : [];
+	const hidden = node.hidden === true;
+	const entity: Omit<Entity, "ref"> = {
+		kind,
+		role,
+		...(name ? { name } : {}),
+		state: { visible: !hidden, occluded: false, disabled: false, focused: false, editable: false, inViewport: !hidden },
+		source: "dom",
+		locators,
+		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
+	};
+	const capturedAt = context.capturedAt ?? Date.now();
+	return {
+		entity,
+		descriptor: {
+			kind,
+			locators,
+			owner: {
+				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
+				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
+				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+			},
+			policy: defaultRefPolicyForKind(kind),
+			semantic: { role, ...(name ? { name } : {}) },
+			observationId: context.observationId,
+			documentEpoch: { url: context.url, capturedAt },
+			createdAt: capturedAt,
+			ttlMs: 5 * 60 * 1000,
+			stabilityScore: 0.5,
 		},
 	};
 }

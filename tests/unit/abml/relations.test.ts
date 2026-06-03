@@ -112,8 +112,8 @@ test("buildRelationSummary returns an empty-but-present summary when no relation
 	assert.deepEqual(highlights, []);
 });
 
-test("deriveStateRelationAnchors builds currentIn from aria-current + stashed container key", () => {
-	const link = entity("pi-ref://control/products", { backendNodeId: 102, state: { current: "page" }, hints: { currentContainerKey: "b:100" } });
+test("deriveStateRelationAnchors builds currentIn from aria-current + stashed container chain", () => {
+	const link = entity("pi-ref://control/products", { backendNodeId: 102, state: { current: "page" }, hints: { currentContainerKeys: ["b:100"] } });
 	const nav = entity("pi-ref://element/nav", { backendNodeId: 100 });
 	const anchors = deriveStateRelationAnchors([link, nav]);
 	const currentIn = anchors.filter((a) => a.type === "currentIn");
@@ -124,10 +124,18 @@ test("deriveStateRelationAnchors builds currentIn from aria-current + stashed co
 	assert.deepEqual(out.relations, [{ type: "currentIn", targetRef: "pi-ref://element/nav", source: "ax", confidence: "high", evidence: { current: "page" } }]);
 });
 
+test("currentIn falls back to a surviving container when the nearest one didn't materialize", () => {
+	// nearest container b:90 has no entity (folded away by the merge); fallback b:100 survives.
+	const link = entity("pi-ref://control/products", { backendNodeId: 102, state: { current: "page" }, hints: { currentContainerKeys: ["b:90", "b:100"] } });
+	const nav = entity("pi-ref://element/nav", { backendNodeId: 100 });
+	const [out] = materializeRelations([link, nav], deriveStateRelationAnchors([link, nav]));
+	assert.equal(out.relations?.[0]?.targetRef, "pi-ref://element/nav", "resolves to the surviving fallback container");
+});
+
 test("deriveStateRelationAnchors skips currentIn when not current or container unknown", () => {
-	const noCurrent = entity("pi-ref://control/a", { backendNodeId: 1, hints: { currentContainerKey: "b:2" } });
+	const noCurrent = entity("pi-ref://control/a", { backendNodeId: 1, hints: { currentContainerKeys: ["b:2"] } });
 	const noContainer = entity("pi-ref://control/b", { backendNodeId: 3, state: { current: "page" } });
-	const falseCurrent = entity("pi-ref://control/c", { backendNodeId: 4, state: { current: false }, hints: { currentContainerKey: "b:5" } });
+	const falseCurrent = entity("pi-ref://control/c", { backendNodeId: 4, state: { current: false }, hints: { currentContainerKeys: ["b:5"] } });
 	assert.equal(deriveStateRelationAnchors([noCurrent, noContainer, falseCurrent]).filter((a) => a.type === "currentIn").length, 0);
 });
 

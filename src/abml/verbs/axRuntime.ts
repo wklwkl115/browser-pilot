@@ -144,17 +144,25 @@ function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: M
 // hints.currentContainerKey; the DOM-sourced derive step (deriveStateRelationAnchors) turns it into a
 // currentIn relation when the entity carries aria-current. We can't emit the relation here because
 // Chrome's getFullAXTree omits aria-current — the current *state* arrives from the DOM scan, post-merge.
-function nearestCurrentContainerKey(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): string | undefined {
+// All built nav/list/menu ancestor keys, nearest-first. currentIn resolution tries them in order
+// (deriveStateRelationAnchors + materialize fallbacks) — a single "nearest container" is unreliable
+// because the merge can fold an AX container node away and drop its key, so we keep the whole chain
+// of *built* containers as fallbacks; the first that survives to a ref wins.
+function builtCurrentContainerKeys(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): string[] {
+	const keys: string[] = [];
 	let cursor = node;
 	for (let depth = 0; depth < 24; depth += 1) {
 		const id = axNodeId(cursor);
-		if (!id) return undefined;
+		if (!id) break;
 		const parent = parentByChildId.get(id);
-		if (!parent) return undefined;
-		if (CURRENT_CONTAINER_ROLES.has(axRole(parent).toLowerCase())) return nodeRelationKey(parent);
+		if (!parent) break;
+		if (CURRENT_CONTAINER_ROLES.has(axRole(parent).toLowerCase())) {
+			const key = nodeRelationKey(parent);
+			if (key && builtByKey.has(key) && !keys.includes(key)) keys.push(key);
+		}
 		cursor = parent;
 	}
-	return undefined;
+	return keys;
 }
 
 // AX relation properties (aria-labelledby/describedby/controls) reference the target *element*,
@@ -226,6 +234,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	}
 	const out: BuiltEntity[] = [];
 	const builtByKey = new Map<string, BuiltEntity>();
+	const builtNodeByKey = new Map<string, Record<string, unknown>>();
 	const propertyAnchors: RelationAnchor[] = [];
 	for (const node of nodes) {
 		if (!isInterestingAxNode(node)) continue;
@@ -248,14 +257,19 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		const built = buildAxEntityFromNode(node, context, geometry);
 		const container = nearestContainer(node, parentByChildId);
 		if (container) built.entity.hints = { ...(built.entity.hints || {}), containerRole: container.role, ...(container.name ? { containerName: container.name } : {}) };
-		const currentContainerKey = nearestCurrentContainerKey(node, parentByChildId);
-		if (currentContainerKey) built.entity.hints = { ...(built.entity.hints || {}), currentContainerKey };
 		out.push(built);
 		const sourceKey = nodeRelationKey(node);
 		if (sourceKey) {
 			builtByKey.set(sourceKey, built);
+			builtNodeByKey.set(sourceKey, node);
 			for (const anchor of extractAxPropertyRelationAnchors(node)) propertyAnchors.push({ sourceKey, type: anchor.type, targetKey: anchor.targetKey, source: "ax", confidence: "high" });
 		}
+	}
+	// Stash the built nav/list container chain (nearest-first) now that all entities exist, so the
+	// DOM-sourced currentIn relation (deriveStateRelationAnchors) can resolve to a surviving ref.
+	for (const [key, node] of builtNodeByKey) {
+		const containerKeys = builtCurrentContainerKeys(node, parentByChildId, builtByKey).filter((k) => k !== key);
+		if (containerKeys.length) builtByKey.get(key)!.entity.hints = { ...(builtByKey.get(key)!.entity.hints || {}), currentContainerKeys: containerKeys };
 	}
 	const rawAnchors = [
 		...propertyAnchors,

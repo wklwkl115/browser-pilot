@@ -14,6 +14,9 @@ export type RelationAnchor = {
 	sourceKey: string;
 	type: RelationType;
 	targetKey: string;
+	// Ordered alternative target keys tried when targetKey doesn't resolve — used by currentIn, whose
+	// nearest container node can be folded away by the merge; the first surviving container ref wins.
+	targetKeyFallbacks?: string[];
 	source: "ax" | "dom" | "geometry";
 	confidence: "high" | "medium" | "low";
 	evidence?: Record<string, unknown>;
@@ -105,7 +108,10 @@ export function materializeRelations(entities: Entity[], anchors: RelationAnchor
 	const bySource = new Map<string, EntityRelation[]>();
 	for (const anchor of anchors) {
 		const sourceRef = keyToRef.get(anchor.sourceKey);
-		const targetRef = keyToRef.get(anchor.targetKey);
+		let targetRef = keyToRef.get(anchor.targetKey);
+		if (!targetRef && anchor.targetKeyFallbacks) {
+			for (const fallback of anchor.targetKeyFallbacks) { targetRef = keyToRef.get(fallback); if (targetRef) break; }
+		}
 		if (!sourceRef || !targetRef || sourceRef === targetRef) continue;
 		const relation: EntityRelation = {
 			type: anchor.type,
@@ -136,14 +142,24 @@ export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[]
 	for (const entity of entities) {
 		const sourceKey = entityRelationKeys(entity)[0];
 		if (!sourceKey) continue;
-		const containerKey = entity.hints?.currentContainerKey;
-		if (entity.state.current !== undefined && entity.state.current !== false && typeof containerKey === "string" && containerKey) {
-			out.push({ sourceKey, type: "currentIn", targetKey: containerKey, source: "ax", confidence: "high", evidence: { current: entity.state.current } });
+		const containerKeys = Array.isArray(entity.hints?.currentContainerKeys) ? (entity.hints!.currentContainerKeys as unknown[]).filter((k): k is string => typeof k === "string" && k.length > 0) : [];
+		if (entity.state.current !== undefined && entity.state.current !== false && containerKeys.length) {
+			out.push({ sourceKey, type: "currentIn", targetKey: containerKeys[0]!, ...(containerKeys.length > 1 ? { targetKeyFallbacks: containerKeys.slice(1) } : {}), source: "ax", confidence: "high", evidence: { current: entity.state.current } });
 		}
 		const occluder = entity.hints?.occluderSelector;
 		if (entity.state.occluded === true && typeof occluder === "string" && occluder) {
 			out.push({ sourceKey, type: "coveredBy", targetKey: `s:${occluder}`, source: "geometry", confidence: "medium", evidence: { hitTest: true } });
 			out.push({ sourceKey: `s:${occluder}`, type: "occludes", targetKey: sourceKey, source: "geometry", confidence: "medium" });
+		}
+		// aria-controls/owns/expandedTarget by selector — resolves even when the target is collapsed/
+		// hidden (the AX-property path drops those). Deduped against the AX-sourced controls/owns when
+		// the target is also visible (same target ref).
+		for (const [hintKey, type] of [["controlsSelectors", "controls"], ["ownsSelectors", "owns"], ["expandedTargetSelectors", "expandedTarget"]] as const) {
+			const selectors = entity.hints?.[hintKey];
+			if (!Array.isArray(selectors)) continue;
+			for (const selector of selectors) {
+				if (typeof selector === "string" && selector) out.push({ sourceKey, type, targetKey: `s:${selector}`, source: "dom", confidence: "high" });
+			}
 		}
 	}
 	return out;
