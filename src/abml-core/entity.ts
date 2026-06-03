@@ -28,6 +28,36 @@ export type EntityStructure = {
 	posInSet?: number; // aria-posinset — 1-based position within that set
 	sort?: string; // aria-sort on a column header (ascending/descending/other)
 	landmark?: string; // landmark role (navigation/main/banner/contentinfo/complementary/search/form/region)
+	rowIndex?: number; // table/grid cell — 1-based row position (aria-rowindex or computed)
+	colIndex?: number; // table/grid cell — 1-based column position (aria-colindex or computed)
+};
+
+// ABML R1 — relationship graph. A typed edge from this entity to another entity (by ref).
+// Reuses AX relations/properties (labelledby/describedby/controls/owns), table hierarchy
+// (cell→row→table), and aria-current. `targetRef` is always a materialized pi-ref://; the
+// pre-ref backend/AX node ids used to extract anchors never leak here. Scalar facts
+// (state.current, state.expanded, hints.containerRole) stay for old callers — relations
+// are additive provenance, not a replacement.
+export type RelationType =
+	| "labelledBy"
+	| "describedBy"
+	| "controls"
+	| "owns"
+	| "expandedTarget"
+	| "currentIn"
+	| "cellOf"
+	| "rowOf"
+	| "columnOf"
+	| "headerFor"
+	| "occludes"
+	| "coveredBy";
+
+export type EntityRelation = {
+	type: RelationType;
+	targetRef: string;
+	source: "ax" | "dom" | "geometry";
+	confidence: "high" | "medium" | "low";
+	evidence?: Record<string, unknown>;
 };
 
 export type Entity = {
@@ -38,6 +68,7 @@ export type Entity = {
 	value?: string;
 	state: EntityState;
 	structure?: EntityStructure;
+	relations?: EntityRelation[];
 	source: EntitySource;
 	locators?: Locator[];
 	geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };

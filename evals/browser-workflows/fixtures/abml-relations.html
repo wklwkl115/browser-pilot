@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ABML R1 relationship-graph fixture</title>
+</head>
+<body>
+  <!-- Pure HTML/ARIA, no script: observe(scan) reads relations from the AX tree directly. Covers
+       every batch-1 relation family so one observe call validates the whole R1 graph. -->
+
+  <!-- labelledBy / describedBy: input names + describes via aria-labelledby / aria-describedby -->
+  <h1>Account</h1>
+  <span id="email-label">Email address</span>
+  <span id="email-help">We never share your email.</span>
+  <input type="email" aria-labelledby="email-label" aria-describedby="email-help" />
+
+  <!-- controls / owns / expandedTarget: an expanded accordion trigger controlling a region -->
+  <button aria-expanded="true" aria-controls="details-panel">Shipping details</button>
+  <div id="details-panel" role="region" aria-label="Shipping details">
+    <p>Ships in 2-3 business days.</p>
+  </div>
+
+  <!-- table / grid: column headers + data cells (cellOf / rowOf / columnOf / headerFor) -->
+  <table>
+    <caption>People</caption>
+    <thead>
+      <tr><th scope="col">Name</th><th scope="col">Age</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Alice</td><td>30</td></tr>
+      <tr><td>Bob</td><td>27</td></tr>
+    </tbody>
+  </table>
+
+  <!-- current / active-route: breadcrumb nav with the active page marked aria-current -->
+  <nav aria-label="Breadcrumb">
+    <ol>
+      <li><a href="#home">Home</a></li>
+      <li><a href="#catalog">Catalog</a></li>
+      <li><a href="#products" aria-current="page">Products</a></li>
+    </ol>
+  </nav>
+</body>
+</html>

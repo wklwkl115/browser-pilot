@@ -34,6 +34,7 @@ const PURE_CORE = [
 	"resolveModel.ts",
 	"entity.ts",
 	"ax.ts",
+	"relations.ts",
 	"stream.ts",
 	"errors.ts",
 	"verbs/router.ts",

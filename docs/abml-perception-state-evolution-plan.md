@@ -286,8 +286,13 @@ covering complex web apps, **complementary** to the optimization roadmap above: 
    real-browser validated, the way P1-P3 were.
 
 ### Phase R1 — Relationship-graph completion (nearest; reuses AX; highest ROI)
-`containerRole` is the seed; the rest mostly already exist in AX relations/properties — make
-them explicit typed relations on the entity:
+**Batch 1 landed + live-verified (2026-06-03)** — see `docs/abml-relationship-graph-execution-plan.md`.
+Typed `EntityRelation[]` on entities + a budget-immune envelope-top-level `relations` summary;
+labelledBy/describedBy/controls/owns/expandedTarget + table cellOf/rowOf/columnOf/headerFor all
+materialize to `pi-ref://` targets from a real Chrome AX tree. `currentIn` deferred (aria-current
+isn't in `getFullAXTree` → needs a DOM-sourced fallback); occlusion below stays batch 2.
+`containerRole` is the seed; the rest mostly already exist in AX relations/properties — made
+explicit typed relations on the entity:
 - labelledBy / describedBy (unify the AX/DOM label sources into one relation)
 - row / column / cell / columnheader (table/grid — AX exposes rowindex/colindex)
 - controls / owns / expandedTarget (combobox / menu / accordion — AX relations)

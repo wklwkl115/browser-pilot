@@ -28,6 +28,9 @@ export type DistilledEnvelope = {
 	abmlIntegrated?: boolean;
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
+	// R1 relationship graph (relations.summary = type→count, always present when abmlIntegrated;
+	// relations.highlights = deterministic capped sample). Lifted here so the budget never hides it.
+	relations?: Record<string, unknown>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -188,6 +191,13 @@ function envelopeOutline(summary: DistilledSummary): Array<Record<string, unknow
 	return outline.length ? structuredClone(outline) as Array<Record<string, unknown>> : undefined;
 }
 
+// R1 relations summary lifted from the (uncompressed) focus so relations.summary survives the
+// budget squeeze — cloned for the same [Circular]-avoidance reason as gist/outline.
+function envelopeRelations(summary: DistilledSummary): Record<string, unknown> | undefined {
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	return isRecord(focus?.relations) ? structuredClone(focus.relations) as Record<string, unknown> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -321,6 +331,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const abmlIntegrated = typeof redactedSummary.abmlIntegrated === "boolean" ? redactedSummary.abmlIntegrated : undefined;
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
+	const relations = envelopeRelations(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -336,6 +347,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(abmlIntegrated !== undefined ? { abmlIntegrated } : {}),
 		...(gist ? { gist } : {}),
 		...(outline ? { outline } : {}),
+		...(relations ? { relations } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

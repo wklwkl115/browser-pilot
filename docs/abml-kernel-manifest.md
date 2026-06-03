@@ -11,12 +11,12 @@ one-way dependency direction:
 - **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
   verb decisions, error shaping. Portable, unit-testable without a browser, and the long-term
-  candidate for an isolated `@pi/abml-core` package. **15 modules + an `index.ts` barrel.**
+  candidate for an isolated `@pi/abml-core` package. **16 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
   data. **7 files.**
 
-`src/abml/` also keeps **15 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/` also keeps **16 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
 `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
 the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
@@ -41,7 +41,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
 
-## Pure core (15 — zero browser/Node deps)
+## Pure core (16 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -49,8 +49,9 @@ each doc links back here.
 | `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
 | `actionabilityModel.ts` | Verb→actionability spec mapping; action-verb classification. |
 | `resolveModel.ts` | Candidate/resolve result shaping (pure data). |
-| `entity.ts` | `Entity`/`EntityState`/`EntityStructure` model + builders. |
-| `ax.ts` | DOM↔AX merge core: box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
+| `entity.ts` | `Entity`/`EntityState`/`EntityStructure`/`EntityRelation` model + builders. |
+| `ax.ts` | DOM↔AX merge core: box-IoU/role/name scoring, AX-authoritative state/structure fusion; AX relation-anchor extraction (R1). |
+| `relations.ts` | ABML R1 relationship graph: anchor→ref materialization, dedupe/cap, envelope relation summary. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |

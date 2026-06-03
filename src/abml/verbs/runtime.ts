@@ -8,7 +8,8 @@ import { summarizeScanData } from "../../tools/summaries/scan.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
 import type { Entity } from "../entity.js";
-import { mergeAxIntoDomEntities, readAxEntities } from "./axRuntime.js";
+import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
+import { materializeRelations } from "../relations.js";
 import { actionabilitySpecForVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
 import { decideRefAccess } from "../refPolicy.js";
@@ -564,19 +565,22 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			...(Array.isArray(focus.list_entities) ? focus.list_entities : []),
 			...(Array.isArray(focus.visual_regions) ? focus.visual_regions : []),
 		].filter((item): item is Entity => isRecord(item));
-		const axEntities = await readAxEntities(server, {
+		const axRead = await readAxEntities(server, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			observationId: snapshot.snapshotId,
 			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
 			capturedAt: snapshot.capturedAt,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
-		}).catch(() => []);
-		const mergedEntities = axEntities.length ? mergeAxIntoDomEntities(entities, axEntities) : entities;
-		const filtered = descriptor ? filterEntitiesForRef(mergedEntities, descriptor) : mergedEntities;
+		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
+		const mergedEntities = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
+		// Materialize relation anchors → typed pi-ref edges only after the merge mints final refs.
+		const relatedEntities = axRead.anchors.length ? materializeRelations(mergedEntities, axRead.anchors) : mergedEntities;
+		const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
+		const filtered = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
 		return {
 			entities: filtered,
-			data: { summary, snapshotId: snapshot.snapshotId, observationId: snapshot.snapshotId, tabId: target.tabId, url: data?.url, axEntityCount: axEntities.length, mergedEntityCount: mergedEntities.length },
+			data: { summary, snapshotId: snapshot.snapshotId, observationId: snapshot.snapshotId, tabId: target.tabId, url: data?.url, axEntityCount: axRead.entities.length, mergedEntityCount: mergedEntities.length, relationCount },
 		};
 	});
 }

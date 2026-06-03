@@ -28,15 +28,16 @@ test("gist/outline are lifted to the envelope top-level", async () => {
 	assert.equal(outline![0]!.name, "Crust");
 });
 
-test("gist/outline survive the summary-budget squeeze (lifted from the uncompressed summary)", async () => {
+test("gist/outline/relations survive the summary-budget squeeze (lifted from the uncompressed summary)", async () => {
 	// Pad primary_entities so the summary trips fitSummaryBudget on a tight budget; the focus
-	// aggregate may get squeezed, but the top-level gist/outline must remain intact.
+	// aggregate may get squeezed, but the top-level gist/outline/relations must remain intact.
 	const primary_entities = Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "radio", name: `option ${i} ${"pad ".repeat(60)}` }));
 	const envelope = await envelopeFor({
 		abmlIntegrated: true,
 		focus: {
 			gist: { landmarks: ["main"], controlCount: 30, statefulControlCount: 30, activeControlCount: 2, containerCount: 1 },
 			outline: [{ container: "radiogroup", name: "Big group", memberCount: 30, memberRefs: ["a", "b", "c"] }],
+			relations: { summary: { labelledBy: 5, controls: 2, tableCells: 16 }, highlights: [{ type: "controls", sourceRef: "pi-ref://control/0", targetRef: "pi-ref://region/0", source: "ax" }] },
 			primary_entities,
 		},
 	}, 3_000);
@@ -45,6 +46,9 @@ test("gist/outline survive the summary-budget squeeze (lifted from the uncompres
 	assert.equal(gist!.controlCount, 30);
 	const outline = envelope.outline as Array<Record<string, unknown>> | undefined;
 	assert.ok(Array.isArray(outline) && outline![0]!.name === "Big group", "outline still present after budget squeeze");
+	const relations = envelope.relations as Record<string, unknown> | undefined;
+	assert.ok(relations, "relations still present after budget squeeze");
+	assert.deepEqual(relations!.summary, { labelledBy: 5, controls: 2, tableCells: 16 }, "relations.summary intact at envelope top-level");
 });
 
 test("abmlIntegrated + disclosure layers form a stable envelope contract under a tight budget", async () => {
@@ -56,6 +60,7 @@ test("abmlIntegrated + disclosure layers form a stable envelope contract under a
 		focus: {
 			gist: { landmarks: ["main"], controlCount: 2, containerCount: 1 },
 			outline: [{ container: "radiogroup", name: "Crust", memberCount: 2, controlCount: 2, memberRefs: ["a", "b"] }],
+			relations: { summary: { controls: 1 }, highlights: [{ type: "controls", sourceRef: "pi-ref://control/1", targetRef: "pi-ref://region/1", source: "ax" }] },
 			primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "radio", name: "A", state: { checked: true } }],
 		},
 	}, 2_000);
@@ -63,6 +68,8 @@ test("abmlIntegrated + disclosure layers form a stable envelope contract under a
 	assert.equal(typeof envelope.gist, "object", "gist is an object");
 	assert.ok(Array.isArray(envelope.outline), "outline is an array");
 	assert.ok(Array.isArray(envelope.entities), "entities is an array");
+	assert.equal(typeof envelope.relations, "object", "relations surfaced at envelope top-level");
+	assert.deepEqual((envelope.relations as Record<string, unknown>).summary, { controls: 1 }, "relations.summary present under tight budget");
 });
 
 test("abmlIntegrated:false is surfaced too (agent can tell AX merge did NOT apply)", async () => {

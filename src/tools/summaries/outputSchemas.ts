@@ -51,6 +51,14 @@ export const EntityGeometrySchema = Type.Object({
 	box: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { additionalProperties: true })),
 	point: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() }, { additionalProperties: true })),
 }, { additionalProperties: true });
+// ABML R1 — a typed relation edge on an entity (targetRef is a materialized pi-ref://).
+export const EntityRelationSchema = Type.Object({
+	type: Type.String(),
+	targetRef: Type.String(),
+	source: Type.String(),
+	confidence: Type.String(),
+	evidence: Type.Optional(LooseObject),
+}, { additionalProperties: true });
 export const EntitySchema = Type.Object({
 	ref: Type.String(),
 	kind: Type.String(),
@@ -61,7 +69,20 @@ export const EntitySchema = Type.Object({
 	source: Type.String(),
 	locators: Type.Optional(Type.Array(EntityLocatorSchema)),
 	geometry: Type.Optional(EntityGeometrySchema),
+	relations: Type.Optional(Type.Array(EntityRelationSchema)),
 	hints: Type.Optional(LooseObject),
+}, { additionalProperties: true });
+
+// ABML R1 — envelope-top-level relation disclosure (also lives in summary.focus.relations).
+// summary = type→count (+ tableCells); highlights = deterministic capped sample.
+export const RelationSummarySchema = Type.Object({
+	summary: Type.Record(Type.String(), Type.Number()),
+	highlights: Type.Array(Type.Object({
+		type: Type.String(),
+		sourceRef: Type.String(),
+		targetRef: Type.String(),
+		source: Type.String(),
+	}, { additionalProperties: true })),
 }, { additionalProperties: true });
 
 // ── browser_evidence summary schema ──────────────────────────────────────────
@@ -185,6 +206,7 @@ export const ScanSummarySchema = Type.Object({
 		primary_entities: Type.Array(EntitySchema),
 		list_entities: Type.Array(EntitySchema),
 		visual_regions: Type.Optional(Type.Array(EntitySchema)),
+		relations: Type.Optional(RelationSummarySchema),
 	}, { additionalProperties: true }),
 	artifact_hints: Type.Object({
 		jsonPaths: Type.Record(Type.String(), Type.String()),

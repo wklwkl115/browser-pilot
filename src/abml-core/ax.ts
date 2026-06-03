@@ -1,6 +1,6 @@
 import { defaultRefPolicyForKind } from "./refPolicy.js";
 import { isRecord } from "../utils/records.js";
-import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure } from "./entity.js";
+import type { BuiltEntity, Entity, EntityKind, EntityState, EntityStructure, RelationType } from "./entity.js";
 import type { Locator } from "./types.js";
 
 export type AxTreeNode = Record<string, unknown>;
@@ -160,15 +160,60 @@ function axStructure(node: AxTreeNode, role: string): EntityStructure | undefine
 	const setSize = numberValue(axValueText(axProperty(node, "setsize")));
 	const posInSet = numberValue(axValueText(axProperty(node, "posinset")));
 	const sortText = axValueText(axProperty(node, "sort"));
+	const colIndex = numberValue(axValueText(axProperty(node, "colindex")));
+	const rowIndex = numberValue(axValueText(axProperty(node, "rowindex")));
 	const landmark = LANDMARK_ROLES.has(role.toLowerCase()) ? role.toLowerCase() : undefined;
 	const structure: EntityStructure = {
 		...(level !== undefined ? { level } : {}),
 		...(setSize !== undefined ? { setSize } : {}),
 		...(posInSet !== undefined ? { posInSet } : {}),
 		...(sortText && sortText !== "none" ? { sort: sortText } : {}),
+		...(colIndex !== undefined ? { colIndex } : {}),
+		...(rowIndex !== undefined ? { rowIndex } : {}),
 		...(landmark ? { landmark } : {}),
 	};
 	return Object.keys(structure).length ? structure : undefined;
+}
+
+// AX relation properties (labelledby/describedby/controls/owns) expose related nodes — the AX
+// layer resolves the ARIA idref lists to nodes, each carrying a backendDOMNodeId, the stable key
+// shared with entity hints. Read those ids as relation anchor targets; the owning node's own id
+// is the source, attached by the runtime caller after the DOM↔AX merge mints refs.
+function axRelatedBackendIds(node: AxTreeNode, propertyName: string): number[] {
+	const value = axProperty(node, propertyName);
+	const record = asRecord(value);
+	const related = record && Array.isArray(record.relatedNodes) ? record.relatedNodes : Array.isArray(value) ? value : [];
+	const ids: number[] = [];
+	for (const item of related) {
+		const rec = asRecord(item);
+		const id = numberValue(rec?.backendDOMNodeId ?? rec?.backendNodeId);
+		if (id !== undefined && id > 0) ids.push(id);
+	}
+	return ids;
+}
+
+export type AxRelationAnchor = { type: RelationType; targetKey: string };
+
+// Per-node AX relation anchors from the node's own ARIA relation properties. Pure: no cross-node
+// lookup — targets are keyed by "b:<backendDOMNodeId>" and resolved to pi-ref:// later. Table
+// hierarchy (cellOf/rowOf/columnOf) and currentIn need the node graph, so the runtime layer
+// derives those; here we cover the self-contained property relations. expandedTarget piggybacks
+// on aria-controls when the control is expandable (combobox/accordion trigger → its region).
+export function extractAxPropertyRelationAnchors(node: AxTreeNode): AxRelationAnchor[] {
+	const out: AxRelationAnchor[] = [];
+	const propertyTypes: Array<[string, RelationType]> = [
+		["labelledby", "labelledBy"],
+		["describedby", "describedBy"],
+		["controls", "controls"],
+		["owns", "owns"],
+	];
+	for (const [property, type] of propertyTypes) {
+		for (const id of axRelatedBackendIds(node, property)) out.push({ type, targetKey: `b:${id}` });
+	}
+	if (axPropertyBool(node, "expanded") !== undefined) {
+		for (const id of axRelatedBackendIds(node, "controls")) out.push({ type: "expandedTarget", targetKey: `b:${id}` });
+	}
+	return out;
 }
 
 export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } }): BuiltEntity {

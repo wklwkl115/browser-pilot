@@ -12,6 +12,7 @@ export * from "./actionabilityModel.js";
 export * from "./resolveModel.js";
 export * from "./entity.js";
 export * from "./ax.js";
+export * from "./relations.js";
 export * from "./stream.js";
 export * from "./errors.js";
 export * from "./verbs/router.js";

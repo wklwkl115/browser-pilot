@@ -1,6 +1,18 @@
 # ABML Relationship Graph Execution Plan
 
-> Status: ready-for-activation. This is the concrete execution contract for the next ABML line after the completed internal-substrate work. It does **not** add public `browser_abml_*` tools. Activate by moving it into `CURRENT.md` after the current active workstream is paused/completed or explicitly superseded.
+> Status: **batch 1 landed + live-verified (2026-06-03).** R1.0–R1.4 + R1.7 shipped and proven
+> against a real Chrome/Edge AX tree; R1.5 (currentIn) extraction landed but is **deferred** (real
+> finding: `Accessibility.getFullAXTree` does not expose `aria-current` in node properties, so
+> currentIn needs a DOM-sourced fallback); R1.6 (geometry occlusion) deferred to batch 2 as planned.
+> It does **not** add public `browser_abml_*` tools. ABML stays internal substrate.
+>
+> **Batch-1 outcome (live, abml-relations.html fixture):** labelledBy 2 · describedBy 1 · controls 1 ·
+> expandedTarget 1 · cellOf/rowOf 6 · columnOf 4 · headerFor 2 — all targets `pi-ref://`, summary at
+> envelope top-level (budget-immune). **Real-AX hardening:** aria-labelledby/describedby/controls
+> `relatedNodes` reference the target *element*, whose AX node is often a non-interesting `generic`
+> wrapper (text lives in a child StaticText) — so relation targets are redirected to the nearest
+> built descendant (`resolveAnchorTargets` in `axRuntime.ts`). Without this, labelledBy/describedBy
+> to plain-text targets silently drop. Contract: `check:abml-relation-graph`; smoke: `smoke:browser:abml-relations`.
 
 ## 0. Baseline
 
@@ -248,16 +260,24 @@ Gate:
 - `npm run check:abml-relation-graph`
 - targeted APG combobox/accordion live smoke when network available.
 
-### R1.5 — current/active route relation
+### R1.5 — current/active route relation — DEFERRED (real-AX finding)
 
 Tasks:
 
 - Promote `aria-current` from scalar state into `currentIn` relation to owning nav/list/breadcrumb.
 - Preserve `state.current`.
 
-Acceptance:
+**Status:** the `currentIn` extraction code landed (`currentRelationAnchors` walks the AX container
+chain and fires when `state.current` is set), but real-browser validation revealed Chrome/Edge
+**do not expose `aria-current` in `Accessibility.getFullAXTree` node properties** — so neither the
+`state.current` scalar (a latent P1 gap, only ever exercised synthetically) nor the `currentIn`
+relation populate from AX on a real page. Deferred to **batch 2**: source `aria-current` from the
+DOM scan (`buildScanScript`) and derive `currentIn` from the AX container of the matched entity.
+Not in the batch-1 smoke pass gate; the synthetic unit/contract cases keep the code path covered.
 
-- Breadcrumb/nav fixture: current item has `state.current` and `currentIn` target.
+Acceptance (batch 2):
+
+- Breadcrumb/nav fixture: current item has `state.current` (DOM-sourced) and a `currentIn` target.
 - Envelope relation highlights include one current navigation relation.
 
 Gate:
