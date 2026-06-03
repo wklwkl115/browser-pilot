@@ -67,10 +67,29 @@ function renderHumanError(text: string): number {
 	return EXIT.toolError;
 }
 
+/**
+ * A tool call failed if it hard-terminated OR the envelope itself signals an error.
+ * Some tool errors (e.g. NO_TAB, browser_memory read-miss) return a normal-shaped
+ * envelope with an error code / ok:false WITHOUT terminate:true — those must still
+ * map to a non-zero exit code so scripts/agents can branch on `$?`.
+ */
+export function looksLikeToolError(text: string): boolean {
+	let env: unknown;
+	try { env = JSON.parse(text); } catch { return false; }
+	if (!isRecord(env)) return false;
+	if (env.failed === true || env.ok === false) return true;
+	if (typeof env.error_code === "string") return true;
+	if (isRecord(env.error) && (typeof env.error.code === "string" || typeof env.error.message === "string")) return true;
+	// Coded-error / BrowserBridgeError shape: top-level code + taxonomy or *Error name.
+	if (typeof env.code === "string" && (isRecord(env.taxonomy) || (typeof env.name === "string" && /Error$/.test(env.name)))) return true;
+	if (isRecord(env.summary) && env.summary.ok === false) return true;
+	return false;
+}
+
 /** Render a result; returns the process exit code. */
 export function renderResult(result: ToolResultLike, mode: RenderMode): number {
 	const text = resultText(result);
-	const isError = result.terminate === true;
+	const isError = result.terminate === true || looksLikeToolError(text);
 	if (mode === "json") {
 		const out = text.endsWith("\n") ? text : `${text}\n`;
 		(isError ? process.stderr : process.stdout).write(out);

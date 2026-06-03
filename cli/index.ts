@@ -16,6 +16,12 @@ import { renderResult, renderUsageError, EXIT, type RenderMode } from "./render.
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { findDaemon, stopDaemon } from "./daemonControl.js";
 
+/** Left-align in a column; if the head already fills the column, keep a 2-space gap so the
+ *  description never glues onto a long flag/subcommand. */
+function pad(head: string, width: number): string {
+	return head.length < width ? head.padEnd(width) : `${head}  `;
+}
+
 function printHelp(): void {
 	const cmds = buildCliCommands();
 	const lines = [
@@ -27,7 +33,7 @@ function printHelp(): void {
 		"",
 		"Commands:",
 	];
-	for (const c of cmds) lines.push(`  ${c.subcommand.padEnd(22)}${c.description ?? ""}`.trimEnd());
+	for (const c of cmds) lines.push(`  ${pad(c.subcommand, 22)}${c.description ?? ""}`.trimEnd());
 	lines.push("", "Run 'pi-browser <command> --help' for flags. Global: --json | --text | --help");
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
@@ -37,7 +43,7 @@ function printCommandHelp(cmd: CliCommand): void {
 	const lines = [`pi-browser ${cmd.subcommand}${cmd.description ? ` — ${cmd.description}` : ""}`, "", "Flags:"];
 	for (const s of specs) {
 		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
-		lines.push(`  ${`${s.flag}${meta}`.padEnd(30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd());
+		lines.push(`  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd());
 	}
 	process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -58,3 +58,17 @@ test("renderResult maps mode + terminate to exit codes", () => {
 	assert.equal(renderResult(err, "json"), EXIT.toolError);
 	assert.equal(renderResult(err, "human"), EXIT.toolError);
 });
+
+test("renderResult maps envelope-signalled tool errors to a non-zero exit even without terminate", () => {
+	// Real cases that previously slipped through as exit 0: NO_TAB and memory read-miss
+	// return error-shaped envelopes WITHOUT terminate:true.
+	const noTab = { content: [{ type: "text", text: JSON.stringify({ code: "NO_TAB", message: "No target tab", name: "BrowserBridgeError", taxonomy: { domain: "driver" } }) }] };
+	const memMiss = { content: [{ type: "text", text: JSON.stringify({ action: "read", ok: false, error: "not found" }) }] };
+	const summaryNotOk = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_x", summary: { ok: false } }) }] };
+	assert.equal(renderResult(noTab, "json"), EXIT.toolError, "NO_TAB envelope → tool error exit");
+	assert.equal(renderResult(memMiss, "json"), EXIT.toolError, "ok:false envelope → tool error exit");
+	assert.equal(renderResult(summaryNotOk, "json"), EXIT.toolError, "summary.ok:false → tool error exit");
+	// A clean success envelope must NOT be misread as an error.
+	const success = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_tabs", summary: { tabs: 1, ok: true }, nextActions: [] }) }] };
+	assert.equal(renderResult(success, "json"), EXIT.ok, "success envelope stays exit 0");
+});
