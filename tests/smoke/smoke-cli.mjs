@@ -56,11 +56,22 @@ try {
 		if (!ok) exitCode = 1;
 	}
 
-	// Secondary: observe scan exercises the ABML perception path through the CLI.
+	// Broader representative workflow set, all through the CLI control channel.
 	if (exitCode === 0) {
-		const observe = await invoke(info, "browser_observe", { mode: "scan" });
-		record("browser_observe scan", observe.json?.terminate !== true, { note: observe.json?.terminate ? envelopeError(observe.json) : "scanned" });
-		if (observe.json?.terminate) exitCode = 3;
+		const steps = [
+			{ label: "browser_tabs list", tool: "browser_tabs", params: { action: "list" } },
+			{ label: "browser_observe scan", tool: "browser_observe", params: { mode: "scan" } },
+			{ label: "browser_observe content", tool: "browser_observe", params: { mode: "content" } },
+			{ label: "browser_screenshot", tool: "browser_screenshot", params: {} },
+			{ label: "browser_network start", tool: "browser_network", params: { action: "start" } },
+			{ label: "browser_network stop", tool: "browser_network", params: { action: "stop" } },
+		];
+		for (const step of steps) {
+			const r = await invoke(info, step.tool, step.params);
+			const ok = r.json?.terminate !== true;
+			record(step.label, ok, { note: ok ? "ok" : envelopeError(r.json) });
+			if (!ok) exitCode = 3; // a tool failing live (e.g. lost the tab) — re-run with a stable page
+		}
 	}
 } catch (error) {
 	record("smoke", false, { note: error instanceof Error ? error.message : String(error) });
