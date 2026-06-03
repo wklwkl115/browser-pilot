@@ -17,7 +17,8 @@ import { tmpdir } from "node:os";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-const storeSrc = read("mcp/resourceStore.ts");
+// resourceStore relocated to src/resources/ in the CLI migration; mcp/resourceStore.ts is now a re-export shim.
+const storeSrc = read("src/resources/resourceStore.ts");
 assert(storeSrc.includes("PI_REF_URI_SCHEME"), "resourceStore.ts must define pi-ref URI scheme");
 assert(storeSrc.includes("parsePiRefUri"), "resourceStore.ts must export parsePiRefUri");
 assert(storeSrc.includes("registerRefDescriptor"), "resourceStore.ts must export registerRefDescriptor");
@@ -35,7 +36,7 @@ const {
 	resolveRefUriDetailed,
 	parsePiRefUri,
 	clearResourceStore,
-} = await import(new URL("../../../mcp/resourceStore.ts", import.meta.url).href);
+} = await import(new URL("../../../src/resources/resourceStore.ts", import.meta.url).href);
 const { resolveIngressHandles } = await import(new URL("../../../mcp/handleResolver.ts", import.meta.url).href);
 
 const dir = mkdtempSync(path.join(tmpdir(), "abml-ref-registry-"));

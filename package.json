@@ -22,7 +22,8 @@
     }
   },
   "bin": {
-    "pi-browser-mcp": "./dist/mcp/bin.js"
+    "pi-browser-mcp": "./dist/mcp/bin.js",
+    "pi-browser": "./dist/cli/bin.js"
   },
   "scripts": {
     "sync:protocol": "node scripts/sync-native-protocol.mjs",
@@ -32,6 +33,8 @@
     "prepare": "lefthook install",
     "build": "tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
+    "cli": "tsx cli/bin.ts",
+    "smoke:cli": "tsx tests/smoke/smoke-cli.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "check:all": "node scripts/run-check-groups.mjs",
