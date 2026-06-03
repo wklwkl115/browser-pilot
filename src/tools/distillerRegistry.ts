@@ -8,7 +8,7 @@ export type Distiller = (value: unknown, command?: string) => Record<string, unk
 /**
  * Extended distiller definition that pairs a distill function with an explicit
  * summarySchema. When registered via registerDistillerDefinition, the schema
- * is used as the MCP outputSchema for tools/list, and conformance tests
+ * declares the tool's structured summary shape, and conformance tests
  * validate that real distill output passes the schema.
  *
  * summarySchema is the single source of truth for the structured output shape;

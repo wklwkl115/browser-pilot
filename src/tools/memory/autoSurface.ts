@@ -12,7 +12,7 @@ const SKIP_TOOLS = new Set(["browser_memory", "browser_tabs"]);
 // Read-only/observational tools still surface RECALL hints, but never trigger the
 // record nudge: merely looking at a page is not a reusable accomplishment worth
 // crystallizing into an SOP — only acting on it is.
-const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_wait", "browser_frame", "browser_pick", "browser_artifact", "browser_tool_discovery"]);
+const NON_SALIENT_RECORD_TOOLS = new Set(["browser_observe", "browser_screenshot", "browser_wait", "browser_frame", "browser_pick", "browser_artifact"]);
 const SCOPE_ORDER: Record<MemoryScopeKind, number> = { origin: 0, task: 1, project: 2 };
 const MAX_HINTS = 3;
 

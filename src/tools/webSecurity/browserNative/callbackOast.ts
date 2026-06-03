@@ -5,7 +5,7 @@ import { createCodedError } from "../../../utils/codedError.js";
 import https from "node:https";
 import dgram from "node:dgram";
 import { allSessionStates, createCallbackSession, filterEvents, loadSessionState, normalizeCallbackSessionId, refreshSessionState, sessionInfo, stopSession, updateSessionStateByPath, waitForState, type CallbackSessionState } from "./oastWorkerManager.js";
-import { asString, isRecord, normalizeMethod, positiveInt } from "../shared/normalize.js";
+import { asString, isRecord, normalizeMethod, positiveInt, requestCwd } from "../shared/normalize.js";
 import { assertAllowedTargetUrl, normalizeHeaders } from "../shared/http.js";
 import type { HeaderMap, RawCallbackOastOptions } from "../shared/types.js";
 
@@ -13,6 +13,7 @@ type CallbackAction = "start" | "list" | "status" | "collect" | "clear" | "trigg
 
 type NormalizedCallbackOastOptions = {
 	action: CallbackAction;
+	cwd?: string;
 	sessionId?: string;
 	listenHost: string;
 	dnsListenHost: string;
@@ -79,6 +80,7 @@ function normalizeCallbackOastOptions(options: RawCallbackOastOptions): Normaliz
 	const bodyBase64 = asString(options.bodyBase64 ?? options.triggerBodyBase64);
 	return {
 		action,
+		cwd: requestCwd(options),
 		sessionId,
 		listenHost: asString(options.listenHost)?.trim() || "127.0.0.1",
 		dnsListenHost: asString(options.dnsListenHost)?.trim() || asString(options.listenHost)?.trim() || "127.0.0.1",
@@ -211,11 +213,11 @@ export async function runCallbackOast(options: RawCallbackOastOptions) {
 		return { ok: true, action: normalized.action, ...sessionInfo(state), events: [] };
 	}
 	if (normalized.action === "list") {
-		const sessions = await allSessionStates();
+		const sessions = await allSessionStates(normalized.cwd);
 		return { ok: true, action: normalized.action, count: sessions.length, activeCount: sessions.filter((session) => session.listenerActive === true).length, sessions: sessions.map(sessionInfo) };
 	}
 	if (!normalized.sessionId) throw callbackOastInputError(`browser_callback_oast action ${normalized.action} requires sessionId`, { action: normalized.action, field: "sessionId" });
-	const session = await refreshSessionState(await loadSessionState(normalized.sessionId));
+	const session = await refreshSessionState(await loadSessionState(normalized.sessionId, normalized.cwd));
 	if (!session) throw callbackOastInputError(`browser_callback_oast unknown sessionId: ${normalized.sessionId}`, { sessionId: normalized.sessionId });
 	if (normalized.action === "status") return { ok: true, action: normalized.action, ...sessionInfo(session) };
 	if (normalized.action === "collect") {

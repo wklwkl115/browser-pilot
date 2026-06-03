@@ -17,6 +17,8 @@ export type CallbackSessionState = Record<string, unknown> & {
 };
 
 export type NormalizedCallbackSessionOptions = {
+	/** Caller cwd (request-scoped); session state lives under <cwd>/.pi/... not the daemon's. */
+	cwd?: string;
 	sessionId?: string;
 	listenHost: string;
 	dnsListenHost: string;
@@ -41,7 +43,13 @@ export type NormalizedCallbackSessionOptions = {
 	maxRuntimeMs: number;
 };
 
-const SESSION_ROOT = path.resolve(process.cwd(), ".pi", "browser-artifacts", "callback-oast-sessions");
+// Callback-OAST session state is request-scoped: it lives under the CALLER's cwd
+// (.pi/browser-artifacts/callback-oast-sessions), threaded from runCallbackOast via
+// requestCwd(options), NOT under the daemon's process.cwd(). Path-based helpers
+// (load/update by absolute statePath) stay cwd-agnostic — they trust the path.
+function sessionRoot(cwd?: string): string {
+	return path.resolve(cwd ?? process.cwd(), ".pi", "browser-artifacts", "callback-oast-sessions");
+}
 const WORKER_PATH = fileURLToPath(new URL("./callbackOastWorker.mjs", import.meta.url));
 const STATE_LOCK_TIMEOUT_MS = 10_000;
 const STATE_LOCK_RETRY_MS = 25;
@@ -75,18 +83,19 @@ export function normalizeCallbackSessionId(value: unknown): string {
 	return sessionId;
 }
 
-function ensureSessionRootPath(targetPath: string): string {
-	const rootWithSep = SESSION_ROOT.endsWith(path.sep) ? SESSION_ROOT : `${SESSION_ROOT}${path.sep}`;
+function ensureSessionRootPath(targetPath: string, cwd?: string): string {
+	const root = sessionRoot(cwd);
+	const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
 	const resolved = path.resolve(targetPath);
-	if (resolved !== SESSION_ROOT && !resolved.startsWith(rootWithSep)) {
+	if (resolved !== root && !resolved.startsWith(rootWithSep)) {
 		throw new Error(`browser_callback_oast resolved path escaped session root: ${resolved}`);
 	}
 	return resolved;
 }
 
-function isPathWithinSessionRoot(targetPath: string): boolean {
+function isPathWithinSessionRoot(targetPath: string, cwd?: string): boolean {
 	try {
-		ensureSessionRootPath(targetPath);
+		ensureSessionRootPath(targetPath, cwd);
 		return true;
 	} catch {
 		return false;
@@ -145,12 +154,12 @@ function prepareHttpsCertificate(artifactRoot: string): { keyPath: string; certP
 	return { keyPath, certPath };
 }
 
-export function sessionArtifactRoot(sessionId: string): string {
-	return ensureSessionRootPath(path.join(SESSION_ROOT, normalizeCallbackSessionId(sessionId)));
+export function sessionArtifactRoot(sessionId: string, cwd?: string): string {
+	return ensureSessionRootPath(path.join(sessionRoot(cwd), normalizeCallbackSessionId(sessionId)), cwd);
 }
 
-export function sessionStatePath(sessionId: string): string {
-	return ensureSessionRootPath(path.join(sessionArtifactRoot(sessionId), "state.json"));
+export function sessionStatePath(sessionId: string, cwd?: string): string {
+	return ensureSessionRootPath(path.join(sessionArtifactRoot(sessionId, cwd), "state.json"), cwd);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -318,24 +327,30 @@ export async function updateSessionStateByPath(statePath: string, update: (state
 
 export async function loadSessionStateByPath(statePath: string): Promise<CallbackSessionState | undefined> {
 	try {
-		const resolvedStatePath = ensureSessionRootPath(statePath);
+		// Trust the absolute path it is given (sessions are caller-cwd-rooted, so the
+		// daemon-global root can't pin it). Derive artifactRoot/statePath from the path,
+		// and keep path-traversal defense via the session-id + folder-segment checks.
+		const resolvedStatePath = path.resolve(statePath);
+		const artifactRoot = path.dirname(resolvedStatePath);
+		if (path.basename(resolvedStatePath) !== "state.json") return undefined;
+		if (path.basename(path.dirname(artifactRoot)) !== "callback-oast-sessions") return undefined;
+		const dirSessionId = normalizeCallbackSessionId(path.basename(artifactRoot));
 		const raw = JSON.parse(await readFile(resolvedStatePath, "utf8")) as Record<string, unknown>;
 		if (!raw || typeof raw !== "object") return undefined;
-		const sessionId = normalizeCallbackSessionId(raw.sessionId || path.basename(path.dirname(resolvedStatePath)));
-		const artifactRoot = sessionArtifactRoot(sessionId);
+		const sessionId = normalizeCallbackSessionId(raw.sessionId || dirSessionId);
 		return {
 			...(raw as Record<string, unknown>),
 			sessionId,
 			artifactRoot,
-			statePath: sessionStatePath(sessionId),
+			statePath: resolvedStatePath,
 		};
 	} catch {
 		return undefined;
 	}
 }
 
-export async function loadSessionState(sessionId: string): Promise<CallbackSessionState | undefined> {
-	return await loadSessionStateByPath(sessionStatePath(sessionId));
+export async function loadSessionState(sessionId: string, cwd?: string): Promise<CallbackSessionState | undefined> {
+	return await loadSessionStateByPath(sessionStatePath(sessionId, cwd));
 }
 
 function isPidAlive(pid: unknown): boolean {
@@ -359,13 +374,14 @@ export async function refreshSessionState(state: CallbackSessionState | undefine
 	return state;
 }
 
-export async function allSessionStates(): Promise<CallbackSessionState[]> {
-	await mkdir(SESSION_ROOT, { recursive: true });
-	const names = await readdir(SESSION_ROOT, { withFileTypes: true });
+export async function allSessionStates(cwd?: string): Promise<CallbackSessionState[]> {
+	const root = sessionRoot(cwd);
+	await mkdir(root, { recursive: true });
+	const names = await readdir(root, { withFileTypes: true });
 	const states: CallbackSessionState[] = [];
 	for (const entry of names) {
 		if (!entry.isDirectory() || !CALLBACK_SESSION_ID_PATTERN.test(entry.name)) continue;
-		const state = await refreshSessionState(await loadSessionStateByPath(path.join(SESSION_ROOT, entry.name, "state.json")));
+		const state = await refreshSessionState(await loadSessionStateByPath(path.join(root, entry.name, "state.json")));
 		if (state) states.push(state);
 	}
 	return states.sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -413,10 +429,10 @@ export function filterEvents(state: CallbackSessionState, afterSeq: number): Arr
 	return events.filter((event) => Number((event as Record<string, unknown>).seq) > afterSeq) as Array<Record<string, unknown>>;
 }
 
-export async function waitForState(sessionId: string, predicate: (state: CallbackSessionState) => boolean, timeoutMs = 10_000): Promise<CallbackSessionState> {
+export async function waitForState(sessionId: string, predicate: (state: CallbackSessionState) => boolean, timeoutMs = 10_000, cwd?: string): Promise<CallbackSessionState> {
 	const started = Date.now();
 	while (Date.now() - started < timeoutMs) {
-		const state = await refreshSessionState(await loadSessionState(sessionId));
+		const state = await refreshSessionState(await loadSessionState(sessionId, cwd));
 		if (state && predicate(state)) return state;
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
@@ -424,14 +440,15 @@ export async function waitForState(sessionId: string, predicate: (state: Callbac
 }
 
 export async function createCallbackSession(options: NormalizedCallbackSessionOptions) {
+	const cwd = options.cwd;
 	const sessionId = normalizeCallbackSessionId(options.sessionId || `oast-${randomUUID()}`);
 	if (options.enableDns === true && !parseIpv4Address(options.dnsResponseAddress)) throw new Error(`browser_callback_oast dnsResponseAddress must be a valid IPv4 address for DNS A-record responses: ${options.dnsResponseAddress}`);
-	const artifactRoot = sessionArtifactRoot(sessionId);
-	const statePath = sessionStatePath(sessionId);
-	const existing = await refreshSessionState(await loadSessionState(sessionId));
+	const artifactRoot = sessionArtifactRoot(sessionId, cwd);
+	const statePath = sessionStatePath(sessionId, cwd);
+	const existing = await refreshSessionState(await loadSessionState(sessionId, cwd));
 	if (existing?.listenerActive) throw new Error(`browser_callback_oast session already exists: ${sessionId}`);
 	if (existing && !existing.listenerActive) {
-		if (!isPathWithinSessionRoot(existing.artifactRoot)) throw new Error(`browser_callback_oast session artifact root escaped callback session storage: ${existing.artifactRoot}`);
+		if (!isPathWithinSessionRoot(existing.artifactRoot, cwd)) throw new Error(`browser_callback_oast session artifact root escaped callback session storage: ${existing.artifactRoot}`);
 		await rm(existing.artifactRoot, { recursive: true, force: true }).catch(() => {});
 	}
 	await mkdir(artifactRoot, { recursive: true });
@@ -483,7 +500,7 @@ export async function createCallbackSession(options: NormalizedCallbackSessionOp
 		closeSync(stdoutFd);
 		closeSync(stderrFd);
 	}
-	const ready = await waitForState(sessionId, (current) => current.ready === true || typeof current.error === "string", 10_000);
+	const ready = await waitForState(sessionId, (current) => current.ready === true || typeof current.error === "string", 10_000, cwd);
 	if (typeof ready.error === "string") {
 		if (options.enableHttps) {
 			await rm(resolveHttpsKeyPath(artifactRoot), { force: true }).catch(() => {});
