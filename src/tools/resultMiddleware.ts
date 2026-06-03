@@ -31,6 +31,9 @@ export type DistilledEnvelope = {
 	// R1 relationship graph (relations.summary = type→count, always present when abmlIntegrated;
 	// relations.highlights = deterministic capped sample). Lifted here so the budget never hides it.
 	relations?: Record<string, unknown>;
+	// R2 inference layer (detected ARIA semantic patterns — intents[]: login/search/data-grid/…).
+	// Lifted here so the budget never hides it.
+	inference?: Record<string, unknown>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -198,6 +201,13 @@ function envelopeRelations(summary: DistilledSummary): Record<string, unknown> |
 	return isRecord(focus?.relations) ? structuredClone(focus.relations) as Record<string, unknown> : undefined;
 }
 
+// R2 inference summary lifted from the (uncompressed) focus so intent labels survive the
+// budget squeeze — cloned for the same [Circular]-avoidance reason.
+function envelopeInference(summary: DistilledSummary): Record<string, unknown> | undefined {
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	return isRecord(focus?.inference) ? structuredClone(focus.inference) as Record<string, unknown> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -332,6 +342,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
 	const relations = envelopeRelations(redactedSummary);
+	const inference = envelopeInference(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -348,6 +359,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(gist ? { gist } : {}),
 		...(outline ? { outline } : {}),
 		...(relations ? { relations } : {}),
+		...(inference ? { inference } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

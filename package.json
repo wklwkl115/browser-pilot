@@ -118,7 +118,8 @@
     "check:package": "node tests/contracts/drift/check-package-files.mjs",
     "check:deps": "node tests/contracts/drift/check-dependencies.mjs",
     "check:runtime-fixtures": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs",
-    "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs"
+    "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs",
+    "check:abml-inference": "tsx tests/contracts/tools/check-abml-inference.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",

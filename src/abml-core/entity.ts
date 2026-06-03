@@ -244,6 +244,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			...(Array.isArray(node.controlsSelectors) && node.controlsSelectors.length ? { controlsSelectors: node.controlsSelectors } : {}),
 			...(Array.isArray(node.ownsSelectors) && node.ownsSelectors.length ? { ownsSelectors: node.ownsSelectors } : {}),
 			...(Array.isArray(node.expandedTargetSelectors) && node.expandedTargetSelectors.length ? { expandedTargetSelectors: node.expandedTargetSelectors } : {}),
+			// HTML input type (e.g. "password", "search", "email") — DOM-sourced for R2 intent
+			// detection. AX tree doesn't distinguish input types beyond role (textbox/searchbox).
+			...(stringValue(node.inputKind) ? { inputKind: stringValue(node.inputKind) } : {}),
 		},
 	};
 	const capturedAt = context.capturedAt ?? Date.now();

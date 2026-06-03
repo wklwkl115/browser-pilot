@@ -35,6 +35,7 @@ const PURE_CORE = [
 	"entity.ts",
 	"ax.ts",
 	"relations.ts",
+	"inference.ts",
 	"stream.ts",
 	"errors.ts",
 	"verbs/router.ts",
@@ -91,7 +92,7 @@ assert.deepEqual(
 assert.deepEqual(
 	walk(abmlDir).sort(),
 	[...RUNTIME, ...PURE_CORE].sort(),
-	"src/abml/ must contain exactly the 7 runtime files + 15 re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
+	"src/abml/ must contain exactly the 7 runtime files + 17 re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
 );
 
 // --- Import extraction -------------------------------------------------------------------------

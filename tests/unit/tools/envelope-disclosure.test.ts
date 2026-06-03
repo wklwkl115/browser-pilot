@@ -28,9 +28,9 @@ test("gist/outline are lifted to the envelope top-level", async () => {
 	assert.equal(outline![0]!.name, "Crust");
 });
 
-test("gist/outline/relations survive the summary-budget squeeze (lifted from the uncompressed summary)", async () => {
+test("gist/outline/relations/inference survive the summary-budget squeeze (lifted from the uncompressed summary)", async () => {
 	// Pad primary_entities so the summary trips fitSummaryBudget on a tight budget; the focus
-	// aggregate may get squeezed, but the top-level gist/outline/relations must remain intact.
+	// aggregate may get squeezed, but the top-level gist/outline/relations/inference must remain.
 	const primary_entities = Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "radio", name: `option ${i} ${"pad ".repeat(60)}` }));
 	const envelope = await envelopeFor({
 		abmlIntegrated: true,
@@ -38,6 +38,7 @@ test("gist/outline/relations survive the summary-budget squeeze (lifted from the
 			gist: { landmarks: ["main"], controlCount: 30, statefulControlCount: 30, activeControlCount: 2, containerCount: 1 },
 			outline: [{ container: "radiogroup", name: "Big group", memberCount: 30, memberRefs: ["a", "b", "c"] }],
 			relations: { summary: { labelledBy: 5, controls: 2, tableCells: 16 }, highlights: [{ type: "controls", sourceRef: "pi-ref://control/0", targetRef: "pi-ref://region/0", source: "ax" }] },
+			inference: { intents: [{ intent: "single-choice", confidence: "high" }, { intent: "data-grid", confidence: "high" }] },
 			primary_entities,
 		},
 	}, 3_000);
@@ -49,6 +50,9 @@ test("gist/outline/relations survive the summary-budget squeeze (lifted from the
 	const relations = envelope.relations as Record<string, unknown> | undefined;
 	assert.ok(relations, "relations still present after budget squeeze");
 	assert.deepEqual(relations!.summary, { labelledBy: 5, controls: 2, tableCells: 16 }, "relations.summary intact at envelope top-level");
+	const inference = envelope.inference as Record<string, unknown> | undefined;
+	assert.ok(inference, "inference still present after budget squeeze");
+	assert.ok(Array.isArray(inference!.intents) && (inference!.intents as unknown[]).length === 2, "inference.intents intact under tight budget");
 });
 
 test("abmlIntegrated + disclosure layers form a stable envelope contract under a tight budget", async () => {

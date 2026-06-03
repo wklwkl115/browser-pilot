@@ -85,6 +85,15 @@ export const RelationSummarySchema = Type.Object({
 	}, { additionalProperties: true })),
 }, { additionalProperties: true });
 
+// ABML R2 — envelope-top-level inference disclosure (also lives in summary.focus.inference).
+// intents[]: detected generic ARIA patterns (login/search/filter-panel/single-choice/…).
+export const InferenceSummarySchema = Type.Object({
+	intents: Type.Array(Type.Object({
+		intent: Type.String(),
+		confidence: Type.String(),
+	}, { additionalProperties: true })),
+}, { additionalProperties: true });
+
 // ── browser_evidence summary schema ──────────────────────────────────────────
 //
 // Simple summary: compact source-level aggregation.
