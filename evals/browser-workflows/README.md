@@ -53,8 +53,6 @@ Each eval should define:
 - `25-wasm-artifact-metadata.md`
 - `26-wasm-wat-bridge.md`
 - `27-websocket-session-transcript.md`
-- `28-mcp-network-request-handle.md`
-- `29-mcp-middleware-coverage.md`
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 
