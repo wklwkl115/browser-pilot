@@ -76,6 +76,14 @@ makes repeated runs low-value.
 - **No streaming in v1.** The CLI returns the final result only (no incremental
   `onUpdate`); long tools (`crawl`/`fuzz`/`callback-oast`) print once at the end. Expected,
   not a bug.
+- **Reload the extension after switching bridges.** The extension does not auto-reconnect
+  to a new bridge: after you free `18765` and start the CLI daemon, reload the extension (or
+  the active tab) so it connects to the daemon — then `pi-browser daemon status` shows
+  `extensionConnected:true`. Also, CDP/debugger-backed tools (`screenshot`) carry a
+  persistent CDP session that goes **stale** when the extension reconnects to a different
+  bridge mid-session — the first such call may `BRIDGE_TIMEOUT`. A clean extension reload
+  refreshes the CDP session and they work again (verified live: `screenshot` →
+  `method:persistent_cdp`, saved). This is an extension-runtime concern, not a CLI issue.
 
 ## What parity does NOT need to be identical
 
