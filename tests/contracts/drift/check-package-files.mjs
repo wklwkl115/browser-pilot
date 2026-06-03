@@ -53,7 +53,7 @@ assert(releaseScript.includes("PI_BROWSER_SMOKE_EXTENSION_DIR") && releaseScript
 assert(releaseScript.includes("PI_BROWSER_CI_RELEASE_SMOKE") && releaseScript.includes("PI_BROWSER_CI_ROLLBACK_SMOKE"), "release acceptance must expose CI opt-in env gates for current and rollback isolated smoke");
 assert(releaseScript.includes("failureDiagnostics") && releaseScript.includes("packFiles") && releaseScript.includes("buildManifest") && releaseScript.includes("chromeProfile") && releaseScript.includes("bridgePort") && releaseScript.includes("smokeArtifact"), "release acceptance failures must expose pack/build/profile/port/smoke diagnostics");
 const tsxScripts = [
-	"check:lint", "check:tools", "test:unit", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "mcp",
+	"check:lint", "check:tools", "test:unit", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "check:cli-parity",
 ];
 for (const name of tsxScripts) assert(usesTsx(pkg.scripts?.[name]), `${name} must run through tsx instead of experimental strip-types`);
 assert(usesTsx(pkg.scripts?.["test:unit"]), "test:unit must use tsx runner");
@@ -74,7 +74,7 @@ assert(pack && Array.isArray(pack.files), "npm pack dry-run must return package 
 const packed = new Set(pack.files.map((file) => file.path));
 
 const manifest = readJson("bridge/pi_browser_bridge/manifest.json");
-const distFiles = new Set(["dist/index.js", "dist/index.d.ts", "dist/mcp/bin.js", "dist/mcp/index.js"]);
+const distFiles = new Set(["dist/index.js", "dist/index.d.ts", "dist/cli/bin.js", "dist/cli/index.js"]);
 distFiles.add(`bridge/pi_browser_bridge/${manifest.background.service_worker}`);
 for (const script of manifest.content_scripts || []) {
 	for (const item of script.js || []) distFiles.add(`bridge/pi_browser_bridge/${item}`);
@@ -90,7 +90,7 @@ for (const file of distFiles) {
 }
 assert(packed.has("bridge/pi_browser_bridge/manifest.json"), "npm package must include extension manifest");
 assert(packed.has("dist/index.js") && packed.has("dist/index.d.ts"), "npm package must include outer dist entry and declarations");
-assert(packed.has("dist/mcp/bin.js") && packed.has("dist/mcp/index.js"), "npm package must include compiled mcp dist entrypoints");
+assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm package must include compiled cli dist entrypoints");
 assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm package must include native command schema");
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");

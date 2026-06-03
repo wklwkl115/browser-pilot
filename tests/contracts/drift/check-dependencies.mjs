@@ -78,7 +78,7 @@ async function main() {
 	assert.deepEqual(sortedObject(lockRoot.devDependencies), sortedObject(pkg.devDependencies), "package-lock devDependencies must match package.json");
 	assert.deepEqual(sortedObject(lockRoot.peerDependencies), sortedObject(pkg.peerDependencies), "package-lock peerDependencies must match package.json");
 	assert.deepEqual(sortedObject(lockRoot.peerDependenciesMeta), sortedObject(pkg.peerDependenciesMeta), "package-lock peerDependenciesMeta must match package.json");
-	assert.deepEqual(listProdDeps(pkg), ["@modelcontextprotocol/sdk", "js-yaml", "typebox", "typescript", "ws", "zod"], "production dependency allowlist drift: update TODO/README/CHANGELOG when changing runtime dependencies");
+	assert.deepEqual(listProdDeps(pkg), ["js-yaml", "typebox", "typescript", "ws", "zod"], "production dependency allowlist drift: update TODO/README/CHANGELOG when changing runtime dependencies");
 
 	const lsResult = await execNpm(["ls", "--json", "--all"], { timeoutMs: 30_000 });
 	const lsJson = parseJsonOutput(lsResult);

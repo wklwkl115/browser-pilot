@@ -70,7 +70,7 @@ for (const [name, command] of Object.entries(pkg.scripts || {})) {
 	if (name === "smoke:browser:isolated") assert(String(command).includes("tests/smoke/smoke-browser-isolated.mjs"), `${name} must point to tests/smoke/smoke-browser-isolated.mjs`);
 	if (name === "release:local" || name === "release:local:smoke") assert(String(command).includes("tests/release/release-local-acceptance.mjs"), `${name} must point to tests/release/release-local-acceptance.mjs`);
 }
-for (const name of ["test:unit", "check:web-security", "check:fake-ws", "check:lifecycle", "check:page-scripts", "smoke:browser", "smoke:browser:isolated", "mcp"]) {
+for (const name of ["test:unit", "check:web-security", "check:fake-ws", "check:lifecycle", "check:page-scripts", "smoke:browser", "smoke:browser:isolated", "smoke:cli"]) {
 	assert(usesTsx(pkg.scripts?.[name]), `${name} must execute TypeScript entrypoints through tsx`);
 }
 assert(!Object.values(pkg.scripts || {}).some((script) => String(script).includes("--experimental-strip-types")), "package scripts must not rely on experimental strip-types");

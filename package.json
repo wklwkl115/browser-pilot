@@ -15,14 +15,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./mcp": {
-      "types": "./dist/mcp/adapter.d.ts",
-      "import": "./dist/mcp/adapter.js"
     }
   },
   "bin": {
-    "pi-browser-mcp": "./dist/mcp/bin.js",
     "pi-browser": "./dist/cli/bin.js"
   },
   "scripts": {
@@ -77,16 +72,7 @@
     "check:output-schema-conformance": "tsx tests/contracts/drift/check-output-schema-conformance.mjs",
     "check:tool-parameter-contract": "tsx tests/contracts/drift/check-tool-parameter-contract.mjs",
     "check:tool-parameter-framework-validation": "node tests/contracts/drift/check-tool-parameter-framework-validation.mjs",
-    "check:mcp-parameter-contract": "tsx tests/contracts/tools/check-mcp-parameter-contract.mjs",
-    "check:mcp-conformance": "node tests/contracts/tools/check-mcp-conformance.mjs",
-    "check:mcp-tools-list": "tsx tests/contracts/tools/check-mcp-tools-list.mjs",
     "check:cli-parity": "tsx tests/contracts/cli/check-cli-parity.mjs",
-    "check:mcp-resources": "tsx tests/contracts/tools/check-mcp-resources.mjs",
-    "check:mcp-ingress-handles": "tsx tests/contracts/tools/check-mcp-ingress-handles.mjs",
-    "check:mcp-middleware": "tsx tests/contracts/tools/check-mcp-middleware.mjs",
-    "check:mcp-e2e": "tsx tests/contracts/tools/check-mcp-e2e.mjs",
-    "check:mcp-structured-envelope": "tsx tests/contracts/tools/check-mcp-structured-envelope.mjs",
-    "check:mcp-etag": "tsx tests/contracts/tools/check-mcp-etag.mjs",
     "check:abml-ref-registry": "tsx tests/contracts/tools/check-abml-ref-registry.mjs",
     "check:abml-scan-entities": "tsx tests/contracts/tools/check-abml-scan-entities.mjs",
     "check:abml-scan-envelope": "tsx tests/contracts/tools/check-abml-scan-envelope.mjs",
@@ -97,11 +83,6 @@
     "check:abml-p6p7-runtime": "tsx tests/contracts/tools/check-abml-p6p7-runtime.mjs",
     "check:abml-internal-integration": "tsx tests/contracts/tools/check-abml-internal-integration.mjs",
     "test:observe-abml-integration": "tsx --test tests/unit/tools/observe-abml-integration.test.ts",
-    "check:mcp-sections": "tsx tests/contracts/tools/check-mcp-sections.mjs",
-    "check:mcp-list-changed": "tsx tests/contracts/tools/check-mcp-list-changed.mjs",
-    "check:mcp-prompts": "tsx tests/contracts/tools/check-mcp-prompts.mjs",
-    "check:mcp-dynamic-tools": "tsx tests/contracts/tools/check-mcp-dynamic-tools.mjs",
-    "check:mcp-memory": "tsx tests/contracts/tools/check-mcp-memory.mjs",
     "check:memory-autosurface": "tsx tests/contracts/tools/check-memory-autosurface.mjs",
     "check:memory-lifecycle": "tsx tests/contracts/tools/check-memory-lifecycle.mjs",
     "check:token-economy": "tsx tests/contracts/tools/check-token-economy.mjs",
@@ -134,11 +115,9 @@
     "check:package": "node tests/contracts/drift/check-package-files.mjs",
     "check:deps": "node tests/contracts/drift/check-dependencies.mjs",
     "check:runtime-fixtures": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs",
-    "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs",
-    "mcp": "tsx mcp/index.ts"
+    "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "js-yaml": "^4.1.1",
     "typebox": "^1.0.55",
     "typescript": "^6.0.3",
@@ -193,7 +172,7 @@
     "docs/",
     "scripts/",
     "skills/",
-    "mcp/",
+    "cli/",
     "src/",
     "dist/",
     "tests/",

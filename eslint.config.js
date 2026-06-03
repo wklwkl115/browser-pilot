@@ -64,9 +64,9 @@ export default tseslint.config(
 			globals: { ...globals.worker, chrome: "readonly" },
 		},
 	},
-	// MCP adapter sources — type-aware via the build tsconfig (which includes mcp/).
+	// CLI frontend sources — type-aware via the build tsconfig (which includes cli/).
 	{
-		files: ["mcp/**/*.ts"],
+		files: ["cli/**/*.ts"],
 		languageOptions: {
 			parser: tseslint.parser,
 			parserOptions: {
