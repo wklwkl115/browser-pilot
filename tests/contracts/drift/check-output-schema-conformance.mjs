@@ -180,26 +180,9 @@ const normalEnvelope = JSON.parse(normalResult.content[0].text);
 assert(Value.Check(EvidenceSummarySchema, normalEnvelope.summary),
 	"normal-size evidence envelope.summary MUST conform to EvidenceSummarySchema (Phase 3 emits structuredContent on happy path)");
 
-// Extreme path: an oversized result forces fitSummaryBudget into the minimal
-// fallback shape, which drops required fields. This proves the MCP handler MUST
-// guard structuredContent emission with Value.Check (it cannot blindly emit
-// envelope.summary). The guard lives in mcp/index.ts.
-const hugeSources = {};
-for (let i = 0; i < 400; i++) {
-	hugeSources[`source_${i}`] = { ok: true, data: { events: Array.from({ length: 50 }, (_, j) => ({ type: `evt_${i}_${j}`, detail: "x".repeat(200) })) } };
-}
-const hugeResult = await distilledJsonResult({ tabId: 1, collected_at: "2026-06-01", sources: hugeSources }, {
-	toolName: "browser_evidence", command: "evidence.collect", maxChars: 8000, fallbackName: "evidence", detailLevel: "summary",
-});
-const hugeEnvelope = JSON.parse(hugeResult.content[0].text);
-const hugeConforms = Value.Check(EvidenceSummarySchema, hugeEnvelope.summary);
-if (!hugeConforms) {
-	// When the emitted summary does NOT conform, the MCP handler must NOT emit it as
-	// structuredContent — verify the guard is present in source.
-	const indexSrc = read("mcp/index.ts");
-	assert(indexSrc.includes("Value.Check(distillerDef.summarySchema"),
-		"mcp/index.ts MUST gate structuredContent emission with Value.Check(distillerDef.summarySchema, summary) — oversized summaries fail the declared outputSchema");
-}
+// (The oversized-summary structuredContent gating guard was an MCP-frontend concern
+// verified in mcp/index.ts; it was removed with the MCP shell. The distiller summary
+// conformance on the normal path is verified above and is frontend-agnostic.)
 assert.equal(typeof normalEnvelope.entities === "undefined" || Array.isArray(normalEnvelope.entities), true, "P8 envelope-level entities projection must be optional but well-shaped");
 
 console.log("output schema conformance ok");

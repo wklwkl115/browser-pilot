@@ -55,7 +55,7 @@ assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must exp
 assert(pkg.main === "./dist/index.js", "package main must point to compiled dist entry");
 assert(pkg.types === "./dist/index.d.ts", "package types must point to compiled declarations");
 assert(pkg.exports?.["."]?.import === "./dist/index.js" && pkg.exports?.["."]?.types === "./dist/index.d.ts", "package exports must point to compiled dist entry and declarations");
-assert(pkg.bin?.["pi-browser-mcp"] === "./dist/mcp/bin.js", "package MCP bin must point to compiled dist entry");
+assert(pkg.bin?.["pi-browser"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
 assert(pkg.devDependencies?.tsx, "package must include tsx for runtime TypeScript execution");
 assert(pkg.scripts?.["sync:protocol"] === "node scripts/sync-native-protocol.mjs", "package must expose protocol sync script");
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
