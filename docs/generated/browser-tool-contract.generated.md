@@ -189,7 +189,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `MEMORY_EVIDENCE_STALE` | tool | tool.memory | no | schema | `src/resources/memoryResourceStore.ts`, `src/tools/memory/evidence.ts` |
 | `MEMORY_EVIDENCE_UNREADABLE` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/resources/memoryResourceStore.ts`, `src/tools/memory/evidence.ts` |
-| `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/resources/memoryResourceReader.ts`, `src/tools/memory/reader.ts` |
+| `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/tools/memory/reader.ts` |
 | `MEMORY_SCHEMA_INVALID` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts`, `src/tools/memory/frontmatter.ts`, `src/tools/memory/indexStore.ts`, `src/tools/memory/origin.ts`, `src/tools/memory/reader.ts` |
 | `MEMORY_SCOPE_REQUIRED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `MEMORY_SECRET_DETECTED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
@@ -213,9 +213,9 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `REF_SCOPE_VIOLATION` | unknown | abml.session | yes | schema | `src/abml-core/refPolicy.ts` |
 | `REF_STALE` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
-| `RESOURCE_NOT_FOUND` | unknown | unknown | no | heuristic | `src/resources/memoryResourceReader.ts`, `src/resources/resourceReader.ts` |
-| `RESOURCE_READ_ERROR` | unknown | unknown | no | heuristic | `src/resources/resourceReader.ts` |
-| `RESOURCE_STALE` | unknown | unknown | no | heuristic | `src/resources/resourceReader.ts` |
+| `RESOURCE_NOT_FOUND` | unknown | abml.ref | no | schema | `src/resources/resourceReader.ts` |
+| `RESOURCE_READ_ERROR` | unknown | abml.ref | no | schema | `src/resources/resourceReader.ts` |
+| `RESOURCE_STALE` | unknown | abml.ref | yes | schema | `src/resources/resourceReader.ts` |
 | `RUNTIME_STATE_LOST` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS` | native | runtime.recovery | yes | schema |  |

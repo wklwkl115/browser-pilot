@@ -1263,6 +1263,21 @@ const schema = {
       "category": "tool.memory",
       "retryable": false,
       "summary": "browser-memory resource is stale."
+    },
+    "RESOURCE_NOT_FOUND": {
+      "category": "abml.ref",
+      "retryable": false,
+      "summary": "Referenced browser-result resource was not found."
+    },
+    "RESOURCE_STALE": {
+      "category": "abml.ref",
+      "retryable": true,
+      "summary": "Referenced browser-result resource is stale; re-capture to mint a fresh handle."
+    },
+    "RESOURCE_READ_ERROR": {
+      "category": "abml.ref",
+      "retryable": false,
+      "summary": "Failed to read the referenced browser-result resource."
     }
   },
   "toolMetadata": {
