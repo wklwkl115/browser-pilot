@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { McpExtensionAdapter } from "../../mcp/adapter.ts";
+import { ToolCollectingAdapter as McpExtensionAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
 
 const cwd = await mkdtemp(path.join(os.tmpdir(), "browser-memory-smoke-"));

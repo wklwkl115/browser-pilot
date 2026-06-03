@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCaptureRefFromLifecycle, eventOrSignalEntitiesFromEvidenceBundle, inspectPayloadHandle, replayInputFromNetworkRef } from "../../../src/abml/verbs/streamRuntime.ts";
-import { registerBrowserResultResource, clearResourceStore } from "../../../mcp/resourceStore.ts";
+import { registerBrowserResultResource, clearResourceStore } from "../../../src/resources/resourceStore.ts";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFrameEntities, probeFrameReachability, frameIdFromRef } from "../../../src/abml/verbs/frameRuntime.ts";
-import { clearResourceStore } from "../../../mcp/resourceStore.ts";
+import { clearResourceStore } from "../../../src/resources/resourceStore.ts";
 import type { RefDescriptor } from "../../../src/abml/types.ts";
 
 function makeServer(crossOriginBlocked = false) {

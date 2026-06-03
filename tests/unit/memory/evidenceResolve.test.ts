@@ -5,8 +5,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { BrowserBridgeServer } from "../../../src/driver/BrowserBridgeServer.ts";
 import { validateMemoryRecord } from "../../../src/tools/memory/store.ts";
-import { registerBrowserResultResource, clearResourceStore } from "../../../mcp/resourceStore.ts";
-import { resolveBrowserResultEvidence } from "../../../mcp/memoryResourceStore.ts";
+import { registerBrowserResultResource, clearResourceStore } from "../../../src/resources/resourceStore.ts";
+import { resolveBrowserResultEvidence } from "../../../src/resources/memoryResourceStore.ts";
 import type { MemoryEvidenceRef } from "../../../src/tools/memory/types.ts";
 
 function freshCwd(): { cwd: string; artifactPath: string } {

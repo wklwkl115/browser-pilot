@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { inspectVisionRegion } from "../../../src/abml/verbs/visionRuntime.ts";
-import { clearResourceStore, resolveResourceUri } from "../../../mcp/resourceStore.ts";
+import { clearResourceStore, resolveResourceUri } from "../../../src/resources/resourceStore.ts";
 
 function makeServer() {
 	return {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pierceRefEntities } from "../../../src/abml/verbs/pierceRuntime.ts";
-import { clearResourceStore } from "../../../mcp/resourceStore.ts";
+import { clearResourceStore } from "../../../src/resources/resourceStore.ts";
 
 function makeServer() {
 	return {

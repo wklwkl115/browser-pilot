@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { registerFrameTool } from "../../../src/tools/registerNativeActionTools.ts";
-import { McpExtensionAdapter } from "../../../mcp/adapter.ts";
+import { ToolCollectingAdapter as McpExtensionAdapter } from "../../../src/frontend/toolCollector.ts";
 
 function fakeServer() {
 	let opId = 0;
