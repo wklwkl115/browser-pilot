@@ -1,5 +1,7 @@
 # MCP 标准化 + 渐进式披露执行合同
 
+> **HISTORICAL（已被取代，非当前行为）.** MCP 壳已于 2026-06-03 整体移除，外部前端改为 `pi-browser` CLI（见 `docs/cli.md` 与 `docs/cli-skill-frontend-migration-plan.md`）。本文仅作为 MCP 阶段的历史合同保留；其描述的 `structuredContent`、resources/prompts、tools/list discovery、`browser_tool_discovery`、`PI_BROWSER_MCP_*` 等均已不存在。
+
 状态：计划冻结，待实现。本文是正式 source of truth；`.plan/mcp-standardization-progressive-disclosure.md` 仅保留为评审输入指针，不再作为执行源。
 
 目标：把当前最小 MCP stdio 适配升级为标准 MCP server，同时在不新增公开 `browser_*` 工具、不回退参数契约、不把工具合并成 dispatcher 的前提下，落地结果侧 layered delivery 与输入侧 typed handle resolution。

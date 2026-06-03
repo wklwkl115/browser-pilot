@@ -1,8 +1,8 @@
 ---
 name: pi-browser-tools
-description: "Use when operating, inspecting, debugging, automating, or verifying live browser pages through browser_* tools: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings, and discover hidden tool groups. Runtime browser-use only; not for extension source development or repo tests."
+description: "Use when operating, inspecting, debugging, automating, or verifying live browser pages through browser_* tools: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. Runtime browser-use only; not for extension source development or repo tests."
 license: MIT
-compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Works on any skill-supporting platform; transport-agnostic (MCP or direct tool calls).
+compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Works on any skill-supporting platform. Invoke as Pi-native `browser_*` tools, or via the `pi-browser` CLI (any shell-capable agent).
 ---
 
 # Pi Browser Tools
@@ -11,6 +11,11 @@ Live browser operation via `browser_*` tools. HOW only — methodology and route
 
 Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
 Current conclusion: real smoke/eval evidence shows this internal ABML layer already strengthens the existing public surface; there is still no evidence that a task is blocked solely because public ABML verb tools are absent.
+
+## Invocation
+
+- **Pi-native** → call the tools directly, e.g. `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`.
+- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser execute --script "…"`. The bridge daemon auto-starts on first call; output is human on a TTY and JSON otherwise (`--json`/`--text` to force). `pi-browser --help` / `pi-browser <cmd> --help` lists every command and its flags — there is no discovery step.
 
 ## Loop
 
@@ -62,25 +67,21 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Mature nuclei | `browser_template {engine:"nuclei"}` + targets/templates/bounds |
 | OAST callback proof | `browser_callback_oast start` → inject/`trigger` (`triggerTimeoutMs`) → `collect` → `stop` |
 | Cookie/JWT/JWE/PASETO/Rails session | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; bounded claim replay) |
-| Reveal hidden tool group | `browser_tool_discovery {revealGroup}` |
 | Local browser memory | `browser_memory {action:"recall"}` → `browser_memory {action:"read"}` |
 
 ## Read results
 
 Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.
 
-- **MCP client** → `resources/read uri=browser-result://…` or `resources/read uri=pi-ref://data-slice/...` with `mode=text|json|search|sample` + `offset`/`limit`/`jsonPath`/`search`. Take URIs from `resource_link`/`sections`/`nextActions`.
-- **Browser memory** → `resources/read uri=browser-memory://…` or `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
-- **Direct / non-MCP** (or `PI_BROWSER_MCP_KEEP_ARTIFACT=1`) → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search`.
-- `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture”; MCP clients map that to `resources/read`, direct callers map it to `browser_artifact`.
+- **Artifacts** → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search` (CLI: `pi-browser artifact …`). Take the path/handle from `summary.saved`, `sections`, or `nextActions`.
+- **Browser memory** → `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
+- `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture” → `browser_artifact`.
 
 ## Tool visibility
 
-All `browser_*` tools — including web-security — are first-class and exposed by default. They are only narrowed if you opt in: `PI_BROWSER_MCP_TOOL_VISIBILITY=compact|minimal` (presentation) or `PI_BROWSER_TOOL_PROFILE=core` (unregisters web-security). In those modes use `browser_tool_discovery` to reveal a group.
+All `browser_*` tools — including web-security — are first-class and exposed by default. The only gate is `PI_BROWSER_TOOL_PROFILE=core`, which unregisters the web-security group. There is no compact/minimal mode and no discovery step; `pi-browser --help` lists every command.
 
-- `browser_tool_discovery {group?, revealGroup?, includeDescriptions?}` — groups: `core state observe action evidence artifact web-security`. `revealGroup` exposes a group in later `tools/list`.
-- `browser_memory {action:"record"|"recall"|"read"|"validate"}` — local-only browser memory under `.pi/browser-memory/`; `record/validate` require durable evidence such as saved artifact path, `browser-result://...`, or non-stale snapshot-backed artifact. Local scopes `origin|task|project` are supported; repo export/promote is not.
-- Env: `PI_BROWSER_MCP_TOOL_VISIBILITY=full|compact|minimal` · `PI_BROWSER_MCP_DISCOVERY=0` disables the helper · `PI_BROWSER_MCP_KEEP_ARTIFACT=1` keeps `browser_artifact`.
+- `browser_memory {action:"record"|"recall"|"read"|"validate"}` — local-only browser memory under `.pi/browser-memory/`; `record/validate` require durable evidence such as a saved artifact path or a non-stale snapshot-backed artifact. Local scopes `origin|task|project` are supported; repo export/promote is not.
 
 ## Bounds (set before expansive routes)
 
@@ -131,7 +132,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 | Timeout | re-observe; `browser_wait action=diagnose`; narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`etag mismatch` on read | artifact changed under the handle — re-capture to mint a fresh `browser-result://`/`pi-ref://` URI; never retry the old one |
-| Tool not in list | `browser_tool_discovery {revealGroup}` |
+| Tool/command not found | `pi-browser --help`; web-security needs `PI_BROWSER_TOOL_PROFILE` unset (not `core`) |
 | Mature bridge fail | explicit target/template/path; inspect stdout/stderr artifacts |
 | Upload/download blocked | dedicated transfer tool + valid selector/path/mode + confirmation |
 
@@ -140,8 +141,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 - Playbooks: `D:/Pi/agent/extensions/pi-browser-tools/docs/playbooks/` — `first-pass-browser-triage` · `recon-and-discovery` · `request-capture-and-replay` · `sqli-verification` · `ssrf-oast` · `auth-session-jwt` · `evidence-and-reporting`
 - Methodology map: `docs/reference/web-security-methodology-map.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- Install/runtime SOP: `AI_INSTALL.md`
-- MCP clients: `prompts/get` → `browser-first-observe` · `browser-evidence-capture` · `browser-web-security-scope` · `browser-artifact-read`
+- Install/runtime SOP: `AI_INSTALL.md` · CLI usage: `docs/cli.md`
 
 ## Output
 

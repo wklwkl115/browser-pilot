@@ -16,15 +16,15 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - 工具面治理计划：见 `docs/tool-surface-consolidation-plan.md`。该文件冻结 TODO 244-249：`browser_observe` 观察层合并、`browser_execute`/`browser_command` 拆分、recovery hints、bounded artifact multi-search、progress/streaming、explicit snapshots/operation metadata、Web Security capability profiles。
 - 下阶段 Web Reversing / 安全原语规划：见 `docs/next-phase-web-reversing-and-security-primitives-plan.md`。当前“请求/响应拦截与热补丁原语”phase 1/2、“JS AST / 反混淆分析原语” phase 1、“DOM 事件链 / sink-flow 分析辅助” phase 1、“Wasm 逆向桥接” phase 1 与 “Stateful WebSocket replay/fuzz primitives” phase 1 均已完成。其余方向仍只作为规划文档，不代表这些能力已成为 callable tool。
 - 当前主链路：`browser_tabs` 定位目标 → `browser_observe mode=scan|content|html|text|tabs` / `browser_screenshot` / `browser_frame` 观察 → `browser_execute` / `browser_command` / `browser_wait` 执行与等待 → `browser_network` / `browser_hook` / `browser_evidence` 取证 → `browser_artifact` 读取大证据；任务成功后可用 `browser_memory` 做本地经验沉淀与 recall，durable evidence 作为推荐 provenance 而非硬前置。
-- ABML surface convergence 决议：当前版本**不新增公开 `browser_*` 动词工具**。公开 callable surface 继续以现有 `browser_*` 为准；ABML `read/click/type/scroll/pierce/frame` 只作为内部 runtime / MCP envelope 语义，不单独暴露新的 Pi tool 名。
+- ABML surface convergence 决议：当前版本**不新增公开 `browser_*` 动词工具**。公开 callable surface 继续以现有 `browser_*` 为准；ABML `read/click/type/scroll/pierce/frame` 只作为内部 runtime 语义，不单独暴露新的 Pi tool 名。
 - 当前阶段结论：真实 smoke/eval 证据已表明 ABML 在 AX/frame/vision/monitor 盲区下能增强现有 `browser_*`，但尚无证据表明 agent 因缺少公开 ABML verbs 而被真实任务卡住；因此公开 ABML tool surface RFC 目前保持 deferred。
-- 结果里出现的 `pi-ref://...`、`pi-ref://data-slice/*`、`read_saved_artifact ...`、`read(...)` / `click(...)` / `frame(...)` 等字符串，表示 ABML 句柄或 follow-up intent；它们不是新的 Pi adapter 工具名。当前应分别通过现有 `browser_observe` / `browser_execute` / `browser_frame` / `resources/read` / `browser_artifact` 承接。
+- 结果里出现的 `pi-ref://...`、`pi-ref://data-slice/*`、`read_saved_artifact ...`、`read(...)` / `click(...)` / `frame(...)` 等字符串，表示 ABML 句柄或 follow-up intent；它们不是新的 Pi adapter 工具名。当前应分别通过现有 `browser_observe` / `browser_execute` / `browser_frame` / `browser_artifact` 承接。
 - TODO 244-249 已完成：观察层已收敛到 `browser_observe`；`browser_execute` 已收敛为 JavaScript-only；`browser_command` 成为 bridge command surface；errors 带 factual recovery hints；`browser_artifact` 支持 bounded multi-artifact search；长 Web follow-up 工具支持 tool-level progress；`browser_observe`/`browser_tabs snapshot` 暴露 explicit snapshot 与 operation metadata；Web Security 可见工具面由显式 profile 控制。
 - Web Security 工具只作为 scoped follow-up：先观察/捕获/重放基线，再按需要使用 recon/crawl/fuzz/template/cookie/SQLi/OAST/bridge 工具。默认 profile 为 `security`；如需缩减日常可见工具面，设置 `PI_BROWSER_TOOL_PROFILE=core` 后 `/reload`。
 - Web Security affordance 只补接缝信息，不引入固定 workflow：工具可以返回并列 `possible/common follow-ups`、参数校验和结构化 recovery，但不会自动串联 `crawl -> fuzz -> sqli`、不会自动升级 mode/engine/action，也不会伪造请求模板。
 - Web Security follow-up 工具的 HTTP 目标执行默认由 Node.js `fetch` 直接发起，而不是经浏览器桥；`bindBrowserSession:true` 仅用于可选注入浏览器 cookies，不改变请求发起位置。
 - 参数契约当前采用双层模式：顶层工具参数由 TypeBox + 框架 `Value.Convert + Check` 保护，复杂对象继续由既有 Zod `validateOptionalParams()` 保护；本仓库不会把复杂对象 schema 全量迁回 TypeBox。
-- MCP 标准化 + 渐进式披露执行合同：见 `docs/mcp-standardization-progressive-disclosure-plan.md`。MCP 路已覆盖 TypeBox 等价参数校验、`structuredContent`、resources、typed handle、`browser_artifact` capability-gated retirement、dynamic tools/list discovery 与 prompts；不得把顶层参数契约迁到 Zod，也不得新增 Pi 公开 `browser_*` 工具。MCP-only discovery helper 为 `browser_tool_discovery`；可用 `PI_BROWSER_MCP_TOOL_VISIBILITY=full|compact|minimal` 调整 tools/list 初始可见性。
+- 外部前端现为 `pi-browser` CLI（由长驻 bridge daemon 驱动）；MCP 壳已移除。非协议 frontend 助手位于 `src/frontend/`，共享 ref/resource 基础设施位于 `src/resources/`，工具核心保持 frontend-agnostic。顶层工具参数仍由 TypeBox `Value.Convert + Check` 校验；不得把顶层参数契约迁到 Zod，也不得新增 Pi 公开 `browser_*` 工具。CLI 用法见 `docs/cli.md`；MCP 阶段的历史合同见 `docs/mcp-standardization-progressive-disclosure-plan.md`（historical，非当前行为）。
 - jshookmcp 研究只作为能力发现来源；本包不迁移其源码、MCP 架构、工具名、schema、payload、fixture 或文档文本；TODO 241 闭环账本见 `docs/jshookmcp-native-absorption.md`。
 - 当前拒绝新增 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 公开工具；对应能力必须优先由 `browser_hook`、`browser_execute`、`browser_network`、`browser_http_replay`、`browser_crawl`、`browser_evidence`、`browser_artifact` 承载；任何新公开工具需单独 RFC 与 eval 证据。下阶段深水区能力规划也必须先走 internal primitive / bridge / artifact-first 路线，不能直接把 problem area 变成公开大工具。
 
@@ -95,7 +95,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - 通用 bridge summary 会上浮 `browserSessionId`、`tabId/frameId/sessionId/requestId/waitId/listenerId/count/total/nextOffset` 与 target source，便于跨 browser session/tab/frame 对账，无需打开完整 artifact；需要原始敏感字段时只用 `browser_artifact redact:false` 对本地路径做定点读取，不把 artifact 上传外部服务。
 - 下一步增强优先沿现有工具面补“cross-tool evidence correlation metadata”：在 distilled envelope 中继续统一 `operationId`、`snapshotId`、`sourceMode`、`selectionVersionAtDispatch/Resolve` 等对账线索，帮助 agent 把 observe → execute/command → wait → network/hook/evidence → artifact 串起来；不新增重叠公开工具，也不做黑盒自动编排。
 - `browser_artifact` 的 JSON summary 现在会尽量上浮 artifact 内已有的 `operationId`、`snapshotId`、`requestId`、`waitId`、`listenerId`、`browserSessionId`、`selectionVersion*` 等对账线索，并给出 `correlationPaths`；优先按这些 `jsonPath` 做定点读取，不要一上来整份打开。
-- MCP / ABML envelope 侧的 follow-up 现在优先表达为 `read_saved_artifact ...` 或 `read(pi-ref://...)` / `click(pi-ref://...)` 这类无本地路径泄露的意图；MCP client 应优先走 `resources/read uri=...`，Pi 直连场景继续可用 `browser_artifact` 做本地 artifact 定点读取。
+- ABML envelope 侧的 follow-up 现在优先表达为 `read_saved_artifact ...` 或 `read(pi-ref://...)` / `click(pi-ref://...)` 这类无本地路径泄露的意图；统一通过 `browser_artifact`（CLI：`pi-browser artifact …`）做本地 artifact 定点读取。
 - 现阶段 deeper internal integration 已把部分 ABML 证据显式上浮到既有公开工具结果中：`browser_observe mode=scan|text` 会在 details 中提供 `abml.integrated/entityCount/primaryEntityCount/listEntityCount/visualRegionCount/frameEntityCount`；`browser_frame` 结果会提供 `abmlIntegrated/frameCount/entityCount`。这仍是内部增强，不是新公开 tool surface。
 - 操作流程保持 GA-style：`browser_observe mode=scan` 观察页面 → `browser_execute` 执行定制 JS/CDP → `browser_wait` 等待 → 再 `browser_observe mode=scan|html` / `browser_execute` 复查；长 wait 成功后检查 `supervisor` 元数据，若返回 `WAIT_STATE_LOST` 则重新观察页面/网络证据。
 - 复杂站点优先在单段脚本内完成定位、可见性判断、点击/输入和结果读取，避免拆成固定 selector 动作工具。
@@ -122,7 +122,7 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 ## 维护入口
 
 - 当前状态与执行队列：`CURRENT.md`
-- Node 发布入口当前同时区分源码入口与分发入口：Pi runtime 仍通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 则指向 `dist/` 编译产物。
+- Node 发布入口当前同时区分源码入口与分发入口：Pi runtime 仍通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser` CLI bin 则指向 `dist/` 编译产物。
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`
 - 兼容 TODO 入口：`TODO.md`
@@ -140,7 +140,7 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - driver 架构与三态状态机矩阵：`docs/driver-architecture.md`
 
 ```bash
-npm run build            # 生成 outer dist/（index.ts + src/** + mcp/**）
+npm run build            # 生成 outer dist/（index.ts + src/** + cli/**）
 npm run check
 npm run check:all:bridge   # bridge + unit 分组门禁
 npm run check:all:package  # package + docs 分组门禁
@@ -186,7 +186,7 @@ npm run smoke:browser:transfer
 
 `src/tools/distillerRegistry.ts` 是 fallback 摘要分发的唯一注册表：`registerBuiltinDistillers()` 在 runtime 与 direct-import contract 两条路径都会初始化，避免新增 fallback 摘要器时静默退回 `summarizeGenericValue()`。对应 drift contract 为 `npm run check:distiller-coverage`。
 
-`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `@modelcontextprotocol/sdk`、`js-yaml`、`typebox`、`typescript`、`ws`、`zod`：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 现已通过 `scripts/run-check-groups.mjs` 拆成 bridge/unit、package/docs、contracts 三组，可按故障域局部复跑。
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 现已通过 `scripts/run-check-groups.mjs` 拆成 bridge/unit、package/docs、contracts 三组，可按故障域局部复跑。
 
 `BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
 
@@ -224,7 +224,7 @@ npm run smoke:browser:transfer
 
 `npm run smoke:browser:websocket-session` 使用独占临时扩展目录和本地 `WebSocketServer` fixture，验证 internal/native `ws.open` / `ws.send` / `ws.wait` / `ws.replay` / `ws.collect` / `ws.close` 路径，以及 replay failure 的 `stepIndex` / `partialTranscript` 诊断；结果写 `.pi/browser-artifacts/smoke-browser-websocket-session-results.json`。
 
-`npm run smoke:browser:memory` 使用本地临时 cwd + `McpExtensionAdapter` 直接注册 `browser_memory`，验证 local-only `task` scope 的 `validate -> record -> recall -> read` 路径，以及 `index.json` 派生写入；结果输出到 stdout，运行目录落在临时 `.pi/browser-memory/`。
+`npm run smoke:browser:memory` 使用本地临时 cwd + `ToolCollectingAdapter` 直接注册 `browser_memory`，验证 local-only `task` scope 的 `validate -> record -> recall -> read` 路径，以及 `index.json` 派生写入；结果输出到 stdout，运行目录落在临时 `.pi/browser-memory/`。
 
 当前最终 smoke 覆盖 tabs/wait/scan/content/html/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload，以及 scan summary v2 的高信号摘要/精准 artifact 导航、debugger evidence workflow 的 Phase 1/2 runtime evidence，cross-tool correlation chain 的 runtime evidence，ABML observe/monitor/frame/vision 对照证据，interception auto-fulfill 路径的 runtime evidence，`replaceScript` 路径的 runtime evidence，uninstall fail-closed 路径的 runtime evidence，以及 request-mutate / tab-close-cleanup / lease-conflict 路径的 runtime evidence。
 

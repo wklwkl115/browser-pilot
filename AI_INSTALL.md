@@ -2,7 +2,7 @@
 
 本 SOP 只覆盖项目安装、浏览器桥安装、环境配置、reload、验证和排障。正式使用方式由 skill 负责。skill 源在仓库内 `skills/pi-browser-tools/SKILL.md`（版本管理的单一来源），部署到全局 `D:/Pi/agent/skills/pi-browser-tools/SKILL.md` 供 Pi 加载。
 
-发布入口说明：Pi runtime 继续通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser-mcp` bin 使用 `dist/` 编译产物。
+发布入口说明：Pi runtime 继续通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser` CLI bin 使用 `dist/` 编译产物。
 
 ## 适用路径
 
@@ -93,7 +93,7 @@ npm run quality:local
 npm run check:deps
 ```
 
-该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `@modelcontextprotocol/sdk`、`js-yaml`、`typebox`、`typescript`、`ws`、`zod`：其中 `typebox`/`typescript`/`zod` 被源码运行路径直接消费，不应机械移动到 devDependencies。
+该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（MCP 壳移除后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 被源码运行路径直接消费，不应机械移动到 devDependencies。
 
 依赖升级记录必须包含：升级范围、兼容性风险、回滚方式、`npm run check`、`npm pack --dry-run --json`，必要时附 `npm run smoke:browser:isolated` artifact。错误统计只落本地 artifact，不发送 cookie/token/网络正文到外部服务。
 

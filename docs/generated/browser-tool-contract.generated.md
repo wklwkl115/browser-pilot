@@ -131,7 +131,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ARTIFACT_SEARCH_REGEX_UNSAFE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_TOO_LARGE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ATTACH_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `BACKEND_UNAVAILABLE` | unknown | abml.backend | yes | schema | `src/abml/verbs/click.ts`, `src/abml/verbs/frame.ts`, `src/abml/verbs/pierce.ts`, `src/abml/verbs/read.ts`, `src/abml/verbs/router.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/scroll.ts`, `src/abml/verbs/type.ts`, `src/abml/verbs/visionRuntime.ts` |
+| `BACKEND_UNAVAILABLE` | unknown | abml.backend | yes | schema | `src/abml-core/verbs/click.ts`, `src/abml-core/verbs/frame.ts`, `src/abml-core/verbs/pierce.ts`, `src/abml-core/verbs/read.ts`, `src/abml-core/verbs/router.ts`, `src/abml-core/verbs/scroll.ts`, `src/abml-core/verbs/type.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
 | `BACKGROUND_THROTTLED` | page | runtime.page | yes | schema |  |
 | `BODY_UNAVAILABLE` | network | runtime.network | no | schema |  |
 | `BRIDGE_CLIENT_DISCONNECTED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
@@ -158,10 +158,10 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `FRAME_DETACHED` | page | runtime.frame | yes | schema |  |
 | `FRAME_EVAL_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `FRAME_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `HANDLE_ETAG_MISMATCH` | unknown | abml.ref | yes | schema | `src/abml/refPolicy.ts` |
-| `HANDLE_EXPIRED` | unknown | abml.ref | yes | schema | `src/abml/refPolicy.ts` |
+| `HANDLE_ETAG_MISMATCH` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts` |
+| `HANDLE_EXPIRED` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
 | `HANDLE_KIND_MISMATCH` | unknown | abml.input | no | schema |  |
-| `HANDLE_NOT_FOUND` | unknown | abml.ref | yes | schema | `src/abml/refPolicy.ts`, `src/abml/verbs/streamRuntime.ts` |
+| `HANDLE_NOT_FOUND` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/abml/verbs/streamRuntime.ts`, `src/resources/resourceStore.ts` |
 | `HTTPS_CERT_GENERATION_FAILED` | security | tool.security | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
 | `INTERNAL_ERROR` | native | runtime.internal | no | schema | `src/tools/webSecurity/shared/http.ts` |
@@ -186,10 +186,10 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `MEMORY_ACTION_UNSUPPORTED` | tool | tool.memory | no | schema | `src/tools/registerMemoryTool.ts` |
 | `MEMORY_ENTRY_NOT_FOUND` | tool | tool.memory | no | schema | `src/tools/memory/reader.ts` |
 | `MEMORY_EVIDENCE_REQUIRED` | tool | tool.memory | no | schema |  |
-| `MEMORY_EVIDENCE_STALE` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
+| `MEMORY_EVIDENCE_STALE` | tool | tool.memory | no | schema | `src/resources/memoryResourceStore.ts`, `src/tools/memory/evidence.ts` |
 | `MEMORY_EVIDENCE_UNREADABLE` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
-| `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
-| `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/tools/memory/reader.ts` |
+| `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/resources/memoryResourceStore.ts`, `src/tools/memory/evidence.ts` |
+| `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/resources/memoryResourceReader.ts`, `src/tools/memory/reader.ts` |
 | `MEMORY_SCHEMA_INVALID` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts`, `src/tools/memory/frontmatter.ts`, `src/tools/memory/indexStore.ts`, `src/tools/memory/origin.ts`, `src/tools/memory/reader.ts` |
 | `MEMORY_SCOPE_REQUIRED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `MEMORY_SECRET_DETECTED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
@@ -205,14 +205,17 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `NO_SOURCE` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `NO_TAB` | driver | driver.tab | yes | schema | `src/abml/verbs/runtime.ts`, `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
 | `NO_TAB_ID` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `PRIVACY_BLOCKED` | unknown | abml.privacy | no | schema | `src/abml/refPolicy.ts` |
+| `PRIVACY_BLOCKED` | unknown | abml.privacy | no | schema | `src/abml-core/refPolicy.ts` |
 | `PRIVATE_TARGET_BLOCKED` | security | tool.security | no | schema | `src/tools/webSecurity/shared/http.ts` |
 | `QUEUE_FULL` | driver | driver.queue | yes | schema | `src/driver/BrowserCommandQueueRegistry.ts` |
 | `REF_AMBIGUOUS` | unknown | abml.ref | yes | schema |  |
 | `REF_NOT_FOUND` | unknown | abml.ref | yes | schema |  |
-| `REF_SCOPE_VIOLATION` | unknown | abml.session | yes | schema | `src/abml/refPolicy.ts` |
-| `REF_STALE` | unknown | abml.ref | yes | schema | `src/abml/refPolicy.ts` |
+| `REF_SCOPE_VIOLATION` | unknown | abml.session | yes | schema | `src/abml-core/refPolicy.ts` |
+| `REF_STALE` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
+| `RESOURCE_NOT_FOUND` | unknown | unknown | no | heuristic | `src/resources/memoryResourceReader.ts`, `src/resources/resourceReader.ts` |
+| `RESOURCE_READ_ERROR` | unknown | unknown | no | heuristic | `src/resources/resourceReader.ts` |
+| `RESOURCE_STALE` | unknown | unknown | no | heuristic | `src/resources/resourceReader.ts` |
 | `RUNTIME_STATE_LOST` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS` | native | runtime.recovery | yes | schema |  |
