@@ -1282,10 +1282,11 @@ async function testRouterNativeWsErrorFrames() {
 	};
 	vm.runInNewContext(router, routerSandbox, { filename: "router.js" });
 	await routerSandbox.handlePiBridgeWsMessage({ id: "native-error", code: { cmd: "wait.selector", selector: "body", tabId: 1 } }, routerSandbox.socket);
-	assert(sent.length === 1, "router native websocket path must send one frame");
-	assert(sent[0].type === "error", "router native websocket path must emit error frames for failed native commands");
-	assert(sent[0].error === "native boom", "router native websocket error frame must preserve native error text");
-	assert(sent[0].result?.ok === false, "router native websocket error frame must keep the failed native result payload");
+	assert(sent.length === 2, "router native websocket path must send an early ack then the result/error frame (mirrors exec)");
+	assert(sent[0].type === "ack" && sent[0].id === "native-error", "router native path must ack receipt before running the (possibly slow) native handler, so timeouts distinguish slow-but-delivered from never-delivered");
+	assert(sent[1].type === "error", "router native websocket path must emit error frames for failed native commands");
+	assert(sent[1].error === "native boom", "router native websocket error frame must preserve native error text");
+	assert(sent[1].result?.ok === false, "router native websocket error frame must keep the failed native result payload");
 }
 
 await testRouterNativeWsErrorFrames();

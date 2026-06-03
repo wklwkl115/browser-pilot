@@ -58,6 +58,11 @@ async function handlePiBridgeWsMessage(data: PiBridgeWsEnvelope, socket: PiBridg
     }
     const msg = (codeObj.tabId === undefined && data.tabId !== undefined ? { ...codeObj, tabId: data.tabId } : codeObj) as PiBridgeCommand;
     enableCspBypassForTab(msg.tabId);
+    // Acknowledge receipt before running the (possibly slow) native command handler, mirroring
+    // the exec path's early ack. Without this, a slow native command (e.g. screenshot grinding
+    // through debugger attempts) times out as "no ACK, message may not have been delivered" —
+    // a misleading diagnostic, since the message WAS delivered; the handler is just slow.
+    socket.send(JSON.stringify({ type: 'ack', id: data.id }));
     const res = await handlePiBridgeMessage(msg, {});
     sendPiBridgeWsCommandResult(socket, data.id, msg, res);
   } else if (typeof code === 'string') {

@@ -8920,6 +8920,7 @@ async function handlePiBridgeWsMessage(data2, socket2) {
     }
     const msg = codeObj.tabId === void 0 && data2.tabId !== void 0 ? { ...codeObj, tabId: data2.tabId } : codeObj;
     enableCspBypassForTab(msg.tabId);
+    socket2.send(JSON.stringify({ type: "ack", id: data2.id }));
     const res2 = await handlePiBridgeMessage(msg, {});
     sendPiBridgeWsCommandResult(socket2, data2.id, msg, res2);
   } else if (typeof code === "string") {
