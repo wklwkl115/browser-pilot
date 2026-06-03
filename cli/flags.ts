@@ -21,6 +21,7 @@ export interface FlagSpec {
 
 export interface GlobalFlags {
 	json: boolean;
+	text: boolean;
 	help: boolean;
 }
 
@@ -71,11 +72,11 @@ export function parseArgs(specs: FlagSpec[], argv: string[]): ParseOutcome {
 	const byFlag = new Map<string, FlagSpec>();
 	for (const s of specs) byFlag.set(s.flag, s);
 	const raw: Record<string, unknown> = {};
-	const globals: GlobalFlags = { json: false, help: false };
+	const globals: GlobalFlags = { json: false, text: false, help: false };
 	for (let i = 0; i < argv.length; i += 1) {
 		let token = argv[i];
-		if (token === "--json") { globals.json = true; continue; }
-		if (token === "--text") { globals.json = false; continue; }
+		if (token === "--json") { globals.json = true; globals.text = false; continue; }
+		if (token === "--text") { globals.text = true; globals.json = false; continue; }
 		if (token === "--help" || token === "-h") { globals.help = true; continue; }
 		if (!token.startsWith("--")) return { ok: false, error: `unexpected argument "${token}" (expected --flags)` };
 		let inlineValue: string | undefined;

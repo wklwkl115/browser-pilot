@@ -16,7 +16,8 @@
     "index.ts",
     "src/**/*.ts",
     "src/**/*.d.ts",
-    "mcp/**/*.ts"
+    "mcp/**/*.ts",
+    "cli/**/*.ts"
   ],
   "exclude": [
     "bridge_src/**",

@@ -11,8 +11,10 @@
  * override.
  */
 import { buildCliCommands, type CliCommand } from "./registry.js";
-import { buildFlagSpecs, parseArgs, coerceParams } from "./flags.js";
-import { renderUsageError, EXIT } from "./render.js";
+import { buildFlagSpecs, parseArgs, coerceParams, type GlobalFlags } from "./flags.js";
+import { renderResult, renderUsageError, EXIT, type RenderMode } from "./render.js";
+import { invokeTool, DaemonUnavailableError } from "./client.js";
+import { findDaemon, stopDaemon } from "./daemonControl.js";
 
 function printHelp(): void {
 	const cmds = buildCliCommands();
@@ -40,13 +42,44 @@ function printCommandHelp(cmd: CliCommand): void {
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
+function renderMode(globals: GlobalFlags): RenderMode {
+	if (globals.json) return "json";
+	if (globals.text) return "human";
+	return process.stdout.isTTY ? "human" : "json";
+}
+
+async function runDaemonControl(action: string | undefined): Promise<number> {
+	if (action === "stop") {
+		const stopped = await stopDaemon();
+		process.stdout.write(stopped ? "daemon stopped\n" : "no daemon running\n");
+		return EXIT.ok;
+	}
+	if (action === "status") {
+		const found = await findDaemon();
+		if (!found) { process.stdout.write("daemon: not running\n"); return EXIT.ok; }
+		process.stdout.write(`${JSON.stringify({ pid: found.info.pid, controlPort: found.info.controlPort, ...found.status }, null, 2)}\n`);
+		return EXIT.ok;
+	}
+	if (action === "start") {
+		// Foreground: own the process until a signal or /shutdown. Auto-start spawns this detached.
+		const { startDaemon } = await import("./daemon.js");
+		const handle = await startDaemon({ onShutdown: () => process.exit(EXIT.ok) });
+		process.stderr.write(`[pi-browser] daemon listening on 127.0.0.1:${handle.controlPort}\n`);
+		for (const sig of ["SIGINT", "SIGTERM"] as const) {
+			process.on(sig, () => { void handle.close().then(() => process.exit(EXIT.ok)); });
+		}
+		await new Promise<never>(() => {}); // keep alive
+		return EXIT.ok; // unreachable
+	}
+	process.stderr.write("usage: pi-browser daemon <start|stop|status>\n");
+	return EXIT.usage;
+}
+
 export async function main(argv: string[]): Promise<number> {
 	const [sub, ...rest] = argv;
 	if (!sub || sub === "--help" || sub === "-h") { printHelp(); return EXIT.ok; }
-	if (sub === "daemon") {
-		process.stderr.write("daemon control is not implemented yet (next checkpoint)\n");
-		return EXIT.unavailable;
-	}
+	if (sub === "daemon") return runDaemonControl(rest[0]);
+
 	const cmd = buildCliCommands().find((c) => c.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`);
 
@@ -58,8 +91,16 @@ export async function main(argv: string[]): Promise<number> {
 	const coerced = coerceParams(cmd.parameters, parsed.value.params);
 	if (!coerced.ok) return renderUsageError(coerced.error);
 
-	// Execution via the daemon /invoke lands in the next checkpoint. For now,
-	// print the resolved (tool, params) so the parse→coerce chain is verifiable.
-	process.stdout.write(`${JSON.stringify({ tool: cmd.name, params: coerced.args }, null, 2)}\n`);
-	return EXIT.ok;
+	// Only execution is delegated to the daemon; the caller cwd rides along so
+	// artifacts/memory land under the caller's .pi/, not the daemon's.
+	try {
+		const result = await invokeTool(cmd.name, coerced.args, process.cwd());
+		return renderResult(result, renderMode(parsed.value.globals));
+	} catch (error) {
+		if (error instanceof DaemonUnavailableError) {
+			process.stderr.write(`${"error:"} pi-browser daemon unavailable — ${error.message}\n`);
+			return EXIT.unavailable;
+		}
+		throw error;
+	}
 }
