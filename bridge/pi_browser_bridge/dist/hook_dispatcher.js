@@ -1016,6 +1016,8 @@
         state,
         installed_at,
         uptime_ms: installed_at ? Date.now() - Date.parse(installed_at) : 0,
+        last_seq: seq,
+        // event seq high-water mark — ABML R3.x P2 baseline anchor (see causal.ts)
         stats: Object.assign({}, stats, { buffer_count, buffer_size, buffer_usage: buffer_count / buffer_size }, bufferMetrics()),
         buffer_capacity: bufferMetrics().buffer_capacity,
         buffer_used: bufferMetrics().buffer_used,

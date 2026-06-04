@@ -44,12 +44,17 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 
 // --- R3.x causal plane (network-delta) runtime wiring ---------------------------------------------
 // A server variant that also answers the network recorder reads observe issues for the causal plane.
-function causalServer(network: { status: unknown; list?: unknown }) {
+function causalServer(network: { status: unknown; list?: unknown }, hook?: { status?: unknown; collect?: unknown }) {
 	return {
 		...fakeServer,
 		async sendCommand(command: any, options: any) {
 			if (command.cmd === "network.status") return { acknowledged: true, data: network.status };
 			if (command.cmd === "network.list") return { acknowledged: true, data: network.list ?? { items: [] } };
+			if (command.cmd === "hook.status") {
+				if (!hook?.status) throw new Error("no hook session");
+				return { acknowledged: true, data: hook.status };
+			}
+			if (command.cmd === "hook.collect") return { acknowledged: true, data: hook?.collect ?? { events: [] } };
 			return fakeServer.sendCommand(command, options);
 		},
 	};
@@ -118,4 +123,24 @@ test("browser_observe P1: no actionRef and no focusable control → causal prese
 	const env = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, baseline: { networkSeq: 5, entities: [BASE_ENTITY] } }, { cwd: process.cwd() }, "scan")).content[0].text);
 	assert.equal(env.causal?.requests?.length, 1, "causal delta present");
 	assert.equal(env.relations?.summary?.triggered, undefined, "no attribution without an action signal");
+});
+
+test("browser_observe P2: baseline attaches the hook event-delta to envelope.causal.events", async () => {
+	const server = causalServer(
+		{ status: { active: true, lastSeq: 8 }, list: { items: [], total: 0 } },
+		{ status: { last_seq: 11 }, collect: { events: [{ seq: 10, type: "domSink", timestamp: 1, data: { prop: "innerHTML", value: "secret=ABCDEF12 x", elementRef: { selector: "#out" } } }], next_seq: 10, total_available: 1 } },
+	);
+	const env = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, baseline: { networkSeq: 5, hookSeq: 9, entities: [BASE_ENTITY] } }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(env.causal?.events?.length, 1, "hook event-delta lifted to envelope.causal.events");
+	assert.equal(env.causal.events[0].ref, "pi-ref://event/10");
+	assert.equal(env.causal.events[0].type, "domSink");
+	assert.equal(env.causal.events[0].selector, "#out", "DOM-sink event carries its target selector");
+	assert.ok(env.causal.events[0].summary && !env.causal.events[0].summary.includes("ABCDEF12"), "event summary redacted");
+});
+
+test("browser_observe P2: records the hook seq high-water on the snapshot for a future baseline", async () => {
+	const server = causalServer({ status: { active: true, lastSeq: 8 } }, { status: { last_seq: 11 } });
+	const env = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(env.snapshot?.hookSeq, 11, "hook high-water stored so a later baseline can window events");
+	assert.equal(env.causal, undefined, "no baseline → no causal block");
 });

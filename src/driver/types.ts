@@ -127,6 +127,9 @@ export type BrowserObservationSnapshotInfo = {
 	// Network recorder seq high-water mark at capture time (ABML R3.x causal plane). When a later
 	// browser_observe uses this snapshot as a baseline, requests with seq > networkSeq are the delta.
 	networkSeq?: number;
+	// Hook event-buffer seq high-water mark at capture time (ABML R3.x P2). A later baseline windows
+	// hook events with seq > hookSeq as the event delta (causal.events).
+	hookSeq?: number;
 	invalidatedReason?: string;
 	expired?: boolean;
 	saved?: {
