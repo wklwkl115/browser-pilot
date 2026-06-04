@@ -30,7 +30,8 @@ kernel's entire public surface at a glance.
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
-| `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; not wired to ref minting. |
+| `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; high-confidence anchors feed gated ref minting in runtime. |
+| `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb dispatch + actionability/verification failure helpers. |
@@ -54,7 +55,7 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   wire it in `verbs/router.ts`, and put the browser I/O in `../abml/verbs/<verb>Runtime.ts`. Keep
   the decision and the I/O on opposite sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
-  `ax.ts` (the merge), `entity.ts` (the model), `templating.ts`, `treeDiff.ts`, or `semanticRefAnchor.ts`. Stay generic —
+  `ax.ts` (the merge), `entity.ts` (the model), `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, or `snapshotProjection.ts`. Stay generic —
   ABML models ARIA patterns, never per-site/per-framework branches (see the perception roadmap doc).
 - **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).

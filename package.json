@@ -128,7 +128,8 @@
     "check:abml-causal": "tsx tests/contracts/tools/check-abml-causal.mjs",
     "check:abml-templating": "tsx tests/contracts/tools/check-abml-templating.mjs",
     "check:abml-tree-diff": "tsx tests/contracts/tools/check-abml-tree-diff.mjs",
-    "check:abml-semantic-ref-anchor": "tsx tests/contracts/tools/check-abml-semantic-ref-anchor.mjs"
+    "check:abml-semantic-ref-anchor": "tsx tests/contracts/tools/check-abml-semantic-ref-anchor.mjs",
+    "check:abml-snapshot-projection": "tsx tests/contracts/tools/check-abml-snapshot-projection.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",

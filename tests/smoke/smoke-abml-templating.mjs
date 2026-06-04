@@ -6,6 +6,7 @@
 //      O(change) structure delta (one high-confidence appeared instance), not nested text churn.
 //   C) a stable named item keeps the same pi-ref after reorder/insert, and that old ref can still
 //      read/click the current item; this validates M2b's narrow high-confidence semantic ref anchor path.
+//   D) the M2c snapshotProjection attaches treeDiff delta and is persisted in the saved artifact.
 // The fixture's <a> items share an AX list container AND carry aria-setsize, so templating fires via
 // either grouping path. Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge
 // + bridge + extension copy, so it never touches the user's browser.
@@ -201,6 +202,22 @@ try {
     treeAppearedOk,
     nestedChurnSuppressed,
   });
+  const projection = afterEnv.snapshotProjection;
+  const projectionTemplate = Array.isArray(projection?.templates) ? projection.templates.find((item) => item?.containerName === "Products" && item?.role === "link") || projection.templates[0] : undefined;
+  const projectionDeltaOk = Number(projection?.summary?.appeared) === 1 && projectionTemplate?.delta?.appeared?.instances?.some((item) => item?.name === "Product Golf" && item?.confidence === "high");
+  const savedPath = afterEnv?.saved?.path || afterEnv?.snapshot?.saved?.path;
+  const savedArtifact = typeof savedPath === "string" && savedPath ? JSON.parse(await readFile(savedPath, "utf8")) : undefined;
+  const artifactProjectionOk = !!savedArtifact?.abml?.snapshotProjection?.templates?.some((item) => item?.delta?.appeared?.instances?.some((instance) => instance?.name === "Product Golf"));
+  const artifactEntitiesOk = Array.isArray(savedArtifact?.abml?.entities) && savedArtifact.abml.entities.length >= 7;
+  record("snapshotProjection.delta", projectionDeltaOk && artifactProjectionOk && artifactEntitiesOk, {
+    summary: projection?.summary,
+    template: projectionTemplate ? { container: projectionTemplate.container, containerName: projectionTemplate.containerName, role: projectionTemplate.role, count: projectionTemplate.count, instanceRefCount: projectionTemplate.instanceRefCount, delta: projectionTemplate.delta } : null,
+    savedPath,
+    projectionDeltaOk,
+    artifactProjectionOk,
+    artifactEntitiesOk,
+  });
+
   const abml = createBrowserAbmlIntegration(bridge, { browserSessionId, tabId, timeoutMs: 10000, maxChars: 50000 });
   const readViaOldRef = stableBefore?.ref ? await abml.readStructure({ ref: stableBefore.ref, browserSessionId, tabId, timeoutMs: 10000, maxChars: 50000 }) : undefined;
   const readResolved = !!readViaOldRef?.ok && Array.isArray(readViaOldRef.entities) && readViaOldRef.entities.some((entity) => entity?.name === "Product Bravo");
@@ -215,7 +232,7 @@ try {
     clickResolved,
   });
 
-  result.ok = templatingOk && treeDiffOk && semanticRefStable && semanticRefShape && readResolved && clickResolved;
+  result.ok = templatingOk && treeDiffOk && semanticRefStable && semanticRefShape && readResolved && clickResolved && projectionDeltaOk && artifactProjectionOk && artifactEntitiesOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

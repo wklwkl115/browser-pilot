@@ -42,7 +42,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
 
-## Pure core (22 — zero browser/Node deps)
+## Pure core (23 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -59,7 +59,8 @@ each doc links back here.
 | `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
 | `templating.ts` | ABML mechanism arm (M1): structure templating — folds repeated sibling entities (same AX container / aria-setsize + role/kind) into one template + compact instances + handles. |
 | `treeDiff.ts` | ABML mechanism arm (M2a): template-level living diff over repeated structures; O(change) projection for scan baselines without changing ref minting. |
-| `semanticRefAnchor.ts` | ABML mechanism arm (M2b P1/P2): pure semantic ref-anchor candidate and shadow-hash input derivation; not wired to ref minting. |
+| `semanticRefAnchor.ts` | ABML mechanism arm (M2b): pure semantic ref-anchor candidate and shadow-hash input derivation; high-confidence anchors feed gated runtime ref minting. |
+| `snapshotProjection.ts` | ABML mechanism arm (M2c): living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
 | `verbs/click.ts` | Click verb decision logic (pure; no browser call). |

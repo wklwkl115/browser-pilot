@@ -1,6 +1,6 @@
 # ABML mechanism arm — structure templating + living tree-diff execution contract
 
-> Status: **M1 COMPLETE; M2a COMPLETE; M2b/M2c PLANNED**
+> Status: **M1 COMPLETE; M2a COMPLETE; M2b COMPLETE; M2c COMPLETE**
 > (reactivated 2026-06-04 by explicit user priority — "开机制臂" / "先开 M2a"). ABML
 > mechanism line has its own execution contract + CURRENT.md activation. This is the *mechanism*
 > line (token efficiency on large pages), complementary to the now-complete *semantic-depth* line
@@ -103,18 +103,20 @@ observe → `envelope.templates` has a template with `count >= N`, `varies`, `in
 - Wire into `browser_observe(mode:scan, baseline)` and lift `envelope.treeDiff` budget-immune.
 - Validated by `check:abml-tree-diff`, `smoke:browser:abml-templating`, and full `npm run check`; shipped in commit `5e92dcc`.
 
-#### M2b — gated semantic ref anchor  (PLANNED, after M2a evidence)
+#### M2b — gated semantic ref anchor  (COMPLETE)
 
-- Add optional semantic-anchor input to ref descriptors for template-eligible entities only.
-- High-confidence name-anchor may feed `stableRefIdForDescriptor`; low-confidence positional anchors
-  remain diff-only unless separately proven safe.
-- Non-grouped entities keep current locator-based refs.
+- Adds optional semantic-anchor input to ref descriptors for template-eligible entities only.
+- High-confidence unique-name anchors inside named AX/ARIA containers feed `stableRefIdForDescriptor`.
+- Low-confidence positional/duplicate/unnamed anchors remain diff-only / locator-based.
+- Validated by `check:abml-semantic-ref-anchor`, live read/click smoke, and full `npm run check`; shipped in commit `2aefe55`.
 
-#### M2c — living snapshot projection  (PLANNED)
+#### M2c — living snapshot projection  (COMPLETE)
 
-- Attach `templates[].delta` from `treeDiff` where useful and persist enough structure metadata in
+- Attaches `templates[].delta` from `treeDiff` where useful and persists enough structure metadata in
   snapshot artifacts for O(change) follow-up.
-- Boundaries identical to M1/M2a.
+- Contract: `docs/abml-mechanism-m2c-living-snapshot-projection-execution-plan.md`.
+- Boundaries identical to M1/M2a/M2b.
+- Validated by `check:abml-snapshot-projection`, `smoke:browser:abml-templating`, and full `npm run check`.
 
 ## 5. Behavior boundaries
 
@@ -136,8 +138,7 @@ observe → `envelope.templates` has a template with `count >= N`, `varies`, `in
 - **M2a**: `check:abml-tree-diff` (semantic template matching across reorder/insert/change;
   partial-baseline unavailable; envelope lift; static observe wiring) + live smoke (mutate a list
   between observations → O(change) diff). Ref minting must remain untouched in this phase.
-- **M2b**: semantic-anchor ref stability contract only after M2a evidence; gated blast-radius tests
-  over scan/diff/read/click/ref registry before any `stableRefIdForDescriptor` mutation.
+- **M2b**: semantic-anchor ref stability contract after M2a evidence; gated blast-radius tests over scan/diff/read/click/ref registry before `stableRefIdForDescriptor` mutation. Complete in `2aefe55`.
 - Gate each phase on `npm run check` green + the live smoke. Update
   `docs/abml-perception-state-evolution-plan.md` §Optimization roadmap as phases land.
 

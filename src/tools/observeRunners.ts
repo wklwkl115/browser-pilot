@@ -10,6 +10,7 @@ import { buildInferenceSummary } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
 import { buildTemplateSummary } from "../abml/templating.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
+import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -468,6 +469,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const abmlTreeDiff: TreeDiff | undefined = observation.abmlRead?.ok === true && baseline
 		? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 		: undefined;
+	const abmlSnapshotProjection: SnapshotProjection | undefined = observation.abmlRead?.ok === true
+		? buildSnapshotProjection(observation.abmlRead.entities ?? [], { treeDiff: abmlTreeDiff })
+		: undefined;
 	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
 	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
 	// fully inline in envelope.causal regardless — passive P0 behavior preserved):
@@ -495,11 +499,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const summary = attributedEntities !== null
 		? (() => {
 			const relSummary = buildRelationSummary(attributedEntities);
+			const snapshotProjection = buildSnapshotProjection(attributedEntities, { treeDiff: abmlTreeDiff });
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
 				...(abmlDiff ? { diff: abmlDiff } : {}),
 				...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
+				snapshotProjection,
 				...causalBlock,
 				focus: {
 					...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
@@ -518,12 +524,15 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					inference: buildInferenceSummary(attributedEntities, relSummary, abmlDiff),
 					...(abmlDiff ? { diff: abmlDiff } : {}),
 					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
+					snapshotProjection,
 					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
 					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
 				},
 			};
 		})()
 		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
+	const summaryRecord = summary as Record<string, unknown>;
+	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -533,7 +542,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, abml: observation.abmlRead },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }
 

@@ -47,6 +47,9 @@ export type DistilledEnvelope = {
 	// ABML mechanism arm M2a — template-level living diff. Present only when browser_observe gets a
 	// full baseline. Lifted here so re-observe can stay O(change) under tight budgets.
 	treeDiff?: Record<string, unknown>;
+	// ABML mechanism arm M2c — persisted living structure snapshot: current templates plus attached
+	// template deltas where available. Lifted here so saved-artifact follow-up can stay structure-first.
+	snapshotProjection?: Record<string, unknown>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -247,6 +250,12 @@ function envelopeTreeDiff(summary: DistilledSummary): Record<string, unknown> | 
 	return isRecord(focus?.treeDiff) ? structuredClone(focus.treeDiff) as Record<string, unknown> : undefined;
 }
 
+function envelopeSnapshotProjection(summary: DistilledSummary): Record<string, unknown> | undefined {
+	if (isRecord(summary.snapshotProjection)) return structuredClone(summary.snapshotProjection) as Record<string, unknown>;
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	return isRecord(focus?.snapshotProjection) ? structuredClone(focus.snapshotProjection) as Record<string, unknown> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -386,6 +395,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const causal = envelopeCausal(redactedSummary);
 	const templates = envelopeTemplates(redactedSummary);
 	const treeDiff = envelopeTreeDiff(redactedSummary);
+	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -407,6 +417,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(causal ? { causal } : {}),
 		...(templates ? { templates } : {}),
 		...(treeDiff ? { treeDiff } : {}),
+		...(snapshotProjection ? { snapshotProjection } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

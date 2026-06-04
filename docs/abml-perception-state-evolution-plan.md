@@ -256,10 +256,11 @@ ABML's tree should be the agent's **page working memory** — persistent, versio
 incrementally updated, focused, honest about reachability. All of these are
 *general* (they help feeds/docs/chat/dashboards more than forms):
 
-- **Near (high ROI):** living **diffable tree** (verb returns a `treeDiff`; agent
-  consumes O(change); requires **ref semantic stability** = semantic anchor, also
-  cures ref-stale); **structure templating** (repeated list/table/card → template +
-  instances + handle).
+- **Near (high ROI, COMPLETE via mechanism M1/M2a/M2b/M2c):** living **diffable tree**
+  (`treeDiff`; agent consumes O(change)); **ref semantic stability** (semantic anchor for
+  high-confidence repeated items); **structure templating** (repeated list/table/card → template +
+  instances + handle); **living snapshot projection** (`snapshotProjection` persisted in observe
+  artifacts with template deltas).
 - **Mid:** **salience-driven default disclosure** (generic salience: in-viewport /
   focused / recently-changed / interaction density); **opaque nodes** (closed shadow
   DOM / cross-origin iframe / canvas as honest fold points, expand via
