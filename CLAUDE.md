@@ -152,3 +152,21 @@ Both use `moduleResolution: "Bundler"` and `noImplicitAny: true`.
 - Bridge port range: `127.0.0.1:18765-18784` — first free port is used
 - `browserSessionId` parameter isolates tab selection across concurrent sessions
 - Write operations require lease; concurrent write to same tab returns `TAB_LEASE_CONFLICT`
+
+## Code search & navigation (large, multi-layer codebase)
+
+This repo spans many layers (`abml-core → abml → tools → driver → bridge_src`). To avoid
+mislocating or misnaming things in a codebase this size:
+
+- **Verify before naming.** Before referencing any tool / API / param / flag in code, prose,
+  or a prompt handed to another agent, confirm it exists (LSP symbol nav or `Grep`) — never
+  from memory. The public tool surface is `browser_*`. There is **no `browser_click` /
+  `browser_type`**: page actions go through `browser_execute` (JavaScript) or `browser_command`
+  (bridge). ABML verbs (click/type/scroll/read) are **internal substrate**, reached via
+  `browser_execute`/Pi-native, not a public tool. R3 `envelope.diff` is only produced by
+  `browser_observe(mode:"scan", baseline:X)`.
+- **TypeScript LSP is available.** `typescript-language-server` is installed globally. Enable
+  Claude Code's LSP tool with `/plugin install typescript-lsp@claude-plugins-official` (choose
+  **Project scope** to share it via `.claude/settings.json`) then `/reload-plugins`. Prefer LSP
+  go-to-definition / find-references over text `grep` when locating a symbol's definition or
+  callers — it understands types, not just text, so it doesn't land on the wrong match.
