@@ -121,7 +121,8 @@
     "check:runtime-fixtures": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs",
     "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs",
     "check:abml-inference": "tsx tests/contracts/tools/check-abml-inference.mjs",
-    "check:abml-diff": "tsx tests/contracts/tools/check-abml-diff.mjs"
+    "check:abml-diff": "tsx tests/contracts/tools/check-abml-diff.mjs",
+    "check:abml-causal": "tsx tests/contracts/tools/check-abml-causal.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
