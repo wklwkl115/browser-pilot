@@ -11,7 +11,8 @@
 
 ## 当前激活项
 
-当前无并行大型架构主线；新 workstream 不得与既有主线并行激活，除非用户显式改优先级。
+- **ABML R3.x — network/API 因果平面**（2026-06-04 用户显式激活）：执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。分阶段：**P0** = 复用 `browser_observe` baseline，在 envelope 顶层加 `causal`（自 baseline 以来 fire 的网络请求；脱敏、截断、零归因假设；复用现有 network recorder + 既有但未接线的 `src/abml-core/stream.ts` stream plane 脚手架）；**P1** = 用 `diff.focusedRef` / 显式 `actionRef` 把请求归因到具体 control（新 `triggered` relation）。边界：不新增公开工具、不改 `native_command_schema`、纯核零运行时依赖、隐私脱敏、时序窗口可解释（不解析 initiator stack、无 per-site 分支）。
+- 其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
 
 ## 已完成但不再作为当前队列
 
@@ -23,7 +24,7 @@
 
 ## Next backlog
 
-当前无并行大型架构主线；R1/R2/R3 已完成。后续候选（R3.x network/API causal plane、iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
+R1/R2/R3 已完成；**R3.x（network/API causal plane）已激活为当前主线**（见"当前激活项" + `docs/abml-r3x-causal-plane-execution-plan.md`）。其余后续候选（iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
 
 ## 后续路线
 
