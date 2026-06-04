@@ -11,10 +11,11 @@
 
 ## 当前激活项
 
-- **ABML 机制臂 M2a — living treeDiff-first**：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。当前阶段只做 treeDiff 投影：复用 M1 ARIA-grounded template groups，对 `browser_observe(mode=scan, baseline)` 输出 `envelope.treeDiff`。边界：不新增公开 `browser_*` 工具、不改 native protocol、不改 `stableRefIdForDescriptor` / ref minting、不做 DOM tag/class/selector 猜测。M2b 语义 ref anchor 需 M2a 证据与单独 gate 后再拍板。
+- 当前无激活大型主线。ABML 机制臂 M2b 需单独执行合同与 gate 后再启动。
 
 ## 已完成但不再作为当前队列
 
+- **ABML 机制臂 M2a — living treeDiff-first 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。M2a 只做 treeDiff 投影：复用 M1 ARIA-grounded template groups，对 `browser_observe(mode=scan, baseline)` 输出 `envelope.treeDiff`。边界已保持：不新增公开 `browser_*` 工具、不改 native protocol、不改 `stableRefIdForDescriptor` / ref minting、不做 DOM tag/class/selector 猜测。验证：`check:abml-tree-diff`、`smoke:browser:abml-templating`、`npm run check`。
 - **ABML R3.x — network/API 因果平面已完成（2026-06-04，浏览器验证）**：P0+P1+P2(A+B+C) 全部落地于 master。执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。P0=被动网络增量 `envelope.causal`；P1=`triggered` 时序归因；P2-A=事件因果 `causal.events`；P2-B=事件源归因 `source:"event"`；P2-C=因果 stream plane（游标 drain 通道，`read(plane:network|event)` arm/drain，内部 substrate 经 `integration.readStream`）。仅"真正的服务端推送"出范围（req/resp 架构物理不可能）。
 - **Browser workflow eval runner 已完成并合并入 master（2026-06-04）**：`feat/browser-workflow-eval-runner` 的可执行 opt-in runner 已合并，分支已删除；入口 `npm run eval:browser-workflows -- --fixture-server`，默认无副作用、fixture server 仅绑 `127.0.0.1`。
 - **CLI + Skill Frontend Migration 已完成**：`pi-browser` CLI（用户级单例 daemon 驱动）成为唯一外部前端，MCP shell 整体移除，`@modelcontextprotocol/sdk` 下线；Pi-native `index.ts` 不变且验证通过（注册 22 工具、零 mcp 依赖），live `npm run smoke:cli` 端到端通过。执行合同：`docs/cli-skill-frontend-migration-plan.md`；CLI 文档：`docs/cli.md`。
@@ -25,7 +26,7 @@
 
 ## Next backlog
 
-R1/R2/R3 已完成；**R3.x（network/API causal plane）已激活为当前主线**（见"当前激活项" + `docs/abml-r3x-causal-plane-execution-plan.md`）。其余后续候选（iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
+R1/R2/R3/R3.x 与 ABML 机制臂 M1/M2a 均已完成。M2b（semantic ref anchor）是下一候选主线，但必须先单独执行合同与 gate；其余后续候选（iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
 
 ## 后续路线
 

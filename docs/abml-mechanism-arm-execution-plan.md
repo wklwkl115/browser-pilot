@@ -1,6 +1,6 @@
 # ABML mechanism arm — structure templating + living tree-diff execution contract
 
-> Status: **M1 COMPLETE; M2a (treeDiff-first, no ref-mint change) ACTIVE; M2b/M2c PLANNED**
+> Status: **M1 COMPLETE; M2a COMPLETE; M2b/M2c PLANNED**
 > (reactivated 2026-06-04 by explicit user priority — "开机制臂" / "先开 M2a"). ABML
 > mechanism line has its own execution contract + CURRENT.md activation. This is the *mechanism*
 > line (token efficiency on large pages), complementary to the now-complete *semantic-depth* line
@@ -59,7 +59,7 @@ template carries only the *varying* fields inline; the constant fields are state
 
 ## 4. Design
 
-### M1 — structure templating  (IN PROGRESS)
+### M1 — structure templating  (COMPLETE)
 
 **M1 slice 1 — pure-core selector (`src/abml-core/templating.ts`).**
 `buildTemplateSummary(entities): { templates: StructureTemplate[] }`:
@@ -88,7 +88,7 @@ observe → `envelope.templates` has a template with `count >= N`, `varies`, `in
 
 ### M2 — living tree-diff
 
-#### M2a — treeDiff-first, no ref-mint change  (ACTIVE)
+#### M2a — treeDiff-first, no ref-mint change  (COMPLETE)
 
 - Add pure-core `src/abml-core/treeDiff.ts`.
 - Reuse M1's ARIA-grounded template groups (`templateGroupDescriptorForEntity`) and project two
@@ -101,6 +101,7 @@ observe → `envelope.templates` has a template with `count >= N`, `varies`, `in
   - bounded `instances`, true `count`, confidence/anchor fields,
   - no change to `stableRefIdForDescriptor`, no change to live-action resolution.
 - Wire into `browser_observe(mode:scan, baseline)` and lift `envelope.treeDiff` budget-immune.
+- Validated by `check:abml-tree-diff`, `smoke:browser:abml-templating`, and full `npm run check`; shipped in commit `5e92dcc`.
 
 #### M2b — gated semantic ref anchor  (PLANNED, after M2a evidence)
 
