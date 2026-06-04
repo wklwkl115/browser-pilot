@@ -114,10 +114,18 @@ function detectExpandable(relSummary: RelationSummary): DetectedIntent | undefin
 	return undefined;
 }
 
-// data-grid: tableCells in the relation summary counts distinct cells with cellOf relations,
-// meaning a table or grid with proper row/column/header structure is present.
-function detectDataGrid(relSummary: RelationSummary): DetectedIntent | undefined {
-	if ((relSummary.summary.tableCells ?? 0) > 0) return { intent: "data-grid", confidence: "high" };
+// data-grid: two signals, priority-ordered:
+//   1. grid/treegrid role entity present — ARIA interactive grid (sortable/selectable rows),
+//      high confidence regardless of cell count.
+//   2. tableCells >= 50 — large static table likely representing structured data content.
+//      Threshold filters documentation/attribute tables that appear on almost every reference
+//      page (W3C APG, MDN) and would otherwise flood any agent reading the page with
+//      false data-grid signals. tableCells > 0 was too broad in live validation (APG pages
+//      all have 12–42-cell attribute tables; only the actual data page had 162+ cells).
+const DATA_GRID_CELL_THRESHOLD = 50;
+function detectDataGrid(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
+	if (hasRole(entities, "grid") || hasRole(entities, "treegrid")) return { intent: "data-grid", confidence: "high" };
+	if ((relSummary.summary.tableCells ?? 0) >= DATA_GRID_CELL_THRESHOLD) return { intent: "data-grid", confidence: "high" };
 	return undefined;
 }
 
@@ -153,7 +161,7 @@ export function buildInferenceSummary(entities: Entity[], relSummary: RelationSu
 	add(detectSingleChoice(entities));
 	add(detectMultiChoice(entities));
 	add(detectExpandable(relSummary));
-	add(detectDataGrid(relSummary));
+	add(detectDataGrid(entities, relSummary));
 	add(detectNavigation(relSummary));
 	add(detectDialog(entities));
 	return { intents };

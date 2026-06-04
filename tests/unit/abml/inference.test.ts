@@ -184,11 +184,28 @@ test("no expandable when only controls (not expandedTarget) in summary", () => {
 
 // ── data-grid ─────────────────────────────────────────────────────────────────
 
-test("data-grid detected from tableCells in relation summary", () => {
-	const result = buildInferenceSummary([], relSummary({ tableCells: 16 }));
+test("data-grid detected from grid role entity (ARIA interactive grid)", () => {
+	const entities = [entity({ role: "grid", kind: "region" })];
+	const result = buildInferenceSummary(entities, emptyRelations());
 	const dg = result.intents.find((i) => i.intent === "data-grid");
-	assert.ok(dg, "data-grid detected");
+	assert.ok(dg, "grid role → data-grid");
 	assert.equal(dg!.confidence, "high");
+});
+
+test("data-grid detected from treegrid role entity", () => {
+	const entities = [entity({ role: "treegrid", kind: "region" })];
+	const result = buildInferenceSummary(entities, emptyRelations());
+	assert.ok(intentKinds(result).includes("data-grid"), "treegrid → data-grid");
+});
+
+test("data-grid detected from tableCells >= 50 (large data table)", () => {
+	const result = buildInferenceSummary([], relSummary({ tableCells: 50 }));
+	assert.ok(intentKinds(result).includes("data-grid"), "tableCells=50 → data-grid");
+});
+
+test("no data-grid from small tables (< 50 cells) — filters documentation/attribute tables", () => {
+	const result = buildInferenceSummary([], relSummary({ tableCells: 42 }));
+	assert.ok(!intentKinds(result).includes("data-grid"), "tableCells=42 does NOT trigger data-grid (doc table noise)");
 });
 
 test("no data-grid when tableCells is 0", () => {
@@ -231,10 +248,11 @@ test("multiple intents co-occur on a complex page", () => {
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
 		entity({ role: "button" }),
 		entity({ role: "radiogroup", kind: "region" }),
+		entity({ role: "grid", kind: "region" }),
 	];
-	const result = buildInferenceSummary(entities, relSummary({ tableCells: 8 }));
+	const result = buildInferenceSummary(entities, relSummary({ tableCells: 0 }));
 	const kinds = intentKinds(result);
 	assert.ok(kinds.includes("login"), "login co-detected");
 	assert.ok(kinds.includes("single-choice"), "single-choice co-detected");
-	assert.ok(kinds.includes("data-grid"), "data-grid co-detected");
+	assert.ok(kinds.includes("data-grid"), "data-grid co-detected (via grid role)");
 });

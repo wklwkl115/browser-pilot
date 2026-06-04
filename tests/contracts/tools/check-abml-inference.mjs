@@ -77,9 +77,13 @@ assert.ok(kinds(mcResult).includes("multi-choice"), "multi-choice (3 checkboxes)
 const expResult = buildInferenceSummary([], relWith({ expandedTarget: 1 }));
 assert.ok(kinds(expResult).includes("expandable"), "expandable detected");
 
-// data-grid (tableCells relation)
-const gridResult = buildInferenceSummary([], relWith({ tableCells: 8 }));
-assert.ok(kinds(gridResult).includes("data-grid"), "data-grid detected");
+// data-grid: grid role entity (primary signal) OR tableCells >= 50 (large table threshold)
+const gridResult = buildInferenceSummary([entity("grid", { kind: "region" })], relWith({}));
+assert.ok(kinds(gridResult).includes("data-grid"), "data-grid detected from grid role");
+const gridByTableResult = buildInferenceSummary([], relWith({ tableCells: 50 }));
+assert.ok(kinds(gridByTableResult).includes("data-grid"), "data-grid detected from tableCells>=50");
+const noGridResult = buildInferenceSummary([], relWith({ tableCells: 42 }));
+assert.ok(!kinds(noGridResult).includes("data-grid"), "tableCells=42 (doc table) does NOT trigger data-grid");
 
 // navigation (currentIn relation)
 const navResult = buildInferenceSummary([], relWith({ currentIn: 1 }));
@@ -96,7 +100,7 @@ const envelopeSummary = {
 	focus: {
 		gist: { landmarks: ["main"], controlCount: 2, containerCount: 1 },
 		outline: [{ container: "radiogroup", name: "Options", memberCount: 2, controlCount: 2, memberRefs: ["a", "b"] }],
-		relations: { summary: { tableCells: 8, currentIn: 1 }, highlights: [] },
+		relations: { summary: { tableCells: 50, currentIn: 1 }, highlights: [] },
 		inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "navigation", confidence: "high" }] },
 		primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "radio", name: "A" }],
 	},
@@ -120,7 +124,7 @@ const tightSummary = {
 	focus: {
 		gist: { landmarks: ["main"], controlCount: 50 },
 		outline: [{ container: "radiogroup", name: "Big", memberCount: 50, memberRefs: [] }],
-		relations: { summary: { tableCells: 100 }, highlights: [] },
+		relations: { summary: { tableCells: 200 }, highlights: [] },
 		inference: { intents: [{ intent: "data-grid", confidence: "high" }] },
 		primary_entities: Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "radio", name: `option ${i} ${"pad ".repeat(60)}` })),
 	},
