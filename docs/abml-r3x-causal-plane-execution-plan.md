@@ -1,10 +1,16 @@
 # ABML R3.x — network/API causal plane execution contract
 
-> Status: **ACTIVE** (activated 2026-06-04 by explicit user priority change). This is a new
-> ABML main line; per project rules it gets its own execution contract and a CURRENT.md
-> activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
+> Status: **ACTIVE — P0 COMPLETE, P1 in progress** (activated 2026-06-04 by explicit user priority
+> change). This is a new ABML main line; per project rules it gets its own execution contract and a
+> CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
 > diff was live-verified (`npm run smoke:browser:abml-inference`, 2026-06-04).
+>
+> **P0 landed (2026-06-04):** passive network-delta plane shipped + browser-verified across 4
+> commits — `99b9bf3` pure-core selector, `729aef6` runtime wiring (envelope `causal`),
+> `ff319cd` contract `check:abml-causal`, `63a0bff` live smoke `smoke:browser:abml-causal` (Edge:
+> `causal.unavailable`, seq high-water, redacted `/api/ping` delta). P1 (attribution) is now the
+> active phase.
 
 ## 1. Goal
 
@@ -47,7 +53,7 @@ not the triggering control; mapping it is brittle and per-site (overfitting smel
 
 ## 4. Design
 
-### P0 — network-delta plane (passive, reuses baseline)  ← THIS PHASE
+### P0 — network-delta plane (passive, reuses baseline)  ✓ LANDED (slices 1–4, browser-verified)
 
 1. `browser_observe(mode:scan)` records the network recorder's current **seq high-water mark**
    alongside the ABML snapshot (in `BrowserObservationSnapshotRegistry` + envelope `correlation`).
@@ -66,7 +72,7 @@ This carries the request details inline in `causal.requests` (ref + method/url/s
 agent can read them directly — which also sidesteps the "evidence ref not resolvable in the
 salience-subset `envelope.entities`" gap (see §7).
 
-### P1 — attribution to a control (deferred until P0 is stable + validated)
+### P1 — attribution to a control  ← THIS PHASE
 
 - Add a relation type `triggered` (control → network-entry) in `entity.ts` `RelationType` +
   `relations.ts` ordering; materialize via `materializeRelations`.

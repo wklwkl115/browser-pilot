@@ -328,7 +328,14 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
 ### Phase R3.x — Perception-source expansion (remaining independent sources)
 - network/API semantics: tables/pagination/submit endpoints behind controls — reuse the
   existing network recorder; hang network/event refs on a control's subtree (the "causal
-  plane" above)
+  plane" above). **P0 COMPLETE (2026-06-04)** — passive network-delta: `browser_observe(mode:scan,
+  baseline:X)` emits envelope `causal` = requests fired since the baseline (redacted, capped,
+  no attribution). Contract `check:abml-causal`, live `smoke:browser:abml-causal`. **P1 IN PROGRESS**
+  — attribution: a `triggered` (control → network request) relation hanging the delta on the
+  activated control (explicit `actionRef` or the focus-normalized R3 `diff.focusedRef`;
+  `source:"timing"`, low confidence — timing window only). See
+  `docs/abml-r3x-causal-plane-execution-plan.md`. P2 (event causal entries, stronger attribution)
+  deferred.
 - vision/layout + OCR: stays the on-demand floor / opaque-node expand per Non-goals — used
   as the geometry source for occludes/coveredBy and for canvas/closed-shadow regions, **not**
   a primary perception source
