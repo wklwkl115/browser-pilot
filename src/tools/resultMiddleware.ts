@@ -44,6 +44,9 @@ export type DistilledEnvelope = {
 	// ABML mechanism arm M1 — structure templates (repeated list/table/card folded to template +
 	// instances + handles). Lifted here so the budget never hides the large-page compression.
 	templates?: Array<Record<string, unknown>>;
+	// ABML mechanism arm M2a — template-level living diff. Present only when browser_observe gets a
+	// full baseline. Lifted here so re-observe can stay O(change) under tight budgets.
+	treeDiff?: Record<string, unknown>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -238,6 +241,12 @@ function envelopeTemplates(summary: DistilledSummary): Array<Record<string, unkn
 	return templates.length ? structuredClone(templates) as Array<Record<string, unknown>> : undefined;
 }
 
+function envelopeTreeDiff(summary: DistilledSummary): Record<string, unknown> | undefined {
+	if (isRecord(summary.treeDiff)) return structuredClone(summary.treeDiff) as Record<string, unknown>;
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	return isRecord(focus?.treeDiff) ? structuredClone(focus.treeDiff) as Record<string, unknown> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -376,6 +385,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const diff = envelopeDiff(redactedSummary);
 	const causal = envelopeCausal(redactedSummary);
 	const templates = envelopeTemplates(redactedSummary);
+	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -396,6 +406,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(diff ? { diff } : {}),
 		...(causal ? { causal } : {}),
 		...(templates ? { templates } : {}),
+		...(treeDiff ? { treeDiff } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

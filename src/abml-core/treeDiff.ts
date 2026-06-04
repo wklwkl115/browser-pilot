@@ -1,0 +1,271 @@
+// ABML mechanism arm — M2a living tree-diff (pure core).
+//
+// M1 folds repeated sibling entities into structure templates. M2a projects an entity diff onto the
+// same ARIA-grounded template groups so re-observing a large list/table reports O(change) structure
+// changes instead of O(all) repeated entities. This phase intentionally does NOT change pi-ref
+// minting: stable semantic anchors are used only for diff matching here.
+import type { Entity } from "./entity.js";
+import type { EntityKind } from "./entity.js";
+import { MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, type TemplateVaryField, templateGroupDescriptorForEntity, type TemplateGroupDescriptor } from "./templating.js";
+
+export const MAX_TREE_DIFF_INSTANCES = 20;
+export const MAX_TREE_DIFF_CHANGED_FIELDS = 8;
+
+export type TreeDiffAnchor = "name" | "posInSet" | "index";
+export type TreeDiffConfidence = "high" | "low";
+
+export type TreeDiffInstance = {
+	key: string;
+	ref: string;
+	anchor: TreeDiffAnchor;
+	confidence: TreeDiffConfidence;
+	name?: string;
+	value?: string;
+	posInSet?: number;
+};
+
+export type TreeDiffFieldChange = {
+	field: TemplateVaryField;
+	before?: unknown;
+	after?: unknown;
+};
+
+export type TreeDiffInstanceChange = {
+	key: string;
+	beforeRef: string;
+	afterRef: string;
+	anchor: TreeDiffAnchor;
+	confidence: TreeDiffConfidence;
+	fields: TreeDiffFieldChange[];
+	name?: string;
+};
+
+export type TreeDiffInstanceBucket = {
+	count: number;
+	instances: TreeDiffInstance[];
+	truncated?: boolean;
+};
+
+export type TreeDiffChangedBucket = {
+	count: number;
+	instances: TreeDiffInstanceChange[];
+	truncated?: boolean;
+};
+
+export type TreeTemplateDiff = {
+	templateKey: string;
+	container?: string;
+	containerName?: string;
+	role: string;
+	kind: EntityKind;
+	beforeCount: number;
+	afterCount: number;
+	appeared: TreeDiffInstanceBucket;
+	disappeared: TreeDiffInstanceBucket;
+	changed: TreeDiffChangedBucket;
+	reordered?: { changed: true; commonCount: number; beforeSample: string[]; afterSample: string[] };
+};
+
+export type TreeDiffSummary = {
+	templateCount: number;
+	changedTemplateCount: number;
+	appeared: number;
+	disappeared: number;
+	changed: number;
+	reordered: number;
+	partialBaseline?: boolean;
+	unavailable?: string;
+};
+
+export type TreeDiff = {
+	summary: TreeDiffSummary;
+	templates: TreeTemplateDiff[];
+};
+
+export type TreeDiffOptions = {
+	partialBaseline?: boolean;
+};
+
+type GroupedEntity = { entity: Entity; index: number };
+type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: GroupedEntity[] };
+type MatchedInstance = TreeDiffInstance & { entity: Entity; order: number };
+
+const COMPARE_FIELDS: TemplateVaryField[] = ["name", "value", "checked", "selected", "pressed", "current", "disabled"];
+
+function normalizeText(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const text = value.trim().replace(/\s+/g, " ");
+	return text ? text.toLowerCase() : undefined;
+}
+
+function displayText(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const text = value.trim().replace(/\s+/g, " ");
+	return text ? text.slice(0, 120) : undefined;
+}
+
+function fieldValue(entity: Entity, field: TemplateVaryField): unknown {
+	if (field === "name") return entity.name;
+	if (field === "value") return entity.value;
+	return entity.state[field];
+}
+
+function structureScopeKey(descriptor: TemplateGroupDescriptor): string {
+	return descriptor.container
+		? JSON.stringify(["c", descriptor.container, descriptor.containerName || ""])
+		: JSON.stringify(["s", descriptor.setSize ?? ""]);
+}
+
+function suppressNestedNonControlGroups(groups: TemplateGroup[]): TemplateGroup[] {
+	const scopesWithControls = new Set(groups.filter((group) => group.descriptor.kind === "control").map((group) => structureScopeKey(group.descriptor)));
+	if (!scopesWithControls.size) return groups;
+	return groups.filter((group) => group.descriptor.kind === "control" || !scopesWithControls.has(structureScopeKey(group.descriptor)));
+}
+
+function groupEntities(entities: Entity[]): TemplateGroup[] {
+	const groups = new Map<string, TemplateGroup>();
+	entities.forEach((entity, index) => {
+		const descriptor = templateGroupDescriptorForEntity(entity);
+		if (!descriptor) return;
+		const group = groups.get(descriptor.key);
+		if (group) group.members.push({ entity, index });
+		else groups.set(descriptor.key, { descriptor, members: [{ entity, index }] });
+	});
+	return suppressNestedNonControlGroups(Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES));
+}
+
+function buildNameCounts(beforeGroups: TemplateGroup[], afterGroups: TemplateGroup[]): Map<string, { before: number; after: number }> {
+	const counts = new Map<string, { before: number; after: number }>();
+	const bump = (side: "before" | "after", group: TemplateGroup) => {
+		for (const item of group.members) {
+			const name = normalizeText(item.entity.name);
+			if (!name) continue;
+			const key = `${group.descriptor.key}\u0000${name}`;
+			const count = counts.get(key) || { before: 0, after: 0 };
+			count[side] += 1;
+			counts.set(key, count);
+		}
+	};
+	for (const group of beforeGroups) bump("before", group);
+	for (const group of afterGroups) bump("after", group);
+	return counts;
+}
+
+function instanceKey(groupKey: string, item: GroupedEntity, counts: Map<string, { before: number; after: number }>): { key: string; anchor: TreeDiffAnchor; confidence: TreeDiffConfidence } {
+	const name = normalizeText(item.entity.name);
+	if (name) {
+		const count = counts.get(`${groupKey}\u0000${name}`);
+		if ((count?.before ?? 0) <= 1 && (count?.after ?? 0) <= 1) return { key: `name:${name}`, anchor: "name", confidence: "high" };
+	}
+	const posInSet = item.entity.structure?.posInSet;
+	if (typeof posInSet === "number" && Number.isFinite(posInSet)) return { key: `pos:${posInSet}`, anchor: "posInSet", confidence: "low" };
+	return { key: `idx:${item.index + 1}`, anchor: "index", confidence: "low" };
+}
+
+function instanceSummary(match: MatchedInstance): TreeDiffInstance {
+	return {
+		key: match.key,
+		ref: match.ref,
+		anchor: match.anchor,
+		confidence: match.confidence,
+		...(displayText(match.entity.name) ? { name: displayText(match.entity.name) } : {}),
+		...(displayText(match.entity.value) ? { value: displayText(match.entity.value) } : {}),
+		...(typeof match.entity.structure?.posInSet === "number" ? { posInSet: match.entity.structure.posInSet } : {}),
+	};
+}
+
+function matchedInstances(group: TemplateGroup, counts: Map<string, { before: number; after: number }>): MatchedInstance[] {
+	return group.members.map((item, order) => {
+		const key = instanceKey(group.descriptor.key, item, counts);
+		return { ...key, ref: item.entity.ref, entity: item.entity, order };
+	});
+}
+
+function bucket<T>(items: T[], shape: (item: T) => TreeDiffInstance): TreeDiffInstanceBucket {
+	return { count: items.length, instances: items.slice(0, MAX_TREE_DIFF_INSTANCES).map(shape), ...(items.length > MAX_TREE_DIFF_INSTANCES ? { truncated: true } : {}) };
+}
+
+function changedBucket(items: TreeDiffInstanceChange[]): TreeDiffChangedBucket {
+	return { count: items.length, instances: items.slice(0, MAX_TREE_DIFF_INSTANCES), ...(items.length > MAX_TREE_DIFF_INSTANCES ? { truncated: true } : {}) };
+}
+
+function fieldChanges(before: Entity, after: Entity): TreeDiffFieldChange[] {
+	const out: TreeDiffFieldChange[] = [];
+	for (const field of COMPARE_FIELDS) {
+		const beforeValue = fieldValue(before, field);
+		const afterValue = fieldValue(after, field);
+		if (beforeValue === afterValue) continue;
+		out.push({ field, ...(beforeValue !== undefined ? { before: beforeValue } : {}), ...(afterValue !== undefined ? { after: afterValue } : {}) });
+		if (out.length >= MAX_TREE_DIFF_CHANGED_FIELDS) break;
+	}
+	return out;
+}
+
+function reordered(before: MatchedInstance[], after: MatchedInstance[]): TreeTemplateDiff["reordered"] | undefined {
+	const beforeKeys = before.map((item) => item.key);
+	const afterKeySet = new Set(after.map((item) => item.key));
+	const beforeCommon = beforeKeys.filter((key) => afterKeySet.has(key));
+	const beforeKeySet = new Set(beforeKeys);
+	const afterCommon = after.map((item) => item.key).filter((key) => beforeKeySet.has(key));
+	if (beforeCommon.length < 2) return undefined;
+	if (beforeCommon.join("\u0000") === afterCommon.join("\u0000")) return undefined;
+	return { changed: true, commonCount: beforeCommon.length, beforeSample: beforeCommon.slice(0, 12), afterSample: afterCommon.slice(0, 12) };
+}
+
+function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: TemplateGroup | undefined, counts: Map<string, { before: number; after: number }>): TreeTemplateDiff | undefined {
+	const descriptor = afterGroup?.descriptor || beforeGroup?.descriptor;
+	if (!descriptor) return undefined;
+	const before = beforeGroup ? matchedInstances(beforeGroup, counts) : [];
+	const after = afterGroup ? matchedInstances(afterGroup, counts) : [];
+	const beforeByKey = new Map(before.map((item) => [item.key, item]));
+	const afterByKey = new Map(after.map((item) => [item.key, item]));
+	const appeared = after.filter((item) => !beforeByKey.has(item.key));
+	const disappeared = before.filter((item) => !afterByKey.has(item.key));
+	const changed: TreeDiffInstanceChange[] = [];
+	for (const item of after) {
+		const prior = beforeByKey.get(item.key);
+		if (!prior) continue;
+		const fields = fieldChanges(prior.entity, item.entity);
+		if (!fields.length) continue;
+		changed.push({ key: item.key, beforeRef: prior.ref, afterRef: item.ref, anchor: item.anchor, confidence: item.confidence, fields, ...(displayText(item.entity.name) ? { name: displayText(item.entity.name) } : {}) });
+	}
+	const order = reordered(before, after);
+	if (!appeared.length && !disappeared.length && !changed.length && !order) return undefined;
+	return {
+		templateKey: descriptor.key,
+		...(descriptor.container ? { container: descriptor.container } : {}),
+		...(descriptor.containerName ? { containerName: descriptor.containerName } : {}),
+		role: descriptor.role,
+		kind: descriptor.kind,
+		beforeCount: before.length,
+		afterCount: after.length,
+		appeared: bucket(appeared, instanceSummary),
+		disappeared: bucket(disappeared, instanceSummary),
+		changed: changedBucket(changed),
+		...(order ? { reordered: order } : {}),
+	};
+}
+
+export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[], options: TreeDiffOptions = {}): TreeDiff {
+	if (options.partialBaseline) return { summary: { templateCount: 0, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0, partialBaseline: true, unavailable: "treeDiff requires a full baseline; partial baselines suppress structure-level change projection" }, templates: [] };
+	const beforeGroups = groupEntities(beforeEntities);
+	const afterGroups = groupEntities(afterEntities);
+	const counts = buildNameCounts(beforeGroups, afterGroups);
+	const allKeys = new Set([...beforeGroups.map((group) => group.descriptor.key), ...afterGroups.map((group) => group.descriptor.key)]);
+	const beforeByKey = new Map(beforeGroups.map((group) => [group.descriptor.key, group]));
+	const afterByKey = new Map(afterGroups.map((group) => [group.descriptor.key, group]));
+	const templates = Array.from(allKeys)
+		.map((key) => buildTemplateDiff(beforeByKey.get(key), afterByKey.get(key), counts))
+		.filter((item): item is TreeTemplateDiff => !!item)
+		.sort((a, b) => Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount))
+		.slice(0, MAX_TEMPLATES);
+	const summary = templates.reduce<TreeDiffSummary>((acc, item) => ({
+		templateCount: acc.templateCount,
+		changedTemplateCount: acc.changedTemplateCount + 1,
+		appeared: acc.appeared + item.appeared.count,
+		disappeared: acc.disappeared + item.disappeared.count,
+		changed: acc.changed + item.changed.count,
+		reordered: acc.reordered + (item.reordered ? 1 : 0),
+	}), { templateCount: allKeys.size, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0 });
+	return { summary, templates };
+}

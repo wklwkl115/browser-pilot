@@ -2,7 +2,7 @@
 
 This folder is the **pure-core kernel** of ABML, the perception substrate under the `browser_*`
 tools. It models a web page as a trustworthy, actionable, focusable semantic graph — entities,
-refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping.
+refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping, and mechanism-arm structure projection.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
 Pure functions and types only. The browser-facing **runtime** lives next door in
@@ -28,6 +28,8 @@ kernel's entire public surface at a glance.
 | `resolveModel.ts` | Candidate scoring + resolve-result classification. |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
+| `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
+| `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb dispatch + actionability/verification failure helpers. |
@@ -51,8 +53,8 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   wire it in `verbs/router.ts`, and put the browser I/O in `../abml/verbs/<verb>Runtime.ts`. Keep
   the decision and the I/O on opposite sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
-  `ax.ts` (the merge) or `entity.ts` (the model). Stay generic — ABML models ARIA patterns, never
-  per-site/per-framework branches (see the perception roadmap doc).
+  `ax.ts` (the merge), `entity.ts` (the model), `templating.ts`, or `treeDiff.ts`. Stay generic —
+  ABML models ARIA patterns, never per-site/per-framework branches (see the perception roadmap doc).
 - **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.

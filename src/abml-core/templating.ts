@@ -25,6 +25,15 @@ export const MAX_TEMPLATES = 12;
 export type TemplateVaryField = "name" | "value" | "checked" | "selected" | "pressed" | "current" | "disabled";
 const VARY_FIELDS: TemplateVaryField[] = ["name", "value", "checked", "selected", "pressed", "current", "disabled"];
 
+export type TemplateGroupDescriptor = {
+	key: string;
+	container?: string;
+	containerName?: string;
+	role: string;
+	kind: EntityKind;
+	setSize?: number;
+};
+
 export type StructureTemplate = {
 	container?: string; // AX containerRole (list/grid/menu/group/…) when grouped by container
 	containerName?: string;
@@ -59,12 +68,32 @@ function containerNameOf(entity: Entity): string | undefined {
 // when already template-sized). Note: two distinct UNNAMED lists with the same containerRole collapse
 // to one template (the AX layer gives role+name, not a container identity) — an acceptable over-fold
 // for M1 (the shape stays correct; count is the sum); a container ref identity is a future refinement.
-function groupSignalOf(entity: Entity): [string, string, string] | [string, number] | undefined {
+function groupSignalOf(entity: Entity): ["c", string, string] | ["s", number] | undefined {
 	const containerRole = containerRoleOf(entity);
 	if (containerRole) return ["c", containerRole, containerNameOf(entity) ?? ""];
 	const setSize = entity.structure?.setSize;
 	if (typeof setSize === "number" && setSize >= MIN_TEMPLATE_INSTANCES) return ["s", setSize];
 	return undefined;
+}
+
+export function templateGroupDescriptorForEntity(entity: Entity): TemplateGroupDescriptor | undefined {
+	const signal = groupSignalOf(entity);
+	if (!signal) return undefined;
+	const key = JSON.stringify([signal, entity.role, entity.kind]);
+	if (signal[0] === "c") {
+		const [, container, containerName] = signal;
+		const setSize = entity.structure?.setSize;
+		return {
+			key,
+			...(container ? { container } : {}),
+			...(containerName ? { containerName } : {}),
+			role: entity.role,
+			kind: entity.kind,
+			...(typeof setSize === "number" ? { setSize } : {}),
+		};
+	}
+	const [, setSize] = signal;
+	return { key, role: entity.role, kind: entity.kind, setSize };
 }
 
 function fieldValue(entity: Entity, field: TemplateVaryField): unknown {
@@ -118,13 +147,12 @@ function buildTemplate(members: Entity[]): StructureTemplate {
 export function buildTemplateSummary(entities: Entity[]): TemplateSummary {
 	const groups = new Map<string, Entity[]>();
 	for (const entity of entities) {
-		const signal = groupSignalOf(entity);
-		if (!signal) continue;
+		const descriptor = templateGroupDescriptorForEntity(entity);
+		if (!descriptor) continue;
 		// JSON key = unambiguous (no delimiter collisions even when containerName contains spaces).
-		const key = JSON.stringify([signal, entity.role, entity.kind]);
-		const list = groups.get(key);
+		const list = groups.get(descriptor.key);
 		if (list) list.push(entity);
-		else groups.set(key, [entity]);
+		else groups.set(descriptor.key, [entity]);
 	}
 	const templates: StructureTemplate[] = [];
 	for (const members of groups.values()) {

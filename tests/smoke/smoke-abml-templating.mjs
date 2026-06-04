@@ -1,7 +1,9 @@
-// ABML mechanism arm — M1 structure templating live smoke. Drives a real browser through the genuine
-// browser_observe tool seam and asserts the large-page compression end-to-end:
+// ABML mechanism arm — M1 structure templating + M2a treeDiff live smoke. Drives a real browser
+// through the genuine browser_observe/browser_execute tool seams and asserts:
 //   A) observe(mode:scan) on a 6-link semantic list -> envelope.templates carries one structure
 //      template (role link, count >= 4, varies includes name, instanceRefs are pi-ref:// handles).
+//   B) mutate the list, then observe(mode:scan, baseline:snapshotId) -> envelope.treeDiff reports
+//      O(change) structure delta (one high-confidence appeared instance), not nested text churn.
 // The fixture's <a> items share an AX list container AND carry aria-setsize, so templating fires via
 // either grouping path. Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge
 // + bridge + extension copy, so it never touches the user's browser.
@@ -117,7 +119,9 @@ try {
   const adapter = new ToolCollectingAdapter();
   registerBrowserTools(adapter, bridge, async () => bridge, { securityToolsEnabled: profile.securityToolsEnabled });
   const observe = adapter.getTool("browser_observe");
+  const execute = adapter.getTool("browser_execute");
   if (!observe) throw new Error("browser_observe not registered");
+  if (!execute) throw new Error("browser_execute not registered");
   const browserSessionId = bridge.snapshot().browserSessionId;
 
   // ── A) observe the repeated list → envelope.templates folds it into one structure template ──────
@@ -134,7 +138,45 @@ try {
     countOk, refsOk, variesName,
   });
 
-  result.ok = templatingOk;
+
+  // ── B) mutate the repeated list → baseline observe emits O(change) treeDiff ─────────────────
+  await execute.execute("templating", {
+    tabId, browserSessionId,
+    script: `(() => {
+      const list = document.querySelector('ul[aria-label="Products"]');
+      if (!list) return { ok: false, reason: 'missing-list' };
+      const items = Array.from(list.children);
+      const charlie = items.find((li) => /Charlie/.test(li.textContent || ''));
+      if (charlie) list.insertBefore(charlie, list.firstElementChild);
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '#golf';
+      a.textContent = 'Product Golf';
+      a.setAttribute('aria-setsize', '7');
+      a.setAttribute('aria-posinset', '7');
+      li.appendChild(a);
+      list.appendChild(li);
+      Array.from(list.querySelectorAll('a')).forEach((link, index) => {
+        link.setAttribute('aria-setsize', '7');
+        link.setAttribute('aria-posinset', String(index + 1));
+      });
+      return { ok: true, count: list.querySelectorAll('a').length };
+    })()`,
+  }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+  const afterEnv = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, detailLevel: "detailed", baseline: { snapshotId: env.snapshot?.snapshotId } });
+  const treeDiff = afterEnv.treeDiff;
+  const treeTemplate = Array.isArray(treeDiff?.templates) ? treeDiff.templates[0] : undefined;
+  const treeAppearedOk = Number(treeDiff?.summary?.appeared) === 1 && Number(treeDiff?.summary?.disappeared) === 0 && treeTemplate?.appeared?.instances?.some((item) => item?.name === "Product Golf" && item?.confidence === "high");
+  const nestedChurnSuppressed = Number(treeDiff?.summary?.templateCount) === 1 && Number(treeDiff?.summary?.changedTemplateCount) === 1;
+  const treeDiffOk = !!treeDiff && treeAppearedOk && nestedChurnSuppressed;
+  record("treeDiff.delta", treeDiffOk, {
+    summary: treeDiff?.summary,
+    template: treeTemplate ? { container: treeTemplate.container, containerName: treeTemplate.containerName, beforeCount: treeTemplate.beforeCount, afterCount: treeTemplate.afterCount, appeared: treeTemplate.appeared, disappeared: treeTemplate.disappeared, changed: treeTemplate.changed, reordered: treeTemplate.reordered } : null,
+    treeAppearedOk,
+    nestedChurnSuppressed,
+  });
+
+  result.ok = templatingOk && treeDiffOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

@@ -96,7 +96,7 @@ All `browser_*` tools — including web-security — are first-class and exposed
 
 ## Action
 
-- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after state, pass scan `baseline` from a prior entity list / scan summary/envelope / snapshotId to get envelope `diff` (`appeared/disappeared/changed/focusedRef`) and possible `form-dependency` intent.
+- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after state, pass scan `baseline` from a prior entity list / scan summary/envelope / snapshotId to get envelope `diff` (`appeared/disappeared/changed/focusedRef`), structure-level `treeDiff` for repeated lists/tables, and possible `form-dependency` intent.
 - Selector miss → re-observe `scan`/`html` → inspect `browser_frame` → retry verified selector/frame.
 - `browser_execute` = JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `browser_command` → dispatch `input`/`change` → read back.
 - `monitor:true` only when a before/after DOM diff helps. `redact:false` only for explicit local raw evidence.

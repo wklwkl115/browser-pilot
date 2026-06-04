@@ -11,9 +11,7 @@
 
 ## 当前激活项
 
-- **Artifact + JS Bundle Readability 已完成（P1–P4 + docs/verification）**：执行合同 `docs/artifact-js-bundle-readability-execution-plan.md`。已落地压缩 JS / 大 artifact 读取窗口、source map manifest、internal-only `/browser-js-ast` 大包 lexical fallback + slice、hook install 幂等诊断。边界保持：不新增公开 `browser_*` 工具、不新增 XSS/CTF 专用扫描器、不恢复 withdrawn 工具面。
-- 当前无新的并行大型架构主线；后续新能力或继续恢复 ABML 机制臂需用户重新确认并另按执行合同推进。
-- **ABML 机制臂**（执行合同 `docs/abml-mechanism-arm-execution-plan.md`）因用户显式改优先级暂停；后续恢复需重新确认，不得与本主线并行。
+- **ABML 机制臂 M2a — living treeDiff-first**：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。当前阶段只做 treeDiff 投影：复用 M1 ARIA-grounded template groups，对 `browser_observe(mode=scan, baseline)` 输出 `envelope.treeDiff`。边界：不新增公开 `browser_*` 工具、不改 native protocol、不改 `stableRefIdForDescriptor` / ref minting、不做 DOM tag/class/selector 猜测。M2b 语义 ref anchor 需 M2a 证据与单独 gate 后再拍板。
 
 ## 已完成但不再作为当前队列
 

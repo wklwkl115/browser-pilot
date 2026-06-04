@@ -9,6 +9,7 @@ import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
 import { buildTemplateSummary } from "../abml/templating.js";
+import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -464,6 +465,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
+	const abmlTreeDiff: TreeDiff | undefined = observation.abmlRead?.ok === true && baseline
+		? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
+		: undefined;
 	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
 	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
 	// fully inline in envelope.causal regardless — passive P0 behavior preserved):
@@ -495,6 +499,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...baseSummary,
 				abmlIntegrated: true,
 				...(abmlDiff ? { diff: abmlDiff } : {}),
+				...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 				...causalBlock,
 				focus: {
 					...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
@@ -512,6 +517,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					// relation graph. Budget-immune (lifted to envelope top-level alongside relations).
 					inference: buildInferenceSummary(attributedEntities, relSummary, abmlDiff),
 					...(abmlDiff ? { diff: abmlDiff } : {}),
+					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
 					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
 				},

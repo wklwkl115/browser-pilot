@@ -10,14 +10,14 @@ one-way dependency direction:
 
 - **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
-  verb decisions, error shaping, and temporal entity diff. Portable, unit-testable without a
-  browser, and the long-term candidate for an isolated `@pi/abml-core` package. **18 modules +
-  an `index.ts` barrel.**
+  verb decisions, error shaping, temporal entity diff, and mechanism-arm structure diff. Portable,
+  unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
+  package. **21 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
   data. **7 files.**
 
-`src/abml/` also keeps **18 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/` also keeps **21 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
 `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
 the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
@@ -42,7 +42,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
 
-## Pure core (19 — zero browser/Node deps)
+## Pure core (21 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -58,6 +58,7 @@ each doc links back here.
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
 | `templating.ts` | ABML mechanism arm (M1): structure templating — folds repeated sibling entities (same AX container / aria-setsize + role/kind) into one template + compact instances + handles. |
+| `treeDiff.ts` | ABML mechanism arm (M2a): template-level living diff over repeated structures; O(change) projection for scan baselines without changing ref minting. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
 | `verbs/click.ts` | Click verb decision logic (pure; no browser call). |
@@ -95,7 +96,7 @@ otherwise move the would-be consumer to RUNTIME instead.
 
 ## Kernel entry point
 
-`src/abml-core/index.ts` is the public barrel — `export *` of all 18 modules, the single place
+`src/abml-core/index.ts` is the public barrel — `export *` of all pure-core modules, the single place
 that shows everything the kernel exposes. It is the future package's entry point. It is additive:
 existing consumers still import individual modules through the `src/abml/` shims and are unchanged.
 

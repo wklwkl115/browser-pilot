@@ -18,6 +18,7 @@ export * from "./diff.js";
 export * from "./stream.js";
 export * from "./causal.js";
 export * from "./templating.js";
+export * from "./treeDiff.js";
 export * from "./errors.js";
 export * from "./verbs/router.js";
 export * from "./verbs/click.js";

@@ -126,7 +126,8 @@
     "check:abml-inference": "tsx tests/contracts/tools/check-abml-inference.mjs",
     "check:abml-diff": "tsx tests/contracts/tools/check-abml-diff.mjs",
     "check:abml-causal": "tsx tests/contracts/tools/check-abml-causal.mjs",
-    "check:abml-templating": "tsx tests/contracts/tools/check-abml-templating.mjs"
+    "check:abml-templating": "tsx tests/contracts/tools/check-abml-templating.mjs",
+    "check:abml-tree-diff": "tsx tests/contracts/tools/check-abml-tree-diff.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
