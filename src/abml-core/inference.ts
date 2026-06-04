@@ -4,32 +4,41 @@
 // rides the envelope top-level alongside gist/outline/relations, budget-immune.
 //
 // Patterns detected:
-//   login         — password-type input + at least one submit control
-//   search        — searchbox role or search landmark with editable inputs
-//   filter-panel  — search landmark + 2+ editable inputs (structured filter UI)
-//   single-choice — radiogroup container or 2+ radio entities
-//   multi-choice  — 3+ checkbox entities
-//   expandable    — expandedTarget relations present (accordion/combobox/disclosure)
-//   data-grid     — table/grid cells (tableCells in relation summary > 0)
-//   navigation    — nav with aria-current item (currentIn relation)
-//   dialog        — dialog or alertdialog entity
+//   login            — password-type input + submit control; evidence.submitRef = button ref
+//   search           — searchbox role or search landmark with editable inputs
+//   filter-panel     — search landmark + 2+ editable inputs (structured filter UI)
+//   single-choice    — radiogroup container or 2+ radio entities
+//   multi-choice     — 3+ checkbox entities; high when grouped in a container, medium when scattered
+//   expandable       — expandedTarget >= 2 (accordion/combobox/disclosure; threshold filters
+//                      single nav-toggle noise found in live validation)
+//   data-grid        — grid/treegrid role entity, or tableCells >= 50
+//   navigation       — nav with aria-current item (currentIn relation)
+//   dialog           — dialog or alertdialog entity
+//   tabbed-interface — tablist role or 2+ tab entities (switch tabs to see more content)
+//   alert-region     — alert or status role (live feedback area after actions)
 import type { Entity } from "./entity.js";
 import type { RelationSummary } from "./relations.js";
 
 export type PageIntent =
-	| "login"         // password-type input + submit button
-	| "search"        // searchbox role or search landmark
-	| "filter-panel"  // search landmark + 2+ editable inputs
-	| "single-choice" // radiogroup or 2+ radio entities
-	| "multi-choice"  // 3+ checkbox entities
-	| "expandable"    // expandedTarget relations present
-	| "data-grid"     // table/grid with cell relations
-	| "navigation"    // nav with aria-current (currentIn) relation
-	| "dialog";       // modal dialog or alertdialog
+	| "login"            // password-type input + submit button
+	| "search"           // searchbox role or search landmark
+	| "filter-panel"     // search landmark + 2+ editable inputs
+	| "single-choice"    // radiogroup or 2+ radio entities
+	| "multi-choice"     // 3+ checkbox entities
+	| "expandable"       // expandedTarget >= 2 relations
+	| "data-grid"        // table/grid with cell relations
+	| "navigation"       // nav with aria-current (currentIn) relation
+	| "dialog"           // modal dialog or alertdialog
+	| "tabbed-interface" // tablist or 2+ tab entities
+	| "alert-region";    // alert or status live region
 
 export type DetectedIntent = {
 	intent: PageIntent;
 	confidence: "high" | "medium" | "low";
+	// Optional relational facts about the detected pattern. Only present when the detector
+	// has useful entity refs to surface (e.g. login includes submitRef so the agent knows
+	// exactly which button to click without re-scanning).
+	evidence?: Record<string, unknown>;
 };
 
 export type InferenceSummary = {
@@ -62,18 +71,18 @@ function countEditable(entities: Entity[]): number {
 	return entities.filter((e) => e.kind === "control" && e.state.editable).length;
 }
 
-// login: password-type input exists (DOM-sourced inputKind from the scan) + at least one
-// non-disabled button/submit. The form landmark need not be present — a passwordless login
-// or a single-field API-key form still counts when those two signals co-occur.
+// login: password-type input (DOM-sourced inputKind) + at least one non-disabled button.
+// evidence.submitRef points to the first non-disabled button so the agent knows which
+// ref to click without a follow-up scan.
 function detectLogin(entities: Entity[]): DetectedIntent | undefined {
 	if (!hasInputKind(entities, "password")) return undefined;
-	const hasButton = entities.some((e) => e.kind === "control" && (e.role === "button" || e.role === "link") && !e.state.disabled);
-	return { intent: "login", confidence: hasButton ? "high" : "medium" };
+	const submitButton = entities.find((e) => e.kind === "control" && (e.role === "button" || e.role === "link") && !e.state.disabled);
+	if (!submitButton) return { intent: "login", confidence: "medium" };
+	return { intent: "login", confidence: "high", evidence: { submitRef: submitButton.ref } };
 }
 
 // search: searchbox role (from <input type=search> via DOM roleOf) is a strong signal.
-// search landmark alone (ARIA search role applied to a region) is medium — it could be a
-// search results page with no input box, or a sidebar filter.
+// search landmark alone (ARIA search role applied to a region) is medium.
 function detectSearch(entities: Entity[]): DetectedIntent | undefined {
 	if (hasRole(entities, "searchbox")) return { intent: "search", confidence: "high" };
 	if (hasLandmark(entities, "search") && countEditable(entities) >= 1) return { intent: "search", confidence: "medium" };
@@ -82,7 +91,6 @@ function detectSearch(entities: Entity[]): DetectedIntent | undefined {
 
 // filter-panel: a search-landmark region containing 2+ editable inputs signals a structured
 // filter UI (date range, facets, dropdown filters) as opposed to a single search box.
-// Requires both signals: the ARIA landmark (intentional by the author) AND multiple inputs.
 function detectFilterPanel(entities: Entity[]): DetectedIntent | undefined {
 	if (!hasLandmark(entities, "search")) return undefined;
 	if (countEditable(entities) < 2) return undefined;
@@ -90,8 +98,7 @@ function detectFilterPanel(entities: Entity[]): DetectedIntent | undefined {
 }
 
 // single-choice: radiogroup container in the AX tree is the clean signal (high confidence).
-// 2+ radio entities without an explicit radiogroup is medium — they may be ungrouped radios
-// still representing a single-choice set (common in legacy HTML).
+// 2+ radio entities without an explicit radiogroup is medium.
 function detectSingleChoice(entities: Entity[]): DetectedIntent | undefined {
 	if (hasRole(entities, "radiogroup")) return { intent: "single-choice", confidence: "high" };
 	if (countRole(entities, "radio") >= 2) return { intent: "single-choice", confidence: "medium" };
@@ -99,29 +106,35 @@ function detectSingleChoice(entities: Entity[]): DetectedIntent | undefined {
 }
 
 // multi-choice: 3+ checkboxes suggests a multi-select list (options, features, tags).
-// Threshold at 3 rather than 2 because form-footer clusters (terms + newsletter) are common
-// and don't represent a semantic multi-choice group.
+// High confidence when 3+ share the same ARIA group container (intentional grouping by author).
+// Medium for scattered checkboxes — could be unrelated form controls (terms + newsletter).
 function detectMultiChoice(entities: Entity[]): DetectedIntent | undefined {
-	if (countRole(entities, "checkbox") >= 3) return { intent: "multi-choice", confidence: "medium" };
-	return undefined;
+	const checkboxes = entities.filter((e) => e.role?.toLowerCase() === "checkbox");
+	if (checkboxes.length < 3) return undefined;
+	// Count checkboxes per container. A group with 3+ checkboxes = intentional multi-choice.
+	const groupCounts = new Map<string, number>();
+	for (const e of checkboxes) {
+		const role = typeof e.hints?.containerRole === "string" ? e.hints.containerRole : null;
+		if (!role) continue;
+		const key = `${role}|${typeof e.hints?.containerName === "string" ? e.hints.containerName : ""}`;
+		groupCounts.set(key, (groupCounts.get(key) ?? 0) + 1);
+	}
+	const hasGrouped = Array.from(groupCounts.values()).some((count) => count >= 3);
+	return { intent: "multi-choice", confidence: hasGrouped ? "high" : "medium" };
 }
 
-// expandable: expandedTarget is the narrowest, highest-signal relation — it fires only when
-// aria-expanded + aria-controls co-occur (accordion panels, combobox listboxes, disclosure
-// widgets). controls alone is broader (any aria-controls reference) so we don't use it here.
+// expandable: expandedTarget >= 2 filters the single-nav-toggle case found in live validation
+// (Bing/GitLab each had expandedTarget=1 from a single hamburger/dropdown menu but aren't
+// really "expandable" pages). Two or more expand relations suggest the pattern is structural.
+const EXPANDABLE_THRESHOLD = 2;
 function detectExpandable(relSummary: RelationSummary): DetectedIntent | undefined {
-	if ((relSummary.summary.expandedTarget ?? 0) > 0) return { intent: "expandable", confidence: "high" };
+	if ((relSummary.summary.expandedTarget ?? 0) >= EXPANDABLE_THRESHOLD) return { intent: "expandable", confidence: "high" };
 	return undefined;
 }
 
-// data-grid: two signals, priority-ordered:
-//   1. grid/treegrid role entity present — ARIA interactive grid (sortable/selectable rows),
-//      high confidence regardless of cell count.
-//   2. tableCells >= 50 — large static table likely representing structured data content.
-//      Threshold filters documentation/attribute tables that appear on almost every reference
-//      page (W3C APG, MDN) and would otherwise flood any agent reading the page with
-//      false data-grid signals. tableCells > 0 was too broad in live validation (APG pages
-//      all have 12–42-cell attribute tables; only the actual data page had 162+ cells).
+// data-grid: grid/treegrid role (ARIA interactive grid) or tableCells >= 50 (large table).
+// Threshold of 50 filters documentation/attribute tables on reference pages (W3C APG, MDN
+// have 12–42-cell attribute tables on almost every page — live validation confirmed this).
 const DATA_GRID_CELL_THRESHOLD = 50;
 function detectDataGrid(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
 	if (hasRole(entities, "grid") || hasRole(entities, "treegrid")) return { intent: "data-grid", confidence: "high" };
@@ -129,8 +142,7 @@ function detectDataGrid(entities: Entity[], relSummary: RelationSummary): Detect
 	return undefined;
 }
 
-// navigation: currentIn fires when an aria-current entity has a resolved nav/list container
-// — the page has an active navigation state (breadcrumb page, selected tab, current menu item).
+// navigation: currentIn fires when an aria-current entity has a resolved nav/list container.
 function detectNavigation(relSummary: RelationSummary): DetectedIntent | undefined {
 	if ((relSummary.summary.currentIn ?? 0) > 0) return { intent: "navigation", confidence: "high" };
 	return undefined;
@@ -144,12 +156,32 @@ function detectDialog(entities: Entity[]): DetectedIntent | undefined {
 	return undefined;
 }
 
+// tabbed-interface: tablist role is the authoritative ARIA container for a tab panel set.
+// 2+ tab entities without an explicit tablist is medium — ungrouped tabs exist in the wild.
+// Tells the agent: switch tabs to access content not visible in the current panel.
+function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
+	if (hasRole(entities, "tablist")) return { intent: "tabbed-interface", confidence: "high" };
+	if (countRole(entities, "tab") >= 2) return { intent: "tabbed-interface", confidence: "medium" };
+	return undefined;
+}
+
+// alert-region: role="alert" (assertive live region, e.g. validation errors) or role="status"
+// (polite live region, e.g. save confirmations). Tells the agent where to look for feedback
+// after an action — essential for form validation and async operation results.
+function detectAlertRegion(entities: Entity[]): DetectedIntent | undefined {
+	if (entities.some((e) => e.role === "alert" || e.role === "status")) {
+		return { intent: "alert-region", confidence: "high" };
+	}
+	return undefined;
+}
+
 // ── Public builder ─────────────────────────────────────────────────────────────
 
 // Detect generic ARIA semantic patterns over the merged entity list + R1 relation summary.
 // Every detector is independent, generic (no per-site/per-type branches), and returns at
-// most one DetectedIntent. Dedup rule: "filter-panel" supersedes "search" (the former
-// implies the latter). Order is deterministic (definition order).
+// most one DetectedIntent. Dedup rules:
+//   - "filter-panel" supersedes "search" (the former implies the latter).
+// Order is deterministic (definition order below).
 export function buildInferenceSummary(entities: Entity[], relSummary: RelationSummary): InferenceSummary {
 	const intents: DetectedIntent[] = [];
 	const add = (d: DetectedIntent | undefined): void => { if (d) intents.push(d); };
@@ -164,5 +196,7 @@ export function buildInferenceSummary(entities: Entity[], relSummary: RelationSu
 	add(detectDataGrid(entities, relSummary));
 	add(detectNavigation(relSummary));
 	add(detectDialog(entities));
+	add(detectTabbedInterface(entities));
+	add(detectAlertRegion(entities));
 	return { intents };
 }

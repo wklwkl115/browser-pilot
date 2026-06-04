@@ -1,13 +1,9 @@
 // ABML R2 inference layer contract.
 //
-// Verifies the full inference pipeline end-to-end without a browser: a hand-built entity +
-// relation set flows through buildInferenceSummary, and the result surfaces at the envelope
-// top-level via the real distiller (budget-immune like gist/outline/relations). Asserts:
-// - All 9 PageIntent patterns are detected from their canonical triggers.
-// - inference.intents survives to the envelope top-level.
-// - filter-panel supersedes search (no duplicate).
-// - Static wiring: observeRunners imports buildInferenceSummary; resultMiddleware has
-//   envelopeInference; InferenceSummarySchema is exported from outputSchemas.
+// Verifies the full inference pipeline end-to-end without a browser: all 11 PageIntent
+// patterns detected from their canonical triggers, plus P2 improvements (evidence field,
+// grouped multi-choice confidence, expandable threshold, tabbed-interface, alert-region).
+// Also asserts budget immunity and static wiring.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -17,8 +13,6 @@ import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function entity(role, opts = {}) {
 	return {
@@ -31,25 +25,24 @@ function entity(role, opts = {}) {
 		...(opts.hints ? { hints: opts.hints } : {}),
 	};
 }
-
 function emptyRel() { return { summary: {}, highlights: [] }; }
 function relWith(counts) { return { summary: counts, highlights: [] }; }
 const kinds = (result) => result.intents.map((i) => i.intent);
 
-// ── All 9 pattern families ─────────────────────────────────────────────────────
+// ── All 11 pattern families ───────────────────────────────────────────────────
 
-// login
+// login (P2: evidence.submitRef)
 const loginEntities = [
 	entity("textbox", { editable: true, hints: { inputKind: "password" } }),
-	entity("button"),
+	entity("button", { ref: "pi-ref://control/submit-btn" }),
 ];
 const loginResult = buildInferenceSummary(loginEntities, emptyRel());
-assert.ok(kinds(loginResult).includes("login"), "login pattern detected");
+assert.ok(kinds(loginResult).includes("login"), "login detected");
 assert.equal(loginResult.intents.find((i) => i.intent === "login")?.confidence, "high");
+assert.equal(loginResult.intents.find((i) => i.intent === "login")?.evidence?.submitRef, "pi-ref://control/submit-btn", "login evidence.submitRef set");
 
 // search (high — searchbox role)
-const searchResult = buildInferenceSummary([entity("searchbox", { editable: true })], emptyRel());
-assert.ok(kinds(searchResult).includes("search"), "search (searchbox role) detected");
+assert.ok(kinds(buildInferenceSummary([entity("searchbox", { editable: true })], emptyRel())).includes("search"));
 
 // filter-panel (supersedes search)
 const filterEntities = [
@@ -59,107 +52,109 @@ const filterEntities = [
 ];
 const filterResult = buildInferenceSummary(filterEntities, emptyRel());
 assert.ok(kinds(filterResult).includes("filter-panel"), "filter-panel detected");
-assert.ok(!kinds(filterResult).includes("search"), "search not emitted when filter-panel fires");
+assert.ok(!kinds(filterResult).includes("search"), "search suppressed");
 
 // single-choice (radiogroup)
-const scResult = buildInferenceSummary([entity("radiogroup", { kind: "region" })], emptyRel());
-assert.ok(kinds(scResult).includes("single-choice"), "single-choice (radiogroup) detected");
+assert.ok(kinds(buildInferenceSummary([entity("radiogroup", { kind: "region" })], emptyRel())).includes("single-choice"));
 
-// multi-choice (3+ checkboxes)
+// multi-choice (P1: high when grouped)
+const groupHints = { containerRole: "group", containerName: "Sport" };
 const mcResult = buildInferenceSummary([
-	entity("checkbox"),
-	entity("checkbox", { ref: "pi-ref://control/cb2" }),
-	entity("checkbox", { ref: "pi-ref://control/cb3" }),
+	entity("checkbox", { hints: groupHints }),
+	entity("checkbox", { hints: groupHints, ref: "pi-ref://control/cb2" }),
+	entity("checkbox", { hints: groupHints, ref: "pi-ref://control/cb3" }),
 ], emptyRel());
-assert.ok(kinds(mcResult).includes("multi-choice"), "multi-choice (3 checkboxes) detected");
+assert.ok(kinds(mcResult).includes("multi-choice"), "multi-choice detected");
+assert.equal(mcResult.intents.find((i) => i.intent === "multi-choice")?.confidence, "high", "grouped → high confidence");
 
-// expandable (expandedTarget relation)
-const expResult = buildInferenceSummary([], relWith({ expandedTarget: 1 }));
-assert.ok(kinds(expResult).includes("expandable"), "expandable detected");
+// expandable (P1: threshold >= 2, not 1)
+assert.ok(kinds(buildInferenceSummary([], relWith({ expandedTarget: 2 }))).includes("expandable"), "expandable at 2");
+assert.ok(!kinds(buildInferenceSummary([], relWith({ expandedTarget: 1 }))).includes("expandable"), "expandedTarget=1 suppressed");
 
-// data-grid: grid role entity (primary signal) OR tableCells >= 50 (large table threshold)
-const gridResult = buildInferenceSummary([entity("grid", { kind: "region" })], relWith({}));
-assert.ok(kinds(gridResult).includes("data-grid"), "data-grid detected from grid role");
-const gridByTableResult = buildInferenceSummary([], relWith({ tableCells: 50 }));
-assert.ok(kinds(gridByTableResult).includes("data-grid"), "data-grid detected from tableCells>=50");
-const noGridResult = buildInferenceSummary([], relWith({ tableCells: 42 }));
-assert.ok(!kinds(noGridResult).includes("data-grid"), "tableCells=42 (doc table) does NOT trigger data-grid");
+// data-grid (grid role OR tableCells >= 50)
+assert.ok(kinds(buildInferenceSummary([entity("grid", { kind: "region" })], emptyRel())).includes("data-grid"), "data-grid from grid role");
+assert.ok(kinds(buildInferenceSummary([], relWith({ tableCells: 50 }))).includes("data-grid"), "data-grid from tableCells=50");
+assert.ok(!kinds(buildInferenceSummary([], relWith({ tableCells: 42 }))).includes("data-grid"), "tableCells=42 suppressed");
 
-// navigation (currentIn relation)
-const navResult = buildInferenceSummary([], relWith({ currentIn: 1 }));
-assert.ok(kinds(navResult).includes("navigation"), "navigation detected");
+// navigation
+assert.ok(kinds(buildInferenceSummary([], relWith({ currentIn: 1 }))).includes("navigation"));
 
 // dialog
-const dialogResult = buildInferenceSummary([entity("dialog", { kind: "region" })], emptyRel());
-assert.ok(kinds(dialogResult).includes("dialog"), "dialog detected");
+assert.ok(kinds(buildInferenceSummary([entity("dialog", { kind: "region" })], emptyRel())).includes("dialog"));
+
+// tabbed-interface (P0: new)
+const tiResult = buildInferenceSummary([entity("tablist", { kind: "region" })], emptyRel());
+assert.ok(kinds(tiResult).includes("tabbed-interface"), "tabbed-interface detected");
+assert.equal(tiResult.intents.find((i) => i.intent === "tabbed-interface")?.confidence, "high");
+
+// alert-region (P0: new)
+const arResult = buildInferenceSummary([entity("alert", { kind: "region" })], emptyRel());
+assert.ok(kinds(arResult).includes("alert-region"), "alert-region detected");
+assert.equal(arResult.intents.find((i) => i.intent === "alert-region")?.confidence, "high");
+
+// status role also triggers alert-region
+assert.ok(kinds(buildInferenceSummary([entity("status", { kind: "region" })], emptyRel())).includes("alert-region"), "status → alert-region");
 
 // ── Budget immunity: inference survives to envelope top-level ─────────────────
 
 const envelopeSummary = {
 	abmlIntegrated: true,
 	focus: {
-		gist: { landmarks: ["main"], controlCount: 2, containerCount: 1 },
-		outline: [{ container: "radiogroup", name: "Options", memberCount: 2, controlCount: 2, memberRefs: ["a", "b"] }],
+		gist: { landmarks: ["main"], controlCount: 3, containerCount: 1 },
+		outline: [{ container: "tablist", name: "Settings", memberCount: 3, controlCount: 3, memberRefs: ["a", "b", "c"] }],
 		relations: { summary: { tableCells: 50, currentIn: 1 }, highlights: [] },
-		inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "navigation", confidence: "high" }] },
-		primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "radio", name: "A" }],
+		inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "tabbed-interface", confidence: "high" }, { intent: "alert-region", confidence: "high" }] },
+		primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "tab", name: "Settings" }],
 	},
 };
 const result = await distilledTextResult("body", {
-	toolName: "browser_observe",
-	command: "scan",
-	detailLevel: "summary",
-	maxChars: 4_000,
-	fallbackName: "observe-scan",
-	summary: envelopeSummary,
+	toolName: "browser_observe", command: "scan", detailLevel: "summary",
+	maxChars: 4_000, fallbackName: "observe-scan", summary: envelopeSummary,
 });
 const envelope = JSON.parse(result.content[0].text);
-assert.ok(typeof envelope.inference === "object" && envelope.inference !== null, "inference surfaced at envelope top-level");
-assert.ok(Array.isArray(envelope.inference.intents) && envelope.inference.intents.length === 2, "inference.intents present and correct length");
-assert.equal(envelope.inference.intents[0].intent, "data-grid", "first intent is data-grid");
+assert.ok(typeof envelope.inference === "object" && envelope.inference !== null, "inference at envelope top-level");
+assert.ok(Array.isArray(envelope.inference.intents) && envelope.inference.intents.length === 3, "3 intents present");
+assert.ok(envelope.inference.intents.some((i) => i.intent === "tabbed-interface"), "tabbed-interface in envelope");
+assert.ok(envelope.inference.intents.some((i) => i.intent === "alert-region"), "alert-region in envelope");
 
-// Budget-squeeze survival: big summary still keeps inference at top-level.
-const tightSummary = {
-	abmlIntegrated: true,
-	focus: {
-		gist: { landmarks: ["main"], controlCount: 50 },
-		outline: [{ container: "radiogroup", name: "Big", memberCount: 50, memberRefs: [] }],
-		relations: { summary: { tableCells: 200 }, highlights: [] },
-		inference: { intents: [{ intent: "data-grid", confidence: "high" }] },
-		primary_entities: Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "radio", name: `option ${i} ${"pad ".repeat(60)}` })),
-	},
-};
+// Budget-squeeze survival
 const tightResult = await distilledTextResult("body", {
 	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 3_000, fallbackName: "observe-scan",
-	summary: tightSummary,
+	summary: {
+		abmlIntegrated: true,
+		focus: {
+			gist: { landmarks: ["main"], controlCount: 50 },
+			outline: [{ container: "tablist", name: "Big", memberCount: 50, memberRefs: [] }],
+			relations: { summary: { tableCells: 200 }, highlights: [] },
+			inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "tabbed-interface", confidence: "high" }] },
+			primary_entities: Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "tab", name: `tab ${i} ${"pad ".repeat(60)}` })),
+		},
+	},
 });
 const tightEnvelope = JSON.parse(tightResult.content[0].text);
 assert.ok(typeof tightEnvelope.inference === "object", "inference survives budget squeeze");
-assert.equal(tightEnvelope.inference?.intents?.[0]?.intent, "data-grid", "inference.intents intact under tight budget");
+assert.ok(tightEnvelope.inference?.intents?.some((i) => i.intent === "tabbed-interface"), "tabbed-interface intact under tight budget");
 
 // ── Static wiring guards ──────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
-assert.ok(observeSrc.includes("buildInferenceSummary"), "observeRunners must import + call buildInferenceSummary");
-assert.ok(observeSrc.includes("inference:"), "observeRunners must surface focus.inference");
+assert.ok(observeSrc.includes("buildInferenceSummary") && observeSrc.includes("inference:"), "observeRunners wires inference");
 
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
-assert.ok(middlewareSrc.includes("envelopeInference"), "resultMiddleware must define envelopeInference");
-assert.ok(middlewareSrc.includes("inference?"), "resultMiddleware DistilledEnvelope must declare inference?");
+assert.ok(middlewareSrc.includes("envelopeInference") && middlewareSrc.includes("inference?"), "resultMiddleware lifts inference");
 
 const schemasSrc = readRepo("src/tools/summaries/outputSchemas.ts");
-assert.ok(schemasSrc.includes("InferenceSummarySchema"), "outputSchemas must export InferenceSummarySchema");
+assert.ok(schemasSrc.includes("InferenceSummarySchema"), "InferenceSummarySchema exported");
 
 const inferenceSrc = readRepo("src/abml-core/inference.ts");
-assert.ok(inferenceSrc.includes("buildInferenceSummary") && inferenceSrc.includes("PageIntent"), "inference.ts must declare buildInferenceSummary + PageIntent");
+assert.ok(inferenceSrc.includes("tabbed-interface") && inferenceSrc.includes("alert-region"), "new intents in inference.ts");
+assert.ok(inferenceSrc.includes("evidence?"), "evidence field on DetectedIntent");
+assert.ok(inferenceSrc.includes("EXPANDABLE_THRESHOLD"), "expandable threshold constant");
 
 const scanSrc = readRepo("src/scan/buildScanScript.ts");
-assert.ok(scanSrc.includes("inputKind"), "scan script must capture inputKind for INPUT elements");
-
-const entitySrc = readRepo("src/abml-core/entity.ts");
-assert.ok(entitySrc.includes("inputKind"), "entity builder must pass inputKind to hints");
+assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 
 const pkg = JSON.parse(readRepo("package.json"));
-assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "package must expose check:abml-inference");
+assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — login/search/filter-panel/single-choice/multi-choice/expandable/data-grid/navigation/dialog all detected; inference.intents at envelope top-level (budget-immune); static wiring verified`);
+console.log(`abml inference ok — 11 patterns (login/search/filter-panel/single-choice/multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region); evidence.submitRef; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);

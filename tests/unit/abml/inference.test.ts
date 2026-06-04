@@ -1,6 +1,6 @@
-// ABML R2 — inference layer unit tests. Each detector is independent; tests cover every
-// PageIntent pattern (login/search/filter-panel/single-choice/multi-choice/expandable/
-// data-grid/navigation/dialog) and dedup behaviour (filter-panel supersedes search).
+// ABML R2 — inference layer unit tests. Covers all 11 PageIntent patterns plus
+// dedup (filter-panel supersedes search), evidence (login submitRef), multi-choice
+// container grouping confidence, and expandable threshold.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildInferenceSummary, type InferenceSummary } from "../../../src/abml-core/inference.ts";
@@ -30,40 +30,32 @@ function entity(opts: {
 	};
 }
 
-function emptyRelations(): RelationSummary {
-	return { summary: {}, highlights: [] };
-}
-
-function relSummary(counts: Record<string, number>): RelationSummary {
-	return { summary: counts, highlights: [] };
-}
-
-function intentKinds(result: InferenceSummary): string[] {
-	return result.intents.map((i) => i.intent);
-}
+function emptyRelations(): RelationSummary { return { summary: {}, highlights: [] }; }
+function relSummary(counts: Record<string, number>): RelationSummary { return { summary: counts, highlights: [] }; }
+function intentKinds(result: InferenceSummary): string[] { return result.intents.map((i) => i.intent); }
 
 // ── login ─────────────────────────────────────────────────────────────────────
 
-test("login detected when password input + button present", () => {
+test("login detected when password input + button present; evidence.submitRef set", () => {
+	const btn = entity({ ref: "pi-ref://control/submit", role: "button" });
 	const entities = [
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "email" } }),
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
-		entity({ role: "button" }),
+		btn,
 	];
 	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("login"), "login detected");
+	assert.ok(intentKinds(result).includes("login"));
 	const login = result.intents.find((i) => i.intent === "login");
-	assert.equal(login?.confidence, "high", "high confidence when button present");
+	assert.equal(login?.confidence, "high");
+	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit", "evidence.submitRef = first non-disabled button");
 });
 
-test("login medium confidence when password input but no button", () => {
-	const entities = [
-		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
-	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const login = result.intents.find((i) => i.intent === "login");
-	assert.ok(login, "login detected");
+test("login medium confidence (no button) — evidence absent", () => {
+	const entities = [entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } })];
+	const login = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "login");
+	assert.ok(login);
 	assert.equal(login!.confidence, "medium");
+	assert.equal(login!.evidence, undefined);
 });
 
 test("no login when no password input", () => {
@@ -71,188 +63,189 @@ test("no login when no password input", () => {
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "text" } }),
 		entity({ role: "button" }),
 	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(!intentKinds(result).includes("login"), "no login without password");
+	assert.ok(!intentKinds(buildInferenceSummary(entities, emptyRelations())).includes("login"));
 });
 
 // ── search ────────────────────────────────────────────────────────────────────
 
-test("search (high) detected from searchbox role", () => {
+test("search (high) from searchbox role", () => {
 	const entities = [entity({ role: "searchbox", state: { editable: true } })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const search = result.intents.find((i) => i.intent === "search");
-	assert.ok(search, "search detected");
-	assert.equal(search!.confidence, "high");
+	const s = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "search");
+	assert.ok(s);
+	assert.equal(s!.confidence, "high");
 });
 
-test("search (medium) detected from search landmark + input", () => {
+test("search (medium) from search landmark + editable input", () => {
 	const entities = [
 		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
 		entity({ role: "textbox", state: { editable: true } }),
 	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const search = result.intents.find((i) => i.intent === "search");
-	assert.ok(search, "search detected from landmark");
-	assert.equal(search!.confidence, "medium");
+	const s = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "search");
+	assert.ok(s);
+	assert.equal(s!.confidence, "medium");
 });
 
-test("no search when search landmark present but no editable inputs", () => {
-	const entities = [
-		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
-	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(!intentKinds(result).includes("search"), "no search without editable input");
-});
+// ── filter-panel supersedes search ───────────────────────────────────────────
 
-// ── filter-panel (supersedes search) ─────────────────────────────────────────
-
-test("filter-panel detected from search landmark + 2+ editable inputs; search not emitted separately", () => {
+test("filter-panel detected; search NOT emitted separately", () => {
 	const entities = [
 		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
 		entity({ role: "textbox", state: { editable: true } }),
-		entity({ role: "combobox", kind: "control", state: { editable: true } }),
+		entity({ role: "combobox", kind: "control", state: { editable: true }, ref: "pi-ref://control/combo" }),
 	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("filter-panel"), "filter-panel detected");
-	assert.ok(!intentKinds(result).includes("search"), "search not emitted when filter-panel fires");
-});
-
-test("filter-panel not detected with only 1 editable input in search landmark", () => {
-	const entities = [
-		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
-		entity({ role: "textbox", state: { editable: true } }),
-	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(!intentKinds(result).includes("filter-panel"), "filter-panel needs 2+ inputs");
+	const kinds = intentKinds(buildInferenceSummary(entities, emptyRelations()));
+	assert.ok(kinds.includes("filter-panel"));
+	assert.ok(!kinds.includes("search"), "search suppressed when filter-panel fires");
 });
 
 // ── single-choice ─────────────────────────────────────────────────────────────
 
-test("single-choice (high) detected from radiogroup role", () => {
-	const entities = [entity({ role: "radiogroup", kind: "region" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const sc = result.intents.find((i) => i.intent === "single-choice");
-	assert.ok(sc, "single-choice detected");
-	assert.equal(sc!.confidence, "high");
+test("single-choice (high) from radiogroup", () => {
+	const s = buildInferenceSummary([entity({ role: "radiogroup", kind: "region" })], emptyRelations()).intents.find((i) => i.intent === "single-choice");
+	assert.ok(s && s.confidence === "high");
 });
 
-test("single-choice (medium) detected from 2+ radio entities", () => {
-	const entities = [entity({ role: "radio" }), entity({ role: "radio", ref: "pi-ref://control/radio2" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const sc = result.intents.find((i) => i.intent === "single-choice");
-	assert.ok(sc, "single-choice detected from radios");
-	assert.equal(sc!.confidence, "medium");
-});
-
-test("no single-choice from only 1 radio entity", () => {
-	const entities = [entity({ role: "radio" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(!intentKinds(result).includes("single-choice"), "single radio is not a choice group");
+test("single-choice (medium) from 2+ radios without radiogroup", () => {
+	const s = buildInferenceSummary([entity({ role: "radio" }), entity({ role: "radio", ref: "pi-ref://control/r2" })], emptyRelations()).intents.find((i) => i.intent === "single-choice");
+	assert.ok(s && s.confidence === "medium");
 });
 
 // ── multi-choice ──────────────────────────────────────────────────────────────
 
-test("multi-choice detected from 3+ checkboxes", () => {
+test("multi-choice (high) when 3+ checkboxes share a group container", () => {
+	const groupHints = { containerRole: "group", containerName: "Sport" };
+	const entities = [
+		entity({ role: "checkbox", hints: groupHints }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb3" }),
+	];
+	const mc = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "multi-choice");
+	assert.ok(mc);
+	assert.equal(mc!.confidence, "high", "grouped checkboxes → high confidence");
+});
+
+test("multi-choice (medium) when 3+ checkboxes are scattered (no shared container)", () => {
 	const entities = [
 		entity({ role: "checkbox" }),
 		entity({ role: "checkbox", ref: "pi-ref://control/cb2" }),
 		entity({ role: "checkbox", ref: "pi-ref://control/cb3" }),
 	];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("multi-choice"), "3 checkboxes → multi-choice");
+	const mc = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "multi-choice");
+	assert.ok(mc);
+	assert.equal(mc!.confidence, "medium", "scattered checkboxes → medium confidence");
 });
 
-test("no multi-choice from 2 checkboxes", () => {
+test("no multi-choice from only 2 checkboxes", () => {
 	const entities = [entity({ role: "checkbox" }), entity({ role: "checkbox", ref: "pi-ref://control/cb2" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(!intentKinds(result).includes("multi-choice"), "2 checkboxes not enough");
+	assert.ok(!intentKinds(buildInferenceSummary(entities, emptyRelations())).includes("multi-choice"));
 });
 
 // ── expandable ────────────────────────────────────────────────────────────────
 
-test("expandable detected from expandedTarget in relation summary", () => {
-	const result = buildInferenceSummary([], relSummary({ expandedTarget: 2 }));
-	const exp = result.intents.find((i) => i.intent === "expandable");
-	assert.ok(exp, "expandable detected");
-	assert.equal(exp!.confidence, "high");
+test("expandable detected when expandedTarget >= 2", () => {
+	const exp = buildInferenceSummary([], relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
+	assert.ok(exp && exp.confidence === "high");
 });
 
-test("no expandable when only controls (not expandedTarget) in summary", () => {
-	const result = buildInferenceSummary([], relSummary({ controls: 3 }));
-	assert.ok(!intentKinds(result).includes("expandable"), "controls alone doesn't imply expandable");
+test("no expandable when expandedTarget = 1 (single nav toggle — noise in live validation)", () => {
+	assert.ok(!intentKinds(buildInferenceSummary([], relSummary({ expandedTarget: 1 }))).includes("expandable"));
+});
+
+test("no expandable from controls alone", () => {
+	assert.ok(!intentKinds(buildInferenceSummary([], relSummary({ controls: 5 }))).includes("expandable"));
 });
 
 // ── data-grid ─────────────────────────────────────────────────────────────────
 
-test("data-grid detected from grid role entity (ARIA interactive grid)", () => {
-	const entities = [entity({ role: "grid", kind: "region" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	const dg = result.intents.find((i) => i.intent === "data-grid");
-	assert.ok(dg, "grid role → data-grid");
-	assert.equal(dg!.confidence, "high");
+test("data-grid from grid role (ARIA interactive grid)", () => {
+	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "grid", kind: "region" })], emptyRelations())).includes("data-grid"));
 });
 
-test("data-grid detected from treegrid role entity", () => {
-	const entities = [entity({ role: "treegrid", kind: "region" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("data-grid"), "treegrid → data-grid");
+test("data-grid from treegrid role", () => {
+	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "treegrid", kind: "region" })], emptyRelations())).includes("data-grid"));
 });
 
-test("data-grid detected from tableCells >= 50 (large data table)", () => {
-	const result = buildInferenceSummary([], relSummary({ tableCells: 50 }));
-	assert.ok(intentKinds(result).includes("data-grid"), "tableCells=50 → data-grid");
+test("data-grid from tableCells >= 50", () => {
+	assert.ok(intentKinds(buildInferenceSummary([], relSummary({ tableCells: 50 }))).includes("data-grid"));
 });
 
-test("no data-grid from small tables (< 50 cells) — filters documentation/attribute tables", () => {
-	const result = buildInferenceSummary([], relSummary({ tableCells: 42 }));
-	assert.ok(!intentKinds(result).includes("data-grid"), "tableCells=42 does NOT trigger data-grid (doc table noise)");
-});
-
-test("no data-grid when tableCells is 0", () => {
-	const result = buildInferenceSummary([], relSummary({ tableCells: 0 }));
-	assert.ok(!intentKinds(result).includes("data-grid"), "tableCells:0 is not a data-grid");
+test("no data-grid from tableCells < 50 (doc-table noise threshold)", () => {
+	assert.ok(!intentKinds(buildInferenceSummary([], relSummary({ tableCells: 42 }))).includes("data-grid"));
 });
 
 // ── navigation ────────────────────────────────────────────────────────────────
 
-test("navigation detected from currentIn in relation summary", () => {
-	const result = buildInferenceSummary([], relSummary({ currentIn: 1 }));
-	const nav = result.intents.find((i) => i.intent === "navigation");
-	assert.ok(nav, "navigation detected");
-	assert.equal(nav!.confidence, "high");
+test("navigation from currentIn relation", () => {
+	const nav = buildInferenceSummary([], relSummary({ currentIn: 1 })).intents.find((i) => i.intent === "navigation");
+	assert.ok(nav && nav.confidence === "high");
 });
 
 // ── dialog ────────────────────────────────────────────────────────────────────
 
-test("dialog detected from dialog role entity", () => {
-	const entities = [entity({ role: "dialog", kind: "region" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("dialog"), "dialog role → dialog intent");
+test("dialog from dialog role", () => {
+	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "dialog", kind: "region" })], emptyRelations())).includes("dialog"));
 });
 
-test("dialog detected from alertdialog role", () => {
-	const entities = [entity({ role: "alertdialog", kind: "region" })];
-	const result = buildInferenceSummary(entities, emptyRelations());
-	assert.ok(intentKinds(result).includes("dialog"), "alertdialog → dialog intent");
+test("dialog from alertdialog role", () => {
+	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "alertdialog", kind: "region" })], emptyRelations())).includes("dialog"));
 });
 
-// ── empty / no-match ─────────────────────────────────────────────────────────
+// ── tabbed-interface ──────────────────────────────────────────────────────────
 
-test("empty intents array when no patterns match", () => {
-	const result = buildInferenceSummary([entity({ role: "link" })], emptyRelations());
-	assert.deepEqual(result.intents, [], "no detections on a plain link");
+test("tabbed-interface (high) from tablist role", () => {
+	const ti = buildInferenceSummary([entity({ role: "tablist", kind: "region" })], emptyRelations()).intents.find((i) => i.intent === "tabbed-interface");
+	assert.ok(ti && ti.confidence === "high");
+});
+
+test("tabbed-interface (medium) from 2+ tab entities without tablist", () => {
+	const entities = [entity({ role: "tab" }), entity({ role: "tab", ref: "pi-ref://control/tab2" })];
+	const ti = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "tabbed-interface");
+	assert.ok(ti && ti.confidence === "medium");
+});
+
+test("no tabbed-interface from single tab entity", () => {
+	assert.ok(!intentKinds(buildInferenceSummary([entity({ role: "tab" })], emptyRelations())).includes("tabbed-interface"));
+});
+
+// ── alert-region ──────────────────────────────────────────────────────────────
+
+test("alert-region from alert role", () => {
+	const ar = buildInferenceSummary([entity({ role: "alert", kind: "region" })], emptyRelations()).intents.find((i) => i.intent === "alert-region");
+	assert.ok(ar && ar.confidence === "high");
+});
+
+test("alert-region from status role", () => {
+	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "status", kind: "region" })], emptyRelations())).includes("alert-region"));
+});
+
+// ── empty / multi-intent co-occurrence ───────────────────────────────────────
+
+test("empty intents when no patterns match", () => {
+	assert.deepEqual(buildInferenceSummary([entity({ role: "link" })], emptyRelations()).intents, []);
 });
 
 test("multiple intents co-occur on a complex page", () => {
+	const groupHints = { containerRole: "group", containerName: "Options" };
 	const entities = [
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
-		entity({ role: "button" }),
+		entity({ ref: "pi-ref://control/submit", role: "button" }),
 		entity({ role: "radiogroup", kind: "region" }),
 		entity({ role: "grid", kind: "region" }),
+		entity({ role: "tablist", kind: "region" }),
+		entity({ role: "checkbox", hints: groupHints }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb3" }),
 	];
-	const result = buildInferenceSummary(entities, relSummary({ tableCells: 0 }));
+	const result = buildInferenceSummary(entities, relSummary({ currentIn: 1 }));
 	const kinds = intentKinds(result);
-	assert.ok(kinds.includes("login"), "login co-detected");
-	assert.ok(kinds.includes("single-choice"), "single-choice co-detected");
-	assert.ok(kinds.includes("data-grid"), "data-grid co-detected (via grid role)");
+	assert.ok(kinds.includes("login"), "login");
+	assert.ok(kinds.includes("single-choice"), "single-choice");
+	assert.ok(kinds.includes("multi-choice"), "multi-choice");
+	assert.ok(kinds.includes("data-grid"), "data-grid via grid role");
+	assert.ok(kinds.includes("navigation"), "navigation via currentIn");
+	assert.ok(kinds.includes("tabbed-interface"), "tabbed-interface");
+	const mc = result.intents.find((i) => i.intent === "multi-choice");
+	assert.equal(mc?.confidence, "high", "grouped checkboxes → high");
+	const login = result.intents.find((i) => i.intent === "login");
+	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit");
 });
