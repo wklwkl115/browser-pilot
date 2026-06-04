@@ -11,7 +11,7 @@
 
 ## 当前激活项
 
-- **ABML 机制臂 M2b — semantic ref anchor 执行合同已开启**：合同 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。当前阶段只做合同与 gate 设计；不得直接修改 `stableRefIdForDescriptor` / ref minting。后续实现必须先走 P0/P1/P2：blast-radius inventory、纯候选锚派生、shadow ref 实验；只有 gate 通过后才允许 P3 窄范围接入 ref minting。
+- **ABML 机制臂 M2b — semantic ref anchor P1/P2 已完成，P3 gate 未开**：合同 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。已实现纯候选锚派生与 shadow ref 稳定性实验：`src/abml-core/semanticRefAnchor.ts` 只产出候选/影子哈希输入，不接 `stableRefIdForDescriptor` / ref minting。下一步若继续，必须先做 P3 gate：scan/diff/read/click/ref-registry blast-radius 后，才允许窄范围接入 ref minting。
 
 ## 已完成但不再作为当前队列
 
@@ -26,7 +26,7 @@
 
 ## Next backlog
 
-R1/R2/R3/R3.x 与 ABML 机制臂 M1/M2a 均已完成。M2b（semantic ref anchor）已开启执行合同但尚未进入 ref minting 实现；其余后续候选（iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
+R1/R2/R3/R3.x 与 ABML 机制臂 M1/M2a 均已完成。M2b P1/P2 已完成但尚未进入 ref minting 实现；其余后续候选（iframe AX aggregation、incognito/profile isolation 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划，未激活。
 
 ## 后续路线
 

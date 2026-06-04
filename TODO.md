@@ -1,12 +1,12 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活主线：ABML 机制臂 M2b semantic ref anchor 合同/gate，见 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。
+- 当前激活主线：ABML 机制臂 M2b semantic ref anchor P3 gate，见 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。
 - 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`。
 当前执行口径：
-- 当前无并行大型架构主线；状态以 `CURRENT.md` 为准。M2b 当前只做合同/gate，不直接改 ref minting。
+- 当前无并行大型架构主线；状态以 `CURRENT.md` 为准。M2b P1/P2 已完成；P3 前仍不得直接改 ref minting。
 - 当前 shipping 行为是 **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**；MCP shell 已移除。
 - `docs/abml-execution-plan.md` 不再作为当前执行队列；ABML R1/R2/R3/R3.x 与机制臂 M1/M2a 均已作为 internal substrate 完成。
 - 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`

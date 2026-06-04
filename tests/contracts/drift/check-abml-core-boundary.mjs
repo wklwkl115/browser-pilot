@@ -41,6 +41,7 @@ const PURE_CORE = [
 	"causal.ts",
 	"templating.ts",
 	"treeDiff.ts",
+	"semanticRefAnchor.ts",
 	"errors.ts",
 	"verbs/router.ts",
 	"verbs/click.ts",

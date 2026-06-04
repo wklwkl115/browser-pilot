@@ -1,8 +1,8 @@
 # ABML mechanism arm M2b — gated semantic ref anchor execution contract
 
-> Status: **ACTIVE CONTRACT ONLY**. This document opens M2b as a separate workstream after M2a.
-> No implementation in this commit. No direct `stableRefIdForDescriptor` / ref-minting mutation until the
-> gates below pass.
+> Status: **P1/P2 COMPLETE; P3 GATED / NOT STARTED**. M2b is active after M2a. Pure candidate
+> derivation and shadow-ref stability are implemented, but there is still no ref-minting feed. No
+> direct `stableRefIdForDescriptor` / ref-minting mutation until the P3 gates below pass.
 
 ## 1. Goal
 
@@ -61,7 +61,7 @@ Activation rule for ref minting:
 
 ## 5. Phases
 
-### P0 — contract + blast-radius inventory
+### P0 — contract + blast-radius inventory  (COMPLETE)
 
 - Keep this document as the source of truth.
 - Inventory all ref-sensitive paths before implementation:
@@ -71,8 +71,9 @@ Activation rule for ref minting:
   - `read(ref)` / action resolution / click paths,
   - snapshot registry and result artifact replay.
 - Add or identify baseline contracts that prove current behavior before any minting change.
+- Result: `check:abml-semantic-ref-anchor` guards that `resourceStore.ts` does not import/use semantic-ref-anchor logic, so ref minting remains untouched.
 
-### P1 — pure candidate derivation, not wired to minting
+### P1 — pure candidate derivation, not wired to minting  (COMPLETE)
 
 - Add a pure helper that derives candidate anchors from M1/M2a template grouping.
 - Store/return candidates only inside tests or internal diagnostics.
@@ -83,15 +84,17 @@ Activation rule for ref minting:
   - unnamed items get no high-confidence anchor,
   - `posInSet`-only stays low-confidence/diff-only,
   - non-template entities get no anchor.
+- Result: `src/abml-core/semanticRefAnchor.ts` derives high-confidence unique-name anchors and low-confidence duplicate/unnamed positional diagnostics only.
 
-### P2 — shadow ref experiment
+### P2 — shadow ref experiment  (COMPLETE)
 
 - Compute old ref id and candidate semantic ref id side-by-side in tests.
 - Assert semantic ref stability across reorder/insert for high-confidence anchors.
 - Assert current locator ref behavior remains unchanged in runtime output.
 - Produce no user-visible ref change.
+- Result: `semanticRefAnchorHashInput` proves stable shadow payloads across reorder/insert while runtime refs remain unchanged.
 
-### P3 — gated minting change
+### P3 — gated minting change  (GATED / NOT STARTED)
 
 Only after P1/P2 pass:
 - Extend `RefDescriptor.semantic` or equivalent internal descriptor field with high-confidence anchor.
@@ -99,7 +102,7 @@ Only after P1/P2 pass:
 - Keep existing locator fallback for every unsupported/ambiguous case.
 - Add a feature gate or narrow branch so rollback is one small diff.
 
-### P4 — live smoke + regression gate
+### P4 — live smoke + regression gate  (NOT STARTED)
 
 Required before shipping P3:
 - Fixture: repeated list/table with unique names.
