@@ -335,8 +335,11 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
   relation hangs the delta on the activated control (explicit `actionRef` or the focus-normalized
   R3 `diff.focusedRef`, accepted only when it resolves to a control/element — frame/region rejected;
   `source:"timing"`, low confidence — timing window only). Lifted to `envelope.relations.summary`.
-  See `docs/abml-r3x-causal-plane-execution-plan.md`. P2 (event causal entries, stronger attribution)
-  deferred.
+  See `docs/abml-r3x-causal-plane-execution-plan.md`. **P2 A+B COMPLETE (2026-06-04)** — A: hook
+  events fired since baseline ride `envelope.causal.events` (console/DOM-sink/storage, redacted,
+  ref `pi-ref://event/<seq>`), browser-verified; B: an event that names its target element hangs a
+  `triggered` `source:"event"`/medium edge on that control (stronger than P1 timing), deterministically
+  verified. P2-C (event streaming/push) deferred. R3.x is the only remaining causal work, all deferred.
 - vision/layout + OCR: stays the on-demand floor / opaque-node expand per Non-goals — used
   as the geometry source for occludes/coveredBy and for canvas/closed-shadow regions, **not**
   a primary perception source

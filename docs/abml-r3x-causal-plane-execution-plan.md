@@ -1,6 +1,6 @@
 # ABML R3.x — network/API causal plane execution contract
 
-> Status: **P0 + P1 COMPLETE — browser-verified; P2 (event causal) IN PROGRESS** (activated 2026-06-04 by explicit user priority
+> Status: **P0 + P1 + P2 (A+B) COMPLETE — browser-verified; P2-C (streaming) deferred** (activated 2026-06-04 by explicit user priority
 > change). This is a new ABML main line; per project rules it gets its own execution contract and a
 > CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
@@ -101,7 +101,14 @@ As shipped (`entity.ts`/`relations.ts`/`causal.ts`/`observeRunners.ts`/`register
   to the redacted `/api/ping2` ref, counted in `relations.summary`). The focus-only path proved
   fragile live (the documented reason the explicit `actionRef` exists).
 
-### P2 — event causal entries + event-sourced attribution  ← THIS PHASE
+### P2 — event causal entries + event-sourced attribution  ✓ A + B LANDED (C deferred)
+
+> Landed 2026-06-04: **A** (event causal entries) browser-verified via `smoke:browser:abml-causal`
+> step D (console.error → `envelope.causal.events`, redacted); **B** (event-sourced attribution)
+> verified deterministically through the envelope by the integration test + `check:abml-causal`
+> (an event naming its element → `triggered` `source:"event"`/medium on that control), with a
+> non-gating live DOM-sink probe (step E; live selector-match is fixture-sensitive). **C**
+> (streaming/push) remains deferred. Commits: `d003c38` `b746027` `1422b31` `4e6719e` `541c4b6` `1b02a1f`.
 
 Extends the causal plane from network-only to **hook events** (console / DOM-sink / storage /
 error / …), reusing P0/P1 machinery wholesale. Verified substrate (2026-06-04): `hook.collect`
@@ -152,12 +159,13 @@ redaction at the same contract, no per-site/stack heuristics.
   `envelope.relations.summary`; static wiring). Live: `smoke:browser:abml-causal` step C —
   focus a control + fire `/api/ping2` → observe(baseline, actionRef) asserts the `triggered`
   edge on the control (browser-verified on Edge).
-- **P2** (in progress): `check:abml-causal` extended (buildCausalEvents seq-window + redaction +
-  cap/count; event-sourced `triggered` `source:"event"` when a delta event names its element;
-  envelope `causal.events` lift). Live: `smoke:browser:abml-causal` adds a hook step —
-  `browser_hook` arm → observe baseline → fire a console/DOM-sink event → observe(baseline) →
-  assert `envelope.causal.events` contains it (redacted). Slices: 1 pure-core selector, 2 runtime
-  wiring (hook seq high-water + delta), 3 event-sourced attribution, 4 contract + live smoke.
+- **P2 (A+B)** ✓: `check:abml-causal` extended (buildCausalEvents seq-window + redaction + cap/count;
+  event-sourced `triggered` `source:"event"`/medium via eventTriggeredByEntity when a delta event
+  names its element; envelope `causal.events` lift). Live: `smoke:browser:abml-causal` step D
+  (`browser_hook` console arm → fire console.error → observe(baseline) → `envelope.causal.events`
+  redacted, browser-verified on Edge) + step E (non-gating DOM-sink attribution probe). B is proven
+  deterministically by the integration test (the live element-selector match is fixture-sensitive).
+  C (streaming/push) deferred. Slices delivered: 1 pure selector, 2 runtime wiring, 3 attribution, 4 smoke.
 - Gate each phase on `npm run check` green + the live smoke.
 - Update `docs/abml-perception-state-evolution-plan.md` R3.x section as phases land.
 
