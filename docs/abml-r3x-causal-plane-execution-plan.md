@@ -1,6 +1,6 @@
 # ABML R3.x — network/API causal plane execution contract
 
-> Status: **P0 + P1 + P2 (A+B) COMPLETE — browser-verified; P2-C (streaming) deferred** (activated 2026-06-04 by explicit user priority
+> Status: **P0 + P1 + P2 (A+B+C) COMPLETE — browser-verified** (activated 2026-06-04 by explicit user priority
 > change). This is a new ABML main line; per project rules it gets its own execution contract and a
 > CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
@@ -101,14 +101,19 @@ As shipped (`entity.ts`/`relations.ts`/`causal.ts`/`observeRunners.ts`/`register
   to the redacted `/api/ping2` ref, counted in `relations.summary`). The focus-only path proved
   fragile live (the documented reason the explicit `actionRef` exists).
 
-### P2 — event causal entries + event-sourced attribution  ✓ A + B LANDED (C deferred)
+### P2 — event causal entries + event-sourced attribution + stream plane  ✓ A + B + C LANDED
 
 > Landed 2026-06-04: **A** (event causal entries) browser-verified via `smoke:browser:abml-causal`
 > step D (console.error → `envelope.causal.events`, redacted); **B** (event-sourced attribution)
 > verified deterministically through the envelope by the integration test + `check:abml-causal`
 > (an event naming its element → `triggered` `source:"event"`/medium on that control), with a
 > non-gating live DOM-sink probe (step E; live selector-match is fixture-sensitive). **C**
-> (streaming/push) remains deferred. Commits: `d003c38` `b746027` `1422b31` `4e6719e` `541c4b6` `1b02a1f`.
+> (causal stream plane) landed: the previously-stubbed `read(plane:"network"|"event")` + the
+> `stream.ts` capture-ref scaffold are activated into a cursor-based drain channel —
+> browser-verified via `smoke:browser:abml-causal` step F (arm pins the cursor at the recorder
+> high-water, drain returns a redacted `pi-ref://network/` stream entity + advances the cursor on a
+> refreshed signal capture-ref; the event plane drained an event entity live too). Commits:
+> `d003c38` `b746027` `1422b31` `4e6719e` `541c4b6` `1b02a1f` + the P2-C slice.
 
 Extends the causal plane from network-only to **hook events** (console / DOM-sink / storage /
 error / …), reusing P0/P1 machinery wholesale. Verified substrate (2026-06-04): `hook.collect`
@@ -130,8 +135,19 @@ and `src/abml-core/stream.ts` already has a pure `buildEventEntity` scaffold (ki
   hang a `triggered` edge from that control to the event ref with a STRONGER signal than P1's pure
   timing — `source:"event"`, higher confidence — because the event names its own target element.
   Pure timing (P1) stays the fallback when no element is named.
-- **C — live streaming / push: DEFERRED** (own follow-up; architecturally separate, no real
-  use-case yet). P2 stays request/response-style snapshot, not a live channel.
+- **C — causal stream plane (cursor drain channel)  ✓ LANDED:** true server→model push is impossible
+  in this request/response tool surface, so P2-C reduces to a **pull/cursor** drain: a long-lived
+  `signal` capture-ref (`stream.ts` `createCaptureRef`, `streamState.lastSeq`) carries the cursor.
+  `read(plane:"network")` / `read(plane:"event")` — the previously-stubbed planes
+  (`runtime.ts` BACKEND_UNAVAILABLE) — now **arm** (no ref → cursor pinned at the recorder/hook
+  high-water, no history replay) and **drain** (pass the prior captureRef → only what fired since the
+  cursor), activating the dead `buildNetworkEntryEntity`/`buildEventEntity` builders. Entities are
+  redacted by reusing `buildCausalRequest`/`buildCausalEvent` (raw url/payload never escapes) and
+  carry the causal ref scheme (`pi-ref://network/<id>`, `pi-ref://event/<id>`) so they match
+  `data.causal`. The cursor advances via the pure `latestSeq` and round-trips on a refreshed
+  capture-ref. **Internal substrate only** (reached via Pi-native / `createBrowserAbmlIntegration`
+  `readStream`); no new public tool, no protocol change. Solves the snapshot model's weak case:
+  background async / polling / WebSocket frames + over-cap deltas, without a full DOM scan.
 
 Boundaries unchanged: no new public tool, no schema change (reuse `hook.*`), pure-core stays pure,
 redaction at the same contract, no per-site/stack heuristics.
@@ -165,7 +181,15 @@ redaction at the same contract, no per-site/stack heuristics.
   (`browser_hook` console arm → fire console.error → observe(baseline) → `envelope.causal.events`
   redacted, browser-verified on Edge) + step E (non-gating DOM-sink attribution probe). B is proven
   deterministically by the integration test (the live element-selector match is fixture-sensitive).
-  C (streaming/push) deferred. Slices delivered: 1 pure selector, 2 runtime wiring, 3 attribution, 4 smoke.
+  Slices delivered: 1 pure selector, 2 runtime wiring, 3 attribution, 4 smoke.
+- **P2-C (causal stream plane)** ✓: `check:abml-causal` extended (pure `latestSeq` cursor-advance; a
+  browser-free behavioral gate running `read(plane:"network")` arm→drain against a fake bridge + the
+  real pi-ref store — redacted causal-scheme entities, cursor advance, refreshed signal capture-ref,
+  recorder-inactive `unavailable`; static wiring: runtime implements both planes / no BACKEND_UNAVAILABLE,
+  `integration.readStream` exposed). Unit/integration: `tests/unit/abml/verbs-stream.test.ts` (arm/drain,
+  redaction, filter.sinceSeq escape hatch, both planes). Live: `smoke:browser:abml-causal` step F
+  (gating network drain; event-plane drain non-gating but live-verified this run). No new public tool,
+  no protocol change — pure internal substrate.
 - Gate each phase on `npm run check` green + the live smoke.
 - Update `docs/abml-perception-state-evolution-plan.md` R3.x section as phases land.
 

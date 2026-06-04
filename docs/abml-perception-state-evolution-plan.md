@@ -339,7 +339,12 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
   events fired since baseline ride `envelope.causal.events` (console/DOM-sink/storage, redacted,
   ref `pi-ref://event/<seq>`), browser-verified; B: an event that names its target element hangs a
   `triggered` `source:"event"`/medium edge on that control (stronger than P1 timing), deterministically
-  verified. P2-C (event streaming/push) deferred. R3.x is the only remaining causal work, all deferred.
+  verified. **P2-C COMPLETE (2026-06-04, browser-verified)** — causal stream plane: the stubbed
+  `read(plane:"network"|"event")` + the `stream.ts` capture-ref scaffold are activated into a
+  cursor-based drain channel (a `signal` capture-ref carries the cursor; arm pins it at the recorder
+  high-water, drain returns redacted `pi-ref://network`/`pi-ref://event` stream entities and advances
+  the cursor — no full DOM scan; internal substrate via `integration.readStream`, no public tool).
+  Live step F in `smoke:browser:abml-causal`. **R3.x causal plane is now complete (P0+P1+P2 A+B+C).**
 - vision/layout + OCR: stays the on-demand floor / opaque-node expand per Non-goals — used
   as the geometry source for occludes/coveredBy and for canvas/closed-shadow regions, **not**
   a primary perception source

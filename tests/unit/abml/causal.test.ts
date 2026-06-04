@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -164,4 +164,17 @@ test("causal P2-B: events without a selector, or selectors matching no entity, a
 test("causal P2-B: a region/non-actionable entity is not an attribution target", () => {
 	const region = { ref: "pi-ref://region/1", kind: "region" as const, role: "main", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" as const, hints: { selector: "#main" } };
 	assert.equal(eventTriggeredByEntity([{ ref: "pi-ref://event/3", type: "domSink", selector: "#main" }], [region]).size, 0, "region rejected (only control/element)");
+});
+
+// ── R3.x P2-C — seq cursor advance (stream-plane drain) ─────────────────────────
+
+test("causal P2-C: latestSeq returns the max seq over a delta window", () => {
+	assert.equal(latestSeq([{ seq: 5 }, { seq: 9 }, { seq: 7 }]), 9, "highest seq is the new cursor");
+	assert.equal(latestSeq([{ seq: 0 }]), 0, "seq 0 is a valid cursor");
+});
+
+test("causal P2-C: latestSeq ignores records with no numeric seq, undefined when none", () => {
+	assert.equal(latestSeq([]), undefined, "empty delta → keep prior cursor (undefined)");
+	assert.equal(latestSeq([{ id: "x" }, { seq: "nope" }]), undefined, "non-numeric seq ignored");
+	assert.equal(latestSeq([{ seq: 4 }, { id: "y" }, { seq: 11 }]), 11, "mixed: max over the numeric ones");
 });

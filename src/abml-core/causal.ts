@@ -167,6 +167,20 @@ export function causalUnavailable(reason: string): CausalSummary {
 	return { unavailable: reason };
 }
 
+// ── R3.x P2-C — seq cursor advance (stream-plane drain) ──────────────────────────────────────────
+
+// The highest `seq` over a delta window — the new cursor after a drain. Pure + self-contained so the
+// stream-plane "advance to the last consumed entry" contract is unit-testable. Returns undefined when
+// no record carries a numeric seq (the caller keeps its prior cursor in that case).
+export function latestSeq(records: Array<Record<string, unknown>>): number | undefined {
+	let max: number | undefined;
+	for (const record of records) {
+		const seq = num(record.seq);
+		if (seq !== undefined && (max === undefined || seq > max)) max = seq;
+	}
+	return max;
+}
+
 // ── R3.x P1 — attribution to a control (timing window only) ──────────────────────────────────────
 
 // Cap on `triggered` edges attached to one control — keeps a heavy delta from evicting the

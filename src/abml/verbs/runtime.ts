@@ -6,15 +6,17 @@ import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { summarizeScanData } from "../../tools/summaries/scan.js";
 import { normalizeTabId } from "../../utils/params.js";
-import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
+import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources/resourceStore.js";
 import { diffEntities } from "../diff.js";
 import type { Entity } from "../entity.js";
+import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../stream.js";
+import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../causal.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
 import { materializeRelations, deriveStateRelationAnchors } from "../relations.js";
 import { actionabilitySpecForVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
 import { decideRefAccess } from "../refPolicy.js";
-import type { ActionabilityBlockerCode, ActionabilityPredicate, ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
+import type { ActionabilityBlockerCode, ActionabilityPredicate, ActionabilityReport, CaptureRef, RefDescriptor, VerificationResult } from "../types.js";
 import type { AbmlClickInput, AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlScrollInput, AbmlTypeInput, AbmlVerbFailure, AbmlVerbResult } from "./router.js";
 import { runAbmlClick } from "./click.js";
 import { runAbmlRead } from "./read.js";
@@ -493,8 +495,154 @@ function verifyType(before: Record<string, unknown>, after: Record<string, unkno
 	};
 }
 
+// ── R3.x P2-C — causal stream plane (cursor-based drain channel) ──────────────────────────────────
+// Activates the previously-stubbed read(plane:"network"|"event") + the stream.ts capture-ref scaffold.
+// A long-lived "signal" capture-ref carries the drain cursor (streamState.lastSeq): the model arms once
+// (no ref → cursor pinned at the recorder's current high-water, no history replay), then re-reads with the
+// returned ref to drain only what fired since its cursor — without a full DOM scan. No new public tool, no
+// protocol change: pure internal substrate reached via Pi-native / the ABML runtime. URLs/payloads are
+// redacted by reusing the P0/P2-A buildCausal* selectors (a raw stream-entity url never leaves redaction).
+
+type StreamPlane = "network" | "event";
+const STREAM_CAPTURE_TTL_MS = 60 * 60 * 1000;
+const STREAM_NETWORK_LIMIT = 500;
+const STREAM_EVENT_LIMIT = 200;
+
+// Read the drain cursor (+ channel age) carried by an incoming signal capture-ref. A non-signal ref (or
+// none) yields an empty cursor → the caller arms a fresh channel.
+function captureCursor(descriptor: RefDescriptor | undefined): { lastSeq?: number; startedAt?: number } {
+	if (!descriptor || descriptor.kind !== "signal") return {};
+	const stream = (descriptor as CaptureRef).streamState;
+	return {
+		lastSeq: typeof stream?.lastSeq === "number" ? stream.lastSeq : undefined,
+		startedAt: typeof stream?.startedAt === "number" ? stream.startedAt : undefined,
+	};
+}
+
+// Mint a refreshed signal capture-ref at the given cursor. registerRefDescriptor mints the pi-ref://signal/<id>
+// URI (locators are empty → no stable-hash reuse); the cursor round-trips in streamState.lastSeq.
+function mintStreamCapture(lastSeq: number, startedAt: number, context: CaptureRefContext): string {
+	const now = context.capturedAt ?? startedAt;
+	const captureRef = createCaptureRef({ refId: "pi-ref://signal/pending", state: "active", startedAt, expiresAt: now + STREAM_CAPTURE_TTL_MS, lastSeq, context });
+	const { refId: _drop, ...descriptor } = captureRef;
+	return registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+}
+
+// One network record → a redacted network-entry entity. buildNetworkEntryEntity is a RAW builder (raw url in
+// stream.url/name/semantic/epoch); we replace every url-bearing field with buildCausalRequest's redacted +
+// truncated url and pin the ref to the causal scheme (pi-ref://network/<requestId>) so the entity ref matches
+// data.causal.requests[].ref — no separate lookup, and no raw url ever escapes.
+function shapeNetworkStreamEntity(record: Record<string, unknown>, context: CaptureRefContext): Entity {
+	const causalReq = buildCausalRequest(record);
+	const built = buildNetworkEntryEntity(record, context);
+	const label = `${causalReq.method || built.entity.stream?.method || "GET"} ${causalReq.url || causalReq.ref}`;
+	const stream = causalReq.url && built.entity.stream ? { ...built.entity.stream, url: causalReq.url } : built.entity.stream;
+	const descriptor = {
+		...built.descriptor,
+		refId: causalReq.ref,
+		semantic: { ...(built.descriptor.semantic || {}), name: label },
+		documentEpoch: { ...built.descriptor.documentEpoch, url: causalReq.url ?? context.url, capturedAt: built.descriptor.documentEpoch?.capturedAt ?? context.capturedAt ?? 0 },
+	};
+	const refId = registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+	return { ...built.entity, ref: refId, name: label, ...(stream ? { stream } : {}) };
+}
+
+// One hook event → a redacted event entity. buildCausalEvent's redacted summary replaces the raw message/value;
+// the ref is pinned to pi-ref://event/<seq|id> so it matches data.causal.events[].ref.
+function shapeEventStreamEntity(record: Record<string, unknown>, context: CaptureRefContext): Entity {
+	const causalEv = buildCausalEvent(record);
+	const built = buildEventEntity(record, context);
+	const descriptor = {
+		...built.descriptor,
+		refId: causalEv.ref,
+		semantic: { ...(built.descriptor.semantic || {}), value: causalEv.summary },
+	};
+	const refId = registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
+	const { value: _rawValue, ...entityNoValue } = built.entity;
+	return { ...entityNoValue, ref: refId, ...(causalEv.summary ? { value: causalEv.summary } : {}) };
+}
+
+async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions, plane: StreamPlane): Promise<{ entities?: Entity[]; data?: Record<string, unknown> }> {
+	const resolved = input.ref ? resolveRefDescriptor(input.ref) : undefined;
+	if (resolved && !resolved.ok) throw resolved.error;
+	const descriptor = resolved && resolved.ok ? resolved.descriptor : undefined;
+	const target = currentTarget(server, options, descriptor);
+	if (!target.tabId) throw new BrowserBridgeError("NO_TAB", `No target browser tab is available for ABML ${plane} stream read`, { browserSessionId: target.browserSessionId });
+	const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
+	const cursor = captureCursor(descriptor);
+	const explicitSince = isRecord(input.filter) && typeof input.filter.sinceSeq === "number" ? input.filter.sinceSeq : undefined;
+	const sinceSeq = cursor.lastSeq ?? explicitSince;
+	const arming = sinceSeq === undefined;
+	const countKey = plane === "network" ? "requestCount" : "eventCount";
+
+	// Recorder/hook liveness + current high-water. Best-effort: any failure degrades to "inactive".
+	let active: boolean;
+	let highWater: number | undefined;
+	try {
+		const statusRes = await server.sendCommand({ cmd: plane === "network" ? "network.status" : "hook.status" }, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
+		const statusData = isRecord(statusRes.data) ? statusRes.data : {};
+		if (plane === "network") {
+			active = statusData.active !== false;
+			highWater = typeof statusData.lastSeq === "number" ? statusData.lastSeq : undefined;
+		} else {
+			highWater = typeof statusData.last_seq === "number" ? statusData.last_seq : undefined;
+			active = highWater !== undefined;
+		}
+	} catch {
+		active = false;
+	}
+	if (!active) {
+		const reason = plane === "network"
+			? "network recorder not active — start via browser_network start"
+			: "hook session not armed — install via browser_hook installTargets";
+		return { entities: [], data: { plane, mode: "stream", unavailable: reason, recorderActive: false } };
+	}
+
+	const capturedAt = Date.now();
+	const context: CaptureRefContext = {
+		browserSessionId: target.browserSessionId,
+		tabId: target.tabId,
+		observationId: `stream:${plane}:${target.tabId}`,
+		capturedAt,
+		url: descriptor?.documentEpoch?.url,
+	};
+
+	// ARM: pin the cursor at the current high-water (no history replay) and hand back the channel ref.
+	if (arming) {
+		const startSeq = highWater ?? 0;
+		const captureRef = mintStreamCapture(startSeq, capturedAt, context);
+		return { entities: [], data: { plane, mode: "stream", armed: true, recorderActive: true, sinceSeq: startSeq, cursor: startSeq, captureRef, [countKey]: 0 } };
+	}
+
+	// DRAIN: pull the delta since the cursor, build redacted stream entities, advance the cursor.
+	const since = sinceSeq as number;
+	let records: Array<Record<string, unknown>>;
+	try {
+		const listRes = await server.sendCommand(
+			plane === "network" ? { cmd: "network.list", sinceSeq: since, limit: STREAM_NETWORK_LIMIT } : { cmd: "hook.collect", since_seq: since, limit: STREAM_EVENT_LIMIT },
+			{ browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs },
+		);
+		const listData = isRecord(listRes.data) ? listRes.data : {};
+		const arr = plane === "network" ? listData.items : listData.events;
+		records = Array.isArray(arr) ? arr.filter(isRecord) : [];
+	} catch {
+		records = [];
+	}
+	const delta = records.filter((record) => { const seq = Number(record.seq); return !Number.isFinite(seq) || seq > since; });
+	const newCursor = latestSeq(delta) ?? since;
+	const startedAt = cursor.startedAt ?? capturedAt;
+	const entities: Entity[] = delta.map((record) => plane === "network" ? shapeNetworkStreamEntity(record, context) : shapeEventStreamEntity(record, context));
+	const causal = plane === "network" ? buildCausalSummary(delta, since) : { sinceSeq: since, ...buildCausalEvents(delta, since) };
+	const captureRef = mintStreamCapture(newCursor, startedAt, context);
+	return {
+		entities,
+		data: { plane, mode: "stream", armed: false, recorderActive: true, sinceSeq: since, cursor: newCursor, captureRef, [countKey]: entities.length, causal },
+	};
+}
+
 async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: AbmlReadInput, options: BrowserAbmlRuntimeOptions = {}): Promise<AbmlVerbResult> {
 	return await runAbmlRead(input, async () => {
+		if (input.plane === "network" || input.plane === "event") return await readStreamPlane(server, input, options, input.plane);
 		if (input.plane && input.plane !== "structure") throw { code: "BACKEND_UNAVAILABLE", message: `ABML read plane is not implemented yet: ${input.plane}`, details: { plane: input.plane } };
 		const resolved = input.ref ? resolveRefDescriptor(input.ref) : undefined;
 		if (resolved && !resolved.ok) throw resolved.error;

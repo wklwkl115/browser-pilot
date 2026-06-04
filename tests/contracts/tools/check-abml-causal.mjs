@@ -14,8 +14,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq } from "../../../src/abml-core/causal.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
+import { createBrowserAbmlRuntime } from "../../../src/abml/verbs/runtime.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -193,6 +194,44 @@ assert.equal(payRels[0].targetRef, "pi-ref://event/9", "edge targets the event r
 assert.equal(p2bMap.get("pi-ref://region/main"), undefined, "region is not an attribution target");
 assert.equal(p2bMap.size, 1, "selectorless / unmatched events attribute nothing");
 
+// ── R3.x P2-C — causal stream plane (cursor drain channel) ───────────────────────
+
+// Pure cursor-advance: latestSeq = max seq over the delta (the new cursor); undefined keeps the prior.
+assert.equal(latestSeq([{ seq: 5 }, { seq: 9 }, { seq: 7 }]), 9, "latestSeq returns the max seq");
+assert.equal(latestSeq([{ seq: 0 }]), 0, "seq 0 is a valid cursor");
+assert.equal(latestSeq([{ id: "x" }, { seq: "nan" }]), undefined, "no numeric seq → undefined (hold cursor)");
+
+// Behavioral gate: arm pins the cursor at the recorder high-water (no history replay), drain returns
+// redacted entities on the causal ref scheme + advances the cursor + refreshes the capture-ref. Run against
+// a fake bridge + the real pi-ref store (the only browser-free way to guard the runtime, not just grep it).
+const streamCalls = [];
+const streamState = { items: [], lastSeq: 30 };
+const streamServer = {
+	snapshot: (o = {}) => ({ browserSessionId: o.browserSessionId || "default", defaultTabId: 7, selectionVersion: 1, tabs: [{ tabId: 7, url: "https://x/" }] }),
+	createObservationSnapshot: (s) => ({ snapshotId: s.snapshotId || "snap-1", ttlMs: 60_000, expired: false, ...s }),
+	async sendCommand(command) {
+		streamCalls.push(command.cmd);
+		if (command.cmd === "network.status") return { acknowledged: true, tabId: 7, data: { active: true, lastSeq: streamState.lastSeq } };
+		if (command.cmd === "network.list") return { acknowledged: true, tabId: 7, data: { items: streamState.items.filter((r) => Number(r.seq) > Number(command.sinceSeq ?? 0)) } };
+		return { acknowledged: true, tabId: 7, data: {} };
+	},
+};
+const streamRuntime = createBrowserAbmlRuntime(streamServer, { tabId: 7, timeoutMs: 2000 });
+const streamArm = await streamRuntime.read({ plane: "network" });
+assert.ok(streamArm.ok && streamArm.data.armed === true && streamArm.data.cursor === 30, "arm pins cursor at high-water 30");
+assert.match(String(streamArm.data.captureRef), /^pi-ref:\/\/signal\//, "arm mints a signal capture-ref cursor");
+streamState.items = [{ seq: 31, requestId: "s31", request: { url: "https://x/api?token=SECRET314", method: "POST" }, response: { status: 200 }, type: "Fetch" }];
+streamState.lastSeq = 31;
+const streamDrain = await streamRuntime.read({ plane: "network", ref: String(streamArm.data.captureRef) });
+assert.ok(streamDrain.ok, "drain succeeds");
+assert.equal((streamDrain.entities || []).length, 1, "delta request became a stream entity");
+assert.equal(streamDrain.entities[0].ref, "pi-ref://network/s31", "entity ref uses the causal scheme");
+assert.ok(!JSON.stringify(streamDrain.entities).includes("SECRET314"), "raw secret never leaves redaction in the stream entity");
+assert.equal(streamDrain.data.cursor, 31, "cursor advanced to the last consumed seq");
+assert.notEqual(String(streamDrain.data.captureRef), String(streamArm.data.captureRef), "drain refreshes the cursor ref");
+const streamInactive = await createBrowserAbmlRuntime({ ...streamServer, async sendCommand(c) { return { acknowledged: true, tabId: 7, data: c.cmd === "network.status" ? { active: false } : {} }; } }, { tabId: 7, timeoutMs: 2000 }).read({ plane: "network" });
+assert.ok(streamInactive.ok && /not active/.test(String(streamInactive.data.unavailable)), "recorder inactive → unavailable (no throw)");
+
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 assert.ok(observeSrc.includes("buildCausalSummary") && observeSrc.includes("causal"), "observeRunners builds causal");
@@ -233,7 +272,18 @@ assert.ok(snapshotTypeSrc.includes("hookSeq"), "observation snapshot type carrie
 const hookDispSrc = readRepo("bridge_src/page_scripts/hook_dispatcher.ts");
 assert.ok(hookDispSrc.includes("last_seq: seq"), "hook status() exposes last_seq event high-water mark");
 
+// P2-C static wiring: the runtime implements the network/event stream planes (the BACKEND_UNAVAILABLE
+// stub is gone for them) via the capture-ref scaffold + redacted causal shaping; integration exposes it.
+const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
+assert.ok(runtimeSrc.includes("readStreamPlane") && runtimeSrc.includes('input.plane === "network" || input.plane === "event"'), "runtime routes network/event planes to the stream drain (no longer BACKEND_UNAVAILABLE)");
+assert.ok(runtimeSrc.includes("createCaptureRef") && runtimeSrc.includes("streamState") && runtimeSrc.includes("latestSeq"), "runtime uses the capture-ref cursor scaffold + latestSeq advance");
+assert.ok(runtimeSrc.includes("buildNetworkEntryEntity") && runtimeSrc.includes("buildEventEntity"), "runtime activates the dead stream entity builders");
+assert.ok(runtimeSrc.includes("buildCausalRequest") && runtimeSrc.includes("buildCausalEvent"), "runtime redacts stream entities via the causal selectors (no raw url/payload)");
+assert.ok(causalSrc.includes("export function latestSeq"), "pure-core latestSeq cursor-advance present");
+const integrationSrc = readRepo("src/abml/verbs/integration.ts");
+assert.ok(integrationSrc.includes("readStream"), "createBrowserAbmlIntegration exposes the readStream drain entry");
+
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-causal"]?.includes("check-abml-causal.mjs"), "check:abml-causal script present");
 
-console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; P2-A event causal (buildCausalEvents seq-window/cap=${MAX_CAUSAL_EVENTS}, redacted summary + selector, no raw payload, lifted to envelope.causal.events; hook last_seq + snapshot hookSeq anchor); P2-B event-sourced attribution (eventTriggeredByEntity: element-named event → triggered source:"event"/medium, region rejected); all static wiring verified`);
+console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; P2-A event causal (buildCausalEvents seq-window/cap=${MAX_CAUSAL_EVENTS}, redacted summary + selector, no raw payload, lifted to envelope.causal.events; hook last_seq + snapshot hookSeq anchor); P2-B event-sourced attribution (eventTriggeredByEntity: element-named event → triggered source:"event"/medium, region rejected); P2-C causal stream plane (latestSeq cursor advance; runtime read(plane:network|event) arm pins high-water + drain returns redacted causal-scheme entities + advances/refreshes the signal capture-ref + recorder-inactive unavailable; integration.readStream entry; capture-ref scaffold activated); all static wiring verified`);

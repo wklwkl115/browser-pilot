@@ -16,6 +16,10 @@
 //   E) P2-B (non-gating): fire a DOM-sink on an id'd control, then observe(baseline) and look for an
 //      event-sourced `triggered` edge (source:"event"); recorded as an extra (live selector match
 //      is fixture-sensitive — the deterministic proof is the integration test).
+//   F) P2-C causal stream plane: via the internal ABML integration readStream — ARM (no ref) pins a
+//      cursor at the recorder high-water, fire a fresh request, DRAIN (pass the arm captureRef) ->
+//      a redacted network-entry stream entity (pi-ref://network/), cursor advanced, ref refreshed.
+//      Event-plane stream drain is recorded non-gating (live hook timing is environment-sensitive).
 // Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge + bridge +
 // extension copy (picks up the freshly-built dist), so it never touches the user's browser.
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
@@ -28,6 +32,7 @@ import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
 import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
+import { createBrowserAbmlIntegration } from "../../src/abml/verbs/integration.ts";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -251,12 +256,58 @@ try {
     });
   }
 
+  // ── F) P2-C causal stream plane: cursor-based drain via the internal ABML runtime ──────────────
+  // The stream plane is internal substrate (no public browser_* tool), reached through the ABML
+  // integration's readStream. ARM (no ref) pins a cursor at the recorder high-water; fire a fresh
+  // request; DRAIN (pass the arm's captureRef) returns a redacted network-entry stream entity on the
+  // causal ref scheme and advances the cursor on a refreshed signal capture-ref — no full DOM scan.
+  const STREAM_PATH = "/api/stream-probe";
+  const abml = createBrowserAbmlIntegration(bridge, { tabId, browserSessionId, timeoutMs: 10000 });
+  const streamArm = await abml.readStream({ plane: "network" });
+  const armCursor = typeof streamArm?.data?.cursor === "number" ? streamArm.data.cursor : undefined;
+  const armRef = typeof streamArm?.data?.captureRef === "string" ? streamArm.data.captureRef : undefined;
+  const armOk = !!streamArm?.ok && streamArm.data?.armed === true && /^pi-ref:\/\/signal\//.test(String(armRef)) && typeof armCursor === "number";
+  await bridge.executeJavaScript(`fetch('${STREAM_PATH}?token=${SECRET}&s=stream').catch(function(){}); return 'fired-stream';`, { tabId, browserSessionId, timeoutMs: 8000 });
+  await bridge.sendCommand({ cmd: "network.wait", tabId, condition: "response", urlContains: STREAM_PATH, timeoutMs: 8000 }, { tabId, timeoutMs: 10000 }).catch(() => undefined);
+  await delay(300);
+  const streamDrain = armRef ? await abml.readStream({ plane: "network", ref: armRef }) : undefined;
+  const drainEntities = Array.isArray(streamDrain?.entities) ? streamDrain.entities : [];
+  const streamEntity = drainEntities.find((e) => typeof e?.stream?.url === "string" && e.stream.url.includes(STREAM_PATH)) || drainEntities.find((e) => /^pi-ref:\/\/network\//.test(String(e?.ref || "")));
+  const drainCursor = typeof streamDrain?.data?.cursor === "number" ? streamDrain.data.cursor : undefined;
+  const streamRefOk = !!streamEntity && /^pi-ref:\/\/network\//.test(String(streamEntity.ref || ""));
+  const streamRedacted = !!streamEntity && !JSON.stringify(streamEntity).includes(SECRET);
+  const cursorAdvanced = typeof drainCursor === "number" && typeof armCursor === "number" && drainCursor > armCursor;
+  const refRefreshed = typeof streamDrain?.data?.captureRef === "string" && streamDrain.data.captureRef !== armRef;
+  const streamPlaneOk = armOk && drainEntities.length >= 1 && streamRefOk && streamRedacted && cursorAdvanced && refRefreshed;
+  record("causal.stream", streamPlaneOk, {
+    armed: streamArm?.data?.armed, armCursor, drainCursor, cursorAdvanced, refRefreshed,
+    drainEntityCount: drainEntities.length,
+    streamEntity: streamEntity ? { ref: streamEntity.ref, name: streamEntity.name, url: streamEntity?.stream?.url } : null,
+    streamRefOk, streamRedacted, armOk,
+  });
+
+  // Event-plane stream drain (non-gating: live hook timing/selector is environment-sensitive, like step E).
+  let eventStreamLive = false;
+  const evArm = await abml.readStream({ plane: "event" }).catch(() => undefined);
+  if (evArm?.ok && typeof evArm.data?.captureRef === "string" && evArm.data.armed) {
+    await bridge.executeJavaScript(`(function(){ console.error('pi-stream-probe token=${SECRET}'); return 'logged'; })()`, { tabId, browserSessionId, timeoutMs: 8000 });
+    await delay(400);
+    const evDrain = await abml.readStream({ plane: "event", ref: evArm.data.captureRef }).catch(() => undefined);
+    const evEntities = Array.isArray(evDrain?.entities) ? evDrain.entities : [];
+    eventStreamLive = evEntities.some((e) => /^pi-ref:\/\/event\//.test(String(e?.ref || "")));
+    record("causal.stream-event", true, {
+      nonGating: true, eventStreamLive, eventEntityCount: evEntities.length,
+      sample: evEntities.slice(0, 2).map((e) => ({ ref: e.ref, value: e.value })),
+    });
+  }
+
   // Core PASS gate: network-delta surfaces the fired request (redacted, windowed at the baseline
   // seq), the recorder-unavailable path is reported, the delta is attributed to the activated
-  // control (P1 `triggered`), AND a hook console event lands in causal.events redacted (P2-A).
-  // P2-B event-sourced attribution is recorded non-gating (eventAttributionLive) — see step E.
-  result.extras = { focusPathTriggered, eventAttributionLive };
-  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk && eventCausalOk;
+  // control (P1 `triggered`), a hook console event lands in causal.events redacted (P2-A), AND the
+  // P2-C stream plane arms + drains a redacted network entity while advancing the cursor (P2-C).
+  // P2-B + event-plane stream are recorded non-gating (eventAttributionLive / eventStreamLive).
+  result.extras = { focusPathTriggered, eventAttributionLive, eventStreamLive };
+  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk && eventCausalOk && streamPlaneOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });
