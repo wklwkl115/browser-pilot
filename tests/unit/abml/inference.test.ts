@@ -13,14 +13,17 @@ function entity(opts: {
 	ref?: string;
 	kind?: Entity["kind"];
 	role: string;
+	name?: string;
 	state?: Partial<Entity["state"]>;
 	structure?: Entity["structure"];
 	hints?: Record<string, unknown>;
+	relations?: Entity["relations"];
 }): Entity {
 	return {
 		ref: opts.ref ?? `pi-ref://control/${opts.role}`,
 		kind: opts.kind ?? "control",
 		role: opts.role,
+		...(opts.name !== undefined ? { name: opts.name } : {}),
 		state: {
 			visible: true, occluded: false, disabled: false, focused: false,
 			editable: false, inViewport: true,
@@ -29,6 +32,7 @@ function entity(opts: {
 		source: "dom",
 		...(opts.structure ? { structure: opts.structure } : {}),
 		...(opts.hints ? { hints: opts.hints } : {}),
+		...(opts.relations ? { relations: opts.relations } : {}),
 	};
 }
 
@@ -38,8 +42,8 @@ function intentKinds(result: InferenceSummary): string[] { return result.intents
 
 // ── login ─────────────────────────────────────────────────────────────────────
 
-test("login detected when password input + button present; evidence.submitRef set", () => {
-	const btn = entity({ ref: "pi-ref://control/submit", role: "button" });
+test("login detected when password input + submit-like button present; evidence.submitRef set", () => {
+	const btn = entity({ ref: "pi-ref://control/submit", role: "button", name: "Sign in" });
 	const entities = [
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "email" } }),
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
@@ -49,7 +53,7 @@ test("login detected when password input + button present; evidence.submitRef se
 	assert.ok(intentKinds(result).includes("login"));
 	const login = result.intents.find((i) => i.intent === "login");
 	assert.equal(login?.confidence, "high");
-	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit", "evidence.submitRef = first non-disabled button");
+	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit", "evidence.submitRef = strong submit button");
 });
 
 test("login medium confidence (no button) — evidence absent", () => {
@@ -89,15 +93,29 @@ test("search (medium) from search landmark + editable input", () => {
 
 // ── filter-panel supersedes search ───────────────────────────────────────────
 
-test("filter-panel detected; search NOT emitted separately", () => {
+test("filter-panel detected from explicit filter controls; search NOT emitted separately", () => {
+	const entities = [
+		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
+		entity({ role: "link", name: "Apply HP filter", ref: "pi-ref://control/filter-hp" }),
+		entity({ role: "link", name: "Apply Lenovo filter", ref: "pi-ref://control/filter-lenovo" }),
+		entity({ role: "link", name: "Apply Dell filter", ref: "pi-ref://control/filter-dell" }),
+	];
+	const result = buildInferenceSummary(entities, emptyRelations());
+	const kinds = intentKinds(result);
+	assert.ok(kinds.includes("filter-panel"));
+	assert.ok(!kinds.includes("search"), "search suppressed when filter-panel fires");
+	assert.deepEqual(result.intents.find((i) => i.intent === "filter-panel")?.evidence?.controlRefs, ["pi-ref://control/filter-hp", "pi-ref://control/filter-lenovo", "pi-ref://control/filter-dell"]);
+});
+
+test("filter-panel does not fire for a plain search landmark with multiple non-filter inputs", () => {
 	const entities = [
 		entity({ role: "region", kind: "region", structure: { landmark: "search" } }),
 		entity({ role: "textbox", state: { editable: true } }),
 		entity({ role: "combobox", kind: "control", state: { editable: true }, ref: "pi-ref://control/combo" }),
 	];
 	const kinds = intentKinds(buildInferenceSummary(entities, emptyRelations()));
-	assert.ok(kinds.includes("filter-panel"));
-	assert.ok(!kinds.includes("search"), "search suppressed when filter-panel fires");
+	assert.ok(!kinds.includes("filter-panel"));
+	assert.ok(kinds.includes("search"));
 });
 
 // ── single-choice ─────────────────────────────────────────────────────────────
@@ -144,8 +162,12 @@ test("no multi-choice from only 2 checkboxes", () => {
 
 // ── expandable ────────────────────────────────────────────────────────────────
 
-test("expandable detected when expandedTarget >= 2", () => {
-	const exp = buildInferenceSummary([], relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
+test("expandable detected when 2 unique perceptible expandedTarget triggers resolve", () => {
+	const triggers = [
+		entity({ role: "button", ref: "pi-ref://control/acc1", relations: [{ type: "expandedTarget", targetRef: "pi-ref://region/p1", source: "dom", confidence: "high" }] }),
+		entity({ role: "button", ref: "pi-ref://control/acc2", relations: [{ type: "expandedTarget", targetRef: "pi-ref://region/p2", source: "dom", confidence: "high" }] }),
+	];
+	const exp = buildInferenceSummary(triggers, relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
 	assert.ok(exp && exp.confidence === "high");
 });
 
@@ -265,16 +287,30 @@ test("login: all buttons disabled → medium, no submitRef", () => {
 	assert.equal(login!.evidence, undefined, "no submitRef when no actionable button");
 });
 
-test("login: submitRef skips the disabled button and points to the enabled one", () => {
+test("login: submitRef skips disabled/noisy buttons and points to the strong enabled submit", () => {
 	const entities = [
 		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
-		entity({ role: "button", ref: "pi-ref://control/disabled-btn", state: { disabled: true } }),
-		entity({ role: "button", ref: "pi-ref://control/active-btn" }),
+		entity({ role: "button", ref: "pi-ref://control/disabled-btn", name: "Sign in", state: { disabled: true } }),
+		entity({ role: "button", ref: "pi-ref://control/passkey", name: "passkey-login-button" }),
+		entity({ role: "button", ref: "pi-ref://control/active-btn", name: "sign-in-button" }),
 	];
 	const login = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "login");
 	assert.ok(login);
 	assert.equal(login!.confidence, "high");
-	assert.equal(login!.evidence?.submitRef, "pi-ref://control/active-btn", "submitRef = first non-disabled button");
+	assert.equal(login!.evidence?.submitRef, "pi-ref://control/active-btn", "submitRef = strongest non-disabled submit button");
+});
+
+test("login: federated '<verb> with X' buttons lose to the real submit — generic, no provider allowlist", () => {
+	const entities = [
+		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
+		entity({ role: "button", ref: "pi-ref://control/oauth-google", name: "Sign in with Google" }),
+		// fictional provider — proves demotion is by the "X with Y" language shape, not a name list
+		entity({ role: "button", ref: "pi-ref://control/oauth-acme", name: "Continue with Acme SSO" }),
+		entity({ role: "button", ref: "pi-ref://control/submit", name: "Sign in" }),
+	];
+	const login = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "login");
+	assert.equal(login?.confidence, "high");
+	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit", "real submit beats federated 'X with Y' buttons via a generic language pattern");
 });
 
 test("multi-choice: partial grouping (3 in a group + 1 scattered) → high", () => {
@@ -447,10 +483,10 @@ test("expandable resolves trigger refs from expandedTarget relations; fires on c
 	const r = buildInferenceSummary(triggers, relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
 	assert.ok(r);
 	assert.deepEqual(r!.evidence?.triggerRefs, ["pi-ref://control/acc1", "pi-ref://control/acc2"]);
-	// Count without matching entities → intent fires, triggerRefs omitted.
+	// Count without matching entities no longer fires: live validation showed count-only
+	// expandable creates hidden/dropdown false positives without actionable anchors.
 	const r2 = buildInferenceSummary([], relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
-	assert.ok(r2, "expandable still fires from count alone");
-	assert.equal(r2!.evidence, undefined, "no evidence when no trigger entity resolves");
+	assert.equal(r2, undefined, "expandable requires resolved trigger evidence");
 });
 
 test("ref arrays are capped at MAX_EVIDENCE_REFS with a sibling count", () => {

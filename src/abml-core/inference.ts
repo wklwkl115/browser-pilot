@@ -12,14 +12,14 @@
 // Patterns detected:
 //   login            — password-type input + submit control; evidence.submitRef
 //   search           — searchbox role or search landmark with editable inputs
-//   filter-panel     — search landmark + 2+ editable inputs (structured filter UI)
+//   filter-panel     — multiple filter/facet controls or structured search filters
 //   single-choice    — radiogroup container or 2+ radio entities
 //   multi-choice     — 3+ checkbox entities; high when grouped in a container
-//   expandable       — expandedTarget >= 2 (accordion/combobox/disclosure)
-//   data-grid        — grid/treegrid role entity, or tableCells >= 50
+//   expandable       — 2+ unique expand triggers with visible/perceptible evidence
+//   data-grid        — grid/treegrid role entity, or tableCells >= 50; autocomplete grids suppressed
 //   navigation       — nav with aria-current item (currentIn relation)
-//   dialog           — dialog or alertdialog entity
-//   tabbed-interface — tablist role or 2+ tab entities
+//   dialog           — visible dialog or alertdialog entity
+//   tabbed-interface — visible tablist or 2+ visible ungrouped tab entities
 //   alert-region     — alert or status role (live feedback area after actions)
 //   form-dependency  — R3 diff: editable/focused field enabled a previously disabled control
 import type { Entity, RelationType } from "./entity.js";
@@ -29,14 +29,14 @@ import type { RelationSummary } from "./relations.js";
 export type PageIntent =
 	| "login"            // password-type input + submit button
 	| "search"           // searchbox role or search landmark
-	| "filter-panel"     // search landmark + 2+ editable inputs
+	| "filter-panel"     // filter/facet controls or structured search filters
 	| "single-choice"    // radiogroup or 2+ radio entities
 	| "multi-choice"     // 3+ checkbox entities
-	| "expandable"       // expandedTarget >= 2 relations
+	| "expandable"       // 2+ unique expand-trigger relations
 	| "data-grid"        // table/grid with cell relations
 	| "navigation"       // nav with aria-current (currentIn) relation
-	| "dialog"           // modal dialog or alertdialog
-	| "tabbed-interface" // tablist or 2+ tab entities
+	| "dialog"           // visible modal dialog or alertdialog
+	| "tabbed-interface" // visible tablist or 2+ visible tab entities
 	| "alert-region"     // alert or status live region
 	| "form-dependency"; // disabled control enabled by an editable/focused field transition
 
@@ -76,20 +76,48 @@ function countEditable(entities: Entity[]): number {
 	return entities.filter((e) => e.kind === "control" && e.state.editable).length;
 }
 
+function roleOf(entity: Entity): string {
+	return (entity.role || "").toLowerCase();
+}
+
+function textOf(entity: Entity): string {
+	const selector = typeof entity.hints?.selector === "string" ? entity.hints.selector : "";
+	return `${entity.name ?? ""} ${entity.role ?? ""} ${selector}`.toLowerCase();
+}
+
+function isPerceptible(entity: Entity): boolean {
+	return entity.state.visible === true && entity.state.occluded !== true;
+}
+
+function uniqueRefs(refs: string[]): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const ref of refs) {
+		if (!ref || seen.has(ref)) continue;
+		seen.add(ref);
+		out.push(ref);
+	}
+	return out;
+}
+
 // ── Evidence resolution helpers (best-effort ref lookup over the merged entity list) ──────
 
-function firstRefByRole(entities: Entity[], ...roles: string[]): string | undefined {
+function firstEntityByRole(entities: Entity[], ...roles: string[]): Entity | undefined {
 	const set = new Set(roles.map((r) => r.toLowerCase()));
-	return entities.find((e) => e.role && set.has(e.role.toLowerCase()))?.ref;
+	return entities.find((e) => e.role && set.has(roleOf(e)));
+}
+
+function firstRefByRole(entities: Entity[], ...roles: string[]): string | undefined {
+	return firstEntityByRole(entities, ...roles)?.ref;
 }
 
 function allRefsByRole(entities: Entity[], role: string): string[] {
 	const lower = role.toLowerCase();
-	return entities.filter((e) => e.role?.toLowerCase() === lower).map((e) => e.ref);
+	return uniqueRefs(entities.filter((e) => roleOf(e) === lower).map((e) => e.ref));
 }
 
-function refsWithRelation(entities: Entity[], type: RelationType): string[] {
-	return entities.filter((e) => e.relations?.some((r) => r.type === type)).map((e) => e.ref);
+function refsWithRelation(entities: Entity[], type: RelationType, predicate: (entity: Entity) => boolean = () => true): string[] {
+	return uniqueRefs(entities.filter((e) => predicate(e) && e.relations?.some((r) => r.type === type)).map((e) => e.ref));
 }
 
 function firstRelationTarget(entities: Entity[], type: RelationType): string | undefined {
@@ -109,9 +137,10 @@ function landmarkRef(entities: Entity[], landmark: string): string | undefined {
 // the caller can spread it into evidence and naturally omit absent anchors.
 function capRefs(all: string[], key: string): Record<string, unknown> {
 	if (!all.length) return {};
-	const refs = all.slice(0, MAX_EVIDENCE_REFS);
+	const unique = uniqueRefs(all);
+	const refs = unique.slice(0, MAX_EVIDENCE_REFS);
 	const countKey = `${key.replace(/Refs$/, "")}Count`;
-	return { [key]: refs, ...(all.length > refs.length ? { [countKey]: all.length } : {}) };
+	return { [key]: refs, ...(unique.length > refs.length ? { [countKey]: unique.length } : {}) };
 }
 
 // Construct a DetectedIntent, dropping an empty evidence object so absent anchors don't
@@ -121,15 +150,42 @@ function mk(intent: PageIntent, confidence: DetectedIntent["confidence"], reason
 	return { intent, confidence, reason, ...(hasEvidence ? { evidence } : {}) };
 }
 
-// ── Detectors (detection logic frozen; evidence/reason additive) ────────────────
+// ── Detectors (generic ARIA/text patterns only — no per-site allowlists; evidence additive) ──
 
-// login: password-type input (DOM-sourced inputKind) + at least one non-disabled button.
-// evidence.submitRef points to the first actionable button so the agent can click without rescan.
+// login: password-type input (DOM-sourced inputKind) + a visible, same-flow submit-like control.
+// Demotion of non-submit controls uses GENERIC signals only — never a per-site/provider allowlist
+// (Non-goal: no overfitting). Third-party identity buttons are recognized by the cross-site
+// "<verb> with <provider>" language shape, not by enumerating Google/GitHub/GitLab/etc.
+const LOGIN_POSITIVE_RE = /\b(sign[-\s]*in|log[-\s]*in|login|submit|continue|next)\b|登入|登录|登陆|提交|继续|下一步/i;
+const LOGIN_NEGATIVE_RE = /passkey|oauth|omniauth|saml|sso|forgot|register|sign\s*up|show\s*password|cookie|privacy|help|explore|万能钥匙|忘记|注册/i;
+// Generic social/federated-login shape: "Sign in with Google", "Continue with Acme SSO", "Connect
+// with …". Matches the language pattern, so it generalizes to any provider without a name list.
+const LOGIN_THIRD_PARTY_RE = /\b(?:sign[-\s]*in|log[-\s]*in|signin|login|continue|connect)\s+with\b/i;
+
+function loginCandidateScore(entity: Entity): number {
+	if (entity.kind !== "control" || !["button", "link"].includes(roleOf(entity)) || entity.state.disabled) return Number.NEGATIVE_INFINITY;
+	let score = 0;
+	if (isPerceptible(entity)) score += 10;
+	if (entity.state.inViewport) score += 2;
+	const text = textOf(entity);
+	const name = (entity.name ?? "").toLowerCase();
+	if (roleOf(entity) === "button") score += 4;
+	if (LOGIN_POSITIVE_RE.test(name)) score += 14;
+	else if (LOGIN_POSITIVE_RE.test(text)) score += 8;
+	if (/type=['"]?submit|sign-?in|login|submit/.test(text)) score += 6;
+	if (/\bbtn\b/.test(name)) score -= 8;
+	if (LOGIN_NEGATIVE_RE.test(text) || LOGIN_THIRD_PARTY_RE.test(text)) score -= 20;
+	if (!entity.state.inViewport) score -= 8;
+	return score;
+}
+
 function detectLogin(entities: Entity[]): DetectedIntent | undefined {
 	if (!hasInputKind(entities, "password")) return undefined;
-	const submitButton = entities.find((e) => e.kind === "control" && (e.role === "button" || e.role === "link") && !e.state.disabled);
-	if (!submitButton) return mk("login", "medium", "password field, no actionable submit");
-	return mk("login", "high", "password field + actionable submit", { submitRef: submitButton.ref });
+	const submitButton = entities
+		.filter((e) => loginCandidateScore(e) > 0)
+		.sort((a, b) => loginCandidateScore(b) - loginCandidateScore(a))[0];
+	if (!submitButton) return mk("login", "medium", "password field, no strong submit");
+	return mk("login", "high", "password field + strong submit", { submitRef: submitButton.ref });
 }
 
 // search: searchbox role (from <input type=search> via DOM roleOf) is a strong signal.
@@ -144,14 +200,30 @@ function detectSearch(entities: Entity[]): DetectedIntent | undefined {
 	return undefined;
 }
 
-// filter-panel: a search-landmark region containing 2+ editable inputs signals a structured
-// filter UI (date range, facets, dropdown filters) as opposed to a single search box.
+// filter-panel: real filter/facet controls are usually links/buttons whose labels mention
+// applying filters, or grouped checkbox/radio/range controls. A plain search landmark with
+// multiple editable fields is only medium and must expose filter/facet semantics; this avoids
+// anchoring Amazon-style search forms as filter panels.
+const FILTER_TEXT_RE = /\b(filter|facet|refine|narrow|brand|price|rating|stars|department|category|condition|delivery|seller|sort)\b|筛选|缩小|品牌|价格|评分|类别|部门|配送|卖家/i;
+
+function filterControls(entities: Entity[]): Entity[] {
+	return entities.filter((entity) => {
+		if (entity.kind !== "control" || entity.state.disabled || !isPerceptible(entity)) return false;
+		const role = roleOf(entity);
+		return ["button", "link", "combobox", "option", "checkbox", "radio", "slider", "spinbutton"].includes(role) && FILTER_TEXT_RE.test(textOf(entity));
+	});
+}
+
 function detectFilterPanel(entities: Entity[]): DetectedIntent | undefined {
+	const controls = filterControls(entities);
+	if (controls.length >= 3) {
+		return mk("filter-panel", "high", `${controls.length} filter controls`, { ...capRefs(controls.map((entity) => entity.ref), "controlRefs"), inputCount: controls.length });
+	}
 	if (!hasLandmark(entities, "search")) return undefined;
-	const inputCount = countEditable(entities);
-	if (inputCount < 2) return undefined;
-	const regionRef = landmarkRef(entities, "search");
-	return mk("filter-panel", "high", `search landmark, ${inputCount} inputs`, { ...(regionRef ? { regionRef } : {}), inputCount });
+	const editableInputs = entities.filter((e) => e.kind === "control" && e.state.editable && isPerceptible(e));
+	const region = entities.find((e) => e.structure?.landmark === "search" && FILTER_TEXT_RE.test(textOf(e)));
+	if (editableInputs.length < 2 || !region) return undefined;
+	return mk("filter-panel", "medium", `search filter landmark, ${editableInputs.length} inputs`, { regionRef: region.ref, inputCount: editableInputs.length });
 }
 
 // single-choice: radiogroup container in the AX tree is the clean signal (high confidence).
@@ -194,9 +266,10 @@ function detectMultiChoice(entities: Entity[]): DetectedIntent | undefined {
 // Detection stays on the relSummary count; evidence resolves trigger refs in a parallel walk.
 const EXPANDABLE_THRESHOLD = 2;
 function detectExpandable(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
-	const count = relSummary.summary.expandedTarget ?? 0;
-	if (count < EXPANDABLE_THRESHOLD) return undefined;
-	return mk("expandable", "high", `${count} expand triggers`, capRefs(refsWithRelation(entities, "expandedTarget"), "triggerRefs"));
+	const triggerRefs = refsWithRelation(entities, "expandedTarget", (entity) => isPerceptible(entity) || entity.state.expanded !== undefined);
+	const count = Math.max(triggerRefs.length, relSummary.summary.expandedTarget ?? 0);
+	if (triggerRefs.length < EXPANDABLE_THRESHOLD) return undefined;
+	return mk("expandable", "high", `${count} expand triggers`, capRefs(triggerRefs, "triggerRefs"));
 }
 
 // data-grid: grid/treegrid role (ARIA interactive grid) or tableCells >= 50 (large table).
@@ -204,8 +277,8 @@ function detectExpandable(entities: Entity[], relSummary: RelationSummary): Dete
 // have 12–42-cell attribute tables on almost every page — live validation confirmed this).
 const DATA_GRID_CELL_THRESHOLD = 50;
 function detectDataGrid(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
-	const gridRef = firstRefByRole(entities, "grid", "treegrid");
-	if (gridRef) return mk("data-grid", "high", "grid role", { gridRef });
+	const grid = entities.find((entity) => ["grid", "treegrid"].includes(roleOf(entity)) && isPerceptible(entity) && !/autocomplete|suggest/i.test(textOf(entity)));
+	if (grid) return mk("data-grid", "high", "visible grid role", { gridRef: grid.ref });
 	const cellCount = relSummary.summary.tableCells ?? 0;
 	if (cellCount >= DATA_GRID_CELL_THRESHOLD) {
 		const tableRef = firstRelationTarget(entities, "cellOf");
@@ -225,19 +298,19 @@ function detectNavigation(entities: Entity[], relSummary: RelationSummary): Dete
 
 // dialog: a dialog or alertdialog entity present in the merged entity list.
 function detectDialog(entities: Entity[]): DetectedIntent | undefined {
-	const dialog = entities.find((e) => e.role === "dialog" || e.role === "alertdialog");
+	const dialog = entities.find((e) => (roleOf(e) === "dialog" || roleOf(e) === "alertdialog") && isPerceptible(e));
 	if (!dialog) return undefined;
-	return mk("dialog", "high", `${dialog.role} role`, { dialogRef: dialog.ref });
+	return mk("dialog", "high", `visible ${dialog.role} role`, { dialogRef: dialog.ref });
 }
 
 // tabbed-interface: tablist role is the authoritative ARIA container for a tab panel set.
 // 2+ tab entities without an explicit tablist is medium — ungrouped tabs exist in the wild.
 // Tells the agent: switch tabs to access content not visible in the current panel.
 function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
-	const tablistRef = firstRefByRole(entities, "tablist");
-	const tabRefs = allRefsByRole(entities, "tab");
-	if (tablistRef) return mk("tabbed-interface", "high", `tablist with ${tabRefs.length} tabs`, { tablistRef, ...capRefs(tabRefs, "tabRefs") });
-	if (tabRefs.length >= 2) return mk("tabbed-interface", "medium", `${tabRefs.length} ungrouped tabs`, capRefs(tabRefs, "tabRefs"));
+	const tablist = entities.find((entity) => roleOf(entity) === "tablist" && isPerceptible(entity));
+	const tabRefs = uniqueRefs(entities.filter((entity) => roleOf(entity) === "tab" && isPerceptible(entity)).map((entity) => entity.ref));
+	if (tablist) return mk("tabbed-interface", "high", `visible tablist with ${tabRefs.length} tabs`, { tablistRef: tablist.ref, ...capRefs(tabRefs, "tabRefs") });
+	if (tabRefs.length >= 2) return mk("tabbed-interface", "medium", `${tabRefs.length} visible ungrouped tabs`, capRefs(tabRefs, "tabRefs"));
 	return undefined;
 }
 
@@ -245,10 +318,10 @@ function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
 // (polite live region, e.g. save confirmations). Tells the agent where to look for feedback
 // after an action — essential for form validation and async operation results.
 function detectAlertRegion(entities: Entity[]): DetectedIntent | undefined {
-	const region = entities.find((e) => e.role === "alert" || e.role === "status");
+	const region = entities.find((e) => (roleOf(e) === "alert" || roleOf(e) === "status") && isPerceptible(e));
 	if (!region) return undefined;
-	const live = region.role === "alert" ? "assertive" : "polite";
-	return mk("alert-region", "high", `${region.role} live region`, { regionRef: region.ref, live });
+	const live = roleOf(region) === "alert" ? "assertive" : "polite";
+	return mk("alert-region", "high", `visible ${region.role} live region`, { regionRef: region.ref, live });
 }
 
 function changedField(change: EntityDiff["changed"][number], side: "before" | "after", field: string): unknown {

@@ -1,9 +1,9 @@
 // ABML R2 inference layer contract.
 //
 // Verifies the full inference pipeline end-to-end without a browser: all 12 PageIntent
-// patterns detected from their canonical triggers, plus P2/R3 improvements (evidence field,
-// grouped multi-choice confidence, expandable threshold, tabbed-interface, alert-region,
-// form-dependency from temporal diff).
+// patterns detected from their canonical triggers, plus reliability hardening (evidence field,
+// grouped multi-choice confidence, resolved expandable triggers, visibility gating,
+// tabbed-interface, alert-region, form-dependency from temporal diff).
 // Also asserts budget immunity and static wiring.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,10 +20,12 @@ function entity(role, opts = {}) {
 		ref: opts.ref ?? `pi-ref://control/${role}`,
 		kind: opts.kind ?? "control",
 		role,
+		...(opts.name !== undefined ? { name: opts.name } : {}),
 		state: { visible: true, occluded: false, disabled: false, focused: false, editable: opts.editable ?? false, inViewport: true, ...(opts.state ?? {}) },
 		source: "dom",
 		...(opts.structure ? { structure: opts.structure } : {}),
 		...(opts.hints ? { hints: opts.hints } : {}),
+		...(opts.relations ? { relations: opts.relations } : {}),
 	};
 }
 function emptyRel() { return { summary: {}, highlights: [] }; }
@@ -35,7 +37,8 @@ const kinds = (result) => result.intents.map((i) => i.intent);
 // login (P2: evidence.submitRef)
 const loginEntities = [
 	entity("textbox", { editable: true, hints: { inputKind: "password" } }),
-	entity("button", { ref: "pi-ref://control/submit-btn" }),
+	entity("button", { ref: "pi-ref://control/passkey", name: "passkey-login-button" }),
+	entity("button", { ref: "pi-ref://control/submit-btn", name: "Sign in" }),
 ];
 const loginResult = buildInferenceSummary(loginEntities, emptyRel());
 assert.ok(kinds(loginResult).includes("login"), "login detected");
@@ -48,12 +51,22 @@ assert.ok(kinds(buildInferenceSummary([entity("searchbox", { editable: true })],
 // filter-panel (supersedes search)
 const filterEntities = [
 	entity("region", { kind: "region", structure: { landmark: "search" } }),
-	entity("textbox", { editable: true }),
-	entity("combobox", { editable: true, ref: "pi-ref://control/combo" }),
+	entity("link", { ref: "pi-ref://control/filter-hp", name: "Apply HP filter" }),
+	entity("link", { ref: "pi-ref://control/filter-lenovo", name: "Apply Lenovo filter" }),
+	entity("link", { ref: "pi-ref://control/filter-dell", name: "Apply Dell filter" }),
 ];
 const filterResult = buildInferenceSummary(filterEntities, emptyRel());
 assert.ok(kinds(filterResult).includes("filter-panel"), "filter-panel detected");
 assert.ok(!kinds(filterResult).includes("search"), "search suppressed");
+assert.deepEqual(filterResult.intents.find((i) => i.intent === "filter-panel")?.evidence?.controlRefs, ["pi-ref://control/filter-hp", "pi-ref://control/filter-lenovo", "pi-ref://control/filter-dell"], "filter-panel anchored to filter controls");
+
+const plainSearchForm = buildInferenceSummary([
+	entity("region", { kind: "region", structure: { landmark: "search" } }),
+	entity("textbox", { editable: true }),
+	entity("combobox", { editable: true, ref: "pi-ref://control/combo" }),
+], emptyRel());
+assert.ok(!kinds(plainSearchForm).includes("filter-panel"), "plain search form is not a filter-panel");
+assert.ok(kinds(plainSearchForm).includes("search"), "plain search form remains search");
 
 // single-choice (radiogroup)
 assert.ok(kinds(buildInferenceSummary([entity("radiogroup", { kind: "region" })], emptyRel())).includes("single-choice"));
@@ -68,8 +81,13 @@ const mcResult = buildInferenceSummary([
 assert.ok(kinds(mcResult).includes("multi-choice"), "multi-choice detected");
 assert.equal(mcResult.intents.find((i) => i.intent === "multi-choice")?.confidence, "high", "grouped → high confidence");
 
-// expandable (P1: threshold >= 2, not 1)
-assert.ok(kinds(buildInferenceSummary([], relWith({ expandedTarget: 2 }))).includes("expandable"), "expandable at 2");
+// expandable (P1: threshold >= 2, not 1; R2.1: requires resolved trigger refs)
+const expandableTriggers = [
+	entity("button", { ref: "pi-ref://control/acc1", relations: [{ type: "expandedTarget", targetRef: "pi-ref://region/p1", source: "dom", confidence: "high" }] }),
+	entity("button", { ref: "pi-ref://control/acc2", relations: [{ type: "expandedTarget", targetRef: "pi-ref://region/p2", source: "dom", confidence: "high" }] }),
+];
+assert.ok(kinds(buildInferenceSummary(expandableTriggers, relWith({ expandedTarget: 2 }))).includes("expandable"), "expandable at 2 with resolved triggers");
+assert.ok(!kinds(buildInferenceSummary([], relWith({ expandedTarget: 2 }))).includes("expandable"), "count-only expandable suppressed");
 assert.ok(!kinds(buildInferenceSummary([], relWith({ expandedTarget: 1 }))).includes("expandable"), "expandedTarget=1 suppressed");
 
 // data-grid (grid role OR tableCells >= 50)
@@ -131,10 +149,10 @@ assert.equal(anchorBy("dialog")?.evidence?.dialogRef, "pi-ref://region/dlg", "di
 assert.equal(anchorBy("alert-region")?.evidence?.regionRef, "pi-ref://region/alert", "alert-region anchored to regionRef");
 assert.equal(anchorBy("alert-region")?.evidence?.live, "assertive", "alert → assertive live");
 
-// Decoupling: count-only detection fires even when no entity resolves (evidence omitted).
+// Decoupling: table/navigation count-only detection still fires; expandable now needs anchors.
 const decoupled = buildInferenceSummary([], relWith({ tableCells: 60, expandedTarget: 2, currentIn: 1 }));
 assert.ok(decoupled.intents.some((i) => i.intent === "data-grid"), "data-grid fires from count alone");
-assert.ok(decoupled.intents.some((i) => i.intent === "expandable"), "expandable fires from count alone");
+assert.ok(!decoupled.intents.some((i) => i.intent === "expandable"), "expandable count-only suppressed");
 assert.ok(decoupled.intents.some((i) => i.intent === "navigation"), "navigation fires from count alone");
 
 // ── Budget immunity: inference survives to envelope top-level ─────────────────
@@ -202,4 +220,4 @@ assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — 12 patterns + evidence anchoring (every intent → reason + actionable refs: searchRef/gridRef/tablistRef/dialogRef/regionRef/triggerRefs/tableRef/...); count-only detection decoupled from evidence; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
+console.log(`abml inference ok — 12 patterns + hardened evidence anchoring (login scorer, filter controls, visible dialog/tab/live regions, resolved expandable triggers); grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
