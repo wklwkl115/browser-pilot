@@ -8,6 +8,7 @@ import type { EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
+import { buildTemplateSummary } from "../abml/templating.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -500,6 +501,10 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					gist: buildPageGist(attributedEntities),
 					primary_entities: sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
 					outline: buildEntityOutline(attributedEntities),
+					// Mechanism arm M1 — structure templates: repeated sibling entities (AX container /
+					// aria-setsize) folded to template + instances + handles, so a big list/table costs
+					// O(template) not O(N). Budget-immune (lifted to envelope.templates).
+					templates: buildTemplateSummary(attributedEntities).templates,
 					// R1 relationship graph — always present when ABML is integrated (even when empty), so
 					// agents can rely on it surviving the summary-budget squeeze (lifted to envelope top-level).
 					relations: relSummary,

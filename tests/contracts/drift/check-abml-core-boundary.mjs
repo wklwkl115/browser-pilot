@@ -39,6 +39,7 @@ const PURE_CORE = [
 	"diff.ts",
 	"stream.ts",
 	"causal.ts",
+	"templating.ts",
 	"errors.ts",
 	"verbs/router.ts",
 	"verbs/click.ts",

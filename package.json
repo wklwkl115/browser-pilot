@@ -115,6 +115,7 @@
     "smoke:browser:abml-relations": "tsx tests/smoke/smoke-abml-relations.mjs",
     "smoke:browser:abml-inference": "tsx tests/smoke/smoke-abml-inference-postaction.mjs",
     "smoke:browser:abml-causal": "tsx tests/smoke/smoke-abml-causal.mjs",
+    "smoke:browser:abml-templating": "tsx tests/smoke/smoke-abml-templating.mjs",
     "smoke:browser:memory": "tsx tests/smoke/smoke-browser-memory.mjs",
     "smoke:abml:internal-routing": "tsx tests/smoke/smoke-abml-internal-tool-routing.mjs",
     "prepack": "npm run build && node scripts/build-bridge.mjs --quiet",
@@ -124,7 +125,8 @@
     "check:abml-ax-smoke": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs",
     "check:abml-inference": "tsx tests/contracts/tools/check-abml-inference.mjs",
     "check:abml-diff": "tsx tests/contracts/tools/check-abml-diff.mjs",
-    "check:abml-causal": "tsx tests/contracts/tools/check-abml-causal.mjs"
+    "check:abml-causal": "tsx tests/contracts/tools/check-abml-causal.mjs",
+    "check:abml-templating": "tsx tests/contracts/tools/check-abml-templating.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",

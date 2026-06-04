@@ -41,6 +41,9 @@ export type DistilledEnvelope = {
 	// no control attribution): { sinceSeq, requests[] } or { unavailable }. Present only when
 	// browser_observe(mode:scan) is given a baseline. Lifted here so the budget never hides it.
 	causal?: Record<string, unknown>;
+	// ABML mechanism arm M1 — structure templates (repeated list/table/card folded to template +
+	// instances + handles). Lifted here so the budget never hides the large-page compression.
+	templates?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -227,6 +230,14 @@ function envelopeCausal(summary: DistilledSummary): Record<string, unknown> | un
 	return isRecord(summary.causal) ? structuredClone(summary.causal) as Record<string, unknown> : undefined;
 }
 
+// ABML mechanism arm M1 — structure templates lifted from the (uncompressed) focus so the large-page
+// compression survives the budget squeeze — cloned for the same [Circular]-avoidance reason as outline.
+function envelopeTemplates(summary: DistilledSummary): Array<Record<string, unknown>> | undefined {
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	const templates = asArray(focus?.templates).filter(isRecord);
+	return templates.length ? structuredClone(templates) as Array<Record<string, unknown>> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -364,6 +375,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const inference = envelopeInference(redactedSummary);
 	const diff = envelopeDiff(redactedSummary);
 	const causal = envelopeCausal(redactedSummary);
+	const templates = envelopeTemplates(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -383,6 +395,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(inference ? { inference } : {}),
 		...(diff ? { diff } : {}),
 		...(causal ? { causal } : {}),
+		...(templates ? { templates } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

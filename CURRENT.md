@@ -11,12 +11,13 @@
 
 ## 当前激活项
 
-- **ABML R3.x — network/API 因果平面**（2026-06-04 用户显式激活）：执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。分阶段：**P0** = 复用 `browser_observe` baseline，在 envelope 顶层加 `causal`（自 baseline 以来 fire 的网络请求；脱敏、截断、零归因假设；复用现有 network recorder + 既有但未接线的 `src/abml-core/stream.ts` stream plane 脚手架）；**P1** = 用 `diff.focusedRef` / 显式 `actionRef` 把请求归因到具体 control（新 `triggered` relation）。边界：不新增公开工具、不改 `native_command_schema`、纯核零运行时依赖、隐私脱敏、时序窗口可解释（不解析 initiator stack、无 per-site 分支）。
-- **Browser workflow eval runner 并行分支**（2026-06-04 用户显式要求并行）：分支 `feat/browser-workflow-eval-runner`，在不触碰 ABML 主线实现、不新增公开 `browser_*` 工具的前提下，已把 `evals/browser-workflows/` 从静态/手工规格推进到真正可执行的 opt-in runner。入口：`npm run eval:browser-workflows -- --fixture-server`；默认无运行副作用；fixture server 仅绑定 `127.0.0.1` ephemeral port；默认覆盖 manifest 全量 eval（`01`-`27` 与 `30`）；结果写 `.pi/browser-artifacts/eval-browser-workflows/<run-id>/` 并符合 `evals/browser-workflows/result-schema.json`。
-- 除上述用户显式并行分支外，其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
+- **ABML 机制臂 — structure templating + living tree-diff**（2026-06-04 用户显式激活 "开机制臂"）：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。目标 = 大页面降 token（语义层 R1/R2/R3 正确但扁平且全量重发）。**M1 structure templating**（重复 list/table/card → 一个 template + N 个紧凑 instance + handle；纯核 `src/abml-core/templating.ts`，按 AX 容器 `hints.containerRole/containerName` 或 `aria-setsize` 分组，不碰 DOM nth-child 猜测）；**M2 living tree-diff**（跨观测只发结构级变更 `treeDiff`，前提是 ref 语义稳定，顺带治 REF_STALE）。边界：不新增公开工具、不改 `native_command_schema`、纯核零依赖、budget-immune envelope、handle 无损（每 instance 留 `pi-ref://`，`read(ref)` 可还原）、ARIA-grounded only 无 per-site。
+- 除用户显式要求的并行分支外，其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
 
 ## 已完成但不再作为当前队列
 
+- **ABML R3.x — network/API 因果平面已完成（2026-06-04，浏览器验证）**：P0+P1+P2(A+B+C) 全部落地于 master。执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。P0=被动网络增量 `envelope.causal`；P1=`triggered` 时序归因；P2-A=事件因果 `causal.events`；P2-B=事件源归因 `source:"event"`；P2-C=因果 stream plane（游标 drain 通道，`read(plane:network|event)` arm/drain，内部 substrate 经 `integration.readStream`）。仅"真正的服务端推送"出范围（req/resp 架构物理不可能）。
+- **Browser workflow eval runner 已完成并合并入 master（2026-06-04）**：`feat/browser-workflow-eval-runner` 的可执行 opt-in runner 已合并，分支已删除；入口 `npm run eval:browser-workflows -- --fixture-server`，默认无副作用、fixture server 仅绑 `127.0.0.1`。
 - **CLI + Skill Frontend Migration 已完成**：`pi-browser` CLI（用户级单例 daemon 驱动）成为唯一外部前端，MCP shell 整体移除，`@modelcontextprotocol/sdk` 下线；Pi-native `index.ts` 不变且验证通过（注册 22 工具、零 mcp 依赖），live `npm run smoke:cli` 端到端通过。执行合同：`docs/cli-skill-frontend-migration-plan.md`；CLI 文档：`docs/cli.md`。
 - **ABML 内核解耦已完成**：纯核模块 + `index.ts` barrel 物理分层到 `src/abml-core/`（零浏览器/Node 依赖），运行时留 `src/abml/`，边界 CI 锁定（`check:abml-core-boundary`）。清单见 `docs/abml-kernel-manifest.md`；workspace 包提升为可选延后项。
 - ABML 执行落地已收口为 internal substrate；公开 ABML tool surface RFC 继续 deferred。历史执行合同保留在 `docs/abml-execution-plan.md`，但不再是当前执行队列。

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>ABML templating fixture — repeated list</title>
+	<style>
+		body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; }
+		ul { list-style: none; padding: 0; }
+		li { margin: 0.25rem 0; }
+		a { display: inline-block; padding: 0.4rem 0.8rem; border: 1px solid #ccc; border-radius: 6px; text-decoration: none; color: #036; }
+	</style>
+</head>
+<body>
+	<h1>Catalog</h1>
+	<!-- A semantic list of links: each <a> is actionable (an ABML entity) and shares the AX list
+	     container; aria-setsize/posinset give each a structure.setSize so templating fires via either
+	     the AX-container path or the aria-setsize path. 6 instances → one structure template. -->
+	<nav aria-label="Catalog">
+		<ul role="list" aria-label="Products">
+			<li><a href="#alpha"   aria-setsize="6" aria-posinset="1">Product Alpha</a></li>
+			<li><a href="#bravo"   aria-setsize="6" aria-posinset="2">Product Bravo</a></li>
+			<li><a href="#charlie" aria-setsize="6" aria-posinset="3">Product Charlie</a></li>
+			<li><a href="#delta"   aria-setsize="6" aria-posinset="4">Product Delta</a></li>
+			<li><a href="#echo"    aria-setsize="6" aria-posinset="5">Product Echo</a></li>
+			<li><a href="#foxtrot" aria-setsize="6" aria-posinset="6">Product Foxtrot</a></li>
+		</ul>
+	</nav>
+	<p><button id="standalone">A non-repeating control</button></p>
+</body>
+</html>

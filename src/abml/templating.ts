@@ -1,0 +1,3 @@
+// Re-export shim — this pure-core module lives in src/abml-core/ (see docs/abml-kernel-manifest.md).
+// Importers may use "../abml/templating.js" while the kernel stays in abml-core. Boundary: check:abml-core-boundary.
+export * from "../abml-core/templating.js";

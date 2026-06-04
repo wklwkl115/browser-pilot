@@ -57,6 +57,7 @@ each doc links back here.
 | `diff.ts` | ABML R3 temporal entity diff: appeared/disappeared/state-changed/name-changed/focusedRef between two entity snapshots. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
+| `templating.ts` | ABML mechanism arm (M1): structure templating — folds repeated sibling entities (same AX container / aria-setsize + role/kind) into one template + compact instances + handles. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
 | `verbs/click.ts` | Click verb decision logic (pure; no browser call). |
