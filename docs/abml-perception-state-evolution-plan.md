@@ -298,12 +298,17 @@ owns/expandedTarget + table cellOf/rowOf/columnOf/headerFor (AX-sourced), plus *
 - current / active-route (promote the existing aria-current *state* to a nav *relation*)
 - occludes / coveredBy (needs geometry — box overlap + z-order; pairs with vision region)
 
-### Phase R2 — Inference layer (semantic aggregation over the R1 graph)
-GENERIC structural patterns → semantic labels (NOT per-site/per-type branches):
-- intent labels: form+password+submit → "login", radiogroup set → "single-choice", search
-  landmark + inputs → "filter panel" (a pattern over ARIA structure, not a URL/site check)
-- relational facts: "this submit acts on form X", "this cell is in row 3" (from the R1 graph)
-- dependency facts: "disabled because a precondition is unmet" (needs R3 runtime events)
+### Phase R2 — Inference layer — COMPLETE (2026-06-04)
+New pure-core `src/abml-core/inference.ts` (17th module). 9 generic ARIA intent labels
+at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune):
+- **Landed**: login · search · filter-panel · single-choice · multi-choice · expandable ·
+  data-grid (grid/treegrid role OR tableCells ≥ 50) · navigation · dialog
+- **Real-page validated** on 9 pages (Bing, Amazon, W3C APG, MDN). data-grid threshold
+  fixed post-validation (tableCells>0 → ≥50) to filter APG doc-table noise.
+- **Deferred to R3**: dependency facts ("disabled because precondition unmet") — needs
+  runtime events to observe state transitions.
+- **inputKind** hint added to entity scan (HTML input type → login detection signal).
+- Contract: `check:abml-inference`; commit `12c4b2f` (initial) + `508e1bf` (threshold fix).
 
 ### Phase R3 — Perception-source expansion (heaviest; independent sources, one at a time)
 - runtime events: post-action state diff, focus migration, menu-expand chains — reuse the
