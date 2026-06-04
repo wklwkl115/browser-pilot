@@ -42,7 +42,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
 
-## Pure core (18 — zero browser/Node deps)
+## Pure core (19 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -56,6 +56,7 @@ each doc links back here.
 | `inference.ts` | ABML R2/R3 inference layer: generic ARIA pattern detection plus temporal `form-dependency` over entities + R1 relation summary + optional R3 diff. |
 | `diff.ts` | ABML R3 temporal entity diff: appeared/disappeared/state-changed/name-changed/focusedRef between two entity snapshots. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
+| `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
 | `verbs/click.ts` | Click verb decision logic (pure; no browser call). |

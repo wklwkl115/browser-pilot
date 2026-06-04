@@ -38,6 +38,7 @@ const PURE_CORE = [
 	"inference.ts",
 	"diff.ts",
 	"stream.ts",
+	"causal.ts",
 	"errors.ts",
 	"verbs/router.ts",
 	"verbs/click.ts",
