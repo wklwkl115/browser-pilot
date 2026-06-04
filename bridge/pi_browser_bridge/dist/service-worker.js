@@ -4637,6 +4637,7 @@ function networkRecorderSummary(recorder) {
     requestCount: recorder.byRequestId.size,
     bodyCount: recorder.bodyStore.size,
     pendingBodyCount: recorder.pendingBodyCount,
+    lastSeq: recorder.entries.length ? Number(recorder.entries[recorder.entries.length - 1].seq) : Number(recorder.seqBase || 0),
     maxEntries: recorder.config.maxEntries,
     maxAgeMs: recorder.config.maxAgeMs,
     maxBodyBytes: recorder.config.maxBodyBytes,

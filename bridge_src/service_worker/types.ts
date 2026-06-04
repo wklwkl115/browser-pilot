@@ -234,6 +234,9 @@ export type NetworkRecorderSummary = {
   requestCount: number;
   bodyCount: number;
   pendingBodyCount: number;
+  // Highest network entry seq currently held (or seqBase when empty). The ABML R3.x causal plane
+  // records this as a baseline high-water mark so a later observe can window seq>lastSeq.
+  lastSeq: number;
   maxEntries: number;
   maxAgeMs: number;
   maxBodyBytes: number;

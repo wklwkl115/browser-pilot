@@ -7,6 +7,7 @@ import type { Entity } from "../abml/entity.js";
 import type { EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary } from "../abml/relations.js";
 import { buildInferenceSummary } from "../abml/inference.js";
+import { buildCausalSummary, causalUnavailable, type CausalSummary } from "../abml/causal.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -155,7 +156,7 @@ export function buildPageGist(entities: Entity[]): Record<string, unknown> {
 	};
 }
 
-function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined) {
+function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number) {
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	return server.createObservationSnapshot({
 		browserSessionId: bridge.browserSessionId,
@@ -165,8 +166,58 @@ function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: Observe
 		selectionVersion: bridge.selectionVersion,
 		sourceMode,
 		capturedAt: Date.now(),
+		networkSeq,
 		saved: savedPath ? { path: savedPath } : undefined,
 	});
+}
+
+// ABML R3.x causal plane — read the network recorder's current seq high-water mark (and whether a
+// recorder is active) for the default network session on the observed tab. Best-effort: any failure
+// degrades to "no recorder" so observe never fails because of the causal read. `network.status`
+// returns the recorder summary (active + lastSeq) when running, or `{ active: false }` otherwise.
+async function readNetworkRecorderSeq(server: BrowserBridgeServer, params: ObserveToolParams, tabId: number | undefined, timeoutMs: number): Promise<{ active: boolean; lastSeq?: number }> {
+	try {
+		const res = await server.sendCommand({ cmd: "network.status" }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
+		const data = isRecord(res.data) ? res.data : {};
+		if (data.active === false) return { active: false };
+		return { active: true, lastSeq: typeof data.lastSeq === "number" ? data.lastSeq : undefined };
+	} catch {
+		return { active: false };
+	}
+}
+
+// Query the network-delta window (entries with seq > sinceSeq) via the existing recorder command.
+// Returns the raw record summaries; the pure-core buildCausalSummary shapes/redacts/caps them.
+async function queryNetworkDelta(server: BrowserBridgeServer, params: ObserveToolParams, sinceSeq: number, tabId: number | undefined, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
+	const res = await server.sendCommand({ cmd: "network.list", sinceSeq, limit: 500 }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
+	const data = isRecord(res.data) ? res.data : {};
+	return Array.isArray(data.items) ? data.items.filter(isRecord) : [];
+}
+
+// Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
+// "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
+// or the baseline carries no seq high-water mark (e.g. a raw entity-list baseline).
+async function buildObserveCausal(server: BrowserBridgeServer, params: ObserveToolParams, recorderState: { active: boolean }, baselineNetworkSeq: number | undefined, tabId: number | undefined, timeoutMs: number): Promise<CausalSummary> {
+	if (!recorderState.active) return causalUnavailable("network recorder not active — start via browser_network start");
+	if (baselineNetworkSeq === undefined) return causalUnavailable("baseline has no network seq high-water mark — capture a baseline observation after browser_network start");
+	try {
+		const items = await queryNetworkDelta(server, params, baselineNetworkSeq, tabId, timeoutMs);
+		return buildCausalSummary(items, baselineNetworkSeq);
+	} catch {
+		return causalUnavailable("network recorder delta query failed");
+	}
+}
+
+// Recover a baseline's network seq high-water mark from an inline baseline (a prior observe
+// envelope/summary carries it under snapshot/correlation/top-level networkSeq).
+function networkSeqFromBaseline(value: unknown): number | undefined {
+	if (!isRecord(value)) return undefined;
+	if (typeof value.networkSeq === "number") return value.networkSeq;
+	const snapshot = isRecord(value.snapshot) ? value.snapshot : undefined;
+	if (typeof snapshot?.networkSeq === "number") return snapshot.networkSeq;
+	const correlation = isRecord(value.correlation) ? value.correlation : undefined;
+	if (typeof correlation?.networkSeq === "number") return correlation.networkSeq;
+	return undefined;
 }
 
 function entityArrayFromUnknown(value: unknown): Entity[] | undefined {
@@ -207,7 +258,7 @@ function baselineSnapshotId(value: unknown): string | undefined {
 	return typeof snapshot?.snapshotId === "string" && snapshot.snapshotId ? snapshot.snapshotId.trim() : undefined;
 }
 
-type BaselineResolution = { entities: Entity[]; partialBaseline: boolean };
+type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number };
 
 function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 	if (Array.isArray(value)) return entities.length < 10;
@@ -223,7 +274,7 @@ function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: unknown): Promise<BaselineResolution | undefined> {
 	if (baseline === undefined || baseline === null) return undefined;
 	const inline = baselineEntitiesFromParam(baseline);
-	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline) };
+	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline) };
 	const snapshotId = baselineSnapshotId(baseline);
 	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", { baselineType: typeof baseline });
 	const snapshot = server.getObservationSnapshot(snapshotId);
@@ -237,7 +288,7 @@ async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: un
 	}
 	const fromArtifact = baselineEntitiesFromParam(parsed);
 	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", { snapshotId, path: snapshot.saved.path });
-	return { entities: fromArtifact, partialBaseline: false };
+	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed) };
 }
 
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
@@ -339,7 +390,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
-	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined);
+	// ABML R3.x causal plane: capture this observation's network seq high-water mark (so it can anchor
+	// a future baseline) and, when a baseline was supplied, the network-delta fired since it.
+	const recorderState = await readNetworkRecorderSeq(server, params, tabId, timeoutMs);
+	const causal = params.baseline !== undefined && params.baseline !== null
+		? await buildObserveCausal(server, params, recorderState, baseline?.networkSeq, tabId, timeoutMs)
+		: undefined;
+	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq);
 	const baseSummary: Record<string, unknown> = {
 		...withObservationMeta(summarizeScanData(data, tabs, {
 			detailLevel: params.detailLevel,
@@ -360,6 +417,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
+	// Top-level `causal` block (budget-immune, lifted to envelope alongside diff/relations/inference).
+	// Present only when a baseline was supplied; independent of ABML entity integration.
+	const causalBlock = causal ? { causal } : {};
 	const summary = abmlEntities !== null
 		? (() => {
 			const relSummary = buildRelationSummary(abmlEntities);
@@ -367,6 +427,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...baseSummary,
 				abmlIntegrated: true,
 				...(abmlDiff ? { diff: abmlDiff } : {}),
+				...causalBlock,
 				focus: {
 					...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
 					gist: buildPageGist(abmlEntities),
@@ -384,7 +445,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				},
 			};
 		})()
-		: { ...baseSummary, abmlIntegrated: false };
+		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",

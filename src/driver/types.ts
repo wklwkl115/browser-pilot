@@ -124,6 +124,9 @@ export type BrowserObservationSnapshotInfo = {
 	sourceMode: string;
 	capturedAt: number;
 	ttlMs: number;
+	// Network recorder seq high-water mark at capture time (ABML R3.x causal plane). When a later
+	// browser_observe uses this snapshot as a baseline, requests with seq > networkSeq are the delta.
+	networkSeq?: number;
 	invalidatedReason?: string;
 	expired?: boolean;
 	saved?: {

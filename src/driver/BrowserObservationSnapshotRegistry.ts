@@ -35,6 +35,7 @@ export class BrowserObservationSnapshotRegistry {
 			selectionVersion: snapshot.selectionVersion,
 			sourceMode: snapshot.sourceMode,
 			capturedAt: snapshot.capturedAt,
+			networkSeq: snapshot.networkSeq,
 			ttlMs: Math.max(1_000, Math.floor(snapshot.ttlMs ?? DEFAULT_SNAPSHOT_TTL_MS)),
 			invalidatedReason: snapshot.invalidatedReason,
 			saved: snapshot.saved,

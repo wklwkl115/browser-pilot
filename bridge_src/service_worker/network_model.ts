@@ -239,6 +239,7 @@ function networkRecorderSummary(recorder: NetworkRecorder | null | undefined): N
     tabId:recorder.tabId, sessionId:recorder.sessionId, recorderId:recorder.recorderId, active:!!recorder.active,
     createdAt:recorder.createdAt, startedAt:recorder.startedAt, stoppedAt:recorder.stoppedAt, age_ms:Date.now()-(recorder.startedAt || recorder.createdAt),
     entries:recorder.entries.length, requestCount:recorder.byRequestId.size, bodyCount:recorder.bodyStore.size, pendingBodyCount:recorder.pendingBodyCount,
+    lastSeq:recorder.entries.length ? Number(recorder.entries[recorder.entries.length - 1].seq) : Number(recorder.seqBase || 0),
     maxEntries:recorder.config.maxEntries, maxAgeMs:recorder.config.maxAgeMs, maxBodyBytes:recorder.config.maxBodyBytes, overflowCount:recorder.overflowCount, bodyOverflowCount:recorder.bodyOverflowCount,
     counters:{ ...recorder.counters }, lastErrors:recorder.lastErrors.slice(-10), lifecycleEvents:recorder.lifecycleEvents.slice(-10), activeWaits, activeWaitCount:activeWaits.length,
     cdp:{ subscriptions:(recorder.cdpRecord.cdpSubscriptions || []).slice(), domains:Array.from(recorder.cdpRecord.cdpDomains || []), attached:!!recorder.cdpRecord.cdpAttached, refs:diagnosePiBrowserCdpDomainRefs(recorder.tabId).filter(r => (r.holders || []).some(h => h.holderId === recorder.cdpRecord.key)) },
