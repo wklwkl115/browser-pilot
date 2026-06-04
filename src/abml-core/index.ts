@@ -14,6 +14,7 @@ export * from "./entity.js";
 export * from "./ax.js";
 export * from "./relations.js";
 export * from "./inference.js";
+export * from "./diff.js";
 export * from "./stream.js";
 export * from "./errors.js";
 export * from "./verbs/router.js";

@@ -299,20 +299,29 @@ owns/expandedTarget + table cellOf/rowOf/columnOf/headerFor (AX-sourced), plus *
 - occludes / coveredBy (needs geometry — box overlap + z-order; pairs with vision region)
 
 ### Phase R2 — Inference layer — COMPLETE (2026-06-04)
-New pure-core `src/abml-core/inference.ts` (17th module). 9 generic ARIA intent labels
+New pure-core `src/abml-core/inference.ts`. 12 generic ARIA/temporal intent labels
 at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune):
 - **Landed**: login · search · filter-panel · single-choice · multi-choice · expandable ·
-  data-grid (grid/treegrid role OR tableCells ≥ 50) · navigation · dialog
+  data-grid (grid/treegrid role OR tableCells ≥ 50) · navigation · dialog · tabbed-interface ·
+  alert-region · form-dependency
 - **Real-page validated** on 9 pages (Bing, Amazon, W3C APG, MDN). data-grid threshold
   fixed post-validation (tableCells>0 → ≥50) to filter APG doc-table noise.
-- **Deferred to R3**: dependency facts ("disabled because precondition unmet") — needs
-  runtime events to observe state transitions.
+- **R3 unlocked dependency facts**: disabled→enabled + focused editable field now emits
+  `form-dependency` evidence `{enabledRef, requiredRef}`.
 - **inputKind** hint added to entity scan (HTML input type → login detection signal).
-- Contract: `check:abml-inference`; commit `12c4b2f` (initial) + `508e1bf` (threshold fix).
+- Contract: `check:abml-inference`.
 
-### Phase R3 — Perception-source expansion (heaviest; independent sources, one at a time)
-- runtime events: post-action state diff, focus migration, menu-expand chains — reuse the
-  existing monitor/hook infra; **this unlocks R2 dependency inference**
+### Phase R3 — Runtime events / temporal diff — COMPLETE (2026-06-04)
+- `src/abml-core/diff.ts` adds pure `diffEntities(before, after)` with appeared,
+  disappeared, state/name changed, and `focusedRef`.
+- `browser_observe mode=scan` accepts an optional `baseline` entity list / prior scan
+  summary/envelope / snapshot id and lifts `diff` to the envelope top level.
+- ABML read/click/type runtimes can attach post-action entity diff; same-page refs are
+  now stable by semantic locator hash so two snapshots match by `pi-ref://`.
+- R2 dependency inference consumes R3 diff to emit `form-dependency`.
+- Contract: `check:abml-diff`; schema: `EntityDiffSchema`.
+
+### Phase R3.x — Perception-source expansion (remaining independent sources)
 - network/API semantics: tables/pagination/submit endpoints behind controls — reuse the
   existing network recorder; hang network/event refs on a control's subtree (the "causal
   plane" above)

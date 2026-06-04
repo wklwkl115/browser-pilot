@@ -1,6 +1,6 @@
 # ABML R3 — Runtime Events Execution Plan
 
-> Status: **ready-for-activation (2026-06-04)**.
+> Status: **complete (2026-06-04)**.
 > Does **not** add public `browser_abml_*` tools. ABML stays internal substrate; new
 > output fields ride existing `browser_observe` + action verb envelopes.
 
@@ -203,6 +203,25 @@ This makes "what changed" visible without a separate observe call.
 Network/API causal plane (R3.x) starts only when:
 - R3.1 entity diff is stable in model-facing output.
 - At least one real-page validation shows meaningful diff on a state-transition.
+
+## 9. Completion notes (2026-06-04)
+
+Implemented:
+- Pure core `src/abml-core/diff.ts` + `src/abml/diff.ts` shim + barrel/boundary manifest.
+- `runAbmlRead` baseline → `EntityDiff`; click/type action runtimes attach post-action diff.
+- `browser_observe mode=scan` optional `baseline` parameter; accepts inline entity arrays,
+  prior summary/envelope objects, or saved observation `snapshotId` artifacts.
+- Envelope top-level `diff`, `EntityDiffSchema`, `check:abml-diff` contract, and full check-group wiring.
+- Stable same-page pi-ref minting from semantic locator hashes to make snapshot diff matching useful.
+- R2 extension: `form-dependency` intent with `{enabledRef, requiredRef}` evidence.
+
+Verified:
+- `npm run check:src:types`
+- `npm run check:abml-core-boundary`
+- `npm run test:unit -- tests/unit/abml/diff.test.ts tests/unit/abml/inference.test.ts tests/unit/abml/verbs.test.ts tests/unit/abml/verbs-runtime.test.ts`
+- `npm run check:abml-diff`
+- `npm run check:abml-inference`
+- `npm run check:abml-scan-envelope`
 
 ## 7. Verification command map
 

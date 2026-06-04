@@ -12,7 +12,7 @@
 // or (b) a whitelisted cross-cutting module proven transitively pure. Importing driver/tools/
 // scan/resources/node, an npm package, a runtime sibling, or reaching back into src/abml/ fails.
 //
-// src/abml/ keeps the 7 runtime files plus 15 re-export shims at the old pure-core paths, so every
+// src/abml/ keeps the 7 runtime files plus pure-core re-export shims at the old pure-core paths, so every
 // existing importer ("../abml/entity.js", "../abml/verbs/router.js", ...) keeps working unchanged.
 // This file IS the machine-readable manifest; keep it in sync with docs/abml-kernel-manifest.md.
 import assert from "node:assert/strict";
@@ -36,6 +36,7 @@ const PURE_CORE = [
 	"ax.ts",
 	"relations.ts",
 	"inference.ts",
+	"diff.ts",
 	"stream.ts",
 	"errors.ts",
 	"verbs/router.ts",

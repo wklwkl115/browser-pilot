@@ -1,8 +1,9 @@
 // ABML R2 inference layer contract.
 //
-// Verifies the full inference pipeline end-to-end without a browser: all 11 PageIntent
-// patterns detected from their canonical triggers, plus P2 improvements (evidence field,
-// grouped multi-choice confidence, expandable threshold, tabbed-interface, alert-region).
+// Verifies the full inference pipeline end-to-end without a browser: all 12 PageIntent
+// patterns detected from their canonical triggers, plus P2/R3 improvements (evidence field,
+// grouped multi-choice confidence, expandable threshold, tabbed-interface, alert-region,
+// form-dependency from temporal diff).
 // Also asserts budget immunity and static wiring.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,7 +30,7 @@ function emptyRel() { return { summary: {}, highlights: [] }; }
 function relWith(counts) { return { summary: counts, highlights: [] }; }
 const kinds = (result) => result.intents.map((i) => i.intent);
 
-// ── All 11 pattern families ───────────────────────────────────────────────────
+// ── All 12 pattern families ───────────────────────────────────────────────────
 
 // login (P2: evidence.submitRef)
 const loginEntities = [
@@ -95,6 +96,15 @@ assert.equal(arResult.intents.find((i) => i.intent === "alert-region")?.confiden
 // status role also triggers alert-region
 assert.ok(kinds(buildInferenceSummary([entity("status", { kind: "region" })], emptyRel())).includes("alert-region"), "status → alert-region");
 
+// form-dependency (R3: disabled→enabled + focused editable field)
+const depEntities = [
+	entity("textbox", { ref: "pi-ref://control/email", editable: true, state: { focused: true } }),
+	entity("button", { ref: "pi-ref://control/submit", state: { disabled: false } }),
+];
+const depResult = buildInferenceSummary(depEntities, emptyRel(), { appeared: [], disappeared: [], changed: [{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }], focusedRef: "pi-ref://control/email" });
+assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency detected from R3 diff");
+assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency requiredRef set");
+
 // ── Budget immunity: inference survives to envelope top-level ─────────────────
 
 const envelopeSummary = {
@@ -147,7 +157,7 @@ const schemasSrc = readRepo("src/tools/summaries/outputSchemas.ts");
 assert.ok(schemasSrc.includes("InferenceSummarySchema"), "InferenceSummarySchema exported");
 
 const inferenceSrc = readRepo("src/abml-core/inference.ts");
-assert.ok(inferenceSrc.includes("tabbed-interface") && inferenceSrc.includes("alert-region"), "new intents in inference.ts");
+assert.ok(inferenceSrc.includes("tabbed-interface") && inferenceSrc.includes("alert-region") && inferenceSrc.includes("form-dependency"), "new intents in inference.ts");
 assert.ok(inferenceSrc.includes("evidence?"), "evidence field on DetectedIntent");
 assert.ok(inferenceSrc.includes("EXPANDABLE_THRESHOLD"), "expandable threshold constant");
 
@@ -157,4 +167,4 @@ assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — 11 patterns (login/search/filter-panel/single-choice/multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region); evidence.submitRef; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
+console.log(`abml inference ok — 12 patterns (login/search/filter-panel/single-choice/multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region/form-dependency); evidence.submitRef; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);

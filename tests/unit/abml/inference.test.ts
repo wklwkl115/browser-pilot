@@ -321,6 +321,33 @@ test("alert-region + dialog co-occur (validation error inside a modal)", () => {
 	assert.ok(kinds.includes("alert-region"), "alert-region detected alongside dialog");
 });
 
+test("form-dependency detected from R3 diff disabled→enabled + focused editable field", () => {
+	const entities = [
+		entity({ role: "textbox", ref: "pi-ref://control/email", state: { editable: true, focused: true } }),
+		entity({ role: "button", ref: "pi-ref://control/submit", state: { disabled: false } }),
+	];
+	const result = buildInferenceSummary(entities, emptyRelations(), {
+		appeared: [],
+		disappeared: [],
+		changed: [{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }],
+		focusedRef: "pi-ref://control/email",
+	});
+	const dep = result.intents.find((i) => i.intent === "form-dependency");
+	assert.ok(dep, "form-dependency fires");
+	assert.equal(dep!.confidence, "high");
+	assert.deepEqual(dep!.evidence, { enabledRef: "pi-ref://control/submit", requiredRef: "pi-ref://control/email" });
+});
+
+test("form-dependency does not fire without focused editable required field", () => {
+	const entities = [entity({ role: "button", ref: "pi-ref://control/submit", state: { disabled: false } })];
+	const result = buildInferenceSummary(entities, emptyRelations(), {
+		appeared: [],
+		disappeared: [],
+		changed: [{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }],
+	});
+	assert.ok(!intentKinds(result).includes("form-dependency"));
+});
+
 test("intents without relational facts carry no evidence field (schema cleanliness)", () => {
 	// data-grid / tabbed-interface / alert-region / navigation don't emit evidence.
 	const entities = [

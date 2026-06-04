@@ -5,8 +5,8 @@ export function createBrowserAbmlIntegration(server: Pick<BrowserBridgeServer, "
 	const runtime = createBrowserAbmlRuntime(server, options);
 	return {
 		runtime,
-		readStructure: async (input: { ref?: string; browserSessionId?: string; tabId?: number | string; timeoutMs?: number; maxChars?: number }) => {
-			return await runtime.read?.({ ref: input.ref, plane: "structure" });
+		readStructure: async (input: { ref?: string; browserSessionId?: string; tabId?: number | string; timeoutMs?: number; maxChars?: number; baseline?: import("../entity.js").Entity[] }) => {
+			return await runtime.read?.({ ref: input.ref, plane: "structure", baseline: input.baseline });
 		},
 	};
 }

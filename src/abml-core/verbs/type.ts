@@ -1,10 +1,11 @@
 import { actionabilitySpecForVerb } from "../actionabilityModel.js";
+import type { EntityDiff } from "../diff.js";
 import type { ActionabilityReport, VerificationResult } from "../types.js";
 import type { AbmlTypeInput, AbmlVerbResult, AbmlVerbSuccess } from "./router.js";
 import { actionabilityFailure, verificationFailure } from "./router.js";
 import { normalizeAbmlError } from "../errors.js";
 
-export type AbmlTypeExecutor = (input: AbmlTypeInput) => Promise<{ data?: Record<string, unknown>; actionability?: ActionabilityReport; verification?: VerificationResult }>;
+export type AbmlTypeExecutor = (input: AbmlTypeInput) => Promise<{ data?: Record<string, unknown>; actionability?: ActionabilityReport; verification?: VerificationResult; diff?: EntityDiff }>;
 
 export async function runAbmlType(input: AbmlTypeInput, executor?: AbmlTypeExecutor): Promise<AbmlVerbResult> {
 	if (!executor) {
@@ -20,6 +21,7 @@ export async function runAbmlType(input: AbmlTypeInput, executor?: AbmlTypeExecu
 		ok: true,
 		verb: "type",
 		data: executed.data,
+		...(executed.diff ? { diff: executed.diff } : {}),
 		actionability: executed.actionability || actionability || {
 			ok: true,
 			spec: actionabilitySpecForVerb("type"),

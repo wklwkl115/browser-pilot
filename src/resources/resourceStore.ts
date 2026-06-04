@@ -12,7 +12,7 @@
  * - pi-ref:// wrappers inherit TTL / etag / redaction / session binding.
  * - Expired resources/refs are pruned on registration and resolution.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { RefDescriptor, RefKind } from "../abml/types.js";
 import { defaultRefPolicyForKind } from "../abml/refPolicy.js";
 import { computeContentHash, computeEtag, isFreshEtag } from "./resourceFreshness.js";
@@ -102,6 +102,27 @@ function makePiRefUri(kind: RefKind, id: string): string {
 
 function wrapperPiRefUriForResource(resource: Pick<BrowserResultResource, "id">): string {
 	return makePiRefUri("data-slice", resource.id);
+}
+
+function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId">): string | undefined {
+	const locator = descriptor.locators.find((item) => item.by === "css")
+		|| descriptor.locators.find((item) => item.by === "backendNodeId")
+		|| descriptor.locators.find((item) => item.by === "axNodeId")
+		|| descriptor.locators.find((item) => item.by === "textAnchor")
+		|| descriptor.locators[0];
+	if (!locator) return undefined;
+	const semantic = descriptor.semantic || {};
+	const stable = {
+		kind: descriptor.kind,
+		tabId: descriptor.owner.tabId,
+		origin: descriptor.owner.topLevelOrigin,
+		url: descriptor.documentEpoch?.url,
+		locator,
+		role: semantic.role,
+		name: semantic.name,
+	};
+	const hash = createHash("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 24);
+	return makePiRefUri(descriptor.kind, hash);
 }
 
 /** Extract id from a `browser-result://{id}` URI. Returns undefined for unrecognized URIs. */
@@ -307,7 +328,7 @@ export function registerRefDescriptor(params: {
 	browserSessionId?: string;
 }): string {
 	pruneExpired();
-	const refId = params.descriptor.refId || makePiRefUri(params.descriptor.kind, randomUUID());
+	const refId = params.descriptor.refId || stableRefIdForDescriptor(params.descriptor) || makePiRefUri(params.descriptor.kind, randomUUID());
 	const parsed = parsePiRefUri(refId);
 	if (!parsed) throw new Error(`Invalid pi-ref URI: ${refId}`);
 	const jsonPath = params.descriptor.snapshot?.jsonPath;

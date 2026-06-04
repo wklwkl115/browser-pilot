@@ -34,6 +34,9 @@ export type DistilledEnvelope = {
 	// R2 inference layer (detected ARIA semantic patterns — intents[]: login/search/data-grid/…).
 	// Lifted here so the budget never hides it.
 	inference?: Record<string, unknown>;
+	// R3 temporal entity diff (appeared/disappeared/changed/focusedRef). Present only when
+	// the caller supplies a baseline to browser_observe/readStructure.
+	diff?: Record<string, unknown>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -208,6 +211,12 @@ function envelopeInference(summary: DistilledSummary): Record<string, unknown> |
 	return isRecord(focus?.inference) ? structuredClone(focus.inference) as Record<string, unknown> : undefined;
 }
 
+function envelopeDiff(summary: DistilledSummary): Record<string, unknown> | undefined {
+	if (isRecord(summary.diff)) return structuredClone(summary.diff) as Record<string, unknown>;
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	return isRecord(focus?.diff) ? structuredClone(focus.diff) as Record<string, unknown> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -343,6 +352,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const outline = envelopeOutline(redactedSummary);
 	const relations = envelopeRelations(redactedSummary);
 	const inference = envelopeInference(redactedSummary);
+	const diff = envelopeDiff(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
 	return sanitizeDistilledEnvelope({
 		tool: options.toolName,
@@ -360,6 +370,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(outline ? { outline } : {}),
 		...(relations ? { relations } : {}),
 		...(inference ? { inference } : {}),
+		...(diff ? { diff } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
 		operation: redactedOperation,

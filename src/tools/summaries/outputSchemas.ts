@@ -97,6 +97,20 @@ export const InferenceSummarySchema = Type.Object({
 	}, { additionalProperties: true })),
 }, { additionalProperties: true });
 
+// ABML R3 — optional temporal diff between a caller-provided baseline entity list and
+// the current observe/read result.
+export const EntityDiffSchema = Type.Object({
+	appeared: Type.Array(Type.String()),
+	disappeared: Type.Array(Type.String()),
+	changed: Type.Array(Type.Object({
+		ref: Type.String(),
+		kind: Type.String(),
+		before: Type.Optional(LooseObject),
+		after: Type.Optional(LooseObject),
+	}, { additionalProperties: true })),
+	focusedRef: Type.Optional(Type.String()),
+}, { additionalProperties: true });
+
 // ── browser_evidence summary schema ──────────────────────────────────────────
 //
 // Simple summary: compact source-level aggregation.
@@ -219,6 +233,8 @@ export const ScanSummarySchema = Type.Object({
 		list_entities: Type.Array(EntitySchema),
 		visual_regions: Type.Optional(Type.Array(EntitySchema)),
 		relations: Type.Optional(RelationSummarySchema),
+		inference: Type.Optional(InferenceSummarySchema),
+		diff: Type.Optional(EntityDiffSchema),
 	}, { additionalProperties: true }),
 	artifact_hints: Type.Object({
 		jsonPaths: Type.Record(Type.String(), Type.String()),

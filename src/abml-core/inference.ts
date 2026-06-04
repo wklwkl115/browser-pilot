@@ -16,7 +16,9 @@
 //   dialog           — dialog or alertdialog entity
 //   tabbed-interface — tablist role or 2+ tab entities (switch tabs to see more content)
 //   alert-region     — alert or status role (live feedback area after actions)
+//   form-dependency  — R3 diff: editable/focused field enabled a previously disabled control
 import type { Entity } from "./entity.js";
+import type { EntityDiff } from "./diff.js";
 import type { RelationSummary } from "./relations.js";
 
 export type PageIntent =
@@ -30,7 +32,8 @@ export type PageIntent =
 	| "navigation"       // nav with aria-current (currentIn) relation
 	| "dialog"           // modal dialog or alertdialog
 	| "tabbed-interface" // tablist or 2+ tab entities
-	| "alert-region";    // alert or status live region
+	| "alert-region"     // alert or status live region
+	| "form-dependency"; // disabled control enabled by an editable/focused field transition
 
 export type DetectedIntent = {
 	intent: PageIntent;
@@ -175,6 +178,24 @@ function detectAlertRegion(entities: Entity[]): DetectedIntent | undefined {
 	return undefined;
 }
 
+function changedField(change: EntityDiff["changed"][number], side: "before" | "after", field: string): unknown {
+	const value = change[side];
+	return value && typeof value === "object" ? (value as Record<string, unknown>)[field] : undefined;
+}
+
+// form-dependency: R3 temporal fact. A control that was disabled became enabled, while the
+// after snapshot has focus on an editable control. Because editable values are intentionally
+// redacted/suppressed, focused editable field is the privacy-safe proxy for "the field just filled".
+function detectFormDependency(entities: Entity[], diff?: EntityDiff): DetectedIntent | undefined {
+	if (!diff) return undefined;
+	const enabled = diff.changed.find((change) => change.kind === "state-changed" && changedField(change, "before", "disabled") === true && changedField(change, "after", "disabled") === false);
+	if (!enabled) return undefined;
+	const focused = diff.focusedRef ? entities.find((entity) => entity.ref === diff.focusedRef && entity.kind === "control" && entity.state.editable === true) : undefined;
+	const requiredRef = focused && focused.ref !== enabled.ref ? focused.ref : undefined;
+	if (!requiredRef) return undefined;
+	return { intent: "form-dependency", confidence: "high", evidence: { enabledRef: enabled.ref, requiredRef } };
+}
+
 // ── Public builder ─────────────────────────────────────────────────────────────
 
 // Detect generic ARIA semantic patterns over the merged entity list + R1 relation summary.
@@ -182,7 +203,7 @@ function detectAlertRegion(entities: Entity[]): DetectedIntent | undefined {
 // most one DetectedIntent. Dedup rules:
 //   - "filter-panel" supersedes "search" (the former implies the latter).
 // Order is deterministic (definition order below).
-export function buildInferenceSummary(entities: Entity[], relSummary: RelationSummary): InferenceSummary {
+export function buildInferenceSummary(entities: Entity[], relSummary: RelationSummary, diff?: EntityDiff): InferenceSummary {
 	const intents: DetectedIntent[] = [];
 	const add = (d: DetectedIntent | undefined): void => { if (d) intents.push(d); };
 	add(detectLogin(entities));
@@ -198,5 +219,6 @@ export function buildInferenceSummary(entities: Entity[], relSummary: RelationSu
 	add(detectDialog(entities));
 	add(detectTabbedInterface(entities));
 	add(detectAlertRegion(entities));
+	add(detectFormDependency(entities, diff));
 	return { intents };
 }

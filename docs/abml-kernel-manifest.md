@@ -10,13 +10,14 @@ one-way dependency direction:
 
 - **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
-  verb decisions, error shaping. Portable, unit-testable without a browser, and the long-term
-  candidate for an isolated `@pi/abml-core` package. **17 modules + an `index.ts` barrel.**
+  verb decisions, error shaping, and temporal entity diff. Portable, unit-testable without a
+  browser, and the long-term candidate for an isolated `@pi/abml-core` package. **18 modules +
+  an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
   data. **7 files.**
 
-`src/abml/` also keeps **17 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/` also keeps **18 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
 `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
 the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
@@ -41,7 +42,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CLAUDE.md`) | you want the historical phase log / file mapping |
 
-## Pure core (17 — zero browser/Node deps)
+## Pure core (18 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -52,7 +53,8 @@ each doc links back here.
 | `entity.ts` | `Entity`/`EntityState`/`EntityStructure`/`EntityRelation` model + builders. |
 | `ax.ts` | DOM↔AX merge core: box-IoU/role/name scoring, AX-authoritative state/structure fusion; AX relation-anchor extraction (R1). |
 | `relations.ts` | ABML R1 relationship graph: anchor→ref materialization, dedupe/cap, envelope relation summary. |
-| `inference.ts` | ABML R2 inference layer: generic ARIA pattern detection (login/search/single-choice/data-grid/…) over entities + R1 relation summary. |
+| `inference.ts` | ABML R2/R3 inference layer: generic ARIA pattern detection plus temporal `form-dependency` over entities + R1 relation summary + optional R3 diff. |
+| `diff.ts` | ABML R3 temporal entity diff: appeared/disappeared/state-changed/name-changed/focusedRef between two entity snapshots. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
 | `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
@@ -91,7 +93,7 @@ otherwise move the would-be consumer to RUNTIME instead.
 
 ## Kernel entry point
 
-`src/abml-core/index.ts` is the public barrel — `export *` of all 15 modules, the single place
+`src/abml-core/index.ts` is the public barrel — `export *` of all 18 modules, the single place
 that shows everything the kernel exposes. It is the future package's entry point. It is additive:
 existing consumers still import individual modules through the `src/abml/` shims and are unchanged.
 
@@ -99,7 +101,7 @@ existing consumers still import individual modules through the `src/abml/` shims
 
 - **Phase 1 — boundary固化 (done):** this manifest + contract test. Zero code movement, zero
   behavior change — the kernel is documented and CI-locked.
-- **Phase 2 — physical split (done):** the 15 pure-core files now live in `src/abml-core/`; the 7
+- **Phase 2 — physical split (done):** the pure-core files now live in `src/abml-core/`; the 7
   runtime files stay in `src/abml/`; thin re-export shims at the old pure-core paths keep every
   consumer's import path unchanged. The whitelist above is now `abml-core`'s only outward
   dependency surface (verified by the boundary test). No behavior change — `tsc` (both projects)

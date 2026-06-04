@@ -1,4 +1,5 @@
 import type { Entity } from "../entity.js";
+import type { EntityDiff } from "../diff.js";
 import type { ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
 import { isActionVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
@@ -18,6 +19,7 @@ export type AbmlReadInput = {
 	plane?: "structure" | "network" | "event";
 	depth?: number;
 	filter?: Record<string, unknown>;
+	baseline?: Entity[];
 };
 
 export type AbmlClickInput = {
@@ -66,6 +68,7 @@ export type AbmlVerbSuccess = {
 	verb: string;
 	data?: Record<string, unknown>;
 	entities?: Entity[];
+	diff?: EntityDiff;
 	actionability?: ActionabilityReport;
 	verification?: VerificationResult;
 	nextActions?: string[];

@@ -7,6 +7,7 @@ import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation
 import { summarizeScanData } from "../../tools/summaries/scan.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed } from "../../resources/resourceStore.js";
+import { diffEntities } from "../diff.js";
 import type { Entity } from "../entity.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
 import { materializeRelations, deriveStateRelationAnchors } from "../relations.js";
@@ -641,6 +642,8 @@ async function executeBrowserAbmlClick(server: AbmlBrowserRuntimeServer, input: 
 		}
 		const actionability = await ensureActionability(server, selector, "click", target, timeoutMs);
 		if (!actionability.ok) return { actionability: actionability.report };
+		const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
+		const beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
 		const before = await clickVerificationProbe(server, target, selector, timeoutMs);
 		let domResult: Record<string, unknown> | undefined;
 		try {
@@ -660,8 +663,11 @@ async function executeBrowserAbmlClick(server: AbmlBrowserRuntimeServer, input: 
 			verification = verifyClick(before, after);
 			transport = "cdp";
 		}
+		const afterRead = beforeEntities ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs }) : undefined;
+		const diff = beforeEntities && afterRead?.ok && afterRead.entities ? diffEntities(beforeEntities, afterRead.entities) : undefined;
 		return {
-			data: { transport, domResult, selector },
+			data: { transport, domResult, selector, ...(diff ? { diff } : {}) },
+			...(diff ? { diff } : {}),
 			actionability: actionability.report,
 			verification,
 		};
@@ -682,14 +688,19 @@ async function executeBrowserAbmlType(server: AbmlBrowserRuntimeServer, input: A
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
 		const actionability = await ensureActionability(server, selector, "type", target, timeoutMs);
 		if (!actionability.ok) return { actionability: actionability.report };
+		const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
+		const beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
 		const before = await typeVerificationProbe(server, target, selector, timeoutMs);
 		const focusResult = await evaluatePageObject(server, focusAndMaybeClearScript(selector, input.clear === true), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_type_focus" });
 		if (focusResult.focused !== true) throw { code: "TARGET_NOT_EDITABLE", message: "ABML type could not focus the target", details: { selector } };
 		await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.insertText", params: { text: input.text } });
 		const after = await typeVerificationProbe(server, target, selector, timeoutMs);
 		const verification = verifyType(before, after, input.text, input.clear === true);
+		const afterRead = beforeEntities ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs }) : undefined;
+		const diff = beforeEntities && afterRead?.ok && afterRead.entities ? diffEntities(beforeEntities, afterRead.entities) : undefined;
 		return {
-			data: { transport: "cdp", selector, focusResult },
+			data: { transport: "cdp", selector, focusResult, ...(diff ? { diff } : {}) },
+			...(diff ? { diff } : {}),
 			actionability: actionability.report,
 			verification,
 		};
