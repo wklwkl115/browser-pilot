@@ -17,6 +17,7 @@
    - Stateful WebSocket replay/fuzz primitives（phase 1 已完成）
 7. 更高层 orchestration/tooling 回归仍保持撤回状态；operation metadata 只能做诊断，不能复活旧 Desired State/Logical Target 默认入口。
 8. ABML 公开 tool surface RFC 当前保持 deferred：已有真实 smoke/eval 证据支持 ABML 继续作为 internal substrate（observe/monitor/frame/vision/AX），但尚无 transcript 证据表明 agent 因缺少公开 ABML verbs 而被真实任务卡住。后续 internal substrate 的下一条可执行路线已细化为 `docs/abml-relationship-graph-execution-plan.md`（R1 relationship graph）；未来若重启公开面方向，应优先评估“现有 `browser_*` 的迁移/替换性吸收 RFC”，而不是并排新增一套 verb tools。
+9. 词典 / wordlist 治理（非 ABML 主线）：见 `docs/dictionary-and-wordlist-governance-plan.md`。源自 2026-06-04 ABML login 去过拟合衍生的全仓硬编码词典盘点（约 44 处，5 类）。可执行项按 ROI 排序为 W1 安全 payload/签名外部化（最高，`readWordlist` 管道已就位）、W2 ARIA 标准词表构建期 codegen（中，非紧急；纯核禁运行时依赖）、W3 脱敏字段对照 SecLists 校准（低成本一次性）。默认非激活，启动须另开独立执行合同、不搭车 ABML 主线。
 
 ## 近期质量建议
 
