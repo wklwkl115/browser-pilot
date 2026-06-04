@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS } from "../../../src/abml-core/causal.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -147,6 +147,39 @@ assert.equal(p1Envelope.causal?.requests?.[0]?.ref, "pi-ref://network/pay-1", "t
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
+// ── R3.x P2 — event causal entries (pure + envelope) ─────────────────────────────
+
+// buildCausalEvent: shape + redaction + selector; never dumps a raw payload object.
+const ev0 = buildCausalEvent({ seq: 9, type: "domSink", timestamp: 5, data: { value: "token=SECRET99 x", elementRef: { selector: "#out" } } });
+assert.equal(ev0.ref, "pi-ref://event/9");
+assert.equal(ev0.type, "domSink");
+assert.equal(ev0.selector, "#out", "DOM-sink event names its element");
+assert.ok(ev0.summary && !ev0.summary.includes("SECRET99"), "event summary redacted");
+assert.equal(buildCausalEvent({ seq: 2, type: "storage", data: { keys: 3 } }).summary, undefined, "no text field → no summary / no raw object dump");
+
+// buildCausalEvents: seq>baseline window, sorted, cap + true count.
+const evDelta = buildCausalEvents([
+	{ seq: 7, type: "console", data: { message: "b" } },
+	{ seq: 5, type: "console", data: { message: "a" } },
+	{ seq: 2, type: "console", data: { message: "old" } },
+], 4);
+assert.deepEqual(evDelta.events.map((e) => e.ref), ["pi-ref://event/5", "pi-ref://event/7"], "seq>4, sorted ascending");
+const evCapped = buildCausalEvents(Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, type: "console", data: { message: `m${i}` } })), 0);
+assert.equal(evCapped.events.length, MAX_CAUSAL_EVENTS, "capped at MAX_CAUSAL_EVENTS");
+assert.equal(evCapped.eventCount, 20, "true count when capped");
+
+// Envelope: causal.events lifts to envelope.causal.events (budget-immune, redacted) alongside requests.
+const evLift = await distilledTextResult("body", {
+	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 4_000, fallbackName: "observe-scan",
+	summary: { abmlIntegrated: true, causal: { sinceSeq: 5, requests: [], events: [{ ref: "pi-ref://event/10", type: "domSink", at: 1, summary: "token=SECRET77 x", selector: "#out" }] }, focus: {} },
+});
+const evEnv = JSON.parse(evLift.content[0].text);
+assert.equal(evEnv.causal?.events?.length, 1, "causal.events lifted to envelope.causal");
+assert.equal(evEnv.causal.events[0].ref, "pi-ref://event/10");
+assert.ok(!evEnv.causal.events[0].summary.includes("SECRET77"), "envelope-level redaction scrubs the event summary");
+
+// ── Static wiring guards ────────────────────────────────────────────────────────
+
 assert.ok(observeSrc.includes("buildCausalSummary") && observeSrc.includes("causal"), "observeRunners builds causal");
 assert.ok(observeSrc.includes("network.status") && observeSrc.includes("network.list"), "observeRunners reads recorder high-water + delta");
 assert.ok(observeSrc.includes("networkSeq"), "observeRunners records/resolves networkSeq baseline anchor");
@@ -175,7 +208,14 @@ assert.ok(bridgeTypesSrc.includes("lastSeq"), "bridge NetworkRecorderSummary typ
 const barrelSrc = readRepo("src/abml-core/index.ts");
 assert.ok(barrelSrc.includes("./causal.js"), "kernel barrel exports causal");
 
+// P2 static wiring
+assert.ok(observeSrc.includes("readHookRecorderSeq") && observeSrc.includes("queryHookDelta") && observeSrc.includes("buildCausalEvents") && observeSrc.includes("hookSeq"), "observeRunners wires the P2 hook event-delta");
+assert.ok(causalSrc.includes("buildCausalEvents") && causalSrc.includes("pi-ref://event/") && causalSrc.includes("CausalEvent"), "pure-core event-causal selector present");
+assert.ok(snapshotTypeSrc.includes("hookSeq"), "observation snapshot type carries hookSeq");
+const hookDispSrc = readRepo("bridge_src/page_scripts/hook_dispatcher.ts");
+assert.ok(hookDispSrc.includes("last_seq: seq"), "hook status() exposes last_seq event high-water mark");
+
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-causal"]?.includes("check-abml-causal.mjs"), "check:abml-causal script present");
 
-console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; all static wiring verified`);
+console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; P2 event causal (buildCausalEvents seq-window/cap=${MAX_CAUSAL_EVENTS}, redacted summary + selector, no raw payload, lifted to envelope.causal.events; hook last_seq + snapshot hookSeq anchor); all static wiring verified`);
