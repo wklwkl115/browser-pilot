@@ -19,6 +19,9 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { createBrowserAbmlIntegration } from "../../src/abml/verbs/integration.ts";
+import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
+import { registerBrowserTools } from "../../src/tools/registerTools.ts";
+import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -122,6 +125,23 @@ try {
   const ladderVerified = ladderClick?.ok ? ladderClick.verification?.status : ladderClick?.error?.code;
   record("ladder.guarded", ladderGuardedEffect === true, { foundRef: guardedEntity?.ref, ladderTransport, ladderVerified, ladderGuardedEffect });
 
+  // ── E) PUBLIC PATH (B2): browser_execute action:{click:"#guarded"} routes through the ladder ──────
+  await bridge.executeJavaScript("return window.__resetEffect();", { tabId, browserSessionId, timeoutMs: 8000 });
+  const profile = resolveBrowserToolCapabilityProfile();
+  bridge.setCapabilityProfile?.(profile);
+  const adapter = new ToolCollectingAdapter();
+  registerBrowserTools(adapter, bridge, async () => bridge, { securityToolsEnabled: profile.securityToolsEnabled });
+  const execute = adapter.getTool("browser_execute");
+  let toolActionEnvelope;
+  if (execute) {
+    const r = await execute.execute("action", { action: { click: "#guarded" }, tabId, browserSessionId }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+    const text = Array.isArray(r.content) ? r.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join("\n") : "";
+    try { toolActionEnvelope = JSON.parse(text); } catch { toolActionEnvelope = undefined; }
+  }
+  await delay(200);
+  const toolActionEffect = (await readEffect("window.__effect === true")) === true;
+  record("public.action", toolActionEffect === true, { toolActionEffect, registered: !!execute, transport: toolActionEnvelope?.details?.transport, verification: toolActionEnvelope?.details?.verification });
+
   result.measurement = {
     raw_works_on_plain: rawPlainEffect,
     raw_guarded_reported_ok: rawClickReportedOk,
@@ -130,9 +150,10 @@ try {
     ladder_guarded_effect_fired: ladderGuardedEffect,
     ladder_transport: ladderTransport,
     ladder_verification: ladderVerified,
+    public_action_effect_fired: toolActionEffect,
   };
   // Gap confirmed AND ladder recovers it: raw silently fails on the trusted-only case, ladder fixes it.
-  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true;
+  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true && toolActionEffect === true;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

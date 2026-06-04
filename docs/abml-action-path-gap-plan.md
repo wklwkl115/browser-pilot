@@ -56,11 +56,38 @@ structured "needs trusted event - escalate to `browser_command` CDP" signal**.
 - **Con:** page JS **cannot** produce a trusted event (CDP needs the bridge), so B3 can only
   detect + instruct, not auto-recover - **the choice is surfaced, not removed.** Partial.
 
-## Recommendation
-- **B3 is the floor** (stop silent failure now, ~free) and is compatible with later doing B1/B2.
-- **B2 is the philosophy-true minimum** (removes the choice, keeps `script` verbatim, one tool) - but
-  it brushes the "no public verb" line, so it needs the user's explicit yes.
-- **B1** delivers the philosophy with no param but at the cost of the verbatim contract + magic - riskiest.
+## Decision (2026-06-05): B2
 
-Pick one (or "B3 now, revisit B2 later"). Then it gets its own slices + contract + live smoke. The
-measurement smoke (C) already exists to gate whichever fix lands.
+Chosen because it is the only option that actually closes the measured gap: B3 cannot auto-recover
+(page JS can't emit a trusted event - CDP is privileged), and B1 breaks `browser_execute`'s verbatim
+contract with fragile classification. B2 delivers auto CDP recovery + effect verification on the
+public path, keeps `script` 100% verbatim, and adds **no new tool** (one optional param). It does
+cross the long-frozen "no public action verb" line, so it lands incrementally with the shape visible
+and the existing action-gap smoke as the end-to-end gate.
+
+### Exact public shape (additive, optional, safe default)
+`browser_execute` gains an optional `action` (mutually exclusive with `script`; absent => today's
+behavior unchanged):
+
+```
+action?: {
+  click?: string                                  // pi-ref:// (from observe) OR a css selector
+  type?:  { target: string, text: string, clear?: boolean }
+}
+```
+
+When present, the call routes through the internal ABML ladder (runtime.click/type: actionability ->
+synthetic -> verify -> auto CDP trusted fallback -> re-verify) and returns its structured result
+(actionability + verification + transport). A bare css selector is accepted by synthesising a minimal
+`control` ref descriptor (defaultRefPolicyForKind("control") allows live actions); a `pi-ref://`
+resolves the real entity. `script` stays exactly as-is.
+
+### Slices
+1. **Core wiring** - `action` param on `browser_execute`; route `click` to the ladder; selector->descriptor
+   synthesis; `script`/`action` mutual-exclusion validation. Verify end-to-end via the action-gap smoke
+   driven through the registered tool (the `#guarded` case must now recover).
+2. **`type` verb** + the type-gap fixture case.
+3. **Public-surface process** - regenerate tool docs, check:tool-parameter-contract /
+   check:output-schema-conformance / check:cli-parity (the CLI must expose `--action`), full check green.
+4. **Skill + docs** - teach the skill when to use `action` (robust) vs `script` (raw); update the
+   coverage map (browser_execute now reaches the ladder via `action`).

@@ -3,6 +3,8 @@ import type { BrowserBridgeExecutionResult } from "../driver/types.js";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { buildScanScript } from "../scan/buildScanScript.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
+import { defaultRefPolicyForKind, DEFAULT_LIVE_REF_TTL_MS } from "../abml/refPolicy.js";
+import type { RefDescriptor } from "../abml/types.js";
 import { compactError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { normalizeTabId } from "../utils/params.js";
@@ -89,6 +91,27 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 	};
 }
 
+// B2 — resolve an `action` target to something the ABML ladder accepts. A pi-ref:// (from observe)
+// resolves the real entity; a bare CSS selector synthesizes a minimal live-actionable control ref
+// (defaultRefPolicyForKind("control") sets liveActionsAllowed) so a click can run without a prior scan.
+function actionTargetRef(target: string, owner: { tabId?: number; browserSessionId?: string }): RefDescriptor | string {
+	const trimmed = target.trim();
+	if (trimmed.startsWith("pi-ref://") || trimmed.startsWith("browser-result://")) return trimmed;
+	return {
+		refId: "pi-ref://control/execute-action",
+		kind: "control",
+		locators: [{ by: "css", value: trimmed }],
+		owner: {
+			...(owner.browserSessionId ? { browserSessionId: owner.browserSessionId } : {}),
+			...(owner.tabId !== undefined ? { tabId: owner.tabId } : {}),
+		},
+		policy: defaultRefPolicyForKind("control"),
+		observationId: `execute-action:${owner.tabId ?? "tab"}`,
+		createdAt: Date.now(),
+		ttlMs: DEFAULT_LIVE_REF_TTL_MS,
+	};
+}
+
 export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
 		name: "browser_execute",
@@ -97,14 +120,22 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 		promptSnippet: "Execute JavaScript in a real browser tab.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_execute for precise browser actions; return explicit values from async JavaScript."],
 		parameters: strictToolParameters({
-			script: Type.String({ description: "JavaScript source." }),
+			script: Type.Optional(Type.String({ description: "JavaScript source. Omit when using `action`." })),
+				action: Type.Optional(Type.Object({
+					click: Type.Optional(Type.String({ description: "Click a control reliably via the ABML ladder (actionability wait + auto CDP trusted-event fallback + effect verification). Value: a pi-ref:// from observe, or a CSS selector. Prefer over a hand-written el.click() when the click must actually take effect." })),
+				}, { description: "Structured page action routed through the ABML degradation ladder instead of raw JS. Mutually exclusive with script. Use when a click must reliably take effect (e.g. sites that ignore synthetic events)." })),
 			...sharedTabScopedToolParams(),
 			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
-				if (!params.script) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script", { toolName: "browser_execute" });
-				if (detectCommandLikeScript(params.script)) {
+				const action = isRecord(params.action) ? params.action : undefined;
+					const actionClick = action && typeof action.click === "string" ? action.click.trim() : "";
+					const hasAction = actionClick.length > 0;
+					const hasScript = typeof params.script === "string" && params.script.trim().length > 0;
+					if (hasScript && hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute takes either script or action, not both", { toolName: "browser_execute" });
+					if (!hasScript && !hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script (JavaScript) or action (structured page action)", { toolName: "browser_execute" });
+				if (!hasAction && detectCommandLikeScript(params.script as string)) {
 					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { toolName: "browser_execute", recovery: { useTool: "browser_command" } });
 				}
 				const server = await ensureStarted();
@@ -112,6 +143,37 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const maxChars = toolMaxChars(params, "browser_execute");
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const tabId = normalizeTabId(params.tabId);
+					if (hasAction) {
+						const ref = actionTargetRef(actionClick, { tabId, browserSessionId });
+						const { result: actionResult, operation } = await withTrackedOperation(server, {
+							toolName: "browser_execute",
+							command: "action.click",
+							browserSessionId,
+							tabId,
+							phase: "running",
+							progress: 10,
+							queueDepth: server.queueDepth(browserSessionId, tabId),
+							leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+						}, _onUpdate, async (handle) => {
+							const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars });
+							await handle.update({ progress: 55 });
+							const res = await abml.runtime.click?.({ ref });
+							if (!res) throw new BrowserBridgeError("BACKEND_UNAVAILABLE", "ABML click runtime unavailable", { toolName: "browser_execute" });
+							return res;
+						});
+						const transport = actionResult.ok ? (actionResult.data as Record<string, unknown> | undefined)?.transport : undefined;
+						const verification = actionResult.ok ? actionResult.verification?.status : actionResult.error?.code;
+						return await jsonToolResult(actionResult, params, ctx, {
+							toolName: "browser_execute",
+							command: "action.click",
+							defaultDetailLevel: "summary",
+							maxChars,
+							fallbackName: artifactFallbackName("execute-action"),
+							details: { mode: "action", action: "click", target: actionClick, transport, verification },
+							operation,
+							artifactValue: { ...actionResult, operation },
+						});
+					}
 				const { result: jsResult, operation } = await withTrackedOperation(server, {
 					toolName: "browser_execute",
 					command: "javascript",
@@ -124,8 +186,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				}, _onUpdate, async (handle) => {
 					await handle.update({ progress: params.monitor === true ? 15 : 35 });
 					const result = params.monitor === true
-						? await executeJavaScriptWithMonitor(server, params.script, { browserSessionId, tabId: params.tabId, timeoutMs })
-						: await server.executeJavaScript(params.script, { browserSessionId, tabId: params.tabId, timeoutMs });
+						? await executeJavaScriptWithMonitor(server, params.script as string, { browserSessionId, tabId: params.tabId, timeoutMs })
+						: await server.executeJavaScript(params.script as string, { browserSessionId, tabId: params.tabId, timeoutMs });
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
