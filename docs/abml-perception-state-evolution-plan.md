@@ -319,6 +319,10 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
 - ABML read/click/type runtimes can attach post-action entity diff; same-page refs are
   now stable by semantic locator hash so two snapshots match by `pi-ref://`.
 - R2 dependency inference consumes R3 diff to emit `form-dependency`.
+- R2 **alert-region** also consumes the R3 diff: a live region that appeared, or whose accessible
+  name changed, is flagged fresh post-action feedback (evidence `fresh: appeared|updated`),
+  preferred over a static region. Live-verified end-to-end by `npm run smoke:browser:abml-inference`
+  (fixture `abml-inference-postaction.html`).
 - Contract: `check:abml-diff`; schema: `EntityDiffSchema`.
 
 ### Phase R3.x — Perception-source expansion (remaining independent sources)
