@@ -49,15 +49,23 @@ const specFiles = [
 	"30-abml-internal-routing-evidence.md",
 ];
 
-for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "result-schema.json", "results/README.md", ...specFiles]) {
+for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "runner.mjs", "result-schema.json", "results/README.md", ...specFiles]) {
 	assert(existsSync(path.join(evalRoot, file)), `missing browser workflow eval file: ${file}`);
 }
 assert(existsSync(path.join(root, "WORKSTREAMS_A_E_SUMMARY.md")), "missing Workstreams A-E completion summary");
 
 const futureRunnerText = read(path.join("evals", "browser-workflows", "future-runner.md"));
-for (const requiredText of ["not an implementation plan", "Require an explicit opt-in flag", "Bind to `127.0.0.1` only", "Use an ephemeral port by default", "Never make outbound network requests", "Do not run sqlmap, nuclei, OAST listeners"]) {
+for (const requiredText of ["Require an explicit opt-in flag", "Bind to `127.0.0.1` only", "Use an ephemeral port by default", "Never make outbound network requests", "Do not run sqlmap, nuclei, OAST listeners", "refuses to run without `--fixture-server`"] ) {
 	assert(futureRunnerText.includes(requiredText), `future-runner.md must state boundary: ${requiredText}`);
 }
+
+const runnerText = read(path.join("evals", "browser-workflows", "runner.mjs"));
+for (const requiredText of ["--fixture-server", "127.0.0.1", "startFixtureServer", "manual-result-template.json", "result-schema.json", "evals/browser-workflows/runner.mjs", "No sqlmap bridge, scanner, external database, or outbound target was used"]) {
+	assert(runnerText.includes(requiredText), `runner.mjs must preserve opt-in/local-safe boundary: ${requiredText}`);
+}
+assert(runnerText.includes("throw new Error(`Refusing to run: --fixture-server is required."), "runner must fail closed without --fixture-server");
+assert(!runnerText.includes("sqlmap") || runnerText.includes("No sqlmap bridge"), "runner must not invoke sqlmap by default");
+assert(!runnerText.includes("nuclei"), "runner must not invoke nuclei by default");
 
 const specTexts = new Map();
 for (const file of specFiles) {
@@ -93,11 +101,16 @@ for (const entry of manifest.evals) {
 	assert(Array.isArray(entry.fixtures) && entry.fixtures.length >= 1, `${entry.id} must list fixtures`);
 	assert(Array.isArray(entry.primaryTools) && entry.primaryTools.every((tool) => /^browser_/.test(tool)), `${entry.id} must list browser primary tools`);
 	assert(Array.isArray(entry.evidence) && entry.evidence.length >= 1, `${entry.id} must list expected evidence classes`);
+	assert(runnerText.includes(`"${entry.id}"`), `runner.mjs must implement manifest eval id: ${entry.id}`);
 	const specText = specTexts.get(entry.spec) || "";
 	for (const fixture of entry.fixtures) assert(specText.includes(fixture), `${entry.spec} must mention manifest fixture: ${fixture}`);
 	for (const tool of entry.primaryTools) assert(specText.includes(tool), `${entry.spec} must mention manifest primary tool: ${tool}`);
 	for (const evidence of entry.evidence) assert(specText.includes(evidence), `${entry.spec} must mention manifest evidence: ${evidence}`);
 }
+
+const pkg = readJson("package.json");
+assert(pkg.scripts?.["eval:browser-workflows"] === "tsx evals/browser-workflows/runner.mjs", "package must expose the opt-in browser workflow eval runner");
+assert(!String(pkg.scripts?.check || "").includes("eval:browser-workflows"), "npm run check must not launch the runtime eval runner");
 
 const resultSchema = readJson(path.join("evals", "browser-workflows", "result-schema.json"));
 assert(resultSchema.type === "object" && resultSchema.additionalProperties === false, "result schema must be a closed object");

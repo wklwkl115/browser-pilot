@@ -7,7 +7,7 @@
 1. jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：已完成能力思想和证据模型吸收；后续 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 仍默认拒绝，必须另开 RFC 并证明现有 canonical tools 不足。
 2. Debugger workflow 更强能力：page-authored provenance、pause/breakpoint/step lifecycle。默认仍由 `browser_command`、`persistent_cdp`、`browser_frame`、`browser_artifact` 承载；不新增公开 `browser_debugger`。
 3. `browser_hook` 后续只能增加显式 hook targets 或静态 target 展开；禁止策略型 preset 名称与黑盒判断。
-4. Real ACI eval runner 如需执行，按 `evals/browser-workflows/future-runner.md` 另开 opt-in runner/fixture server：ephemeral port、local-only、无默认浏览器启动、无 scanner/OAST。
+4. Real ACI eval runner 已在并行分支 `feat/browser-workflow-eval-runner` 落地为全量 manifest opt-in runner：`npm run eval:browser-workflows -- --fixture-server`，local-only ephemeral fixture server，默认无浏览器启动副作用，覆盖 eval `01`-`27` 与 `30`。后续路线是增加新 specs 时同步接入 runner；仍禁止 scanner/OAST/external network 默认运行。
 5. Incognito/profile isolation 不在当前主干路线内；如需要，另开独立能力设计，不挂到默认浏览器会话入口。
 6. 下阶段 Web reversing/security primitives 继续 RFC/eval-first；已完成 phase 1 的项不自动升级 phase 2：
    - 请求/响应拦截与热补丁原语（phase 1/2 已完成）
@@ -25,7 +25,7 @@
 ## 近期质量建议
 
 - 发布/合并前继续复跑 `npm run quality:local`。
-- 需要 runtime 证据时按需复跑 opt-in smoke：`npm run smoke:browser:isolated`、`npm run smoke:browser:scan-summary`、`npm run smoke:browser:debugger-evidence`、`npm run release:local:smoke`。
+- 需要 runtime 证据时按需复跑 opt-in smoke/eval：`npm run smoke:browser:isolated`、`npm run smoke:browser:scan-summary`、`npm run smoke:browser:debugger-evidence`、`npm run release:local:smoke`、`npm run eval:browser-workflows -- --fixture-server`。
 - 新能力或重大重构先补 `CURRENT.md` 决策、边界、contracts/evals，再改代码。
 
 ## 历史复核结论
