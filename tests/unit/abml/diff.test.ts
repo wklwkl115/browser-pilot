@@ -47,6 +47,25 @@ test("diffEntities detects appeared and disappeared refs", () => {
 	});
 });
 
+test("diffEntities partialBaseline suppresses unmatched after refs while keeping tracked changes", () => {
+	const before = [entity("pi-ref://control/accordion", { state: { expanded: false } })];
+	const after = [
+		entity("pi-ref://control/accordion", { state: { expanded: true, focused: true } }),
+		entity("pi-ref://element/noisy-inline-box", { kind: "element", role: "InlineTextBox" }),
+	];
+	assert.deepEqual(stripUndefined(diffEntities(before, after, { partialBaseline: true })), {
+		appeared: [],
+		disappeared: [],
+		changed: [{
+			ref: "pi-ref://control/accordion",
+			kind: "state-changed",
+			before: { focused: false, expanded: false },
+			after: { focused: true, expanded: true },
+		}],
+		focusedRef: "pi-ref://control/accordion",
+	});
+});
+
 test("diffEntities detects state delta only for changed state fields", () => {
 	const before = [entity("pi-ref://control/submit", { state: { disabled: true, focused: false, expanded: false } })];
 	const after = [entity("pi-ref://control/submit", { state: { disabled: false, focused: true, expanded: false } })];

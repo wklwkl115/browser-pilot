@@ -207,10 +207,23 @@ function baselineSnapshotId(value: unknown): string | undefined {
 	return typeof snapshot?.snapshotId === "string" && snapshot.snapshotId ? snapshot.snapshotId.trim() : undefined;
 }
 
-async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: unknown): Promise<Entity[] | undefined> {
+type BaselineResolution = { entities: Entity[]; partialBaseline: boolean };
+
+function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
+	if (Array.isArray(value)) return entities.length < 10;
+	if (!isRecord(value)) return false;
+	if (value.partialBaseline === true || value.partial === true) return true;
+	const diffOptions = isRecord(value.diffOptions) ? value.diffOptions : undefined;
+	if (diffOptions?.partialBaseline === true) return true;
+	if (["primary_entities", "list_entities", "visual_regions", "referenced_entities"].some((key) => Array.isArray(value[key]))) return true;
+	const focus = isRecord(value.focus) ? value.focus : undefined;
+	return !!focus && ["primary_entities", "list_entities", "visual_regions", "referenced_entities"].some((key) => Array.isArray(focus[key]));
+}
+
+async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: unknown): Promise<BaselineResolution | undefined> {
 	if (baseline === undefined || baseline === null) return undefined;
 	const inline = baselineEntitiesFromParam(baseline);
-	if (inline) return inline;
+	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline) };
 	const snapshotId = baselineSnapshotId(baseline);
 	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", { baselineType: typeof baseline });
 	const snapshot = server.getObservationSnapshot(snapshotId);
@@ -224,7 +237,7 @@ async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: un
 	}
 	const fromArtifact = baselineEntitiesFromParam(parsed);
 	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", { snapshotId, path: snapshot.saved.path });
-	return fromArtifact;
+	return { entities: fromArtifact, partialBaseline: false };
 }
 
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
@@ -302,7 +315,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
 	const scanScript = buildScanScript({ textOnly: mode === "text", maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
-	const baselineEntities = await resolveBaselineEntities(server, params.baseline);
+	const baseline = await resolveBaselineEntities(server, params.baseline);
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
 	const { result: observation, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
@@ -318,7 +331,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		await handle.update({ progress: 40 });
 		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "scan_extract" });
 		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
-		const abmlRead = await abml.readStructure({ browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, baseline: baselineEntities });
+		const abmlRead = await abml.readStructure({ browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, baseline: baseline?.entities, diffOptions: baseline?.partialBaseline ? { partialBaseline: true } : undefined });
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
 		return { result, abmlRead };
 	});

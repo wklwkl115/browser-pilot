@@ -18,6 +18,13 @@ export type EntityDiff = {
 	focusedRef?: string;
 };
 
+export type EntityDiffOptions = {
+	// Partial baselines intentionally include only a subset of refs (for example, a few controls
+	// the caller wants to track). In that mode unmatched after-entities are noise, not true
+	// appearances, so suppress appeared refs while still reporting disappeared/changed/focus.
+	partialBaseline?: boolean;
+};
+
 const STATE_KEYS: Array<keyof EntityState> = [
 	"visible",
 	"occluded",
@@ -43,7 +50,7 @@ function stateDelta(before: EntityState, after: EntityState): { before: Partial<
 	return Object.keys(beforeDelta).length ? { before: beforeDelta, after: afterDelta } : undefined;
 }
 
-export function diffEntities(before: Entity[], after: Entity[]): EntityDiff {
+export function diffEntities(before: Entity[], after: Entity[], options: EntityDiffOptions = {}): EntityDiff {
 	const beforeByRef = new Map(before.map((entity) => [entity.ref, entity]));
 	const afterByRef = new Map(after.map((entity) => [entity.ref, entity]));
 	const appeared: string[] = [];
@@ -53,7 +60,7 @@ export function diffEntities(before: Entity[], after: Entity[]): EntityDiff {
 	for (const entity of after) {
 		const previous = beforeByRef.get(entity.ref);
 		if (!previous) {
-			appeared.push(entity.ref);
+			if (!options.partialBaseline) appeared.push(entity.ref);
 			continue;
 		}
 		const delta = stateDelta(previous.state, entity.state);

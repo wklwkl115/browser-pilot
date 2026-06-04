@@ -1,5 +1,5 @@
 import type { Entity } from "../entity.js";
-import type { EntityDiff } from "../diff.js";
+import type { EntityDiff, EntityDiffOptions } from "../diff.js";
 import type { ActionabilityReport, RefDescriptor, VerificationResult } from "../types.js";
 import { isActionVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
@@ -20,6 +20,7 @@ export type AbmlReadInput = {
 	depth?: number;
 	filter?: Record<string, unknown>;
 	baseline?: Entity[];
+	diffOptions?: EntityDiffOptions;
 };
 
 export type AbmlClickInput = {

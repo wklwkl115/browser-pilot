@@ -48,6 +48,9 @@ const after = [
 
 const diff = diffEntities(before, after);
 assert.deepEqual(diff.appeared, ["pi-ref://control/new"], "appeared refs detected");
+const partialDiff = diffEntities([before[1]], after, { partialBaseline: true });
+assert.deepEqual(partialDiff.appeared, [], "partial baseline suppresses unmatched appeared refs");
+assert.ok(partialDiff.changed.some((c) => c.ref === "pi-ref://control/submit" && c.kind === "state-changed"), "partial baseline still reports tracked state changes");
 assert.deepEqual(diff.disappeared, ["pi-ref://control/old"], "disappeared refs detected");
 assert.equal(diff.focusedRef, "pi-ref://control/email", "focusedRef from after snapshot");
 assert.ok(diff.changed.some((c) => c.ref === "pi-ref://control/submit" && c.kind === "state-changed" && c.before?.disabled === true && c.after?.disabled === false), "disabled true→false state delta detected");
@@ -108,7 +111,7 @@ assert.ok(coreBoundarySrc.includes('"diff.ts"'), "diff.ts must be classified in 
 const barrelSrc = readRepo("src/abml-core/index.ts");
 assert.ok(barrelSrc.includes('./diff.js'), "abml-core barrel must export diff");
 const observeSrc = readRepo("src/tools/observeRunners.ts");
-assert.ok(observeSrc.includes("baselineEntities") && observeSrc.includes("resolveBaselineEntities") && observeSrc.includes("abmlRead.diff") && observeSrc.includes("buildInferenceSummary(abmlEntities, relSummary, abmlDiff)"), "observeRunners must thread baseline → readStructure → diff → inference");
+assert.ok(observeSrc.includes("resolveBaselineEntities") && observeSrc.includes("partialBaseline") && observeSrc.includes("abmlRead.diff") && observeSrc.includes("buildInferenceSummary(abmlEntities, relSummary, abmlDiff)"), "observeRunners must thread baseline → readStructure → diff → inference with partial-baseline support");
 const observeToolSrc = readRepo("src/tools/registerObserveTool.ts");
 assert.ok(observeToolSrc.includes("baseline") && observeToolSrc.includes("baseline diff is only valid for scan mode"), "browser_observe schema must expose scan-only baseline");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
@@ -116,7 +119,7 @@ assert.ok(middlewareSrc.includes("envelopeDiff") && middlewareSrc.includes("diff
 const schemaSrc = readRepo("src/tools/summaries/outputSchemas.ts");
 assert.ok(schemaSrc.includes("EntityDiffSchema"), "outputSchemas must export EntityDiffSchema");
 const integrationSrc = readRepo("src/abml/verbs/integration.ts");
-assert.ok(integrationSrc.includes("baseline") && integrationSrc.includes("runtime.read"), "ABML integration helper must accept baseline");
+assert.ok(integrationSrc.includes("baseline") && integrationSrc.includes("diffOptions") && integrationSrc.includes("runtime.read"), "ABML integration helper must accept baseline + diffOptions");
 const resourceSrc = readRepo("src/resources/resourceStore.ts");
 assert.ok(resourceSrc.includes("stableRefIdForDescriptor") && resourceSrc.includes("createHash"), "resourceStore must mint stable refs for snapshot diff matching");
 const pkg = JSON.parse(readRepo("package.json"));

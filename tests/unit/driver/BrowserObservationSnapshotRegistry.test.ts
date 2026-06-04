@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { BrowserObservationSnapshotRegistry } from "../../../src/driver/BrowserObservationSnapshotRegistry.ts";
 
-test("BrowserObservationSnapshotRegistry marks stale snapshots expired after selection drift", () => {
+test("BrowserObservationSnapshotRegistry survives selection drift but expires after source tab disconnect", () => {
 	const registry = new BrowserObservationSnapshotRegistry();
 	const now = Date.now();
 	const created = registry.create({
@@ -28,7 +28,7 @@ test("BrowserObservationSnapshotRegistry marks stale snapshots expired after sel
 		pending: [],
 	});
 	assert.equal(live?.expired, false);
-	const stale = registry.get(created.snapshotId, {
+	const drifted = registry.get(created.snapshotId, {
 		browserSessionId: "default",
 		host: "127.0.0.1",
 		port: 18765,
@@ -39,10 +39,29 @@ test("BrowserObservationSnapshotRegistry marks stale snapshots expired after sel
 		defaultTabId: 8,
 		latestTabId: 8,
 		selectionVersion: 2,
+		tabs: [
+			{ id: "browserA:7", browserId: "browserA", tabId: 7, url: "https://example.test", title: "Example", type: "ext_ws", connectedAt: now },
+			{ id: "browserA:8", browserId: "browserA", tabId: 8, url: "https://example.test/other", title: "Other", type: "ext_ws", connectedAt: now },
+		],
+		pending: [],
+	});
+	assert.equal(drifted?.expired, false);
+	const stale = registry.get(created.snapshotId, {
+		browserSessionId: "default",
+		host: "127.0.0.1",
+		port: 18765,
+		running: true,
+		connectedClients: 1,
+		extensionConnected: true,
+		clients: [],
+		defaultTabId: 8,
+		latestTabId: 8,
+		selectionVersion: 3,
 		tabs: [{ id: "browserA:8", browserId: "browserA", tabId: 8, url: "https://example.test/other", title: "Other", type: "ext_ws", connectedAt: now }],
 		pending: [],
 	});
 	assert.equal(stale?.expired, true);
+	assert.equal(stale?.invalidatedReason, "tab_disconnected");
 });
 
 test("BrowserObservationSnapshotRegistry prunes TTL-expired snapshots on new writes", () => {

@@ -12,7 +12,7 @@ export async function runAbmlRead(input: AbmlReadInput, resolver?: AbmlReadResol
 		return { ok: false, verb: "read", error, nextActions: error.recovery.nextActions };
 	}
 	const resolved = await resolver(input);
-	const diff = input.baseline && resolved.entities ? diffEntities(input.baseline, resolved.entities) : undefined;
+	const diff = input.baseline && resolved.entities ? diffEntities(input.baseline, resolved.entities, input.diffOptions) : undefined;
 	const result: AbmlVerbSuccess = {
 		ok: true,
 		verb: "read",

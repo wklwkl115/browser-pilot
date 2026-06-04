@@ -8,7 +8,10 @@ function evaluateSnapshot(record: BrowserObservationSnapshotInfo, snapshot: Brow
 	let invalidatedReason = record.invalidatedReason;
 	if (!invalidatedReason && now - record.capturedAt > record.ttlMs) invalidatedReason = "ttl_expired";
 	if (!invalidatedReason && record.browserSessionId && snapshot?.browserSessionId === record.browserSessionId) {
-		if (record.selectionVersion !== undefined && snapshot.selectionVersion !== record.selectionVersion) invalidatedReason = "selection_changed";
+		// Observation snapshots are durable read baselines backed by saved artifacts. A browser
+		// selectionVersion bump only means the active/default tab changed; it does not invalidate
+		// the captured entities while the original tab is still connected. Expire only when the
+		// source tab disconnects or TTL elapses.
 		if (record.tabId !== undefined && !snapshot.tabs.some((tab) => tab.tabId === record.tabId && !tab.disconnectedAt)) invalidatedReason = "tab_disconnected";
 	}
 	return { ...record, invalidatedReason, expired: !!invalidatedReason };
