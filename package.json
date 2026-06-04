@@ -65,6 +65,7 @@
     "check:artifact": "tsx tests/contracts/tools/check-artifact-reader.mjs",
     "check:errors": "tsx tests/contracts/tools/check-errors.mjs",
     "check:eval-workflows": "node tests/contracts/tools/check-eval-workflows.mjs",
+    "eval:browser-workflows": "tsx evals/browser-workflows/runner.mjs",
     "check:browser-workflow-results": "node tests/contracts/tools/check-browser-workflow-results.mjs",
     "check:browser-commands": "node tests/contracts/runtime/check-browser-commands.mjs",
     "check:jshookmcp-closure": "node tests/contracts/tools/check-jshookmcp-closure.mjs",

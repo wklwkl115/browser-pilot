@@ -166,6 +166,8 @@ npm run smoke:browser:isolated
 npm run smoke:browser:scan-summary
 npm run smoke:browser:debugger-evidence
 npm run smoke:browser:transfer
+npm run eval:browser-workflows -- --fixture-server
+npm run eval:browser-workflows -- --fixture-server --eval 01-readable-content-artifact
 ```
 
 `build:bridge` 现在从 `bridge_src/service-worker.ts` 真实 ESM entry 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。`dist/build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false`、`foundationImported:true`、`commandImported:true`、`startupImported:true`，以及 metadata-only 模块清单字段。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
@@ -197,6 +199,8 @@ npm run smoke:browser:transfer
 `npm run smoke:browser` 默认使用 `127.0.0.1:18765-18784` 首个空闲 bridge 端口。端口范围都被占用时会显式失败并在 `.pi/browser-artifacts/smoke-browser-results.json` 写入 `bridge.port.reason`：`agent_occupies`、`orphan_socket` 或 `unknown_owner`。脚本会先写入 `build.runtime`（dist target、entries、service worker sha256），只诊断 PID/命令行，不自动关闭用户进程。
 
 `npm run smoke:browser:isolated` 会复制临时扩展目录、patch dist bridge 端口、启动独占 Chrome profile，并写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json`；用于本地常驻 agent 占用 18765 时的 runtime 验证，不修改用户当前扩展目录。
+
+`npm run eval:browser-workflows -- --fixture-server` 是显式 opt-in 的 ACI workflow eval runner：启动 `127.0.0.1` ephemeral fixture server、独占临时扩展目录和 isolated browser profile，默认运行 manifest 全量 eval（`01`-`27` 与 `30`），并把 `*.result.json` 与 `browser-workflow-eval-summary.json` 写到 `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`。不带 `--fixture-server` 会 fail closed；默认不跑 scanner/OAST/sqlmap/nuclei，不访问外部网络。
 
 `npm run smoke:browser:scan-summary` 使用独占临时扩展目录和本地 `scan-high-entropy.html` fixture，验证 `browser_observe mode=scan` 的 high-entropy summary、`artifact_hints` 精确 `jsonPath` 后续动作、artifact 可读性，以及执行后 `text_signals` 状态变化；结果写 `.pi/browser-artifacts/smoke-browser-scan-summary-results.json`，对应 scan artifact 写 `.pi/browser-artifacts/scan-summary-smoke-scan-<ts>.json`。
 

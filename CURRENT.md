@@ -12,7 +12,8 @@
 ## 当前激活项
 
 - **ABML R3.x — network/API 因果平面**（2026-06-04 用户显式激活）：执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。分阶段：**P0** = 复用 `browser_observe` baseline，在 envelope 顶层加 `causal`（自 baseline 以来 fire 的网络请求；脱敏、截断、零归因假设；复用现有 network recorder + 既有但未接线的 `src/abml-core/stream.ts` stream plane 脚手架）；**P1** = 用 `diff.focusedRef` / 显式 `actionRef` 把请求归因到具体 control（新 `triggered` relation）。边界：不新增公开工具、不改 `native_command_schema`、纯核零运行时依赖、隐私脱敏、时序窗口可解释（不解析 initiator stack、无 per-site 分支）。
-- 其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
+- **Browser workflow eval runner 并行分支**（2026-06-04 用户显式要求并行）：分支 `feat/browser-workflow-eval-runner`，在不触碰 ABML 主线实现、不新增公开 `browser_*` 工具的前提下，已把 `evals/browser-workflows/` 从静态/手工规格推进到真正可执行的 opt-in runner。入口：`npm run eval:browser-workflows -- --fixture-server`；默认无运行副作用；fixture server 仅绑定 `127.0.0.1` ephemeral port；默认覆盖 manifest 全量 eval（`01`-`27` 与 `30`）；结果写 `.pi/browser-artifacts/eval-browser-workflows/<run-id>/` 并符合 `evals/browser-workflows/result-schema.json`。
+- 除上述用户显式并行分支外，其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
 
 ## 已完成但不再作为当前队列
 

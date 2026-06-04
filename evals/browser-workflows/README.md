@@ -58,8 +58,17 @@ Use `spec-template.md` for new workflow evals. Fixture requirements live under `
 
 `manifest.json` lists the eval suite for manual execution or a future runner. It is intentionally inert: it must not start a browser, open network sockets, or run scanners. Use `manual-result-template.json` to record hand-run evidence.
 
-`future-runner.md` freezes the opt-in boundary for any later runner or fixture server. It is documentation only; the current suite remains static/manual.
+`runner.mjs` is the explicit opt-in browser workflow runner. It starts a local-only fixture server and isolated browser only when invoked with `--fixture-server`:
 
-`result-schema.json` defines the compact manual result record shape. Optional hand-run results belong under `results/` and should reference artifacts by path instead of pasting raw browser evidence.
+```bash
+npm run eval:browser-workflows -- --fixture-server
+npm run eval:browser-workflows -- --fixture-server --eval 01-readable-content-artifact
+```
+
+The runner writes schema-compatible `*.result.json` files plus `browser-workflow-eval-summary.json` under `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`. The default implemented suite now covers every manifest eval (`01`-`27` and `30`); result files remain runtime artifacts and are not required CI output.
+
+`future-runner.md` records the original activation boundary and now serves as the runner boundary reference: explicit opt-in, local-only fixture server, ephemeral ports, isolated temp profile, no default scanner/OAST/external network.
+
+`result-schema.json` defines the compact result record shape. Optional hand-run results belong under `results/` and should reference artifacts by path instead of pasting raw browser evidence.
 
 `jshook-closure-ledger.md` maps TODO 241.2 jshookmcp capability classes to eval specs and closure states. It is a planning/evidence ledger only, not a tool contract.
