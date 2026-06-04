@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>action gap</title>
+	<style>body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; } button { padding: .5rem 1rem; margin: .25rem; }</style>
+</head>
+<body>
+	<h1>ABML action-gap fixture</h1>
+	<!-- #guarded only honors a TRUSTED click (e.isTrusted). A synthetic el.click() (isTrusted:false)
+	     is silently ignored - the exact case the ABML ladder's CDP-trusted-event fallback exists for.
+	     #plain accepts any click (control: raw synthetic works here). -->
+	<button id="guarded">Guarded (trusted-only)</button>
+	<button id="plain">Plain</button>
+	<p id="status">idle</p>
+	<script>
+		window.__effect = false;
+		window.__plainEffect = false;
+		document.getElementById('guarded').addEventListener('click', function (e) {
+			if (!e.isTrusted) return;
+			window.__effect = true;
+			document.title = 'guarded-clicked';
+			document.getElementById('status').textContent = 'guarded fired';
+		});
+		document.getElementById('plain').addEventListener('click', function () {
+			window.__plainEffect = true;
+			document.getElementById('status').textContent = 'plain fired';
+		});
+		window.__resetEffect = function () { window.__effect = false; document.title = 'action gap'; document.getElementById('status').textContent = 'idle'; return true; };
+	</script>
+</body>
+</html>
