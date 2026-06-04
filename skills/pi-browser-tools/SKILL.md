@@ -10,7 +10,7 @@ compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connecte
 Live browser operation via `browser_*` tools. HOW only — methodology and route index. For depth, follow the Index.
 
 Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
-Current conclusion: real smoke/eval evidence shows this internal ABML layer already strengthens the existing public surface; there is still no evidence that a task is blocked solely because public ABML verb tools are absent.
+Coverage reality (do not overstate): ABML is wired into the **read** path — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. It is **not** wired into the **action** path: page actions are the JavaScript you write via `browser_execute`, run verbatim — so you still own the method choice (synthetic event vs CDP) and the retry/verify yourself. The internal click/type **degradation ladder** (actionability + auto CDP fallback + effect verification, in `src/abml/verbs/runtime.ts`) is NOT on this public path. Practical consequence: after a synthetic `el.click()`, verify it took effect (re-observe / read back); if it was swallowed, fall back to CDP via `browser_command` yourself. The narrow surface is a deliberate, evidence-backed choice — public verb tools were tried and proved worse than the base tools (they widen the surface and add a "which tool?" decision), not a "no one has been blocked yet" hold. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 

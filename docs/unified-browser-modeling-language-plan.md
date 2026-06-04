@@ -4,6 +4,14 @@
 > 作用域:重构 pi-browser-tools 的 agent ↔ 浏览器交互面，把现有的"扫描 + 蒸馏中间件 + 各类工具"收敛为一门 **以 JS 为底座、以 MCP 动词为正式入口、读写同构、无盲区** 的 agent 面向建模语言。
 > 工作命名:**ABML**(Agent Browser Modeling Language)。名字可改，本文用它指代这门语言。
 
+> ⚠️ **落地现实 ≠ 本文愿景(2026-06-04 核实)。** 本文描述的"agent 把 `click(ref)` 当工具调、14 个旧工具退化为动词/薄别名、唯一正式 surface 是 MCP 动词 face"**未被采纳为公开形态**。实际落地:
+> - **公开 surface 仍是现有 `browser_*` 工具**(observe / execute / command / wait / network / …),不是动词 face。
+> - **"读"侧愿景已兑现**:`browser_observe` 内部走 ABML(AX 合并 / 实体 / relations / inference / diff / templates),"该用哪个读模式"的复杂度确实对 agent 透明。
+> - **"动"侧愿景未兑现**:公开动作路径是 `browser_execute` 跑 agent 自己写的 JS(verbatim)。§6 描述的"动词内部 actionability + CDP 降级梯 + 后置校验"**确实实现在 `src/abml/verbs/runtime.ts`,但没接到任何公开路径**(只被测试 / eval 调用)。所以"走 JS 还是走 CDP 的判断从根上消失"目前**只对内部 substrate 成立,对公开 agent 不成立**。
+> - 曾尝试把动词做成公开工具 → 实测**比基础工具更差**(加宽工具面、多一个要 agent 选的入口),故未保留;公开动词 face 的 RFC 继续 deferred(见 `CURRENT.md`)。
+>
+> 以下内容作为**设计愿景 / 历史评审**保留,不代表当前公开行为。当前事实地图见 `docs/abml-tool-coverage-map.md`。
+
 ---
 
 ## 0. TL;DR(给评审 agent 的 30 秒摘要)
