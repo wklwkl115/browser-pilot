@@ -17,26 +17,26 @@ for *acting* on the page.** Everything else (tabs, network, files, waiting, raw 
 | Tool | Touches ABML? | Reality |
 |---|---|---|
 | `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, `relations`/`inference`/`diff`/`templates`. `observeRunners.ts` → `abml.readStructure`. The "which read mode" complexity is genuinely hidden from the agent. |
-| `browser_execute` | ⚠️ read-only-adjacent | Runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts:128` `server.executeJavaScript(params.script)`). ABML is used **only** by `monitor:true` for a before/after structure read (`readStructure`), never to perform the action. |
+| `browser_execute` | ⚠️ read + click | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`), ABML only via `monitor:true` for a before/after read. **`{action:{click}}` (B2 slice 1) now routes through the ABML ladder** (actionability + auto CDP trusted-event fallback + verify) — the action path reaches ABML for click. `action.type`/`scroll` pending. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
 | `browser_screenshot` | ➖ no | Raw pixels (ABML's vision floor is a separate internal path). |
 | `browser_tabs` / `browser_wait` / `browser_command` / `browser_network` / `browser_hook` / `browser_evidence` / `browser_artifact` / `browser_download` / `browser_upload` / `browser_memory` / all web-security (`crawl`/`fuzz`/`sqli`/`template`/`oast`/`cookie`/`http_replay`) | ➖ no — **and correctly so** | These do not operate on page affordances. Routing them "through ABML" would be a category error (forcing a page model onto tab/network/file/transport concerns) — exactly the surface-widening the project's narrow-tool philosophy rejects. |
 
-## 3. The real gap: the action path is stranded off ABML
+## 3. The action gap — CLICK now closed (B2 slice 1), type/scroll pending
 
 The ABML **action degradation ladder** — `executeBrowserAbmlClick` / `…Type` / `…Scroll` in
 `src/abml/verbs/runtime.ts`: actionability gating (wait stable/visible/not-occluded) → synthetic
 click → effect verification → **automatic fallback to CDP `Input.dispatchMouseEvent`** → re-verify —
-**is fully implemented but wired to nothing public.** Its only callers are tests and the eval runner;
-no public tool, no Pi-native entry (`index.ts` has zero ABML references), and **not** `browser_execute`
-invokes it (`dispatchAbmlVerb` / `runtime.click` have no production caller).
+was fully implemented but wired to nothing public (the gap this doc opened with). **B2 slice 1
+(commit `f88762a`) wired it for click:** `browser_execute {action:{click:"<pi-ref|selector>"}}`
+routes through the ladder, so the JS↔CDP decision disappears for the agent on a click. Verified live
+(`smoke:browser:abml-action-gap` step E: the trusted-only `#guarded` button, which raw `el.click()`
+silently fails, now fires via the public tool — `public_action_effect_fired=true`).
 
-So on the public path, **the agent still owns the method choice**: it hand-writes the click JS (the
-skill ships a snippet with an `elementFromPoint` occlusion check, but no auto-CDP-fallback and no
-effect verification), and if a synthetic event is swallowed the agent must notice and switch to CDP
-via `browser_command` itself. The vision's "the JS↔CDP decision disappears" holds **only inside the
-ABML runtime**, which public actions do not traverse.
+**Still open:** `action.type` / `action.scroll` are not wired yet — for typing/scrolling the agent
+still hand-writes JS (`{script}`) and owns its own fallback. `{script}` itself stays 100% verbatim
+(no magic re-routing). Plan + remaining slices: `docs/abml-action-path-gap-plan.md`.
 
 ## 4. Why this isn't fixed by "add a click tool"
 

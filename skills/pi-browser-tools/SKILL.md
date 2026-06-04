@@ -10,7 +10,7 @@ compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connecte
 Live browser operation via `browser_*` tools. HOW only — methodology and route index. For depth, follow the Index.
 
 Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
-Coverage reality (do not overstate): ABML is wired into the **read** path — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. It is **not** wired into the **action** path: page actions are the JavaScript you write via `browser_execute`, run verbatim — so you still own the method choice (synthetic event vs CDP) and the retry/verify yourself. The internal click/type **degradation ladder** (actionability + auto CDP fallback + effect verification, in `src/abml/verbs/runtime.ts`) is NOT on this public path. Practical consequence: after a synthetic `el.click()`, verify it took effect (re-observe / read back); if it was swallowed, fall back to CDP via `browser_command` yourself. The narrow surface is a deliberate, evidence-backed choice — public verb tools were tried and proved worse than the base tools (they widen the surface and add a "which tool?" decision), not a "no one has been blocked yet" hold. Full map: `docs/abml-tool-coverage-map.md`.
+Coverage reality: ABML's **read** path is wired in — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. On the **action** path: raw `browser_execute {script}` runs your JavaScript **verbatim** — you own the method choice and retry/verify. **For a click that must actually take effect, prefer `browser_execute {action:{click:"<pi-ref|css selector>"}}`** — it routes through the ABML **degradation ladder** (actionability wait → synthetic → verify → **auto CDP trusted-event fallback** → re-verify, `src/abml/verbs/runtime.ts`), so a synthetic-event-only failure is recovered for you instead of silently lost (raw `el.click()` reports ok but the effect never fires on such sites). `action` is **one optional param on the same tool**, not a parallel verb — the narrow surface holds (public verb *tools* were tried and proved worse). `action.type` is not wired yet; for typing, raw `script` still owns its own fallback. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
@@ -48,7 +48,8 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame list` → `browser_frame evaluate` |
-| Click/type/mutate state | `browser_execute` (JS) → `browser_wait` → re-observe |
+| Reliable click (must take effect) | `browser_execute {action:{click:"<pi-ref\|selector>"}}` (laddered: actionability + auto CDP fallback + verify) |
+| Type / mutate / custom DOM | `browser_execute` (JS) → `browser_wait` → re-observe |
 | CDP / native command | `browser_command` with explicit command object |
 | Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
 | User points to element | `browser_pick` |
