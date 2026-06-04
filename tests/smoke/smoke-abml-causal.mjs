@@ -11,6 +11,8 @@
 //      the delta is attributed to that control as a `triggered` relation (relations.summary.
 //      triggered >= 1; targetRef resolvable in causal.requests). The focus-only path is recorded
 //      as an extra (§7 focus robustness is environment-sensitive on live pages).
+//   D) P2 event causal: arm the console hook, baseline, fire console.error, then observe(baseline)
+//      -> the event lands in envelope.causal.events (pi-ref://event/, type console.*, redacted).
 // Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge + bridge +
 // extension copy (picks up the freshly-built dist), so it never touches the user's browser.
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
@@ -204,11 +206,32 @@ try {
     },
   });
 
-  // Core PASS gate: the network-delta surfaces the fired request (redacted, windowed at the
-  // baseline seq), the recorder-unavailable path is reported when no recorder is active, AND
-  // the delta is attributed to the activated control as a `triggered` relation (P1).
+  // ── D) P2: hook event-delta → envelope.causal.events ──────────────────────────────
+  // Arm the console hook, take a fresh baseline (records the hook seq high-water), fire a
+  // console.error, then observe(baseline) and assert the event lands in causal.events (redacted).
+  await bridge.sendCommand({ cmd: "hook.install", targets: { console: true } }, { tabId, timeoutMs: 8000 }).catch(() => undefined);
+  const envH0 = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, detailLevel: "detailed" });
+  const hookSeqBase = envH0.snapshot?.hookSeq;
+  await bridge.executeJavaScript(`(function(){ console.error('pi-causal-probe token=${SECRET}'); return 'logged'; })()`, { tabId, browserSessionId, timeoutMs: 8000 });
+  await delay(400);
+  const envH = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: envH0, detailLevel: "detailed" });
+  const events = Array.isArray(envH.causal?.events) ? envH.causal.events : [];
+  const probeEvent = events.find((e) => typeof e.summary === "string" && e.summary.includes("pi-causal-probe"));
+  const eventRefOk = !!probeEvent && /^pi-ref:\/\/event\//.test(String(probeEvent.ref || ""));
+  const eventTypeOk = !!probeEvent && /^console/.test(String(probeEvent.type || ""));
+  const eventTokenScrubbed = !!probeEvent && !String(probeEvent.summary).includes(SECRET);
+  const eventCausalOk = !!probeEvent && eventRefOk && eventTypeOk && eventTokenScrubbed;
+  record("causal.events", eventCausalOk, {
+    hookSeqBase, eventCount: events.length,
+    probeEvent: probeEvent ? { ref: probeEvent.ref, type: probeEvent.type, summary: probeEvent.summary, selector: probeEvent.selector } : null,
+    eventRefOk, eventTypeOk, eventTokenScrubbed, eventCausalOk,
+  });
+
+  // Core PASS gate: network-delta surfaces the fired request (redacted, windowed at the baseline
+  // seq), the recorder-unavailable path is reported, the delta is attributed to the activated
+  // control (P1 `triggered`), AND a hook console event lands in causal.events redacted (P2).
   result.extras = { focusPathTriggered };
-  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk;
+  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk && eventCausalOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

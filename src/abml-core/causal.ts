@@ -110,7 +110,15 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 function eventSummary(data: unknown): string | undefined {
 	if (typeof data === "string") return data;
 	if (!isRecord(data)) return undefined;
-	return str(data.message) || str(data.summary) || str(data.preview) || str(data.text) || str(data.value) || str(data.url);
+	const direct = str(data.message) || str(data.summary) || str(data.preview) || str(data.text) || str(data.value) || str(data.url);
+	if (direct) return direct;
+	// console.* events carry their message in `args` (the hook records `{ args, stack }`); the first
+	// string arg is the human-meaningful summary. Generic shape, no per-event-type branching.
+	if (Array.isArray(data.args)) {
+		const first = data.args.find((a) => typeof a === "string" && a.trim());
+		if (typeof first === "string") return first;
+	}
+	return undefined;
 }
 
 // The event's target element selector, when the hook recorded one (DOM-sink events carry an

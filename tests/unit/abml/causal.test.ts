@@ -126,6 +126,12 @@ test("causal P2: buildCausalEvents windows seq>sinceSeq, sorts, caps + true coun
 	assert.equal(many.eventCount, 20, "true delta count reported when capped");
 });
 
+test("causal P2: console event summary comes from args[0] (the message), redacted", () => {
+	const e = buildCausalEvent({ seq: 4, type: "console.error", data: { args: ["login failed token=SECRETXY"], stack: "…" } });
+	assert.equal(e.type, "console.error");
+	assert.ok(e.summary && e.summary.includes("login failed") && !e.summary.includes("SECRETXY"), "args[0] used as summary, sensitive value scrubbed");
+});
+
 test("causal P2: empty event delta → empty events, no eventCount", () => {
 	const r = buildCausalEvents([], 10);
 	assert.equal(r.events.length, 0);
