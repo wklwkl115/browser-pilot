@@ -958,6 +958,10 @@ function testHookDispatcherSessionCollectAndSeqContracts() {
 	const hooks = sandbox.window.__PI_BROWSER_HOOKS__;
 	const install = hooks.install({ session_id: "hook-contract-session", targets: { console: true }, buffer_size: 20 });
 	assert(install.ok === true, "hook dispatcher must install the contract session");
+	const sameInstall = hooks.install({ session_id: "hook-contract-session", targets: { console: true }, buffer_size: 20 });
+	assert(sameInstall.ok === true && sameInstall.data.idempotent === true && sameInstall.data.same_fingerprint === true, "hook dispatcher must reuse same-session same-fingerprint installs idempotently");
+	const differentInstall = hooks.install({ session_id: "hook-contract-session", targets: { console: true, storage: true }, buffer_size: 20 });
+	assert(differentInstall.ok === false && differentInstall.error_code === "ALREADY_INSTALLED" && differentInstall.details.same_fingerprint === false, "hook dispatcher must reject different fingerprints unless force is explicit");
 	const badStatus = hooks.dispatch("hook.status", { session_id: "wrong-session" });
 	assert(badStatus.ok === false && badStatus.error_code === "INVALID_SESSION", "hook.status must reject mismatched explicit sessionId");
 	const badCollect = hooks.dispatch("hook.collect", { session_id: "wrong-session" });

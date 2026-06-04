@@ -24,8 +24,8 @@ function resolvedThreshold(value: unknown): number {
 }
 
 function reductionArtifactPayload(result: JsAstArtifactAnalysis): string | undefined {
-	const reduction = result.analysis.summary.reduction;
-	if (!reduction.applied || !reduction.preview) return undefined;
+	const reduction = result.analysis?.summary.reduction;
+	if (!reduction?.applied || !reduction.preview) return undefined;
 	return JSON.stringify({
 		input: result.input,
 		reduction,
@@ -39,7 +39,7 @@ export async function runJsAstShell(params: JsAstShellParams, ctx: JsAstShellCon
 	let saved: JsAstShellResult["saved"];
 	if (reductionPayload) {
 		const threshold = resolvedThreshold(params.artifactThreshold ?? params.maxChars);
-		if (params.outputPath || reductionPayload.length > threshold || analyzed.analysis.summary.reduction.truncated) {
+		if (params.outputPath || reductionPayload.length > threshold || analyzed.analysis?.summary.reduction.truncated) {
 			const fallback = artifactFallbackName("js-ast-reduction");
 			saved = await saveTextArtifact(ctx, params.outputPath, fallback, reductionPayload);
 			summary.reductionArtifact = { path: saved.path, bytes: saved.bytes, chars: saved.chars };

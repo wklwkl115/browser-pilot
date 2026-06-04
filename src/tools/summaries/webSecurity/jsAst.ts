@@ -18,6 +18,43 @@ function diagnosticsPreview(value: unknown): Record<string, unknown>[] {
 export function summarizeJsAstAnalysisData(value: unknown): Summary {
 	const root = isRecord(value) ? value : {};
 	const input = isRecord(root.input) ? root.input : {};
+	const analysisMode = typeof root.analysisMode === "string" ? root.analysisMode : "ast";
+	const lexical = isRecord(root.lexical) ? root.lexical : {};
+	if (analysisMode === "lexical") {
+		const lexicalSummary = isRecord(lexical.summary) ? lexical.summary : {};
+		const tableFor = (name: string) => {
+			const group = isRecord(lexicalSummary[name]) ? lexicalSummary[name] : {};
+			return {
+				count: group.count,
+				truncated: group.truncated,
+				table: summaryTable(Array.isArray(group.entries) ? group.entries : [], [
+					{ key: "kind", value: (item) => isRecord(item) ? item.kind : undefined },
+					{ key: "value", value: (item) => isRecord(item) && typeof item.value === "string" ? textPreview(item.value, 120) : undefined },
+					{ key: "method", value: (item) => isRecord(item) ? item.method : undefined },
+					{ key: "line", value: (item) => isRecord(item) ? item.line : undefined },
+					{ key: "column", value: (item) => isRecord(item) ? item.column : undefined },
+				], 12),
+			};
+		};
+		return {
+			ok: lexical.ok,
+			analysisMode,
+			input: { mode: input.mode, path: input.path, fileName: input.fileName, bytes: input.bytes, slice: input.slice, privacy: input.privacy },
+			parser: lexical.parser,
+			sourceType: lexical.sourceType,
+			lines: lexical.lines,
+			bytes: lexical.bytes,
+			endpoints: tableFor("endpoints"),
+			sinks: tableFor("sinks"),
+			storage: tableFor("storage"),
+			riskyCalls: tableFor("riskyCalls"),
+			sourceMaps: tableFor("sourceMaps"),
+			nextActions: [
+				"large JavaScript used lexical inventory; rerun /browser-js-ast on a smaller slice or source-map archived source for AST reduction",
+				"use browser_artifact search with contextChars or text columnOffset/columnLimit for exact long-line snippets",
+			],
+		};
+	}
 	const analysis = isRecord(root.analysis) ? root.analysis : {};
 	const summary = isRecord(analysis.summary) ? analysis.summary : {};
 	const imports = isRecord(summary.imports) ? summary.imports : {};
@@ -30,6 +67,7 @@ export function summarizeJsAstAnalysisData(value: unknown): Summary {
 	const objectDispatch = isRecord(suspicious.objectDispatchCandidates) ? suspicious.objectDispatchCandidates : {};
 	return {
 		ok: analysis.ok,
+		analysisMode,
 		input: {
 			mode: input.mode,
 			path: input.path,

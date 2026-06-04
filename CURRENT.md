@@ -11,8 +11,9 @@
 
 ## 当前激活项
 
-- **ABML 机制臂 — structure templating + living tree-diff**（2026-06-04 用户显式激活 "开机制臂"）：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。目标 = 大页面降 token（语义层 R1/R2/R3 正确但扁平且全量重发）。**M1 structure templating**（重复 list/table/card → 一个 template + N 个紧凑 instance + handle；纯核 `src/abml-core/templating.ts`，按 AX 容器 `hints.containerRole/containerName` 或 `aria-setsize` 分组，不碰 DOM nth-child 猜测）；**M2 living tree-diff**（跨观测只发结构级变更 `treeDiff`，前提是 ref 语义稳定，顺带治 REF_STALE）。边界：不新增公开工具、不改 `native_command_schema`、纯核零依赖、budget-immune envelope、handle 无损（每 instance 留 `pi-ref://`，`read(ref)` 可还原）、ARIA-grounded only 无 per-site。
-- 除用户显式要求的并行分支外，其余 workstream 不得与本主线并行激活，除非用户再次显式改优先级。
+- **Artifact + JS Bundle Readability 已完成（P1–P4 + docs/verification）**：执行合同 `docs/artifact-js-bundle-readability-execution-plan.md`。已落地压缩 JS / 大 artifact 读取窗口、source map manifest、internal-only `/browser-js-ast` 大包 lexical fallback + slice、hook install 幂等诊断。边界保持：不新增公开 `browser_*` 工具、不新增 XSS/CTF 专用扫描器、不恢复 withdrawn 工具面。
+- 当前无新的并行大型架构主线；后续新能力或继续恢复 ABML 机制臂需用户重新确认并另按执行合同推进。
+- **ABML 机制臂**（执行合同 `docs/abml-mechanism-arm-execution-plan.md`）因用户显式改优先级暂停；后续恢复需重新确认，不得与本主线并行。
 
 ## 已完成但不再作为当前队列
 

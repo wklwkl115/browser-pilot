@@ -142,9 +142,23 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
     const injected = await ensurePiBrowserDispatcher(tabId);
     if (!injected.ok) return injected;
     const args = hookInstallArgsFromMessage(msg, targetOverride);
+    const beforeStatus = await callPagePiBrowser(tabId, 'hook.status', piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
     const res = await callPagePiBrowser(tabId, 'hook.install', args);
+    if (res && !res.ok && res.error_code === PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED) {
+      res.details = {
+        ...(res.details || {}),
+        recovery: {
+          force: true,
+          uninstallFirst: true,
+          message: 'Hook dispatcher is already installed with a different session or fingerprint; retry with force:true or uninstall the current hook session first.',
+        },
+      };
+    }
     if (res && res.ok) {
       const data = (res.data && typeof res.data === 'object') ? res.data as JsonRecord : {};
+      data.reused = data.idempotent === true || data.already_installed === true;
+      data.preinstall_status = beforeStatus && beforeStatus.ok ? 'installed' : beforeStatus && beforeStatus.error_code ? String(beforeStatus.error_code) : 'unknown';
+      data.history_lost = false;
       if (cmd === 'hook.install_targets') {
         data.expanded_targets = expandedTargets || [];
         data.rejected_targets = rejectedTargets || [];

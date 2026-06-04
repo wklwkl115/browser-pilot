@@ -1,3 +1,4 @@
+import { artifactHints } from "../common.js";
 import { asArray, hostOf, increment, isRecord, summaryTable, topCounts, type Summary } from "./shared.js";
 
 export function summarizeBrowserCrawlData(value: unknown): Summary {
@@ -8,10 +9,14 @@ export function summarizeBrowserCrawlData(value: unknown): Summary {
 	const hostCounts: Record<string, number> = {};
 	const serviceWorkerVersions = new Set<string>();
 	let sourceArchiveCount = 0;
+	const sourceMapManifests: Record<string, unknown>[] = [];
 	for (const page of pages) {
 		increment(statusCounts, page.status ?? "unknown");
 		increment(hostCounts, hostOf(page.url));
-		sourceArchiveCount += Number(isRecord(page.sourceMapDetails) ? page.sourceMapDetails.archivedSourceCount || 0 : 0);
+		if (isRecord(page.sourceMapDetails)) {
+			sourceArchiveCount += Number(page.sourceMapDetails.archivedSourceCount || 0);
+			if (page.sourceMapDetails.manifestPath) sourceMapManifests.push({ url: page.url, manifestPath: page.sourceMapDetails.manifestPath, manifestRelativePath: page.sourceMapDetails.manifestRelativePath, archivedSourceCount: page.sourceMapDetails.archivedSourceCount });
+		}
 		if (isRecord(page.serviceWorkerDetails) && isRecord(page.serviceWorkerDetails.versionSummary) && Array.isArray(page.serviceWorkerDetails.versionSummary.versionTokens)) {
 			for (const token of page.serviceWorkerDetails.versionSummary.versionTokens) serviceWorkerVersions.add(String(token));
 		}
@@ -27,6 +32,13 @@ export function summarizeBrowserCrawlData(value: unknown): Summary {
 		sourceArchiveCount: isRecord(value) ? value.sourceArchiveCount : sourceArchiveCount,
 		serviceWorkerCacheNames: isRecord(value) ? value.serviceWorkerCacheNames : undefined,
 		serviceWorkerVersionTokens: isRecord(value) ? value.serviceWorkerVersionTokens : Array.from(serviceWorkerVersions),
+		sourceMapManifestCount: sourceMapManifests.length,
+		sourceMapManifests: summaryTable(sourceMapManifests, [
+			{ key: "url", value: (item) => item.url },
+			{ key: "manifestPath", value: (item) => item.manifestPath },
+			{ key: "archivedSourceCount", value: (item) => item.archivedSourceCount },
+		], 20),
+		...(sourceMapManifests.length ? artifactHints([{ label: "all source map details", jsonPath: "pages", kind: "source-map-details", count: sourceMapManifests.length }]) : {}),
 		statusCounts: topCounts(statusCounts),
 		hostCounts: topCounts(hostCounts),
 		pages: summaryTable(pages, [
@@ -67,6 +79,7 @@ export function summarizeBrowserCrawlData(value: unknown): Summary {
 			"use browser_fuzz mode=path with discovered routes or endpoint paths for bounded path discovery",
 			"use browser_template with discovered hosts, paths, or API surfaces for exposure or nuclei follow-up checks",
 			"capture live request templates with browser_network or HAR before browser_http_replay, browser_fuzz mode=param, or browser_sqli",
+			...(sourceMapManifests.length ? ["read sourceMapManifests[].manifestPath with browser_artifact, then search archived source-map files with bounded root/glob"] : []),
 		],
 	};
 }

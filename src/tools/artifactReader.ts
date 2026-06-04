@@ -52,6 +52,9 @@ export type BrowserArtifactParams = {
 	regex?: boolean;
 	ignoreCase?: boolean;
 	contextLines?: number;
+	contextChars?: number;
+	columnOffset?: number;
+	columnLimit?: number;
 	maxMatches?: number;
 	maxFiles?: number;
 	maxBytes?: number;
@@ -62,8 +65,8 @@ export type BrowserArtifactParams = {
 
 type BrowserArtifactContext = { cwd?: string } | undefined;
 
-type TextSnippet = { lineStart: number; lineEnd: number; text: string; truncated: boolean };
-type SearchSnippet = TextSnippet & { matchLine: number; path?: string };
+type TextSnippet = { lineStart: number; lineEnd: number; text: string; truncated: boolean; columnStart?: number; columnEnd?: number; lineLength?: number; truncatedBefore?: boolean; truncatedAfter?: boolean };
+type SearchSnippet = TextSnippet & { matchLine: number; path?: string; matchColumnStart?: number; matchColumnEnd?: number };
 type SampleSnippet = TextSnippet & { section: string; deduped?: boolean };
 
 export type BrowserArtifactReadResult =
@@ -149,6 +152,58 @@ function boundedJoin(lines: Array<{ line: number; text: string }>, maxChars: num
 	return { text: out.join("\n"), lineEnd, truncated: false };
 }
 
+function positiveIntParam(value: unknown, fallback: number, min: number, max: number): number {
+	const n = Number(value);
+	if (!Number.isFinite(n)) return fallback;
+	return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function lineWindow(line: string, start: number, length: number): { text: string; columnStart: number; columnEnd: number; lineLength: number; truncatedBefore: boolean; truncatedAfter: boolean } {
+	const lineLength = line.length;
+	const columnStart = Math.max(0, Math.min(lineLength, Math.floor(start)));
+	const columnEnd = Math.max(columnStart, Math.min(lineLength, columnStart + Math.max(0, Math.floor(length))));
+	return {
+		text: line.slice(columnStart, columnEnd),
+		columnStart,
+		columnEnd,
+		lineLength,
+		truncatedBefore: columnStart > 0,
+		truncatedAfter: columnEnd < lineLength,
+	};
+}
+
+function textLineWindow(line: string, params: BrowserArtifactParams, maxChars: number) {
+	const hasColumnWindow = params.columnOffset !== undefined || params.columnLimit !== undefined;
+	if (!hasColumnWindow) return lineWindow(line, 0, line.length);
+	const start = Math.max(0, Math.floor(Number(params.columnOffset || 0)));
+	const fallbackLimit = Math.max(1, maxChars);
+	const limit = positiveIntParam(params.columnLimit, fallbackLimit, 1, Math.max(1, line.length));
+	return lineWindow(line, start, limit);
+}
+
+function searchLineWindow(line: string, matchStart: number, matchEnd: number, params: BrowserArtifactParams, maxChars: number) {
+	const matchLength = Math.max(1, matchEnd - matchStart);
+	const contextChars = positiveIntParam(params.contextChars, 800, 80, 20_000);
+	const displayBudget = Math.max(matchLength, maxChars - 20);
+	if (line.length <= Math.min(contextChars, displayBudget)) return lineWindow(line, 0, line.length);
+	const windowLength = Math.min(line.length, Math.max(matchLength, Math.min(contextChars, displayBudget)));
+	const side = Math.floor(Math.max(0, windowLength - matchLength) / 2);
+	const start = Math.max(0, Math.min(line.length - windowLength, matchStart - side));
+	return lineWindow(line, start, windowLength);
+}
+
+function matchColumns(line: string, params: BrowserArtifactParams, pattern: RegExp | undefined, needle: string): { matched: boolean; start?: number; end?: number } {
+	if (pattern) {
+		const regexLine = line.length > MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS ? line.slice(0, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS) : line;
+		const match = pattern.exec(regexLine);
+		pattern.lastIndex = 0;
+		return match?.index !== undefined ? { matched: true, start: match.index, end: match.index + match[0].length } : { matched: false };
+	}
+	const haystack = params.ignoreCase === false ? line : line.toLowerCase();
+	const index = haystack.indexOf(needle);
+	return index >= 0 ? { matched: true, start: index, end: index + needle.length } : { matched: false };
+}
+
 async function eachLine(absPath: string, onLine: (line: string, lineNumber: number) => void | Promise<void>): Promise<number> {
 	const rl = readline.createInterface({ input: createReadStream(absPath, { encoding: "utf8" }), crlfDelay: Infinity });
 	let lineNumber = 0;
@@ -189,21 +244,31 @@ function compileArtifactSearchRegex(query: string, flags: string): RegExp {
 async function readTextRange(absPath: string, fileSize: number, params: BrowserArtifactParams, maxChars: number) {
 	const offset = Math.max(1, Math.floor(Number(params.offset || 1)));
 	const limit = Math.max(1, Math.floor(Number(params.limit || 120)));
-	const selected: Array<{ line: number; text: string }> = [];
+	const selected: Array<{ line: number; text: string; window?: ReturnType<typeof textLineWindow> }> = [];
 	const lineCount = await eachLine(absPath, (line, lineNumber) => {
-		if (lineNumber >= offset && lineNumber < offset + limit) selected.push({ line: lineNumber, text: line });
+		if (lineNumber >= offset && lineNumber < offset + limit) {
+			const window = textLineWindow(line, params, maxChars);
+			selected.push({ line: lineNumber, text: window.text, window });
+		}
 	});
 	const chars = await countTextChars(absPath);
 	if (!selected.length) return { mode: "text" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), offset, limit, nextOffset: null, snippets: [] };
 	const joined = boundedJoin(selected, maxChars);
 	const nextOffset = offset - 1 + selected.length < lineCount ? joined.lineEnd + 1 : null;
+	const firstWindow = selected[0].window;
 	return {
 		mode: "text" as const,
 		summary: summaryFromStats(fileSize, absPath, lineCount, chars),
 		offset,
 		limit,
 		nextOffset,
-		snippets: [{ lineStart: selected[0].line, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated }],
+		snippets: [{
+			lineStart: selected[0].line,
+			lineEnd: joined.lineEnd,
+			text: joined.text,
+			truncated: joined.truncated || !!firstWindow?.truncatedBefore || !!firstWindow?.truncatedAfter,
+			...(firstWindow ? { columnStart: firstWindow.columnStart, columnEnd: firstWindow.columnEnd, lineLength: firstWindow.lineLength, truncatedBefore: firstWindow.truncatedBefore, truncatedAfter: firstWindow.truncatedAfter } : {}),
+		}],
 	};
 }
 
@@ -218,7 +283,7 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 	const needle = params.ignoreCase === false ? query : query.toLowerCase();
 	const matches: SearchSnippet[] = [];
 	const ring: Array<{ line: number; text: string }> = [];
-	let pending: { matchLine: number; lines: Array<{ line: number; text: string }>; remainingAfter: number } | undefined;
+	let pending: { matchLine: number; lines: Array<{ line: number; text: string }>; remainingAfter: number; window: ReturnType<typeof searchLineWindow>; matchStart: number; matchEnd: number } | undefined;
 	let used = 0;
 	let lastRangeEnd = 0;
 	let regexTruncatedLines = 0;
@@ -227,7 +292,20 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		const budgetLeft = Math.max(0, maxChars - used);
 		const joined = boundedJoin(pending.lines, budgetLeft);
 		if (joined.text || !matches.length) {
-			matches.push({ lineStart: pending.lines[0]?.line || pending.matchLine, lineEnd: joined.lineEnd || pending.matchLine, matchLine: pending.matchLine, text: joined.text, truncated: joined.truncated });
+			matches.push({
+				lineStart: pending.lines[0]?.line || pending.matchLine,
+				lineEnd: joined.lineEnd || pending.matchLine,
+				matchLine: pending.matchLine,
+				text: joined.text,
+				truncated: joined.truncated || pending.window.truncatedBefore || pending.window.truncatedAfter,
+				columnStart: pending.window.columnStart,
+				columnEnd: pending.window.columnEnd,
+				lineLength: pending.window.lineLength,
+				truncatedBefore: pending.window.truncatedBefore,
+				truncatedAfter: pending.window.truncatedAfter,
+				matchColumnStart: pending.matchStart,
+				matchColumnEnd: pending.matchEnd,
+			});
 			used += joined.text.length + 1;
 		}
 		lastRangeEnd = pending.lines[pending.lines.length - 1]?.line || pending.matchLine;
@@ -245,18 +323,16 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 			if (ring.length > contextLines) ring.shift();
 			return;
 		}
-		const regexLine = pattern && line.length > MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS ? line.slice(0, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS) : line;
-		if (pattern && regexLine.length !== line.length) regexTruncatedLines += 1;
-		const haystack = params.ignoreCase === false ? line : line.toLowerCase();
-		const matched = pattern ? pattern.test(regexLine) : haystack.includes(needle);
-		if (pattern) pattern.lastIndex = 0;
-		if (!matched) {
+		if (pattern && line.length > MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS) regexTruncatedLines += 1;
+		const match = matchColumns(line, params, pattern, needle);
+		if (!match.matched || match.start === undefined || match.end === undefined) {
 			ring.push({ line: lineNumber, text: line });
 			if (ring.length > contextLines) ring.shift();
 			return;
 		}
 		const before = ring.filter((item) => item.line > lastRangeEnd);
-		pending = { matchLine: lineNumber, lines: [...before, { line: lineNumber, text: line }], remainingAfter: contextLines };
+		const window = searchLineWindow(line, match.start, match.end, params, Math.max(0, maxChars - used));
+		pending = { matchLine: lineNumber, lines: [...before, { line: lineNumber, text: window.text }], remainingAfter: contextLines, window, matchStart: match.start, matchEnd: match.end };
 		if (contextLines === 0) flushPending();
 		ring.splice(0, ring.length, { line: lineNumber, text: line });
 	});
@@ -267,11 +343,10 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		mode: "search" as const,
 		summary: {
 			...summaryFromStats(fileSize, absPath, lineCount, chars),
-			search: pattern ? {
-				regexMaxPatternChars: MAX_ARTIFACT_SEARCH_REGEX_CHARS,
-				regexMaxLineChars: MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS,
-				regexTruncatedLines,
-			} : undefined,
+			search: {
+				...(pattern ? { regexMaxPatternChars: MAX_ARTIFACT_SEARCH_REGEX_CHARS, regexMaxLineChars: MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, regexTruncatedLines } : {}),
+				contextChars: positiveIntParam(params.contextChars, 800, 80, 20_000),
+			},
 		},
 		query,
 		regex: params.regex === true,
@@ -288,6 +363,35 @@ async function sampleText(absPath: string, fileSize: number, params: BrowserArti
 	await eachLine(absPath, () => { lineCount += 1; });
 	const chars = await countTextChars(absPath);
 	if (lineCount === 0) return { mode: "sample" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), limit: perSection, snippets: [] };
+	if (lineCount === 1) {
+		let onlyLine = "";
+		await eachLine(absPath, (line) => { onlyLine = line; });
+		const windowLength = positiveIntParam(params.contextChars ?? params.columnLimit, Math.max(1, Math.floor(maxChars / 3)), 40, Math.max(40, onlyLine.length));
+		const candidates = [
+			{ section: "head", start: 0 },
+			{ section: "middle", start: Math.max(0, Math.floor(onlyLine.length / 2) - Math.floor(windowLength / 2)) },
+			{ section: "tail", start: Math.max(0, onlyLine.length - windowLength) },
+		];
+		const snippets: SampleSnippet[] = [];
+		const ranges: Array<{ start: number; end: number }> = [];
+		let used = 0;
+		for (const candidate of candidates) {
+			const window = lineWindow(onlyLine, candidate.start, windowLength);
+			if (ranges.some((range) => window.columnStart >= range.start && window.columnEnd <= range.end)) continue;
+			const joined = boundedJoin([{ line: 1, text: window.text }], Math.max(0, maxChars - used));
+			if (!joined.text && snippets.length) break;
+			snippets.push({ section: candidate.section, lineStart: 1, lineEnd: 1, text: joined.text, truncated: joined.truncated || window.truncatedBefore || window.truncatedAfter, columnStart: window.columnStart, columnEnd: window.columnEnd, lineLength: window.lineLength, truncatedBefore: window.truncatedBefore, truncatedAfter: window.truncatedAfter });
+			ranges.push({ start: window.columnStart, end: window.columnEnd });
+			used += joined.text.length + 1;
+			if (joined.truncated || used >= maxChars) break;
+		}
+		return {
+			mode: "sample" as const,
+			summary: { ...summaryFromStats(fileSize, absPath, lineCount, chars), sample: { requestedSections: candidates.length, returnedSections: snippets.length, singleLineWindows: true } },
+			limit: perSection,
+			snippets,
+		};
+	}
 	const sections = [
 		{ name: "head", start: 1, end: Math.min(lineCount, perSection) },
 		{ name: "middle", start: Math.max(1, Math.floor(lineCount / 2) - Math.floor(perSection / 2)), end: Math.min(lineCount, Math.max(1, Math.floor(lineCount / 2) - Math.floor(perSection / 2)) + perSection - 1) },

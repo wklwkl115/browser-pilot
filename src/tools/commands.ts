@@ -14,14 +14,16 @@ function commandArgsText(args: unknown): string {
 	return typeof args === "string" ? args.trim() : "";
 }
 
-function parseBrowserJsAstArgs(args: unknown): { path?: string; outputPath?: string } {
+function parseBrowserJsAstArgs(args: unknown): { path?: string; outputPath?: string; slice?: { offset: number; length: number } } {
 	const text = commandArgsText(args);
 	if (!text) return {};
 	const outputMatch = text.match(/(?:^|\s)--output\s+("[^"]+"|'[^']+'|\S+)/);
 	const rawOutput = outputMatch ? outputMatch[1] : undefined;
 	const outputPath = rawOutput ? rawOutput.replace(/^['"]|['"]$/g, "") : undefined;
-	const withoutOutput = outputMatch ? text.replace(outputMatch[0], " ").trim() : text;
-	return { path: withoutOutput || undefined, outputPath };
+	const sliceMatch = text.match(/(?:^|\s)--slice\s+(\d+)\s*:\s*(\d+)/);
+	const slice = sliceMatch ? { offset: Number(sliceMatch[1]), length: Number(sliceMatch[2]) } : undefined;
+	const withoutFlags = text.replace(outputMatch?.[0] || "", " ").replace(sliceMatch?.[0] || "", " ").trim();
+	return { path: withoutFlags || undefined, outputPath, slice };
 }
 
 function parseBrowserWasmArgs(args: unknown): { path?: string; outputPath?: string; mode?: "metadata" | "wat" } {
@@ -81,19 +83,19 @@ export function registerBrowserCommands(pi: ExtensionAPI, server: BrowserBridgeS
 	});
 
 	pi.registerCommand("browser-js-ast", {
-		description: "Run internal JS AST/deobfuscation summary on explicit editor text or a local file path. Usage: /browser-js-ast [path] [--output file]",
+		description: "Run internal JS AST/deobfuscation summary on explicit editor text or a local file path. Usage: /browser-js-ast [path] [--slice offset:length] [--output file]",
 		handler: async (args, ctx) => {
 			try {
 				const parsed = parseBrowserJsAstArgs(args);
 				const editorText = ctx.ui.getEditorText?.()?.trim() ?? "";
 				const explicitPath = parsed.path ? path.resolve(ctx.cwd || process.cwd(), parsed.path) : undefined;
 				if (!explicitPath && !editorText) {
-					ctx.ui.notify("Usage: /browser-js-ast [path] [--output file], or place explicit JS text in the editor first.", "warning");
+					ctx.ui.notify("Usage: /browser-js-ast [path] [--slice offset:length] [--output file], or place explicit JS text in the editor first.", "warning");
 					return;
 				}
 				const result = explicitPath
-					? await runJsAstShell({ path: explicitPath, outputPath: parsed.outputPath }, { cwd: ctx.cwd })
-					: await runJsAstShell({ text: editorText, fileName: "editor-input.js", outputPath: parsed.outputPath }, { cwd: ctx.cwd });
+					? await runJsAstShell({ path: explicitPath, outputPath: parsed.outputPath, slice: parsed.slice }, { cwd: ctx.cwd })
+					: await runJsAstShell({ text: editorText, fileName: "editor-input.js", outputPath: parsed.outputPath, slice: parsed.slice }, { cwd: ctx.cwd });
 				ctx.ui.notify(stableJson(result.summary), "info");
 				if (result.saved?.path) {
 					const savedText = await readFile(result.saved.path, "utf8");

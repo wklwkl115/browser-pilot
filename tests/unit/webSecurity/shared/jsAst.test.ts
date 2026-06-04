@@ -95,13 +95,31 @@ test("jsAst artifact input supports explicit local file paths", async () => {
 	assert.equal(result.analysis.summary.imports.count, 1);
 });
 
-test("jsAst artifact input rejects oversized text", async () => {
+test("jsAst artifact input rejects oversized text when caller sets an explicit bound", async () => {
 	const huge = "a".repeat(Math.min(4096, JS_AST_MAX_INPUT_BYTES + 1));
 	await assert.rejects(() => analyzeJavaScriptArtifactInput({ text: huge, maxBytes: 1024 }), (error: unknown) => {
 		assert.equal(error instanceof JsAstArtifactError, true);
 		assert.equal((error as JsAstArtifactError).code, "JS_AST_INPUT_TOO_LARGE");
 		return true;
 	});
+});
+
+test("jsAst artifact input falls back to lexical inventory for large default-bounded bundles", async () => {
+	const large = `${"a".repeat(JS_AST_MAX_INPUT_BYTES + 1)};fetch('/api/v1/items');el.innerHTML=x;localStorage.getItem('token');//# sourceMappingURL=app.js.map`;
+	const result = await analyzeJavaScriptArtifactInput({ text: large, fileName: "large-bundle.js" });
+	assert.equal(result.analysisMode, "lexical");
+	assert.equal(result.lexical?.summary.endpoints.count >= 1, true);
+	assert.equal(result.lexical?.summary.sinks.count >= 1, true);
+	assert.equal(result.lexical?.summary.storage.count >= 1, true);
+	assert.equal(result.lexical?.summary.sourceMaps.count, 1);
+});
+
+test("jsAst artifact input supports explicit slices for large files", async () => {
+	const large = `${"x".repeat(2048)}export const answer = 42;${"y".repeat(2048)}`;
+	const result = await analyzeJavaScriptArtifactInput({ text: large, fileName: "slice.js", slice: { offset: 2048, length: 25 } });
+	assert.equal(result.analysisMode, "ast");
+	assert.equal(result.input.slice?.offset, 2048);
+	assert.equal(result.analysis?.summary.exports.count, 1);
 });
 
 test("jsAst bounds large summary collections", () => {

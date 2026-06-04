@@ -15,8 +15,12 @@ function safeArchiveSegment(value: string, fallback = "source") {
 	return normalized || fallback;
 }
 
+function sourceMapArchiveKey(url: string): string {
+	return `source-map-${sha256Hex(url).slice(0, 12)}`;
+}
+
 function sourceMapArchiveRelativePath(url: string, sourceName: string, index: number): string {
-	const mapKey = `source-map-${sha256Hex(url).slice(0, 12)}`;
+	const mapKey = sourceMapArchiveKey(url);
 	const normalized = sourceName.replace(/^[a-z]+:\/+/i, "").replace(/[?#].*$/, "").replace(/\\/g, "/");
 	const segments = normalized.split("/").filter(Boolean).slice(-4).map((part, partIndex) => safeArchiveSegment(part, `part-${partIndex + 1}`));
 	const fileName = `${String(index + 1).padStart(3, "0")}-${segments.pop() || "source.txt"}`;
@@ -471,6 +475,8 @@ export async function parseSourceMapDetails(bodyText: string, url: string, ensur
 	}
 	const archivedSources: Array<Record<string, unknown>> = [];
 	let archiveRelativeDir: string | undefined;
+	let manifestPath: string | undefined;
+	let manifestRelativePath: string | undefined;
 	if (sourcesContent.length) {
 		const artifactRoot = await ensureArtifactRoot();
 		for (let index = 0; index < Math.min(sources.length, sourcesContent.length, 200); index += 1) {
@@ -485,11 +491,26 @@ export async function parseSourceMapDetails(bodyText: string, url: string, ensur
 				sourceName,
 				resolvedUrl: resolveSourceMapSourceUrl(sourceName, sourceRoot, url),
 				relativePath,
+				artifactPath: absolutePath,
 				bytes: Buffer.byteLength(content),
 				sha256: sha256Hex(content),
 				endpointHintCount: extractStringUrls(content, url).length,
 			});
 		}
+		manifestRelativePath = path.posix.join("source-maps", sourceMapArchiveKey(url), "manifest.json");
+		manifestPath = path.join(artifactRoot, manifestRelativePath);
+		await mkdir(path.dirname(manifestPath), { recursive: true });
+		await writeFile(manifestPath, JSON.stringify({
+			kind: "source-map-manifest",
+			mapUrl: url,
+			artifactRoot,
+			sourceRoot,
+			sourceCount: sources.length,
+			sourcesContentCount: sourcesContent.length,
+			archivedSourceCount: archivedSources.length,
+			archivedSources,
+			endpointHints: endpointHints.slice(0, 200),
+		}, null, 2), "utf8");
 	}
 	return {
 		kind: "source-map",
@@ -503,6 +524,8 @@ export async function parseSourceMapDetails(bodyText: string, url: string, ensur
 		endpointHints: endpointHints.slice(0, 200),
 		archivedSourceCount: archivedSources.length,
 		archiveRelativeDir,
+		manifestPath,
+		manifestRelativePath,
 		archivedSources,
 	};
 }

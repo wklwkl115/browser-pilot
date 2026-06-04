@@ -301,7 +301,7 @@ npm run smoke:browser:transfer
 2. 如果扩展未连接，检查端口、扩展是否启用、浏览器扩展是否重新加载。
 3. 如果 tab 不可用，先用 `browser_tabs list` 确认目标 tab。
 4. 如果命令超时，检查 `/browser-status` 的 pending 请求和目标页面是否阻塞。
-5. 如果要做 internal-only JS AST 摘要，执行 `/browser-js-ast [path] [--output file]`，或先把显式 JS 文本放进编辑器再执行 `/browser-js-ast`。
+5. 如果要做 internal-only JS AST 摘要，执行 `/browser-js-ast [path] [--slice offset:length] [--output file]`，或先把显式 JS 文本放进编辑器再执行 `/browser-js-ast`。大 bundle 会降级为 lexical inventory；需要 AST 时用 `--slice` 或 source map 归档源码。
 6. 如果要做 internal-only Wasm 元数据/桥接摘要，执行 `/browser-wasm <path> [--wat] [--output file]`；`--wat` 依赖本地成熟桥接工具可用。
 7. 如果要做 internal-only WebSocket session/transcript 原语，执行 `/browser-ws open <url> [--session id] ...`、`/browser-ws send --text ...`、`/browser-ws replay --step ... [--steps-json '[...]']`、`/browser-ws wait ...`、`/browser-ws collect [--output file]`、`/browser-ws close`。
 8. 如果 `browser_dom_snapshot` 返回空 viewport/nodes，先切换到目标 tab，确认页面可见后重试。

@@ -73,7 +73,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 
 Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.
 
-- **Artifacts** → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search` (CLI: `pi-browser artifact …`). Take the path/handle from `summary.saved`, `sections`, or `nextActions`.
+- **Artifacts** → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search` (CLI: `pi-browser artifact …`). For minified JS or long single-line artifacts, use `search contextChars` or `text columnOffset/columnLimit`. Take the path/handle from `summary.saved`, `sections`, or `nextActions`.
 - **Browser memory** → `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
 - `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture” → `browser_artifact`.
 
@@ -120,7 +120,7 @@ Click:
 
 `browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from failing step.
 
-Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file/transcript slash commands, not a public browser tool surface.
+Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file/transcript slash commands, not a public browser tool surface. `/browser-js-ast` accepts explicit local files/editor text, supports `--slice offset:length`, and may return lexical inventory for large bundles instead of AST.
 
 ## Recovery
 

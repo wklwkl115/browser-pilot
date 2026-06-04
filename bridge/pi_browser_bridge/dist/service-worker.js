@@ -6440,9 +6440,23 @@ async function handlePiBrowserHookCommand(cmd, tabId2, msg) {
     const injected = await ensurePiBrowserDispatcher(tabId2);
     if (!injected.ok) return injected;
     const args = hookInstallArgsFromMessage(msg, targetOverride);
+    const beforeStatus = await callPagePiBrowser(tabId2, "hook.status", piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
     const res2 = await callPagePiBrowser(tabId2, "hook.install", args);
+    if (res2 && !res2.ok && res2.error_code === PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED) {
+      res2.details = {
+        ...res2.details || {},
+        recovery: {
+          force: true,
+          uninstallFirst: true,
+          message: "Hook dispatcher is already installed with a different session or fingerprint; retry with force:true or uninstall the current hook session first."
+        }
+      };
+    }
     if (res2 && res2.ok) {
       const data2 = res2.data && typeof res2.data === "object" ? res2.data : {};
+      data2.reused = data2.idempotent === true || data2.already_installed === true;
+      data2.preinstall_status = beforeStatus && beforeStatus.ok ? "installed" : beforeStatus && beforeStatus.error_code ? String(beforeStatus.error_code) : "unknown";
+      data2.history_lost = false;
       if (cmd === "hook.install_targets") {
         data2.expanded_targets = expandedTargets || [];
         data2.rejected_targets = rejectedTargets || [];

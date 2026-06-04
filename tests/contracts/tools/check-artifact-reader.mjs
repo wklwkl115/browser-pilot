@@ -147,8 +147,14 @@ try {
 	await writeFile(longLineContractPath, `${"A".repeat(200)} NEEDLE\nsecond\n`, "utf8");
 	const longLineText = await readBrowserArtifact({ path: longLineContractPath, mode: "text", offset: 1, limit: 1, maxChars: 50 }, { cwd: tmp });
 	assert.notEqual(longLineText.snippets[0].text, "", "check-artifact text.long-line: truncated long lines must still return a visible prefix");
-	const longLineMatch = await readBrowserArtifact({ path: longLineContractPath, mode: "search", query: "NEEDLE", contextLines: 0, maxChars: 50 }, { cwd: tmp });
+	const longLineMatch = await readBrowserArtifact({ path: longLineContractPath, mode: "search", query: "NEEDLE", contextLines: 0, contextChars: 40, maxChars: 80 }, { cwd: tmp });
 	assert.notEqual(longLineMatch.snippets[0].text, "", "check-artifact search.long-line: truncated matches must still return a visible prefix");
+	assert.ok(longLineMatch.snippets[0].text.includes("NEEDLE"), "check-artifact search.long-line.window: search snippets must keep the match visible inside long-line windows");
+	assert.equal(typeof longLineMatch.snippets[0].matchColumnStart, "number", "check-artifact search.long-line.columns: search snippets must expose match columns");
+	assert.equal(longLineMatch.snippets[0].truncatedBefore, true, "check-artifact search.long-line.truncatedBefore: long-line match windows must expose left truncation");
+	const longLineColumn = await readBrowserArtifact({ path: longLineContractPath, mode: "text", offset: 1, limit: 1, columnOffset: 200, columnLimit: 20, maxChars: 80 }, { cwd: tmp });
+	assert.ok(longLineColumn.snippets[0].text.includes("NEEDLE"), "check-artifact text.column-window: text mode must support character windows inside long lines");
+	assert.equal(longLineColumn.snippets[0].columnStart, 200, "check-artifact text.column-window.columns: text mode must expose columnStart");
 
 	await assert.rejects(readBrowserArtifact({ path: artifactPath, mode: "search", query: "[", regex: true }, { cwd: tmp }), (error) => {
 		assert.equal(error instanceof ArtifactReaderError, true);
@@ -167,6 +173,13 @@ try {
 		assert.equal(error.details.reason, "pattern_too_long");
 		return true;
 	});
+
+	const singleLineSamplePath = path.join(tmp, ".pi", "browser-artifacts", "single-line-sample.js");
+	await writeFile(singleLineSamplePath, `${"h".repeat(120)}MIDDLE${"t".repeat(120)}`, "utf8");
+	const singleLineSample = await readBrowserArtifact({ path: singleLineSamplePath, mode: "sample", contextChars: 40, maxChars: 200 }, { cwd: tmp });
+	assert.equal(singleLineSample.summary.sample.singleLineWindows, true, "check-artifact sample.single-line: single-line samples must use character windows");
+	assert.equal(singleLineSample.snippets.length >= 2, true, "check-artifact sample.single-line.windows: single-line samples must include multiple windows when budget allows");
+	assert.ok(singleLineSample.snippets.some((snippet) => snippet.text.includes("MIDDLE")), "check-artifact sample.single-line.middle: middle window must preserve mid-file evidence");
 
 	const longLinePath = path.join(tmp, ".pi", "browser-artifacts", "long-line.txt");
 	await writeFile(longLinePath, `${"a".repeat(MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS + 10)}\nneedle\n`, "utf8");
