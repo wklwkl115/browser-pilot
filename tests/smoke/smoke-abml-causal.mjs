@@ -11,8 +11,11 @@
 //      the delta is attributed to that control as a `triggered` relation (relations.summary.
 //      triggered >= 1; targetRef resolvable in causal.requests). The focus-only path is recorded
 //      as an extra (§7 focus robustness is environment-sensitive on live pages).
-//   D) P2 event causal: arm the console hook, baseline, fire console.error, then observe(baseline)
+//   D) P2-A event causal: arm the console hook, baseline, fire console.error, then observe(baseline)
 //      -> the event lands in envelope.causal.events (pi-ref://event/, type console.*, redacted).
+//   E) P2-B (non-gating): fire a DOM-sink on an id'd control, then observe(baseline) and look for an
+//      event-sourced `triggered` edge (source:"event"); recorded as an extra (live selector match
+//      is fixture-sensitive — the deterministic proof is the integration test).
 // Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge + bridge +
 // extension copy (picks up the freshly-built dist), so it never touches the user's browser.
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
@@ -209,7 +212,7 @@ try {
   // ── D) P2: hook event-delta → envelope.causal.events ──────────────────────────────
   // Arm the console hook, take a fresh baseline (records the hook seq high-water), fire a
   // console.error, then observe(baseline) and assert the event lands in causal.events (redacted).
-  await bridge.sendCommand({ cmd: "hook.install", targets: { console: true } }, { tabId, timeoutMs: 8000 }).catch(() => undefined);
+  await bridge.sendCommand({ cmd: "hook.install", targets: { console: true, dom_sinks: true } }, { tabId, timeoutMs: 8000 }).catch(() => undefined);
   const envH0 = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, detailLevel: "detailed" });
   const hookSeqBase = envH0.snapshot?.hookSeq;
   await bridge.executeJavaScript(`(function(){ console.error('pi-causal-probe token=${SECRET}'); return 'logged'; })()`, { tabId, browserSessionId, timeoutMs: 8000 });
@@ -227,10 +230,32 @@ try {
     eventRefOk, eventTypeOk, eventTokenScrubbed, eventCausalOk,
   });
 
+  // ── E) P2-B (best-effort, non-gating): a DOM-sink event names its element → triggered source:"event" ──
+  // Fire innerHTML on a real id'd control, then observe(baseline) and look for an event-sourced
+  // triggered edge. Recorded as an extra: live element-selector matching is fixture-sensitive (the
+  // hook records "#id" only for id'd elements, which must equal the ABML entity's hints.selector).
+  let eventAttributionLive = false;
+  let eventTriggerEdge = null;
+  if (actionRef && typeof focusSel === "string") {
+    const envE0 = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, detailLevel: "detailed" });
+    await bridge.executeJavaScript(`(function(){ var el=document.querySelector(${JSON.stringify(focusSel)}); if(el){ el.innerHTML = 'pi-causal-sink'; } return 'sunk'; })()`, { tabId, browserSessionId, timeoutMs: 8000 });
+    await delay(400);
+    const envE = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: envE0, detailLevel: "detailed" });
+    const sinkCtl = (envE.entities ?? []).find((e) => e.ref === actionRef);
+    eventTriggerEdge = (sinkCtl?.relations ?? []).find((r) => r.type === "triggered" && r.source === "event") || null;
+    eventAttributionLive = !!eventTriggerEdge || (envE.relations?.summary?.triggered || 0) >= 1;
+    record("causal.event-attribution", true, {
+      nonGating: true, eventAttributionLive,
+      domSinkEvents: (envE.causal?.events ?? []).filter((e) => /domSink|dom_sink|innerHTML/i.test(String(e.type || "")) || e.selector).map((e) => ({ ref: e.ref, type: e.type, selector: e.selector })),
+      eventTriggerEdge: eventTriggerEdge ? { source: eventTriggerEdge.source, targetRef: eventTriggerEdge.targetRef, confidence: eventTriggerEdge.confidence } : null,
+    });
+  }
+
   // Core PASS gate: network-delta surfaces the fired request (redacted, windowed at the baseline
   // seq), the recorder-unavailable path is reported, the delta is attributed to the activated
-  // control (P1 `triggered`), AND a hook console event lands in causal.events redacted (P2).
-  result.extras = { focusPathTriggered };
+  // control (P1 `triggered`), AND a hook console event lands in causal.events redacted (P2-A).
+  // P2-B event-sourced attribution is recorded non-gating (eventAttributionLive) — see step E.
+  result.extras = { focusPathTriggered, eventAttributionLive };
   result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk && eventCausalOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
