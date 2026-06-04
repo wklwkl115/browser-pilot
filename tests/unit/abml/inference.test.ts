@@ -1,6 +1,8 @@
-// ABML R2 — inference layer unit tests. Covers all 11 PageIntent patterns plus
+// ABML R2 — inference layer unit tests. Covers all PageIntent patterns plus
 // dedup (filter-panel supersedes search), evidence (login submitRef), multi-choice
-// container grouping confidence, and expandable threshold.
+// container grouping confidence, expandable threshold, and boundary conditions
+// (disabled-only buttons, partial/split grouping, co-occurring intents, evidence
+// cleanliness, optional-diff-arg call site).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildInferenceSummary, type InferenceSummary } from "../../../src/abml-core/inference.ts";
@@ -248,4 +250,93 @@ test("multiple intents co-occur on a complex page", () => {
 	assert.equal(mc?.confidence, "high", "grouped checkboxes → high");
 	const login = result.intents.find((i) => i.intent === "login");
 	assert.equal(login?.evidence?.submitRef, "pi-ref://control/submit");
+});
+
+// ── boundary conditions (regression guards) ─────────────────────────────────────
+
+test("login: all buttons disabled → medium, no submitRef", () => {
+	const entities = [
+		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
+		entity({ role: "button", ref: "pi-ref://control/disabled-btn", state: { disabled: true } }),
+	];
+	const login = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "login");
+	assert.ok(login, "login still detected (password present) even when button disabled");
+	assert.equal(login!.confidence, "medium", "disabled-only buttons → medium");
+	assert.equal(login!.evidence, undefined, "no submitRef when no actionable button");
+});
+
+test("login: submitRef skips the disabled button and points to the enabled one", () => {
+	const entities = [
+		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
+		entity({ role: "button", ref: "pi-ref://control/disabled-btn", state: { disabled: true } }),
+		entity({ role: "button", ref: "pi-ref://control/active-btn" }),
+	];
+	const login = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "login");
+	assert.ok(login);
+	assert.equal(login!.confidence, "high");
+	assert.equal(login!.evidence?.submitRef, "pi-ref://control/active-btn", "submitRef = first non-disabled button");
+});
+
+test("multi-choice: partial grouping (3 in a group + 1 scattered) → high", () => {
+	const groupHints = { containerRole: "group", containerName: "Toppings" };
+	const entities = [
+		entity({ role: "checkbox", hints: groupHints }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb3" }),
+		entity({ role: "checkbox", ref: "pi-ref://control/cb-loose" }), // ungrouped newsletter checkbox
+	];
+	const mc = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "multi-choice");
+	assert.ok(mc);
+	assert.equal(mc!.confidence, "high", "a group of 3 drives high even with an extra scattered checkbox");
+});
+
+test("multi-choice: 4 checkboxes spread across two groups of 2 each → medium (no single group reaches 3)", () => {
+	const groupA = { containerRole: "group", containerName: "A" };
+	const groupB = { containerRole: "group", containerName: "B" };
+	const entities = [
+		entity({ role: "checkbox", hints: groupA }),
+		entity({ role: "checkbox", hints: groupA, ref: "pi-ref://control/a2" }),
+		entity({ role: "checkbox", hints: groupB, ref: "pi-ref://control/b1" }),
+		entity({ role: "checkbox", hints: groupB, ref: "pi-ref://control/b2" }),
+	];
+	const mc = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "multi-choice");
+	assert.ok(mc, "4 checkboxes total → multi-choice fires");
+	assert.equal(mc!.confidence, "medium", "no single group reaches 3 → medium");
+});
+
+test("tabbed-interface + navigation co-occur (tab panel with a breadcrumb — common SPA shape)", () => {
+	const entities = [entity({ role: "tablist", kind: "region" })];
+	const kinds = intentKinds(buildInferenceSummary(entities, relSummary({ currentIn: 1 })));
+	assert.ok(kinds.includes("tabbed-interface"), "tabbed-interface from tablist");
+	assert.ok(kinds.includes("navigation"), "navigation from currentIn — independent detectors co-fire");
+});
+
+test("alert-region + dialog co-occur (validation error inside a modal)", () => {
+	const entities = [
+		entity({ role: "dialog", kind: "region" }),
+		entity({ role: "alert", kind: "region", ref: "pi-ref://region/err" }),
+	];
+	const kinds = intentKinds(buildInferenceSummary(entities, emptyRelations()));
+	assert.ok(kinds.includes("dialog"), "dialog detected");
+	assert.ok(kinds.includes("alert-region"), "alert-region detected alongside dialog");
+});
+
+test("intents without relational facts carry no evidence field (schema cleanliness)", () => {
+	// data-grid / tabbed-interface / alert-region / navigation don't emit evidence.
+	const entities = [
+		entity({ role: "grid", kind: "region" }),
+		entity({ role: "tablist", kind: "region" }),
+		entity({ role: "status", kind: "region" }),
+	];
+	const result = buildInferenceSummary(entities, relSummary({ currentIn: 1 }));
+	for (const i of result.intents) {
+		if (i.intent === "login" || i.intent === "form-dependency") continue; // these legitimately carry evidence
+		assert.equal(i.evidence, undefined, `${i.intent} must not emit an evidence field`);
+	}
+});
+
+test("buildInferenceSummary is callable without the optional diff arg (R2-only call site)", () => {
+	// observeRunners may call with two args (no R3 diff baseline); must not throw.
+	const result = buildInferenceSummary([entity({ role: "tablist", kind: "region" })], emptyRelations());
+	assert.ok(intentKinds(result).includes("tabbed-interface"));
 });
