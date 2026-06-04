@@ -1,10 +1,20 @@
 # ABML R2 — Evidence Anchoring + Explainability Execution Plan
 
-> Status: **ready-for-activation — BLOCKED on the R3 `inference.ts` commit** (a parallel
-> agent is mid-edit on `src/abml-core/inference.ts`, adding `form-dependency`; land this
-> only on a clean tree to avoid a merge collision). Does **not** add public
-> `browser_abml_*` tools. ABML stays internal substrate; the change rides the existing
+> Status: **COMPLETE (2026-06-04)** — landed on the clean tree after R3 committed. Every
+> intent now carries `reason` + actionable `evidence` refs; detection logic is unchanged
+> (zero-regression, verified by the untouched fire/confidence assertions). Does **not** add
+> public `browser_abml_*` tools. ABML stays internal substrate; the change rides the existing
 > `browser_observe` envelope `inference` field.
+>
+> **Outcome:** `DetectedIntent` gained `reason?: string`; all 12 intents anchor to evidence
+> refs (`searchRef`/`regionRef`/`groupRef`/`optionRefs`/`triggerRefs`/`gridRef`/`tableRef`/
+> `currentRef`+`navRef`/`dialogRef`/`tablistRef`+`tabRefs`/`live`, plus login `submitRef` +
+> form-dependency `enabledRef`/`requiredRef`). Ref arrays capped at `MAX_EVIDENCE_REFS=6` with
+> a sibling count. Count-only detectors (expandable/navigation/data-grid-via-tableCells) keep
+> their count-based judgement and resolve evidence in a parallel walk — fire even when no ref
+> resolves. `InferenceSummarySchema` gained optional `reason`. Tests: 443 unit + extended
+> `check:abml-inference`; `npm run check` green. **Deferred (still out of scope):**
+> primary-intent ranking (page-type overfitting risk).
 
 Source roadmap: `docs/abml-perception-state-evolution-plan.md` → R2.
 

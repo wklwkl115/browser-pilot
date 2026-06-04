@@ -87,12 +87,14 @@ export const RelationSummarySchema = Type.Object({
 
 // ABML R2 — envelope-top-level inference disclosure (also lives in summary.focus.inference).
 // intents[]: detected generic ARIA patterns (login/search/filter-panel/single-choice/
-// multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region).
-// evidence (optional): relational facts for the pattern (e.g. login.evidence.submitRef).
+// multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region/
+// form-dependency). reason (optional): short signal/confidence rationale. evidence (optional):
+// actionable anchor refs for the pattern (e.g. login.evidence.submitRef, data-grid.gridRef).
 export const InferenceSummarySchema = Type.Object({
 	intents: Type.Array(Type.Object({
 		intent: Type.String(),
 		confidence: Type.String(),
+		reason: Type.Optional(Type.String()),
 		evidence: Type.Optional(LooseObject),
 	}, { additionalProperties: true })),
 }, { additionalProperties: true });

@@ -105,6 +105,38 @@ const depResult = buildInferenceSummary(depEntities, emptyRel(), { appeared: [],
 assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency detected from R3 diff");
 assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency requiredRef set");
 
+// ── Evidence anchoring + reason (R2 optimization) ─────────────────────────────
+
+// Every fired intent carries a reason string and (where resolvable) an evidence ref.
+const anchorEntities = [
+	entity("searchbox", { ref: "pi-ref://control/q", editable: true }),
+	entity("grid", { kind: "region", ref: "pi-ref://region/grid" }),
+	entity("tablist", { kind: "region", ref: "pi-ref://region/tablist" }),
+	entity("tab", { ref: "pi-ref://control/tab1" }),
+	entity("tab", { ref: "pi-ref://control/tab2" }),
+	entity("dialog", { kind: "region", ref: "pi-ref://region/dlg" }),
+	entity("alert", { kind: "region", ref: "pi-ref://region/alert" }),
+];
+const anchorResult = buildInferenceSummary(anchorEntities, emptyRel());
+for (const i of anchorResult.intents) {
+	assert.equal(typeof i.reason, "string", `${i.intent} carries a reason`);
+	assert.ok(i.reason.length > 0, `${i.intent} reason non-empty`);
+}
+const anchorBy = (intent) => anchorResult.intents.find((i) => i.intent === intent);
+assert.equal(anchorBy("search")?.evidence?.searchRef, "pi-ref://control/q", "search anchored to searchRef");
+assert.equal(anchorBy("data-grid")?.evidence?.gridRef, "pi-ref://region/grid", "data-grid anchored to gridRef");
+assert.equal(anchorBy("tabbed-interface")?.evidence?.tablistRef, "pi-ref://region/tablist", "tabbed-interface anchored to tablistRef");
+assert.deepEqual(anchorBy("tabbed-interface")?.evidence?.tabRefs, ["pi-ref://control/tab1", "pi-ref://control/tab2"], "tab refs collected");
+assert.equal(anchorBy("dialog")?.evidence?.dialogRef, "pi-ref://region/dlg", "dialog anchored to dialogRef");
+assert.equal(anchorBy("alert-region")?.evidence?.regionRef, "pi-ref://region/alert", "alert-region anchored to regionRef");
+assert.equal(anchorBy("alert-region")?.evidence?.live, "assertive", "alert → assertive live");
+
+// Decoupling: count-only detection fires even when no entity resolves (evidence omitted).
+const decoupled = buildInferenceSummary([], relWith({ tableCells: 60, expandedTarget: 2, currentIn: 1 }));
+assert.ok(decoupled.intents.some((i) => i.intent === "data-grid"), "data-grid fires from count alone");
+assert.ok(decoupled.intents.some((i) => i.intent === "expandable"), "expandable fires from count alone");
+assert.ok(decoupled.intents.some((i) => i.intent === "navigation"), "navigation fires from count alone");
+
 // ── Budget immunity: inference survives to envelope top-level ─────────────────
 
 const envelopeSummary = {
@@ -158,8 +190,11 @@ assert.ok(schemasSrc.includes("InferenceSummarySchema"), "InferenceSummarySchema
 
 const inferenceSrc = readRepo("src/abml-core/inference.ts");
 assert.ok(inferenceSrc.includes("tabbed-interface") && inferenceSrc.includes("alert-region") && inferenceSrc.includes("form-dependency"), "new intents in inference.ts");
-assert.ok(inferenceSrc.includes("evidence?"), "evidence field on DetectedIntent");
-assert.ok(inferenceSrc.includes("EXPANDABLE_THRESHOLD"), "expandable threshold constant");
+assert.ok(inferenceSrc.includes("evidence?") && inferenceSrc.includes("reason?"), "evidence + reason fields on DetectedIntent");
+assert.ok(inferenceSrc.includes("EXPANDABLE_THRESHOLD") && inferenceSrc.includes("MAX_EVIDENCE_REFS"), "expandable threshold + evidence cap constants");
+
+const schemaReasonSrc = readRepo("src/tools/summaries/outputSchemas.ts");
+assert.ok(schemaReasonSrc.includes("reason: Type.Optional"), "InferenceSummarySchema exposes optional reason");
 
 const scanSrc = readRepo("src/scan/buildScanScript.ts");
 assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
@@ -167,4 +202,4 @@ assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — 12 patterns (login/search/filter-panel/single-choice/multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region/form-dependency); evidence.submitRef; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
+console.log(`abml inference ok — 12 patterns + evidence anchoring (every intent → reason + actionable refs: searchRef/gridRef/tablistRef/dialogRef/regionRef/triggerRefs/tableRef/...); count-only detection decoupled from evidence; grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);

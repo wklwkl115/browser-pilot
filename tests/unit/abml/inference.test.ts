@@ -348,18 +348,117 @@ test("form-dependency does not fire without focused editable required field", ()
 	assert.ok(!intentKinds(result).includes("form-dependency"));
 });
 
-test("intents without relational facts carry no evidence field (schema cleanliness)", () => {
-	// data-grid / tabbed-interface / alert-region / navigation don't emit evidence.
+// ── evidence anchoring + reason (R2 optimization) ───────────────────────────────
+
+test("every fired intent carries a reason string", () => {
+	const groupHints = { containerRole: "group", containerName: "Sizes" };
 	const entities = [
+		entity({ role: "textbox", state: { editable: true }, hints: { inputKind: "password" } }),
+		entity({ role: "button", ref: "pi-ref://control/submit" }),
 		entity({ role: "grid", kind: "region" }),
 		entity({ role: "tablist", kind: "region" }),
 		entity({ role: "status", kind: "region" }),
+		entity({ role: "checkbox", hints: groupHints }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb3" }),
 	];
 	const result = buildInferenceSummary(entities, relSummary({ currentIn: 1 }));
+	assert.ok(result.intents.length > 0);
 	for (const i of result.intents) {
-		if (i.intent === "login" || i.intent === "form-dependency") continue; // these legitimately carry evidence
-		assert.equal(i.evidence, undefined, `${i.intent} must not emit an evidence field`);
+		assert.equal(typeof i.reason, "string", `${i.intent} must carry a reason`);
+		assert.ok(i.reason!.length > 0, `${i.intent} reason non-empty`);
 	}
+});
+
+test("evidence values are refs/counts/metadata only — never user-entered text", () => {
+	// All evidence values must be pi-ref:// strings, numbers (counts), short metadata tokens
+	// (live: assertive/polite), or arrays thereof — never arbitrary user input.
+	const groupHints = { containerRole: "group", containerName: "Sport" };
+	const entities = [
+		entity({ role: "grid", kind: "region" }),
+		entity({ role: "tablist", kind: "region" }),
+		entity({ role: "alert", kind: "region" }),
+		entity({ role: "checkbox", hints: groupHints }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/cb3" }),
+	];
+	const result = buildInferenceSummary(entities, relSummary({ currentIn: 1 }));
+	const okValue = (v: unknown): boolean =>
+		(typeof v === "string" && (v.startsWith("pi-ref://") || v === "assertive" || v === "polite" || /^[\w' -]{1,40}$/.test(v)))
+		|| typeof v === "number"
+		|| (Array.isArray(v) && v.every((x) => typeof x === "string" && x.startsWith("pi-ref://")));
+	for (const i of result.intents) {
+		for (const [key, val] of Object.entries(i.evidence ?? {})) {
+			assert.ok(okValue(val), `${i.intent}.evidence.${key} must be a ref/count/metadata token, got ${JSON.stringify(val)}`);
+		}
+	}
+});
+
+test("evidence anchors each intent to the right ref", () => {
+	const groupHints = { containerRole: "group", containerName: "Toppings" };
+	const entities = [
+		entity({ role: "searchbox", ref: "pi-ref://control/q", state: { editable: true } }),
+		entity({ role: "grid", kind: "region", ref: "pi-ref://region/grid" }),
+		entity({ role: "tablist", kind: "region", ref: "pi-ref://region/tablist" }),
+		entity({ role: "tab", ref: "pi-ref://control/tab1" }),
+		entity({ role: "tab", ref: "pi-ref://control/tab2" }),
+		entity({ role: "dialog", kind: "region", ref: "pi-ref://region/dlg" }),
+		entity({ role: "alert", kind: "region", ref: "pi-ref://region/alert" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/t1" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/t2" }),
+		entity({ role: "checkbox", hints: groupHints, ref: "pi-ref://control/t3" }),
+	];
+	const by = (intent: string) => buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === intent);
+	assert.equal(by("search")?.evidence?.searchRef, "pi-ref://control/q");
+	assert.equal(by("data-grid")?.evidence?.gridRef, "pi-ref://region/grid");
+	assert.equal(by("tabbed-interface")?.evidence?.tablistRef, "pi-ref://region/tablist");
+	assert.deepEqual(by("tabbed-interface")?.evidence?.tabRefs, ["pi-ref://control/tab1", "pi-ref://control/tab2"]);
+	assert.equal(by("dialog")?.evidence?.dialogRef, "pi-ref://region/dlg");
+	assert.equal(by("alert-region")?.evidence?.regionRef, "pi-ref://region/alert");
+	assert.equal(by("alert-region")?.evidence?.live, "assertive");
+	assert.deepEqual(by("multi-choice")?.evidence?.optionRefs, ["pi-ref://control/t1", "pi-ref://control/t2", "pi-ref://control/t3"]);
+	assert.equal(by("multi-choice")?.evidence?.groupName, "Toppings");
+});
+
+test("data-grid via tableCells resolves tableRef from a cellOf relation; fires even without one", () => {
+	// With a cellOf relation present → tableRef resolves.
+	const withTable = [
+		entity({ role: "gridcell", ref: "pi-ref://cell/1", hints: {}, }),
+	];
+	withTable[0]!.relations = [{ type: "cellOf", targetRef: "pi-ref://region/table", source: "ax", confidence: "high" }];
+	const r1 = buildInferenceSummary(withTable, relSummary({ tableCells: 60 })).intents.find((i) => i.intent === "data-grid");
+	assert.ok(r1, "data-grid fires from tableCells>=50");
+	assert.equal(r1!.evidence?.tableRef, "pi-ref://region/table");
+	assert.equal(r1!.evidence?.cellCount, 60);
+	// Count comes from a table whose entities aren't in the list → tableRef omitted, intent still fires.
+	const r2 = buildInferenceSummary([], relSummary({ tableCells: 60 })).intents.find((i) => i.intent === "data-grid");
+	assert.ok(r2, "data-grid still fires when no cell entity is present (decoupled detection)");
+	assert.equal(r2!.evidence?.tableRef, undefined, "tableRef omitted when unresolvable");
+	assert.equal(r2!.evidence?.cellCount, 60, "cellCount still surfaced");
+});
+
+test("expandable resolves trigger refs from expandedTarget relations; fires on count even without them", () => {
+	const triggers = [
+		entity({ role: "button", ref: "pi-ref://control/acc1" }),
+		entity({ role: "button", ref: "pi-ref://control/acc2" }),
+	];
+	triggers[0]!.relations = [{ type: "expandedTarget", targetRef: "pi-ref://region/p1", source: "ax", confidence: "high" }];
+	triggers[1]!.relations = [{ type: "expandedTarget", targetRef: "pi-ref://region/p2", source: "ax", confidence: "high" }];
+	const r = buildInferenceSummary(triggers, relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
+	assert.ok(r);
+	assert.deepEqual(r!.evidence?.triggerRefs, ["pi-ref://control/acc1", "pi-ref://control/acc2"]);
+	// Count without matching entities → intent fires, triggerRefs omitted.
+	const r2 = buildInferenceSummary([], relSummary({ expandedTarget: 2 })).intents.find((i) => i.intent === "expandable");
+	assert.ok(r2, "expandable still fires from count alone");
+	assert.equal(r2!.evidence, undefined, "no evidence when no trigger entity resolves");
+});
+
+test("ref arrays are capped at MAX_EVIDENCE_REFS with a sibling count", () => {
+	const entities = Array.from({ length: 9 }, (_, i) => entity({ role: "tab", ref: `pi-ref://control/tab${i}` }));
+	const ti = buildInferenceSummary(entities, emptyRelations()).intents.find((i) => i.intent === "tabbed-interface");
+	assert.ok(ti);
+	assert.equal((ti!.evidence?.tabRefs as string[]).length, 6, "tabRefs capped at 6");
+	assert.equal(ti!.evidence?.tabCount, 9, "tabCount = untruncated total");
 });
 
 test("buildInferenceSummary is callable without the optional diff arg (R2-only call site)", () => {
