@@ -1,6 +1,6 @@
 # ABML R3.x — network/API causal plane execution contract
 
-> Status: **ACTIVE — P0 COMPLETE, P1 in progress** (activated 2026-06-04 by explicit user priority
+> Status: **P0 + P1 COMPLETE — browser-verified** (activated 2026-06-04 by explicit user priority
 > change). This is a new ABML main line; per project rules it gets its own execution contract and a
 > CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
@@ -9,8 +9,15 @@
 > **P0 landed (2026-06-04):** passive network-delta plane shipped + browser-verified across 4
 > commits — `99b9bf3` pure-core selector, `729aef6` runtime wiring (envelope `causal`),
 > `ff319cd` contract `check:abml-causal`, `63a0bff` live smoke `smoke:browser:abml-causal` (Edge:
-> `causal.unavailable`, seq high-water, redacted `/api/ping` delta). P1 (attribution) is now the
-> active phase.
+> `causal.unavailable`, seq high-water, redacted `/api/ping` delta).
+>
+> **P1 landed (2026-06-04):** attribution to the activated control via a `triggered` (control →
+> network request) relation, `source:"timing"` / confidence `"low"` (timing-window only, no
+> initiator-stack proof). Explicit `actionRef` param or the focus-normalized `diff.focusedRef`
+> (control/element only — a frame/region focus is rejected, the §7 focus-robustness fix). Browser-
+> verified on Edge: `relations.summary.triggered`, the control's inline `triggered` edge targeting
+> the redacted `/api/ping2` request ref. The focus-only path is recorded as fragile on live pages
+> (the documented reason `actionRef` exists).
 
 ## 1. Goal
 
@@ -72,15 +79,27 @@ This carries the request details inline in `causal.requests` (ref + method/url/s
 agent can read them directly — which also sidesteps the "evidence ref not resolvable in the
 salience-subset `envelope.entities`" gap (see §7).
 
-### P1 — attribution to a control  ← THIS PHASE
+### P1 — attribution to a control  ✓ LANDED (browser-verified)
 
-- Add a relation type `triggered` (control → network-entry) in `entity.ts` `RelationType` +
-  `relations.ts` ordering; materialize via `materializeRelations`.
-- Attribution signal: `diff.focusedRef`, or a new optional `browser_observe` param `actionRef`
-  (the agent says "I just activated ref R"). Requests in the delta window hang on that control's
-  subtree as `triggered`, `source:"timing"`.
-- Risk to resolve here: focus robustness — the R3 `diff.focusedRef` can land on a `frame` entity
-  rather than the activated control on a live page (observed 2026-06-04 in the post-action smoke).
+As shipped (`entity.ts`/`relations.ts`/`causal.ts`/`observeRunners.ts`/`registerObserveTool.ts`):
+
+- Relation type `triggered` (control → network request) on `RelationType`, ordered high in
+  `TYPE_ORDER` (after `expandedTarget`); new relation `source:"timing"`. The target is a
+  `pi-ref://network/<id>` resolvable inline in `causal.requests` (NOT a graph entity), so the
+  edges bypass the anchor→ref `materializeRelations` pass and attach via the exported
+  `addEntityRelations` (same dedupe + per-entity cap).
+- `buildTriggeredRelations(causal)` mints one edge per delta request (capped at
+  `MAX_TRIGGERED_RELATIONS`), `confidence:"low"` — timing-window attribution, never an
+  initiator-stack proof.
+- Attribution signal: the explicit scan-only `actionRef` param, else the R3 `diff.focusedRef`,
+  resolved by `resolveActionEntityRef`. **Focus robustness (the §7 risk) resolved:** a ref is
+  accepted ONLY when it resolves to a `control`/`element` entity — a `focusedRef` (or `actionRef`)
+  landing on a `frame`/`region` is rejected, so the delta is never mis-attributed. The passive P0
+  behavior is preserved: with no trustworthy control, `causal` ships without `triggered`.
+- Contract: `check:abml-causal` (P1 pure + envelope `relations.summary.triggered` lift + static
+  wiring). Live: `smoke:browser:abml-causal` step C (browser-verified on Edge — `triggered` edge
+  to the redacted `/api/ping2` ref, counted in `relations.summary`). The focus-only path proved
+  fragile live (the documented reason the explicit `actionRef` exists).
 
 ### P2 — deferred
 
@@ -105,18 +124,24 @@ live streaming/push. Each needs its own follow-up.
   `browser_network start` → observe → `browser_execute` fires an XHR → observe(baseline) →
   assert `envelope.causal.requests` contains the XHR (redacted), and the unavailable path when
   the recorder is off.
+- **P1** ✓: `check:abml-causal` extended (buildTriggeredRelations timing/low + cap;
+  resolveActionEntityRef precedence + frame/region rejection; `triggered` lifted to
+  `envelope.relations.summary`; static wiring). Live: `smoke:browser:abml-causal` step C —
+  focus a control + fire `/api/ping2` → observe(baseline, actionRef) asserts the `triggered`
+  edge on the control (browser-verified on Edge).
 - Gate each phase on `npm run check` green + the live smoke.
 - Update `docs/abml-perception-state-evolution-plan.md` R3.x section as phases land.
 
 ## 7. Folded-in R3 quality findings (from the 2026-06-04 live smoke)
 
-- **evidence-ref resolvable in output**: `envelope.entities` is a salience subset, so an evidence
-  ref can point outside it. P0 mitigates by carrying request details inline in `causal.requests`
-  (not only a ref). When P1 mints control→request relations, ensure referenced network entities
-  are resolvable (inline in `causal`, or a documented ref→entity lookup).
-- **focus robustness**: `diff.focusedRef` can land on a frame, not the activated editable/control
-  (breaks form-dependency and would break P1 attribution). Resolve in P1 (normalize focus to the
-  deepest focusable entity, or accept an explicit `actionRef`).
+- **evidence-ref resolvable in output** ✓: `envelope.entities` is a salience subset, so an
+  evidence ref can point outside it. P0 carries request details inline in `causal.requests` (not
+  only a ref); P1's `triggered` edges target those same `pi-ref://network/<id>`, resolvable inline
+  in `causal.requests` — no separate entity lookup needed.
+- **focus robustness** ✓ (resolved in P1): `resolveActionEntityRef` accepts a `focusedRef`/`actionRef`
+  ONLY when it resolves to a `control`/`element` entity; a ref landing on a `frame`/`region` is
+  rejected (no mis-attribution). The explicit `actionRef` param is the robust path when live focus
+  is unreliable — the smoke confirmed the focus-only path is fragile on real pages.
 
 ## 8. Out of scope (unchanged ABML non-goals)
 
