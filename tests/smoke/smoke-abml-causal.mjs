@@ -1,4 +1,4 @@
-// ABML R3.x causal plane (P0) live smoke. Drives a real browser through the genuine
+// ABML R3.x causal plane (P0 + P1) live smoke. Drives a real browser through the genuine
 // browser_observe tool seam and asserts the network-delta causal plane end-to-end:
 //   U) observe(baseline) BEFORE starting the recorder -> envelope.causal.unavailable
 //      ("network recorder not active").
@@ -7,6 +7,10 @@
 //   B) fire a fetch() to /api/ping?token=… , wait for the recorder to capture it, then
 //      observe(baseline:A) -> envelope.causal.requests contains that request, URL redacted
 //      (no token leak), windowed at the baseline seq.
+//   C) P1 attribution: focus a control + fire /api/ping2, then observe(baseline, actionRef) ->
+//      the delta is attributed to that control as a `triggered` relation (relations.summary.
+//      triggered >= 1; targetRef resolvable in causal.requests). The focus-only path is recorded
+//      as an extra (§7 focus robustness is environment-sensitive on live pages).
 // Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge + bridge +
 // extension copy (picks up the freshly-built dist), so it never touches the user's browser.
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
@@ -166,9 +170,45 @@ try {
     deltaHasPing, tokenScrubbed, sinceSeqOk, refOk,
   });
 
+  // ── C) P1 attribution: attribute the delta to a control via the `triggered` relation ──
+  const PING2 = "/api/ping2";
+  const liveControls = [...(env2.summary?.focus?.primary_entities ?? []), ...(env2.entities ?? [])].filter((e) => e && (e.kind === "control" || e.kind === "element"));
+  const actionRef = liveControls[0]?.ref;
+  const focusSel = typeof liveControls[0]?.hints?.selector === "string" ? liveControls[0].hints.selector : "#email";
+  // Focus that control (drives diff.focusedRef for the focus-path check) and fire a fresh request.
+  // executeJavaScript returns the FIRST expression, so wrap in an IIFE to run focus + fetch together.
+  await bridge.executeJavaScript(`(function(){ var el=document.querySelector(${JSON.stringify(focusSel)}); if(el&&el.focus){el.focus();} fetch('${PING2}?token=${SECRET}').catch(function(){}); return 'fired2'; })()`, { tabId, browserSessionId, timeoutMs: 8000 });
+  await bridge.sendCommand({ cmd: "network.wait", tabId, condition: "response", urlContains: PING2, timeoutMs: 8000 }, { tabId, timeoutMs: 10000 }).catch(() => undefined);
+  await delay(300);
+  // Explicit actionRef path (deterministic core): attribute the delta to the asserted control.
+  const envC = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: env2, actionRef, detailLevel: "detailed" });
+  const triggeredCount = envC.relations?.summary?.triggered || 0;
+  const ctlEntity = (envC.entities ?? []).find((e) => e.ref === actionRef);
+  const triggeredEdge = (ctlEntity?.relations ?? []).find((r) => r.type === "triggered");
+  const ping2Req = (envC.causal?.requests ?? []).find((r) => typeof r.url === "string" && r.url.includes(PING2));
+  const attributedOk = !!actionRef && triggeredCount >= 1 && !!ping2Req;
+  // Focus-path (extra, non-gating: §7 focus robustness is environment-sensitive on live pages).
+  const envCfocus = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: env2, detailLevel: "detailed" });
+  const focusPathTriggered = (envCfocus.relations?.summary?.triggered || 0) >= 1;
+  record("causal.attribution", attributedOk, {
+    actionRef, triggeredCount,
+    triggeredEdge: triggeredEdge ? { type: triggeredEdge.type, targetRef: triggeredEdge.targetRef, source: triggeredEdge.source, confidence: triggeredEdge.confidence } : null,
+    ping2Ref: ping2Req?.ref, focusedRef: envCfocus.diff?.focusedRef, focusPathTriggered, attributedOk,
+    diag: {
+      baselineSeqC: env2.snapshot?.networkSeq,
+      sinceSeqC: envC.causal?.sinceSeq,
+      causalReqCount: (envC.causal?.requests ?? []).length,
+      causalUrls: (envC.causal?.requests ?? []).map((r) => r.url),
+      actionRefInEntities: (envC.entities ?? []).some((e) => e.ref === actionRef),
+      relationsSummary: envC.relations?.summary,
+    },
+  });
+
   // Core PASS gate: the network-delta surfaces the fired request (redacted, windowed at the
-  // baseline seq) AND the recorder-unavailable path is reported when no recorder is active.
-  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk;
+  // baseline seq), the recorder-unavailable path is reported when no recorder is active, AND
+  // the delta is attributed to the activated control as a `triggered` relation (P1).
+  result.extras = { focusPathTriggered };
+  result.ok = unavailableOk && deltaHasPing && tokenScrubbed && sinceSeqOk && refOk && attributedOk;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });
