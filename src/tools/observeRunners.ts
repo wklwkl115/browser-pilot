@@ -5,9 +5,9 @@ import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSuperviso
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { Entity } from "../abml/entity.js";
 import type { EntityDiff } from "../abml/diff.js";
-import { buildRelationSummary } from "../abml/relations.js";
+import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary } from "../abml/inference.js";
-import { buildCausalSummary, causalUnavailable, type CausalSummary } from "../abml/causal.js";
+import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, type CausalSummary } from "../abml/causal.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -43,6 +43,7 @@ export type ObserveToolParams = {
 	htmlMode?: string;
 	params?: unknown;
 	baseline?: unknown;
+	actionRef?: string;
 };
 
 type ObserveRunnerError = Error & { code: "INVALID_TIMEOUT"; details: Record<string, unknown> };
@@ -417,12 +418,24 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
+	// R3.x P1 — attribute the causal network-delta to the activated control: an explicit `actionRef`
+	// (the agent says "I just activated R"), else the focus-normalized R3 `diff.focusedRef` (rejected
+	// if it lands on a frame/region). Attach `triggered` (control → network request) relations BEFORE
+	// the relation summary so they appear in relations.summary + the control's inline relations. The
+	// delta stays fully inline in envelope.causal.requests regardless (passive P0 behavior preserved).
+	const attributedEntities = (() => {
+		if (!abmlEntities || !causal || !("requests" in causal) || !causal.requests.length) return abmlEntities;
+		const actionEntityRef = resolveActionEntityRef(params.actionRef, abmlDiff?.focusedRef, abmlEntities);
+		if (!actionEntityRef) return abmlEntities;
+		const triggered = buildTriggeredRelations(causal);
+		return abmlEntities.map((entity) => entity.ref === actionEntityRef ? addEntityRelations(entity, triggered) : entity);
+	})();
 	// Top-level `causal` block (budget-immune, lifted to envelope alongside diff/relations/inference).
 	// Present only when a baseline was supplied; independent of ABML entity integration.
 	const causalBlock = causal ? { causal } : {};
-	const summary = abmlEntities !== null
+	const summary = attributedEntities !== null
 		? (() => {
-			const relSummary = buildRelationSummary(abmlEntities);
+			const relSummary = buildRelationSummary(attributedEntities);
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
@@ -430,18 +443,18 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...causalBlock,
 				focus: {
 					...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
-					gist: buildPageGist(abmlEntities),
-					primary_entities: sortEntitiesBySalience(abmlEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
-					outline: buildEntityOutline(abmlEntities),
+					gist: buildPageGist(attributedEntities),
+					primary_entities: sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
+					outline: buildEntityOutline(attributedEntities),
 					// R1 relationship graph — always present when ABML is integrated (even when empty), so
 					// agents can rely on it surviving the summary-budget squeeze (lifted to envelope top-level).
 					relations: relSummary,
 					// R2 inference layer — generic ARIA semantic patterns detected over the entity list +
 					// relation graph. Budget-immune (lifted to envelope top-level alongside relations).
-					inference: buildInferenceSummary(abmlEntities, relSummary, abmlDiff),
+					inference: buildInferenceSummary(attributedEntities, relSummary, abmlDiff),
 					...(abmlDiff ? { diff: abmlDiff } : {}),
-					list_entities: abmlEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
-					visual_regions: abmlEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
+					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
+					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
 				},
 			};
 		})()

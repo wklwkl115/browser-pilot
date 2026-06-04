@@ -6,6 +6,7 @@
 // which needs an action context). Timing/seq-window only — it never parses CDP initiator stacks
 // (a JS call stack, not a DOM element; mapping it would be brittle + per-site) and applies no
 // per-site heuristics. URLs are redacted + truncated; no bodies. Pure core: zero browser/Node deps.
+import type { Entity, EntityRelation } from "./entity.js";
 import { isRecord } from "../utils/records.js";
 import { redactSensitiveText } from "../utils/redaction.js";
 
@@ -85,4 +86,44 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 
 export function causalUnavailable(reason: string): CausalSummary {
 	return { unavailable: reason };
+}
+
+// ── R3.x P1 — attribution to a control (timing window only) ──────────────────────────────────────
+
+// Cap on `triggered` edges attached to one control — keeps a heavy delta from evicting the
+// control's R1 relations under the per-entity cap. The full list always stays in causal.requests.
+export const MAX_TRIGGERED_RELATIONS = 8;
+
+// Build `triggered` (control → network request) relations from the causal delta. Each points at a
+// `pi-ref://network/<id>` resolvable inline in envelope.causal.requests. source "timing", confidence
+// "low": this is timing-window attribution ("fired after the activated control"), NOT an initiator-
+// stack proof — the honest confidence ceiling for a passive observer. Empty when no requests/unavailable.
+export function buildTriggeredRelations(causal: CausalSummary): EntityRelation[] {
+	if (!("requests" in causal)) return [];
+	return causal.requests.slice(0, MAX_TRIGGERED_RELATIONS).map((request) => ({
+		type: "triggered" as const,
+		targetRef: request.ref,
+		source: "timing" as const,
+		confidence: "low" as const,
+		evidence: {
+			since: causal.sinceSeq,
+			...(request.method ? { method: request.method } : {}),
+			...(request.status !== undefined ? { status: request.status } : {}),
+		},
+	}));
+}
+
+// Decide which control the causal delta is attributed to. Prefers an explicit `actionRef` (the agent
+// states "I just activated ref R"); else the R3 diff's `focusedRef`. FOCUS ROBUSTNESS: a ref is only
+// accepted when it resolves to a focusable control/element entity — a `focusedRef` that lands on a
+// frame/region (observed on live pages) is rejected, so the delta is never mis-attributed. Returns
+// undefined when no trustworthy control is identified (causal stays present, just without `triggered`).
+export function resolveActionEntityRef(actionRef: string | undefined, focusedRef: string | undefined, entities: Entity[]): string | undefined {
+	const resolveActionable = (ref: string | undefined): string | undefined => {
+		if (!ref) return undefined;
+		const entity = entities.find((candidate) => candidate.ref === ref);
+		if (!entity) return undefined;
+		return entity.kind === "control" || entity.kind === "element" ? entity.ref : undefined;
+	};
+	return resolveActionable(actionRef) ?? resolveActionable(focusedRef);
 }

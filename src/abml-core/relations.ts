@@ -17,7 +17,7 @@ export type RelationAnchor = {
 	// Ordered alternative target keys tried when targetKey doesn't resolve — used by currentIn, whose
 	// nearest container node can be folded away by the merge; the first surviving container ref wins.
 	targetKeyFallbacks?: string[];
-	source: "ax" | "dom" | "geometry";
+	source: "ax" | "dom" | "geometry" | "timing";
 	confidence: "high" | "medium" | "low";
 	evidence?: Record<string, unknown>;
 };
@@ -29,6 +29,7 @@ const TYPE_ORDER: RelationType[] = [
 	"controls",
 	"owns",
 	"expandedTarget",
+	"triggered",
 	"currentIn",
 	"labelledBy",
 	"describedBy",
@@ -165,7 +166,15 @@ export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[]
 	return out;
 }
 
-export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" };
+export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" | "timing" };
+
+// Attach additional relations (e.g. R3.x `triggered` edges, whose targets are network refs rather
+// than entities, so they bypass the anchor→ref materialize pass) to a single entity, reusing the
+// same dedupe + deterministic cap as materializeRelations. Returns a new entity; input untouched.
+export function addEntityRelations(entity: Entity, added: EntityRelation[]): Entity {
+	if (!added.length) return entity;
+	return { ...entity, relations: capRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
+}
 export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[] };
 
 // Table-structural relation types are already encoded in `tableCells` (distinct cell count).

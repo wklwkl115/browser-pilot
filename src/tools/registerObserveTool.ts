@@ -26,6 +26,7 @@ function rejectModeParam(mode: ObserveMode, param: string, reason: string): neve
 
 function validateObserveParams(mode: ObserveMode, params: ObserveToolParams): void {
 	if (mode !== "scan" && params.baseline !== undefined) rejectModeParam(mode, "baseline", "baseline diff is only valid for scan mode");
+	if (mode !== "scan" && params.actionRef !== undefined) rejectModeParam(mode, "actionRef", "actionRef causal attribution is only valid for scan mode");
 	if ((mode === "scan" || mode === "text" || mode === "tabs") && params.selector !== undefined) rejectModeParam(mode, "selector", "selector is only valid for content/html modes");
 	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "html") && params.url !== undefined) rejectModeParam(mode, "url", "url navigation is only valid for content mode");
 	if ((mode === "scan" || mode === "text" || mode === "tabs" || mode === "html") && params.includeLinks !== undefined) rejectModeParam(mode, "includeLinks", "includeLinks is only valid for content mode");
@@ -55,6 +56,7 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			maxNodes: Type.Optional(Type.Number({ description: "scan/text modes: maximum DOM nodes visited" })),
 			includeIframes: Type.Optional(Type.Boolean({ description: "scan/text modes: include same-origin iframe content" })),
 			baseline: Type.Optional(Type.Union([Type.Array(Type.Object({}, { additionalProperties: true })), Type.Object({}, { additionalProperties: true })], { description: "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff" })),
+			actionRef: Type.Optional(Type.String({ description: "scan mode only (R3.x P1): pi-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted." })),
 			htmlMode: Type.Optional(Type.Union([Type.Literal("fragment"), Type.Literal("raw"), Type.Literal("text"), Type.Literal("inner"), Type.Literal("outer")], { description: "html mode only: fragment | raw | text | inner | outer" })),
 			params: Type.Optional(NativeCommandParamsSchema),
 			...sharedTabScopedToolParams(),
