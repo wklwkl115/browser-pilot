@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -51,4 +51,46 @@ test("causal: unavailable block when no recorder is active", () => {
 	const c = causalUnavailable("network recorder not active — start via browser_network start");
 	assert.ok(!("requests" in c));
 	assert.ok("unavailable" in c && c.unavailable.includes("not active"));
+});
+
+// ── R3.x P1 — attribution ────────────────────────────────────────────────────
+
+const control = (ref: string) => ({ ref, kind: "control" as const, role: "button", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" as const });
+
+test("causal P1: buildTriggeredRelations maps the delta to triggered edges (timing/low, capped)", () => {
+	const causal = buildCausalSummary([
+		{ seq: 6, requestId: "a", request: { url: "https://x/a", method: "POST" }, response: { status: 200 } },
+		{ seq: 7, requestId: "b", request: { url: "https://x/b", method: "GET" } },
+	], 5);
+	const relations = buildTriggeredRelations(causal);
+	assert.equal(relations.length, 2);
+	assert.deepEqual(relations.map((r) => r.type), ["triggered", "triggered"]);
+	assert.deepEqual(relations.map((r) => r.targetRef), ["pi-ref://network/a", "pi-ref://network/b"]);
+	assert.equal(relations[0].source, "timing");
+	assert.equal(relations[0].confidence, "low");
+	assert.equal(relations[0].evidence?.method, "POST");
+	assert.equal(relations[0].evidence?.since, 5);
+});
+
+test("causal P1: buildTriggeredRelations caps at MAX_TRIGGERED_RELATIONS and is empty for unavailable", () => {
+	const many = buildCausalSummary(Array.from({ length: 12 }, (_, i) => ({ seq: i + 1, requestId: `r${i}`, request: { url: `https://x/${i}` } })), 0);
+	assert.equal(buildTriggeredRelations(many).length, MAX_TRIGGERED_RELATIONS);
+	assert.deepEqual(buildTriggeredRelations(causalUnavailable("off")), []);
+});
+
+test("causal P1: resolveActionEntityRef prefers explicit actionRef, falls back to focusedRef", () => {
+	const entities = [control("pi-ref://control/a"), control("pi-ref://control/b")];
+	assert.equal(resolveActionEntityRef("pi-ref://control/a", "pi-ref://control/b", entities), "pi-ref://control/a", "explicit actionRef wins");
+	assert.equal(resolveActionEntityRef(undefined, "pi-ref://control/b", entities), "pi-ref://control/b", "falls back to focusedRef");
+	assert.equal(resolveActionEntityRef(undefined, undefined, entities), undefined, "no signal → no attribution");
+	assert.equal(resolveActionEntityRef("pi-ref://control/missing", undefined, entities), undefined, "unknown ref → no attribution");
+});
+
+test("causal P1: focus robustness — a focusedRef landing on a frame/region is rejected", () => {
+	const frame = { ref: "pi-ref://frame/1", kind: "frame" as const, role: "iframe", state: { visible: true, occluded: false, disabled: false, focused: true, editable: false, inViewport: true }, source: "dom" as const };
+	const region = { ref: "pi-ref://region/1", kind: "region" as const, role: "main", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" as const };
+	const entities = [frame, region, control("pi-ref://control/ok")];
+	assert.equal(resolveActionEntityRef(undefined, "pi-ref://frame/1", entities), undefined, "frame focusedRef rejected (no mis-attribution)");
+	assert.equal(resolveActionEntityRef("pi-ref://region/1", undefined, entities), undefined, "region actionRef rejected");
+	assert.equal(resolveActionEntityRef(undefined, "pi-ref://control/ok", entities), "pi-ref://control/ok", "a real control is accepted");
 });

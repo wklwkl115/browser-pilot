@@ -87,3 +87,35 @@ test("browser_observe records the network seq high-water mark for a future basel
 	assert.equal(envelope.causal, undefined, "no baseline → no causal block");
 	assert.equal(envelope.snapshot?.networkSeq, 8, "high-water mark stored on the snapshot so it can anchor a later baseline");
 });
+
+test("browser_observe P1: actionRef attributes the causal delta to the control as a triggered relation", async () => {
+	const server = causalServer({
+		status: { active: true, lastSeq: 8 },
+		list: { items: [{ seq: 6, requestId: "pay-1", request: { url: "https://example.test/api/pay", method: "POST" }, response: { status: 200 }, type: "XHR", updatedAt: 1 }], total: 1 },
+	});
+	// Discover the control ref from a plain scan, then attribute a baseline delta to it via actionRef.
+	const env1 = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	const candidates = [...(env1.summary?.focus?.primary_entities ?? []), ...(env1.entities ?? [])];
+	const control = candidates.find((e: any) => e.kind === "control") ?? candidates[0];
+	const actionRef = control?.ref;
+	assert.ok(typeof actionRef === "string" && actionRef, "a control ref is available to attribute to");
+	const env2 = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, baseline: { networkSeq: 5, entities: [BASE_ENTITY] }, actionRef }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(env2.relations?.summary?.triggered, 1, "triggered edge counted in the lifted relations summary");
+	assert.equal(env2.causal?.requests?.length, 1, "the causal delta still ships inline (passive behavior preserved)");
+	const triggered = (env2.entities ?? []).find((e: any) => e.ref === actionRef)?.relations?.find((r: any) => r.type === "triggered");
+	if (triggered) {
+		assert.equal(triggered.targetRef, "pi-ref://network/pay-1", "triggered points at the network request ref");
+		assert.equal(triggered.source, "timing");
+	}
+});
+
+test("browser_observe P1: no actionRef and no focusable control → causal present, no triggered (passive)", async () => {
+	const server = causalServer({
+		status: { active: true, lastSeq: 8 },
+		list: { items: [{ seq: 6, requestId: "x", request: { url: "https://example.test/api/x", method: "GET" }, response: { status: 200 }, type: "Fetch", updatedAt: 1 }], total: 1 },
+	});
+	// No actionRef; the fakeServer control is not focused, so diff.focusedRef yields no control.
+	const env = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, baseline: { networkSeq: 5, entities: [BASE_ENTITY] } }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(env.causal?.requests?.length, 1, "causal delta present");
+	assert.equal(env.relations?.summary?.triggered, undefined, "no attribution without an action signal");
+});

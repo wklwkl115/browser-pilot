@@ -1,17 +1,20 @@
-// ABML R3.x causal plane (P0) contract.
+// ABML R3.x causal plane (P0 + P1) contract.
 //
 // Verifies the network-delta causal plane end-to-end without a browser:
-//   - pure-core selector: seq>baseline window, sorted, pi-ref://network refs, URL redaction,
+//   - P0 pure-core selector: seq>baseline window, sorted, pi-ref://network refs, URL redaction,
 //     cap + true count, empty delta, recorder-unavailable shape;
-//   - budget immunity: a `causal` summary block survives to envelope.causal (incl. tight budget
+//   - P0 budget immunity: a `causal` summary block survives to envelope.causal (incl. tight budget
 //     and the unavailable variant), with envelope-level redaction as defense-in-depth;
-//   - static wiring: observeRunners queries the recorder + builds causal, resultMiddleware lifts
-//     it, the bridge exposes lastSeq, the snapshot carries networkSeq, and the check is registered.
+//   - P1 attribution: buildTriggeredRelations (timing/low edges, capped), resolveActionEntityRef
+//     (actionRef > focusedRef, focus robustness rejecting frame/region), triggered lifted to
+//     envelope.relations.summary with its target resolvable inline in causal.requests;
+//   - static wiring: observeRunners queries the recorder + builds/attributes causal, resultMiddleware
+//     lifts it, the bridge exposes lastSeq, the snapshot carries networkSeq, and the check is registered.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS } from "../../../src/abml-core/causal.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -102,12 +105,58 @@ const tightEnvelope = JSON.parse(tight.content[0].text);
 assert.ok(typeof tightEnvelope.causal === "object", "causal survives budget squeeze");
 assert.equal(tightEnvelope.causal?.sinceSeq, 9, "causal sinceSeq intact under tight budget");
 
+// ── R3.x P1 — attribution (triggered relation, focus robustness) ─────────────────
+
+const ctl = (ref) => ({ ref, kind: "control", role: "button", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" });
+
+// buildTriggeredRelations: one timing/low edge per delta request, capped; empty for unavailable.
+const trig = buildTriggeredRelations(buildCausalSummary([
+	{ seq: 6, requestId: "a", request: { url: "https://x/a", method: "POST" }, response: { status: 200 } },
+	{ seq: 7, requestId: "b", request: { url: "https://x/b", method: "GET" } },
+], 5));
+assert.deepEqual(trig.map((r) => r.type), ["triggered", "triggered"], "triggered edges built from delta");
+assert.deepEqual(trig.map((r) => r.targetRef), ["pi-ref://network/a", "pi-ref://network/b"], "target the network refs");
+assert.equal(trig[0].source, "timing", "timing-sourced (not initiator-stack proof)");
+assert.equal(trig[0].confidence, "low", "low confidence — timing window only");
+assert.equal(buildTriggeredRelations(causalUnavailable("off")).length, 0, "no triggered when unavailable");
+assert.equal(buildTriggeredRelations(buildCausalSummary(Array.from({ length: 12 }, (_, i) => ({ seq: i + 1, requestId: `r${i}`, request: { url: `https://x/${i}` } })), 0)).length, MAX_TRIGGERED_RELATIONS, "capped at MAX_TRIGGERED_RELATIONS");
+
+// resolveActionEntityRef: actionRef > focusedRef; FOCUS ROBUSTNESS rejects a ref on a frame/region.
+const attEntities = [ctl("pi-ref://control/a"), { ref: "pi-ref://frame/1", kind: "frame", role: "iframe", state: { focused: true }, source: "dom" }, { ref: "pi-ref://region/1", kind: "region", role: "main", state: {}, source: "dom" }];
+assert.equal(resolveActionEntityRef("pi-ref://control/a", undefined, attEntities), "pi-ref://control/a", "explicit actionRef resolves to its control");
+assert.equal(resolveActionEntityRef(undefined, "pi-ref://control/a", attEntities), "pi-ref://control/a", "focusedRef fallback resolves a control");
+assert.equal(resolveActionEntityRef(undefined, "pi-ref://frame/1", attEntities), undefined, "focusedRef on a frame is rejected (no mis-attribution)");
+assert.equal(resolveActionEntityRef("pi-ref://region/1", undefined, attEntities), undefined, "actionRef on a region is rejected");
+
+// Budget immunity: a triggered edge in relations.summary survives to envelope.relations.
+const p1Lift = await distilledTextResult("body", {
+	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 4_000, fallbackName: "observe-scan",
+	summary: {
+		abmlIntegrated: true,
+		causal: { sinceSeq: 5, requests: [{ ref: "pi-ref://network/pay-1", method: "POST", url: "https://x/api/pay", status: 200, type: "XHR", at: 1 }] },
+		focus: {
+			relations: { summary: { triggered: 1 }, highlights: [{ type: "triggered", sourceRef: "pi-ref://control/pay", targetRef: "pi-ref://network/pay-1", source: "timing" }] },
+			primary_entities: [{ ref: "pi-ref://control/pay", kind: "control", role: "button", name: "Pay", relations: [{ type: "triggered", targetRef: "pi-ref://network/pay-1", source: "timing", confidence: "low" }] }],
+		},
+	},
+});
+const p1Envelope = JSON.parse(p1Lift.content[0].text);
+assert.equal(p1Envelope.relations?.summary?.triggered, 1, "triggered count lifted to envelope.relations.summary");
+assert.equal(p1Envelope.causal?.requests?.[0]?.ref, "pi-ref://network/pay-1", "triggered targetRef resolvable inline in causal.requests");
+
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
 assert.ok(observeSrc.includes("buildCausalSummary") && observeSrc.includes("causal"), "observeRunners builds causal");
 assert.ok(observeSrc.includes("network.status") && observeSrc.includes("network.list"), "observeRunners reads recorder high-water + delta");
 assert.ok(observeSrc.includes("networkSeq"), "observeRunners records/resolves networkSeq baseline anchor");
+assert.ok(observeSrc.includes("resolveActionEntityRef") && observeSrc.includes("buildTriggeredRelations") && observeSrc.includes("addEntityRelations"), "observeRunners wires P1 attribution");
+assert.ok(observeSrc.includes("actionRef"), "observeRunners reads the actionRef attribution signal");
+
+const entitySrc = readRepo("src/abml-core/entity.ts");
+assert.ok(entitySrc.includes("\"triggered\"") && entitySrc.includes("\"timing\""), "entity RelationType has triggered + source timing");
+const registerSrc = readRepo("src/tools/registerObserveTool.ts");
+assert.ok(registerSrc.includes("actionRef"), "browser_observe exposes the scan-only actionRef param");
 
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeCausal") && middlewareSrc.includes("causal?"), "resultMiddleware lifts causal");
@@ -129,4 +178,4 @@ assert.ok(barrelSrc.includes("./causal.js"), "kernel barrel exports causal");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-causal"]?.includes("check-abml-causal.mjs"), "check:abml-causal script present");
 
-console.log(`abml causal ok — pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable); causal budget-immune to envelope top-level (incl. unavailable + tight budget); recorder lastSeq high-water + snapshot networkSeq anchor; all static wiring verified`);
+console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; all static wiring verified`);
