@@ -69,6 +69,19 @@ export type RefDescriptor = {
 		name?: string;
 		value?: string;
 		state?: SemanticState;
+		anchor?: {
+			scope: "abml-template";
+			confidence: "high" | "low";
+			mintingEligible?: boolean;
+			containerRole?: string;
+			containerName?: string;
+			setSize?: number;
+			role?: string;
+			kind?: string;
+			name?: string;
+			normalizedName?: string;
+			posInSet?: number;
+		};
 	};
 	geometry?: RefGeometry;
 	observationId: string;

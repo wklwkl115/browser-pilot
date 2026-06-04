@@ -15,7 +15,8 @@ import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axR
 import { materializeRelations, deriveStateRelationAnchors } from "../relations.js";
 import { actionabilitySpecForVerb, type AbmlActionVerb } from "../actionabilityModel.js";
 import { normalizeAbmlError } from "../errors.js";
-import { decideRefAccess } from "../refPolicy.js";
+import { decideRefAccess, defaultRefPolicyForKind } from "../refPolicy.js";
+import { deriveSemanticRefAnchors } from "../semanticRefAnchor.js";
 import type { ActionabilityBlockerCode, ActionabilityPredicate, ActionabilityReport, CaptureRef, RefDescriptor, VerificationResult } from "../types.js";
 import type { AbmlClickInput, AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlScrollInput, AbmlTypeInput, AbmlVerbFailure, AbmlVerbResult } from "./router.js";
 import { runAbmlClick } from "./click.js";
@@ -74,6 +75,48 @@ type ScrollProbe = {
 const DEFAULT_ACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const DEFAULT_SCAN_CAPTURE_MAX_CHARS = 100_000;
+
+function originOf(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try { return new URL(url).origin; } catch { return undefined; }
+}
+
+function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; url?: string; observationId: string; capturedAt: number }): Entity[] {
+	const anchors = deriveSemanticRefAnchors(entities).anchors.filter((item) => item.anchor.mintingEligible && item.anchor.confidence === "high");
+	if (!anchors.length) return entities;
+	const anchorByRef = new Map(anchors.map((item) => [item.ref, item.anchor]));
+	return entities.map((entity) => {
+		const anchor = anchorByRef.get(entity.ref);
+		if (!anchor) return entity;
+		const refId = registerRefDescriptor({
+			descriptor: {
+				kind: entity.kind,
+				locators: entity.locators || [],
+				owner: {
+					...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
+					...(typeof context.tabId === "number" ? { tabId: context.tabId } : {}),
+					...(originOf(context.url) ? { topLevelOrigin: originOf(context.url) } : {}),
+				},
+				policy: defaultRefPolicyForKind(entity.kind),
+				semantic: {
+					role: entity.role,
+					...(entity.name ? { name: entity.name } : {}),
+					...(entity.value ? { value: entity.value } : {}),
+					anchor,
+				},
+				...(entity.geometry ? { geometry: entity.geometry } : {}),
+				observationId: context.observationId,
+				documentEpoch: { url: context.url, capturedAt: context.capturedAt },
+				createdAt: context.capturedAt,
+				ttlMs: 5 * 60 * 1000,
+				stabilityScore: 0.9,
+			},
+			resourceKind: "scan",
+			name: entity.name || entity.role,
+		});
+		return { ...entity, ref: refId };
+	});
+}
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -723,7 +766,14 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			capturedAt: snapshot.capturedAt,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
-		const mergedEntities = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
+		const mergedEntitiesRaw = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
+		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
+			browserSessionId: bridge.browserSessionId,
+			tabId: target.tabId,
+			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			observationId: snapshot.snapshotId,
+			capturedAt: snapshot.capturedAt,
+		});
 		// AX anchors (property/table) + DOM-sourced anchors derived from the merged entities'
 		// own state (currentIn from aria-current, occludes/coveredBy from the hit-test). Materialize
 		// to typed pi-ref edges only after the merge mints final refs.

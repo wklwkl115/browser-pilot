@@ -120,7 +120,16 @@ function anchorFor(group: TemplateGroup, item: GroupedEntity, counts: Map<string
 		...(normalizedName ? { normalizedName } : {}),
 		...(typeof posInSet === "number" ? { posInSet } : {}),
 	};
-	if (namedUniquely) return { ...base, confidence: "high", reason: "unique-name", mintingEligible: true };
+	if (namedUniquely) {
+		return {
+			...base,
+			confidence: "high",
+			reason: "unique-name",
+			// P3 may feed only named AX-container scopes into ref minting. setSize-only groups remain
+			// useful diagnostics, but they do not provide a safe container identity for live refs.
+			mintingEligible: Boolean(group.descriptor.container && group.descriptor.containerName),
+		};
+	}
 	if (typeof posInSet !== "number") return undefined;
 	return { ...base, confidence: "low", reason: normalizedName ? "duplicate-name" : "missing-name", mintingEligible: false };
 }
@@ -143,7 +152,7 @@ export function deriveSemanticRefAnchors(entities: Entity[]): SemanticRefAnchorS
 }
 
 export function semanticRefAnchorHashInput(descriptor: Pick<RefDescriptor, "kind" | "owner" | "documentEpoch">, anchor: SemanticRefAnchor): SemanticRefAnchorHashInput | undefined {
-	if (!anchor.mintingEligible || anchor.confidence !== "high" || !anchor.normalizedName) return undefined;
+	if (!anchor.mintingEligible || anchor.confidence !== "high" || !anchor.normalizedName || !anchor.containerRole || !anchor.containerName) return undefined;
 	return {
 		scope: "abml-template",
 		kind: descriptor.kind,
@@ -151,9 +160,8 @@ export function semanticRefAnchorHashInput(descriptor: Pick<RefDescriptor, "kind
 		...(descriptor.owner.topLevelOrigin ? { origin: descriptor.owner.topLevelOrigin } : {}),
 		...(descriptor.documentEpoch?.url ? { url: descriptor.documentEpoch.url } : {}),
 		anchor: {
-			...(anchor.containerRole ? { containerRole: anchor.containerRole } : {}),
-			...(anchor.containerName ? { containerName: anchor.containerName } : {}),
-			...(typeof anchor.setSize === "number" ? { setSize: anchor.setSize } : {}),
+			containerRole: anchor.containerRole,
+			containerName: anchor.containerName,
 			role: anchor.role,
 			kind: anchor.kind,
 			normalizedName: anchor.normalizedName,

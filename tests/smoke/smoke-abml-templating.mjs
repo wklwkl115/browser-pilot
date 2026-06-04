@@ -1,9 +1,11 @@
-// ABML mechanism arm — M1 structure templating + M2a treeDiff live smoke. Drives a real browser
+// ABML mechanism arm — M1 structure templating + M2a treeDiff + M2b semantic ref anchor live smoke. Drives a real browser
 // through the genuine browser_observe/browser_execute tool seams and asserts:
 //   A) observe(mode:scan) on a 6-link semantic list -> envelope.templates carries one structure
 //      template (role link, count >= 4, varies includes name, instanceRefs are pi-ref:// handles).
 //   B) mutate the list, then observe(mode:scan, baseline:snapshotId) -> envelope.treeDiff reports
 //      O(change) structure delta (one high-confidence appeared instance), not nested text churn.
+//   C) a stable named item keeps the same pi-ref after reorder/insert, and that old ref can still
+//      read/click the current item; this validates M2b's narrow high-confidence semantic ref anchor path.
 // The fixture's <a> items share an AX list container AND carry aria-setsize, so templating fires via
 // either grouping path. Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL. Self-launches an isolated Chrome/Edge
 // + bridge + extension copy, so it never touches the user's browser.
@@ -17,6 +19,7 @@ import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
 import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
+import { createBrowserAbmlIntegration } from "../../src/abml/verbs/integration.ts";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -67,6 +70,25 @@ async function waitUntil(predicate, timeoutMs = 20000) {
 }
 const steps = [];
 function record(step, ok, data = {}) { steps.push({ step, ok, ...data, t: Date.now() }); }
+function namedEntityFromRecord(record, name) {
+  const focus = record && typeof record.focus === "object" ? record.focus : {};
+  const abml = record && typeof record.abml === "object" ? record.abml : {};
+  const candidates = [
+    ...(Array.isArray(focus.primary_entities) ? focus.primary_entities : []),
+    ...(Array.isArray(focus.list_entities) ? focus.list_entities : []),
+    ...(Array.isArray(focus.referenced_entities) ? focus.referenced_entities : []),
+    ...(Array.isArray(abml.entities) ? abml.entities : []),
+  ];
+  return candidates.find((entity) => entity && entity.name === name);
+}
+async function namedEntity(env, name) {
+  const inline = namedEntityFromRecord(env, name);
+  if (inline) return inline;
+  const savedPath = env?.snapshot?.saved?.path;
+  if (typeof savedPath !== "string" || !savedPath) return undefined;
+  try { return namedEntityFromRecord(JSON.parse(await readFile(savedPath, "utf8")), name); }
+  catch { return undefined; }
+}
 
 async function observeEnvelope(observe, args) {
   const r = await observe.execute("templating", args, undefined, undefined, { cwd: process.cwd(), hasUI: false });
@@ -168,6 +190,10 @@ try {
   const treeTemplate = Array.isArray(treeDiff?.templates) ? treeDiff.templates[0] : undefined;
   const treeAppearedOk = Number(treeDiff?.summary?.appeared) === 1 && Number(treeDiff?.summary?.disappeared) === 0 && treeTemplate?.appeared?.instances?.some((item) => item?.name === "Product Golf" && item?.confidence === "high");
   const nestedChurnSuppressed = Number(treeDiff?.summary?.templateCount) === 1 && Number(treeDiff?.summary?.changedTemplateCount) === 1;
+  const stableBefore = await namedEntity(env, "Product Bravo");
+  const stableAfter = await namedEntity(afterEnv, "Product Bravo");
+  const semanticRefStable = !!stableBefore?.ref && stableBefore.ref === stableAfter?.ref;
+  const semanticRefShape = /^pi-ref:\/\/control\/[0-9a-f]{24}$/.test(String(stableAfter?.ref || ""));
   const treeDiffOk = !!treeDiff && treeAppearedOk && nestedChurnSuppressed;
   record("treeDiff.delta", treeDiffOk, {
     summary: treeDiff?.summary,
@@ -175,8 +201,21 @@ try {
     treeAppearedOk,
     nestedChurnSuppressed,
   });
+  const abml = createBrowserAbmlIntegration(bridge, { browserSessionId, tabId, timeoutMs: 10000, maxChars: 50000 });
+  const readViaOldRef = stableBefore?.ref ? await abml.readStructure({ ref: stableBefore.ref, browserSessionId, tabId, timeoutMs: 10000, maxChars: 50000 }) : undefined;
+  const readResolved = !!readViaOldRef?.ok && Array.isArray(readViaOldRef.entities) && readViaOldRef.entities.some((entity) => entity?.name === "Product Bravo");
+  const clickViaOldRef = stableBefore?.ref && abml.runtime.click ? await abml.runtime.click({ ref: stableBefore.ref }) : undefined;
+  const clickResolved = !!clickViaOldRef?.ok;
+  record("semanticRef.stable", semanticRefStable && semanticRefShape && readResolved && clickResolved, {
+    before: stableBefore ? { ref: stableBefore.ref, name: stableBefore.name, role: stableBefore.role } : null,
+    after: stableAfter ? { ref: stableAfter.ref, name: stableAfter.name, role: stableAfter.role } : null,
+    semanticRefStable,
+    semanticRefShape,
+    readResolved,
+    clickResolved,
+  });
 
-  result.ok = templatingOk && treeDiffOk;
+  result.ok = templatingOk && treeDiffOk && semanticRefStable && semanticRefShape && readResolved && clickResolved;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

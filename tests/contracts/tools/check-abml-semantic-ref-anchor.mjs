@@ -1,13 +1,14 @@
 // ABML mechanism arm — M2b P1/P2 semantic ref-anchor contract.
 //
-// Verifies pure candidate derivation and shadow-ref stability only. Ref minting must remain
-// untouched: resourceStore/stableRefIdForDescriptor must not consume these anchors in this phase.
+// Verifies pure candidate derivation, shadow-ref stability, and the narrow P3 minting feed. The
+// runtime may consume only high-confidence eligible anchors; low-confidence anchors stay diff-only.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deriveSemanticRefAnchors, semanticRefAnchorHashInput } from "../../../src/abml-core/semanticRefAnchor.ts";
+import { clearResourceStore, registerRefDescriptor } from "../../../src/resources/resourceStore.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -53,13 +54,72 @@ const afterInput = semanticRefAnchorHashInput(descriptor, afterBravo);
 assert.deepEqual(beforeInput, afterInput, "shadow input must be stable across reorder/insert");
 assert.equal(hash(beforeInput), hash(afterInput), "shadow hash must be stable across reorder/insert");
 
+clearResourceStore();
+const beforeRef = registerRefDescriptor({
+	descriptor: {
+		kind: "control",
+		locators: [{ by: "css", value: "ul > li:nth-of-type(2) > a" }],
+		owner: descriptor.owner,
+		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+		semantic: { role: "link", name: "Bravo", anchor: beforeBravo },
+		observationId: "before",
+		documentEpoch: descriptor.documentEpoch,
+		createdAt: 1000,
+		ttlMs: 60_000,
+	},
+});
+const afterRef = registerRefDescriptor({
+	descriptor: {
+		kind: "control",
+		locators: [{ by: "css", value: "ul > li:nth-of-type(3) > a" }],
+		owner: descriptor.owner,
+		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+		semantic: { role: "link", name: "Bravo", anchor: afterBravo },
+		observationId: "after",
+		documentEpoch: descriptor.documentEpoch,
+		createdAt: 2000,
+		ttlMs: 60_000,
+	},
+});
+assert.equal(beforeRef, afterRef, "high-confidence semantic anchor must stabilize ref across nth-of-type locator churn");
+const lowRefA = registerRefDescriptor({
+	descriptor: {
+		kind: "control",
+		locators: [{ by: "css", value: "ul > li:nth-of-type(1) > a" }],
+		owner: descriptor.owner,
+		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+		semantic: { role: "link", name: "Item", anchor: duplicate.anchors[0].anchor },
+		observationId: "low-a",
+		documentEpoch: descriptor.documentEpoch,
+		createdAt: 3000,
+		ttlMs: 60_000,
+	},
+});
+const lowRefB = registerRefDescriptor({
+	descriptor: {
+		kind: "control",
+		locators: [{ by: "css", value: "ul > li:nth-of-type(2) > a" }],
+		owner: descriptor.owner,
+		policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+		semantic: { role: "link", name: "Item", anchor: duplicate.anchors[1].anchor },
+		observationId: "low-b",
+		documentEpoch: descriptor.documentEpoch,
+		createdAt: 4000,
+		ttlMs: 60_000,
+	},
+});
+assert.notEqual(lowRefA, lowRefB, "low-confidence anchors must not override locator-based ref minting");
+clearResourceStore();
+
 const resourceStoreSrc = readRepo("src/resources/resourceStore.ts");
 assert.ok(resourceStoreSrc.includes("function stableRefIdForDescriptor"), "resourceStore still owns ref minting");
-assert.equal(resourceStoreSrc.includes("semanticRefAnchor"), false, "M2b P1/P2 must not wire semantic anchors into resourceStore/ref minting");
-assert.equal(resourceStoreSrc.includes("abml-template"), false, "M2b P1/P2 must not feed template anchors into stableRefIdForDescriptor");
+assert.equal(resourceStoreSrc.includes("semanticRefAnchor"), false, "resourceStore must not import candidate derivation directly");
+assert.ok(resourceStoreSrc.includes("abml-template"), "P3 gate allows a narrow semantic anchor branch inside stableRefIdForDescriptor");
+const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
+assert.ok(runtimeSrc.includes("remintSemanticTemplateRefs") && runtimeSrc.includes("deriveSemanticRefAnchors"), "runtime must remint only after AX/DOM merge has template evidence");
 const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
 assert.ok(boundarySrc.includes('"semanticRefAnchor.ts"'), "semanticRefAnchor is classified as pure core");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-semantic-ref-anchor"]?.includes("check-abml-semantic-ref-anchor.mjs"), "check:abml-semantic-ref-anchor script present");
 
-console.log("abml semantic-ref-anchor ok — M2b P1/P2 pure candidates + stable shadow inputs verified; ref minting untouched");
+console.log("abml semantic-ref-anchor ok — M2b P1/P2 candidates + P3 gated high-confidence minting verified; low-confidence remains locator-based");

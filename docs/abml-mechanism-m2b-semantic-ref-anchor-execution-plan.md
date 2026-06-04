@@ -1,8 +1,8 @@
 # ABML mechanism arm M2b — gated semantic ref anchor execution contract
 
-> Status: **P1/P2 COMPLETE; P3 GATED / NOT STARTED**. M2b is active after M2a. Pure candidate
-> derivation and shadow-ref stability are implemented, but there is still no ref-minting feed. No
-> direct `stableRefIdForDescriptor` / ref-minting mutation until the P3 gates below pass.
+> Status: **COMPLETE**. M2b is active after M2a. Pure candidate derivation, shadow-ref
+> stability, narrow high-confidence ref-minting feed, and live read/click smoke are implemented.
+> The feed is gated to unique accessible-name anchors inside named AX/ARIA template containers.
 
 ## 1. Goal
 
@@ -94,15 +94,16 @@ Activation rule for ref minting:
 - Produce no user-visible ref change.
 - Result: `semanticRefAnchorHashInput` proves stable shadow payloads across reorder/insert while runtime refs remain unchanged.
 
-### P3 — gated minting change  (GATED / NOT STARTED)
+### P3 — gated minting change  (COMPLETE)
 
 Only after P1/P2 pass:
 - Extend `RefDescriptor.semantic` or equivalent internal descriptor field with high-confidence anchor.
 - Feed only allowed high-confidence anchors into `stableRefIdForDescriptor`.
 - Keep existing locator fallback for every unsupported/ambiguous case.
 - Add a feature gate or narrow branch so rollback is one small diff.
+- Result: `stableRefIdForDescriptor` accepts only `semantic.anchor.scope === "abml-template"` with `confidence:"high"`, `mintingEligible:true`, named container role/name, and normalized accessible name. Runtime feeds anchors only after DOM/AX merge via `remintSemanticTemplateRefs`.
 
-### P4 — live smoke + regression gate  (NOT STARTED)
+### P4 — live smoke + regression gate  (COMPLETE)
 
 Required before shipping P3:
 - Fixture: repeated list/table with unique names.
@@ -110,6 +111,7 @@ Required before shipping P3:
 - Expected: stable item ref survives; new item appears; duplicate/unnamed items do not claim semantic
   stability.
 - Full gate: `npm run check`, plus targeted contracts for scan/diff/read/click/ref registry.
+- Result: `smoke:browser:abml-templating` verifies stable `Product Bravo` ref across reorder/insert and uses the old ref to `read` and `click` the current item.
 
 ## 6. Acceptance
 
