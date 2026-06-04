@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -93,4 +93,41 @@ test("causal P1: focus robustness — a focusedRef landing on a frame/region is 
 	assert.equal(resolveActionEntityRef(undefined, "pi-ref://frame/1", entities), undefined, "frame focusedRef rejected (no mis-attribution)");
 	assert.equal(resolveActionEntityRef("pi-ref://region/1", undefined, entities), undefined, "region actionRef rejected");
 	assert.equal(resolveActionEntityRef(undefined, "pi-ref://control/ok", entities), "pi-ref://control/ok", "a real control is accepted");
+});
+
+// ── R3.x P2 — event causal entries ────────────────────────────────────────────
+
+test("causal P2: buildCausalEvent shapes a hook event — ref/type/at/redacted summary/selector", () => {
+	const e = buildCausalEvent({ seq: 9, type: "domSink", timestamp: 1710, data: { prop: "innerHTML", value: "token=SECRET123 hi", elementRef: { selector: "#out" } } });
+	assert.equal(e.ref, "pi-ref://event/9");
+	assert.equal(e.type, "domSink");
+	assert.equal(e.at, 1710);
+	assert.equal(e.selector, "#out", "DOM-sink event names its target element");
+	assert.ok(e.summary && !e.summary.includes("SECRET123"), "summary redacted");
+});
+
+test("causal P2: buildCausalEvent never dumps a raw payload object (summary omitted when no text field)", () => {
+	const e = buildCausalEvent({ seq: 3, type: "storage", data: { keys: 4, bytes: 200 } });
+	assert.equal(e.summary, undefined, "no message/summary/... field → no summary, no object dump");
+	assert.equal(e.selector, undefined);
+});
+
+test("causal P2: buildCausalEvents windows seq>sinceSeq, sorts, caps + true count", () => {
+	const recs = [
+		{ seq: 7, type: "console", data: { message: "b" } },
+		{ seq: 5, type: "console", data: { message: "a" } },
+		{ seq: 2, type: "console", data: { message: "old" } },
+	];
+	const r = buildCausalEvents(recs, 4);
+	assert.deepEqual(r.events.map((e) => e.ref), ["pi-ref://event/5", "pi-ref://event/7"], "seq>4, sorted ascending");
+	assert.equal(r.eventCount, undefined, "no count when not capped");
+	const many = buildCausalEvents(Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, type: "console", data: { message: `m${i}` } })), 0);
+	assert.equal(many.events.length, MAX_CAUSAL_EVENTS, "capped at MAX_CAUSAL_EVENTS");
+	assert.equal(many.eventCount, 20, "true delta count reported when capped");
+});
+
+test("causal P2: empty event delta → empty events, no eventCount", () => {
+	const r = buildCausalEvents([], 10);
+	assert.equal(r.events.length, 0);
+	assert.ok(!("eventCount" in r));
 });

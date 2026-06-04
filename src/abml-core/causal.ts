@@ -20,14 +20,34 @@ export type CausalRequest = {
 	at?: number; // last-update timestamp of the entry
 };
 
+// A non-network causal entry (R3.x P2) — a hook event (console / DOM-sink / storage / error / …)
+// fired since the baseline. `selector` is present only when the event names its own target element
+// (DOM-sink), which P2 part B uses for element-sourced attribution.
+export type CausalEvent = {
+	ref: string; // pi-ref://event/<seq|id>
+	type: string; // console | domSink | storage | error | ...
+	at?: number;
+	summary?: string; // redacted + truncated; never a raw payload
+	selector?: string; // the event's target element, when it names one
+};
+
 // Budget-immune envelope block. `unavailable` is emitted when no network recorder is active for
-// the tab (P0 does NOT auto-start it — the agent opts in via `browser_network start`).
+// the tab (P0 does NOT auto-start it — the agent opts in via `browser_network start`). R3.x P2 adds
+// an optional `events` delta (hook events since baseline) alongside the network `requests`.
 export type CausalSummary =
-	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number }
+	| { sinceSeq: number; requests: CausalRequest[]; requestCount?: number; events?: CausalEvent[]; eventCount?: number }
 	| { unavailable: string };
 
 export const MAX_CAUSAL_REQUESTS = 12;
+export const MAX_CAUSAL_EVENTS = 12;
 const MAX_URL_CHARS = 200;
+const MAX_EVENT_SUMMARY_CHARS = 200;
+
+// Redact sensitive substrings then clamp to a max length (shared by URL + event-summary shaping).
+function redactClamp(text: string, max: number): string {
+	const red = redactSensitiveText(text);
+	return red.length > max ? `${red.slice(0, max)}…` : red;
+}
 
 function str(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
@@ -41,8 +61,7 @@ function num(value: unknown): number | undefined {
 }
 
 function redactUrl(url: string): string {
-	const red = redactSensitiveText(url);
-	return red.length > MAX_URL_CHARS ? `${red.slice(0, MAX_URL_CHARS)}…` : red;
+	return redactClamp(url, MAX_URL_CHARS);
 }
 
 // One network record → a compact, redacted causal request. Tolerant of both the full NetworkRecord
@@ -81,6 +100,58 @@ export function buildCausalSummary(records: Array<Record<string, unknown>>, sinc
 		sinceSeq,
 		requests,
 		...(delta.length > requests.length ? { requestCount: delta.length } : {}),
+	};
+}
+
+// ── R3.x P2 — event (non-network) causal entries ─────────────────────────────────────────────────
+
+// A short, redacted summary for a hook event: prefer a named text field (message/summary/preview/…),
+// never dump the raw payload object. Falls back to undefined so the entry stays compact.
+function eventSummary(data: unknown): string | undefined {
+	if (typeof data === "string") return data;
+	if (!isRecord(data)) return undefined;
+	return str(data.message) || str(data.summary) || str(data.preview) || str(data.text) || str(data.value) || str(data.url);
+}
+
+// The event's target element selector, when the hook recorded one (DOM-sink events carry an
+// elementRef `{ nodeName, className, selector }`). Used by P2 part B for element-sourced attribution.
+function eventSelector(record: Record<string, unknown>): string | undefined {
+	const data = isRecord(record.data) ? record.data : {};
+	const el = isRecord(record.elementRef) ? record.elementRef : isRecord(data.elementRef) ? data.elementRef : isRecord(data.element) ? data.element : undefined;
+	return str(record.selector) || str(data.selector) || (el ? str(el.selector) : undefined);
+}
+
+// One hook event → a compact, redacted causal event. Tolerant of the HookEvent shape
+// (`{ seq, type, timestamp, data }`) and defensive field aliases, like buildCausalRequest.
+export function buildCausalEvent(record: Record<string, unknown>): CausalEvent {
+	const seq = num(record.seq);
+	const id = str(record.id) || (seq !== undefined ? String(seq) : "event");
+	const type = str(record.type) || str(record.event) || str(record.eventType) || "event";
+	const at = num(record.timestamp) ?? num(record.t) ?? num(record.at);
+	const summary = eventSummary(record.data ?? record.summary ?? record.message);
+	const selector = eventSelector(record);
+	return {
+		ref: `pi-ref://event/${id}`,
+		type,
+		...(at !== undefined ? { at } : {}),
+		...(summary ? { summary: redactClamp(summary, MAX_EVENT_SUMMARY_CHARS) } : {}),
+		...(selector ? { selector } : {}),
+	};
+}
+
+// Build the event-delta (hook events captured since the baseline seq). Mirrors buildCausalSummary:
+// defensive seq>sinceSeq window, sorted ascending, capped at MAX_CAUSAL_EVENTS with the true count.
+export function buildCausalEvents(records: Array<Record<string, unknown>>, sinceSeq: number): { events: CausalEvent[]; eventCount?: number } {
+	const delta = records
+		.filter((r) => {
+			const seq = num(r.seq);
+			return seq === undefined || seq > sinceSeq;
+		})
+		.sort((a, b) => (num(a.seq) ?? 0) - (num(b.seq) ?? 0));
+	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map((r) => buildCausalEvent(r));
+	return {
+		events,
+		...(delta.length > events.length ? { eventCount: delta.length } : {}),
 	};
 }
 

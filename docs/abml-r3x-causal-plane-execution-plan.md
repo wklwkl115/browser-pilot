@@ -1,6 +1,6 @@
 # ABML R3.x — network/API causal plane execution contract
 
-> Status: **P0 + P1 COMPLETE — browser-verified** (activated 2026-06-04 by explicit user priority
+> Status: **P0 + P1 COMPLETE — browser-verified; P2 (event causal) IN PROGRESS** (activated 2026-06-04 by explicit user priority
 > change). This is a new ABML main line; per project rules it gets its own execution contract and a
 > CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
@@ -101,10 +101,33 @@ As shipped (`entity.ts`/`relations.ts`/`causal.ts`/`observeRunners.ts`/`register
   to the redacted `/api/ping2` ref, counted in `relations.summary`). The focus-only path proved
   fragile live (the documented reason the explicit `actionRef` exists).
 
-### P2 — deferred
+### P2 — event causal entries + event-sourced attribution  ← THIS PHASE
 
-Event (non-network) causal entries; stronger attribution (hook `elementRef`/stack correlation);
-live streaming/push. Each needs its own follow-up.
+Extends the causal plane from network-only to **hook events** (console / DOM-sink / storage /
+error / …), reusing P0/P1 machinery wholesale. Verified substrate (2026-06-04): `hook.collect`
+already takes `since_seq` (seq-windowed, like `network.list`); each `HookEvent = { seq, type,
+timestamp, data }`; DOM-sink events carry an `elementRef` (`{ nodeName, className, selector }`);
+and `src/abml-core/stream.ts` already has a pure `buildEventEntity` scaffold (kind `event`, source
+`hook`, `stream.eventType/phase/payloadHandle`) that was never populated.
+
+- **A — event causal entries (primary):** envelope `causal` gains an `events` array alongside
+  `requests`: events fired since the baseline observation. `CausalEvent = { ref:
+  pi-ref://event/<seq>, type, at, summary(redacted+truncated), selector? }`. Pure-core selector
+  `buildCausalEvents(events, sinceSeq)` mirrors `buildCausalSummary` (seq>baseline window, sorted,
+  capped + count, redacted, no raw payloads). Runtime: a hook seq high-water mark on the
+  observation snapshot (like `networkSeq`); on `baseline:X`, `hook.collect since_seq=X.hookSeq` →
+  the delta. Recorder/hook not active → events simply omitted (same opt-in posture as P0; the agent
+  arms hooks via `browser_hook`).
+- **B — event-sourced attribution (secondary):** when a delta event carries an `elementRef.selector`
+  that resolves to a control/element entity (the relation key space already has `s:<selector>`),
+  hang a `triggered` edge from that control to the event ref with a STRONGER signal than P1's pure
+  timing — `source:"event"`, higher confidence — because the event names its own target element.
+  Pure timing (P1) stays the fallback when no element is named.
+- **C — live streaming / push: DEFERRED** (own follow-up; architecturally separate, no real
+  use-case yet). P2 stays request/response-style snapshot, not a live channel.
+
+Boundaries unchanged: no new public tool, no schema change (reuse `hook.*`), pure-core stays pure,
+redaction at the same contract, no per-site/stack heuristics.
 
 ## 5. Behavior boundaries
 
@@ -129,6 +152,12 @@ live streaming/push. Each needs its own follow-up.
   `envelope.relations.summary`; static wiring). Live: `smoke:browser:abml-causal` step C —
   focus a control + fire `/api/ping2` → observe(baseline, actionRef) asserts the `triggered`
   edge on the control (browser-verified on Edge).
+- **P2** (in progress): `check:abml-causal` extended (buildCausalEvents seq-window + redaction +
+  cap/count; event-sourced `triggered` `source:"event"` when a delta event names its element;
+  envelope `causal.events` lift). Live: `smoke:browser:abml-causal` adds a hook step —
+  `browser_hook` arm → observe baseline → fire a console/DOM-sink event → observe(baseline) →
+  assert `envelope.causal.events` contains it (redacted). Slices: 1 pure-core selector, 2 runtime
+  wiring (hook seq high-water + delta), 3 event-sourced attribution, 4 contract + live smoke.
 - Gate each phase on `npm run check` green + the live smoke.
 - Update `docs/abml-perception-state-evolution-plan.md` R3.x section as phases land.
 
