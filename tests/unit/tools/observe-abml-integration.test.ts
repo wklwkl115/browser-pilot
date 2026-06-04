@@ -144,3 +144,23 @@ test("browser_observe P2: records the hook seq high-water on the snapshot for a 
 	assert.equal(env.snapshot?.hookSeq, 11, "hook high-water stored so a later baseline can window events");
 	assert.equal(env.causal, undefined, "no baseline → no causal block");
 });
+
+test("browser_observe P2-B: a DOM-sink event naming its element → triggered edge on that control (source event)", async () => {
+	// Discover a control with a selector from a plain scan, then have the hook delta name it.
+	const probe = causalServer({ status: { active: true, lastSeq: 8 } });
+	const env1 = JSON.parse((await runScanObservation(probe as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	const ctl = (env1.summary?.focus?.primary_entities ?? []).find((e: any) => e.hints?.selector && (e.kind === "control" || e.kind === "element"));
+	assert.ok(ctl?.hints?.selector, "a control with a selector is available to attribute to");
+	const server = causalServer(
+		{ status: { active: true, lastSeq: 8 }, list: { items: [], total: 0 } },
+		{ status: { last_seq: 11 }, collect: { events: [{ seq: 10, type: "domSink", timestamp: 1, data: { value: "x" }, selector: ctl.hints.selector }] } },
+	);
+	const env2 = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, baseline: { networkSeq: 5, hookSeq: 9, entities: [BASE_ENTITY] } }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(env2.causal?.events?.length, 1, "event present in causal.events");
+	assert.equal(env2.relations?.summary?.triggered, 1, "event-sourced triggered counted in relations.summary");
+	const edge = (env2.entities ?? []).find((e: any) => e.ref === ctl.ref)?.relations?.find((r: any) => r.type === "triggered");
+	if (edge) {
+		assert.equal(edge.source, "event", "element-sourced attribution (stronger than timing)");
+		assert.equal(edge.targetRef, "pi-ref://event/10", "edge targets the event ref");
+	}
+});

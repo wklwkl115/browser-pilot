@@ -7,7 +7,7 @@ import type { Entity } from "../abml/entity.js";
 import type { EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary } from "../abml/inference.js";
-import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, type CausalSummary } from "../abml/causal.js";
+import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -463,17 +463,26 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
-	// R3.x P1 — attribute the causal network-delta to the activated control: an explicit `actionRef`
-	// (the agent says "I just activated R"), else the focus-normalized R3 `diff.focusedRef` (rejected
-	// if it lands on a frame/region). Attach `triggered` (control → network request) relations BEFORE
-	// the relation summary so they appear in relations.summary + the control's inline relations. The
-	// delta stays fully inline in envelope.causal.requests regardless (passive P0 behavior preserved).
+	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
+	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
+	// fully inline in envelope.causal regardless — passive P0 behavior preserved):
+	//   P1  — the network-delta → the activated control (explicit `actionRef`, else the focus-normalized
+	//         R3 `diff.focusedRef`; a frame/region focus is rejected). source:"timing", low confidence.
+	//   P2-B — each event that names its own target element (DOM-sink `selector`) → that element.
+	//         source:"event", medium confidence (stronger than timing — the event records its element).
 	const attributedEntities = (() => {
-		if (!abmlEntities || !causal || !("requests" in causal) || !causal.requests.length) return abmlEntities;
-		const actionEntityRef = resolveActionEntityRef(params.actionRef, abmlDiff?.focusedRef, abmlEntities);
-		if (!actionEntityRef) return abmlEntities;
-		const triggered = buildTriggeredRelations(causal);
-		return abmlEntities.map((entity) => entity.ref === actionEntityRef ? addEntityRelations(entity, triggered) : entity);
+		if (!abmlEntities || !causal || !("requests" in causal)) return abmlEntities;
+		const actionEntityRef = causal.requests.length ? resolveActionEntityRef(params.actionRef, abmlDiff?.focusedRef, abmlEntities) : undefined;
+		const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal) : [];
+		const eventTriggers = eventTriggeredByEntity("events" in causal && Array.isArray(causal.events) ? causal.events : [], abmlEntities);
+		if (!actionEntityRef && eventTriggers.size === 0) return abmlEntities;
+		return abmlEntities.map((entity) => {
+			let next = entity;
+			if (actionEntityRef && entity.ref === actionEntityRef) next = addEntityRelations(next, requestTriggered);
+			const eventRels = eventTriggers.get(entity.ref);
+			if (eventRels) next = addEntityRelations(next, eventRels);
+			return next;
+		});
 	})();
 	// Top-level `causal` block (budget-immune, lifted to envelope alongside diff/relations/inference).
 	// Present only when a baseline was supplied; independent of ABML entity integration.

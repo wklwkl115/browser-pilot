@@ -52,15 +52,16 @@ export type RelationType =
 	| "occludes"
 	| "coveredBy"
 	// ABML R3.x P1 — control → network request fired in the post-action delta window. Target is a
-	// `pi-ref://network/<id>` (resolvable inline in envelope.causal.requests, not an entity). Causal
-	// attribution is timing-only (source "timing", low confidence): the request fired after the
-	// activated control, NOT a parsed initiator-stack proof. See abml-core/causal.ts.
+	// `pi-ref://network/<id>` or `pi-ref://event/<id>` (resolvable inline in envelope.causal, not an
+	// entity). Causal attribution source: "timing" (P1 — request fired after the activated control,
+	// low confidence, no initiator-stack proof) or "event" (P2-B — a hook event named THIS element as
+	// its target, medium confidence). See abml-core/causal.ts.
 	| "triggered";
 
 export type EntityRelation = {
 	type: RelationType;
 	targetRef: string;
-	source: "ax" | "dom" | "geometry" | "timing";
+	source: "ax" | "dom" | "geometry" | "timing" | "event";
 	confidence: "high" | "medium" | "low";
 	evidence?: Record<string, unknown>;
 };

@@ -206,3 +206,32 @@ export function resolveActionEntityRef(actionRef: string | undefined, focusedRef
 	};
 	return resolveActionable(actionRef) ?? resolveActionable(focusedRef);
 }
+
+// ── R3.x P2-B — event-sourced attribution (element-named, stronger than timing) ───────────────────
+
+// When a causal event names its own target element (`selector`, from a DOM-sink event's elementRef)
+// and that selector resolves to a control/element entity, the event hangs a `triggered` edge on that
+// entity → the event ref, source:"event" / confidence:"medium". This is STRONGER than P1's timing
+// attribution: the event records the element it fired on — no timing guess. Returns entityRef →
+// triggered edges; entities without a matching event get none (the event still ships in causal.events).
+export function eventTriggeredByEntity(events: CausalEvent[], entities: Entity[]): Map<string, EntityRelation[]> {
+	const out = new Map<string, EntityRelation[]>();
+	if (!events.length) return out;
+	const bySelector = new Map<string, string>();
+	for (const entity of entities) {
+		const selector = isRecord(entity.hints) && typeof entity.hints.selector === "string" ? entity.hints.selector.trim() : "";
+		if (selector && (entity.kind === "control" || entity.kind === "element") && !bySelector.has(selector)) bySelector.set(selector, entity.ref);
+	}
+	if (!bySelector.size) return out;
+	for (const event of events) {
+		const selector = event.selector?.trim();
+		if (!selector) continue;
+		const entityRef = bySelector.get(selector);
+		if (!entityRef) continue;
+		const relation: EntityRelation = { type: "triggered", targetRef: event.ref, source: "event", confidence: "medium", evidence: { eventType: event.type } };
+		const list = out.get(entityRef);
+		if (list) list.push(relation);
+		else out.set(entityRef, [relation]);
+	}
+	return out;
+}

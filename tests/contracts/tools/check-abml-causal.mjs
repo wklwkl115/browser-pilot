@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity } from "../../../src/abml-core/causal.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -178,6 +178,21 @@ assert.equal(evEnv.causal?.events?.length, 1, "causal.events lifted to envelope.
 assert.equal(evEnv.causal.events[0].ref, "pi-ref://event/10");
 assert.ok(!evEnv.causal.events[0].summary.includes("SECRET77"), "envelope-level redaction scrubs the event summary");
 
+// ── R3.x P2-B — event-sourced attribution (pure) ─────────────────────────────────
+
+const p2bEntities = [
+	{ ref: "pi-ref://control/pay", kind: "control", role: "button", state: {}, source: "dom", hints: { selector: "#pay" } },
+	{ ref: "pi-ref://region/main", kind: "region", role: "main", state: {}, source: "dom", hints: { selector: "#main" } },
+];
+const p2bMap = eventTriggeredByEntity([{ ref: "pi-ref://event/9", type: "domSink", selector: "#pay" }, { ref: "pi-ref://event/10", type: "domSink", selector: "#main" }, { ref: "pi-ref://event/11", type: "console.error" }], p2bEntities);
+const payRels = p2bMap.get("pi-ref://control/pay");
+assert.ok(payRels && payRels.length === 1, "event naming a control → triggered on it");
+assert.equal(payRels[0].source, "event", "element-sourced (stronger than P1 timing)");
+assert.equal(payRels[0].confidence, "medium");
+assert.equal(payRels[0].targetRef, "pi-ref://event/9", "edge targets the event ref");
+assert.equal(p2bMap.get("pi-ref://region/main"), undefined, "region is not an attribution target");
+assert.equal(p2bMap.size, 1, "selectorless / unmatched events attribute nothing");
+
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 assert.ok(observeSrc.includes("buildCausalSummary") && observeSrc.includes("causal"), "observeRunners builds causal");
@@ -210,7 +225,10 @@ assert.ok(barrelSrc.includes("./causal.js"), "kernel barrel exports causal");
 
 // P2 static wiring
 assert.ok(observeSrc.includes("readHookRecorderSeq") && observeSrc.includes("queryHookDelta") && observeSrc.includes("buildCausalEvents") && observeSrc.includes("hookSeq"), "observeRunners wires the P2 hook event-delta");
+assert.ok(observeSrc.includes("eventTriggeredByEntity"), "observeRunners wires P2-B event-sourced attribution");
 assert.ok(causalSrc.includes("buildCausalEvents") && causalSrc.includes("pi-ref://event/") && causalSrc.includes("CausalEvent"), "pure-core event-causal selector present");
+assert.ok(causalSrc.includes("eventTriggeredByEntity") && causalSrc.includes("\"event\""), "pure-core P2-B event-sourced attribution present");
+assert.ok(entitySrc.includes("\"event\""), "entity relation source union includes event");
 assert.ok(snapshotTypeSrc.includes("hookSeq"), "observation snapshot type carries hookSeq");
 const hookDispSrc = readRepo("bridge_src/page_scripts/hook_dispatcher.ts");
 assert.ok(hookDispSrc.includes("last_seq: seq"), "hook status() exposes last_seq event high-water mark");
@@ -218,4 +236,4 @@ assert.ok(hookDispSrc.includes("last_seq: seq"), "hook status() exposes last_seq
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-causal"]?.includes("check-abml-causal.mjs"), "check:abml-causal script present");
 
-console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; P2 event causal (buildCausalEvents seq-window/cap=${MAX_CAUSAL_EVENTS}, redacted summary + selector, no raw payload, lifted to envelope.causal.events; hook last_seq + snapshot hookSeq anchor); all static wiring verified`);
+console.log(`abml causal ok — P0 pure-core seq-window selector (sorted, pi-ref://network refs, URL redaction, cap=${MAX_CAUSAL_REQUESTS}+count, unavailable) + budget-immune envelope.causal (incl. unavailable + tight budget); P1 attribution (triggered timing/low edges cap=${MAX_TRIGGERED_RELATIONS}, focus robustness rejects frame/region, lifted to relations.summary); recorder lastSeq + snapshot networkSeq anchor; P2-A event causal (buildCausalEvents seq-window/cap=${MAX_CAUSAL_EVENTS}, redacted summary + selector, no raw payload, lifted to envelope.causal.events; hook last_seq + snapshot hookSeq anchor); P2-B event-sourced attribution (eventTriggeredByEntity: element-named event → triggered source:"event"/medium, region rejected); all static wiring verified`);

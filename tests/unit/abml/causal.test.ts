@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -136,4 +136,32 @@ test("causal P2: empty event delta → empty events, no eventCount", () => {
 	const r = buildCausalEvents([], 10);
 	assert.equal(r.events.length, 0);
 	assert.ok(!("eventCount" in r));
+});
+
+// ── R3.x P2-B — event-sourced attribution ──────────────────────────────────────
+
+const ctlSel = (ref: string, selector: string) => ({ ref, kind: "control" as const, role: "button", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" as const, hints: { selector } });
+
+test("causal P2-B: an event naming its element → triggered edge on that entity (source event/medium)", () => {
+	const entities = [ctlSel("pi-ref://control/pay", "#pay"), ctlSel("pi-ref://control/other", "#other")];
+	const events = [{ ref: "pi-ref://event/9", type: "domSink", selector: "#pay" }];
+	const map = eventTriggeredByEntity(events, entities);
+	const rels = map.get("pi-ref://control/pay");
+	assert.ok(rels && rels.length === 1, "triggered edge attached to the named control");
+	assert.equal(rels[0].type, "triggered");
+	assert.equal(rels[0].targetRef, "pi-ref://event/9", "edge targets the event ref");
+	assert.equal(rels[0].source, "event", "element-sourced (stronger than timing)");
+	assert.equal(rels[0].confidence, "medium");
+	assert.equal(map.get("pi-ref://control/other"), undefined, "unrelated control gets nothing");
+});
+
+test("causal P2-B: events without a selector, or selectors matching no entity, attribute nothing", () => {
+	const entities = [ctlSel("pi-ref://control/pay", "#pay")];
+	assert.equal(eventTriggeredByEntity([{ ref: "pi-ref://event/1", type: "console.error" }], entities).size, 0, "no selector → no attribution");
+	assert.equal(eventTriggeredByEntity([{ ref: "pi-ref://event/2", type: "domSink", selector: "#nope" }], entities).size, 0, "unmatched selector → no attribution");
+});
+
+test("causal P2-B: a region/non-actionable entity is not an attribution target", () => {
+	const region = { ref: "pi-ref://region/1", kind: "region" as const, role: "main", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" as const, hints: { selector: "#main" } };
+	assert.equal(eventTriggeredByEntity([{ ref: "pi-ref://event/3", type: "domSink", selector: "#main" }], [region]).size, 0, "region rejected (only control/element)");
 });
