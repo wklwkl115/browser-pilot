@@ -242,6 +242,39 @@ test("alert-region from status role", () => {
 	assert.ok(intentKinds(buildInferenceSummary([entity({ role: "status", kind: "region" })], emptyRelations())).includes("alert-region"));
 });
 
+test("alert-region: a live region that appeared after an action is flagged fresh=appeared", () => {
+	const entities = [entity({ role: "status", kind: "region", ref: "pi-ref://region/toast" })];
+	const ar = buildInferenceSummary(entities, emptyRelations(), { appeared: ["pi-ref://region/toast"], disappeared: [], changed: [] }).intents.find((i) => i.intent === "alert-region");
+	assert.equal(ar?.confidence, "high");
+	assert.equal(ar?.evidence?.fresh, "appeared");
+	assert.equal(ar?.evidence?.regionRef, "pi-ref://region/toast");
+	assert.match(ar!.reason!, /appeared after action/);
+});
+
+test("alert-region: a persistent live region whose accessible name changed is flagged fresh=updated", () => {
+	const entities = [entity({ role: "alert", kind: "region", ref: "pi-ref://region/err" })];
+	const ar = buildInferenceSummary(entities, emptyRelations(), { appeared: [], disappeared: [], changed: [{ ref: "pi-ref://region/err", kind: "name-changed", before: {}, after: { name: "Error" } }] }).intents.find((i) => i.intent === "alert-region");
+	assert.equal(ar?.evidence?.fresh, "updated");
+	assert.equal(ar?.evidence?.live, "assertive");
+	assert.match(ar!.reason!, /updated after action/);
+});
+
+test("alert-region: static scan (no diff) carries no fresh flag — behavior unchanged", () => {
+	const ar = buildInferenceSummary([entity({ role: "status", kind: "region" })], emptyRelations()).intents.find((i) => i.intent === "alert-region");
+	assert.ok(ar);
+	assert.equal(ar!.evidence?.fresh, undefined);
+});
+
+test("alert-region: prefers the freshly-appeared region over a static one", () => {
+	const entities = [
+		entity({ role: "status", kind: "region", ref: "pi-ref://region/static" }),
+		entity({ role: "alert", kind: "region", ref: "pi-ref://region/new" }),
+	];
+	const ar = buildInferenceSummary(entities, emptyRelations(), { appeared: ["pi-ref://region/new"], disappeared: [], changed: [] }).intents.find((i) => i.intent === "alert-region");
+	assert.equal(ar?.evidence?.regionRef, "pi-ref://region/new", "the appeared region answers the last action; static one is secondary");
+	assert.equal(ar?.evidence?.fresh, "appeared");
+});
+
 // ── empty / multi-intent co-occurrence ───────────────────────────────────────
 
 test("empty intents when no patterns match", () => {

@@ -114,6 +114,12 @@ assert.equal(arResult.intents.find((i) => i.intent === "alert-region")?.confiden
 // status role also triggers alert-region
 assert.ok(kinds(buildInferenceSummary([entity("status", { kind: "region" })], emptyRel())).includes("alert-region"), "status → alert-region");
 
+// alert-region post-action (R3 diff): a live region that appeared / whose name changed is fresh feedback
+const arAppeared = buildInferenceSummary([entity("status", { kind: "region", ref: "pi-ref://region/toast" })], emptyRel(), { appeared: ["pi-ref://region/toast"], disappeared: [], changed: [] });
+assert.equal(arAppeared.intents.find((i) => i.intent === "alert-region")?.evidence?.fresh, "appeared", "alert-region flags fresh=appeared from R3 diff appeared");
+const arUpdated = buildInferenceSummary([entity("alert", { kind: "region", ref: "pi-ref://region/err" })], emptyRel(), { appeared: [], disappeared: [], changed: [{ ref: "pi-ref://region/err", kind: "name-changed", before: {}, after: { name: "Error" } }] });
+assert.equal(arUpdated.intents.find((i) => i.intent === "alert-region")?.evidence?.fresh, "updated", "alert-region flags fresh=updated from R3 diff name-changed");
+
 // form-dependency (R3: disabled→enabled + focused editable field)
 const depEntities = [
 	entity("textbox", { ref: "pi-ref://control/email", editable: true, state: { focused: true } }),
@@ -220,4 +226,4 @@ assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — 12 patterns + hardened evidence anchoring (login scorer, filter controls, visible dialog/tab/live regions, resolved expandable triggers); grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
+console.log(`abml inference ok — 12 patterns + hardened evidence anchoring (login scorer, filter controls, visible dialog/tab/live regions, post-action live-region freshness, resolved expandable triggers); grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);

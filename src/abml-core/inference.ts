@@ -317,11 +317,23 @@ function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
 // alert-region: role="alert" (assertive live region, e.g. validation errors) or role="status"
 // (polite live region, e.g. save confirmations). Tells the agent where to look for feedback
 // after an action — essential for form validation and async operation results.
-function detectAlertRegion(entities: Entity[]): DetectedIntent | undefined {
-	const region = entities.find((e) => (roleOf(e) === "alert" || roleOf(e) === "status") && isPerceptible(e));
-	if (!region) return undefined;
+// With an R3 diff, a live region that just appeared (dynamically inserted toast/alert) or whose
+// accessible name changed (a persistent container that just received text) is fresh post-action
+// feedback — the strongest signal. It is flagged via an evidence token (appeared|updated) + reason;
+// the region's text is never embedded (generic + privacy-safe, same contract as form-dependency).
+// Among multiple live regions the fresh one is preferred (it answers the last action).
+function detectAlertRegion(entities: Entity[], diff?: EntityDiff): DetectedIntent | undefined {
+	const regions = entities.filter((e) => (roleOf(e) === "alert" || roleOf(e) === "status") && isPerceptible(e));
+	if (!regions.length) return undefined;
+	const nameChanged = (ref: string): boolean => !!diff && diff.changed.some((c) => c.kind === "name-changed" && c.ref === ref);
+	const isFresh = (ref: string): boolean => !!diff && (diff.appeared.includes(ref) || nameChanged(ref));
+	const region = (diff ? regions.find((r) => isFresh(r.ref)) : undefined) ?? regions[0];
 	const live = roleOf(region) === "alert" ? "assertive" : "polite";
-	return mk("alert-region", "high", `visible ${region.role} live region`, { regionRef: region.ref, live });
+	const fresh = !diff ? undefined : diff.appeared.includes(region.ref) ? "appeared" : nameChanged(region.ref) ? "updated" : undefined;
+	const reason = fresh === "appeared" ? `${region.role} live region appeared after action`
+		: fresh === "updated" ? `${region.role} live region updated after action`
+		: `visible ${region.role} live region`;
+	return mk("alert-region", "high", reason, { regionRef: region.ref, live, ...(fresh ? { fresh } : {}) });
 }
 
 function changedField(change: EntityDiff["changed"][number], side: "before" | "after", field: string): unknown {
@@ -364,7 +376,7 @@ export function buildInferenceSummary(entities: Entity[], relSummary: RelationSu
 	add(detectNavigation(entities, relSummary));
 	add(detectDialog(entities));
 	add(detectTabbedInterface(entities));
-	add(detectAlertRegion(entities));
+	add(detectAlertRegion(entities, diff));
 	add(detectFormDependency(entities, diff));
 	return { intents };
 }
