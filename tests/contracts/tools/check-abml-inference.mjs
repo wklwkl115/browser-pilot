@@ -128,6 +128,37 @@ const depEntities = [
 const depResult = buildInferenceSummary(depEntities, emptyRel(), { appeared: [], disappeared: [], changed: [{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } }], focusedRef: "pi-ref://control/email" });
 assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency detected from R3 diff");
 assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency requiredRef set");
+assert.equal(depResult.intents.find((i) => i.intent === "form-dependency")?.evidence?.focusSignal, "focusedRef", "focusedRef signal preferred");
+
+const depGainedFocus = buildInferenceSummary(depEntities, emptyRel(), { appeared: [], disappeared: [], changed: [
+	{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+	{ ref: "pi-ref://control/email", kind: "state-changed", before: { focused: false }, after: { focused: true } },
+] });
+assert.equal(depGainedFocus.intents.find((i) => i.intent === "form-dependency")?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency falls back to editable gained-focus transition");
+assert.equal(depGainedFocus.intents.find((i) => i.intent === "form-dependency")?.confidence, "high", "gained-focus fallback remains high confidence");
+assert.equal(depGainedFocus.intents.find((i) => i.intent === "form-dependency")?.evidence?.focusSignal, "focus-gained", "gained-focus signal exposed");
+
+const depLostFocus = buildInferenceSummary([
+	entity("textbox", { ref: "pi-ref://control/email", editable: true, state: { focused: false } }),
+	entity("button", { ref: "pi-ref://control/submit", state: { disabled: false } }),
+], emptyRel(), { appeared: [], disappeared: [], changed: [
+	{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+	{ ref: "pi-ref://control/email", kind: "state-changed", before: { focused: true }, after: { focused: false } },
+] });
+assert.equal(depLostFocus.intents.find((i) => i.intent === "form-dependency")?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency falls back to editable lost-focus transition");
+assert.equal(depLostFocus.intents.find((i) => i.intent === "form-dependency")?.confidence, "medium", "lost-focus fallback is medium confidence");
+assert.equal(depLostFocus.intents.find((i) => i.intent === "form-dependency")?.evidence?.focusSignal, "focus-lost", "lost-focus signal exposed");
+
+const depAmbiguous = buildInferenceSummary([
+	entity("textbox", { ref: "pi-ref://control/email", editable: true, state: { focused: true } }),
+	entity("textbox", { ref: "pi-ref://control/name", editable: true, state: { focused: true } }),
+	entity("button", { ref: "pi-ref://control/submit", state: { disabled: false } }),
+], emptyRel(), { appeared: [], disappeared: [], changed: [
+	{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+	{ ref: "pi-ref://control/email", kind: "state-changed", before: { focused: false }, after: { focused: true } },
+	{ ref: "pi-ref://control/name", kind: "state-changed", before: { focused: false }, after: { focused: true } },
+] });
+assert.ok(!depAmbiguous.intents.some((i) => i.intent === "form-dependency"), "ambiguous editable focus transitions are suppressed");
 
 // ── Evidence anchoring + reason (R2 optimization) ─────────────────────────────
 
@@ -201,13 +232,32 @@ const tightEnvelope = JSON.parse(tightResult.content[0].text);
 assert.ok(typeof tightEnvelope.inference === "object", "inference survives budget squeeze");
 assert.ok(tightEnvelope.inference?.intents?.some((i) => i.intent === "tabbed-interface"), "tabbed-interface intact under tight budget");
 
+const evidenceEntityResult = await distilledTextResult("body", {
+	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 2_500, fallbackName: "observe-scan",
+	summary: {
+		abmlIntegrated: true,
+		focus: {
+			inference: { intents: [{ intent: "login", confidence: "high", evidence: { submitRef: "pi-ref://control/submit-hidden" } }] },
+			primary_entities: Array.from({ length: 20 }, (_, i) => ({ ref: `pi-ref://control/noise-${i}`, kind: "control", role: "button", name: `noise ${i} ${"pad ".repeat(30)}`, state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" })),
+			list_entities: [],
+			visual_regions: [],
+			referenced_entities: [{ ref: "pi-ref://control/submit-hidden", kind: "control", role: "button", name: "Sign in", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom" }],
+		},
+	},
+});
+const evidenceEntityEnvelope = JSON.parse(evidenceEntityResult.content[0].text);
+assert.equal(evidenceEntityEnvelope.entities?.[0]?.ref, "pi-ref://control/submit-hidden", "inference evidence entity is promoted into envelope.entities before salience noise");
+
 // ── Static wiring guards ──────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
-assert.ok(observeSrc.includes("buildInferenceSummary") && observeSrc.includes("inference:"), "observeRunners wires inference");
+assert.ok(observeSrc.includes("buildInferenceSummary") && observeSrc.includes("const inference"), "observeRunners wires inference");
+assert.ok(observeSrc.includes("entitiesForInferenceEvidence") && observeSrc.includes("referenced_entities"), "observeRunners carries inference evidence entities into referenced_entities");
+assert.ok(observeSrc.includes("savedArtifactPathFromBaseline") && observeSrc.includes("baseline saved artifact"), "observeRunners prefers full saved baseline artifacts over capped envelope entities");
 
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeInference") && middlewareSrc.includes("inference?"), "resultMiddleware lifts inference");
+assert.ok(middlewareSrc.includes("referenced_entities") && middlewareSrc.includes("inferenceEvidenceRefs"), "resultMiddleware promotes inference evidence entities");
 
 const schemasSrc = readRepo("src/tools/summaries/outputSchemas.ts");
 assert.ok(schemasSrc.includes("InferenceSummarySchema"), "InferenceSummarySchema exported");
@@ -215,7 +265,9 @@ assert.ok(schemasSrc.includes("InferenceSummarySchema"), "InferenceSummarySchema
 const inferenceSrc = readRepo("src/abml-core/inference.ts");
 assert.ok(inferenceSrc.includes("tabbed-interface") && inferenceSrc.includes("alert-region") && inferenceSrc.includes("form-dependency"), "new intents in inference.ts");
 assert.ok(inferenceSrc.includes("evidence?") && inferenceSrc.includes("reason?"), "evidence + reason fields on DetectedIntent");
+assert.ok(inferenceSrc.includes("editableFocusTransition") && inferenceSrc.includes("focusSignal"), "form-dependency has robust focus-transition fallback");
 assert.ok(inferenceSrc.includes("EXPANDABLE_THRESHOLD") && inferenceSrc.includes("MAX_EVIDENCE_REFS"), "expandable threshold + evidence cap constants");
+assert.ok(inferenceSrc.includes("inferenceEvidenceRefs") && inferenceSrc.includes("entitiesForInferenceEvidence"), "inference evidence ref helpers exported");
 
 const schemaReasonSrc = readRepo("src/tools/summaries/outputSchemas.ts");
 assert.ok(schemaReasonSrc.includes("reason: Type.Optional"), "InferenceSummarySchema exposes optional reason");

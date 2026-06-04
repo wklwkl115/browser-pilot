@@ -233,6 +233,7 @@ export const ScanSummarySchema = Type.Object({
 		text_signals: Type.Array(Type.String()),
 		primary_entities: Type.Array(EntitySchema),
 		list_entities: Type.Array(EntitySchema),
+		referenced_entities: Type.Optional(Type.Array(EntitySchema)),
 		visual_regions: Type.Optional(Type.Array(EntitySchema)),
 		relations: Type.Optional(RelationSummarySchema),
 		inference: Type.Optional(InferenceSummarySchema),

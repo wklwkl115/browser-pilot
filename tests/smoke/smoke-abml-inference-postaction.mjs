@@ -5,7 +5,7 @@
 //      dialog does NOT fire (perceptibility gating).
 //   2) an action (enable a disabled control + focus an editable field + inject a role=alert toast)
 //   3) scan with the baseline -> asserts the envelope top-level R3 diff (appeared), alert-region
-//      flagged fresh=appeared (post-action live region), and form-dependency from the diff.
+//      flagged fresh=appeared (post-action live region), and robust form-dependency from the diff.
 // Exit 0 PASS · 3 NEEDS BROWSER · 1 FAIL.
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -169,7 +169,7 @@ try {
   await delay(600);
 
   // ── 3) scan with the baseline → R3 diff + post-action alert + form-dependency ──
-  const env2 = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: env1.entities, detailLevel: "detailed" });
+  const env2 = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, baseline: env1, detailLevel: "detailed" });
   const diff = env2.diff || {};
   const diffHasAppeared = Array.isArray(diff.appeared) && diff.appeared.length > 0;
   const alert2 = intentByName(env2, "alert-region");
@@ -185,10 +185,9 @@ try {
     diffHasAppeared, alertFreshOk, formDepOk,
   });
 
-  // Core PASS gate: the two things this batch shipped — de-overfit login + post-action alert via R3 diff —
-  // plus the supporting gating (hidden dialog suppressed) and a populated diff. form-dependency + nav are
-  // recorded as extras (form-dependency can be focus-timing sensitive on a real page).
-  const corePass = loginDeOverfitOk && filterPanelOk && dialogGatedOk && diffHasAppeared && alertFreshOk;
+  // Core PASS gate: de-overfit login + post-action alert + robust form-dependency via R3 diff,
+  // plus the supporting gating (hidden dialog suppressed) and a populated diff.
+  const corePass = loginDeOverfitOk && filterPanelOk && dialogGatedOk && diffHasAppeared && alertFreshOk && formDepOk;
   result.extras = { navOk, formDepOk };
   result.ok = corePass;
 } catch (error) {

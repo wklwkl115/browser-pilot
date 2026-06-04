@@ -1,6 +1,6 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前无激活大型主线；ABML 机制臂 M2c living snapshot projection 已完成。
+- 当前无激活大型主线；ABML R3 质量跟进已完成。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。

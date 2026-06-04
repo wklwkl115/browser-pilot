@@ -6,7 +6,7 @@ import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { Entity } from "../abml/entity.js";
 import type { EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
-import { buildInferenceSummary } from "../abml/inference.js";
+import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
 import { buildTemplateSummary } from "../abml/templating.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
@@ -265,6 +265,19 @@ function entityArrayFromUnknown(value: unknown): Entity[] | undefined {
 	return entities.length ? entities : undefined;
 }
 
+function mergeEntitiesByRef(...groups: unknown[][]): Entity[] {
+	const seen = new Set<string>();
+	const out: Entity[] = [];
+	for (const group of groups) {
+		for (const item of group) {
+			if (!isRecord(item) || typeof item.ref !== "string" || !isRecord(item.state) || seen.has(item.ref)) continue;
+			seen.add(item.ref);
+			out.push(item as Entity);
+		}
+	}
+	return out;
+}
+
 function baselineEntitiesFromParam(value: unknown): Entity[] | undefined {
 	const direct = entityArrayFromUnknown(value);
 	if (direct) return direct;
@@ -297,6 +310,12 @@ function baselineSnapshotId(value: unknown): string | undefined {
 	return typeof snapshot?.snapshotId === "string" && snapshot.snapshotId ? snapshot.snapshotId.trim() : undefined;
 }
 
+function savedArtifactPathFromBaseline(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	const saved = isRecord(value.saved) ? value.saved : undefined;
+	return typeof saved?.path === "string" && saved.path.trim() ? saved.path.trim() : undefined;
+}
+
 type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number };
 
 function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
@@ -312,6 +331,18 @@ function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 
 async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: unknown): Promise<BaselineResolution | undefined> {
 	if (baseline === undefined || baseline === null) return undefined;
+	const savedPath = savedArtifactPathFromBaseline(baseline);
+	if (savedPath) {
+		let parsedSaved: unknown;
+		try {
+			parsedSaved = parseJsonOrThrow(await readFile(savedPath, "utf8"), "browser_observe baseline saved artifact");
+		} catch (error) {
+			throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact could not be read as JSON", { path: savedPath, error: error instanceof Error ? error.message : String(error) });
+		}
+		const fromSaved = baselineEntitiesFromParam(parsedSaved);
+		if (!fromSaved) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact does not contain ABML entities", { path: savedPath });
+		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved) };
+	}
 	const inline = baselineEntitiesFromParam(baseline);
 	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline) };
 	const snapshotId = baselineSnapshotId(baseline);
@@ -499,7 +530,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const summary = attributedEntities !== null
 		? (() => {
 			const relSummary = buildRelationSummary(attributedEntities);
+			const inference = buildInferenceSummary(attributedEntities, relSummary, abmlDiff);
 			const snapshotProjection = buildSnapshotProjection(attributedEntities, { treeDiff: abmlTreeDiff });
+			const baseFocus = typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus as Record<string, unknown> : {};
+			const referencedEntities = mergeEntitiesByRef(
+				Array.isArray(baseFocus.referenced_entities) ? baseFocus.referenced_entities : [],
+				entitiesForInferenceEvidence(attributedEntities, inference),
+			).slice(0, 40);
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
@@ -508,7 +545,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				snapshotProjection,
 				...causalBlock,
 				focus: {
-					...(typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus : {}),
+					...baseFocus,
 					gist: buildPageGist(attributedEntities),
 					primary_entities: sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
 					outline: buildEntityOutline(attributedEntities),
@@ -521,10 +558,11 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					relations: relSummary,
 					// R2 inference layer — generic ARIA semantic patterns detected over the entity list +
 					// relation graph. Budget-immune (lifted to envelope top-level alongside relations).
-					inference: buildInferenceSummary(attributedEntities, relSummary, abmlDiff),
+					inference,
 					...(abmlDiff ? { diff: abmlDiff } : {}),
 					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 					snapshotProjection,
+					referenced_entities: referencedEntities,
 					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
 					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
 				},

@@ -63,7 +63,9 @@ assert.deepEqual(read.diff, diff, "runAbmlRead threads baseline through diffEnti
 
 const inference = buildInferenceSummary(after, { summary: {}, highlights: [] }, diff);
 const dep = inference.intents.find((i) => i.intent === "form-dependency");
-assert.deepEqual(dep?.evidence, { enabledRef: "pi-ref://control/submit", requiredRef: "pi-ref://control/email" }, "form-dependency evidence exposes enabledRef + requiredRef");
+assert.equal(dep?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency evidence exposes enabledRef");
+assert.equal(dep?.evidence?.requiredRef, "pi-ref://control/email", "form-dependency evidence exposes requiredRef");
+assert.equal(dep?.evidence?.focusSignal, "focusedRef", "form-dependency evidence exposes focus signal");
 
 const envelopeResult = await distilledTextResult("body", {
 	toolName: "browser_observe",

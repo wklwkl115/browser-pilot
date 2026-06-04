@@ -404,7 +404,44 @@ test("form-dependency detected from R3 diff disabled→enabled + focused editabl
 	const dep = result.intents.find((i) => i.intent === "form-dependency");
 	assert.ok(dep, "form-dependency fires");
 	assert.equal(dep!.confidence, "high");
-	assert.deepEqual(dep!.evidence, { enabledRef: "pi-ref://control/submit", requiredRef: "pi-ref://control/email" });
+	assert.equal(dep!.evidence?.enabledRef, "pi-ref://control/submit");
+	assert.equal(dep!.evidence?.requiredRef, "pi-ref://control/email");
+	assert.equal(dep!.evidence?.focusSignal, "focusedRef");
+});
+
+test("form-dependency falls back to unique editable focus transitions", () => {
+	const entities = [
+		entity({ role: "textbox", ref: "pi-ref://control/email", state: { editable: true, focused: true } }),
+		entity({ role: "button", ref: "pi-ref://control/submit", state: { disabled: false } }),
+	];
+	const gained = buildInferenceSummary(entities, emptyRelations(), {
+		appeared: [],
+		disappeared: [],
+		changed: [
+			{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+			{ ref: "pi-ref://control/email", kind: "state-changed", before: { focused: false }, after: { focused: true } },
+		],
+	});
+	const gainedDep = gained.intents.find((i) => i.intent === "form-dependency");
+	assert.equal(gainedDep?.confidence, "high");
+	assert.equal(gainedDep?.evidence?.requiredRef, "pi-ref://control/email");
+	assert.equal(gainedDep?.evidence?.focusSignal, "focus-gained");
+
+	const lost = buildInferenceSummary([
+		entity({ role: "textbox", ref: "pi-ref://control/email", state: { editable: true, focused: false } }),
+		entity({ role: "button", ref: "pi-ref://control/submit", state: { disabled: false } }),
+	], emptyRelations(), {
+		appeared: [],
+		disappeared: [],
+		changed: [
+			{ ref: "pi-ref://control/submit", kind: "state-changed", before: { disabled: true }, after: { disabled: false } },
+			{ ref: "pi-ref://control/email", kind: "state-changed", before: { focused: true }, after: { focused: false } },
+		],
+	});
+	const lostDep = lost.intents.find((i) => i.intent === "form-dependency");
+	assert.equal(lostDep?.confidence, "medium");
+	assert.equal(lostDep?.evidence?.requiredRef, "pi-ref://control/email");
+	assert.equal(lostDep?.evidence?.focusSignal, "focus-lost");
 });
 
 test("form-dependency does not fire without focused editable required field", () => {

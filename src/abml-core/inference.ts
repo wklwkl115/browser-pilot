@@ -143,6 +143,31 @@ function capRefs(all: string[], key: string): Record<string, unknown> {
 	return { [key]: refs, ...(unique.length > refs.length ? { [countKey]: unique.length } : {}) };
 }
 
+function collectEvidenceRefs(value: unknown, refs: string[]): void {
+	if (typeof value === "string") {
+		if (value.startsWith("pi-ref://")) refs.push(value);
+		return;
+	}
+	if (!value || typeof value !== "object") return;
+	if (Array.isArray(value)) {
+		for (const item of value) collectEvidenceRefs(item, refs);
+		return;
+	}
+	for (const item of Object.values(value as Record<string, unknown>)) collectEvidenceRefs(item, refs);
+}
+
+export function inferenceEvidenceRefs(summary: InferenceSummary | undefined): string[] {
+	const refs: string[] = [];
+	for (const intent of summary?.intents ?? []) collectEvidenceRefs(intent.evidence, refs);
+	return uniqueRefs(refs);
+}
+
+export function entitiesForInferenceEvidence(entities: Entity[], summary: InferenceSummary | undefined, cap = MAX_EVIDENCE_REFS * 4): Entity[] {
+	const refs = new Set(inferenceEvidenceRefs(summary).slice(0, cap));
+	if (!refs.size) return [];
+	return entities.filter((entity) => refs.has(entity.ref)).slice(0, cap);
+}
+
 // Construct a DetectedIntent, dropping an empty evidence object so absent anchors don't
 // surface as `evidence: {}`.
 function mk(intent: PageIntent, confidence: DetectedIntent["confidence"], reason: string, evidence?: Record<string, unknown>): DetectedIntent {
@@ -341,17 +366,39 @@ function changedField(change: EntityDiff["changed"][number], side: "before" | "a
 	return value && typeof value === "object" ? (value as Record<string, unknown>)[field] : undefined;
 }
 
-// form-dependency: R3 temporal fact. A control that was disabled became enabled, while the
-// after snapshot has focus on an editable control. Because editable values are intentionally
-// redacted/suppressed, focused editable field is the privacy-safe proxy for "the field just filled".
+function editableControlByRef(entities: Entity[], ref: string | undefined, enabledRef: string): Entity | undefined {
+	if (!ref || ref === enabledRef) return undefined;
+	return entities.find((entity) => entity.ref === ref && entity.kind === "control" && entity.state.editable === true);
+}
+
+function editableFocusTransition(entities: Entity[], diff: EntityDiff, enabledRef: string): { ref: string; confidence: DetectedIntent["confidence"]; reason: string; signal: string } | undefined {
+	const candidates = diff.changed
+		.filter((change) => change.kind === "state-changed" && changedField(change, "before", "focused") !== changedField(change, "after", "focused"))
+		.map((change) => ({ change, entity: editableControlByRef(entities, change.ref, enabledRef) }))
+		.filter((item): item is { change: EntityDiff["changed"][number]; entity: Entity } => !!item.entity);
+	const gained = candidates.filter((item) => changedField(item.change, "after", "focused") === true);
+	if (gained.length === 1) return { ref: gained[0].entity.ref, confidence: "high", reason: "a field gained focus while enabling a disabled control", signal: "focus-gained" };
+	if (gained.length > 1 || candidates.length !== 1) return undefined;
+	const candidate = candidates[0];
+	if (changedField(candidate.change, "before", "focused") === true && changedField(candidate.change, "after", "focused") === false) {
+		return { ref: candidate.entity.ref, confidence: "medium", reason: "an editable field lost focus while a disabled control became enabled", signal: "focus-lost" };
+	}
+	return undefined;
+}
+
+// form-dependency: R3 temporal fact. A control that was disabled became enabled, while an
+// editable control was the live focus or had a unique focus transition in the same diff. Because
+// editable values are intentionally redacted/suppressed, focus is the privacy-safe proxy for
+// "the field just filled". The transition fallback covers real pages where focus moves before rescan.
 function detectFormDependency(entities: Entity[], diff?: EntityDiff): DetectedIntent | undefined {
 	if (!diff) return undefined;
 	const enabled = diff.changed.find((change) => change.kind === "state-changed" && changedField(change, "before", "disabled") === true && changedField(change, "after", "disabled") === false);
 	if (!enabled) return undefined;
-	const focused = diff.focusedRef ? entities.find((entity) => entity.ref === diff.focusedRef && entity.kind === "control" && entity.state.editable === true) : undefined;
-	const requiredRef = focused && focused.ref !== enabled.ref ? focused.ref : undefined;
-	if (!requiredRef) return undefined;
-	return mk("form-dependency", "high", "a field enabled a disabled control", { enabledRef: enabled.ref, requiredRef });
+	const focused = editableControlByRef(entities, diff.focusedRef, enabled.ref);
+	if (focused) return mk("form-dependency", "high", "a focused editable field enabled a disabled control", { enabledRef: enabled.ref, requiredRef: focused.ref, focusSignal: "focusedRef" });
+	const transition = editableFocusTransition(entities, diff, enabled.ref);
+	if (!transition) return undefined;
+	return mk("form-dependency", transition.confidence, transition.reason, { enabledRef: enabled.ref, requiredRef: transition.ref, focusSignal: transition.signal });
 }
 
 // ── Public builder ─────────────────────────────────────────────────────────────

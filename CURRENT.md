@@ -11,10 +11,11 @@
 
 ## 当前激活项
 
-- 当前无激活大型主线。ABML 机制臂 M2c 已完成并进入已完成队列；后续若继续 M3 / public surface / profile isolation，必须另开执行合同。
+- 当前无激活大型主线。ABML R3 质量跟进已完成并进入已完成队列；后续若继续 M3 / public surface / profile isolation，必须另开执行合同。
 
 ## 已完成但不再作为当前队列
 
+- **ABML R3 质量跟进已完成（2026-06-05，浏览器验证）**：执行合同 `docs/abml-r3-quality-followup-execution-plan.md`。完成 `form-dependency` live-focus 稳健化、scan actionable `focused` 采集、inference evidence refs→`envelope.entities` 实体补齐、prior-envelope baseline 优先读取 saved full `abml.entities`。边界保持：不新增公开 `browser_*` 工具、不改 native protocol、不改 ref minting。验证：`check:abml-inference`、`check:abml-diff`、`check:scan`、`smoke:browser:abml-inference`、`npm run check`。
 - **ABML 机制臂 M2c — living snapshot projection 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-m2c-living-snapshot-projection-execution-plan.md`。完成 pure `snapshotProjection`、budget-immune envelope lift、saved artifact 持久化、live projection delta smoke。边界：复用 M1 templates + M2a treeDiff + M2b stable refs；不新增公开 `browser_*` 工具、不改 native protocol、不改 action/ref 行为、不做 DOM tag/class/selector 猜测。验证：`check:abml-snapshot-projection`、`smoke:browser:abml-templating`、`npm run check`。
 - **ABML 机制臂 M2b — semantic ref anchor 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。完成 P1/P2/P3/P4：纯候选锚派生、shadow ref 稳定性实验、窄范围 high-confidence ref-minting feed、live read/click smoke。边界：只允许 named AX/ARIA template container + unique accessible name 的 high-confidence anchor；duplicate/unnamed/posInSet-only 继续 locator-based / diff-only；无新公开 `browser_*` 工具或 native protocol 变更。验证：`check:abml-semantic-ref-anchor`、`smoke:browser:abml-templating`、`npm run check`。
 - **ABML 机制臂 M2a — living treeDiff-first 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。M2a 只做 treeDiff 投影：复用 M1 ARIA-grounded template groups，对 `browser_observe(mode=scan, baseline)` 输出 `envelope.treeDiff`。边界已保持：不新增公开 `browser_*` 工具、不改 native protocol、不改 `stableRefIdForDescriptor` / ref minting、不做 DOM tag/class/selector 猜测。验证：`check:abml-tree-diff`、`smoke:browser:abml-templating`、`npm run check`。

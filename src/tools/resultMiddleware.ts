@@ -183,15 +183,55 @@ function compactArtifactDescriptor(saved?: Record<string, unknown>): Record<stri
 	return pickDefined(saved, ["path", "bytes", "chars", "mime"]);
 }
 
+function collectPiRefs(value: unknown, refs: string[]): void {
+	if (typeof value === "string") {
+		if (value.startsWith("pi-ref://")) refs.push(value);
+		return;
+	}
+	if (!value || typeof value !== "object") return;
+	if (Array.isArray(value)) {
+		for (const item of value) collectPiRefs(item, refs);
+		return;
+	}
+	for (const item of Object.values(value as Record<string, unknown>)) collectPiRefs(item, refs);
+}
+
+function inferenceEvidenceRefs(summary: DistilledSummary, focus?: Record<string, unknown>): Set<string> {
+	const refs: string[] = [];
+	const collect = (inference: unknown): void => {
+		if (!isRecord(inference)) return;
+		for (const intent of asArray(inference.intents).filter(isRecord)) collectPiRefs(intent.evidence, refs);
+	};
+	collect(summary.inference);
+	collect(focus?.inference);
+	return new Set(refs);
+}
+
+function dedupeEntityRecords(entities: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+	const seen = new Set<string>();
+	const out: Array<Record<string, unknown>> = [];
+	for (const entity of entities) {
+		const ref = typeof entity.ref === "string" ? entity.ref : undefined;
+		const key = ref || stableJson(entity);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(entity);
+	}
+	return out;
+}
+
 function envelopeEntities(summary: DistilledSummary, explicit?: Array<Record<string, unknown>>): Array<Record<string, unknown>> | undefined {
 	if (Array.isArray(explicit) && explicit.length) return explicit;
 	const focus = isRecord(summary.focus) ? summary.focus : undefined;
-	const candidates = [
-		...asArray(focus?.primary_entities),
-		...asArray(focus?.list_entities),
-		...asArray(focus?.visual_regions),
-	].filter((item) => isRecord(item));
-	return candidates.length ? candidates.slice(0, 12) as Array<Record<string, unknown>> : undefined;
+	const primary = asArray(focus?.primary_entities).filter(isRecord) as Array<Record<string, unknown>>;
+	const list = asArray(focus?.list_entities).filter(isRecord) as Array<Record<string, unknown>>;
+	const visual = asArray(focus?.visual_regions).filter(isRecord) as Array<Record<string, unknown>>;
+	const referenced = asArray(focus?.referenced_entities).filter(isRecord) as Array<Record<string, unknown>>;
+	const candidates = [...primary, ...list, ...visual, ...referenced];
+	const evidenceRefs = inferenceEvidenceRefs(summary, focus);
+	const evidenceEntities = evidenceRefs.size ? candidates.filter((entity) => typeof entity.ref === "string" && evidenceRefs.has(entity.ref)) : [];
+	const ordered = dedupeEntityRecords([...evidenceEntities, ...primary, ...list, ...visual, ...referenced]);
+	return ordered.length ? ordered.slice(0, 12) : undefined;
 }
 
 // L0/L1 disclosure layers pulled from the (uncompressed) summary so they survive the
