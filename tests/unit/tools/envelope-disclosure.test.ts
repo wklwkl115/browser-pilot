@@ -28,9 +28,10 @@ test("gist/outline are lifted to the envelope top-level", async () => {
 	assert.equal(outline![0]!.name, "Crust");
 });
 
-test("gist/outline/relations/inference survive the summary-budget squeeze (lifted from the uncompressed summary)", async () => {
+test("gist/outline/relations survive the summary-budget squeeze; inference is no longer lifted (output field removed)", async () => {
 	// Pad primary_entities so the summary trips fitSummaryBudget on a tight budget; the focus
-	// aggregate may get squeezed, but the top-level gist/outline/relations/inference must remain.
+	// aggregate may get squeezed, but the top-level gist/outline/relations must remain. inference
+	// is no longer an agent-facing envelope field (removed 2026-06-05) even though focus carries it.
 	const primary_entities = Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "radio", name: `option ${i} ${"pad ".repeat(60)}` }));
 	const envelope = await envelopeFor({
 		abmlIntegrated: true,
@@ -50,9 +51,7 @@ test("gist/outline/relations/inference survive the summary-budget squeeze (lifte
 	const relations = envelope.relations as Record<string, unknown> | undefined;
 	assert.ok(relations, "relations still present after budget squeeze");
 	assert.deepEqual(relations!.summary, { labelledBy: 5, controls: 2, tableCells: 16 }, "relations.summary intact at envelope top-level");
-	const inference = envelope.inference as Record<string, unknown> | undefined;
-	assert.ok(inference, "inference still present after budget squeeze");
-	assert.ok(Array.isArray(inference!.intents) && (inference!.intents as unknown[]).length === 2, "inference.intents intact under tight budget");
+	assert.equal(envelope.inference, undefined, "inference is no longer lifted to the envelope top-level (output field removed)");
 });
 
 test("abmlIntegrated + disclosure layers form a stable envelope contract under a tight budget", async () => {

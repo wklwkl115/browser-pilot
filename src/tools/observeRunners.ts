@@ -8,7 +8,6 @@ import { summarizeEntityDiff, type EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
-import { buildTemplateSummary } from "../abml/templating.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
@@ -562,16 +561,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					gist: buildPageGist(attributedEntities),
 					primary_entities: sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
 					outline: buildEntityOutline(attributedEntities),
-					// Mechanism arm M1 — structure templates: repeated sibling entities (AX container /
-					// aria-setsize) folded to template + instances + handles, so a big list/table costs
-					// O(template) not O(N). Budget-immune (lifted to envelope.templates).
-					templates: buildTemplateSummary(attributedEntities).templates,
-					// R1 relationship graph — always present when ABML is integrated (even when empty), so
-					// agents can rely on it surviving the summary-budget squeeze (lifted to envelope top-level).
-					relations: relSummary,
-					// R2 inference layer — generic ARIA semantic patterns detected over the entity list +
-					// relation graph. Budget-immune (lifted to envelope top-level alongside relations).
-					inference,
+					// R1 relationship graph — emitted ONLY when it carries real edges (triggered / table /
+					// controls / labelledBy / ...). The always-present empty summary was unread token cost; the
+					// in-memory relSummary still feeds inference + causal attribution regardless. (envelope.templates
+					// and envelope.inference were removed as agent-facing fields — a real-agent eval showed them
+					// unread; their ENGINES keep running internally: treeDiff/snapshotProjection use templating,
+					// referenced_entities uses inference.)
+					...(Object.keys(relSummary.summary).length || relSummary.highlights.length ? { relations: relSummary } : {}),
 					...(envelopeDiff ? { diff: envelopeDiff } : {}),
 					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 					snapshotProjection,
@@ -615,9 +611,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	// agents hunting `data.relations`/`data.tables` and missing the buried table relations, while
 	// top-level-mirrored causal/templates/diff were found and used. Lift them to match.
 	const artifactFocus = isRecord(summaryRecord.focus) ? (summaryRecord.focus as Record<string, unknown>) : undefined;
+	// relations is conditional (focus only carries it when it has edges); templates/inference are no longer
+	// agent-facing output, so they are not mirrored. diff/treeDiff/snapshotProjection/causal stay.
 	const artifactRelations = isRecord(artifactFocus?.relations) ? artifactFocus!.relations : undefined;
-	const artifactInference = isRecord(artifactFocus?.inference) ? artifactFocus!.inference : undefined;
-	const artifactTemplates = Array.isArray(artifactFocus?.templates) ? artifactFocus!.templates : undefined;
 	const artifactEnvelopeMirror = {
 		tool: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -625,8 +621,6 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),
-		...(artifactInference ? { inference: artifactInference } : {}),
-		...(artifactTemplates ? { templates: artifactTemplates } : {}),
 		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
 		...causalBlock,
 	};
@@ -639,7 +633,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactInference ? { inference: artifactInference } : {}), ...(artifactTemplates ? { templates: artifactTemplates } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }
 

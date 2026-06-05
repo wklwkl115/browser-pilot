@@ -257,13 +257,6 @@ function envelopeRelations(summary: DistilledSummary): Record<string, unknown> |
 	return isRecord(focus?.relations) ? structuredClone(focus.relations) as Record<string, unknown> : undefined;
 }
 
-// R2 inference summary lifted from the (uncompressed) focus so intent labels survive the
-// budget squeeze — cloned for the same [Circular]-avoidance reason.
-function envelopeInference(summary: DistilledSummary): Record<string, unknown> | undefined {
-	const focus = isRecord(summary.focus) ? summary.focus : undefined;
-	return isRecord(focus?.inference) ? structuredClone(focus.inference) as Record<string, unknown> : undefined;
-}
-
 function envelopeDiff(summary: DistilledSummary): Record<string, unknown> | undefined {
 	if (isRecord(summary.diff)) return structuredClone(summary.diff) as Record<string, unknown>;
 	const focus = isRecord(summary.focus) ? summary.focus : undefined;
@@ -274,14 +267,6 @@ function envelopeDiff(summary: DistilledSummary): Record<string, unknown> | unde
 // budget squeeze — cloned for the same [Circular]-avoidance reason as gist/diff/relations.
 function envelopeCausal(summary: DistilledSummary): Record<string, unknown> | undefined {
 	return isRecord(summary.causal) ? structuredClone(summary.causal) as Record<string, unknown> : undefined;
-}
-
-// ABML mechanism arm M1 — structure templates lifted from the (uncompressed) focus so the large-page
-// compression survives the budget squeeze — cloned for the same [Circular]-avoidance reason as outline.
-function envelopeTemplates(summary: DistilledSummary): Array<Record<string, unknown>> | undefined {
-	const focus = isRecord(summary.focus) ? summary.focus : undefined;
-	const templates = asArray(focus?.templates).filter(isRecord);
-	return templates.length ? structuredClone(templates) as Array<Record<string, unknown>> : undefined;
 }
 
 function envelopeTreeDiff(summary: DistilledSummary): Record<string, unknown> | undefined {
@@ -430,10 +415,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
 	const relations = envelopeRelations(redactedSummary);
-	const inference = envelopeInference(redactedSummary);
 	const diff = envelopeDiff(redactedSummary);
 	const causal = envelopeCausal(redactedSummary);
-	const templates = envelopeTemplates(redactedSummary);
 	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
@@ -452,10 +435,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(gist ? { gist } : {}),
 		...(outline ? { outline } : {}),
 		...(relations ? { relations } : {}),
-		...(inference ? { inference } : {}),
 		...(diff ? { diff } : {}),
 		...(causal ? { causal } : {}),
-		...(templates ? { templates } : {}),
 		...(treeDiff ? { treeDiff } : {}),
 		...(snapshotProjection ? { snapshotProjection } : {}),
 		...(error ? { error } : {}),

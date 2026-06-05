@@ -78,12 +78,12 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 
 | You need | Read this envelope field | Then |
 |---|---|---|
-| Understand a big repeated list/table as a group (how many kinds, which item differs) | `templates` (folded shape + `varies`/`constant`) · `snapshotProjection` | per-item values → `browser_execute` |
+| Understand a big repeated list/table as a group (how many groups, how big) | `outline` / `gist` (fold by AX container) | per-item values & "which item differs" → `browser_execute` |
 | What changed after operating a control | scan with `baseline:<prior snapshotId>` → read **`treeDiff`** (template-level appeared/disappeared) | raw `diff` churns on dynamic pages (ref turnover) — prefer `treeDiff`; per-item content → `browser_execute` |
-| Row/column/header relations of a table | `relations` (`summary.tableCells` + each cell entity's inline `relations[]`: `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
+| Row/column/header relations of a table | `relations` (`summary.tableCells` + each cell entity's inline `relations[]`: `cellOf`/`headerFor`) — present only when the page actually has such edges | exact cell values → `browser_execute` |
 | Which requests an action fired | **`browser_network start` FIRST**, then scan with `baseline` → `causal.requests` | — |
 
-All are top-level on the live result AND mirrored into the saved artifact's `envelope.*` (read via `browser_artifact jsonPath:"envelope.relations"` etc.). An empty/absent field means that signal wasn't present, not an error.
+`treeDiff`/`causal`/`relations` are top-level on the live result (relations only when it carries edges) AND mirrored into the saved artifact's `envelope.*`. An empty/absent field means that signal wasn't present, not an error. The scan result also actively points you at `treeDiff`/`causal` via `nextActions` when they apply.
 
 ## Read results
 

@@ -3,8 +3,10 @@
 // Verifies the large-page token-compression layer without a browser:
 //   - pure-core selector: AX-container + aria-setsize grouping, MIN threshold, varies/constant field
 //     split, instanceRefs cap + true count, sort, distinct-name no-collision, no-signal → no template;
-//   - budget immunity: focus.templates lifts to envelope.templates and survives a tight budget;
-//   - static wiring: observeRunners builds focus.templates, resultMiddleware lifts it, barrel + shim.
+//   - ENGINE-only: envelope.templates output field removed (2026-06-05); templating still feeds
+//     treeDiff + snapshotProjection;
+//   - static wiring: observeRunners no longer builds focus.templates, resultMiddleware no longer
+//     lifts it; treeDiff/snapshotProjection still import templating; barrel + shim.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -85,38 +87,27 @@ const textOnly = buildTemplateSummary(Array.from({ length: 6 }, (_, i) => item(`
 assert.equal(textOnly.length, 1, "text-only accessible table-like repetition remains templated");
 assert.equal(textOnly[0].kind, "text");
 
-// ── Budget immunity: templates survive to envelope top-level ──────────────────────
+// ── templates is NO LONGER an agent-facing envelope field (removed 2026-06-05) ─────
+// A real-agent eval showed envelope.templates was unread; the templating ENGINE stays (treeDiff +
+// snapshotProjection consume it), but the budget-immune output field was cut to save tokens.
 
 const tmpl = { container: "list", containerName: "Results", role: "link", kind: "control", count: 20, varies: ["name"], constant: { role: "link", kind: "control" }, instanceRefs: ["pi-ref://control/0", "pi-ref://control/1"], sample: { ref: "pi-ref://control/0", name: "Item 0" } };
-const lifted = await distilledTextResult("body", {
+const notLifted = await distilledTextResult("body", {
 	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 4_000, fallbackName: "observe-scan",
 	summary: { abmlIntegrated: true, focus: { templates: [tmpl], primary_entities: [{ ref: "pi-ref://control/0", kind: "control", role: "link", name: "Item 0" }] } },
 });
-const liftedEnv = JSON.parse(lifted.content[0].text);
-assert.ok(Array.isArray(liftedEnv.templates) && liftedEnv.templates.length === 1, "templates lifted to envelope top-level");
-assert.equal(liftedEnv.templates[0].count, 20);
-assert.equal(liftedEnv.templates[0].container, "list");
-
-// budget-squeeze survival: many big primary entities, tight budget → templates still present.
-const tight = await distilledTextResult("body", {
-	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 3_000, fallbackName: "observe-scan",
-	summary: {
-		abmlIntegrated: true,
-		focus: {
-			templates: [tmpl],
-			primary_entities: Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "link", name: `item ${i} ${"pad ".repeat(60)}` })),
-		},
-	},
-});
-const tightEnv = JSON.parse(tight.content[0].text);
-assert.ok(Array.isArray(tightEnv.templates) && tightEnv.templates[0].count === 20, "templates survive the budget squeeze");
+assert.equal(JSON.parse(notLifted.content[0].text).templates, undefined, "templates is no longer lifted to the envelope (output field removed)");
 
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
-assert.ok(observeSrc.includes("buildTemplateSummary") && observeSrc.includes("templates:"), "observeRunners builds focus.templates");
+assert.ok(!observeSrc.includes("buildTemplateSummary"), "observeRunners no longer builds focus.templates");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
-assert.ok(middlewareSrc.includes("envelopeTemplates") && middlewareSrc.includes("templates?"), "resultMiddleware lifts templates");
+assert.ok(!middlewareSrc.includes("envelopeTemplates"), "resultMiddleware no longer lifts templates");
+const treeDiffSrc = readRepo("src/abml-core/treeDiff.ts");
+assert.ok(treeDiffSrc.includes("./templating.js") && treeDiffSrc.includes("templateGroupDescriptorForEntity"), "treeDiff still consumes the templating engine");
+const snapshotSrc = readRepo("src/abml-core/snapshotProjection.ts");
+assert.ok(snapshotSrc.includes("./templating.js") && snapshotSrc.includes("buildTemplateSummary"), "snapshotProjection still consumes the templating engine");
 const templatingSrc = readRepo("src/abml-core/templating.ts");
 assert.ok(templatingSrc.includes("buildTemplateSummary") && templatingSrc.includes("containerRole") && templatingSrc.includes("setSize"), "pure-core selector groups by AX container + setSize");
 const barrelSrc = readRepo("src/abml-core/index.ts");
@@ -126,4 +117,4 @@ assert.ok(shimSrc.includes("../abml-core/templating.js"), "src/abml/templating.t
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-templating"]?.includes("check-abml-templating.mjs"), "check:abml-templating script present");
 
-console.log(`abml templating ok — M1 pure-core selector (AX-container + aria-setsize grouping, MIN=${MIN_TEMPLATE_INSTANCES}, varies/constant split, instanceRefs cap=${MAX_TEMPLATE_INSTANCE_REFS}+count, MAX_TEMPLATES=${MAX_TEMPLATES}, distinct-name no-collision, no-signal→no-template) + budget-immune envelope.templates lift (incl. tight budget) + static wiring verified`);
+console.log(`abml templating ok — M1 pure-core selector (AX-container + aria-setsize grouping, MIN=${MIN_TEMPLATE_INSTANCES}, varies/constant split, instanceRefs cap=${MAX_TEMPLATE_INSTANCE_REFS}+count, MAX_TEMPLATES=${MAX_TEMPLATES}, distinct-name no-collision, no-signal→no-template) + ENGINE-only (treeDiff/snapshotProjection consume templating; envelope.templates output field removed 2026-06-05) + static wiring verified`);

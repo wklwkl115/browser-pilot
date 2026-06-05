@@ -147,9 +147,10 @@ try {
   if (!execute) throw new Error("browser_execute not registered");
   const browserSessionId = bridge.snapshot().browserSessionId;
 
-  // ── A) observe the repeated list → envelope.templates folds it into one structure template ──────
+  // ── A) observe the repeated list → the templating engine folds it, surfaced via the kept
+  //       snapshotProjection.templates (the standalone envelope.templates output field was removed 2026-06-05). ──────
   const env = await observeEnvelope(observe, { mode: "scan", tabId, browserSessionId, detailLevel: "detailed" });
-  const templates = Array.isArray(env.templates) ? env.templates : [];
+  const templates = Array.isArray(env.snapshotProjection?.templates) ? env.snapshotProjection.templates : [];
   const linkTemplate = templates.find((t) => t && (t.role === "link" || t.kind === "control") && Number(t.count) >= 4) || templates[0];
   const countOk = !!linkTemplate && Number(linkTemplate.count) >= 4;
   const refsOk = !!linkTemplate && Array.isArray(linkTemplate.instanceRefs) && linkTemplate.instanceRefs.length >= 4 && linkTemplate.instanceRefs.every((r) => /^pi-ref:\/\//.test(String(r)));

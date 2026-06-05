@@ -98,7 +98,8 @@ const envelopeResult = await distilledTextResult("body", {
 const envelope = JSON.parse(envelopeResult.content[0].text);
 assert.equal(envelope.diff.focusedRef, "pi-ref://control/email", "diff lifted to envelope top-level");
 assert.equal(envelope.diff.summary.items[0].kind, "changed", "diff salience summary survives envelope lift");
-assert.equal(envelope.inference.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency survives envelope lift");
+assert.equal(inference.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency detected by the inference engine");
+assert.equal(envelope.inference, undefined, "inference is no longer lifted to the envelope (output field removed 2026-06-05)");
 
 clearResourceStore();
 const now = Date.now();

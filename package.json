@@ -113,7 +113,6 @@
     "smoke:browser:websocket-session": "tsx tests/smoke/smoke-websocket-session.mjs",
     "smoke:browser:ax-merge": "tsx tests/smoke/smoke-browser-ax-merge.mjs",
     "smoke:browser:abml-relations": "tsx tests/smoke/smoke-abml-relations.mjs",
-    "smoke:browser:abml-inference": "tsx tests/smoke/smoke-abml-inference-postaction.mjs",
     "smoke:browser:abml-causal": "tsx tests/smoke/smoke-abml-causal.mjs",
     "smoke:browser:abml-templating": "tsx tests/smoke/smoke-abml-templating.mjs",
     "smoke:browser:memory": "tsx tests/smoke/smoke-browser-memory.mjs",

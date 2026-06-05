@@ -192,15 +192,17 @@ assert.ok(decoupled.intents.some((i) => i.intent === "data-grid"), "data-grid fi
 assert.ok(!decoupled.intents.some((i) => i.intent === "expandable"), "expandable count-only suppressed");
 assert.ok(decoupled.intents.some((i) => i.intent === "navigation"), "navigation fires from count alone");
 
-// ── Budget immunity: inference survives to envelope top-level ─────────────────
+// ── inference is NO LONGER an agent-facing envelope field (removed 2026-06-05) ────
+// A real-agent eval showed envelope.inference (intent labels) was unread; the inference ENGINE stays
+// (it still feeds referenced_entities + evidence-ref promotion below), but the budget-immune output
+// field was cut to save tokens.
 
 const envelopeSummary = {
 	abmlIntegrated: true,
 	focus: {
 		gist: { landmarks: ["main"], controlCount: 3, containerCount: 1 },
-		outline: [{ container: "tablist", name: "Settings", memberCount: 3, controlCount: 3, memberRefs: ["a", "b", "c"] }],
 		relations: { summary: { tableCells: 50, currentIn: 1 }, highlights: [] },
-		inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "tabbed-interface", confidence: "high" }, { intent: "alert-region", confidence: "high" }] },
+		inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "tabbed-interface", confidence: "high" }] },
 		primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "tab", name: "Settings" }],
 	},
 };
@@ -209,28 +211,7 @@ const result = await distilledTextResult("body", {
 	maxChars: 4_000, fallbackName: "observe-scan", summary: envelopeSummary,
 });
 const envelope = JSON.parse(result.content[0].text);
-assert.ok(typeof envelope.inference === "object" && envelope.inference !== null, "inference at envelope top-level");
-assert.ok(Array.isArray(envelope.inference.intents) && envelope.inference.intents.length === 3, "3 intents present");
-assert.ok(envelope.inference.intents.some((i) => i.intent === "tabbed-interface"), "tabbed-interface in envelope");
-assert.ok(envelope.inference.intents.some((i) => i.intent === "alert-region"), "alert-region in envelope");
-
-// Budget-squeeze survival
-const tightResult = await distilledTextResult("body", {
-	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 3_000, fallbackName: "observe-scan",
-	summary: {
-		abmlIntegrated: true,
-		focus: {
-			gist: { landmarks: ["main"], controlCount: 50 },
-			outline: [{ container: "tablist", name: "Big", memberCount: 50, memberRefs: [] }],
-			relations: { summary: { tableCells: 200 }, highlights: [] },
-			inference: { intents: [{ intent: "data-grid", confidence: "high" }, { intent: "tabbed-interface", confidence: "high" }] },
-			primary_entities: Array.from({ length: 30 }, (_, i) => ({ ref: `pi-ref://control/${i}`, kind: "control", role: "tab", name: `tab ${i} ${"pad ".repeat(60)}` })),
-		},
-	},
-});
-const tightEnvelope = JSON.parse(tightResult.content[0].text);
-assert.ok(typeof tightEnvelope.inference === "object", "inference survives budget squeeze");
-assert.ok(tightEnvelope.inference?.intents?.some((i) => i.intent === "tabbed-interface"), "tabbed-interface intact under tight budget");
+assert.equal(envelope.inference, undefined, "inference is no longer lifted to the envelope (output field removed)");
 
 const evidenceEntityResult = await distilledTextResult("body", {
 	toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 2_500, fallbackName: "observe-scan",
@@ -256,7 +237,7 @@ assert.ok(observeSrc.includes("entitiesForInferenceEvidence") && observeSrc.incl
 assert.ok(observeSrc.includes("savedArtifactPathFromBaseline") && observeSrc.includes("baseline saved artifact"), "observeRunners prefers full saved baseline artifacts over capped envelope entities");
 
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
-assert.ok(middlewareSrc.includes("envelopeInference") && middlewareSrc.includes("inference?"), "resultMiddleware lifts inference");
+assert.ok(!middlewareSrc.includes("envelopeInference"), "resultMiddleware no longer lifts inference to the envelope");
 assert.ok(middlewareSrc.includes("referenced_entities") && middlewareSrc.includes("inferenceEvidenceRefs"), "resultMiddleware promotes inference evidence entities");
 
 const schemasSrc = readRepo("src/tools/summaries/outputSchemas.ts");
@@ -278,4 +259,4 @@ assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");
 
-console.log(`abml inference ok — 12 patterns + hardened evidence anchoring (login scorer, filter controls, visible dialog/tab/live regions, post-action live-region freshness, resolved expandable triggers); grouped multi-choice high; expandable threshold=2; budget-immune; all static wiring verified`);
+console.log(`abml inference ok — 12 patterns + hardened evidence anchoring (login scorer, filter controls, visible dialog/tab/live regions, post-action live-region freshness, resolved expandable triggers); grouped multi-choice high; expandable threshold=2; ENGINE-only (feeds referenced_entities + evidence-ref promotion; envelope.inference output field removed 2026-06-05); all static wiring verified`);
