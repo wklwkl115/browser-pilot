@@ -583,6 +583,31 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		})()
 		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
 	const summaryRecord = summary as Record<string, unknown>;
+	// Narrow active capability hints — causal + treeDiff ONLY. A three-round real-agent eval (2026-06-05)
+	// showed these two are valuable when used but agents never reach for them unprompted, and passive skill
+	// docs did NOT move adoption (the new skill was loaded and still skipped 4/4). So push from the result:
+	//   • upstream — on a plain scan, plant the baseline→treeDiff/causal path BEFORE the agent defaults to
+	//     execute-before/after (the moment it actually decides how to detect change).
+	//   • downstream — when a baseline scan actually produced causal requests or a template-level change,
+	//     point straight at it.
+	// NOT templates/relations: the eval showed they only give structure (agents still need JS for per-item
+	// VALUES), so pushing them is marginal. Hints fire only when there's something real to point at → low noise.
+	const scanHints: string[] = (() => {
+		const hints: string[] = [];
+		const sid = typeof snapshotMeta.snapshotId === "string" ? snapshotMeta.snapshotId : undefined;
+		if (!hasBaseline && sid) {
+			hints.push(`to see what CHANGES after you act here: re-run browser_observe mode=scan baseline:"${sid}" → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${recorderState.active ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
+		}
+		if (hasBaseline && causal && "requests" in causal && Array.isArray(causal.requests) && causal.requests.length) {
+			hints.push(`${causal.requests.length} request(s) fired since baseline → read envelope.causal.requests (action→request attribution)`);
+		}
+		if (hasBaseline && abmlTreeDiff && abmlTreeDiff.summary.changedTemplateCount > 0) {
+			const s = abmlTreeDiff.summary;
+			hints.push(`structure changed (${s.appeared} appeared / ${s.disappeared} disappeared / ${s.changed} changed, template-level) → read envelope.treeDiff instead of diffing raw scans`);
+		}
+		return hints;
+	})();
+	if (scanHints.length) summaryRecord.nextActions = scanHints;
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
 	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
 	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +

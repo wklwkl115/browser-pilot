@@ -242,6 +242,11 @@ assert.ok(observeSrc.includes("network.status") && observeSrc.includes("network.
 assert.ok(observeSrc.includes("networkSeq"), "observeRunners records/resolves networkSeq baseline anchor");
 assert.ok(observeSrc.includes("resolveActionEntityRef") && observeSrc.includes("buildTriggeredRelations") && observeSrc.includes("addEntityRelations"), "observeRunners wires P1 attribution");
 assert.ok(observeSrc.includes("actionRef"), "observeRunners reads the actionRef attribution signal");
+// Narrow active capability hints (causal + treeDiff only) — pushed via summary.nextActions so the
+// agent is nudged toward the two proven-valuable products at the moment of relevance (a real-agent
+// eval showed passive skill docs did not move adoption).
+assert.ok(observeSrc.includes("scanHints") && observeSrc.includes("summaryRecord.nextActions = scanHints"), "observeRunners emits scan hints via summary.nextActions");
+assert.ok(observeSrc.includes("envelope.causal.requests") && observeSrc.includes("envelope.treeDiff"), "scan hints point at causal.requests + treeDiff (the proven-valuable products), gated on hasBaseline/recorder");
 
 const entitySrc = readRepo("src/abml-core/entity.ts");
 assert.ok(entitySrc.includes("\"triggered\"") && entitySrc.includes("\"timing\""), "entity RelationType has triggered + source timing");
