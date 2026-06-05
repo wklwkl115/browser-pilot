@@ -40,6 +40,7 @@ const inserted = buildTreeDiff(list(["Alpha", "Bravo", "Charlie", "Delta"], "b")
 assert.equal(inserted.summary.appeared, 1);
 assert.equal(inserted.templates[0].appeared.instances[0].name, "Echo");
 assert.equal(inserted.templates[0].appeared.instances[0].confidence, "high");
+assert.deepEqual(inserted.summary.sample?.appeared, ["Echo"], "summary.sample surfaces the appeared item name at the summary level (no drilling into templates[].instances)");
 
 // Field changes are attached to the semantic instance key.
 const before = list(["Alpha", "Bravo", "Charlie", "Delta"], "b");
@@ -49,6 +50,7 @@ const changed = buildTreeDiff(before, after);
 assert.equal(changed.summary.changed, 1);
 assert.equal(changed.templates[0].changed.instances[0].key, "name:charlie");
 assert.deepEqual(changed.templates[0].changed.instances[0].fields.map((field) => field.field), ["value", "selected"]);
+assert.ok(changed.summary.sample?.changed?.includes("Charlie"), "summary.sample surfaces the changed item name at the summary level");
 
 // Partial baselines are explicit: treeDiff needs a full baseline.
 const partial = buildTreeDiff(before, after, { partialBaseline: true });

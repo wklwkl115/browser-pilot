@@ -10,6 +10,10 @@ import { MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, type TemplateVaryField, template
 
 export const MAX_TREE_DIFF_INSTANCES = 20;
 export const MAX_TREE_DIFF_CHANGED_FIELDS = 8;
+// A real-agent eval showed agents adopt treeDiff but stop at the summary counts and don't drill into
+// templates[].*.instances[].name to answer "WHICH item changed" → they fall back to JS. Surface a flat
+// sample of the changed-item names at the summary level (and in the scan hint) so the answer is one read away.
+export const MAX_TREE_DIFF_SUMMARY_NAMES = 6;
 
 export type TreeDiffAnchor = "name" | "posInSet" | "index";
 export type TreeDiffConfidence = "high" | "low";
@@ -73,6 +77,9 @@ export type TreeDiffSummary = {
 	disappeared: number;
 	changed: number;
 	reordered: number;
+	// Flat, capped names of the actually-changed items (pulled up from templates[].*.instances[].name)
+	// so an agent can answer "which item appeared/left/changed" from the summary without drilling.
+	sample?: { appeared?: string[]; disappeared?: string[]; changed?: string[] };
 	partialBaseline?: boolean;
 	unavailable?: string;
 };
@@ -271,5 +278,26 @@ export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[],
 		changed: acc.changed + item.changed.count,
 		reordered: acc.reordered + (item.reordered ? 1 : 0),
 	}), { templateCount: allKeys.size, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0 });
-	return { summary, templates };
+	// Flatten changed-item names across templates (salient templates lead, since `templates` is sorted by
+	// signal score) into a capped, deduped sample so the "which item" answer is one read away.
+	const collectNames = (pick: (t: TreeTemplateDiff) => Array<{ name?: string }>): string[] => {
+		const out: string[] = [];
+		for (const t of templates) {
+			for (const inst of pick(t)) {
+				const name = inst.name;
+				if (typeof name === "string" && name && !out.includes(name)) {
+					out.push(name);
+					if (out.length >= MAX_TREE_DIFF_SUMMARY_NAMES) return out;
+				}
+			}
+		}
+		return out;
+	};
+	const appearedNames = collectNames((t) => t.appeared.instances);
+	const disappearedNames = collectNames((t) => t.disappeared.instances);
+	const changedNames = collectNames((t) => t.changed.instances);
+	const sample = appearedNames.length || disappearedNames.length || changedNames.length
+		? { ...(appearedNames.length ? { appeared: appearedNames } : {}), ...(disappearedNames.length ? { disappeared: disappearedNames } : {}), ...(changedNames.length ? { changed: changedNames } : {}) }
+		: undefined;
+	return { summary: sample ? { ...summary, sample } : summary, templates };
 }
