@@ -4120,7 +4120,11 @@ function normalizePiBrowserWaitKind(kind, msg) {
 }
 async function dispatchPiBrowserWait(tabId2, msg, kind) {
   const k = normalizePiBrowserWaitKind(kind, msg);
-  if (k === "waitforloadstate" || k === "loadstate" || k === "load" || k === "domcontentloaded" || k === "complete") return await waitForLoadState(tabId2, msg);
+  if (k === "waitforloadstate" || k === "loadstate" || k === "load" || k === "domcontentloaded" || k === "complete") {
+    const st = String(msg.state ?? msg.loadState ?? msg.load_state ?? "").replace(/[._-]/g, "").toLowerCase();
+    if (st === "networkidle") return await waitForNetworkIdle(tabId2, msg);
+    return await waitForLoadState(tabId2, msg);
+  }
   if (k === "waitfornetworkidle" || k === "networkidle") return await waitForNetworkIdle(tabId2, msg);
   if (k === "waitfornavigation" || k === "navigation") return await waitForNavigation(tabId2, msg);
   if (k === "waitforselector" || k === "selector" || k === "css") return await waitForSelector(tabId2, msg);

@@ -131,7 +131,14 @@ function normalizePiBrowserWaitKind(kind: unknown, msg?: PiBridgeCommand): strin
 }
 async function dispatchPiBrowserWait(tabId: number, msg: PiBridgeCommand, kind: unknown): Promise<PiBridgeResponse> {
   const k = normalizePiBrowserWaitKind(kind, msg);
-  if (k === 'waitforloadstate' || k === 'loadstate' || k === 'load' || k === 'domcontentloaded' || k === 'complete') return await waitForLoadState(tabId, msg) as PiBridgeResponse;
+  if (k === 'waitforloadstate' || k === 'loadstate' || k === 'load' || k === 'domcontentloaded' || k === 'complete') {
+    // Ergonomics: agents routinely call loadState with state:"networkidle", conflating the two waits.
+    // networkidle is a separate wait kind, not a loadState value -- reroute instead of rejecting with
+    // "wait.loadState unsupported state" (observed in a real agent session, 2026-06-05).
+    const st = String(msg.state ?? msg.loadState ?? msg.load_state ?? '').replace(/[._-]/g, '').toLowerCase();
+    if (st === 'networkidle') return await waitForNetworkIdle(tabId, msg) as PiBridgeResponse;
+    return await waitForLoadState(tabId, msg) as PiBridgeResponse;
+  }
   if (k === 'waitfornetworkidle' || k === 'networkidle') return await waitForNetworkIdle(tabId, msg) as PiBridgeResponse;
   if (k === 'waitfornavigation' || k === 'navigation') return await waitForNavigation(tabId, msg) as PiBridgeResponse;
   if (k === 'waitforselector' || k === 'selector' || k === 'css') return await waitForSelector(tabId, msg) as PiBridgeResponse;
