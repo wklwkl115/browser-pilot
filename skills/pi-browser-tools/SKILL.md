@@ -72,6 +72,19 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Cookie/JWT/JWE/PASETO/Rails session | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; bounded claim replay) |
 | Local browser memory | `browser_memory {action:"recall"}` → `browser_memory {action:"read"}` |
 
+## Observe products (scan envelope)
+
+`browser_observe {mode:"scan"}` returns an envelope whose **top-level fields are where the page MODEL lives** — reach for them before hand-writing extraction JS. Boundary: observe gives **structure / relations / change / causality**; **per-item data VALUES (prices, ratings, cell text, titles) are JS** — observe won't pull them, so once the structure tells you *where* a value is, extract it with `browser_execute`.
+
+| You need | Read this envelope field | Then |
+|---|---|---|
+| Understand a big repeated list/table as a group (how many kinds, which item differs) | `templates` (folded shape + `varies`/`constant`) · `snapshotProjection` | per-item values → `browser_execute` |
+| What changed after operating a control | scan with `baseline:<prior snapshotId>` → read **`treeDiff`** (template-level appeared/disappeared) | raw `diff` churns on dynamic pages (ref turnover) — prefer `treeDiff`; per-item content → `browser_execute` |
+| Row/column/header relations of a table | `relations` (`summary.tableCells` + each cell entity's inline `relations[]`: `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
+| Which requests an action fired | **`browser_network start` FIRST**, then scan with `baseline` → `causal.requests` | — |
+
+All are top-level on the live result AND mirrored into the saved artifact's `envelope.*` (read via `browser_artifact jsonPath:"envelope.relations"` etc.). An empty/absent field means that signal wasn't present, not an error.
+
 ## Read results
 
 Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.

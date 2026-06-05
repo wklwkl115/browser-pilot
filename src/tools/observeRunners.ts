@@ -584,13 +584,24 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
 	const summaryRecord = summary as Record<string, unknown>;
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
+	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
+	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +
+	// inference were previously only inside summary.focus — a real-agent eval (2026-06-05, task3) showed
+	// agents hunting `data.relations`/`data.tables` and missing the buried table relations, while
+	// top-level-mirrored causal/templates/diff were found and used. Lift them to match.
+	const artifactFocus = isRecord(summaryRecord.focus) ? (summaryRecord.focus as Record<string, unknown>) : undefined;
+	const artifactRelations = isRecord(artifactFocus?.relations) ? artifactFocus!.relations : undefined;
+	const artifactInference = isRecord(artifactFocus?.inference) ? artifactFocus!.inference : undefined;
+	const artifactTemplates = Array.isArray(artifactFocus?.templates) ? artifactFocus!.templates : undefined;
 	const artifactEnvelopeMirror = {
 		tool: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
 		summary,
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
-		...(Array.isArray((summaryRecord.focus as Record<string, unknown> | undefined)?.templates) ? { templates: (summaryRecord.focus as Record<string, unknown>).templates } : {}),
+		...(artifactRelations ? { relations: artifactRelations } : {}),
+		...(artifactInference ? { inference: artifactInference } : {}),
+		...(artifactTemplates ? { templates: artifactTemplates } : {}),
 		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
 		...causalBlock,
 	};
@@ -603,7 +614,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(Array.isArray((summaryRecord.focus as Record<string, unknown> | undefined)?.templates) ? { templates: (summaryRecord.focus as Record<string, unknown>).templates } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactInference ? { inference: artifactInference } : {}), ...(artifactTemplates ? { templates: artifactTemplates } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }
 
