@@ -4,7 +4,7 @@
  * Verifies source-level/runtime boundaries for the internal ABML verb runtime:
  * - read uses P3 scan/entity model
  * - click/type use actionability + verification + CDP true input fallback path
- * - scroll does read-after-scroll collection with virtual/stable-stop support
+ * - scroll default is probe-only; collect:true does read-after-scroll collection with virtual/stable-stop support
  * - P6 pierce/frame runtime boundaries stay internal and explicit
  * - P7 visual-floor point/region support stays behind runtime helpers
  * - failures are normalized through AbmlError envelopes instead of silent fallbacks
@@ -23,7 +23,11 @@ assert(runtimeSrc.includes("ensureActionability("), "ABML write verbs must run a
 assert(runtimeSrc.includes("Input.dispatchMouseEvent"), "ABML click runtime must support CDP true mouse input fallback");
 assert(runtimeSrc.includes("Input.insertText"), "ABML type runtime must use CDP Input.insertText");
 assert(runtimeSrc.includes("verifyClick(") && runtimeSrc.includes("verifyType("), "ABML runtime must perform post-action verification");
-assert(runtimeSrc.includes("scrollStepScript(") && runtimeSrc.includes("executeBrowserAbmlRead(") && runtimeSrc.includes("stablePasses"), "ABML scroll runtime must do read-after-scroll collection with virtual-scroll stable-stop");
+assert(runtimeSrc.includes("createActionDeadline") && runtimeSrc.includes("timeoutFor(deadline"), "ABML action runtime must share one deadline across subcalls");
+assert(runtimeSrc.includes("input.diff === true") && runtimeSrc.includes("click before diff read") && runtimeSrc.includes("type before diff read"), "ABML click/type full entity diff must be opt-in");
+assert(runtimeSrc.includes("targetStateChanges") && runtimeSrc.includes("observed: { before, after, changed"), "ABML click/type verification must report target semantic state deltas");
+assert(runtimeSrc.includes("const collect = input.collect === true") && runtimeSrc.includes("scroll collect read"), "ABML scroll structure collection must be opt-in");
+assert(runtimeSrc.includes("scrollStepScript(") && runtimeSrc.includes("executeBrowserAbmlRead(") && runtimeSrc.includes("stablePasses"), "ABML scroll collect:true runtime must keep virtual-scroll stable-stop");
 assert(runtimeSrc.includes("normalizeAbmlError"), "ABML runtime failures must normalize into AbmlError envelopes");
 assert(runtimeSrc.includes("executeBrowserAbmlPierce") && runtimeSrc.includes("executeBrowserAbmlFrame"), "ABML runtime must expose internal pierce/frame executors for P6");
 assert(runtimeSrc.includes("inspectVisionRegion") || read("src/abml/verbs/visionRuntime.ts").includes("screenshot.capture"), "ABML runtime must keep visual-floor helpers behind screenshot-backed internals for P7");

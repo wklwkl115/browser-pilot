@@ -123,10 +123,12 @@ test("abml runtime click uses DOM path and verifies state change", async () => {
 	assert.equal(read?.ok, true);
 	const ref = read?.entities?.find((entity) => entity.role === "button")?.ref;
 	assert.ok(ref);
+	const scanCountBeforeClick = server.evaluateScripts.filter((script) => script.includes("collectActionables") && script.includes("list_hints")).length;
 	const clicked = await runtime.click?.({ ref });
 	assert.equal(clicked?.ok, true);
 	assert.equal(clicked?.verification?.status, "verified");
 	assert.equal((clicked?.data as Record<string, unknown>)?.transport, "dom");
+	assert.equal(server.evaluateScripts.filter((script) => script.includes("collectActionables") && script.includes("list_hints")).length, scanCountBeforeClick, "default click must not run before/after full structure reads");
 });
 
 test("abml runtime probe scripts normalize text with a real whitespace regex", async () => {
@@ -151,15 +153,28 @@ test("abml runtime type focuses target and uses Input.insertText", async () => {
 	assert.equal(server.commandCalls.some((call) => call.command.cdpMethod === "Input.insertText"), true);
 });
 
-test("abml runtime scroll performs read-after-scroll collection", async () => {
+test("abml runtime scroll default uses probe-only verification", async () => {
 	const server = fakeServer();
 	const runtime = createBrowserAbmlRuntime(server as any, { timeoutMs: 5_000, maxChars: 12_000 });
 	const scrolled = await runtime.scroll?.({ to: "next", steps: 2 });
 	assert.equal(scrolled?.ok, true);
 	assert.equal(scrolled?.verification?.status, "verified");
+	assert.equal((scrolled?.meta as Record<string, unknown>)?.entityCount, 0);
+	assert.equal(server.evaluateScripts.filter((script) => script.includes("collectActionables") && script.includes("list_hints")).length, 0, "default scroll must not read structure");
+	assert.equal(Number((scrolled?.data as Record<string, unknown>)?.iterations), 2);
+	assert.equal((scrolled?.data as Record<string, unknown>)?.collect, false);
+});
+
+test("abml runtime scroll collect opt-in performs bounded read-after-scroll collection", async () => {
+	const server = fakeServer();
+	const runtime = createBrowserAbmlRuntime(server as any, { timeoutMs: 5_000, maxChars: 12_000 });
+	const scrolled = await runtime.scroll?.({ to: "next", steps: 2, collect: true });
+	assert.equal(scrolled?.ok, true);
+	assert.equal(scrolled?.verification?.status, "verified");
 	assert.equal((scrolled?.meta as Record<string, unknown>)?.entityCount, 5);
 	assert.equal(server.evaluateScripts.filter((script) => script.includes("collectActionables") && script.includes("list_hints")).length >= 2, true);
 	assert.equal(Number((scrolled?.data as Record<string, unknown>)?.iterations) >= 2, true);
+	assert.equal((scrolled?.data as Record<string, unknown>)?.collect, true);
 });
 
 test("abml runtime click supports point-backed vision region refs", async () => {

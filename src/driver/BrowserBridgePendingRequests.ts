@@ -26,6 +26,7 @@ export class BrowserBridgePendingRequests {
 		const timeoutMs = Math.max(100, Math.floor(options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
 		const payload: Record<string, unknown> = { id, code };
 		if (options.tabId !== undefined) payload.tabId = options.tabId;
+		payload.timeoutMs = timeoutMs;
 
 		return new Promise<BrowserBridgeExecutionResult>((resolve, reject) => {
 			const debugCodePreview = typeof code === "string" ? code.slice(0, 120) : JSON.stringify(code).slice(0, 120);

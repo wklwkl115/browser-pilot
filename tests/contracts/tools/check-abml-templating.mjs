@@ -75,6 +75,16 @@ assert.equal(buildTemplateSummary([
 	...Array.from({ length: 4 }, (_, i) => item(`pi-ref://control/bn${i}`, { role: "button", container: "navigation", containerName: "Main", name: `B${i}` })),
 ]).templates.length, 2, "distinct roles → distinct templates");
 
+const redundantText = buildTemplateSummary([
+	...Array.from({ length: 12 }, (_, i) => item(`pi-ref://text/t${i}`, { role: "StaticText", kind: "text", container: "list", containerName: "Results", name: `Item ${i}` })),
+	...Array.from({ length: 4 }, (_, i) => item(`pi-ref://control/l${i}`, { role: "link", kind: "control", container: "list", containerName: "Results", name: `Item ${i}` })),
+]).templates;
+assert.equal(redundantText.length, 1, "redundant text-leaf template suppressed when structural/actionable template shares the container");
+assert.equal(redundantText[0].kind, "control");
+const textOnly = buildTemplateSummary(Array.from({ length: 6 }, (_, i) => item(`pi-ref://text/cell${i}`, { role: "StaticText", kind: "text", container: "row", containerName: "Totals", name: `Cell ${i}` }))).templates;
+assert.equal(textOnly.length, 1, "text-only accessible table-like repetition remains templated");
+assert.equal(textOnly[0].kind, "text");
+
 // ── Budget immunity: templates survive to envelope top-level ──────────────────────
 
 const tmpl = { container: "list", containerName: "Results", role: "link", kind: "control", count: 20, varies: ["name"], constant: { role: "link", kind: "control" }, instanceRefs: ["pi-ref://control/0", "pi-ref://control/1"], sample: { ref: "pi-ref://control/0", name: "Item 0" } };

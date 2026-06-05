@@ -72,9 +72,51 @@ type ScrollProbe = {
 	atBottom: boolean;
 };
 
+type ActionDeadline = {
+	timeoutMs: number;
+	startedAt: number;
+	deadlineAt: number;
+	elapsedMs: () => number;
+	remainingMs: () => number;
+	expired: () => boolean;
+};
+
 const DEFAULT_ACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const DEFAULT_SCAN_CAPTURE_MAX_CHARS = 100_000;
+const MIN_ACTION_SUBCALL_MS = 50;
+
+function createActionDeadline(timeoutMs: number): ActionDeadline {
+	const normalized = Math.max(1, Math.floor(timeoutMs));
+	const startedAt = Date.now();
+	const deadlineAt = startedAt + normalized;
+	return {
+		timeoutMs: normalized,
+		startedAt,
+		deadlineAt,
+		elapsedMs: () => Math.max(0, Date.now() - startedAt),
+		remainingMs: () => Math.max(0, deadlineAt - Date.now()),
+		expired: () => Date.now() >= deadlineAt,
+	};
+}
+
+function timeoutFor(deadline: ActionDeadline, label: string, minimumMs = MIN_ACTION_SUBCALL_MS): number {
+	const remainingMs = Math.floor(deadline.remainingMs());
+	if (remainingMs < minimumMs) {
+		throw new BrowserBridgeError("TIMEOUT", `ABML action timeout exhausted before ${label}`, {
+			label,
+			timeoutMs: deadline.timeoutMs,
+			elapsedMs: deadline.elapsedMs(),
+			remainingMs,
+		});
+	}
+	return remainingMs;
+}
+
+async function delayWithin(deadline: ActionDeadline, ms: number): Promise<void> {
+	const waitMs = Math.min(Math.max(0, ms), Math.max(0, deadline.remainingMs()));
+	if (waitMs > 0) await delay(waitMs);
+}
 
 function originOf(url: string | undefined): string | undefined {
 	if (!url) return undefined;
@@ -234,6 +276,7 @@ async function sendPersistentCdp(server: AbmlBrowserRuntimeServer, options: { br
 		cdpMethod: options.cdpMethod,
 		params: options.params || {},
 		persistent: false,
+		bringToFront: true,
 		timeoutMs: options.timeoutMs,
 	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
@@ -346,7 +389,28 @@ function verificationProbeScript(selector: string): string {
 		const el = document.querySelector(${JSON.stringify(selector)});
 		const tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
 		const value = !el ? undefined : (tag === 'input' || tag === 'textarea' || tag === 'select' ? String(el.value || '') : String(el.textContent || ''));
-		return { url: location.href, activeElementMatches: !!el && document.activeElement === el, value, text: !el ? undefined : String(el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 500), mutationTick: window.__PI_ABML_MUTATION_TICK__ || 0 };
+		const attrBool = (name) => {
+			if (!el || !el.getAttribute) return undefined;
+			const raw = el.getAttribute(name);
+			if (raw === null || raw === '') return undefined;
+			if (raw === 'true') return true;
+			if (raw === 'false') return false;
+			return raw;
+		};
+		const inputBool = (prop, attr) => {
+			if (!el) return undefined;
+			if (typeof el[prop] === 'boolean') return !!el[prop];
+			return attrBool(attr);
+		};
+		const state = {
+			expanded: attrBool('aria-expanded'),
+			checked: inputBool('checked', 'aria-checked'),
+			selected: inputBool('selected', 'aria-selected'),
+			pressed: attrBool('aria-pressed'),
+			current: attrBool('aria-current'),
+		};
+		for (const key of Object.keys(state)) if (state[key] === undefined) delete state[key];
+		return { url: location.href, activeElementMatches: !!el && document.activeElement === el, value, text: !el ? undefined : String(el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 500), state, mutationTick: window.__PI_ABML_MUTATION_TICK__ || 0 };
 	})()`;
 }
 
@@ -467,17 +531,16 @@ async function probeActionability(server: AbmlBrowserRuntimeServer, target: { br
 	};
 }
 
-async function ensureActionability(server: AbmlBrowserRuntimeServer, selector: string, verb: AbmlActionVerb, target: { browserSessionId?: string; tabId?: number }, timeoutMs: number): Promise<{ ok: true; report: ActionabilityReport; probe: ActionabilityProbe } | { ok: false; report: ActionabilityReport }> {
+async function ensureActionability(server: AbmlBrowserRuntimeServer, selector: string, verb: AbmlActionVerb, target: { browserSessionId?: string; tabId?: number }, deadline: ActionDeadline): Promise<{ ok: true; report: ActionabilityReport; probe: ActionabilityProbe } | { ok: false; report: ActionabilityReport }> {
 	const spec = actionabilitySpecForVerb(verb);
-	const startedAt = Date.now();
 	let attempts = 0;
 	let lastProbe: ActionabilityProbe | undefined;
 	let stableSince = 0;
 	let lastStableKey = "";
 	let scrolledIntoView = false;
-	while (Date.now() - startedAt <= timeoutMs) {
+	while (!deadline.expired()) {
 		attempts += 1;
-		const probe = await probeActionability(server, target, selector, timeoutMs);
+		const probe = await probeActionability(server, target, selector, timeoutFor(deadline, "actionability probe"));
 		lastProbe = probe;
 		const rectKey = stableRectKey(probe.rect);
 		if (rectKey !== lastStableKey) {
@@ -488,19 +551,47 @@ async function ensureActionability(server: AbmlBrowserRuntimeServer, selector: s
 		const checks = probeToActionability(probe, stable, spec.required);
 		if (checks.inViewport === false && spec.required.includes("inViewport") && !scrolledIntoView) {
 			scrolledIntoView = true;
-			await evaluatePageObject(server, scrollIntoViewScript(selector), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_scroll_into_view" });
-			await delay(spec.pollMs);
+			await evaluatePageObject(server, scrollIntoViewScript(selector), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "actionability scrollIntoView"), name: "abml_scroll_into_view" });
+			await delayWithin(deadline, spec.pollMs);
 			continue;
 		}
-		const report = buildActionabilityReport(spec, Date.now() - startedAt, attempts, checks, probe);
+		const report = buildActionabilityReport(spec, deadline.elapsedMs(), attempts, checks, probe);
 		if (report.ok) return { ok: true, report, probe };
-		await delay(spec.pollMs);
+		await delayWithin(deadline, spec.pollMs);
 	}
-	return { ok: false, report: buildActionabilityReport(spec, Date.now() - startedAt, attempts, probeToActionability(lastProbe || { selector, count: 0, unique: false, attached: false, visible: false, disabled: false, editable: false, inViewport: false, receivesEvents: false, notOccluded: false, focused: false, scrollable: false }, false, spec.required), lastProbe) };
+	return { ok: false, report: buildActionabilityReport(spec, deadline.elapsedMs(), attempts, probeToActionability(lastProbe || { selector, count: 0, unique: false, attached: false, visible: false, disabled: false, editable: false, inViewport: false, receivesEvents: false, notOccluded: false, focused: false, scrollable: false }, false, spec.required), lastProbe) };
 }
 
 async function clickVerificationProbe(server: AbmlBrowserRuntimeServer, target: { browserSessionId?: string; tabId?: number }, selector: string, timeoutMs: number) {
 	return await evaluatePageObject(server, verificationProbeScript(selector), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_click_verify" });
+}
+
+function stateRecord(value: unknown): Record<string, unknown> {
+	return isRecord(value) ? value : {};
+}
+
+function formatChangeValue(value: unknown): string {
+	if (value === undefined) return "undefined";
+	if (value === null) return "null";
+	if (typeof value === "string") return value.length > 80 ? `${value.slice(0, 80)}...` : value;
+	return String(value);
+}
+
+function targetStateChanges(before: Record<string, unknown>, after: Record<string, unknown>): Array<{ field: string; before: unknown; after: unknown; summary: string }> {
+	const fields: Array<{ field: string; before: unknown; after: unknown }> = [
+		{ field: "url", before: before.url, after: after.url },
+		{ field: "focus", before: before.activeElementMatches, after: after.activeElementMatches },
+		{ field: "value", before: before.value, after: after.value },
+		{ field: "text", before: before.text, after: after.text },
+	];
+	const beforeState = stateRecord(before.state);
+	const afterState = stateRecord(after.state);
+	for (const key of ["expanded", "checked", "selected", "pressed", "current"]) {
+		fields.push({ field: key, before: beforeState[key], after: afterState[key] });
+	}
+	return fields
+		.filter((item) => item.before !== item.after)
+		.map((item) => ({ ...item, summary: `${item.field}:${formatChangeValue(item.before)}->${formatChangeValue(item.after)}` }));
 }
 
 function verifyClick(before: Record<string, unknown>, after: Record<string, unknown>): VerificationResult {
@@ -508,13 +599,14 @@ function verifyClick(before: Record<string, unknown>, after: Record<string, unkn
 	const focusChanged = before.activeElementMatches !== after.activeElementMatches && after.activeElementMatches === true;
 	const mutationChanged = Number(before.mutationTick || 0) !== Number(after.mutationTick || 0);
 	const valueChanged = before.value !== after.value || before.text !== after.text;
-	const verified = urlChanged || focusChanged || mutationChanged || valueChanged;
+	const changed = targetStateChanges(before, after);
+	const verified = changed.length > 0 || mutationChanged || valueChanged || urlChanged || focusChanged;
 	return {
 		status: verified ? "verified" : "inconclusive",
 		verb: "click",
-		observed: { before, after, urlChanged, focusChanged, mutationChanged, valueChanged },
+		observed: { before, after, changed, urlChanged, focusChanged, mutationChanged, valueChanged },
 		evidence: [
-			{ kind: "probe", summary: `urlChanged=${urlChanged} focusChanged=${focusChanged} mutationChanged=${mutationChanged} valueChanged=${valueChanged}` },
+			{ kind: "probe", summary: `changed=${changed.map((item) => item.summary).join(",") || "none"} mutationChanged=${mutationChanged}` },
 		],
 		elapsedMs: 0,
 	};
@@ -528,12 +620,13 @@ function verifyType(before: Record<string, unknown>, after: Record<string, unkno
 	const beforeValue = String(before.value ?? before.text ?? "");
 	const afterValue = String(after.value ?? after.text ?? "");
 	const verified = clear ? afterValue === text : afterValue.includes(text) || afterValue === `${beforeValue}${text}`;
+	const changed = targetStateChanges(before, after);
 	return {
 		status: verified ? "verified" : after.activeElementMatches === true ? "inconclusive" : "failed",
 		verb: "type",
 		expected: { clear, text },
-		observed: { beforeValue, afterValue, focused: after.activeElementMatches === true },
-		evidence: [{ kind: "probe", summary: `before=${beforeValue.length} after=${afterValue.length} focused=${after.activeElementMatches === true}` }],
+		observed: { beforeValue, afterValue, focused: after.activeElementMatches === true, changed },
+		evidence: [{ kind: "probe", summary: `before=${beforeValue.length} after=${afterValue.length} focused=${after.activeElementMatches === true} changed=${changed.map((item) => item.summary).join(",") || "none"}` }],
 		elapsedMs: 0,
 	};
 }
@@ -819,52 +912,66 @@ async function executeBrowserAbmlClick(server: AbmlBrowserRuntimeServer, input: 
 	if (!selector && !point) return failure("click", { code: "INVALID_INPUT", message: "ABML click requires a css locator or point-backed region ref" });
 	return await runAbmlClick(input, async () => {
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
+		const deadline = createActionDeadline(timeoutMs);
 		if (!selector) {
 			const fallbackPoint = pointFromRef(descriptor);
 			if (!fallbackPoint) return { verification: { status: "failed", verb: "click", observed: { reason: "missing point" }, evidence: [{ kind: "point", summary: "point-backed region ref is missing geometry" }], elapsedMs: 0 } };
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", clickCount: input.count ?? 1 } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", clickCount: input.count ?? 1 } });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click bringToFront"), cdpMethod: "Page.bringToFront" });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mouseMoved"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: fallbackPoint.x, y: fallbackPoint.y, button: "none", buttons: 0, clickCount: 0, pointerType: "mouse" } });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mousePressed"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", buttons: 1, clickCount: input.count ?? 1, pointerType: "mouse" } });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mouseReleased"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", buttons: 0, clickCount: input.count ?? 1, pointerType: "mouse" } });
 			return {
 				data: { transport: "cdp", selector: undefined, point: fallbackPoint, visualFloor: true },
 				actionability: {
 					ok: true,
 					spec: actionabilitySpecForVerb("click"),
-					elapsedMs: 0,
+					elapsedMs: deadline.elapsedMs(),
 					attempts: 1,
 					checks: { attached: true, visible: true, inViewport: true, receivesEvents: true, notOccluded: true },
 					blockers: [],
 					hitTest: { x: fallbackPoint.x, y: fallbackPoint.y, matchedTarget: true },
 				},
-				verification: { status: "verified", verb: "click", observed: { point: fallbackPoint, visualFloor: true }, evidence: [{ kind: "point", summary: `clicked visual region at ${fallbackPoint.x},${fallbackPoint.y}` }], elapsedMs: 0 },
+				verification: { status: "verified", verb: "click", observed: { point: fallbackPoint, visualFloor: true }, evidence: [{ kind: "point", summary: `clicked visual region at ${fallbackPoint.x},${fallbackPoint.y}` }], elapsedMs: deadline.elapsedMs() },
 			};
 		}
-		const actionability = await ensureActionability(server, selector, "click", target, timeoutMs);
+		const actionability = await ensureActionability(server, selector, "click", target, deadline);
 		if (!actionability.ok) return { actionability: actionability.report };
-		const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
-		const beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
-		const before = await clickVerificationProbe(server, target, selector, timeoutMs);
+		let beforeEntities: Entity[] | undefined;
+		let diffUnavailable: string | undefined;
+		if (input.diff === true) {
+			if (deadline.remainingMs() >= MIN_ACTION_SUBCALL_MS) {
+				const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "click before diff read") });
+				beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
+			} else {
+				diffUnavailable = "deadline_exhausted_before_diff";
+			}
+		}
+		const before = await clickVerificationProbe(server, target, selector, timeoutFor(deadline, "click before verify probe"));
 		let domResult: Record<string, unknown> | undefined;
 		try {
-			domResult = await evaluatePageObject(server, syntheticClickScript(selector), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_click_dom" });
+			domResult = await evaluatePageObject(server, syntheticClickScript(selector), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "synthetic click"), name: "abml_click_dom" });
 		} catch {
 			domResult = undefined;
 		}
-		let after = await clickVerificationProbe(server, target, selector, timeoutMs);
+		let after = await clickVerificationProbe(server, target, selector, timeoutFor(deadline, "click after verify probe"));
 		let verification = verifyClick(before, after);
 		let transport: "dom" | "cdp" = "dom";
 		if (verification.status !== "verified") {
 			const actionPoint = actionability.probe.point || pointFromRef(descriptor);
 			if (!actionPoint) return { data: { transport, domResult }, actionability: actionability.report, verification };
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", clickCount: input.count ?? 1 } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", clickCount: input.count ?? 1 } });
-			after = await clickVerificationProbe(server, target, selector, timeoutMs);
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click bringToFront"), cdpMethod: "Page.bringToFront" });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mouseMoved"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: actionPoint.x, y: actionPoint.y, button: "none", buttons: 0, clickCount: 0, pointerType: "mouse" } });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mousePressed"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", buttons: 1, clickCount: input.count ?? 1, pointerType: "mouse" } });
+			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mouseReleased"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", buttons: 0, clickCount: input.count ?? 1, pointerType: "mouse" } });
+			after = await clickVerificationProbe(server, target, selector, timeoutFor(deadline, "trusted click verify probe"));
 			verification = verifyClick(before, after);
 			transport = "cdp";
 		}
-		const afterRead = beforeEntities ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs }) : undefined;
+		if (beforeEntities && deadline.remainingMs() < MIN_ACTION_SUBCALL_MS) diffUnavailable = "deadline_exhausted_after_action";
+		const afterRead = beforeEntities && !diffUnavailable ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "click after diff read") }) : undefined;
 		const diff = beforeEntities && afterRead?.ok && afterRead.entities ? diffEntities(beforeEntities, afterRead.entities) : undefined;
 		return {
-			data: { transport, domResult, selector, ...(diff ? { diff } : {}) },
+			data: { transport, domResult, selector, ...(diff ? { diff } : {}), ...(diffUnavailable ? { diffUnavailable } : {}) },
 			...(diff ? { diff } : {}),
 			actionability: actionability.report,
 			verification,
@@ -884,20 +991,30 @@ async function executeBrowserAbmlType(server: AbmlBrowserRuntimeServer, input: A
 	if (!selector) return failure("type", { code: "INVALID_INPUT", message: "ABML type currently requires a css locator" });
 	return await runAbmlType(input, async () => {
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
-		const actionability = await ensureActionability(server, selector, "type", target, timeoutMs);
+		const deadline = createActionDeadline(timeoutMs);
+		const actionability = await ensureActionability(server, selector, "type", target, deadline);
 		if (!actionability.ok) return { actionability: actionability.report };
-		const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
-		const beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
-		const before = await typeVerificationProbe(server, target, selector, timeoutMs);
-		const focusResult = await evaluatePageObject(server, focusAndMaybeClearScript(selector, input.clear === true), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_type_focus" });
+		let beforeEntities: Entity[] | undefined;
+		let diffUnavailable: string | undefined;
+		if (input.diff === true) {
+			if (deadline.remainingMs() >= MIN_ACTION_SUBCALL_MS) {
+				const beforeRead = await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type before diff read") });
+				beforeEntities = beforeRead.ok ? beforeRead.entities : undefined;
+			} else {
+				diffUnavailable = "deadline_exhausted_before_diff";
+			}
+		}
+		const before = await typeVerificationProbe(server, target, selector, timeoutFor(deadline, "type before verify probe"));
+		const focusResult = await evaluatePageObject(server, focusAndMaybeClearScript(selector, input.clear === true), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type focus"), name: "abml_type_focus" });
 		if (focusResult.focused !== true) throw { code: "TARGET_NOT_EDITABLE", message: "ABML type could not focus the target", details: { selector } };
-		await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, cdpMethod: "Input.insertText", params: { text: input.text } });
-		const after = await typeVerificationProbe(server, target, selector, timeoutMs);
+		await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type insertText"), cdpMethod: "Input.insertText", params: { text: input.text } });
+		const after = await typeVerificationProbe(server, target, selector, timeoutFor(deadline, "type after verify probe"));
 		const verification = verifyType(before, after, input.text, input.clear === true);
-		const afterRead = beforeEntities ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs }) : undefined;
+		if (beforeEntities && deadline.remainingMs() < MIN_ACTION_SUBCALL_MS) diffUnavailable = "deadline_exhausted_after_action";
+		const afterRead = beforeEntities && !diffUnavailable ? await executeBrowserAbmlRead(server, { plane: "structure" }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type after diff read") }) : undefined;
 		const diff = beforeEntities && afterRead?.ok && afterRead.entities ? diffEntities(beforeEntities, afterRead.entities) : undefined;
 		return {
-			data: { transport: "cdp", selector, focusResult, ...(diff ? { diff } : {}) },
+			data: { transport: "cdp", selector, focusResult, ...(diff ? { diff } : {}), ...(diffUnavailable ? { diffUnavailable } : {}) },
 			...(diff ? { diff } : {}),
 			actionability: actionability.report,
 			verification,
@@ -905,14 +1022,21 @@ async function executeBrowserAbmlType(server: AbmlBrowserRuntimeServer, input: A
 	});
 }
 
-function verifyScroll(before: ScrollProbe, after: ScrollProbe): VerificationResult {
+function scrollAlreadyAtEdge(before: ScrollProbe, to: AbmlScrollInput["to"]): boolean {
+	if (to === "top" || to === "previous") return before.atTop;
+	if (to === "bottom" || to === "next" || to === undefined) return before.atBottom;
+	return false;
+}
+
+function verifyScroll(before: ScrollProbe, after: ScrollProbe, to: AbmlScrollInput["to"]): VerificationResult {
 	const changed = before.scrollTop !== after.scrollTop || before.scrollLeft !== after.scrollLeft;
+	const alreadyAtEdge = scrollAlreadyAtEdge(before, to);
 	const atEdge = after.atTop || after.atBottom;
 	return {
-		status: changed || atEdge ? "verified" : "failed",
+		status: changed || alreadyAtEdge || atEdge ? "verified" : "failed",
 		verb: "scroll",
-		observed: { before, after, changed, atEdge },
-		evidence: [{ kind: "probe", summary: `before=${before.scrollTop} after=${after.scrollTop} atTop=${after.atTop} atBottom=${after.atBottom}` }],
+		observed: { before, after, changed, alreadyAtEdge, atEdge },
+		evidence: [{ kind: "probe", summary: `before=${before.scrollTop} after=${after.scrollTop} changed=${changed} alreadyAtEdge=${alreadyAtEdge} atTop=${after.atTop} atBottom=${after.atBottom}` }],
 		elapsedMs: 0,
 	};
 }
@@ -956,35 +1080,54 @@ async function executeBrowserAbmlScroll(server: AbmlBrowserRuntimeServer, input:
 	const selector = descriptor ? selectorFromRef(descriptor) : undefined;
 	return await runAbmlScroll(input, async () => {
 		const timeoutMs = options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
+		const deadline = createActionDeadline(timeoutMs);
+		const collect = input.collect === true;
 		const collected: Entity[] = [];
-		const before = await scrollProbe(server, target, selector, timeoutMs);
+		const before = await scrollProbe(server, target, selector, timeoutFor(deadline, "scroll before probe"));
 		const requestedSteps = Math.max(1, input.steps ?? 1);
-		const maxIterations = Math.max(requestedSteps, requestedSteps + 6);
+		const maxIterations = collect ? Math.max(requestedSteps, requestedSteps + 6) : requestedSteps;
 		let lastStep: Record<string, unknown> | undefined;
 		let stablePasses = 0;
 		let previousScrollHeight = before.scrollHeight;
 		let previousEntityCount = 0;
 		let iterations = 0;
-		for (; iterations < maxIterations; iterations += 1) {
-			lastStep = await evaluatePageObject(server, scrollStepScript(selector, input.to, 1), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs, name: "abml_scroll_step" });
-			const readResult = await executeBrowserAbmlRead(server, { plane: "structure", ref: descriptor }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs });
-			if (readResult.ok && Array.isArray(readResult.entities)) collected.push(...readResult.entities);
-			const deduped = dedupeCollectedEntities(collected);
-			const probe = await scrollProbe(server, target, selector, timeoutMs);
-			const unchangedHeight = probe.scrollHeight === previousScrollHeight;
-			const unchangedEntities = deduped.length === previousEntityCount;
-			const unchangedPosition = probe.atBottom || probe.scrollTop === before.scrollTop || lastStep?.changed === false;
-			if (unchangedHeight && unchangedEntities && unchangedPosition) stablePasses += 1;
-			else stablePasses = 0;
-			previousScrollHeight = probe.scrollHeight;
-			previousEntityCount = deduped.length;
-			if (iterations + 1 >= requestedSteps && stablePasses >= 2) break;
+		let current = before;
+		let partialReason: string | undefined;
+		for (let attempt = 0; attempt < maxIterations; attempt += 1) {
+			if (deadline.remainingMs() < MIN_ACTION_SUBCALL_MS) {
+				partialReason = "deadline_exhausted_before_step";
+				break;
+			}
+			lastStep = await evaluatePageObject(server, scrollStepScript(selector, input.to, 1), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "scroll step"), name: "abml_scroll_step" });
+			const probe = await scrollProbe(server, target, selector, timeoutFor(deadline, "scroll step probe"));
+			current = probe;
+			iterations += 1;
+			if (collect) {
+				if (deadline.remainingMs() < MIN_ACTION_SUBCALL_MS) {
+					partialReason = "deadline_exhausted_before_collect";
+					break;
+				}
+				const readResult = await executeBrowserAbmlRead(server, { plane: "structure", ref: descriptor }, { ...options, browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "scroll collect read") });
+				if (readResult.ok && Array.isArray(readResult.entities)) collected.push(...readResult.entities);
+				const deduped = dedupeCollectedEntities(collected);
+				const unchangedHeight = probe.scrollHeight === previousScrollHeight;
+				const unchangedEntities = deduped.length === previousEntityCount;
+				const unchangedPosition = probe.atBottom || probe.scrollTop === before.scrollTop || lastStep?.changed === false;
+				if (unchangedHeight && unchangedEntities && unchangedPosition) stablePasses += 1;
+				else stablePasses = 0;
+				previousScrollHeight = probe.scrollHeight;
+				previousEntityCount = deduped.length;
+				if (iterations >= requestedSteps && stablePasses >= 2) break;
+			}
 		}
-		const after = await scrollProbe(server, target, selector, timeoutMs);
+		const after = deadline.remainingMs() >= MIN_ACTION_SUBCALL_MS
+			? await scrollProbe(server, target, selector, timeoutFor(deadline, "scroll after probe"))
+			: current;
+		const alreadyAtEdge = scrollAlreadyAtEdge(before, input.to);
 		return {
-			data: { selector, stepResult: lastStep, before, after, iterations, stablePasses, virtualCollectionStop: stablePasses >= 2 || after.atBottom === true },
-			verification: verifyScroll(before, after),
-			entities: dedupeCollectedEntities(collected),
+			data: { selector, before, after, iterations, collect, alreadyAtEdge, ...(partialReason ? { partialReason } : {}), ...(collect ? { stepResult: lastStep, stablePasses, virtualCollectionStop: stablePasses >= 2 || after.atBottom === true } : {}) },
+			verification: verifyScroll(before, after, input.to),
+			entities: collect ? dedupeCollectedEntities(collected) : [],
 		};
 	});
 }

@@ -50,6 +50,10 @@ async function freePort(start, end) {
   }
   throw new Error(`No free port in range ${start}-${end}`);
 }
+function randomPortWindow(base, span = 400) {
+  const start = base + Math.floor(Math.random() * 4000);
+  return [start, start + span];
+}
 async function patchExtensionPort(extensionDir, bridgePort) {
   const serviceWorkerPath = path.join(extensionDir, "dist", "service-worker.js");
   let source = await readFile(serviceWorkerPath, "utf8");
@@ -75,8 +79,10 @@ try {
   const chromeExe = chromePath();
   if (!chromeExe) { result.needsBrowser = true; throw new Error("NEEDS_BROWSER: no Chrome/Edge found (set PI_BROWSER_SMOKE_CHROME)"); }
   if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`extension source missing manifest.json: ${extensionSource}`);
-  const bridgePort = await freePort(18871, 18900);
-  const fixturePort = await freePort(8871, 8900);
+  const [bridgeStart, bridgeEnd] = randomPortWindow(25000);
+  const [fixtureStart, fixtureEnd] = randomPortWindow(32000);
+  const bridgePort = await freePort(bridgeStart, bridgeEnd);
+  const fixturePort = await freePort(fixtureStart, fixtureEnd);
   const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "abml-action-gap.html"), "utf8");
   const fixtureUrl = `http://127.0.0.1:${fixturePort}/abml-action-gap.html`;
   fixture = createHttpServer((_req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(fixtureHtml) }); res.end(fixtureHtml); });
@@ -94,6 +100,8 @@ try {
   const tabId = targetTab.tabId;
   await bridge.sendCommand({ cmd: "wait.loadState", tabId, state: "complete", timeoutMs: 10000 }, { tabId, timeoutMs: 12000 });
   const browserSessionId = bridge.snapshot().browserSessionId;
+  await bridge.switchTab(tabId, 10000, { browserSessionId });
+  await delay(250);
   const readEffect = async (expr) => evalValue(await bridge.executeJavaScript(`return ${expr};`, { tabId, browserSessionId, timeoutMs: 8000 }));
 
   // ── control) raw snippet on #plain (accepts any click) — raw JS is not broken in general ──────────

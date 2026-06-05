@@ -47,6 +47,9 @@ assert.equal(flat.status, 204);
 // URL redaction: sensitive query value scrubbed
 const red = buildCausalRequest({ requestId: "t", request: { url: "https://x/api?token=SECRET123&q=1", method: "GET" } });
 assert.ok(red.url && !red.url.includes("SECRET123"), "sensitive query value scrubbed in causal request url");
+const queryRed = buildCausalRequest({ requestId: "q", request: { url: "https://x/search?query=playwright+browser+test+2&q=user%40example.test&qry=13800138000&id=123&id2=12345678&t=1717600000000&page=2&lang=en", method: "GET" } });
+assert.ok(queryRed.url && !queryRed.url.includes("playwright") && !queryRed.url.includes("user%40example.test") && !queryRed.url.includes("13800138000"), "free-text query and PII-looking query values scrubbed");
+assert.ok(queryRed.url?.includes("id=123") && queryRed.url?.includes("id2=12345678") && queryRed.url?.includes("t=1717600000000") && queryRed.url?.includes("page=2") && queryRed.url?.includes("lang=en"), "low-risk machine query params remain visible, including long ids/timestamps");
 
 // cap + true count
 const capped = buildCausalSummary(Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, requestId: `r${i}`, request: { url: `https://x/${i}`, method: "GET" } })), 0);

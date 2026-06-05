@@ -27,6 +27,7 @@ export type AbmlClickInput = {
 	ref: RefDescriptor | string;
 	button?: "left" | "middle" | "right";
 	count?: number;
+	diff?: boolean;
 	actionability?: ActionabilityReport;
 	verification?: VerificationResult;
 };
@@ -35,6 +36,7 @@ export type AbmlTypeInput = {
 	ref: RefDescriptor | string;
 	text: string;
 	clear?: boolean;
+	diff?: boolean;
 	actionability?: ActionabilityReport;
 	verification?: VerificationResult;
 };
@@ -43,6 +45,7 @@ export type AbmlScrollInput = {
 	ref?: RefDescriptor | string;
 	to?: "top" | "bottom" | "next" | "previous" | { x?: number; y?: number };
 	steps?: number;
+	collect?: boolean;
 	verification?: VerificationResult;
 };
 

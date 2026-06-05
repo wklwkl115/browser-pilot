@@ -1,6 +1,6 @@
 # Browser-tools skeptical-eval fixes — execution contract
 
-> Status: **PLANNED (not started).** Driven by the first real-agent skeptical eval
+> Status: **IMPLEMENTED (verification in progress).** Driven by the first real-agent skeptical eval
 > (2026-06-05, `browser-tools-skeptical-eval`, n=1, 5 real sites). Turns its measured efficacy signal
 > into fixes for the recently-shipped action path (B2), causal plane (R3.x), and templating (M1).
 > Activated in `CURRENT.md`. Every report finding maps to a slice or to a reasoned out-of-scope
@@ -36,19 +36,27 @@ Fix the concrete defects and correct the docs' "effect" wording to match measure
 
 - **No new public tool**; `action`/observe changes are additive/optional with a safe default
   (absent ⇒ today's behavior).
-- **Redaction stays GENERIC** — pattern-based, never per-site key allowlists.
+- **Redaction stays GENERIC** — PII-pattern + generic query-param class based, never per-site key allowlists/denylists.
 - **Templating + diff stay ARIA/kind-grounded** — no DOM tag/class/selector heuristics.
 - **Pure-core stays pure**; no `native_command_schema.json` change.
 - **No behavior regression**: existing `action` click/type effect + verification still hold
   (`smoke:browser:abml-action-gap` gating assertions stay green).
 
-## 4. Fixes (slices, ROI order)
+## 4. Fixes (slices, execution order)
+
+Feasibility-review refinements before execution:
+- `timeoutMs` fixes require a **single shared deadline** (`remainingMs()` for every probe/CDP/read subcall), not reusing the full timeout per subcall.
+- `causal` redaction must cover the eval's ordinary search-query leak, not only PII-looking values.
+- `diff`/`treeDiff` salience is **additive**: preserve existing raw `EntityDiff` arrays/schema and add ranked summaries; do not break consumers.
+- Observe artifact jsonPath should prefer saving/reading the same envelope shape agents saw live; documentation-only is acceptable only if a compatibility reason blocks that.
 
 ### S1 — Doc honesty + usage guidance (F0, G4-docs)  ·  cheap, zero-risk, first
 Record the measured per-feature verdict in SKILL.md + `docs/abml-tool-coverage-map.md`:
 `action.type`/`causal` preferred; `action.click` only when synthetic clicks are unreliable;
-**`action.scroll` not recommended until fixed**; `templates` only on big lists/tables; `diff`/`treeDiff`
-only on large pages tolerating churn. Add guidance: **`pi-ref://` and observe baselines are
+`action.scroll` recorded as the original 1/5 weak spot and, after S3, recommended only as a bounded
+probe-default action with `collect:true` reserved for virtualized-list entity collection; `templates`
+only on big lists/tables; `diff`/`treeDiff`
+read `summary` salience first and raw arrays only when churn is acceptable. Add guidance: **`pi-ref://` and observe baselines are
 short-lived — re-observe to refresh; don't reuse a stale baseline** (the eval's `HANDLE_NOT_FOUND` /
 `baseline ... expired`). Tag "first real-agent eval, 2026-06-05, n=1". No code.
 
@@ -62,58 +70,79 @@ pressed/current` + `value`/`text`/`url`/`focus` before/after and report the delt
 `verification.observed.changed` (e.g. `expanded:false→true`). This is **faster** (no full scan) AND
 **more accurate** (the signal the eval actually wanted). The full `diffEntities` over `readStructure`
 becomes **opt-in** (`action:{click:…, diff:true}` / `type:{…, diff:true}`, additive bool, default
-false). Click/type also honor `timeoutMs` as a hard bound.
+false). Click/type honor `timeoutMs` through a shared action deadline: every probe, DOM action, CDP
+fallback, verification, and optional diff uses `remainingMs()`; when the deadline is exhausted the
+verb returns a bounded failure/recovery instead of starting another full-timeout subcall.
 **Acceptance:** action-gap smoke green; latency assertion (default click/type ≪ current, and ≪ with
-`diff:true`); `verification.observed.changed` carries the target state delta on the fast path.
+`diff:true`); hard-timeout test proves elapsed wall time stays within a small grace window;
+`verification.observed.changed` carries the target state delta on the fast path.
 
 ### S3 — action.scroll: bound + denoise + fix summary (F2, G2-scroll)
 **Root cause:** `executeBrowserAbmlScroll` calls `readStructure` (full scan) **every iteration**
 (1 step → 7 iterations) and the loop is **not bounded by `timeoutMs`** (73–79 s under a 20 s budget);
 the summary is internally inconsistent (`stepResult.beforeTop=afterTop`, `changed=false`, while overall
 `before/after.scrollTop` differ).
-**Fix:** default scroll = scroll + cheap `scrollProbe` verify, **no per-iteration `readStructure`**
-(virtualized-list collection → opt-in `scroll:{…, collect:true}`); bound the loop by elapsed vs
-`timeoutMs`; report one coherent overall before/after + an explicit "already at edge" flag.
+**Fix:** default scroll = scroll + cheap `scrollProbe` verify, **no per-iteration `readStructure`**.
+Virtualized-list collection becomes opt-in (`scroll:{…, collect:true}`), and only that path may read
+structure after bounded scroll steps. The loop uses the same shared-deadline discipline as S2: stop
+when `remainingMs()` cannot cover another step/probe, return a bounded partial result, and never spend
+the full timeout per iteration. Report one coherent overall before/after + an explicit `alreadyAtEdge`
+flag; `stepResult` must reflect the same before/after pair or be omitted from the default summary.
 **Fallback if non-trivial:** temporarily drop `scroll` from the public `action` param (keep the
 internal verb) — better than shipping a 1/5 net-negative.
-**Acceptance:** scroll smoke step completes within `timeoutMs`, scrollY advances, summary self-consistent.
+**Acceptance:** scroll smoke step completes within `timeoutMs` plus grace, scrollY advances or
+`alreadyAtEdge=true`, summary self-consistent, and default path performs zero structure reads.
 
-### S4 — causal URL PII redaction (F3)  ·  privacy
+### S4 — causal URL query-value redaction (F3)  ·  privacy
 **Root cause / precise:** redaction is **key-based**, so a search query *value*
 (`query=playwright browser test 2`) — no sensitive key — is emitted raw (a user email/order#/phone in
 `q=`/`query=` would leak).
-**Fix:** extend `src/utils/redaction.ts` to scrub query-param **values matching PII patterns** (email,
-phone, long digit runs) in **any** param — generic, pattern-based, **no per-site key allowlist**.
-Shared util (causal + network + evidence) → must NOT over-redact ordinary API params; tight pattern +
-a contract test on both "scrubs the email in `q=`" and "leaves `id=123` / short values alone".
-**Acceptance:** redaction contract covers the new patterns; existing redaction tests unregressed.
+**Fix:** extend `src/utils/redaction.ts` with two generic URL query rules:
+1. scrub **PII-looking values** (email, phone, long digit runs) in any query parameter;
+2. scrub values for generic human-query/text parameters (`q`, `query`, `qry`, `search`, `keyword`,
+   `term`, `text`, `prompt`, `message`) even when the value is not PII.
+Do not use per-site key allowlists/denylists. Keep ordinary low-risk machine identifiers visible
+(e.g. `id=123`, `page=2`, `lang=en`, short enum/status params). Shared util applies to causal,
+network summaries, and evidence model-facing output.
+**Acceptance:** redaction contract covers `q=user@example.test`, `query=playwright browser test 2`,
+`qry=13800138000`, and non-overredaction (`id=123`, `page=2`, `lang=en` remain visible); existing
+redaction tests unregressed.
 
 ### S5 — templates denoise (F4)
 **Root cause:** `buildTemplateSummary` groups **all** kinds, so text-leaf entities surface as templates
 (`row/InlineTextBox`, `row/StaticText`) — high count, low meaning.
-**Fix:** exclude pure-text-leaf entities (kind `text` / role `InlineTextBox`/`StaticText`) and/or rank
-`control`/`link`/`element` templates ahead of text and cap — surfaced templates are the actionable/
-structural ones. Pure-core, ARIA/kind-grounded (no DOM guessing).
-**Acceptance:** `check:abml-templating` extended (text-leaf excluded/deprioritized); templating smoke
-still folds the link list.
+**Fix:** rank `control`/`link`/structural `element` templates ahead of pure text leaves, and exclude
+or cap pure-text-leaf templates only when a same-container actionable/structural template exists.
+Do **not** blindly delete all `InlineTextBox`/`StaticText` groups, because some accessible tables expose
+text/cell structure as the only repeated signal. Pure-core, ARIA/kind-grounded (no DOM guessing).
+**Acceptance:** `check:abml-templating` extended (text-leaf deprioritized/suppressed when redundant;
+text-only accessible table fixture still yields a useful template); templating smoke still folds the
+link list.
 
 ### S7 — diff/treeDiff salience (G5)  ·  bounded, generic
 **Root cause:** the diff enumerates `appeared`/`disappeared` churn (27/76 on a search-suggestion popup)
 while the one meaningful change (`value:A→B`, the focused control) is buried; `treeDiff` helps but still
 leads with order-change noise.
-**Fix (bounded, NOT a perception redesign):** rank the diff output by signal — **high-signal first**
-(state/value/name changes on `control`/`element` entities, and the focused entity's change), then
-**summarize churn as counts** (`appeared:N`, `disappeared:M`) instead of enumerating it. Generic by
-entity-kind + change-type, **no per-site/per-type branches**. S1's doc-downgrade stays as the safety
-net if this proves insufficient.
-**Acceptance:** `check:abml-diff` extended (high-signal changes ordered ahead of churn; churn
-summarized); on a synthetic suggestion-popup fixture the value-change leads.
+**Fix (bounded, NOT a perception redesign):** preserve the existing raw `EntityDiff` contract
+(`appeared[]`, `disappeared[]`, `changed[]`) and add an **additive salience view** for summaries/
+envelopes: high-signal changes first (value/name/state changes on `control`/`element`, focused entity
+changes), then churn summarized as counts/sample refs (`appeared:N`, `disappeared:M`) without hiding
+the raw arrays in artifacts/full output. Generic by entity-kind + change-type, **no per-site/per-type
+branches**. S1's doc-downgrade stays as the safety net if this proves insufficient.
+**Acceptance:** `check:abml-diff` extended (raw schema unchanged; high-signal summary ordered ahead of
+churn; churn summarized in the summary view); on a synthetic suggestion-popup fixture the value-change
+leads while raw `appeared[]`/`disappeared[]` remain available.
 
 ### S6 — artifact jsonPath on observe results (F5)  ·  investigate-first
 The eval hit "live result shows it, but `browser_artifact jsonPath` says notFound" on observe results
-(fell back to `text`/`search`). **Investigate** the saved observe-artifact shape vs the reader's
-jsonPath; fix the mismatch or document the correct read path.
-**Acceptance:** a reader test: jsonPath into a saved observe artifact resolves a known field.
+(fell back to `text`/`search`). Source review indicates the saved scan artifact currently stores the
+raw bridge result plus `abml`, while the live agent-facing envelope lifts `diff`/`treeDiff`/
+`snapshotProjection`/`templates` to summary/top-level positions. **Investigate** and prefer fixing by
+saving an envelope-compatible artifact shape (or adding an envelope mirror) so jsonPath reads match
+what agents saw. If compatibility blocks that, document exact read paths (`abml.diff`,
+`abml.snapshotProjection`, etc.) and expose them in nextActions.
+**Acceptance:** a reader test: jsonPath into a saved observe artifact resolves a known live-envelope
+field (`diff` or documented mirror path) and no longer requires text/search fallback for normal reads.
 
 ### S8 — execute robustness (G3, G4-error)  ·  investigate-first, minor
 - **G3:** a raw async `browser_execute` script (`await 800ms`) returned `BRIDGE_TIMEOUT` though the
@@ -127,11 +156,12 @@ jsonPath; fix the mismatch or document the correct read path.
 
 - Per slice: targeted unit/contract green + `smoke:browser:abml-action-gap` green + full `npm run check`.
 - Perf slices (S2, S3): measure action latency before/after; assert no full scan on the default path;
-  scroll bounded by `timeoutMs`.
+  click/type/scroll bounded by `timeoutMs` through a shared deadline.
 - **Meta-acceptance:** re-run the skeptical-eval prompt with a fresh agent. Negatives should flip —
   `type`/`causal` stay strong; `click`/`scroll` materially faster + click verify carries target state;
-  `causal` redacts a PII query value; `templates` surface fewer text-leaf rows; `diff` leads with the
-  value change. n=1 caveat noted.
+  `causal` redacts both PII query values and ordinary human search-query values; `templates` surface
+  fewer redundant text-leaf rows without losing text-only table structure; `diff` summary leads with
+  the value change while raw diff arrays remain available. n=1 caveat noted.
 
 ## 6. Out of scope (with reasons — each is a deliberate decision, not an omission)
 
@@ -153,9 +183,9 @@ jsonPath; fix the mismatch or document the correct read path.
 | action.click / action.scroll exceed `timeoutMs` (期待#1) | **S2** (click) + **S3** (scroll) |
 | action.scroll slow + per-step scan | **S3** (collection opt-in) |
 | action.scroll summary self-contradiction | **S3** (coherent summary) |
-| causal URL not redacting query value (期待#4) | **S4** |
+| causal URL not redacting query value, including ordinary search text (期待#4) | **S4** |
 | templates text-leaf noise / too-low-level naming (期待#5) | **S5** |
-| diff/treeDiff churn-noise / semantic filtering (期待#3) | **S7** (bounded salience) + S1 doc-downgrade |
+| diff/treeDiff churn-noise / semantic filtering (期待#3) | **S7** (additive salience summary; raw schema preserved) + S1 doc-downgrade |
 | baseline snapshot TTL expiry → INVALID_RULE | **S1** (guidance) + **S8** (recovery hint) |
 | raw async `browser_execute` → BRIDGE_TIMEOUT | **S8** (investigate) |
 | artifact jsonPath on observe → notFound (期待#6) | **S6** |

@@ -114,3 +114,20 @@ test("templating: templates sorted by instance count descending", () => {
 	assert.equal(templates[0].count, 8, "largest group first");
 	assert.equal(templates[1].count, 4);
 });
+
+test("templating: redundant text leaves are suppressed when a structural template shares the container", () => {
+	const links = Array.from({ length: 4 }, (_, i) => item(`pi-ref://control/l${i}`, { role: "link", kind: "control", container: "list", containerName: "Results", name: `Item ${i}` }));
+	const text = Array.from({ length: 12 }, (_, i) => item(`pi-ref://text/t${i}`, { role: "StaticText", kind: "text", container: "list", containerName: "Results", name: `Item ${i}` }));
+	const { templates } = buildTemplateSummary([...text, ...links]);
+	assert.equal(templates.length, 1);
+	assert.equal(templates[0].kind, "control");
+	assert.equal(templates[0].role, "link");
+});
+
+test("templating: text-only repeated accessible structure remains available", () => {
+	const text = Array.from({ length: 6 }, (_, i) => item(`pi-ref://text/cell${i}`, { role: "StaticText", kind: "text", container: "row", containerName: "Totals", name: `Cell ${i}` }));
+	const { templates } = buildTemplateSummary(text);
+	assert.equal(templates.length, 1);
+	assert.equal(templates[0].kind, "text");
+	assert.equal(templates[0].role, "StaticText");
+});

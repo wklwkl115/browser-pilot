@@ -141,23 +141,59 @@ function buildTemplate(members: Entity[]): StructureTemplate {
 	};
 }
 
+export function structureScopeKey(descriptor: Pick<TemplateGroupDescriptor, "container" | "containerName" | "setSize">): string {
+	return descriptor.container
+		? JSON.stringify(["c", descriptor.container, descriptor.containerName || ""])
+		: JSON.stringify(["s", descriptor.setSize ?? ""]);
+}
+
+export function isPureTextLeaf(descriptor: Pick<TemplateGroupDescriptor, "role" | "kind">): boolean {
+	const role = descriptor.role.toLowerCase();
+	return descriptor.kind === "text" || role === "inlinetextbox" || role === "statictext";
+}
+
+export function isActionableOrStructural(descriptor: Pick<TemplateGroupDescriptor, "role" | "kind">): boolean {
+	if (isPureTextLeaf(descriptor)) return false;
+	return descriptor.kind === "control" || descriptor.kind === "element" || descriptor.kind === "region";
+}
+
+export function templateRank(template: Pick<StructureTemplate, "role" | "kind">): number {
+	if (template.kind === "control") return 0;
+	if (template.kind === "element" && !isPureTextLeaf(template)) return 1;
+	if (template.kind === "region") return 1;
+	return 2;
+}
+
 // Fold repeated sibling entities (same AX container or aria-setsize set + same role/kind, ≥
 // MIN_TEMPLATE_INSTANCES) into structure templates. Sorted by instance count desc, capped at
 // MAX_TEMPLATES. Empty when nothing repeats. Budget-immune block for the observe envelope.
 export function buildTemplateSummary(entities: Entity[]): TemplateSummary {
 	const groups = new Map<string, Entity[]>();
+	const descriptors = new Map<string, TemplateGroupDescriptor>();
 	for (const entity of entities) {
 		const descriptor = templateGroupDescriptorForEntity(entity);
 		if (!descriptor) continue;
 		// JSON key = unambiguous (no delimiter collisions even when containerName contains spaces).
 		const list = groups.get(descriptor.key);
 		if (list) list.push(entity);
-		else groups.set(descriptor.key, [entity]);
+		else {
+			groups.set(descriptor.key, [entity]);
+			descriptors.set(descriptor.key, descriptor);
+		}
 	}
+	const templateSizedDescriptors = Array.from(groups.entries())
+		.filter(([, members]) => members.length >= MIN_TEMPLATE_INSTANCES)
+		.map(([key]) => descriptors.get(key))
+		.filter((item): item is TemplateGroupDescriptor => !!item);
+	const scopesWithStructuralTemplates = new Set(templateSizedDescriptors
+		.filter(isActionableOrStructural)
+		.map(structureScopeKey));
 	const templates: StructureTemplate[] = [];
-	for (const members of groups.values()) {
+	for (const [key, members] of groups.entries()) {
 		if (members.length < MIN_TEMPLATE_INSTANCES) continue;
+		const descriptor = descriptors.get(key);
+		if (descriptor && isPureTextLeaf(descriptor) && scopesWithStructuralTemplates.has(structureScopeKey(descriptor))) continue;
 		templates.push(buildTemplate(members));
 	}
-	return { templates: templates.sort((a, b) => b.count - a.count).slice(0, MAX_TEMPLATES) };
+	return { templates: templates.sort((a, b) => templateRank(a) - templateRank(b) || b.count - a.count).slice(0, MAX_TEMPLATES) };
 }

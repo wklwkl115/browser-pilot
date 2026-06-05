@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Value } from "typebox/value";
-import { diffEntities } from "../../../src/abml-core/diff.ts";
+import { diffEntities, summarizeEntityDiff } from "../../../src/abml-core/diff.ts";
 import { buildInferenceSummary } from "../../../src/abml-core/inference.ts";
 import { runAbmlRead } from "../../../src/abml-core/verbs/read.ts";
 import { registerRefDescriptor, resolveRefUriDetailed, clearResourceStore } from "../../../src/resources/resourceStore.ts";
@@ -57,6 +57,17 @@ assert.ok(diff.changed.some((c) => c.ref === "pi-ref://control/submit" && c.kind
 assert.ok(diff.changed.some((c) => c.ref === "pi-ref://control/submit" && c.kind === "name-changed" && c.before?.name === "Continue" && c.after?.name === "Submit"), "name delta detected");
 assert(Value.Check(EntityDiffSchema, diff), `EntityDiffSchema validates diff: ${JSON.stringify([...Value.Errors(EntityDiffSchema, diff)].slice(0, 5))}`);
 
+const suggestionBefore = [entity("pi-ref://control/search", { role: "searchbox", value: "A" })];
+const suggestionAfter = [
+	entity("pi-ref://control/search", { role: "searchbox", value: "B", state: { focused: true } }),
+	...Array.from({ length: 8 }, (_, i) => entity(`pi-ref://text/suggest-${i}`, { kind: "text", role: "StaticText", name: `Suggestion ${i}` })),
+];
+const suggestionDiff = diffEntities(suggestionBefore, suggestionAfter);
+const suggestionSalience = summarizeEntityDiff(suggestionDiff, suggestionBefore, suggestionAfter);
+assert.equal(suggestionSalience.items[0].kind, "changed", "salience leads with semantic value change");
+assert.equal(suggestionSalience.items[0].ref, "pi-ref://control/search");
+assert.equal(suggestionSalience.items.at(-1)?.kind, "churn", "appeared/disappeared churn summarized after changed items");
+
 const read = await runAbmlRead({ plane: "structure", baseline: before }, async () => ({ entities: after }));
 assert.equal(read.ok, true, "runAbmlRead with baseline succeeds");
 assert.deepEqual(read.diff, diff, "runAbmlRead threads baseline through diffEntities");
@@ -75,7 +86,7 @@ const envelopeResult = await distilledTextResult("body", {
 	fallbackName: "observe-scan",
 	summary: {
 		abmlIntegrated: true,
-		diff,
+		diff: { ...diff, summary: summarizeEntityDiff(diff, before, after) },
 		focus: {
 			gist: { landmarks: ["main"], controlCount: 2, containerCount: 1 },
 			relations: { summary: {}, highlights: [] },
@@ -86,6 +97,7 @@ const envelopeResult = await distilledTextResult("body", {
 });
 const envelope = JSON.parse(envelopeResult.content[0].text);
 assert.equal(envelope.diff.focusedRef, "pi-ref://control/email", "diff lifted to envelope top-level");
+assert.equal(envelope.diff.summary.items[0].kind, "changed", "diff salience summary survives envelope lift");
 assert.equal(envelope.inference.intents.find((i) => i.intent === "form-dependency")?.evidence?.enabledRef, "pi-ref://control/submit", "form-dependency survives envelope lift");
 
 clearResourceStore();
@@ -113,7 +125,7 @@ assert.ok(coreBoundarySrc.includes('"diff.ts"'), "diff.ts must be classified in 
 const barrelSrc = readRepo("src/abml-core/index.ts");
 assert.ok(barrelSrc.includes('./diff.js'), "abml-core barrel must export diff");
 const observeSrc = readRepo("src/tools/observeRunners.ts");
-assert.ok(observeSrc.includes("resolveBaselineEntities") && observeSrc.includes("partialBaseline") && observeSrc.includes("abmlRead.diff") && /buildInferenceSummary\((abmlEntities|attributedEntities), relSummary, abmlDiff\)/.test(observeSrc), "observeRunners must thread baseline → readStructure → diff → inference with partial-baseline support");
+assert.ok(observeSrc.includes("resolveBaselineEntities") && observeSrc.includes("partialBaseline") && observeSrc.includes("abmlRead.diff") && observeSrc.includes("summarizeEntityDiff") && /buildInferenceSummary\((abmlEntities|attributedEntities), relSummary, abmlDiff\)/.test(observeSrc), "observeRunners must thread baseline → readStructure → diff → inference with partial-baseline support and salience");
 const observeToolSrc = readRepo("src/tools/registerObserveTool.ts");
 assert.ok(observeToolSrc.includes("baseline") && observeToolSrc.includes("baseline diff is only valid for scan mode"), "browser_observe schema must expose scan-only baseline");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");

@@ -10,7 +10,9 @@ compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connecte
 Live browser operation via `browser_*` tools. HOW only — methodology and route index. For depth, follow the Index.
 
 Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
-Coverage reality: ABML's **read** path is wired in — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. On the **action** path: raw `browser_execute {script}` runs your JavaScript **verbatim** — you own the method choice and retry/verify. **For a click that must actually take effect, prefer `browser_execute {action:{click:"<pi-ref|css selector>"}}`** — it routes through the ABML **degradation ladder** (actionability wait → synthetic → verify → **auto CDP trusted-event fallback** → re-verify, `src/abml/verbs/runtime.ts`), so a synthetic-event-only failure is recovered for you instead of silently lost (raw `el.click()` reports ok but the effect never fires on such sites). `action` is **one optional param on the same tool**, not a parallel verb — the narrow surface holds (public verb *tools* were tried and proved worse). `action.type` ({target,text,clear?}) does the same for typing (focus + CDP `Input.insertText` trusted events + verify) — prefer it when a field ignores synthetic input. `action.scroll` ({target?,to,steps?}) scrolls the window (or a container) via the ladder — `to`: top/bottom/next/previous. So `action` covers click/type/scroll; raw `{script}` is for everything else. Full map: `docs/abml-tool-coverage-map.md`.
+Coverage reality: ABML's **read** path is wired in — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. Raw `browser_execute {script}` runs your JavaScript **verbatim**. Structured `browser_execute {action:{...}}` is the laddered action arm on the same tool, not a parallel verb tool: click/type/scroll use actionability wait, trusted-event fallback where needed, shared `timeoutMs`, and compact verification.
+
+First real-agent skeptical eval (2026-06-05, n=1): `causal` and `action.type` were strong; prefer them for API provenance and fields that ignore synthetic input. `action.click` is for clicks that must take effect or where synthetic clicks are unreliable; default verify now reports target state deltas, and full entity diff is opt-in with `diff:true`. `action.scroll` is now bounded/probe-only by default; use `scroll.collect:true` only when virtualized-list entity collection is needed. `templates` are most useful on big lists/tables and stay ARIA-grounded; redundant text-leaf groups are suppressed only when structural/actionable groups exist in the same scope. `diff/treeDiff` can still be churny on dynamic pages; read `diff.summary` first for value/name/state/focus salience, then raw arrays if needed. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
@@ -48,8 +50,9 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame list` → `browser_frame evaluate` |
-| Reliable click (must take effect) | `browser_execute {action:{click:"<pi-ref\|selector>"}}` (laddered: actionability + auto CDP fallback + verify) |
-| Reliable type into a field | `browser_execute {action:{type:{target:"<pi-ref\|selector>",text}}}` (laddered: focus + CDP insertText + verify) |
+| Reliable click (must take effect) | `browser_execute {action:{click:"<pi-ref\|selector>"}}` (bounded ladder + target-state verify; add `diff:true` only for full entity diff) |
+| Reliable type into a field | `browser_execute {action:{type:{target:"<pi-ref\|selector>",text}}}` (bounded ladder + CDP insertText + verify; add `diff:true` only for full entity diff) |
+| Reliable scroll | `browser_execute {action:{scroll:{target?,to,steps?}}}` (`collect:true` only for virtualized-list entity collection) |
 | Mutate / custom DOM | `browser_execute` (JS) → `browser_wait` → re-observe |
 | CDP / native command | `browser_command` with explicit command object |
 | Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
@@ -98,9 +101,9 @@ All `browser_*` tools — including web-security — are first-class and exposed
 
 ## Action
 
-- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after state, pass scan `baseline` from a prior entity list / scan summary/envelope / snapshotId to get envelope `diff` (`appeared/disappeared/changed/focusedRef`), structure-level `treeDiff` for repeated lists/tables, `snapshotProjection` for persisted template+delta structure, and possible `form-dependency` intent.
+- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after state, pass a fresh scan `baseline` from a prior entity list / scan summary/envelope / snapshotId to get envelope `diff` (`appeared/disappeared/changed/focusedRef` plus `summary` salience), structure-level `treeDiff` for repeated lists/tables, `snapshotProjection` for persisted template+delta structure, and possible `form-dependency` intent. `pi-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe instead of retrying the old handle.
 - Selector miss → re-observe `scan`/`html` → inspect `browser_frame` → retry verified selector/frame.
-- `browser_execute` = JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `browser_command` → dispatch `input`/`change` → read back.
+- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. Use `browser_execute {action:{type:{...}}}` instead of hand-rolling focus/setter/CDP for fields that ignore synthetic input. Use `action.click` when a click must take effect; otherwise a small verified script is still fine. Use `action.scroll` for bounded scroll and reserve `collect:true` for virtualized lists.
 - `monitor:true` only when a before/after DOM diff helps. `redact:false` only for explicit local raw evidence.
 - Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion* sourceMode`.
 
@@ -133,7 +136,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
 | Timeout | re-observe; `browser_wait action=diagnose`; narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
-| Resource `stale`/`etag mismatch` on read | artifact changed under the handle — re-capture to mint a fresh `browser-result://`/`pi-ref://` URI; never retry the old one |
+| Resource `stale`/`etag mismatch`/`HANDLE_NOT_FOUND` or baseline expired | artifact/ref/baseline changed under the handle — re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old one |
 | Tool/command not found | `pi-browser --help`; web-security needs `PI_BROWSER_TOOL_PROFILE` unset (not `core`) |
 | Mature bridge fail | explicit target/template/path; inspect stdout/stderr artifacts |
 | Upload/download blocked | dedicated transfer tool + valid selector/path/mode + confirmation |

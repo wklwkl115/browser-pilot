@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { diffEntities, type EntityDiff } from "../../../src/abml-core/diff.ts";
+import { diffEntities, summarizeEntityDiff, type EntityDiff } from "../../../src/abml-core/diff.ts";
 import type { Entity } from "../../../src/abml-core/entity.ts";
 
 function entity(ref: string, opts: {
 	name?: string;
+	value?: string;
 	role?: string;
 	kind?: Entity["kind"];
 	state?: Partial<Entity["state"]>;
@@ -14,6 +15,7 @@ function entity(ref: string, opts: {
 		kind: opts.kind ?? "control",
 		role: opts.role ?? "button",
 		...(opts.name !== undefined ? { name: opts.name } : {}),
+		...(opts.value !== undefined ? { value: opts.value } : {}),
 		state: {
 			visible: true,
 			occluded: false,
@@ -95,6 +97,35 @@ test("diffEntities detects name changes", () => {
 			after: { name: "Submit" },
 		}],
 	});
+});
+
+test("diffEntities detects value changes", () => {
+	const before = [entity("pi-ref://control/search", { role: "searchbox", value: "A" })];
+	const after = [entity("pi-ref://control/search", { role: "searchbox", value: "B" })];
+	assert.deepEqual(stripUndefined(diffEntities(before, after)), {
+		appeared: [],
+		disappeared: [],
+		changed: [{
+			ref: "pi-ref://control/search",
+			kind: "value-changed",
+			before: { value: "A" },
+			after: { value: "B" },
+		}],
+	});
+});
+
+test("summarizeEntityDiff ranks focused control value changes before churn", () => {
+	const before = [entity("pi-ref://control/search", { role: "searchbox", value: "A" })];
+	const after = [
+		entity("pi-ref://control/search", { role: "searchbox", value: "B", state: { focused: true } }),
+		...Array.from({ length: 8 }, (_, i) => entity(`pi-ref://text/suggest-${i}`, { kind: "text", role: "StaticText", name: `Suggestion ${i}` })),
+	];
+	const diff = diffEntities(before, after);
+	const salience = summarizeEntityDiff(diff, before, after);
+	assert.equal(salience.items[0].kind, "changed");
+	assert.equal(salience.items[0].ref, "pi-ref://control/search");
+	assert.equal(salience.items.at(-1)?.kind, "churn");
+	assert.equal(salience.appeared, 8);
 });
 
 test("diffEntities reports focusedRef from after snapshot without requiring a change", () => {

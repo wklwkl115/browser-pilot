@@ -62,6 +62,18 @@ try {
 	assert.equal(missingJsonPathArtifact.summary.exists, false, "check-artifact json.missing: summary must expose exists=false");
 	assert.equal(missingJsonPathArtifact.summary.notFound, true, "check-artifact json.missing: summary must expose notFound=true");
 
+	const observeArtifactPath = path.join(tmp, ".pi", "browser-artifacts", "observe-scan.json");
+	await writeFile(observeArtifactPath, JSON.stringify({
+		data: { url: "https://example.test" },
+		diff: { summary: { items: [{ kind: "changed", ref: "pi-ref://control/search", signal: "value-changed:pi-ref://control/search:value" }] } },
+		envelope: { diff: { summary: { items: [{ kind: "changed", ref: "pi-ref://control/search" }] } } },
+		abml: { diff: { summary: { items: [{ kind: "changed", ref: "pi-ref://control/search" }] } } },
+	}, null, 2), "utf8");
+	const observeDiffPath = await readBrowserArtifact({ path: observeArtifactPath, mode: "json", jsonPath: "diff.summary.items[0].ref" }, { cwd: tmp });
+	assert.equal(observeDiffPath.value, "pi-ref://control/search", "check-artifact observe.jsonPath: saved observe artifact exposes live-envelope diff at top-level");
+	const observeEnvelopePath = await readBrowserArtifact({ path: observeArtifactPath, mode: "json", jsonPath: "envelope.diff.summary.items[0].kind" }, { cwd: tmp });
+	assert.equal(observeEnvelopePath.value, "changed", "check-artifact observe.envelope: saved observe artifact keeps an envelope-compatible mirror");
+
 	const mixedPickArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", pick: ["items[0].requestId", "items[999].requestId"], limit: 4 }, { cwd: tmp });
 	assert.deepEqual(mixedPickArtifact.value["items[0].requestId"], { exists: true, jsonPath: "items[0].requestId", value: "0" }, "check-artifact json.pick.mixed: existing path must stay aligned with requested key");
 	assert.deepEqual(mixedPickArtifact.value["items[999].requestId"], { exists: false, notFound: true, jsonPath: "items[999].requestId", value: null }, "check-artifact json.pick.mixed: missing path must not disappear during JSON serialization");

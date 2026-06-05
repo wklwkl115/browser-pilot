@@ -234,7 +234,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TARGET_DISABLED` | unknown | abml.actionability | yes | schema |  |
 | `TARGET_NOT_EDITABLE` | unknown | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
 | `TARGET_OCCLUDED` | unknown | abml.actionability | yes | schema |  |
-| `TIMEOUT` | native | runtime.timeout | yes | schema | `src/tools/webSecurity/browserNative/sqliProbe.ts` |
+| `TIMEOUT` | native | runtime.timeout | yes | schema | `src/abml/verbs/runtime.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts` |
 | `UI_LOCK_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserLeaseRegistry.ts` |
 | `UNKNOWN_ACTION` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `UNKNOWN_BROWSER_CLIENT` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeClientRegistry.ts` |

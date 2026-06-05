@@ -101,6 +101,37 @@ export const InferenceSummarySchema = Type.Object({
 
 // ABML R3 — optional temporal diff between a caller-provided baseline entity list and
 // the current observe/read result.
+const EntityDiffSalienceItemSchema = Type.Union([
+	Type.Object({
+		kind: Type.Literal("changed"),
+		ref: Type.String(),
+		changeKind: Type.String(),
+		score: Type.Number(),
+		signal: Type.String(),
+		entityKind: Type.Optional(Type.String()),
+		role: Type.Optional(Type.String()),
+		name: Type.Optional(Type.String()),
+		fields: Type.Array(Type.String()),
+		before: Type.Optional(UnknownValue),
+		after: Type.Optional(UnknownValue),
+	}, { additionalProperties: true }),
+	Type.Object({
+		kind: Type.Literal("churn"),
+		score: Type.Number(),
+		signal: Type.String(),
+		appeared: Type.Number(),
+		disappeared: Type.Number(),
+		sampleAppeared: Type.Array(Type.String()),
+		sampleDisappeared: Type.Array(Type.String()),
+	}, { additionalProperties: true }),
+]);
+const EntityDiffSalienceSchema = Type.Object({
+	changed: Type.Number(),
+	appeared: Type.Number(),
+	disappeared: Type.Number(),
+	focusedRef: Type.Optional(Type.String()),
+	items: Type.Array(EntityDiffSalienceItemSchema),
+}, { additionalProperties: true });
 export const EntityDiffSchema = Type.Object({
 	appeared: Type.Array(Type.String()),
 	disappeared: Type.Array(Type.String()),
@@ -111,6 +142,7 @@ export const EntityDiffSchema = Type.Object({
 		after: Type.Optional(LooseObject),
 	}, { additionalProperties: true })),
 	focusedRef: Type.Optional(Type.String()),
+	summary: Type.Optional(EntityDiffSalienceSchema),
 }, { additionalProperties: true });
 
 // ── browser_evidence summary schema ──────────────────────────────────────────

@@ -3,6 +3,8 @@ import { stableJson } from "./json.js";
 const REDACTED = "[redacted]";
 const REDACTED_BODY = "[redacted body]";
 const REDACTED_POST_DATA = "[redacted postData]";
+const QUERY_PARAM_RE = /([?&])([^=&#\s"'<>]{1,120})=([^&#\s"'<>]*)/g;
+const EMAIL_VALUE_RE = /^[^\s@/?#&=]+@[^\s@/?#&=]+\.[^\s@/?#&=]+$/i;
 
 const SENSITIVE_FIELD_NAMES = new Set([
 	"authorization",
@@ -60,8 +62,41 @@ function shouldRedactPayloadText(key: string, parentPayload: boolean): boolean {
 	return parentPayload && (normalized === "text" || normalized === "value" || normalized === "data" || normalized === "content");
 }
 
+function decodeQueryComponent(value: string): string {
+	try {
+		return decodeURIComponent(value.replace(/\+/g, " "));
+	} catch {
+		return value.replace(/\+/g, " ");
+	}
+}
+
+function queryValueLooksFreeText(rawValue: string): boolean {
+	const value = decodeQueryComponent(rawValue).trim();
+	if (!value) return false;
+	const words = value.split(/\s+/).filter(Boolean);
+	if (words.length < 2) return false;
+	return /[\p{L}\p{Script=Han}]/u.test(value);
+}
+
+function queryValueLooksPii(rawValue: string): boolean {
+	const value = decodeQueryComponent(rawValue).trim();
+	if (!value) return false;
+	if (EMAIL_VALUE_RE.test(value)) return true;
+	const digits = value.replace(/\D/g, "");
+	if (/^\+/.test(value) && digits.length >= 10) return true;
+	if (/[\s().-]/.test(value) && digits.length >= 10 && /^[+\d\s().-]+$/.test(value)) return true;
+	return /^1\d{10}$/.test(value);
+}
+
+function redactUrlQueryValues(text: string): string {
+	return text.replace(QUERY_PARAM_RE, (match, prefix: string, rawKey: string, rawValue: string) => {
+		if (queryValueLooksFreeText(rawValue) || queryValueLooksPii(rawValue)) return `${prefix}${rawKey}=${REDACTED}`;
+		return match;
+	});
+}
+
 export function redactSensitiveText(text: string): string {
-	return text
+	return redactUrlQueryValues(String(text))
 		.replace(/((?:^|[\r\n])\s*(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
 		.replace(/("(?:cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp|postData|payloadData|body)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
 		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")

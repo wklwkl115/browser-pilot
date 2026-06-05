@@ -53,6 +53,16 @@ assert.equal(bigProjection.templates[0].count, 30, "true count survives cap");
 assert.ok(bigProjection.templates[0].instanceRefs.length < 30, "instanceRefs are capped");
 assert.equal(bigProjection.templates[0].instanceRefCount, bigProjection.templates[0].instanceRefs.length, "capped handle count is explicit");
 
+const noisyProjection = buildSnapshotProjection([
+	...Array.from({ length: 12 }, (_, i) => item(`pi-ref://text/noise${i}`, `Noise ${i}`, i + 1, { role: "StaticText", kind: "text", container: "list", containerName: "Mixed" })),
+	...Array.from({ length: 16 }, (_, i) => item(`pi-ref://element/li${i}`, `•`, i + 1, { role: "listitem", kind: "element", container: "list", containerName: "Mixed" })),
+	...Array.from({ length: 4 }, (_, i) => item(`pi-ref://control/action${i}`, `Action ${i}`, i + 1, { role: "link", kind: "control", container: "list", containerName: "Mixed" })),
+]);
+assert.equal(noisyProjection.templates[0].kind, "control", "snapshotProjection must rank controls ahead of larger structural/text groups");
+assert.equal(noisyProjection.templates[0].role, "link");
+assert.equal(noisyProjection.templates[1].kind, "element", "non-text structural projection remains after controls");
+assert.equal(noisyProjection.templates.some((template) => template.kind === "text" && template.containerName === "Mixed"), false, "redundant text-only projection is suppressed when a structural template shares the scope");
+
 const lifted = await distilledTextResult("body", {
 	toolName: "browser_observe",
 	command: "scan",

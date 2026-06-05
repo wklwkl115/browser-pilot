@@ -145,7 +145,7 @@ function normalizeExecNavigationUrl(rawUrl: unknown): string {
   return raw;
 }
 
-async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown }, socket: PiWebSocketLike): Promise<void> {
+async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number }, socket: PiWebSocketLike): Promise<void> {
   const tabId = data.tabId;
   console.log('[PI-BROWSER-WS] Exec request', data.id, 'on tab', tabId);
   socket.send(JSON.stringify({ type: 'ack', id: data.id }));
@@ -183,7 +183,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   try {
     let res: unknown;
     try {
-      const EXECUTE_SCRIPT_TIMEOUT_MS = 2500;
+      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 2500) || 2500));
       const executePromise = chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
@@ -215,7 +215,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
         const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', {
           expression: wrappedCode, awaitPromise: true, returnByValue: true
-        }, { name: 'default', persistent: false }));
+        }, { name: 'default', persistent: false, timeoutMs: Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000)) }));
         if (!resp || resp.ok === false) throw new Error(String(resp?.error || resp?.message || 'persistent CDP Runtime.evaluate failed'));
         const cdpRes = (((resp.data && typeof resp.data === 'object') ? resp.data as JsonRecord : {}).result || resp.result || resp.data) as JsonRecord;
         const exceptionDetails = cdpRes.exceptionDetails && typeof cdpRes.exceptionDetails === 'object' ? cdpRes.exceptionDetails as JsonRecord : undefined;

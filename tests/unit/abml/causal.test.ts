@@ -27,6 +27,19 @@ test("causal: redacts a sensitive URL query value", () => {
 	assert.ok(!r.url!.includes("SECRET123"), "sensitive query value scrubbed");
 });
 
+test("causal: redacts free-text and PII-looking query values without over-redacting machine params", () => {
+	const r = buildCausalRequest({ requestId: "q", request: { url: "https://x/search?query=playwright+browser+test+2&q=user%40example.test&qry=13800138000&id=123&id2=12345678&t=1717600000000&page=2&lang=en", method: "GET" } });
+	assert.ok(r.url, "url present");
+	assert.ok(!r.url!.includes("playwright"));
+	assert.ok(!r.url!.includes("user%40example.test"));
+	assert.ok(!r.url!.includes("13800138000"));
+	assert.ok(r.url!.includes("id=123"));
+	assert.ok(r.url!.includes("id2=12345678"));
+	assert.ok(r.url!.includes("t=1717600000000"));
+	assert.ok(r.url!.includes("page=2"));
+	assert.ok(r.url!.includes("lang=en"));
+});
+
 test("causal: caps at MAX_CAUSAL_REQUESTS and reports the true count", () => {
 	const records = Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, requestId: `r${i}`, request: { url: `https://x/${i}`, method: "GET" } }));
 	const c = buildCausalSummary(records, 0);

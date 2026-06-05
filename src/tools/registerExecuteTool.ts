@@ -121,29 +121,30 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_execute for precise browser actions; return explicit values from async JavaScript."],
 		parameters: strictToolParameters({
 			script: Type.Optional(Type.String({ description: "JavaScript source. Omit when using `action`." })),
-				action: Type.Optional(Type.Object({
-					click: Type.Optional(Type.String({ description: "Click a control reliably via the ABML ladder (actionability wait + auto CDP trusted-event fallback + effect verification). Value: a pi-ref:// from observe, or a CSS selector. Prefer over a hand-written el.click() when the click must actually take effect." })),
-					type: Type.Optional(Type.Object({ target: Type.String({ description: "pi-ref:// or CSS selector of the field to type into." }), text: Type.String({ description: "Text to insert." }), clear: Type.Optional(Type.Boolean({ description: "Clear the field first (default false)." })) }, { description: "Type into a field reliably via the ladder (focus + CDP Input.insertText trusted events + verify)." })),
-					scroll: Type.Optional(Type.Object({ target: Type.Optional(Type.String({ description: "pi-ref:// or CSS selector of the scroll container. Omit to scroll the window." })), to: Type.Optional(Type.String({ description: "top | bottom | next | previous (default next)." })), steps: Type.Optional(Type.Number({ description: "Viewport steps for next/previous (default 1)." })) }, { description: "Scroll the window or a container reliably via the ladder (actionability + verify + virtualized-list collection)." })),
-				}, { description: "Structured page action routed through the ABML degradation ladder instead of raw JS. Mutually exclusive with script. Provide exactly one of click/type/scroll. Use when an action must reliably take effect (e.g. sites that ignore synthetic events)." })),
+			action: Type.Optional(Type.Object({
+				click: Type.Optional(Type.String({ description: "Click a control reliably via the ABML ladder (actionability wait + auto CDP trusted-event fallback + effect verification). Value: a pi-ref:// from observe, or a CSS selector. Prefer over a hand-written el.click() when the click must actually take effect." })),
+				type: Type.Optional(Type.Object({ target: Type.String({ description: "pi-ref:// or CSS selector of the field to type into." }), text: Type.String({ description: "Text to insert." }), clear: Type.Optional(Type.Boolean({ description: "Clear the field first (default false)." })) }, { description: "Type into a field reliably via the ladder (focus + CDP Input.insertText trusted events + verify)." })),
+				scroll: Type.Optional(Type.Object({ target: Type.Optional(Type.String({ description: "pi-ref:// or CSS selector of the scroll container. Omit to scroll the window." })), to: Type.Optional(Type.String({ description: "top | bottom | next | previous (default next)." })), steps: Type.Optional(Type.Number({ description: "Viewport steps for next/previous (default 1)." })), collect: Type.Optional(Type.Boolean({ description: "Opt in to bounded structure reads while scrolling virtualized lists. Default false." })) }, { description: "Scroll the window or a container with cheap probe verification. Set collect:true only when virtualized-list entity collection is needed." })),
+				diff: Type.Optional(Type.Boolean({ description: "Opt in to full before/after ABML entity diff for click/type. Default false; the default path uses target-state verification only." })),
+			}, { description: "Structured page action routed through the ABML degradation ladder instead of raw JS. Mutually exclusive with script. Provide exactly one of click/type/scroll. Use when an action must reliably take effect (e.g. sites that ignore synthetic events)." })),
 			...sharedTabScopedToolParams(),
 			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
 				const action = isRecord(params.action) ? params.action : undefined;
-					const actionClick = action && typeof action.click === "string" ? action.click.trim() : "";
-					const actionType = action && isRecord(action.type) ? action.type : undefined;
-					const actionTypeTarget = actionType && typeof actionType.target === "string" ? actionType.target.trim() : "";
-					const hasClick = actionClick.length > 0;
-					const hasType = actionTypeTarget.length > 0 && typeof actionType?.text === "string";
-					const actionScroll = action && isRecord(action.scroll) ? action.scroll : undefined;
-						const hasScroll = !!actionScroll;
-						const hasAction = hasClick || hasType || hasScroll;
-					if ([hasClick, hasType, hasScroll].filter(Boolean).length > 1) throw new BrowserBridgeError("INVALID_RULE", "browser_execute action takes exactly one of click/type/scroll", { toolName: "browser_execute" });
-					const hasScript = typeof params.script === "string" && params.script.trim().length > 0;
-					if (hasScript && hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute takes either script or action, not both", { toolName: "browser_execute" });
-					if (!hasScript && !hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script (JavaScript) or action (structured page action)", { toolName: "browser_execute" });
+				const actionClick = action && typeof action.click === "string" ? action.click.trim() : "";
+				const actionType = action && isRecord(action.type) ? action.type : undefined;
+				const actionTypeTarget = actionType && typeof actionType.target === "string" ? actionType.target.trim() : "";
+				const hasClick = actionClick.length > 0;
+				const hasType = actionTypeTarget.length > 0 && typeof actionType?.text === "string";
+				const actionScroll = action && isRecord(action.scroll) ? action.scroll : undefined;
+				const hasScroll = !!actionScroll;
+				const hasAction = hasClick || hasType || hasScroll;
+				if ([hasClick, hasType, hasScroll].filter(Boolean).length > 1) throw new BrowserBridgeError("INVALID_RULE", "browser_execute action takes exactly one of click/type/scroll", { toolName: "browser_execute" });
+				const hasScript = typeof params.script === "string" && params.script.trim().length > 0;
+				if (hasScript && hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute takes either script or action, not both", { toolName: "browser_execute" });
+				if (!hasScript && !hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script (JavaScript) or action (structured page action)", { toolName: "browser_execute" });
 				if (!hasAction && detectCommandLikeScript(params.script as string)) {
 					throw new BrowserBridgeError("INVALID_RULE", "browser_execute only accepts JavaScript; use browser_command for bridge commands", { toolName: "browser_execute", recovery: { useTool: "browser_command" } });
 				}
@@ -152,39 +153,39 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const maxChars = toolMaxChars(params, "browser_execute");
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const tabId = normalizeTabId(params.tabId);
-					if (hasAction) {
-						const verb = hasClick ? "click" : hasType ? "type" : "scroll";
-						const target = hasClick ? actionClick : hasType ? actionTypeTarget : (actionScroll && typeof actionScroll.target === "string" ? actionScroll.target.trim() : "");
-						const ref = target ? actionTargetRef(target, { tabId, browserSessionId }) : undefined;
-						const { result: actionResult, operation } = await withTrackedOperation(server, {
-							toolName: "browser_execute",
-							command: `action.${verb}`,
-							browserSessionId,
-							tabId,
-							phase: "running",
-							progress: 10,
-							queueDepth: server.queueDepth(browserSessionId, tabId),
-							leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
-						}, _onUpdate, async (handle) => {
-							const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars });
-							await handle.update({ progress: 55 });
-							const res = hasClick ? await abml.runtime.click?.({ ref: ref as RefDescriptor | string }) : hasType ? await abml.runtime.type?.({ ref: ref as RefDescriptor | string, text: String(actionType?.text ?? ""), clear: actionType?.clear === true }) : await abml.runtime.scroll?.({ ref, to: (typeof actionScroll?.to === "string" ? actionScroll.to : undefined) as "top" | "bottom" | "next" | "previous" | undefined, steps: typeof actionScroll?.steps === "number" ? actionScroll.steps : undefined });
-							if (!res) throw new BrowserBridgeError("BACKEND_UNAVAILABLE", `ABML ${verb} runtime unavailable`, { toolName: "browser_execute" });
-							return res;
-						});
-						const transport = actionResult.ok ? (actionResult.data as Record<string, unknown> | undefined)?.transport : undefined;
-						const verification = actionResult.ok ? actionResult.verification?.status : actionResult.error?.code;
-						return await jsonToolResult(actionResult, params, ctx, {
-							toolName: "browser_execute",
-							command: `action.${verb}`,
-							defaultDetailLevel: "summary",
-							maxChars,
-							fallbackName: artifactFallbackName("execute-action"),
-							details: { mode: "action", action: verb, target, transport, verification },
-							operation,
-							artifactValue: { ...actionResult, operation },
-						});
-					}
+				if (hasAction) {
+					const verb = hasClick ? "click" : hasType ? "type" : "scroll";
+					const target = hasClick ? actionClick : hasType ? actionTypeTarget : (actionScroll && typeof actionScroll.target === "string" ? actionScroll.target.trim() : "");
+					const ref = target ? actionTargetRef(target, { tabId, browserSessionId }) : undefined;
+					const { result: actionResult, operation } = await withTrackedOperation(server, {
+						toolName: "browser_execute",
+						command: `action.${verb}`,
+						browserSessionId,
+						tabId,
+						phase: "running",
+						progress: 10,
+						queueDepth: server.queueDepth(browserSessionId, tabId),
+						leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
+					}, _onUpdate, async (handle) => {
+						const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars });
+						await handle.update({ progress: 55 });
+						const res = hasClick ? await abml.runtime.click?.({ ref: ref as RefDescriptor | string, diff: action?.diff === true }) : hasType ? await abml.runtime.type?.({ ref: ref as RefDescriptor | string, text: String(actionType?.text ?? ""), clear: actionType?.clear === true, diff: action?.diff === true }) : await abml.runtime.scroll?.({ ref, to: (typeof actionScroll?.to === "string" ? actionScroll.to : undefined) as "top" | "bottom" | "next" | "previous" | undefined, steps: typeof actionScroll?.steps === "number" ? actionScroll.steps : undefined, collect: actionScroll?.collect === true });
+						if (!res) throw new BrowserBridgeError("BACKEND_UNAVAILABLE", `ABML ${verb} runtime unavailable`, { toolName: "browser_execute" });
+						return res;
+					});
+					const transport = actionResult.ok ? (actionResult.data as Record<string, unknown> | undefined)?.transport : undefined;
+					const verification = actionResult.ok ? actionResult.verification?.status : actionResult.error?.code;
+					return await jsonToolResult(actionResult, params, ctx, {
+						toolName: "browser_execute",
+						command: `action.${verb}`,
+						defaultDetailLevel: "summary",
+						maxChars,
+						fallbackName: artifactFallbackName("execute-action"),
+						details: { mode: "action", action: verb, target, transport, verification },
+						operation,
+						artifactValue: { ...actionResult, operation },
+					});
+				}
 				const { result: jsResult, operation } = await withTrackedOperation(server, {
 					toolName: "browser_execute",
 					command: "javascript",

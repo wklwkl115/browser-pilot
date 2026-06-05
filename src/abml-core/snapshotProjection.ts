@@ -5,7 +5,7 @@
 // delta buckets where available. It intentionally does not mint refs, resolve actions, or infer DOM
 // structure from tag/class/selector patterns.
 import type { Entity, EntityKind } from "./entity.js";
-import { buildTemplateSummary, MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, templateGroupDescriptorForEntity, type StructureTemplate, type TemplateGroupDescriptor, type TemplateVaryField } from "./templating.js";
+import { buildTemplateSummary, isActionableOrStructural, isPureTextLeaf, MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, structureScopeKey, templateGroupDescriptorForEntity, templateRank, type StructureTemplate, type TemplateGroupDescriptor, type TemplateVaryField } from "./templating.js";
 import type { TreeDiff, TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "./treeDiff.js";
 
 export type SnapshotProjectionDelta = {
@@ -58,6 +58,14 @@ export type SnapshotProjectionOptions = {
 
 type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: Entity[] };
 
+function suppressRedundantTextLeafGroups(groups: TemplateGroup[]): TemplateGroup[] {
+	const scopesWithStructuralTemplates = new Set(groups
+		.filter((group) => isActionableOrStructural(group.descriptor))
+		.map((group) => structureScopeKey(group.descriptor)));
+	if (!scopesWithStructuralTemplates.size) return groups;
+	return groups.filter((group) => !(isPureTextLeaf(group.descriptor) && scopesWithStructuralTemplates.has(structureScopeKey(group.descriptor))));
+}
+
 function groupEntities(entities: Entity[]): TemplateGroup[] {
 	const groups = new Map<string, TemplateGroup>();
 	for (const entity of entities) {
@@ -67,7 +75,7 @@ function groupEntities(entities: Entity[]): TemplateGroup[] {
 		if (group) group.members.push(entity);
 		else groups.set(descriptor.key, { descriptor, members: [entity] });
 	}
-	return Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES);
+	return suppressRedundantTextLeafGroups(Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES));
 }
 
 function cloneInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBucket {
@@ -154,7 +162,7 @@ export function buildSnapshotProjection(entities: Entity[], options: SnapshotPro
 		templates.push(deltaOnlyTemplate(diff, delta));
 	}
 	const capped = templates
-		.sort((a, b) => Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0))
+		.sort((a, b) => templateRank(a) - templateRank(b) || Math.max(b.count, b.delta?.beforeCount ?? 0) - Math.max(a.count, a.delta?.beforeCount ?? 0))
 		.slice(0, MAX_TEMPLATES);
 	const summary: SnapshotProjectionSummary = {
 		templateCount: capped.length,

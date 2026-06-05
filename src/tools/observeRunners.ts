@@ -4,7 +4,7 @@ import { BrowserBridgeError } from "../driver/errors.js";
 import { executeBrowserWaitWithSupervisor } from "../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { Entity } from "../abml/entity.js";
-import type { EntityDiff } from "../abml/diff.js";
+import { summarizeEntityDiff, type EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
@@ -318,6 +318,17 @@ function savedArtifactPathFromBaseline(value: unknown): string | undefined {
 
 type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number };
 
+function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		...extra,
+		recovery: {
+			retryable: true,
+			hint: "Re-capture the baseline with browser_observe mode=scan, then pass the fresh snapshotId or saved observe artifact as baseline.",
+			nextActions: ["browser_observe mode=scan", "use the new snapshotId or saved artifact as baseline"],
+		},
+	};
+}
+
 function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 	if (Array.isArray(value)) return entities.length < 10;
 	if (!isRecord(value)) return false;
@@ -337,27 +348,27 @@ async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: un
 		try {
 			parsedSaved = parseJsonOrThrow(await readFile(savedPath, "utf8"), "browser_observe baseline saved artifact");
 		} catch (error) {
-			throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact could not be read as JSON", { path: savedPath, error: error instanceof Error ? error.message : String(error) });
+			throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact could not be read as JSON", baselineRecovery({ path: savedPath, error: error instanceof Error ? error.message : String(error) }));
 		}
 		const fromSaved = baselineEntitiesFromParam(parsedSaved);
-		if (!fromSaved) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact does not contain ABML entities", { path: savedPath });
+		if (!fromSaved) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact does not contain ABML entities", baselineRecovery({ path: savedPath }));
 		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved) };
 	}
 	const inline = baselineEntitiesFromParam(baseline);
 	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline) };
 	const snapshotId = baselineSnapshotId(baseline);
-	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", { baselineType: typeof baseline });
+	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", baselineRecovery({ baselineType: typeof baseline }));
 	const snapshot = server.getObservationSnapshot(snapshotId);
-	if (!snapshot || snapshot.expired) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot is unavailable or expired", { snapshotId, expired: snapshot?.expired, invalidatedReason: snapshot?.invalidatedReason });
-	if (!snapshot.saved?.path) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot has no saved artifact path", { snapshotId });
+	if (!snapshot || snapshot.expired) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot is unavailable or expired", baselineRecovery({ snapshotId, expired: snapshot?.expired, invalidatedReason: snapshot?.invalidatedReason }));
+	if (!snapshot.saved?.path) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot has no saved artifact path", baselineRecovery({ snapshotId }));
 	let parsed: unknown;
 	try {
 		parsed = parseJsonOrThrow(await readFile(snapshot.saved.path, "utf8"), "browser_observe baseline snapshot artifact");
 	} catch (error) {
-		throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact could not be read as JSON", { snapshotId, path: snapshot.saved.path, error: error instanceof Error ? error.message : String(error) });
+		throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact could not be read as JSON", baselineRecovery({ snapshotId, path: snapshot.saved.path, error: error instanceof Error ? error.message : String(error) }));
 	}
 	const fromArtifact = baselineEntitiesFromParam(parsed);
-	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", { snapshotId, path: snapshot.saved.path });
+	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", baselineRecovery({ snapshotId, path: snapshot.saved.path }));
 	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed), hookSeq: typeof snapshot.hookSeq === "number" ? snapshot.hookSeq : hookSeqFromBaseline(parsed) };
 }
 
@@ -497,6 +508,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const abmlEntities = observation.abmlRead?.ok === true ? (observation.abmlRead.entities ?? []) : null;
 	const abmlDiff: EntityDiff | undefined = observation.abmlRead?.ok === true ? observation.abmlRead.diff : undefined;
+	const abmlDiffSummary = abmlDiff ? summarizeEntityDiff(abmlDiff, baseline?.entities, observation.abmlRead?.ok === true ? observation.abmlRead.entities ?? [] : []) : undefined;
+	const envelopeDiff = abmlDiff ? { ...abmlDiff, ...(abmlDiffSummary ? { summary: abmlDiffSummary } : {}) } : undefined;
 	const abmlTreeDiff: TreeDiff | undefined = observation.abmlRead?.ok === true && baseline
 		? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 		: undefined;
@@ -540,7 +553,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
-				...(abmlDiff ? { diff: abmlDiff } : {}),
+				...(envelopeDiff ? { diff: envelopeDiff } : {}),
 				...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 				snapshotProjection,
 				...causalBlock,
@@ -559,7 +572,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					// R2 inference layer — generic ARIA semantic patterns detected over the entity list +
 					// relation graph. Budget-immune (lifted to envelope top-level alongside relations).
 					inference,
-					...(abmlDiff ? { diff: abmlDiff } : {}),
+					...(envelopeDiff ? { diff: envelopeDiff } : {}),
 					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 					snapshotProjection,
 					referenced_entities: referencedEntities,
@@ -571,6 +584,16 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
 	const summaryRecord = summary as Record<string, unknown>;
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
+	const artifactEnvelopeMirror = {
+		tool: "browser_observe",
+		command: mode === "text" ? "scan.text" : "scan",
+		summary,
+		...(envelopeDiff ? { diff: envelopeDiff } : {}),
+		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
+		...(Array.isArray((summaryRecord.focus as Record<string, unknown> | undefined)?.templates) ? { templates: (summaryRecord.focus as Record<string, unknown>).templates } : {}),
+		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
+		...causalBlock,
+	};
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -580,7 +603,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(Array.isArray((summaryRecord.focus as Record<string, unknown> | undefined)?.templates) ? { templates: (summaryRecord.focus as Record<string, unknown>).templates } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }
 

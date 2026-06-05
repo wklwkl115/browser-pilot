@@ -246,6 +246,10 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 	};
 }
 
+function templateDiffSignalScore(diff: TreeTemplateDiff): number {
+	return diff.changed.count * 40 + diff.appeared.count * 12 + diff.disappeared.count * 12 + (diff.reordered ? 4 : 0);
+}
+
 export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[], options: TreeDiffOptions = {}): TreeDiff {
 	if (options.partialBaseline) return { summary: { templateCount: 0, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0, partialBaseline: true, unavailable: "treeDiff requires a full baseline; partial baselines suppress structure-level change projection" }, templates: [] };
 	const beforeGroups = groupEntities(beforeEntities);
@@ -257,7 +261,7 @@ export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[],
 	const templates = Array.from(allKeys)
 		.map((key) => buildTemplateDiff(beforeByKey.get(key), afterByKey.get(key), counts))
 		.filter((item): item is TreeTemplateDiff => !!item)
-		.sort((a, b) => Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount))
+		.sort((a, b) => templateDiffSignalScore(b) - templateDiffSignalScore(a) || Math.max(b.beforeCount, b.afterCount) - Math.max(a.beforeCount, a.afterCount))
 		.slice(0, MAX_TEMPLATES);
 	const summary = templates.reduce<TreeDiffSummary>((acc, item) => ({
 		templateCount: acc.templateCount,
