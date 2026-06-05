@@ -77,5 +77,6 @@ export function tabSessionSummary(session: BrowserTabSession): Record<string, un
 		tabId: session.tabId,
 		url: session.url,
 		active: session.active,
+		incognito: session.incognito,
 	};
 }

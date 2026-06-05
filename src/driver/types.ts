@@ -22,6 +22,7 @@ export type BrowserTabSession = {
 	title: string;
 	active?: boolean;
 	windowId?: number;
+	incognito?: boolean;
 	type: "ext_ws";
 	connectedAt: number;
 	disconnectedAt?: number;

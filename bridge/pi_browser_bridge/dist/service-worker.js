@@ -8429,7 +8429,7 @@ async function handleTabsCommand(msg) {
   try {
     if (!msg.method || msg.method === "list") {
       const tabs = (await chromeApi.tabs.query({})).filter((t) => isScriptable(t.url));
-      const data2 = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }));
+      const data2 = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }));
       return { ok: true, data: data2 };
     }
     if (msg.method === "switch") {
@@ -8441,8 +8441,23 @@ async function handleTabsCommand(msg) {
     if (msg.method === "create") {
       const normalized = normalizePiBrowserCreateTabUrl(msg.url);
       if (!normalized.ok) return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, normalized.error, { cmd: msg.cmd, method: msg.method, ...normalized.details });
+      if (msg.incognito) {
+        const allowed = await new Promise((resolve) => {
+          try {
+            if (chromeApi.extension && typeof chromeApi.extension.isAllowedIncognitoAccess === "function") chromeApi.extension.isAllowedIncognitoAccess((a) => resolve(!!a));
+            else resolve(true);
+          } catch {
+            resolve(true);
+          }
+        });
+        if (!allowed) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, "Incognito access is not granted to the Pi bridge extension", { cmd: msg.cmd, method: msg.method, recovery: 'Open chrome://extensions, find "Pi Native Browser Bridge" \u2192 Details \u2192 enable "Allow in incognito", then retry browser_tabs create with incognito:true' });
+        const win = await chromeApi.windows.create({ url: normalized.url, incognito: true, focused: msg.active !== false });
+        const incognitoTab = win && Array.isArray(win.tabs) ? win.tabs[0] : void 0;
+        if (!incognitoTab || incognitoTab.id === void 0) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, "Incognito window was created but no tab was returned", { cmd: msg.cmd, method: msg.method });
+        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || "", windowId: incognitoTab.windowId, incognito: true } };
+      }
       const tab = await chromeApi.tabs.create({ url: normalized.url, active: msg.active !== false });
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || "", windowId: tab.windowId } };
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || "", windowId: tab.windowId, incognito: tab.incognito === true } };
     }
     if (msg.method === "close") {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;
@@ -8974,7 +8989,7 @@ async function sendTabsUpdate() {
   const payload = JSON.stringify({
     type: "tabs_update",
     bridge: piBridgeInfo(),
-    tabs: tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
+    tabs: tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }))
   });
   for (const socket2 of openSockets) socket2.send(payload);
 }

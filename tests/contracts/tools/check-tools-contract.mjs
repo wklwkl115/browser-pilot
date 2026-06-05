@@ -81,6 +81,12 @@ assert(nativeActionTools.includes("executeBrowserWaitWithSupervisor") && nativeA
 assert(transferTools.includes("confirm:true") && transferTools.includes("command.timeoutMs = timeoutMs"), "browser_upload/download must preserve explicit confirmation and command timeout injection");
 assert(evidenceTool.includes("DEFAULT_OBSERVATION_TIMEOUT_MS") && evidenceTool.includes("withTrackedOperation"), "browser_evidence must keep longer observation timeout and tracked operations");
 
+// Isolated/logged-out session: browser_tabs create gained an `incognito` option that opens a fresh
+// incognito window (separate cookie jar) via the bridge, with an allowed-access recovery when the user
+// hasn't enabled "Allow in incognito".
+assert(read("src/tools/registerTabsTool.ts").includes("incognito: params.incognito === true"), "browser_tabs create must forward the incognito option to createTab");
+assert(read("bridge_src/service_worker/core_commands.ts").includes("chrome.windows.create") && read("bridge_src/service_worker/core_commands.ts").includes("isAllowedIncognitoAccess"), "bridge tabs.create must open an incognito window and check isAllowedIncognitoAccess");
+
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
 assert(String(packageJson.scripts?.["check:web-security"] || "").includes("check-web-security-tools.mjs"), "check:web-security must run the dedicated WebSecurity contract");
 

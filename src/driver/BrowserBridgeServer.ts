@@ -228,7 +228,7 @@ export class BrowserBridgeServer {
 		return await this.commandService.switchTab(tabId, timeoutMs, options);
 	}
 
-	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
+	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean } = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.createTab(url, active, timeoutMs, options);
 	}
 

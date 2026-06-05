@@ -40,7 +40,7 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
   try {
     if (!msg.method || msg.method === 'list') {
       const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
-      const data = tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }));
+      const data = tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }));
       return { ok: true, data };
     }
     if (msg.method === 'switch') {
@@ -52,8 +52,24 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
     if (msg.method === 'create') {
       const normalized = normalizePiBrowserCreateTabUrl(msg.url);
       if (!normalized.ok) return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, normalized.error, { cmd: msg.cmd, method: msg.method, ...normalized.details });
+      if (msg.incognito) {
+        // Isolated (logged-out) browsing context = a fresh incognito window with its own cookie jar.
+        // Requires the user to have enabled "Allow in incognito" for this extension; we can detect that
+        // but not toggle it, so on denial return a clear, actionable recovery instead of a raw failure.
+        const allowed = await new Promise<boolean>((resolve) => {
+          try {
+            if (chrome.extension && typeof chrome.extension.isAllowedIncognitoAccess === 'function') chrome.extension.isAllowedIncognitoAccess((a: boolean) => resolve(!!a));
+            else resolve(true); // can't pre-check on this build — let windows.create surface the real error
+          } catch { resolve(true); }
+        });
+        if (!allowed) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito access is not granted to the Pi bridge extension', { cmd: msg.cmd, method: msg.method, recovery: 'Open chrome://extensions, find "Pi Native Browser Bridge" → Details → enable "Allow in incognito", then retry browser_tabs create with incognito:true' });
+        const win = await chrome.windows.create({ url: normalized.url, incognito: true, focused: msg.active !== false });
+        const incognitoTab = win && Array.isArray(win.tabs) ? win.tabs[0] : undefined;
+        if (!incognitoTab || incognitoTab.id === undefined) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito window was created but no tab was returned', { cmd: msg.cmd, method: msg.method });
+        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, incognito: true } };
+      }
       const tab = await chrome.tabs.create({ url: normalized.url, active: msg.active !== false });
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId } };
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, incognito: tab.incognito === true } };
     }
     if (msg.method === 'close') {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;

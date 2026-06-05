@@ -54,6 +54,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			allowExpired: Type.Optional(Type.Boolean({ description: "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata." })),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
+				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 			timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
 		}),
 		async execute(_toolCallId, params) {
@@ -84,7 +85,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "releasetab" && tabId !== undefined) return jsonResult({ released: server.releaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
 				if (action === "selectbrowser" || action === "browser" || action === "select") return jsonResult({ selected: server.selectBrowser(params.browserId || "", browserSession), snapshot: server.snapshot(browserSession) }, { action });
 				if (action === "switch" && tabId !== undefined) return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
-				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, browserSession), { action });
+				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true }), { action });
 				if (action === "close" && tabId !== undefined) return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});

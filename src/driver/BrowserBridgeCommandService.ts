@@ -72,8 +72,8 @@ export class BrowserBridgeCommandService {
 		}
 	}
 
-	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
-		const result = await this.sendCommand({ cmd: "tabs", method: "create", url, active }, { timeoutMs, browserSessionId: options.browserSessionId });
+	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean } = {}): Promise<BrowserBridgeExecutionResult> {
+		const result = await this.sendCommand({ cmd: "tabs", method: "create", url, active, ...(options.incognito ? { incognito: true } : {}) }, { timeoutMs, browserSessionId: options.browserSessionId });
 		// A newly created tab only becomes a live router session when the extension's ASYNC `tabs_update`
 		// event arrives (chrome.tabs.onCreated → sendTabsUpdate). An immediate tab-scoped call on the
 		// returned tabId (e.g. browser_wait) would otherwise race that event and hit TAB_NOT_FOUND — a

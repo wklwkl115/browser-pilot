@@ -95,6 +95,7 @@ export class BrowserTabSessionRouter {
 				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
 				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
 				windowId: toTabId(tab.windowId) ?? existing?.windowId,
+				incognito: typeof tab.incognito === "boolean" ? tab.incognito : existing?.incognito,
 				type: "ext_ws",
 				connectedAt: existing?.connectedAt || now,
 				bridge: this.clients.info(ws),

@@ -27,7 +27,7 @@ async function sendTabsUpdate() {
   const payload = JSON.stringify({
     type: 'tabs_update',
     bridge: piBridgeInfo(),
-    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
+    tabs: tabs.map((t: PiChromeTab) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }))
   });
   for (const socket of openSockets) socket.send(payload);
 }

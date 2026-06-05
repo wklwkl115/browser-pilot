@@ -522,7 +522,8 @@ export type PiChromeApi = {
   runtime: PiChromeRuntime;
   debugger: PiChromeDebugger;
   tabs: PiChromeTabs;
-  windows: { update(windowId: number, updateInfo: JsonRecord): Promise<unknown> };
+  windows: { update(windowId: number, updateInfo: JsonRecord): Promise<unknown>; create(createData: JsonRecord): Promise<{ id?: number; tabs?: PiChromeTab[] } | undefined> };
+  extension?: { isAllowedIncognitoAccess(callback: (allowed: boolean) => void): void };
   scripting: { executeScript(options: JsonRecord): Promise<unknown[]> };
   downloads: PiChromeDownloads;
   cookies: { getAll(details: JsonRecord): Promise<PiChromeCookie[]> };
