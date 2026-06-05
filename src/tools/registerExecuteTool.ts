@@ -15,6 +15,7 @@ import type { ToolRegistrarContext } from "./toolShared.js";
 type MonitorScanResult = {
 	ok: boolean;
 	content?: string;
+	url?: string;
 	error?: Record<string, unknown>;
 	source?: "abml-read" | "legacy-scan";
 };
@@ -26,6 +27,10 @@ type MonitorMetadata = {
 	afterChars: number;
 	changed: number;
 	top_change?: string;
+	navigated?: boolean;
+	afterUnreliable?: boolean;
+	urlBefore?: string;
+	urlAfter?: string;
 	beforeError?: Record<string, unknown>;
 	afterError?: Record<string, unknown>;
 	beforeSource?: "abml-read" | "legacy-scan";
@@ -56,7 +61,8 @@ async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 		if (abml?.ok && abml.data && typeof abml.data === "object") {
 			const summary = (abml.data as Record<string, unknown>).summary as Record<string, unknown> | undefined;
 			const content = typeof summary?.textPreview === "string" ? summary.textPreview : JSON.stringify(abml.entities ?? [], null, 2);
-			return { ok: true, content, source: "abml-read" };
+			const url = typeof summary?.url === "string" ? summary.url : undefined;
+			return { ok: true, content, url, source: "abml-read" };
 		}
 		const result = await server.executeJavaScript(scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
 		const content = (result.data as Record<string, unknown> | undefined)?.content;
@@ -73,6 +79,14 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 	const executed = await server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
 	const after = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
 	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
+	// A script that navigates/reloads makes the same-document line diff meaningless: the after-read
+	// races the navigation and often sees no NEW lines → a misleading `changed: 0`. `summary.url` comes
+	// from the page's location.href (updated synchronously on assignment), so a url change is the reliable
+	// signal. Flag it so `changed: 0` is never read as "nothing happened" (observed in a real agent
+	// session: a click that navigated to the next chapter reported changed:0). For navigation-level change
+	// detection use browser_wait + a baseline observe (treeDiff), not monitor.
+	const navigated = !!(before.url && after.url && before.url !== after.url);
+	const afterUnreliable = before.ok && !after.ok;
 	return {
 		...executed,
 		monitor: {
@@ -81,6 +95,8 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 			beforeChars: typeof before.content === "string" ? before.content.length : 0,
 			afterChars: typeof after.content === "string" ? after.content.length : 0,
 			...diff,
+			...(navigated ? { navigated: true, urlBefore: before.url, urlAfter: after.url } : {}),
+			...(afterUnreliable ? { afterUnreliable: true } : {}),
 			beforeError: before.error,
 			afterError: after.error,
 			beforeSource: before.source,
@@ -147,6 +163,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 								after: monitor.afterSource,
 								changed: monitor.changed,
 								top_change: monitor.top_change,
+								...(monitor.navigated === true ? { navigated: true, urlBefore: monitor.urlBefore, urlAfter: monitor.urlAfter, note: "page navigated — the before/after DOM diff does not span navigation; use browser_wait + a baseline observe (treeDiff) for post-navigation change" } : {}),
+								...(monitor.afterUnreliable === true ? { afterUnreliable: true } : {}),
 								abmlIntegrated: monitor.beforeSource === "abml-read" || monitor.afterSource === "abml-read",
 							};
 						}

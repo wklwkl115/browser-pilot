@@ -14,5 +14,9 @@ assert(helper.includes("const executed = await server.executeJavaScript"), "moni
 assert(helper.includes("return {\n\t\t...executed,\n\t\tmonitor:"), "monitor helper must append monitor beside the original execution envelope");
 assert(!helper.includes("execution: executed.data"), "monitor helper must not wrap the execution result under execution");
 assert(!helper.includes("newTabs: executed.newTabs"), "monitor helper must not move newTabs into monitor metadata");
+// Navigation honesty: a script that navigates makes the same-document line diff meaningless (misleading
+// changed:0). monitor must flag navigation via the page url change, not present a bare changed:0.
+assert(helper.includes("const navigated = !!(before.url && after.url && before.url !== after.url)"), "monitor must detect navigation via before/after page url change");
+assert(helper.includes("navigated: true") && helper.includes("urlBefore") && helper.includes("urlAfter"), "monitor must surface navigated + the before/after urls instead of a misleading changed:0");
 
 console.log("execute tool contract ok");
