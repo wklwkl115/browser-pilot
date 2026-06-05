@@ -136,6 +136,19 @@ function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number)
 	return out;
 }
 
+// Cheap scalar identity fields (url/title/readyState/counts/tabId/…) cost almost nothing but tell an
+// agent WHAT page this is + WHERE to look. Keep them even in the extreme budget fallback instead of
+// nuking the whole summary to a generic preview (observed on a 9-iframe page degrading to an unusable
+// summary in a real agent session, 2026-06-05). Operates on the already-redacted summary, so safe.
+function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
+	const out: DistilledSummary = {};
+	for (const [key, value] of Object.entries(summary)) {
+		if (typeof value === "number" || typeof value === "boolean") out[key] = value;
+		else if (typeof value === "string" && value.length <= 200) out[key] = value;
+	}
+	return out;
+}
+
 function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
 	if (stableJson(summary).length <= budget) return summary;
 	for (const limits of [
@@ -149,11 +162,18 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 	}
 	const dropped = dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
 	if (stableJson(dropped).length <= budget) return dropped;
-	const minimalBase: DistilledSummary = {
-		summaryTruncatedToBudget: true,
-		summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summaryOmitted) ? dropped.summaryOmitted : []), ...Object.keys(summary)])),
-		keys: Object.keys(summary).slice(0, 40),
-	};
+	const keptScalars = scalarIdentityFields(summary);
+	const droppedKeys = Object.keys(summary).filter((key) => !(key in keptScalars));
+	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
+	// Keep the cheap scalar identity core when it fits; only if even that overflows fall back to the
+	// bare omit-everything shape.
+	const minimalBase: DistilledSummary = stableJson(scalarBase).length <= budget
+		? scalarBase
+		: {
+			summaryTruncatedToBudget: true,
+			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summaryOmitted) ? dropped.summaryOmitted : []), ...Object.keys(summary)])),
+			keys: Object.keys(summary).slice(0, 40),
+		};
 	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
 	let previewChars = Math.max(0, Math.min(previewSource.length, budget));
 	while (previewChars >= 0) {

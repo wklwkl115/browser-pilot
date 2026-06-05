@@ -163,6 +163,12 @@ export function registerFrameTool(context: ToolRegistrarContext) {
 		actionDescription: nativeToolMetadata.nativeActionTools.browser_frame.actionDescription,
 		commandForAction: frameCommandForAction,
 		commandExecutor: async (server, command, options) => {
+			// Ergonomics: browser_execute takes `script`; the frame.evaluate protocol field is `expression`.
+			// Agents primed by browser_execute routinely pass `script` here and hit a hard schema error
+			// (frame.evaluate missing required fields: expression). Accept `script` as an alias so the
+			// natural call just works (observed wasting a round in a real agent session, 2026-06-05).
+			const c = command as Record<string, unknown>;
+			if (c.cmd === "frame.evaluate" && typeof c.script === "string" && c.expression === undefined) { c.expression = c.script; delete c.script; }
 			const result = await server.sendCommand(command, options);
 			if ((command.cmd === "frame.list" || command.cmd === "frame.evaluate") && result.data && typeof result.data === "object") {
 				const tabId = typeof result.tabId === "number" ? result.tabId : typeof options.tabId === "number" ? options.tabId : typeof command.tabId === "number" ? command.tabId : undefined;
