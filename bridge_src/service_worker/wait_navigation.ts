@@ -240,6 +240,18 @@ async function waitForLoadState(tabId: number, msg: PiBridgeCommand): Promise<Pi
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
     record.listeners.push({ remove: () => chrome.tabs.onUpdated.removeListener(onUpdated) });
+    // Re-check AFTER the listeners are armed. The immediate check (above) ran before any listener
+    // existed, and CDP listeners arm asynchronously (enablePiBrowserCdpDomains().then(...)); if the
+    // load completes in that window the Page.loadEventFired / status='complete' transition fires before
+    // a listener sees it and the wait would hang until timeout (observed: navigateAndWait false-timeout
+    // on an already-/fast-loading page). This backstop catches a state that became satisfied during arming.
+    void (async () => {
+      const recheckTab = await chrome.tabs.get(tabId).catch(() => null);
+      const recheckMetrics = await queryLoadMetrics(tabId).catch(() => null);
+      if (loadStateSatisfied(targetState, recheckTab, recheckMetrics)) {
+        complete(finishPiBrowserWait(record, true, { state: targetState, url: recheckMetrics?.url || recheckTab?.url, title: recheckMetrics?.title || recheckTab?.title, recheck: true, readyState: recheckMetrics?.readyState }));
+      }
+    })();
   });
 }
 // CDP contract literal: 'Network.enable'

@@ -3978,6 +3978,13 @@ async function waitForLoadState(tabId2, msg) {
     };
     chromeApi.tabs.onUpdated.addListener(onUpdated);
     record.listeners.push({ remove: () => chromeApi.tabs.onUpdated.removeListener(onUpdated) });
+    void (async () => {
+      const recheckTab = await chromeApi.tabs.get(tabId2).catch(() => null);
+      const recheckMetrics = await queryLoadMetrics(tabId2).catch(() => null);
+      if (loadStateSatisfied(targetState, recheckTab, recheckMetrics)) {
+        complete(finishPiBrowserWait(record, true, { state: targetState, url: recheckMetrics?.url || recheckTab?.url, title: recheckMetrics?.title || recheckTab?.title, recheck: true, readyState: recheckMetrics?.readyState }));
+      }
+    })();
   });
 }
 var __piBridgeModule_wait_navigation = { name: "wait_navigation", symbols: { navigatePiBrowser, navigateAndWait, waitForNavigation, loadStateSatisfied, queryLoadMetrics, waitForLoadState } };
