@@ -13,6 +13,9 @@
 	     #plain accepts any click (control: raw synthetic works here). -->
 	<button id="guarded">Guarded (trusted-only)</button>
 	<button id="plain">Plain</button>
+	<!-- #typed updates its model ONLY on a TRUSTED input event - raw el.value + a synthetic input
+	     event is ignored (like a framework-controlled input); the ladder's CDP Input.insertText fires it. -->
+	<input id="typed" placeholder="trusted-input-only" />
 	<p id="status">idle</p>
 	<script>
 		window.__effect = false;
@@ -27,7 +30,12 @@
 			window.__plainEffect = true;
 			document.getElementById('status').textContent = 'plain fired';
 		});
-		window.__resetEffect = function () { window.__effect = false; document.title = 'action gap'; document.getElementById('status').textContent = 'idle'; return true; };
+		window.__typedModel = "";
+		document.getElementById('typed').addEventListener('input', function (e) {
+			if (!e.isTrusted) return;     // synthetic input (raw el.value + dispatched Event) is ignored
+			window.__typedModel = e.target.value;
+		});
+		window.__resetEffect = function () { window.__effect = false; window.__plainEffect = false; window.__typedModel = ''; var t = document.getElementById('typed'); if (t) t.value = ''; document.title = 'action gap'; document.getElementById('status').textContent = 'idle'; return true; };
 	</script>
 </body>
 </html>

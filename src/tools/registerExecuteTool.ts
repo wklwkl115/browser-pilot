@@ -123,7 +123,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 			script: Type.Optional(Type.String({ description: "JavaScript source. Omit when using `action`." })),
 				action: Type.Optional(Type.Object({
 					click: Type.Optional(Type.String({ description: "Click a control reliably via the ABML ladder (actionability wait + auto CDP trusted-event fallback + effect verification). Value: a pi-ref:// from observe, or a CSS selector. Prefer over a hand-written el.click() when the click must actually take effect." })),
-				}, { description: "Structured page action routed through the ABML degradation ladder instead of raw JS. Mutually exclusive with script. Use when a click must reliably take effect (e.g. sites that ignore synthetic events)." })),
+					type: Type.Optional(Type.Object({ target: Type.String({ description: "pi-ref:// or CSS selector of the field to type into." }), text: Type.String({ description: "Text to insert." }), clear: Type.Optional(Type.Boolean({ description: "Clear the field first (default false)." })) }, { description: "Type into a field reliably via the ladder (focus + CDP Input.insertText trusted events + verify)." })),
+				}, { description: "Structured page action routed through the ABML degradation ladder instead of raw JS. Mutually exclusive with script. Provide exactly one of click/type. Use when an action must reliably take effect (e.g. sites that ignore synthetic events)." })),
 			...sharedTabScopedToolParams(),
 			monitor: Type.Optional(Type.Boolean({ description: "Capture compact before/after scan diff for JavaScript mode. Default false to avoid token and latency overhead." })),
 		}),
@@ -131,7 +132,12 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 			return await runTool(async () => {
 				const action = isRecord(params.action) ? params.action : undefined;
 					const actionClick = action && typeof action.click === "string" ? action.click.trim() : "";
-					const hasAction = actionClick.length > 0;
+					const actionType = action && isRecord(action.type) ? action.type : undefined;
+					const actionTypeTarget = actionType && typeof actionType.target === "string" ? actionType.target.trim() : "";
+					const hasClick = actionClick.length > 0;
+					const hasType = actionTypeTarget.length > 0 && typeof actionType?.text === "string";
+					const hasAction = hasClick || hasType;
+					if (hasClick && hasType) throw new BrowserBridgeError("INVALID_RULE", "browser_execute action takes one of click/type, not both", { toolName: "browser_execute" });
 					const hasScript = typeof params.script === "string" && params.script.trim().length > 0;
 					if (hasScript && hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute takes either script or action, not both", { toolName: "browser_execute" });
 					if (!hasScript && !hasAction) throw new BrowserBridgeError("INVALID_RULE", "browser_execute requires script (JavaScript) or action (structured page action)", { toolName: "browser_execute" });
@@ -144,10 +150,12 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const tabId = normalizeTabId(params.tabId);
 					if (hasAction) {
-						const ref = actionTargetRef(actionClick, { tabId, browserSessionId });
+						const verb = hasClick ? "click" : "type";
+						const target = hasClick ? actionClick : actionTypeTarget;
+						const ref = actionTargetRef(target, { tabId, browserSessionId });
 						const { result: actionResult, operation } = await withTrackedOperation(server, {
 							toolName: "browser_execute",
-							command: "action.click",
+							command: `action.${verb}`,
 							browserSessionId,
 							tabId,
 							phase: "running",
@@ -157,7 +165,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						}, _onUpdate, async (handle) => {
 							const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars });
 							await handle.update({ progress: 55 });
-							const res = await abml.runtime.click?.({ ref });
+							const res = hasClick ? await abml.runtime.click?.({ ref }) : await abml.runtime.type?.({ ref, text: String(actionType?.text ?? ""), clear: actionType?.clear === true });
 							if (!res) throw new BrowserBridgeError("BACKEND_UNAVAILABLE", "ABML click runtime unavailable", { toolName: "browser_execute" });
 							return res;
 						});
@@ -165,11 +173,11 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						const verification = actionResult.ok ? actionResult.verification?.status : actionResult.error?.code;
 						return await jsonToolResult(actionResult, params, ctx, {
 							toolName: "browser_execute",
-							command: "action.click",
+							command: `action.${verb}`,
 							defaultDetailLevel: "summary",
 							maxChars,
 							fallbackName: artifactFallbackName("execute-action"),
-							details: { mode: "action", action: "click", target: actionClick, transport, verification },
+							details: { mode: "action", action: verb, target, transport, verification },
 							operation,
 							artifactValue: { ...actionResult, operation },
 						});

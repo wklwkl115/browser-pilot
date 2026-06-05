@@ -142,6 +142,21 @@ try {
   const toolActionEffect = (await readEffect("window.__effect === true")) === true;
   record("public.action", toolActionEffect === true, { toolActionEffect, registered: !!execute, transport: toolActionEnvelope?.details?.transport, verification: toolActionEnvelope?.details?.verification });
 
+  // ── F) PUBLIC PATH (B2 type): raw synthetic input is ignored by the model; action:{type} fires it via CDP ──
+  await bridge.executeJavaScript("return window.__resetEffect();", { tabId, browserSessionId, timeoutMs: 8000 });
+  await bridge.executeJavaScript("(() => { const el = document.querySelector('#typed'); el.focus(); el.value = 'hello-abml'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()", { tabId, browserSessionId, timeoutMs: 8000 });
+  await delay(150);
+  const rawTypeModel = await readEffect("window.__typedModel");
+  const rawTypeEffect = rawTypeModel === "hello-abml";
+  await bridge.executeJavaScript("return window.__resetEffect();", { tabId, browserSessionId, timeoutMs: 8000 });
+  let toolTypeEffect = false;
+  if (execute) {
+    await execute.execute("action", { action: { type: { target: "#typed", text: "hello-abml" } }, tabId, browserSessionId }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+    await delay(200);
+    toolTypeEffect = (await readEffect("window.__typedModel")) === "hello-abml";
+  }
+  record("public.type", toolTypeEffect === true, { rawTypeModel, rawTypeEffect, toolTypeEffect });
+
   result.measurement = {
     raw_works_on_plain: rawPlainEffect,
     raw_guarded_reported_ok: rawClickReportedOk,
@@ -151,9 +166,11 @@ try {
     ladder_transport: ladderTransport,
     ladder_verification: ladderVerified,
     public_action_effect_fired: toolActionEffect,
+    raw_type_model_updated: rawTypeEffect,
+    public_type_effect_fired: toolTypeEffect,
   };
   // Gap confirmed AND ladder recovers it: raw silently fails on the trusted-only case, ladder fixes it.
-  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true && toolActionEffect === true;
+  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true && toolActionEffect === true && rawTypeEffect === false && toolTypeEffect === true;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

@@ -83,11 +83,12 @@ synthetic -> verify -> auto CDP trusted fallback -> re-verify) and returns its s
 resolves the real entity. `script` stays exactly as-is.
 
 ### Slices
-1. **Core wiring** - `action` param on `browser_execute`; route `click` to the ladder; selector->descriptor
-   synthesis; `script`/`action` mutual-exclusion validation. Verify end-to-end via the action-gap smoke
-   driven through the registered tool (the `#guarded` case must now recover).
-2. **`type` verb** + the type-gap fixture case.
-3. **Public-surface process** - regenerate tool docs, check:tool-parameter-contract /
-   check:output-schema-conformance / check:cli-parity (the CLI must expose `--action`), full check green.
-4. **Skill + docs** - teach the skill when to use `action` (robust) vs `script` (raw); update the
-   coverage map (browser_execute now reaches the ladder via `action`).
+1. **Core wiring** ✓ (commit `f88762a`) - `action.click` on `browser_execute` → ladder; selector→descriptor
+   synthesis; script/action mutual-exclusion. Live-verified (#guarded recovers via the public tool).
+2. **`type` verb** ✓ - `action.type` {target,text,clear?} → ladder (focus + CDP insertText + verify);
+   #typed fixture (trusted-input-only) live-verified (raw synthetic ignored, action:{type} fires it).
+3. **Public-surface process** ✓ - tool docs regenerated; tool-parameter-contract / output-schema /
+   cli-parity all auto-green (the `action` param derives to the CLI); full `npm run check` green.
+4. **Skill + docs** ✓ - skill teaches `action.click`/`type` (robust) vs `script` (raw); coverage map
+   updated (browser_execute reaches the ladder via `action` for click + type).
+5. **Remaining:** `action.scroll` (symmetric, not gap-critical) — open.
