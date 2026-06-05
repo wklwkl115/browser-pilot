@@ -1,6 +1,6 @@
 # ABML action-path gap - measure (C) then deepen (B)
 
-> Status: **C (measurement) DONE - gap quantified on a real browser; B (the fix) AWAITS a pick.**
+> Status: **C (measurement) DONE; B2 (the fix) COMPLETE — click + type + scroll route through the ABML ladder via `browser_execute {action}`, live-verified.**
 > Follow-up to `docs/abml-tool-coverage-map.md`. Scope: the page-ACTION path only (the read path is
 > already on ABML). Constraint: **deepen the one narrow tool, never widen the surface** (public verb
 > tools were tried and proved worse). No new public tool unless the user explicitly accepts it.
@@ -91,4 +91,6 @@ resolves the real entity. `script` stays exactly as-is.
    cli-parity all auto-green (the `action` param derives to the CLI); full `npm run check` green.
 4. **Skill + docs** ✓ - skill teaches `action.click`/`type` (robust) vs `script` (raw); coverage map
    updated (browser_execute reaches the ladder via `action` for click + type).
-5. **Remaining:** `action.scroll` (symmetric, not gap-critical) — open.
+5. **`scroll`** ✓ - `action.scroll` {target?,to,steps?} → window/container scroll via the ladder;
+   live-verified (`public_scroll_effect_fired=true`). **B2 complete: click + type + scroll all reach
+   the ladder via the one optional `action` param; the action gap is closed.**

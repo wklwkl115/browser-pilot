@@ -157,6 +157,17 @@ try {
   }
   record("public.type", toolTypeEffect === true, { rawTypeModel, rawTypeEffect, toolTypeEffect });
 
+  // ── G) PUBLIC PATH (B2 scroll): action:{scroll:{to:"bottom"}} scrolls the window via the ladder ──
+  await bridge.executeJavaScript("(() => { window.scrollTo(0, 0); return true; })()", { tabId, browserSessionId, timeoutMs: 8000 });
+  let toolScrollY = 0;
+  if (execute) {
+    await execute.execute("action", { action: { scroll: { to: "bottom" } }, tabId, browserSessionId }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+    await delay(250);
+    toolScrollY = Number(await readEffect("window.scrollY")) || 0;
+  }
+  const toolScrollEffect = toolScrollY > 0;
+  record("public.scroll", toolScrollEffect === true, { toolScrollY });
+
   result.measurement = {
     raw_works_on_plain: rawPlainEffect,
     raw_guarded_reported_ok: rawClickReportedOk,
@@ -168,9 +179,10 @@ try {
     public_action_effect_fired: toolActionEffect,
     raw_type_model_updated: rawTypeEffect,
     public_type_effect_fired: toolTypeEffect,
+    public_scroll_effect_fired: toolScrollEffect,
   };
   // Gap confirmed AND ladder recovers it: raw silently fails on the trusted-only case, ladder fixes it.
-  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true && toolActionEffect === true && rawTypeEffect === false && toolTypeEffect === true;
+  result.ok = rawPlainEffect === true && rawClickReportedOk === true && rawGuardedEffect === false && ladderGuardedEffect === true && toolActionEffect === true && rawTypeEffect === false && toolTypeEffect === true && toolScrollEffect === true;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   record("error", false, { message });

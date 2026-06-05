@@ -17,13 +17,13 @@ for *acting* on the page.** Everything else (tabs, network, files, waiting, raw 
 | Tool | Touches ABML? | Reality |
 |---|---|---|
 | `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, `relations`/`inference`/`diff`/`templates`. `observeRunners.ts` → `abml.readStructure`. The "which read mode" complexity is genuinely hidden from the agent. |
-| `browser_execute` | ⚠️ read + click/type | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`), ABML only via `monitor:true` for a before/after read. **`{action:{click}}` / `{action:{type}}` (B2) now route through the ABML ladder** (actionability + auto CDP trusted-event fallback/insertText + verify) — the action path reaches ABML for click + type. `action.scroll` pending. |
+| `browser_execute` | ✅ read + click/type/scroll | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`), ABML only via `monitor:true` for a before/after read. **`{action:{click\|type\|scroll}}` (B2) routes through the ABML ladder** (actionability + auto CDP trusted-event fallback / insertText + verify) — the action path now reaches ABML for click, type, and scroll. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
 | `browser_screenshot` | ➖ no | Raw pixels (ABML's vision floor is a separate internal path). |
 | `browser_tabs` / `browser_wait` / `browser_command` / `browser_network` / `browser_hook` / `browser_evidence` / `browser_artifact` / `browser_download` / `browser_upload` / `browser_memory` / all web-security (`crawl`/`fuzz`/`sqli`/`template`/`oast`/`cookie`/`http_replay`) | ➖ no — **and correctly so** | These do not operate on page affordances. Routing them "through ABML" would be a category error (forcing a page model onto tab/network/file/transport concerns) — exactly the surface-widening the project's narrow-tool philosophy rejects. |
 
-## 3. The action gap — CLICK + TYPE now closed (B2), scroll pending
+## 3. The action gap — CLOSED (B2): click + type + scroll reach the ladder
 
 The ABML **action degradation ladder** — `executeBrowserAbmlClick` / `…Type` / `…Scroll` in
 `src/abml/verbs/runtime.ts`: actionability gating (wait stable/visible/not-occluded) → synthetic
@@ -36,9 +36,10 @@ wired `type`:** `browser_execute {action:{type:{target,text,clear?}}}` → focus
 button (raw `el.click()` silently fails) now fires via the public tool, and `#typed` (raw synthetic
 input ignored, `raw_type_model_updated=false`) updates via `action:{type}` (`public_type_effect_fired=true`).
 
-**Still open:** `action.scroll` is not wired — for scrolling the agent still hand-writes JS (`{script}`)
-and owns its own fallback. `{script}` itself stays 100% verbatim (no magic re-routing). Plan +
-remaining slices: `docs/abml-action-path-gap-plan.md`.
+**B2 slice 5 wired `scroll`:** `browser_execute {action:{scroll:{target?,to,steps?}}}` → window or
+container scroll via the ladder (live-verified: `public_scroll_effect_fired=true`). So `action` now
+covers click + type + scroll; raw `{script}` stays 100% verbatim (no magic re-routing) for everything
+else. **The action gap is closed.** Plan: `docs/abml-action-path-gap-plan.md`.
 
 ## 4. Why this isn't fixed by "add a click tool"
 
