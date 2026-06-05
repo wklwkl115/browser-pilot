@@ -7,76 +7,82 @@
 
 ## 1. The one-line truth
 
-ABML is the **page-interaction substrate**. The vision is "agent expresses intent, the JS↔CDP/AX
-choice disappears inside." That vision is **fully realized for *reading* the page and for the
-structured `browser_execute.action` click/type/scroll path**. Raw `browser_execute {script}` remains
-verbatim JavaScript. Everything else (tabs, network, files, waiting, raw CDP, web-security) is
-**orthogonal** to ABML and correctly does not go through it.
+ABML is the **page-perception substrate** — it is observation-only. The vision is "agent reads the
+page through one merged AX↔DOM model; the read-mode choice disappears inside." That vision is
+**fully realized for *reading* the page** (`browser_observe`). **Execution is NOT in ABML:** page
+actions are the JavaScript the agent writes via `browser_execute {script}` (run verbatim), with
+`browser_command` CDP as the escape for the rare trusted-event-gated control JS can't drive.
+Everything else (tabs, network, files, waiting, raw CDP, web-security) is **orthogonal** to ABML and
+correctly does not go through it.
 
 ## 2. The map (verified)
 
 | Tool | Touches ABML? | Reality |
 |---|---|---|
 | `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, `relations`/`inference`/`diff`/`templates`. `observeRunners.ts` → `abml.readStructure`. The "which read mode" complexity is genuinely hidden from the agent. |
-| `browser_execute` | ✅ read + click/type/scroll | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`), ABML only via `monitor:true` for a before/after read. **`{action:{click\|type\|scroll}}` routes through the ABML ladder** (actionability + auto CDP trusted-event fallback / insertText + bounded probe verification). Click/type default verification is now a cheap target-state probe; full entity diff is opt-in with `diff:true`. Scroll default is probe-only; virtualized-list structure collection is opt-in with `scroll.collect:true`. |
+| `browser_execute` | ⚠️ read-only | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`) — execution is the agent's JS, NOT ABML. ABML is borrowed only via `monitor:true` for a before/after **read** diff. There is no structured action arm: a click/type/scroll that needs a trusted event escalates to `browser_command` CDP. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
 | `browser_screenshot` | ➖ no | Raw pixels (ABML's vision floor is a separate internal path). |
 | `browser_tabs` / `browser_wait` / `browser_command` / `browser_network` / `browser_hook` / `browser_evidence` / `browser_artifact` / `browser_download` / `browser_upload` / `browser_memory` / all web-security (`crawl`/`fuzz`/`sqli`/`template`/`oast`/`cookie`/`http_replay`) | ➖ no — **and correctly so** | These do not operate on page affordances. Routing them "through ABML" would be a category error (forcing a page model onto tab/network/file/transport concerns) — exactly the surface-widening the project's narrow-tool philosophy rejects. |
 
-## 3. The action gap — CLOSED (B2): click + type + scroll reach the ladder
+## 3. The action arm — TRIED, then REVERTED (2026-06-05): execution stays JS + CDP escape
 
 The ABML **action degradation ladder** — `executeBrowserAbmlClick` / `…Type` / `…Scroll` in
-`src/abml/verbs/runtime.ts`: actionability gating (wait stable/visible/not-occluded) → synthetic
-click → effect verification → **automatic fallback to CDP `Input.dispatchMouseEvent`** → re-verify —
-was fully implemented but wired to nothing public (the gap this doc opened with). **B2 slice 1
-(commit `f88762a`) wired it for click:** `browser_execute {action:{click:"<pi-ref|selector>"}}`
-routes through the ladder, so the JS↔CDP decision disappears for the agent on a click. **B2 slice 2
-wired `type`:** `browser_execute {action:{type:{target,text,clear?}}}` → focus + CDP `Input.insertText`
-(trusted) + verify. Both verified live (`smoke:browser:abml-action-gap`): the trusted-only `#guarded`
-button (raw `el.click()` silently fails) now fires via the public tool, and `#typed` (raw synthetic
-input ignored, `raw_type_model_updated=false`) updates via `action:{type}` (`public_type_effect_fired=true`).
+`src/abml/verbs/runtime.ts`: actionability gating → synthetic action → effect verification →
+**automatic fallback to CDP `Input.dispatchMouseEvent`** → re-verify — exists and works, but it is
+**internal substrate** (reached via `createBrowserAbmlIntegration().runtime`, used by tests / the
+eval-runner / `monitor:true`'s read path). A structured `action:{click|type|scroll}` param on
+`browser_execute` was built (B2) to wire it to a public path — and then **reverted**.
 
-**B2 slice 5 wired `scroll`:** `browser_execute {action:{scroll:{target?,to,steps?}}}` → window or
-container scroll via the ladder (live-verified: `public_scroll_effect_fired=true`). The skeptical eval
-found the first shipped scroll path slow and buggy (1/5); the 2026-06-05 fix made the default path
-bounded by one shared `timeoutMs` deadline, removed default per-step structure reads, and reserved
-structure collection for `scroll.collect:true`.
+**Why reverted:** the first skeptical real-agent eval (2026-06-05) showed the public action arm did
+not earn its keep for clicks — in the wild `action.click` had silent failures, `ACTIONABILITY_TIMEOUT`,
+and selector misses, and agents simply reverted to writing raw JS. "Verified" did not mean "intent
+achieved" (a click reported verified because *something* locally mutated, but the intended
+search/sort didn't happen). type/scroll/read worked, but did not justify a standing public action
+surface that re-introduces a "which entry — JS or action?" decision. The deeper hazard: an "action
+silently failed → escalate to CDP" recovery cannot reliably distinguish *swallowed* from
+*slow-but-working*, so it risks double-execution (worst for click).
 
-So `action` covers click + type + scroll; raw `{script}` stays 100% verbatim (no magic re-routing) for
-everything else. **The action gap is closed.** Plan: `docs/abml-action-path-gap-plan.md`.
+**Where execution lives now:** the agent writes JS via `browser_execute {script}` (the action
+language); for the rare trusted-event-gated control a synthetic `el.click()`/input can't drive, the
+agent escalates to `browser_command` CDP (`Input.dispatchMouseEvent` / `Input.insertText` at the
+element rect) — the trusted-event escape JS can't do is **already publicly reachable** there, so no
+new tool is needed. ABML does not touch execution. Plan / history: `docs/abml-action-path-gap-plan.md`.
 
-## 4. First Real-Agent Eval Verdict (2026-06-05, n=1)
+## 4. First Real-Agent Eval Verdict (2026-06-05)
 
-The first skeptical real-agent eval was mixed, not a blanket win:
+The first skeptical real-agent eval was mixed, and is what drove the action-arm revert above:
 
 | Capability | Verdict | Current guidance |
 |---|---|---|
-| `causal` | strong (4/5) | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
-| `action.type` | strong (4/5) | Prefer for fields that ignore synthetic input; it saves manual focus/setter/CDP/wait/readback chains. |
-| `templates` | situational (3/5) | Useful for big ARIA-grounded lists/tables; redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
-| `action.click` | marginal before fix (3/5) | Use when the click must take effect or synthetic clicks are unreliable; default verification now reports target semantic-state changes, with full entity diff opt-in. |
-| `diff`/`treeDiff` | noisy before fix (2/5) | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
-| `action.scroll` | net negative before fix (1/5) | Default is now bounded/probe-only; use `collect:true` only for virtualized-list entity collection. |
+| `causal` | strong | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
+| page reading (lists/tables, `templates`) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. |
+| `templates` | situational | Useful for big ARIA-grounded lists/tables; redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
+| structured `action` (click/type/scroll) | reverted | Did not earn a public surface (agents reverted to JS; click "verified" ≠ intent achieved; CDP-escalation double-action hazard). Execution = JS via `browser_execute`; trusted-event escape via `browser_command` CDP. |
+| `diff`/`treeDiff` | noisy before fix | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
 
 `pi-ref://` handles and observe baselines are short-lived. On `HANDLE_NOT_FOUND`, stale resource, or
 baseline-expired errors, re-run `browser_observe mode=scan` and use the fresh refs/baseline instead of
 retrying old handles.
 
-## 5. Why this isn't fixed by "add a click tool"
+## 5. Why there is no public action verb (and why the `action` arm was reverted too)
 
 Public verb tools (`browser_click`, etc.) were **tried and proved worse** than the base tools: a
 parallel tool *widens* the surface and adds a "which tool?" decision, the opposite of the philosophy.
-And `browser_execute` is "run arbitrary JS" — arbitrary JS can't be auto-wrapped in the ladder because
-the ladder needs an *expressed intent* (`click(ref)`) the raw JS doesn't carry. So closing the action
-gap was a "deepen, don't widen" design problem: add a structured action arm to the existing
-`browser_execute`, not a parallel public verb tool.
+The structured `action` arm on `browser_execute` avoided a new *tool*, but a real-agent eval showed it
+re-introduced the same "which entry — JS or action?" decision without earning its keep (agents reverted
+to JS; "verified" ≠ intent; CDP-escalation double-action hazard). So the action arm was reverted: the
+single action language is the JavaScript the agent writes via `browser_execute {script}`, and the one
+thing JS can't do — emit a trusted event — is **already** reachable via `browser_command` CDP
+(`Input.dispatchMouseEvent` / `Input.insertText`). No parallel verb tool, no structured action param.
+ABML stays the read substrate.
 
 ## 6. Consequence for the docs
 
 - `docs/unified-browser-modeling-language-plan.md` describes the agent calling `click(ref)` as a tool
   and the old tools collapsing into verbs. That **public verb-face was not adopted** — it is an
   aspirational RFC, not shipped reality (a banner there now says so).
-- The skill's ABML guidance now separates raw JS from the structured action arm: raw
-  `browser_execute {script}` is unchanged; `browser_execute {action:{...}}` is the shipped laddered
-  path for click/type/scroll.
+- The skill's ABML guidance is observe-only on the action question: `browser_execute {script}` runs
+  the agent's JS verbatim; a trusted-event-gated control that silently ignores a synthetic
+  click/input escalates to `browser_command` CDP. There is no `browser_execute {action:{...}}` arm.

@@ -1,11 +1,18 @@
 # Browser-tools skeptical-eval fixes — execution contract
 
-> Status: **IMPLEMENTED (verification in progress).** Driven by the first real-agent skeptical eval
-> (2026-06-05, `browser-tools-skeptical-eval`, n=1, 5 real sites). Turns its measured efficacy signal
-> into fixes for the recently-shipped action path (B2), causal plane (R3.x), and templating (M1).
-> Activated in `CURRENT.md`. Every report finding maps to a slice or to a reasoned out-of-scope
-> decision — see the **coverage matrix (§7)**. Each slice lands behind `npm run check` + the
-> action-gap smoke; the eval is **re-run as meta-acceptance**.
+> Status: **CLOSED (2026-06-05).** Driven by the first real-agent skeptical eval (2026-06-05,
+> `browser-tools-skeptical-eval`, 5 real sites + two blind rounds). **Outcome split in two:** the
+> **read/observe-side fixes landed and are kept** (S4 generic query redaction, S5 template text-leaf
+> denoise, S6 observe-artifact envelope mirror, S7 `diff.summary` salience, baseline-expiry recovery,
+> and the internal runtime.ts actionability/target-probe improvements as substrate). The
+> **execution-side action arm (B2) was REVERTED** — the eval showed the public `action.click` didn't
+> earn its keep (silent failures / timeouts / selector misses in the wild, agents reverted to JS;
+> "verified" ≠ intent achieved; CDP-escalation double-action hazard). Per user decision (Option A),
+> ABML is observation-only; execution = `browser_execute {script}` (JS) with `browser_command` CDP as
+> the trusted-event escape. The `action` param, `smoke:abml-action-gap` smoke + fixture, and its
+> package.json script were removed. The per-feature scores below are the eval's *raw* signal and are
+> kept for the record; the action-row guidance is superseded by the revert (see `CURRENT.md` and
+> `docs/abml-action-path-gap-plan.md`).
 
 ## 1. Goal
 

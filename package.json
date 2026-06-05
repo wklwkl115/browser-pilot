@@ -116,7 +116,6 @@
     "smoke:browser:abml-inference": "tsx tests/smoke/smoke-abml-inference-postaction.mjs",
     "smoke:browser:abml-causal": "tsx tests/smoke/smoke-abml-causal.mjs",
     "smoke:browser:abml-templating": "tsx tests/smoke/smoke-abml-templating.mjs",
-    "smoke:browser:abml-action-gap": "tsx tests/smoke/smoke-abml-action-gap.mjs",
     "smoke:browser:memory": "tsx tests/smoke/smoke-browser-memory.mjs",
     "smoke:abml:internal-routing": "tsx tests/smoke/smoke-abml-internal-tool-routing.mjs",
     "prepack": "npm run build && node scripts/build-bridge.mjs --quiet",

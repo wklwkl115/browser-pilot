@@ -1,9 +1,15 @@
 # ABML action-path gap - measure (C) then deepen (B)
 
-> Status: **C (measurement) DONE; B2 (the fix) COMPLETE — click + type + scroll route through the ABML ladder via `browser_execute {action}`, live-verified.**
+> Status: **C (measurement) DONE; B2 was shipped, then REVERTED (2026-06-05).** The first skeptical
+> real-agent eval showed the public `action` arm did not earn its keep (wild `action.click` silently
+> failed / timed out / missed selectors, agents reverted to JS; "verified" ≠ intent achieved;
+> "silent-fail → escalate CDP" has a double-action hazard). **Decision (user, Option A): full revert.**
+> ABML is observation-only; execution is the JS the agent writes via `browser_execute {script}`, and the
+> trusted-event escape JS can't do is **already** reachable via `browser_command` CDP — i.e. **B3-as-guidance**
+> (detect silent failure → escalate to CDP) is the landed answer, B2 is removed, no new public tool/param.
+> The B1/B2/B3 analysis below is kept as historical record of how the decision was reached.
 > Follow-up to `docs/abml-tool-coverage-map.md`. Scope: the page-ACTION path only (the read path is
-> already on ABML). Constraint: **deepen the one narrow tool, never widen the surface** (public verb
-> tools were tried and proved worse). No new public tool unless the user explicitly accepts it.
+> already on ABML). Constraint: **never widen the surface** (public verb tools were tried and proved worse).
 
 ## The gap, measured (C - done)
 
@@ -56,14 +62,30 @@ structured "needs trusted event - escalate to `browser_command` CDP" signal**.
 - **Con:** page JS **cannot** produce a trusted event (CDP needs the bridge), so B3 can only
   detect + instruct, not auto-recover - **the choice is surfaced, not removed.** Partial.
 
-## Decision (2026-06-05): B2
+## Decision (2026-06-05): B2 — shipped, then REVERTED to B3-as-guidance
 
-Chosen because it is the only option that actually closes the measured gap: B3 cannot auto-recover
-(page JS can't emit a trusted event - CDP is privileged), and B1 breaks `browser_execute`'s verbatim
-contract with fragile classification. B2 delivers auto CDP recovery + effect verification on the
-public path, keeps `script` 100% verbatim, and adds **no new tool** (one optional param). It does
-cross the long-frozen "no public action verb" line, so it lands incrementally with the shape visible
-and the existing action-gap smoke as the end-to-end gate.
+B2 was chosen first and shipped (click+type+scroll behind one optional `action` param). It was then
+**reverted** after the first skeptical real-agent eval: on real sites `action.click` silently failed /
+hit `ACTIONABILITY_TIMEOUT` / missed selectors and agents reverted to raw JS; "verified" did not mean
+"intent achieved" (a locally-mutated click still didn't perform the intended search/sort); and the
+"silent-fail → escalate to CDP" recovery cannot distinguish *swallowed* from *slow-but-working*, so it
+risks double-execution (worst for click). The microbenchmark gap B2 closed (the `#guarded`
+trusted-only button) is real but rare, and does not outweigh re-introducing a "which entry — JS or
+action?" decision on the hot path.
+
+**Landed answer = B3-as-guidance.** Page JS can't emit a trusted event, but the privileged escape it
+needs is **already public**: `browser_command` CDP (`Input.dispatchMouseEvent` / `Input.insertText`).
+So the skill teaches: write the action as JS via `browser_execute {script}`; if a synthetic
+`el.click()`/input returns ok but the page didn't change (a trusted-event-gated control), escalate to
+`browser_command` CDP at the element rect. This kills the *silent* part (B3's win) without a new tool,
+without a structured action param, and without the double-action hazard. ABML stays observation-only.
+
+### Historical record — B2 as it was shipped (now removed from code)
+
+The slices below describe B2 as it existed before the revert. The `action` param, the
+`smoke:abml-action-gap` smoke + fixture, and its package.json script have been removed;
+`registerExecuteTool` was restored to its pre-action `{script}`-only shape. Kept here only as the
+record of what was tried.
 
 ### Exact public shape (additive, optional, safe default)
 `browser_execute` gains an optional `action` (mutually exclusive with `script`; absent => today's
