@@ -11,7 +11,8 @@
 
 ## 当前激活项
 
-- 当前无激活大型主线。ABML R3 质量跟进已完成并进入已完成队列；后续若继续 M3 / public surface / profile isolation，必须另开执行合同。
+- **Browser-tools skeptical-eval 修复线**（2026-06-05 用户依据首份真 agent 评估激活）：执行合同 `docs/browser-tools-eval-fixes-execution-plan.md`。把首份真 agent 怀疑型评估（n=1，5 个真实站点）的**混合结论**转为修复:**S1** 文档诚实化（type/causal 优先、click 仅在 synthetic 不稳时、**scroll 暂不推荐**、templates 仅大列表、diff 仅大页容噪）；**S2** action click/type 提速（before/after 全量 readStructure 改 opt-in `diff`，默认走轻量 verify）；**S3** action.scroll 用 `timeoutMs` 封顶 + 去每步全扫（collection 改 opt-in）+ 修自相矛盾摘要（修不动则从公共 `action` 暂撤 scroll）；**S4** causal URL 的 PII query 值通用模式脱敏；**S5** templates 去文本叶子噪音（control/link 优先）；**S6** artifact jsonPath 读 observe 结果（先排查）。边界:不新增公开工具、`action`/observe 改动为附加可选+安全默认、脱敏保持**通用无 per-site**、templating 保持 **ARIA-grounded 不补 DOM 猜测**、纯核保纯、**无行为回归**（`smoke:browser:abml-action-gap` 维持绿）。Meta 验收:重跑评估提示词。按 slice 推进,每片过 `npm run check`。
+- 后续若继续 M3 / public surface / profile isolation,必须另开执行合同。
 
 ## 已完成但不再作为当前队列
 
