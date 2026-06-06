@@ -278,13 +278,24 @@ function normalizeAction(action) {
 
 function generatedNativeActionMetadata() {
 	const source = schema.toolMetadata || {};
+	const commands = schema.commands || {};
 	const nativeActionTools = {};
 	for (const [toolName, tool] of Object.entries(source.nativeActionTools || {})) {
 		const actionAliases = {};
-		for (const action of tool.actions || []) {
+		// Join each action with its command's param requirements (single source of truth =
+		// schema.commands[*].required/requiredAny/notes) so `pi-browser <tool> --help` can surface
+		// per-action --params keys instead of an opaque `<json>`. Derived for EVERY action of every
+		// action tool — never hand-listed — so it stays correct and drift-guarded by check:protocol.
+		const actions = (tool.actions || []).map((action) => {
 			for (const alias of action.aliases || [action.action]) actionAliases[normalizeAction(alias)] = action.command;
-		}
-		nativeActionTools[toolName] = { ...tool, actionAliases };
+			const spec = commands[action.command] || {};
+			const enriched = { ...action };
+			if (Array.isArray(spec.required) && spec.required.length) enriched.required = spec.required;
+			if (Array.isArray(spec.requiredAny) && spec.requiredAny.length) enriched.requiredAny = spec.requiredAny;
+			if (typeof spec.notes === "string" && spec.notes) enriched.notes = spec.notes;
+			return enriched;
+		});
+		nativeActionTools[toolName] = { ...tool, actions, actionAliases };
 	}
 	return {
 		nativeActionTools,

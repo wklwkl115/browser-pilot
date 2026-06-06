@@ -20,6 +20,9 @@ export const nativeToolMetadata = {
           "command": "wait.navigate",
           "aliases": [
             "navigate"
+          ],
+          "required": [
+            "url"
           ]
         },
         {
@@ -27,6 +30,9 @@ export const nativeToolMetadata = {
           "command": "wait.navigateAndWait",
           "aliases": [
             "navigateAndWait"
+          ],
+          "required": [
+            "url"
           ]
         },
         {
@@ -59,6 +65,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "selector",
             "waitForSelector"
+          ],
+          "required": [
+            "selector"
           ]
         },
         {
@@ -305,6 +314,9 @@ export const nativeToolMetadata = {
           "command": "hook.evaluate",
           "aliases": [
             "evaluate"
+          ],
+          "required": [
+            "expression"
           ]
         },
         {
@@ -312,6 +324,9 @@ export const nativeToolMetadata = {
           "command": "hook.addEventListener",
           "aliases": [
             "addEventListener"
+          ],
+          "required": [
+            "eventType"
           ]
         },
         {
@@ -319,6 +334,9 @@ export const nativeToolMetadata = {
           "command": "hook.removeEventListener",
           "aliases": [
             "removeEventListener"
+          ],
+          "required": [
+            "listenerId"
           ]
         },
         {
@@ -335,6 +353,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "getNodeListeners",
             "listeners"
+          ],
+          "required": [
+            "selector"
           ]
         },
         {
@@ -343,6 +364,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "getListenerChain",
             "listenerChain"
+          ],
+          "required": [
+            "selector"
           ]
         },
         {
@@ -351,6 +375,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "getSinkHints",
             "sinkHints"
+          ],
+          "required": [
+            "selector"
           ]
         }
       ],
@@ -409,6 +436,10 @@ export const nativeToolMetadata = {
           "command": "frame.evaluate",
           "aliases": [
             "evaluate"
+          ],
+          "required": [
+            "frameId",
+            "expression"
           ]
         },
         {
@@ -417,6 +448,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "addNewDocumentScript",
             "addScript"
+          ],
+          "required": [
+            "source"
           ]
         },
         {
@@ -425,6 +459,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "removeNewDocumentScript",
             "removeScript"
+          ],
+          "required": [
+            "identifier"
           ]
         }
       ],

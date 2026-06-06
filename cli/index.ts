@@ -15,6 +15,7 @@ import { buildFlagSpecs, parseArgs, coerceParams, type GlobalFlags } from "./fla
 import { renderResult, renderUsageError, EXIT, type RenderMode } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { findDaemon, stopDaemon } from "./daemonControl.js";
+import { nativeToolMetadata } from "../src/protocol/nativeActionMetadata.js";
 
 /** Left-align in a column; if the head already fills the column, keep a 2-space gap so the
  *  description never glues onto a long flag/subcommand. */
@@ -38,12 +39,38 @@ function printHelp(): void {
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
+type ActionParamMeta = { action: string; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
+
+/** Per-action `--params` keys, surfaced from the generated native protocol metadata (single source of
+ *  truth = bridge/native_command_schema.json). Action tools (wait/network/hook/frame) take an opaque
+ *  `--params <json>`; this lists the REQUIRED keys the schema knows for each action so a blind agent
+ *  doesn't have to guess. Optional keys may also exist — see the action description. Empty for
+ *  non-action tools. */
+export function nativeActionParamsHelp(toolName: string): string[] {
+	const tools = nativeToolMetadata.nativeActionTools as unknown as Record<string, { actions?: readonly ActionParamMeta[] }>;
+	const actions = tools[toolName]?.actions;
+	if (!actions?.length) return [];
+	const rows: string[] = [];
+	for (const a of actions) {
+		const parts: string[] = [];
+		if (a.required?.length) parts.push(`requires ${a.required.join(", ")}`);
+		if (a.requiredAny?.length) parts.push(`requires one of ${a.requiredAny.map((g) => g.join("+")).join(" | ")}`);
+		if (a.notes) parts.push(a.notes);
+		if (parts.length) rows.push(`  ${pad(a.action, 18)}${parts.join("; ")}`);
+	}
+	return rows;
+}
+
 function printCommandHelp(cmd: CliCommand): void {
 	const specs = buildFlagSpecs(cmd.parameters);
 	const lines = [`pi-browser ${cmd.subcommand}${cmd.description ? ` — ${cmd.description}` : ""}`, "", "Flags:"];
 	for (const s of specs) {
 		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
 		lines.push(`  ${pad(`${s.flag}${meta}`, 30)}${s.required ? "[required] " : ""}${s.description ?? ""}`.trimEnd());
+	}
+	const actionParams = nativeActionParamsHelp(cmd.name);
+	if (actionParams.length) {
+		lines.push("", "Per-action --params keys (a JSON object; optional keys may also apply — see the action list above):", ...actionParams);
 	}
 	process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildFlagSpecs, parseArgs } from "../../../cli/flags.ts";
 import { renderResult, EXIT } from "../../../cli/render.ts";
+import { nativeActionParamsHelp } from "../../../cli/index.ts";
 
 const specs = buildFlagSpecs({
 	type: "object",
@@ -48,6 +49,21 @@ test("parseArgs rejects unknown flags and bad enum values", () => {
 	assert.equal(parseArgs(specs, ["--nope"]).ok, false);
 	assert.equal(parseArgs(specs, ["--mode", "fly"]).ok, false);
 	assert.equal(parseArgs(specs, ["positional"]).ok, false);
+});
+
+test("F4: nativeActionParamsHelp surfaces per-action required --params keys from generated metadata", () => {
+	// General + source-of-truth driven (bridge/native_command_schema.json → generated metadata), not
+	// hand-listed: any action tool's per-action required/requiredAny keys must show in `<tool> --help`
+	// so a blind agent doesn't have to guess the `--params` shape.
+	const wait = nativeActionParamsHelp("browser_wait").join("\n");
+	assert.match(wait, /selector\s+requires selector/, "wait.selector must surface its required selector key");
+	assert.match(wait, /navigate\s+requires url/, "wait.navigate must surface its required url key");
+	const hook = nativeActionParamsHelp("browser_hook").join("\n");
+	assert.match(hook, /evaluate\s+requires expression/, "hook.evaluate must surface its required expression key");
+	const frame = nativeActionParamsHelp("browser_frame").join("\n");
+	assert.match(frame, /evaluate\s+requires frameId, expression/, "frame.evaluate must surface both required keys");
+	// Honest + general: a non-action tool (no per-action --params) yields nothing; nothing fabricated.
+	assert.deepEqual(nativeActionParamsHelp("browser_observe"), [], "non-action tools have no per-action params block");
 });
 
 test("renderResult maps mode + terminate to exit codes", () => {
