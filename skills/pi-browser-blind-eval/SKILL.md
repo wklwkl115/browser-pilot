@@ -33,6 +33,12 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
   which pins it to the isolated stage daemon — it never sees the operator's real browser. Verify
   isolation before fanning out (the stage daemon must list only the stage's own tab).
 - **Honest, n>1.** Don't conclude from one run. Re-run a finding with a second agent / a second site.
+- **True defect, no overfit (core).** Only fix what is a TRUE, GENERAL project defect — confirmed root
+  cause that generalizes, not noise. No change-for-change; no special-casing the site/DOM/task/shape
+  that surfaced it; the fix + its regression must be general (synthetic/representative inputs, not the
+  live page); a tuned threshold must be principled/bounded, never fitted to make one case pass. A
+  change that narrows generality is worse than the friction. See
+  [[eval-fixes-true-defect-no-overfit]].
 - **Do NOT fix execution-authoring friction.** "Had to hand-write the click/form-fill JS, no
   click/type helper" is WORKING-AS-INTENDED — tag `WAI`, never add an execution verb/helper.
 
@@ -56,9 +62,16 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
    first-wrong-tool-choice? Triage each friction item `fixable | WAI | reliability`, AND record
    skill↔tool fidelity gaps. Append to `evals/browser-workflows/blind-findings.md` (dedupe; bump the
    cross-run count when a finding recurs across agents/sites).
-7. **Distill**: a confirmed (n≥2) `fixable`/`reliability` finding becomes a work item; where it is a
-   deterministic output behavior, seed a new assertion in the deterministic runner so the fix is
-   regression-guarded without an agent. A skill-fidelity gap becomes a `pi-browser-tools` skill edit.
+7. **Distill — but gate the fix.** Before writing any code, clear the true-defect/no-overfit gates
+   ([[eval-fixes-true-defect-no-overfit]]): (a) confirmed root cause that GENERALIZES (n≥2 across
+   different agent+task+site, not a one-off); (b) the fix measurably improves real outcomes, not
+   change-for-change; (c) the fix AND its regression are GENERAL — no special-casing the site/DOM/task/
+   shape that surfaced it, regression uses synthetic/representative inputs (never the live page), any
+   threshold principled/bounded by an existing safety layer. If a finding can't clear the gates, leave
+   it in `blind-findings.md` as "needs more runs" — do NOT patch. When cleared: a `fixable`/
+   `reliability` finding becomes a work item; where it is a deterministic output behavior, seed a new
+   assertion in the deterministic runner so the fix is regression-guarded without an agent. A
+   skill-fidelity gap becomes a `pi-browser-tools` skill edit.
 8. **Teardown ALWAYS**: `node evals/browser-workflows/teardown-blind.mjs` (even on failure).
 
 ## Scheduling (常驻)

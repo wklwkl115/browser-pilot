@@ -5,6 +5,11 @@ per `eval-friction-triage-perception-vs-execution`. `runs` = how many independen
 agent + task) surfaced it; treat `runs ≥ 2` as confirmed, `runs = 1` as a hypothesis to re-test before
 acting. WAI items are recorded for transparency but are **not** work items.
 
+**Before fixing anything**, a finding must be a TRUE, GENERAL project defect — confirmed root cause that
+generalizes, no change-for-change, no overfit to the site/DOM/task/shape that surfaced it (fix +
+regression stay general). If it can't clear that bar, leave it here as "needs more runs", don't patch.
+See `eval-fixes-true-defect-no-overfit`.
+
 > **Protocol (corrected 2026-06-06, see `blind-eval-protocol-realsite-skill-china`):** blind eval now
 > runs on REAL, mainland-China-reachable sites (READ-ONLY) with the agent READING the
 > `pi-browser-tools` skill. The first two runs below predate that and are **legacy** (no skill,
