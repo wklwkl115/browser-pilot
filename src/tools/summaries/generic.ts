@@ -4,6 +4,27 @@ import { isRecord, type Summary } from "./common.js";
 const SAMPLE_LIMIT = 5;
 const KEY_LIMIT = 40;
 const STRING_PREVIEW_CHARS = 240;
+// When the WHOLE returned value serializes within this, it is shown VERBATIM in the model-facing
+// summary instead of being collapsed to {type,count/keyCount} shape placeholders. This is what lets an
+// agent read the small structured value it just returned from browser_execute (and browser_command)
+// without a second browser_artifact round-trip — the dominant real-agent friction (F1, n=3 incl. a
+// skill-guided run). Larger payloads still collapse to a compact shape (samples stay small) and the
+// full value is mirrored to the saved artifact; the downstream summary budget (fitSummaryBudget, ~8k)
+// remains the hard size guard, so inlining up to a few KB here is safe.
+const INLINE_VALUE_CHARS = 4_000;
+
+// Size-check + JSON round-trip clone in one pass: if `value` serializes within `limit`, return a
+// detached clone (never the live bridge-result reference, so downstream redaction can't alias it, and
+// any non-JSON members are dropped exactly as JSON.stringify would). Otherwise signal "too big".
+function inlineIfSmall(value: unknown, limit: number): { inline: true; value: unknown } | { inline: false } {
+	try {
+		const json = JSON.stringify(value);
+		if (typeof json === "string" && json.length <= limit) return { inline: true, value: JSON.parse(json) as unknown };
+	} catch {
+		// unserializable (circular/function members) → fall through and summarize as a shape
+	}
+	return { inline: false };
+}
 
 function compactSample(value: unknown, depth = 0): unknown {
 	if (value === null || value === undefined) return value;
@@ -22,10 +43,14 @@ function compactSample(value: unknown, depth = 0): unknown {
 	return out;
 }
 
-function summarizePlainValue(value: unknown): Summary {
+function summarizePlainValue(value: unknown): unknown {
+	// Whole value small → return it verbatim so the caller sees exactly what it produced. Only genuinely
+	// large payloads fall through to the compact, sample-limited shape (with the full value in the artifact).
+	const inlined = inlineIfSmall(value, INLINE_VALUE_CHARS);
+	if (inlined.inline) return inlined.value;
 	if (Array.isArray(value)) return { type: "array", count: value.length, samples: value.slice(0, SAMPLE_LIMIT).map((item) => compactSample(item)) };
 	if (!isRecord(value)) return { type: typeof value, value: compactSample(value) };
-	return compactSample(value) as Summary;
+	return compactSample(value);
 }
 
 function bridgeResultMetadata(value: Record<string, unknown>, data: unknown): Summary {
@@ -58,5 +83,7 @@ export function summarizeGenericValue(value: unknown): Summary {
 			keys: Object.keys(value).slice(0, KEY_LIMIT),
 		};
 	}
-	return summarizePlainValue(value);
+	// Top-level generic summary must stay a record; carry a verbatim small array/scalar under `value`.
+	const top = summarizePlainValue(value);
+	return isRecord(top) ? top : { type: Array.isArray(value) ? "array" : typeof value, value: top };
 }

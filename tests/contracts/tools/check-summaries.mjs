@@ -275,6 +275,17 @@ assert.equal(generic.data.rows.count, 20, "check-summaries generic.array: arrays
 assert.equal(generic.data.html.truncated, true, "check-summaries generic.string: large strings must be compacted");
 assert.equal(JSON.stringify(generic).includes("v".repeat(500)), false, "check-summaries generic.raw: summary must not retain large raw samples");
 
+// F1 regression (real-agent blind eval, n=3 incl. a skill-guided run): a SMALL structured return value
+// must be inlined VERBATIM in the summary — never collapsed to {type,count/keyCount} shape placeholders
+// that hide the agent's own data and force a second browser_artifact round-trip.
+const smallReturn = summarizeGenericValue({ ok: true, tabId: 3, data: { count: 2, rows: [{ id: "A-1", item: "Keyboard", amount: 89 }, { id: "A-2", item: "Monitor", amount: 240 }] } });
+assert.equal(smallReturn.data.count, 2, "check-summaries generic.inline.count: a small return must expose its data verbatim");
+assert.equal(Array.isArray(smallReturn.data.rows), true, "check-summaries generic.inline.rows: small nested arrays must stay arrays, not {type:array} placeholders");
+assert.equal(smallReturn.data.rows.length, 2, "check-summaries generic.inline.len: small nested arrays must keep every element, not 5 samples");
+assert.equal(smallReturn.data.rows[1].item, "Monitor", "check-summaries generic.inline.value: nested item VALUES must be present verbatim (no {type,keyCount} collapse)");
+const smallString = summarizeGenericValue({ ok: true, data: "x".repeat(280) });
+assert.equal(smallString.data, "x".repeat(280), "check-summaries generic.inline.string: a small string return must be shown in full, not truncated to a preview");
+
 const evidence = summarizeEvidenceData({ tabId: 9, collected_at: "now", event_types: ["console"], sources: {
 	hook_status: { ok: true, data: { state: "INSTALLED", session_id: "summary-session", installed_at: "2026-05-20T00:00:00.000Z", dispatcher_version: "hook-v1", pi_browser_version: "hook-v1", install_epoch: 12345, buffer_used: 2, stats: { buffer_count: 2 } } },
 	hook_events: { ok: true, data: { events: [{ type: "console.log" }, { type: "console.error" }, { type: "console.log" }], total_available: 3 } },
