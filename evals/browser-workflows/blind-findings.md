@@ -19,6 +19,26 @@ See `eval-fixes-true-defect-no-overfit`.
 > Runs: R1 = login→orders (ad-hoc fixture, legacy); R2 = spec 02 scan-execute-wait (interactive.html,
 > legacy); **R3 = linux.do top-topics (REAL site, skill-guided)** — canonical corrected run.
 
+## Pending live verification (next round)
+
+These landed with unit/contract proof but want live confirmation. **Both need a daemon restart first**
+(Node `src/` changes don't hot-reload — `src-reload-requires-process-restart`); the running operator
+daemon predates them.
+
+- **C2 (`browser_tabs` universal params) — any run, trivial.** After restart, call
+  `pi-browser tabs list --max-chars 5000 --detail-level summary` (or `browser_tabs {action:list,
+  maxChars:5000, detailLevel:"summary"}`). **Pass:** returns the tab list with NO
+  `Validation failed … must not have additional properties`. A blind run naturally exercises
+  `browser_tabs`, so a maxChars/detailLevel-bearing call there confirms it for free.
+- **C1 (`http_replay` CSRF reflection) — operator-driven (blind is READ-ONLY and cannot log in).**
+  Recipe: (1) be logged into a site using double-submit CSRF (XSRF-TOKEN cookie ↔ `X-*-CSRF` header)
+  and open its tab; (2) restart the daemon; (3) capture an authenticated request (`browser_network`)
+  or know an endpoint, then `browser_http_replay url=<endpoint> method=POST bindBrowserSession:true`
+  **without manually adding the CSRF header**. **Pass:** `summary.request.csrfReflected:{cookie,header}`
+  is present and the response is 200 (not 403 "missing csrf token"); a control run with
+  `reflectCsrf:false` should reproduce the 403. Real-session evidence that motivated it is in the C1
+  entry below.
+
 ## fixable (work items)
 
 | # | finding | runs | evidence | candidate fix |
