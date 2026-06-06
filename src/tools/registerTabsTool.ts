@@ -2,8 +2,8 @@ import { Type } from "typebox";
 import { type NativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { jsonResult } from "../utils/toolResult.js";
-import { defineBrowserTool, runTool, toolTimeoutMs } from "./toolAdapter.js";
-import { strictToolParameters } from "./toolShared.js";
+import { defineBrowserTool, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter.js";
+import { asPositiveInt, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
 function tabsToolError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): BrowserBridgeError {
@@ -46,34 +46,40 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		],
 		parameters: strictToolParameters({
 			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
-			browserSessionId: Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this unless managing explicit browser sessions." })),
+			// Universal output/control params (browserSessionId/tabId/detailLevel/timeoutMs/maxChars/redact)
+			// come from the shared mixin so browser_tabs accepts them like every other browser_* tool. Real
+			// agents repeatedly passed maxChars/detailLevel here and hit a hard "additional properties" reject
+			// (C2, ≥7 occurrences across sessions); outputPath is excluded (browser_tabs writes no artifact).
+			...sharedTabScopedToolParams({ includeOutputPath: false, tabIdDescription: "Target tab id for switch/close; use browser_tabs list to identify it first." }),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
-			tabId: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: "Target tab id for switch/close; use browser_tabs list to identify it first." })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
 			allowExpired: Type.Optional(Type.Boolean({ description: "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata." })),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
-			timeoutMs: Type.Optional(Type.Number({ description: "Bridge timeout in milliseconds" })),
 		}),
 		async execute(_toolCallId, params) {
 			return await runTool(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 5_000);
+				// Honor maxChars on the sizable outputs (tab list / observation snapshots); detailLevel and
+				// redact are accepted for cross-tool consistency but are no-ops here (tab metadata is a small,
+				// non-secret JSON list, not a distilled/redacted summary).
+				const maxChars = asPositiveInt(params.maxChars, 50_000);
 				const tabId = action === "switch" || action === "close" || action === "attachtab" || action === "detachtab" || action === "leasetab" || action === "releasetab" ? requireTabsActionTabId(action, params.tabId) : undefined;
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
 				const browserSession = { browserSessionId: typeof params.browserSessionId === "string" ? params.browserSessionId : undefined };
-				if (action === "list") return jsonResult(await server.refreshTabs(timeoutMs, browserSession), { action, snapshot: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots().length });
+				if (action === "list") return jsonResult(await server.refreshTabs(timeoutMs, browserSession), { action, snapshot: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots().length }, maxChars);
 				if (action === "snapshot") {
 					if (typeof params.snapshotId === "string" && params.snapshotId.trim()) {
 						const snapshot = server.getObservationSnapshot(params.snapshotId);
 						if (!snapshot) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId was not found", { snapshotId: params.snapshotId, reason: "snapshot_not_found" });
 						if (snapshot.expired && params.allowExpired !== true) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId is stale; read the saved artifact explicitly or pass allowExpired:true", { snapshotId: snapshot.snapshotId, invalidatedReason: snapshot.invalidatedReason, saved: snapshot.saved, reason: "snapshot_expired" });
-						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, { action });
+						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, { action }, maxChars);
 					}
-					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, { action });
+					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, { action }, maxChars);
 				}
 				if (action === "listsessions") return jsonResult({ sessions: server.listBrowserSessions() }, { action });
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });

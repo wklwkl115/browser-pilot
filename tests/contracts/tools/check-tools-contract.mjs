@@ -85,6 +85,10 @@ assert(evidenceTool.includes("DEFAULT_OBSERVATION_TIMEOUT_MS") && evidenceTool.i
 // incognito window (separate cookie jar) via the bridge, with an allowed-access recovery when the user
 // hasn't enabled "Allow in incognito".
 assert(read("src/tools/registerTabsTool.ts").includes("incognito: params.incognito === true"), "browser_tabs create must forward the incognito option to createTab");
+// C2: browser_tabs must accept the universal output/control params (maxChars/detailLevel/redact/…) via
+// the shared mixin like every other browser_* tool — real agents repeatedly passed maxChars/detailLevel
+// and hit a hard "additional properties" reject. Guard against regressing back to a hand-rolled schema.
+assert(read("src/tools/registerTabsTool.ts").includes("sharedTabScopedToolParams("), "browser_tabs must spread sharedTabScopedToolParams so it accepts the universal output params (maxChars/detailLevel/redact) — C2");
 assert(read("bridge_src/service_worker/core_commands.ts").includes("chrome.windows.create") && read("bridge_src/service_worker/core_commands.ts").includes("isAllowedIncognitoAccess"), "bridge tabs.create must open an incognito window and check isAllowedIncognitoAccess");
 
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
