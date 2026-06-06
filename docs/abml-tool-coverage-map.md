@@ -19,7 +19,7 @@ correctly does not go through it.
 
 | Tool | Touches ABML? | Reality |
 |---|---|---|
-| `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, `relations`/`inference`/`diff`/`templates`. `observeRunners.ts` → `abml.readStructure`. The "which read mode" complexity is genuinely hidden from the agent. |
+| `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, and emits `relations`/`diff`/`treeDiff`/`snapshotProjection`/`causal` envelope fields. `observeRunners.ts` → `abml.readStructure`. The `inference`/`templates` engines still run internally (they drive `treeDiff`/`snapshotProjection`/`referenced_entities`) but were removed as agent-facing fields after a 2026-06-05 real-agent eval. The "which read mode" complexity is genuinely hidden from the agent. |
 | `browser_execute` | ⚠️ read-only | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`) — execution is the agent's JS, NOT ABML. ABML is borrowed only via `monitor:true` for a before/after **read** diff. There is no structured action arm: a click/type/scroll that needs a trusted event escalates to `browser_command` CDP. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
@@ -57,8 +57,8 @@ The first skeptical real-agent eval was mixed, and is what drove the action-arm 
 | Capability | Verdict | Current guidance |
 |---|---|---|
 | `causal` | strong | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
-| page reading (lists/tables, `templates`) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. |
-| `templates` | situational | Useful for big ARIA-grounded lists/tables; redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
+| page reading (lists/tables) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. Structure surfaces via `treeDiff`/`snapshotProjection`; per-item VALUES still come from `browser_execute`. |
+| `templates` (internal engine) | engine-only | No longer an agent-facing envelope field (a real-agent eval showed it unread); the templating engine still powers `treeDiff`/`snapshotProjection`. Redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
 | structured `action` (click/type/scroll) | reverted | Did not earn a public surface (agents reverted to JS; click "verified" ≠ intent achieved; CDP-escalation double-action hazard). Execution = JS via `browser_execute`; trusted-event escape via `browser_command` CDP. |
 | `diff`/`treeDiff` | noisy before fix | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
 

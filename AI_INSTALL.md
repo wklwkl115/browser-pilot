@@ -293,7 +293,7 @@ npm run smoke:browser:transfer
 .pi/browser-artifacts/final-smoke/results.json
 ```
 
-该结果覆盖 tabs/wait/scan/content/html/artifact/execute/query/type/click/semantic DOM/pick/network/hook/evidence/frame/screenshot/download/upload；临时 tab/server/upload fixture/download 文件已清理。
+该结果覆盖 tabs/wait/observe(scan/content/html)/artifact/execute/pick/network/hook/evidence/frame/screenshot/download/upload（早期独立的 query/type/click/semantic DOM 动词已并入 `browser_execute`/`browser_observe`，不再是独立工具）；临时 tab/server/upload fixture/download 文件已清理。
 
 ## 排障
 
@@ -304,10 +304,10 @@ npm run smoke:browser:transfer
 5. 如果要做 internal-only JS AST 摘要，执行 `/browser-js-ast [path] [--slice offset:length] [--output file]`，或先把显式 JS 文本放进编辑器再执行 `/browser-js-ast`。大 bundle 会降级为 lexical inventory；需要 AST 时用 `--slice` 或 source map 归档源码。
 6. 如果要做 internal-only Wasm 元数据/桥接摘要，执行 `/browser-wasm <path> [--wat] [--output file]`；`--wat` 依赖本地成熟桥接工具可用。
 7. 如果要做 internal-only WebSocket session/transcript 原语，执行 `/browser-ws open <url> [--session id] ...`、`/browser-ws send --text ...`、`/browser-ws replay --step ... [--steps-json '[...]']`、`/browser-ws wait ...`、`/browser-ws collect [--output file]`、`/browser-ws close`。
-8. 如果 `browser_dom_snapshot` 返回空 viewport/nodes，先切换到目标 tab，确认页面可见后重试。
-8. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
-7. 如果 `browser_download` 没有返回路径，重新加载浏览器扩展并确认 downloads 权限。
-8. 如果 `browser_upload` 返回 file access 错误，在扩展详情启用文件网址访问后重试。
+8. 如果 `browser_observe mode=scan` 返回空结构，先用 `browser_tabs list` 切换到目标 tab，确认页面可见后重试。
+9. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
+10. 如果 `browser_download` 没有返回路径，重新加载浏览器扩展并确认 downloads 权限。
+11. 如果 `browser_upload` 返回 file access 错误，在扩展详情启用文件网址访问后重试。
 
 ## 安全约束
 
