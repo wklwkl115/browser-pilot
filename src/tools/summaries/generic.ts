@@ -1,4 +1,4 @@
-import { truncateText } from "../../utils/json.js";
+import { truncateText, tryJson } from "../../utils/json.js";
 import { isRecord, type Summary } from "./common.js";
 
 const SAMPLE_LIMIT = 5;
@@ -19,7 +19,9 @@ const INLINE_VALUE_CHARS = 4_000;
 function inlineIfSmall(value: unknown, limit: number): { inline: true; value: unknown } | { inline: false } {
 	try {
 		const json = JSON.stringify(value);
-		if (typeof json === "string" && json.length <= limit) return { inline: true, value: JSON.parse(json) as unknown };
+		// tryJson (shared helper, the reviewed JSON.parse root) detaches the clone — never the live
+		// bridge-result reference, so downstream redaction can't alias it.
+		if (typeof json === "string" && json.length <= limit) return { inline: true, value: tryJson(json) };
 	} catch {
 		// unserializable (circular/function members) → fall through and summarize as a shape
 	}
