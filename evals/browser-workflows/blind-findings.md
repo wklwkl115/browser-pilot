@@ -30,12 +30,13 @@ See `eval-fixes-true-defect-no-overfit`.
 
 ## Needs more runs (n=1, hypothesis)
 
-| # | finding | runs | evidence | status |
-|---|---------|------|----------|--------|
-| H1 | **`nextActions: read_saved_artifact` misleads when data is already inline**: when `browser_execute` returns small data inline (F1 fixed), `diagnostics.warnings: ["raw_result_saved_to_artifact"]` + `nextActions: ["read_saved_artifact …"]` still fire, potentially nudging agents to take an extra round-trip for data they already have in `summary.data`. | 1 (R4-A skill-guided) | Agent A: "nextActions `read_saved_artifact` may be misleading — summary.data already complete." | n=1; confirm with a second run on a different task before acting. Output-ergonomics class if confirmed. |
-| H2 | **`artifact --json-path` requires `--mode json` but `nextActions` hint omits it**: `nextActions` emits `read_saved_artifact jsonPath=data.actionables` but the CLI requires `--mode json --json-path …`; without the mode flag the whole file is returned. | 1 (R4-B skill-guided) | Agent B: `--json-path data.actionables` returned the full file; had to fall back to `node -e` parse. Root cause confirmed (flag exists, mode missing); fix = skill text, not code. | n=1; confirm second run. When confirmed: update skill `nextActions` wording and/or make `--json-path` imply `--mode json`. |
+*(none currently — H1 and H2 confirmed and resolved)*
 
 ## Resolved
+
+- **H1 + H2 — execute nextActions 误导 + artifact --json-path 无 mode 静默失效（2026-06-06，n=2 bilibili+linux.do）。** 两条一起修：**H1** — execute distill 在数据已内联（小返回值，F1 已修）时标记 `dataInline:true`；`artifactReadActions` 检测该标志并抑制关联路径 nextActions hint（operationId 等），因为 agent 已有数据无需读 artifact。**H2（两个 fix）** — ① `artifactReadActions` 的 preferredReads hint 改为 `read_saved_artifact mode=json jsonPath=X`（补全 `mode=json`，agent 可直接翻译成 CLI 调用）；② `readBrowserArtifact` 在 `--json-path` 或 `--pick` 存在但未指定 mode 时**自动升级到 json 模式**（之前静默回退 text，忽略 jsonPath，整个文件被返回）。回归：`check-summaries`（nextActions 格式 `includes("jsonPath=…")`，兼容新旧格式）；`check:artifact` 已通过（json 模式自动升级不破坏任何现有路径）。全量 check 绿，token-economy 0.06 未损。
+
+## Resolved (prior)
 
 - **F1 — `browser_execute` small return-value rendering (2026-06-06).** Root cause: `src/tools/summaries/generic.ts` `compactSample` is depth-2 + 5-sample + 240-char limited, so a value nested inside an object/array (R1 rows→cells, R3 `{count,rows}`) collapsed to `{type,count/keyCount}` even when the whole return was a few hundred bytes. Fix: `summarizePlainValue` now inlines the WHOLE return value VERBATIM (JSON-cloned) when it serializes within `INLINE_VALUE_CHARS` (4 KB); genuinely large payloads still collapse to a compact shape (samples stay small) with the full value in the saved artifact, and `fitSummaryBudget` (~8 KB) remains the hard guard. Redaction still applies (it runs after distill). Regression locked in `tests/contracts/tools/check-summaries.mjs` (`generic.inline.*`). Verified live through the rebuilt daemon on a real, China-reachable site (linux.do): a `{count,rows:[{title,replies}…]}` extraction now returns inline in ONE call — no second `browser_artifact` round-trip. NOT "fixed" by an execution helper (that would be WAI); this is pure output-ergonomics.
 

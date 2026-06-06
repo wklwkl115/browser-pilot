@@ -373,18 +373,28 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 	if (!saved?.path) return [];
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints : undefined;
 	const preferredReads = asArray(hints?.preferredReads).filter(isRecord);
+	// H2: include mode=json in the hint so agents can translate it directly to a CLI call without
+	// having to know that --json-path requires --mode json (blind-eval H2, n=2, bilibili+linux.do).
 	const actions = preferredReads
-		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `read_saved_artifact jsonPath=${hint.jsonPath}` : undefined)
+		.map((hint) => typeof hint.jsonPath === "string" && hint.jsonPath ? `read_saved_artifact mode=json jsonPath=${hint.jsonPath}` : undefined)
 		.filter((item): item is string => !!item)
 		.slice(0, 3);
-	const correlationPaths = [
-		{ key: "operationId", path: "operation.operationId", value: operation?.operationId },
-		{ key: "snapshotId", path: "snapshot.snapshotId", value: snapshot?.snapshotId },
-		{ key: "requestId", path: "data.requestId", value: summary.requestId },
-		{ key: "waitId", path: "data.waitId", value: summary.waitId },
-		{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
-	].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
-	for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact jsonPath=${item.path}`);
+	// H1: when the execute/command result is already fully inline in summary.data (small return value,
+	// F1 fix), emitting correlation-ID artifact hints as nextActions is misleading noise — the agent
+	// already has the data and doesn't need to call browser_artifact. Suppress them when dataInline is
+	// set (blind-eval H1, n=2, bilibili+linux.do). For all other tools (observe, network, hook, …)
+	// correlation hints remain useful for evidence linkage.
+	const dataAlreadyInline = summary.dataInline === true;
+	if (!dataAlreadyInline) {
+		const correlationPaths = [
+			{ key: "operationId", path: "operation.operationId", value: operation?.operationId },
+			{ key: "snapshotId", path: "snapshot.snapshotId", value: snapshot?.snapshotId },
+			{ key: "requestId", path: "data.requestId", value: summary.requestId },
+			{ key: "waitId", path: "data.waitId", value: summary.waitId },
+			{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
+		].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
+		for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact jsonPath=${item.path}`);
+	}
 	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json|text"];
 }
 

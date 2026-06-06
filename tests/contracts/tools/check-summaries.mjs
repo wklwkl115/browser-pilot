@@ -198,8 +198,10 @@ try {
 		artifactValue: { data: { content: "x".repeat(9_000), actionables: [{ selector: "#pay" }], list_hints: [] } },
 	}));
 	assert.ok(scanEnvelope.saved?.path && existsSync(scanEnvelope.saved.path), "check-summaries scan.artifact: large scan result must save raw artifact");
-	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact jsonPath=data.actionables") || item.includes("click(pi-ref://") || item.includes("read(pi-ref://")), true, "check-summaries scan.nextActions: artifact or verb follow-up must point directly at actionables evidence");
-	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
+	// H2: nextActions hints now include mode=json so agents can translate directly to a CLI call
+	// without knowing that --json-path requires --mode json (blind-eval H2, n=2).
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=data.actionables") || item.includes("click(pi-ref://") || item.includes("read(pi-ref://")), true, "check-summaries scan.nextActions: artifact or verb follow-up must point directly at actionables evidence");
+	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
 } finally {
 	await rm(scanTmp, { recursive: true, force: true });
 }

@@ -660,7 +660,12 @@ async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: Brow
 }
 
 export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: BrowserArtifactContext): Promise<BrowserArtifactReadResult> {
-	const mode = normalizeArtifactMode(params.mode);
+	// H2: when --json-path (or --pick) is given without --mode, promote to json mode automatically.
+	// Without this, --json-path was silently ignored and the full file was returned as text — agents
+	// following the nextActions `read_saved_artifact mode=json jsonPath=X` hint, or just guessing
+	// the flag, would get the whole file (blind-eval H2, n=2, bilibili+linux.do).
+	const modeParam = params.mode ?? ((params.jsonPath || (Array.isArray(params.pick) && params.pick.length)) ? "json" : undefined);
+	const mode = normalizeArtifactMode(modeParam);
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
 	const redact = params.redact !== false;
 	if (mode !== "search" && (Array.isArray(params.paths) || params.root !== undefined || params.glob !== undefined)) {

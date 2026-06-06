@@ -155,7 +155,15 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					operation,
 					artifactValue: { ...jsResult, operation },
 					distill: (value) => {
-						const base = { ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode } as Record<string, unknown>;
+						const generic = summarizeGenericValue(value);
+						// H1: mark when the script's return value is already fully inline in summary.data so
+						// artifactReadActions can suppress the misleading correlation-ID nextActions hints
+						// (blind-eval H1, n=2). The generic summarizer inlines small values; large ones
+						// collapse to shape placeholders — detect inline by checking data is not a shape.
+						const data = generic.data;
+						const dataInline = data !== undefined && data !== null &&
+							!(isRecord(data) && (data.type === "array" || data.type === "object" || data.type === "string"));
+						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(dataInline ? { dataInline: true } : {}) } as Record<string, unknown>;
 						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
 						if (monitor) {
 							base.monitorSource = {
