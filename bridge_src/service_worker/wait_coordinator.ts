@@ -7,12 +7,17 @@ import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBrowserWaitRecord
 
 type PiBrowserEventSubscription = JsonRecord & { key?: string; listenerId: string; tabId: number };
 type CleanupTabWaitsOptions = { includeCdp?: boolean; action?: string; remember?: boolean };
+type TerminalWaitRecord = JsonRecord & { key: string; waitId: string; tabId: number; kind: string; status: string; completedAt: number; criteria: JsonRecord };
+
+const PI_BROWSER_TERMINAL_WAIT_MAX_AGE_MS = 300000;
+const PI_BROWSER_TERMINAL_WAIT_MAX_RECORDS = 200;
 
 class WaitCoordinator {
   activeWaits = new Map<string, PiBrowserWaitRecord>();
   eventSubscriptions = new Map<string, PiBrowserEventSubscription>();
+  terminalWaits = new Map<string, TerminalWaitRecord>();
   epoch = 0;
-  constructor() { this.activeWaits = new Map<string, PiBrowserWaitRecord>(); this.eventSubscriptions = new Map<string, PiBrowserEventSubscription>(); this.epoch = 0; }
+  constructor() { this.activeWaits = new Map<string, PiBrowserWaitRecord>(); this.eventSubscriptions = new Map<string, PiBrowserEventSubscription>(); this.terminalWaits = new Map<string, TerminalWaitRecord>(); this.epoch = 0; }
   makeWaitId(tabId: unknown, kind: unknown): string { return makeWaitId(tabId, kind); }
   waitKey(tabId: unknown, waitId: unknown): string { return waitKey(tabId, waitId); }
   eventSubscriptionKey(tabId: unknown, listenerId: unknown): string { return eventSubscriptionKey(tabId, listenerId); }
@@ -26,6 +31,28 @@ class WaitCoordinator {
   set(key: string, record: PiBrowserWaitRecord): this { this.activeWaits.set(key, record); return this; }
   has(key: string): boolean { return this.activeWaits.has(key); }
   delete(key: string): boolean { return this.activeWaits.delete(key); }
+  rememberTerminal(record: PiBrowserWaitRecord, status: string, details: JsonRecord = {}): TerminalWaitRecord {
+    const terminal = terminalWaitRecord(record, status, details);
+    this.terminalWaits.set(terminal.key, terminal);
+    this.pruneTerminal();
+    return terminal;
+  }
+  terminal(waitId: unknown, tabId?: unknown): TerminalWaitRecord | null {
+    this.pruneTerminal();
+    if (tabId !== undefined && tabId !== null) return this.terminalWaits.get(waitKey(tabId, waitId)) || null;
+    const matches = Array.from(this.terminalWaits.values()).filter(w => String(w.waitId) === String(waitId));
+    return matches.length === 1 ? matches[0] : null;
+  }
+  terminalValues(tabId?: unknown): TerminalWaitRecord[] {
+    this.pruneTerminal();
+    return Array.from(this.terminalWaits.values()).filter(w => tabId === undefined || tabId === null || Number(w.tabId) === Number(tabId));
+  }
+  pruneTerminal(): void {
+    const now = Date.now();
+    for (const [key, wait] of Array.from(this.terminalWaits.entries())) if (now - Number(wait.completedAt || 0) > PI_BROWSER_TERMINAL_WAIT_MAX_AGE_MS) this.terminalWaits.delete(key);
+    const overflow = this.terminalWaits.size - PI_BROWSER_TERMINAL_WAIT_MAX_RECORDS;
+    if (overflow > 0) for (const key of Array.from(this.terminalWaits.keys()).slice(0, overflow)) this.terminalWaits.delete(key);
+  }
   values(): IterableIterator<PiBrowserWaitRecord> { return this.activeWaits.values(); }
   entries(): IterableIterator<[string, PiBrowserWaitRecord]> { return this.activeWaits.entries(); }
   keys(): IterableIterator<string> { return this.activeWaits.keys(); }
@@ -61,7 +88,7 @@ class WaitCoordinator {
   cleanupWait(record: PiBrowserWaitRecord, reason?: string): void { return cleanupWait(record, reason); }
   cleanupWaitsForFrame(tabId: unknown, frameId: unknown, reason?: string): number { return cleanupWaitsForFrame(tabId, frameId, reason); }
   cleanupWaitsForUninstall(tabId: unknown): number { return cleanupWaitsForUninstall(tabId); }
-  diagnostics(tabId?: unknown) { const scopedEvents = Array.from(this.eventSubscriptions.values()).filter(s => !tabId || Number(s.tabId) === Number(tabId)); return { activeWaits: Array.from(this.activeWaits.values()).filter(w => !tabId || Number(w.tabId) === Number(tabId)).map(w => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), eventSubscriptions: scopedEvents.length, epoch: this.epoch }; }
+  diagnostics(tabId?: unknown) { const scopedEvents = Array.from(this.eventSubscriptions.values()).filter(s => !tabId || Number(s.tabId) === Number(tabId)); return { activeWaits: Array.from(this.activeWaits.values()).filter(w => !tabId || Number(w.tabId) === Number(tabId)).map(w => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), recentWaits: this.terminalValues(tabId).slice(-20), eventSubscriptions: scopedEvents.length, epoch: this.epoch }; }
 }
 function cleanupWait(record: PiBrowserWaitRecord, reason?: string): void { return cleanupPiBrowserWait(record, reason); }
 function cleanupWaitsForFrame(tabId: unknown, frameId: unknown, reason?: string): number { let n = 0; for (const r of Array.from(piBrowserWaits.values())) if (Number(r.tabId) === Number(tabId) && String(r.frameId || '') === String(frameId || '')) { cleanupPiBrowserWait(r, reason || 'FRAME_DETACHED'); n++; } return n; }
@@ -122,6 +149,26 @@ function normalizePiBrowserTimeoutMs(msg: PiBridgeCommand | null | undefined, fa
 function makeWaitId(tabId: unknown, kind: unknown): string { return 'wait_' + Number(tabId) + '_' + String(kind || 'generic') + '_' + Date.now() + '_' + (++piBrowserWaitSeq); }
 function waitKey(tabId: unknown, waitId: unknown): string { return Number(tabId) + ':' + String(waitId); }
 function eventSubscriptionKey(tabId: unknown, listenerId: unknown): string { return Number(tabId) + '::' + String(listenerId); }
+function terminalWaitRecord(record: PiBrowserWaitRecord, status: string, details: JsonRecord = {}): TerminalWaitRecord {
+  return {
+    key: record.key || waitKey(record.tabId, record.waitId),
+    waitId: String(record.waitId || record.wait_id || ''),
+    wait_id: String(record.wait_id || record.waitId || ''),
+    requestId: String(record.requestId || record.request_id || ''),
+    request_id: String(record.request_id || record.requestId || ''),
+    tabId: Number(record.tabId),
+    kind: String(record.kind || ''),
+    status: String(status || record.status || ''),
+    criteria: record.criteria || {},
+    createdAt: record.createdAt,
+    completedAt: Date.now(),
+    elapsed_ms: Date.now() - Number(record.createdAt || Date.now()),
+    diagnostics: record.diagnostics || [],
+    lastEventAt: record.lastEventAt,
+    cdpEvents: Array.isArray(record.cdpEvents) ? record.cdpEvents.slice(-20) : [],
+    details,
+  };
+}
 function isAbortError(e: unknown): boolean { const err = e && typeof e === 'object' ? e as JsonRecord : {}; return !!e && (err.name === 'AbortError' || /aborted|cancelled/i.test(String(err.message || e))); }
 function waitAbortMessage(record: PiBrowserWaitRecord): string { return 'piBrowser wait ' + record.waitId + ' cancelled'; }
 function normalizeWaitState(value: unknown, fallback = 'complete'): string {
@@ -242,7 +289,9 @@ function waitWithTimeout<T>(record: PiBrowserWaitRecord, promise: Promise<T>, ti
 function finishPiBrowserWait(record: PiBrowserWaitRecord, ok: boolean, data: JsonRecord | null = null, errorCode?: string, message?: string, details: JsonRecord = {}): PiBridgeResponse {
   const elapsed_ms = Date.now() - record.createdAt;
   const base = { waitId: record.waitId, nativeWaitId: record.waitId, kind: record.kind, tabId: record.tabId, elapsed_ms, criteria: record.criteria };
-  clearWait(record, ok ? 'completed' : (errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? 'timeout' : (errorCode === 'CANCELLED' ? 'cancelled' : 'failed')));
+  const status = ok ? 'completed' : (errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? 'timeout' : (errorCode === 'CANCELLED' ? 'cancelled' : 'failed'));
+  piBrowserWaits.rememberTerminal(record, status, ok ? (data || {}) : details);
+  clearWait(record, status);
   if (ok) return { ok: true, data: { ...base, ...(data || {}) } };
   return piBrowserError(errorCode || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message || 'wait failed', { ...base, ...(details || {}) });
 }

@@ -2905,13 +2905,17 @@ function diagnosePiBrowserCdpCleanupHistory(tabId2) {
 var __piBridgeModule_wait_cdp = { name: "wait_cdp", symbols: { piBrowserCdpSubscriptions, piBrowserCdpTabRefs, piBrowserCdpDomainRefs, piBrowserCdpCleanupHistory, piBrowserCdpSubSeq, piBrowserCdpDomainKey, piBrowserCdpHolderId, rememberPiBrowserCdpCleanup, sendPiBrowserCdpDomainCommand, acquirePiBrowserCdpDomain, schedulePiBrowserCdpDomainDisable, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, enablePiBrowserCdpDomains, attachDebuggerForWait, subscribePiBrowserCdp, unsubscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpCleanupHistory } };
 
 // bridge_src/service_worker/wait_coordinator.ts
+var PI_BROWSER_TERMINAL_WAIT_MAX_AGE_MS = 3e5;
+var PI_BROWSER_TERMINAL_WAIT_MAX_RECORDS = 200;
 var WaitCoordinator = class {
   activeWaits = /* @__PURE__ */ new Map();
   eventSubscriptions = /* @__PURE__ */ new Map();
+  terminalWaits = /* @__PURE__ */ new Map();
   epoch = 0;
   constructor() {
     this.activeWaits = /* @__PURE__ */ new Map();
     this.eventSubscriptions = /* @__PURE__ */ new Map();
+    this.terminalWaits = /* @__PURE__ */ new Map();
     this.epoch = 0;
   }
   makeWaitId(tabId2, kind) {
@@ -2941,6 +2945,28 @@ var WaitCoordinator = class {
   }
   delete(key) {
     return this.activeWaits.delete(key);
+  }
+  rememberTerminal(record, status, details = {}) {
+    const terminal = terminalWaitRecord(record, status, details);
+    this.terminalWaits.set(terminal.key, terminal);
+    this.pruneTerminal();
+    return terminal;
+  }
+  terminal(waitId, tabId2) {
+    this.pruneTerminal();
+    if (tabId2 !== void 0 && tabId2 !== null) return this.terminalWaits.get(waitKey(tabId2, waitId)) || null;
+    const matches = Array.from(this.terminalWaits.values()).filter((w) => String(w.waitId) === String(waitId));
+    return matches.length === 1 ? matches[0] : null;
+  }
+  terminalValues(tabId2) {
+    this.pruneTerminal();
+    return Array.from(this.terminalWaits.values()).filter((w) => tabId2 === void 0 || tabId2 === null || Number(w.tabId) === Number(tabId2));
+  }
+  pruneTerminal() {
+    const now2 = Date.now();
+    for (const [key, wait] of Array.from(this.terminalWaits.entries())) if (now2 - Number(wait.completedAt || 0) > PI_BROWSER_TERMINAL_WAIT_MAX_AGE_MS) this.terminalWaits.delete(key);
+    const overflow = this.terminalWaits.size - PI_BROWSER_TERMINAL_WAIT_MAX_RECORDS;
+    if (overflow > 0) for (const key of Array.from(this.terminalWaits.keys()).slice(0, overflow)) this.terminalWaits.delete(key);
   }
   values() {
     return this.activeWaits.values();
@@ -3003,7 +3029,7 @@ var WaitCoordinator = class {
   }
   diagnostics(tabId2) {
     const scopedEvents = Array.from(this.eventSubscriptions.values()).filter((s2) => !tabId2 || Number(s2.tabId) === Number(tabId2));
-    return { activeWaits: Array.from(this.activeWaits.values()).filter((w) => !tabId2 || Number(w.tabId) === Number(tabId2)).map((w) => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), eventSubscriptions: scopedEvents.length, epoch: this.epoch };
+    return { activeWaits: Array.from(this.activeWaits.values()).filter((w) => !tabId2 || Number(w.tabId) === Number(tabId2)).map((w) => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), recentWaits: this.terminalValues(tabId2).slice(-20), eventSubscriptions: scopedEvents.length, epoch: this.epoch };
   }
 };
 function cleanupWait(record, reason) {
@@ -3076,6 +3102,26 @@ function waitKey(tabId2, waitId) {
 }
 function eventSubscriptionKey(tabId2, listenerId) {
   return Number(tabId2) + "::" + String(listenerId);
+}
+function terminalWaitRecord(record, status, details = {}) {
+  return {
+    key: record.key || waitKey(record.tabId, record.waitId),
+    waitId: String(record.waitId || record.wait_id || ""),
+    wait_id: String(record.wait_id || record.waitId || ""),
+    requestId: String(record.requestId || record.request_id || ""),
+    request_id: String(record.request_id || record.requestId || ""),
+    tabId: Number(record.tabId),
+    kind: String(record.kind || ""),
+    status: String(status || record.status || ""),
+    criteria: record.criteria || {},
+    createdAt: record.createdAt,
+    completedAt: Date.now(),
+    elapsed_ms: Date.now() - Number(record.createdAt || Date.now()),
+    diagnostics: record.diagnostics || [],
+    lastEventAt: record.lastEventAt,
+    cdpEvents: Array.isArray(record.cdpEvents) ? record.cdpEvents.slice(-20) : [],
+    details
+  };
 }
 function isAbortError(e) {
   const err = e && typeof e === "object" ? e : {};
@@ -3220,7 +3266,9 @@ function waitWithTimeout(record, promise, timeoutMs, label) {
 function finishPiBrowserWait(record, ok, data2 = null, errorCode, message, details = {}) {
   const elapsed_ms = Date.now() - record.createdAt;
   const base = { waitId: record.waitId, nativeWaitId: record.waitId, kind: record.kind, tabId: record.tabId, elapsed_ms, criteria: record.criteria };
-  clearWait(record, ok ? "completed" : errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? "timeout" : errorCode === "CANCELLED" ? "cancelled" : "failed");
+  const status = ok ? "completed" : errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? "timeout" : errorCode === "CANCELLED" ? "cancelled" : "failed";
+  piBrowserWaits.rememberTerminal(record, status, ok ? data2 || {} : details);
+  clearWait(record, status);
   if (ok) return { ok: true, data: { ...base, ...data2 || {} } };
   return piBrowserError(errorCode || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message || "wait failed", { ...base, ...details || {} });
 }
@@ -4265,7 +4313,57 @@ async function getPerformanceEntries(tabId2, msg) {
   }
   return { ok: true, data: { entries: [], entryType, nameContains, count: 0, explicit_entry_type: hasEntryType, note: "PerformanceObserver performance.getEntriesByType Runtime.evaluate unavailable" } };
 }
-async function diagnosePiBrowser(tabId2, _msg) {
+function selectorDiagnoseExpression(selector) {
+  return `(() => {
+    const selector = ${JSON.stringify(selector)};
+    function cleanText(value, limit) { return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, limit); }
+    function compactNode(node) {
+      if (!node) return null;
+      let rect = null;
+      try { const r = node.getBoundingClientRect ? node.getBoundingClientRect() : null; if (r) rect = { x:r.x, y:r.y, width:r.width, height:r.height, top:r.top, left:r.left, right:r.right, bottom:r.bottom }; } catch (_) {}
+      let style = null;
+      try { style = window.getComputedStyle ? window.getComputedStyle(node) : null; } catch (_) {}
+      const display = style ? String(style.display || '') : '';
+      const visibility = style ? String(style.visibility || '') : '';
+      const opacity = style ? Number(style.opacity === '' || style.opacity === undefined ? 1 : style.opacity) : 1;
+      const visible = !!(rect && (rect.width || rect.height) && display !== 'none' && visibility !== 'hidden' && opacity !== 0);
+      return { tagName: node.tagName ? String(node.tagName).toLowerCase() : '', id: node.id || '', role: node.getAttribute && node.getAttribute('role') || '', name: node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('name')) || '', text: cleanText(node.innerText || node.textContent || '', 160), visible, rect };
+    }
+    let nodes = [];
+    try { nodes = Array.from(document.querySelectorAll(selector)); }
+    catch (e) { return { selector, validSyntax:false, syntaxError: String(e && (e.message || e) || e), matchCount:0, readyState:document.readyState }; }
+    return { selector, validSyntax:true, matchCount:nodes.length, visibleCount:nodes.filter(node => compactNode(node)?.visible).length, firstMatch: compactNode(nodes[0]), sampleMatches:nodes.slice(0,5).map(compactNode), readyState:document.readyState, visibilityState:document.visibilityState };
+  })()`;
+}
+async function diagnoseSelectorForWait(tabId2, msg) {
+  const waitId = msg.waitId ?? msg.wait_id;
+  const terminal = waitId ? piBrowserWaits.terminal(waitId, tabId2) : null;
+  const active = waitId ? piBrowserWaits.get(waitKey(tabId2, waitId)) : null;
+  const source = active || terminal || null;
+  const criteria = waitRecord(source?.criteria);
+  const details = waitRecord(source?.details);
+  const explicitSelector = typeof msg.selector === "string" ? msg.selector : "";
+  const selector = String(explicitSelector || criteria.selector || criteria.css || criteria.target || "").trim();
+  if (!selector) return waitId ? { waitId: String(waitId), foundWait: false, selector: null, note: "no selector was found for waitId; pass selector explicitly for selector diagnostics" } : null;
+  const probe = await callPagePiBrowser(tabId2, "hook.evaluate", { expression: selectorDiagnoseExpression(selector) }).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
+  const data2 = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
+  return {
+    waitId: waitId ? String(waitId) : void 0,
+    foundWait: !!source,
+    waitStatus: source?.status,
+    kind: source?.kind,
+    selector,
+    expectedState: criteria.state || (criteria.visible === true ? "visible" : void 0),
+    lastState: details.last_state || details.snapshot || null,
+    current: data2,
+    recoveryCommands: [
+      `browser_observe mode=scan to refresh selectors around ${selector}`,
+      `browser_observe mode=html selector=${selector} to inspect the current DOM match`,
+      "browser_frame list when iframe placement is suspected"
+    ]
+  };
+}
+async function diagnosePiBrowser(tabId2, msg) {
   const tab = await chromeApi.tabs.get(tabId2).catch((e) => ({ error: waitErrorMessage(e) }));
   const status = await callPagePiBrowser(tabId2, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
   const cdp = piBrowserPersistentCdp();
@@ -4287,6 +4385,8 @@ async function diagnosePiBrowser(tabId2, _msg) {
   const version = "wait-goal-v1";
   const epoch = Date.now();
   const activeWaits = Array.from(piBrowserWaits.values()).filter((r) => Number(r.tabId) === Number(tabId2)).map((r) => ({ waitId: r.waitId, kind: r.kind, criteria: r.criteria, age_ms: Date.now() - r.createdAt, status: r.status, cdpSubscriptions: r.cdpSubscriptions, lastEventAt: r.lastEventAt, diagnostics: r.diagnostics }));
+  const recentWaits = piBrowserWaits.terminalValues(tabId2).slice(-20);
+  const selectorDiagnostics = await diagnoseSelectorForWait(tabId2, msg || {}).catch((e) => ({ error: waitErrorMessage(e) }));
   const listeners = Array.from(piBrowserWaits.eventSubscriptionValues()).filter((s2) => Number(s2.tabId) === Number(tabId2)).map((s2) => ({ listenerId: s2.listenerId, eventType: s2.eventType, selector: s2.selector, diagnostics: s2.diagnostics }));
   const diagnostics2 = piBrowserWaits.diagnostics(tabId2);
   try {
@@ -4346,7 +4446,7 @@ async function diagnosePiBrowser(tabId2, _msg) {
     domain_ref_leaks: cdpDomainRefs.filter((r) => r.count > 0 && !r.holders.length),
     subscription_leaks: activeCdpSubscriptions.filter((s2) => s2.waitId && !piBrowserWaits.has(waitKey(s2.tabId, s2.waitId)))
   };
-  return { ok: true, data: { tabId: Number(tabId2), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s2]) => ({ tabId: tid, ...s2 })), session: piBrowserSessions.get(Number(tabId2)) || null, queue: getPiBrowserQueueStats(tabId2), waits: activeWaits, activeWaits, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics: diagnostics2, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
+  return { ok: true, data: { tabId: Number(tabId2), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s2]) => ({ tabId: tid, ...s2 })), session: piBrowserSessions.get(Number(tabId2)) || null, queue: getPiBrowserQueueStats(tabId2), waits: activeWaits, activeWaits, recentWaits, selectorDiagnostics, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics: diagnostics2, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }
 var __piBridgeModule_wait = { name: "wait", symbols: { waitForAny, waitForAll, waitForComposite, normalizePiBrowserWaitKind, dispatchPiBrowserWait, cancelWait, cancelPiBrowserWait, extractPiBrowserRuntimeValue, cleanupPiBrowserPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnosePiBrowser } };
 

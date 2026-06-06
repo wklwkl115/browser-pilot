@@ -1801,8 +1801,9 @@ async function testWaitDiagnoseIframeProbeContract() {
 		document: {
 			readyState: "complete",
 			querySelectorAll(selector) {
-				assert(selector === "iframe", "wait.diagnose must query iframe elements");
-				return iframes;
+				if (selector === "iframe") return iframes;
+				if (selector === "#missing") return [];
+				throw new Error(`unexpected selector diagnostic query: ${selector}`);
 			},
 		},
 	};
@@ -1815,7 +1816,7 @@ async function testWaitDiagnoseIframeProbeContract() {
 		clearTimeout,
 		AbortController,
 		Date,
-		PI_BROWSER_ERROR_CODES: { NO_SESSION: "NO_SESSION", INTERNAL_ERROR: "INTERNAL_ERROR" },
+		PI_BROWSER_ERROR_CODES: { NO_SESSION: "NO_SESSION", INTERNAL_ERROR: "INTERNAL_ERROR", TIMEOUT: "TIMEOUT" },
 		piBrowserError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
 		piBrowserSessions: sessions,
 		getPiBrowserQueueStats: (tabId) => ({ tabId:Number(tabId), pending: false, depth: 0 }),
@@ -1837,10 +1838,13 @@ async function testWaitDiagnoseIframeProbeContract() {
 			debugger: { async getTargets() { return [{ tabId: 31, type: "page" }, { tabId: 32, type: "page" }]; } },
 		},
 	};
-	vm.runInNewContext(`${waitBridge}\nself.__diagnoseIframeTest = { diagnosePiBrowser };`, sandbox, { filename: "wait-diagnose-iframe.js" });
-	const result = await sandbox.self.__diagnoseIframeTest.diagnosePiBrowser(31, { cmd: "wait.diagnose" });
+	vm.runInNewContext(`${waitBridge}
+const selectorWait = registerWait(31, 'selector', { waitId: 'missing-sel', selector: '#missing', state: 'visible' });
+finishPiBrowserWait(selectorWait, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, 'wait.selector timed out', { selector:'#missing', state:'visible', last_state:{ found:false, readyState:'complete' } });
+self.__diagnoseIframeTest = { diagnosePiBrowser };`, sandbox, { filename: "wait-diagnose-iframe.js" });
+	const result = await sandbox.self.__diagnoseIframeTest.diagnosePiBrowser(31, { cmd: "wait.diagnose", waitId: "missing-sel" });
 	assert(result.ok === true, "wait.diagnose iframe fixture must succeed");
-	assert(evaluateCalls.length === 1, "wait.diagnose must run one page probe");
+	assert(evaluateCalls.length === 2, "wait.diagnose must run selector + iframe page probes when waitId is supplied");
 	assert(result.data.frameCount === 2, "wait.diagnose must expose window.frames.length as frameCount");
 	assert(result.data.iframeCount === 2, "wait.diagnose must expose iframe element count");
 	assert(result.data.frames.length === 2, "wait.diagnose must return iframe node diagnostics");
@@ -1850,6 +1854,11 @@ async function testWaitDiagnoseIframeProbeContract() {
 	assert(result.data.frames[0].visible === true, "wait.diagnose iframe diagnostics must include visibility");
 	assert(result.data.frames[0].rect.width === 200, "wait.diagnose iframe diagnostics must include geometry");
 	assert(result.data.frames[1].visible === false, "wait.diagnose must report hidden iframes as not visible");
+	assert(result.data.selectorDiagnostics.waitId === "missing-sel", "wait.diagnose waitId must recover the recent selector wait identity");
+	assert(result.data.selectorDiagnostics.selector === "#missing", "wait.diagnose waitId must recover the selector from the recent wait");
+	assert(result.data.selectorDiagnostics.current.matchCount === 0, "wait.diagnose selector diagnostics must run a current main-document match count");
+	assert(result.data.selectorDiagnostics.lastState.found === false, "wait.diagnose selector diagnostics must retain the timeout's last selector state");
+	assert(result.data.recentWaits.some((wait) => wait.waitId === "missing-sel" && wait.status === "timeout"), "wait.diagnose must expose recent terminal waits for post-timeout diagnosis");
 	assert(result.data.debuggerTargets.length === 1, "wait.diagnose debugger targets must stay scoped to the requested tab");
 	assert(result.data.inflight === 4, "wait.diagnose must retain page inflight diagnostics");
 	assert(result.data.last_errors.includes("fixture-page-error"), "wait.diagnose must retain page last_errors diagnostics");

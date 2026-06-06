@@ -145,7 +145,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 | No bridge/browser/tab | `browser_tabs list`; ask user: `/browser-status`, install, reload, open tab |
 | Stale tab | `browser_tabs list`; use live `tabId` |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
-| Timeout | re-observe; `browser_wait action=diagnose`; narrow/raise bound |
+| Timeout | re-observe; `browser_wait action=diagnose` (pass the timed-out `waitId` to get selector-specific `selectorDiagnostics`: current match/visible count, iframe clues, recovery commands); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`etag mismatch`/`HANDLE_NOT_FOUND` or baseline expired | artifact/ref/baseline changed under the handle — re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old one |
 | Tool/command not found | `pi-browser --help`; web-security needs `PI_BROWSER_TOOL_PROFILE` unset (not `core`) |

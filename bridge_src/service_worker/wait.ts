@@ -276,7 +276,59 @@ async function getPerformanceEntries(tabId: number, msg: PiBridgeCommand): Promi
   return { ok: true, data: { entries: [], entryType, nameContains, count: 0, explicit_entry_type: hasEntryType, note: 'PerformanceObserver performance.getEntriesByType Runtime.evaluate unavailable' } };
 }
 
-async function diagnosePiBrowser(tabId: number, _msg: PiBridgeCommand): Promise<PiBridgeResponse> {
+function selectorDiagnoseExpression(selector: string): string {
+  return `(() => {
+    const selector = ${JSON.stringify(selector)};
+    function cleanText(value, limit) { return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, limit); }
+    function compactNode(node) {
+      if (!node) return null;
+      let rect = null;
+      try { const r = node.getBoundingClientRect ? node.getBoundingClientRect() : null; if (r) rect = { x:r.x, y:r.y, width:r.width, height:r.height, top:r.top, left:r.left, right:r.right, bottom:r.bottom }; } catch (_) {}
+      let style = null;
+      try { style = window.getComputedStyle ? window.getComputedStyle(node) : null; } catch (_) {}
+      const display = style ? String(style.display || '') : '';
+      const visibility = style ? String(style.visibility || '') : '';
+      const opacity = style ? Number(style.opacity === '' || style.opacity === undefined ? 1 : style.opacity) : 1;
+      const visible = !!(rect && (rect.width || rect.height) && display !== 'none' && visibility !== 'hidden' && opacity !== 0);
+      return { tagName: node.tagName ? String(node.tagName).toLowerCase() : '', id: node.id || '', role: node.getAttribute && node.getAttribute('role') || '', name: node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('name')) || '', text: cleanText(node.innerText || node.textContent || '', 160), visible, rect };
+    }
+    let nodes = [];
+    try { nodes = Array.from(document.querySelectorAll(selector)); }
+    catch (e) { return { selector, validSyntax:false, syntaxError: String(e && (e.message || e) || e), matchCount:0, readyState:document.readyState }; }
+    return { selector, validSyntax:true, matchCount:nodes.length, visibleCount:nodes.filter(node => compactNode(node)?.visible).length, firstMatch: compactNode(nodes[0]), sampleMatches:nodes.slice(0,5).map(compactNode), readyState:document.readyState, visibilityState:document.visibilityState };
+  })()`;
+}
+
+async function diagnoseSelectorForWait(tabId: number, msg: PiBridgeCommand): Promise<JsonRecord | null> {
+  const waitId = msg.waitId ?? msg.wait_id;
+  const terminal = waitId ? piBrowserWaits.terminal(waitId, tabId) : null;
+  const active = waitId ? piBrowserWaits.get(waitKey(tabId, waitId)) : null;
+  const source = active || terminal || null;
+  const criteria = waitRecord(source?.criteria);
+  const details = waitRecord(source?.details);
+  const explicitSelector = typeof msg.selector === 'string' ? msg.selector : '';
+  const selector = String(explicitSelector || criteria.selector || criteria.css || criteria.target || '').trim();
+  if (!selector) return waitId ? { waitId:String(waitId), foundWait:false, selector:null, note:'no selector was found for waitId; pass selector explicitly for selector diagnostics' } : null;
+  const probe = await callPagePiBrowser(tabId, 'hook.evaluate', { expression: selectorDiagnoseExpression(selector) }).catch((e: unknown) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
+  const data = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
+  return {
+    waitId: waitId ? String(waitId) : undefined,
+    foundWait: !!source,
+    waitStatus: source?.status,
+    kind: source?.kind,
+    selector,
+    expectedState: criteria.state || (criteria.visible === true ? 'visible' : undefined),
+    lastState: details.last_state || details.snapshot || null,
+    current: data,
+    recoveryCommands: [
+      `browser_observe mode=scan to refresh selectors around ${selector}`,
+      `browser_observe mode=html selector=${selector} to inspect the current DOM match`,
+      'browser_frame list when iframe placement is suspected',
+    ],
+  };
+}
+
+async function diagnosePiBrowser(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const tab = await chrome.tabs.get(tabId).catch((e: unknown) => ({ error: waitErrorMessage(e) }));
   const status = await callPagePiBrowser(tabId, 'hook.status', {}).catch((e: unknown) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
   const cdp = piBrowserPersistentCdp();
@@ -301,6 +353,8 @@ async function diagnosePiBrowser(tabId: number, _msg: PiBridgeCommand): Promise<
   const version = 'wait-goal-v1';
   const epoch = Date.now();
   const activeWaits = Array.from(piBrowserWaits.values()).filter(r => Number(r.tabId) === Number(tabId)).map(r => ({ waitId:r.waitId, kind:r.kind, criteria:r.criteria, age_ms:Date.now()-r.createdAt, status:r.status, cdpSubscriptions:r.cdpSubscriptions, lastEventAt:r.lastEventAt, diagnostics:r.diagnostics }));
+  const recentWaits = piBrowserWaits.terminalValues(tabId).slice(-20);
+  const selectorDiagnostics = await diagnoseSelectorForWait(tabId, msg || {}).catch((e: unknown) => ({ error: waitErrorMessage(e) }));
   const listeners = Array.from(piBrowserWaits.eventSubscriptionValues()).filter(s => Number(s.tabId) === Number(tabId)).map(s => ({ listenerId:s.listenerId, eventType:s.eventType, selector:s.selector, diagnostics:s.diagnostics }));
   const diagnostics = piBrowserWaits.diagnostics(tabId);
   try { if (chrome.debugger?.getTargets) debuggerTargets = (await chrome.debugger.getTargets()).filter((t: JsonRecord) => Number(t.tabId) === Number(tabId)); } catch (e) { last_errors.push(waitErrorMessage(e)); }
@@ -354,7 +408,7 @@ async function diagnosePiBrowser(tabId: number, _msg: PiBridgeCommand): Promise<
     domain_ref_leaks: cdpDomainRefs.filter(r => r.count > 0 && !r.holders.length),
     subscription_leaks: activeCdpSubscriptions.filter(s => s.waitId && !piBrowserWaits.has(waitKey(s.tabId, s.waitId))),
   };
-  return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
+  return { ok: true, data: { tabId:Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, recentWaits, selectorDiagnostics, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }
 export { waitForAny, waitForAll, waitForComposite, normalizePiBrowserWaitKind, dispatchPiBrowserWait, cancelWait, cancelPiBrowserWait, extractPiBrowserRuntimeValue, cleanupPiBrowserPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnosePiBrowser };
 // ESM module metadata
