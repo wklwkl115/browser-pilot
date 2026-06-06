@@ -26,6 +26,7 @@ export function summarizeHttpReplayData(value: unknown): Summary {
 			omittedHeaderNames: request.omittedHeaderNames,
 			bodyBytes: request.bodyBytes,
 			cookiesBound: request.cookiesBound,
+			csrfReflected: isRecord(request.csrfReflected) ? { cookie: request.csrfReflected.cookie, header: request.csrfReflected.header } : undefined,
 			multipart: isRecord(request.multipart) ? { partCount: request.multipart.partCount, fileCount: request.multipart.fileCount, fieldCount: request.multipart.fieldCount, nestedMultipartPartCount: request.multipart.nestedMultipartPartCount } : undefined,
 		},
 		response: {

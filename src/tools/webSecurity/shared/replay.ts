@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { FETCH_OMIT_HEADER_NAMES, fetchWithRedirects, mergeCookieHeaders, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
+import { FETCH_OMIT_HEADER_NAMES, deriveCsrfReflection, fetchWithRedirects, mergeCookieHeaders, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
 import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize.js";
 import { createCodedError } from "../../../utils/codedError.js";
@@ -17,6 +17,9 @@ export type NormalizedReplayOptions = {
 	allowPrivateTargets: boolean;
 	bindBrowserSession: boolean;
 	cookieMode: "merge" | "replace" | "preserve";
+	reflectCsrf: boolean;
+	csrfCookie?: string;
+	csrfHeader?: string;
 	compareBaseline: boolean;
 	sequenceCookies: boolean;
 	continueOnError: boolean;
@@ -260,6 +263,9 @@ export function normalizeReplayOptions(options: ReplayOptions): NormalizedReplay
 		allowPrivateTargets: options.allowPrivateTargets === true,
 		bindBrowserSession: options.bindBrowserSession === true,
 		cookieMode: cookieMode === "replace" ? "replace" : cookieMode === "preserve" ? "preserve" : "merge",
+		reflectCsrf: options.reflectCsrf !== false,
+		csrfCookie: typeof options.csrfCookie === "string" && options.csrfCookie.trim() ? options.csrfCookie.trim() : undefined,
+		csrfHeader: typeof options.csrfHeader === "string" && options.csrfHeader.trim() ? options.csrfHeader.trim() : undefined,
 		compareBaseline: options.compareBaseline === true,
 		sequenceCookies: options.sequenceCookies !== false,
 		continueOnError: options.continueOnError === true,
@@ -301,6 +307,27 @@ export function extractReplayVariables(value: unknown, final: FetchStep): Record
 	return out;
 }
 
+// Double-submit CSRF reflection: when binding the browser session, reflect the
+// CSRF cookie already present in the bound Cookie header into its matching
+// request header (the common XSRF-TOKEN→header pattern). Sensible default-on,
+// visible (returns NAMES only — caller surfaces csrfReflected), overridable
+// (reflectCsrf/csrfCookie/csrfHeader), and never overrides a CSRF header the
+// caller already supplied. Mutates `headers` in place; returns the reflection
+// descriptor or undefined when nothing was reflected.
+export function reflectCsrfIntoHeaders(
+	headers: HeaderMap,
+	options: { bindBrowserSession?: boolean; reflectCsrf?: boolean; csrfCookie?: string; csrfHeader?: string },
+): { cookie: string; header: string } | undefined {
+	if (options.bindBrowserSession !== true || options.reflectCsrf === false) return undefined;
+	const boundCookie = headers.Cookie ?? headers.cookie;
+	const derived = deriveCsrfReflection(boundCookie, { csrfCookie: options.csrfCookie, csrfHeader: options.csrfHeader });
+	if (!derived) return undefined;
+	const already = Object.keys(headers).some((name) => normalizeHeaderName(name) === normalizeHeaderName(derived.header));
+	if (already) return undefined;
+	setHeaderCaseInsensitive(headers, derived.header, derived.value);
+	return { cookie: derived.cookie, header: derived.header };
+}
+
 export async function sendReplayLikeRequest(request: ReplayRequest, options: NormalizedReplayOptions) {
 	const headers = { ...request.headers };
 	const injectedBrowserCookie = options.bindBrowserSession === true ? await options.cookieProvider?.(request.url) : undefined;
@@ -310,10 +337,11 @@ export async function sendReplayLikeRequest(request: ReplayRequest, options: Nor
 		else if (options.cookieMode !== "preserve") setCookieHeader(headers, mergeCookieHeaders(currentCookie, injectedBrowserCookie));
 		else if (!currentCookie) setCookieHeader(headers, injectedBrowserCookie);
 	}
+	const csrfReflected = injectedBrowserCookie ? reflectCsrfIntoHeaders(headers, options) : undefined;
 	const bodyOmittedForMethod = (request.method === "GET" || request.method === "HEAD") && request.body !== undefined;
 	const sanitized = sanitizeFetchHeaders(headers);
 	const exchange = await fetchWithRedirects({ url: request.url, method: request.method, headers: sanitized.headers, body: bodyOmittedForMethod ? undefined : request.body }, options);
-	return { exchange, sanitized, bodyOmittedForMethod, cookiesBound: !!injectedBrowserCookie };
+	return { exchange, sanitized, bodyOmittedForMethod, cookiesBound: !!injectedBrowserCookie, csrfReflected };
 }
 
 export function cookieHeaderFromSetCookie(lines: string[]): string | undefined {

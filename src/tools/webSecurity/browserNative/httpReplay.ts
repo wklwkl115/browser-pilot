@@ -36,6 +36,7 @@ function replayRequestRecord(request: ReplayRequest, sent: Awaited<ReturnType<ty
 		bodyOmittedForMethod: sent.bodyOmittedForMethod,
 		cookiesBound: sent.cookiesBound,
 		cookieMode: options.cookieMode,
+		csrfReflected: sent.csrfReflected,
 		multipart: request.multipart,
 	};
 }

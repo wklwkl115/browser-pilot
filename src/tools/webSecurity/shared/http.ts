@@ -199,6 +199,42 @@ export function setCookieHeader(headers: HeaderMap, value: string | undefined) {
 	if (value) headers.Cookie = value;
 }
 
+// Common double-submit CSRF cookie names (Angular XSRF-TOKEN, Django csrftoken,
+// Laravel XSRF-TOKEN, generic csrf_token/_csrf). Override via csrfCookie.
+const CSRF_COOKIE_PATTERN = /^(?:x-)?(?:csrf|xsrf)[-_]?token$|^_csrf$|^csrftoken$/i;
+
+// Derive the double-submit CSRF header to reflect from an already-bound Cookie
+// header: find the CSRF cookie (default heuristics or an explicit csrfCookie),
+// percent-decode its value, and map it to the matching request header name.
+// Default header names stay within REDACTED_HEADER_NAMES so the token value is
+// never surfaced in evidence; the caller reports only cookie/header NAMES.
+export function deriveCsrfReflection(
+	cookieHeader: string | undefined,
+	opts: { csrfCookie?: string; csrfHeader?: string } = {},
+): { cookie: string; header: string; value: string } | undefined {
+	const jar = parseCookieHeader(cookieHeader);
+	if (!jar.size) return undefined;
+	let cookieName: string | undefined;
+	const explicit = opts.csrfCookie?.trim().toLowerCase();
+	for (const name of jar.keys()) {
+		if (explicit ? name.toLowerCase() === explicit : CSRF_COOKIE_PATTERN.test(name)) {
+			cookieName = name;
+			break;
+		}
+	}
+	if (!cookieName) return undefined;
+	const raw = jar.get(cookieName);
+	if (raw === undefined || raw === "") return undefined;
+	let value = raw;
+	try {
+		value = decodeURIComponent(raw);
+	} catch {
+		// keep raw when it is not valid percent-encoding
+	}
+	const header = opts.csrfHeader?.trim() || (cookieName.toLowerCase() === "xsrf-token" ? "X-XSRF-TOKEN" : "X-CSRF-Token");
+	return { cookie: cookieName, header, value };
+}
+
 function cookiesToHeader(cookies: unknown): string | undefined {
 	const items = Array.isArray(cookies) ? cookies : isRecord(cookies) && Array.isArray(cookies.data) ? cookies.data : [];
 	const pairs: string[] = [];

@@ -107,7 +107,7 @@ All `browser_*` tools — including web-security — are first-class and exposed
 - Private/link-local/metadata blocked → `allowPrivateTargets:true` only for explicit internal testing.
 - Launcher overrides (`sqlmapPath`/`nucleiPath`/`PI_*_PATH`) → `allowLauncherOverride:true`.
 - `wordlistPath` limited to CWD or `.pi/`.
-- `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab).
+- `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab). It also reflects a double-submit CSRF cookie (XSRF-TOKEN/csrf-token/…) into its matching request header by default (`csrfReflected` in the summary reports the cookie/header names) — so authenticated `browser_http_replay` works without hand-writing in-page `fetch`. Override with `csrfCookie`/`csrfHeader`, or set `reflectCsrf:false` to send the bound session without a CSRF header (e.g. to test CSRF protection).
 - `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint, which you should recall before continuing. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action

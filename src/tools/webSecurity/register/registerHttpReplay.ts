@@ -45,6 +45,9 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true.",
 			}),
 			...browserCookieBindingParams("Merge browser cookies into outgoing HTTP request headers for the request URL; default false."),
+			reflectCsrf: Type.Optional(Type.Boolean({ description: "When bindBrowserSession is true, reflect a double-submit CSRF cookie (e.g. XSRF-TOKEN) into its matching request header; default true. Set false to send the bound session without a CSRF header (e.g. to test CSRF protection)." })),
+			csrfCookie: Type.Optional(Type.String({ description: "Exact CSRF cookie name to reflect, overriding auto-detection (xsrf-token/csrf-token/csrftoken/_csrf/csrf_token)." })),
+			csrfHeader: Type.Optional(Type.String({ description: "Request header name to carry the reflected CSRF token, overriding the default (XSRF-TOKEN→X-XSRF-TOKEN, else X-CSRF-Token)." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const current = normalizeWebSecurityToolParams<HttpReplayToolParams>(params);

@@ -52,6 +52,9 @@ export type RawReplayOptions = WebFetchOptions & {
 	defaultScheme?: unknown;
 	bindBrowserSession?: unknown;
 	cookieMode?: unknown;
+	reflectCsrf?: unknown;
+	csrfCookie?: unknown;
+	csrfHeader?: unknown;
 	cookieProvider?: CookieProvider;
 };
 
