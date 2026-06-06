@@ -89,14 +89,14 @@ Delivered:
 - `manual-result-template.json` and `result-schema.json` for compact manual result records.
 - `results/README.md` for optional hand-run result storage rules.
 - `future-runner.md` to freeze opt-in runner/server boundaries without implementing them.
-- `tests/contracts/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
+- `tests/contracts/tools/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
 - Package file coverage for `evals/`.
 
 Boundary:
 
-- The suite is static/manual today.
-- It does not start a browser, start a server, access external networks, or run sqlmap/nuclei/OAST.
-- Any future runner or fixture server must be explicitly opt-in and separately scoped.
+- The spec suite is static and check-locked; an opt-in runner (`npm run eval:browser-workflows -- --fixture-server`) landed later (2026-06-04) with a local-only ephemeral fixture server bound to `127.0.0.1`.
+- Neither the static suite nor the default runner starts a browser, accesses external networks, or runs sqlmap/nuclei/OAST.
+- The runner stays explicitly opt-in and separately scoped; scanner/OAST/external-network execution is never run by default.
 
 ## Verification
 

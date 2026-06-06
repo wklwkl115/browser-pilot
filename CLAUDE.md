@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Migration contract (now landed): `docs/cli-skill-frontend-migration-plan.md`
 - Current shipping external frontends are **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**. The MCP shell has been removed; CLI usage is documented in `docs/cli.md`.
-- `pi-browser` CLI is shipped: code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all landed. Remaining migration items are doc/archive cleanup only.
+- `pi-browser` CLI is shipped and the migration is complete (landed 2026-06-03): code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all passed. No migration items remain.
 - `docs/abml-execution-plan.md` is no longer the active queue; ABML remains an internal substrate / historical execution contract.
 
 ## Architecture

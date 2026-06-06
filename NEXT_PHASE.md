@@ -4,7 +4,7 @@
 
 ## Phase Theme
 
-工具接口治理与内部可组合性重构。Workstreams A-E 已完成当前主线；下一阶段按 `docs/tool-surface-consolidation-plan.md` 执行 TODO 244-249。目标是把观察层收敛到 `browser_observe` canonical surface，拆清 JavaScript execution 与 bridge command，补 recovery/artifact/progress/snapshot/operation diagnostics，并用显式 profile 管理 Web Security 可见工具面。
+工具接口治理与内部可组合性重构。Workstreams A-E 与 `docs/tool-surface-consolidation-plan.md` 的 TODO 244-249 均已完成：观察层已收敛到 `browser_observe` canonical surface，JavaScript execution 与 bridge command 已拆清，recovery/artifact/progress/snapshot/operation diagnostics 已补齐，Web Security 可见工具面由显式 profile 管理。当前无激活执行线（见 `CURRENT.md`）；下一阶段方向见 `ROADMAP.md`。本文件保留为该阶段的指导约束记录。
 
 ## Guiding Constraints
 
@@ -102,10 +102,10 @@ Do not remove existing `tool`, `command`, `browserSessionId`, `detailLevel`, `su
 
 ### Verification
 
-- `tests/contracts/check-summaries.mjs`
-- `tests/contracts/check-errors.mjs`
-- `tests/contracts/check-artifact-reader.mjs`
-- `tests/contracts/check-tools-contract.mjs`
+- `tests/contracts/tools/check-summaries.mjs`
+- `tests/contracts/tools/check-errors.mjs`
+- `tests/contracts/tools/check-artifact-reader.mjs`
+- `tests/contracts/tools/check-tools-contract.mjs`
 - `npm run check`
 
 ## Workstream C: Web Security Internal Primitive Refactor
@@ -155,8 +155,8 @@ Extract only internal primitives, in small steps:
 
 ### Verification
 
-- `tests/contracts/check-web-security-tools.mjs`
-- `tests/contracts/check-tools-contract.mjs`
+- `tests/contracts/tools/check-web-security-tools.mjs`
+- `tests/contracts/tools/check-tools-contract.mjs`
 - Existing fixture-heavy Web Security checks through `npm run check`
 - Runtime smoke only if bridge-facing behavior changes.
 
@@ -218,7 +218,7 @@ Completed current static suite:
 - `evals/browser-workflows/manual-result-template.json` and `result-schema.json` for compact hand-run evidence records.
 - `evals/browser-workflows/results/README.md` for optional manual result storage rules.
 - `evals/browser-workflows/future-runner.md` to freeze opt-in runner/server boundaries without implementing them.
-- `tests/contracts/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
+- `tests/contracts/tools/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
 
 Current boundary: no callable tools, no browser execution, no fixture server, no external network, and no scanner/OAST execution. A future runner must be opt-in and separately scoped.
 
