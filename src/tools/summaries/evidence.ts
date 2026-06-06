@@ -39,7 +39,9 @@ export function summarizeEvidenceData(data: unknown): Summary {
 		event_types: data.event_types,
 		source_count: sourceCount,
 		sources: sourceSummary,
-		// Layer-1 hint: the full per-source evidence lives under `sources` in the raw artifact.
-		...(sourceCount ? artifactHints([{ label: "all evidence sources", jsonPath: "sources", kind: "evidence", count: sourceCount }]) : {}),
+		// Layer-1 hint must be data-rooted: the saved artifact is the bridge result `{id,tabId,data,…}`
+		// and the per-source evidence lives at `data.sources` (the bare `sources` path resolved to
+		// notFound against the saved file — blind-eval, same class as the network N1 fix).
+		...(sourceCount ? artifactHints([{ label: "all evidence sources", jsonPath: "data.sources", kind: "evidence", count: sourceCount }]) : {}),
 	};
 }

@@ -297,7 +297,9 @@ const evidence = summarizeEvidenceData({ tabId: 9, collected_at: "now", event_ty
 	network_entries: { ok: true, data: { items: [{ id: 1 }, { id: 2 }], total: 2 } },
 } });
 assert.deepEqual(Object.keys(evidence).sort(), ["artifact_hints", "collected_at", "event_types", "source_count", "sources", "tabId"].sort(), "check-summaries evidence.keys: summary fields must stay stable");
-assert.equal(evidence.artifact_hints.preferredReads[0].jsonPath, "sources", "check-summaries evidence.artifactHints: sources hint must point at the sources container");
+// N1-class: evidence saved artifact is the bridge result (root {id,tabId,data,…}); the hint must be
+// data-rooted (data.sources) to resolve, matching scan/network. Bare `sources` resolved to notFound.
+assert.equal(evidence.artifact_hints.preferredReads[0].jsonPath, "data.sources", "check-summaries evidence.artifactHints: sources hint must be data-rooted (data.sources) to resolve in the saved artifact");
 assert.equal(evidence.source_count, 3);
 assert.equal(evidence.sources.hook_status.state, "INSTALLED", "check-summaries evidence.hook_status.state: hook state must stay visible in summary");
 assert.equal(evidence.sources.hook_status.session_id, "summary-session", "check-summaries evidence.hook_status.session: hook session id must stay visible in summary");
