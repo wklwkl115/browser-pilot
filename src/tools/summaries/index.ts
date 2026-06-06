@@ -2,7 +2,7 @@ export type { Summary, CountItem } from "./common.js";
 export { summarizeContentData } from "./content.js";
 export { summarizeEvidenceData } from "./evidence.js";
 export { summarizeGenericValue } from "./generic.js";
-export { summarizeHookCollectData } from "./hook.js";
+export { summarizeHookCollectData, summarizeHookPerformance } from "./hook.js";
 export { summarizeHtmlSnapshot } from "./html.js";
 export { summarizeNetworkData } from "./network.js";
 export { summarizeMemoryResult } from "./memory.js";

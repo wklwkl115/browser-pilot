@@ -118,6 +118,9 @@ async function testWaitSupervisorInstantTimeoutBackoff() {
 		assert.equal(error.details.supervisor.attempts, calls);
 		assert.ok(calls <= 8, `instant lease timeouts must be throttled, got ${calls} attempts`);
 		assert.ok(error.details.supervisor.leases.some((lease) => lease.retryDelayMs > 0), "lease_timeout retries must record throttle delay diagnostics");
+		assert.equal(error.details.supervisor.selectorTimeout.selector, "#never", "selector timeouts must surface the selector being waited for");
+		assert.ok(error.details.supervisor.selectorTimeout.recoveryCommands.some((cmd) => String(cmd).includes("browser_wait action=diagnose")), "selector timeout recovery must include a diagnose command");
+		assert.ok(error.details.supervisor.selectorTimeout.recoveryCommands.some((cmd) => String(cmd).includes("browser_observe mode=scan")), "selector timeout recovery must include a re-observe command");
 		return true;
 	});
 }

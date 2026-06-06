@@ -35,6 +35,15 @@ try {
 	assert.equal(jsonArtifact.value.items.length, 5, "check-artifact json.value.items.length: expected window size 5");
 	assert.equal(jsonArtifact.value.nextOffset, 7, "check-artifact json.value.nextOffset: expected 7");
 
+	const longJsonStringPath = path.join(tmp, ".pi", "browser-artifacts", "long-string.json");
+	await writeFile(longJsonStringPath, JSON.stringify({ data: { content: `${"A".repeat(900)}NEEDLE${"B".repeat(900)}` } }), "utf8");
+	const longJsonString = await readBrowserArtifact({ path: longJsonStringPath, mode: "json", jsonPath: "data.content", offset: 895, limit: 20 }, { cwd: tmp });
+	assert.equal(longJsonString.value.type, "string", "check-artifact json.scalar-string-window: long scalar strings must return a window object");
+	assert.equal(longJsonString.value.text, "AAAAANEEDLEBBBBBBBBB", "check-artifact json.scalar-string-window: offset/limit must slice scalar strings by character");
+	assert.equal(longJsonString.value.offset, 895, "check-artifact json.scalar-string-window: offset must be exposed");
+	assert.equal(longJsonString.value.nextOffset, 915, "check-artifact json.scalar-string-window: nextOffset must page scalar strings");
+	assert.equal(longJsonString.value.originalLength, 1806, "check-artifact json.scalar-string-window: originalLength must be exposed");
+
 	const correlationArtifactPath = path.join(tmp, ".pi", "browser-artifacts", "correlation.json");
 	await writeFile(correlationArtifactPath, JSON.stringify({
 		operation: { operationId: "op-77" },

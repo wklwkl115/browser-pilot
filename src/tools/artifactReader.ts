@@ -459,12 +459,34 @@ function getJsonPath(value: unknown, jsonPath: string | undefined): { exists: bo
 	return { exists: true, value: current };
 }
 
+const JSON_INLINE_STRING_CHARS = 800;
+const JSON_STRING_WINDOW_MAX_CHARS = 100_000;
+
+function jsonStringWindow(value: string, params: BrowserArtifactParams): unknown {
+	const hasWindow = params.offset !== undefined || params.limit !== undefined;
+	if (!hasWindow && value.length <= JSON_INLINE_STRING_CHARS) return value;
+	const offset = Math.max(0, Math.min(value.length, Math.floor(Number(params.offset || 0))));
+	const fallbackLimit = asPositiveInt(params.maxChars, 8_000);
+	const limit = positiveIntParam(params.limit, fallbackLimit, 1, JSON_STRING_WINDOW_MAX_CHARS);
+	const end = Math.max(offset, Math.min(value.length, offset + limit));
+	return {
+		type: "string",
+		text: value.slice(offset, end),
+		offset,
+		limit,
+		nextOffset: end < value.length ? end : null,
+		originalLength: value.length,
+		truncated: end < value.length || offset > 0,
+		truncatedBefore: offset > 0,
+		truncatedAfter: end < value.length,
+	};
+}
+
 function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth = 0): unknown {
-	const maxString = 800;
 	const limit = Math.max(1, Math.floor(Number(params.limit || 40)));
 	const offset = Math.max(0, Math.floor(Number(params.offset || 0)));
 	if (value === null || value === undefined) return value;
-	if (typeof value === "string") return value.length > maxString ? { preview: value.slice(0, maxString), originalLength: value.length, truncated: true } : value;
+	if (typeof value === "string") return value.length > JSON_INLINE_STRING_CHARS ? { preview: value.slice(0, JSON_INLINE_STRING_CHARS), originalLength: value.length, truncated: true } : value;
 	if (typeof value === "number" || typeof value === "boolean") return value;
 	if (typeof value === "bigint") return value.toString();
 	if (typeof value !== "object") return String(value);
@@ -558,11 +580,12 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 			value: { exists: false, notFound: true, jsonPath, value: null },
 		};
 	}
+	const value = typeof selected.value === "string" ? jsonStringWindow(selected.value, params) : compactJsonValue(selected.value, params);
 	return {
 		mode: "json" as const,
 		summary: { ...summarizeJsonValue(selected.value, absPath, fileSize), exists: true, jsonPath },
 		jsonPath,
-		value: compactJsonValue(selected.value, params),
+		value,
 	};
 }
 

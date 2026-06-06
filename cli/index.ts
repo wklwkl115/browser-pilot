@@ -10,8 +10,10 @@
  * to the daemon. Default output is human on a TTY, JSON otherwise; --json/--text
  * override.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { buildCliCommands, type CliCommand } from "./registry.js";
-import { buildFlagSpecs, parseArgs, coerceParams, type GlobalFlags } from "./flags.js";
+import { buildFlagSpecs, parseArgs, coerceParams, type GlobalFlags, type FlagSpec } from "./flags.js";
 import { renderResult, renderUsageError, EXIT, type RenderMode } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { findDaemon, stopDaemon } from "./daemonControl.js";
@@ -61,8 +63,38 @@ export function nativeActionParamsHelp(toolName: string): string[] {
 	return rows;
 }
 
-function printCommandHelp(cmd: CliCommand): void {
+export function buildCommandFlagSpecs(cmd: CliCommand): FlagSpec[] {
 	const specs = buildFlagSpecs(cmd.parameters);
+	if (cmd.name === "browser_execute") {
+		specs.push({
+			name: "scriptFile",
+			flag: "--script-file",
+			kind: "string",
+			description: "Read JavaScript source from a local file and pass it as --script. CLI-only; cannot be combined with --script.",
+			required: false,
+		});
+	}
+	return specs;
+}
+
+export function applyCliOnlyParams(cmd: CliCommand, raw: Record<string, unknown>, cwd = process.cwd()): { ok: true; params: Record<string, unknown> } | { ok: false; error: string } {
+	const params = { ...raw };
+	if (cmd.name !== "browser_execute" || params.scriptFile === undefined) return { ok: true, params };
+	if (typeof params.scriptFile !== "string" || !params.scriptFile) return { ok: false, error: "--script-file requires a non-empty path" };
+	if (params.script !== undefined) return { ok: false, error: "--script-file cannot be combined with --script" };
+	const filePath = path.resolve(cwd, params.scriptFile);
+	try {
+		params.script = readFileSync(filePath, "utf8");
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { ok: false, error: `cannot read --script-file ${filePath}: ${message}` };
+	}
+	delete params.scriptFile;
+	return { ok: true, params };
+}
+
+function printCommandHelp(cmd: CliCommand): void {
+	const specs = buildCommandFlagSpecs(cmd);
 	const lines = [`pi-browser ${cmd.subcommand}${cmd.description ? ` — ${cmd.description}` : ""}`, "", "Flags:"];
 	for (const s of specs) {
 		const meta = s.kind === "enum" && s.choices ? ` (${s.choices.join("|")})` : s.kind === "boolean" ? "" : ` <${s.kind}>`;
@@ -121,12 +153,14 @@ export async function main(argv: string[]): Promise<number> {
 	const cmd = buildCliCommands().find((c) => c.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`);
 
-	const specs = buildFlagSpecs(cmd.parameters);
+	const specs = buildCommandFlagSpecs(cmd);
 	const parsed = parseArgs(specs, rest);
 	if (!parsed.ok) return renderUsageError(parsed.error);
 	if (parsed.value.globals.help) { printCommandHelp(cmd); return EXIT.ok; }
 
-	const coerced = coerceParams(cmd.parameters, parsed.value.params);
+	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
+	if (!cliParams.ok) return renderUsageError(cliParams.error);
+	const coerced = coerceParams(cmd.parameters, cliParams.params);
 	if (!coerced.ok) return renderUsageError(coerced.error);
 
 	// Only execution is delegated to the daemon; the caller cwd rides along so

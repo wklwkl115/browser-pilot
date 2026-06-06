@@ -1,5 +1,25 @@
 # Changelog
 
+- 修复 **B6 + B8 + B9b + B10（2026-06-06，第二批盲 eval n=2 确认；全部 live/contract 验证）**，B7、B9a 经验证后 defer：
+  - **B6**（链接 href/origin）：`buildScanScript` 给 `<a>`/`<area>` actionable 附 resolved `href`；scan 摘要 actionables 表加 `href` + 机械 `sameOrigin` 列（`scan.ts` `linkSameOrigin`）——仅身份感知、无排序/抽取（守 B1 边界）。live：article.html 链接带 resolved href + sameOrigin。
+  - **B8**（perf/evidence 样本，收窄）：standalone `browser_hook getPerformanceEntries` 加 distiller（`summaries/hook.ts` `summarizeHookPerformance`：initiatorType 计数 + resource/ms 样本 + `data.entries` hint），经 `hookToolDistiller` 路由。多源 evidence **聚合按设计保持 counts-only**——往聚合加样本撑爆 token-economy 守卫(+106%，被 `check:token-economy` 拦下)，聚合用 `data.sources` hint 下钻；hook lifecycle 事件 `detail:null` 属 WAI。live(linux.do)：17 条 perf → 计数+样本，不再 `{type,keyCount}` 折叠。
+  - **B9b**（download MIME 不符）：`browser_download` 加 `expectMime`（media 模式默认 `image`），完成后比对 Chrome `download.mime`，不符则给 `mimeMismatch` 诊断（如 image 拿到反爬 text/html）——诊断而非硬失败，文件仍保存。
+  - **B10**（CLI did-you-mean）：`parseArgs` 对未知 flag 给最近匹配建议（驼峰↔kebab 归一化 + 编辑距离 ≤2），对"本命令没有的常见 flag"给定向提示（`--detail-level` → 用 `--limit/--offset/--max-chars`）。通用——惠及所有 flag 笔误。live：`--jsonPath`/`--max-char`/`--detail-level` 均给对提示。
+  - **B7（cookie 属性）defer**：验证发现属性在上游被丢弃——browser-session cookieProvider 返回扁平 Cookie header（`register/shared.ts` `browserCookiesToHeader`），无 domain/path/secure 等；surface 需改 provider 契约传结构化 cookie（中等、动共享代码），非加列。**B9a（media 候选表）defer**（贴近 B1 语义抽取边界）。
+  回归：`check-summaries`（B6/B8/B9b）、`flags-render.test`（B10）；全量 check 绿，unit 全过，token-economy 0.06 未损，docs/protocol 重生成。同 `blind-findings.md` Resolved 段。
+
+- 修复 **B4 + B5 partial（2026-06-06，第二批 10 站点真实盲 eval）**，并关闭 **Rel1**：
+  - **B4**：`browser_artifact mode=json --json-path data.content` 命中长标量字符串时被 `compactJsonValue` 固定截为 800 字符，`offset/limit` 只对数组生效。修：标量字符串命中 `jsonPath` 时走字符窗口，返回 `{type:"string", text, offset, limit, nextOffset, originalLength, truncated*}`；短字符串仍原样返回，嵌套对象/数组压缩和默认脱敏不变。
+  - **B5 partial**：`wait.selector` 超时只暴露通用 lease/CDP 诊断。修：wait supervisor 的 `WAIT_TIMEOUT` payload 增加 `selectorTimeout`，显式给出 selector、state、已知主文档 0 命中，以及可复制的 `diagnose` / re-observe / html-or-frame 恢复命令。更重的超时 DOM 相似 selector/iframe 探测继续 deferred。
+  - **Rel1**：确认与 M2 相同，属于 blind harness 脏状态产物，已并入 M2 关闭，不作为工具 bug 处理。
+  回归：`npm run check:artifact`、`npm run check:fake-ws`。同步 `blind-findings.md`。
+
+- 修复 **B2 + B3（2026-06-06，10 站点真实盲 eval）**，并将 **B1** 降级为 RFC/观察项：
+  - **B2**：`browser_execute` 长脚本经 CLI 内联易受 shell/CSS/JS 引号影响。修：`pi-browser execute --script-file <path>` 作为 CLI-only flag，读取 cwd-relative/absolute 文件内容写入既有 `script` 参数，禁止与 `--script` 同用，进入 schema 校验前移除 synthetic param；**不改 Pi 工具 API/schema**。
+  - **B3**：artifact 路径发现反复误猜 `data.data.*` / `--pick` JSON 数组。修：`browser_artifact` 参数描述明确常见 artifact 根为 `data` / `data.<key>`，CLI `--pick` 需重复传；大/非内联 `browser_execute` 返回值新增 `artifact_hints.preferredReads` 指向 `data` 与最多 3 个顶层 `data.<key>`。
+  - **B1 不修语义 extractor**：不实现 headline/card/news/source/time/uploader 推断；如未来再做，仅限通用 viewport-visible text/link row projection。
+  回归：`tests/unit/cli/flags-render.test.ts`、`tests/unit/tools/execute-artifact-hints.test.ts`；`npm run check` 全绿。同 `blind-findings.md`。
+
 - 修复 **E1 + H3 + 两个 minor（2026-06-06，盲 eval R7 换能力面 evidence/截图/hook 探索 + 真站验证）**：
   - **E1**：`browser_evidence` artifact hint 漏 `data.` 前缀（`sources`→`data.sources`）——与 N1 同类、不同工具。修 `summaries/evidence.ts`，回归 `check-summaries`。R7 类审计确认：bridge-wrapped 工具(scan/network/evidence/hook)需 data-rooted（已全对）；web-security 工具(crawl/recon/fuzz/domFlow) artifact 是 flat，裸路径正确（domFlow 自检 wrapped）——**不动，避免过拟合**。
   - **H3**：`browser_hook collect` 事件被埋——collect 落到 `domFlowDistiller` 的 generic 分支，events 折叠成 keyCount stub、nextActions 给 `operation.operationId`。修：新 `summaries/hook.ts` `summarizeHookCollectData`（event 类型计数 + seq/type/detail 紧凑样本 + data-rooted `data.events` hint），由新 `hookToolDistiller` 路由 `hook.collect`。回归 `check-summaries`。真站验证：eventTypes/total/samples 内联 + `data.events` hint。

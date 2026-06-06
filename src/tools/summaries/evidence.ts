@@ -6,9 +6,9 @@ export function summarizeEvidenceData(data: unknown): Summary {
 	const sourceSummary = Object.fromEntries(Object.entries(sources).map(([name, value]) => {
 		const source = isRecord(value) ? value : {};
 		const payload = isRecord(source.data) ? source.data : {};
-		const events = asArray(payload.events);
+		const events = asArray(payload.events).filter(isRecord);
 		const eventTypes: Record<string, number> = {};
-		for (const event of events) if (isRecord(event)) increment(eventTypes, event.type);
+		for (const event of events) increment(eventTypes, event.type);
 		const summary: Summary = {
 			ok: source.ok,
 			error_code: source.error_code,

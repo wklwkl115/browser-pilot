@@ -54,6 +54,20 @@ function detectCommandLikeScript(script: string): boolean {
 	return isRecord(parsed) && typeof parsed.cmd === "string";
 }
 
+export function executeArtifactHints(data: unknown): Record<string, unknown> | undefined {
+	const preferredReads: Array<{ label: string; jsonPath: string; kind?: string; count?: number }> = [];
+	if (Array.isArray(data)) {
+		preferredReads.push({ label: "script return array", jsonPath: "data", kind: "execute-result", count: data.length });
+	} else if (isRecord(data)) {
+		const keys = Object.keys(data).filter((key) => data[key] !== undefined).slice(0, 3);
+		preferredReads.push({ label: "script return object", jsonPath: "data", kind: "execute-result", count: Object.keys(data).length });
+		for (const key of keys) preferredReads.push({ label: `script return field ${key}`, jsonPath: `data.${key}`, kind: "execute-result-field" });
+	} else if (data !== undefined) {
+		preferredReads.push({ label: "script return value", jsonPath: "data", kind: "execute-result" });
+	}
+	return preferredReads.length ? { preferredReads } : undefined;
+}
+
 async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
 	try {
 		const runtime = createBrowserAbmlIntegration(server, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs, maxChars: 50_000 });
@@ -163,7 +177,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						const data = generic.data;
 						const dataInline = data !== undefined && data !== null &&
 							!(isRecord(data) && (data.type === "array" || data.type === "object" || data.type === "string"));
-						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(dataInline ? { dataInline: true } : {}) } as Record<string, unknown>;
+						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
+						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
 						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
 						if (monitor) {
 							base.monitorSource = {

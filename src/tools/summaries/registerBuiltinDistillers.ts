@@ -1,5 +1,5 @@
 import { registerCommandDistiller, registerDistillerDefinition, unwrapDistillData, type Distiller } from "../distillerRegistry.js";
-import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
+import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
 import { EvidenceSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, NetworkSummarySchema } from "./outputSchemas.js";
 
 const DOM_FLOW_COMMANDS = new Set(["hook.getNodeListeners", "hook.getListenerChain", "hook.getSinkHints"]);
@@ -16,6 +16,7 @@ function hookToolDistiller(value: unknown, command?: string): Record<string, unk
 	const cmd = String(command || "");
 	if (DOM_FLOW_COMMANDS.has(cmd)) return summarizeDomFlowData(cmd, value);
 	if (cmd === "hook.collect") return summarizeHookCollectData(unwrapDistillData(value));
+	if (cmd === "hook.getPerformanceEntries") return summarizeHookPerformance(unwrapDistillData(value));
 	return summarizeGenericValue(value);
 }
 

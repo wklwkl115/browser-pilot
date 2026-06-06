@@ -385,6 +385,12 @@ function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOp
 	return { entities, primaryEntities, listEntities, visualRegions, referencedEntities: referencedSurvivors, controlsSources: controlsSourceOnly.filter((e) => entities.includes(e)) };
 }
 
+// B6: same-origin classification for link actionables — bounded mechanical compare, no extraction.
+function linkSameOrigin(href: unknown, pageUrl: unknown): boolean | undefined {
+	if (typeof href !== "string" || !href || typeof pageUrl !== "string" || !pageUrl) return undefined;
+	try { return new URL(href).origin === new URL(pageUrl).origin; } catch { return undefined; }
+}
+
 function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Limits, options: ScanSummaryOptions, omitted: string[] = []): Summary {
 	const content = typeof item.content === "string" ? item.content : "";
 	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -458,6 +464,10 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 			{ key: "selector", value: (node) => node.selector },
 			{ key: "point", value: (node) => node.point },
 			{ key: "hitOk", value: (node) => node.hitOk },
+			// B6: link identity so link-inventory tasks don't need custom JS — href is resolved/captured
+			// in the scan (buildScanScript), sameOrigin is a mechanical origin compare vs the page URL.
+			{ key: "href", value: (node) => node.href },
+			{ key: "sameOrigin", value: (node) => linkSameOrigin(node.href, item.url) },
 		], limits.actionRows),
 		interactive: lines.filter((line) => /^<(a|button|input|textarea|select|option)\b/i.test(line)).slice(0, limits.interactive),
 		// Distinct array from focus.headings: a shared reference makes redactSensitiveValue collapse the

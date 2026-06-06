@@ -36,6 +36,7 @@ type WaitSupervisorState = {
 	workerRestarts: number;
 	historyLost: boolean;
 	leases: WaitLeaseSummary[];
+	selectorTimeout?: Record<string, unknown>;
 };
 
 function waitTimeoutMs(value: unknown, fallback: number, allowZero = false): number {
@@ -83,6 +84,33 @@ function bridgeErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function bridgeErrorDetails(error: unknown): Record<string, unknown> | undefined {
+	const result = bridgeErrorResult(error);
+	const details = isRecord(result?.details) ? result.details : undefined;
+	const nestedDetails = isRecord(details?.details) ? details.details : undefined;
+	return nestedDetails || details;
+}
+
+function selectorTimeoutRecovery(command: BridgeCommand, error: unknown): Record<string, unknown> | undefined {
+	if (command.cmd !== "wait.selector") return undefined;
+	const selector = String(command.selector ?? command.css ?? command.target ?? "").trim();
+	if (!selector) return undefined;
+	const details = bridgeErrorDetails(error);
+	const lastState = isRecord(details?.last_state) ? details.last_state : undefined;
+	const state = String(command.state ?? (command.visible === true ? "visible" : details?.state ?? "attached"));
+	return {
+		selector,
+		state,
+		...(lastState?.found === false ? { mainDocumentMatches: 0 } : {}),
+		...(typeof lastState?.found === "boolean" ? { lastProbeFound: lastState.found } : {}),
+		recoveryCommands: [
+			`browser_wait action=diagnose params={"waitId":"${String(command.waitId ?? command.wait_id ?? "<waitId>")}"}`,
+			"browser_observe mode=scan to refresh actionables/selectors",
+			"browser_observe mode=html selector=<nearby-or-parent-selector> or browser_frame list when iframe placement is suspected",
+		],
+	};
+}
+
 function isLeaseTimeout(error: unknown): boolean {
 	const code = bridgeErrorCode(error);
 	if (code && WAIT_TIMEOUT_CODES.has(code)) return true;
@@ -123,6 +151,7 @@ function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> 
 		initialWorkerBootId: state.initialWorkerBootId,
 		workerBootId: state.workerBootId,
 		leases: state.leases,
+		...(state.selectorTimeout ? { selectorTimeout: state.selectorTimeout } : {}),
 	};
 }
 
@@ -200,6 +229,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 			const status = error instanceof BrowserBridgeError && error.code === "BRIDGE_CLIENT_DISCONNECTED" ? "disconnect"
 				: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout"
 					: isLeaseTimeout(error) ? "lease_timeout" : "failed";
+			state.selectorTimeout = selectorTimeoutRecovery(immediateCommand, error) || state.selectorTimeout;
 			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status, errorCode, message: bridgeErrorMessage(error) });
 			if (error instanceof BrowserBridgeError) throw new BrowserBridgeError(error.code, error.message, { ...error.details, supervisor: supervisorPayload(state) });
 			throw error;
@@ -233,6 +263,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			const errorCode = bridgeErrorCode(error);
 			if (isLeaseTimeout(error)) {
+				state.selectorTimeout = selectorTimeoutRecovery(leaseCommand, error) || state.selectorTimeout;
 				const retryDelayMs = Math.min(WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS, Math.max(0, state.deadline - Date.now()));
 				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "lease_timeout", errorCode, message: bridgeErrorMessage(error), retryDelayMs: retryDelayMs || undefined });
 				if (retryDelayMs > 0) await sleep(retryDelayMs);

@@ -1,5 +1,38 @@
 import { artifactHints, asArray, increment, isRecord, summaryTable, topCounts, type Summary } from "./common.js";
 
+// Shorten a resource URL to host/…/basename so a performance sample row stays compact.
+function compactResource(value: unknown): unknown {
+	if (typeof value !== "string" || !value) return value;
+	try { const u = new URL(value); const seg = u.pathname.split("/").filter(Boolean).pop(); return seg ? `${u.host}/…/${seg}` : u.host; }
+	catch { return value.length > 80 ? `${value.slice(0, 80)}…` : value; }
+}
+
+/**
+ * Distiller for `browser_hook getPerformanceEntries`. Without it the result fell through to the generic
+ * summarizer, which collapsed the resource-timing array to `{type:object,keyCount}` stubs (blind-eval
+ * B8). This surfaces initiatorType counts + a compact resource/ms sample inline, and a data-rooted
+ * artifact hint for the full set.
+ */
+export function summarizeHookPerformance(data: unknown): Summary {
+	if (!isRecord(data)) return { type: typeof data };
+	const entries = asArray(data.entries).filter(isRecord);
+	const initiatorTypes: Record<string, number> = {};
+	for (const entry of entries) increment(initiatorTypes, entry.initiatorType);
+	return {
+		ok: data.ok,
+		error_code: data.error_code,
+		total: data.total ?? entries.length,
+		returned: entries.length || undefined,
+		initiatorTypes: topCounts(initiatorTypes, 10),
+		samples: summaryTable(entries, [
+			{ key: "resource", value: (entry) => compactResource(entry.name) },
+			{ key: "initiatorType", value: (entry) => entry.initiatorType },
+			{ key: "ms", value: (entry) => typeof entry.duration === "number" ? Math.round(entry.duration) : undefined },
+		], 8),
+		...(entries.length ? artifactHints([{ label: "all performance entries", jsonPath: "data.entries", kind: "performance-entry", count: entries.length }]) : {}),
+	};
+}
+
 // Salient per-event field for the compact sample row — the one detail an agent most wants to see at a
 // glance (the storage key, the request url, the console message, …) without opening the artifact.
 function eventDetail(event: Record<string, unknown>): unknown {

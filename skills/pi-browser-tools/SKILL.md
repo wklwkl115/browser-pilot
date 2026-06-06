@@ -17,7 +17,7 @@ First real-agent skeptical eval (2026-06-05): `causal` (which APIs an action hit
 ## Invocation
 
 - **Pi-native** → call the tools directly, e.g. `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`.
-- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser execute --script "…"`. The bridge daemon auto-starts on first call; output is human on a TTY and JSON otherwise (`--json`/`--text` to force). `pi-browser --help` / `pi-browser <cmd> --help` lists every command and its flags — there is no discovery step.
+- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser execute --script "…"`. For non-trivial JS, prefer `pi-browser execute --script-file path/to/script.js` to avoid shell quoting; this is CLI-only and still calls the normal `script` parameter. The bridge daemon auto-starts on first call; output is human on a TTY and JSON otherwise (`--json`/`--text` to force). `pi-browser --help` / `pi-browser <cmd> --help` lists every command and its flags — there is no discovery step.
 
 ## Loop
 
@@ -89,7 +89,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 
 Tool results return a `summary` + `resource_link`(s) + `sections`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.
 
-- **Artifacts** → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search` (CLI: `pi-browser artifact …`). For minified JS or long single-line artifacts, use `search contextChars` or `text columnOffset/columnLimit`. Take the path/handle from `summary.saved`, `sections`, or `nextActions`.
+- **Artifacts** → `browser_artifact` with `jsonPath`/`pick`/`offset`/`search` (CLI: `pi-browser artifact …`). Most browser tool artifacts keep primary results under `data`: start with `jsonPath:"data"`, then `data.<key>` (for example `data.items`, `data.links`). For long scalar strings at a JSON path (`data.content`, `data.markdown`), use `offset`/`limit` as character windows and follow `nextOffset`. CLI `--pick` is repeated once per path, not passed as a JSON array string. For minified JS or long single-line artifacts, use `search contextChars` or `text columnOffset/columnLimit`. Take the path/handle from `summary.saved`, `sections`, or `nextActions`.
 - **Browser memory** → `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
 - `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture” → `browser_artifact`.
 

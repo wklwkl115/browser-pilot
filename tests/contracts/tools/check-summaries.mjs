@@ -21,7 +21,9 @@ import {
 	summarizeJsAstAnalysisData,
 	summarizeNetworkData,
 	summarizeNucleiBridgeData,
+	summarizeHookPerformance,
 	summarizeScanData,
+	summarizeTransferData,
 	summarizeSqlmapBridgeData,
 	summarizeSqliProbeData,
 	summarizeTemplateCheckData,
@@ -159,7 +161,18 @@ assert.equal(scan.tabs_count, 2);
 assert.equal(scan.page.tabs_count, 2, "check-summaries scan.page: compact page manifest must retain tab count");
 assert.equal(scan.interactive.length, 2);
 assert.equal(scan.headings.length, 1);
-assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk"], "check-summaries scan.actionables: GA-style actionables table must be exposed");
+assert.deepEqual(scan.actionables.columns, ["index", "tag", "role", "action", "label", "selector", "point", "hitOk", "href", "sameOrigin"], "check-summaries scan.actionables: GA-style actionables table must be exposed (incl. B6 href/sameOrigin)");
+// B6: link actionables carry resolved href + same-origin classification so link inventory needs no custom JS.
+const linkScan = summarizeScanData({ url: "https://example.test/page", title: "L", readyState: "complete", content: "x", node_count: 1, actionables: [
+	{ index: 0, tag: "a", role: "link", selector: "a.in", point: [1, 1], hitOk: true, href: "https://example.test/inside" },
+	{ index: 1, tag: "a", role: "link", selector: "a.out", point: [2, 2], hitOk: true, href: "https://other.test/x" },
+] }, []);
+const linkRows = linkScan.actionables.rows;
+const hrefCol = linkScan.actionables.columns.indexOf("href");
+const sameCol = linkScan.actionables.columns.indexOf("sameOrigin");
+assert.equal(linkRows[0][hrefCol], "https://example.test/inside", "check-summaries scan.actionables.href (B6): resolved link href must be surfaced");
+assert.equal(linkRows[0][sameCol], true, "check-summaries scan.actionables.sameOrigin (B6): same-origin link must be classified true");
+assert.equal(linkRows[1][sameCol], false, "check-summaries scan.actionables.sameOrigin (B6): cross-origin link must be classified false");
 assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 assert.equal(scan.artifact_hints.jsonPaths.actionables, "data.actionables", "check-summaries scan.artifactHints: scan summary must provide precise actionables jsonPath");
 
@@ -315,6 +328,28 @@ assert.equal(hookCollect.total, 3, "check-summaries hook.collect (H3): total mus
 assert.equal(hookCollect.eventTypes.find((t) => t.key === "console.log")?.count, 2, "check-summaries hook.collect (H3): event-type counts must be surfaced inline");
 assert.equal(hookCollect.samples.rows[1][2], "k", "check-summaries hook.collect (H3): per-event sample must carry a salient detail (storage key)");
 assert.equal(hookCollect.artifact_hints.preferredReads[0].jsonPath, "data.events", "check-summaries hook.collect (H3): events hint must be data-rooted (data.events)");
+
+// B8: standalone browser_hook getPerformanceEntries must surface initiatorType counts + a compact
+// resource/ms sample, instead of collapsing the resource-timing array to {type,keyCount} stubs.
+// (The multi-source evidence AGGREGATE stays counts-only by design — its data.sources hint drills in —
+// so it does not exceed the token-economy budget.)
+const perf = summarizeHookPerformance({ total: 2, entries: [
+	{ name: "https://cdn.example.test/a/app.js", initiatorType: "script", duration: 12.7 },
+	{ name: "https://example.test/api/data", initiatorType: "fetch", duration: 4.2 },
+] });
+assert.equal(perf.total, 2, "check-summaries hook.performance (B8): total must be surfaced");
+assert.equal(perf.initiatorTypes.find((t) => t.key === "script")?.count, 1, "check-summaries hook.performance (B8): initiatorType counts must be surfaced");
+const perfResourceCol = perf.samples.columns.indexOf("resource");
+assert.match(String(perf.samples.rows[0][perfResourceCol]), /app\.js/, "check-summaries hook.performance (B8): sample must carry a compact resource name");
+assert.equal(perf.artifact_hints.preferredReads[0].jsonPath, "data.entries", "check-summaries hook.performance (B8): hint must be data-rooted (data.entries)");
+
+// B9b: a media/image download completing with a text/html (anti-bot) body must surface a mimeMismatch.
+const mismatch = summarizeTransferData({ data: { downloadId: 9, download: { id: 9, state: "complete", path: "C:/dl/x.jpg", mime: "text/html", finalUrl: "https://site.test/x.jpg" }, mimeMismatch: { expected: "image", actual: "text/html", note: "anti-bot html" } } });
+assert.ok(mismatch.mimeMismatch, "check-summaries transfer.mimeMismatch (B9b): mismatch must be surfaced at summary top level");
+assert.equal(mismatch.mimeMismatch.actual, "text/html");
+assert.equal(mismatch.lines.some((l) => /mime mismatch/i.test(l)), true, "check-summaries transfer.mimeMismatch (B9b): a human line must flag the mismatch");
+const okDownload = summarizeTransferData({ data: { downloadId: 8, download: { id: 8, state: "complete", path: "C:/dl/x.png", mime: "image/png" } } });
+assert.equal(okDownload.mimeMismatch, undefined, "check-summaries transfer.mimeMismatch (B9b): a matching download must not flag a mismatch");
 assert.equal(evidence.sources.hook_status.session_id, "summary-session", "check-summaries evidence.hook_status.session: hook session id must stay visible in summary");
 assert.equal(evidence.sources.hook_status.installed_at, "2026-05-20T00:00:00.000Z", "check-summaries evidence.hook_status.installed: hook install time must stay visible in summary");
 assert.equal(evidence.sources.hook_status.dispatcher_version, "hook-v1", "check-summaries evidence.hook_status.dispatcher: dispatcher version must stay visible in summary");

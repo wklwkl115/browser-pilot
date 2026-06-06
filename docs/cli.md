@@ -30,13 +30,16 @@ pi-browser <cmd> --help                 # flags for one command
 pi-browser tabs --action list
 pi-browser observe --mode scan
 pi-browser execute --script "document.title"
+pi-browser execute --script-file ./extract.js   # avoids shell quoting for longer JS
 pi-browser cookie-analyze --url https://target.example --bind-browser-session
 ```
 
 Flag mapping from the tool's TypeBox schema: `string`/`number` → `--x <v>`; `boolean` → `--x` /
 `--no-x`; enum (union of literals) → `--x <choice>`; array → repeatable `--x`; object → `--x <json>`.
-Big values accept `--flag @file` or `--flag -` (stdin). Coercion/validation reuses the shared
-frontend validator — there is no separate CLI coercion.
+Big values accept `--flag @file` or `--flag -` (stdin). `execute --script-file <path>` is a CLI-only
+shortcut that reads a cwd-relative/absolute JavaScript file into the normal `script` parameter and
+cannot be combined with `--script`. Coercion/validation reuses the shared frontend validator — there
+is no separate CLI coercion.
 
 ## Output
 

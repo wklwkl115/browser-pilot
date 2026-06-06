@@ -67,6 +67,43 @@ export interface ParsedArgs {
 }
 export type ParseOutcome = { ok: true; value: ParsedArgs } | { ok: false; error: string };
 
+function normalizeFlag(flag: string): string { return flag.replace(/[^a-z0-9]/gi, "").toLowerCase(); }
+
+function editDistance(a: string, b: string): number {
+	const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i += 1) {
+		let diag = prev[0];
+		prev[0] = i;
+		for (let j = 1; j <= b.length; j += 1) {
+			const tmp = prev[j];
+			prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+			diag = tmp;
+		}
+	}
+	return prev[b.length];
+}
+
+/** Suggest the closest valid flag for a typo: exact match on the normalized form catches
+ *  camelCase↔kebab (e.g. --jsonPath → --json-path), then nearest by edit distance ≤ 2. */
+function suggestFlag(token: string, flags: string[]): string | undefined {
+	const norm = normalizeFlag(token);
+	const exact = flags.find((flag) => normalizeFlag(flag) === norm);
+	if (exact) return exact;
+	let best: string | undefined;
+	let bestDistance = 3;
+	for (const flag of flags) {
+		const distance = editDistance(norm, normalizeFlag(flag));
+		if (distance < bestDistance) { bestDistance = distance; best = flag; }
+	}
+	return bestDistance <= 2 ? best : undefined;
+}
+
+// Common flags some commands legitimately do NOT accept — point at the right knob instead of just
+// dumping the accepted list (e.g. browser_artifact has no --detail-level; it sizes with --limit/etc).
+const ABSENT_FLAG_HINTS: Record<string, string> = {
+	"--detail-level": "this command has no --detail-level; size output with --limit / --offset / --max-chars",
+};
+
 /** Collect argv into a raw params object (string/bool/array/json), plus CLI globals. */
 export function parseArgs(specs: FlagSpec[], argv: string[]): ParseOutcome {
 	const byFlag = new Map<string, FlagSpec>();
@@ -88,8 +125,11 @@ export function parseArgs(specs: FlagSpec[], argv: string[]): ParseOutcome {
 		}
 		const spec = byFlag.get(token);
 		if (!spec) {
-			const accepted = specs.map((s) => s.flag).join(", ");
-			return { ok: false, error: `unknown flag "${token}"; accepted: ${accepted || "(none)"}` };
+			const flags = specs.map((s) => s.flag);
+			const suggestion = suggestFlag(token, flags);
+			const hint = ABSENT_FLAG_HINTS[token];
+			const guidance = hint ? `${hint}. ` : suggestion ? `did you mean "${suggestion}"? ` : "";
+			return { ok: false, error: `unknown flag "${token}"; ${guidance}accepted: ${flags.join(", ") || "(none)"}` };
 		}
 		if (spec.kind === "boolean") { raw[spec.name] = inlineValue === undefined ? true : inlineValue !== "false"; continue; }
 		const value = inlineValue !== undefined ? inlineValue : argv[i += 1];

@@ -3,9 +3,12 @@
 // maps a tool result to an exit code per mode.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { buildFlagSpecs, parseArgs } from "../../../cli/flags.ts";
 import { renderResult, EXIT } from "../../../cli/render.ts";
-import { nativeActionParamsHelp } from "../../../cli/index.ts";
+import { applyCliOnlyParams, buildCommandFlagSpecs, nativeActionParamsHelp } from "../../../cli/index.ts";
 import { buildCliCommands } from "../../../cli/registry.ts";
 
 const specs = buildFlagSpecs({
@@ -52,6 +55,22 @@ test("parseArgs rejects unknown flags and bad enum values", () => {
 	assert.equal(parseArgs(specs, ["positional"]).ok, false);
 });
 
+test("B10: unknown flag suggests the closest valid flag (camelCase↔kebab) + absent-flag hints", () => {
+	const jsonSpecs = buildFlagSpecs({ type: "object", properties: { jsonPath: { type: "string" }, maxChars: { type: "number" } } });
+	// camelCase typo of a kebab flag → exact normalized match suggestion
+	const camel = parseArgs(jsonSpecs, ["--jsonPath", "data.items"]);
+	assert.equal(camel.ok, false);
+	assert.match(camel.error, /did you mean "--json-path"/);
+	// near typo → edit-distance suggestion
+	const typo = parseArgs(jsonSpecs, ["--max-char", "5"]);
+	assert.equal(typo.ok, false);
+	assert.match(typo.error, /did you mean "--max-chars"/);
+	// a common flag the command legitimately lacks → targeted hint, not just the accepted list
+	const detail = parseArgs(jsonSpecs, ["--detail-level", "full"]);
+	assert.equal(detail.ok, false);
+	assert.match(detail.error, /--limit \/ --offset \/ --max-chars/);
+});
+
 test("F4: nativeActionParamsHelp surfaces per-action required --params keys from generated metadata", () => {
 	// General + source-of-truth driven (bridge/native_command_schema.json → generated metadata), not
 	// hand-listed: any action tool's per-action required/requiredAny keys must show in `<tool> --help`
@@ -73,6 +92,32 @@ test("M1: observe exposes by-reference baseline flags (CLI-discoverable, no huge
 	const flags = buildFlagSpecs(observe.parameters).map((s) => s.flag);
 	assert.ok(flags.includes("--baseline-snapshot-id"), "observe must expose --baseline-snapshot-id (daemon-resolved by reference)");
 	assert.ok(flags.includes("--baseline-path"), "observe must expose --baseline-path (saved-artifact by reference)");
+});
+
+test("B2: execute exposes and applies CLI-only --script-file", () => {
+	const execute = buildCliCommands().find((c) => c.subcommand === "execute");
+	assert.ok(execute, "execute command must exist");
+	const specs = buildCommandFlagSpecs(execute);
+	assert.ok(specs.some((s) => s.flag === "--script-file"), "execute help must expose --script-file");
+	const parsed = parseArgs(specs, ["--script-file", "script.js", "--tab-id", "7"]);
+	assert.ok(parsed.ok);
+	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-script-file-"));
+	writeFileSync(path.join(dir, "script.js"), "(() => 42)()", "utf8");
+	const applied = applyCliOnlyParams(execute, parsed.value.params, dir);
+	assert.ok(applied.ok);
+	assert.equal(applied.params.script, "(() => 42)()");
+	assert.equal("scriptFile" in applied.params, false);
+	assert.equal(applyCliOnlyParams(execute, { script: "1", scriptFile: "script.js" }, dir).ok, false, "--script-file and --script conflict");
+});
+
+test("B3: artifact help describes data-rooted jsonPath and repeated --pick", () => {
+	const artifact = buildCliCommands().find((c) => c.subcommand === "artifact");
+	assert.ok(artifact, "artifact command must exist");
+	const specs = buildCommandFlagSpecs(artifact);
+	const byName = Object.fromEntries(specs.map((s) => [s.name, s]));
+	assert.match(byName.jsonPath.description || "", /data\.items/);
+	assert.match(byName.pick.description || "", /repeat --pick/);
+	assert.match(byName.pick.description || "", /not a JSON array string/);
 });
 
 test("renderResult maps mode + terminate to exit codes", () => {
