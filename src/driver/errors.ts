@@ -1,5 +1,6 @@
 import { type NativeErrorCode, normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import { normalizeError } from "../utils/errors.js";
+import { redactSensitiveText } from "../utils/redaction.js";
 
 export class BrowserBridgeError extends Error {
 	readonly code: NativeErrorCode;
@@ -29,11 +30,33 @@ export function errorToPlain(error: unknown): Record<string, unknown> {
  * the live `tabs` diagnostics, surface the current/latest tab id and tell the
  * caller it can simply omit tabId to use the active tab.
  */
+function compactTabForError(tab: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const key of ["id", "browserId", "tabId", "title", "active", "windowId", "incognito", "type", "connectedAt"] as const) {
+		if (tab[key] !== undefined) out[key] = tab[key];
+	}
+	if (typeof tab.url === "string") out.url = compactUrlForError(tab.url);
+	return out;
+}
+
+function compactUrlForError(value: string): string {
+	const base = value.split(/[?#]/, 1)[0] || value;
+	try {
+		const url = new URL(value);
+		const suffix = url.search || url.hash ? "?[redacted]" : "";
+		if (url.protocol === "http:" || url.protocol === "https:") return redactSensitiveText(`${url.origin}${url.pathname}${suffix}`);
+		if (["data:", "javascript:", "vbscript:", "mailto:"].includes(url.protocol)) return `${url.protocol}[redacted]`;
+		return redactSensitiveText(`${base}${suffix}`);
+	} catch {
+		return redactSensitiveText(base);
+	}
+}
+
 export function tabNotFoundError(args: {
 	tabId: number;
 	browserSessionId?: string;
 	selectedBrowser?: unknown;
-	tabs: Array<{ tabId?: number }>;
+	tabs: Array<{ tabId?: number } & Record<string, unknown>>;
 	latestTabId?: number;
 }): BrowserBridgeError {
 	const liveTabIds = args.tabs.map((tab) => tab.tabId).filter((id): id is number => typeof id === "number");
@@ -44,7 +67,7 @@ export function tabNotFoundError(args: {
 		tabId: args.tabId,
 		browserSessionId: args.browserSessionId,
 		selectedBrowser: args.selectedBrowser,
-		tabs: args.tabs,
+		tabs: args.tabs.map((tab) => compactTabForError(tab)),
 		recovery: {
 			retryable: true,
 			hint,

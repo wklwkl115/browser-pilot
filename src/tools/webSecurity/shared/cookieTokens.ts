@@ -5,7 +5,7 @@ import { tryJson } from "../../../utils/json.js";
 import { asString, base64UrlDecode, base64UrlEncode, isRecord, printableText, sha256Hex } from "./normalize.js";
 import { createRailsCookieTokenFns } from "./railsCookieTokens.js";
 
-type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };
+type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, unknown> };
 
 type SecretMatch = Record<string, unknown>;
 

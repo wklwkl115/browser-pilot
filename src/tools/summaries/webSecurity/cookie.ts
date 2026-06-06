@@ -55,6 +55,13 @@ export function summarizeCookieAnalyzeData(value: unknown): Summary {
 		results: summaryTable(results, [
 			{ key: "source", value: (item) => item.source },
 			{ key: "name", value: (item) => item.name },
+			{ key: "domain", value: (item) => isRecord(item.attributes) ? item.attributes.domain : undefined },
+			{ key: "path", value: (item) => isRecord(item.attributes) ? item.attributes.path : undefined },
+			{ key: "secure", value: (item) => isRecord(item.attributes) ? item.attributes.secure : undefined },
+			{ key: "httpOnly", value: (item) => isRecord(item.attributes) ? item.attributes.httpOnly : undefined },
+			{ key: "sameSite", value: (item) => isRecord(item.attributes) ? item.attributes.sameSite : undefined },
+			{ key: "session", value: (item) => isRecord(item.attributes) ? item.attributes.session : undefined },
+			{ key: "expires", value: (item) => isRecord(item.attributes) ? item.attributes.expirationDate ?? item.attributes.expires : undefined },
 			{ key: "kind", value: (item) => item.kind },
 			{ key: "format", value: (item) => tokenFormat(item) },
 			{ key: "length", value: (item) => item.valueLength },

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { detectApiSpec, detectGraphqlSchema, endpointKindFor, extractAttributeUrls, extractForms, extractKnownFileUrls, extractManifestUrls, extractScriptSources, extractServiceWorkerCacheRoutes, extractServiceWorkerUrls, extractServiceWorkerVersionSummary, extractSourceMapUrls, extractStringUrls, inScope, knownFilePaths, normalizeUrlForVisit, parseSourceMapDetails, shouldProbeGraphqlIntrospection } from "./crawlExtractors.js";
-import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
+import { compactStep, contentTypeOf, cookieProviderResultHeader, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
 import { isRecord, positiveInt, requestCwd } from "../shared/normalize.js";
 import type { CrawlOptions, HeaderMap, WebFetchOptions } from "../shared/types.js";
 
@@ -71,7 +71,7 @@ export async function runBrowserCrawl(options: CrawlOptions) {
 		visited.add(url);
 		try {
 			const headers = { ...baseHeaders };
-			const cookie = options.bindBrowserSession === true ? await options.cookieProvider?.(url) : undefined;
+			const cookie = cookieProviderResultHeader(options.bindBrowserSession === true ? await options.cookieProvider?.(url) : undefined);
 			if (cookie) headers.Cookie = cookie;
 			const sanitized = sanitizeFetchHeaders(headers);
 			const exchange = await fetchWithRedirects({ url, method: "GET", headers: sanitized.headers }, { ...options, followRedirects: true, maxRedirects: positiveInt(options.maxRedirects, 5) });

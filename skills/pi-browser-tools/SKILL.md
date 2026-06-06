@@ -69,7 +69,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Exposure/config/custom templates | `browser_template` (`builtin` default; omitted templates = baseline) |
 | Mature nuclei | `browser_template {engine:"nuclei"}` + targets/templates/bounds |
 | OAST callback proof | `browser_callback_oast start` → inject/`trigger` (`triggerTimeoutMs`) → `collect` → `stop` |
-| Cookie/JWT/JWE/PASETO/Rails session | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; bounded claim replay) |
+| Cookie/JWT/JWE/PASETO/Rails session + cookie attributes | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; browser-bound cookie `domain/path/secure/httpOnly/sameSite/session/expires`; bounded claim replay) |
 | Local browser memory | `browser_memory {action:"recall"}` → `browser_memory {action:"read"}` |
 
 ## Observe products (scan envelope)

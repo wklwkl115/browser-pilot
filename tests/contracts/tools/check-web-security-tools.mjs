@@ -51,7 +51,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 		assert.equal(text.includes("browserCookiesToHeader"), false, `${file} must not own cookie binding; shared shell owns cookie provider`);
 	}
 	assert.equal((sourceFiles.registerShared.match(/cmd: "cookies"/g) || []).length, 1, "only WebSecurity shared shell may call native cookies command");
-	assert.ok(sourceFiles.registerShared.includes("createBrowserCookieProvider") && sourceFiles.registerShared.includes("browserCookiesToHeader"), "shared shell must expose cookie binding through a CookieProvider adapter");
+	assert.ok(sourceFiles.registerShared.includes("createBrowserCookieProvider") && sourceFiles.registerShared.includes("browserCookiesToProviderResult"), "shared shell must expose structured cookie binding through a CookieProvider adapter");
 	assert.equal(/pi\.registerTool\(/.test(sourceFiles.core), false, "webSecurityCore must not register tools");
 	assert.equal(/BrowserBridgeServer|ensureStarted|server\.sendCommand|bridge_src|chrome\./.test(sourceFiles.core), false, "webSecurityCore must not depend on base browser driver/runtime");
 	assert.ok(sourceFiles.core.includes("./webSecurity/browserNative/") && sourceFiles.core.includes("./webSecurity/bridges/") && sourceFiles.core.includes("./webSecurity/shared/"), "webSecurityCore must stay a compatibility export layer over WebSecurity subdomains");

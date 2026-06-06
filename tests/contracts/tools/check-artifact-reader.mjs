@@ -91,8 +91,15 @@ try {
 
 	const searchArtifact = await readBrowserArtifact({ path: artifactPath, mode: "search", query: "h1.test", maxMatches: 2 }, { cwd: tmp });
 	assert.equal(searchArtifact.mode, "search");
+	assert.equal(searchArtifact.query, "h1.test", "check-artifact search.query: ordinary query must remain attributable after redaction");
 	assert.ok(searchArtifact.matches > 0);
 	assert.ok(searchArtifact.snippets[0].text.includes("h1.test"));
+	const searchChineseArtifact = await readBrowserArtifact({ path: observeArtifactPath, mode: "search", query: "漏洞类型", maxMatches: 2 }, { cwd: tmp });
+	assert.equal(searchChineseArtifact.query, "漏洞类型", "check-artifact search.query.zh: ordinary field labels must not be over-redacted");
+	for (const ordinaryQuery of ["token economy", "password reset", "secret santa", "cookie banner"]) {
+		const ordinarySearch = await readBrowserArtifact({ path: artifactPath, mode: "search", query: ordinaryQuery, maxMatches: 1 }, { cwd: tmp });
+		assert.equal(ordinarySearch.query, ordinaryQuery, `check-artifact search.query.ordinary-sensitive-word: ${ordinaryQuery} must remain attributable`);
+	}
 
 	const sensitivePath = path.join(tmp, ".pi", "browser-artifacts", "sensitive-evidence.json");
 	const sensitivePayload = {
@@ -119,8 +126,18 @@ try {
 	assert.equal(sensitiveRaw.summary.privacy.redaction, "disabled", "check-artifact privacy.raw: summary must record explicit redaction disable");
 	const sensitiveText = await readBrowserArtifact({ path: sensitivePath, mode: "text", maxChars: 4_000 }, { cwd: tmp });
 	assert.equal(JSON.stringify(sensitiveText).includes("auth-secret"), false, "check-artifact privacy.text: text snippets must redact Authorization values by default");
+	const prefixedHeaderPath = path.join(tmp, ".pi", "browser-artifacts", "prefixed-headers.txt");
+	await writeFile(prefixedHeaderPath, "7: cookie line: Cookie: sessionid=cookie-prefixed-secret; theme=dark\n8: header line: Authorization: Bearer auth-prefixed-secret\n", "utf8");
+	const prefixedHeaderSearch = await readBrowserArtifact({ path: prefixedHeaderPath, mode: "search", query: "cookie line", maxChars: 2_000 }, { cwd: tmp });
+	const prefixedHeaderSearchText = JSON.stringify(prefixedHeaderSearch);
+	assert.equal(prefixedHeaderSearchText.includes("cookie-prefixed-secret"), false, "check-artifact privacy.search.prefixed-cookie: line-number/prefix context must not bypass cookie redaction");
+	assert.equal(prefixedHeaderSearchText.includes("auth-prefixed-secret"), false, "check-artifact privacy.search.prefixed-auth: line-number/prefix context must not bypass authorization redaction");
 	const sensitiveSearch = await readBrowserArtifact({ path: sensitivePath, mode: "search", query: "cookie-secret", contextLines: 0, maxChars: 2_000 }, { cwd: tmp });
-	assert.equal(JSON.stringify(sensitiveSearch).includes("cookie-secret"), false, "check-artifact privacy.search: search snippets and query must be redacted by default");
+	assert.equal(JSON.stringify(sensitiveSearch).includes("cookie-secret"), false, "check-artifact privacy.search: search snippets and obvious sensitive queries must be redacted by default");
+	const sensitiveTokenSearch = await readBrowserArtifact({ path: sensitivePath, mode: "search", query: "token=query-secret", contextLines: 0, maxChars: 2_000 }, { cwd: tmp });
+	assert.equal(sensitiveTokenSearch.query, "token=[redacted]", "check-artifact privacy.search.query: sensitive query values must stay redacted");
+	const opaqueSecretSearch = await readBrowserArtifact({ path: prefixedHeaderPath, mode: "search", query: "auth-prefixed-secret", contextLines: 0, maxChars: 2_000 }, { cwd: tmp });
+	assert.equal(opaqueSecretSearch.query, "[redacted]", "check-artifact privacy.search.query.opaque: credential-shaped standalone query must be redacted");
 	const sensitiveSample = await readBrowserArtifact({ path: sensitivePath, mode: "sample", maxChars: 4_000 }, { cwd: tmp });
 	assert.equal(JSON.stringify(sensitiveSample).includes("ws-secret"), false, "check-artifact privacy.sample: sampled websocket payloads must be redacted by default");
 

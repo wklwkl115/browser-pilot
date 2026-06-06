@@ -3,7 +3,7 @@ import https from "node:https";
 import { Buffer } from "node:buffer";
 import { createCodedError } from "../../../utils/codedError.js";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster as sameHttpBaselineCluster } from "../shared/baseline.js";
-import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
+import { TEXTUAL_CONTENT_TYPE, assertAllowedTargetUrl, compactStep, cookieProviderResultHeader, normalizeHeaders, normalizeProbeTargets, responseDistance, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import type { CookieProvider, FetchStep, HeaderMap, RawFuzzVhostsOptions, WebFetchOptions } from "../shared/types.js";
 
@@ -324,7 +324,7 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 		for (const baselineHost of baselineHosts) {
 			try {
 				const baselineHeaders = { ...normalized.baseHeaders };
-				const baselineCookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined;
+				const baselineCookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined);
 				if (baselineCookie) baselineHeaders.Cookie = baselineCookie;
 				const sanitizedBaseline = sanitizeFetchHeaders(baselineHeaders);
 				const sniName = vhostSniName(base, baselineHost, normalized);
@@ -343,7 +343,7 @@ export async function runFuzzVhosts(options: RawFuzzVhostsOptions) {
 		for (const host of candidates) {
 			try {
 				const headers = { ...normalized.baseHeaders };
-				const cookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined;
+				const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(base) : undefined);
 				if (cookie) headers.Cookie = cookie;
 				const sanitized = sanitizeFetchHeaders(headers);
 				const sniName = vhostSniName(base, host, normalized);

@@ -6,13 +6,13 @@ import tls from "node:tls";
 import type { NativeErrorCode } from "../../../protocol/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
 import { asString, DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, defaultScheme, isRecord, normalizeHeaderName, numericList, positiveInt, sha256Hex, stringList } from "./normalize.js";
-import type { FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types.js";
+import type { BrowserCookieMetadata, BrowserCookieProviderResult, FetchExchange, FetchRequest, FetchStep, HeaderMap, ProbeOptions, WebFetchOptions } from "./types.js";
 
 export const TEXTUAL_CONTENT_TYPE = /(?:^|[\s;/+.-])(text|json|xml|html|javascript|ecmascript|x-www-form-urlencoded|svg|graphql)(?:[\s;/+.-]|$)/i;
 export const REDACTED_HEADER_NAMES = new Set(["authorization", "cookie", "proxy-authorization", "set-cookie", "x-api-key", "x-auth-token", "x-csrf-token", "x-xsrf-token"]);
 export const FETCH_OMIT_HEADER_NAMES = new Set(["host", "content-length", "transfer-encoding", "connection", "keep-alive", "upgrade", "proxy-connection", "expect"]);
 
-export type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };
+export type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, unknown> };
 export type ResponseFingerprint = { status: number; title?: string; bodyBytes: number; bodySha256: string; location?: string };
 
 const METADATA_HOSTS = new Set(["169.254.169.254", "metadata.google.internal", "metadata.google.internal.", "metadata", "metadata.azure", "metadata.azure.internal"]);
@@ -235,11 +235,14 @@ export function deriveCsrfReflection(
 	return { cookie: cookieName, header, value };
 }
 
-function cookiesToHeader(cookies: unknown): string | undefined {
+function browserCookieItems(cookies: unknown): BrowserCookieMetadata[] {
 	const items = Array.isArray(cookies) ? cookies : isRecord(cookies) && Array.isArray(cookies.data) ? cookies.data : [];
+	return items.filter(isRecord) as BrowserCookieMetadata[];
+}
+
+function cookiesToHeader(cookies: unknown): string | undefined {
 	const pairs: string[] = [];
-	for (const item of items) {
-		if (!isRecord(item)) continue;
+	for (const item of browserCookieItems(cookies)) {
 		const name = asString(item.name)?.trim();
 		const value = asString(item.value);
 		if (name && value !== undefined) pairs.push(`${name}=${value}`);
@@ -249,6 +252,23 @@ function cookiesToHeader(cookies: unknown): string | undefined {
 
 export function browserCookiesToHeader(cookies: unknown): string | undefined {
 	return cookiesToHeader(cookies);
+}
+
+export function browserCookiesToProviderResult(cookies: unknown, url?: string): BrowserCookieProviderResult | undefined {
+	const items = browserCookieItems(cookies);
+	const header = cookiesToHeader(items);
+	if (!header && !items.length) return undefined;
+	return { header, cookies: items, ...(url ? { url } : {}) };
+}
+
+export function cookieProviderResultHeader(value: BrowserCookieProviderResult | undefined): string | undefined {
+	if (typeof value === "string") return value;
+	return isRecord(value) ? asString(value.header) : undefined;
+}
+
+export function cookieProviderResultCookies(value: BrowserCookieProviderResult | undefined): BrowserCookieMetadata[] {
+	if (!isRecord(value) || !Array.isArray(value.cookies)) return [];
+	return value.cookies.filter(isRecord) as BrowserCookieMetadata[];
 }
 
 export function parseSetCookieLine(raw: string, source: string): CookieSample | undefined {

@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { FETCH_OMIT_HEADER_NAMES, deriveCsrfReflection, fetchWithRedirects, mergeCookieHeaders, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
+import { FETCH_OMIT_HEADER_NAMES, cookieProviderResultHeader, deriveCsrfReflection, fetchWithRedirects, mergeCookieHeaders, sanitizeFetchHeaders, setCookieHeader, setHeaderCaseInsensitive } from "./http.js";
 import { buildMultipartBodyFromParts, multipartPartsFromValue, parseMultipartBody, setMultipartContentTypeVariant, summarizeMultipartParts } from "./multipart.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeHeaderName, positiveInt, stringList } from "./normalize.js";
 import { createCodedError } from "../../../utils/codedError.js";
@@ -330,7 +330,8 @@ export function reflectCsrfIntoHeaders(
 
 export async function sendReplayLikeRequest(request: ReplayRequest, options: NormalizedReplayOptions) {
 	const headers = { ...request.headers };
-	const injectedBrowserCookie = options.bindBrowserSession === true ? await options.cookieProvider?.(request.url) : undefined;
+	const injectedBrowserCookieResult = options.bindBrowserSession === true ? await options.cookieProvider?.(request.url) : undefined;
+	const injectedBrowserCookie = cookieProviderResultHeader(injectedBrowserCookieResult);
 	if (injectedBrowserCookie) {
 		const currentCookie = headers.Cookie ?? headers.cookie;
 		if (options.cookieMode === "replace") setCookieHeader(headers, injectedBrowserCookie);

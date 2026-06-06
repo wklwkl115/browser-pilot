@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveCsrfReflection, mergeCookieHeaders, parseCookieHeader, sanitizeFetchHeaders } from "../../../../src/tools/webSecurity/shared/http.ts";
+import { browserCookiesToProviderResult, cookieProviderResultHeader, deriveCsrfReflection, mergeCookieHeaders, parseCookieHeader, sanitizeFetchHeaders } from "../../../../src/tools/webSecurity/shared/http.ts";
 
 test("webSecurity/shared/http parses cookie header pairs", () => {
 	const cookies = parseCookieHeader("a=1; b=2; c=hello");
@@ -41,4 +41,23 @@ test("webSecurity/shared/http default reflected header names stay within the red
 	// Guards token non-leak: the header carrying the token must be one redactHeaders strips.
 	const redacted = new Set(["x-csrf-token", "x-xsrf-token"]);
 	for (const header of ["X-XSRF-TOKEN", "X-CSRF-Token"]) assert.ok(redacted.has(header.toLowerCase()), `${header} must be redactable`);
+});
+
+test("webSecurity/shared/http preserves structured browser cookie metadata while exposing a Cookie header", () => {
+	const providerResult = browserCookiesToProviderResult({ data: [
+		{ name: "sid", value: "abc", domain: ".example.test", path: "/", secure: true, httpOnly: true, sameSite: "lax", session: false, expirationDate: 2000000000 },
+	] }, "https://example.test/");
+	assert.equal(cookieProviderResultHeader(providerResult), "sid=abc");
+	assert.equal(Array.isArray(providerResult && typeof providerResult === "object" ? providerResult.cookies : undefined), true);
+	assert.deepEqual(providerResult && typeof providerResult === "object" ? providerResult.cookies?.[0] : undefined, {
+		name: "sid",
+		value: "abc",
+		domain: ".example.test",
+		path: "/",
+		secure: true,
+		httpOnly: true,
+		sameSite: "lax",
+		session: false,
+		expirationDate: 2000000000,
+	});
 });

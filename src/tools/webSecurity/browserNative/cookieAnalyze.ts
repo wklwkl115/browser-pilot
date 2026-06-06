@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 import { createCodedError } from "../../../utils/codedError.js";
 import { responseReplayDelta } from "../shared/baseline.js";
-import { absoluteUrl, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http.js";
+import { absoluteUrl, cookieProviderResultCookies, cookieProviderResultHeader, fetchWithRedirects, normalizeHeaders, parseCookieHeader, parseSetCookieLine, responseFingerprint } from "../shared/http.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, asString, isRecord, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import { analyzeCookieSample, tokenCountOf, tokenFormatOf, tokenMutationToken, tokenVerifiedOf } from "../shared/cookieTokens.js";
 import type { RawCookieAnalyzeOptions } from "../shared/types.js";
 
-type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, string | boolean> };
+type CookieSample = { source: string; name?: string; value: string; attributes?: Record<string, unknown> };
 
 type ClaimReplayConfig = {
 	url: string;
@@ -34,9 +34,34 @@ type NormalizedCookieAnalyzeOptions = {
 	bindUrl?: string;
 };
 
-function addCookieHeaderSamples(out: CookieSample[], raw: string, source: string) {
+function normalizeBrowserCookieAttributes(value: Record<string, unknown>): Record<string, unknown> | undefined {
+	const attributes: Record<string, unknown> = {};
+	const copyString = (key: string) => {
+		const raw = asString(value[key])?.trim();
+		if (raw) attributes[key] = raw;
+	};
+	const copyBoolean = (key: string) => {
+		if (typeof value[key] === "boolean") attributes[key] = value[key];
+	};
+	const copyNumber = (key: string) => {
+		if (typeof value[key] === "number" && Number.isFinite(value[key])) attributes[key] = value[key];
+	};
+	copyString("domain");
+	copyString("path");
+	copyString("sameSite");
+	copyString("storeId");
+	copyBoolean("secure");
+	copyBoolean("httpOnly");
+	copyBoolean("session");
+	copyNumber("expirationDate");
+	copyNumber("expires");
+	if (isRecord(value.partitionKey)) attributes.partitionKey = { ...value.partitionKey };
+	return Object.keys(attributes).length ? attributes : undefined;
+}
+
+function addCookieHeaderSamples(out: CookieSample[], raw: string, source: string, metadata: Map<string, Record<string, unknown>> = new Map()) {
 	const header = raw.replace(/^cookie\s*:\s*/i, "").trim();
-	for (const [name, value] of parseCookieHeader(header)) out.push({ source, name, value });
+	for (const [name, value] of parseCookieHeader(header)) out.push({ source, name, value, attributes: metadata.get(name) });
 }
 
 function addCookieSamples(out: CookieSample[], value: unknown, source: string, setCookieMode = false) {
@@ -47,7 +72,8 @@ function addCookieSamples(out: CookieSample[], value: unknown, source: string, s
 	if (isRecord(value)) {
 		const name = asString(value.name)?.trim();
 		const cookieValue = asString(value.value);
-		if (cookieValue !== undefined) out.push({ source, name, value: cookieValue, attributes: normalizeHeaders(value.attributes) });
+		const attributes = isRecord(value.attributes) ? { ...value.attributes } : normalizeBrowserCookieAttributes(value);
+		if (cookieValue !== undefined) out.push({ source, name, value: cookieValue, attributes });
 		return;
 	}
 	const text = asString(value);
@@ -111,13 +137,22 @@ async function normalizeCookieAnalyzeOptions(options: RawCookieAnalyzeOptions): 
 		bindUrl = absoluteUrl(options.url, { scheme: "https" });
 		browserSessionAttempted = true;
 		const browserCookie = await options.cookieProvider?.(bindUrl);
-		if (browserCookie) addCookieSamples(samples, browserCookie, "browser-session");
+		const browserCookieHeader = cookieProviderResultHeader(browserCookie);
+		const browserCookies = cookieProviderResultCookies(browserCookie);
+		const browserCookieMetadata = new Map<string, Record<string, unknown>>();
+		for (const cookie of browserCookies) {
+			const name = asString(cookie.name)?.trim();
+			const attributes = normalizeBrowserCookieAttributes(cookie);
+			if (name && attributes) browserCookieMetadata.set(name, attributes);
+		}
+		if (browserCookieHeader) addCookieHeaderSamples(samples, browserCookieHeader, "browser-session", browserCookieMetadata);
+		else for (const cookie of browserCookies) addCookieSamples(samples, cookie, "browser-session");
 	}
 	const secrets = [...stringList(options.secretCandidates), ...stringList(options.secrets), ...stringList(options.wordlist), ...(await readWordlist(options.wordlistPath))];
 	const maxSecretCandidates = Math.min(100_000, positiveInt(options.maxSecretCandidates, 10_000));
 	const limitedSecrets = [...new Set(secrets)].slice(0, maxSecretCandidates);
 	const claimReplay = isRecord(options.claimReplay) ? normalizeClaimReplay(options.claimReplay, options.url, undefined, options.allowPrivateTargets) : undefined;
-	if (claimReplay && wantsBrowserSession) claimReplay.browserCookie = await options.cookieProvider?.(claimReplay.url);
+	if (claimReplay && wantsBrowserSession) claimReplay.browserCookie = cookieProviderResultHeader(await options.cookieProvider?.(claimReplay.url));
 	return {
 		samples,
 		limitedSecrets,
@@ -207,7 +242,7 @@ export async function runCookieAnalyze(options: RawCookieAnalyzeOptions) {
 		}
 		throw cookieAnalyzeInputError("browser_cookie_analyze requires cookie, cookies, setCookie, setCookies, jwt, jwts, values, or bindBrowserSession with url", { fields: ["cookie", "cookies", "setCookie", "setCookies", "jwt", "jwts", "values", "bindBrowserSession+url"] });
 	}
-	const results: Record<string, unknown>[] = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, source: sample.source, name: sample.name, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
+	const results: Record<string, unknown>[] = await Promise.all(normalized.samples.map(async (sample, index) => ({ index, source: sample.source, name: sample.name, attributes: sample.attributes, ...(await analyzeCookieSample(sample, normalized.limitedSecrets, normalized.claimMutations)) })));
 	const tokenResults = results.filter((item) => tokenCountOf(item) > 0);
 	const jwtResults = results.filter((item) => String(item.kind || "") === "jwt");
 	const jweCount = results.filter((item) => String(item.kind || "") === "jwe").length;

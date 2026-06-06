@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http.js";
+import { cookieProviderResultHeader, mergeCookieHeaders, normalizeProbeTargets, setCookieHeader, setHeaderCaseInsensitive } from "../shared/http.js";
 import { asString, isRecord, parseCommandArgs, positiveInt, requestCwd, stringList } from "../shared/normalize.js";
 import { describeTextArtifact } from "../shared/artifacts.js";
 import { detectMatureBridgeLauncher, assertMatureBridgeProcessResult, matureBridgeFailureRecord, matureBridgeToolError } from "../shared/matureBridge.js";
@@ -183,7 +183,7 @@ function serializeRawRequest(request: ReplayRequest): Buffer {
 
 async function bindBrowserCookies(request: ReplayRequest, options: NormalizedNucleiBridgeOptions): Promise<ReplayRequest> {
 	if (!options.bindBrowserSession) return request;
-	const browserCookie = await options.cookieProvider?.(request.url);
+	const browserCookie = cookieProviderResultHeader(await options.cookieProvider?.(request.url));
 	if (!browserCookie) return request;
 	const headers = { ...request.headers };
 	const currentCookie = headers.Cookie ?? headers.cookie;

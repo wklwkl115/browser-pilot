@@ -1,4 +1,4 @@
-import { compactStep, detectFingerprints, detectTech, detectTechHints, extractTitle, fetchFaviconHash, fetchWithRedirects, inspectTlsCertificate, normalizeHeaders, normalizeProbeTargets, redactHeaders, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
+import { compactStep, cookieProviderResultHeader, detectFingerprints, detectTech, detectTechHints, extractTitle, fetchFaviconHash, fetchWithRedirects, inspectTlsCertificate, normalizeHeaders, normalizeProbeTargets, redactHeaders, responseBodyHash, sanitizeFetchHeaders } from "../shared/http.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, normalizeMethod, positiveInt } from "../shared/normalize.js";
 import type { CookieProvider, HeaderMap, ProbeOptions } from "../shared/types.js";
 
@@ -40,7 +40,7 @@ export async function runReconProbe(options: ProbeOptions) {
 	const results = [];
 	for (const target of normalized.targets) {
 		try {
-				const injectedBrowserCookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined;
+			const injectedBrowserCookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined);
 			const headers = { ...normalized.headers };
 			if (injectedBrowserCookie) headers.Cookie = injectedBrowserCookie;
 			const sanitized = sanitizeFetchHeaders(headers);

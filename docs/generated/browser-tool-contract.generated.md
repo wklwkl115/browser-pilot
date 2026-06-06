@@ -229,7 +229,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_ID_CONFLICT` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeCommandService.ts` |
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserLeaseRegistry.ts` |
-| `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/BrowserBridgeServer.ts`, `src/driver/errors.ts` |
+| `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/errors.ts` |
 | `TARGET_DISABLED` | unknown | abml.actionability | yes | schema |  |
 | `TARGET_NOT_EDITABLE` | unknown | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
 | `TARGET_OCCLUDED` | unknown | abml.actionability | yes | schema |  |

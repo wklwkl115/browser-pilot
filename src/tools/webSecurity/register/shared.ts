@@ -4,7 +4,7 @@ import { isRecord } from "../../../utils/records.js";
 import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, type ToolOnUpdate } from "../../toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, enumOrEnumArrayParam, enumParam } from "../../toolShared.js";
 import type { EnsureStarted } from "../../toolShared.js";
-import { browserCookiesToHeader } from "../../webSecurityCore.js";
+import { browserCookiesToProviderResult } from "../../webSecurityCore.js";
 import type { CookieProvider, RawCallbackOastOptions, RawCookieAnalyzeOptions, RawCrawlOptions, RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions, RawNucleiBridgeOptions, RawProbeOptions, RawReplayOptions, RawSqliProbeOptions, RawSqlmapBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
 import type { ToolResultBudgetName } from "../../budgets.js";
 import { webSecurityToolError } from "../shared/diagnostics.js";
@@ -327,7 +327,7 @@ function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSe
 	return async (url: string) => {
 		const server = await ensureStarted();
 		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
-		return browserCookiesToHeader(cookies.data);
+		return browserCookiesToProviderResult(cookies.data, url);
 	};
 }
 

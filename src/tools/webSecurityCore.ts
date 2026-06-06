@@ -16,7 +16,7 @@ export type {
 	WebFetchOptions,
 } from "./webSecurity/shared/types.js";
 
-export { browserCookiesToHeader, normalizeHeaders, normalizeProbeTargets } from "./webSecurity/shared/http.js";
+export { browserCookiesToHeader, browserCookiesToProviderResult, cookieProviderResultCookies, cookieProviderResultHeader, normalizeHeaders, normalizeProbeTargets } from "./webSecurity/shared/http.js";
 export { buildReplayRequest, parseRawHttpRequest } from "./webSecurity/shared/replay.js";
 export { runReconProbe } from "./webSecurity/browserNative/recon.js";
 export { runBrowserCrawl } from "./webSecurity/browserNative/crawl.js";

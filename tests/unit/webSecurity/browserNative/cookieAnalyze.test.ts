@@ -52,3 +52,22 @@ test("cookie_analyze does not auto-bind when explicit cookies are supplied", asy
 	assert.equal(result.ok, true);
 	assert.equal(providerCalled, false, "explicit cookies must not trigger implicit session binding");
 });
+
+test("cookie_analyze preserves browser cookie attributes from structured provider results", async () => {
+	const result = await runCookieAnalyze({
+		url: "https://target.test",
+		bindBrowserSession: true,
+		cookieProvider: async () => ({
+			header: "session=abc123; pref=dark",
+			cookies: [
+				{ name: "session", value: "abc123", domain: ".target.test", path: "/", secure: true, httpOnly: true, sameSite: "lax", session: false, expirationDate: 2_000_000_000, storeId: "0" },
+				{ name: "pref", value: "dark", domain: "target.test", path: "/prefs", secure: false, httpOnly: false, sameSite: "no_restriction", session: true },
+			],
+		}),
+	});
+	assert.equal(result.ok, true);
+	const session = result.results.find((item) => item.name === "session");
+	assert.deepEqual(session?.attributes, { domain: ".target.test", path: "/", sameSite: "lax", storeId: "0", secure: true, httpOnly: true, session: false, expirationDate: 2_000_000_000 });
+	const pref = result.results.find((item) => item.name === "pref");
+	assert.deepEqual(pref?.attributes, { domain: "target.test", path: "/prefs", sameSite: "no_restriction", secure: false, httpOnly: false, session: true });
+});

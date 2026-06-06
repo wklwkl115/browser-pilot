@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
 import { baselineClusterKey, matchesStatusBodyResult, nearestBaselineByDistance, normalizeBaselineStrategy, responseChangeDelta, sameBaselineCluster } from "../shared/baseline.js";
-import { compactStep, contentTypeOf, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
+import { compactStep, contentTypeOf, cookieProviderResultHeader, extractTitle, fetchWithRedirects, normalizeHeaders, normalizeProbeTargets, responseFingerprint, responsesDiffer, sanitizeFetchHeaders } from "../shared/http.js";
 import { asString, normalizeMethod, numericList, positiveInt, readWordlist, stringList } from "../shared/normalize.js";
 import type { CookieProvider, HeaderMap, RawFuzzPathsOptions } from "../shared/types.js";
 
@@ -245,7 +245,7 @@ export async function runFuzzPaths(options: RawFuzzPathsOptions) {
 				const baselineUrl = buildFuzzBaselineUrl(current.baseUrl, sample);
 				try {
 					const headers = { ...normalized.baseHeaders };
-					const cookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(baselineUrl) : undefined;
+					const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(baselineUrl) : undefined);
 					if (cookie) headers.Cookie = cookie;
 					const sanitized = sanitizeFetchHeaders(headers);
 					const baselineExchange = await fetchWithRedirects({ url: baselineUrl, method: normalized.method, headers: sanitized.headers }, normalized);
@@ -264,7 +264,7 @@ export async function runFuzzPaths(options: RawFuzzPathsOptions) {
 				for (const target of targets) {
 					try {
 						const headers = { ...normalized.baseHeaders };
-						const cookie = normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined;
+						const cookie = cookieProviderResultHeader(normalized.bindBrowserSession ? await normalized.cookieProvider?.(target) : undefined);
 						if (cookie) headers.Cookie = cookie;
 						const sanitized = sanitizeFetchHeaders(headers);
 						const exchange = await fetchWithRedirects({ url: target, method: normalized.method, headers: sanitized.headers }, normalized);

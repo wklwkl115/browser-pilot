@@ -1,7 +1,21 @@
 import { Buffer } from "node:buffer";
 
 export type HeaderMap = Record<string, string>;
-export type CookieProvider = (url: string) => Promise<string | undefined>;
+export type BrowserCookieMetadata = Record<string, unknown> & {
+	name?: string;
+	value?: string;
+	domain?: string;
+	path?: string;
+	secure?: boolean;
+	httpOnly?: boolean;
+	sameSite?: string;
+	session?: boolean;
+	expirationDate?: number;
+	storeId?: string;
+	partitionKey?: unknown;
+};
+export type BrowserCookieProviderResult = string | { header?: string; cookies?: BrowserCookieMetadata[]; url?: string };
+export type CookieProvider = (url: string) => Promise<BrowserCookieProviderResult | undefined>;
 
 export type WebFetchOptions = {
 	followRedirects?: boolean;

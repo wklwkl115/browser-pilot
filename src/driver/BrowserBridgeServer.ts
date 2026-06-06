@@ -166,7 +166,7 @@ export class BrowserBridgeServer {
 	attachTabToBrowserSession(tabId: number | string, options: { browserSessionId?: string; browserId?: string } = {}): BrowserTabInfo {
 		const id = this.requireTabId(tabId);
 		const attached = this.tabs.attachTab(id, options.browserSessionId, options.browserId);
-		if (!attached) throw new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", { tabId: id, browserId: options.browserId, browserSessionId: options.browserSessionId, tabs: this.getTabs() });
+		if (!attached) throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId) });
 		return this.tabInfo(attached);
 	}
 
