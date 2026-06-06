@@ -62,4 +62,41 @@ assert(archive.split(/\r?\n/).length <= 120, "ARCHIVE.md must stay summary-first
 assert(todo.split(/\r?\n/).length <= 30, "TODO.md must remain a navigation page");
 assert(roadmap.split(/\r?\n/).length <= 80, "ROADMAP.md must stay compact and future-facing");
 
+// AGENTS.md is inlined into CLAUDE.md because Claude Code does not auto-read AGENTS.md.
+// Guard the two copies against silent drift: every AGENTS.md `## section` must appear under
+// CLAUDE.md's inlined block as a `### section` with verbatim body.
+function parseSections(text, prefix) {
+	const sections = {};
+	let name = null;
+	let buf = [];
+	for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+		if (line.startsWith(prefix) && !line.startsWith(`${prefix}#`)) {
+			if (name !== null) sections[name] = buf.join("\n").trim();
+			name = line.slice(prefix.length).trim();
+			buf = [];
+		} else if (name !== null) {
+			buf.push(line);
+		}
+	}
+	if (name !== null) sections[name] = buf.join("\n").trim();
+	return sections;
+}
+
+const claudeMd = read("CLAUDE.md");
+const agentsMd = read("AGENTS.md");
+const inlineMarker = "## Design, Governance & Workflow Rules (inlined from AGENTS.md)";
+const inlineIdx = claudeMd.indexOf(inlineMarker);
+assert(inlineIdx !== -1, "CLAUDE.md must inline AGENTS.md under a 'Design, Governance & Workflow Rules (inlined from AGENTS.md)' section");
+const agentsSections = parseSections(agentsMd, "## ");
+const inlinedSections = parseSections(claudeMd.slice(inlineIdx), "### ");
+assert(Object.keys(agentsSections).length >= 9, "AGENTS.md must define its governance sections (Scope..Sync & Verification)");
+assert(
+	Object.keys(agentsSections).length === Object.keys(inlinedSections).length,
+	`CLAUDE.md inlined AGENTS.md section count (${Object.keys(inlinedSections).length}) must equal AGENTS.md (${Object.keys(agentsSections).length}) — re-sync the inlined block`,
+);
+for (const [name, body] of Object.entries(agentsSections)) {
+	assert(name in inlinedSections, `CLAUDE.md must inline AGENTS.md section "### ${name}"`);
+	assert(inlinedSections[name] === body, `CLAUDE.md inlined "${name}" drifted from AGENTS.md — re-sync the two verbatim`);
+}
+
 console.log("doc structure contract ok");
