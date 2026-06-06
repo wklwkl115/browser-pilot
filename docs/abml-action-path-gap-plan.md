@@ -13,7 +13,7 @@
 
 ## The gap, measured (C - done)
 
-`tests/smoke/smoke-abml-action-gap.mjs` + fixture `evals/.../abml-action-gap.html`. The fixture's
+`tests/smoke/smoke-abml-action-gap.mjs` + fixture `evals/.../abml-action-gap.html` (note: this smoke + fixture were removed together with the B2 action-arm revert; see Status above — kept here as a historical measurement record). The fixture's
 `#guarded` button honors only a **trusted** click (`e.isTrusted`). Live Edge result:
 
 | Path | reported ok? | effect fired? |

@@ -4,6 +4,8 @@
 
 COMPLETE — 2026-06-05.
 
+> 注：本合同 P4/Validated 中列出的 `npm run smoke:browser:abml-inference[-postaction]` 与 `tests/smoke/smoke-abml-inference*.mjs` 已随 2026-06-05 `envelope.inference` 重构（commit `b6feaf3`，移除 agent-facing `inference`/`templates` 字段）一并移除；inference 逻辑回归现由 `check:abml-inference` contract 承担。下方保留为完成时的历史验证记录。
+
 ## Goal
 
 Tighten the existing R3/R2 substrate without adding new public tools or protocol surface:

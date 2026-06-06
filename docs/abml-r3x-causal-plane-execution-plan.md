@@ -4,7 +4,7 @@
 > change). This is a new ABML main line; per project rules it gets its own execution contract and a
 > CURRENT.md activation. The handoff conditions in `docs/abml-r3-runtime-events-execution-plan.md §6`
 > are met: R3.1 entity diff is stable in model-facing output, and a real-page state-transition
-> diff was live-verified (`npm run smoke:browser:abml-inference`, 2026-06-04).
+> diff was live-verified (`npm run smoke:browser:abml-inference`, 2026-06-04; that smoke was later removed with the 2026-06-05 `envelope.inference` refactor — inference regression is now covered by `check:abml-inference`).
 >
 > **P0 landed (2026-06-04):** passive network-delta plane shipped + browser-verified across 4
 > commits — `99b9bf3` pure-core selector, `729aef6` runtime wiring (envelope `causal`),
