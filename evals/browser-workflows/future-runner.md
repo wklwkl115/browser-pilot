@@ -11,6 +11,12 @@ This document freezes the boundary for the opt-in runner and fixture server for 
 
 ## Non-goals
 
+> Scope: these non-goals constrain the **deterministic runner** (`runner.mjs`) + its fixture server.
+> The separate **blind-agent discovery layer** (see below) is an explicit `--confirm` opt-in that
+> *deliberately* starts Chrome, uses the real network (real sites), and holds a transient isolated
+> daemon — governed by its own boundary, not these. The one rule both share: never touch the
+> operator's real browser, and never run inside `npm run check`.
+
 - Do not add a callable `browser_*` tool.
 - Do not run as part of `npm run check` unless the mode remains static-only.
 - Do not start Chrome, connect to a user browser, or mutate existing browser sessions by default.
@@ -59,6 +65,31 @@ If a later phase adds browser automation, it must be opt-in and separate from st
 - Preserve tool-call traces and artifact paths in result records.
 - Record first wrong tool choice, recovery, artifact sufficiency, and scoped follow-up discipline.
 - Treat scanner bridge usage as follow-up only after scoped request evidence exists.
+
+## Blind-agent discovery layer (opt-in, real-site)
+
+This realizes the browser-execution phase above as the project's standing real-agent **discovery**
+loop (complementing the deterministic runner's regression role). Driven by the `pi-browser-blind-eval`
+skill; scripts: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`; prompt `blind-agent-prompt.md`;
+targets `blind-tasks-realsite.md`; backlog `blind-findings.md`. Its boundary:
+
+- **Explicit opt-in.** `launch-blind.mjs` refuses to run without `--confirm` (it starts a browser).
+- **Isolated daemon, never the operator's browser.** A dedicated `PI_BROWSER_DAEMON_STATE_DIR` + a
+  forced bridge port (18801+, above the default 18765–18784) gives the stage its own user-local
+  daemon. The blind agent drives it ONLY via `pb-blind.mjs`, which pins it to that state dir — it
+  cannot see or act on the operator's real browser. Verify isolation (stage daemon lists only its own
+  tab) before fanning out.
+- **Real sites, real network — by design.** Unlike the deterministic runner, blind eval targets REAL
+  websites (the deterministic runner stays fixture-only). Targets must be **mainland-China reachable**
+  (the agent's network); pre-flight with `observe` (reject `chrome-error://`). Real-site actions are
+  **READ-ONLY** (no login/submit/post).
+- **Transient, torn down.** The stage holds a daemon + browser only for the run; `teardown-blind.mjs`
+  (`daemon stop` on the isolated state dir + hard-kill pids + remove temp) must always run. Temp lives
+  under `.pi/temp-profiles/` and is never packaged.
+- **Skill-guided, implementation-blind.** The agent reads `skills/pi-browser-tools/SKILL.md` as its
+  guide; it must NOT read tool implementation source. Findings are triaged `fixable | WAI | reliability`
+  (+ skill↔tool fidelity); execution-authoring friction is WAI by project decision.
+- **Not in `npm run check`.** It is operator-/cron-driven, never part of the default check.
 
 ## Static contract requirements
 

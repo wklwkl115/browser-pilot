@@ -2,6 +2,20 @@
 
 These evals measure agent-computer-interface quality for `pi-browser-tools` workflows. They are not callable tools and do not change runtime behavior.
 
+## Two layers
+
+1. **Deterministic regression runner** — `runner.mjs` (`npm run eval:browser-workflows -- --fixture-server`).
+   Replays human-authored tool sequences against the **local fixtures** below and asserts. Guards
+   against regressions; cheap and reproducible. Boundary frozen in `future-runner.md`.
+2. **Blind-agent discovery loop** — the standing real-agent friction finder (mature-maintenance
+   optimization driver). A blind subagent reads the `pi-browser-tools` skill and works a task on a
+   **real, mainland-China-reachable website** (READ-ONLY), then reports friction. Run via the
+   `pi-browser-blind-eval` skill. Files: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`
+   (`npm run eval:blind:launch -- --confirm --url <site>` / `npm run eval:blind:teardown`),
+   `blind-agent-prompt.md` (prompt), `blind-tasks-realsite.md` (targets), `blind-findings.md` (rolling
+   triaged backlog). Boundary in `future-runner.md` → "Blind-agent discovery layer". The spec files
+   below are the deterministic layer's; the blind layer uses real sites, not these fixtures.
+
 ## Eval format
 
 Each eval should define:

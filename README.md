@@ -168,6 +168,8 @@ npm run smoke:browser:debugger-evidence
 npm run smoke:browser:transfer
 npm run eval:browser-workflows -- --fixture-server
 npm run eval:browser-workflows -- --fixture-server --eval 01-readable-content-artifact
+npm run eval:blind:launch -- --confirm --url https://linux.do/   # 盲 agent 真站 eval 舞台（隔离）
+npm run eval:blind:teardown                                      # 收掉舞台
 ```
 
 `build:bridge` 现在从 `bridge_src/service-worker.ts` 真实 ESM entry 生成完整 service worker bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。`dist/build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false`、`foundationImported:true`、`commandImported:true`、`startupImported:true`，以及 metadata-only 模块清单字段。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
@@ -200,7 +202,9 @@ npm run eval:browser-workflows -- --fixture-server --eval 01-readable-content-ar
 
 `npm run smoke:browser:isolated` 会复制临时扩展目录、patch dist bridge 端口、启动独占 Chrome profile，并写入 `.pi/browser-artifacts/smoke-browser-isolated-results.json`；用于本地常驻 agent 占用 18765 时的 runtime 验证，不修改用户当前扩展目录。
 
-`npm run eval:browser-workflows -- --fixture-server` 是显式 opt-in 的 ACI workflow eval runner：启动 `127.0.0.1` ephemeral fixture server、独占临时扩展目录和 isolated browser profile，默认运行 manifest 全量 eval（`01`-`27` 与 `30`），并把 `*.result.json` 与 `browser-workflow-eval-summary.json` 写到 `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`。不带 `--fixture-server` 会 fail closed；默认不跑 scanner/OAST/sqlmap/nuclei，不访问外部网络。
+`npm run eval:browser-workflows -- --fixture-server` 是显式 opt-in 的 ACI workflow eval runner：启动 `127.0.0.1` ephemeral fixture server、独占临时扩展目录和 isolated browser profile，默认运行 manifest 全量 eval（`01`-`27` 与 `30`），并把 `*.result.json` 与 `browser-workflow-eval-summary.json` 写到 `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`。不带 `--fixture-server` 会 fail closed；默认不跑 scanner/OAST/sqlmap/nuclei，不访问外部网络。这是 eval 的**确定性回归层**（人手写序列、防回归）。
+
+`npm run eval:blind:launch -- --confirm --url <site>` 启动 eval 的**盲 agent 发现层**——成熟维护期的真 agent 优化驱动。它用独立 `PI_BROWSER_DAEMON_STATE_DIR` + 强制 bridge 端口（18801+，避开默认 18765–18784）起一个与用户日常浏览器**完全隔离**的舞台，写 `.pi/browser-artifacts/eval-blind/stage.json`。盲 subagent 经 `pb-blind.mjs` 包装器（物理锁死该隔离舞台）驱动工具：**先读 `pi-browser-tools` skill**、在**真实、中国大陆可达的网站**上**只读**完成任务、产出 command-log + 三分类摩擦报告（`fixable | WAI | reliability`）。流程由 `pi-browser-blind-eval` skill 编排，可 cron 定时；`npm run eval:blind:teardown` 收掉舞台（`daemon stop` + 按 pid 硬杀 + 清临时目录）。不带 `--confirm` 拒启；不属于 `npm run check`。边界见 `evals/browser-workflows/future-runner.md`。
 
 `npm run smoke:browser:scan-summary` 使用独占临时扩展目录和本地 `scan-high-entropy.html` fixture，验证 `browser_observe mode=scan` 的 high-entropy summary、`artifact_hints` 精确 `jsonPath` 后续动作、artifact 可读性，以及执行后 `text_signals` 状态变化；结果写 `.pi/browser-artifacts/smoke-browser-scan-summary-results.json`，对应 scan artifact 写 `.pi/browser-artifacts/scan-summary-smoke-scan-<ts>.json`。
 

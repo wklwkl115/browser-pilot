@@ -112,6 +112,19 @@ npm run smoke:browser:scan-summary   # scan summary smoke
 npm run smoke:browser:transfer       # download/upload smoke
 ```
 
+### Evals (agent-computer-interface quality)
+```bash
+npm run eval:browser-workflows -- --fixture-server   # deterministic regression layer (local fixtures)
+npm run eval:blind:launch -- --confirm --url <site>  # blind real-agent discovery layer (isolated, real site)
+npm run eval:blind:teardown                          # tear the blind stage down
+```
+Two layers: the **deterministic runner** replays human-authored sequences against local fixtures
+(regression); the **blind-agent discovery loop** (mature-maintenance optimization driver) has a
+skill-guided, implementation-blind subagent work a READ-ONLY task on a real, mainland-China-reachable
+site and report triaged friction. The blind loop is operator-/cron-driven via the
+`pi-browser-blind-eval` skill — **not** part of `npm run check`. See
+`evals/browser-workflows/future-runner.md` (boundaries) and `evals/browser-workflows/blind-findings.md`.
+
 ### Docs & Protocol
 ```bash
 npm run docs:generate         # regenerate tool contract docs
@@ -128,6 +141,8 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `bridge/native_command_schema.json` — native command protocol source of truth
 - `tests/contracts/` — contract tests (protocol, tools, boundaries)
 - `tests/smoke/` — browser smoke tests
+- `evals/browser-workflows/` — ACI evals: deterministic `runner.mjs` + blind-agent discovery layer (`launch-blind.mjs`/`pb-blind.mjs`/`teardown-blind.mjs`, `blind-tasks-realsite.md`, `blind-findings.md`)
+- `skills/pi-browser-blind-eval/` — operator/cron procedure for the standing blind real-agent eval loop
 - `docs/generated/` — auto-generated protocol and tool contract docs
 - `docs/cli-skill-frontend-migration-plan.md` — active frontend migration execution contract
 

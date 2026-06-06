@@ -66,6 +66,8 @@
     "check:errors": "tsx tests/contracts/tools/check-errors.mjs",
     "check:eval-workflows": "node tests/contracts/tools/check-eval-workflows.mjs",
     "eval:browser-workflows": "tsx evals/browser-workflows/runner.mjs",
+    "eval:blind:launch": "node evals/browser-workflows/launch-blind.mjs",
+    "eval:blind:teardown": "node evals/browser-workflows/teardown-blind.mjs",
     "check:browser-workflow-results": "node tests/contracts/tools/check-browser-workflow-results.mjs",
     "check:browser-commands": "node tests/contracts/runtime/check-browser-commands.mjs",
     "check:jshookmcp-closure": "node tests/contracts/tools/check-jshookmcp-closure.mjs",
