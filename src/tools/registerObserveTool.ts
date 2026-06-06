@@ -55,7 +55,9 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 			includeLinks: Type.Optional(Type.Boolean({ description: "content mode only: include Markdown links; default true" })),
 			maxNodes: Type.Optional(Type.Number({ description: "scan/text modes: maximum DOM nodes visited" })),
 			includeIframes: Type.Optional(Type.Boolean({ description: "scan/text modes: include same-origin iframe content" })),
-			baseline: Type.Optional(Type.Union([Type.Array(Type.Object({}, { additionalProperties: true })), Type.Object({}, { additionalProperties: true })], { description: "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff" })),
+			baseline: Type.Optional(Type.Union([Type.Array(Type.Object({}, { additionalProperties: true })), Type.Object({}, { additionalProperties: true })], { description: "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff. CLI-friendlier: use --baseline-snapshot-id or --baseline-path instead of inlining a large prior envelope." })),
+			baselineSnapshotId: Type.Optional(Type.String({ description: "scan mode only: snapshotId from a prior browser_observe scan; the daemon resolves it to that scan's saved entities as the baseline. CLI-friendly by-reference alternative to passing the full prior envelope inline as `baseline`." })),
+			baselinePath: Type.Optional(Type.String({ description: "scan mode only: filesystem path to a prior scan's saved artifact (from a previous browser_observe --output-path); used as the baseline. No-state by-reference alternative to inlining `baseline`." })),
 			actionRef: Type.Optional(Type.String({ description: "scan mode only (R3.x P1): pi-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted." })),
 			htmlMode: Type.Optional(Type.Union([Type.Literal("fragment"), Type.Literal("raw"), Type.Literal("text"), Type.Literal("inner"), Type.Literal("outer")], { description: "html mode only: fragment | raw | text | inner | outer" })),
 			params: Type.Optional(NativeCommandParamsSchema),
@@ -66,6 +68,17 @@ export function registerObserveTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const toolCtx = ctx ?? {};
 				const server = await ensureStarted();
 				const observeParams = params as ObserveToolParams;
+				// M1: CLI-friendly by-reference baseline — map the scalar --baseline-snapshot-id / --baseline-path
+				// flags onto the existing baseline resolution (daemon resolves snapshotId from its observation
+				// store; path is read as a saved artifact). Avoids inlining a multi-hundred-KB prior envelope on
+				// the CLI (hit the OS argv limit — blind-eval M1). Explicit `baseline` still wins if provided.
+				if (observeParams.baseline === undefined) {
+					const raw = params as Record<string, unknown>;
+					const baselinePath = typeof raw.baselinePath === "string" ? raw.baselinePath.trim() : "";
+					const baselineSnapshotId = typeof raw.baselineSnapshotId === "string" ? raw.baselineSnapshotId.trim() : "";
+					if (baselinePath) observeParams.baseline = { saved: { path: baselinePath } };
+					else if (baselineSnapshotId) observeParams.baseline = { snapshotId: baselineSnapshotId };
+				}
 				const mode = normalizeObserveMode(observeParams.mode);
 				validateObserveParams(mode, observeParams);
 				if (mode === "scan" || mode === "text" || mode === "tabs") return await runScanObservation(server, observeParams, toolCtx, mode, _onUpdate);

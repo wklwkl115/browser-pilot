@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { buildFlagSpecs, parseArgs } from "../../../cli/flags.ts";
 import { renderResult, EXIT } from "../../../cli/render.ts";
 import { nativeActionParamsHelp } from "../../../cli/index.ts";
+import { buildCliCommands } from "../../../cli/registry.ts";
 
 const specs = buildFlagSpecs({
 	type: "object",
@@ -64,6 +65,14 @@ test("F4: nativeActionParamsHelp surfaces per-action required --params keys from
 	assert.match(frame, /evaluate\s+requires frameId, expression/, "frame.evaluate must surface both required keys");
 	// Honest + general: a non-action tool (no per-action --params) yields nothing; nothing fabricated.
 	assert.deepEqual(nativeActionParamsHelp("browser_observe"), [], "non-action tools have no per-action params block");
+});
+
+test("M1: observe exposes by-reference baseline flags (CLI-discoverable, no huge inline envelope)", () => {
+	const observe = buildCliCommands().find((c) => c.subcommand === "observe");
+	assert.ok(observe, "observe command must exist");
+	const flags = buildFlagSpecs(observe.parameters).map((s) => s.flag);
+	assert.ok(flags.includes("--baseline-snapshot-id"), "observe must expose --baseline-snapshot-id (daemon-resolved by reference)");
+	assert.ok(flags.includes("--baseline-path"), "observe must expose --baseline-path (saved-artifact by reference)");
 });
 
 test("renderResult maps mode + terminate to exit codes", () => {

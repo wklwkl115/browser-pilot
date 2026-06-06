@@ -233,7 +233,10 @@ const network = summarizeNetworkData({ tabId: 7, sessionId: "s", items: [
 	{ requestId: "2", url: "https://api.example.test/fail", method: "POST", status: 500, type: "Fetch", errorText: "boom" },
 ] });
 assert.deepEqual(Object.keys(network).sort(), ["active", "artifact_hints", "bodyAvailability", "bodyBytes", "bodyRef", "bodyTruncated", "bodyUnavailableReason", "condition", "entryCount", "event", "failed", "hostCounts", "methodCounts", "recorder", "samples", "sessionId", "statusCounts", "tabId", "total", "typeCounts", "waitId"].sort(), "check-summaries network.keys: summary fields must stay stable");
-assert.equal(network.artifact_hints.preferredReads[0].jsonPath, "items", "check-summaries network.artifactHints: entries hint must point at the actual container key (items)");
+// N1: artifact-read hints must be data-rooted (resolve against the SAVED bridge-result artifact whose
+// root is {id,tabId,data,…}), matching scan's `data.content`. Previously emitted bare `items` → notFound.
+assert.equal(network.artifact_hints.preferredReads[0].jsonPath, "data.items", "check-summaries network.artifactHints (N1): entries hint must be data-rooted (data.items) to resolve in the saved artifact");
+assert.equal(network.artifact_hints.preferredReads.every((r) => typeof r.jsonPath !== "string" || r.jsonPath.startsWith("data.")), true, "check-summaries network.artifactHints (N1): every network read hint must be data-rooted");
 assert.equal(network.entryCount, 2);
 assert.equal(network.failed.count, 1);
 assert.deepEqual(network.failed.columns.slice(0, 4), ["requestId", "method", "status", "type"]);
