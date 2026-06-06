@@ -397,7 +397,9 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 	const actionEntityByPath = new Map(scanEntities.entities.map((entity) => [String(entity.hints?.jsonPath || ""), entity]));
 	const primaryActionsWithEntities = primaryActions.map((action) => ({ ...action, ...(actionEntityByPath.get(String(action.jsonPath || "")) ? { entity: actionEntityByPath.get(String(action.jsonPath || "")) } : {}) }));
 	const focus: Record<string, unknown> = {
-		top_layer: item.top_layer,
+		// Cloned so it is not the same reference as summary.top_layer (shared refs render as "[Circular]"
+		// after redaction — blind-eval F2). null/undefined clone through unchanged.
+		top_layer: structuredClone(item.top_layer),
 		primary_actions: primaryActionsWithEntities,
 		forms: summarizeForms(actionables, 2),
 		lists: summarizeLists(listHints, limits.lists),
@@ -458,7 +460,9 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 			{ key: "hitOk", value: (node) => node.hitOk },
 		], limits.actionRows),
 		interactive: lines.filter((line) => /^<(a|button|input|textarea|select|option)\b/i.test(line)).slice(0, limits.interactive),
-		headings,
+		// Distinct array from focus.headings: a shared reference makes redactSensitiveValue collapse the
+		// second occurrence to "[Circular]" in the model-facing envelope (blind-eval F2).
+		headings: [...headings],
 		textPreview: limits.textPreviewChars > 0 ? textPreview(content, limits.textPreviewChars) : "",
 		...(omitted.length ? { summaryOmitted: omitted } : {}),
 	};

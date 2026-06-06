@@ -63,6 +63,11 @@ export type DistilledEnvelope = {
 
 const SUMMARY_MAX_CHARS = 12_000;
 const SUMMARY_BUDGET_CHARS = 8_000;
+// Last-resort orientation snippet cap when the summary overflows even after compaction and falls to the
+// scalar-identity fallback. The real page model lives in the lifted top-level fields (entities/gist/
+// outline/diff/treeDiff/causal) + the saved artifact, so this preview only needs to ORIENT, not carry
+// data — capping it small kills the multi-KB re-dump blob that drowned the answer (blind-eval F2).
+const PREVIEW_FALLBACK_CHARS = 800;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
 
 type DistillBaseOptions = {
@@ -175,7 +180,7 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 			keys: Object.keys(summary).slice(0, 40),
 		};
 	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
-	let previewChars = Math.max(0, Math.min(previewSource.length, budget));
+	let previewChars = Math.max(0, Math.min(previewSource.length, budget, PREVIEW_FALLBACK_CHARS));
 	while (previewChars >= 0) {
 		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
 		if (stableJson(candidate).length <= budget) return candidate;

@@ -69,6 +69,14 @@ try {
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.actionables") || String(item).includes("click(pi-ref://") || String(item).includes("read(pi-ref://")), "scan envelope nextActions must retain actionables targeted follow-up");
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.content") || String(item).includes("read_saved_artifact")), "scan envelope nextActions must retain content targeted follow-up");
 	assert(Array.isArray(envelope.entities), "scan envelope must surface entity projections at envelope level in P8");
+	// F2: the scan summarizer duplicated `headings`/`top_layer` into both summary top-level AND focus by
+	// SHARED reference, so redactSensitiveValue collapsed the second occurrence to a "[Circular]" string
+	// — unreadable noise. They are now distinct copies; assert none renders as the placeholder.
+	// (Entity objects are still intentionally shared across primary_actions[].entity / primary_entities /
+	// envelope.entities — that de-dup is by design and contracted, so it is NOT asserted away here.)
+	for (const value of [envelope.summary.headings, envelope.summary.top_layer, envelope.summary.focus?.headings, envelope.summary.focus?.top_layer]) {
+		assert(value !== "[Circular]", "scan summary headings/top_layer must be real values, never a [Circular] placeholder");
+	}
 } finally {
 	await rm(tmp, { recursive: true, force: true });
 }

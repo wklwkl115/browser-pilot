@@ -568,9 +568,10 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					// unread; their ENGINES keep running internally: treeDiff/snapshotProjection use templating,
 					// referenced_entities uses inference.)
 					...(Object.keys(relSummary.summary).length || relSummary.highlights.length ? { relations: relSummary } : {}),
-					...(envelopeDiff ? { diff: envelopeDiff } : {}),
-					...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
-					snapshotProjection,
+					// diff/treeDiff/snapshotProjection live ONLY at summary top-level (above) and are lifted to
+					// envelope.* by responseEnvelope. Duplicating them here referenced the SAME object, so
+					// redactSensitiveValue collapsed the second occurrence to "[Circular]" and doubled bytes
+					// (blind-eval F2). The envelope lift reads summary top-level first, so focus needs neither.
 					referenced_entities: referencedEntities,
 					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
 					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),

@@ -388,4 +388,14 @@ assert.equal(correlationEnvelope.target.selectionVersionAtDispatch, 7, "check-su
 assert.equal(correlationEnvelope.target.selectionVersionAtResolve, 8, "check-summaries envelope.target.selectionResolve: selectionVersionAtResolve must be promoted to target metadata");
 assert.equal(correlationEnvelope.diagnostics.sourceMode, "scan", "check-summaries envelope.diagnostics.sourceMode: sourceMode must be diagnosable");
 
+// F2: when a summary overflows the budget even after compaction and falls to the scalar-identity
+// fallback, the last-resort `preview` must stay a small ORIENTATION snippet (the real model lives in
+// the lifted top-level fields + artifact) — not the multi-KB re-dump blob that "drowned the answer".
+const fatSummary = { url: "https://x.test", title: "T", ...Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`field_${i}`, i])) };
+const overflow = parseToolText(await distilledJsonResult({ data: {} }, { toolName: "browser_observe", command: "scan", detailLevel: "summary", maxChars: 50_000, fallbackName: "scan-overflow.json", distill: () => fatSummary }));
+if (typeof overflow.summary?.preview === "string") {
+	assert.ok(overflow.summary.preview.length <= 800, `check-summaries F2.previewCap: overflow fallback preview must stay a bounded orientation snippet (≤800), got ${overflow.summary.preview.length}`);
+}
+assert.ok(!JSON.stringify(overflow).includes("[Circular]"), "check-summaries F2.noCircular: budget-fallback envelope must not emit [Circular] placeholders");
+
 console.log("summary contract ok");
