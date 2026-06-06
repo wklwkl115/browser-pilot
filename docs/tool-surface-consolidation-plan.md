@@ -1,6 +1,6 @@
 # Browser Tool Surface Consolidation Plan
 
-> Status: planning contract. This document defines the accepted direction for the next tool-surface workstream. It does not describe currently callable tools until implementation lands and generated docs are updated.
+> Status: COMPLETE — TODO 244-249 have all landed (observation-layer consolidation, execute/command split, recovery hints, bounded artifact multi-search, tool-level progress, explicit snapshots/operation metadata, Web Security capability profiles; the 247 streaming phase 2 is intentionally deferred). Per-section Status notes are below; the currently callable tool surface is authoritative in the generated docs.
 
 ## Decision source
 

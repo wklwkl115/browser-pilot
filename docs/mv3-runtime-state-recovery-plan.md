@@ -1,6 +1,6 @@
 # MV3 Runtime State Recovery Plan
 
-> Status: active planning contract. This document freezes the implementation plan for service-worker runtime state recovery. It does not add a public `browser_*` tool and does not revive orchestration / target resolver / desired-state coordination.
+> Status: COMPLETE — archived. Service-worker runtime state recovery is implemented (`bridge_src/service_worker/state_store.ts`; `RUNTIME_STATE_RECOVERED` / `_WITH_HISTORY_LOSS` / `_LOST` error codes in `src/protocol/nativeErrorCodes.ts`) and moved out of the active queue (see `CURRENT.md` / `ARCHIVE.md`). It did not add a public `browser_*` tool and did not revive orchestration / target resolver / desired-state coordination.
 
 ## Goal
 

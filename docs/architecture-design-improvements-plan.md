@@ -1,6 +1,6 @@
 # 架构与工程化设计改进执行合同
 
-> Status: active planning contract.
+> Status: COMPLETE — archived. 7 个工作流已交付（distiller 注册化 `src/tools/summaries/registerBuiltinDistillers.ts`、lease/heartbeat 硬化、`src/driver/BrowserWaitSupervisor.ts`、`lefthook.yml`、`tsconfig.base.json`、`docs/driver-architecture.md` 等，见 CHANGELOG）；工程化收口已归档（见 `CURRENT.md`）。
 > 本文取代 `.plan/architecture-design-improvements.md` 作为唯一执行合同；`.plan/...` 仅保留为讨论输入，不再直接作为执行源。
 
 ## 目标
@@ -84,7 +84,7 @@
    - `registerBrowserTools()` 显式调用 `registerBuiltinDistillers()`
    - `resultMiddleware.ts` 内部增加一次性 `ensureBuiltinDistillersRegistered()`，保证 direct-import contracts 也能拿到完整注册
 6. 兼容 `RunBrowserToolSpec.distill`：调用点显式 `distill` 优先；central fallback 只负责没有调用点定制摘要的路径
-7. 新增 contract：`tests/contracts/check-distiller-coverage.mjs`
+7. 新增 contract：`tests/contracts/drift/check-distiller-coverage.mjs`
    - 只校验“当前依赖 central fallback 的工具/命令”全部被注册表覆盖
    - 显式调用点级 `distill` 路径不强制进入 fallback 白名单
 8. 删除 `resultMiddleware.ts` 中现有硬编码 `if` 链
@@ -95,7 +95,7 @@
 - `src/tools/summaries/index.ts`
 - `src/tools/summaries/registerBuiltinDistillers.ts`（新增）
 - `src/tools/registerTools.ts`
-- `tests/contracts/check-distiller-coverage.mjs`（新增）
+- `tests/contracts/drift/check-distiller-coverage.mjs`（新增）
 - `package.json`（如需纳入现有检查脚本）
 
 验证：

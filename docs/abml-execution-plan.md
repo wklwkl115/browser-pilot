@@ -2,7 +2,7 @@
 
 *ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
 
-> 状态: ACTIVE TODO。  
+> 状态: HISTORICAL — ABML 已作为 internal substrate 完成（R1/R2/R3/R3.x + 机制臂 M1/M2a/M2b/M2c，均有 `check:abml-*` contract 锁定）。本文件不再是当前执行队列，仅作历史实施合同保留（见 `CURRENT.md` / `TODO.md`）。  
 > 设计源: `docs/unified-browser-modeling-language-plan.md`。  
 > P1 规格源: `docs/abml-p1-spec.md`。  
 > 约束: 已完成设计评审；本文件只承载具体实施任务、文件映射、phase gates 和验证命令。未通过前一 phase gate 不得进入后一 phase runtime 改动。
@@ -283,16 +283,14 @@
 
 ---
 
-## 12. 当前可执行 TODO 队列
+## 12. 历史 TODO 队列（已收口，非当前执行队列）
 
-优先级按顺序执行，不跳 phase：
+> HISTORICAL：以下为 ABML 落地的原始 phase 执行顺序。ABML 已作为 internal substrate 完成（R1/R2/R3/R3.x + 机制臂 M1/M2a/M2b/M2c，见 `CURRENT.md` 与各 `check:abml-*` contract）；本节仅作历史记录，不再作为当前 TODO。
 
-1. [ ] P1.1–P1.6：落地 ABML 纯函数模型与单测。
-2. [ ] P2.1–P2.5：ref registry 并轨。
-3. [ ] P3.1–P3.5：DOM Entity/ref mint。
-4. [ ] P4.1–P4.7：核心动词/actionability。
-5. [ ] P5/P5S：AX 与流平面。
-6. [ ] P6/P7：结构盲区与视觉地板。
-7. [ ] P8/P9：envelope 与 surface 收敛。
-
-当前下一步只允许执行 P1；P2+ 需 P1 gate 通过后再改 runtime。
+1. P1.1–P1.6：ABML 纯函数模型与单测。
+2. P2.1–P2.5：ref registry 并轨。
+3. P3.1–P3.5：DOM Entity/ref mint。
+4. P4.1–P4.7：核心动词/actionability。
+5. P5/P5S：AX 与流平面。
+6. P6/P7：结构盲区与视觉地板。
+7. P8/P9：envelope 与 surface 收敛。

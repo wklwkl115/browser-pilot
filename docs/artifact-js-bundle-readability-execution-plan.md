@@ -1,6 +1,6 @@
 # Artifact + JS Bundle Readability Execution Plan
 
-> **Status: ACTIVE — opened 2026-06-04.** 用户显式切换到浏览器工具工程优化。目标是修复真实使用中暴露的通用短板：压缩 JS / 大 artifact 难读、source map 后续检索链不顺、JS AST 对大包不友好、hook 安装状态偶发不顺。不得过拟合单个 CTF 站点。
+> **Status: COMPLETE — opened 2026-06-04.** 全部 phase（P0–P5）已完成（见下方各节 Status 与收尾 checklist，含最终 `npm run check`）。目标是修复真实使用中暴露的通用短板：压缩 JS / 大 artifact 难读、source map 后续检索链不顺、JS AST 对大包不友好、hook 安装状态偶发不顺。不得过拟合单个 CTF 站点。
 
 ## Decision source
 

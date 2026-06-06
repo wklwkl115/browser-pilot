@@ -1,6 +1,6 @@
 # Browser Memory / Learning Mechanism v1 执行合同
 
-> Status: execution contract. 本文取代 `.plan/browser-memory-learning-mechanism.md` 作为实现 source of truth；`.plan/...` 仅保留为讨论记录。
+> Status: COMPLETE — `browser_memory` v1 已 ship（`src/tools/registerMemoryTool.ts`，已在 `src/tools/toolRegistry.ts` 注册；contracts `check:memory-autosurface` / `check:memory-lifecycle`，smoke `smoke:browser:memory`）。本文取代 `.plan/browser-memory-learning-mechanism.md` 作为实现 source of truth；`.plan/...` 仅保留为讨论记录。注：下方 W2/W3 实施步骤中引用的 `mcp/*` 文件与 `check:mcp-*` 验收命令已随 MCP shell（2026-06-03）移除而作废。
 
 ## 目标
 

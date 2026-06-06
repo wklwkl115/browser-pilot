@@ -2,7 +2,7 @@
 
 *ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
 
-> Status: planning contract, **core feasibility verified by offline spike**.
+> Status: living perception roadmap — R1/R2/R3/R3.x + 机制臂 M1/M2a/M2b/M2c are **COMPLETE and shipped** (see the per-phase records below and `CURRENT.md`); the Mid/Far items remain forward-looking and unimplemented.
 > Establishes the first principle for what the browser tools return to an agent, a
 > **generality principle** (ARIA full-spectrum as the design template — not any one
 > page type), and a sequenced implementation. Does not describe currently shipping
@@ -323,7 +323,7 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
 - R2 **alert-region** also consumes the R3 diff: a live region that appeared, or whose accessible
   name changed, is flagged fresh post-action feedback (evidence `fresh: appeared|updated`),
   preferred over a static region. Live-verified end-to-end by `npm run smoke:browser:abml-inference`
-  (fixture `abml-inference-postaction.html`).
+  (fixture `abml-inference-postaction.html`; that smoke was later removed with the 2026-06-05 `envelope.inference` refactor — inference regression is now covered by `check:abml-inference`).
 - Contract: `check:abml-diff`; schema: `EntityDiffSchema`.
 
 ### Phase R3.x — Perception-source expansion (remaining independent sources)
