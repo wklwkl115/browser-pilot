@@ -665,7 +665,10 @@ const schema = {
     "hook.install_targets": {
       "domain": "hook",
       "tabScoped": true,
-      "accessMode": "write"
+      "accessMode": "write",
+      "required": [
+        "targets"
+      ]
     }
   },
   "errorCodes": {

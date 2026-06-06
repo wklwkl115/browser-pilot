@@ -243,6 +243,9 @@ export const nativeToolMetadata = {
           "aliases": [
             "installTargets",
             "targetInstall"
+          ],
+          "required": [
+            "targets"
           ]
         },
         {

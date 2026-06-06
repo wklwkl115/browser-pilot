@@ -1,5 +1,12 @@
 # Changelog
 
+- 修复 **E1 + H3 + 两个 minor（2026-06-06，盲 eval R7 换能力面 evidence/截图/hook 探索 + 真站验证）**：
+  - **E1**：`browser_evidence` artifact hint 漏 `data.` 前缀（`sources`→`data.sources`）——与 N1 同类、不同工具。修 `summaries/evidence.ts`，回归 `check-summaries`。R7 类审计确认：bridge-wrapped 工具(scan/network/evidence/hook)需 data-rooted（已全对）；web-security 工具(crawl/recon/fuzz/domFlow) artifact 是 flat，裸路径正确（domFlow 自检 wrapped）——**不动，避免过拟合**。
+  - **H3**：`browser_hook collect` 事件被埋——collect 落到 `domFlowDistiller` 的 generic 分支，events 折叠成 keyCount stub、nextActions 给 `operation.operationId`。修：新 `summaries/hook.ts` `summarizeHookCollectData`（event 类型计数 + seq/type/detail 紧凑样本 + data-rooted `data.events` hint），由新 `hookToolDistiller` 路由 `hook.collect`。回归 `check-summaries`。真站验证：eventTypes/total/samples 内联 + `data.events` hint。
+  - **minor 1**：screenshot 缺宽高——`registerScreenshotTool` 现从 data URL 解码 PNG IHDR / JPEG SOF 得 width/height 进 summary（解不出则省略不伪造）。单元测试 `tests/unit/tools/screenshot-dimensions.test.ts`。真站：`data.width:2058,height:1514`。
+  - **minor 2**：`hook installTargets` 的 `--params {targets}` 无文档——确认 `hook.install_targets` 无 targets 即报错(`hook.ts:137`)，故 `native_command_schema.json` 标 `required:["targets"]`，F4 per-action help 现显示 `installTargets requires targets`。
+  全量 check 绿，unit 519/0，token-economy 0.06，docs/protocol 重生成。同 `blind-findings.md`。
+
 - 修复 **N1 + M1（2026-06-06，盲 eval R6 换能力面 network/causal 探索 + 真站验证）**，并关闭 **M2**（harness 产物）：
   - **N1**：network 结果 artifact-read hint 漏 `data.` 前缀——`summaries/network.ts` `entriesContainerPath` 发 `items`（相对 bridgeResult 的 `.data`），但 `read_saved_artifact jsonPath=…` 是对 **saved artifact**（root 是整个 bridgeResult `{id,tabId,data,…}`）解析的，故 hint 指向不存在的 `items[…]`→notFound（scan 早已正确用 `data.content`）。修：路径加 `data.` 前缀。回归 `check-summaries`（network hint 必须 data-rooted）。真站验证：hint 现为 `data.items[…]`、一次解析成功、且带 H2 的 `mode=json`。
   - **M1**：`browser_observe` 的 baseline（treeDiff/diff/causal）经 CLI 按引用不可达——`--baseline` 只收内联 Array/Object（完整 prior envelope，几十~几百 KB）→ CLI 超 argv（ENAMETOOLONG）；bare snapshotId 被 schema 拒（与 skill 矛盾）。daemon 其实已能解析带 `{snapshotId}`/`{saved:{path}}` 的 baseline 对象，但无文档、JSON-on-CLI 难用。修：加两个 CLI 标量 flag `--baseline-snapshot-id <id>`、`--baseline-path <file>`，薄映射到现有解析，零 daemon 改动；skill 改为"按引用传 baseline、勿内联"。回归 `flags-render.test.ts`（observe 暴露两 flag）。真站验证：`--baseline-snapshot-id` 导航后产出 `diff`+`treeDiff`(74 appeared/354 disappeared)，causal 在（因 baseline 早于 network start 而正确 unavailable）。

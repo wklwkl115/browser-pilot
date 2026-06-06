@@ -14,6 +14,7 @@ import {
 	summarizeFuzzPathsData,
 	summarizeFuzzVhostsData,
 	summarizeGenericValue,
+	summarizeHookCollectData,
 	summarizeHtmlSnapshot,
 	summarizeDomFlowData,
 	summarizeHttpReplayData,
@@ -302,6 +303,18 @@ assert.deepEqual(Object.keys(evidence).sort(), ["artifact_hints", "collected_at"
 assert.equal(evidence.artifact_hints.preferredReads[0].jsonPath, "data.sources", "check-summaries evidence.artifactHints: sources hint must be data-rooted (data.sources) to resolve in the saved artifact");
 assert.equal(evidence.source_count, 3);
 assert.equal(evidence.sources.hook_status.state, "INSTALLED", "check-summaries evidence.hook_status.state: hook state must stay visible in summary");
+
+// H3: browser_hook collect must surface event types/counts + a compact sample + a data-rooted hint,
+// instead of collapsing the events array to opaque {type,keyCount} stubs (blind-eval R7).
+const hookCollect = summarizeHookCollectData({ sessionId: "h", total: 3, dropped: 0, events: [
+	{ seq: 1, type: "console.log", args: ["hello", { a: 1 }] },
+	{ seq: 2, type: "storage.set", key: "k", value: "v", storage: "localStorage" },
+	{ seq: 3, type: "console.log", args: ["again"] },
+] });
+assert.equal(hookCollect.total, 3, "check-summaries hook.collect (H3): total must be surfaced");
+assert.equal(hookCollect.eventTypes.find((t) => t.key === "console.log")?.count, 2, "check-summaries hook.collect (H3): event-type counts must be surfaced inline");
+assert.equal(hookCollect.samples.rows[1][2], "k", "check-summaries hook.collect (H3): per-event sample must carry a salient detail (storage key)");
+assert.equal(hookCollect.artifact_hints.preferredReads[0].jsonPath, "data.events", "check-summaries hook.collect (H3): events hint must be data-rooted (data.events)");
 assert.equal(evidence.sources.hook_status.session_id, "summary-session", "check-summaries evidence.hook_status.session: hook session id must stay visible in summary");
 assert.equal(evidence.sources.hook_status.installed_at, "2026-05-20T00:00:00.000Z", "check-summaries evidence.hook_status.installed: hook install time must stay visible in summary");
 assert.equal(evidence.sources.hook_status.dispatcher_version, "hook-v1", "check-summaries evidence.hook_status.dispatcher: dispatcher version must stay visible in summary");

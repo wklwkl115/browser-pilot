@@ -641,7 +641,10 @@ var __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDG
       "hook.install_targets": {
         "domain": "hook",
         "tabScoped": true,
-        "accessMode": "write"
+        "accessMode": "write",
+        "required": [
+          "targets"
+        ]
       }
     },
     "errorCodes": {

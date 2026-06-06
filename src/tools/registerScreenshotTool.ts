@@ -5,6 +5,32 @@ import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolPa
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
+// Decode pixel dimensions from a base64 image data URL so the screenshot summary can report
+// width/height — agents otherwise had to read the saved PNG out-of-band to confirm the capture
+// (blind-eval R7 minor). PNG (IHDR) + JPEG (SOF) covered; returns undefined rather than guessing.
+export function imageDimensions(dataUrl: string): { width: number; height: number } | undefined {
+	const comma = dataUrl.indexOf(",");
+	if (comma < 0) return undefined;
+	let buf: Buffer;
+	try { buf = Buffer.from(dataUrl.slice(comma + 1), "base64"); } catch { return undefined; }
+	if (buf.length < 24) return undefined;
+	if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+		return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+	}
+	if (buf[0] === 0xff && buf[1] === 0xd8) {
+		let off = 2;
+		while (off + 9 < buf.length) {
+			if (buf[off] !== 0xff) { off += 1; continue; }
+			const marker = buf[off + 1];
+			if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+				return { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
+			}
+			off += 2 + buf.readUInt16BE(off + 2);
+		}
+	}
+	return undefined;
+}
+
 export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
 		name: "browser_screenshot",
@@ -33,8 +59,13 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 					const actualFormat = typeof data?.format === "string" ? data.format.toLowerCase() : format;
 					const ext = actualFormat === "jpeg" ? "jpg" : actualFormat;
 					const outputPath = resolveArtifactPath(ctx, params.outputPath, `screenshot-${Date.now()}.${ext}`);
+					const dims = imageDimensions(screenshot);
 					saved = await saveDataUrl(screenshot, outputPath);
-					if (data) data.screenshot = `[saved to ${outputPath}]`;
+					if (data) {
+						data.screenshot = `[saved to ${outputPath}]`;
+						if (dims && data.width === undefined) data.width = dims.width;
+						if (dims && data.height === undefined) data.height = dims.height;
+					}
 				}
 				return inlineJsonToolResult({ ...result, data, saved }, { command: commandName, saved }, params, "browser_screenshot");
 			});

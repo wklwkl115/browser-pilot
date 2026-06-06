@@ -1,5 +1,5 @@
 import { registerCommandDistiller, registerDistillerDefinition, unwrapDistillData, type Distiller } from "../distillerRegistry.js";
-import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
+import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
 import { EvidenceSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, NetworkSummarySchema } from "./outputSchemas.js";
 
 const DOM_FLOW_COMMANDS = new Set(["hook.getNodeListeners", "hook.getListenerChain", "hook.getSinkHints"]);
@@ -8,6 +8,15 @@ let builtinDistillersRegistered = false;
 function domFlowDistiller(value: unknown, command?: string): Record<string, unknown> {
 	const cmd = String(command || "");
 	return DOM_FLOW_COMMANDS.has(cmd) ? summarizeDomFlowData(cmd, value) : summarizeGenericValue(value);
+}
+
+// The browser_hook tool distiller: dom-flow reads → domFlow; collect → its own events summarizer
+// (H3 — surface event types/counts/sample + a data.events hint instead of generic collapse); else generic.
+function hookToolDistiller(value: unknown, command?: string): Record<string, unknown> {
+	const cmd = String(command || "");
+	if (DOM_FLOW_COMMANDS.has(cmd)) return summarizeDomFlowData(cmd, value);
+	if (cmd === "hook.collect") return summarizeHookCollectData(unwrapDistillData(value));
+	return summarizeGenericValue(value);
 }
 
 const evidenceDistiller: Distiller = (value) => summarizeEvidenceData(unwrapDistillData(value));
@@ -34,7 +43,7 @@ export function registerBuiltinDistillers(): void {
 	registerDistillerDefinition({
 		toolName: "browser_hook",
 		summarySchema: HookDomFlowSummarySchema,
-		distill: domFlowDistiller,
+		distill: hookToolDistiller,
 	});
 	registerDistillerDefinition({
 		toolName: "browser_memory",
