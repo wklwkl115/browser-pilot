@@ -1329,7 +1329,7 @@ assert(toolSource.includes("A tabId is NOT stable"), "tab-scoped tools must warn
 assert(toolSource.includes("omit tabId to use the selected/active tab"), "tabId fallback warning missing from tool prompts");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
-const skill = read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md");
+const skill = read("skills/pi-browser-tools/SKILL.md");
 assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "pi-browser-tools skill must document explicit tabId automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "pi-browser-tools skill must document pick/observe flows");
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {

@@ -142,6 +142,6 @@ assert.equal(toolResultSource.includes("result: value"), false, "toolResult must
 assert.ok(read("src/tools/resultMiddleware.ts").includes("fitSummaryBudget"), "result middleware must apply deterministic summary budget allocation");
 assert.ok(read("src/tools/resultMiddleware.ts").includes("containsSensitiveEvidence") && read("src/tools/artifactReader.ts").includes("redactArtifactResult"), "artifact privacy governance must redact summaries and browser_artifact output by default");
 assert.ok(read("src/tools/summaries/common.ts").includes("summaryTable"), "summary modules must support columns+rows compact tables");
-assert.ok(read("D:/Pi/agent/skills/pi-browser-tools/SKILL.md").includes("detailLevel"), "pi-browser-tools skill must document detailLevel behavior");
+assert.ok(read("skills/pi-browser-tools/SKILL.md").includes("detailLevel"), "pi-browser-tools skill must document detailLevel behavior");
 
 console.log("token contract ok");

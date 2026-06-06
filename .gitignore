@@ -23,6 +23,7 @@ target/
 log
 nul
 stored.txt
+subagent-blind-round2/
 
 # nested export repo must never be used as a second source tree
 /.pi/public-export/

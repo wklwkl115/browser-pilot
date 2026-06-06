@@ -6,7 +6,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 - 安装、环境变量、浏览器扩展加载、reload、check/smoke、排障：见 `AI_INSTALL.md`。
 - `.pi/public-export/` 仅允许作为本地导出/归档产物，不能作为第二开发仓库或第二真源；当前唯一正式源码仓库是本目录。
-- Pi 正式使用场景、工具选择、输出风格、诊断约定：见全局 skill `D:/Pi/agent/skills/pi-browser-tools/SKILL.md`。
+- Pi 正式使用场景、工具选择、输出风格、诊断约定：见 `skills/pi-browser-tools/SKILL.md`。
 - 多步骤安全测试方法论：见 `docs/playbooks/README.md`；信号到工具路线映射见 `docs/reference/web-security-methodology-map.md`。
 - 本 README 只作为项目入口、工具清单和维护入口。
 
@@ -129,7 +129,7 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - 契约测试：`tests/contracts/`
 - 真实浏览器 smoke：`tests/smoke/`
 - 最终全量 smoke 结果：`.pi/browser-artifacts/final-smoke/results.json`
-- 全局 skill 验证：`PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/skills/pi-browser-tools`
+- Skill 验证：`PYTHONUTF8=1 python <pi-root>/skills/skill-creator/scripts/quick_validate.py skills/pi-browser-tools`
 - 维护者入口图：`docs/maintainer-map.md`
 - 生成器/build/check 脚本：`scripts/`
 - 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`

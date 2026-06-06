@@ -154,7 +154,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 
 ## Index
 
-- Playbooks: `D:/Pi/agent/extensions/pi-browser-tools/docs/playbooks/` — `first-pass-browser-triage` · `recon-and-discovery` · `request-capture-and-replay` · `sqli-verification` · `ssrf-oast` · `auth-session-jwt` · `evidence-and-reporting`
+- Playbooks: `docs/playbooks/` — `first-pass-browser-triage` · `recon-and-discovery` · `request-capture-and-replay` · `sqli-verification` · `ssrf-oast` · `auth-session-jwt` · `evidence-and-reporting`
 - Methodology map: `docs/reference/web-security-methodology-map.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
 - Install/runtime SOP: `AI_INSTALL.md` · CLI usage: `docs/cli.md`
