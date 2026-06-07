@@ -22,6 +22,7 @@ export type ArtifactReaderErrorCode =
 	| "ARTIFACT_SEARCH_REGEX_UNSAFE"
 	| "ARTIFACT_SEARCH_REGEX_INVALID"
 	| "ARTIFACT_MULTI_SEARCH_MODE_INVALID"
+	| "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE"
 	| "ARTIFACT_JSON_INVALID"
 	| "ARTIFACT_TOO_LARGE";
 
@@ -710,8 +711,22 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 	// Without this, --json-path was silently ignored and the full file was returned as text — agents
 	// following the nextActions `read_saved_artifact mode=json jsonPath=X` hint, or just guessing
 	// the flag, would get the whole file (blind-eval H2, n=2, bilibili+linux.do).
-	const modeParam = params.mode ?? ((params.jsonPath || (Array.isArray(params.pick) && params.pick.length)) ? "json" : undefined);
+	const wantsJson = !!(params.jsonPath || (Array.isArray(params.pick) && params.pick.length));
+	const hasQuery = typeof params.query === "string" && params.query.trim() !== "";
+	// G-round mirror of H2: `query` is a search-mode param. When it is given without --mode (and not as a
+	// targeted json read), promote to search mode instead of silently ignoring it and returning text from
+	// offset 0 (blind-eval R-G Friction 6: agent passed query expecting it to locate text, got the file head).
+	const modeParam = params.mode ?? (wantsJson ? "json" : hasQuery ? "search" : undefined);
 	const mode = normalizeArtifactMode(modeParam);
+	// `query` only does anything in search mode. Passing it alongside json/text/sample silently no-ops
+	// (Friction 6). Fail with factual remediation pointing at the two real ways to find/window text.
+	if (hasQuery && mode !== "search") {
+		throw new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "browser_artifact query is only used in mode=search; it is ignored in mode=" + mode, {
+			mode,
+			...(params.jsonPath ? { jsonPath: params.jsonPath } : {}),
+			remediation: "To find text across the artifact run mode=search (a plain, non-regex query windows even a single very long line via contextChars). To window a known value instead, read it with jsonPath + columnOffset/columnLimit.",
+		});
+	}
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
 	const redact = params.redact !== false;
 	if (mode !== "search" && (Array.isArray(params.paths) || params.root !== undefined || params.glob !== undefined)) {

@@ -125,6 +125,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ARTIFACT_MULTI_SEARCH_MODE_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_REQUIRED` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
+| `ARTIFACT_QUERY_REQUIRES_SEARCH_MODE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_SEARCH_QUERY_REQUIRED` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_SEARCH_REGEX_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_SEARCH_REGEX_UNSAFE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
