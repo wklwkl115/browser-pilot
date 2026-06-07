@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq, causalRequestsFiredCount, causalFiredHint } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -46,6 +46,25 @@ test("causal: caps at MAX_CAUSAL_REQUESTS and reports the true count", () => {
 	assert.ok(hasRequests(c));
 	assert.equal(c.requests.length, MAX_CAUSAL_REQUESTS);
 	assert.equal(c.requestCount, 20);
+});
+
+test("causal: fired count + hint use the TRUE delta total, not the capped requests.length (G10)", () => {
+	// 20 fired since baseline → requests capped at 12, requestCount=20. The "N fired" surfacing must
+	// say 20 (not 12), or it under-reports the real delta (blind-eval R-G5 F2).
+	const records = Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, requestId: `r${i}`, request: { url: `https://x/${i}`, method: "GET" } }));
+	const c = buildCausalSummary(records, 0);
+	assert.equal(causalRequestsFiredCount(c), 20);
+	const hint = causalFiredHint(c);
+	assert.match(hint ?? "", /^20 request\(s\) fired since baseline/);
+	assert.match(hint ?? "", /first 12 shown inline; full set via browser_network list/);
+	// non-truncated delta: count == shown, no "full set" suffix
+	const small = buildCausalSummary([{ seq: 1, requestId: "a", request: { url: "https://x/a", method: "GET" } }], 0);
+	assert.equal(causalRequestsFiredCount(small), 1);
+	assert.match(causalFiredHint(small) ?? "", /^1 request\(s\) fired since baseline/);
+	assert.doesNotMatch(causalFiredHint(small) ?? "", /full set via/);
+	// unavailable / empty → no hint, zero count
+	assert.equal(causalFiredHint(causalUnavailable("x")), undefined);
+	assert.equal(causalRequestsFiredCount(causalUnavailable("x")), 0);
 });
 
 test("causal: empty delta → empty requests, no requestCount", () => {

@@ -40,6 +40,27 @@ export type CausalSummary =
 
 export const MAX_CAUSAL_REQUESTS = 12;
 export const MAX_CAUSAL_EVENTS = 12;
+
+// The TRUE number of requests fired since the baseline. `requests` is capped at MAX_CAUSAL_REQUESTS,
+// so `requests.length` UNDERCOUNTS the delta whenever it was truncated — `requestCount` carries the
+// real total in that case. Any "N requests fired" surfacing (e.g. the scan nextActions hint) must use
+// this, not `requests.length`, or it under-reports 30×+ on a real SPA navigation (blind-eval R-G5 F2).
+export function causalRequestsFiredCount(causal: CausalSummary): number {
+	if (!("requests" in causal)) return 0;
+	return typeof causal.requestCount === "number" ? causal.requestCount : causal.requests.length;
+}
+
+// The agent-facing "what fired since baseline" hint line. Reports the TRUE fired count and, when the
+// inline `requests` preview is capped below that total, says where the rest live (browser_network list)
+// — so the agent isn't left wondering whether the unseen requests are pageable (they are not; the
+// causal block is a bounded preview, the recorder holds the full set).
+export function causalFiredHint(causal: CausalSummary): string | undefined {
+	if (!("requests" in causal) || !causal.requests.length) return undefined;
+	const fired = causalRequestsFiredCount(causal);
+	const shown = causal.requests.length;
+	const more = fired > shown ? ` (first ${shown} shown inline; full set via browser_network list)` : "";
+	return `${fired} request(s) fired since baseline → read envelope.causal.requests${more} (action→request attribution)`;
+}
 const MAX_URL_CHARS = 200;
 const MAX_EVENT_SUMMARY_CHARS = 200;
 

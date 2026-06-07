@@ -7,7 +7,7 @@ import type { Entity } from "../abml/entity.js";
 import { summarizeEntityDiff, type EntityDiff } from "../abml/diff.js";
 import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inference.js";
-import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, type CausalSummary } from "../abml/causal.js";
+import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, causalFiredHint, type CausalSummary } from "../abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
@@ -595,8 +595,11 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		if (!hasBaseline && sid) {
 			hints.push(`to see what CHANGES after you act here: re-run browser_observe mode=scan baseline:"${sid}" → envelope.treeDiff (template-level appeared/disappeared, cleaner than re-extracting before/after)${recorderState.active ? "; + envelope.causal.requests = which requests your action fired" : ""}`);
 		}
-		if (hasBaseline && causal && "requests" in causal && Array.isArray(causal.requests) && causal.requests.length) {
-			hints.push(`${causal.requests.length} request(s) fired since baseline → read envelope.causal.requests (action→request attribution)`);
+		if (hasBaseline && causal) {
+			// Use the TRUE fired count (requestCount), not the capped requests.length, or the hint
+			// under-reports 30×+ when >12 requests fired since baseline (blind-eval R-G5 F2/G10).
+			const firedHint = causalFiredHint(causal);
+			if (firedHint) hints.push(firedHint);
 		}
 		if (hasBaseline && abmlTreeDiff && abmlTreeDiff.summary.changedTemplateCount > 0) {
 			const s = abmlTreeDiff.summary;
