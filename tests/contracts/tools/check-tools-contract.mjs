@@ -89,6 +89,11 @@ assert(read("src/tools/registerTabsTool.ts").includes("incognito: params.incogni
 // the shared mixin like every other browser_* tool — real agents repeatedly passed maxChars/detailLevel
 // and hit a hard "additional properties" reject. Guard against regressing back to a hand-rolled schema.
 assert(read("src/tools/registerTabsTool.ts").includes("sharedTabScopedToolParams("), "browser_tabs must spread sharedTabScopedToolParams so it accepts the universal output params (maxChars/detailLevel/redact) — C2");
+// H1 (same class as C2, real CTF session 2026-06-07): browser_artifact hand-rolls its schema and was
+// missing `detailLevel`, so a {…,detailLevel:"summary"} call hard-rejected with "additional properties".
+// It must accept detailLevel (as a no-op — output shape is set by mode) so the universal param agents
+// pass everywhere does not error here.
+assert(read("src/tools/registerArtifactTool.ts").includes("detailLevel:"), "browser_artifact must accept the universal detailLevel param (no-op) instead of hard-rejecting it — H1");
 assert(read("bridge_src/service_worker/core_commands.ts").includes("chrome.windows.create") && read("bridge_src/service_worker/core_commands.ts").includes("isAllowedIncognitoAccess"), "bridge tabs.create must open an incognito window and check isAllowedIncognitoAccess");
 
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");

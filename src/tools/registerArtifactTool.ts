@@ -3,7 +3,7 @@ import { normalizeArtifactMode } from "../utils/params.js";
 import { readBrowserArtifact } from "./artifactReader.js";
 import { defineBrowserTool, inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
-import { strictToolParameters } from "./toolShared.js";
+import { strictToolParameters, DETAIL_LEVEL_DESCRIPTION } from "./toolShared.js";
 
 export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -29,6 +29,11 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; item offset for json arrays; character offset for json scalar strings" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json arrays/objects; character limit for json scalar strings" })),
 			maxChars: maxCharsParam(),
+			// Accepted as a no-op so the universal output param agents pass on every other browser_* tool does
+			// not hard-reject here (real CTF session 2026-06-07: browser_artifact {…,detailLevel:"summary"} →
+			// "must not have additional properties"). browser_artifact returns structured json/text/search,
+			// not a detail-leveled summary, so the value has no effect — same resolution as C2 for browser_tabs.
+			detailLevel: Type.Optional(Type.String({ description: `${DETAIL_LEVEL_DESCRIPTION} (accepted but a no-op for browser_artifact — output shape is set by mode)` })),
 			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode; missing paths return exists:false/notFound:true. Browser tool artifacts usually keep primary results under data, e.g. data, data.items, data.links." })),
 			pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths; repeat --pick path for each path in the CLI (not a JSON array string). Results stay aligned one entry per requested path." })),
 			query: Type.Optional(Type.String({ description: "String or bounded safe-regex query for search mode" })),
