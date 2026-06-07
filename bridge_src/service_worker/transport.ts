@@ -192,6 +192,13 @@ function installPiBrowserTransport(): boolean {
   void probeAndConnectWS(true);
   chrome.runtime.onStartup.addListener(() => { void probeAndConnectWS(true); });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
+  // PoC (experimental, uncommitted): keep the SW warm + fast-probe while disconnected so a freshly
+  // started daemon connects in seconds instead of waiting for the ~30s alarm. Minimal SW-only change;
+  // the production fix (B5) will use an offscreen document for robustness past the SW 5-min hard cap.
+  setInterval(() => {
+    try { void chrome.tabs.query({}); } catch (e) { /* keepalive best-effort: any chrome API call resets the SW idle timer */ }
+    if (getPiBrowserTransportSockets().length === 0) void probeAndConnectWS(false);
+  }, 5000);
   piBrowserTransportInstalled = true;
   return true;
 }

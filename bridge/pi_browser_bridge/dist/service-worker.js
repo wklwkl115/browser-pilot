@@ -9332,6 +9332,13 @@ function installPiBrowserTransport() {
     void probeAndConnectWS(true);
   });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
+  setInterval(() => {
+    try {
+      void chromeApi.tabs.query({});
+    } catch (e) {
+    }
+    if (getPiBrowserTransportSockets().length === 0) void probeAndConnectWS(false);
+  }, 5e3);
   piBrowserTransportInstalled = true;
   return true;
 }

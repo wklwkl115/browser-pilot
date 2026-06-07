@@ -359,6 +359,30 @@ step. The pointer carries names/paths only — **never the value** (I5 holds).
   this mainline; its P-items interlock with the batches here (e.g. B1 simplifies P1 command metadata
   and `check:cli-parity`; B2 shrinks `commands`/`schema` discovery output; B3/B4 align with P2/P6).
 
+## Connection reliability (B5 — interim landed 2026-06-08, durable version deferred)
+
+**Problem (measured 2026-06-08):** the extension's WebSocket reconnect is driven by the MV3 service
+worker, which idles out; reconnection then waits on the ~30s `chrome.alarms` probe + backoff. Measured
+cold-SW reconnect latency **~50-97s and unstable**; warm-SW ~2s. Agent-native pain: an agent starts a
+daemon after the browser's been idle → tens of seconds before the extension connects (no human to wake
+it). Earlier `ERR_CONNECTION_REFUSED` console spam is just the benign no-daemon scan, not this defect.
+
+**Interim fix — LANDED:** `bridge_src/service_worker/transport.ts` adds a 5s keepalive `setInterval`
+that touches a chrome API (resets the SW idle timer) + fast-probes while disconnected. **Measured:
+after a 50s idle gap, reconnect dropped to 2s** (was ~50-97s). Worst case is no worse than before
+(falls back to the alarm). SW-only change; no manifest/protocol/tool change; multi-daemon fan-out
+unaffected.
+
+**Caveat (why interim, not the end):** the API-call keepalive does NOT bypass the MV3 ~5-minute SW
+hard cap — Chrome does not support keepalive-only — so long idle (>~5min) may still cold-out (verified
+at 50s, not 6min). Worst case there reverts to today's alarm behavior, so it never regresses.
+
+**Durable version (B5, deferred):** move connection persistence into an **offscreen document** (no
+5-min cap; the official MV3 persistent context). Refine: keep alive only while a connection is wanted,
+tear down when truly idle. Add: offscreen-lifecycle contract + a `smoke:browser` "daemon restart →
+reconnect ≤Ns" gate; eval baseline = the numbers above (measure before/after). Boundary: extension-side
+only; the bigger broker / multi-agent-arbitration rearchitecture stays a separate, deferred workstream.
+
 ## Boundaries / non-goals
 
 - No new public `browser_*` tools; no MCP; no orchestration/target-resolver revival.
