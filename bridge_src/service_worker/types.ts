@@ -490,6 +490,12 @@ export type PiChromeRuntime = {
   onStartup: PiChromeEvent<() => void>;
 };
 
+export type PiChromeOffscreen = {
+  createDocument(options: { url: string; reasons: string[]; justification: string }): Promise<void>;
+  closeDocument?(): Promise<void>;
+  hasDocument?(): Promise<boolean>;
+};
+
 export type PiChromeTabs = {
   query(queryInfo: JsonRecord): Promise<PiChromeTab[]>;
   update(tabId: number, updateProperties: JsonRecord): Promise<PiChromeTab>;
@@ -528,6 +534,7 @@ export type PiChromeApi = {
   downloads: PiChromeDownloads;
   cookies: { getAll(details: JsonRecord): Promise<PiChromeCookie[]> };
   management: { getAll(): Promise<Array<JsonRecord & { id?: string; name?: string; enabled?: boolean; type?: string; version?: string }>>; setEnabled(id: string, enabled: boolean): Promise<void> };
+  offscreen?: PiChromeOffscreen;
   alarms: { create(name: string, alarmInfo: JsonRecord): void; clear?(name: string): Promise<boolean> | boolean; onAlarm: PiChromeEvent<(alarm: { name: string }) => void | Promise<void>> };
   storage?: { session?: { get(keys?: string | string[] | JsonRecord): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> } };
   contentSettings?: Record<string, { set(details: JsonRecord): Promise<void> }>;

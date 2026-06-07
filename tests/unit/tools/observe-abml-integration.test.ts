@@ -42,6 +42,19 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(envelope.summary?.focus?.primary_entities?.length >= 1, true);
 });
 
+test("browser_observe tabs mode returns a tracked scan.tabs envelope", async () => {
+	const result = await runScanObservation(fakeServer as any, { mode: "tabs", maxChars: 12_000 }, { cwd: process.cwd() }, "tabs");
+	const envelope = JSON.parse(result.content[0].text);
+	assert.equal(envelope.tool, "browser_observe");
+	assert.equal(envelope.command, "scan.tabs");
+	assert.equal(envelope.summary?.mode, "tabs");
+	assert.equal(envelope.summary?.tabs_count, 1);
+	assert.equal(envelope.summary?.active_tab, 7);
+	assert.equal(envelope.operation?.operationId?.startsWith("op-"), true);
+	assert.equal(envelope.snapshot?.snapshotId, "snap-1");
+	assert.ok(envelope.saved?.path, "tabs mode should save a read-back artifact");
+});
+
 // --- R3.x causal plane (network-delta) runtime wiring ---------------------------------------------
 // A server variant that also answers the network recorder reads observe issues for the causal plane.
 function causalServer(network: { status: unknown; list?: unknown }, hook?: { status?: unknown; collect?: unknown }) {

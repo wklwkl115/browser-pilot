@@ -359,7 +359,7 @@ step. The pointer carries names/paths only — **never the value** (I5 holds).
   this mainline; its P-items interlock with the batches here (e.g. B1 simplifies P1 command metadata
   and `check:cli-parity`; B2 shrinks `commands`/`schema` discovery output; B3/B4 align with P2/P6).
 
-## Connection reliability (B5 — interim landed 2026-06-08, durable version deferred)
+## Connection reliability (B5 — durable offscreen transport)
 
 **Problem (measured 2026-06-08):** the extension's WebSocket reconnect is driven by the MV3 service
 worker, which idles out; reconnection then waits on the ~30s `chrome.alarms` probe + backoff. Measured
@@ -367,21 +367,28 @@ cold-SW reconnect latency **~50-97s and unstable**; warm-SW ~2s. Agent-native pa
 daemon after the browser's been idle → tens of seconds before the extension connects (no human to wake
 it). Earlier `ERR_CONNECTION_REFUSED` console spam is just the benign no-daemon scan, not this defect.
 
-**Interim fix — LANDED:** `bridge_src/service_worker/transport.ts` adds a 5s keepalive `setInterval`
-that touches a chrome API (resets the SW idle timer) + fast-probes while disconnected. **Measured:
-after a 50s idle gap, reconnect dropped to 2s** (was ~50-97s). Worst case is no worse than before
-(falls back to the alarm). SW-only change; no manifest/protocol/tool change; multi-daemon fan-out
-unaffected.
+**Interim fix — REPLACED:** the earlier `bridge_src/service_worker/transport.ts` 5s chrome API
+`setInterval` keepalive improved a 50s-idle reconnect from ~50-97s to ~2s, but it still fought the
+MV3 service worker lifetime model and could not survive Chrome's hard service-worker cap. That code is
+not the durable B5 architecture.
 
-**Caveat (why interim, not the end):** the API-call keepalive does NOT bypass the MV3 ~5-minute SW
-hard cap — Chrome does not support keepalive-only — so long idle (>~5min) may still cold-out (verified
-at 50s, not 6min). Worst case there reverts to today's alarm behavior, so it never regresses.
+**Durable fix — ACTIVE:** move the real WebSocket lifecycle into an **offscreen document**. The
+offscreen context owns local daemon health probes, port-range fan-out, reconnect backoff, ping, socket
+identity cleanup, and inbound/outbound WS frames. The service worker owns only extension capabilities:
+offscreen creation/recovery, router dispatch, startup recovery, tab sync, CDP/CSP/state cleanup, and
+socket adapters that forward bytes to the offscreen document.
 
-**Durable version (B5, deferred):** move connection persistence into an **offscreen document** (no
-5-min cap; the official MV3 persistent context). Refine: keep alive only while a connection is wanted,
-tear down when truly idle. Add: offscreen-lifecycle contract + a `smoke:browser` "daemon restart →
-reconnect ≤Ns" gate; eval baseline = the numbers above (measure before/after). Boundary: extension-side
-only; the bigger broker / multi-agent-arbitration rearchitecture stays a separate, deferred workstream.
+**Why this split:** offscreen is the only MV3 context here that can hold a long-lived connection without
+turning the service worker into a keepalive target. The service worker must still execute browser
+capabilities because offscreen has limited extension API access. Therefore B5 is an internal transport
+ownership change, not a protocol/tool-surface change.
+
+**Contracts:** manifest includes `offscreen`; `offscreen.html` loads generated `dist/offscreen.js`;
+build manifest records the offscreen entry; service-worker transport contains no `new WebSocket` and no
+5s keepalive interval; offscreen transport contains `new WebSocket`, health probes, backoff, ping, and
+message forwarding; tab sync fans out through service-worker socket adapters. Runtime smoke target:
+"daemon restart after long idle → reconnect within bounded seconds" remains the live browser acceptance
+gate after deterministic contracts pass.
 
 ## Boundaries / non-goals
 

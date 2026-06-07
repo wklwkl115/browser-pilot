@@ -4,6 +4,7 @@
 
 ## 最新完成归档（241-261 已完成）
 
+- B5 durable connection reliability（2026-06-08）：完成 offscreen transport 迁移。真实 WebSocket 生命周期从 MV3 service worker 移到 `offscreen.html` / `dist/offscreen.js`；service worker 保留 offscreen lifecycle、command router、startup recovery、tab sync 与 socket adapter fan-out；移除 SW 5s keepalive interval。manifest/build/package/contracts/docs 已同步，边界保持不新增公开 `browser_*` 工具、不改 native WS wire protocol。验证通过 `npm run build:bridge`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`、`npm run check`。
 - 241：完成 jshookmcp 能力原生吸收闭环。边界冻结为“只吸收功能思想和证据模型，不新增被拒绝的五个公开工具面”；交付 5 个 synthetic eval、fixtures、closure ledger、`browser_hook listTargets/installTargets`、contracts、全量 `npm run check`。
 - 242：完成 `browser_scan` high-entropy summary v2。默认 summary 升级为 Scan Manifest，新增 `focus.primary_actions/forms/lists/text_signals` 与 `artifact_hints` 精确 jsonPath 导航，保留 artifact-first 和 legacy `actionables/list_hints` 紧凑字段；新增 `16-scan-high-entropy-summary` eval、fixture、contracts、`smoke:browser:scan-summary` runtime smoke。
 - 243：完成 Debugger evidence workflow 的 RFC/eval 收口。`browser_execute` + `persistent_cdp` 已能稳定提供 debugger evidence；剩余缺口收缩为 page-authored provenance 与 pause/breakpoint/step 生命周期，继续保持 RFC-only，不新增公开调试工具。

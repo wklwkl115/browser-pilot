@@ -141,6 +141,50 @@ assert.ok(compactSummary.content[0].text.length < 4_500, "check-token summaryBud
 assert.equal(compactSummary.content[0].text.includes("z".repeat(1_000)), false, "check-token summaryBudget.text: low-value long previews must be trimmed or omitted");
 assert.ok(!compactEnvelope.summary.rows || compactEnvelope.summary.rows.rows.length < 80, "check-token summaryBudget.table: compact tables must not return all rows under summary budget");
 
+const envelopeBudgetTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-envelope-budget-"));
+try {
+	const noisyEntities = Array.from({ length: 40 }, (_, i) => ({
+		ref: `pi-ref://entity/${i}`,
+		kind: "control",
+		role: "button",
+		name: `Entity ${i} ${"x".repeat(160)}`,
+		hints: { selector: `#entity-${i}`, text: "y".repeat(160), itemCount: i },
+		structure: { label: "z".repeat(160), role: "button" },
+	}));
+	const savedFirst = await distilledJsonResult({ data: { blob: "r".repeat(20_000) } }, {
+		toolName: "browser_observe",
+		command: "scan",
+		detailLevel: "summary",
+		maxChars: 4_000,
+		ctx: { cwd: envelopeBudgetTmp },
+		fallbackName: "saved-first-budget.json",
+		artifactValue: { data: { blob: "r".repeat(20_000) } },
+		distill: () => ({
+			mode: "scan",
+			sourceMode: "scan",
+			summaryVersion: 2,
+			browserSessionId: "default",
+			tabId: 1,
+			selectionVersionAtDispatch: 1,
+			selectionVersionAtResolve: 1,
+			abmlIntegrated: true,
+			focus: {
+				gist: { title: "Budget page", purpose: "budget regression" },
+				primary_entities: noisyEntities,
+			},
+			snapshotProjection: { templates: noisyEntities.map((entity) => ({ entity, instances: noisyEntities })) },
+		}),
+	});
+	const savedFirstText = savedFirst.content[0].text;
+	const savedFirstEnvelope = JSON.parse(savedFirstText);
+	assert.ok(savedFirstEnvelope.saved?.path, "check-token envelopeBudget.savedFirst: raw artifact must already be saved before envelope fitting");
+	assert.ok(savedFirstText.length <= 4_000, `check-token envelopeBudget.savedFirst: envelope must fit maxChars even when saved already exists (${savedFirstText.length} > 4000)`);
+	assert.equal(savedFirstEnvelope.summary.envelopeTruncatedToBudget, true, "check-token envelopeBudget.savedFirst: envelope-level truncation must be explicit");
+	assert.ok(savedFirstEnvelope.diagnostics.warnings.some((item) => String(item).startsWith("envelope_omitted:")), "check-token envelopeBudget.savedFirst: diagnostics must identify omitted lifted fields");
+} finally {
+	await rm(envelopeBudgetTmp, { recursive: true, force: true });
+}
+
 const toolResultSource = read("src/utils/toolResult.ts");
 assert.equal(toolResultSource.includes("result: value"), false, "toolResult must not add full result into details");
 assert.ok(read("src/tools/resultMiddleware.ts").includes("fitSummaryBudget"), "result middleware must apply deterministic summary budget allocation");

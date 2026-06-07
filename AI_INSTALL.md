@@ -55,7 +55,7 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 3. 点击「加载已解压的扩展程序」。
 4. 选择 `bridge/pi_browser_bridge`。
 5. 确认扩展名称为 `Pi Native Browser Bridge`。
-6. 确认扩展权限包含 downloads 和 webNavigation；更新后需重新加载扩展才能启用 `browser_download` 路径回传和 `wait.navigation` 事件完成监听。
+6. 确认扩展权限包含 downloads、webNavigation 和 offscreen；更新后需重新加载扩展才能启用 `browser_download` 路径回传、`wait.navigation` 事件完成监听和 B5 durable WebSocket transport。
 7. 如需 `browser_upload` 读取本地文件路径，在扩展详情中启用「允许访问文件网址」。
 
 ## Reload 流程
@@ -154,7 +154,7 @@ npm run check:runtime-fixtures
 
 该 fixture 使用本地 HTTP/WS server、fake Chrome/CDP API 与 recorded bridge envelopes，覆盖 network body/postData/HAR、hook session/listener、wait immediate/MV3 状态、transfer download/upload、frame evaluate、screenshot fallback、callback worker 状态文件和 stale lock recovery。成功摘要写 `.pi/browser-artifacts/fixtures/runtime-fixtures-summary.json`；失败诊断写 `.pi/browser-artifacts/fixtures/runtime-fixtures-failure.json` 并按字段名脱敏。
 
-Bridge ESM TypeScript 构建管线（生成当前 manifest 使用的 service worker 与 content/hook/disable-dialogs dist bundles；支柱二终态已完成：TODO 197 shared/runtime/CDP/wait、TODO 198 command 层、TODO 199 router/transport/tab_sync 启动层均已走真实 ESM import graph，TODO 200 已开启 strict/noImplicitAny 并完成 page script 类型收口，TODO 202 已通过 build/check/pack/isolated-smoke gate；`build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false` 与 metadata-only 模块清单；修改 `bridge_src/**` 后先 build 再 reload 扩展）：
+Bridge ESM TypeScript 构建管线（生成当前 manifest 使用的 service worker、offscreen transport 与 content/hook/disable-dialogs dist bundles；支柱二终态已完成：TODO 197 shared/runtime/CDP/wait、TODO 198 command 层、TODO 199 router/transport/tab_sync 启动层均已走真实 ESM import graph，TODO 200 已开启 strict/noImplicitAny 并完成 page script 类型收口，TODO 202 已通过 build/check/pack/isolated-smoke gate；B5 后 WebSocket 探测/重连/ping 在 `dist/offscreen.js`，service worker 只做 offscreen lifecycle 与 command adapter；`build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`offscreenEntry`、`orderedConcatenation:false` 与 metadata-only 模块清单；修改 `bridge_src/**` 后先 build 再 reload 扩展）：
 
 ```bash
 npm run build:bridge
@@ -166,7 +166,7 @@ npm run build:bridge
 npm pack --dry-run --json
 ```
 
-`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 dry-run 验证 `dist/service-worker.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内；干净安装不应依赖手工提前 build。
+`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 dry-run 验证 `dist/service-worker.js`、`dist/offscreen.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内；干净安装不应依赖手工提前 build。
 
 本地发布包验收与回滚演练：
 

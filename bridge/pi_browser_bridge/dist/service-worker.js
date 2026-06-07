@@ -9033,6 +9033,7 @@ async function handlePiBridgeMessage(msg, sender) {
 function installPiBridgeRouter() {
   if (piBridgeRouterInstalled) return false;
   chromeApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && typeof msg === "object" && typeof msg.type === "string" && String(msg.type).startsWith("pi-browser-offscreen-")) return false;
     void handlePiBridgeMessage(msg, sender).then(sendResponse);
     return true;
   });
@@ -9149,176 +9150,174 @@ function installPiBrowserTabSync(deps = void 0) {
 var __piBridgeModule_tab_sync = { name: "tab_sync", symbols: { setPiBrowserTabSyncTransport, requirePiBrowserTabSyncTransport, sendTabsUpdate, logTabSyncError, runTabSyncTask, safeProbeAndConnectWS, safeSendTabsUpdate, installPiBrowserTabSync } };
 
 // bridge_src/service_worker/transport.ts
+var OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
+var SOCKET_OPEN = 1;
+var SOCKET_CLOSED = 3;
 var primaryPort = PI_BROWSER_BRIDGE_PORT;
 var sockets = /* @__PURE__ */ new Map();
 var startupRecoveryDone = false;
+var piBrowserTransportInstalled = false;
+var offscreenCreateInFlight = null;
 var WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 var WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
 var WS_RECONNECT_INITIAL_MS = 1e3;
 var WS_RECONNECT_MAX_MS = 3e4;
 var wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-var piBrowserTransportInstalled = false;
-function portRange() {
-  const ports = [];
-  for (let port = PI_BROWSER_BRIDGE_PORT; port <= PI_BROWSER_BRIDGE_PORT_RANGE_END; port += 1) ports.push(port);
-  return ports;
+function isOffscreenBridgeMessage(message) {
+  return !!message && typeof message === "object" && typeof message.type === "string" && String(message.type).startsWith("pi-browser-offscreen-");
 }
-function wsUrlForPort(port) {
-  return port === PI_BROWSER_BRIDGE_PORT ? PI_BROWSER_BRIDGE_WS_URL : `ws://${PI_BROWSER_BRIDGE_HOST}:${port}`;
+function offscreenUrl() {
+  return chromeApi.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
 }
-function httpUrlForPort(port) {
-  return port === PI_BROWSER_BRIDGE_PORT ? PI_BROWSER_BRIDGE_HTTP_URL : `http://${PI_BROWSER_BRIDGE_HOST}:${port}`;
+async function hasOffscreenDocument() {
+  if (typeof chromeApi.offscreen?.hasDocument === "function") return await chromeApi.offscreen.hasDocument();
+  const workerGlobal = globalThis;
+  const clientsApi = workerGlobal.clients;
+  if (!clientsApi?.matchAll) return false;
+  const clients = await clientsApi.matchAll({ type: "window", includeUncontrolled: true });
+  return clients.some((client) => client.url === offscreenUrl());
+}
+async function ensureOffscreenDocument() {
+  if (!chromeApi.offscreen?.createDocument) {
+    console.warn("[PI-BROWSER-WS] chrome.offscreen unavailable; durable transport cannot start");
+    return false;
+  }
+  if (await hasOffscreenDocument()) return true;
+  if (!offscreenCreateInFlight) {
+    offscreenCreateInFlight = chromeApi.offscreen.createDocument({
+      url: OFFSCREEN_DOCUMENT_PATH,
+      reasons: ["WORKERS"],
+      justification: "Maintain the local Pi browser bridge WebSocket transport outside the MV3 service worker lifetime."
+    }).then(() => true, (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/only a single offscreen document/i.test(message)) return true;
+      console.warn("[PI-BROWSER-WS] offscreen create failed", error);
+      return false;
+    }).finally(() => {
+      offscreenCreateInFlight = null;
+    });
+  }
+  return await offscreenCreateInFlight;
+}
+async function sendOffscreenMessage(message) {
+  if (!await ensureOffscreenDocument()) return { ok: false, error: "offscreen unavailable" };
+  return await chromeApi.runtime.sendMessage(message);
+}
+function ensureSocketAdapter(port) {
+  const current = sockets.get(port);
+  if (current) {
+    current.readyState = SOCKET_OPEN;
+    return current;
+  }
+  const socket2 = {
+    port,
+    readyState: SOCKET_OPEN,
+    send(data2) {
+      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data: data2 }).catch((error) => console.warn("[PI-BROWSER-WS] offscreen send failed", error));
+    }
+  };
+  sockets.set(port, socket2);
+  return socket2;
+}
+function responseOpenPorts(response) {
+  const record = response && typeof response === "object" ? response : {};
+  return Array.isArray(record.openPorts) ? record.openPorts.filter((port) => typeof port === "number") : [];
 }
 function getPiBrowserTransportSocket() {
-  const open = getPiBrowserTransportSockets()[0];
-  if (open) return open;
-  for (const socket2 of sockets.values()) if (socket2.readyState === WebSocket.CONNECTING) return socket2;
-  return null;
+  return getPiBrowserTransportSockets()[0] ?? null;
 }
 function getPiBrowserTransportSockets() {
-  return Array.from(sockets.values()).filter((socket2) => socket2.readyState === WebSocket.OPEN);
-}
-function piBrowserErrorMessage2(error) {
-  return error instanceof Error ? error.message : String(error);
+  return Array.from(sockets.values()).filter((socket2) => socket2.readyState === SOCKET_OPEN);
 }
 function cleanupTransportSocket(socket2, reason = "") {
   if (!socket2) return false;
   let removed = false;
   for (const [port, current] of sockets.entries()) {
     if (current !== socket2) continue;
+    current.readyState = SOCKET_CLOSED;
     sockets.delete(port);
     removed = true;
     console.log("[PI-BROWSER-WS] Disconnected", port, reason || "");
   }
-  if (!removed) return false;
-  bumpProbeBackoff();
-  scheduleProbe();
-  return true;
+  return removed;
 }
 function scheduleProbe(resetDelay = false) {
   if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-  const jitter = 0.85 + Math.random() * 0.3;
-  const delayMs = Math.min(WS_RECONNECT_MAX_MS, Math.max(WS_RECONNECT_INITIAL_MS, wsReconnectDelayMs)) * jitter;
-  chromeApi.alarms.create("pi-browser-ws-probe", { delayInMinutes: Math.max(0.02, delayMs / 6e4) });
+  chromeApi.alarms.create("pi-browser-ws-probe", { delayInMinutes: 1 });
 }
 function bumpProbeBackoff() {
   wsReconnectDelayMs = Math.min(WS_RECONNECT_MAX_MS, Math.max(WS_RECONNECT_INITIAL_MS, wsReconnectDelayMs * 2));
 }
 function scheduleKeepalive() {
-  chromeApi.alarms.create("pi-browser-ws-keepalive", { delayInMinutes: 0.4 });
+  void sendOffscreenMessage({ type: "pi-browser-offscreen-status" }).catch((error) => console.debug("[PI-BROWSER-WS] offscreen status failed", error));
 }
-async function isServerAlive(port = PI_BROWSER_BRIDGE_PORT) {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 2e3);
-    await fetch(httpUrlForPort(port), { signal: ctrl.signal });
-    return true;
-  } catch (e) {
-    return false;
-  }
+async function isServerAlive() {
+  const response = await sendOffscreenMessage({ type: "pi-browser-offscreen-status" });
+  return responseOpenPorts(response).length > 0;
+}
+async function syncOpenPorts(response) {
+  for (const port of responseOpenPorts(response)) await handleOffscreenConnected(port);
 }
 async function probeAndConnectWS(resetDelay) {
-  if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-  let detected = false;
-  for (const port of portRange()) {
-    const current = sockets.get(port);
-    if (current && current.readyState <= WebSocket.OPEN) {
-      detected = true;
-      continue;
-    }
-    if (current) sockets.delete(port);
-    if (await isServerAlive(port)) {
-      detected = true;
-      console.log("[PI-BROWSER-WS] Server detected, connecting...", port);
-      connectWS(port);
+  const response = await sendOffscreenMessage({ type: "pi-browser-offscreen-probe", resetDelay });
+  await syncOpenPorts(response);
+  scheduleProbe(resetDelay);
+}
+function connectWS(port = PI_BROWSER_BRIDGE_PORT) {
+  void sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false }).then(syncOpenPorts);
+}
+async function sendExtReady(socket2, port) {
+  primaryPort = port;
+  if (!startupRecoveryDone) {
+    startupRecoveryDone = true;
+    try {
+      await runStartupRecovery();
+    } catch (error) {
+      console.warn("[PI-BROWSER-WS] Startup recovery failed", error);
     }
   }
-  if (!detected) bumpProbeBackoff();
-  scheduleProbe();
+  const tabs = (await chromeApi.tabs.query({})).filter((tab) => isScriptable(tab.url));
+  socket2.send(JSON.stringify({
+    type: "ext_ready",
+    bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
+    tabs: tabs.map((tab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId }))
+  }));
+  console.log("[PI-BROWSER-WS] Sent ext_ready with", tabs.length, "tabs to", port);
+}
+async function handleOffscreenConnected(port) {
+  const socket2 = ensureSocketAdapter(port);
+  await sendExtReady(socket2, port);
+}
+async function handlePiBrowserOffscreenMessage(message) {
+  if (message.type === "pi-browser-offscreen-ready") return { ok: true };
+  if (message.type === "pi-browser-offscreen-connected" && typeof message.port === "number") {
+    await handleOffscreenConnected(message.port);
+    return { ok: true };
+  }
+  if (message.type === "pi-browser-offscreen-disconnected" && typeof message.port === "number") {
+    cleanupTransportSocket(sockets.get(message.port) ?? null, String(message.data?.reason ?? ""));
+    return { ok: true };
+  }
+  if (message.type === "pi-browser-offscreen-ws-message" && typeof message.port === "number") {
+    await handlePiBridgeWsMessage(message.data, ensureSocketAdapter(message.port));
+    return { ok: true };
+  }
+  return { ok: false, error: "unknown offscreen message" };
 }
 async function handlePiBrowserTransportAlarm(alarm) {
   if (alarm.name === "pi-browser-self-reload") {
     chromeApi.runtime.reload();
     return;
   }
-  if (alarm.name === "pi-browser-ws-keepalive") {
-    const openSockets = getPiBrowserTransportSockets();
-    for (const socket2 of openSockets) {
-      try {
-        socket2.send('{"type":"ping"}');
-      } catch (error) {
-        console.warn("[PI-BROWSER-WS] Keepalive ping failed", error);
-        cleanupTransportSocket(socket2, "keepalive-send");
-      }
-    }
-    if (openSockets.length) scheduleKeepalive();
-    else await probeAndConnectWS(false);
-  }
-  if (alarm.name === "pi-browser-ws-probe") {
-    await probeAndConnectWS(false);
-  }
-}
-function connectWS(port = PI_BROWSER_BRIDGE_PORT) {
-  const current = sockets.get(port);
-  if (current && current.readyState <= WebSocket.OPEN) return;
-  sockets.delete(port);
-  const url = wsUrlForPort(port);
-  console.log("[PI-BROWSER-WS] Connecting to", url);
-  let socket2;
-  try {
-    socket2 = new WebSocket(url);
-    sockets.set(port, socket2);
-  } catch (e) {
-    console.warn("[PI-BROWSER-WS] Constructor failed:", piBrowserErrorMessage2(e));
-    bumpProbeBackoff();
-    scheduleProbe();
-    return;
-  }
-  socket2.onopen = async () => {
-    if (sockets.get(port) !== socket2) return;
-    primaryPort = port;
-    wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-    console.log("[PI-BROWSER-WS] Connected!", port);
-    scheduleKeepalive();
-    if (!startupRecoveryDone) {
-      startupRecoveryDone = true;
-      try {
-        await runStartupRecovery();
-      } catch (e) {
-        console.warn("[PI-BROWSER-WS] Startup recovery failed", e);
-      }
-    }
-    const tabs = (await chromeApi.tabs.query({})).filter((t) => isScriptable(t.url));
-    if (sockets.get(port) !== socket2 || socket2.readyState !== WebSocket.OPEN) return;
-    socket2.send(JSON.stringify({
-      type: "ext_ready",
-      bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
-      tabs: tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }))
-    }));
-    console.log("[PI-BROWSER-WS] Sent ext_ready with", tabs.length, "tabs to", port);
-  };
-  socket2.onmessage = async (event) => {
-    if (sockets.get(port) !== socket2) return;
-    try {
-      await handlePiBridgeWsMessage(JSON.parse(event.data), socket2);
-    } catch (e) {
-      console.error("[PI-BROWSER-WS] message parse error", e);
-    }
-  };
-  socket2.onclose = () => {
-    cleanupTransportSocket(socket2, "close");
-  };
-  socket2.onerror = (e) => {
-    console.debug("[PI-BROWSER-WS] Connection error; waiting for local server", {
-      port,
-      readyState: socket2 ? socket2.readyState : null,
-      type: e && e.type ? e.type : "error"
-    });
-    if (socket2.readyState !== WebSocket.OPEN && socket2.readyState !== WebSocket.CONNECTING) cleanupTransportSocket(socket2, "error");
-  };
+  if (alarm.name === "pi-browser-ws-keepalive" || alarm.name === "pi-browser-ws-probe") await probeAndConnectWS(false);
 }
 function installPiBrowserTransport() {
   if (piBrowserTransportInstalled) return false;
+  chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!isOffscreenBridgeMessage(message)) return false;
+    void handlePiBrowserOffscreenMessage(message).then(sendResponse);
+    return true;
+  });
   chromeApi.runtime.onInstalled.addListener(() => {
     console.log("Pi Browser Bridge installed");
     installCspBypassRule();
@@ -9332,17 +9331,10 @@ function installPiBrowserTransport() {
     void probeAndConnectWS(true);
   });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
-  setInterval(() => {
-    try {
-      void chromeApi.tabs.query({});
-    } catch (e) {
-    }
-    if (getPiBrowserTransportSockets().length === 0) void probeAndConnectWS(false);
-  }, 5e3);
   piBrowserTransportInstalled = true;
   return true;
 }
-var __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, sockets, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS } };
+var __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, sockets, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS, handlePiBrowserOffscreenMessage, ensureOffscreenDocument } };
 
 // bridge_src/shared/buildInfo.ts
 var BRIDGE_BUILD_PIPELINE_VERSION = "bridge-build-dist-v1";

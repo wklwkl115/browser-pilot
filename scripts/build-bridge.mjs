@@ -30,6 +30,11 @@ const entries = [
 		outfile: "bridge/pi_browser_bridge/dist/content.js",
 	},
 	{
+		name: "offscreen",
+		source: "bridge_src/offscreen/transport.ts",
+		outfile: "bridge/pi_browser_bridge/dist/offscreen.js",
+	},
+	{
 		name: "hook-dispatcher",
 		source: "bridge_src/page_scripts/hook_dispatcher.ts",
 		outfile: "bridge/pi_browser_bridge/dist/hook_dispatcher.js",
@@ -51,7 +56,7 @@ for (const entry of entries) {
 		entryPoints: [path.join(root, entry.source)],
 		outfile: path.join(root, entry.outfile),
 		bundle: true,
-		format: entry.name === "service-worker" ? "esm" : "iife",
+		format: entry.name === "service-worker" || entry.name === "offscreen" ? "esm" : "iife",
 		platform: "browser",
 		target: ["chrome120"],
 		sourcemap: true,
@@ -78,7 +83,8 @@ await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	metadataOnlyServiceWorkerCommandModules,
 	metadataOnlyServiceWorkerStartupModules,
 	metadataOnlyLegacyServiceWorkerModules,
-	pageScriptEntries: entries.filter((entry) => entry.name !== "service-worker"),
+	pageScriptEntries: entries.filter((entry) => !["service-worker", "offscreen"].includes(entry.name)),
+	offscreenEntry: entries.find((entry) => entry.name === "offscreen"),
 }, null, 2) + "\n", "utf8");
 
 if (!quiet) console.log(JSON.stringify({ ok: true, distDir: path.relative(root, distDir), entries: entries.map((entry) => entry.outfile) }, null, 2));

@@ -22,6 +22,11 @@
       "outfile": "bridge/pi_browser_bridge/dist/content.js"
     },
     {
+      "name": "offscreen",
+      "source": "bridge_src/offscreen/transport.ts",
+      "outfile": "bridge/pi_browser_bridge/dist/offscreen.js"
+    },
+    {
       "name": "hook-dispatcher",
       "source": "bridge_src/page_scripts/hook_dispatcher.ts",
       "outfile": "bridge/pi_browser_bridge/dist/hook_dispatcher.js"
@@ -84,5 +89,10 @@
       "source": "bridge_src/page_scripts/disable_dialogs.ts",
       "outfile": "bridge/pi_browser_bridge/dist/disable_dialogs.js"
     }
-  ]
+  ],
+  "offscreenEntry": {
+    "name": "offscreen",
+    "source": "bridge_src/offscreen/transport.ts",
+    "outfile": "bridge/pi_browser_bridge/dist/offscreen.js"
+  }
 }

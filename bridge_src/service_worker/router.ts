@@ -19,6 +19,7 @@ async function handlePiBridgeMessage(msg: PiBridgeCommand, sender: PiChromeMessa
 function installPiBridgeRouter() {
   if (piBridgeRouterInstalled) return false;
   chrome.runtime.onMessage.addListener((msg: unknown, sender: PiChromeMessageSender, sendResponse: (response: unknown) => void) => {
+    if (msg && typeof msg === 'object' && typeof (msg as PiBridgeDict).type === 'string' && String((msg as PiBridgeDict).type).startsWith('pi-browser-offscreen-')) return false;
     void handlePiBridgeMessage(msg as PiBridgeCommand, sender).then(sendResponse);
     return true;
   });

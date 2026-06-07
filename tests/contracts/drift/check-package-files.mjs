@@ -80,6 +80,7 @@ for (const script of manifest.content_scripts || []) {
 	for (const item of script.js || []) distFiles.add(`bridge/pi_browser_bridge/${item}`);
 }
 distFiles.add("bridge/pi_browser_bridge/dist/hook_dispatcher.js");
+distFiles.add("bridge/pi_browser_bridge/dist/offscreen.js");
 distFiles.add("bridge/pi_browser_bridge/dist/build-manifest.json");
 for (const file of [...distFiles]) {
 	if (file.endsWith(".js")) distFiles.add(`${file}.map`);
@@ -89,6 +90,7 @@ for (const file of distFiles) {
 	assert(packed.has(file), `npm package must include generated runtime file: ${file}`);
 }
 assert(packed.has("bridge/pi_browser_bridge/manifest.json"), "npm package must include extension manifest");
+assert(packed.has("bridge/pi_browser_bridge/offscreen.html"), "npm package must include the B5 offscreen transport document");
 assert(packed.has("dist/index.js") && packed.has("dist/index.d.ts"), "npm package must include outer dist entry and declarations");
 assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm package must include compiled cli dist entrypoints");
 // tsc does not emit .mjs to dist/. The callback-OAST worker is spawned from src/ even when
@@ -96,6 +98,7 @@ assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm pa
 assert(packed.has("src/tools/webSecurity/browserNative/callbackOastWorker.mjs"), "npm package must ship the callback-OAST worker .mjs (resolved from src/ by the dist build)");
 assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm package must include native command schema");
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
+assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");

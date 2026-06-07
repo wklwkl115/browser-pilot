@@ -10,17 +10,17 @@ Do not use tree-shaking or “lower resident memory” as the justification. The
 
 ## Current phase vs target final state
 
-Current service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, calls explicit router/transport startup functions, and esbuild follows the dependency graph from that single entry.
+Current service worker build mode is `esm-import-graph`: `bridge_src/service-worker.ts` directly imports real module exports, calls explicit router/transport startup functions, and esbuild follows the dependency graph from that single entry. B5 adds a separate offscreen transport entry: `bridge_src/offscreen/transport.ts` builds to `dist/offscreen.js`, loaded by `offscreen.html`, and owns the real local bridge WebSocket lifecycle.
 
 The previous `ordered-concat-compat` bridge has been removed: `scripts/build-bridge.mjs` no longer reads service worker source text, no longer creates `bridge_src/.generated/service-worker.generated.ts`, and no longer carries a `serviceWorkerModules` ordered-concat list.
 
-The generated `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, `foundationImported:true`, `commandImported:true`, `startupImported:true`, and metadata-only module lists (`metadataOnlyServiceWorkerFoundationModules`, `metadataOnlyServiceWorkerCommandModules`, `metadataOnlyServiceWorkerStartupModules`, `metadataOnlyLegacyServiceWorkerModules`).
+The generated `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `targetServiceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, `foundationImported:true`, `commandImported:true`, `startupImported:true`, `offscreenEntry`, and metadata-only module lists (`metadataOnlyServiceWorkerFoundationModules`, `metadataOnlyServiceWorkerCommandModules`, `metadataOnlyServiceWorkerStartupModules`, `metadataOnlyLegacyServiceWorkerModules`).
 
 ## Target final state
 
 - Source lives under `bridge_src/` unless TODO 188 chooses an equivalent name before code migration.
 - Service worker source is TypeScript ESM with explicit `import/export`.
-- Page/content entries are separate bundles, not mixed into the service worker bundle.
+- Offscreen and page/content entries are separate bundles, not mixed into the service worker bundle.
 - Generated output lives under `bridge/pi_browser_bridge/dist/`.
 - `bridge/pi_browser_bridge/manifest.json` points to dist output after TODO 191.
 - Old hand-written `background.js importScripts(...)` and unused global bridge files were deleted in TODO 192, not kept as a second production path.
@@ -74,8 +74,8 @@ Business modules must not depend on router, transport, popup UI, or startup side
 
 TODO 202 final gate evidence:
 
-- `bridge/pi_browser_bridge/manifest.json` points to `dist/service-worker.js` with `type:"module"`.
-- `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `orderedConcatenation:false`, and `metadataOnlyLegacyServiceWorkerModules:[]`.
+- `bridge/pi_browser_bridge/manifest.json` points to `dist/service-worker.js` with `type:"module"` and declares the `offscreen` permission for `offscreen.html`.
+- `dist/build-manifest.json` records `serviceWorkerBuildMode:"esm-import-graph"`, `offscreenEntry`, `orderedConcatenation:false`, and `metadataOnlyLegacyServiceWorkerModules:[]`.
 - `tsconfig.bridge-src.json` has `strict:true` and `noImplicitAny:true`; bridge/page source `@ts-nocheck` comments are forbidden by contract.
 - Verification commands passed: `npm run build:bridge`, `npm run check`, `npm pack --dry-run --json`, and `PI_BROWSER_SMOKE_CHROME="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run smoke:browser:isolated`.
 - Isolated smoke artifact: `.pi/browser-artifacts/smoke-browser-isolated-results.json`; recorded service worker sha256 `b4bc10872b5b9b8e13ba239ff3eed398bc9f7b7d9118473a1807889228e937c7`.

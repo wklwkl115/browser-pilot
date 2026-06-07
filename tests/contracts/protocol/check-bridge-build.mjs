@@ -16,6 +16,7 @@ assert(pkg.devDependencies?.esbuild, "bridge build pipeline must depend on esbui
 
 for (const distRel of [
 	"bridge/pi_browser_bridge/dist/service-worker.js",
+	"bridge/pi_browser_bridge/dist/offscreen.js",
 	"bridge/pi_browser_bridge/dist/content.js",
 	"bridge/pi_browser_bridge/dist/hook_dispatcher.js",
 	"bridge/pi_browser_bridge/dist/disable_dialogs.js",
@@ -27,6 +28,9 @@ for (const distRel of [
 const manifest = readJson("bridge/pi_browser_bridge/manifest.json");
 assert.equal(manifest.background?.service_worker, "dist/service-worker.js", "manifest must use the generated dist service worker after TODO 191");
 assert.equal(manifest.background?.type, "module", "dist service worker must run as an MV3 module service worker");
+assert(manifest.permissions?.includes("offscreen"), "manifest must request offscreen permission for durable B5 transport");
+assert(existsSync(path.join(root, "bridge/pi_browser_bridge/offscreen.html")), "offscreen transport document must exist");
+assert(read("bridge/pi_browser_bridge/offscreen.html").includes('type="module"') && read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen document must load the generated offscreen module");
 assert.deepEqual(manifest.content_scripts?.[0]?.js, ["dist/disable_dialogs.js"], "manifest document_start content script must use dist disable-dialogs bundle");
 assert.deepEqual(manifest.content_scripts?.[1]?.js, ["dist/content.js"], "manifest document_idle content script must use dist content bundle without ambient config.js");
 
@@ -37,6 +41,7 @@ assert(existsSync(path.join(root, "bridge_src", "service_worker", "types.ts")), 
 for (const pageScript of ["content", "hook_dispatcher", "disable_dialogs"]) {
 	assert(existsSync(path.join(root, "bridge_src", "page_scripts", `${pageScript}.ts`)), `bridge_src page script module missing: ${pageScript}`);
 }
+assert(existsSync(path.join(root, "bridge_src", "offscreen", "transport.ts")), "bridge_src offscreen transport source must exist");
 assert(read("bridge_src/page_scripts/content.ts").includes("import { TID } from \"../shared/protocol\""), "content page source must own an explicit shared TID import instead of ambient config.js");
 assert(!/\bimport\s+|\bimport\s*\(|\bimportScripts\s*\(|\bchrome\./.test(read("bridge_src/page_scripts/hook_dispatcher.ts")), "hook dispatcher page source must not import modules or call background-only Chrome APIs");
 assert(!/\bimport\s+|\bimport\s*\(|\bimportScripts\s*\(|\bchrome\./.test(read("bridge_src/page_scripts/disable_dialogs.ts")), "disable-dialogs page source must not import modules or call background-only Chrome APIs");
@@ -64,8 +69,10 @@ assert.equal(buildManifest.serviceWorkerModules, undefined, "TODO 199 must remov
 assert.equal(buildManifest.metadataOnlyModuleLists, true, "build manifest must label module lists as metadata-only");
 const buildScript = read("scripts/build-bridge.mjs");
 assert(!buildScript.includes("readFile") && !buildScript.includes("stdin:") && !buildScript.includes("service-worker.generated"), "TODO 199 build script must not assemble the service worker from source text");
-assert.deepEqual(buildManifest.entries.map((entry) => entry.name), ["service-worker", "content", "hook-dispatcher", "disable-dialogs"], "build manifest must record independent service-worker and page-script bundle entries");
+assert.deepEqual(buildManifest.entries.map((entry) => entry.name), ["service-worker", "content", "offscreen", "hook-dispatcher", "disable-dialogs"], "build manifest must record independent service-worker, offscreen, and page-script bundle entries");
 assert.deepEqual(buildManifest.pageScriptEntries.map((entry) => entry.name), ["content", "hook-dispatcher", "disable-dialogs"], "build manifest must keep page scripts separate from the service-worker bundle");
+assert.equal(buildManifest.offscreenEntry?.name, "offscreen", "build manifest must record the offscreen transport entry separately from page scripts");
+assert.equal(buildManifest.offscreenEntry?.outfile, "bridge/pi_browser_bridge/dist/offscreen.js", "offscreen entry must target dist/offscreen.js");
 assert.deepEqual(buildManifest.metadataOnlyServiceWorkerFoundationModules, ["config", "protocol", "patterns", "cdp", "state_store", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait"], "build manifest must record TODO 197 foundation ESM modules as metadata-only");
 for (const foundation of buildManifest.metadataOnlyServiceWorkerFoundationModules) {
 	const source = read(`bridge_src/service_worker/${foundation}.ts`);
@@ -112,10 +119,20 @@ assert(!bundle.includes("Object.assign(globalThis, module.symbols)") && !bundle.
 for (const moduleName of [...buildManifest.metadataOnlyServiceWorkerFoundationModules, ...buildManifest.metadataOnlyServiceWorkerCommandModules, ...buildManifest.metadataOnlyServiceWorkerStartupModules]) assert(!bundle.includes(`// ---- bridge_src/service_worker/${moduleName}.ts ----`), `service worker module must not be text-concatenated: ${moduleName}`);
 for (const command of buildManifest.metadataOnlyServiceWorkerCommandModules) assert(bundle.includes(`__piBridgeModule_${command}`), `command module must be present through the imported ESM graph: ${command}`);
 for (const startup of buildManifest.metadataOnlyServiceWorkerStartupModules) assert(bundle.includes(`__piBridgeModule_${startup}`), `startup module must be present through the imported ESM graph: ${startup}`);
-for (const required of ["PI_BROWSER_BRIDGE_WS_URL", "PI_BROWSER_HOOK_DISPATCHER_FILE", "dist/hook_dispatcher.js", "matchNetworkPattern", "async function handlePiBrowser", "handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "function installPiBrowserServiceWorker", "function installPiBridgeRouter", "function installPiBrowserTransport", "function installPiBrowserTabSync", "function connectWS"]) {
+for (const required of ["PI_BROWSER_BRIDGE_WS_URL", "PI_BROWSER_HOOK_DISPATCHER_FILE", "dist/hook_dispatcher.js", "matchNetworkPattern", "async function handlePiBrowser", "handleNetworkRecorderCommand", "handlePiBrowserHookCommand", "function installPiBrowserServiceWorker", "function installPiBridgeRouter", "function installPiBrowserTransport", "function installPiBrowserTabSync", "function ensureOffscreenDocument", "pi-browser-offscreen-ws-message"]) {
 	assert(bundle.includes(required), `service-worker bundle must include migrated runtime symbol: ${required}`);
 }
+const serviceWorkerTransportSource = read("bridge_src/service_worker/transport.ts");
+assert(!serviceWorkerTransportSource.includes("new WebSocket("), "B5 durable service-worker transport must not own the real WebSocket transport");
+assert(!serviceWorkerTransportSource.includes("setInterval("), "B5 durable service-worker transport must not keep itself warm with a polling interval");
 assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", "service-worker.js.map")), "build pipeline must emit a source map for the experimental bundle");
+const offscreenBundle = read("bridge/pi_browser_bridge/dist/offscreen.js");
+assert(offscreenBundle.startsWith("// Generated by scripts/build-bridge.mjs. Do not edit by hand."), "dist offscreen bundle must carry generated-file banner");
+for (const required of ["new WebSocket", "pi-browser-offscreen-ws-message", "pi-browser-offscreen-send", "PI_BROWSER_BRIDGE_PORT_RANGE_END", "function probeAndConnectWS"]) {
+	assert(offscreenBundle.includes(required), `offscreen bundle must own durable transport behavior: ${required}`);
+}
+assert(!offscreenBundle.includes("chrome.tabs") && !offscreenBundle.includes("chrome.debugger") && !offscreenBundle.includes("chrome.scripting"), "offscreen transport must not own browser capability APIs");
+assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "dist", "offscreen.js.map")), "build pipeline must emit a source map for the offscreen bundle");
 
 const distPageScripts = {
 	content: read("bridge/pi_browser_bridge/dist/content.js"),
@@ -161,6 +178,9 @@ const oldSelf = globalThis.self;
 const oldNavigator = globalThis.navigator;
 const oldFetch = globalThis.fetch;
 const oldWebSocket = globalThis.WebSocket;
+const oldSetInterval = globalThis.setInterval;
+const oldClearInterval = globalThis.clearInterval;
+const fixtureIntervals = [];
 globalThis.self = globalThis;
 Object.defineProperty(globalThis, "navigator", { value: { userAgent: "bridge-build-contract" }, configurable: true });
 globalThis.fetch = async () => { throw new Error("fixture offline"); };
@@ -171,6 +191,15 @@ globalThis.WebSocket = class FixtureWebSocket {
 	static CLOSED = 3;
 	readyState = FixtureWebSocket.CLOSED;
 	constructor() { throw new Error("fixture websocket disabled"); }
+};
+globalThis.setInterval = (callback, delay, ...args) => {
+	const handle = { callback, delay, args, fixtureInterval: true };
+	fixtureIntervals.push(handle);
+	return handle;
+};
+globalThis.clearInterval = (handle) => {
+	const index = fixtureIntervals.indexOf(handle);
+	if (index >= 0) fixtureIntervals.splice(index, 1);
 };
 globalThis.chrome = {
 	runtime: {
@@ -207,6 +236,7 @@ globalThis.chrome = {
 	downloads: { download() {}, search(_query, callback) { callback([]); }, onChanged: eventStore(), onCreated: eventStore() },
 	cookies: { getAll: async () => [] },
 	management: { getAll: async () => [], setEnabled: async () => {} },
+	offscreen: { hasDocument: async () => true, createDocument: async () => {} },
 	alarms: { create() {}, onAlarm: alarmsOnAlarm },
 	contentSettings: { automaticDownloads: { set: async () => {} } },
 	declarativeNetRequest: { updateDynamicRules: async () => {} },
@@ -227,6 +257,8 @@ try {
 	Object.defineProperty(globalThis, "navigator", { value: oldNavigator, configurable: true });
 	globalThis.fetch = oldFetch;
 	globalThis.WebSocket = oldWebSocket;
+	globalThis.setInterval = oldSetInterval;
+	globalThis.clearInterval = oldClearInterval;
 }
 
 for (const file of ["README.md", "AI_INSTALL.md", "docs/bridge-esm-bundler-plan.md"]) {

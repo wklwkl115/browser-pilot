@@ -90,9 +90,13 @@ assert(manifest.background?.service_worker === "dist/service-worker.js" && manif
 assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["dist/disable_dialogs.js"]), "manifest document_start script must use dist disable-dialogs bundle");
 assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must declare downloads permission for browser_download path return");
+assert(manifest.permissions?.includes("offscreen"), "manifest must declare offscreen permission for durable B5 transport");
+assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "offscreen.html")), "offscreen.html must exist for durable B5 transport");
+assert(read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen.html must load the generated offscreen bundle");
 
 const bridgeInfo = readServiceWorkerSource("bridge_info.js");
 const transport = readServiceWorkerSource("transport.js");
+const offscreenTransport = read("bridge_src/offscreen/transport.ts");
 const router = readServiceWorkerSource("router.js");
 const runtimeBridge = readServiceWorkerSource("runtime.js");
 const hookBridge = readServiceWorkerSource("hook.js");
@@ -177,6 +181,9 @@ for (const file of ["hook_dispatcher.js", "disable_dialogs.js"]) {
 	for (const pattern of forbiddenNaming) assert(!pattern.test(text), `${file} contains legacy naming: ${pattern}`);
 }
 assert(transport.split(/\r?\n/).length <= 230, "transport.js must stay focused on WebSocket lifecycle");
+assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own durable WebSocket sockets or keepalive intervals");
+assert(transport.includes("ensureOffscreenDocument") && transport.includes("pi-browser-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must bridge offscreen frames through socket adapters");
+assert(offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own port-range WebSocket lifecycle and forward inbound frames");
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 
 assert(existsSync(path.join(root, "AI_INSTALL.md")), "AI_INSTALL.md install SOP must exist");

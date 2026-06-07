@@ -69,6 +69,8 @@ const SUMMARY_BUDGET_CHARS = 8_000;
 // data — capping it small kills the multi-KB re-dump blob that drowned the answer (blind-eval F2).
 const PREVIEW_FALLBACK_CHARS = 800;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
+const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
+const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
 
 type DistillBaseOptions = {
 	toolName: string;
@@ -312,6 +314,170 @@ function envelopeError(summary: DistilledSummary, explicit?: Record<string, unkn
 	return undefined;
 }
 
+function compactEntityForEnvelope(entity: Record<string, unknown>): Record<string, unknown> {
+	const out = pickDefined(entity, ["ref", "kind", "role", "name", "label"]);
+	const hints = isRecord(entity.hints) ? pickDefined(entity.hints, ["selector", "listContainer", "itemCount"]) : {};
+	if (Object.keys(hints).length) out.hints = hints;
+	return Object.keys(out).length ? out : compactSummaryValue(entity, { stringChars: 80, arrayItems: 2, tableRows: 2 }) as Record<string, unknown>;
+}
+
+function compactLiftedEnvelopeValue(key: string, value: unknown): unknown {
+	if (key === "entities" && Array.isArray(value)) return value.slice(0, 4).filter(isRecord).map((entity) => compactEntityForEnvelope(entity));
+	if (key === "relations" && isRecord(value)) return pickDefined(value, ["summary"]);
+	if (key === "treeDiff" && isRecord(value)) {
+		const compactInstances = (bucket: unknown): unknown => {
+			if (!isRecord(bucket)) return bucket;
+			const instances = Array.isArray(bucket.instances)
+				? bucket.instances.slice(0, 4).filter(isRecord).map((instance) => pickDefined(instance, ["key", "name", "role", "kind", "confidence", "fields"]))
+				: undefined;
+			return {
+				...pickDefined(bucket, ["count"]),
+				...(instances ? { instances } : {}),
+			};
+		};
+		const templates = Array.isArray(value.templates)
+			? value.templates.slice(0, 4).filter(isRecord).map((template) => ({
+				...pickDefined(template, ["templateKey", "container", "containerName", "role", "kind", "beforeCount", "afterCount"]),
+				...(template.appeared ? { appeared: compactInstances(template.appeared) } : {}),
+				...(template.disappeared ? { disappeared: compactInstances(template.disappeared) } : {}),
+				...(template.changed ? { changed: compactInstances(template.changed) } : {}),
+				...(template.reordered ? { reordered: pickDefined(template.reordered as Record<string, unknown>, ["commonCount", "sample"]) } : {}),
+			}))
+			: undefined;
+		return {
+			...(isRecord(value.summary) ? { summary: compactSummaryValue(value.summary, { stringChars: 120, arrayItems: 4, tableRows: 4 }) } : {}),
+			...(templates ? { templates } : {}),
+		};
+	}
+	if (key === "diff" && isRecord(value)) {
+		const summary = isRecord(value.summary) ? value.summary : {};
+		const summaryItems = Array.isArray(summary.items)
+			? summary.items.slice(0, 4).filter(isRecord).map((item) => pickDefined(item, ["kind", "ref", "changeKind", "score", "signal", "entityKind", "role", "name", "fields", "appeared", "disappeared", "sampleAppeared", "sampleDisappeared"]))
+			: undefined;
+		return {
+			...pickDefined(value, ["focusedRef"]),
+			...(Object.keys(summary).length ? {
+				summary: {
+					...pickDefined(summary, ["changed", "appeared", "disappeared", "focusedRef"]),
+					...(summaryItems ? { items: summaryItems } : {}),
+				},
+			} : {}),
+		};
+	}
+	if (key === "snapshotProjection" && isRecord(value)) {
+		const compactInstances = (bucket: unknown): unknown => {
+			if (!isRecord(bucket)) return bucket;
+			const instances = Array.isArray(bucket.instances)
+				? bucket.instances.slice(0, 4).filter(isRecord).map((instance) => pickDefined(instance, ["key", "name", "role", "kind", "confidence", "fields"]))
+				: undefined;
+			return {
+				...pickDefined(bucket, ["count"]),
+				...(instances ? { instances } : {}),
+			};
+		};
+		const compactDelta = (delta: unknown): unknown => {
+			if (!isRecord(delta)) return undefined;
+			return {
+				...pickDefined(delta, ["beforeCount", "afterCount"]),
+				...(delta.appeared ? { appeared: compactInstances(delta.appeared) } : {}),
+				...(delta.disappeared ? { disappeared: compactInstances(delta.disappeared) } : {}),
+				...(delta.changed ? { changed: compactInstances(delta.changed) } : {}),
+				...(delta.reordered && isRecord(delta.reordered) ? { reordered: pickDefined(delta.reordered, ["commonCount", "sample"]) } : {}),
+			};
+		};
+		const templates = Array.isArray(value.templates)
+			? value.templates.slice(0, 4).filter(isRecord).map((template) => ({
+				...pickDefined(template, ["templateKey", "container", "containerName", "role", "kind", "count", "instanceRefCount", "varies", "constantText"]),
+				...(template.delta ? { delta: compactDelta(template.delta) } : {}),
+			}))
+			: undefined;
+		return {
+			...(isRecord(value.summary) ? { summary: compactSummaryValue(value.summary, { stringChars: 120, arrayItems: 4, tableRows: 4 }) } : {}),
+			...(templates ? { templates } : {}),
+		};
+	}
+	return compactSummaryValue(value, { stringChars: 120, arrayItems: 4, tableRows: 4 });
+}
+
+function markEnvelopeBudgetOmissions(envelope: DistilledEnvelope, omitted: string[]): DistilledEnvelope {
+	if (!omitted.length) return envelope;
+	const unique = Array.from(new Set(omitted));
+	const diagnostics = isRecord(envelope.diagnostics) ? { ...envelope.diagnostics } : {};
+	const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings.filter((item): item is string => typeof item === "string") : [];
+	diagnostics.warnings = Array.from(new Set([...warnings, `envelope_omitted:${unique.join(",")}`]));
+	return {
+		...envelope,
+		summary: {
+			...envelope.summary,
+			envelopeTruncatedToBudget: true,
+			envelopeOmitted: unique,
+		},
+		diagnostics,
+	};
+}
+
+function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {
+	const budget = Math.max(1_000, Math.floor(maxChars));
+	if (stableJson(envelope).length <= budget) return envelope;
+	let out: DistilledEnvelope = { ...envelope };
+	const omitted: string[] = [];
+	const check = (): boolean => stableJson(markEnvelopeBudgetOmissions(out, omitted)).length <= budget;
+	const nonSummaryChars = stableJson({ ...out, summary: {} }).length;
+	const summaryBudget = Math.max(300, budget - nonSummaryChars);
+	if (stableJson(out.summary).length > summaryBudget) {
+		out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
+		if (stableJson(out).length <= budget) return out;
+	}
+	for (const key of ENVELOPE_LIFTED_KEYS) {
+		const value = out[key];
+		if (value === undefined) continue;
+		const compacted = compactLiftedEnvelopeValue(key, value);
+		if (stableJson(compacted).length < stableJson(value).length) {
+			out = { ...out, [key]: compacted };
+			omitted.push(`${key}:compact`);
+			if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+		}
+	}
+	for (const key of ENVELOPE_REMOVABLE_KEYS) {
+		if (out[key] === undefined) continue;
+		out = { ...out };
+		delete out[key];
+		omitted.push(key);
+		if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+	}
+	const overhead = stableJson({ ...out, summary: {}, diagnostics: out.diagnostics }).length;
+	out = { ...out, summary: fitSummaryBudget(out.summary, Math.max(300, budget - overhead)) };
+	if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+	const essentialWithDiff = markEnvelopeBudgetOmissions({
+		tool: out.tool,
+		command: out.command,
+		browserSessionId: out.browserSessionId,
+		detailLevel: out.detailLevel,
+		summary: fitSummaryBudget(out.summary, 300),
+		diagnostics: out.diagnostics,
+		limits: out.limits,
+		privacy: out.privacy,
+		...(out.diff ? { diff: out.diff } : {}),
+		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
+		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
+		nextActions: out.nextActions?.slice(0, 2),
+		saved: out.saved,
+	}, [...omitted, "nonessential_metadata"]);
+	if (stableJson(essentialWithDiff).length <= budget) return essentialWithDiff;
+	return markEnvelopeBudgetOmissions({
+		tool: out.tool,
+		command: out.command,
+		browserSessionId: out.browserSessionId,
+		detailLevel: out.detailLevel,
+		summary: fitSummaryBudget(out.summary, 300),
+		diagnostics: out.diagnostics,
+		limits: out.limits,
+		privacy: out.privacy,
+		nextActions: out.nextActions?.slice(0, 2),
+		saved: out.saved,
+	}, [...omitted, "nonessential_metadata", ...(out.diff ? ["diff"] : []), ...(out.treeDiff ? ["treeDiff"] : []), ...(out.snapshotProjection ? ["snapshotProjection"] : [])]);
+}
+
 function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
 	const summaryTarget = isRecord(summary.target) ? summary.target : {};
 	const target = {
@@ -447,7 +613,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
 	const error = envelopeError(redactedSummary, options.error);
-	return {
+	return fitEnvelopeBudget({
 		tool: options.toolName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,
@@ -472,7 +638,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),
 		saved,
-	};
+	}, options.maxChars);
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {

@@ -56,6 +56,11 @@ function readBridgeRuntimeFile(file) {
 	return transformBridgeSource(read(`bridge_src/service_worker/${name}.ts`), `bridge_src/service_worker/${name}.ts`);
 }
 
+function readOffscreenRuntimeFile(file) {
+	const name = file.replace(/\.js$/, "");
+	return transformBridgeSource(read(`bridge_src/offscreen/${name}.ts`), `bridge_src/offscreen/${name}.ts`);
+}
+
 function readBridgeBundle(files) {
 	return files.map((file) => readBridgeRuntimeFile(file)).join("\n");
 }
@@ -63,6 +68,7 @@ function readBridgeBundle(files) {
 const requiredBridgeFiles = [
 	"manifest.json",
 	"popup.html",
+	"offscreen.html",
 	"popup.js",
 	"native_command_schema.json",
 	"dist/.gitignore",
@@ -83,6 +89,22 @@ const stateStoreStubs = {
 	redactConfig: (value) => value,
 };
 
+function intervalStubs() {
+	const intervals = [];
+	return {
+		__fixtureIntervals: intervals,
+		setInterval(callback, delay, ...args) {
+			const handle = { callback, delay, args };
+			intervals.push(handle);
+			return handle;
+		},
+		clearInterval(handle) {
+			const index = intervals.indexOf(handle);
+			if (index >= 0) intervals.splice(index, 1);
+		},
+	};
+}
+
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.version === "0.3.0", "package version must be 0.3.0");
 assert(pkg.keywords?.includes("pi-package"), "package must declare pi-package keyword");
@@ -102,10 +124,13 @@ assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["di
 assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
+assert(manifest.permissions?.includes("offscreen"), "manifest must include offscreen permission for durable B5 transport");
+assert(read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen.html must load the generated offscreen transport");
 
 const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 const background = serviceWorkerBridgeFiles.join(" ");
 const transport = readBridgeRuntimeFile("transport.js");
+const offscreenTransport = readOffscreenRuntimeFile("transport.js");
 const tabSync = readBridgeRuntimeFile("tab_sync.js");
 const bridgeInfo = readBridgeRuntimeFile("bridge_info.js");
 const router = readBridgeRuntimeFile("router.js");
@@ -199,15 +224,19 @@ assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDi
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook dispatcher must remain self-contained until TODO 192 removes old runtime files");
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
-assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && transport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !transport.includes("127.0.0.1:18765"), "transport.js must read generated bridge URLs and port range instead of hardcoding the port");
-assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "transport.js must stay focused on WebSocket lifecycle");
+assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "service-worker transport must retain generated bridge metadata without hardcoding the port");
+assert(offscreenTransport.includes("PI_BROWSER_BRIDGE_WS_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !offscreenTransport.includes("127.0.0.1:18765"), "offscreen transport must read generated bridge URLs and port range instead of hardcoding the port");
+assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "service-worker transport must stay focused on offscreen lifecycle and socket adapters");
+assert(offscreenTransport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "offscreen transport must stay focused on WebSocket lifecycle");
 assert(transport.includes("cleanupTransportSocket") && transport.includes("if (current !== socket) continue"), "transport.js must use identity-guarded socket cleanup");
-assert(transport.includes("sockets.set(port, socket)") && transport.includes("handlePiBridgeWsMessage(JSON.parse(event.data), socket)"), "transport.js handlers must capture the current socket instead of reading global socket state");
+assert(transport.includes("ensureOffscreenDocument") && transport.includes("pi-browser-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must forward WebSocket frames through offscreen socket adapters");
+assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own real WebSocket sockets or keep itself warm with intervals");
+assert(offscreenTransport.includes("sockets.set(port, socket)") && offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own real WebSocket sockets and forward inbound frames");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
-assert(scheduleProbeBlock.includes("chrome.alarms.create('pi-browser-ws-probe'"), "transport scheduleProbe must use the single named Chrome alarm for reconnect probes");
+assert(scheduleProbeBlock.includes("chrome.alarms.create(\"pi-browser-ws-probe\""), "service-worker transport scheduleProbe must use the single named Chrome alarm for offscreen recovery probes");
 assert(!scheduleProbeBlock.includes("setTimeout("), "transport scheduleProbe must not create untracked setTimeout probe timers");
-const socketOpenBlock = transport.slice(transport.indexOf("socket.onopen"), transport.indexOf("socket.onmessage"));
-assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"), "transport must reset reconnect backoff after a successful WebSocket open");
+const socketOpenBlock = offscreenTransport.slice(offscreenTransport.indexOf("socket.onopen"), offscreenTransport.indexOf("socket.onmessage"));
+assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"), "offscreen transport must reset reconnect backoff after a successful WebSocket open");
 assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTask"), "tab_sync.js must wrap async lifecycle tasks with rejection handling");
 assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 assert(/chrome\.tabs\.onRemoved\.addListener\(\(tabId\)\s*=>\s*\{\s*cleanupPiBrowserTab\(tabId,\s*['"]tab_removed['"]\)/s.test(tabSync), "tab removal must route through unified tab cleanup before sending tabs_update");
@@ -517,75 +546,11 @@ async function testWsSessionPrimitives() {
 
 await testWsSessionPrimitives();
 
-async function testTransportSocketCleanupIdentity() {
-	const alarms = [];
+async function testOffscreenTransportLifecycle() {
 	const sockets = [];
-	class FakeWebSocket {
-		static CONNECTING = 0;
-		static OPEN = 1;
-		static CLOSING = 2;
-		static CLOSED = 3;
-		constructor(url) {
-			this.url = url;
-			this.readyState = FakeWebSocket.CONNECTING;
-			this.sent = [];
-			sockets.push(this);
-		}
-		send(data) { this.sent.push(data); }
-	}
-	const sandbox = {
-		PI_BROWSER_BRIDGE_HOST: "bridge.test",
-		PI_BROWSER_BRIDGE_PORT: 18765,
-		PI_BROWSER_BRIDGE_PORT_RANGE_END: 18765,
-		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test:18765",
-		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
-		WebSocket: FakeWebSocket,
-		AbortController,
-		setTimeout,
-		console: { log() {}, warn() {}, debug() {}, error() {} },
-		fetch: async () => ({}),
-		isScriptable: () => true,
-		piBridgeInfo: () => ({ id: "bridge-test" }),
-		installCspBypassRule() {},
-		installPiBrowserTabSync(deps) { sandbox.tabSyncDeps = deps; },
-		setBridgeWakeProbe(fn) { sandbox.bridgeWakeProbe = fn; },
-		handlePiBridgeWsMessage: async () => {},
-		chrome: {
-			runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, reload() {} },
-			alarms: { create(name, options) { alarms.push({ name, options }); }, onAlarm: { addListener(fn) { sandbox.onAlarm = fn; } } },
-			tabs: { async query() { return [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }]; } },
-		},
-	};
-	vm.runInNewContext(transport, sandbox, { filename: "transport.js" });
-	assert(sandbox.installPiBrowserTransport() === true, "transport must install explicitly through the ESM service-worker entry");
-	assert(sandbox.installPiBrowserTransport() === false, "transport install must be idempotent");
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert(sandbox.bridgeWakeProbe === sandbox.probeAndConnectWS, "transport must register bridge_wake probe through the command-layer hook");
-	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.getSockets === sandbox.getPiBrowserTransportSockets && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
-	assert(sockets.length === 1, "transport must create an initial socket after successful health probe");
-	const first = sockets[0];
-	first.readyState = FakeWebSocket.OPEN;
-	await first.onopen();
-	assert(first.sent.length === 1, "first socket should send ext_ready after open");
-	first.readyState = FakeWebSocket.CLOSED;
-	first.onerror({ type: "error" });
-	assert(sandbox.getPiBrowserTransportSocket() === null, "non-open socket error must clear the current socket");
-	assert(alarms.some((alarm) => alarm.name === "pi-browser-ws-probe"), "socket error cleanup must schedule reconnect probe");
-	sandbox.connectWS();
-	const second = sockets[1];
-	assert(second, "transport should create a second socket after cleanup");
-	second.readyState = FakeWebSocket.CONNECTING;
-	first.onclose();
-	assert(sandbox.getPiBrowserTransportSocket() === second, "late close from old socket must not clear the new socket");
-	first.onerror({ type: "error" });
-	assert(sandbox.getPiBrowserTransportSocket() === second, "late error from old socket must not clear the new socket");
-	second.readyState = FakeWebSocket.OPEN;
-	await second.onopen();
-	assert(second.sent.length === 1, "second socket should send its own ext_ready");
-}
-
-async function testTransportMultiPortFanout() {
-	const sockets = [];
+	const runtimeMessages = [];
+	let runtimeListener;
+	const timers = [];
 	class FakeWebSocket {
 		static CONNECTING = 0;
 		static OPEN = 1;
@@ -607,17 +572,136 @@ async function testTransportMultiPortFanout() {
 		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
 		WebSocket: FakeWebSocket,
 		AbortController,
-		setTimeout,
 		console: { log() {}, warn() {}, debug() {}, error() {} },
 		fetch: async () => ({}),
+		Math,
+		JSON,
+		setTimeout(callback, delay, ...args) {
+			const handle = { callback, delay, args };
+			timers.push(handle);
+			return handle;
+		},
+		clearTimeout(handle) {
+			const index = timers.indexOf(handle);
+			if (index >= 0) timers.splice(index, 1);
+		},
+		chrome: {
+			runtime: {
+				sendMessage: async (message) => {
+					runtimeMessages.push(message);
+					return { ok: true };
+				},
+				onMessage: { addListener(fn) { runtimeListener = fn; } },
+			},
+		},
+	};
+	vm.runInNewContext(offscreenTransport, sandbox, { filename: "offscreen-transport.js" });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sockets.length === 2, "offscreen transport must create sockets for every live bridge server in the configured port range");
+	assert(sockets.map((socket) => socket.url).join(" ").includes("18765") && sockets.map((socket) => socket.url).join(" ").includes("18766"), "offscreen sockets must target distinct bridge ports");
+	for (const socket of sockets) {
+		socket.readyState = FakeWebSocket.OPEN;
+		socket.onopen();
+	}
+	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-connected" && message.port === 18765), "offscreen open must notify the service worker");
+	runtimeListener({ type: "pi-browser-offscreen-send", port: 18765, data: "{\"type\":\"ext_ready\"}" }, {}, () => {});
+	assert(sockets[0].sent.some((message) => String(message).includes("ext_ready")), "offscreen must write service-worker bytes to the real WebSocket");
+	sockets[0].onmessage({ data: "{\"id\":\"cmd-1\",\"code\":{\"cmd\":\"tabs.list\"}}" });
+	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-ws-message" && message.port === 18765 && message.data?.id === "cmd-1"), "offscreen must forward inbound WebSocket frames to the service worker");
+	sockets[0].readyState = FakeWebSocket.CLOSED;
+	sockets[0].onclose();
+	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-disconnected" && message.port === 18765), "offscreen close must notify the service worker");
+}
+
+await testOffscreenTransportLifecycle();
+
+async function testTransportSocketCleanupIdentity() {
+	const alarms = [];
+	const runtimeListeners = [];
+	const offscreenMessages = [];
+	const offscreenSends = [];
+	let handledWsMessage;
+	const sandbox = {
+		PI_BROWSER_BRIDGE_HOST: "bridge.test",
+		PI_BROWSER_BRIDGE_PORT: 18765,
+		PI_BROWSER_BRIDGE_PORT_RANGE_END: 18765,
+		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test:18765",
+		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
+		console: { log() {}, warn() {}, debug() {}, error() {} },
 		isScriptable: () => true,
 		piBridgeInfo: () => ({ id: "bridge-test" }),
 		installCspBypassRule() {},
 		installPiBrowserTabSync(deps) { sandbox.tabSyncDeps = deps; },
 		setBridgeWakeProbe(fn) { sandbox.bridgeWakeProbe = fn; },
-		handlePiBridgeWsMessage: async () => {},
+		runStartupRecovery: async () => {},
+		handlePiBridgeWsMessage: async (data, socket) => {
+			handledWsMessage = data;
+			socket.send(JSON.stringify({ type: "ack", id: data.id }));
+		},
 		chrome: {
-			runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} }, reload() {} },
+			runtime: {
+				getURL: (item) => `chrome-extension://fixture/${item}`,
+				sendMessage: async (message) => {
+					offscreenMessages.push(message);
+					if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
+					return message.type === "pi-browser-offscreen-probe" || message.type === "pi-browser-offscreen-status" ? { ok: true, openPorts: [18765] } : { ok: true };
+				},
+				onMessage: { addListener(fn) { runtimeListeners.push(fn); } },
+				onInstalled: { addListener() {} },
+				onStartup: { addListener() {} },
+				reload() {},
+			},
+			offscreen: { hasDocument: async () => true, createDocument: async () => {} },
+			alarms: { create(name, options) { alarms.push({ name, options }); }, onAlarm: { addListener(fn) { sandbox.onAlarm = fn; } } },
+			tabs: { async query() { return [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }]; } },
+		},
+	};
+	vm.runInNewContext(transport, sandbox, { filename: "transport.js" });
+	assert(sandbox.installPiBrowserTransport() === true, "transport must install explicitly through the ESM service-worker entry");
+	assert(sandbox.installPiBrowserTransport() === false, "transport install must be idempotent");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sandbox.bridgeWakeProbe === sandbox.probeAndConnectWS, "transport must register bridge_wake probe through the command-layer hook");
+	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.getSockets === sandbox.getPiBrowserTransportSockets && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
+	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "service-worker transport must expose an open socket adapter after offscreen reports an open port");
+	assert(offscreenSends.some((message) => String(message.data).includes('"ext_ready"')), "service-worker transport must send ext_ready through the offscreen socket adapter");
+	assert(alarms.some((alarm) => alarm.name === "pi-browser-ws-probe"), "transport install must schedule the recovery probe alarm");
+	const listener = runtimeListeners[0];
+	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-ws-message", port: 18765, data: { id: "cmd-1", code: { cmd: "tabs.list" } } }, {}, (response) => { sandbox.wsResponse = response; resolve(); }));
+	assert(handledWsMessage?.id === "cmd-1", "offscreen inbound WebSocket frames must dispatch through the service-worker router");
+	assert(offscreenSends.some((message) => String(message.data).includes('"ack"') && String(message.data).includes('"cmd-1"')), "router socket replies must be forwarded back to offscreen");
+	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-disconnected", port: 18765, data: { reason: "close" } }, {}, () => resolve()));
+	assert(sandbox.getPiBrowserTransportSocket() === null, "offscreen disconnect must clear the matching socket adapter");
+}
+
+async function testTransportMultiPortFanout() {
+	const offscreenSends = [];
+	const sandbox = {
+		PI_BROWSER_BRIDGE_HOST: "bridge.test",
+		PI_BROWSER_BRIDGE_PORT: 18765,
+		PI_BROWSER_BRIDGE_PORT_RANGE_END: 18766,
+		PI_BROWSER_BRIDGE_WS_URL: "ws://bridge.test:18765",
+		PI_BROWSER_BRIDGE_HTTP_URL: "http://bridge.test:18765",
+		WebSocket: { OPEN: 1 },
+		console: { log() {}, warn() {}, debug() {}, error() {} },
+		isScriptable: () => true,
+		piBridgeInfo: () => ({ id: "bridge-test" }),
+		installCspBypassRule() {},
+		setBridgeWakeProbe(fn) { sandbox.bridgeWakeProbe = fn; },
+		handlePiBridgeWsMessage: async () => {},
+		runStartupRecovery: async () => {},
+		chrome: {
+			runtime: {
+				getURL: (item) => `chrome-extension://fixture/${item}`,
+				sendMessage: async (message) => {
+					if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
+					return message.type === "pi-browser-offscreen-probe" || message.type === "pi-browser-offscreen-status" ? { ok: true, openPorts: [18765, 18766] } : { ok: true };
+				},
+				onMessage: { addListener() {} },
+				onInstalled: { addListener() {} },
+				onStartup: { addListener() {} },
+				reload() {},
+			},
+			offscreen: { hasDocument: async () => true, createDocument: async () => {} },
 			alarms: { create() {}, onAlarm: { addListener(fn) { sandbox.onAlarm = fn; } } },
 			tabs: {
 				async query() { return [{ id: 1, url: "https://example.test", title: "Example", active: true, windowId: 1 }]; },
@@ -631,11 +715,10 @@ async function testTransportMultiPortFanout() {
 	vm.runInNewContext(tabSync, sandbox, { filename: "tab_sync.js" });
 	sandbox.installPiBrowserTransport();
 	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert(sockets.length === 2, "transport must connect to every live bridge server in the configured port range");
-	assert(sockets.map((socket) => socket.url).join(" ").includes("18765") && sockets.map((socket) => socket.url).join(" ").includes("18766"), "transport sockets must target distinct bridge ports");
-	for (const socket of sockets) { socket.readyState = FakeWebSocket.OPEN; await socket.onopen(); }
+	assert(sandbox.getPiBrowserTransportSockets().length === 2, "service-worker transport must expose one socket adapter per open offscreen port");
 	await sandbox.sendTabsUpdate();
-	assert(sockets.every((socket) => socket.sent.some((message) => String(message).includes('"tabs_update"'))), "tab sync must fan out updates to every open bridge socket");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert([18765, 18766].every((port) => offscreenSends.some((message) => message.port === port && String(message.data).includes('"tabs_update"'))), "tab sync must fan out updates to every open offscreen socket adapter");
 }
 
 await testTransportMultiPortFanout();

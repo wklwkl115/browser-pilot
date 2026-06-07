@@ -1,6 +1,6 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前无激活执行线：最近的 Browser-tools skeptical-eval 修复线已收口（详见 `CURRENT.md`）；ABML R3 质量跟进已完成。
+- 当前无激活执行线：B5 durable connection reliability（offscreen transport）已完成并归档（详见 `CURRENT.md` / `ARCHIVE.md`）。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。
@@ -14,3 +14,5 @@
 - 新增能力、重大架构变更、成熟替代/bridge 引入、既有工具实质变更，先更新 `CURRENT.md` 中的决策、边界、契约与验证计划。
 - 执行细分任务放入对应 `docs/*execution-plan.md`；新主线启动前先在 `CURRENT.md` 写明决策、边界、契约与验证计划。
 - 完成后迁入 `ARCHIVE.md`，后续项进入 `ROADMAP.md`。
+## Recently completed
+- B5 durable connection reliability：已将扩展侧 WebSocket 连接所有权从 MV3 service worker 迁到 offscreen document；保持 native bridge WebSocket wire protocol、公开 `browser_*` 工具、端口范围 fan-out、`bridge_wake` 行为不变；验证通过 `npm run build:bridge`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`、`npm run check`。
