@@ -49,7 +49,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Exact DOM/HTML for selector | `browser_observe {mode:"html", selector, htmlMode}` — `htmlMode` ∈ `fragment\|raw\|text\|inner\|outer` (CLI `--html-mode`) |
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
-| Inside iframe | `browser_frame list` → `browser_frame evaluate` |
+| Inside iframe | `browser_frame list` (read child `frameId` from `frames[].frameId`) → `browser_frame evaluate` with `--params '{"frameId":"<id>","expression":"<js>"}'`. A top-level scan does NOT structurally cover child frames (`mode=text` only appends same-origin iframe text after a `--- iframe ---` marker — flat, no refs) |
 | Click/type/scroll/mutate state | `browser_execute` (JS) → `browser_wait` → re-observe |
 | Click/input returned ok but page didn't change | trusted-event-gated → `browser_command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the element rect |
 | CDP / native command | `browser_command` with explicit command object |
