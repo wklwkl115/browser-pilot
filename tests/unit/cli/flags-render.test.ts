@@ -69,6 +69,10 @@ test("B10: unknown flag suggests the closest valid flag (camelCase↔kebab) + ab
 	const detail = parseArgs(jsonSpecs, ["--detail-level", "full"]);
 	assert.equal(detail.ok, false);
 	assert.match(detail.error, /--limit \/ --offset \/ --max-chars/);
+	// G-round R-bilibili: agents reach for --selector on action tools; point them at the --params shape.
+	const selector = parseArgs(jsonSpecs, ["--selector", "#id"]);
+	assert.equal(selector.ok, false);
+	assert.match(selector.error, /--params/);
 });
 
 test("F4: nativeActionParamsHelp surfaces per-action required --params keys from generated metadata", () => {

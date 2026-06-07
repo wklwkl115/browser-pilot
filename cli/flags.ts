@@ -102,6 +102,9 @@ function suggestFlag(token: string, flags: string[]): string | undefined {
 // dumping the accepted list (e.g. browser_artifact has no --detail-level; it sizes with --limit/etc).
 const ABSENT_FLAG_HINTS: Record<string, string> = {
 	"--detail-level": "this command has no --detail-level; size output with --limit / --offset / --max-chars",
+	// Action tools (wait/network/hook/frame) take per-action keys inside --params, not as flags. `selector`
+	// is the one agents most often reach for as a flag (e.g. wait --action selector). Point at the shape.
+	"--selector": "action tools (wait/hook/frame) take selector inside --params, e.g. --action selector --params '{\"selector\":\"#id\"}'",
 };
 
 /** Collect argv into a raw params object (string/bool/array/json), plus CLI globals. */
