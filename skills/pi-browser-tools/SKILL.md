@@ -46,7 +46,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 |---|---|
 | Page structure | `browser_observe {mode:"scan"}` |
 | Main article text | `browser_observe {mode:"content"}` |
-| Exact DOM/HTML for selector | `browser_observe {mode:"html", selector, htmlMode}` |
+| Exact DOM/HTML for selector | `browser_observe {mode:"html", selector, htmlMode}` — `htmlMode` ∈ `fragment\|raw\|text\|inner\|outer` (CLI `--html-mode`) |
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame list` → `browser_frame evaluate` |

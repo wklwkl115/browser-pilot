@@ -182,8 +182,17 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   chrome.tabs.onCreated.addListener(onCreated);
   try {
     let res: unknown;
+    // The caller-supplied timeout is the TOTAL budget for this exec (it is also the outer client
+    // pending-request timeout). chrome.scripting.executeScript (MAIN world) is the fast primary path,
+    // but it can HANG when the debugger is attached / the renderer never acks the MAIN-world injection
+    // on some pages — exactly the case the persistent-CDP Runtime.evaluate fallback below was added for
+    // (browser_observe drives the same CDP eval successfully on those pages). So executeScript must FAIL
+    // FAST and reserve the bulk of the budget for the fallback: cap it to ≤1/3 of the budget and ≤2500ms.
+    // Reusing the full timeoutMs here (the prior bug) let a hung executeScript consume the entire budget
+    // so the fallback never ran and the client only ever saw BRIDGE_TIMEOUT with no result. [F2]
+    const TOTAL_EXEC_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
     try {
-      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 2500) || 2500));
+      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(2500, Math.floor(TOTAL_EXEC_TIMEOUT_MS / 3)));
       const executePromise = chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
@@ -215,7 +224,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
         const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', {
           expression: wrappedCode, awaitPromise: true, returnByValue: true
-        }, { name: 'default', persistent: false, timeoutMs: Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000)) }));
+        }, { name: 'default', persistent: false, timeoutMs: TOTAL_EXEC_TIMEOUT_MS }));
         if (!resp || resp.ok === false) throw new Error(String(resp?.error || resp?.message || 'persistent CDP Runtime.evaluate failed'));
         const cdpRes = (((resp.data && typeof resp.data === 'object') ? resp.data as JsonRecord : {}).result || resp.result || resp.data) as JsonRecord;
         const exceptionDetails = cdpRes.exceptionDetails && typeof cdpRes.exceptionDetails === 'object' ? cdpRes.exceptionDetails as JsonRecord : undefined;

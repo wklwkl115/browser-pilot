@@ -1295,6 +1295,53 @@ async function testRouterNativeWsErrorFrames() {
 
 await testRouterNativeWsErrorFrames();
 
+// F2 — a hung chrome.scripting.executeScript must NOT eat the whole budget; the persistent-CDP fallback
+// (the path browser_observe uses reliably on the same page) must still run within the caller timeout.
+async function testExecHangingScriptFallsBackToCdpWithinBudget() {
+	const execBridge = readBridgeRuntimeFile("exec.js");
+	const sent = [];
+	let cdpSendArgs;
+	const sandbox = {
+		chrome: {
+			scripting: { executeScript() { return new Promise(() => {}); } }, // never resolves → simulate MAIN-world injection hang
+			tabs: { onCreated: { addListener() {}, removeListener() {} }, async get() { return {}; }, async update() {}, async create() { return {}; } },
+		},
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => ({
+			async send(_tabId, _method, _params, options) {
+				cdpSendArgs = options;
+				return { ok: true, data: { result: { result: { value: { ok: true, data: 42 } } } } };
+			},
+		}),
+		socket: { send(text) { sent.push(JSON.parse(text)); } },
+		console,
+		setTimeout,
+		Promise,
+		URL,
+		JSON,
+		Number,
+		Math,
+		Array,
+		Object,
+		String,
+	};
+	vm.runInNewContext(`${execBridge}\nglobalThis.handleWsExec = handleWsExec;`, sandbox, { filename: "exec.js" });
+	const timeoutMs = 900;
+	const startedAt = Date.now();
+	await sandbox.handleWsExec({ id: "f2", tabId: 7, code: "1+1", timeoutMs }, sandbox.socket);
+	const elapsed = Date.now() - startedAt;
+	assert(sent[0]?.type === "ack" && sent[0]?.id === "f2", "exec must ack receipt before running");
+	const final = sent.at(-1);
+	assert(final?.type === "result" && final?.result === 42, "a hung executeScript must fall back to the persistent-CDP result, not a BRIDGE_TIMEOUT with no result");
+	assert(cdpSendArgs?.timeoutMs === timeoutMs, "the CDP fallback must inherit the full exec budget (so the reserved budget is actually usable)");
+	// With the fix the executeScript fast-path is capped to ≤1/3 of the budget (≤300ms here) so the
+	// fallback runs well within the 900ms caller timeout; a regression that re-gives executeScript the
+	// whole budget would only fall back at ~900ms (or after the caller already timed out).
+	assert(elapsed < timeoutMs - 150, `exec fallback must complete well inside the caller budget (elapsed=${elapsed}ms, budget=${timeoutMs}ms)`);
+}
+
+await testExecHangingScriptFallsBackToCdpWithinBudget();
+
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
 assert(serverSource.includes('methodAccessMode') && serverSource.includes('spec.accessMode'), "driver command access mode must come from protocol schema metadata");

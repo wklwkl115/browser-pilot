@@ -8946,8 +8946,9 @@ async function handleWsExec(data, socket) {
   chromeApi.tabs.onCreated.addListener(onCreated);
   try {
     let res;
+    const TOTAL_EXEC_TIMEOUT_MS = Math.max(100, Math.min(12e4, Number(data.timeoutMs ?? data.timeout_ms ?? 3e4) || 3e4));
     try {
-      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(12e4, Number(data.timeoutMs ?? data.timeout_ms ?? 2500) || 2500));
+      const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(2500, Math.floor(TOTAL_EXEC_TIMEOUT_MS / 3)));
       const executePromise = chromeApi.scripting.executeScript({
         target: { tabId },
         world: "MAIN",
@@ -8981,7 +8982,7 @@ async function handleWsExec(data, socket) {
           expression: wrappedCode,
           awaitPromise: true,
           returnByValue: true
-        }, { name: "default", persistent: false, timeoutMs: Math.max(100, Math.min(12e4, Number(data.timeoutMs ?? data.timeout_ms ?? 3e4) || 3e4)) }));
+        }, { name: "default", persistent: false, timeoutMs: TOTAL_EXEC_TIMEOUT_MS }));
         if (!resp || resp.ok === false) throw new Error(String(resp?.error || resp?.message || "persistent CDP Runtime.evaluate failed"));
         const cdpRes = (resp.data && typeof resp.data === "object" ? resp.data : {}).result || resp.result || resp.data;
         const exceptionDetails = cdpRes.exceptionDetails && typeof cdpRes.exceptionDetails === "object" ? cdpRes.exceptionDetails : void 0;
