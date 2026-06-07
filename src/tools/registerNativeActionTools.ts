@@ -32,16 +32,40 @@ function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): 
 	return toolTimeoutMs(value, fallback, { allowZero });
 }
 
+// Reserved top-level keys an action tool already owns — never treated as a per-action passthrough.
+const ACTION_RESERVED_KEYS = new Set(["action", "params", "browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars", "redact", "sessionId"]);
+
+// The per-action REQUIRED keys for a tool, derived from the generated native metadata (the same
+// source-of-truth F4 surfaces in --help). Agents primed by other tools routinely place these at the
+// TOP LEVEL (e.g. browser_wait {action:"navigate", url:"…"}) instead of nesting them under `params`,
+// and hit a hard `root: must not have additional properties` (real CTF session 2026-06-07, H2). We
+// accept them as optional top-level aliases and fold them into `params` (below), keeping the schema
+// strict — only these known keys are added, unknown typos are still rejected.
+function actionPassthroughKeys(toolName: string): string[] {
+	const tools = nativeToolMetadata.nativeActionTools as unknown as Record<string, { actions?: Array<{ required?: readonly string[]; requiredAny?: readonly (readonly string[])[] }> }>;
+	const keys = new Set<string>();
+	for (const a of tools[toolName]?.actions ?? []) {
+		for (const k of a.required ?? []) keys.add(k);
+		for (const g of a.requiredAny ?? []) for (const k of g) keys.add(k);
+	}
+	for (const r of ACTION_RESERVED_KEYS) keys.delete(r);
+	return [...keys];
+}
+
 function nativeActionErrorResult(error: unknown) {
 	return bridgeNestedErrorResult(error, { defaultMessage: "browser native action failed" });
 }
 
 function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, config: ActionToolConfig) {
+	const passthroughKeys = actionPassthroughKeys(config.name);
 	const parameterProperties = {
 		action: Type.String({ description: config.actionDescription }),
 		params: Type.Optional(NativeCommandParamsSchema),
 		...sharedTabScopedToolParams(),
 		...(config.sessionIdDescription ? { sessionId: Type.Optional(Type.String({ description: config.sessionIdDescription })) } : {}),
+		// H2: accept each per-action required key at the top level too (folded into params at execute) so
+		// the natural `{action, <key>}` call works instead of hard-rejecting; primary path stays `params`.
+		...Object.fromEntries(passthroughKeys.map((k) => [k, Type.Optional(Type.Unknown({ description: `Per-action '${k}' — pass here or inside params; folded into params.` }))])),
 	};
 	defineBrowserTool(pi, {
 		name: config.name,
@@ -54,6 +78,11 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 			return await runTool(async () => {
 				const server = await ensureStarted();
 				const body = objectParam(params.params);
+				// H2: fold any per-action key passed at the top level into params (params still wins if both set).
+				for (const k of passthroughKeys) {
+					const top = (params as Record<string, unknown>)[k];
+					if (top !== undefined && body[k] === undefined) body[k] = top;
+				}
 				const commandName = config.commandForAction(params.action);
 				const tabId = targetTabId(params, body);
 				if (params.sessionId && body.sessionId === undefined && body.session_id === undefined) body.sessionId = params.sessionId;

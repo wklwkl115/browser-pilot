@@ -94,6 +94,11 @@ assert(read("src/tools/registerTabsTool.ts").includes("sharedTabScopedToolParams
 // It must accept detailLevel (as a no-op — output shape is set by mode) so the universal param agents
 // pass everywhere does not error here.
 assert(read("src/tools/registerArtifactTool.ts").includes("detailLevel:"), "browser_artifact must accept the universal detailLevel param (no-op) instead of hard-rejecting it — H1");
+// H2 (real CTF session 2026-06-07): action tools (wait/network/hook/frame) hard-rejected per-action
+// keys placed at the TOP LEVEL (e.g. browser_wait {action:"navigate", url:"…"} -> "additional
+// properties"). They must accept each action's required keys at top level (folded into params) while
+// staying strict (unknown keys still rejected) — derived from the native metadata, not hand-listed.
+assert(nativeActionTools.includes("actionPassthroughKeys(") && nativeActionTools.includes("body[k] = top"), "native action tools must fold top-level per-action keys into params (accept-natural-input) — H2");
 assert(read("bridge_src/service_worker/core_commands.ts").includes("chrome.windows.create") && read("bridge_src/service_worker/core_commands.ts").includes("isAllowedIncognitoAccess"), "bridge tabs.create must open an incognito window and check isAllowedIncognitoAccess");
 
 assert(String(packageJson.scripts?.["check:tools"] || "").includes("check-execute-tool.mjs"), "check:tools must run browser_execute monitor shape contract");
