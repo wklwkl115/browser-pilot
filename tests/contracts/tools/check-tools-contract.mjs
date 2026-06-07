@@ -94,6 +94,10 @@ assert(read("src/tools/registerTabsTool.ts").includes("sharedTabScopedToolParams
 // It must accept detailLevel (as a no-op — output shape is set by mode) so the universal param agents
 // pass everywhere does not error here.
 assert(read("src/tools/registerArtifactTool.ts").includes("detailLevel:"), "browser_artifact must accept the universal detailLevel param (no-op) instead of hard-rejecting it — H1");
+// C4: browser_memory was the last hand-rolled tool missing the universal output params; it must accept
+// detailLevel/redact (no-op/threaded) so agents passing them everywhere don't hit a hard reject — this
+// closes the C2/C3 class (every tool now accepts the universal output triad).
+assert(read("src/tools/registerMemoryTool.ts").includes("detailLevel:") && read("src/tools/registerMemoryTool.ts").includes("redact:"), "browser_memory must accept the universal detailLevel/redact params instead of hard-rejecting them — C4");
 // H2 (real CTF session 2026-06-07): action tools (wait/network/hook/frame) hard-rejected per-action
 // keys placed at the TOP LEVEL (e.g. browser_wait {action:"navigate", url:"…"} -> "additional
 // properties"). They must accept each action's required keys at top level (folded into params) while
