@@ -1,9 +1,9 @@
 import { Type } from "typebox";
 import { normalizeArtifactMode } from "../utils/params.js";
 import { readBrowserArtifact } from "./artifactReader.js";
-import { defineBrowserTool, inlineJsonToolResult, maxCharsParam, runTool } from "./toolAdapter.js";
+import { defineBrowserTool, inlineJsonToolResult, runTool } from "./toolAdapter.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
-import { strictToolParameters, DETAIL_LEVEL_DESCRIPTION } from "./toolShared.js";
+import { strictToolParameters } from "./toolShared.js";
 
 export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
@@ -13,7 +13,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 		promptSnippet: "Read/search browser tool artifact files by path, offsets, snippets, JSON paths, or bounded multi-artifact search.",
 		promptGuidelines: [
 			"Use browser_artifact after browser tools return saved.path; prefer search/json/text offsets over re-running full browser captures.",
-			"Default output redacts cookie/token/authorization/body/postData/websocket payload values; use redact:false only when the user explicitly needs local raw evidence.",
+			"Default text/search/sample/whole-json output redacts cookie/token/authorization/body/postData/websocket payload values; explicit jsonPath/pick reads return the named local raw value.",
 			"JSON path misses return explicit exists:false/notFound:true; pick results stay aligned one entry per requested path.",
 			"Use paths or bounded root/glob plus maxFiles/maxBytes/maxMatchesPerFile/maxTotalMatches for multi-artifact search; do not run unbounded search.",
 			"For minified JS or long single-line artifacts, use search contextChars or text columnOffset/columnLimit instead of loading the whole file.",
@@ -28,12 +28,6 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("json"), Type.Literal("search"), Type.Literal("sample")], { description: "text | json | search | sample" })),
 			offset: Type.Optional(Type.Number({ description: "Line offset for text/search; item offset for json arrays; character offset for json scalar strings" })),
 			limit: Type.Optional(Type.Number({ description: "Line count for text/sample; item/key limit for json arrays/objects; character limit for json scalar strings" })),
-			maxChars: maxCharsParam(),
-			// Accepted as a no-op so the universal output param agents pass on every other browser_* tool does
-			// not hard-reject here (real CTF session 2026-06-07: browser_artifact {…,detailLevel:"summary"} →
-			// "must not have additional properties"). browser_artifact returns structured json/text/search,
-			// not a detail-leveled summary, so the value has no effect — same resolution as C2 for browser_tabs.
-			detailLevel: Type.Optional(Type.String({ description: `${DETAIL_LEVEL_DESCRIPTION} (accepted but a no-op for browser_artifact — output shape is set by mode)` })),
 			jsonPath: Type.Optional(Type.String({ description: "Simple dot/bracket path for json mode; missing paths return exists:false/notFound:true. Browser tool artifacts usually keep primary results under data, e.g. data, data.items, data.links." })),
 			pick: Type.Optional(Type.Array(Type.String(), { description: "Multiple simple JSON paths; repeat --pick path for each path in the CLI (not a JSON array string). Results stay aligned one entry per requested path." })),
 			query: Type.Optional(Type.String({ description: "String or bounded safe-regex query for search mode" })),
@@ -48,7 +42,6 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			maxBytes: Type.Optional(Type.Number({ description: "Maximum total bytes scanned for bounded multi-artifact search." })),
 			maxMatchesPerFile: Type.Optional(Type.Number({ description: "Maximum search matches retained per file in bounded multi-artifact search." })),
 			maxTotalMatches: Type.Optional(Type.Number({ description: "Maximum total matches retained across all files in bounded multi-artifact search." })),
-			redact: Type.Optional(Type.Boolean({ description: "Redact cookie/token/authorization/body/postData/websocket payload values from browser_artifact output; default true. Raw local artifact file is unchanged." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {

@@ -113,7 +113,11 @@ try {
 		assert.equal(sensitiveFullText.includes(secret), false, `check-token resultMiddleware.privacy: ${secret} must not leak through summary/full output`);
 	}
 	assert.ok(sensitiveFullText.includes("saved_to_artifact"), "check-token resultMiddleware.privacy: sensitive full output must be represented by a saved artifact envelope");
-	assert.ok(sensitiveFullText.includes("[redacted]") && sensitiveFullText.includes("[redacted body]") && sensitiveFullText.includes("[redacted postData]"), "check-token resultMiddleware.privacy: redaction markers must remain visible");
+	const sensitiveEnvelope = JSON.parse(sensitiveFullText);
+	assert.ok(sensitiveFullText.includes('"redacted": true'), "check-token resultMiddleware.privacy: redaction pointers must remain visible");
+	assert.ok(sensitiveFullText.includes('"kind": "authorization"') && sensitiveFullText.includes('"kind": "cookie"') && sensitiveFullText.includes('"kind": "postData"') && sensitiveFullText.includes('"kind": "body"'), "check-token resultMiddleware.privacy: pointer kinds must identify sensitive value classes");
+	assert.equal(sensitiveEnvelope.summary.headers.Authorization.raw, sensitiveOutputPath, "check-token resultMiddleware.privacy: pointer must name the raw artifact path");
+	assert.equal(sensitiveEnvelope.summary.headers.Authorization.jsonPath, "request.headers.Authorization", "check-token resultMiddleware.privacy: pointer must name the raw artifact jsonPath");
 	assert.ok(readFileSync(sensitiveOutputPath, "utf8").includes("summary-secret"), "check-token resultMiddleware.privacy: local artifact must preserve raw evidence for explicit reads");
 } finally {
 	await rm(tmp, { recursive: true, force: true });

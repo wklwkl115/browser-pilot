@@ -409,7 +409,7 @@ async function startBrowserEnv(args, runDir, fixture) {
 	if (!launchTab?.browserId) throw new Error(`Fixture launch tab did not appear for ${fixture.baseUrl}`);
 	bridge.selectBrowser(launchTab.browserId);
 	const tools = new ToolCollectingAdapter();
-	registerBrowserTools(tools, bridge, async () => bridge, { securityToolsEnabled: true });
+	registerBrowserTools(tools, bridge, async () => bridge);
 	return { bridge, chrome, bridgePort, profileDir, extensionDir, extensionSource, launchBrowserId: launchTab.browserId, launchTabId: launchTab.tabId, sharedTabId: launchTab.tabId, tools, runDir, fixtureBaseUrl: fixture.baseUrl, fixtureWsUrl: fixture.wsUrl, keepTemp: args.keepTemp };
 }
 

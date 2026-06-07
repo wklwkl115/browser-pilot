@@ -11,7 +11,7 @@
 
 ## 当前激活项
 
-- 当前无激活执行线。最近一条 **B7 cookie 属性结构化 provider 修复**（2026-06-07）已收口,详见下方"已完成"。后续若继续 M3 / public surface / profile isolation,必须另开执行合同。
+- **Agent-native 统一架构主线（2026-06-07，Workstream A 已落地）**。**决策**：架构重设计与 CLI 优化合并为一条——二者是“同一契约的里外两面”（`register*Tool` typebox = 单一源，Pi-native 直接用 / CLI 经 `buildCliCommands`+`buildFlagSpecs(def.parameters)` 派生，`check:cli-parity` 锁定；分两线设计必漂移）。**已完成**：B1 移除 capability profile，22 个工具 always-on；B2 机械参数从 schema/CLI help 隐藏并通过统一 `prepareArguments` 容忍旧调用；B3 scan summary distiller 去除 ref/resource 写副作用，并新增 summary boundary guard；B4 模型侧统一脱敏，敏感字段携带本地 artifact `raw` + `jsonPath` 指针，`browser_artifact` 的显式 `jsonPath`/`pick` 定点读取返回原始值；Workstream B 的安全 dead-weight strip 已删除 `streamRuntime`、`resolveModel` 与未用 `dispatchAbmlVerb`。**边界保持**：不新增公开 `browser_*`、执行永久 = JS+CDP（ABML 观察-only，action 梯不复活）、安全闸内化但不移除/不下放给 agent、websec 机械参不嵌套成 `bounds` 对象。**Workstream B（维护线，多数 defer）**：ABML PageModel/ChangeModel 全拆、envelope 字段收口、双校验栈收敛、`observeRunners` 拆分仍 defer，门槛=维护痛到值得冒险。**契约/文档**：权威设计 `docs/agent-native-architecture.md`；外部面 `docs/agent-native-cli-spec.md` + 队列 `docs/agent-native-cli-execution-plan.md` 从属本线。**验证脊柱**：`check:cli-parity`、`check:param-surface`、`check:summary-boundary`、`check:token`、`check:artifact`、`check:all:contracts` 与最终 `npm run check`。
 - **常驻盲 agent eval 机制（2026-06-06，已 live 验证）**。项目进入成熟维护期：默认不再加新功能，重心转为**用真 agent 证据优化既有内容**。决策：在既有 deterministic runner（`npm run eval:browser-workflows`，人手写序列、防回归但发现不了新摩擦、且 notes 是作者自证）之上，新增**盲发现层**——盲 subagent 只拿 spec 的 `Goal`（藏答案卡）、仅靠 `--help`+JSON 摸索、被隔离舞台物理锁死，跑完产出 command-log + 三分类摩擦报告。操作者驱动（`pi-browser-blind-eval` skill），可 cron 定时。**边界**：不新增公开 `browser_*` 工具 / 不改 native protocol；纯 eval/测试基建（`evals/browser-workflows/`）；隔离用独立 `PI_BROWSER_DAEMON_STATE_DIR` + 18801+ 端口，绝不碰操作者真实浏览器；**执行类摩擦（无 click/type 帮手、手写 form-fill）按设计判为 WAI 不修**（感知归项目、执行归 agent）。**契约/文件**：`skills/pi-browser-blind-eval/SKILL.md`、`evals/browser-workflows/{launch-blind,teardown-blind,pb-blind}.mjs`、`blind-agent-prompt.md`、滚动 backlog `blind-findings.md`。**验证**：两次独立盲跑（login→orders 抽取 / spec 02 scan-execute-wait）全程隔离、安全约束保持、收敛到同一可修主题（execute 返回值渲染 + envelope 噪声）。三分类规则与成熟期口径见 memory `eval-friction-triage-perception-vs-execution` / `project-maturity-optimization-focus`。
 
 ## 已完成但不再作为当前队列
@@ -43,5 +43,4 @@ R1/R2/R3/R3.x 与 ABML 机制臂 M1/M2a/M2b/M2c 均已完成。其余后续候�
 
 - future-facing 能力方向继续放在 `ROADMAP.md` 与对应 RFC/eval 文档中。
 - 若后续重新打开 ABML public surface、debugger workflow、incognito/profile isolation 等方向，必须另开新的执行合同，不得搭车既有主线。
-
 

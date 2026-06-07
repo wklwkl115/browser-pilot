@@ -18,7 +18,7 @@ import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
-import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserToolCapabilityProfileInfo, BrowserUiLockInfo } from "./types.js";
+import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
 export class BrowserBridgeServer {
 	readonly host: string;
@@ -39,13 +39,6 @@ export class BrowserBridgeServer {
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private readonly commandService: BrowserBridgeCommandService;
 	private readonly clientMessageService: BrowserBridgeClientMessageService;
-	private capabilityProfile: BrowserToolCapabilityProfileInfo = {
-		name: "core",
-		source: "default",
-		envVar: "PI_BROWSER_TOOL_PROFILE",
-		securityToolsEnabled: false,
-		enableHint: "PI_BROWSER_TOOL_PROFILE=security then /reload",
-	};
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -137,7 +130,6 @@ export class BrowserBridgeServer {
 			uiLock: this.leases.uiLockInfo(),
 			queues: this.queues.snapshot(),
 			operations: this.operations.snapshot(),
-			capabilityProfile: this.capabilityProfileInfo(),
 			pending: this.pendingRequests.snapshot(),
 		};
 	}
@@ -242,14 +234,6 @@ export class BrowserBridgeServer {
 
 	async sendCommand(command: import("../protocol/nativeProtocol.js").BridgeCommand, options = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.sendCommand(command, options);
-	}
-
-	setCapabilityProfile(profile: BrowserToolCapabilityProfileInfo): void {
-		this.capabilityProfile = { ...profile };
-	}
-
-	capabilityProfileInfo(): BrowserToolCapabilityProfileInfo {
-		return { ...this.capabilityProfile };
 	}
 
 	beginOperation(operation: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): BrowserActiveOperationInfo {

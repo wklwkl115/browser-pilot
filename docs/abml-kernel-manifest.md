@@ -12,12 +12,12 @@ one-way dependency direction:
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
   verb decisions, error shaping, temporal entity diff, and mechanism-arm structure diff. Portable,
   unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
-  package. **22 modules + an `index.ts` barrel.**
+  package. **23 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
-  data. **7 files.**
+  data. **6 files.**
 
-`src/abml/` also keeps **22 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/` also keeps **23 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
 `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
 the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
@@ -47,9 +47,9 @@ each doc links back here.
 | File | Role |
 | --- | --- |
 | `types.ts` | Foundational types (locators, refs, actionability, errors, captures). No imports. |
+| `refId.ts` | Pure pi-ref URI minting and summary placeholder ref IDs. |
 | `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
 | `actionabilityModel.ts` | Verb→actionability spec mapping; action-verb classification. |
-| `resolveModel.ts` | Candidate/resolve result shaping (pure data). |
 | `entity.ts` | `Entity`/`EntityState`/`EntityStructure`/`EntityRelation` model + builders. |
 | `ax.ts` | DOM↔AX merge core: box-IoU/role/name scoring, AX-authoritative state/structure fusion; AX relation-anchor extraction (R1). |
 | `relations.ts` | ABML R1 relationship graph: anchor→ref materialization, dedupe/cap, envelope relation summary. |
@@ -70,7 +70,7 @@ each doc links back here.
 | `verbs/frame.ts` | Frame verb decision logic. |
 | `verbs/pierce.ts` | Pierce verb decision logic. |
 
-## Runtime (7 — talk to the live browser)
+## Runtime (6 — talk to the live browser)
 
 | File | Why runtime (forbidden-for-core imports) |
 | --- | --- |
@@ -78,7 +78,6 @@ each doc links back here.
 | `verbs/axRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
 | `verbs/frameRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
 | `verbs/pierceRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
-| `verbs/streamRuntime.ts` | `resources/resourceReader`, `resources/resourceStore`. |
 | `verbs/visionRuntime.ts` | `node:fs/promises`, `node:path`, `driver`, `tools/artifacts`, `resources`. |
 | `verbs/integration.ts` | `driver`; wires `createBrowserAbmlRuntime`. |
 
@@ -106,7 +105,7 @@ existing consumers still import individual modules through the `src/abml/` shims
 
 - **Phase 1 — boundary固化 (done):** this manifest + contract test. Zero code movement, zero
   behavior change — the kernel is documented and CI-locked.
-- **Phase 2 — physical split (done):** the pure-core files now live in `src/abml-core/`; the 7
+- **Phase 2 — physical split (done):** the pure-core files now live in `src/abml-core/`; the 6
   runtime files stay in `src/abml/`; thin re-export shims at the old pure-core paths keep every
   consumer's import path unchanged. The whitelist above is now `abml-core`'s only outward
   dependency surface (verified by the boundary test). No behavior change — `tsc` (both projects)

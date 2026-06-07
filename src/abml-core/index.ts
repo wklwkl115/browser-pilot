@@ -7,9 +7,9 @@
 // Existing consumers still import the individual modules via the src/abml/ re-export shims; this
 // barrel is additive and changes nothing for them.
 export * from "./types.js";
+export * from "./refId.js";
 export * from "./refPolicy.js";
 export * from "./actionabilityModel.js";
-export * from "./resolveModel.js";
 export * from "./entity.js";
 export * from "./ax.js";
 export * from "./relations.js";

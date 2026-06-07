@@ -46,11 +46,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		],
 		parameters: strictToolParameters({
 			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
-			// Universal output/control params (browserSessionId/tabId/detailLevel/timeoutMs/maxChars/redact)
-			// come from the shared mixin so browser_tabs accepts them like every other browser_* tool. Real
-			// agents repeatedly passed maxChars/detailLevel here and hit a hard "additional properties" reject
-			// (C2, ≥7 occurrences across sessions); outputPath is excluded (browser_tabs writes no artifact).
-			...sharedTabScopedToolParams({ includeOutputPath: false, tabIdDescription: "Target tab id for switch/close; use browser_tabs list to identify it first." }),
+			...sharedTabScopedToolParams({ includeBrowserSessionId: true, tabIdDescription: "Target tab id for switch/close; use browser_tabs list to identify it first." }),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),

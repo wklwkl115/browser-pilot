@@ -19,7 +19,6 @@ import path from "node:path";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
-import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
 import { createBrowserAbmlIntegration } from "../../src/abml/verbs/integration.ts";
 
 const root = process.cwd();
@@ -137,10 +136,8 @@ try {
   const tabId = targetTab.tabId;
   await bridge.sendCommand({ cmd: "wait.loadState", tabId, state: "complete", timeoutMs: 10000 }, { tabId, timeoutMs: 12000 });
 
-  const profile = resolveBrowserToolCapabilityProfile();
-  bridge.setCapabilityProfile?.(profile);
   const adapter = new ToolCollectingAdapter();
-  registerBrowserTools(adapter, bridge, async () => bridge, { securityToolsEnabled: profile.securityToolsEnabled });
+  registerBrowserTools(adapter, bridge, async () => bridge);
   const observe = adapter.getTool("browser_observe");
   const execute = adapter.getTool("browser_execute");
   if (!observe) throw new Error("browser_observe not registered");

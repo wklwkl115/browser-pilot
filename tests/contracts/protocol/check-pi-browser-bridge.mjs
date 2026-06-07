@@ -274,8 +274,8 @@ const streamingModeBranch = artifactReaderSource.slice(streamingModeStart);
 assert(
 	jsonModeBranch.includes("info.size > MAX_ARTIFACT_READ_BYTES")
 	&& jsonModeBranch.includes('readFile(absPath, "utf8")')
-	&& jsonModeBranch.includes("redactArtifactResult(result, redact)"),
-	"browser_artifact readFile path must stay isolated to json mode after size cap and feed the redacted output path",
+	&& jsonModeBranch.includes("redactArtifactResult(result, redact, targetedJsonRaw)"),
+	"browser_artifact readFile path must stay isolated to json mode after size cap and feed the redacted/targeted output path",
 );
 assert(!streamingModeBranch.includes("readFile(absPath"), "browser_artifact text/search/sample paths must not use readFile");
 assert(/if \(mode === "json"\) \{\s*if \(info\.size > MAX_ARTIFACT_READ_BYTES\)/s.test(jsonModeBranch), "browser_artifact size cap must apply to json readFile path, not streaming text/search/sample paths");

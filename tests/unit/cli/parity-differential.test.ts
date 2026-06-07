@@ -14,7 +14,6 @@ import path from "node:path";
 import { BrowserBridgeServer } from "../../../src/driver/BrowserBridgeServer.ts";
 import { ToolCollectingAdapter } from "../../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../../src/tools/registerTools.ts";
-import { resolveBrowserToolCapabilityProfile } from "../../../src/tools/capabilityProfile.ts";
 import { validateToolArgs } from "../../../src/frontend/validation.ts";
 import { startDaemon } from "../../../cli/daemon.ts";
 import { controlRequest } from "../../../cli/daemonControl.ts";
@@ -47,11 +46,9 @@ function envelopeText(content: unknown): string {
 
 test("CLI /invoke and Pi-native execute produce identical envelopes for the same params", async () => {
 	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-parity-"));
-	const profile = resolveBrowserToolCapabilityProfile();
 
 	// A) the Pi-native surface: one adapter over its own server (same registration).
 	const serverA = new BrowserBridgeServer();
-	serverA.setCapabilityProfile(profile);
 	let startA: Promise<void> | undefined;
 	const ensureStartedA = async () => {
 		if (!startA) startA = serverA.start().catch((e) => { startA = undefined; throw e; });
@@ -59,7 +56,7 @@ test("CLI /invoke and Pi-native execute produce identical envelopes for the same
 		return serverA;
 	};
 	const adapterA = new ToolCollectingAdapter();
-	registerBrowserTools(adapterA, serverA, ensureStartedA, { securityToolsEnabled: profile.securityToolsEnabled });
+	registerBrowserTools(adapterA, serverA, ensureStartedA);
 
 	// B) the CLI surface: the daemon (its own server), driven over the control channel.
 	const handle = await startDaemon({ writeLock: false });
@@ -69,7 +66,8 @@ test("CLI /invoke and Pi-native execute produce identical envelopes for the same
 		for (const { tool, params } of CASES) {
 			const def = adapterA.getTool(tool);
 			assert.ok(def, `tool ${tool} is registered`);
-			const v = validateToolArgs(def!.parameters, params);
+			const prepared = def!.prepareArguments ? def!.prepareArguments(params) : params;
+			const v = validateToolArgs(def!.parameters, prepared);
 			assert.ok(v.ok, `params validate for ${tool}: ${v.ok ? "" : v.error}`);
 
 			const a = await def!.execute(`parity-${tool}`, (v as { args: Record<string, unknown> }).args, undefined, undefined, { cwd, hasUI: false });
@@ -82,6 +80,33 @@ test("CLI /invoke and Pi-native execute produce identical envelopes for the same
 			assert.equal(bNorm, aNorm, `envelope parity for ${tool}`);
 			assert.equal(json?.terminate === true, a.terminate === true, `terminate parity for ${tool}`);
 		}
+	} finally {
+		await handle.close();
+		await serverA.stop().catch(() => {});
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("deprecated mechanical params are tolerated via prepareArguments on both Pi-native and CLI paths", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-prepare-"));
+	const serverA = new BrowserBridgeServer();
+	const adapterA = new ToolCollectingAdapter();
+	registerBrowserTools(adapterA, serverA, async () => serverA);
+	const def = adapterA.getTool("browser_tabs");
+	assert.ok(def, "browser_tabs is registered");
+	const raw = { action: "list", detailLevel: "summary", maxChars: 1000, timeoutMs: 10 };
+	const prepared = def!.prepareArguments ? def!.prepareArguments(raw) : raw;
+	assert.deepEqual(prepared, { action: "list" });
+	const validation = validateToolArgs(def!.parameters, prepared);
+	assert.ok(validation.ok, validation.ok ? "" : validation.error);
+
+	const handle = await startDaemon({ writeLock: false });
+	const info = { controlHost: handle.controlHost, controlPort: handle.controlPort, token: handle.token };
+	try {
+		const { status, json } = await controlRequest(info, "POST", "/invoke", { tool: "browser_tabs", params: raw, cwd });
+		assert.equal(status, 200);
+		assert.equal(json?.ok, true);
+		assert.equal(json?.terminate === true, false);
 	} finally {
 		await handle.close();
 		await serverA.stop().catch(() => {});

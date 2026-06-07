@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeFuzzParamsData, summarizeFuzzPathsData, summarizeFuzzVhostsData } from "../../summaries/index.js";
 import { runFuzzParams, runFuzzPaths, runFuzzVhosts } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, fuzzLocationParam, webSecurityDefaultSchemeParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxCandidatesParam, maxCasesParam, maxDepthParam, rateLimitPerSecondParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateFuzzParams, headerRecordParam, stringNumberOrListParam, fuzzLocationParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import type { RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions } from "../shared/types.js";
@@ -28,7 +28,6 @@ export function registerFuzzTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			wordlistPath: Type.Optional(Type.String({ description: "Optional local wordlist file path; one entry per line." })),
 			method: Type.Optional(Type.String({ description: "HTTP method; default GET in path/vhost modes, override request method in param mode." })),
 			headers: headerRecordParam("Optional request headers object or overrides."),
-			defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 			...redirectControlParams({
 				followRedirectsDescription: "Follow redirects. path/vhost/param modes default false for stable matching except explicit current-mode overrides.",
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true; default 3.",

@@ -121,7 +121,7 @@ test("abml runtime click uses DOM path and verifies state change", async () => {
 	const runtime = createBrowserAbmlRuntime(server as any, { timeoutMs: 5_000 });
 	const read = await runtime.read?.({ plane: "structure" });
 	assert.equal(read?.ok, true);
-	const ref = read?.entities?.find((entity) => entity.role === "button")?.ref;
+	const ref = read?.entities?.find((entity) => entity.role === "button" && entity.hints?.selector === "#pay")?.ref;
 	assert.ok(ref);
 	const scanCountBeforeClick = server.evaluateScripts.filter((script) => script.includes("collectActionables") && script.includes("list_hints")).length;
 	const clicked = await runtime.click?.({ ref });

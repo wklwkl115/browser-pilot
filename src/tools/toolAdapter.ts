@@ -30,6 +30,7 @@ type SharedToolParamOptions = {
 	timeoutDescription?: string;
 	outputPathDescription?: string;
 	maxCharsDescription?: string;
+	includeBrowserSessionId?: boolean;
 	includeTabId?: boolean;
 	includeDetailLevel?: boolean;
 	includeOutputPath?: boolean;
@@ -159,13 +160,13 @@ export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
 
 export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) {
 	const params: Record<string, unknown> = {};
-	params.browserSessionId = Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this; runtime defaults to the default session." }));
+	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this; runtime defaults to the default session." }));
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
-	if (options.includeDetailLevel !== false) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
-	if (options.includeOutputPath !== false) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
-	if (options.includeTimeout !== false) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
-	if (options.includeMaxChars !== false) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION }));
-	if (options.includeRedact !== false) params.redact = Type.Optional(Type.Boolean({ description: "Redact cookie/token/authorization/body values from this tool's model-facing output; default true. Set false only when you explicitly need the raw value you just read (e.g. a token). The raw local artifact is unaffected." }));
+	if (options.includeDetailLevel === true) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
+	if (options.includeOutputPath === true) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
+	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
+	if (options.includeMaxChars === true) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION }));
+	if (options.includeRedact === true) params.redact = Type.Optional(Type.Boolean({ description: "Deprecated compatibility only; model-facing output is redacted by default and targeted raw reads use browser_artifact jsonPath/pick." }));
 	return params;
 }
 

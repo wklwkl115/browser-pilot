@@ -16,7 +16,7 @@ export interface ToolResultLike {
 	terminate?: boolean;
 }
 
-export const EXIT = { ok: 0, toolError: 1, usage: 2, unavailable: 3 } as const;
+export const EXIT = { ok: 0, toolError: 1, usage: 2, unavailable: 3, input: 4 } as const;
 
 const tty = Boolean(process.stdout.isTTY);
 const bold = (s: string) => (tty ? `\x1b[1m${s}\x1b[0m` : s);
@@ -67,6 +67,90 @@ function renderHumanError(text: string): number {
 	return EXIT.toolError;
 }
 
+function parseJsonObject(text: string): Record<string, unknown> {
+	try {
+		const parsed = JSON.parse(text) as unknown;
+		return isRecord(parsed) ? parsed : { value: parsed };
+	} catch {
+		return { message: text };
+	}
+}
+
+function errorCode(env: Record<string, unknown>, fallback: string): string {
+	if (typeof env.code === "string") return env.code;
+	if (typeof env.error_code === "string") return env.error_code;
+	if (isRecord(env.error) && typeof env.error.code === "string") return env.error.code;
+	return fallback;
+}
+
+function cliActionFromText(action: string): Record<string, unknown> | undefined {
+	const artifactJson = action.match(/read_saved_artifact\s+mode=json\s+jsonPath=([^\s]+)/);
+	if (artifactJson) return { kind: "artifact-read", command: `pi-browser artifact --mode json --json-path ${artifactJson[1]} --json`, source: action };
+	const artifactText = action.match(/read_saved_artifact\s+mode=text/);
+	if (artifactText) return { kind: "artifact-read", command: "pi-browser artifact --mode text --json", source: action };
+	const baseline = action.match(/baseline:"([^"]+)"|baseline=([0-9a-f-]{16,})/i);
+	if (baseline) return { kind: "observe-baseline", command: `pi-browser observe --mode scan --baseline-snapshot-id ${baseline[1] ?? baseline[2]} --json`, source: action };
+	return undefined;
+}
+
+function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
+	const additions: Record<string, unknown> = {};
+	const saved = isRecord(env.saved) ? env.saved : undefined;
+	if (saved && typeof saved.path === "string") {
+		additions.artifacts = [{
+			path: saved.path,
+			kind: typeof env.tool === "string" ? env.tool : "browser-result",
+			...(typeof saved.bytes === "number" ? { bytes: saved.bytes } : {}),
+			...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
+			...(saved.privacy ? { privacy: saved.privacy } : {}),
+			readCommands: [
+				`pi-browser artifact --path "${saved.path}" --mode json --json-path data --json`,
+				`pi-browser artifact --path "${saved.path}" --mode search --query "<text>" --json`,
+			],
+		}];
+	}
+	const cliNextActions: Record<string, unknown>[] = [];
+	if (Array.isArray(env.nextActions)) {
+		for (const action of env.nextActions) {
+			if (typeof action !== "string") continue;
+			const cli = cliActionFromText(action);
+			if (cli) cliNextActions.push(cli);
+		}
+	}
+	if (saved && typeof saved.path === "string") {
+		cliNextActions.push({
+			kind: "artifact-read",
+			command: `pi-browser artifact --path "${saved.path}" --mode json --json-path data --json`,
+			source: "saved.path",
+		});
+	}
+	const snapshot = isRecord(env.snapshot) ? env.snapshot : undefined;
+	if (typeof snapshot?.snapshotId === "string") {
+		cliNextActions.push({
+			kind: "observe-baseline",
+			command: `pi-browser observe --mode scan --baseline-snapshot-id ${snapshot.snapshotId} --json`,
+			source: "snapshot.snapshotId",
+		});
+	}
+	if (cliNextActions.length) additions.cliNextActions = cliNextActions;
+	return { ...env, ...additions };
+}
+
+export function normalizeJsonEnvelope(text: string, exitCode: number, fallbackCode: string): Record<string, unknown> {
+	const env = enrichForCli(parseJsonObject(text));
+	const ok = exitCode === EXIT.ok;
+	return {
+		...env,
+		ok: ok ? (env.ok === false ? false : true) : false,
+		exitCode,
+		...(ok ? {} : { code: errorCode(env, fallbackCode) }),
+	};
+}
+
+export function writeJsonEnvelope(envelope: Record<string, unknown>): void {
+	process.stdout.write(`${JSON.stringify(envelope)}\n`);
+}
+
 /**
  * A tool call failed if it hard-terminated OR the envelope itself signals an error.
  * Some tool errors (e.g. NO_TAB, browser_memory read-miss) return a normal-shaped
@@ -91,15 +175,47 @@ export function renderResult(result: ToolResultLike, mode: RenderMode): number {
 	const text = resultText(result);
 	const isError = result.terminate === true || looksLikeToolError(text);
 	if (mode === "json") {
-		const out = text.endsWith("\n") ? text : `${text}\n`;
-		(isError ? process.stderr : process.stdout).write(out);
-		return isError ? EXIT.toolError : EXIT.ok;
+		const exitCode = isError ? EXIT.toolError : EXIT.ok;
+		writeJsonEnvelope(normalizeJsonEnvelope(text, exitCode, isError ? "TOOL_ERROR" : "OK"));
+		return exitCode;
 	}
 	return isError ? renderHumanError(text) : renderHumanOk(text);
 }
 
 /** Render a CLI-level usage/parse error (not a tool result). */
-export function renderUsageError(message: string): number {
+export function renderUsageError(message: string, mode: RenderMode = "human", exitCode: number = EXIT.usage): number {
+	if (mode === "json") {
+		writeJsonEnvelope({
+			ok: false,
+			exitCode,
+			code: exitCode === EXIT.input ? "CLI_INPUT_ERROR" : "CLI_USAGE_ERROR",
+			message,
+			taxonomy: { domain: "cli", category: exitCode === EXIT.input ? "input" : "usage", retryable: false, source: "cli" },
+			diagnostics: {},
+			recovery: { hint: "Run pi-browser --help or pi-browser <command> --help." },
+		});
+		return exitCode;
+	}
 	process.stderr.write(`${red("error:")} ${message}\n`);
-	return EXIT.usage;
+	return exitCode;
+}
+
+export function renderUnavailableError(message: string, mode: RenderMode = "human"): number {
+	if (mode === "json") {
+		writeJsonEnvelope({
+			ok: false,
+			exitCode: EXIT.unavailable,
+			code: "CLI_DAEMON_UNAVAILABLE",
+			message,
+			taxonomy: { domain: "cli", category: "daemon", retryable: true, source: "cli" },
+			diagnostics: {},
+			recovery: {
+				hint: "Check daemon and browser bridge readiness.",
+				commands: ["pi-browser daemon status --json", "pi-browser doctor --json"],
+			},
+		});
+		return EXIT.unavailable;
+	}
+	process.stderr.write(`${red("error:")} pi-browser daemon unavailable — ${message}\n`);
+	return EXIT.unavailable;
 }

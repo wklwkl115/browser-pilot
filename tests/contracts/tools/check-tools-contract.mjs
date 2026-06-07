@@ -46,6 +46,7 @@ const commandToolSource = read("src/tools/registerCommandTool.ts");
 const nativeActionTools = read("src/tools/registerNativeActionTools.ts");
 const transferTools = read("src/tools/registerTransferTools.ts");
 const evidenceTool = read("src/tools/registerEvidenceTool.ts");
+const prepareArguments = read("src/tools/prepareArguments.ts");
 const webSecurityFacade = read("src/tools/registerWebSecurityTools.ts");
 const webSecurityRegisterIndex = read("src/tools/webSecurity/register/index.ts");
 const webSecurityShared = read("src/tools/webSecurity/register/shared.ts");
@@ -53,10 +54,10 @@ const readme = read("README.md");
 const skill = read("skills/pi-browser-tools/SKILL.md");
 
 assert(registerToolsSource.split(/\r?\n/).length <= 30, "registerTools.ts must stay a thin composition entrypoint");
-assert(registerToolsSource.includes("resolveBrowserToolRegistrars") && registerToolsSource.includes("for (const registerTool of resolveBrowserToolRegistrars(options))"), "registerTools.ts must consume declarative tool registrars");
-assert(toolRegistrySource.includes("CORE_BROWSER_TOOL_REGISTRARS") && toolRegistrySource.includes("WEB_SECURITY_TOOL_REGISTRARS") && toolRegistrySource.includes("resolveBrowserToolRegistrars"), "toolRegistry.ts must define declarative core/security registries and resolver");
+assert(registerToolsSource.includes("resolveBrowserToolRegistrars") && registerToolsSource.includes("for (const registerTool of resolveBrowserToolRegistrars())"), "registerTools.ts must consume declarative tool registrars");
+assert(toolRegistrySource.includes("BROWSER_TOOL_REGISTRARS") && toolRegistrySource.includes("WEB_SECURITY_TOOL_NAMES") && toolRegistrySource.includes("resolveBrowserToolRegistrars"), "toolRegistry.ts must define one always-on browser tool registry and security group metadata");
 assert(toolRegistrySource.includes("registerFuzzTool") && toolRegistrySource.includes("registerSqliTool") && toolRegistrySource.includes("registerTemplateTool") && toolRegistrySource.includes("registerCrawlTool"), "toolRegistry.ts must use merged WebSecurity registrars");
-assert(toolRegistrySource.includes("options.securityToolsEnabled === false"), "toolRegistry must support explicit core/security capability profile gating");
+assert(!toolRegistrySource.includes("securityToolsEnabled"), "toolRegistry must not support capability profile gating; all 22 tools are always registered");
 
 assert(toolAdapterSource.includes("defineBrowserTool") && toolAdapterSource.includes("runBrowserTool") && toolAdapterSource.includes("runWebSecurityTool"), "toolAdapter.ts must expose unified registration/execution adapters");
 assert(toolAdapterSource.includes("sharedTabScopedToolParams") && toolAdapterSource.includes("runTool") && toolAdapterSource.includes("jsonToolResult") && toolAdapterSource.includes("textToolResult"), "toolAdapter.ts must centralize shared params and result helpers");
@@ -80,24 +81,21 @@ assert(commandToolSource.includes('name: "browser_command"') && commandToolSourc
 assert(nativeActionTools.includes("executeBrowserWaitWithSupervisor") && nativeActionTools.includes("allowZeroTimeout"), "native action tools must preserve durable wait supervision and immediate probes");
 assert(transferTools.includes("confirm:true") && transferTools.includes("command.timeoutMs = timeoutMs"), "browser_upload/download must preserve explicit confirmation and command timeout injection");
 assert(evidenceTool.includes("DEFAULT_OBSERVATION_TIMEOUT_MS") && evidenceTool.includes("withTrackedOperation"), "browser_evidence must keep longer observation timeout and tracked operations");
+for (const deprecated of ["detailLevel", "maxChars", "timeoutMs", "browserSessionId", "outputPath", "maxBodyBytes"]) {
+	assert(prepareArguments.includes(`"${deprecated}"`), `prepareArguments must tolerate deprecated mechanical param ${deprecated}`);
+}
 
 // Isolated/logged-out session: browser_tabs create gained an `incognito` option that opens a fresh
 // incognito window (separate cookie jar) via the bridge, with an allowed-access recovery when the user
 // hasn't enabled "Allow in incognito".
 assert(read("src/tools/registerTabsTool.ts").includes("incognito: params.incognito === true"), "browser_tabs create must forward the incognito option to createTab");
-// C2: browser_tabs must accept the universal output/control params (maxChars/detailLevel/redact/…) via
-// the shared mixin like every other browser_* tool — real agents repeatedly passed maxChars/detailLevel
-// and hit a hard "additional properties" reject. Guard against regressing back to a hand-rolled schema.
-assert(read("src/tools/registerTabsTool.ts").includes("sharedTabScopedToolParams("), "browser_tabs must spread sharedTabScopedToolParams so it accepts the universal output params (maxChars/detailLevel/redact) — C2");
-// H1 (same class as C2, real CTF session 2026-06-07): browser_artifact hand-rolls its schema and was
-// missing `detailLevel`, so a {…,detailLevel:"summary"} call hard-rejected with "additional properties".
-// It must accept detailLevel (as a no-op — output shape is set by mode) so the universal param agents
-// pass everywhere does not error here.
-assert(read("src/tools/registerArtifactTool.ts").includes("detailLevel:"), "browser_artifact must accept the universal detailLevel param (no-op) instead of hard-rejecting it — H1");
-// C4: browser_memory was the last hand-rolled tool missing the universal output params; it must accept
-// detailLevel/redact (no-op/threaded) so agents passing them everywhere don't hit a hard reject — this
-// closes the C2/C3 class (every tool now accepts the universal output triad).
-assert(read("src/tools/registerMemoryTool.ts").includes("detailLevel:") && read("src/tools/registerMemoryTool.ts").includes("redact:"), "browser_memory must accept the universal detailLevel/redact params instead of hard-rejecting them — C4");
+// C2/H1/C4 changed mechanism in the agent-native line: mechanical params leave the advertised schema,
+// but prepareArguments strips the deprecated allowlist before strict validation so habit-callers are
+// accepted-and-ignored instead of hard-rejected.
+assert(registerToolsSource.includes("withDeprecatedParamStrip"), "all tools must be wrapped with deprecated-param prepareArguments tolerance");
+assert(read("src/tools/registerTabsTool.ts").includes("includeBrowserSessionId: true"), "browser_tabs must be the only tool that advertises browserSessionId");
+assert(!/detailLevel:\s*Type\./.test(read("src/tools/registerArtifactTool.ts")), "browser_artifact must not expose deprecated detailLevel in schema");
+assert(!/detailLevel:\s*Type\./.test(read("src/tools/registerMemoryTool.ts")), "browser_memory must not expose deprecated detailLevel in schema");
 // H2 (real CTF session 2026-06-07): action tools (wait/network/hook/frame) hard-rejected per-action
 // keys placed at the TOP LEVEL (e.g. browser_wait {action:"navigate", url:"…"} -> "additional
 // properties"). They must accept each action's required keys at top level (folded into params) while

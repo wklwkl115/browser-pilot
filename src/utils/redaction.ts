@@ -45,6 +45,22 @@ const SENSITIVE_FIELD_NAMES = new Set([
 const BODY_FIELD_NAMES = new Set(["body", "requestbody", "responsebody"]);
 const POST_DATA_FIELD_NAMES = new Set(["postdata", "requestpostdata", "payloaddata", "payload"]);
 
+export type RedactionPointerKind = "cookie" | "token" | "authorization" | "body" | "postData" | "wsPayload";
+
+export type RedactionPointer = {
+	redacted: true;
+	kind: RedactionPointerKind;
+	raw: string;
+	jsonPath: string;
+	bytes?: number;
+};
+
+type RawPointerOptions = {
+	raw: string;
+	jsonPath: string;
+	bytes?: number;
+};
+
 function normalizeFieldName(key: string): string {
 	return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -55,6 +71,27 @@ function sensitiveFieldPlaceholder(key: string): string | undefined {
 	if (POST_DATA_FIELD_NAMES.has(normalized)) return REDACTED_POST_DATA;
 	if (BODY_FIELD_NAMES.has(normalized)) return REDACTED_BODY;
 	return undefined;
+}
+
+function sensitiveFieldKind(key: string): RedactionPointerKind | undefined {
+	const normalized = normalizeFieldName(key);
+	if (normalized.includes("cookie")) return "cookie";
+	if (normalized.includes("authorization")) return "authorization";
+	if (POST_DATA_FIELD_NAMES.has(normalized)) return "postData";
+	if (BODY_FIELD_NAMES.has(normalized)) return "body";
+	if (normalized.includes("payload")) return "wsPayload";
+	if (SENSITIVE_FIELD_NAMES.has(normalized)) return "token";
+	return undefined;
+}
+
+function placeholderForKind(kind: RedactionPointerKind): string {
+	if (kind === "body" || kind === "wsPayload") return REDACTED_BODY;
+	if (kind === "postData") return REDACTED_POST_DATA;
+	return REDACTED;
+}
+
+function pointerFor(kind: RedactionPointerKind, raw?: RawPointerOptions): RedactionPointer | string {
+	return raw ? { redacted: true, kind, raw: raw.raw, jsonPath: raw.jsonPath, ...(raw.bytes !== undefined ? { bytes: raw.bytes } : {}) } : placeholderForKind(kind);
 }
 
 function shouldRedactPayloadText(key: string, parentPayload: boolean): boolean {
@@ -126,6 +163,78 @@ export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(
 			continue;
 		}
 		out[key] = redactSensitiveValue(item, seen, payloadField);
+	}
+	return out;
+}
+
+function jsonPathSegment(key: string): string {
+	return key;
+}
+
+function jsonPathAppend(base: string, token: string | number): string {
+	if (typeof token === "number") return `${base}[${token}]`;
+	const segment = jsonPathSegment(token);
+	return base === "$" ? segment : `${base}.${segment}`;
+}
+
+function samePrimitiveValue(a: unknown, b: unknown): boolean {
+	return (typeof a === "string" || typeof a === "number" || typeof a === "boolean" || a === null)
+		&& (typeof b === "string" || typeof b === "number" || typeof b === "boolean" || b === null)
+		&& a === b;
+}
+
+function rawJsonPathForValue(root: unknown, target: unknown, kind: RedactionPointerKind, seen = new WeakSet<object>(), path = "$"): string | undefined {
+	if (samePrimitiveValue(root, target)) return path;
+	if (!root || typeof root !== "object" || seen.has(root)) return undefined;
+	seen.add(root);
+	if (Array.isArray(root)) {
+		for (let index = 0; index < root.length; index += 1) {
+			const found = rawJsonPathForValue(root[index], target, kind, seen, jsonPathAppend(path, index));
+			if (found) return found;
+		}
+		return undefined;
+	}
+	for (const [key, item] of Object.entries(root as Record<string, unknown>)) {
+		const keyKind = sensitiveFieldKind(key);
+		const childPath = jsonPathAppend(path, key);
+		if ((keyKind === kind || (kind === "wsPayload" && keyKind === "body")) && samePrimitiveValue(item, target)) return childPath;
+		const found = rawJsonPathForValue(item, target, kind, seen, childPath);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+export function redactSensitiveValueWithPointers(
+	value: unknown,
+	options: { rawArtifactPath?: string; rawArtifactBytes?: number; artifactValue?: unknown } = {},
+	seen = new WeakSet<object>(),
+	parentPayload = false,
+): unknown {
+	const pointer = (kind: RedactionPointerKind, target: unknown): RedactionPointer | string => {
+		if (!options.rawArtifactPath) return placeholderForKind(kind);
+		const jsonPath = rawJsonPathForValue(options.artifactValue, target, kind) || "$";
+		return pointerFor(kind, { raw: options.rawArtifactPath, jsonPath, bytes: options.rawArtifactBytes });
+	};
+	if (typeof value === "string") return parentPayload ? pointer("body", value) : redactSensitiveText(value);
+	if (value === null || value === undefined || typeof value !== "object") return value;
+	if (seen.has(value)) return "[Circular]";
+	seen.add(value);
+	if (Array.isArray(value)) return value.map((item) => redactSensitiveValueWithPointers(item, options, seen, parentPayload));
+	const out: Record<string, unknown> = {};
+	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+		const placeholder = sensitiveFieldPlaceholder(key);
+		const kind = sensitiveFieldKind(key);
+		const normalized = normalizeFieldName(key);
+		const payloadField = BODY_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized);
+		if (placeholder && kind && (item === null || item === undefined || typeof item !== "object" || SENSITIVE_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized))) {
+			out[key] = pointer(kind, item);
+			continue;
+		}
+		if (shouldRedactPayloadText(key, parentPayload)) {
+			out[key] = pointer(parentPayload ? "body" : "postData", item);
+			continue;
+		}
+		out[key] = redactSensitiveValueWithPointers(item, options, seen, payloadField);
 	}
 	return out;
 }

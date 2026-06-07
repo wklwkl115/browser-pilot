@@ -6,7 +6,6 @@
  */
 import { ToolCollectingAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
-import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
 import type { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 
 export type CliCommand = {
@@ -33,19 +32,16 @@ export function fromSubcommand(subcommand: string): string {
 	return `browser_${subcommand.replace(/-/g, "_")}`;
 }
 
-/** Collect all registered tool definitions for the active (or given) profile. */
-export function collectToolDefs(securityToolsEnabled?: boolean): ToolDefinition[] {
+/** Collect all registered tool definitions. */
+export function collectToolDefs(): ToolDefinition[] {
 	const adapter = new ToolCollectingAdapter();
-	const profile = resolveBrowserToolCapabilityProfile();
-	registerBrowserTools(adapter, placeholderServer, noopEnsureStarted, {
-		securityToolsEnabled: securityToolsEnabled ?? profile.securityToolsEnabled,
-	});
+	registerBrowserTools(adapter, placeholderServer, noopEnsureStarted);
 	return adapter.getTools();
 }
 
 /** Build the CLI command list (one per registered tool). */
-export function buildCliCommands(securityToolsEnabled?: boolean): CliCommand[] {
-	return collectToolDefs(securityToolsEnabled)
+export function buildCliCommands(): CliCommand[] {
+	return collectToolDefs()
 		.map((def) => ({
 			name: def.name,
 			subcommand: toSubcommand(def.name),

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeBrowserCrawlData, summarizeWebReconProbeData } from "../../summaries/index.js";
 import { runBrowserCrawl, runReconProbe } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, webSecurityDefaultSchemeParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, maxDepthParam, maxPagesParam, redirectControlParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateCrawlParams, headerRecordParam, enumParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import type { RawCrawlOptions, RawProbeOptions } from "../shared/types.js";
@@ -22,7 +22,6 @@ export function registerCrawlTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Bounded list of seed URLs or hosts." })),
 			paths: Type.Optional(Type.Array(Type.String(), { description: "Optional seed paths to resolve against each target URL." })),
 			headers: headerRecordParam("Optional request headers object."),
-			defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 			method: Type.Optional(Type.String({ description: "fingerprint mode only: HTTP method for probing; default GET." })),
 			ports: Type.Optional(Type.Array(Type.Number(), { description: "fingerprint mode only: optional ports to apply to each target URL." })),
 			schemes: Type.Optional(Type.Array(Type.String(), { description: "fingerprint mode only: optional schemes to expand, e.g. [http, https]." })),

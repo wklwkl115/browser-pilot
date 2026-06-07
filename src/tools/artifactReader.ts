@@ -115,8 +115,8 @@ function summaryFromStats(fileSize: number, absPath: string, lineCount: number |
 	return { path: absPath, bytes: fileSize, chars, lineCount };
 }
 
-function privacySummary(redacted: boolean) {
-	return redacted ? { redaction: "default", ...browserArtifactPrivacyMetadata() } : { redaction: "disabled", localOnly: true };
+function privacySummary(redacted: boolean, targetedRaw = false) {
+	return redacted ? { redaction: "default", ...browserArtifactPrivacyMetadata() } : { redaction: targetedRaw ? "targeted_raw" : "disabled", localOnly: true };
 }
 
 function redactSnippetText(text: string): string {
@@ -146,8 +146,8 @@ function redactSearchQuery(query: string): string {
 	return searchQueryLooksSecretProbe(query) ? "[redacted]" : query;
 }
 
-function redactArtifactResult<T extends BrowserArtifactReadResult>(result: T, redacted: boolean): T {
-	const summary = { ...result.summary, privacy: privacySummary(redacted) };
+function redactArtifactResult<T extends BrowserArtifactReadResult>(result: T, redacted: boolean, targetedRaw = false): T {
+	const summary = { ...result.summary, privacy: privacySummary(redacted, targetedRaw) };
 	if (!redacted) return { ...result, summary } as T;
 	if (result.mode === "text") return { ...result, summary, snippets: result.snippets.map(redactTextSnippet) } as T;
 	if (result.mode === "search") return { ...result, summary, query: redactSearchQuery(result.query), snippets: result.snippets.map(redactTextSnippet) } as T;
@@ -728,7 +728,11 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 		});
 	}
 	const maxChars = asPositiveInt(params.maxChars, 8_000);
-	const redact = params.redact !== false;
+	const targetedJsonRaw = mode === "json" && (
+		(Array.isArray(params.pick) && params.pick.length > 0)
+		|| (typeof params.jsonPath === "string" && params.jsonPath.trim() !== "" && params.jsonPath.trim() !== "$")
+	);
+	const redact = params.redact !== false && !targetedJsonRaw;
 	if (mode !== "search" && (Array.isArray(params.paths) || params.root !== undefined || params.glob !== undefined)) {
 		throw new ArtifactReaderError("ARTIFACT_MULTI_SEARCH_MODE_INVALID", "browser_artifact paths/root/glob are only valid for mode=search", { mode, root: params.root, glob: params.glob, pathCount: Array.isArray(params.paths) ? params.paths.length : 0 });
 	}
@@ -743,7 +747,7 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 			throw new ArtifactReaderError("ARTIFACT_TOO_LARGE", "Artifact is too large for browser_artifact json reader", { path: absPath, bytes: info.size, maxBytes: MAX_ARTIFACT_READ_BYTES });
 		}
 		result = readJson(await readFile(absPath, "utf8"), info.size, absPath, params);
-		return redactArtifactResult(result, redact);
+		return redactArtifactResult(result, redact, targetedJsonRaw);
 	}
 	if (mode === "search") result = await searchText(absPath, info.size, params, maxChars);
 	else if (mode === "sample") result = await sampleText(absPath, info.size, params, maxChars);

@@ -23,9 +23,9 @@ kernel's entire public surface at a glance.
 | Module | Role |
 | --- | --- |
 | `types.ts` | Foundational types — locators, refs, actionability, errors, captures. |
+| `refId.ts` | Pure pi-ref URI minting and summary placeholder ref IDs. |
 | `entity.ts` | `Entity` / `EntityState` / `EntityStructure` model + builders. |
 | `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
-| `resolveModel.ts` | Candidate scoring + resolve-result classification. |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
@@ -34,7 +34,7 @@ kernel's entire public surface at a glance.
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
 | `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
-| `verbs/router.ts` | Verb dispatch + actionability/verification failure helpers. |
+| `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
 | `verbs/{click,type,scroll,read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
 
 The matching browser I/O for each verb lives in `../abml/verbs/*Runtime.ts` (e.g. `ax.ts`'s merge

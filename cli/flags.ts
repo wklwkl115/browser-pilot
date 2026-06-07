@@ -7,6 +7,8 @@
  * rejection) — we never re-implement coercion.
  */
 import { validateToolArgs } from "../src/frontend/validation.js";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 export type FlagKind = "string" | "number" | "boolean" | "enum" | "array" | "json";
 
@@ -67,6 +69,64 @@ export interface ParsedArgs {
 }
 export type ParseOutcome = { ok: true; value: ParsedArgs } | { ok: false; error: string };
 
+export function wantsJson(argv: string[]): boolean {
+	let json = false;
+	for (const token of argv) {
+		if (token === "--json") json = true;
+		if (token === "--text") json = false;
+	}
+	return json;
+}
+
+function readValueReference(value: string, cwd = process.cwd()): { ok: true; value: string } | { ok: false; error: string } {
+	if (value === "-") {
+		try {
+			return { ok: true, value: readFileSync(0, "utf8") };
+		} catch (error) {
+			return { ok: false, error: `cannot read stdin: ${error instanceof Error ? error.message : String(error)}` };
+		}
+	}
+	if (!value.startsWith("@") || value === "@") return { ok: true, value };
+	const filePath = path.resolve(cwd, value.slice(1));
+	try {
+		return { ok: true, value: readFileSync(filePath, "utf8") };
+	} catch (error) {
+		return { ok: false, error: `cannot read ${filePath}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+}
+
+function parseArrayValue(text: string): unknown[] {
+	const trimmed = text.trim();
+	if (!trimmed) return [];
+	if (trimmed.startsWith("[")) {
+		const parsed = JSON.parse(trimmed) as unknown;
+		if (!Array.isArray(parsed)) throw new Error("expected JSON array");
+		return parsed;
+	}
+	return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function parseFlagValue(spec: FlagSpec, value: string, cwd = process.cwd()): { ok: true; value: unknown } | { ok: false; error: string } {
+	const referenced = readValueReference(value, cwd);
+	if (!referenced.ok) return referenced;
+	const resolved = referenced.value;
+	if (spec.kind === "json") {
+		try {
+			return { ok: true, value: JSON.parse(resolved) };
+		} catch {
+			return { ok: false, error: `flag "${spec.flag}" expects JSON, got: ${value}` };
+		}
+	}
+	if (spec.kind === "array" && (value === "-" || value.startsWith("@"))) {
+		try {
+			return { ok: true, value: parseArrayValue(resolved) };
+		} catch (error) {
+			return { ok: false, error: `flag "${spec.flag}" expects a JSON array or newline list, got ${value}: ${error instanceof Error ? error.message : String(error)}` };
+		}
+	}
+	return { ok: true, value: resolved };
+}
+
 function normalizeFlag(flag: string): string { return flag.replace(/[^a-z0-9]/gi, "").toLowerCase(); }
 
 function editDistance(a: string, b: string): number {
@@ -101,14 +161,31 @@ function suggestFlag(token: string, flags: string[]): string | undefined {
 // Common flags some commands legitimately do NOT accept — point at the right knob instead of just
 // dumping the accepted list (e.g. browser_artifact has no --detail-level; it sizes with --limit/etc).
 const ABSENT_FLAG_HINTS: Record<string, string> = {
-	"--detail-level": "this command has no --detail-level; size output with --limit / --offset / --max-chars",
+	"--browser-session-id": "browserSessionId is managed internally; use pi-browser tabs for session management.",
+	"--detail-level": "detailLevel is internal now; request narrower artifact reads with --limit / --offset / --max-chars / --json-path.",
+	"--max-chars": "maxChars is internal now; request narrower artifact reads with --limit / --offset / --json-path.",
+	"--timeout-ms": "timeoutMs is internal now; use operator config/env for global timeout changes.",
+	"--output-path": "outputPath is internal now; read saved.path from the result.",
+	"--max-body-bytes": "maxBodyBytes is internal now; inspect saved artifacts for full bounded evidence.",
+	"--max-depth": "maxDepth is internal now; use the tool's scoped target parameters instead.",
+	"--max-pages": "maxPages is internal now; use the tool's scoped target parameters instead.",
+	"--max-cases": "maxCases is internal now; use the tool's scoped target parameters instead.",
+	"--max-candidates": "maxCandidates is internal now; use the tool's scoped target parameters instead.",
+	"--max-templates": "maxTemplates is internal now; use the tool's scoped target parameters instead.",
+	"--rate-limit-per-second": "rateLimitPerSecond is internal now; use operator config/env for global rate changes.",
+	"--timeout-seconds": "timeoutSeconds is internal now; use operator config/env for global timeout changes.",
+	"--har-max-entries": "harMaxEntries is internal now; narrow the HAR source with --har-entry-index or --har-url-pattern.",
+	"--follow-redirects": "followRedirects is internal now; use the tool's default replay/crawl behavior.",
+	"--max-redirects": "maxRedirects is internal now; use the tool's default replay/crawl behavior.",
+	"--default-scheme": "defaultScheme is internal now; pass an absolute http:// or https:// URL when the scheme matters.",
+	"--cookie-mode": "cookieMode is internal now; bindBrowserSession merges browser cookies by default.",
 	// Action tools (wait/network/hook/frame) take per-action keys inside --params, not as flags. `selector`
 	// is the one agents most often reach for as a flag (e.g. wait --action selector). Point at the shape.
 	"--selector": "action tools (wait/hook/frame) take selector inside --params, e.g. --action selector --params '{\"selector\":\"#id\"}'",
 };
 
 /** Collect argv into a raw params object (string/bool/array/json), plus CLI globals. */
-export function parseArgs(specs: FlagSpec[], argv: string[]): ParseOutcome {
+export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()): ParseOutcome {
 	const byFlag = new Map<string, FlagSpec>();
 	for (const s of specs) byFlag.set(s.flag, s);
 	const raw: Record<string, unknown> = {};
@@ -142,12 +219,19 @@ export function parseArgs(specs: FlagSpec[], argv: string[]): ParseOutcome {
 		}
 		if (spec.kind === "array") {
 			const arr = (raw[spec.name] as string[] | undefined) ?? [];
-			arr.push(value);
+			const parsedValue = parseFlagValue(spec, value, cwd);
+			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+			if (Array.isArray(parsedValue.value) && (value === "-" || value.startsWith("@"))) arr.push(...parsedValue.value.map((v) => String(v)));
+			else arr.push(String(parsedValue.value));
 			raw[spec.name] = arr;
 		} else if (spec.kind === "json") {
-			try { raw[spec.name] = JSON.parse(value); } catch { return { ok: false, error: `flag "${spec.flag}" expects JSON, got: ${value}` }; }
+			const parsedValue = parseFlagValue(spec, value, cwd);
+			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+			raw[spec.name] = parsedValue.value;
 		} else {
-			raw[spec.name] = value; // string/number/enum — validateToolArgs coerces below
+			const parsedValue = parseFlagValue(spec, value, cwd);
+			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+			raw[spec.name] = parsedValue.value; // string/number/enum — validateToolArgs coerces below
 		}
 	}
 	return { ok: true, value: { params: raw, globals } };

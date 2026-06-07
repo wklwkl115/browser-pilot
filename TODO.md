@@ -6,7 +6,7 @@
 - 后续路线与建议：`ROADMAP.md`。
 - 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`。
 当前执行口径：
-- 当前无并行大型架构主线；状态以 `CURRENT.md` 为准。后续 M3 / public surface / profile isolation 需单独激活。
+- 最近完成的大型主线：Agent-native 统一架构 Workstream A（合并原 CLI 优化线），状态以 `CURRENT.md` 为准；权威设计见 `docs/agent-native-architecture.md`，外部面规范 `docs/agent-native-cli-spec.md` + 队列 `docs/agent-native-cli-execution-plan.md`。
 - 当前 shipping 行为是 **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**；MCP shell 已移除。
 - `docs/abml-execution-plan.md` 不再作为当前执行队列；ABML R1/R2/R3/R3.x 与机制臂 M1/M2a/M2b/M2c 均已作为 internal substrate 完成。
 - 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`

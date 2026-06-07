@@ -13,11 +13,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { buildCliCommands, type CliCommand } from "./registry.js";
-import { buildFlagSpecs, parseArgs, coerceParams, type GlobalFlags, type FlagSpec } from "./flags.js";
-import { renderResult, renderUsageError, EXIT, type RenderMode } from "./render.js";
+import { buildFlagSpecs, parseArgs, coerceParams, wantsJson, type GlobalFlags, type FlagSpec } from "./flags.js";
+import { renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
-import { findDaemon, stopDaemon } from "./daemonControl.js";
+import { findDaemon, lockfilePath, stopDaemon } from "./daemonControl.js";
 import { nativeToolMetadata } from "../src/protocol/nativeActionMetadata.js";
+import { WEB_SECURITY_TOOL_NAMES } from "../src/tools/toolRegistry.js";
 
 /** Left-align in a column; if the head already fills the column, keep a 2-space gap so the
  *  description never glues onto a long flag/subcommand. */
@@ -33,6 +34,11 @@ function printHelp(): void {
 		"Usage:",
 		"  pi-browser <command> [--flags]",
 		"  pi-browser daemon <start|stop|status>",
+		"  pi-browser commands --json",
+		"  pi-browser schema <command> --json",
+		"  pi-browser validate <command> --params @params.json --json",
+		"  pi-browser doctor --json",
+		"  pi-browser selftest --confirm --json",
 		"",
 		"Commands:",
 	];
@@ -107,22 +113,188 @@ function printCommandHelp(cmd: CliCommand): void {
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
+function packageVersion(): string {
+	try {
+		const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as { version?: unknown };
+		return typeof pkg.version === "string" ? pkg.version : "unknown";
+	} catch {
+		return "unknown";
+	}
+}
+
+function commandGroup(cmd: CliCommand): "core" | "security" {
+	return WEB_SECURITY_TOOL_NAMES.has(cmd.name) ? "security" : "core";
+}
+
+function flagMetadata(cmd: CliCommand): Record<string, unknown>[] {
+	return buildCommandFlagSpecs(cmd).map((spec) => ({
+		name: spec.name,
+		flag: spec.flag,
+		kind: spec.kind,
+		required: spec.required,
+		...(spec.choices ? { choices: spec.choices } : {}),
+		...(spec.description ? { description: spec.description } : {}),
+		inputs: ["inline", ...(spec.kind === "json" || spec.kind === "array" || spec.kind === "string" ? ["@file", "stdin"] : [])],
+	}));
+}
+
+function renderLocalJson(obj: Record<string, unknown>): number {
+	writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, ...obj });
+	return EXIT.ok;
+}
+
+function runCommandsCommand(argv: string[]): number {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const commands = buildCliCommands().map((cmd) => ({
+		name: cmd.subcommand,
+		toolName: cmd.name,
+		group: commandGroup(cmd),
+		description: cmd.description,
+		flags: flagMetadata(cmd),
+	}));
+	if (mode === "json") return renderLocalJson({ command: "commands", commands });
+	for (const cmd of commands) process.stdout.write(`${pad(String(cmd.name), 22)}${cmd.description ?? ""}\n`);
+	return EXIT.ok;
+}
+
+function runSchemaCommand(argv: string[]): number {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const cmdName = argv.find((arg) => !arg.startsWith("--"));
+	if (!cmdName) return renderUsageError("usage: pi-browser schema <command> --json", mode);
+	const cmd = buildCliCommands().find((c) => c.subcommand === cmdName);
+	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
+	if (mode === "json") return renderLocalJson({ command: "schema", name: cmd.subcommand, toolName: cmd.name, schema: cmd.parameters ?? {}, flags: flagMetadata(cmd) });
+	process.stdout.write(JSON.stringify(cmd.parameters ?? {}, null, 2) + "\n");
+	return EXIT.ok;
+}
+
+function extractParamsArg(argv: string[], mode: RenderMode): { ok: true; params: Record<string, unknown> } | { ok: false; code: number } {
+	const specs: FlagSpec[] = [{
+		name: "params",
+		flag: "--params",
+		kind: "json",
+		required: true,
+		description: "Parameter object to validate; supports inline JSON, @file, or stdin.",
+	}];
+	const parsed = parseArgs(specs, argv);
+	if (!parsed.ok) return { ok: false, code: renderUsageError(parsed.error, mode) };
+	const params = parsed.value.params.params;
+	if (!params || typeof params !== "object" || Array.isArray(params)) return { ok: false, code: renderUsageError("--params must resolve to a JSON object", mode, EXIT.input) };
+	return { ok: true, params: params as Record<string, unknown> };
+}
+
+function runValidateCommand(argv: string[]): number {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const [cmdName, ...rest] = argv;
+	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: pi-browser validate <command> --params @params.json --json", mode);
+	const cmd = buildCliCommands().find((c) => c.subcommand === cmdName);
+	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
+	const extracted = extractParamsArg(rest, mode);
+	if (!extracted.ok) return extracted.code;
+	const prepared = (cmd.def.prepareArguments ? cmd.def.prepareArguments(extracted.params) : extracted.params) as Record<string, unknown>;
+	const cliParams = applyCliOnlyParams(cmd, prepared);
+	if (!cliParams.ok) return renderUsageError(cliParams.error, mode, EXIT.input);
+	const coerced = coerceParams(cmd.parameters, cliParams.params);
+	if (!coerced.ok) return renderUsageError(coerced.error, mode);
+	if (mode === "json") return renderLocalJson({ command: "validate", name: cmd.subcommand, toolName: cmd.name, valid: true, args: coerced.args });
+	process.stdout.write(`valid: ${cmd.subcommand}\n`);
+	return EXIT.ok;
+}
+
+async function runDoctorCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const found = await findDaemon();
+	const activeTabs = Array.isArray(found?.status.tabs) ? found.status.tabs : [];
+	const active = activeTabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? activeTabs[0];
+	const report = {
+		command: "doctor",
+		version: packageVersion(),
+		cwd: process.cwd(),
+		commandCount: buildCliCommands().length,
+		daemon: {
+			lockfile: lockfilePath(),
+			running: Boolean(found),
+			...(found ? { pid: found.info.pid, controlPort: found.info.controlPort, bridgePort: found.status.bridgePort, extensionConnected: found.status.extensionConnected } : {}),
+		},
+		activeTab: active ?? null,
+		artifactRoot: path.join(process.cwd(), ".pi", "browser-artifacts"),
+		recovery: {
+			commands: ["pi-browser daemon status --json", "pi-browser tabs --action list --json", "pi-browser selftest --confirm --json"],
+		},
+	};
+	if (mode === "json") return renderLocalJson(report);
+	process.stdout.write(`pi-browser ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
+	return EXIT.ok;
+}
+
+async function runSelftestCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const confirmed = argv.includes("--confirm");
+	if (!confirmed) return renderUsageError("selftest may create and close a temporary tab; rerun with --confirm", mode);
+	const steps: Array<Record<string, unknown>> = [];
+	let tabId: number | undefined;
+	try {
+		const create = await invokeTool("browser_tabs", { action: "create", url: "about:blank", active: true }, process.cwd());
+		const createText = create.content.map((c) => c.text).join("\n");
+		const createEnv = JSON.parse(createText) as { data?: { tabId?: number } };
+		tabId = createEnv.data?.tabId;
+		steps.push({ step: "create-temp-tab", ok: typeof tabId === "number", tabId });
+		if (typeof tabId !== "number") throw new Error("selftest could not create a temporary tab");
+		const exec = await invokeTool("browser_execute", { tabId, script: "document.title='Pi Selftest';document.body.textContent='pi-browser selftest ok';({title:document.title,text:document.body.textContent})" }, process.cwd());
+		const execText = exec.content.map((c) => c.text).join("\n");
+		steps.push({ step: "execute", ok: execText.includes("pi-browser selftest ok") });
+		const observe = await invokeTool("browser_observe", { tabId, mode: "text", maxNodes: 50 }, process.cwd());
+		const observeText = observe.content.map((c) => c.text).join("\n");
+		steps.push({ step: "observe-text", ok: observeText.includes("pi-browser selftest ok") });
+		const close = await invokeTool("browser_tabs", { action: "close", tabId }, process.cwd());
+		steps.push({ step: "close-temp-tab", ok: close.terminate !== true, tabId });
+		tabId = undefined;
+		if (mode === "json") return renderLocalJson({ command: "selftest", steps, passed: steps.every((s) => s.ok === true) });
+		process.stdout.write("selftest PASS\n");
+		return EXIT.ok;
+	} catch (error) {
+		if (tabId !== undefined) {
+			try {
+				await invokeTool("browser_tabs", { action: "close", tabId }, process.cwd());
+				steps.push({ step: "cleanup-temp-tab", ok: true, tabId });
+			} catch {
+				steps.push({ step: "cleanup-temp-tab", ok: false, tabId });
+			}
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") {
+			writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_SELFTEST_FAILED", message, command: "selftest", steps });
+			return EXIT.toolError;
+		}
+		process.stderr.write(`selftest FAIL: ${message}\n`);
+		return EXIT.toolError;
+	}
+}
+
 function renderMode(globals: GlobalFlags): RenderMode {
 	if (globals.json) return "json";
 	if (globals.text) return "human";
 	return process.stdout.isTTY ? "human" : "json";
 }
 
-async function runDaemonControl(action: string | undefined): Promise<number> {
+async function runDaemonControl(action: string | undefined, argv: string[] = []): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
 	if (action === "stop") {
 		const stopped = await stopDaemon();
+		if (mode === "json") return renderLocalJson({ command: "daemon.stop", stopped });
 		process.stdout.write(stopped ? "daemon stopped\n" : "no daemon running\n");
 		return EXIT.ok;
 	}
 	if (action === "status") {
 		const found = await findDaemon();
-		if (!found) { process.stdout.write("daemon: not running\n"); return EXIT.ok; }
-		process.stdout.write(`${JSON.stringify({ pid: found.info.pid, controlPort: found.info.controlPort, ...found.status }, null, 2)}\n`);
+		if (!found) {
+			if (mode === "json") return renderLocalJson({ command: "daemon.status", running: false, daemon: null });
+			process.stdout.write("daemon: not running\n");
+			return EXIT.ok;
+		}
+		const status = { command: "daemon.status", running: true, pid: found.info.pid, controlPort: found.info.controlPort, ...found.status };
+		if (mode === "json") return renderLocalJson(status);
+		process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
 		return EXIT.ok;
 	}
 	if (action === "start") {
@@ -141,27 +313,32 @@ async function runDaemonControl(action: string | undefined): Promise<number> {
 		await new Promise<never>(() => {}); // keep alive
 		return EXIT.ok; // unreachable
 	}
-	process.stderr.write("usage: pi-browser daemon <start|stop|status>\n");
-	return EXIT.usage;
+	return renderUsageError("usage: pi-browser daemon <start|stop|status>", mode);
 }
 
 export async function main(argv: string[]): Promise<number> {
 	const [sub, ...rest] = argv;
 	if (!sub || sub === "--help" || sub === "-h") { printHelp(); return EXIT.ok; }
-	if (sub === "daemon") return runDaemonControl(rest[0]);
+	if (sub === "daemon") return runDaemonControl(rest[0], rest);
+	if (sub === "commands") return runCommandsCommand(rest);
+	if (sub === "schema") return runSchemaCommand(rest);
+	if (sub === "validate") return runValidateCommand(rest);
+	if (sub === "doctor") return await runDoctorCommand(rest);
+	if (sub === "selftest") return await runSelftestCommand(rest);
 
 	const cmd = buildCliCommands().find((c) => c.subcommand === sub);
-	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`);
+	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`, wantsJson(rest) ? "json" : "human");
 
 	const specs = buildCommandFlagSpecs(cmd);
 	const parsed = parseArgs(specs, rest);
-	if (!parsed.ok) return renderUsageError(parsed.error);
+	const requestedMode: RenderMode = wantsJson(rest) ? "json" : "human";
+	if (!parsed.ok) return renderUsageError(parsed.error, requestedMode);
 	if (parsed.value.globals.help) { printCommandHelp(cmd); return EXIT.ok; }
 
 	const cliParams = applyCliOnlyParams(cmd, parsed.value.params);
-	if (!cliParams.ok) return renderUsageError(cliParams.error);
+	if (!cliParams.ok) return renderUsageError(cliParams.error, renderMode(parsed.value.globals), EXIT.input);
 	const coerced = coerceParams(cmd.parameters, cliParams.params);
-	if (!coerced.ok) return renderUsageError(coerced.error);
+	if (!coerced.ok) return renderUsageError(coerced.error, renderMode(parsed.value.globals));
 
 	// Only execution is delegated to the daemon; the caller cwd rides along so
 	// artifacts/memory land under the caller's .pi/, not the daemon's.
@@ -170,8 +347,7 @@ export async function main(argv: string[]): Promise<number> {
 		return renderResult(result, renderMode(parsed.value.globals));
 	} catch (error) {
 		if (error instanceof DaemonUnavailableError) {
-			process.stderr.write(`${"error:"} pi-browser daemon unavailable — ${error.message}\n`);
-			return EXIT.unavailable;
+			return renderUnavailableError(error.message, renderMode(parsed.value.globals));
 		}
 		throw error;
 	}

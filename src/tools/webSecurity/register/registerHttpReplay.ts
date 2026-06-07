@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeHttpReplayData } from "../../summaries/index.js";
 import { runHttpReplay } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, webSecurityDefaultSchemeParam, type HttpReplayToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, type HttpReplayToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import { validateOptionalParams } from "../../../validation/middleware.js";
@@ -39,7 +39,6 @@ export function registerHttpReplayTool({ pi, ensureStarted }: ToolRegistrarConte
 			body: Type.Optional(Type.String({ description: "Text request body override." })),
 			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
 			mutations: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional mutation object with url, method, headers, body, bodyBase64, or multipart." })),
-			defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 			...redirectControlParams({
 				followRedirectsDescription: "Follow redirects; default false for replay determinism.",
 				maxRedirectsDescription: "Maximum redirects when followRedirects is true.",

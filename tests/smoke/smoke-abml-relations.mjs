@@ -13,7 +13,6 @@ import path from "node:path";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
-import { resolveBrowserToolCapabilityProfile } from "../../src/tools/capabilityProfile.ts";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
@@ -114,11 +113,9 @@ try {
   // TRUE end-to-end: drive the registered browser_observe tool (the exact def.execute seam Pi-native
   // and the CLI both call) and read the CONSUMER-FACING envelope — not the internal functions. This
   // proves relations actually surface in the tool output an agent receives.
-  const profile = resolveBrowserToolCapabilityProfile();
-  bridge.setCapabilityProfile?.(profile);
   const ensureStarted = async () => bridge; // already started above
   const adapter = new ToolCollectingAdapter();
-  registerBrowserTools(adapter, bridge, ensureStarted, { securityToolsEnabled: profile.securityToolsEnabled });
+  registerBrowserTools(adapter, bridge, ensureStarted);
   const observe = adapter.getTool("browser_observe");
   if (!observe) throw new Error("browser_observe not registered");
   const browserSessionId = bridge.snapshot().browserSessionId;

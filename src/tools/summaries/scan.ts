@@ -1,6 +1,6 @@
 import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../abml/entity.js";
-import { registerRefDescriptor } from "../../resources/resourceStore.js";
+import { summaryRefIdForDescriptor } from "../../abml-core/refId.js";
 
 export type ScanSummaryOptions = {
 	detailLevel?: unknown;
@@ -325,6 +325,11 @@ function numberField(value: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
+function nodeRefId(node: Record<string, unknown>, built: { descriptor: Parameters<typeof summaryRefIdForDescriptor>[0] }, slot: string): string {
+	const refs = isRecord(node.__piEntityRefs) ? node.__piEntityRefs : undefined;
+	return stringField(refs?.[slot]) ?? stringField(node.__piEntityRef) ?? stringField(node.entityRef) ?? summaryRefIdForDescriptor(built.descriptor);
+}
+
 function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
 	const actionables = asArray(item.actionables).filter(isRecord);
@@ -334,33 +339,28 @@ function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOp
 	const canvasRegions = asArray(item.canvas_regions).filter(isRecord);
 	const actionEntities = dedupeEntities(actionables.map((node) => {
 		const built = buildDomEntityFromScanActionable(node, context);
-		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
-		return withRegisteredRef(built.entity, refId);
+		return withRegisteredRef(built.entity, nodeRefId(node, built, "domAction"));
 	}));
 	// Minimal entities for aria-controls/owns targets (incl. hidden/collapsed) so those relations
 	// resolve. Deduped by selector against actionables (a visible target collapses to one entity).
 	const referencedEntities = references.map((node) => {
 		const built = buildReferencedTargetEntity(node, context);
-		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
-		return withRegisteredRef(built.entity, refId);
+		return withRegisteredRef(built.entity, nodeRefId(node, built, "referencedTarget"));
 	});
 	// Minimal entities for controls/owns SOURCE elements that were NOT in the actionable list
 	// (off-screen). Carries controlsSelectors/ownsSelectors hints for deriveStateRelationAnchors.
 	const controlsSourceEntities = controlsPairs.map((node) => {
 		const built = buildControlsSourceEntity(node, context);
-		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
-		return withRegisteredRef(built.entity, refId);
+		return withRegisteredRef(built.entity, nodeRefId(node, built, "controlsSource"));
 	});
 	const visualRegions = dedupeEntities((canvasRegions.length ? canvasRegions : actionables.filter((node) => String(node.tag || "").toLowerCase() === "canvas"))
 		.map((node) => {
 			const built = buildVisionRegionFromCanvasActionable(node, context);
-			const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || built.entity.role });
-			return withRegisteredRef(built.entity, refId);
+			return withRegisteredRef(built.entity, nodeRefId(node, built, "visionRegion"));
 		}));
 	const listEntities = dedupeEntities(listHints.map((node, index) => {
 		const built = buildRegionEntityFromListHint(node, context, index);
-		const refId = registerRefDescriptor({ descriptor: built.descriptor, resourceKind: "scan", name: built.entity.name || `list-${index}` });
-		return withRegisteredRef(built.entity, refId);
+		return withRegisteredRef(built.entity, nodeRefId(node, built, "listRegion"));
 	}));
 	// Hidden/collapsed targets (aria-controls/owns) need their own entities since they're not in
 	// actionEntities. For visible targets that were also scanned as actionables, the actionable

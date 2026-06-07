@@ -12,7 +12,7 @@
 // or (b) a whitelisted cross-cutting module proven transitively pure. Importing driver/tools/
 // scan/resources/node, an npm package, a runtime sibling, or reaching back into src/abml/ fails.
 //
-// src/abml/ keeps the 7 runtime files plus pure-core re-export shims at the old pure-core paths, so every
+// src/abml/ keeps the 6 runtime files plus pure-core re-export shims at the old pure-core paths, so every
 // existing importer ("../abml/entity.js", "../abml/verbs/router.js", ...) keeps working unchanged.
 // This file IS the machine-readable manifest; keep it in sync with docs/abml-kernel-manifest.md.
 import assert from "node:assert/strict";
@@ -29,9 +29,9 @@ const read = (abs) => readFileSync(abs, "utf8");
 // --- The manifest (abml-core-relative paths for pure core; abml-relative for runtime) ----------
 const PURE_CORE = [
 	"types.ts",
+	"refId.ts",
 	"refPolicy.ts",
 	"actionabilityModel.ts",
-	"resolveModel.ts",
 	"entity.ts",
 	"ax.ts",
 	"relations.ts",
@@ -56,7 +56,6 @@ const RUNTIME = [
 	"verbs/axRuntime.ts",
 	"verbs/frameRuntime.ts",
 	"verbs/pierceRuntime.ts",
-	"verbs/streamRuntime.ts",
 	"verbs/visionRuntime.ts",
 	"verbs/runtime.ts",
 	"verbs/integration.ts",
@@ -98,7 +97,7 @@ assert.deepEqual(
 assert.deepEqual(
 	walk(abmlDir).sort(),
 	[...RUNTIME, ...PURE_CORE].sort(),
-	"src/abml/ must contain exactly the 7 runtime files + pure-core re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
+	"src/abml/ must contain exactly the 6 runtime files + pure-core re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
 );
 
 // --- Import extraction -------------------------------------------------------------------------

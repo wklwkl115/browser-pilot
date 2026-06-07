@@ -5,6 +5,7 @@ import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { summarizeScanData } from "../../tools/summaries/scan.js";
+import { registerScanEntityRefs } from "../../tools/scanEntityRefs.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources/resourceStore.js";
 import { diffEntities } from "../diff.js";
@@ -833,16 +834,18 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			sourceMode: "scan",
 			capturedAt: Date.now(),
 		});
-		const summary = summarizeScanData(data, bridge.tabs || [], {
+		const entityContext = {
+			browserSessionId: bridge.browserSessionId,
+			tabId: target.tabId,
+			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			observationId: snapshot.snapshotId,
+			capturedAt: snapshot.capturedAt,
+		};
+		const summaryData = registerScanEntityRefs(data, entityContext);
+		const summary = summarizeScanData(summaryData, bridge.tabs || [], {
 			detailLevel: "summary",
 			maxChars: options.maxChars ?? DEFAULT_MAX_CHARS,
-			entityContext: {
-				browserSessionId: bridge.browserSessionId,
-				tabId: target.tabId,
-				url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
-				observationId: snapshot.snapshotId,
-				capturedAt: snapshot.capturedAt,
-			},
+			entityContext,
 		});
 		const focus = summary.focus && typeof summary.focus === "object" ? summary.focus as Record<string, unknown> : {};
 		const entities = [

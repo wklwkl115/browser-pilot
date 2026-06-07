@@ -20,7 +20,6 @@ export function registerSqliTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		parameters: strictToolParameters({
 			engine: Type.Optional(Type.Union([Type.Literal("builtin"), Type.Literal("sqlmap")], { description: "Detection engine (default: builtin). builtin: lightweight probes; sqlmap: external binary." })),
 			...sharedWebSecurityBrowserSessionParams("Process timeout in milliseconds; default 120000 for engine:sqlmap, per-request timeout for engine:builtin."),
-			maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum response body bytes stored per request before truncation; default 128000." })),
 			allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures." })),
 			...rawRequestParams({
 				urlDescription: "Absolute URL or host/path target. Required unless rawRequest, request, requests, sequence, or HAR input supplies a target.",

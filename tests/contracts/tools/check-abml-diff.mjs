@@ -136,7 +136,8 @@ assert.ok(schemaSrc.includes("EntityDiffSchema"), "outputSchemas must export Ent
 const integrationSrc = readRepo("src/abml/verbs/integration.ts");
 assert.ok(integrationSrc.includes("baseline") && integrationSrc.includes("diffOptions") && integrationSrc.includes("runtime.read"), "ABML integration helper must accept baseline + diffOptions");
 const resourceSrc = readRepo("src/resources/resourceStore.ts");
-assert.ok(resourceSrc.includes("stableRefIdForDescriptor") && resourceSrc.includes("createHash"), "resourceStore must mint stable refs for snapshot diff matching");
+const refIdSrc = readRepo("src/abml-core/refId.ts");
+assert.ok(resourceSrc.includes("stableRefIdForDescriptor") && refIdSrc.includes("stableHash24"), "resourceStore must mint stable refs for snapshot diff matching");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-diff"]?.includes("check-abml-diff.mjs"), "package must expose check:abml-diff");
 

@@ -112,9 +112,10 @@ assert.notEqual(lowRefA, lowRefB, "low-confidence anchors must not override loca
 clearResourceStore();
 
 const resourceStoreSrc = readRepo("src/resources/resourceStore.ts");
-assert.ok(resourceStoreSrc.includes("function stableRefIdForDescriptor"), "resourceStore still owns ref minting");
+const refIdSrc = readRepo("src/abml-core/refId.ts");
+assert.ok(resourceStoreSrc.includes('from "../abml-core/refId.js"') && resourceStoreSrc.includes("stableRefIdForDescriptor"), "resourceStore must reuse the pure refId minting helper");
+assert.ok(refIdSrc.includes("function stableRefIdForDescriptor") && refIdSrc.includes("abml-template"), "refId core still owns stable semantic-template ref minting");
 assert.equal(resourceStoreSrc.includes("semanticRefAnchor"), false, "resourceStore must not import candidate derivation directly");
-assert.ok(resourceStoreSrc.includes("abml-template"), "P3 gate allows a narrow semantic anchor branch inside stableRefIdForDescriptor");
 const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
 assert.ok(runtimeSrc.includes("remintSemanticTemplateRefs") && runtimeSrc.includes("deriveSemanticRefAnchors"), "runtime must remint only after AX/DOM merge has template evidence");
 const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");

@@ -37,13 +37,18 @@ assert(registerSqli.includes("validateOptionalParams(HttpRequestSchema, current.
 
 const registerCrawl = read("src/tools/webSecurity/register/registerCrawl.ts");
 assert(registerCrawl.includes("knownFiles: enumParam([\"none\", \"robotstxt\", \"sitemapxml\", \"all\"]"), "browser_crawl knownFiles must be a strict enum");
-assert(registerCrawl.includes("defaultScheme: webSecurityDefaultSchemeParam("), "browser_crawl defaultScheme must be a strict enum");
+assert.equal(registerCrawl.includes("defaultScheme: webSecurityDefaultSchemeParam("), false, "browser_crawl defaultScheme is mechanical and must not be advertised");
 assert.equal(registerCrawl.includes("validateOptionalParams("), false, "browser_crawl should not invent complex-object Zod validation when no real gap exists");
 
 const registerTemplate = read("src/tools/webSecurity/register/registerTemplate.ts");
 const registerHttpReplay = read("src/tools/webSecurity/register/registerHttpReplay.ts");
-assert(registerTemplate.includes("defaultScheme: webSecurityDefaultSchemeParam("), "browser_template defaultScheme must be a strict enum");
-assert(registerHttpReplay.includes("defaultScheme: webSecurityDefaultSchemeParam("), "browser_http_replay defaultScheme must be a strict enum");
+assert.equal(registerTemplate.includes("defaultScheme: webSecurityDefaultSchemeParam("), false, "browser_template defaultScheme is mechanical and must not be advertised");
+assert.equal(registerHttpReplay.includes("defaultScheme: webSecurityDefaultSchemeParam("), false, "browser_http_replay defaultScheme is mechanical and must not be advertised");
+
+const prepareArguments = read("src/tools/prepareArguments.ts");
+for (const deprecated of ["defaultScheme", "maxBodyBytes", "rateLimitPerSecond", "timeoutSeconds", "cookieMode"]) {
+	assert(prepareArguments.includes(`"${deprecated}"`), `prepareArguments must tolerate deprecated mechanical WebSecurity param ${deprecated}`);
+}
 
 for (const file of [
 	"src/tools/registerCommandTool.ts",

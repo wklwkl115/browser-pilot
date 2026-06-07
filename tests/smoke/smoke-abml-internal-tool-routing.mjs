@@ -8,7 +8,6 @@ const cwd = await mkdtemp(path.join(os.tmpdir(), "abml-internal-routing-"));
 const adapter = new McpExtensionAdapter();
 const commandCalls = [];
 const fakeBridge = {
-	setCapabilityProfile() {},
 	queueDepth() { return 0; },
 	leaseOwnerHash() { return undefined; },
 	refreshTabs: async () => [{ tabId: 7, url: "https://example.test/checkout", title: "Checkout", active: true }],
@@ -43,7 +42,7 @@ const fakeBridge = {
 		return { id: "ok", acknowledged: true, tabId: 7, data: { ok: true } };
 	},
 };
-registerBrowserTools(adapter, fakeBridge, async () => fakeBridge, { securityToolsEnabled: true });
+registerBrowserTools(adapter, fakeBridge, async () => fakeBridge);
 const observe = adapter.getTool("browser_observe");
 const execute = adapter.getTool("browser_execute");
 if (!observe || !execute) throw new Error("tools not registered");

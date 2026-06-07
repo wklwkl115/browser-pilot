@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { distilledJsonResult, distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 function textOf(result: { content: Array<{ text: string }> }) {
@@ -43,22 +46,37 @@ test("distilledJsonResult redacts sensitive summary fields by default", async ()
 	});
 	const text = textOf(result);
 	assert.equal(text.includes("supersecretvalue"), false, "default must redact token-named fields");
-	assert.ok(text.includes("[redacted]"));
+	const envelope = JSON.parse(text);
+	assert.equal(envelope.summary.token.redacted, true);
+	assert.equal(envelope.summary.token.kind, "token");
+	assert.equal(envelope.summary.token.jsonPath, "token");
 });
 
-test("distilledJsonResult honors redact:false to surface the raw value inline", async () => {
-	const result = await distilledJsonResult({ token: "supersecretvalue" }, {
-		toolName: "browser_execute",
-		command: "javascript",
-		maxChars: 4000,
-		fallbackName: "exec.json",
-		detailLevel: "summary",
-		distill: (value) => ({ token: (value as { token?: unknown }).token }),
-		redact: false,
-	});
-	const text = textOf(result);
-	assert.ok(text.includes("supersecretvalue"), "redact:false must surface the raw value the caller asked for");
-	assert.ok(text.includes('"redaction": "disabled"'), "privacy must record that redaction was disabled");
+test("distilledJsonResult ignores redact:false and emits a raw-location pointer", async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-result-redaction-"));
+	try {
+		const result = await distilledJsonResult({ token: "supersecretvalue" }, {
+			toolName: "browser_execute",
+			command: "javascript",
+			maxChars: 4000,
+			fallbackName: "exec.json",
+			detailLevel: "summary",
+			distill: (value) => ({ token: (value as { token?: unknown }).token }),
+			redact: false,
+			ctx: { cwd },
+		});
+		const text = textOf(result);
+		const envelope = JSON.parse(text);
+		assert.equal(text.includes("supersecretvalue"), false, "model-facing output must not expose raw values inline");
+		assert.equal(envelope.summary.token.redacted, true);
+		assert.equal(envelope.summary.token.kind, "token");
+		assert.equal(envelope.summary.token.raw, path.join(cwd, ".pi", "browser-artifacts", "exec.json"));
+		assert.equal(envelope.summary.token.jsonPath, "token");
+		assert.equal(typeof envelope.summary.token.bytes, "number");
+		assert.equal(envelope.privacy.modelFacingRedaction, "default");
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
 });
 
 test("distilledTextResult summary mode emits compact artifact-guided output", async () => {

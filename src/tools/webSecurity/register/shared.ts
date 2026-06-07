@@ -123,7 +123,6 @@ export function sharedWebSecurityParams() {
 			tabIdDescription: "Target tab id used when bindBrowserSession injects browser cookies into HTTP requests; otherwise omitted is allowed.",
 			timeoutDescription: "Per-request timeout in milliseconds",
 		}),
-		maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum response body bytes stored per request before truncation; default 256000." })),
 		allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners." })),
 	};
 }
@@ -131,7 +130,7 @@ export function sharedWebSecurityParams() {
 export function browserCookieBindingParams(bindBrowserSessionDescription: string, options: { includeCookieMode?: boolean } = {}) {
 	return {
 		bindBrowserSession: Type.Optional(Type.Boolean({ description: bindBrowserSessionDescription })),
-		...(options.includeCookieMode === false ? {} : { cookieMode: webSecurityCookieModeParam("merge | replace | preserve for browser cookie injection into HTTP requests; default merge.") }),
+		...(options.includeCookieMode === true ? { cookieMode: webSecurityCookieModeParam("merge | replace | preserve for browser cookie injection into HTTP requests; default merge.") } : {}),
 	};
 }
 
@@ -141,7 +140,6 @@ export function harReplayParams(options: { harDescription: string; harPathDescri
 		harPath: Type.Optional(Type.String({ description: options.harPathDescription })),
 		harEntryIndex: Type.Optional(Type.Number({ description: "Zero-based HAR entry index to replay." })),
 		harUrlPattern: Type.Optional(Type.String({ description: "Bounded safe-regex or substring filter for HAR request URLs; unsafe regex falls back to substring and candidate entries are capped." })),
-		harMaxEntries: Type.Optional(Type.Number({ description: "Maximum HAR entries to replay; default 20, hard-capped at 100." })),
 	};
 }
 
@@ -158,7 +156,6 @@ export function rawRequestParams(options: { urlDescription: string; rawRequestDe
 		body: Type.Optional(Type.String({ description: "Text request body override." })),
 		bodyBase64: Type.Optional(Type.String({ description: "Base64 request body override for binary-ish payloads." })),
 		mutations: Type.Optional(Type.Object({}, { additionalProperties: true, description: options.mutationsDescription })),
-		defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 	};
 	if (config.section === "target") return targetParams;
 	if (config.section === "overrides") return overrideParams;
@@ -173,52 +170,43 @@ export function requestSequenceParams(options: { requestsDescription: string; se
 }
 
 export function boundedExecutionParams(options: { timeoutSecondsDescription: string }) {
-	return {
-		timeoutSeconds: Type.Optional(Type.Number({ description: options.timeoutSecondsDescription })),
-	};
+	void options;
+	return {};
 }
 
 export function redirectControlParams(options: { followRedirectsDescription: string; maxRedirectsDescription: string }) {
-	return {
-		followRedirects: Type.Optional(Type.Boolean({ description: options.followRedirectsDescription })),
-		maxRedirects: Type.Optional(Type.Number({ description: options.maxRedirectsDescription })),
-	};
+	void options;
+	return {};
 }
 
 export function rateLimitPerSecondParam(description: string) {
-	return {
-		rateLimitPerSecond: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export function maxCasesParam(description: string) {
-	return {
-		maxCases: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export function maxCandidatesParam(description: string) {
-	return {
-		maxCandidates: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export function maxDepthParam(description: string) {
-	return {
-		maxDepth: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export function maxPagesParam(description: string) {
-	return {
-		maxPages: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export function maxTemplatesParam(description: string) {
-	return {
-		maxTemplates: Type.Optional(Type.Number({ description })),
-	};
+	void description;
+	return {};
 }
 
 export type WebSecuritySharedToolParams = {

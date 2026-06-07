@@ -121,9 +121,11 @@ try {
 	assert.equal(sensitiveJson.summary.privacy.classification, "local_raw_evidence", "check-artifact privacy.summary: artifacts must expose local raw evidence classification");
 	assert.equal(sensitiveJson.summary.privacy.localOnly, true, "check-artifact privacy.summary: artifacts must remain local-only");
 	assert.ok(String(sensitiveJson.summary.privacy.cleanup).includes(".pi/browser-artifacts"), "check-artifact privacy.summary: cleanup hint must name artifact root");
-	const sensitiveRaw = await readBrowserArtifact({ path: sensitivePath, mode: "json", redact: false }, { cwd: tmp });
-	assert.ok(JSON.stringify(sensitiveRaw).includes("cookie-secret"), "check-artifact privacy.raw: redact:false must allow explicit local raw evidence reads");
-	assert.equal(sensitiveRaw.summary.privacy.redaction, "disabled", "check-artifact privacy.raw: summary must record explicit redaction disable");
+	const sensitiveTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "request.headers.Cookie" }, { cwd: tmp });
+	assert.equal(sensitiveTargeted.value, "sid=cookie-secret", "check-artifact privacy.targeted-jsonPath: explicit jsonPath must return one raw value");
+	assert.equal(sensitiveTargeted.summary.privacy.redaction, "targeted_raw", "check-artifact privacy.targeted-jsonPath: summary must record targeted raw access");
+	const sensitivePick = await readBrowserArtifact({ path: sensitivePath, mode: "json", pick: ["response.body.text"] }, { cwd: tmp });
+	assert.equal(sensitivePick.value["response.body.text"].value, "token=body-secret", "check-artifact privacy.targeted-pick: explicit pick must return one raw value");
 	const sensitiveText = await readBrowserArtifact({ path: sensitivePath, mode: "text", maxChars: 4_000 }, { cwd: tmp });
 	assert.equal(JSON.stringify(sensitiveText).includes("auth-secret"), false, "check-artifact privacy.text: text snippets must redact Authorization values by default");
 	const prefixedHeaderPath = path.join(tmp, ".pi", "browser-artifacts", "prefixed-headers.txt");

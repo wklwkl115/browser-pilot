@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 import { createCodedError } from "../utils/codedError.js";
-import { defineBrowserTool, jsonToolResult, maxCharsParam, runTool, toolMaxChars } from "./toolAdapter.js";
+import { defineBrowserTool, jsonToolResult, runTool, toolMaxChars } from "./toolAdapter.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
-import { enumParam, strictToolParameters, DETAIL_LEVEL_DESCRIPTION } from "./toolShared.js";
+import { enumParam, strictToolParameters } from "./toolShared.js";
 import { readBrowserMemory } from "./memory/reader.js";
 import { recordMemoryEntry, recallMemory, validateMemoryRecord } from "./memory/store.js";
 import type { MemoryReadMode, MemoryRecordPayload } from "./memory/types.js";
@@ -54,13 +54,6 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 			offset: Type.Optional(Type.Number({ description: "read text mode: starting line (1-indexed)." })),
 			limit: Type.Optional(Type.Number({ description: "read text/json mode: line or item limit." })),
 			jsonPath: Type.Optional(Type.String({ description: "read json mode: optional jsonPath." })),
-			maxChars: maxCharsParam(),
-			// Accept the universal output params agents pass on every other browser_* tool so this last
-			// hand-rolled schema does not hard-reject them (C2/C3 class — completes "every tool accepts the
-			// universal output triad"). detailLevel is a no-op (memory output shape is fixed by action/mode);
-			// redact is threaded through to the result redactor below.
-			detailLevel: Type.Optional(Type.String({ description: `${DETAIL_LEVEL_DESCRIPTION} (accepted but a no-op for browser_memory)` })),
-			redact: Type.Optional(Type.Boolean({ description: "Redact sensitive values from browser_memory output; default true." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
@@ -69,11 +62,11 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 				if (!MEMORY_ACTIONS.includes(action as typeof MEMORY_ACTIONS[number])) throw createCodedError({ name: "MemoryActionError", code: "MEMORY_ACTION_UNSUPPORTED", message: `Unsupported browser_memory action: ${params.action}` });
 				if (action === "read") {
 					const result = await readBrowserMemory({ cwd: ctx?.cwd, id: params.id, uri: params.uri, mode: params.mode as MemoryReadMode | undefined, offset: params.offset, limit: params.limit, jsonPath: params.jsonPath });
-					return await jsonToolResult({ action: "read", ...result, id: params.id, uri: params.uri }, { browserSessionId: undefined, detailLevel: params.detailLevel, outputPath: undefined, maxChars, redact: params.redact }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-read.json" });
+					return await jsonToolResult({ action: "read", ...result, id: params.id, uri: params.uri }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-read.json" });
 				}
 				if (action === "recall") {
 					const cards = await recallMemory({ cwd: ctx?.cwd, scopeKind: params.scopeKind, scopeKey: params.scopeKey, url: params.url, query: params.query });
-					return await jsonToolResult({ action: "recall", scopeKind: params.scopeKind, scopeKey: params.scopeKey, query: params.query, cards }, { browserSessionId: undefined, detailLevel: params.detailLevel, outputPath: undefined, maxChars, redact: params.redact }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-recall.json" });
+					return await jsonToolResult({ action: "recall", scopeKind: params.scopeKind, scopeKey: params.scopeKey, query: params.query, cards }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-recall.json" });
 				}
 				const payload: MemoryRecordPayload = {
 					kind: params.kind as "sop" | "fact",
@@ -89,10 +82,10 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 				const server = await ensureStarted().catch(() => undefined);
 				if (action === "validate") {
 					const validated = await validateMemoryRecord({ cwd: ctx?.cwd, server, resolver: memoryEvidenceResolver, payload });
-					return await jsonToolResult({ action: "validate", ok: true, scopeKind: validated.entry.scopeKind, scopeKey: validated.scopeKey, entry: validated.entry, supersedeCandidates: validated.existingIds, duplicateCandidates: validated.duplicateCandidates }, { browserSessionId: undefined, detailLevel: params.detailLevel, outputPath: undefined, maxChars, redact: params.redact }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-validate.json" });
+					return await jsonToolResult({ action: "validate", ok: true, scopeKind: validated.entry.scopeKind, scopeKey: validated.scopeKey, entry: validated.entry, supersedeCandidates: validated.existingIds, duplicateCandidates: validated.duplicateCandidates }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-validate.json" });
 				}
 				const recorded = await recordMemoryEntry({ cwd: ctx?.cwd, server, resolver: memoryEvidenceResolver, payload });
-				return await jsonToolResult({ action: "record", ok: true, scopeKind: recorded.entry.scopeKind, scopeKey: recorded.entry.scopeKey, entry: recorded.entry, id: recorded.entry.id, uri: browserMemoryUriForEntry(recorded.entry), supersededIds: recorded.supersededIds, duplicateCandidates: recorded.duplicateCandidates, index: { generatedAt: recorded.index.generatedAt, entryCount: recorded.index.entries.length } }, { browserSessionId: undefined, detailLevel: params.detailLevel, outputPath: undefined, maxChars, redact: params.redact }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-record.json" });
+				return await jsonToolResult({ action: "record", ok: true, scopeKind: recorded.entry.scopeKind, scopeKey: recorded.entry.scopeKey, entry: recorded.entry, id: recorded.entry.id, uri: browserMemoryUriForEntry(recorded.entry), supersededIds: recorded.supersededIds, duplicateCandidates: recorded.duplicateCandidates, index: { generatedAt: recorded.index.generatedAt, entryCount: recorded.index.entries.length } }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars, redact: undefined }, ctx, { toolName: "browser_memory", fallbackName: "browser-memory-record.json" });
 			}, async (error) => await memoryErrorResult(error));
 		},
 	});

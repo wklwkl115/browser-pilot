@@ -62,12 +62,12 @@ The daemon starts the browser bridge lazily on the first tool call. If a browser
 already attached to another bridge on the first port in `18765-18784`, a second daemon binds the
 next free port and will not see that extension — run a single daemon per user/profile.
 
-## Capability profile
+## Tool Surface
 
-All `browser_*` commands — including web-security — are exposed by default. The only gate is
-`PI_BROWSER_TOOL_PROFILE=core`, which unregisters the web-security group (15 core vs 22 with
-security). There is no compact/minimal visibility mode and no discovery step; `pi-browser --help`
-always lists the full set for the active profile.
+All 22 `browser_*` commands — including web-security — are exposed by default. There is no
+capability profile, compact/minimal visibility mode, or discovery step; `pi-browser --help`
+always lists the full set. WebSecurity commands still carry group metadata for docs and UI
+organization, but registration is always-on.
 
 ## Usage logging
 
@@ -78,4 +78,4 @@ size) for studying real usage. Off by default; best-effort writes.
 
 `npm run smoke:cli` drives the full path (daemon → `/invoke` → bridge → extension → page eval →
 back) against a live browser. `npm run check:cli-parity` asserts every registered tool has a
-subcommand for both profiles.
+subcommand and that the 22-command surface stays aligned with Pi-native registration.

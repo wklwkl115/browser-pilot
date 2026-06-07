@@ -18,6 +18,7 @@ export type ToolDefinition = {
 	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters?: unknown;
+	prepareArguments?: (args: any) => any;
 	execute: (
 		toolCallId: string,
 		params: any,

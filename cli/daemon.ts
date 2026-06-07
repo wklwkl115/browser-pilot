@@ -18,13 +18,13 @@ import { randomBytes } from "node:crypto";
 import { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
-import { resolveBrowserToolCapabilityProfile } from "../src/tools/capabilityProfile.js";
 import { ToolCollectingAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
 import { resolveBrowserResultEvidence } from "../src/resources/memoryResourceStore.js";
 import { validateToolArgs } from "../src/frontend/validation.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../src/frontend/middleware.js";
 import { resolveUsageLogOptions, createUsageLogHook } from "../src/frontend/usageLog.js";
 import { isRecord } from "../src/utils/records.js";
+import { strippedDeprecatedParamKeys } from "../src/tools/prepareArguments.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 
 export const DAEMON_VERSION = "1";
@@ -93,8 +93,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	registerDaemonHooks();
 
 	const bridgeServer = new BrowserBridgeServer();
-	const profile = resolveBrowserToolCapabilityProfile();
-	bridgeServer.setCapabilityProfile(profile);
 
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
@@ -110,7 +108,6 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	const adapter = new ToolCollectingAdapter();
 	registerBrowserTools(adapter, bridgeServer, ensureStarted, {
-		securityToolsEnabled: profile.securityToolsEnabled,
 		memoryEvidenceResolver: resolveBrowserResultEvidence,
 	});
 	const toolByName = new Map<string, ToolDefinition>(adapter.getTools().map((def) => [def.name, def]));
@@ -180,17 +177,19 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 				const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
 				const def = toolByName.get(tool);
 				if (!def) return send(404, { ok: false, error: `unknown tool: ${tool || "(missing)"}` });
-				const validation = validateToolArgs(def.parameters, params);
+				const prepared = (def.prepareArguments ? def.prepareArguments(params) : params) as Record<string, unknown>;
+				const strippedDeprecatedParams = strippedDeprecatedParamKeys(params, prepared);
+				const validation = validateToolArgs(def.parameters, prepared);
 				if (!validation.ok) return send(400, { ok: false, error: validation.error });
 				const ctx: MiddlewareContext = { method: "invoke", toolName: tool, startedAt: Date.now(), ...(usageEnabled ? { args: validation.args } : {}) };
 				try {
 					const result = await def.execute(`cli-${tool}-${Date.now()}`, validation.args, undefined, undefined, { cwd, hasUI: false });
 					if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
-					emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok");
+					emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok", strippedDeprecatedParams.length ? { strippedDeprecatedParams } : undefined);
 					return send(200, { ok: true, content: result.content, details: result.details, terminate: result.terminate === true });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message });
+					emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message, ...(strippedDeprecatedParams.length ? { strippedDeprecatedParams } : {}) });
 					return send(200, { ok: true, content: [{ type: "text", text: message }], terminate: true });
 				}
 			}

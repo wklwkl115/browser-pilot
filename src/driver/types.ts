@@ -88,15 +88,6 @@ export type BrowserCommandQueueInfo = {
 	depth: number;
 };
 
-export type BrowserToolCapabilityProfileInfo = {
-	name: "security" | "core";
-	source: "default" | "env";
-	envVar: "PI_BROWSER_TOOL_PROFILE";
-	securityToolsEnabled: boolean;
-	enableHint: string;
-	warnings?: string[];
-};
-
 export type BrowserActiveOperationInfo = {
 	operationId: string;
 	toolName: string;
@@ -166,7 +157,6 @@ export type BrowserBridgeSnapshot = {
 	uiLock?: BrowserUiLockInfo;
 	queues?: BrowserCommandQueueInfo[];
 	operations?: BrowserActiveOperationInfo[];
-	capabilityProfile?: BrowserToolCapabilityProfileInfo;
 	pending: Array<{
 		id: string;
 		tabId?: number;

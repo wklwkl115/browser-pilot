@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildFlagSpecs, parseArgs } from "../../../cli/flags.ts";
-import { renderResult, EXIT } from "../../../cli/render.ts";
+import { normalizeJsonEnvelope, renderResult, EXIT } from "../../../cli/render.ts";
 import { applyCliOnlyParams, buildCommandFlagSpecs, nativeActionParamsHelp } from "../../../cli/index.ts";
 import { buildCliCommands } from "../../../cli/registry.ts";
 
@@ -42,6 +42,25 @@ test("parseArgs collects values, booleans, --no-, repeatable arrays, and globals
 	assert.deepEqual(out.value.params.tag, ["a", "b"]);
 	assert.equal(out.value.globals.json, true);
 	assert.equal(out.value.globals.text, false);
+});
+
+test("parseArgs reads @file and stdin-style file references for structured inputs", () => {
+	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-flag-file-"));
+	writeFileSync(path.join(dir, "params.json"), JSON.stringify({ action: "list" }), "utf8");
+	writeFileSync(path.join(dir, "items.txt"), "a\nb\n", "utf8");
+	const fileSpecs = buildFlagSpecs({
+		type: "object",
+		properties: {
+			params: { type: "object" },
+			tag: { type: "array", items: { type: "string" } },
+			script: { type: "string" },
+		},
+	});
+	const out = parseArgs(fileSpecs, ["--params", "@params.json", "--tag", "@items.txt", "--script", "@items.txt"], dir);
+	assert.ok(out.ok);
+	assert.deepEqual(out.value.params.params, { action: "list" });
+	assert.deepEqual(out.value.params.tag, ["a", "b"]);
+	assert.equal(out.value.params.script, "a\nb\n");
 });
 
 test("--text and --json are mutually exclusive (last wins, both reset the other)", () => {
@@ -145,4 +164,22 @@ test("renderResult maps envelope-signalled tool errors to a non-zero exit even w
 	// A clean success envelope must NOT be misread as an error.
 	const success = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_tabs", summary: { tabs: 1, ok: true }, nextActions: [] }) }] };
 	assert.equal(renderResult(success, "json"), EXIT.ok, "success envelope stays exit 0");
+});
+
+test("normalizeJsonEnvelope adds stable ok and exitCode fields", () => {
+	assert.deepEqual(normalizeJsonEnvelope(JSON.stringify({ tool: "browser_tabs" }), EXIT.ok, "OK"), { tool: "browser_tabs", ok: true, exitCode: 0 });
+	assert.deepEqual(normalizeJsonEnvelope(JSON.stringify({ code: "NO_TAB", message: "no tab" }), EXIT.toolError, "TOOL_ERROR"), { code: "NO_TAB", message: "no tab", ok: false, exitCode: 1 });
+});
+
+test("normalizeJsonEnvelope adds CLI artifact descriptors and executable next actions", () => {
+	const env = normalizeJsonEnvelope(JSON.stringify({
+		tool: "browser_observe",
+		saved: { path: "D:\\tmp\\observe.json", bytes: 10, chars: 10 },
+		snapshot: { snapshotId: "123e4567-e89b-12d3-a456-426614174000" },
+		nextActions: ["read_saved_artifact mode=json jsonPath=data.content"],
+	}), EXIT.ok, "OK");
+	assert.ok(Array.isArray(env.artifacts));
+	assert.ok(Array.isArray(env.cliNextActions));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("pi-browser artifact")));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--baseline-snapshot-id")));
 });

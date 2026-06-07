@@ -1,7 +1,7 @@
 export const BROWSER_ARTIFACT_ROOT = ".pi/browser-artifacts";
 export const BROWSER_ARTIFACT_CLEANUP_HINT = "Delete stale local evidence with: rm -rf .pi/browser-artifacts/*";
 
-export { containsSensitiveEvidence, redactSensitiveText, redactSensitiveValue } from "../utils/redaction.js";
+export { containsSensitiveEvidence, redactSensitiveText, redactSensitiveValue, redactSensitiveValueWithPointers } from "../utils/redaction.js";
 
 export function browserArtifactPrivacyMetadata() {
 	return {

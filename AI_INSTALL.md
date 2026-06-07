@@ -25,7 +25,7 @@ npm install
 - `PI_BROWSER_BRIDGE_HOST=127.0.0.1`
 - `PI_BROWSER_BRIDGE_PORT=18765`
 - `PI_BROWSER_BRIDGE_PORT_RANGE_END=18784`
-- `PI_BROWSER_TOOL_PROFILE=security`（默认；设为 `core` 可隐藏 Web Security follow-up tools）
+- 22 个 `browser_*` 工具默认全部注册；`PI_BROWSER_TOOL_PROFILE` 已下线，不再用于隐藏 Web Security 工具。
 - `PI_BROWSER_USAGE_LOG`（开发期临时用法日志，默认关）：设为 `1` 写入 `.pi/usage/usage-YYYYMMDD.jsonl`，或设为某个 `.jsonl` 路径写到指定文件；每个工具调用一行 JSON（tool/args/result/ms/bytes，args 默认脱敏）。`PI_BROWSER_USAGE_LOG_RAW=1` 关闭脱敏（不建议）。仅挂在 `on_log` 中间件钩子上、best-effort 写入，不影响工具行为。
 
 如需改端口：
@@ -118,7 +118,7 @@ npm run check:errors
 
 该契约锁定 `normalizeError` / `compactError` 保留公开 `code/message/details/name`，追加 `taxonomy` 与紧凑 `diagnostics`；覆盖 driver/tool/native/page/CDP/network/transfer/security/artifact/protocol 分类、nested bridge/native response、ArtifactReader、transfer、WebSecurity、stack strip、secret redaction 和 circular details。
 
-Tool Registry / Adapter 注册层边界分别由 `src/tools/toolRegistry.ts` 与 `src/tools/toolAdapter.ts` 承载：前者维护 core/security 声明式注册顺序与 capability profile 分组，并由 `tests/unit/tools/toolRegistry.test.ts` + contracts 锁定顺序/唯一性/gating；后者负责共享 tab-scoped 参数、timeout/maxChars 归一、`runTool`、`jsonToolResult/textToolResult`、nested bridge error 与 artifact fallback。修改工具注册样板后至少运行 `npm run check:tools`、`npm run check:tool-docs`；涉及 WebSecurity shared shell 时同步运行 `npm run check:web-security`。
+Tool Registry / Adapter 注册层边界分别由 `src/tools/toolRegistry.ts` 与 `src/tools/toolAdapter.ts` 承载：前者维护 22 个 always-on 工具的声明式注册顺序与 WebSecurity 分组元数据，并由 `tests/unit/tools/toolRegistry.test.ts` + contracts 锁定顺序/唯一性/分组；后者负责共享 tab-scoped 参数、timeout/maxChars 归一、`runTool`、`jsonToolResult/textToolResult`、nested bridge error 与 artifact fallback。修改工具注册样板后至少运行 `npm run check:tools`、`npm run check:tool-docs`；涉及 WebSecurity shared shell 时同步运行 `npm run check:web-security`。
 
 WebSecurity 子域边界验证（已纳入 `npm run check`）：
 
@@ -136,7 +136,7 @@ npm run check:token
 npm run check:artifact
 ```
 
-默认 artifact 根目录是 `.pi/browser-artifacts/`，保存的原始证据标记为 `local_raw_evidence`、`localOnly:true`、手动清理。工具 summary/details/error 与 `browser_artifact` 默认脱敏 cookie/token/authorization/body/postData/websocket payload；只有明确需要本地原始证据时才对具体路径使用 `browser_artifact` 的 `redact:false`。清理命令：`rm -rf .pi/browser-artifacts/*`。不要上传或提交该目录。
+默认 artifact 根目录是 `.pi/browser-artifacts/`，保存的原始证据标记为 `local_raw_evidence`、`localOnly:true`、手动清理。工具 summary/details/error 默认脱敏 cookie/token/authorization/body/postData/websocket payload，并在可解析时给出 `raw` + `jsonPath` 指针；`browser_artifact` 的 text/search/sample/整份 JSON 默认脱敏，明确需要本地原始证据时对具体路径使用 `mode=json jsonPath=...` 或 `pick` 定点读取。清理命令：`rm -rf .pi/browser-artifacts/*`。不要上传或提交该目录。
 
 本地生命周期 fixture（已纳入 `npm run check`，不启动真实浏览器）：
 
@@ -305,7 +305,7 @@ npm run smoke:browser:transfer
 6. 如果要做 internal-only Wasm 元数据/桥接摘要，执行 `/browser-wasm <path> [--wat] [--output file]`；`--wat` 依赖本地成熟桥接工具可用。
 7. 如果要做 internal-only WebSocket session/transcript 原语，执行 `/browser-ws open <url> [--session id] ...`、`/browser-ws send --text ...`、`/browser-ws replay --step ... [--steps-json '[...]']`、`/browser-ws wait ...`、`/browser-ws collect [--output file]`、`/browser-ws close`。
 8. 如果 `browser_observe mode=scan` 返回空结构，先用 `browser_tabs list` 切换到目标 tab，确认页面可见后重试。
-9. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时显式 `redact:false`。
+9. 如果 artifact 读取失败，确认相对路径位于 `.pi/browser-artifacts/`；读取其它文件使用绝对路径；默认脱敏输出，确需原始本地证据时使用 `mode=json jsonPath=...` 或 `pick` 定点读取。
 10. 如果 `browser_download` 没有返回路径，重新加载浏览器扩展并确认 downloads 权限。
 11. 如果 `browser_upload` 返回 file access 错误，在扩展详情启用文件网址访问后重试。
 

@@ -12,9 +12,10 @@
  * - pi-ref:// wrappers inherit TTL / etag / redaction / session binding.
  * - Expired resources/refs are pruned on registration and resolution.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { RefDescriptor, RefKind } from "../abml/types.js";
 import { defaultRefPolicyForKind } from "../abml/refPolicy.js";
+import { makePiRefUri, stableRefIdForDescriptor } from "../abml-core/refId.js";
 import { computeContentHash, computeEtag, isFreshEtag } from "./resourceFreshness.js";
 
 export const RESOURCE_URI_SCHEME = "browser-result";
@@ -96,47 +97,8 @@ function makeUri(id: string): string {
 	return `${RESOURCE_URI_SCHEME}://${id}`;
 }
 
-function makePiRefUri(kind: RefKind, id: string): string {
-	return `${PI_REF_URI_SCHEME}://${kind}/${id}`;
-}
-
 function wrapperPiRefUriForResource(resource: Pick<BrowserResultResource, "id">): string {
 	return makePiRefUri("data-slice", resource.id);
-}
-
-function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId">): string | undefined {
-	const semantic = descriptor.semantic || {};
-	const anchor = semantic.anchor;
-	const semanticAnchor = anchor?.scope === "abml-template"
-		&& anchor.confidence === "high"
-		&& anchor.mintingEligible === true
-		&& typeof anchor.containerRole === "string"
-		&& typeof anchor.containerName === "string"
-		&& typeof anchor.normalizedName === "string"
-		? {
-			scope: "abml-template",
-			containerRole: anchor.containerRole,
-			containerName: anchor.containerName,
-			role: anchor.role || semantic.role,
-			kind: anchor.kind || descriptor.kind,
-			normalizedName: anchor.normalizedName,
-		}
-		: undefined;
-	const locator = semanticAnchor ? undefined : descriptor.locators.find((item) => item.by === "css")
-		|| descriptor.locators.find((item) => item.by === "backendNodeId")
-		|| descriptor.locators.find((item) => item.by === "axNodeId")
-		|| descriptor.locators.find((item) => item.by === "textAnchor")
-		|| descriptor.locators[0];
-	if (!semanticAnchor && !locator) return undefined;
-	const stable = {
-		kind: descriptor.kind,
-		tabId: descriptor.owner.tabId,
-		origin: descriptor.owner.topLevelOrigin,
-		url: descriptor.documentEpoch?.url,
-		...(semanticAnchor ? { semanticAnchor } : { locator, role: semantic.role, name: semantic.name }),
-	};
-	const hash = createHash("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 24);
-	return makePiRefUri(descriptor.kind, hash);
 }
 
 /** Extract id from a `browser-result://{id}` URI. Returns undefined for unrecognized URIs. */

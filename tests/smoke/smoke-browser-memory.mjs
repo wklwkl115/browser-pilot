@@ -12,10 +12,9 @@ await writeFile(evidencePath, JSON.stringify({ ok: true, step: "memory smoke" })
 
 const adapter = new McpExtensionAdapter();
 const fakeBridge = {
-	setCapabilityProfile() {},
 	getObservationSnapshot() { return undefined; },
 };
-registerBrowserTools(adapter, fakeBridge, async () => fakeBridge, { securityToolsEnabled: true });
+registerBrowserTools(adapter, fakeBridge, async () => fakeBridge);
 const tool = adapter.getTool("browser_memory");
 if (!tool) throw new Error("browser_memory tool not registered");
 

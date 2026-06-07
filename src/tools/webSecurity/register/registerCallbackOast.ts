@@ -45,7 +45,6 @@ export function registerCallbackOastTool({ pi, ensureStarted }: ToolRegistrarCon
 			resolverPort: Type.Optional(Type.Number({ description: "trigger only: DNS resolver port override; defaults to the current session DNS listener port." })),
 			rejectUnauthorized: Type.Optional(Type.Boolean({ description: "trigger only: HTTPS certificate verification flag. Default false for the local self-signed listener." })),
 			maxEvents: Type.Optional(Type.Number({ description: "Maximum persisted callback events per session; default 1000, hard-capped at 100000." })),
-			maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum request body bytes stored per callback event; default 64000." })),
 			maxRuntimeMs: Type.Optional(Type.Number({ description: "Maximum worker lifetime in milliseconds before the local callback listener self-stops; default 3600000, hard-capped at 86400000." })),
 			afterSeq: Type.Optional(Type.Number({ description: "collect only: return callback events with seq greater than this value." })),
 			triggerTimeoutMs: Type.Optional(Type.Number({ description: "trigger only: wait timeout in milliseconds for the triggered callback event to be persisted." })),

@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { BrowserBridgeServer } from "./src/driver/BrowserBridgeServer.js";
-import { resolveBrowserToolCapabilityProfile } from "./src/tools/capabilityProfile.js";
 import { registerBrowserCommands } from "./src/tools/commands.js";
 import { registerBrowserTools } from "./src/tools/registerTools.js";
 
@@ -13,8 +12,6 @@ type SessionUiContext = {
 
 export default function piBrowserTools(pi: ExtensionAPI) {
 	const server = new BrowserBridgeServer();
-	const capabilityProfile = resolveBrowserToolCapabilityProfile();
-	server.setCapabilityProfile(capabilityProfile);
 	let startPromise: Promise<void> | undefined;
 	let activeSessionCount = 0;
 
@@ -34,7 +31,6 @@ export default function piBrowserTools(pi: ExtensionAPI) {
 		try {
 			await ensureStarted();
 			ctx.ui.setStatus("browser", `browser:${server.port}`);
-			for (const warning of capabilityProfile.warnings || []) ctx.ui.notify(warning, "warning");
 		} catch (error) {
 			ctx.ui.setStatus("browser", "browser:error");
 			ctx.ui.notify(`Browser bridge start failed: ${error instanceof Error ? error.message : String(error)}`, "error");
@@ -50,5 +46,5 @@ export default function piBrowserTools(pi: ExtensionAPI) {
 	});
 
 	registerBrowserCommands(pi, server, ensureStarted);
-	registerBrowserTools(pi, server, ensureStarted, { securityToolsEnabled: capabilityProfile.securityToolsEnabled });
+	registerBrowserTools(pi, server, ensureStarted);
 }

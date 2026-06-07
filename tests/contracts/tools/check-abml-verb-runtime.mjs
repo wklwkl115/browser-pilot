@@ -36,6 +36,6 @@ assert(runtimeSrc.includes("transport: \"dom\" | \"cdp\"") && runtimeSrc.include
 
 const routerSrc = read("src/abml-core/verbs/router.ts"); // pure-core kernel (re-export shim at src/abml/verbs/router.ts)
 assert(routerSrc.includes("actionabilityFailure") && routerSrc.includes("verificationFailure"), "ABML router must expose unified actionability/verification failure helpers");
-assert(routerSrc.includes("BACKEND_UNAVAILABLE"), "ABML router must fail closed when a verb handler is missing");
+assert(!routerSrc.includes("dispatchAbmlVerb"), "ABML router must not keep an unused strategy-shaped dispatcher");
 
 console.log("abml verb runtime ok");

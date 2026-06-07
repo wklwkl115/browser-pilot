@@ -7,11 +7,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outFile = path.join(root, "docs", "generated", "browser-tool-contract.generated.md");
 const checkOnly = process.argv.includes("--check");
 
-const SHARED_TOOL_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
-const SHARED_WEB_SECURITY_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars", "maxBodyBytes"];
-const NATIVE_ACTION_PARAMS = ["action", "params", "browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
-const SHARED_TRANSFER_PARAMS = ["browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars"];
-const SECURITY_PROFILE_TOOLS = new Set(["browser_crawl", "browser_fuzz", "browser_sqli", "browser_template", "browser_callback_oast", "browser_cookie_analyze", "browser_http_replay"]);
+const SHARED_TOOL_PARAMS = ["tabId"];
+const SHARED_WEB_SECURITY_PARAMS = ["tabId", "allowPrivateTargets"];
+const NATIVE_ACTION_PARAMS = ["action", "params", "tabId"];
+const SHARED_TRANSFER_PARAMS = ["tabId"];
+const SECURITY_GROUP_TOOLS = new Set(["browser_crawl", "browser_fuzz", "browser_sqli", "browser_template", "browser_callback_oast", "browser_cookie_analyze", "browser_http_replay"]);
 
 async function read(rel) {
 	return await readFile(path.join(root, rel), "utf8");
@@ -77,11 +77,13 @@ function extractActionDescription(block) {
 
 function sharedTabScopedParamKeys(objectText) {
 	const keys = [...SHARED_TOOL_PARAMS];
+	if (/includeBrowserSessionId\s*:\s*true/.test(objectText)) keys.push("browserSessionId");
 	if (/includeTabId\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("tabId"), 1);
-	if (/includeDetailLevel\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("detailLevel"), 1);
-	if (/includeOutputPath\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("outputPath"), 1);
-	if (/includeTimeout\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("timeoutMs"), 1);
-	if (/includeMaxChars\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("maxChars"), 1);
+	if (/includeDetailLevel\s*:\s*true/.test(objectText)) keys.push("detailLevel");
+	if (/includeOutputPath\s*:\s*true/.test(objectText)) keys.push("outputPath");
+	if (/includeTimeout\s*:\s*true/.test(objectText)) keys.push("timeoutMs");
+	if (/includeMaxChars\s*:\s*true/.test(objectText)) keys.push("maxChars");
+	if (/includeRedact\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("redact"), 1);
 	return keys;
 }
 
@@ -131,20 +133,10 @@ function parameterKeys(block, file) {
 			if (objectText.includes("sharedWebSecurityParams()")) merged = [...SHARED_WEB_SECURITY_PARAMS, ...merged];
 			if (objectText.includes("sharedWebSecurityBrowserSessionParams(")) merged = [...SHARED_TOOL_PARAMS, ...merged];
 			if (objectText.includes("sharedWebSecurityResultParams()")) merged = [...sharedTabScopedParamKeys("includeTabId:false,includeTimeout:false"), ...merged];
-			if (objectText.includes("browserCookieBindingParams(")) {
-				merged = objectText.includes("includeCookieMode: false") ? ["bindBrowserSession", ...merged] : ["bindBrowserSession", "cookieMode", ...merged];
-			}
-			if (objectText.includes("harReplayParams(")) merged = ["har", "harPath", "harEntryIndex", "harUrlPattern", "harMaxEntries", ...merged];
-			if (objectText.includes("rawRequestParams(")) merged = ["url", "baseUrl", "rawRequest", "request", "method", "headers", "body", "bodyBase64", "mutations", "defaultScheme", ...merged];
+			if (objectText.includes("browserCookieBindingParams(")) merged = ["bindBrowserSession", ...merged];
+			if (objectText.includes("harReplayParams(")) merged = ["har", "harPath", "harEntryIndex", "harUrlPattern", ...merged];
+			if (objectText.includes("rawRequestParams(")) merged = ["url", "baseUrl", "rawRequest", "request", "method", "headers", "body", "bodyBase64", "mutations", ...merged];
 			if (objectText.includes("requestSequenceParams(")) merged = ["requests", "sequence", ...merged];
-			if (objectText.includes("boundedExecutionParams(")) merged = ["timeoutSeconds", ...merged];
-			if (objectText.includes("redirectControlParams(")) merged = ["followRedirects", "maxRedirects", ...merged];
-			if (objectText.includes("rateLimitPerSecondParam(")) merged = ["rateLimitPerSecond", ...merged];
-			if (objectText.includes("maxCasesParam(")) merged = ["maxCases", ...merged];
-			if (objectText.includes("maxCandidatesParam(")) merged = ["maxCandidates", ...merged];
-			if (objectText.includes("maxDepthParam(")) merged = ["maxDepth", ...merged];
-			if (objectText.includes("maxPagesParam(")) merged = ["maxPages", ...merged];
-			if (objectText.includes("maxTemplatesParam(")) merged = ["maxTemplates", ...merged];
 			if (objectText.includes("sharedTransferParams()")) merged = [...SHARED_TRANSFER_PARAMS, ...merged];
 			if (objectText.includes("sharedTabScopedToolParams(")) merged = [...sharedTabScopedParamKeys(objectText), ...merged];
 			return Array.from(new Set(merged)).sort();
@@ -330,10 +322,10 @@ async function generate() {
 		`- Native command source: \`bridge/native_command_schema.json\` (${schema.name} ${schema.version}).\n` +
 		`- Error taxonomy source: \`bridge/native_command_schema.json\` plus local \`src/**\` and \`bridge_src/**\` structured error declarations.\n\n` +
 		`## Callable browser tools\n\n` +
-		renderTable(["Tool", "Label", "Profile", "Parameters", "Actions / command surface", "Artifact behavior", "Source"], tools.map((tool) => [
+		renderTable(["Tool", "Label", "Group", "Parameters", "Actions / command surface", "Artifact behavior", "Source"], tools.map((tool) => [
 			`\`${tool.name}\``,
 			tool.label,
-			SECURITY_PROFILE_TOOLS.has(tool.name) ? "security (default profile; set PI_BROWSER_TOOL_PROFILE=core to hide)" : "always-on",
+			SECURITY_GROUP_TOOLS.has(tool.name) ? "security" : "core",
 			tool.parameters.map((item) => `\`${item}\``).join(", "),
 			tool.actions || tool.promptSnippet || tool.description,
 			tool.artifact,
@@ -356,7 +348,7 @@ async function generate() {
 		`\n\n## Artifact and privacy contract\n\n` +
 		`- Tools exposing \`outputPath\` or result middleware preserve full evidence in local artifacts while summaries stay compact.\n` +
 		`- Saved artifacts are classified as local raw evidence under \`.pi/browser-artifacts/\`; cleanup is manual and local-only.\n` +
-		`- \`browser_artifact\` redacts cookie/token/authorization/body/postData/websocket payload values by default; \`redact:false\` is an explicit local raw-evidence read.\n` +
+		`- \`browser_artifact\` redacts text/search/sample and whole-JSON output by default; explicit \`jsonPath\`/\`pick\` reads return the named local raw value.\n` +
 		`- WebSecurity tools use bounded local artifacts and shared distillation helpers; raw evidence stays local.\n` +
 		`- Lifecycle fixture failure evidence is written to \`.pi/browser-artifacts/lifecycle-fixture-failure.json\` with cookie/token/authorization/body/postData-style fields redacted by key.\n`;
 }

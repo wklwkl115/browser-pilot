@@ -20,7 +20,7 @@ import {
 } from "./registerWebSecurityTools.js";
 import type { ToolRegistrar } from "./toolShared.js";
 
-export const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
+const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerTabsTool,
 	registerCommandTool,
 	registerExecuteTool,
@@ -38,7 +38,7 @@ export const CORE_BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerMemoryTool,
 ];
 
-export const WEB_SECURITY_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
+const WEB_SECURITY_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerCrawlTool,
 	registerFuzzTool,
 	registerSqliTool,
@@ -48,8 +48,21 @@ export const WEB_SECURITY_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
 	registerHttpReplayTool,
 ];
 
-export function resolveBrowserToolRegistrars(options: { securityToolsEnabled?: boolean } = {}): readonly ToolRegistrar[] {
-	return options.securityToolsEnabled === false
-		? CORE_BROWSER_TOOL_REGISTRARS
-		: [...CORE_BROWSER_TOOL_REGISTRARS, ...WEB_SECURITY_TOOL_REGISTRARS];
+export const BROWSER_TOOL_REGISTRARS: readonly ToolRegistrar[] = [
+	...CORE_BROWSER_TOOL_REGISTRARS,
+	...WEB_SECURITY_TOOL_REGISTRARS,
+];
+
+export const WEB_SECURITY_TOOL_NAMES = new Set([
+	"browser_crawl",
+	"browser_fuzz",
+	"browser_sqli",
+	"browser_template",
+	"browser_callback_oast",
+	"browser_cookie_analyze",
+	"browser_http_replay",
+]);
+
+export function resolveBrowserToolRegistrars(): readonly ToolRegistrar[] {
+	return BROWSER_TOOL_REGISTRARS;
 }

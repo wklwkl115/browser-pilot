@@ -20,6 +20,7 @@ import { isRecord, normalizeTabId } from "../utils/params.js";
 import { resolveArtifactPath } from "./artifacts.js";
 import { assertBridgeCommandSucceeded } from "./bridgeResultValidation.js";
 import { evaluatePageScriptDirect } from "./pageScriptEvaluation.js";
+import { registerScanEntityRefs } from "./scanEntityRefs.js";
 import { summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
 import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared.js";
@@ -416,7 +417,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		};
 		const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, undefined);
 		const trackedTabId = typeof tabId === "number" ? tabId : undefined;
-		const { result: toolResult, operation } = await withTrackedOperation(server, {
+		const { result: toolResult } = await withTrackedOperation(server, {
 			toolName: "browser_observe",
 			command: "scan.tabs",
 			browserSessionId,
@@ -435,10 +436,10 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				maxChars,
 				fallbackName,
 				details: { mode: "tabs", sourceMode: "scan", sourceCommand: "tabs.list" },
-				operation: { ...operation, snapshotId: snapshotMeta.snapshotId },
+				operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 				snapshot: snapshotMeta,
 				distill: (value) => summarizeObserveTabsData(value),
-				artifactValue: { ...tabsOnlyData, operation: { ...operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
+				artifactValue: { ...tabsOnlyData, operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
 			});
 		});
 		return toolResult;
@@ -487,17 +488,19 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		} catch { /* event delta is additive; never fail the observe on it */ }
 	}
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq);
+	const scanEntityContext = {
+		browserSessionId: bridge.browserSessionId,
+		tabId,
+		url: typeof data?.url === "string" ? data.url : undefined,
+		observationId: snapshotMeta.snapshotId,
+		capturedAt: snapshotMeta.capturedAt,
+	};
+	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
 	const baseSummary: Record<string, unknown> = {
-		...withObservationMeta(summarizeScanData(data, tabs, {
+		...withObservationMeta(summarizeScanData(summaryData, tabs, {
 			detailLevel: params.detailLevel,
 			maxChars,
-			entityContext: {
-				browserSessionId: bridge.browserSessionId,
-				tabId,
-				url: typeof data?.url === "string" ? data.url : undefined,
-				observationId: snapshotMeta.snapshotId,
-				capturedAt: snapshotMeta.capturedAt,
-			},
+			entityContext: scanEntityContext,
 		}), mode, "scan"),
 		browserSessionId: bridge.browserSessionId,
 		tabId,

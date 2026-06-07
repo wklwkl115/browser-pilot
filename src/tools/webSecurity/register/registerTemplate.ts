@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { summarizeNucleiBridgeData, summarizeTemplateCheckData } from "../../summaries/index.js";
 import { runNucleiBridge, runTemplateCheck } from "../../webSecurityCore.js";
-import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, webSecurityDefaultSchemeParam, type WebSecuritySharedToolParams } from "./shared.js";
+import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, maxTemplatesParam, rateLimitPerSecondParam, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, validateTemplateParams, headerRecordParam, stringOrStringArrayParam, type WebSecuritySharedToolParams } from "./shared.js";
 import type { ToolRegistrarContext } from "../../toolShared.js";
 import { strictToolParameters } from "../../toolShared.js";
 import type { RawNucleiBridgeOptions, RawTemplateCheckOptions } from "../shared/types.js";
@@ -20,7 +20,6 @@ export function registerTemplateTool({ pi, ensureStarted }: ToolRegistrarContext
 		parameters: strictToolParameters({
 			engine: Type.Optional(Type.Union([Type.Literal("builtin"), Type.Literal("nuclei")], { description: "Template engine (default: builtin). builtin: lightweight matchers; nuclei: external binary." })),
 			...sharedWebSecurityBrowserSessionParams("Process timeout in milliseconds; default 120000 for engine:nuclei, per-request timeout for engine:builtin."),
-			maxBodyBytes: Type.Optional(Type.Number({ description: "Maximum response body bytes stored per request before truncation; default 128000." })),
 			allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures." })),
 			url: Type.Optional(Type.String({ description: "Single target URL or host. Host-only input uses defaultScheme." })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Bounded list of target URLs or hosts." })),
@@ -32,7 +31,6 @@ export function registerTemplateTool({ pi, ensureStarted }: ToolRegistrarContext
 			body: Type.Optional(Type.String({ description: "Base text request body for raw/captured replay mode." })),
 			bodyBase64: Type.Optional(Type.String({ description: "Base64 request body for raw/captured replay mode." })),
 			mutations: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional base mutation object with url, method, headers, body, or bodyBase64." })),
-			defaultScheme: webSecurityDefaultSchemeParam("http | https for host-only input; default https."),
 			templateIds: stringOrStringArrayParam("builtin mode: built-in template ids or tags to run. Omit templateIds/templates/templatePath to run the small built-in exposure/API baseline; use all for every built-in template. nuclei mode: optional nuclei template ids passed via -id."),
 			templates: Type.Optional(Type.Object({}, { additionalProperties: true, description: "builtin mode only: inline custom template object or array. Fields: id, paths/url, method, headers, body, matchStatus, bounded bodyRegex, bodyIncludes, bounded headerRegex, bounded extractRegex, matchers, extractors." })),
 			templatePath: Type.Optional(Type.String({ description: "builtin mode only: local JSON or YAML template file path containing a template object, array, or {templates}." })),

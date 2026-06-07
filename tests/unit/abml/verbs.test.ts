@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dispatchAbmlVerb, actionabilityFailure, verificationFailure } from "../../../src/abml/verbs/router.ts";
+import { actionabilityFailure, verificationFailure } from "../../../src/abml/verbs/router.ts";
 import { runAbmlRead } from "../../../src/abml/verbs/read.ts";
 import { runAbmlClick } from "../../../src/abml/verbs/click.ts";
 import { runAbmlType } from "../../../src/abml/verbs/type.ts";
@@ -32,19 +32,6 @@ test("abml verbs scroll returns successful verification metadata", async () => {
 	assert.equal(result.ok, true);
 	assert.equal(result.meta?.steps, 3);
 	assert.equal(result.verification?.status, "verified");
-});
-
-test("abml verbs router dispatches installed handlers and fails closed when missing", async () => {
-	const read = await dispatchAbmlVerb({ verb: "read", input: { plane: "structure" } }, { read: async () => ({ ok: true, verb: "read", entities: [] }) });
-	assert.equal(read.ok, true);
-	const click = await dispatchAbmlVerb({ verb: "click", input: { ref: "pi-ref://control/x" } }, {});
-	assert.equal(click.ok, false);
-	assert.equal(click.error.code, "BACKEND_UNAVAILABLE");
-	const pierce = await dispatchAbmlVerb({ verb: "pierce", input: { ref: "pi-ref://control/x" } }, { pierce: async () => ({ ok: true, verb: "pierce", entities: [] }) });
-	assert.equal(pierce.ok, true);
-	const frame = await dispatchAbmlVerb({ verb: "frame", input: {} }, {});
-	assert.equal(frame.ok, false);
-	assert.equal(frame.error.code, "BACKEND_UNAVAILABLE");
 });
 
 test("abml verbs helper constructors expose consistent failure envelopes", () => {
