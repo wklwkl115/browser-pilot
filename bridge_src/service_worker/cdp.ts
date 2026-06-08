@@ -11,7 +11,7 @@ type PiCdpOptions = PiBridgeCommand & { name?: string; protocolVersion?: string;
 
 function cdpRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function cdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-function cdpRawError(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { message: String(error) }; }
+function cdpRawError(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 
 // cdp.js — Pi browser persistent CDP / iframe helpers.
 // Design notes: chrome.debugger cannot attach to iframe targets with Target.attachToTarget in this bridge;
@@ -382,7 +382,7 @@ async function piPersistentCdpReleaseIdle(maxIdleMs?: unknown): Promise<PiCdpRes
 // Synchronous by contract: piPersistentCdpDetachEntry removes each entry from the
 // map before its first await, so the map is drained for this tab by the time this
 // returns; the physical chrome.debugger.detach completes best-effort afterwards.
-function cleanupPersistentCdpForTab(tabId: number, reason?: string): JsonRecord {
+function cleanupPersistentCdpForTab(tabId: number, _reason?: string): JsonRecord {
   const target = Number(tabId);
   const removed: string[] = [];
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
@@ -393,7 +393,6 @@ function cleanupPersistentCdpForTab(tabId: number, reason?: string): JsonRecord 
   for (const [key, rec] of Array.from(piPersistentCdpNewDocumentScripts.entries())) {
     if (rec && Number(rec.tabId) === target) piPersistentCdpNewDocumentScripts.delete(key);
   }
-  if (removed.length) console.log('[PI-BROWSER-CDP] released persistent sessions for tab', target, reason || 'tab_cleanup', removed.length);
   return { tabId: target, released: removed.length, sessionKeys: removed };
 }
 

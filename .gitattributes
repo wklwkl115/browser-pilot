@@ -6,6 +6,7 @@
 *.js text eol=lf
 *.mjs text eol=lf
 *.json text eol=lf
+*.map text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
@@ -21,3 +22,7 @@
 *.svg text eol=lf
 *.tgz binary
 *.zip binary
+
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.npmignore text eol=lf

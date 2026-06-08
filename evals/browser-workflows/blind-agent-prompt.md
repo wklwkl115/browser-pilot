@@ -49,7 +49,13 @@ A browser tab is open: tabId **{{TAB_ID}}**, URL **{{SITE_URL}}**.
    actual behavior? Anything the skill told you to do that didn't work, or that the skill should have
    warned you about? Quote errors/flags. Smooth parts: say so. THIS SECTION IS THE MOST VALUABLE — do
    not soften it.
-4. **VERDICT**: with the skill + `--help` + JSON output, could a real agent finish this on this site?
+4. **CLI ROUTING ADOPTION**: for every action-style command you used or considered (`wait`,
+   `network`, `frame`, or `hook`), say whether you used the natural subcommand form (for example
+   `wait selector`, `wait network-idle`, `network list`, `network export-har`, `frame list`,
+   `frame evaluate`, `hook install-targets`, `hook collect`) or the legacy protocol form
+   (`--action` / `--params`). If you used or preferred the legacy form, explain why: skill wording,
+   `commands --json` / `schema --json` metadata, help output, missing flag, error, habit, or task need.
+5. **VERDICT**: with the skill + `--help` + JSON output, could a real agent finish this on this site?
    yes / partially / no — and the single biggest improvement (to the TOOL or the SKILL — say which).
 
 Work the task now. Be economical but complete.

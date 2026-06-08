@@ -74,6 +74,7 @@ export function buildUsageRecord(
 		ms: durationMs,
 	};
 	if (ctx.toolName) record.tool = ctx.toolName;
+	if (ctx.cli !== undefined) record.cli = options.raw ? ctx.cli : redactSensitiveValue(ctx.cli);
 	if (ctx.args !== undefined) record.args = options.raw ? ctx.args : redactSensitiveValue(ctx.args);
 	if (typeof ctx.resultBytes === "number") record.bytes = ctx.resultBytes;
 	if (details && Object.keys(details).length > 0) {

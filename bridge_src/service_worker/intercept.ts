@@ -429,7 +429,6 @@ registerRecovery(async (results) => {
 				session.active = true;
 				session.installedAt = Date.now();
 				rememberInterceptDiagnostic(session, { action: "recovered", historyLost: true, pausedLost: true, previousWorkerBootId: record.workerBootId, ruleCount: session.rules.length, generation: record.generation });
-				console.log('[PI-BROWSER-INTERCEPT] Recovered intercept session', key, 'historyLost=true');
 				return { recovered: true, historyLost: true };
 			} catch (error) {
 				console.warn('[PI-BROWSER-INTERCEPT] Failed to recover intercept session', key, error);

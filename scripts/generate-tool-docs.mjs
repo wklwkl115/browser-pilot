@@ -259,6 +259,8 @@ async function collectErrorCodes() {
 
 function taxonomyDomain(code, category) {
 	if (code === "INVALID_BROWSER_COMMAND") return "protocol";
+	if (category?.startsWith("abml.")) return "abml";
+	if (category === "bridge.ws") return "websocket";
 	if (category?.startsWith("driver.")) return "driver";
 	if (category === "tool.transfer" || category === "runtime.transfer") return "transfer";
 	if (category === "tool.artifact") return "artifact";

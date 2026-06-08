@@ -254,7 +254,6 @@ registerRecovery(async (results) => {
             targets: (record.config as JsonRecord)?.targets,
             install_fingerprint: data.install_fingerprint !== undefined ? String(data.install_fingerprint) : undefined,
           });
-          console.log('[PI-BROWSER-HOOK] Recovered hook session metadata', key, sessionId);
           return { recovered: true, historyLost: false };
         }
         // Dispatcher not found on page - mark as lost

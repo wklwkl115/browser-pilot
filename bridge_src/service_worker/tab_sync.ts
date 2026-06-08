@@ -37,11 +37,14 @@ function piBrowserErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function isExpectedTabSyncShutdownError(message: string): boolean {
+  return /browser is shutting down|extension context invalidated|context invalidated/i.test(message);
+}
+
 function logTabSyncError(reason: string, error: unknown) {
-  console.debug('[PI-BROWSER] tab sync error', {
-    reason,
-    error: error ? piBrowserErrorMessage(error) : String(error)
-  });
+  const message = error ? piBrowserErrorMessage(error) : String(error);
+  if (isExpectedTabSyncShutdownError(message)) return;
+  console.debug(`[PI-BROWSER] tab sync error reason=${reason} error=${message}`);
 }
 
 function runTabSyncTask(reason: string, task: () => unknown) {

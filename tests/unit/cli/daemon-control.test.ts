@@ -15,11 +15,13 @@ import {
 	removeLockfile,
 	isPidAlive,
 	findDaemon,
+	ensureDaemon,
 	controlRequest,
 	isDaemonVersionCurrent,
 	resolveDaemonStartCommand,
 	stopDaemon,
 	daemonSpawnEnv,
+	startLockfilePath,
 	type DaemonInfo,
 } from "../../../cli/daemonControl.ts";
 import { daemonVersion } from "../../../cli/packageInfo.ts";
@@ -135,6 +137,39 @@ test("findDaemon keeps the lockfile when the pid is still alive but unreachable"
 	const found = await findDaemon();
 	assert.equal(found, undefined, "still unreachable → undefined");
 	assert.equal(existsSync(lockfilePath()), true, "live-pid lockfile is preserved");
+}));
+
+test("ensureDaemon waits on an existing start lock instead of spawning a competing daemon", withTempStateDir(async () => {
+	mkdirSync(path.dirname(startLockfilePath()), { recursive: true });
+	writeFileSync(startLockfilePath(), JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }), "utf8");
+	const server = http.createServer((req, res) => {
+		if (req.headers["x-pi-daemon-token"] !== "test-token") {
+			res.writeHead(401, { "content-type": "application/json" });
+			res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+			return;
+		}
+		res.writeHead(200, { "content-type": "application/json" });
+		res.end(JSON.stringify({ ok: true, running: true, extensionConnected: false, tabCount: 0, activeTab: null, tools: 22 }));
+	});
+	await new Promise<void>((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			server.off("error", reject);
+			resolve();
+		});
+	});
+	const address = server.address();
+	assert.ok(address && typeof address === "object");
+	try {
+		setTimeout(() => {
+			writeLockfile(sampleInfo({ controlPort: address.port, token: "test-token" }));
+		}, 150);
+		const info = await ensureDaemon({ startTimeoutMs: 2_000 });
+		assert.equal(info.controlPort, address.port);
+		assert.equal(existsSync(startLockfilePath()), true, "a start lock owned by another starter is not removed by the waiter");
+	} finally {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
 }));
 
 test("stopDaemon does not kill a live pid from an unreachable stale lockfile", withTempStateDir(async () => {

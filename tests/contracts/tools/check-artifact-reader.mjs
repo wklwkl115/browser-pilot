@@ -124,6 +124,10 @@ try {
 	const sensitiveTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "request.headers.Cookie" }, { cwd: tmp });
 	assert.equal(sensitiveTargeted.value, "sid=cookie-secret", "check-artifact privacy.targeted-jsonPath: explicit jsonPath must return one raw value");
 	assert.equal(sensitiveTargeted.summary.privacy.redaction, "targeted_raw", "check-artifact privacy.targeted-jsonPath: summary must record targeted raw access");
+	const sensitiveBracketTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "response.headers['Set-Cookie']" }, { cwd: tmp });
+	assert.equal(sensitiveBracketTargeted.value, "sid=response-secret", "check-artifact privacy.targeted-jsonPath.bracket: bracket jsonPath must resolve keys that are not dot-safe identifiers");
+	const sensitiveMalformedTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "request.headers['Cookie'" }, { cwd: tmp });
+	assert.deepEqual(sensitiveMalformedTargeted.value, { exists: false, notFound: true, jsonPath: "request.headers['Cookie'", value: null }, "check-artifact privacy.targeted-jsonPath.malformed: malformed bracket paths must not return a broader raw parent object");
 	const sensitivePick = await readBrowserArtifact({ path: sensitivePath, mode: "json", pick: ["response.body.text"] }, { cwd: tmp });
 	assert.equal(sensitivePick.value["response.body.text"].value, "token=body-secret", "check-artifact privacy.targeted-pick: explicit pick must return one raw value");
 	const sensitiveText = await readBrowserArtifact({ path: sensitivePath, mode: "text", maxChars: 4_000 }, { cwd: tmp });
@@ -174,6 +178,16 @@ try {
 	assert.deepEqual(emptyArtifact.snippets, [], "check-artifact text.empty: empty files must not return invalid line ranges");
 	const emptySample = await readBrowserArtifact({ path: ".pi/browser-artifacts/empty.txt", mode: "sample" }, { cwd: tmp });
 	assert.deepEqual(emptySample.snippets, [], "check-artifact sample.empty: empty files must not return invalid line ranges");
+	await assert.rejects(readBrowserArtifact({ path: ".pi/browser-artifacts/missing.json", mode: "json" }, { cwd: tmp }), (error) => {
+		assert.equal(error instanceof ArtifactReaderError, true);
+		assert.equal(error.code, "ARTIFACT_NOT_FOUND", "check-artifact missing.typed: missing artifacts must return a typed artifact error, not raw ENOENT");
+		assert.equal(error.message.includes(tmp), false, "check-artifact missing.message: missing artifact error message must not leak absolute paths");
+		assert.equal(JSON.stringify(error.details).includes(tmp), false, "check-artifact missing.details: missing artifact details must not leak resolved local paths");
+		assert.equal(error.details.requested, ".pi/browser-artifacts/missing.json", "check-artifact missing.details.requested: keep the agent-supplied artifact path");
+		assert.equal(JSON.stringify(error.details.recovery).includes(tmp), false, "check-artifact missing.recovery: recovery guidance must not leak resolved local paths");
+		assert.ok(error.details.recovery?.nextActions?.some((item) => item.includes("pi-browser artifact")), "check-artifact missing.recovery: missing artifact error must include CLI recovery guidance");
+		return true;
+	});
 
 	const multibytePath = path.join(tmp, ".pi", "browser-artifacts", "multibyte.txt");
 	await writeFile(multibytePath, "你好世界\n第二行\n", "utf8");

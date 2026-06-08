@@ -64,7 +64,7 @@ function buildExecScript(code: unknown, errorHandler: string): string {
         if (seen.has(value)) return '[Circular]';
         if (depth >= MAX_DEPTH) return '[MaxDepth]';
         seen.add(value);
-        if (value instanceof Error) return { __type: 'Error', name: value.name, code: value.code || undefined, message: trim(value.message, MAX_TEXT), details: serialize(value.details || {}, depth + 1), stack: trim(value.stack || '', MAX_HTML) };
+        if (value instanceof Error) return { __type: 'Error', name: value.name, code: value.code || undefined, message: trim(value.message, MAX_TEXT), details: serialize(value.details || {}, depth + 1) };
         if (value instanceof Date) return { __type: 'Date', iso: value.toISOString() };
         if (value instanceof RegExp) return { __type: 'RegExp', source: value.source, flags: value.flags, text: value.toString() };
         if (value instanceof Map) return { __type: 'Map', size: value.size, entries: Array.from(value.entries()).slice(0, 50).map(function(entry) { return [serialize(entry[0], depth + 1), serialize(entry[1], depth + 1)]; }) };
@@ -125,14 +125,14 @@ function buildExecScript(code: unknown, errorHandler: string): string {
 function buildPageScript(code: unknown): string {
   return buildExecScript(code, `
       const errMsg = e.message || String(e);
-      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {}, stack: e.stack || '' },
+      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {} },
         csp: errMsg.includes('Refused to evaluate') || errMsg.includes('unsafe-eval') || errMsg.includes('Content Security Policy') };
   `);
 }
 
 function buildCdpScript(code: unknown): string {
   return buildExecScript(code, `
-      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {}, stack: e.stack || '' } };
+      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {} } };
   `);
 }
 
@@ -147,7 +147,6 @@ function normalizeExecNavigationUrl(rawUrl: unknown): string {
 
 async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: number; code?: unknown; timeoutMs?: number; timeout_ms?: number }, socket: PiWebSocketLike): Promise<void> {
   const tabId = data.tabId;
-  console.log('[PI-BROWSER-WS] Exec request', data.id, 'on tab', tabId);
   socket.send(JSON.stringify({ type: 'ack', id: data.id }));
   if (!tabId) {
     socket.send(JSON.stringify({ type: 'error', id: data.id, error: 'No tabId provided' }));
@@ -161,7 +160,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       await chrome.tabs.update(tabId, { url: targetUrl });
       socket.send(JSON.stringify({ type: 'result', id: data.id, result: { navigated: true, url: targetUrl } }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
     }
     return;
   }
@@ -173,7 +172,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       const newTabs = [{ id: t.id, tabId: t.id, url: t.url || targetUrl, title: t.title || '' }];
       socket.send(JSON.stringify({ type: 'result', id: data.id, result: { opened: true, tabId: t.id, url: targetUrl }, newTabs }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
     }
     return;
   }
@@ -196,7 +195,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       const executePromise = chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
-        func: async (s: string) => await eval(s),
+        func: async (s: string) => await (0, eval)(s),
         args: [buildPageScript(data.code)]
       });
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
@@ -208,16 +207,13 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       const scriptResults = Array.isArray(result) ? result as Array<{ result?: unknown }> : [];
       res = scriptResults[0]?.result;
       if (res === null || res === undefined) {
-        console.log('[PI-BROWSER-WS] executeScript returned null/undefined, treating as CSP issue');
-        res = { ok: false, error: { name: 'Error', message: 'executeScript returned null (possible CSP or context issue)', stack: '' }, csp: true };
+        res = { ok: false, error: { name: 'Error', message: 'executeScript returned null (possible CSP or context issue)' }, csp: true };
       }
     } catch (e) {
-      console.log('[PI-BROWSER-WS] scripting.executeScript failed:', e instanceof Error ? e.message : String(e));
-      res = { ok: false, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' }, csp: true };
+      res = { ok: false, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) }, csp: true };
     }
     const firstRes = res && typeof res === 'object' ? res as JsonRecord : {};
     if (res && firstRes.ok === false && firstRes.csp) {
-      console.log('[PI-BROWSER-WS] CDP fallback for tab', tabId);
       const wrappedCode = buildCdpScript(data.code);
       try {
         const cdp = piBrowserPersistentCdp();
@@ -231,13 +227,13 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         if (exceptionDetails) {
           const exception = exceptionDetails.exception && typeof exceptionDetails.exception === 'object' ? exceptionDetails.exception as JsonRecord : {};
           const desc = String(exception.description || 'CDP Error');
-          res = { ok: false, error: { name: 'Error', message: desc, stack: desc } };
+          res = { ok: false, error: { name: 'Error', message: desc } };
         } else {
           const result = cdpRes.result && typeof cdpRes.result === 'object' ? cdpRes.result as JsonRecord : {};
           res = result.value;
         }
       } catch (cdpErr) {
-        res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)), stack: '' } };
+        res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)) } };
       }
     }
     if (newTabIds.size === 0) await new Promise(r => setTimeout(r, 200));
@@ -255,11 +251,10 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
     if (finalRes.ok) {
       socket.send(JSON.stringify({ type: 'result', id: data.id, result: finalRes.data, newTabs }));
     } else {
-      console.log(res);
       socket.send(JSON.stringify({ type: 'error', id: data.id, error: finalRes.error || 'Unknown error', newTabs }));
     }
   } catch (e) {
-    socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || '' : '' } }));
+    socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
   } finally {
     chrome.tabs.onCreated.removeListener(onCreated);
   }

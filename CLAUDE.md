@@ -134,7 +134,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 
 ## Key Files & Directories
 
-- `src/tools/toolRegistry.ts` — declarative tool registration order + capability profile groups
+- `src/tools/toolRegistry.ts` — declarative always-on tool registration order + core/security group metadata
 - `src/tools/toolAdapter.ts` — shared param handling, timeout, error wrapping, artifact fallback
 - `src/driver/BrowserBridgeServer.ts` — facade delegating to sub-registries
 - `bridge_src/service-worker.ts` — Chrome extension entry point (ESM import graph)

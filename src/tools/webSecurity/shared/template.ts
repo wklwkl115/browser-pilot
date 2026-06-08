@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import yaml from "js-yaml";
 import { tryJson } from "../../../utils/json.js";
+import { getJsonPath, parseJsonPath } from "../../../utils/jsonPath.js";
 import { SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../../../utils/safeRegex.js";
 import { absoluteUrl, extractTitle, normalizeHeaders, parseSetCookieLine, redirectLocation, responseBodyHash } from "./http.js";
 import { asString, isRecord, numericList, positiveInt, stringList } from "./normalize.js";
@@ -252,26 +253,14 @@ function evaluateDslMatcher(matcher: TemplateDslMatcher, final: FetchStep, heade
 }
 
 export function jsonPathParts(path: string): Array<string | number> {
-	const out: Array<string | number> = [];
-	const re = /([^.[\]]+)|\[(\d+|"[^"]+"|'[^']+')\]/g;
-	let match: RegExpExecArray | null;
-	while ((match = re.exec(path))) {
-		if (match[1]) out.push(match[1]);
-		else if (/^\d+$/.test(match[2])) out.push(Number(match[2]));
-		else out.push(match[2].slice(1, -1));
-	}
+	const out = parseJsonPath(path);
+	if (path.trim().startsWith("$")) return ["$", ...out];
 	return out.length ? out : [path];
 }
 
 function jsonPathValue(root: unknown, path: string): unknown {
-	let current: unknown = root;
-	for (const part of jsonPathParts(path.replace(/^\$\.?/, ""))) {
-		if (Array.isArray(current) && typeof part === "number") current = current[part];
-		else if (isRecord(current) && typeof part === "string") current = current[part];
-		else return undefined;
-		if (current === undefined || current === null) return current;
-	}
-	return current;
+	const selected = getJsonPath(root, path);
+	return selected.exists ? selected.value : undefined;
 }
 
 export function evaluateDslExtractor(extractor: TemplateDslExtractor, final: FetchStep, headersLower: HeaderMap): Array<Record<string, unknown>> {

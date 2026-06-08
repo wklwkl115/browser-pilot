@@ -38,8 +38,10 @@ Future frontend-reversing work is tracked only as RFC/eval problem areas, not as
 ## Observation mode boundary
 
 `browser_observe` is the current canonical observation tool.
+The former observation tools are historical implementation sources only; `browser_scan`,
+`browser_content`, and `browser_html` are not current callable tools.
 
-| Mode | Replaces | Boundary |
+| Mode | Historical source | Boundary |
 |---|---|---|
 | `scan` | legacy `browser_scan` | Compact DOM/text perception, Scan Manifest v2, actionables, forms/lists/text signals, same-origin iframe overview. |
 | `content` | legacy `browser_content` | Readable Markdown extraction, optional URL navigation through durable wait supervisor, selector empty/miss/invalid semantics. |

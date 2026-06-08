@@ -59,9 +59,14 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
 5. **Spawn ONE blind subagent** (general-purpose) using `blind-agent-prompt.md`, filling `{{TAB_ID}}` /
    `{{SITE_URL}}` / `{{GOAL}}`. Run independent targets' subagents in parallel.
 6. **Grade + triage** the returned report: did it complete the task? tool path / call count /
-   first-wrong-tool-choice? Triage each friction item `fixable | WAI | reliability`, AND record
-   skill↔tool fidelity gaps. Append to `evals/browser-workflows/blind-findings.md` (dedupe; bump the
-   cross-run count when a finding recurs across agents/sites).
+   first-wrong-tool-choice? For CLI natural-routing work, also record whether action-style `wait` /
+   `network` / `frame` / `hook` calls used natural subcommands (`wait selector`,
+   `wait network-idle`, `network list`, `network export-har`, `frame list`, `frame evaluate`,
+   `hook install-targets`, `hook collect`) or fell back to legacy `--action` / `--params`, and why.
+   Triage each friction item `fixable | WAI | reliability`, AND record skill↔tool fidelity gaps.
+   Append to
+   `evals/browser-workflows/blind-findings.md` (dedupe; bump the cross-run count when a finding recurs
+   across agents/sites).
 7. **Distill — but gate the fix.** Before writing any code, clear the true-defect/no-overfit gates
    ([[eval-fixes-true-defect-no-overfit]]): (a) confirmed root cause that GENERALIZES (n≥2 across
    different agent+task+site, not a one-off); (b) the fix measurably improves real outcomes, not

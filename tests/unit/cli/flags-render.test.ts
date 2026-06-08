@@ -6,10 +6,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildFlagSpecs, parseArgs } from "../../../cli/flags.ts";
+import { buildFlagSpecs, coerceParams, parseArgs } from "../../../cli/flags.ts";
 import { normalizeJsonEnvelope, renderResult, EXIT } from "../../../cli/render.ts";
-import { applyCliOnlyParams, buildCommandFlagSpecs, nativeActionParamsHelp } from "../../../cli/index.ts";
+import { applyCliOnlyParams, buildCommandFlagSpecs, invocationFlagSpecs, nativeActionParamsHelp, selftestToolError, translateNaturalActionArgv } from "../../../cli/index.ts";
 import { buildCliCommands } from "../../../cli/registry.ts";
+import { nativeToolMetadata } from "../../../src/protocol/nativeActionMetadata.ts";
 
 const specs = buildFlagSpecs({
 	type: "object",
@@ -21,6 +22,50 @@ const specs = buildFlagSpecs({
 	},
 	required: ["mode"],
 });
+
+function captureStderr(fn: () => number): { code: number; output: string } {
+	const originalWrite = process.stderr.write;
+	let output = "";
+	process.stderr.write = ((chunk: string | Uint8Array) => {
+		output += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+		return true;
+	}) as typeof process.stderr.write;
+	try {
+		return { code: fn(), output };
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+}
+
+function parseAndCoerceCommand(subcommand: string, argv: string[]): Record<string, unknown> {
+	const cmd = buildCliCommands().find((c) => c.subcommand === subcommand);
+	assert.ok(cmd, `${subcommand} command must exist`);
+	const translated = translateNaturalActionArgv(cmd, argv);
+	assert.ok(translated.ok);
+	const parsed = parseArgs(invocationFlagSpecs(cmd, translated.natural?.action), translated.argv);
+	assert.ok(parsed.ok);
+	const coerced = coerceParams(cmd.parameters, parsed.value.params);
+	assert.ok(coerced.ok);
+	return coerced.args;
+}
+
+type NaturalActionToolName = "browser_wait" | "browser_network" | "browser_frame" | "browser_hook";
+
+function canonicalNativeActionArgs(toolName: NaturalActionToolName, args: Record<string, unknown>): Record<string, unknown> {
+	const actions = (nativeToolMetadata.nativeActionTools as Record<string, { actions?: Array<{ required?: readonly string[]; requiredAny?: readonly (readonly string[])[] }> }>)[toolName]?.actions ?? [];
+	const passthroughKeys = new Set<string>();
+	for (const action of actions) {
+		for (const key of action.required ?? []) passthroughKeys.add(key);
+		for (const group of action.requiredAny ?? []) for (const key of group) passthroughKeys.add(key);
+	}
+	const params = { ...((args.params && typeof args.params === "object" && !Array.isArray(args.params)) ? args.params as Record<string, unknown> : {}) };
+	const out: Record<string, unknown> = { ...args, params };
+	for (const key of passthroughKeys) {
+		if (out[key] !== undefined && params[key] === undefined) params[key] = out[key];
+		delete out[key];
+	}
+	return out;
+}
 
 test("buildFlagSpecs maps schema constructs to flag kinds", () => {
 	const byName = Object.fromEntries(specs.map((s) => [s.name, s]));
@@ -48,18 +93,21 @@ test("parseArgs reads @file and stdin-style file references for structured input
 	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-flag-file-"));
 	writeFileSync(path.join(dir, "params.json"), JSON.stringify({ action: "list" }), "utf8");
 	writeFileSync(path.join(dir, "items.txt"), "a\nb\n", "utf8");
+	writeFileSync(path.join(dir, "requests.json"), JSON.stringify([{ url: "https://example.test/", method: "POST" }]), "utf8");
 	const fileSpecs = buildFlagSpecs({
 		type: "object",
 		properties: {
 			params: { type: "object" },
 			tag: { type: "array", items: { type: "string" } },
+			requests: { type: "array", items: { type: "object" } },
 			script: { type: "string" },
 		},
 	});
-	const out = parseArgs(fileSpecs, ["--params", "@params.json", "--tag", "@items.txt", "--script", "@items.txt"], dir);
+	const out = parseArgs(fileSpecs, ["--params", "@params.json", "--tag", "@items.txt", "--requests", "@requests.json", "--script", "@items.txt"], dir);
 	assert.ok(out.ok);
 	assert.deepEqual(out.value.params.params, { action: "list" });
 	assert.deepEqual(out.value.params.tag, ["a", "b"]);
+	assert.deepEqual(out.value.params.requests, [{ url: "https://example.test/", method: "POST" }]);
 	assert.equal(out.value.params.script, "a\nb\n");
 });
 
@@ -72,6 +120,15 @@ test("parseArgs rejects unknown flags and bad enum values", () => {
 	assert.equal(parseArgs(specs, ["--nope"]).ok, false);
 	assert.equal(parseArgs(specs, ["--mode", "fly"]).ok, false);
 	assert.equal(parseArgs(specs, ["positional"]).ok, false);
+});
+
+test("parseArgs error results preserve only schema-aware globals", () => {
+	const explicitJson = parseArgs(specs, ["--json", "--mode", "fly"]);
+	assert.equal(explicitJson.ok, false);
+	assert.equal(explicitJson.globals.json, true, "real global --json is preserved on parse errors");
+	const valueLooksGlobal = parseArgs(specs, ["--mode", "--text"]);
+	assert.equal(valueLooksGlobal.ok, false);
+	assert.deepEqual(valueLooksGlobal.globals, { json: false, text: false, help: false }, "a consumed flag value must not be reclassified as a global output flag");
 });
 
 test("B10: unknown flag suggests the closest valid flag (camelCase↔kebab) + absent-flag hints", () => {
@@ -143,6 +200,120 @@ test("B3: artifact help describes data-rooted jsonPath and repeated --pick", () 
 	assert.match(byName.pick.description || "", /not a JSON array string/);
 });
 
+test("natural action routing translates action subcommands to legacy action params", () => {
+	const wait = buildCliCommands().find((c) => c.subcommand === "wait");
+	const network = buildCliCommands().find((c) => c.subcommand === "network");
+	const frame = buildCliCommands().find((c) => c.subcommand === "frame");
+	const hook = buildCliCommands().find((c) => c.subcommand === "hook");
+	assert.ok(wait, "wait command must exist");
+	assert.ok(network, "network command must exist");
+	assert.ok(frame, "frame command must exist");
+	assert.ok(hook, "hook command must exist");
+
+	const selector = translateNaturalActionArgv(wait, ["selector", "--selector", "#login", "--json"]);
+	assert.ok(selector.ok);
+	assert.deepEqual(selector.argv, ["--action", "selector", "--selector", "#login", "--json"]);
+	assert.deepEqual(selector.natural, { action: "selector", token: "selector" });
+
+	const networkIdle = translateNaturalActionArgv(wait, ["--json", "network-idle"]);
+	assert.ok(networkIdle.ok);
+	assert.deepEqual(networkIdle.argv, ["--json", "--action", "networkIdle"]);
+
+	const exportHar = translateNaturalActionArgv(network, ["export", "--session-id", "net-1"]);
+	assert.ok(exportHar.ok);
+	assert.deepEqual(exportHar.argv, ["--action", "exportHar", "--session-id", "net-1"]);
+
+	const frameEval = translateNaturalActionArgv(frame, ["evaluate", "--frame-id", "frame-1", "--expression", "document.title"]);
+	assert.ok(frameEval.ok);
+	assert.deepEqual(frameEval.argv, ["--action", "evaluate", "--frame-id", "frame-1", "--expression", "document.title"]);
+
+	const hookInstallTargets = translateNaturalActionArgv(hook, ["install-targets", "--targets", "console,error"]);
+	assert.ok(hookInstallTargets.ok);
+	assert.deepEqual(hookInstallTargets.argv, ["--action", "installTargets", "--targets", "console,error"]);
+
+	const hookListeners = translateNaturalActionArgv(hook, ["get-node-listeners", "--selector", "button"]);
+	assert.ok(hookListeners.ok);
+	assert.deepEqual(hookListeners.argv, ["get-node-listeners", "--selector", "button"], "non-allowlisted hook actions remain advanced compatibility only");
+});
+
+test("natural action routes are semantically equivalent to legacy action params", () => {
+	const cases: Array<{
+		subcommand: "wait" | "network" | "frame" | "hook";
+		toolName: NaturalActionToolName;
+		natural: string[];
+		legacy: string[];
+	}> = [
+		{
+			subcommand: "wait",
+			toolName: "browser_wait",
+			natural: ["selector", "--selector", "#login", "--tab-id", "7"],
+			legacy: ["--action", "selector", "--params", "{\"selector\":\"#login\"}", "--tab-id", "7"],
+		},
+		{
+			subcommand: "wait",
+			toolName: "browser_wait",
+			natural: ["network-idle", "--tab-id", "7"],
+			legacy: ["--action", "networkIdle", "--tab-id", "7"],
+		},
+		{
+			subcommand: "network",
+			toolName: "browser_network",
+			natural: ["start", "--tab-id", "7"],
+			legacy: ["--action", "start", "--tab-id", "7"],
+		},
+		{
+			subcommand: "network",
+			toolName: "browser_network",
+			natural: ["export", "--session-id", "net-1"],
+			legacy: ["--action", "exportHar", "--session-id", "net-1"],
+		},
+		{
+			subcommand: "frame",
+			toolName: "browser_frame",
+			natural: ["list", "--tab-id", "7"],
+			legacy: ["--action", "list", "--tab-id", "7"],
+		},
+		{
+			subcommand: "frame",
+			toolName: "browser_frame",
+			natural: ["evaluate", "--frame-id", "frame-1", "--expression", "document.title", "--tab-id", "7"],
+			legacy: ["--action", "evaluate", "--params", "{\"frameId\":\"frame-1\",\"expression\":\"document.title\"}", "--tab-id", "7"],
+		},
+		{
+			subcommand: "hook",
+			toolName: "browser_hook",
+			natural: ["install-targets", "--targets", "console,error", "--tab-id", "7"],
+			legacy: ["--action", "installTargets", "--params", "{\"targets\":[\"console\",\"error\"]}", "--tab-id", "7"],
+		},
+		{
+			subcommand: "hook",
+			toolName: "browser_hook",
+			natural: ["install-targets", "--targets", "console", "--targets", "error", "--tab-id", "7"],
+			legacy: ["--action", "installTargets", "--params", "{\"targets\":[\"console\",\"error\"]}", "--tab-id", "7"],
+		},
+		{
+			subcommand: "hook",
+			toolName: "browser_hook",
+			natural: ["collect", "--session-id", "hook-1"],
+			legacy: ["--action", "collect", "--session-id", "hook-1"],
+		},
+	];
+
+	for (const item of cases) {
+		const natural = canonicalNativeActionArgs(item.toolName, parseAndCoerceCommand(item.subcommand, item.natural));
+		const legacy = canonicalNativeActionArgs(item.toolName, parseAndCoerceCommand(item.subcommand, item.legacy));
+		assert.deepEqual(natural, legacy, `${item.subcommand} ${item.natural[0]} must match legacy --action form`);
+	}
+});
+
+test("natural action routing rejects mixing subcommand action with legacy --action", () => {
+	const wait = buildCliCommands().find((c) => c.subcommand === "wait");
+	assert.ok(wait, "wait command must exist");
+	const mixed = translateNaturalActionArgv(wait, ["selector", "--action", "navigation"]);
+	assert.equal(mixed.ok, false);
+	if (!mixed.ok) assert.match(mixed.error, /cannot be combined with --action/);
+});
+
 test("renderResult maps mode + terminate to exit codes", () => {
 	const ok = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_tabs", summary: { tabs: 1 } }) }] };
 	const err = { content: [{ type: "text", text: JSON.stringify({ error: { code: "NO_BROWSER", message: "no extension" } }) }], terminate: true };
@@ -166,6 +337,44 @@ test("renderResult maps envelope-signalled tool errors to a non-zero exit even w
 	assert.equal(renderResult(success, "json"), EXIT.ok, "success envelope stays exit 0");
 });
 
+test("selftestToolError preserves structured daemon/tool failure messages", () => {
+	const daemonError = {
+		content: [{ type: "text", text: JSON.stringify({ ok: false, code: "CLI_DAEMON_INVOKE_ERROR", message: "Validation failed: missing script" }) }],
+		terminate: true,
+	};
+	assert.equal(selftestToolError(daemonError), "Validation failed: missing script");
+
+	const codedError = {
+		content: [{ type: "text", text: JSON.stringify({ code: "NO_TAB", message: "No target tab", name: "BrowserBridgeError", taxonomy: { domain: "driver" } }) }],
+	};
+	assert.equal(selftestToolError(codedError), "No target tab");
+
+	const plainError = { content: [{ type: "text", text: "browser bridge offline" }], terminate: true };
+	assert.equal(selftestToolError(plainError), "browser bridge offline");
+
+	const ok = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_tabs", data: { tabId: 1 } }) }] };
+	assert.equal(selftestToolError(ok), undefined);
+});
+
+test("renderResult human errors show structured recovery nextActions", () => {
+	const err = {
+		content: [{
+			type: "text",
+			text: JSON.stringify({
+				code: "REF_STALE",
+				message: "stale ref",
+				taxonomy: { domain: "abml" },
+				recovery: { nextActions: ["browser_observe mode=scan"] },
+				diagnostics: { nextActions: ["retry with a fresh ABML ref"] },
+			}),
+		}],
+	};
+	const captured = captureStderr(() => renderResult(err, "human"));
+	assert.equal(captured.code, EXIT.toolError);
+	assert.match(captured.output, /REF_STALE/);
+	assert.match(captured.output, /next: browser_observe mode=scan \| retry with a fresh ABML ref/);
+});
+
 test("normalizeJsonEnvelope adds stable ok and exitCode fields", () => {
 	assert.deepEqual(normalizeJsonEnvelope(JSON.stringify({ tool: "browser_tabs" }), EXIT.ok, "OK"), { tool: "browser_tabs", ok: true, exitCode: 0 });
 	assert.deepEqual(normalizeJsonEnvelope(JSON.stringify({ code: "NO_TAB", message: "no tab" }), EXIT.toolError, "TOOL_ERROR"), { code: "NO_TAB", message: "no tab", ok: false, exitCode: 1 });
@@ -176,10 +385,20 @@ test("normalizeJsonEnvelope adds CLI artifact descriptors and executable next ac
 		tool: "browser_observe",
 		saved: { path: "D:\\tmp\\observe.json", bytes: 10, chars: 10 },
 		snapshot: { snapshotId: "123e4567-e89b-12d3-a456-426614174000" },
-		nextActions: ["read_saved_artifact mode=json jsonPath=data.content"],
+		nextActions: ["read_saved_artifact mode=json jsonPath=data.content", "read_saved_artifact offset=20"],
 	}), EXIT.ok, "OK");
 	assert.ok(Array.isArray(env.artifacts));
 	assert.ok(Array.isArray(env.cliNextActions));
+	const commonPaths = ["data.content", "data.actionables", "data.list_hints", "operation.operationId", "snapshot.snapshotId"];
+	const artifact = (env.artifacts as Array<Record<string, unknown>>)[0];
+	const readCommands = artifact.readCommands as string[];
+	for (const jsonPath of commonPaths) {
+		assert.ok(readCommands.some((command) => command.includes(`--json-path "${jsonPath}"`)), `artifact readCommands include ${jsonPath}`);
+		assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes(jsonPath)), `cliNextActions include ${jsonPath}`);
+	}
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("pi-browser artifact")));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--path \"D:\\tmp\\observe.json\"") && String(action.command).includes("--json-path \"data.content\"")));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--path \"D:\\tmp\\observe.json\"") && String(action.command).includes("--offset 20")));
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--baseline-snapshot-id")));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes("D:\\tmp\\observe.json") && action.argv.includes("data.content")));
 });

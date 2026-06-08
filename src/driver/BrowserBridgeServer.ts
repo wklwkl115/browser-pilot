@@ -143,6 +143,10 @@ export class BrowserBridgeServer {
 		return this.browserSessions.list().map((session) => this.browserSessionInfo(session));
 	}
 
+	getLastTabSyncAt(): number | undefined {
+		return this.tabs.lastTabSyncAt;
+	}
+
 	createBrowserSession(name?: string): BrowserAutomationSessionInfo {
 		return this.browserSessionInfo(this.browserSessions.create(name));
 	}

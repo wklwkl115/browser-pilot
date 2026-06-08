@@ -553,5 +553,5 @@ export function errorMessage(error: unknown): string {
 }
 
 export function errorDetails(error: unknown): JsonRecord {
-  return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { message: String(error) };
+  return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) };
 }

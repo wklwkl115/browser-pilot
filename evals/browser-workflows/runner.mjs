@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
-import { createServer as createNetServer } from "node:net";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +13,8 @@ import { registerBrowserTools } from "../../src/tools/registerTools.ts";
 import { runJsAstShell } from "../../src/tools/webSecurity/shared/jsAstShell.ts";
 import { runWasmShell } from "../../src/tools/webSecurity/shared/wasmShell.ts";
 import { runWsShell } from "../../src/tools/webSecurity/shared/wsShell.ts";
+import { browserLaunchHardeningArgs, chromePath, freePort, stopBrowserProcess, windowsPathForChrome } from "../../tests/support/browserSmokeEnv.mjs";
+import { patchExtensionDistPort } from "../../tests/support/patchExtensionPort.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const evalRoot = path.join(root, "evals", "browser-workflows");
@@ -200,28 +201,6 @@ function sanitizeParams(params) {
 	return copy;
 }
 
-async function freePort(start = 0, end = 0) {
-	if (start === 0) {
-		const server = createNetServer();
-		await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-		const address = server.address();
-		await new Promise((resolve) => server.close(resolve));
-		if (!isRecord(address) || typeof address.port !== "number") throw new Error("Could not allocate ephemeral port");
-		return address.port;
-	}
-	for (let port = start; port <= end; port += 1) {
-		const server = createNetServer();
-		try {
-			await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
-			await new Promise((resolve) => server.close(resolve));
-			return port;
-		} catch {
-			await new Promise((resolve) => server.close(resolve));
-		}
-	}
-	throw new Error(`No free port in range ${start}-${end}`);
-}
-
 async function fixtureFileResponse(res, relPath) {
 	let safeRel = relPath.replace(/^\/+/, "");
 	if (safeRel === "abml-frame-child.html") safeRel = "abml-frame-child.html";
@@ -263,7 +242,7 @@ async function readRequestBody(req, maxBytes = 64_000) {
 
 async function startFixtureServer() {
 	const routeMap = await readJson("evals/browser-workflows/fixtures/path-fuzz-routes.json");
-	const port = await freePort(0, 0);
+	const port = await freePort();
 	const server = createHttpServer(async (req, res) => {
 		try {
 			const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
@@ -331,48 +310,8 @@ async function startFixtureServer() {
 	};
 }
 
-const chromeCandidates = [
-	process.env.PI_BROWSER_EVAL_CHROME,
-	process.env.PI_BROWSER_SMOKE_CHROME,
-	process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined,
-	"google-chrome",
-	"chromium",
-	"chromium-browser",
-].filter(Boolean);
-
-function chromePath() {
-	for (const candidate of chromeCandidates) if (existsSync(candidate)) return candidate;
-	throw new Error(`Chrome/Chromium executable not found; set PI_BROWSER_EVAL_CHROME. Tried: ${chromeCandidates.join(", ")}`);
-}
-
-function isWindowsChromeExecutable(chromeExe) {
-	return process.platform !== "win32" && /\.exe$/i.test(String(chromeExe || "")) && /^\/mnt\/[a-z]\//i.test(String(chromeExe || ""));
-}
-
-function windowsPathForChrome(value, chromeExe) {
-	if (!isWindowsChromeExecutable(chromeExe)) return value;
-	const match = /^\/mnt\/([a-z])\/(.*)$/i.exec(String(value || ""));
-	if (!match) return value;
-	return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, "\\")}`;
-}
-
-async function patchExtensionPort(extensionDir, bridgePort) {
-	const serviceWorkerPath = path.join(extensionDir, "dist", "service-worker.js");
-	let source = await readFile(serviceWorkerPath, "utf8");
-	source = source
-		.replaceAll("127.0.0.1:18765", `127.0.0.1:${bridgePort}`)
-		.replace(/PI_BROWSER_BRIDGE_PORT\s*=\s*18765/g, `PI_BROWSER_BRIDGE_PORT = ${bridgePort}`)
-		.replace(/PI_BROWSER_BRIDGE_PORT_RANGE_END\s*=\s*18784/g, `PI_BROWSER_BRIDGE_PORT_RANGE_END = ${bridgePort}`);
-	await writeFile(serviceWorkerPath, source, "utf8");
-}
-
 async function startBrowserEnv(args, runDir, fixture) {
-	const bridgePort = await freePort(18766, 18880);
+	const bridgePort = await freePort();
 	const runId = `${Date.now()}-${process.pid}`;
 	const profileDir = path.join(tempRoot, `eval-browser-workflows-profile-${runId}`);
 	const extensionDir = path.join(tempRoot, `eval-browser-workflows-extension-${runId}`);
@@ -380,17 +319,17 @@ async function startBrowserEnv(args, runDir, fixture) {
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
 	await mkdir(tempRoot, { recursive: true });
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionPort(extensionDir, bridgePort);
+	await patchExtensionDistPort(extensionDir, bridgePort);
 	const bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort });
 	await bridge.start();
-	const chromeExe = chromePath();
+	const chromeExe = chromePath({ envNames: ["PI_BROWSER_EVAL_CHROME", "PI_BROWSER_SMOKE_CHROME"] });
 	const chrome = spawn(chromeExe, [
 		`--user-data-dir=${windowsPathForChrome(profileDir, chromeExe)}`,
 		`--disable-extensions-except=${windowsPathForChrome(extensionDir, chromeExe)}`,
 		`--load-extension=${windowsPathForChrome(extensionDir, chromeExe)}`,
 		"--no-first-run",
 		"--no-default-browser-check",
-		"--disable-background-networking",
+		...browserLaunchHardeningArgs(),
 		"--enable-logging=stderr",
 		"--v=0",
 		`${fixture.baseUrl}/fixtures/article.html`,
@@ -425,10 +364,7 @@ async function waitUntil(predicate, timeoutMs) {
 
 async function stopBrowserEnv(env) {
 	try { await env.bridge?.stop?.(); } catch {}
-	if (env.chrome?.pid) {
-		if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(env.chrome.pid), "/T", "/F"], { stdio: "ignore" });
-		else env.chrome.kill("SIGTERM");
-	}
+	stopBrowserProcess(env.chrome);
 	if (!env.keepTemp) {
 		await rm(env.profileDir, { recursive: true, force: true }).catch(() => {});
 		await rm(env.extensionDir, { recursive: true, force: true }).catch(() => {});

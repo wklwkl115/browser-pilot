@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { createCodedError } from "../utils/codedError.js";
+import { compactError } from "../utils/errors.js";
 import { defineBrowserTool, jsonToolResult, runTool, toolMaxChars } from "./toolAdapter.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 import { enumParam, strictToolParameters } from "./toolShared.js";
@@ -14,7 +15,16 @@ const MEMORY_SCOPES = ["origin", "task", "project"] as const;
 const MEMORY_READ_MODES = ["text", "json"] as const;
 
 function memoryErrorResult(error: unknown) {
-	return jsonToolResult({ action: "error", ok: false, error: error instanceof Error ? error.message : String(error) }, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars: 8_000 }, undefined, {
+	const normalized = compactError(error);
+	return jsonToolResult({
+		action: "error",
+		ok: false,
+		error_code: normalized.code,
+		message: normalized.message,
+		error: normalized.message,
+		diagnostics: normalized.diagnostics,
+		recovery: normalized.recovery,
+	}, { browserSessionId: undefined, detailLevel: undefined, outputPath: undefined, maxChars: 8_000 }, undefined, {
 		toolName: "browser_memory",
 		fallbackName: "browser-memory-error.json",
 	});
@@ -53,7 +63,7 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 			mode: Type.Optional(Type.Union(MEMORY_READ_MODES.map((value) => Type.Literal(value)), { description: "read only: text | json" })),
 			offset: Type.Optional(Type.Number({ description: "read text mode: starting line (1-indexed)." })),
 			limit: Type.Optional(Type.Number({ description: "read text/json mode: line or item limit." })),
-			jsonPath: Type.Optional(Type.String({ description: "read json mode: optional jsonPath." })),
+			jsonPath: Type.Optional(Type.String({ description: "read only: optional jsonPath; when provided without mode, read defaults to json." })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {

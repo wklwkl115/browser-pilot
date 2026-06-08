@@ -35,16 +35,46 @@ test("usageLog honors an explicit .jsonl path and the RAW flag", () => {
 
 test("usageLog redacts secrets in args by default but keeps structural signal", () => {
 	const opts = resolveUsageLogOptions({ PI_BROWSER_USAGE_LOG: "1" }, "/work", NOW, 7);
-	const ctx: MiddlewareContext = { method: "tools/call", toolName: "browser_http_replay", startedAt: 0, args: { url: "https://target.test/api", password: "hunter2", mode: "GET" }, resultBytes: 1234 };
+	const ctx: MiddlewareContext = {
+		method: "tools/call",
+		toolName: "browser_http_replay",
+		startedAt: 0,
+		cli: { command: "http-replay", routing: "standard" },
+		args: { url: "https://target.test/api", password: "hunter2", mode: "GET" },
+		resultBytes: 1234,
+	};
 	const record = buildUsageRecord(opts, ctx, 42, "ok", { code: "OK" }, NOW.toISOString());
 	assert.equal(record.tool, "browser_http_replay");
 	assert.equal(record.result, "ok");
 	assert.equal(record.ms, 42);
 	assert.equal(record.bytes, 1234);
+	assert.deepEqual(record.cli, { command: "http-replay", routing: "standard" });
 	const args = record.args as Record<string, unknown>;
 	assert.equal(args.url, "https://target.test/api", "non-sensitive params are preserved");
 	assert.equal(args.mode, "GET");
 	assert.notEqual(args.password, "hunter2", "secrets must be redacted before disk");
+});
+
+test("usageLog records CLI routing metadata for natural-vs-legacy adoption", () => {
+	const opts = resolveUsageLogOptions({ PI_BROWSER_USAGE_LOG: "1" }, "/work", NOW, 7);
+	const record = buildUsageRecord(opts, {
+		method: "invoke",
+		toolName: "browser_wait",
+		startedAt: 0,
+		cli: {
+			command: "wait",
+			routing: "natural",
+			naturalSubcommand: "selector",
+			action: "selector",
+		},
+		args: { action: "selector", params: { selector: "#ready" } },
+	}, 10, "ok", undefined, NOW.toISOString());
+	assert.deepEqual(record.cli, {
+		command: "wait",
+		routing: "natural",
+		naturalSubcommand: "selector",
+		action: "selector",
+	});
 });
 
 test("usageLog raw mode preserves args verbatim", () => {

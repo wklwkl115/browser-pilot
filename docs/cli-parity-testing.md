@@ -29,9 +29,9 @@ proof that the CLI frontend does not alter tool semantics. Runs in `npm run test
 through the CLI control channel against a connected browser, and asserts each returns a
 healthy (non-terminate) envelope. Exit `0` PASS · `3` NEEDS BROWSER · `1` FAIL.
 
-`check:cli-parity` separately proves every registered tool has a subcommand for both
-capability profiles (15 core / 22 security), and `check:cli-migration-drift` proves no
-MCP-only identifiers leak back into active code.
+`check:cli-parity` separately proves every registered tool has a subcommand in the
+always-on 22-tool surface, and `check:cli-migration-drift` proves no MCP-only
+identifiers leak back into active code.
 
 ## Layer 3 — Agent A/B (real agent + real browser)
 

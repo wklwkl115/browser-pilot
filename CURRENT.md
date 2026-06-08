@@ -1,47 +1,56 @@
 # CURRENT
 
 ## 当前状态
-- 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
+
 - 当前 shipping 外部前端是 **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**；MCP shell 已移除（CLI 用法见 `docs/cli.md`）。
-- 当前主链路仍是：`browser_tabs list` / `browser_tabs switch|create` -> 显式 `tabId` -> `browser_observe` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
-- 当前工具边界不变：不新增公开 `browser_*` 工具；不恢复 orchestration / target resolver；ABML 继续作为现有 `browser_*` 的内部 substrate（纯核模块已物理分层到 `src/abml-core/`，运行时留 `src/abml/`，边界由 `check:abml-core-boundary` 锁定；清单见 `docs/abml-kernel-manifest.md`）。R1/R2/R3 已完成，并经 2026-06-05 真 agent eval 收敛 agent-facing 输出：`browser_observe` envelope 顶层有 `relations`（含边时）、`diff/treeDiff/snapshotProjection/causal` 与 `referenced_entities`，`mode=scan` 可用 `baseline` 生成顶层 `diff`/`treeDiff`；`inference`/`templates` 引擎仍在内部驱动 `treeDiff`/`snapshotProjection`/`referenced_entities`（含 form-dependency 等 intent 信号），但不再作为 envelope 字段输出。
+- 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
+- 当前主链路：`browser_tabs list|switch|create` -> 显式 `tabId` -> `browser_observe` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
+- 当前工具边界：22 个 `browser_*` 工具 always-on；Web Security 是 scoped follow-up 分组，不再有 capability profile / compact mode / discovery mode；不新增公开 `browser_*` 工具，不恢复 orchestration / target resolver。
+- ABML 是内部 substrate，不是公开工具面：继续增强 `browser_observe` / `browser_execute monitor` / `browser_frame` / AX/vision/monitor 盲区；公开 ABML verb surface 仍 deferred。
 - jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：只吸收能力模型与证据路径，不新增被拒绝的公开工具 `browser_sources` / `browser_debugger` / `browser_intercept` / `browser_storage` / `browser_canvas`。
-- 修改协议/工具后先跑 `npm run check`；局部回归优先 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。
 - 仓库单一源码根：`D:/Pi/agent/extensions/pi-browser-tools` 是唯一正式源码仓库；`.pi/public-export/` 仅作本地导出/归档产物。
+- 修改协议/工具后先跑 `npm run check`；局部回归优先 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。
 
 ## 当前激活项
 
-- **Agent-native 统一架构主线（2026-06-07，Workstream A 已落地）**。**决策**：架构重设计与 CLI 优化合并为一条——二者是“同一契约的里外两面”（`register*Tool` typebox = 单一源，Pi-native 直接用 / CLI 经 `buildCliCommands`+`buildFlagSpecs(def.parameters)` 派生，`check:cli-parity` 锁定；分两线设计必漂移）。**已完成**：B1 移除 capability profile，22 个工具 always-on；B2 机械参数从 schema/CLI help 隐藏并通过统一 `prepareArguments` 容忍旧调用；B3 scan summary distiller 去除 ref/resource 写副作用，并新增 summary boundary guard；B4 模型侧统一脱敏，敏感字段携带本地 artifact `raw` + `jsonPath` 指针，`browser_artifact` 的显式 `jsonPath`/`pick` 定点读取返回原始值；Workstream B 的安全 dead-weight strip 已删除 `streamRuntime`、`resolveModel` 与未用 `dispatchAbmlVerb`。**边界保持**：不新增公开 `browser_*`、执行永久 = JS+CDP（ABML 观察-only，action 梯不复活）、安全闸内化但不移除/不下放给 agent、websec 机械参不嵌套成 `bounds` 对象。**Workstream B（维护线，多数 defer）**：ABML PageModel/ChangeModel 全拆、envelope 字段收口、双校验栈收敛、`observeRunners` 拆分仍 defer，门槛=维护痛到值得冒险。**契约/文档**：权威设计 `docs/agent-native-architecture.md`；外部面 `docs/agent-native-cli-spec.md` + 队列 `docs/agent-native-cli-execution-plan.md` 从属本线。**验证脊柱**：`check:cli-parity`、`check:param-surface`、`check:summary-boundary`、`check:token`、`check:artifact`、`check:all:contracts` 与最终 `npm run check`。
-- **常驻盲 agent eval 机制（2026-06-06，已 live 验证）**。项目进入成熟维护期：默认不再加新功能，重心转为**用真 agent 证据优化既有内容**。决策：在既有 deterministic runner（`npm run eval:browser-workflows`，人手写序列、防回归但发现不了新摩擦、且 notes 是作者自证）之上，新增**盲发现层**——盲 subagent 只拿 spec 的 `Goal`（藏答案卡）、仅靠 `--help`+JSON 摸索、被隔离舞台物理锁死，跑完产出 command-log + 三分类摩擦报告。操作者驱动（`pi-browser-blind-eval` skill），可 cron 定时。**边界**：不新增公开 `browser_*` 工具 / 不改 native protocol；纯 eval/测试基建（`evals/browser-workflows/`）；隔离用独立 `PI_BROWSER_DAEMON_STATE_DIR` + 18801+ 端口，绝不碰操作者真实浏览器；**执行类摩擦（无 click/type 帮手、手写 form-fill）按设计判为 WAI 不修**（感知归项目、执行归 agent）。**契约/文件**：`skills/pi-browser-blind-eval/SKILL.md`、`evals/browser-workflows/{launch-blind,teardown-blind,pb-blind}.mjs`、`blind-agent-prompt.md`、滚动 backlog `blind-findings.md`。**验证**：两次独立盲跑（login→orders 抽取 / spec 02 scan-execute-wait）全程隔离、安全约束保持、收敛到同一可修主题（execute 返回值渲染 + envelope 噪声）。三分类规则与成熟期口径见 memory `eval-friction-triage-perception-vs-execution` / `project-maturity-optimization-focus`。
+### Agent-facing CLI connection control protocol
 
-## 已完成但不再作为当前队列
+决策：
+- 已新增 agent-facing 连接控制面，让 agent 主动执行 readiness gate，而不是被动依赖普通命令触发 `ensureDaemon()` 后再从失败里推断连接状态。
+- 推荐入口是 `pi-browser connect --json` / `pi-browser connect --wait --timeout-ms <ms> --json`：幂等启动或复用 user-local singleton daemon，显式启动 bridge，等待扩展连接，返回机器可读 connection envelope。
+- 已新增 `pi-browser status --json` 只读 agent 状态面：不启动 daemon/bridge，只报告 daemon lockfile、reachable、bridgeRunning、extensionConnected、tabCount、activeTab、health、staleLockfile、recovery commands；`--tabs` 才展开完整 `tabs[]`。
+- `connect` / `status` 默认紧凑，避免多标签页 profile 把完整 tab 列表塞进每次 readiness envelope；已透出 `lastPingAt`、`lastPongAt`、`connectedForMs`、`tabSyncAgeMs` 等健康字段。
+- daemon 冷启动已加 user-local start lock，避免两个 agent 同时发现无 daemon 后各自 spawn detached daemon 抢端口。
+- 保留 `pi-browser daemon start|stop|status` 作为高级生命周期/诊断面；不把 `daemon stop` 写成常规 agent 收尾步骤。
+- 普通工具命令暂保留 auto-start 兼容行为；agent SOP 改为复杂任务前先 `connect`，后续自然命令直接执行。是否增加 `--no-auto-start` / `PI_BROWSER_REQUIRE_CONNECTED=1` 作为严格手动模式，需由本主线 eval 决定。
 
-- **B5 durable connection reliability（2026-06-08，offscreen transport，已全量验证）**。**决策**：把扩展侧 WebSocket 连接持久化从 MV3 service worker 迁到 offscreen document；offscreen 拥有真实 WebSocket、端口范围探测、backoff、ping 与断线重连，service worker 拥有 browser capability 命令执行、tab sync、startup recovery、CSP/CDP/状态清理。**边界**：不新增公开 `browser_*` 工具；不改 native bridge WebSocket wire protocol；不引入 broker / multi-agent arbitration；不把 offscreen 当作周期性唤醒 service worker 的 keepalive hack。**产物**：manifest 增加 `offscreen` permission + `offscreen.html`；build pipeline 生成 `dist/offscreen.js` 并记录 `build-manifest.offscreenEntry`；service worker 通过 `chrome.runtime` 消息收发 offscreen WS 帧，向 router 注入可 fan-out 的 socket adapter；`bridge_wake`/tab lifecycle 只触发 ensure/probe，不直接创建 WebSocket。**验证**：`npm run build:bridge`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`、`npm run check`。
-- **B7 — `browser_cookie_analyze` 浏览器 cookie 属性（2026-06-07，源自 n=2 真实站点盲 eval backlog，已 unit/contract 验证）**。**决策**：补齐既有 cookie 分析工具的浏览器态属性证据，不新增公开工具、不改 native protocol。**边界**：cookie provider contract 从仅返回扁平 Cookie header 扩展为结构化 `{header,cookies,url}`；HTTP replay/crawl/fuzz/recon/sqlmap/nuclei 只消费 `header`，行为保持；`browser_cookie_analyze` 额外消费 `cookies[]` 的非敏感属性。**产物**：summary `results` 表新增 `domain/path/secure/httpOnly/sameSite/session/expires`，artifact/result 保留 `attributes`（含 `storeId/partitionKey` 等）；cookie 值仍只做长度/hash/分析，不在摘要泄漏。**验证**：`npx tsc --noEmit`、`npm run test:unit -- --test-name-pattern 'cookie_analyze|webSecurity/shared/http|replay'`、`npm run check:web-security`、`npm run check:summaries`、`npm run check:all:package`；C2 live 复验：`browser_tabs list` 携带 `maxChars/detailLevel` 已通过。
-- **C1 — `browser_http_replay` 双提交 CSRF 反射（2026-06-06，源自真实 CTF web 安全会话日志，已 unit/contract 验证）**。**决策**：真实非盲会话（`sessions/2026-06-06T14-28-19….jsonl`）显示 `http_replay` 的 `bindBrowserSession:true` 只绑 Cookie 头、不反射双提交 CSRF（XSRF-TOKEN cookie↔header，极普遍），导致 agent 弃用工具改在页内手写 `fetch` 抠 CSRF 反射、重复约 10 次 → 补全这个机械会话绑定能力。**边界**：① 仅作用 `sendReplayLikeRequest`（http_replay），recon/fuzz/crawl 各自注入不受影响；② token 值不泄漏——summary `csrfReflected` 只报 cookie/header 名，注入头值走既有 `redactHeaders`，默认头名锁定在脱敏集内；③ 非策略、不违反"执行归 agent"（确定性 CSRF 双提交知识，**默认开仅在 bindBrowserSession 下生效 + 可见 + 可覆盖** `reflectCsrf/csrfCookie/csrfHeader`，不覆盖调用方已设 csrf 头）；④ 不改 native protocol。**契约**：`shared/http.ts` `deriveCsrfReflection`、`shared/replay.ts` `reflectCsrfIntoHeaders` + `NormalizedReplayOptions`、`browserNative/httpReplay.ts` + `summaries/webSecurity/replay.ts` surface `csrfReflected`、`registerHttpReplay.ts` 加 3 参数。**验证**：`tests/unit/webSecurity/shared/{http,replay-csrf}.test.ts`、`check-summaries`、`npm run check` 全绿、token-economy 0.0607 未损、docs 重生成；真站 authed 复验留作下次盲测。**B7（cookie 属性）回退 backlog**：同会话显示 agent 拿属性用 `browser_command cookies getAll` 很顺、未碰 cookie_analyze，边际价值低于 C1。findings 见 `evals/browser-workflows/blind-findings.md`（C1）。
-- **Browser-tools 真 agent 评估线 — 已收口（2026-06-05）**。三件事一条线：
-  1. **action 臂回退（Option A）**：首份怀疑型评估证实公开 `action:{click|type|scroll}` 臂在野外不站住（`action.click` 静默失败/`ACTIONABILITY_TIMEOUT`/selector miss，agent 退回 JS；"verified ≠ intent achieved"；静默失败→升 CDP 有 click 双重执行风险）。**B2 整体回退**：`registerExecuteTool` restore 到 `{script}`-only，移除 smoke/fixture/package 脚本/生成文档的 `action` 参。**ABML 回归观察-only**；执行 = `browser_execute {script}`(JS)，trusted-event 逃生口 = `browser_command` CDP（已存在，无需新子工具）。commit `7a59b5a`。
-  2. **观察侧采用诊断（三轮放养→引导→修后放养）**：放养 4/4 跳过深层 observe 产物（scan 只当初步定位，提取/理解整组/检测变化全退回 JS）；引导下 templates/relations 只给结构、agent 仍需 JS 取条目值，只有 `causal`/`treeDiff` 真省事。修了 artifact 顶层镜像漏的 `relations`+`inference`（commit `d7486cf`）+ SKILL "Observe products" 路由 + JS 边界。**关键发现（已排除混淆项：重测 agent 逐字抄回新 skill 段落却仍 4/4 跳过）→ 被动文档改不动采用**，JS 优先本能盖过它。
-  3. **窄主动 hint（commit `ecf8dfb`，已 live 验证收口）**：`observeRunners` 经 `summary.nextActions` 主动推送,**只推 `causal`+`treeDiff`**（普通 scan 带 snapshotId → plant "baseline 再扫拿 treeDiff/causal"；baseline scan 真有变化 → 直指产物；低噪；不推 templates/relations）。**验证（干净前后隔离）**：放养重测 task2，agent 做了前两轮放养从没做的 `browser_observe scan baseline=... 读 treeDiff/causal` —— round3（新 skill 无 hint）跳过 vs 本轮（skill+hint）采用，唯一差别是 hint → **主动 push 推动了采用**（实证"反向暴露"）。边界：treeDiff 给结构级、条目级仍补 JS（正确边界）；causal 经 observe 时可达、纯 network 流走 network 亦可；templates/relations 数据取值=JS。静态接线锁在 `check:abml-causal`。**结论：observe = 感知 + 一个已验证能推动采用的 treeDiff/causal 主动 hint。** 执行合同 `docs/browser-tools-eval-fixes-execution-plan.md` + `docs/abml-action-path-gap-plan.md`。
-- **ABML R3 质量跟进已完成（2026-06-05，浏览器验证）**：执行合同 `docs/abml-r3-quality-followup-execution-plan.md`。完成 `form-dependency` live-focus 稳健化、scan actionable `focused` 采集、inference evidence refs→`envelope.entities` 实体补齐、prior-envelope baseline 优先读取 saved full `abml.entities`。边界保持：不新增公开 `browser_*` 工具、不改 native protocol、不改 ref minting。验证：`check:abml-inference`、`check:abml-diff`、`check:scan`、`smoke:browser:abml-inference`、`npm run check`。
-- **ABML 机制臂 M2c — living snapshot projection 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-m2c-living-snapshot-projection-execution-plan.md`。完成 pure `snapshotProjection`、budget-immune envelope lift、saved artifact 持久化、live projection delta smoke。边界：复用 M1 templates + M2a treeDiff + M2b stable refs；不新增公开 `browser_*` 工具、不改 native protocol、不改 action/ref 行为、不做 DOM tag/class/selector 猜测。验证：`check:abml-snapshot-projection`、`smoke:browser:abml-templating`、`npm run check`。
-- **ABML 机制臂 M2b — semantic ref anchor 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-m2b-semantic-ref-anchor-execution-plan.md`。完成 P1/P2/P3/P4：纯候选锚派生、shadow ref 稳定性实验、窄范围 high-confidence ref-minting feed、live read/click smoke。边界：只允许 named AX/ARIA template container + unique accessible name 的 high-confidence anchor；duplicate/unnamed/posInSet-only 继续 locator-based / diff-only；无新公开 `browser_*` 工具或 native protocol 变更。验证：`check:abml-semantic-ref-anchor`、`smoke:browser:abml-templating`、`npm run check`。
-- **ABML 机制臂 M2a — living treeDiff-first 已完成（2026-06-04，浏览器验证）**：执行合同 `docs/abml-mechanism-arm-execution-plan.md`。M2a 只做 treeDiff 投影：复用 M1 ARIA-grounded template groups，对 `browser_observe(mode=scan, baseline)` 输出 `envelope.treeDiff`。边界已保持：不新增公开 `browser_*` 工具、不改 native protocol、不改 `stableRefIdForDescriptor` / ref minting、不做 DOM tag/class/selector 猜测。验证：`check:abml-tree-diff`、`smoke:browser:abml-templating`、`npm run check`。
-- **ABML R3.x — network/API 因果平面已完成（2026-06-04，浏览器验证）**：P0+P1+P2(A+B+C) 全部落地于 master。执行合同 `docs/abml-r3x-causal-plane-execution-plan.md`。P0=被动网络增量 `envelope.causal`；P1=`triggered` 时序归因；P2-A=事件因果 `causal.events`；P2-B=事件源归因 `source:"event"`；P2-C=因果 stream plane（游标 drain 通道，`read(plane:network|event)` arm/drain，内部 substrate 经 `integration.readStream`）。仅"真正的服务端推送"出范围（req/resp 架构物理不可能）。
-- **Browser workflow eval runner 已完成并合并入 master（2026-06-04）**：`feat/browser-workflow-eval-runner` 的可执行 opt-in runner 已合并，分支已删除；入口 `npm run eval:browser-workflows -- --fixture-server`，默认无副作用、fixture server 仅绑 `127.0.0.1`。
-- **CLI + Skill Frontend Migration 已完成**：`pi-browser` CLI（用户级单例 daemon 驱动）成为唯一外部前端，MCP shell 整体移除，`@modelcontextprotocol/sdk` 下线；Pi-native `index.ts` 不变且验证通过（注册 22 工具、零 mcp 依赖），live `npm run smoke:cli` 端到端通过。执行合同：`docs/cli-skill-frontend-migration-plan.md`；CLI 文档：`docs/cli.md`。
-- **ABML 内核解耦已完成**：纯核模块 + `index.ts` barrel 物理分层到 `src/abml-core/`（零浏览器/Node 依赖），运行时留 `src/abml/`，边界 CI 锁定（`check:abml-core-boundary`）。清单见 `docs/abml-kernel-manifest.md`；workspace 包提升为可选延后项。
-- ABML 执行落地已收口为 internal substrate；公开 ABML tool surface RFC 继续 deferred。历史执行合同保留在 `docs/abml-execution-plan.md`，但不再是当前执行队列。
-- MCP 标准化 + 渐进式披露 Phase -1 -> Phase 10 已完成，并随 MCP shell 移除归档为历史（`docs/mcp-standardization-progressive-disclosure-plan.md`，HISTORICAL，非当前行为）。
-- Web Security affordance / validation / recovery、MV3 runtime state recovery、bridge runtime hardening、工具面治理与工程化收口均已归档，不再作为当前 active queue。
-- **Browser memory v1 已 ship**：`browser_memory` 工具（`src/tools/registerMemoryTool.ts`，已在 `src/tools/toolRegistry.ts` 注册）提供本地 `.pi/browser-memory/` 的 record/validate/recall/read；contracts `check:memory-autosurface` / `check:memory-lifecycle`，smoke `smoke:browser:memory`。执行合同 `docs/browser-memory-learning-mechanism-plan.md`。
+边界：
+- 不新增公开 `browser_*` 工具，不恢复 MCP，不改变 Pi-native `index.ts` 工具面。
+- 不把策略塞入 CLI；`connect` 只承担 deterministic readiness：daemon reachable、bridge running、extension connected、tab visibility/health visible。
+- 不实现 one-shot/direct transport 作为首批目标；它会牺牲跨命令状态。先把 singleton daemon 的连接控制变成 agent 显式协议，后续再用 eval 判断是否需要 `--transport direct`。
+- 不泄露 daemon token；stale lockfile 继续只暴露非敏感字段。
 
-## Next backlog
+契约草案：
+- `connect --json` 输出单一 JSON envelope，包含 `command:"connect"`、`ready`、`startedDaemon`、`startedBridge`、`waitedMs`、`daemon{pid,controlPort,version,expectedVersion,versionStale}`、`bridge{port,running}`、`extension{connected}`、`tabCount`、`activeTab`、`health`、`recovery.commands[]`；显式 `--tabs` 时才包含完整 `tabs[]`。
+- `connect --wait` 在 timeout 后仍未连接扩展时返回 parseable error envelope，exit code `3`，code 类似 `CLI_EXTENSION_NOT_CONNECTED`，并给出可执行 recovery commands。
+- `status --json` 永远只读、不 auto-start；daemon 不存在时 exit code `0` 且 `ready:false`，除非参数错误。
+- `doctor --json` 可继续保留更宽诊断；`status` 面向 agent 快速 loop，`doctor` 面向排障。
 
-R1/R2/R3/R3.x 与 ABML 机制臂 M1/M2a/M2b/M2c 均已完成。其余后续候选（iframe AX aggregation、incognito/profile isolation、public surface 等）继续只作为 `ROADMAP.md` 与 RFC/eval 规划。
+验证：
+- 本线执行队列：`docs/agent-cli-connection-control-plan.md`。
+- 已补 CLI unit/contract：local `status` 不启动 daemon；`connect` 可启动 daemon/bridge；默认紧凑 status/connect 与 `--tabs` 展开；健康字段透出；start lock 等待并发启动；extension timeout JSON envelope；stale lockfile 不泄 token；ordinary commands 兼容 auto-start。
+- 已补 runtime smoke：隔离 `PI_BROWSER_DAEMON_STATE_DIR` + patched extension port，验证 `connection.status.initial -> connection.connect-wait -> connection.status.ready -> tabs list`，agent path 不需要手动 stop；测试 cleanup 仍停止隔离 daemon。
+- 已更新 `docs/cli.md`、`skills/pi-browser-tools/SKILL.md`、`CHANGELOG.md`、`TODO.md`；skill validation、focused CLI checks、package/smoke diagnostics 和 `smoke:cli:full` 已通过，最终 `npm run check` 待跑。
+
+## 最近完成且仍影响当前规则
+
+- **Agent-native CLI 产品化主线已完成**：`docs/agent-native-cli-spec.md` 是外部面契约，`docs/agent-native-cli-execution-plan.md` 已完成。`commands/schema --json` 暴露 `agentCli` + `artifactBehavior`；推荐 `standard`/`natural` 路径覆盖 wait/network/frame/hook 高频动作；legacy `--action/--params` 保留为 advanced compatibility；`command --command @file` 保留为 native escape hatch。
+- **Agent-native 统一架构 Workstream A 已落地**：`register*Tool` TypeBox schema 是 Pi-native 与 CLI 的单一契约源；机械参数从 schema/CLI help 隐藏并通过 `prepareArguments` 兼容旧调用；summary/ref/resource 副作用边界、脱敏与 artifact raw pointer 由 contracts 锁定。权威设计见 `docs/agent-native-architecture.md`。
+- **盲 agent eval 机制已 live 验证**：确定性 runner 负责回归；blind real-agent layer 由 `pi-browser-blind-eval` skill 操作，隔离 `PI_BROWSER_DAEMON_STATE_DIR` + 18801+ 端口，不属于 `npm run check`。发现与三分类记录见 `evals/browser-workflows/blind-findings.md`。
+- **B5 durable connection reliability 已完成**：扩展侧 WebSocket 生命周期迁到 offscreen document；native WS wire protocol 与公开工具面不变。验证、历史和后续候选见 `ARCHIVE.md` / `ROADMAP.md`。
 
 ## 后续路线
 
-- future-facing 能力方向继续放在 `ROADMAP.md` 与对应 RFC/eval 文档中。
+- future-facing 能力方向只放在 `ROADMAP.md` 与对应 RFC/eval 文档中。
+- 已完成历史不再写回本文件；压缩摘要见 `ARCHIVE.md`，长详档见 `docs/archive/*.full.md`。
 - 若后续重新打开 ABML public surface、debugger workflow、incognito/profile isolation 等方向，必须另开新的执行合同，不得搭车既有主线。
-

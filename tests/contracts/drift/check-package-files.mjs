@@ -9,6 +9,8 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const readJson = (rel) => JSON.parse(read(rel));
 
 const pkg = readJson("package.json");
+const eslintConfig = read("eslint.config.js");
+const gitAttributes = read(".gitattributes");
 const usesTsx = (script) => /(^|\s)tsx(\s|$)/.test(String(script || ""));
 assert.equal(pkg.scripts?.prepack, "npm run build && node scripts/build-bridge.mjs --quiet", "package prepack must build outer dist and regenerate bridge dist without noisy stdout");
 assert.equal(pkg.scripts?.build, "tsc -p tsconfig.build.json", "package must expose outer dist build");
@@ -24,11 +26,17 @@ assert.equal(pkg.scripts?.["check:all:package"], "node scripts/run-check-groups.
 assert.equal(pkg.scripts?.["check:all:contracts"], "node scripts/run-check-groups.mjs contracts", "check:all:contracts must expose contract grouped validation");
 assert.equal(pkg.scripts?.check, "npm run check:all", "npm run check must route through grouped validation runner");
 const qualityLocal = String(pkg.scripts?.["quality:local"] || "");
-assert(qualityLocal.includes("npm run build:bridge") && qualityLocal.includes("npm run check") && qualityLocal.includes("npm pack --dry-run --json"), "quality:local must run build, check, and package dry-run gates");
+assert(qualityLocal.includes("npm run build:bridge") && qualityLocal.includes("npm run lint") && qualityLocal.includes("npm run check") && qualityLocal.includes("npm pack --dry-run --json"), "quality:local must run build, lint, check, and package dry-run gates");
 assert(qualityLocal.includes("smoke:browser:isolated") && qualityLocal.includes("Optional runtime smoke"), "quality:local must print the optional isolated smoke next step");
 assert(!qualityLocal.split("node -e")[0].includes("smoke:browser"), "quality:local must not launch browser smoke by default");
 assert.equal(pkg.scripts?.["release:local"], "node tests/release/release-local-acceptance.mjs", "release:local must expose local pack acceptance without browser smoke by default");
 assert.equal(pkg.scripts?.["release:local:smoke"], "node tests/release/release-local-acceptance.mjs --smoke --rollback-smoke", "release:local:smoke must exercise current and rollback isolated smoke");
+assert.equal((eslintConfig.match(/files:\s*\["cli\/\*\*\/\*\.ts"\]/g) || []).length, 1, "eslint config must have one authoritative CLI TypeScript block");
+assert(eslintConfig.includes('files: ["cli/**/*.ts"]') && eslintConfig.includes('project: "./tsconfig.json"'), "CLI TypeScript linting must use the Node tsconfig as its authoritative project");
+assert(!eslintConfig.includes('project: "./tsconfig.build.json"'), "eslint config must not bind any source lint block to the build-only tsconfig");
+for (const rule of ["*.ts text eol=lf", "*.mjs text eol=lf", "*.json text eol=lf", "*.map text eol=lf", ".gitattributes text eol=lf", ".gitignore text eol=lf", ".npmignore text eol=lf"]) {
+	assert(gitAttributes.includes(rule), `.gitattributes must pin LF for generated and source text rule: ${rule}`);
+}
 for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/"]) {
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
 }
@@ -53,7 +61,7 @@ assert(releaseScript.includes("PI_BROWSER_SMOKE_EXTENSION_DIR") && releaseScript
 assert(releaseScript.includes("PI_BROWSER_CI_RELEASE_SMOKE") && releaseScript.includes("PI_BROWSER_CI_ROLLBACK_SMOKE"), "release acceptance must expose CI opt-in env gates for current and rollback isolated smoke");
 assert(releaseScript.includes("failureDiagnostics") && releaseScript.includes("packFiles") && releaseScript.includes("buildManifest") && releaseScript.includes("chromeProfile") && releaseScript.includes("bridgePort") && releaseScript.includes("smokeArtifact"), "release acceptance failures must expose pack/build/profile/port/smoke diagnostics");
 const tsxScripts = [
-	"check:lint", "check:tools", "test:unit", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "check:cli-parity",
+	"check:lint", "check:tools", "test:unit", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "smoke:cli:full", "check:cli-parity",
 ];
 for (const name of tsxScripts) assert(usesTsx(pkg.scripts?.[name]), `${name} must run through tsx instead of experimental strip-types`);
 assert(usesTsx(pkg.scripts?.["test:unit"]), "test:unit must use tsx runner");
@@ -66,15 +74,16 @@ const browserSmoke = read("tests/smoke/smoke-browser.mjs");
 assert(browserSmoke.includes("PI_BROWSER_SMOKE_MINIMAL") && browserSmoke.includes("execute.minimal") && browserSmoke.includes("wait.loadState"), "browser smoke must expose a minimal rollback path covering tabs/wait/execute");
 assert(!Object.values(pkg.scripts || {}).some((script) => String(script).includes("--experimental-strip-types")), "package scripts must not rely on experimental strip-types after tsx migration");
 
-const output = execSync("npm pack --dry-run --json", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const output = execSync("npm pack --dry-run --ignore-scripts --json", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const jsonStart = output.indexOf("[");
-assert(jsonStart >= 0, "npm pack --dry-run --json must emit a JSON array");
+assert(jsonStart >= 0, "npm pack --dry-run --ignore-scripts --json must emit a JSON array");
 const pack = JSON.parse(output.slice(jsonStart))[0];
 assert(pack && Array.isArray(pack.files), "npm pack dry-run must return package file metadata");
 const packed = new Set(pack.files.map((file) => file.path));
 
 const manifest = readJson("bridge/pi_browser_bridge/manifest.json");
 const distFiles = new Set(["dist/index.js", "dist/index.d.ts", "dist/cli/bin.js", "dist/cli/index.js"]);
+distFiles.add("dist/cli/connection.js");
 distFiles.add(`bridge/pi_browser_bridge/${manifest.background.service_worker}`);
 for (const script of manifest.content_scripts || []) {
 	for (const item of script.js || []) distFiles.add(`bridge/pi_browser_bridge/${item}`);
@@ -113,6 +122,7 @@ for (const file of ["README.md", "AI_INSTALL.md", "CHANGELOG.md", "ARCHIVE.md"])
 	const text = read(file);
 	assert(text.includes("npm pack --dry-run"), `${file} must document or record package dry-run verification`);
 }
+assert(read("README.md").includes("npm pack --dry-run --ignore-scripts --json") && read("AI_INSTALL.md").includes("npm pack --dry-run --ignore-scripts --json"), "README and AI_INSTALL must document that check:package uses ignore-scripts to avoid rebuilding dist during npm run check");
 for (const file of ["TODO.md", "CURRENT.md", "ARCHIVE.md", "ROADMAP.md", "WORKSTREAMS_A_E_SUMMARY.md"]) {
 	assert(packed.has(file), `npm package must include planning document: ${file}`);
 }

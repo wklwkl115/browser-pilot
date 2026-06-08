@@ -12,6 +12,8 @@ export function summarizeMemoryResult(value: unknown): Summary {
 	if (typeof value.id === "string") summary.id = value.id;
 	if (typeof value.uri === "string") summary.uri = value.uri;
 	if (typeof value.mode === "string") summary.mode = value.mode;
+	if (typeof value.error_code === "string") summary.error_code = value.error_code;
+	if (typeof value.message === "string") summary.message = value.message;
 	if (Array.isArray(value.cards)) summary.count = value.cards.length;
 	if (Array.isArray(value.supersededIds)) summary.superseded = value.supersededIds.length;
 	if (Array.isArray(value.supersedeCandidates)) summary.supersedeCandidates = value.supersedeCandidates.length;
@@ -22,5 +24,6 @@ export function summarizeMemoryResult(value: unknown): Summary {
 		if (typeof value.entry.scopeKey === "string") summary.scopeKey = value.entry.scopeKey;
 	}
 	if (typeof value.error === "string") summary.error = value.error;
+	if (isRecord(value.recovery)) summary.recovery = value.recovery;
 	return summary;
 }

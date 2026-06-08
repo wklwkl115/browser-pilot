@@ -408,7 +408,6 @@ registerRecovery(async (results) => {
         recorder.active = true;
         recorder.startedAt = Date.now();
         recorder.diagnostics.push({ t: Date.now(), action: 'recovered', historyLost: true, previousWorkerBootId: record.workerBootId, generation: record.generation });
-        console.log('[PI-BROWSER-NET] Recovered network recorder', key, 'historyLost=true');
         return { recovered: true, historyLost: true };
       } catch (error) {
         console.warn('[PI-BROWSER-NET] Failed to recover network recorder', key, error);

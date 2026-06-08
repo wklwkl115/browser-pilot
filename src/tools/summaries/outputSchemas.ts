@@ -220,7 +220,10 @@ export const MemorySummarySchema = Type.Object({
 	superseded: Type.Optional(Type.Number()),
 	supersedeCandidates: Type.Optional(Type.Number()),
 	entryCount: Type.Optional(Type.Number()),
+	error_code: Type.Optional(Type.String()),
+	message: Type.Optional(Type.String()),
 	error: Type.Optional(Type.String()),
+	recovery: Type.Optional(LooseObject),
 }, { additionalProperties: true });
 
 export const ScanSummarySchema = Type.Object({

@@ -86,6 +86,7 @@ const interceptTabCloseCleanupSmoke = read("tests/smoke/smoke-intercept-tab-clos
 const interceptLeaseConflictSmoke = read("tests/smoke/smoke-intercept-lease-conflict.mjs");
 const websocketSessionSmoke = read("tests/smoke/smoke-websocket-session.mjs");
 const browserMemorySmoke = read("tests/smoke/smoke-browser-memory.mjs");
+const cliFullSmoke = read("tests/smoke/smoke-cli-full.mjs");
 const pkg = JSON.parse(read("package.json"));
 assert(pkg.scripts?.["smoke:browser:isolated"]?.includes("smoke-browser-isolated.mjs"), "package must expose isolated browser smoke");
 assert(pkg.scripts?.["smoke:browser:scan-summary"]?.includes("smoke-scan-summary.mjs"), "package must expose scan summary runtime smoke");
@@ -102,6 +103,7 @@ assert(pkg.scripts?.["smoke:browser:intercept-tab-close-cleanup"]?.includes("smo
 assert(pkg.scripts?.["smoke:browser:intercept-lease-conflict"]?.includes("smoke-intercept-lease-conflict.mjs"), "package must expose intercept lease-conflict runtime smoke");
 assert(pkg.scripts?.["smoke:browser:websocket-session"]?.includes("smoke-websocket-session.mjs"), "package must expose websocket session runtime smoke");
 assert(pkg.scripts?.["smoke:browser:memory"]?.includes("smoke-browser-memory.mjs"), "package must expose browser memory runtime smoke");
+assert(pkg.scripts?.["smoke:cli:full"]?.includes("smoke-cli-full.mjs"), "package must expose the full CLI runtime smoke");
 assert(isolatedSmoke.includes("--user-data-dir") && isolatedSmoke.includes("--load-extension") && isolatedSmoke.includes("PI_BROWSER_BRIDGE_PORT") && isolatedSmoke.includes("smoke-browser-isolated-results.json"), "isolated smoke must launch a temporary Chrome profile, patch a temporary extension port, and write an artifact");
 assert(scanSummarySmoke.includes("scan-high-entropy.html") && scanSummarySmoke.includes("summarizeScanData") && scanSummarySmoke.includes("smoke-browser-scan-summary-results.json"), "scan summary smoke must use the local high-entropy fixture, summarize scan output, and write a dedicated artifact");
 assert(debuggerEvidenceSmoke.includes("debugger-evidence.html") && debuggerEvidenceSmoke.includes("Debugger.enable") && debuggerEvidenceSmoke.includes("Debugger.getScriptSource") && debuggerEvidenceSmoke.includes("smoke-browser-debugger-evidence-results.json"), "debugger evidence smoke must use the local debugger fixture, collect debugger evidence, and write a dedicated artifact");
@@ -117,6 +119,9 @@ assert(interceptTabCloseCleanupSmoke.includes("intercept-response.html") && inte
 assert(interceptLeaseConflictSmoke.includes("leaseTab") && interceptLeaseConflictSmoke.includes("TAB_LEASE_CONFLICT") && interceptLeaseConflictSmoke.includes("smoke-browser-intercept-lease-conflict-results.json"), "intercept lease-conflict smoke must validate cross-session write conflict and write a dedicated artifact");
 assert(websocketSessionSmoke.includes("WebSocketServer") && websocketSessionSmoke.includes("ws.open") && websocketSessionSmoke.includes("ws.replay") && websocketSessionSmoke.includes("partialTranscript") && websocketSessionSmoke.includes("smoke-browser-websocket-session-results.json"), "websocket session smoke must use a local WS fixture, validate ws open/replay/failure diagnostics, and write a dedicated artifact");
 assert(browserMemorySmoke.includes("browser_memory") && browserMemorySmoke.includes("scopeKind: \"task\"") && browserMemorySmoke.includes("index.json"), "browser memory smoke must validate task-scope record/recall/read and confirm index write");
+for (const token of ["PI_BROWSER_DAEMON_STATE_DIR", "patchExtensionDistPort", "smoke-cli-full-results.json", "connection.status.initial", "connection.connect-wait", "connection.status.ready", "local.commands-json", "local.schema.", "wait.selector", "network.export-har", "frame.evaluate", "hook.install-targets", "command.escape-file", "execute.script-file", "callback-oast.trigger", "cookie-analyze.jwt", "http-replay.raw", "template.builtin-file"]) {
+	assert(cliFullSmoke.includes(token), `full CLI smoke must cover ${token}`);
+}
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
 	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);

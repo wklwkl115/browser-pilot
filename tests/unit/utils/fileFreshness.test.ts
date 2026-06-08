@@ -75,6 +75,18 @@ test("computeContentHash with jsonPath scopes to nested value", () => {
 	});
 });
 
+test("computeContentHash with bracket jsonPath supports complex object keys", () => {
+	withTempDir((dir) => {
+		const file = path.join(dir, "data.json");
+		writeFileSync(file, JSON.stringify({ response: { headers: { "Set-Cookie": "sid=abc", "x.api.key": "key-1" } } }));
+		const setCookieHash = computeContentHash(file, "$.response.headers['Set-Cookie']");
+		const dottedKeyHash = computeContentHash(file, "response.headers['x.api.key']");
+		assert.ok(typeof setCookieHash === "string", "Set-Cookie bracket path should resolve");
+		assert.ok(typeof dottedKeyHash === "string", "dotted key bracket path should resolve");
+		assert.notEqual(setCookieHash, dottedKeyHash);
+	});
+});
+
 test("computeContentHash with jsonPath returns undefined for missing path", () => {
 	withTempDir((dir) => {
 		const file = path.join(dir, "data.json");

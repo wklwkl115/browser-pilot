@@ -1,6 +1,5 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
-import { createServer as createNetServer } from "node:net";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -10,61 +9,16 @@ import { evaluatePageScriptDirect } from "../../src/tools/pageScriptEvaluation.t
 import { distilledTextResult } from "../../src/tools/resultMiddleware.ts";
 import { summarizeScanData } from "../../src/tools/summaries/scan.ts";
 import { readBrowserArtifact } from "../../src/tools/artifactReader.ts";
+import { browserLaunchHardeningArgs, chromePath, freePort, stopBrowserProcess, windowsPathForChrome } from "../support/browserSmokeEnv.mjs";
+import { patchExtensionDistPort } from "../support/patchExtensionPort.mjs";
 
 const root = process.cwd();
 const outDir = path.resolve(root, ".pi", "browser-artifacts");
 const tempRoot = path.resolve(root, ".pi", "temp-profiles");
 const extensionSource = path.resolve(process.env.PI_BROWSER_SMOKE_EXTENSION_DIR || path.join(root, "bridge", "pi_browser_bridge"));
 const resultPath = path.resolve(process.env.PI_BROWSER_SMOKE_RESULT_PATH || path.join(outDir, "smoke-browser-scan-summary-results.json"));
-const chromeCandidates = [
-	process.env.PI_BROWSER_SMOKE_CHROME,
-	process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env.ProgramFiles || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "win32" ? path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe") : undefined,
-	process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined,
-	"google-chrome",
-	"chromium",
-	"chromium-browser",
-].filter(Boolean);
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-function isWindowsChromeExecutable(chromeExe) {
-	return process.platform !== "win32" && /\.exe$/i.test(String(chromeExe || "")) && /^\/mnt\/[a-z]\//i.test(String(chromeExe || ""));
-}
-function windowsPathForChrome(value, chromeExe) {
-	if (!isWindowsChromeExecutable(chromeExe)) return value;
-	const match = /^\/mnt\/([a-z])\/(.*)$/i.exec(String(value || ""));
-	if (!match) return value;
-	return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, "\\")}`;
-}
-function chromePath() {
-	for (const candidate of chromeCandidates) if (existsSync(candidate)) return candidate;
-	throw new Error(`Chrome/Chromium executable not found; set PI_BROWSER_SMOKE_CHROME. Tried: ${chromeCandidates.join(", ")}`);
-}
-async function freePort(start, end) {
-	for (let port = start; port <= end; port += 1) {
-		const server = createNetServer();
-		try {
-			await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
-			await new Promise((resolve) => server.close(resolve));
-			return port;
-		} catch {
-			await new Promise((resolve) => server.close(resolve));
-		}
-	}
-	throw new Error(`No free port in range ${start}-${end}`);
-}
-async function patchExtensionPort(extensionDir, bridgePort) {
-	const serviceWorkerPath = path.join(extensionDir, "dist", "service-worker.js");
-	let source = await readFile(serviceWorkerPath, "utf8");
-	source = source
-		.replaceAll("127.0.0.1:18765", `127.0.0.1:${bridgePort}`)
-		.replace(/PI_BROWSER_BRIDGE_PORT\s*=\s*18765/g, `PI_BROWSER_BRIDGE_PORT = ${bridgePort}`)
-		.replace(/PI_BROWSER_BRIDGE_PORT_RANGE_END\s*=\s*18784/g, `PI_BROWSER_BRIDGE_PORT_RANGE_END = ${bridgePort}`);
-	await writeFile(serviceWorkerPath, source, "utf8");
-}
 async function waitUntil(predicate, timeoutMs = 15_000) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
@@ -90,8 +44,8 @@ try {
 	await mkdir(outDir, { recursive: true });
 	await mkdir(tempRoot, { recursive: true });
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
-	const bridgePort = await freePort(18766, 18800);
-	const fixturePort = await freePort(8766, 8800);
+	const bridgePort = await freePort();
+	const fixturePort = await freePort();
 	const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "scan-high-entropy.html"), "utf8");
 	const fixtureUrl = `http://127.0.0.1:${fixturePort}/scan-high-entropy.html`;
 	fixture = createHttpServer((req, res) => {
@@ -100,7 +54,7 @@ try {
 	});
 	await new Promise((resolve, reject) => { fixture.once("error", reject); fixture.listen(fixturePort, "127.0.0.1", resolve); });
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionPort(extensionDir, bridgePort);
+	await patchExtensionDistPort(extensionDir, bridgePort);
 	bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort });
 	await bridge.start();
 	const chromeExe = chromePath();
@@ -110,7 +64,7 @@ try {
 		`--load-extension=${windowsPathForChrome(extensionDir, chromeExe)}`,
 		"--no-first-run",
 		"--no-default-browser-check",
-		"--disable-background-networking",
+		...browserLaunchHardeningArgs(),
 		"--enable-logging=stderr",
 		"--v=0",
 		fixtureUrl,
@@ -150,8 +104,8 @@ try {
 		artifactValue: { ...rawScan, tabs_count: tabs.length, tabs, active_tab: bridge.snapshot().defaultTabId },
 	});
 	const beforeEnvelope = JSON.parse(before.content[0].text);
-	const hasActionablesFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("read_saved_artifact jsonPath=data.actionables") || String(item).includes("click(pi-ref://") || String(item).includes("read(pi-ref://"));
-	const hasContentFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("read_saved_artifact jsonPath=data.content"));
+	const hasActionablesFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("jsonPath=data.actionables") || String(item).includes("click(pi-ref://") || String(item).includes("read(pi-ref://"));
+	const hasContentFollowup = beforeEnvelope.nextActions.some((item) => String(item).includes("jsonPath=data.content"));
 	record("scan.summary", typeof beforeEnvelope.saved?.path === "string"
 		&& hasActionablesFollowup
 		&& hasContentFollowup, {
@@ -183,6 +137,7 @@ try {
 	const afterSummary = summarizeScanData(afterRaw.data, tabs, { detailLevel: "summary", maxChars });
 	record("scan.afterAction", Array.isArray(afterSummary.focus?.text_signals) && afterSummary.focus.text_signals.some((item) => String(item).includes("action completed for pay-now")), { textSignals: afterSummary.focus?.text_signals });
 	result.ok = steps.every((step) => step.ok !== false);
+	if (!result.ok) process.exitCode = 1;
 } catch (error) {
 	record("error", false, { message: error instanceof Error ? error.message : String(error) });
 	result.ok = false;
@@ -190,10 +145,7 @@ try {
 } finally {
 	if (tabId && bridge) await bridge.closeTab(tabId, 2_000).catch(() => {});
 	await bridge?.stop().catch(() => {});
-	if (chrome?.pid) {
-		if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" });
-		else chrome.kill("SIGTERM");
-	}
+	stopBrowserProcess(chrome);
 	if (fixture) await new Promise((resolve) => fixture.close(resolve));
 	const keepTemp = process.env.PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE === "1" && result.ok === false;
 	if (!keepTemp) {

@@ -75,12 +75,17 @@ function readServiceWorkerSource(name) {
 
 const patternsSource = readServiceWorkerSource("patterns");
 const stateStoreSource = readServiceWorkerSource("state_store");
+assert(!stateStoreSource.includes("tabExists lookup failed"), "state_store tab existence misses are normal recovery signals and must not print async warnings after successful fixture checks");
+assert(!stateStoreSource.includes("Startup recovery complete"), "state_store startup recovery success must be exposed through the structured summary, not Chrome stderr logs");
 const cdpSource = readServiceWorkerSource("cdp");
 const networkSource = `${patternsSource}\n${readServiceWorkerSource("network_model")}\n${readServiceWorkerSource("network_events")}\n${readServiceWorkerSource("network")}`;
 const waitSource = `${patternsSource}\n${readServiceWorkerSource("wait_cdp")}\n${readServiceWorkerSource("wait_coordinator")}\n${readServiceWorkerSource("wait_navigation")}\n${readServiceWorkerSource("wait_network_idle")}\n${readServiceWorkerSource("wait_selector")}\n${readServiceWorkerSource("wait")}`;
 const hookSource = readServiceWorkerSource("hook");
 const wsSource = `${readServiceWorkerSource("ws_model")}\n${readServiceWorkerSource("ws")}`;
 const interceptSource = `${readServiceWorkerSource("intercept_model")}\n${readServiceWorkerSource("intercept")}`;
+assert(!networkSource.includes("Recovered network recorder"), "network recovery success must stay structured and quiet");
+assert(!hookSource.includes("Recovered hook session metadata"), "hook recovery success must stay structured and quiet");
+assert(!interceptSource.includes("Recovered intercept session"), "intercept recovery success must stay structured and quiet");
 const frameSource = readServiceWorkerSource("frame");
 const screenshotSource = readServiceWorkerSource("screenshot");
 const transferSource = readServiceWorkerSource("transfer");

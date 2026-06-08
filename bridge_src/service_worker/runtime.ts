@@ -147,10 +147,8 @@ function cleanupPiBrowserTab(tabId: number, reason?: string) {
   // Preserve the public cancellation path for tab teardown so queued callers,
   // diagnostics and static contract tests all see the same lifecycle entrypoint.
   // Literal contract: cancelWaitsForTab(tabId, 'tab_cleanup')
-  const waits = cleanupReason === 'tab_cleanup'
-    ? { cleaned: cancelWaitsForTab(tabId, 'tab_cleanup'), orphaned: 0 }
-    : cleanupTabWaits(tabId, cleanupReason, { includeCdp: true, action: 'tab_cleanup' });
-  console.log('[PI-BROWSER] cleaned tab state', key, cleanupReason, { waits_cleaned: waits.cleaned, orphan_waits: waits.orphaned });
+  if (cleanupReason === 'tab_cleanup') cancelWaitsForTab(tabId, 'tab_cleanup');
+  else cleanupTabWaits(tabId, cleanupReason, { includeCdp: true, action: 'tab_cleanup' });
 }
 function canonicalPiBrowserCommand(cmd: unknown): string { const key = String(cmd || ''); return PI_BROWSER_PROTOCOL.canonicalCommand ? PI_BROWSER_PROTOCOL.canonicalCommand(key) : (PI_BROWSER_ALIASES[key] || key); }
 const PI_NATIVE_BROWSER_COMMANDS = PI_BROWSER_PROTOCOL.nativeCommandMap;
@@ -233,7 +231,6 @@ function normalizeBridgeResponse(resp: PiBridgeResponse, cmd?: unknown): PiBridg
   if (raw && typeof raw === 'object') {
     const rawRecord = raw as JsonRecord;
     if (rawRecord.name && details.name === undefined) details.name = rawRecord.name;
-    if (rawRecord.stack && details.stack === undefined) details.stack = rawRecord.stack;
     return bridgeError(String(resp.error_code || rawRecord.error_code || rawRecord.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), rawRecord.message || String(rawRecord.code || rawRecord.name || 'bridge command failed'), details);
   }
   return bridgeError(resp.error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, raw || 'bridge command failed', details);

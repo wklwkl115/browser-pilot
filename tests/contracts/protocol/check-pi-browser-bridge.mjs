@@ -146,6 +146,8 @@ const networkBridge = readBridgeBundle(["network_model.js", "network_events.js",
 const patternsBridge = readBridgeRuntimeFile("patterns.js");
 const hookDispatcher = readBridgeRuntimeFile("hook_dispatcher.js");
 const coreCommands = readBridgeRuntimeFile("core_commands.js");
+assert(!/raw:function\s+cdpRawError[\s\S]*?\bstack\b[\s\S]*?\n\/\//.test(cdpBridge), "cdp raw Error details must not include Error.stack in default failure responses");
+assert(!/raw:function\s+coreErrorDetails[\s\S]*?\bstack\b[\s\S]*?\n\/\//.test(coreCommands), "core command raw Error details must not include Error.stack in default failure responses");
 assert(bridgeInfo.includes("manifest.version_name || manifest.version"), "bridge_info must report display version_name when available");
 assert(/\b(?:url|text)\s*===\s*["']about:blank["']/.test(bridgeInfo), "bridge tab tracking must include about:blank tabs created before navigation");
 assert(/raw:\s*["']outer["']/.test(htmlBridge) && /fragment:\s*["']inner["']/.test(htmlBridge), "html.get must implement documented raw/fragment mode aliases");
@@ -214,6 +216,7 @@ assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.st
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "missing.command" })?.ok === false, "protocol validator must reject unknown commands");
 const runtime = readBridgeRuntimeFile("runtime.js");
+assert(!/raw:\s*if\s*\(rawRecord\.stack[\s\S]*?details\.stack/.test(runtime), "runtime normalization must not promote raw Error.stack into default failure details");
 assert(runtime.includes("PI_BROWSER_PROTOCOL.nativeCommandMap"), "runtime native command map must come from protocol schema");
 assert(runtime.includes("TAB_NOT_FOUND: 'TAB_NOT_FOUND'"), "runtime must expose a dedicated missing-tab error code for tab-scoped native commands");
 assert(runtime.includes("SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND'") && runtime.includes("INVALID_SELECTOR: 'INVALID_SELECTOR'"), "runtime must expose stable selector error codes for non-wait selector commands");
@@ -224,12 +227,16 @@ assert(hookDispatcher.includes(";(function PiBrowserHookDispatcher()") && hookDi
 assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDispatcher), "legacy hook dispatcher must remain self-contained until TODO 192 removes old runtime files");
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
+assert(coreCommands.includes("Promise.resolve(bridgeWakeProbe(true)).catch"), "bridge_wake must catch async probe rejection so offscreen startup races do not create unhandled promises");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "service-worker transport must retain generated bridge metadata without hardcoding the port");
 assert(offscreenTransport.includes("PI_BROWSER_BRIDGE_WS_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !offscreenTransport.includes("127.0.0.1:18765"), "offscreen transport must read generated bridge URLs and port range instead of hardcoding the port");
 assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "service-worker transport must stay focused on offscreen lifecycle and socket adapters");
 assert(offscreenTransport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "offscreen transport must stay focused on WebSocket lifecycle");
+assert(!/console\.log\s*\(/.test(transport) && !/console\.log\s*\(/.test(offscreenTransport), "transport lifecycle success paths must not print noisy console.log entries into Chrome stderr");
 assert(transport.includes("cleanupTransportSocket") && transport.includes("if (current !== socket) continue"), "transport.js must use identity-guarded socket cleanup");
 assert(transport.includes("ensureOffscreenDocument") && transport.includes("pi-browser-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must forward WebSocket frames through offscreen socket adapters");
+assert(transport.includes("isExpectedOffscreenTransientError") && transport.includes("receiving end does not exist") && transport.includes("offscreenTransportErrorMessage") && !transport.includes('console.warn("[PI-BROWSER-WS] offscreen send failed", error)'), "service-worker transport must not warn on expected offscreen transient failures or stringify offscreen send errors as raw objects");
+assert(transport.includes("runTransportTask") && !transport.includes("void probeAndConnectWS(true)") && !transport.includes(".then(syncOpenPorts)"), "service-worker transport fire-and-forget probes must be wrapped so offscreen startup races do not create unhandled promises");
 assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own real WebSocket sockets or keep itself warm with intervals");
 assert(offscreenTransport.includes("sockets.set(port, socket)") && offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own real WebSocket sockets and forward inbound frames");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
@@ -241,6 +248,8 @@ assert(tabSync.includes("safeSendTabsUpdate") && tabSync.includes("runTabSyncTas
 assert(!tabSync.includes("sendTabsUpdate();") && !tabSync.includes("void probeAndConnectWS(false);"), "tab_sync.js listeners must not fire async tasks without catch");
 assert(/chrome\.tabs\.onRemoved\.addListener\(\(tabId\)\s*=>\s*\{\s*cleanupPiBrowserTab\(tabId,\s*['"]tab_removed['"]\)/s.test(tabSync), "tab removal must route through unified tab cleanup before sending tabs_update");
 assert(runtime.includes("function cleanupPiBrowserTab(tabId, reason)") && runtime.includes("cleanupPiBrowserPageListenersForTab(tabId, cleanupReason)") && runtime.includes("cleanupNetworkRecorderTab(tabId, cleanupReason)") && runtime.includes("cleanupInterceptSessionTab(tabId, cleanupReason)") && runtime.includes("cleanupTabWaits(tabId, cleanupReason, { includeCdp: true") && runtime.includes("cancelWaitsForTab(tabId, 'tab_cleanup')"), "cleanupPiBrowserTab must release page listeners, queues, waits, interception state, CDP refs, and network recorders for removed tabs");
+assert(!runtime.includes("cleaned tab state"), "cleanupPiBrowserTab normal teardown must not print noisy success logs into Chrome stderr");
+assert(!cdpBridge.includes("released persistent sessions for tab"), "CDP tab cleanup must return release counts without printing noisy success logs into Chrome stderr");
 assert(
 	/function\s+cleanupTabWaits\s*\(\s*tabId\s*,\s*reason\s*,\s*options(?:\s*=\s*\{\})?\s*\)/.test(waitBridge)
 	&& waitBridge.includes("cleanupPiBrowserCdpTab(tabId, cleanupReason)")
@@ -723,6 +732,28 @@ async function testTransportMultiPortFanout() {
 
 await testTransportMultiPortFanout();
 
+function testTabSyncErrorLoggingIsReadableAndQuietForShutdown() {
+	const logs = [];
+	const sandbox = {
+		console: { debug(message) { logs.push(String(message)); } },
+		WebSocket: { OPEN: 1 },
+		chrome: { tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener() {} }, onCreated: { addListener() {} } } },
+		cleanupPiBrowserTab() {},
+		isScriptable: () => true,
+		piBridgeInfo: () => ({}),
+	};
+	vm.runInNewContext(tabSync, sandbox, { filename: "tab_sync.js" });
+	sandbox.logTabSyncError("tabs.onRemoved", { message: "fixture boom" });
+	assert(logs.length === 1, "tab sync unexpected errors must still be logged");
+	assert(logs[0].includes("reason=tabs.onRemoved") && logs[0].includes("fixture boom"), "tab sync error log must be a readable single-string diagnostic");
+	assert(!logs[0].includes("[object Object]"), "tab sync error log must not stringify object payloads as [object Object]");
+	sandbox.logTabSyncError("tabs.onRemoved", { message: "The browser is shutting down." });
+	sandbox.logTabSyncError("tabs.onUpdated", { message: "Extension context invalidated." });
+	assert(logs.length === 1, "tab sync shutdown/context invalidation errors are expected during browser teardown and must stay quiet");
+}
+
+testTabSyncErrorLoggingIsReadableAndQuietForShutdown();
+
 async function testHtmlGetSliceUtf8IsSelfContained() {
 	const bridgeSandbox = {
 		TextEncoder,
@@ -821,20 +852,20 @@ async function testTabSyncAsyncErrorsAreCaught() {
 	queryImpl = async () => { throw new Error("query boom"); };
 	listeners.updated(1, { status: "complete" });
 	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onUpdated" && entry[1]?.error === "query boom"), "tab_sync must catch tabs.query rejection");
+	assert(debugLogs.some((entry) => String(entry[0]).includes("reason=tabs.onUpdated") && String(entry[0]).includes("query boom")), "tab_sync must catch tabs.query rejection");
 	debugLogs.length = 0;
 	queryImpl = async () => [{ id: 2, url: "https://example.test/ok", title: "OK", active: true, windowId: 1 }];
 	socket = { readyState: 1, send() { throw new Error("send boom"); } };
 	listeners.removed(22);
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert(cleanupTabId === 22, "tab_sync must still clean removed tabs");
-	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onRemoved" && entry[1]?.error === "send boom"), "tab_sync must catch ws.send exceptions");
+	assert(debugLogs.some((entry) => String(entry[0]).includes("reason=tabs.onRemoved") && String(entry[0]).includes("send boom")), "tab_sync must catch ws.send exceptions");
 	debugLogs.length = 0;
 	probeImpl = async () => { throw new Error("probe boom"); };
 	socket = { readyState: 1, send() {} };
 	listeners.created();
 	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert(debugLogs.some((entry) => entry[1]?.reason === "tabs.onCreated.probe" && entry[1]?.error === "probe boom"), "tab_sync must catch probe rejection from lifecycle hooks");
+	assert(debugLogs.some((entry) => String(entry[0]).includes("reason=tabs.onCreated.probe") && String(entry[0]).includes("probe boom")), "tab_sync must catch probe rejection from lifecycle hooks");
 }
 
 await testTabSyncAsyncErrorsAreCaught();
@@ -1382,6 +1413,9 @@ await testRouterNativeWsErrorFrames();
 // (the path browser_observe uses reliably on the same page) must still run within the caller timeout.
 async function testExecHangingScriptFallsBackToCdpWithinBudget() {
 	const execBridge = readBridgeRuntimeFile("exec.js");
+	const execSource = read("bridge_src/service_worker/exec.ts");
+	assert(!/console\.(?:log|debug|warn|error)\s*\(/.test(execBridge), "exec.js must return structured result/error frames instead of writing page execution details to Chrome stderr");
+	assert(execSource.includes("await (0, eval)(s)") && !execSource.includes("await eval(s)"), "executeScript wrapper must use indirect eval so esbuild does not treat the service-worker bundle as direct-eval scoped");
 	const sent = [];
 	let cdpSendArgs;
 	const sandbox = {

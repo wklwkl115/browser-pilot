@@ -70,7 +70,7 @@ Each eval should define:
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 
-`manifest.json` lists the eval suite for manual execution or a future runner. It is intentionally inert: it must not start a browser, open network sockets, or run scanners. Use `manual-result-template.json` to record hand-run evidence.
+`manifest.json` lists the eval suite for manual execution and for the opt-in runner. The manifest itself is intentionally inert: it must not start a browser, open network sockets, or run scanners. Use `manual-result-template.json` to record hand-run evidence.
 
 `runner.mjs` is the explicit opt-in browser workflow runner. It starts a local-only fixture server and isolated browser only when invoked with `--fixture-server`:
 

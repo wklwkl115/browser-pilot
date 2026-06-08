@@ -1,8 +1,9 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, type Stats } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { tryJson } from "../utils/json.js";
+import { getJsonPath } from "../utils/jsonPath.js";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params.js";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex.js";
 import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy.js";
@@ -16,6 +17,7 @@ export const MAX_MULTI_ARTIFACT_MATCHES_PER_FILE = 20;
 export const MAX_MULTI_ARTIFACT_TOTAL_MATCHES = 100;
 
 export type ArtifactReaderErrorCode =
+	| "ARTIFACT_NOT_FOUND"
 	| "ARTIFACT_PATH_REQUIRED"
 	| "ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT"
 	| "ARTIFACT_SEARCH_QUERY_REQUIRED"
@@ -459,30 +461,6 @@ async function sampleText(absPath: string, fileSize: number, params: BrowserArti
 	};
 }
 
-function parseJsonPath(jsonPath: string): Array<string | number> {
-	const text = jsonPath.trim();
-	if (!text || text === "$") return [];
-	const normalized = text.startsWith("$.") ? text.slice(2) : text.startsWith("$") ? text.slice(1) : text;
-	const tokens: Array<string | number> = [];
-	for (const part of normalized.split(".")) {
-		if (!part) continue;
-		const re = /([^[]+)|\[(\d+)\]/g;
-		let match: RegExpExecArray | null;
-		while ((match = re.exec(part))) tokens.push(match[1] !== undefined ? match[1] : Number(match[2]));
-	}
-	return tokens;
-}
-
-function getJsonPath(value: unknown, jsonPath: string | undefined): { exists: boolean; value: unknown } {
-	let current = value;
-	for (const token of parseJsonPath(jsonPath || "$")) {
-		if (current === null || current === undefined || typeof current !== "object") return { exists: false, value: undefined };
-		if (!Object.prototype.hasOwnProperty.call(current, token)) return { exists: false, value: undefined };
-		current = (current as Record<string | number, unknown>)[token];
-	}
-	return { exists: true, value: current };
-}
-
 const JSON_INLINE_STRING_CHARS = 800;
 const JSON_STRING_WINDOW_MAX_CHARS = 100_000;
 
@@ -706,6 +684,35 @@ async function searchMultipleArtifacts(params: BrowserArtifactParams, ctx?: Brow
 	};
 }
 
+function publicRequestedArtifactPath(requested: unknown): Record<string, unknown> {
+	const text = String(requested || "").trim();
+	if (!text) return {};
+	return {
+		requested: path.isAbsolute(text) ? "<absolute-path>" : text,
+		...(path.isAbsolute(text) ? { requestedPathKind: "absolute" } : {}),
+	};
+}
+
+async function statArtifact(absPath: string, requested: unknown): Promise<Stats> {
+	try {
+		return await stat(absPath);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException)?.code;
+		if (code === "ENOENT" || code === "ENOTDIR") {
+			throw new ArtifactReaderError("ARTIFACT_NOT_FOUND", "Artifact path was not found", {
+				...publicRequestedArtifactPath(requested),
+				recovery: {
+					nextActions: [
+						"pi-browser artifact --path <saved.path> --mode json --json-path data --json",
+						"pi-browser observe --mode scan --json",
+					],
+				},
+			});
+		}
+		throw error;
+	}
+}
+
 export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: BrowserArtifactContext): Promise<BrowserArtifactReadResult> {
 	// H2: when --json-path (or --pick) is given without --mode, promote to json mode automatically.
 	// Without this, --json-path was silently ignored and the full file was returned as text — agents
@@ -740,7 +747,7 @@ export async function readBrowserArtifact(params: BrowserArtifactParams, ctx?: B
 		return redactArtifactResult(await searchMultipleArtifacts(params, ctx), redact);
 	}
 	const absPath = resolveInputPath(ctx, params.path);
-	const info = await stat(absPath);
+	const info = await statArtifact(absPath, params.path);
 	let result: BrowserArtifactReadResult;
 	if (mode === "json") {
 		if (info.size > MAX_ARTIFACT_READ_BYTES) {

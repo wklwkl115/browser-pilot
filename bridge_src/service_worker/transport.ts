@@ -7,17 +7,8 @@ import { runStartupRecovery } from "./state_store";
 import { installPiBrowserTabSync } from "./tab_sync";
 import type { JsonRecord, PiBridgeWebSocketLike, PiBridgeWsEnvelope, PiChromeAlarm, PiChromeTab } from "./types";
 
-type OffscreenMessage = JsonRecord & {
-  type?: string;
-  port?: number;
-  data?: unknown;
-  resetDelay?: boolean;
-};
-
-type SocketAdapter = PiBridgeWebSocketLike & {
-  port: number;
-  readyState: number;
-};
+type OffscreenMessage = JsonRecord & { type?: string; port?: number; data?: unknown; resetDelay?: boolean };
+type SocketAdapter = PiBridgeWebSocketLike & { port: number; readyState: number };
 
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 const SOCKET_OPEN = 1;
@@ -76,6 +67,20 @@ async function sendOffscreenMessage(message: OffscreenMessage): Promise<unknown>
   return await chrome.runtime.sendMessage(message);
 }
 
+function offscreenTransportErrorMessage(error: unknown): string {
+  return error && typeof error === "object" && "message" in error ? String((error as { message?: unknown }).message || error) : String(error);
+}
+
+function isExpectedOffscreenTransientError(message: string): boolean { return /browser is shutting down|extension context invalidated|context invalidated|receiving end does not exist/i.test(message); }
+
+function logTransportAsyncError(reason: string, error: unknown): void {
+  const message = offscreenTransportErrorMessage(error);
+  if (isExpectedOffscreenTransientError(message)) return;
+  console.warn(`[PI-BROWSER-WS] ${reason} failed`, message);
+}
+
+function runTransportTask(reason: string, task: () => Promise<unknown>): void { void task().catch((error: unknown) => logTransportAsyncError(reason, error)); }
+
 function ensureSocketAdapter(port: number): SocketAdapter {
   const current = sockets.get(port);
   if (current) {
@@ -86,7 +91,11 @@ function ensureSocketAdapter(port: number): SocketAdapter {
     port,
     readyState: SOCKET_OPEN,
     send(data: string) {
-      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).catch((error: unknown) => console.warn("[PI-BROWSER-WS] offscreen send failed", error));
+      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).catch((error: unknown) => {
+        const message = offscreenTransportErrorMessage(error);
+        if (isExpectedOffscreenTransientError(message)) return;
+        console.warn("[PI-BROWSER-WS] offscreen send failed", message);
+      });
     },
   };
   sockets.set(port, socket);
@@ -106,7 +115,7 @@ function getPiBrowserTransportSockets(): PiBridgeWebSocketLike[] {
   return Array.from(sockets.values()).filter((socket) => socket.readyState === SOCKET_OPEN);
 }
 
-function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, reason = ""): boolean {
+function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, _reason = ""): boolean {
   if (!socket) return false;
   let removed = false;
   for (const [port, current] of sockets.entries()) {
@@ -114,7 +123,6 @@ function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, reason = "
     current.readyState = SOCKET_CLOSED;
     sockets.delete(port);
     removed = true;
-    console.log("[PI-BROWSER-WS] Disconnected", port, reason || "");
   }
   return removed;
 }
@@ -129,7 +137,7 @@ function bumpProbeBackoff(): void {
 }
 
 function scheduleKeepalive(): void {
-  void sendOffscreenMessage({ type: "pi-browser-offscreen-status" }).catch((error: unknown) => console.debug("[PI-BROWSER-WS] offscreen status failed", error));
+  runTransportTask("offscreen status", async () => { await sendOffscreenMessage({ type: "pi-browser-offscreen-status" }); });
 }
 
 async function isServerAlive(): Promise<boolean> {
@@ -148,7 +156,7 @@ async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
 }
 
 function connectWS(port: number = PI_BROWSER_BRIDGE_PORT): void {
-  void sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false }).then(syncOpenPorts);
+  runTransportTask("offscreen probe", async () => { await syncOpenPorts(await sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false })); });
 }
 
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
@@ -163,7 +171,6 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
     bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
     tabs: tabs.map((tab: PiChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId })),
   }));
-  console.log("[PI-BROWSER-WS] Sent ext_ready with", tabs.length, "tabs to", port);
 }
 
 async function handleOffscreenConnected(port: number): Promise<void> {
@@ -204,15 +211,14 @@ function installPiBrowserTransport(): boolean {
     return true;
   });
   chrome.runtime.onInstalled.addListener(() => {
-    console.log("Pi Browser Bridge installed");
     installCspBypassRule();
-    void probeAndConnectWS(true);
+    runTransportTask("install probe", async () => { await probeAndConnectWS(true); });
   });
   installCspBypassRule();
-  chrome.alarms.onAlarm.addListener(handlePiBrowserTransportAlarm);
+  chrome.alarms.onAlarm.addListener((alarm: PiChromeAlarm) => { runTransportTask("transport alarm", async () => { await handlePiBrowserTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
-  void probeAndConnectWS(true);
-  chrome.runtime.onStartup.addListener(() => { void probeAndConnectWS(true); });
+  runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
+  chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
   piBrowserTransportInstalled = true;
   return true;

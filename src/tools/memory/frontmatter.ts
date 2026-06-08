@@ -1,6 +1,7 @@
 import yaml from "js-yaml";
 import { createCodedError } from "../../utils/codedError.js";
 import { isRecord } from "../../utils/records.js";
+import { normalizeMemoryEntryId } from "./ids.js";
 import type { MemoryEntry, MemoryFrontmatter } from "./types.js";
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
@@ -36,7 +37,7 @@ export function parseMemoryEntry(text: string, relPath: string): MemoryEntry {
 	const evidenceRefs = Array.isArray(frontmatter.evidenceRefs) ? frontmatter.evidenceRefs as MemoryEntry["evidenceRefs"] : [];
 	return {
 		schemaVersion: 1,
-		id: String(frontmatter.id || "").trim(),
+		id: normalizeMemoryEntryId(frontmatter.id),
 		title: String(frontmatter.title || "").trim(),
 		kind: frontmatter.kind === "fact" ? "fact" : "sop",
 		triggers,

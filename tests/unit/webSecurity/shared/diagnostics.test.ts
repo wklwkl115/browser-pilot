@@ -15,6 +15,7 @@ test("webSecurityToolError wraps and redacts nested diagnostics", () => {
 	cause.details = {
 		cookie: "sid=abc",
 		nested: { authorization: "Bearer secret", safe: "ok" },
+		recovery: { nextActions: ["retry with Authorization: Bearer secret", "retry token=web-token"] },
 		stack: "should-be-removed",
 	};
 	const wrapped = webSecurityToolError(cause, { toolName: "browser_sqlmap_bridge", command: "web.sqlmap_bridge" }) as Error & { code?: string; details?: Record<string, unknown> };
@@ -22,6 +23,8 @@ test("webSecurityToolError wraps and redacts nested diagnostics", () => {
 	assert.equal(wrapped.message.includes("sid=abc"), false);
 	assert.equal(JSON.stringify(wrapped.details).includes("sid=abc"), false);
 	assert.equal(JSON.stringify(wrapped.details).includes("Bearer secret"), false);
+	assert.equal(JSON.stringify(wrapped.details).includes("web-token"), false);
+	assert.equal(JSON.stringify(wrapped.details).includes("token=[redacted]"), true);
 	assert.equal(JSON.stringify(wrapped.details).includes("should-be-removed"), false);
 	assert.equal(wrapped.details?.domain, "webSecurity");
 	assert.equal(wrapped.details?.toolName, "browser_sqlmap_bridge");

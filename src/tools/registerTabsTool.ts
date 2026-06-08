@@ -71,8 +71,29 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "snapshot") {
 					if (typeof params.snapshotId === "string" && params.snapshotId.trim()) {
 						const snapshot = server.getObservationSnapshot(params.snapshotId);
-						if (!snapshot) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId was not found", { snapshotId: params.snapshotId, reason: "snapshot_not_found" });
-						if (snapshot.expired && params.allowExpired !== true) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId is stale; read the saved artifact explicitly or pass allowExpired:true", { snapshotId: snapshot.snapshotId, invalidatedReason: snapshot.invalidatedReason, saved: snapshot.saved, reason: "snapshot_expired" });
+						if (!snapshot) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId was not found", {
+							snapshotId: params.snapshotId,
+							reason: "snapshot_not_found",
+							recovery: {
+								nextActions: [
+									"pi-browser observe --mode scan --json",
+									"pi-browser tabs --action snapshot --json",
+								],
+							},
+						});
+						if (snapshot.expired && params.allowExpired !== true) throw tabsToolError("INVALID_RULE", "browser_tabs snapshotId is stale; read the saved artifact explicitly or pass allowExpired:true", {
+							snapshotId: snapshot.snapshotId,
+							invalidatedReason: snapshot.invalidatedReason,
+							saved: snapshot.saved,
+							reason: "snapshot_expired",
+							recovery: {
+								nextActions: [
+									"pi-browser tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
+									"pi-browser artifact --path <saved.path> --mode json --json-path data --json",
+									"pi-browser observe --mode scan --json",
+								],
+							},
+						});
 						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, { action }, maxChars);
 					}
 					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, { action }, maxChars);

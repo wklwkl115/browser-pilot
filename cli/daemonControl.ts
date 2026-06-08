@@ -15,8 +15,8 @@
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { daemonVersion, packageRoot } from "./packageInfo.js";
 
@@ -36,11 +36,15 @@ export interface DaemonStatus {
 	running?: boolean;
 	extensionConnected?: boolean;
 	tabs?: unknown[];
+	tabCount?: number;
+	activeTab?: unknown;
+	health?: Record<string, unknown>;
 	tools?: number;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_CONTROL_RESPONSE_BYTES = 1024 * 1024;
+const START_LOCK_STALE_MS = 30_000;
 
 /** User-local state root. Overridable for tests/isolation. */
 export function stateDir(): string {
@@ -49,6 +53,10 @@ export function stateDir(): string {
 
 export function lockfilePath(): string {
 	return path.join(stateDir(), "browser-daemon.json");
+}
+
+export function startLockfilePath(): string {
+	return path.join(stateDir(), "browser-daemon.starting.json");
 }
 
 export function readLockfile(): DaemonInfo | undefined {
@@ -73,6 +81,48 @@ export function removeLockfile(): void {
 		if (existsSync(lockfilePath())) rmSync(lockfilePath(), { force: true });
 	} catch {
 		/* best-effort */
+	}
+}
+
+function readStartLock(): { pid?: number; acquiredAt?: string } | undefined {
+	try {
+		const parsed = JSON.parse(readFileSync(startLockfilePath(), "utf8")) as Record<string, unknown>;
+		return {
+			pid: typeof parsed.pid === "number" ? parsed.pid : undefined,
+			acquiredAt: typeof parsed.acquiredAt === "string" ? parsed.acquiredAt : undefined,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+function isStartLockStale(): boolean {
+	const lock = readStartLock();
+	if (!lock) return true;
+	if (typeof lock.pid === "number" && !isPidAlive(lock.pid)) return true;
+	const acquiredAt = Date.parse(String(lock.acquiredAt || ""));
+	return !Number.isFinite(acquiredAt) || Date.now() - acquiredAt > START_LOCK_STALE_MS;
+}
+
+function tryAcquireStartLock(): { release: () => void } | undefined {
+	mkdirSync(path.dirname(startLockfilePath()), { recursive: true });
+	try {
+		const fd = openSync(startLockfilePath(), "wx");
+		try {
+			writeFileSync(fd, `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`, "utf8");
+		} finally {
+			closeSync(fd);
+		}
+		return { release: () => rmSync(startLockfilePath(), { force: true }) };
+	} catch {
+		if (isStartLockStale()) {
+			try {
+				rmSync(startLockfilePath(), { force: true });
+			} catch {
+				// Another process may have removed or replaced the stale marker first.
+			}
+		}
+		return undefined;
 	}
 }
 
@@ -163,9 +213,9 @@ export function controlRequest(
 }
 
 /** GET /status; undefined if the daemon is unreachable. */
-export async function pingStatus(info: DaemonInfo, timeoutMs = 1_500): Promise<DaemonStatus | undefined> {
+export async function pingStatus(info: DaemonInfo, timeoutMs = 1_500, opts: { tabs?: boolean } = {}): Promise<DaemonStatus | undefined> {
 	try {
-		const { status, json } = await controlRequest(info, "GET", "/status", undefined, timeoutMs);
+		const { status, json } = await controlRequest(info, "GET", opts.tabs ? "/status?tabs=1" : "/status", undefined, timeoutMs);
 		if (status === 200 && json) return json as unknown as DaemonStatus;
 	} catch {
 		/* unreachable */
@@ -174,10 +224,10 @@ export async function pingStatus(info: DaemonInfo, timeoutMs = 1_500): Promise<D
 }
 
 /** Read the lockfile and confirm the daemon answers. Cleans up a lockfile whose pid is dead. */
-export async function findDaemon(): Promise<{ info: DaemonInfo; status: DaemonStatus } | undefined> {
+export async function findDaemon(opts: { tabs?: boolean } = {}): Promise<{ info: DaemonInfo; status: DaemonStatus } | undefined> {
 	const info = readLockfile();
 	if (!info) return undefined;
-	const status = await pingStatus(info);
+	const status = await pingStatus(info, 1_500, opts);
 	if (status) return { info, status };
 	// Not answering. Only reclaim the lockfile if the process is gone — a live but
 	// slow-starting daemon must not have its lockfile yanked out from under it.
@@ -261,26 +311,44 @@ export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Prom
 		if (isDaemonVersionCurrent(found.info)) return found.info;
 		await stopDaemon();
 	}
-	const startCommand = resolveDaemonStartCommand();
-	const child = spawn(startCommand.command, startCommand.args, {
-		detached: true,
-		stdio: "ignore",
-		// On Windows a detached child is given its own console window; hide it so the
-		// background daemon runs invisibly (the process still shows in Task Manager —
-		// it is a long-lived singleton by design). No-op on POSIX.
-		windowsHide: true,
-		...(startCommand.cwd ? { cwd: startCommand.cwd } : {}),
-		env: daemonSpawnEnv(),
-	});
-	child.unref();
 	const deadline = Date.now() + (opts.startTimeoutMs ?? 10_000);
-	while (Date.now() < deadline) {
-		await delay(150);
+	let lock = tryAcquireStartLock();
+	while (!lock && Date.now() < deadline) {
+		await delay(100);
 		const ready = await findDaemon();
 		if (ready && isDaemonVersionCurrent(ready.info)) return ready.info;
-		if (child.exitCode !== null && child.exitCode !== 0) break;
+		lock = tryAcquireStartLock();
 	}
-	throw new Error("pi-browser daemon did not become ready in time");
+	if (!lock) throw new Error("pi-browser daemon start lock timeout");
+	let child: ChildProcess | undefined;
+	try {
+		const again = await findDaemon();
+		if (again) {
+			if (isDaemonVersionCurrent(again.info)) return again.info;
+			await stopDaemon();
+		}
+		const startCommand = resolveDaemonStartCommand();
+		child = spawn(startCommand.command, startCommand.args, {
+			detached: true,
+			stdio: "ignore",
+			// On Windows a detached child is given its own console window; hide it so the
+			// background daemon runs invisibly (the process still shows in Task Manager —
+			// it is a long-lived singleton by design). No-op on POSIX.
+			windowsHide: true,
+			...(startCommand.cwd ? { cwd: startCommand.cwd } : {}),
+			env: daemonSpawnEnv(),
+		});
+		child.unref();
+		while (Date.now() < deadline) {
+			await delay(150);
+			const ready = await findDaemon();
+			if (ready && isDaemonVersionCurrent(ready.info)) return ready.info;
+			if (child.exitCode !== null && child.exitCode !== 0) break;
+		}
+		throw new Error("pi-browser daemon did not become ready in time");
+	} finally {
+		lock.release();
+	}
 }
 
 async function waitForPidDeath(pid: number, ms: number): Promise<boolean> {

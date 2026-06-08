@@ -88,7 +88,7 @@ Delivered:
 - `manifest.json` for suite metadata.
 - `manual-result-template.json` and `result-schema.json` for compact manual result records.
 - `results/README.md` for optional hand-run result storage rules.
-- `future-runner.md` to freeze opt-in runner/server boundaries without implementing them.
+- `future-runner.md` to freeze opt-in runner/server boundaries before implementation; the opt-in runner landed later and keeps those boundaries.
 - `tests/contracts/tools/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
 - Package file coverage for `evals/`.
 

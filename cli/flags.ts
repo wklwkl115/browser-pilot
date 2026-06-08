@@ -19,6 +19,7 @@ export interface FlagSpec {
 	choices?: string[];
 	description?: string;
 	required: boolean;
+	split?: "comma";
 }
 
 export interface GlobalFlags {
@@ -67,7 +68,7 @@ export interface ParsedArgs {
 	params: Record<string, unknown>;
 	globals: GlobalFlags;
 }
-export type ParseOutcome = { ok: true; value: ParsedArgs } | { ok: false; error: string };
+export type ParseOutcome = { ok: true; value: ParsedArgs } | { ok: false; error: string; globals: GlobalFlags };
 
 export function wantsJson(argv: string[]): boolean {
 	let json = false;
@@ -104,6 +105,24 @@ function parseArrayValue(text: string): unknown[] {
 		return parsed;
 	}
 	return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+export function resolveParamValueReferences(
+	specs: FlagSpec[],
+	raw: Record<string, unknown>,
+	cwd = process.cwd(),
+): { ok: true; params: Record<string, unknown> } | { ok: false; error: string } {
+	const byName = new Map(specs.map((spec) => [spec.name, spec]));
+	const params: Record<string, unknown> = { ...raw };
+	for (const [name, value] of Object.entries(raw)) {
+		if (typeof value !== "string" || (value !== "-" && !value.startsWith("@"))) continue;
+		const spec = byName.get(name);
+		if (!spec || !["json", "array", "string"].includes(spec.kind)) continue;
+		const parsedValue = parseFlagValue(spec, value, cwd);
+		if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+		params[name] = parsedValue.value;
+	}
+	return { ok: true, params };
 }
 
 function parseFlagValue(spec: FlagSpec, value: string, cwd = process.cwd()): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -190,12 +209,13 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 	for (const s of specs) byFlag.set(s.flag, s);
 	const raw: Record<string, unknown> = {};
 	const globals: GlobalFlags = { json: false, text: false, help: false };
+	const fail = (error: string): ParseOutcome => ({ ok: false, error, globals: { ...globals } });
 	for (let i = 0; i < argv.length; i += 1) {
 		let token = argv[i];
 		if (token === "--json") { globals.json = true; globals.text = false; continue; }
 		if (token === "--text") { globals.text = true; globals.json = false; continue; }
 		if (token === "--help" || token === "-h") { globals.help = true; continue; }
-		if (!token.startsWith("--")) return { ok: false, error: `unexpected argument "${token}" (expected --flags)` };
+		if (!token.startsWith("--")) return fail(`unexpected argument "${token}" (expected --flags)`);
 		let inlineValue: string | undefined;
 		const eq = token.indexOf("=");
 		if (eq >= 0) { inlineValue = token.slice(eq + 1); token = token.slice(0, eq); }
@@ -209,28 +229,29 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 			const suggestion = suggestFlag(token, flags);
 			const hint = ABSENT_FLAG_HINTS[token];
 			const guidance = hint ? `${hint}. ` : suggestion ? `did you mean "${suggestion}"? ` : "";
-			return { ok: false, error: `unknown flag "${token}"; ${guidance}accepted: ${flags.join(", ") || "(none)"}` };
+			return fail(`unknown flag "${token}"; ${guidance}accepted: ${flags.join(", ") || "(none)"}`);
 		}
 		if (spec.kind === "boolean") { raw[spec.name] = inlineValue === undefined ? true : inlineValue !== "false"; continue; }
 		const value = inlineValue !== undefined ? inlineValue : argv[i += 1];
-		if (value === undefined) return { ok: false, error: `flag "${spec.flag}" needs a value` };
+		if (value === undefined) return fail(`flag "${spec.flag}" needs a value`);
 		if (spec.kind === "enum" && spec.choices && !spec.choices.includes(value)) {
-			return { ok: false, error: `flag "${spec.flag}" must be one of: ${spec.choices.join(", ")}` };
+			return fail(`flag "${spec.flag}" must be one of: ${spec.choices.join(", ")}`);
 		}
 		if (spec.kind === "array") {
-			const arr = (raw[spec.name] as string[] | undefined) ?? [];
+			const arr = (raw[spec.name] as unknown[] | undefined) ?? [];
 			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
-			if (Array.isArray(parsedValue.value) && (value === "-" || value.startsWith("@"))) arr.push(...parsedValue.value.map((v) => String(v)));
+			if (!parsedValue.ok) return fail(parsedValue.error);
+			if (Array.isArray(parsedValue.value) && (value === "-" || value.startsWith("@"))) arr.push(...parsedValue.value);
+			else if (spec.split === "comma") arr.push(...String(parsedValue.value).split(",").map((item) => item.trim()).filter(Boolean));
 			else arr.push(String(parsedValue.value));
 			raw[spec.name] = arr;
 		} else if (spec.kind === "json") {
 			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+			if (!parsedValue.ok) return fail(parsedValue.error);
 			raw[spec.name] = parsedValue.value;
 		} else {
 			const parsedValue = parseFlagValue(spec, value, cwd);
-			if (!parsedValue.ok) return { ok: false, error: parsedValue.error };
+			if (!parsedValue.ok) return fail(parsedValue.error);
 			raw[spec.name] = parsedValue.value; // string/number/enum — validateToolArgs coerces below
 		}
 	}

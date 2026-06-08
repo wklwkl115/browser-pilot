@@ -87,7 +87,6 @@ function cleanupTransportSocket(socket: WebSocket | null, reason = ""): boolean 
     sockets.delete(port);
     removed = true;
     post({ type: "pi-browser-offscreen-disconnected", port, data: { reason } });
-    console.log("[PI-BROWSER-OFFSCREEN] Disconnected", port, reason);
   }
   if (!removed) return false;
   bumpProbeBackoff();
@@ -100,7 +99,6 @@ function connectWS(port: number): void {
   if (current && current.readyState <= WebSocket.OPEN) return;
   sockets.delete(port);
   const url = wsUrlForPort(port);
-  console.log("[PI-BROWSER-OFFSCREEN] Connecting to", url);
   let socket: WebSocket;
   try {
     socket = new WebSocket(url);
@@ -116,7 +114,6 @@ function connectWS(port: number): void {
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
     post({ type: "pi-browser-offscreen-connected", port, data: { openPorts: openPorts() } });
     scheduleKeepalive();
-    console.log("[PI-BROWSER-OFFSCREEN] Connected", port);
   };
   socket.onmessage = (event: MessageEvent) => {
     if (sockets.get(port) !== socket) return;

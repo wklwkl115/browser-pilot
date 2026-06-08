@@ -12,6 +12,7 @@ export class BrowserTabSessionRouter {
 	readonly sessions = new Map<string, BrowserTabSession>();
 	private readonly clients: BrowserBridgeClientRegistry;
 	private readonly browserSessions: BrowserSessionRegistry;
+	private lastTabSyncAtValue?: number;
 
 	constructor(clients: BrowserBridgeClientRegistry, browserSessions: BrowserSessionRegistry) {
 		this.clients = clients;
@@ -22,8 +23,13 @@ export class BrowserTabSessionRouter {
 		return this.browserSession().selectionVersion;
 	}
 
+	get lastTabSyncAt(): number | undefined {
+		return this.lastTabSyncAtValue;
+	}
+
 	clear(): void {
 		this.sessions.clear();
+		this.lastTabSyncAtValue = undefined;
 		const session = this.browserSession();
 		this.setDefaultSessionId(session, undefined);
 		this.setLatestSessionId(session, undefined);
@@ -77,6 +83,7 @@ export class BrowserTabSessionRouter {
 
 	updateTabs(rawTabs: unknown[], ws: WebSocket): void {
 		const now = Date.now();
+		this.lastTabSyncAtValue = now;
 		const current = new Set<string>();
 		const browserId = this.clients.browserIdForClient(ws);
 		for (const raw of rawTabs) {

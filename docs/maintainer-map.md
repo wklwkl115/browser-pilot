@@ -9,8 +9,7 @@
 1. `index.ts`
    - 扩展源码入口（Pi runtime 通过 `pi.extensions:["./index.ts"]` 加载）
    - 启动 `BrowserBridgeServer`
-   - 解析 capability profile
-   - 注册 Pi commands 与 `browser_*` tools
+   - 注册 Pi commands 与 22 个 always-on `browser_*` tools
    - 发布产物入口对应 `dist/index.js`
 
 2. `src/driver/*`
@@ -25,7 +24,7 @@
    - `BrowserObservationSnapshotRegistry.ts` / `BrowserOperationRegistry.ts`：snapshot / operation metadata
 
 3. `src/tools/toolRegistry.ts` → `src/tools/registerTools.ts` → `src/tools/distillerRegistry.ts`
-   - `toolRegistry.ts`：唯一工具注册顺序与 profile gating
+   - `toolRegistry.ts`：唯一工具注册顺序与 core/security 分组元数据；无 profile gating
    - `registerTools.ts`：只遍历 registrar，不放领域逻辑
    - `distillerRegistry.ts`：fallback 摘要分发注册表；runtime 与 direct-import contract 共用初始化路径
 

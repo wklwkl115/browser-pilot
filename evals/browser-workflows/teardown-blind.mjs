@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { rm, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stopProcessTree } from "../../tests/support/browserSmokeEnv.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const stagePath = path.join(root, ".pi", "browser-artifacts", "eval-blind", "stage.json");
@@ -18,9 +19,7 @@ const cliBin = path.join(root, "dist", "cli", "bin.js");
 const keepTemp = process.argv.includes("--keep-temp");
 
 function killPid(pid) {
-	if (!pid) return;
-	if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
-	else { try { process.kill(pid, "SIGTERM"); } catch {} }
+	stopProcessTree(pid);
 }
 
 // taskkill /T on the tracked launch pid misses the detached browser's re-parented renderer/GPU/utility
@@ -65,7 +64,7 @@ async function main() {
 		}
 	}
 	await unlink(stagePath).catch(() => {});
-	console.log(JSON.stringify({ ok: true, stoppedDaemonStateDir: stage.stateDir, killedPids: [stage.browserPid, stage.daemonPid, stage.launchPid].filter(Boolean), removed: keepTemp ? "kept" : removed }, null, 2));
+	console.log(JSON.stringify({ ok: true, stageState: stage.stageState, stoppedDaemonStateDir: stage.stateDir, killedPids: [stage.browserPid, stage.daemonPid, stage.launchPid].filter(Boolean), removed: keepTemp ? "kept" : removed }, null, 2));
 }
 
 main().catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });

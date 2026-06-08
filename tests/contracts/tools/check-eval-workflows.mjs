@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { EXTENSION_PORT_PATCH_BUNDLES, patchExtensionDistPort } from "../../support/patchExtensionPort.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const evalRoot = path.join(root, "evals", "browser-workflows");
@@ -49,7 +51,7 @@ const specFiles = [
 	"30-abml-internal-routing-evidence.md",
 ];
 
-for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "runner.mjs", "result-schema.json", "results/README.md", ...specFiles]) {
+for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "runner.mjs", "result-schema.json", "results/README.md", "blind-agent-prompt.md", ...specFiles]) {
 	assert(existsSync(path.join(evalRoot, file)), `missing browser workflow eval file: ${file}`);
 }
 assert(existsSync(path.join(root, "WORKSTREAMS_A_E_SUMMARY.md")), "missing Workstreams A-E completion summary");
@@ -60,12 +62,22 @@ for (const requiredText of ["Require an explicit opt-in flag", "Bind to `127.0.0
 }
 
 const runnerText = read(path.join("evals", "browser-workflows", "runner.mjs"));
+const launchBlindText = read(path.join("evals", "browser-workflows", "launch-blind.mjs"));
+const teardownBlindText = read(path.join("evals", "browser-workflows", "teardown-blind.mjs"));
+const blindAgentPromptText = read(path.join("evals", "browser-workflows", "blind-agent-prompt.md"));
+const blindEvalSkillText = read(path.join("skills", "pi-browser-blind-eval", "SKILL.md"));
 for (const requiredText of ["--fixture-server", "127.0.0.1", "startFixtureServer", "manual-result-template.json", "result-schema.json", "evals/browser-workflows/runner.mjs", "No sqlmap bridge, scanner, external database, or outbound target was used"]) {
 	assert(runnerText.includes(requiredText), `runner.mjs must preserve opt-in/local-safe boundary: ${requiredText}`);
 }
 assert(runnerText.includes("throw new Error(`Refusing to run: --fixture-server is required."), "runner must fail closed without --fixture-server");
 assert(!runnerText.includes("sqlmap") || runnerText.includes("No sqlmap bridge"), "runner must not invoke sqlmap by default");
 assert(!runnerText.includes("nuclei"), "runner must not invoke nuclei by default");
+for (const requiredText of ["CLI ROUTING ADOPTION", "`wait`", "`network`", "`frame`", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`", "`commands --json` / `schema --json` metadata"]) {
+	assert(blindAgentPromptText.includes(requiredText), `blind-agent-prompt.md must capture route-adoption signal: ${requiredText}`);
+}
+for (const requiredText of ["CLI natural-routing", "`wait` /", "`network` /", "`frame` /", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`"]) {
+	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require route-adoption triage: ${requiredText}`);
+}
 
 const specTexts = new Map();
 for (const file of specFiles) {
@@ -111,6 +123,96 @@ for (const entry of manifest.evals) {
 const pkg = readJson("package.json");
 assert(pkg.scripts?.["eval:browser-workflows"] === "tsx evals/browser-workflows/runner.mjs", "package must expose the opt-in browser workflow eval runner");
 assert(!String(pkg.scripts?.check || "").includes("eval:browser-workflows"), "npm run check must not launch the runtime eval runner");
+
+assert(EXTENSION_PORT_PATCH_BUNDLES.includes("service-worker.js"), "extension port patch helper must patch the service worker bundle");
+assert(EXTENSION_PORT_PATCH_BUNDLES.includes("offscreen.js"), "extension port patch helper must patch the B5 offscreen transport bundle");
+{
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-port-patch-"));
+	try {
+		const distDir = path.join(tempDir, "dist");
+		mkdirSync(distDir, { recursive: true });
+		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
+			writeFileSync(path.join(distDir, bundle), "const PI_BROWSER_BRIDGE_PORT = 18765; const PI_BROWSER_BRIDGE_PORT_RANGE_END = 18784; const url = 'ws://127.0.0.1:18765';\n", "utf8");
+		}
+		const patch = await patchExtensionDistPort(tempDir, 19001);
+		assert(patch.patched.length === EXTENSION_PORT_PATCH_BUNDLES.length && patch.patched.every((item) => item.replacements >= 3), "extension port patch helper must report replacement diagnostics for every runtime bundle");
+		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
+			const text = readFileSync(path.join(distDir, bundle), "utf8");
+			assert(text.includes("19001") && !text.includes("18784") && !text.includes("127.0.0.1:18765"), `extension port patch helper must rewrite bridge markers in ${bundle}`);
+		}
+		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
+			writeFileSync(path.join(distDir, bundle), "const PI_BROWSER_BRIDGE_PORT = 18765; const PI_BROWSER_BRIDGE_PORT_RANGE_END = 18784; const url = 'ws://127.0.0.1:18765';\n", "utf8");
+		}
+		await patchExtensionDistPort(tempDir, 18784);
+		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
+			const text = readFileSync(path.join(distDir, bundle), "utf8");
+			assert(text.includes("PI_BROWSER_BRIDGE_PORT = 18784") && text.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END = 18784") && text.includes("127.0.0.1:18784"), `extension port patch helper must allow bridge port 18784 without treating range-end as stale in ${bundle}`);
+		}
+		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) writeFileSync(path.join(distDir, bundle), "console.log('no bridge markers');\n", "utf8");
+		let failed = false;
+		try {
+			await patchExtensionDistPort(tempDir, 19002);
+		} catch (error) {
+			failed = /no bridge port markers/.test(String(error?.message || error));
+		}
+		assert(failed, "extension port patch helper must fail when bundle port markers drift instead of silently leaving the default bridge port");
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+}
+const isolatedPatchScripts = [
+	...readdirSync(path.join(root, "tests", "smoke"))
+		.filter((file) => file.endsWith(".mjs"))
+		.map((file) => path.join("tests", "smoke", file)),
+	path.join("evals", "browser-workflows", "runner.mjs"),
+	path.join("evals", "browser-workflows", "launch-blind.mjs"),
+].filter((file) => read(file).includes("patchExtensionDistPort("));
+const extensionLaunchScripts = [
+	...readdirSync(path.join(root, "tests", "smoke"))
+		.filter((file) => file.endsWith(".mjs"))
+		.map((file) => path.join("tests", "smoke", file)),
+	path.join("evals", "browser-workflows", "runner.mjs"),
+	path.join("evals", "browser-workflows", "launch-blind.mjs"),
+].filter((file) => read(file).includes("--load-extension"));
+assert(isolatedPatchScripts.length >= 20, "isolated smoke/eval scripts that stage extension copies must call the shared patchExtensionDistPort helper directly");
+for (const file of isolatedPatchScripts) {
+	const text = read(file);
+	assert(text.includes("patchExtensionDistPort"), `${file} must use the shared extension port patch helper`);
+	assert(!/function\s+patchExtensionPort\s*\(/.test(text), `${file} must not keep a local pass-through patchExtensionPort wrapper; call patchExtensionDistPort directly`);
+	assert(!text.includes('path.join(extensionDir, "dist", "service-worker.js")'), `${file} must not patch only dist/service-worker.js; B5 WebSocket transport lives in dist/offscreen.js`);
+}
+const isolatedSmokeText = read(path.join("tests", "smoke", "smoke-browser-isolated.mjs"));
+assert(isolatedSmokeText.includes("node_modules\", \"tsx\", \"dist\", \"cli.mjs"), "smoke-browser-isolated must launch the inner smoke via the local tsx CLI path");
+assert(!isolatedSmokeText.includes("npx.cmd") && !isolatedSmokeText.includes("'npx'") && !isolatedSmokeText.includes("\"npx\""), "smoke-browser-isolated must not spawn npx/npx.cmd; Windows .cmd shims can throw EINVAL under Node spawn");
+const browserSmokeEnv = read(path.join("tests", "support", "browserSmokeEnv.mjs"));
+assert(browserSmokeEnv.includes("export function chromePath") && browserSmokeEnv.includes("export function findChromePath") && browserSmokeEnv.includes("export async function freePort") && browserSmokeEnv.includes("export function windowsPathForChrome") && browserSmokeEnv.includes("export function browserLaunchHardeningArgs") && browserSmokeEnv.includes("export function stopProcessTree") && browserSmokeEnv.includes("export function stopBrowserProcess"), "browser smoke/eval environment helpers must centralize Chrome discovery, optional Chrome discovery, port allocation, WSL path conversion, browser launch hardening, generic process-tree cleanup, and browser process cleanup");
+assert(browserSmokeEnv.includes("if (!server.listening) return"), "shared freePort helper must not call server.close on a socket that never listened after a bind error");
+assert(browserSmokeEnv.includes("RECENT_EPHEMERAL_PORTS") && browserSmokeEnv.includes("Could not allocate a distinct ephemeral port"), "shared freePort helper must avoid returning the same ephemeral port twice within one smoke/eval process");
+for (const flag of ["--disable-background-networking", "--disable-sync", "--disable-component-update", "--disable-default-apps"]) {
+	assert(browserSmokeEnv.includes(flag), `browserLaunchHardeningArgs must include ${flag}`);
+}
+assert(isolatedSmokeText.includes("stopProcessTree(smokeChild)") && !isolatedSmokeText.includes("smokeChild.kill"), "smoke-browser-isolated must clean up the nested smoke process tree instead of sending a direct SIGTERM that leaks children on Windows");
+assert(teardownBlindText.includes("stopProcessTree(pid)") && !teardownBlindText.includes("taskkill.exe") && !/process\.kill\(pid/.test(teardownBlindText), "blind eval teardown must reuse the shared process-tree cleanup helper for tracked pids");
+assert(launchBlindText.includes("stageState: \"daemon-started\"") && launchBlindText.includes("stageState: \"browser-started\"") && launchBlindText.includes("stageState: \"ready\"") && launchBlindText.includes("stageState: \"launch-failed\""), "blind eval launch must write partial/final stage states so teardown can clean failed launches");
+assert(launchBlindText.includes("latestStage") && launchBlindText.includes("writeStage("), "blind eval launch must keep a latest partial stage manifest for failure cleanup");
+assert(launchBlindText.includes("parsed.value"), "blind eval launch must accept the pi-browser CLI JSON result envelope shape from tabs list");
+assert(teardownBlindText.includes("stageState: stage.stageState"), "blind eval teardown output must report the stage state it cleaned");
+for (const file of isolatedPatchScripts) {
+	const text = read(file);
+	assert(text.includes("browserSmokeEnv.mjs"), `${file} must use the shared browser smoke environment helper`);
+	assert(!/const\s+chromeCandidates\s*=/.test(text) && !/function\s+windowsPathForChrome\s*\(/.test(text) && !/createServer\s+as\s+createNetServer/.test(text), `${file} must not re-inline Chrome discovery, WSL path conversion, or port probing`);
+	assert(!/freePort\(\s*\d/.test(text), `${file} must use ephemeral freePort() ports instead of shared fixed ranges; fixed smoke ranges collide under parallel runs`);
+	if (!file.endsWith(path.join("evals", "browser-workflows", "launch-blind.mjs"))) {
+		assert(text.includes("stopBrowserProcess"), `${file} must use the shared browser process cleanup helper`);
+		assert(!/taskkill\.exe|chrome\.kill/.test(text), `${file} must not inline browser process cleanup; use stopBrowserProcess`);
+	}
+}
+assert(extensionLaunchScripts.length >= 20, "browser smoke/eval scripts that load the extension must be covered by launch hardening checks");
+for (const file of extensionLaunchScripts) {
+	const text = read(file);
+	assert(text.includes("browserLaunchHardeningArgs()"), `${file} must consume the shared browser launch hardening helper`);
+	assert(!/"--disable-(background-networking|sync|component-update|default-apps)"/.test(text), `${file} must not inline browser launch hardening flags; use browserLaunchHardeningArgs()`);
+}
 
 const resultSchema = readJson(path.join("evals", "browser-workflows", "result-schema.json"));
 assert(resultSchema.type === "object" && resultSchema.additionalProperties === false, "result schema must be a closed object");

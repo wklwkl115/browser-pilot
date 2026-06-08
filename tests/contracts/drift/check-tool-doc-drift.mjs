@@ -29,6 +29,7 @@ assert(registered.length >= 15, "tool drift: expected registered browser tools")
 const readme = read("README.md");
 const sop = read("AI_INSTALL.md");
 const boundaries = read("docs/tool-boundaries.md");
+const generatedContract = read("docs/generated/browser-tool-contract.generated.md");
 const skillPath = "skills/pi-browser-tools/SKILL.md";
 assert(existsSync(resolveReadPath(skillPath)), "tool drift: pi-browser-tools skill must exist in repo");
 const skill = read(skillPath);
@@ -60,6 +61,8 @@ for (const forbidden of ["npm run check", "npm run smoke:browser", "npm install"
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type", "browser_orchestrate"]) {
 	assert(!boundaries.includes(removed), `tool boundaries must not document removed tool: ${removed}`);
 }
+assert(generatedContract.includes("| `REF_STALE` | abml | abml.ref | yes | schema |"), "generated contract must classify ABML ref errors as abml, not unknown");
+assert(generatedContract.includes("| `WEBSOCKET_WAIT_TIMEOUT` | websocket | bridge.ws | yes | schema |"), "generated contract must classify WebSocket errors as websocket, not unknown");
 const migration = read("docs/browser-usage.md");
 assert(migration.includes("迁移指引") && migration.includes("AI_INSTALL.md") && migration.includes("SKILL.md"), "docs/browser-usage.md must only be a migration pointer");
 console.log("tool doc drift contract ok");

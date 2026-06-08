@@ -61,10 +61,16 @@ presentation layer.
   - Does not start daemon/browser.
 - `pi-browser commands --json`
   - Returns machine-readable command metadata for the always-on tool surface: name, toolName,
-    description, flags, required params, input modes, output artifact behavior, and security group.
+    description, flags, required params, input modes, output artifact behavior, security group, and
+    `agentCli` routing role (`standard`, `natural`, `advancedCompatibility`, or
+    `nativeEscapeHatch`).
   - Does not start daemon/browser.
 - `pi-browser schema <cmd> --json`
   - Returns the TypeBox-derived parameter schema and CLI flag mapping.
+  - For action-tool root schemas, returns the low-level route as `advancedCompatibility` and includes
+    `subcommands[]` for the recommended natural routes.
+  - For natural action schemas (`schema wait selector --json`), returns the narrowed flag mapping and
+    `agentCli.mode:"natural"`.
   - Does not start daemon/browser.
 
 ### Invocation
@@ -83,6 +89,10 @@ All structured or large values must support:
 - inline flag value: `--params '{"action":"list"}'`
 - file value: `--params @params.json`
 - stdin value: `--params -`
+
+Action-specific natural routes may add narrower CLI ergonomics when the protocol shape is known and
+auditable. Example: `hook install-targets --targets console,error` is equivalent to repeated
+`--targets console --targets error` and to the underlying JSON `params.targets:["console","error"]`.
 
 Required specific support:
 
@@ -184,6 +194,16 @@ Required diagnostic commands:
 
 ## Compatibility Requirements
 
+- High-frequency action tools may expose natural action subcommands as the recommended agent path,
+  but the `--action/--params` interface must remain available as an advanced compatibility path unless
+  a migration explicitly proves it can be removed.
+- `browser_command` / `pi-browser command --command` is the complete native bridge escape hatch for
+  command objects that are not modeled as ergonomic CLI flags.
+- `commands --json` and `schema --json` must label these roles with `agentCli` metadata so skills and
+  eval runners can distinguish recommended paths from escape hatches without reading human help text.
+- Opt-in usage logging must preserve local-only, redacted route-adoption evidence for CLI calls
+  (`standard`, `natural`, `advancedCompatibility`, `nativeEscapeHatch`) so legacy-path reduction can
+  be evaluated from real use rather than guessed.
 - `npm run check:cli-parity` must prove every registered tool has a CLI command.
 - Pi-native registration count and CLI command count must stay aligned at 22 tools, with WebSecurity
   represented as group metadata rather than a profile gate.

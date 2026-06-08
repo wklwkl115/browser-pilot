@@ -1,6 +1,7 @@
 # 架构与工程化设计改进执行合同
 
-> Status: COMPLETE — archived. 7 个工作流已交付（distiller 注册化 `src/tools/summaries/registerBuiltinDistillers.ts`、lease/heartbeat 硬化、`src/driver/BrowserWaitSupervisor.ts`、`lefthook.yml`、`tsconfig.base.json`、`docs/driver-architecture.md` 等，见 CHANGELOG）；工程化收口已归档（见 `CURRENT.md`）。
+> Status: COMPLETE — archived. 7 个工作流已交付（distiller 注册化 `src/tools/summaries/registerBuiltinDistillers.ts`、lease/heartbeat 硬化、`src/driver/BrowserWaitSupervisor.ts`、`lefthook.yml`、`tsconfig.base.json`、`docs/driver-architecture.md` 等，见 CHANGELOG）；工程化收口已归档（见 `ARCHIVE.md`）。
+> 本文中的 capability profile 边界是执行当时的历史约束；后续 agent-native architecture B1 已移除 profile，当前 22 个工具 always-on。
 > 本文取代 `.plan/architecture-design-improvements.md` 作为唯一执行合同；`.plan/...` 仅保留为讨论输入，不再直接作为执行源。
 
 ## 目标
@@ -22,7 +23,7 @@
 默认保持以下外部面稳定：
 
 - 公开 `browser_*` 工具名、参数名、detail envelope 主形状
-- 三层分层与现有 capability profile 语义
+- 三层分层与当时的 capability profile 语义（历史约束；当前 profile 已移除）
 - `browser_execute` / `browser_command` / `browser_observe` 的既有职责边界
 
 允许的可观察变化仅限：
@@ -39,7 +40,7 @@
 - 不重构三层总架构，不把本批工作扩成新一轮结构性拆仓
 - 不新增公开 `browser_*` 工具
 - 不恢复自动选 tab / 自动选 observe mode / 自动串联 workflow
-- 不削弱 Web Security capability profile 或引入任务/风险分类器
+- 不削弱当时的 Web Security capability profile 或引入任务/风险分类器（历史约束；当前 profile 已移除，Web Security always-on）
 - 不对 generated files 做无边界清理
 - 不把 helper / test / docs 收口扩成全仓风格统一运动
 - 不把原计划中“可选增强”扩成新的阻塞大项；本合同仅覆盖 7 个主工作流

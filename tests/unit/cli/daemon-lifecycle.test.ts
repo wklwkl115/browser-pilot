@@ -12,6 +12,8 @@ import path from "node:path";
 import { startDaemon } from "../../../cli/daemon.ts";
 import { controlRequest, findDaemon } from "../../../cli/daemonControl.ts";
 import { buildCliCommands } from "../../../cli/registry.ts";
+import { daemonVersion } from "../../../cli/packageInfo.ts";
+import { invokeTool, DaemonUnavailableError } from "../../../cli/client.ts";
 
 function rawGet(port: number, pathname: string, headers: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
 	return new Promise((resolve, reject) => {
@@ -71,6 +73,7 @@ test("findDaemon discovers a live daemon via its lockfile", async () => {
 		const found = await findDaemon();
 		assert.ok(found, "lockfile-backed daemon is discoverable");
 		assert.equal(found!.info.controlPort, handle.controlPort);
+		assert.equal(found!.info.version, daemonVersion());
 		assert.equal(found!.status.ok, true);
 		assert.equal(found!.status.tools as number, (await controlRequest({ controlHost: handle.controlHost, controlPort: handle.controlPort, token: handle.token }, "GET", "/status")).json?.tools);
 	} finally {
@@ -79,5 +82,34 @@ test("findDaemon discovers a live daemon via its lockfile", async () => {
 		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_STATE_DIR;
 		else process.env.PI_BROWSER_DAEMON_STATE_DIR = prev;
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("invokeTool preserves daemon /invoke validation errors instead of reporting daemon unavailable", async () => {
+	const prev = process.env.PI_BROWSER_DAEMON_STATE_DIR;
+	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-daemon-invoke-error-"));
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-daemon-invoke-cwd-"));
+	process.env.PI_BROWSER_DAEMON_STATE_DIR = dir;
+	const handle = await startDaemon({ writeLock: true });
+	try {
+		let result;
+		try {
+			result = await invokeTool("browser_execute", {}, cwd);
+		} catch (error) {
+			assert.fail(`invokeTool should return a structured invoke error, not throw ${error instanceof DaemonUnavailableError ? "DaemonUnavailableError" : String(error)}`);
+		}
+		assert.equal(result.terminate, true);
+		const text = result.content.map((item) => item.text).join("\n");
+		const env = JSON.parse(text) as Record<string, unknown>;
+		assert.equal(env.ok, false);
+		assert.equal(env.code, "CLI_DAEMON_INVOKE_ERROR");
+		assert.equal(env.status, 400);
+		assert.match(String(env.message), /Validation failed|script/i);
+	} finally {
+		await handle.close();
+		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_STATE_DIR;
+		else process.env.PI_BROWSER_DAEMON_STATE_DIR = prev;
+		rmSync(dir, { recursive: true, force: true });
+		rmSync(cwd, { recursive: true, force: true });
 	}
 });

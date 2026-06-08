@@ -53,6 +53,64 @@ assert.equal(artifactPlain.taxonomy.source, "heuristic");
 assert.ok(artifactPlain.diagnostics.scopes.includes("artifact"), "artifact errors must expose artifact diagnostics scope");
 assert.equal(Array.isArray(artifactPlain.recovery?.nextActions), true, "artifact errors must expose bounded browser_artifact recovery guidance");
 
+const artifactQueryModeError = normalizeError(new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "query ignored outside search", { mode: "json", query: "needle" }));
+assertNormalized(artifactQueryModeError, "ArtifactReaderError query mode");
+assert.equal(artifactQueryModeError.taxonomy.domain, "artifact", "artifact query/mode errors must classify as artifact");
+assert.equal(artifactQueryModeError.recovery?.nextActions?.some((item) => item.includes("mode=search")), true, "query/mode errors must tell agents to switch to search mode");
+assert.equal(artifactQueryModeError.recovery?.nextActions?.includes("retry browser_artifact search with query=needle"), true, "query/mode errors must preserve the actionable search query");
+const compactArtifactSecretQuery = compactError(new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "query ignored outside search", { mode: "json", query: "token=artifact-secret" }));
+assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("artifact-secret"), false, "compactError must redact secrets embedded in recovery/diagnostics nextActions");
+assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("token=[redacted]"), true, "compactError must preserve redacted query shape in recovery/diagnostics nextActions");
+
+const artifactJsonInvalidError = normalizeError(new ArtifactReaderError("ARTIFACT_JSON_INVALID", "invalid json", { path: "/tmp/not-json.txt", bytes: 12 }));
+assertNormalized(artifactJsonInvalidError, "ArtifactReaderError invalid json");
+assert.equal(artifactJsonInvalidError.taxonomy.domain, "artifact", "invalid-json artifact errors must classify as artifact");
+assert.equal(artifactJsonInvalidError.recovery?.nextActions?.some((item) => item.includes("mode=text|search")), true, "invalid-json errors must suggest text/search fallback");
+
+const memoryScopeError = normalizeError({ code: "MEMORY_SCOPE_REQUIRED", message: "missing scope", details: { scopeKind: "origin" } });
+assertNormalized(memoryScopeError, "memory scope error");
+assert.equal(memoryScopeError.taxonomy.domain, "tool", "memory errors must keep tool taxonomy domain");
+assert.equal(memoryScopeError.taxonomy.category, "tool.memory", "memory errors must keep memory category");
+assert.equal(memoryScopeError.diagnostics.scopes.includes("memory"), true, "memory errors must expose memory diagnostics scope");
+assert.equal(memoryScopeError.recovery?.nextActions?.some((item) => item.includes("scopeKind/scopeKey")), true, "memory scope errors must suggest explicit scope recovery");
+
+const memoryEvidenceStale = normalizeError({ code: "MEMORY_EVIDENCE_STALE", message: "stale evidence", details: { snapshotId: "snap-1", invalidatedReason: "navigation" } });
+assertNormalized(memoryEvidenceStale, "memory stale evidence error");
+assert.equal(memoryEvidenceStale.diagnostics.scopes.includes("memory"), true, "stale memory evidence errors must expose memory diagnostics scope");
+assert.equal(memoryEvidenceStale.diagnostics.scopes.includes("snapshot"), true, "stale memory evidence errors must expose snapshot diagnostics scope");
+assert.equal(memoryEvidenceStale.recovery?.nextActions?.some((item) => item.includes("re-capture evidence")), true, "stale memory evidence errors must suggest evidence recapture");
+
+const memorySecretError = normalizeError({ code: "MEMORY_SECRET_DETECTED", message: "blocked payload", details: {} });
+assertNormalized(memorySecretError, "memory secret error");
+assert.equal(memorySecretError.recovery?.nextActions?.some((item) => item.includes("remove secrets")), true, "memory secret errors must suggest removing blocked content");
+
+const memoryEntryMissing = normalizeError({ code: "MEMORY_ENTRY_NOT_FOUND", message: "missing memory", details: { id: "sop_missing" } });
+assertNormalized(memoryEntryMissing, "memory entry missing error");
+assert.equal(memoryEntryMissing.recovery?.nextActions?.includes("browser_memory action=recall or read by a fresh browser-memory:// URI/id"), true, "missing memory entries must suggest recall or fresh resource reads");
+assert.equal(memoryEntryMissing.recovery?.nextActions?.includes("browser_memory action=read id=sop_missing"), true, "missing memory entry recovery must preserve the requested id");
+
+const abmlStaleRef = normalizeError({ code: "REF_STALE", message: "stale ref", details: { ref: "pi-ref://old" } });
+assertNormalized(abmlStaleRef, "ABML stale ref error");
+assert.equal(abmlStaleRef.taxonomy.domain, "abml", "ABML schema errors must not classify as unknown");
+assert.equal(abmlStaleRef.taxonomy.category, "abml.ref", "ABML schema errors must preserve schema category");
+assert.equal(abmlStaleRef.diagnostics.scopes.includes("abml"), true, "ABML errors must expose abml diagnostics scope");
+assert.equal(abmlStaleRef.recovery?.nextActions?.some((item) => item.includes("fresh ABML refs")), true, "stale ABML refs must suggest recapture");
+
+const resourceStale = normalizeError({ code: "RESOURCE_STALE", message: "stale browser-result", details: { uri: "browser-result://old" } });
+assertNormalized(resourceStale, "browser-result stale resource error");
+assert.equal(resourceStale.taxonomy.domain, "abml", "browser-result stale resources must classify with resource/ref recovery");
+assert.equal(resourceStale.taxonomy.category, "abml.ref", "browser-result stale resources must preserve ref/resource category");
+assert.equal(resourceStale.diagnostics.scopes.includes("abml"), true, "browser-result stale resources must expose abml diagnostics scope");
+assert.equal(resourceStale.recovery?.nextActions?.includes("re-run the original capture tool or browser_observe to mint a fresh browser-result:// resource"), true, "browser-result stale resources must suggest fresh capture");
+assert.equal(resourceStale.recovery?.nextActions?.includes("retry with a fresh resource URI instead of browser-result://old"), true, "browser-result stale recovery must preserve the stale URI handle, not local paths");
+
+const wsTimeout = normalizeError({ code: "WEBSOCKET_WAIT_TIMEOUT", message: "ws wait timed out", details: { sessionId: "ws-1", timeoutMs: 1000 } });
+assertNormalized(wsTimeout, "WebSocket wait timeout error");
+assert.equal(wsTimeout.taxonomy.domain, "websocket", "WebSocket schema errors must not classify as unknown");
+assert.equal(wsTimeout.taxonomy.category, "bridge.ws", "WebSocket schema errors must preserve bridge.ws category");
+assert.equal(wsTimeout.diagnostics.scopes.includes("websocket"), true, "WebSocket errors must expose websocket diagnostics scope");
+assert.equal(wsTimeout.recovery?.nextActions?.some((item) => item.includes("WebSocket transcript")), true, "WebSocket timeout errors must suggest transcript/state recovery");
+
 const protocol = validateBridgeCommand({ cmd: "wait.selector", tabId: 1 }, { allowMissingTabId: false });
 assert.equal(protocol.ok, false, "protocol command must fail for missing selector");
 const protocolError = normalizeError({ code: "INVALID_BROWSER_COMMAND", message: protocol.error, details: protocol.details });
@@ -161,6 +219,9 @@ const sharedJson = stableJson({ left: shared, right: shared, big: 1n });
 assert.equal((sharedJson.match(/"value": 1/g) || []).length, 2, "stableJson must not label non-cyclic shared references as circular");
 assert.ok(sharedJson.includes('"big": "1"'), "stableJson must keep bigint stringification");
 assert.equal(sharedJson.includes("[Circular]"), false, "stableJson must only mark actual ancestor cycles");
+const stableErrorJson = stableJson({ error: new Error("stable boom") });
+assert.equal(stableErrorJson.includes("stable boom"), true, "stableJson must keep Error messages");
+assert.equal(stableErrorJson.includes("stack"), false, "stableJson must not expose Error.stack by default");
 const circularDetails = { selector: "#go" };
 circularDetails.self = circularDetails;
 const circularErrorResult = errorResult(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "loop", circularDetails));

@@ -13,7 +13,7 @@ let bridgeWakeProbe: BridgeWakeProbe | null = null;
 
 function coreRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function coreErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { message: String(error) }; }
+function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 function optionalString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 
 function setBridgeWakeProbe(probe: unknown): void {
@@ -21,7 +21,7 @@ function setBridgeWakeProbe(probe: unknown): void {
 }
 
 async function handleBridgeWake(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
-  if (bridgeWakeProbe) void bridgeWakeProbe(true);
+  if (bridgeWakeProbe) void Promise.resolve(bridgeWakeProbe(true)).catch(() => {});
   return { ok: true, data: { connecting: !!bridgeWakeProbe, bridge: piBridgeInfo(), url: msg.url || sender.tab?.url || null } };
 }
 

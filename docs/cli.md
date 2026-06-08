@@ -20,6 +20,19 @@ on the first invocation (built CLI: `node dist/cli/bin.js daemon start`; source 
 override with `PI_BROWSER_DAEMON_STATE_DIR`), never under the caller project `.pi/`. Each call sends
 the caller `cwd`, so artifacts/memory/evidence land under the caller's `.pi/`, not the daemon's.
 
+For multi-step agent work, make readiness explicit before the first browser operation:
+
+```bash
+pi-browser connect --wait --timeout-ms 15000 --json
+pi-browser status --json
+```
+
+`connect` is an idempotent readiness gate: it starts or reuses the singleton daemon, starts the
+bridge, waits for the extension when `--wait` is present, and reports `ready`, daemon, bridge,
+extension, tab count, active tab, health, and recovery commands. `status` is read-only and never
+starts daemon or bridge. Both commands are compact by default; add `--tabs` only when the full
+`tabs[]` array is needed. Simple one-off commands still auto-start the daemon for compatibility.
+
 ## Commands
 
 Every registered `browser_*` tool maps to a subcommand: drop the `browser_` prefix and turn `_`
@@ -28,8 +41,17 @@ into `-` (`browser_cookie_analyze` → `cookie-analyze`). Flags are the kebab-ca
 ```bash
 pi-browser --help                       # list every command
 pi-browser <cmd> --help                 # flags for one command
+pi-browser connect --wait --timeout-ms 15000 --json
+pi-browser status --json
 pi-browser tabs --action list
 pi-browser observe --mode scan
+pi-browser wait selector --selector "#result"
+pi-browser network start
+pi-browser network list --session-id net-1
+pi-browser frame list
+pi-browser frame evaluate --frame-id frame-1 --expression "document.title"
+pi-browser hook install-targets --targets console,error
+pi-browser hook collect --session-id hook-1
 pi-browser execute --script "document.title"
 pi-browser execute --script-file ./extract.js   # avoids shell quoting for longer JS
 pi-browser cookie-analyze --url https://target.example --bind-browser-session
@@ -42,6 +64,110 @@ shortcut that reads a cwd-relative/absolute JavaScript file into the normal `scr
 cannot be combined with `--script`. Coercion/validation reuses the shared frontend validator — there
 is no separate CLI coercion.
 
+Prefer files for anything containing quotes, braces, newlines, request bodies, or long JavaScript:
+
+```bash
+# bash / sh / zsh
+pi-browser execute --script-file ./extract.js --json
+pi-browser command --command @native-command.json --json
+pi-browser http-replay --raw-request @request.txt --json
+pi-browser http-replay --request @captured-request.json --json
+pi-browser http-replay --har-path ./capture.har --har-url-pattern "/api/" --json
+pi-browser template --template-path ./template.yaml --url https://target.example --json
+
+# PowerShell
+pi-browser execute --script-file .\extract.js --json
+pi-browser command --command '@native-command.json' --json
+pi-browser http-replay --raw-request '@request.txt' --json
+pi-browser http-replay --request '@captured-request.json' --json
+pi-browser http-replay --har-path .\capture.har --har-url-pattern '/api/' --json
+pi-browser template --template-path .\template.yaml --url https://target.example --json
+
+# cmd.exe
+pi-browser execute --script-file extract.js --json
+pi-browser command --command @native-command.json --json
+pi-browser http-replay --raw-request @request.txt --json
+pi-browser http-replay --request @captured-request.json --json
+pi-browser http-replay --har-path capture.har --har-url-pattern /api/ --json
+pi-browser template --template-path template.yaml --url https://target.example --json
+```
+
+For local validation without starting the daemon or browser, put parameters in one object file:
+
+```bash
+pi-browser validate execute --params @params.json --json
+pi-browser validate http-replay --params @replay-params.json --json
+```
+
+### Natural action subcommands
+
+`wait`, `network`, `frame`, and selected `hook` actions expose natural action subcommands for the
+common agent path:
+
+```bash
+pi-browser wait selector --selector "#ready" --json
+pi-browser wait navigate --url https://example.test --json
+pi-browser wait network-idle --json
+pi-browser network start --json
+pi-browser network list --session-id net-1 --json
+pi-browser network export-har --session-id net-1 --json
+pi-browser frame list --json
+pi-browser frame evaluate --frame-id frame-1 --expression "document.body.innerText" --json
+pi-browser hook install-targets --targets console,error --json
+pi-browser hook collect --session-id hook-1 --json
+```
+
+These are CLI routing sugar over the same underlying tools and are equivalent to the legacy
+`--action` form. Keep the legacy form for compatibility, full native-action coverage, and advanced
+JSON protocol access:
+
+```bash
+pi-browser wait --action selector --params '{"selector":"#ready"}' --json
+```
+
+For full bridge-native objects that do not fit a modeled command, use the command escape hatch:
+
+```bash
+pi-browser command --command @native-command.json --json
+```
+
+Natural routing is intentionally scoped. Complex or low-frequency actions such as frame script
+lifecycle operations, hook listener-chain inspection, or hook event-listener mutation remain available
+through the advanced `--action/--params` interface.
+
+For `hook install-targets`, target ids are the `hook list-targets` ids such as `console` and `error`.
+The natural CLI route accepts either comma-separated values (`--targets console,error`) or repeated
+flags (`--targets console --targets error`); file-backed arrays still use `--targets @targets.json`.
+
+Use `pi-browser <cmd> --help`, `pi-browser <cmd> <natural-subcommand> --help`, or
+`pi-browser schema <cmd> <natural-subcommand> --json` to discover narrowed action-specific flags
+without starting the daemon or browser.
+
+### Agent routing metadata
+
+`pi-browser commands --json` and `pi-browser schema <cmd> [natural-subcommand] --json` expose an
+`agentCli` object so agents do not have to infer route quality from help prose:
+
+- `mode:"standard"` — ordinary recommended command flags.
+- `mode:"natural"` — recommended action subcommand, such as `wait selector`; it also includes the
+  underlying native action it translates to.
+- `mode:"advancedCompatibility"` — supported `--action/--params` interface for compatibility,
+  complete native action coverage, and advanced JSON escape use.
+- `mode:"nativeEscapeHatch"` — `command --command`, the full native bridge command-object escape
+  hatch.
+
+Skills should teach `standard` and `natural` routes first, and reserve the advanced modes for legacy
+scripts, actions without a natural route, or complex command objects.
+
+For action tools, bare `schema wait|network|frame|hook --json` still marks the root command as
+`advancedCompatibility` because the root invocation is the low-level `--action/--params` interface,
+but it also includes `subcommands[]` with the recommended natural routes. Use
+`schema hook install-targets --json` or `schema frame evaluate --json` for the narrowed flag mapping.
+
+The same discovery objects include `artifactBehavior`, which describes the shared result-artifact
+contract: results with `saved.path` are enriched with `artifacts[]`, `readCommands`/`readArgv`, and
+`cliNextActions[]`; bounded follow-up reads use `pi-browser artifact --path <saved.path>`.
+
 ## Output
 
 - **TTY** → a compact human summary (+ `nextActions`, artifact path, diagnostics).
@@ -51,19 +177,40 @@ is no separate CLI coercion.
   present, the last one in argv wins.
 
 Exit codes: `0` ok · `1` tool error (envelope `terminate`) · `2` usage/param error · `3`
-daemon/bridge unavailable.
+daemon/bridge unavailable · `4` local file/stdin input error.
+
+In JSON mode, usage, local input, daemon unavailable, daemon invoke, and tool/runtime failures all
+return one parseable JSON object on stdout. Daemon invoke errors include `taxonomy`, `diagnostics`,
+`recovery.commands[]`, and `nextActions` such as `pi-browser schema <cmd> --json`,
+`pi-browser validate <cmd> --params @params.json --json`, `pi-browser doctor --json`, and
+`pi-browser daemon status --json`.
+
+For machine JSON, invoke the installed `pi-browser` binary, `node dist/cli/bin.js`, or the source
+entry directly. During repo-local debugging, use `npm --silent run cli -- ...`; ordinary
+`npm run cli -- ...` prints npm lifecycle banner text to stdout before the CLI output, so it is not
+a valid single-JSON transport.
 
 ## Daemon lifecycle
 
 ```bash
-pi-browser daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, tabs, tools}
+pi-browser connect --wait --timeout-ms 15000 --json  # agent readiness gate
+pi-browser status --json                             # compact read-only readiness state
+pi-browser status --tabs --json                      # include full tabs[] when needed
+pi-browser daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, tabCount, activeTab, health, tools}
 pi-browser daemon start      # foreground (auto-start spawns this detached)
 pi-browser daemon stop       # stop the singleton daemon
 ```
 
-The daemon starts the browser bridge lazily on the first tool call. If a browser extension is
+The recommended agent path is `connect --wait` at the start of a multi-step task, then ordinary
+`pi-browser` commands. Do not use `daemon stop` as normal task cleanup; it is an advanced lifecycle
+command for tests, profile/port conflicts, upgrades, or explicit resource release.
+
+The daemon starts the browser bridge lazily on the first tool call, or explicitly through
+`connect`. If a browser extension is
 already attached to another bridge on the first port in `18765-18784`, a second daemon binds the
 next free port and will not see that extension — run a single daemon per user/profile.
+Concurrent cold starts coordinate through a user-local start lock so two agents do not both spawn a
+detached daemon while the first one is still writing its lockfile.
 CLI tool invocations automatically replace a lockfile-backed daemon whose recorded version does
 not match the current CLI package + daemon protocol version; `doctor --json` and
 `daemon status --json` expose `versionStale` for read-only diagnostics.
@@ -73,6 +220,49 @@ unreachable is left untouched to avoid killing an unrelated PID that the OS may 
 In JSON mode, `daemon status`, `daemon stop`, and `doctor` expose this case as
 `staleLockfile` with non-sensitive fields (`pid`, `controlHost`, `controlPort`, `version`,
 `pidAlive`, `unreachable`); the daemon token is never emitted.
+
+## Readiness
+
+`pi-browser connect --wait --timeout-ms 15000 --json` is the first command an external agent should
+run for a multi-step browser workflow. It returns one JSON object with `ready`, `startedDaemon`,
+`startedBridge`, `waitedMs`, `daemon`, `bridge`, `extension`, `tabCount`, `activeTab`, `health`, and
+`recovery.commands[]`. Pass `--tabs` to include full `tabs[]`; the default is intentionally compact
+for multi-tab profiles. If the extension does not connect before the timeout, it exits `3` with
+`code:"CLI_EXTENSION_NOT_CONNECTED"` and concrete recovery commands.
+
+`pi-browser status --json` is the fast read-only state check. It never auto-starts daemon or bridge;
+with no daemon it returns `ready:false` and exit `0`. When a daemon is reachable it reports
+`tabCount`, `activeTab`, and `health` fields such as `lastPingAt`, `lastPongAt`, `connectedForMs`,
+and `tabSyncAgeMs`; use `status --tabs --json` only when the agent needs the full tab list.
+
+`pi-browser doctor --json` is read-only and broader diagnostics. It reports the CLI package `version`, caller `cwd`,
+`commandCount`, `commandGroups`, `webSecurityCommandCount`, daemon `lockfile`, daemon
+`reachable`/`running`, expected daemon version, bridge port/running state, extension connectivity,
+the selected/active tab summary when available, the caller-local `artifactRoot`, and structured
+`recovery.commands[]` entries with both display `command` and executable `argv`.
+
+`pi-browser selftest --confirm --json` is the bounded live smoke. It may create, use, and close a
+temporary safe tab, and reports each cleanup step in JSON.
+
+## Artifact Reads
+
+When a CLI result writes `saved.path`, JSON mode adds normalized `artifacts[]` and
+`cliNextActions[]` entries. The generic read is:
+
+```bash
+pi-browser artifact --path <saved.path> --mode json --json-path data --json
+```
+
+Common direct reads are also emitted as executable commands so agents do not have to guess artifact
+shape:
+
+```bash
+pi-browser artifact --path <saved.path> --mode json --json-path data.content --json
+pi-browser artifact --path <saved.path> --mode json --json-path data.actionables --json
+pi-browser artifact --path <saved.path> --mode json --json-path data.list_hints --json
+pi-browser artifact --path <saved.path> --mode json --json-path operation.operationId --json
+pi-browser artifact --path <saved.path> --mode json --json-path snapshot.snapshotId --json
+```
 
 ## Tool Surface
 
@@ -84,7 +274,10 @@ organization, but registration is always-on.
 ## Usage logging
 
 Set `PI_BROWSER_USAGE_LOG=<path>` to append one JSON line per invocation (tool, timing, result
-size) for studying real usage. Off by default; best-effort writes.
+size, and CLI routing metadata such as `routing:"natural"` versus
+`routing:"advancedCompatibility"`) for studying real usage. Off by default; best-effort writes.
+Arguments are redacted by default; `PI_BROWSER_USAGE_LOG_RAW=1` is available only for controlled
+local debugging.
 
 ## Connection & TLS environment
 
@@ -103,6 +296,15 @@ size) for studying real usage. Off by default; best-effort writes.
 
 ## Verification
 
-`npm run smoke:cli` drives the full path (daemon → `/invoke` → bridge → extension → page eval →
-back) against a live browser. `npm run check:cli-parity` asserts every registered tool has a
-subcommand and that the 22-command surface stays aligned with Pi-native registration.
+`npm run smoke:cli` drives a representative full path (daemon → `/invoke` → bridge → extension →
+page eval → back) against a live browser.
+
+`npm run smoke:cli:full` is the heavier full CLI runtime audit. It launches an isolated Edge/Chrome
+profile with a temporary patched extension and a temporary `PI_BROWSER_DAEMON_STATE_DIR`, then runs
+real `pi-browser` CLI subprocesses across all 22 commands, local discovery/help/schema/validate,
+natural `wait`/`network`/`frame`/`hook` routes, file inputs, `command --command @file`, WebSecurity
+HTTP helpers, memory, transfer, artifacts, and selftest. Results are written to
+`.pi/browser-artifacts/smoke-cli-full-results.json`.
+
+`npm run check:cli-parity` asserts every registered tool has a subcommand and that the 22-command
+surface stays aligned with Pi-native registration.

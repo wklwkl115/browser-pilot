@@ -548,9 +548,9 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 			{ key: "waitId", path: "data.waitId", value: summary.waitId },
 			{ key: "listenerId", path: "data.listenerId", value: summary.listenerId },
 		].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
-		for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact jsonPath=${item.path}`);
+		for (const item of correlationPaths.slice(0, 3)) actions.push(`read_saved_artifact mode=json jsonPath=${item.path}`);
 	}
-	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json|text"];
+	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json", "read_saved_artifact mode=text"];
 }
 
 function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = []): string[] | undefined {
@@ -569,7 +569,7 @@ function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSu
 			if (kind === "frame") actions.push(`frame(${ref})`);
 		}
 	}
-	if (summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`read_saved_artifact offset=${String(summary.nextOffset)}`);
+	if (saved?.path && summary.nextOffset !== undefined && summary.nextOffset !== null) actions.push(`read_saved_artifact offset=${String(summary.nextOffset)}`);
 	if (summary.bodyUnavailableReason) actions.push("inspect network body with a fresh recorder entry or recapture with captureBodies enabled");
 	if (summary.empty === true || summary.notFound === true) actions.push("narrow the target ref/filter or re-read with mode=scan|html");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or inspect the saved artifact by jsonPath/offset");
@@ -590,6 +590,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
 	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
 	const redactedSummary = maybeRedact(summary) as DistilledSummary;
+	const redactedEntitiesOption = options.entities ? maybeRedact(options.entities) as Array<Record<string, unknown>> : undefined;
+	const redactedExplicitError = options.error ? maybeRedact(options.error) as Record<string, unknown> : undefined;
 	const summaryHintActions = Array.isArray(redactedSummary.nextActions)
 		? redactedSummary.nextActions.filter((item): item is string => typeof item === "string")
 		: [];
@@ -603,7 +605,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...pickDefined(redactedOperation || {}, ["operationId", "snapshotId", "sourceMode"]),
 		...pickDefined(redactedSnapshot || {}, ["snapshotId", "sourceMode"]),
 	};
-	const entities = envelopeEntities(redactedSummary, options.entities);
+	const entities = envelopeEntities(redactedSummary, redactedEntitiesOption);
 	const abmlIntegrated = typeof redactedSummary.abmlIntegrated === "boolean" ? redactedSummary.abmlIntegrated : undefined;
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
@@ -612,7 +614,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const causal = envelopeCausal(redactedSummary);
 	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
-	const error = envelopeError(redactedSummary, options.error);
+	const error = envelopeError(redactedSummary, redactedExplicitError);
 	return fitEnvelopeBudget({
 		tool: options.toolName,
 		command: options.command,

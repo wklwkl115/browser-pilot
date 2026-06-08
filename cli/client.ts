@@ -12,16 +12,71 @@ import type { ToolResultLike } from "./render.js";
 /** Daemon/bridge unavailable — maps to EXIT.unavailable at the dispatch layer. */
 export class DaemonUnavailableError extends Error {}
 
-export async function invokeTool(tool: string, params: Record<string, unknown>, cwd: string): Promise<ToolResultLike> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function publicDaemonDiagnostics(json: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (!json) return {};
+	const details = isRecord(json.details) ? json.details : undefined;
+	return {
+		daemon: json,
+		...(details ? { details } : {}),
+	};
+}
+
+function daemonInvokeErrorResult(status: number, json: Record<string, unknown> | undefined, tool: string, cli?: Record<string, unknown>): ToolResultLike {
+	const message = typeof json?.error === "string" ? json.error : `daemon /invoke failed (HTTP ${status})`;
+	const command = typeof cli?.command === "string" ? cli.command : tool.replace(/^browser_/, "").replace(/_/g, "-");
+	const schemaCommand = `pi-browser schema ${command} --json`;
+	const validateCommand = `pi-browser validate ${command} --params @params.json --json`;
+	const nextActions = [
+		schemaCommand,
+		validateCommand,
+		"pi-browser doctor --json",
+		"pi-browser daemon status --json",
+	];
+	return {
+		content: [{
+			type: "text",
+			text: JSON.stringify({
+				ok: false,
+				code: "CLI_DAEMON_INVOKE_ERROR",
+				message,
+				status,
+				taxonomy: { domain: "cli", category: "daemon-invoke", retryable: false, source: "cli" },
+				diagnostics: { ...publicDaemonDiagnostics(json), nextActions },
+				recovery: {
+					hint: "Check the command parameters against the current daemon tool contract and daemon readiness.",
+					commands: [
+						{ command: schemaCommand, argv: ["pi-browser", "schema", command, "--json"], purpose: "inspect the current CLI parameter schema" },
+						{ command: validateCommand, argv: ["pi-browser", "validate", command, "--params", "@params.json", "--json"], purpose: "validate a file-backed params object without invoking the daemon" },
+						{ command: "pi-browser doctor --json", argv: ["pi-browser", "doctor", "--json"], purpose: "inspect CLI, daemon, bridge, and extension readiness" },
+						{ command: "pi-browser daemon status --json", argv: ["pi-browser", "daemon", "status", "--json"], purpose: "inspect daemon version and bridge state" },
+					],
+					nextActions,
+				},
+			}),
+		}],
+		terminate: true,
+	};
+}
+
+export async function invokeTool(tool: string, params: Record<string, unknown>, cwd: string, cli?: Record<string, unknown>): Promise<ToolResultLike> {
 	let info;
 	try {
 		info = await ensureDaemon();
 	} catch (error) {
 		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
 	}
-	const { status, json } = await controlRequest(info, "POST", "/invoke", { tool, params, cwd });
-	if (status !== 200 || !json) throw new DaemonUnavailableError(`daemon /invoke failed (HTTP ${status})`);
-	if (json.ok === false) throw new DaemonUnavailableError(String(json.error ?? "invoke failed"));
+	let response;
+	try {
+		response = await controlRequest(info, "POST", "/invoke", { tool, params, cwd, ...(cli ? { cli } : {}) });
+	} catch (error) {
+		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
+	}
+	const { status, json } = response;
+	if (status !== 200 || !json || json.ok === false) return daemonInvokeErrorResult(status, json, tool, cli);
 	return {
 		content: Array.isArray(json.content) ? (json.content as ToolResultLike["content"]) : [],
 		details: typeof json.details === "object" && json.details ? (json.details as Record<string, unknown>) : undefined,

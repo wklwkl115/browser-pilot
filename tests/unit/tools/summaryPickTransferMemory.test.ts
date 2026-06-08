@@ -134,3 +134,18 @@ test("summarizeMemoryResult passes through error field", () => {
 	const result = summarizeMemoryResult({ action: "record", ok: false, error: "scope not found" });
 	assert.equal(result.error, "scope not found");
 });
+
+test("summarizeMemoryResult preserves structured error recovery fields", () => {
+	const result = summarizeMemoryResult({
+		action: "error",
+		ok: false,
+		error_code: "MEMORY_ENTRY_NOT_FOUND",
+		message: "missing memory",
+		error: "missing memory",
+		recovery: { nextActions: ["browser_memory action=recall"] },
+	});
+	assert.equal(result.ok, false);
+	assert.equal(result.error_code, "MEMORY_ENTRY_NOT_FOUND");
+	assert.equal(result.message, "missing memory");
+	assert.deepEqual(result.recovery, { nextActions: ["browser_memory action=recall"] });
+});

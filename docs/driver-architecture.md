@@ -8,7 +8,7 @@
 
 | 模块 | 角色 | 直接职责 |
 |---|---|---|
-| `BrowserBridgeServer.ts` | facade | 暴露 public API，组合 driver services / registries，提供 snapshot / lifecycle / capability profile |
+| `BrowserBridgeServer.ts` | facade | 暴露 public API，组合 driver services / registries，提供 snapshot / lifecycle diagnostics |
 | `BrowserBridgeHttpServer.ts` | transport ingress | HTTP/WS server、端口绑定、upgrade 接入 |
 | `BrowserBridgeClientRegistry.ts` | browser client registry | 已连接扩展 client、selected extension client、ping/pong/stale 观测 |
 | `BrowserSessionRegistry.ts` | logical browser session | selected browser session、default session、browser session 生命周期 |

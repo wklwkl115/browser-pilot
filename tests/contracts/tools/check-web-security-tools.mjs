@@ -59,10 +59,10 @@ async function checkWebSecurityDomainBoundaryContract() {
 	assert.equal((webSecurityRegistryBlock.match(/register[A-Za-z]+Tool/g) || []).filter((line) => /Crawl|Fuzz|Sqli|Template|Callback|Cookie|Http/.test(line)).length, 7, "toolRegistry must compose exactly the 7 explicit WebSecurity tool registrations");
 	assert.ok(sourceFiles.toolRegistry.includes("WEB_SECURITY_TOOL_NAMES") && sourceFiles.toolRegistry.includes("resolveBrowserToolRegistrars"), "toolRegistry must expose WebSecurity group metadata and resolver");
 	assert.ok(sourceFiles.registerShared.includes("webSecurityToolError(error") && sourceFiles.diagnostics.includes("WebSecurityToolError"), "shared shell must delegate failure envelope creation to WebSecurity diagnostics");
-	assert.ok(sourceFiles.diagnostics.includes("...(normalized.recovery ? { recovery: normalized.recovery } : {})"), "webSecurity diagnostics must preserve structured recovery in the domain envelope");
+	assert.ok(sourceFiles.diagnostics.includes("const recovery = normalized.recovery ? redactWebSecurityDiagnosticValue(normalized.recovery)") && sourceFiles.diagnostics.includes("...(recovery ? { recovery } : {})"), "webSecurity diagnostics must preserve structured recovery in the domain envelope only after redaction");
 	const sensitive = new Error("Authorization: Bearer secret\nCookie: sid=abc");
 	sensitive.name = "FixtureSensitiveError";
-	sensitive.details = { Cookie: "sid=abc", nested: { authorization: "Bearer secret", safe: "kept" }, stack: "hidden" };
+	sensitive.details = { Cookie: "sid=abc", nested: { authorization: "Bearer secret", safe: "kept" }, recovery: { nextActions: ["retry token=web-token"] }, stack: "hidden" };
 	const wrapped = webSecurityToolError(sensitive, {
 		toolName: "browser_http_replay",
 		command: "web.http_replay",
@@ -70,6 +70,7 @@ async function checkWebSecurityDomainBoundaryContract() {
 	const wrappedText = JSON.stringify({ name: wrapped.name, message: wrapped.message, code: wrapped.code, details: wrapped.details });
 	assert.equal(wrappedText.includes("sid=abc"), false, "WebSecurity failure envelope must redact cookie values");
 	assert.equal(wrappedText.includes("Bearer secret"), false, "WebSecurity failure envelope must redact authorization values");
+	assert.equal(wrappedText.includes("web-token"), false, "WebSecurity failure envelope must redact recovery nextAction values before generic formatting");
 	assert.equal(wrappedText.includes("stack"), false, "WebSecurity failure envelope must strip stack traces from details");
 	assert.equal(Object.hasOwn(wrapped, "stack") && wrapped.stack !== undefined, false, "WebSecurity failure envelope must suppress Error.stack");
 	assert.ok(wrappedText.includes("webSecurity") && wrappedText.includes("browser_http_replay") && wrappedText.includes("web.http_replay"), "WebSecurity failure envelope must include domain/tool/command diagnostics");

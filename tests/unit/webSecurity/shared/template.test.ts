@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
 	applyTemplateVars,
+	evaluateDslExtractor,
 	evaluateTemplateMatcher,
 	jsonPathParts,
 	normalizeDslExtractors,
@@ -28,6 +29,26 @@ test("normalizeDslMatchers and extractors normalize supported shapes", () => {
 
 test("jsonPathParts parses dot and bracket notation", () => {
 	assert.deepEqual(jsonPathParts("$.items[0].name"), ["$", "items", 0, "name"]);
+	assert.deepEqual(jsonPathParts("$.response.headers['Set-Cookie']"), ["$", "response", "headers", "Set-Cookie"]);
+	assert.deepEqual(jsonPathParts("response.headers['x.api.key']"), ["response", "headers", "x.api.key"]);
+});
+
+test("json extractor returns whole body for default and root jsonPath", () => {
+	const final = {
+		url: "https://example.test/",
+		status: 200,
+		statusText: "OK",
+		headers: { "content-type": "application/json" },
+		setCookie: [],
+		elapsedMs: 10,
+		ok: true,
+		bodyText: JSON.stringify({ ok: true, items: [1, 2] }),
+		bodyBytes: 27,
+		bodyTruncated: false,
+	};
+	assert.deepEqual(evaluateDslExtractor({ type: "json" }, final, {})[0]?.value, { ok: true, items: [1, 2] });
+	assert.deepEqual(evaluateDslExtractor({ type: "json", jsonPath: "$" }, final, {})[0]?.value, { ok: true, items: [1, 2] });
+	assert.deepEqual(evaluateDslExtractor({ type: "json", jsonPath: "$.items[1]" }, final, {})[0]?.value, 2);
 });
 
 test("templateTargetsForBase expands relative paths", () => {

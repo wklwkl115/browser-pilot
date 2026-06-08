@@ -216,6 +216,7 @@ try {
 	// without knowing that --json-path requires --mode json (blind-eval H2, n=2).
 	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=data.actionables") || item.includes("click(pi-ref://") || item.includes("read(pi-ref://")), true, "check-summaries scan.nextActions: artifact or verb follow-up must point directly at actionables evidence");
 	assert.equal(scanEnvelope.nextActions.some((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=data.content")), true, "check-summaries scan.nextActions: artifact follow-up must point directly at content jsonPath");
+	assert.equal(scanEnvelope.nextActions.filter((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=")).every((item) => item.includes("mode=json")), true, "check-summaries scan.nextActions.mode: every jsonPath artifact follow-up must include mode=json");
 } finally {
 	await rm(scanTmp, { recursive: true, force: true });
 }
@@ -277,6 +278,7 @@ assert.equal(networkMissingBody.bodyUnavailableReason, "cdp_body_expired", "chec
 const networkEnvelope = parseToolText(await distilledJsonResult({ data: { requestId: "missing-body", url: "https://api.example.test/body", method: "POST", status: 200, bodyAvailability: "expired", bodyUnavailableReason: "cdp_body_expired" } }, { toolName: "browser_network", command: "network.body", detailLevel: "summary", maxChars: 4_000, fallbackName: "network-body.json" }));
 assert.equal(networkEnvelope.diagnostics.bodyUnavailableReason, "cdp_body_expired", "check-summaries envelope.diagnostics.network: body unavailable reason must be promoted");
 assert.equal(networkEnvelope.nextActions.some((item) => item.includes("inspect network body") || item.includes("read_saved_artifact")), true, "check-summaries envelope.nextActions.network: network body recovery hint must be present");
+assert.equal(networkEnvelope.nextActions.filter((item) => item.includes("read_saved_artifact") && item.includes("jsonPath=")).every((item) => item.includes("mode=json")), true, "check-summaries envelope.nextActions.correlationMode: correlation jsonPath follow-ups must include mode=json");
 const networkHar = summarizeNetworkData({ log: { entries: [{ _requestId: "5", request: { url: "https://api.example.test/har", method: "GET" }, response: { status: 200 }, _type: "Fetch" }] }, diagnostics: { tabId: 9, sessionId: "har", recorderId: "r2", active: true, entries: 1, bodyCount: 1, activeWaitCount: 0 } });
 assert.equal(networkHar.tabId, 9, "check-summaries network.har.tabId: HAR diagnostics tabId must be retained");
 assert.equal(networkHar.sessionId, "har", "check-summaries network.har.sessionId: HAR diagnostics sessionId must be retained");

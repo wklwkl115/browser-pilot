@@ -25,6 +25,15 @@ type WaitLeaseSummary = {
 	retryDelayMs?: number;
 };
 
+type NavigationPhaseSummary = {
+	timeoutMs: number;
+	workerBootId?: string;
+	workerBootIdAfter?: string;
+	status: "success" | "bridge_timeout" | "failed";
+	errorCode?: string;
+	message?: string;
+};
+
 type WaitSupervisorState = {
 	waitId: string;
 	command: string;
@@ -36,6 +45,7 @@ type WaitSupervisorState = {
 	workerRestarts: number;
 	historyLost: boolean;
 	leases: WaitLeaseSummary[];
+	navigation?: NavigationPhaseSummary;
 	selectorTimeout?: Record<string, unknown>;
 };
 
@@ -150,6 +160,7 @@ function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> 
 		historyLost: state.historyLost,
 		initialWorkerBootId: state.initialWorkerBootId,
 		workerBootId: state.workerBootId,
+		...(state.navigation ? { navigation: state.navigation } : {}),
 		leases: state.leases,
 		...(state.selectorTimeout ? { selectorTimeout: state.selectorTimeout } : {}),
 	};
@@ -302,20 +313,54 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServ
 		const waitUntil = waitUntilForNavigateAndWait(command);
 		const navigationTimeoutMs = Math.min(totalTimeoutMs, WAIT_LEASE_MAX_MS);
 		const navigationBridgeGraceMs = computeBridgeGraceMs(totalTimeoutMs);
-		const navigation = await server.sendCommand({ ...command, cmd: "wait.navigate", timeoutMs: navigationTimeoutMs }, { ...options, timeoutMs: navigationTimeoutMs + navigationBridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
-		const remainingMs = deadline - Date.now();
-		if (remainingMs <= 0) {
+		const navigationBeforeBootId = currentWorkerBootId(server);
+		let navigation: BrowserBridgeExecutionResult;
+		try {
+			navigation = await server.sendCommand({ ...command, cmd: "wait.navigate", timeoutMs: navigationTimeoutMs }, { ...options, timeoutMs: navigationTimeoutMs + navigationBridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
+		} catch (error) {
+			const navigationAfterBootId = currentWorkerBootId(server);
 			const state: WaitSupervisorState = {
 				waitId: String(command.waitId ?? command.wait_id ?? `pi_ts_wait_${randomUUID()}`),
 				command: command.cmd,
 				startedAt,
 				deadline,
 				totalTimeoutMs,
-				initialWorkerBootId: currentWorkerBootId(server),
-				workerBootId: currentWorkerBootId(server),
-				workerRestarts: 0,
+				initialWorkerBootId: navigationBeforeBootId,
+				workerBootId: navigationAfterBootId ?? navigationBeforeBootId,
+				workerRestarts: navigationBeforeBootId && navigationAfterBootId && navigationBeforeBootId !== navigationAfterBootId ? 1 : 0,
 				historyLost: false,
 				leases: [],
+				navigation: {
+					timeoutMs: navigationTimeoutMs,
+					workerBootId: navigationBeforeBootId,
+					workerBootIdAfter: navigationAfterBootId,
+					status: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout" : "failed",
+					errorCode: bridgeErrorCode(error),
+					message: bridgeErrorMessage(error),
+				},
+			};
+			throw finalWaitError(state, `wait.navigateAndWait navigation phase failed: ${bridgeErrorMessage(error)}`);
+		}
+		const remainingMs = deadline - Date.now();
+		if (remainingMs <= 0) {
+			const navigationAfterBootId = workerBootIdFromResult(navigation) ?? currentWorkerBootId(server);
+			const state: WaitSupervisorState = {
+				waitId: String(command.waitId ?? command.wait_id ?? `pi_ts_wait_${randomUUID()}`),
+				command: command.cmd,
+				startedAt,
+				deadline,
+				totalTimeoutMs,
+				initialWorkerBootId: navigationBeforeBootId,
+				workerBootId: navigationAfterBootId ?? navigationBeforeBootId,
+				workerRestarts: navigationBeforeBootId && navigationAfterBootId && navigationBeforeBootId !== navigationAfterBootId ? 1 : 0,
+				historyLost: false,
+				leases: [],
+				navigation: {
+					timeoutMs: navigationTimeoutMs,
+					workerBootId: navigationBeforeBootId,
+					workerBootIdAfter: navigationAfterBootId,
+					status: "success",
+				},
 			};
 			throw finalWaitError(state, "wait.navigateAndWait timed out after navigation before wait phase");
 		}

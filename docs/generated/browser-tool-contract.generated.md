@@ -117,12 +117,13 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 
 | Code | Domain | Category | Retryable | Source | Local sources |
 | --- | --- | --- | --- | --- | --- |
-| `ACTIONABILITY_TIMEOUT` | unknown | abml.actionability | yes | schema |  |
+| `ACTIONABILITY_TIMEOUT` | abml | abml.actionability | yes | schema |  |
 | `ALREADY_INSTALLED` | native | runtime.lifecycle | no | schema |  |
 | `AMBIGUOUS_DOWNLOAD` | transfer | runtime.transfer | no | schema |  |
 | `AMBIGUOUS_TAB_ID` | driver | driver.tab | no | schema | `src/driver/BrowserTabSessionRouter.ts` |
 | `ARTIFACT_JSON_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_MULTI_SEARCH_MODE_INVALID` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
+| `ARTIFACT_NOT_FOUND` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_OUTSIDE_ALLOWED_ROOT` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_PATH_REQUIRED` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_QUERY_REQUIRES_SEARCH_MODE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
@@ -131,7 +132,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ARTIFACT_SEARCH_REGEX_UNSAFE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_TOO_LARGE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ATTACH_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `BACKEND_UNAVAILABLE` | unknown | abml.backend | yes | schema | `src/abml-core/verbs/click.ts`, `src/abml-core/verbs/frame.ts`, `src/abml-core/verbs/pierce.ts`, `src/abml-core/verbs/read.ts`, `src/abml-core/verbs/scroll.ts`, `src/abml-core/verbs/type.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
+| `BACKEND_UNAVAILABLE` | abml | abml.backend | yes | schema | `src/abml-core/verbs/click.ts`, `src/abml-core/verbs/frame.ts`, `src/abml-core/verbs/pierce.ts`, `src/abml-core/verbs/read.ts`, `src/abml-core/verbs/scroll.ts`, `src/abml-core/verbs/type.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
 | `BACKGROUND_THROTTLED` | page | runtime.page | yes | schema |  |
 | `BODY_UNAVAILABLE` | network | runtime.network | no | schema |  |
 | `BRIDGE_CLIENT_DISCONNECTED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
@@ -147,7 +148,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BUFFER_OVERFLOW` | native | runtime.hook | no | schema |  |
 | `CANCELLED` | native | runtime.wait | yes | schema |  |
 | `CONTENT_EXTRACTION_FAILED` | tool | tool.content | no | schema |  |
-| `CROSS_ORIGIN_BLOCKED` | unknown | abml.backend | no | schema | `src/abml/verbs/frameRuntime.ts` |
+| `CROSS_ORIGIN_BLOCKED` | abml | abml.backend | no | schema | `src/abml/verbs/frameRuntime.ts` |
 | `CROSS_ORIGIN_IFRAME` | page | runtime.frame | no | schema |  |
 | `DETACH_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `DOWNLOAD_TARGET_REQUIRED` | transfer | tool.transfer | no | schema | `src/tools/transferValidation.ts` |
@@ -158,16 +159,16 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `FRAME_DETACHED` | page | runtime.frame | yes | schema |  |
 | `FRAME_EVAL_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `FRAME_NOT_FOUND` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `HANDLE_ETAG_MISMATCH` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts` |
-| `HANDLE_EXPIRED` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
-| `HANDLE_KIND_MISMATCH` | unknown | abml.input | no | schema |  |
-| `HANDLE_NOT_FOUND` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
+| `HANDLE_ETAG_MISMATCH` | abml | abml.ref | yes | schema | `src/abml-core/refPolicy.ts` |
+| `HANDLE_EXPIRED` | abml | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
+| `HANDLE_KIND_MISMATCH` | abml | abml.input | no | schema |  |
+| `HANDLE_NOT_FOUND` | abml | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
 | `HTTPS_CERT_GENERATION_FAILED` | security | tool.security | no | schema |  |
 | `INJECTION_FAILED` | native | runtime.hook | yes | schema |  |
 | `INTERNAL_ERROR` | native | runtime.internal | no | schema | `src/tools/webSecurity/shared/http.ts` |
 | `INVALID_BROWSER_COMMAND` | protocol | driver.command | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/validation/middleware.ts` |
 | `INVALID_BROWSER_ID` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
-| `INVALID_INPUT` | unknown | abml.input | no | schema | `src/abml/verbs/pierceRuntime.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
+| `INVALID_INPUT` | abml | abml.input | no | schema | `src/abml/verbs/pierceRuntime.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
 | `INVALID_RULE` | tool | tool.validation | no | schema | `src/tools/observeRunners.ts`, `src/tools/registerCommandTool.ts`, `src/tools/registerExecuteTool.ts`, `src/tools/registerObserveTool.ts`, `src/tools/registerPickTool.ts`, `src/tools/registerTabsTool.ts`, `src/tools/transferValidation.ts`, `src/tools/webSecurity/browserNative/callbackOast.ts`, `src/tools/webSecurity/browserNative/cookieAnalyze.ts`, `src/tools/webSecurity/browserNative/fuzzParams.ts`, `src/tools/webSecurity/browserNative/fuzzPaths.ts`, `src/tools/webSecurity/browserNative/fuzzVhosts.ts`, `src/tools/webSecurity/browserNative/httpReplay.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts`, `src/tools/webSecurity/browserNative/templateCheck.ts`, `src/tools/webSecurity/register/shared.ts`, `src/tools/webSecurity/shared/har.ts`, `src/tools/webSecurity/shared/http.ts`, `src/tools/webSecurity/shared/normalize.ts`, `src/tools/webSecurity/shared/replay.ts`, `src/tools/webSecurity/shared/requestTemplate.ts`, `src/tools/webSecurity/shared/wsShell.ts` |
 | `INVALID_SELECTOR` | page | runtime.selector | no | schema | `bridge_src/service_worker/transfer.ts`, `src/abml/verbs/runtime.ts` |
 | `INVALID_SESSION` | native | runtime.session | no | schema |  |
@@ -190,7 +191,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `MEMORY_EVIDENCE_UNREADABLE` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/resources/memoryResourceStore.ts`, `src/tools/memory/evidence.ts` |
 | `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/tools/memory/reader.ts` |
-| `MEMORY_SCHEMA_INVALID` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts`, `src/tools/memory/frontmatter.ts`, `src/tools/memory/indexStore.ts`, `src/tools/memory/origin.ts`, `src/tools/memory/reader.ts` |
+| `MEMORY_SCHEMA_INVALID` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts`, `src/tools/memory/frontmatter.ts`, `src/tools/memory/ids.ts`, `src/tools/memory/indexStore.ts`, `src/tools/memory/origin.ts`, `src/tools/memory/reader.ts` |
 | `MEMORY_SCOPE_REQUIRED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `MEMORY_SECRET_DETECTED` | tool | tool.memory | no | schema | `src/tools/memory/evidence.ts` |
 | `NAVIGATION_TIMEOUT` | native | runtime.wait | yes | schema |  |
@@ -198,24 +199,24 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `NETWORK_RECORDER_NOT_STARTED` | network | runtime.network | yes | schema |  |
 | `NETWORK_RECORDER_TIMEOUT` | network | runtime.network | yes | schema |  |
 | `NOT_INSTALLED` | native | runtime.session | yes | schema |  |
-| `NO_BROWSER_EXTENSION` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeClientRegistry.ts`, `src/driver/BrowserBridgeCommandService.ts` |
+| `NO_BROWSER_EXTENSION` | driver | driver.lifecycle | yes | schema | `src/driver/errors.ts` |
 | `NO_IDENTIFIER` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `NO_METHOD` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `NO_SESSION` | native | runtime.session | yes | schema |  |
 | `NO_SOURCE` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `NO_TAB` | driver | driver.tab | yes | schema | `src/abml/verbs/runtime.ts`, `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
 | `NO_TAB_ID` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `PRIVACY_BLOCKED` | unknown | abml.privacy | no | schema | `src/abml-core/refPolicy.ts` |
+| `PRIVACY_BLOCKED` | abml | abml.privacy | no | schema | `src/abml-core/refPolicy.ts` |
 | `PRIVATE_TARGET_BLOCKED` | security | tool.security | no | schema | `src/tools/webSecurity/shared/http.ts` |
 | `QUEUE_FULL` | driver | driver.queue | yes | schema | `src/driver/BrowserCommandQueueRegistry.ts` |
-| `REF_AMBIGUOUS` | unknown | abml.ref | yes | schema |  |
-| `REF_NOT_FOUND` | unknown | abml.ref | yes | schema |  |
-| `REF_SCOPE_VIOLATION` | unknown | abml.session | yes | schema | `src/abml-core/refPolicy.ts` |
-| `REF_STALE` | unknown | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
+| `REF_AMBIGUOUS` | abml | abml.ref | yes | schema |  |
+| `REF_NOT_FOUND` | abml | abml.ref | yes | schema |  |
+| `REF_SCOPE_VIOLATION` | abml | abml.session | yes | schema | `src/abml-core/refPolicy.ts` |
+| `REF_STALE` | abml | abml.ref | yes | schema | `src/abml-core/refPolicy.ts`, `src/resources/resourceStore.ts` |
 | `REQUEST_NOT_FOUND` | network | runtime.network | no | schema |  |
-| `RESOURCE_NOT_FOUND` | unknown | abml.ref | no | schema | `src/resources/resourceReader.ts` |
-| `RESOURCE_READ_ERROR` | unknown | abml.ref | no | schema | `src/resources/resourceReader.ts` |
-| `RESOURCE_STALE` | unknown | abml.ref | yes | schema | `src/resources/resourceReader.ts` |
+| `RESOURCE_NOT_FOUND` | abml | abml.ref | no | schema | `src/resources/resourceReader.ts` |
+| `RESOURCE_READ_ERROR` | abml | abml.ref | no | schema | `src/resources/resourceReader.ts` |
+| `RESOURCE_STALE` | abml | abml.ref | yes | schema | `src/resources/resourceReader.ts` |
 | `RUNTIME_STATE_LOST` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED` | native | runtime.recovery | yes | schema |  |
 | `RUNTIME_STATE_RECOVERED_WITH_HISTORY_LOSS` | native | runtime.recovery | yes | schema |  |
@@ -231,9 +232,9 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserLeaseRegistry.ts` |
 | `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/errors.ts` |
-| `TARGET_DISABLED` | unknown | abml.actionability | yes | schema |  |
-| `TARGET_NOT_EDITABLE` | unknown | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
-| `TARGET_OCCLUDED` | unknown | abml.actionability | yes | schema |  |
+| `TARGET_DISABLED` | abml | abml.actionability | yes | schema |  |
+| `TARGET_NOT_EDITABLE` | abml | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
+| `TARGET_OCCLUDED` | abml | abml.actionability | yes | schema |  |
 | `TIMEOUT` | native | runtime.timeout | yes | schema | `src/abml/verbs/runtime.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts` |
 | `UI_LOCK_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserLeaseRegistry.ts` |
 | `UNKNOWN_ACTION` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
@@ -248,20 +249,20 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `UPLOAD_PATH_NOT_FILE` | transfer | tool.transfer | no | schema | `src/tools/transferValidation.ts` |
 | `UPLOAD_REQUIRES_BROWSER_UPLOAD` | transfer | tool.transfer | no | schema | `src/tools/transferValidation.ts` |
 | `UPLOAD_SELECTOR_REQUIRED` | transfer | tool.transfer | no | schema | `src/tools/registerTransferTools.ts` |
-| `VERIFY_FAILED` | unknown | abml.verification | yes | schema |  |
-| `VERIFY_INCONCLUSIVE` | unknown | abml.verification | yes | schema |  |
+| `VERIFY_FAILED` | abml | abml.verification | yes | schema |  |
+| `VERIFY_INCONCLUSIVE` | abml | abml.verification | yes | schema |  |
 | `WAIT_STATE_LOST` | driver | driver.wait | yes | schema |  |
 | `WAIT_TIMEOUT` | driver | driver.wait | yes | schema |  |
-| `WEBSOCKET_INVALID_INPUT` | unknown | bridge.ws | no | schema |  |
-| `WEBSOCKET_INVALID_MATCHER` | unknown | bridge.ws | no | schema |  |
-| `WEBSOCKET_OPEN_FAILED` | unknown | bridge.ws | yes | schema |  |
-| `WEBSOCKET_OPEN_TIMEOUT` | unknown | bridge.ws | yes | schema |  |
-| `WEBSOCKET_SEND_FAILED` | unknown | bridge.ws | yes | schema |  |
-| `WEBSOCKET_SESSION_ALREADY_OPEN` | unknown | bridge.ws | no | schema |  |
-| `WEBSOCKET_SESSION_NOT_FOUND` | unknown | bridge.ws | no | schema |  |
-| `WEBSOCKET_SESSION_NOT_OPEN` | unknown | bridge.ws | no | schema |  |
-| `WEBSOCKET_WAIT_ABORTED` | unknown | bridge.ws | yes | schema |  |
-| `WEBSOCKET_WAIT_TIMEOUT` | unknown | bridge.ws | yes | schema |  |
+| `WEBSOCKET_INVALID_INPUT` | websocket | bridge.ws | no | schema |  |
+| `WEBSOCKET_INVALID_MATCHER` | websocket | bridge.ws | no | schema |  |
+| `WEBSOCKET_OPEN_FAILED` | websocket | bridge.ws | yes | schema |  |
+| `WEBSOCKET_OPEN_TIMEOUT` | websocket | bridge.ws | yes | schema |  |
+| `WEBSOCKET_SEND_FAILED` | websocket | bridge.ws | yes | schema |  |
+| `WEBSOCKET_SESSION_ALREADY_OPEN` | websocket | bridge.ws | no | schema |  |
+| `WEBSOCKET_SESSION_NOT_FOUND` | websocket | bridge.ws | no | schema |  |
+| `WEBSOCKET_SESSION_NOT_OPEN` | websocket | bridge.ws | no | schema |  |
+| `WEBSOCKET_WAIT_ABORTED` | websocket | bridge.ws | yes | schema |  |
+| `WEBSOCKET_WAIT_TIMEOUT` | websocket | bridge.ws | yes | schema |  |
 | `WORDLIST_PATH_BLOCKED` | security | tool.security | no | schema | `src/tools/webSecurity/shared/normalize.ts` |
 
 ## Artifact and privacy contract

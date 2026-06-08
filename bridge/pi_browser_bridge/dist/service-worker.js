@@ -2055,19 +2055,18 @@ async function getAll(kind) {
   const map = await loadAll();
   return Object.values(map).filter((r) => r.kind === kind);
 }
-async function tabExists(tabId2) {
+async function tabExists(tabId) {
   try {
-    const tab = await chromeApi.tabs.get(tabId2);
+    const tab = await chromeApi.tabs.get(tabId);
     return !!tab;
-  } catch (error) {
-    console.warn("[PI-BROWSER-STATE] tabExists lookup failed", tabId2, error instanceof Error ? error.message : error);
+  } catch {
     return false;
   }
 }
 async function recover(kind, opts = {}) {
   const bootId = currentBootId();
   const records = await getAll(kind);
-  const result2 = { kind, recovered: [], lost: [], diagnostics: [] };
+  const result = { kind, recovered: [], lost: [], diagnostics: [] };
   for (const record of records) {
     const key = record.key;
     const sk = stateKey(kind, key);
@@ -2075,7 +2074,7 @@ async function recover(kind, opts = {}) {
     if (opts.validateTab && record.tabId != null) {
       const exists = await tabExists(record.tabId);
       if (!exists) {
-        result2.lost.push({
+        result.lost.push({
           key,
           code: RECOVERY_CODES.LOST,
           reason: `tab ${record.tabId} no longer exists`
@@ -2096,27 +2095,27 @@ async function recover(kind, opts = {}) {
             existing.updatedAt = now();
             await saveAll(map);
           }
-          result2.recovered.push({
+          result.recovered.push({
             key,
             config: record.config,
             code: recovery.historyLost ? RECOVERY_CODES.RECOVERED_WITH_HISTORY_LOSS : RECOVERY_CODES.RECOVERED
           });
         } else {
-          result2.lost.push({
+          result.lost.push({
             key,
             code: RECOVERY_CODES.LOST,
             reason: recovery.reason || "recovery failed"
           });
         }
       } catch (error) {
-        result2.lost.push({
+        result.lost.push({
           key,
           code: RECOVERY_CODES.LOST,
           reason: error instanceof Error ? error.message : String(error)
         });
       }
     } else {
-      result2.recovered.push({
+      result.recovered.push({
         key,
         config: record.config,
         code: RECOVERY_CODES.RECOVERED_WITH_HISTORY_LOSS
@@ -2131,7 +2130,7 @@ async function recover(kind, opts = {}) {
       }
     }
   }
-  return result2;
+  return result;
 }
 async function diagnostics() {
   const map = await loadAll();
@@ -2157,18 +2156,18 @@ function summarizeRecovery(results) {
   let recoveredWithHistoryLoss = 0;
   let lost = 0;
   const byKind = {};
-  for (const result2 of results) {
-    const kindStats = byKind[result2.kind] || { recovered: 0, lost: 0 };
-    for (const entry of result2.recovered) {
+  for (const result of results) {
+    const kindStats = byKind[result.kind] || { recovered: 0, lost: 0 };
+    for (const entry of result.recovered) {
       if (entry.code === RECOVERY_CODES.RECOVERED) recovered++;
       else recoveredWithHistoryLoss++;
       kindStats.recovered++;
     }
-    for (const _ of result2.lost) {
+    for (const _ of result.lost) {
       lost++;
       kindStats.lost++;
     }
-    byKind[result2.kind] = kindStats;
+    byKind[result.kind] = kindStats;
   }
   return { recovered, recoveredWithHistoryLoss, lost, byKind };
 }
@@ -2194,14 +2193,6 @@ async function runStartupRecovery() {
   };
   lastRecoverySummary = summary;
   runtimeRecoveryGlobal().__PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__ = summary;
-  if (summary.totals.recovered + summary.totals.recoveredWithHistoryLoss + summary.totals.lost > 0) {
-    console.log(
-      "[PI-BROWSER-STATE] Startup recovery complete",
-      `recovered=${summary.totals.recovered}`,
-      `historyLoss=${summary.totals.recoveredWithHistoryLoss}`,
-      `lost=${summary.totals.lost}`
-    );
-  }
   return summary;
 }
 function getRuntimeRecoverySummary() {
@@ -2232,30 +2223,30 @@ function cdpErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function cdpRawError(error) {
-  return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { message: String(error) };
+  return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) };
 }
 var PI_PERSISTENT_CDP_VERSION = "p4.0.0";
 var PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15e3;
 var PI_PERSISTENT_CDP_MAX_SESSIONS = 16;
 var piPersistentCdpSessions = /* @__PURE__ */ new Map();
 var piPersistentCdpNewDocumentScripts = /* @__PURE__ */ new Map();
-function piPersistentCdpHasSessionForTab(tabId2) {
-  return Array.from(piPersistentCdpSessions.values()).some((rec) => Number(rec.tabId) === Number(tabId2));
+function piPersistentCdpHasSessionForTab(tabId) {
+  return Array.from(piPersistentCdpSessions.values()).some((rec) => Number(rec.tabId) === Number(tabId));
 }
 function piCdpNow() {
   return Date.now();
 }
-function piCdpSessionKey(tabId2, name) {
-  return String(tabId2) + ":" + (name || "default");
+function piCdpSessionKey(tabId, name) {
+  return String(tabId) + ":" + (name || "default");
 }
-function piCdpNewDocumentScriptKey(tabId2, name, identifier) {
-  return piCdpSessionKey(tabId2, name || "new_document") + ":" + String(identifier);
+function piCdpNewDocumentScriptKey(tabId, name, identifier) {
+  return piCdpSessionKey(tabId, name || "new_document") + ":" + String(identifier);
 }
-function piCdpKnownNewDocumentIdentifiers(tabId2, name) {
-  return Array.from(piPersistentCdpNewDocumentScripts.values()).filter((rec) => Number(rec.tabId) === Number(tabId2) && (!name || rec.cdpSessionName === name)).map((rec) => rec.identifier);
+function piCdpKnownNewDocumentIdentifiers(tabId, name) {
+  return Array.from(piPersistentCdpNewDocumentScripts.values()).filter((rec) => Number(rec.tabId) === Number(tabId) && (!name || rec.cdpSessionName === name)).map((rec) => rec.identifier);
 }
-function piCdpStateStoreKey(tabId2, name, identifier) {
-  return `new_document:${piCdpNewDocumentScriptKey(tabId2, name, identifier)}`;
+function piCdpStateStoreKey(tabId, name, identifier) {
+  return `new_document:${piCdpNewDocumentScriptKey(tabId, name, identifier)}`;
 }
 async function piCdpPersistNewDocumentScript(rec) {
   await persist("cdp", piCdpStateStoreKey(rec.tabId, rec.cdpSessionName, rec.identifier), {
@@ -2272,11 +2263,11 @@ async function piCdpPersistNewDocumentScript(rec) {
     recoveryPolicy: "diagnosticOnly"
   });
 }
-async function piCdpForgetNewDocumentScriptState(tabId2, name, identifier) {
-  await forget("cdp", piCdpStateStoreKey(tabId2, name, identifier));
+async function piCdpForgetNewDocumentScriptState(tabId, name, identifier) {
+  await forget("cdp", piCdpStateStoreKey(tabId, name, identifier));
 }
-async function piCdpLostNewDocumentScriptState(tabId2, name, identifier) {
-  const record = await get("cdp", piCdpStateStoreKey(tabId2, name, identifier));
+async function piCdpLostNewDocumentScriptState(tabId, name, identifier) {
+  const record = await get("cdp", piCdpStateStoreKey(tabId, name, identifier));
   if (!record) return void 0;
   return record.workerBootId !== void 0 ? record : void 0;
 }
@@ -2287,14 +2278,14 @@ function piCdpError(code, message, details = {}) {
 function piCdpRawError(e) {
   return cdpRawError(e);
 }
-function piCdpAugmentDebuggerEvidence(method, data2) {
-  const out = { ...data2 };
-  const result2 = cdpRecord(out.result);
-  if (method === "Debugger.enable" && result2.debuggerId !== void 0 && out.debuggerId === void 0) out.debuggerId = result2.debuggerId;
-  if (method === "Debugger.getScriptSource" && result2.scriptSource !== void 0 && out.scriptSource === void 0) out.scriptSource = result2.scriptSource;
+function piCdpAugmentDebuggerEvidence(method, data) {
+  const out = { ...data };
+  const result = cdpRecord(out.result);
+  if (method === "Debugger.enable" && result.debuggerId !== void 0 && out.debuggerId === void 0) out.debuggerId = result.debuggerId;
+  if (method === "Debugger.getScriptSource" && result.scriptSource !== void 0 && out.scriptSource === void 0) out.scriptSource = result.scriptSource;
   if (method === "Runtime.evaluate") {
-    if (result2.value !== void 0 && out.value === void 0) out.value = result2.value;
-    if (result2.exceptionDetails && out.exceptionDetails === void 0) out.exceptionDetails = result2.exceptionDetails;
+    if (result.value !== void 0 && out.value === void 0) out.value = result.value;
+    if (result.exceptionDetails && out.exceptionDetails === void 0) out.exceptionDetails = result.exceptionDetails;
     const exceptionDetails = cdpRecord(out.exceptionDetails);
     if (exceptionDetails.scriptId !== void 0 && out.scriptId === void 0) out.scriptId = exceptionDetails.scriptId;
     const stackTrace = cdpRecord(exceptionDetails.stackTrace);
@@ -2302,8 +2293,8 @@ function piCdpAugmentDebuggerEvidence(method, data2) {
   }
   return out;
 }
-function piCdpOk(data2) {
-  return { ok: true, data: data2 };
+function piCdpOk(data) {
+  return { ok: true, data };
 }
 function piCdpWithTimeout(promise, timeoutMs, label = "CDP command") {
   const ms = Math.max(1, Number(timeoutMs || PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS));
@@ -2361,14 +2352,14 @@ function piCdpResolveFrame(frames, selector) {
   if (selectorRecord2.index !== void 0) return frames[Number(selectorRecord2.index)] || null;
   return null;
 }
-async function piPersistentCdpAttach(tabId2, options = {}) {
-  if (!tabId2) return piCdpError("NO_TAB_ID", "tabId is required");
+async function piPersistentCdpAttach(tabId, options = {}) {
+  if (!tabId) return piCdpError("NO_TAB_ID", "tabId is required");
   const name = options?.name || "default";
-  const key = piCdpSessionKey(tabId2, name);
+  const key = piCdpSessionKey(tabId, name);
   if (piPersistentCdpSessions.has(key)) {
     const old = piPersistentCdpSessions.get(key);
     old.lastUsed = piCdpNow();
-    return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: true, attachedAt: old.attachedAt });
+    return piCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: old.attachedAt });
   }
   if (piPersistentCdpSessions.size >= PI_PERSISTENT_CDP_MAX_SESSIONS) {
     try {
@@ -2381,40 +2372,40 @@ async function piPersistentCdpAttach(tabId2, options = {}) {
     }
   }
   try {
-    if (options?.bringToFront) await chromeApi.tabs.update(tabId2, { active: true });
-    await chromeApi.debugger.attach({ tabId: tabId2 }, options?.protocolVersion || "1.3");
-    const rec = { tabId: tabId2, name, key, attachedAt: piCdpNow(), lastUsed: piCdpNow(), commands: 0, pending: 0, lockedUntil: 0 };
+    if (options?.bringToFront) await chromeApi.tabs.update(tabId, { active: true });
+    await chromeApi.debugger.attach({ tabId }, options?.protocolVersion || "1.3");
+    const rec = { tabId, name, key, attachedAt: piCdpNow(), lastUsed: piCdpNow(), commands: 0, pending: 0, lockedUntil: 0 };
     piPersistentCdpSessions.set(key, rec);
     try {
-      await piPersistentCdpSend(tabId2, "Page.enable", {}, { name });
+      await piPersistentCdpSend(tabId, "Page.enable", {}, { name });
     } catch (error) {
       console.warn("[PI-BROWSER-CDP] Failed to enable Page domain after attach", key, error);
     }
     try {
-      await piPersistentCdpSend(tabId2, "Runtime.enable", {}, { name });
+      await piPersistentCdpSend(tabId, "Runtime.enable", {}, { name });
     } catch (error) {
       console.warn("[PI-BROWSER-CDP] Failed to enable Runtime domain after attach", key, error);
     }
-    return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: false, attachedAt: rec.attachedAt });
+    return piCdpOk({ sessionKey: key, tabId, name, reused: false, attachedAt: rec.attachedAt });
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (/Another debugger is already attached|Cannot attach/i.test(String(msg || ""))) {
-      const existingKey = piCdpSessionKey(tabId2, "default");
+      const existingKey = piCdpSessionKey(tabId, "default");
       const existing = piPersistentCdpSessions.get(existingKey);
       if (existing) {
         existing.lastUsed = piCdpNow();
         if (name !== "default") piPersistentCdpSessions.set(key, existing);
-        return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
+        return piCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: existing.attachedAt, alreadyAttached: true });
       }
       for (const [, rec] of piPersistentCdpSessions.entries()) {
-        if (rec && rec.tabId === tabId2) {
+        if (rec && rec.tabId === tabId) {
           rec.lastUsed = piCdpNow();
           piPersistentCdpSessions.set(key, rec);
-          return piCdpOk({ sessionKey: key, tabId: tabId2, name, reused: true, attachedAt: rec.attachedAt, alreadyAttached: true });
+          return piCdpOk({ sessionKey: key, tabId, name, reused: true, attachedAt: rec.attachedAt, alreadyAttached: true });
         }
       }
     }
-    return piCdpError("ATTACH_FAILED", msg, { tabId: tabId2, name, raw: piCdpRawError(e) });
+    return piCdpError("ATTACH_FAILED", msg, { tabId, name, raw: piCdpRawError(e) });
   }
 }
 async function piPersistentCdpDetachEntry(key) {
@@ -2432,60 +2423,60 @@ async function piPersistentCdpDetachEntry(key) {
   }
   return piCdpOk({ sessionKey: key, detached: true, lifetimeMs: piCdpNow() - rec.attachedAt, commands: rec.commands });
 }
-async function piPersistentCdpDetach(tabId2, options = {}) {
+async function piPersistentCdpDetach(tabId, options = {}) {
   const name = options?.name || "default";
-  return await piPersistentCdpDetachEntry(piCdpSessionKey(tabId2, name));
+  return await piPersistentCdpDetachEntry(piCdpSessionKey(tabId, name));
 }
-async function piPersistentCdpSend(tabId2, method, params = {}, options = {}) {
+async function piPersistentCdpSend(tabId, method, params = {}, options = {}) {
   if (!method) return piCdpError("NO_METHOD", "CDP method is required");
   const name = options?.name || "default";
-  const key = piCdpSessionKey(tabId2, name);
+  const key = piCdpSessionKey(tabId, name);
   const retrying = Boolean(options?.__piRetryAfterNotAttached);
   let rec = piPersistentCdpSessions.get(key);
   let temporary = false;
   if (!rec) {
-    const attached = await piPersistentCdpAttach(tabId2, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront });
+    const attached = await piPersistentCdpAttach(tabId, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront });
     if (!attached.ok) return attached;
     rec = piPersistentCdpSessions.get(key);
     temporary = options?.persistent === false;
   }
-  if (!rec) return piCdpError("ATTACH_FAILED", "CDP session missing after attach", { tabId: tabId2, name });
+  if (!rec) return piCdpError("ATTACH_FAILED", "CDP session missing after attach", { tabId, name });
   rec.pending = (rec.pending || 0) + 1;
   rec.lockedUntil = Math.max(rec.lockedUntil || 0, piCdpNow() + Number(options?.timeoutMs || 3e4));
   try {
-    const data2 = await piCdpWithTimeout(
+    const data = await piCdpWithTimeout(
       chromeApi.debugger.sendCommand({ tabId: rec.tabId }, method, params || {}),
       options?.timeoutMs,
       method
     );
     rec.commands += 1;
     rec.lastUsed = piCdpNow();
-    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data2, sessionKey: key, method }));
+    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method }));
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (!retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(msg || ""))) {
       for (const [staleKey, staleRec] of Array.from(piPersistentCdpSessions.entries())) {
         if (staleRec && Number(staleRec.tabId) === Number(rec.tabId)) piPersistentCdpSessions.delete(staleKey);
       }
-      return await piPersistentCdpSend(tabId2, method, params, { ...options || {}, __piRetryAfterNotAttached: true });
+      return await piPersistentCdpSend(tabId, method, params, { ...options || {}, __piRetryAfterNotAttached: true });
     }
-    if (options?.detachOnError) await piPersistentCdpDetach(tabId2, { name });
+    if (options?.detachOnError) await piPersistentCdpDetach(tabId, { name });
     return piCdpError("SEND_FAILED", msg || String(e), { sessionKey: key, method, raw: piCdpRawError(e) });
   } finally {
     rec.pending = Math.max(0, (rec.pending || 1) - 1);
     rec.lockedUntil = 0;
     rec.lastUsed = piCdpNow();
-    if (temporary) await piPersistentCdpDetach(tabId2, { name });
+    if (temporary) await piPersistentCdpDetach(tabId, { name });
   }
 }
-async function piPersistentCdpFrameTree(tabId2, options = {}) {
-  const resp = await piPersistentCdpSend(tabId2, "Page.getFrameTree", {}, options || {});
+async function piPersistentCdpFrameTree(tabId, options = {}) {
+  const resp = await piPersistentCdpSend(tabId, "Page.getFrameTree", {}, options || {});
   if (!resp.ok) return resp;
   const rawTree = cdpRecord(cdpRecord(cdpRecord(resp.data).result).frameTree);
   return piCdpOk({ frameTree: piCdpNormalizeFrameTreeNode(rawTree), frames: piCdpFlattenFrameTree(rawTree, []) });
 }
-async function piPersistentCdpEvaluateInFrame(tabId2, expression, options = {}) {
-  const frameTree = await piPersistentCdpFrameTree(tabId2, options || {});
+async function piPersistentCdpEvaluateInFrame(tabId, expression, options = {}) {
+  const frameTree = await piPersistentCdpFrameTree(tabId, options || {});
   if (!frameTree.ok) return frameTree;
   const frameTreeData = cdpRecord(frameTree.data);
   const frames = Array.isArray(frameTreeData.frames) ? frameTreeData.frames : [];
@@ -2493,13 +2484,13 @@ async function piPersistentCdpEvaluateInFrame(tabId2, expression, options = {}) 
   if (!frame) return piCdpError("FRAME_NOT_FOUND", "requested frame not found", { frame: options?.frame || options?.frameId, frames });
   try {
     const worldName = options?.worldName || "pi_browser_" + Math.random().toString(36).slice(2);
-    const world = await piPersistentCdpSend(tabId2, "Page.createIsolatedWorld", {
+    const world = await piPersistentCdpSend(tabId, "Page.createIsolatedWorld", {
       frameId: frame.frameId,
       worldName,
       grantUniversalAccess: Boolean(options?.grantUniversalAccess)
     }, options || {});
     if (!world.ok) return world;
-    const evalResp = await piPersistentCdpSend(tabId2, "Runtime.evaluate", {
+    const evalResp = await piPersistentCdpSend(tabId, "Runtime.evaluate", {
       expression: String(expression || ""),
       contextId: cdpRecord(cdpRecord(world.data).result).executionContextId,
       awaitPromise: options?.awaitPromise !== false,
@@ -2512,7 +2503,7 @@ async function piPersistentCdpEvaluateInFrame(tabId2, expression, options = {}) 
     return piCdpError("FRAME_EVAL_FAILED", cdpErrorMessage(e), { frame, raw: piCdpRawError(e) });
   }
 }
-async function piPersistentCdpAddNewDocumentScript(tabId2, source, options = {}) {
+async function piPersistentCdpAddNewDocumentScript(tabId, source, options = {}) {
   if (!source) return piCdpError("NO_SOURCE", "script source is required");
   const cdpOptions = { ...options || {}, persistent: options?.persistent === true, name: options?.name || "new_document" };
   const params = {
@@ -2521,14 +2512,14 @@ async function piPersistentCdpAddNewDocumentScript(tabId2, source, options = {})
     runImmediately: Boolean(options?.runImmediately)
   };
   if (options?.worldName !== void 0) params.worldName = String(options.worldName || "");
-  const resp = await piPersistentCdpSend(tabId2, "Page.addScriptToEvaluateOnNewDocument", params, cdpOptions);
+  const resp = await piPersistentCdpSend(tabId, "Page.addScriptToEvaluateOnNewDocument", params, cdpOptions);
   if (!resp.ok) return resp;
   const respData = cdpRecord(resp.data);
   const identifier = String(cdpRecord(respData.result).identifier);
   const sessionKey = respData.sessionKey;
   const rec = {
-    key: piCdpNewDocumentScriptKey(tabId2, cdpOptions.name, identifier),
-    tabId: Number(tabId2),
+    key: piCdpNewDocumentScriptKey(tabId, cdpOptions.name, identifier),
+    tabId: Number(tabId),
     identifier,
     sessionKey,
     cdpSessionName: cdpOptions.name,
@@ -2544,44 +2535,44 @@ async function piPersistentCdpAddNewDocumentScript(tabId2, source, options = {})
   } catch (error) {
     console.warn("[PI-BROWSER-CDP] Failed to persist new-document script state", rec.key, error);
   }
-  return piCdpOk({ identifier, sessionKey, cdpSessionName: cdpOptions.name, tabId: Number(tabId2), method: rec.method, detached: cdpOptions.persistent !== true });
+  return piCdpOk({ identifier, sessionKey, cdpSessionName: cdpOptions.name, tabId: Number(tabId), method: rec.method, detached: cdpOptions.persistent !== true });
 }
-async function piPersistentCdpRemoveNewDocumentScript(tabId2, identifier, options = {}) {
+async function piPersistentCdpRemoveNewDocumentScript(tabId, identifier, options = {}) {
   if (!identifier) return piCdpError("NO_IDENTIFIER", "script identifier is required");
   const cdpOptions = { ...options || {}, persistent: options?.persistent === true, name: options?.name || "new_document" };
   const id = String(identifier);
-  const key = piCdpNewDocumentScriptKey(tabId2, cdpOptions.name, id);
+  const key = piCdpNewDocumentScriptKey(tabId, cdpOptions.name, id);
   const known = piPersistentCdpNewDocumentScripts.get(key);
   if (!known) {
-    const lost = await piCdpLostNewDocumentScriptState(tabId2, cdpOptions.name, id);
+    const lost = await piCdpLostNewDocumentScriptState(tabId, cdpOptions.name, id);
     if (lost) {
-      return piCdpError(RECOVERY_CODES.LOST, "new document script state was lost after service worker restart", { tabId: Number(tabId2), identifier: id, cdpSessionName: String(cdpOptions.name), knownIdentifiers: piCdpKnownNewDocumentIdentifiers(tabId2, String(cdpOptions.name)), historyLost: true, nextAction: "re-add the new-document script with frame.addNewDocumentScript" });
+      return piCdpError(RECOVERY_CODES.LOST, "new document script state was lost after service worker restart", { tabId: Number(tabId), identifier: id, cdpSessionName: String(cdpOptions.name), knownIdentifiers: piCdpKnownNewDocumentIdentifiers(tabId, String(cdpOptions.name)), historyLost: true, nextAction: "re-add the new-document script with frame.addNewDocumentScript" });
     }
-    return piCdpError("SCRIPT_NOT_FOUND", "new document script identifier is not registered", { tabId: Number(tabId2), identifier: id, cdpSessionName: String(cdpOptions.name), knownIdentifiers: piCdpKnownNewDocumentIdentifiers(tabId2, String(cdpOptions.name)) });
+    return piCdpError("SCRIPT_NOT_FOUND", "new document script identifier is not registered", { tabId: Number(tabId), identifier: id, cdpSessionName: String(cdpOptions.name), knownIdentifiers: piCdpKnownNewDocumentIdentifiers(tabId, String(cdpOptions.name)) });
   }
   const method = "Page.removeScriptToEvaluateOnNewDocument";
-  const resp = await piPersistentCdpSend(tabId2, method, { identifier: id }, cdpOptions);
+  const resp = await piPersistentCdpSend(tabId, method, { identifier: id }, cdpOptions);
   if (!resp.ok) {
     const errorRecord2 = cdpRecord(resp.error);
     const msg = String(errorRecord2.message || resp.message || resp.error || "");
     if (/(no\s+script|script.*(not\s*found|does\s*not\s*exist|given\s+id)|identifier.*(not\s*found|does\s*not\s*exist))/i.test(msg)) {
       piPersistentCdpNewDocumentScripts.delete(key);
       try {
-        await piCdpForgetNewDocumentScriptState(tabId2, cdpOptions.name, id);
+        await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id);
       } catch (error) {
         console.warn("[PI-BROWSER-CDP] Failed to forget already-removed new-document script state", key, error);
       }
-      return piCdpOk({ identifier: id, removed: false, alreadyRemoved: true, sessionKey: known.sessionKey, cdpSessionName: known.cdpSessionName, tabId: Number(tabId2), method, error: msg });
+      return piCdpOk({ identifier: id, removed: false, alreadyRemoved: true, sessionKey: known.sessionKey, cdpSessionName: known.cdpSessionName, tabId: Number(tabId), method, error: msg });
     }
     return resp;
   }
   piPersistentCdpNewDocumentScripts.delete(key);
   try {
-    await piCdpForgetNewDocumentScriptState(tabId2, cdpOptions.name, id);
+    await piCdpForgetNewDocumentScriptState(tabId, cdpOptions.name, id);
   } catch (error) {
     console.warn("[PI-BROWSER-CDP] Failed to forget new-document script state after removal", key, error);
   }
-  return piCdpOk({ identifier: id, removed: true, alreadyRemoved: false, sessionKey: cdpRecord(resp.data).sessionKey || known.sessionKey, cdpSessionName: known.cdpSessionName, tabId: Number(tabId2), method });
+  return piCdpOk({ identifier: id, removed: true, alreadyRemoved: false, sessionKey: cdpRecord(resp.data).sessionKey || known.sessionKey, cdpSessionName: known.cdpSessionName, tabId: Number(tabId), method });
 }
 async function piPersistentCdpReleaseIdle(maxIdleMs) {
   const now2 = piCdpNow();
@@ -2596,14 +2587,14 @@ async function piPersistentCdpReleaseIdle(maxIdleMs) {
       continue;
     }
     if (now2 - rec.lastUsed >= idleMs) {
-      const res2 = await piPersistentCdpDetachEntry(key);
-      released.push({ sessionKey: key, ok: res2.ok, detached: cdpRecord(res2.data).detached === true });
+      const res = await piPersistentCdpDetachEntry(key);
+      released.push({ sessionKey: key, ok: res.ok, detached: cdpRecord(res.data).detached === true });
     }
   }
   return piCdpOk({ released, skipped, remaining: piPersistentCdpSessions.size });
 }
-function cleanupPersistentCdpForTab(tabId2, reason) {
-  const target = Number(tabId2);
+function cleanupPersistentCdpForTab(tabId, _reason) {
+  const target = Number(tabId);
   const removed = [];
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
     if (!rec || Number(rec.tabId) !== target) continue;
@@ -2613,20 +2604,19 @@ function cleanupPersistentCdpForTab(tabId2, reason) {
   for (const [key, rec] of Array.from(piPersistentCdpNewDocumentScripts.entries())) {
     if (rec && Number(rec.tabId) === target) piPersistentCdpNewDocumentScripts.delete(key);
   }
-  if (removed.length) console.log("[PI-BROWSER-CDP] released persistent sessions for tab", target, reason || "tab_cleanup", removed.length);
   return { tabId: target, released: removed.length, sessionKeys: removed };
 }
 async function handlePersistentCdpCommand(msg, sender) {
-  const tabId2 = Number(msg.tabId || sender?.tab?.id || 0);
+  const tabId = Number(msg.tabId || sender?.tab?.id || 0);
   const action = msg.action || msg.method;
-  if (!tabId2 && action !== "releaseIdle") return piCdpError("NO_TAB_ID", "tabId is required");
-  if (action === "attach") return await piPersistentCdpAttach(tabId2, msg);
-  if (action === "send") return await piPersistentCdpSend(tabId2, String(msg.cdpMethod || ""), cdpRecord(msg.params), msg);
-  if (action === "detach") return await piPersistentCdpDetach(tabId2, msg);
-  if (action === "frameTree") return await piPersistentCdpFrameTree(tabId2, msg);
-  if (action === "evaluateInFrame") return await piPersistentCdpEvaluateInFrame(tabId2, msg.expression, msg);
-  if (action === "addNewDocumentScript") return await piPersistentCdpAddNewDocumentScript(tabId2, msg.source, msg);
-  if (action === "removeNewDocumentScript") return await piPersistentCdpRemoveNewDocumentScript(tabId2, msg.identifier, msg);
+  if (!tabId && action !== "releaseIdle") return piCdpError("NO_TAB_ID", "tabId is required");
+  if (action === "attach") return await piPersistentCdpAttach(tabId, msg);
+  if (action === "send") return await piPersistentCdpSend(tabId, String(msg.cdpMethod || ""), cdpRecord(msg.params), msg);
+  if (action === "detach") return await piPersistentCdpDetach(tabId, msg);
+  if (action === "frameTree") return await piPersistentCdpFrameTree(tabId, msg);
+  if (action === "evaluateInFrame") return await piPersistentCdpEvaluateInFrame(tabId, msg.expression, msg);
+  if (action === "addNewDocumentScript") return await piPersistentCdpAddNewDocumentScript(tabId, msg.source, msg);
+  if (action === "removeNewDocumentScript") return await piPersistentCdpRemoveNewDocumentScript(tabId, msg.identifier, msg);
   if (action === "releaseIdle") return await piPersistentCdpReleaseIdle(msg.maxIdleMs);
   return piCdpError("UNKNOWN_ACTION", "unknown persistent CDP action: " + action, { action });
 }
@@ -2637,7 +2627,7 @@ chromeApi.debugger.onDetach.addListener((source, _reason) => {
   }
 });
 registerRecovery(async (results) => {
-  const result2 = await recover("cdp", {
+  const result = await recover("cdp", {
     validateTab: true,
     recover: async () => ({
       recovered: false,
@@ -2645,7 +2635,7 @@ registerRecovery(async (results) => {
       reason: "raw new-document script source is not persisted; explicit frame.addNewDocumentScript is required"
     })
   });
-  results.push(result2);
+  results.push(result);
 });
 var piPersistentCdpBridge = {
   version: PI_PERSISTENT_CDP_VERSION,
@@ -2679,8 +2669,8 @@ function waitCdpRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 var piBrowserCdpSubSeq = 0;
-function piBrowserCdpDomainKey(tabId2, domain) {
-  return Number(tabId2) + ":" + String(domain);
+function piBrowserCdpDomainKey(tabId, domain) {
+  return Number(tabId) + ":" + String(domain);
 }
 function piBrowserCdpHolderId(record) {
   return record?.key || Number(record?.tabId) + ":" + String(record?.waitId || record?.kind || "anonymous");
@@ -2689,11 +2679,11 @@ function rememberPiBrowserCdpCleanup(entry = {}) {
   piBrowserCdpCleanupHistory.push({ t: Date.now(), ...entry || {} });
   if (piBrowserCdpCleanupHistory.length > 200) piBrowserCdpCleanupHistory.splice(0, piBrowserCdpCleanupHistory.length - 200);
 }
-async function sendPiBrowserCdpDomainCommand(tabId2, domain, action, modeHint) {
+async function sendPiBrowserCdpDomainCommand(tabId, domain, action, modeHint) {
   const cdp = piBrowserPersistentCdp();
   const method = String(domain) + "." + String(action);
   if (cdp?.send && modeHint !== "chrome.debugger") {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, method, {}, { name: "wait", persistent: true }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, method, {}, { name: "wait", persistent: true }));
     if (!resp || resp.ok === false) {
       const error = waitCdpRecord(resp?.error);
       const msg = error.message || resp?.message || resp?.error || "failed to " + action + " " + domain;
@@ -2702,17 +2692,17 @@ async function sendPiBrowserCdpDomainCommand(tabId2, domain, action, modeHint) {
     return "persistent_cdp";
   }
   if (action === "enable") {
-    await chromeApi.debugger.attach({ tabId: Number(tabId2) }, "1.3").catch((e) => {
+    await chromeApi.debugger.attach({ tabId: Number(tabId) }, "1.3").catch((e) => {
       if (!/Another debugger|already attached|Debugger is already attached/i.test(waitCdpErrorMessage(e))) throw e;
     });
   }
-  await chromeApi.debugger.sendCommand({ tabId: Number(tabId2) }, method, {});
+  await chromeApi.debugger.sendCommand({ tabId: Number(tabId) }, method, {});
   return "chrome.debugger";
 }
 async function acquirePiBrowserCdpDomain(record, domain) {
-  const tabId2 = Number(record.tabId);
+  const tabId = Number(record.tabId);
   const holderId = piBrowserCdpHolderId(record);
-  const key = piBrowserCdpDomainKey(tabId2, domain);
+  const key = piBrowserCdpDomainKey(tabId, domain);
   let ref = piBrowserCdpDomainRefs.get(key);
   if (ref?.holders?.has(holderId)) {
     record.cdpDomains.add(domain);
@@ -2725,13 +2715,13 @@ async function acquirePiBrowserCdpDomain(record, domain) {
     ref = piBrowserCdpDomainRefs.get(key);
   }
   if (!ref) {
-    ref = { key, tabId: tabId2, domain, count: 0, holders: /* @__PURE__ */ new Map(), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false, disableInFlight: false, disablePromise: null, disableToken: 0 };
+    ref = { key, tabId, domain, count: 0, holders: /* @__PURE__ */ new Map(), mode: null, createdAt: Date.now(), enabledAt: 0, lastError: null, disablePending: false, disableInFlight: false, disablePromise: null, disableToken: 0 };
     piBrowserCdpDomainRefs.set(key, ref);
   }
   const first = ref.count === 0;
   try {
     if (first) {
-      ref.mode = await sendPiBrowserCdpDomainCommand(tabId2, domain, "enable", ref.mode);
+      ref.mode = await sendPiBrowserCdpDomainCommand(tabId, domain, "enable", ref.mode);
       ref.enabledAt = Date.now();
       ref.lastError = null;
       ref.disablePending = false;
@@ -2757,11 +2747,11 @@ function schedulePiBrowserCdpDomainDisable(ref, reason, holderId, action) {
   ref.disableToken = Number(ref.disableToken || 0) + 1;
   const token = ref.disableToken;
   const mode = ref.mode;
-  const tabId2 = Number(ref.tabId);
+  const tabId = Number(ref.tabId);
   const domain = ref.domain;
   const key = ref.key;
-  rememberPiBrowserCdpCleanup({ tabId: tabId2, domain, reason, holderId, action: action || "disable", mode });
-  ref.disablePromise = sendPiBrowserCdpDomainCommand(tabId2, domain, "disable", mode).then(() => {
+  rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: action || "disable", mode });
+  ref.disablePromise = sendPiBrowserCdpDomainCommand(tabId, domain, "disable", mode).then(() => {
     const current = piBrowserCdpDomainRefs.get(key);
     if (current !== ref || current.disableToken !== token) return;
     current.disableInFlight = false;
@@ -2782,19 +2772,19 @@ function schedulePiBrowserCdpDomainDisable(ref, reason, holderId, action) {
         current.lastError = errorText8;
       }
     }
-    rememberPiBrowserCdpCleanup({ tabId: tabId2, domain, reason, holderId, action: (action || "disable") + "_failed", mode, error: waitCdpErrorMessage(e) });
+    rememberPiBrowserCdpCleanup({ tabId, domain, reason, holderId, action: (action || "disable") + "_failed", mode, error: waitCdpErrorMessage(e) });
   });
   return true;
 }
 function releasePiBrowserCdpDomains(record, domains, reason) {
   const unique = Array.from(new Set(domains || []));
   if (!record || !unique.length) return { released: 0, disabled: 0 };
-  const tabId2 = Number(record.tabId);
+  const tabId = Number(record.tabId);
   const holderId = piBrowserCdpHolderId(record);
   let released = 0;
   let disabled = 0;
   for (const domain of unique.reverse()) {
-    const key = piBrowserCdpDomainKey(tabId2, domain);
+    const key = piBrowserCdpDomainKey(tabId, domain);
     const ref = piBrowserCdpDomainRefs.get(key);
     if (!ref) {
       try {
@@ -2818,11 +2808,11 @@ function releasePiBrowserCdpDomains(record, domains, reason) {
   }
   return { released, disabled };
 }
-function forceReleasePiBrowserCdpDomainsForTab(tabId2, reason) {
+function forceReleasePiBrowserCdpDomainsForTab(tabId, reason) {
   let released = 0;
   let disabled = 0;
   for (const [, ref] of Array.from(piBrowserCdpDomainRefs.entries())) {
-    if (Number(ref.tabId) !== Number(tabId2)) continue;
+    if (Number(ref.tabId) !== Number(tabId)) continue;
     const holders = Array.from(ref.holders.values()).map((holder) => ({ holderId: holder.holderId, waitId: holder.waitId, kind: holder.kind }));
     released += ref.count || holders.length;
     ref.holders.clear();
@@ -2851,21 +2841,21 @@ async function enablePiBrowserCdpDomains(record, domains) {
 async function attachDebuggerForWait(record, domains) {
   return await enablePiBrowserCdpDomains(record, domains);
 }
-function subscribePiBrowserCdp(tabId2, event, handler, record) {
+function subscribePiBrowserCdp(tabId, event, handler, record) {
   if (!chromeApi.debugger?.onEvent) return null;
   const subscriptionId = "cdp-sub-" + ++piBrowserCdpSubSeq;
   const events = Array.isArray(event) ? event : [event];
   const wrapped = (source, method, params) => {
-    if (!source || Number(source.tabId) !== Number(tabId2)) return;
+    if (!source || Number(source.tabId) !== Number(tabId)) return;
     if (events.length && !events.includes(method) && !events.includes("*")) return;
     handler(source, method, params || {});
   };
   chromeApi.debugger.onEvent.addListener(wrapped);
-  const rec = { subscriptionId, tabId: Number(tabId2), events, createdAt: Date.now(), handler: wrapped, waitId: record?.waitId || null, kind: record?.kind || null };
+  const rec = { subscriptionId, tabId: Number(tabId), events, createdAt: Date.now(), handler: wrapped, waitId: record?.waitId || null, kind: record?.kind || null };
   piBrowserCdpSubscriptions.set(subscriptionId, rec);
-  const set = piBrowserCdpTabRefs.get(Number(tabId2)) || /* @__PURE__ */ new Set();
+  const set = piBrowserCdpTabRefs.get(Number(tabId)) || /* @__PURE__ */ new Set();
   set.add(subscriptionId);
-  piBrowserCdpTabRefs.set(Number(tabId2), set);
+  piBrowserCdpTabRefs.set(Number(tabId), set);
   if (record?.cdpSubscriptions) record.cdpSubscriptions.push(subscriptionId);
   return subscriptionId;
 }
@@ -2885,22 +2875,22 @@ function unsubscribePiBrowserCdp(subscriptionId) {
   }
   return true;
 }
-function cleanupPiBrowserCdpTab(tabId2, reason) {
-  const ids = Array.from(piBrowserCdpTabRefs.get(Number(tabId2)) || []);
+function cleanupPiBrowserCdpTab(tabId, reason) {
+  const ids = Array.from(piBrowserCdpTabRefs.get(Number(tabId)) || []);
   for (const id of ids) unsubscribePiBrowserCdp(id);
-  const domains = forceReleasePiBrowserCdpDomainsForTab(tabId2, reason || "tab_cleanup");
-  const result2 = { tabId: Number(tabId2), reason, removed: ids.length, subscriptions_removed: ids.length, domains_released: domains.released, domains_disabled: domains.disabled };
-  rememberPiBrowserCdpCleanup({ ...result2, action: "tab_cleanup" });
-  return result2;
+  const domains = forceReleasePiBrowserCdpDomainsForTab(tabId, reason || "tab_cleanup");
+  const result = { tabId: Number(tabId), reason, removed: ids.length, subscriptions_removed: ids.length, domains_released: domains.released, domains_disabled: domains.disabled };
+  rememberPiBrowserCdpCleanup({ ...result, action: "tab_cleanup" });
+  return result;
 }
-function diagnosePiBrowserCdpSubscriptions(tabId2) {
-  return Array.from(piBrowserCdpSubscriptions.values()).filter((s2) => tabId2 === void 0 || Number(s2.tabId) === Number(tabId2)).map((s2) => ({ subscriptionId: s2.subscriptionId, tabId: s2.tabId, events: s2.events, waitId: s2.waitId, kind: s2.kind, age_ms: Date.now() - s2.createdAt }));
+function diagnosePiBrowserCdpSubscriptions(tabId) {
+  return Array.from(piBrowserCdpSubscriptions.values()).filter((s) => tabId === void 0 || Number(s.tabId) === Number(tabId)).map((s) => ({ subscriptionId: s.subscriptionId, tabId: s.tabId, events: s.events, waitId: s.waitId, kind: s.kind, age_ms: Date.now() - s.createdAt }));
 }
-function diagnosePiBrowserCdpDomainRefs(tabId2) {
-  return Array.from(piBrowserCdpDomainRefs.values()).filter((r) => tabId2 === void 0 || Number(r.tabId) === Number(tabId2)).map((r) => ({ key: r.key, tabId: r.tabId, domain: r.domain, count: r.count, mode: r.mode, holders: Array.from(r.holders.values()).map((holder) => ({ holderId: holder.holderId, waitId: holder.waitId, kind: holder.kind, age_ms: Date.now() - holder.acquiredAt })), age_ms: Date.now() - r.createdAt, enabled_age_ms: r.enabledAt ? Date.now() - r.enabledAt : null, lastError: r.lastError || null, disablePending: !!r.disablePending }));
+function diagnosePiBrowserCdpDomainRefs(tabId) {
+  return Array.from(piBrowserCdpDomainRefs.values()).filter((r) => tabId === void 0 || Number(r.tabId) === Number(tabId)).map((r) => ({ key: r.key, tabId: r.tabId, domain: r.domain, count: r.count, mode: r.mode, holders: Array.from(r.holders.values()).map((holder) => ({ holderId: holder.holderId, waitId: holder.waitId, kind: holder.kind, age_ms: Date.now() - holder.acquiredAt })), age_ms: Date.now() - r.createdAt, enabled_age_ms: r.enabledAt ? Date.now() - r.enabledAt : null, lastError: r.lastError || null, disablePending: !!r.disablePending }));
 }
-function diagnosePiBrowserCdpCleanupHistory(tabId2) {
-  return piBrowserCdpCleanupHistory.filter((e) => tabId2 === void 0 || Number(e.tabId) === Number(tabId2)).slice(-50).map((e) => ({ ...e, age_ms: Date.now() - e.t }));
+function diagnosePiBrowserCdpCleanupHistory(tabId) {
+  return piBrowserCdpCleanupHistory.filter((e) => tabId === void 0 || Number(e.tabId) === Number(tabId)).slice(-50).map((e) => ({ ...e, age_ms: Date.now() - e.t }));
 }
 var __piBridgeModule_wait_cdp = { name: "wait_cdp", symbols: { piBrowserCdpSubscriptions, piBrowserCdpTabRefs, piBrowserCdpDomainRefs, piBrowserCdpCleanupHistory, piBrowserCdpSubSeq, piBrowserCdpDomainKey, piBrowserCdpHolderId, rememberPiBrowserCdpCleanup, sendPiBrowserCdpDomainCommand, acquirePiBrowserCdpDomain, schedulePiBrowserCdpDomainDisable, releasePiBrowserCdpDomains, forceReleasePiBrowserCdpDomainsForTab, enablePiBrowserCdpDomains, attachDebuggerForWait, subscribePiBrowserCdp, unsubscribePiBrowserCdp, cleanupPiBrowserCdpTab, diagnosePiBrowserCdpSubscriptions, diagnosePiBrowserCdpDomainRefs, diagnosePiBrowserCdpCleanupHistory } };
 
@@ -2918,14 +2908,14 @@ var WaitCoordinator = class {
     this.terminalWaits = /* @__PURE__ */ new Map();
     this.epoch = 0;
   }
-  makeWaitId(tabId2, kind) {
-    return makeWaitId(tabId2, kind);
+  makeWaitId(tabId, kind) {
+    return makeWaitId(tabId, kind);
   }
-  waitKey(tabId2, waitId) {
-    return waitKey(tabId2, waitId);
+  waitKey(tabId, waitId) {
+    return waitKey(tabId, waitId);
   }
-  eventSubscriptionKey(tabId2, listenerId) {
-    return eventSubscriptionKey(tabId2, listenerId);
+  eventSubscriptionKey(tabId, listenerId) {
+    return eventSubscriptionKey(tabId, listenerId);
   }
   register(record) {
     const key = record.key || waitKey(record.tabId, record.wait_id || record.waitId);
@@ -2952,15 +2942,15 @@ var WaitCoordinator = class {
     this.pruneTerminal();
     return terminal;
   }
-  terminal(waitId, tabId2) {
+  terminal(waitId, tabId) {
     this.pruneTerminal();
-    if (tabId2 !== void 0 && tabId2 !== null) return this.terminalWaits.get(waitKey(tabId2, waitId)) || null;
+    if (tabId !== void 0 && tabId !== null) return this.terminalWaits.get(waitKey(tabId, waitId)) || null;
     const matches = Array.from(this.terminalWaits.values()).filter((w) => String(w.waitId) === String(waitId));
     return matches.length === 1 ? matches[0] : null;
   }
-  terminalValues(tabId2) {
+  terminalValues(tabId) {
     this.pruneTerminal();
-    return Array.from(this.terminalWaits.values()).filter((w) => tabId2 === void 0 || tabId2 === null || Number(w.tabId) === Number(tabId2));
+    return Array.from(this.terminalWaits.values()).filter((w) => tabId === void 0 || tabId === null || Number(w.tabId) === Number(tabId));
   }
   pruneTerminal() {
     const now2 = Date.now();
@@ -2989,13 +2979,13 @@ var WaitCoordinator = class {
     this.eventSubscriptions.set(key, sub);
     return sub;
   }
-  eventSubscription(listenerId, tabId2) {
-    if (tabId2 !== void 0 && tabId2 !== null) return this.eventSubscriptions.get(eventSubscriptionKey(tabId2, listenerId)) || null;
-    const matches = Array.from(this.eventSubscriptions.values()).filter((s2) => String(s2.listenerId) === String(listenerId));
+  eventSubscription(listenerId, tabId) {
+    if (tabId !== void 0 && tabId !== null) return this.eventSubscriptions.get(eventSubscriptionKey(tabId, listenerId)) || null;
+    const matches = Array.from(this.eventSubscriptions.values()).filter((s) => String(s.listenerId) === String(listenerId));
     return matches.length === 1 ? matches[0] : null;
   }
-  deleteEventSubscription(listenerId, tabId2) {
-    if (tabId2 !== void 0 && tabId2 !== null) return this.eventSubscriptions.delete(eventSubscriptionKey(tabId2, listenerId));
+  deleteEventSubscription(listenerId, tabId) {
+    if (tabId !== void 0 && tabId !== null) return this.eventSubscriptions.delete(eventSubscriptionKey(tabId, listenerId));
     let deleted = false;
     for (const [key, sub] of Array.from(this.eventSubscriptions.entries())) {
       if (String(sub.listenerId) === String(listenerId)) {
@@ -3008,10 +2998,10 @@ var WaitCoordinator = class {
   eventSubscriptionValues() {
     return this.eventSubscriptions.values();
   }
-  cleanupEventSubscriptionsForTab(tabId2) {
+  cleanupEventSubscriptionsForTab(tabId) {
     let n = 0;
     for (const [listenerId, sub] of Array.from(this.eventSubscriptions.entries())) {
-      if (Number(sub.tabId) === Number(tabId2)) {
+      if (Number(sub.tabId) === Number(tabId)) {
         this.eventSubscriptions.delete(listenerId);
         n++;
       }
@@ -3021,31 +3011,31 @@ var WaitCoordinator = class {
   cleanupWait(record, reason) {
     return cleanupWait(record, reason);
   }
-  cleanupWaitsForFrame(tabId2, frameId, reason) {
-    return cleanupWaitsForFrame(tabId2, frameId, reason);
+  cleanupWaitsForFrame(tabId, frameId, reason) {
+    return cleanupWaitsForFrame(tabId, frameId, reason);
   }
-  cleanupWaitsForUninstall(tabId2) {
-    return cleanupWaitsForUninstall(tabId2);
+  cleanupWaitsForUninstall(tabId) {
+    return cleanupWaitsForUninstall(tabId);
   }
-  diagnostics(tabId2) {
-    const scopedEvents = Array.from(this.eventSubscriptions.values()).filter((s2) => !tabId2 || Number(s2.tabId) === Number(tabId2));
-    return { activeWaits: Array.from(this.activeWaits.values()).filter((w) => !tabId2 || Number(w.tabId) === Number(tabId2)).map((w) => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), recentWaits: this.terminalValues(tabId2).slice(-20), eventSubscriptions: scopedEvents.length, epoch: this.epoch };
+  diagnostics(tabId) {
+    const scopedEvents = Array.from(this.eventSubscriptions.values()).filter((s) => !tabId || Number(s.tabId) === Number(tabId));
+    return { activeWaits: Array.from(this.activeWaits.values()).filter((w) => !tabId || Number(w.tabId) === Number(tabId)).map((w) => ({ wait_id: w.wait_id || w.waitId, request_id: w.request_id || w.requestId, kind: w.kind, epoch: w.epoch, diagnostics: w.diagnostics || {} })), recentWaits: this.terminalValues(tabId).slice(-20), eventSubscriptions: scopedEvents.length, epoch: this.epoch };
   }
 };
 function cleanupWait(record, reason) {
   return cleanupPiBrowserWait(record, reason);
 }
-function cleanupWaitsForFrame(tabId2, frameId, reason) {
+function cleanupWaitsForFrame(tabId, frameId, reason) {
   let n = 0;
-  for (const r of Array.from(piBrowserWaits.values())) if (Number(r.tabId) === Number(tabId2) && String(r.frameId || "") === String(frameId || "")) {
+  for (const r of Array.from(piBrowserWaits.values())) if (Number(r.tabId) === Number(tabId) && String(r.frameId || "") === String(frameId || "")) {
     cleanupPiBrowserWait(r, reason || "FRAME_DETACHED");
     n++;
   }
   return n;
 }
-function cleanupWaitsForUninstall(tabId2) {
-  cleanupEventSubscriptionsForTab(tabId2);
-  return cancelWaitsForTab(tabId2, "uninstall");
+function cleanupWaitsForUninstall(tabId) {
+  cleanupEventSubscriptionsForTab(tabId);
+  return cancelWaitsForTab(tabId, "uninstall");
 }
 var piBrowserWaits = new WaitCoordinator();
 var PI_BROWSER_ORPHAN_WAIT_MAX_AGE_MS = 3e5;
@@ -3094,14 +3084,14 @@ function normalizePiBrowserTimeoutMs(msg, fallback = PI_BROWSER_DEFAULT_WAIT_TIM
   if (n === 0) return 0;
   return Math.max(50, Math.min(3e5, Math.floor(n)));
 }
-function makeWaitId(tabId2, kind) {
-  return "wait_" + Number(tabId2) + "_" + String(kind || "generic") + "_" + Date.now() + "_" + ++piBrowserWaitSeq;
+function makeWaitId(tabId, kind) {
+  return "wait_" + Number(tabId) + "_" + String(kind || "generic") + "_" + Date.now() + "_" + ++piBrowserWaitSeq;
 }
-function waitKey(tabId2, waitId) {
-  return Number(tabId2) + ":" + String(waitId);
+function waitKey(tabId, waitId) {
+  return Number(tabId) + ":" + String(waitId);
 }
-function eventSubscriptionKey(tabId2, listenerId) {
-  return Number(tabId2) + "::" + String(listenerId);
+function eventSubscriptionKey(tabId, listenerId) {
+  return Number(tabId) + "::" + String(listenerId);
 }
 function terminalWaitRecord(record, status, details = {}) {
   return {
@@ -3131,19 +3121,19 @@ function waitAbortMessage(record) {
   return "piBrowser wait " + record.waitId + " cancelled";
 }
 function normalizeWaitState(value, fallback = "complete") {
-  const s2 = String(value || fallback || "").toLowerCase().replace(/_/g, "");
-  if (s2 === "domcontentloaded" || s2 === "dominteractive") return "domcontentloaded";
-  if (s2 === "load" || s2 === "loaded") return "load";
-  if (s2 === "complete" || s2 === "networkalmostidle") return "complete";
-  if (s2 === "networkidle") return "networkidle";
-  return s2 || "complete";
+  const s = String(value || fallback || "").toLowerCase().replace(/_/g, "");
+  if (s === "domcontentloaded" || s === "dominteractive") return "domcontentloaded";
+  if (s === "load" || s === "loaded") return "load";
+  if (s === "complete" || s === "networkalmostidle") return "complete";
+  if (s === "networkidle") return "networkidle";
+  return s || "complete";
 }
-function registerWait(tabId2, kind, criteria = {}) {
-  const waitId = criteria && (criteria.waitId || criteria.wait_id) || makeWaitId(tabId2, kind);
+function registerWait(tabId, kind, criteria = {}) {
+  const waitId = criteria && (criteria.waitId || criteria.wait_id) || makeWaitId(tabId, kind);
   const requestId = criteria && (criteria.requestId || criteria.request_id);
   const abortController = criteria?.abortController || new AbortController();
-  const record = { waitId: String(waitId), wait_id: String(waitId), requestId: requestId ? String(requestId) : "", request_id: requestId ? String(requestId) : "", tabId: Number(tabId2), kind, criteria, createdAt: Date.now(), status: "pending", listeners: [], timers: [], cdpAttached: false, cdpDomains: /* @__PURE__ */ new Set(), cdpSubscriptions: [], cdpEvents: [], diagnostics: [], lastEventAt: 0, lastError: null, abortController, key: "" };
-  record.key = waitKey(tabId2, record.waitId);
+  const record = { waitId: String(waitId), wait_id: String(waitId), requestId: requestId ? String(requestId) : "", request_id: requestId ? String(requestId) : "", tabId: Number(tabId), kind, criteria, createdAt: Date.now(), status: "pending", listeners: [], timers: [], cdpAttached: false, cdpDomains: /* @__PURE__ */ new Set(), cdpSubscriptions: [], cdpEvents: [], diagnostics: [], lastEventAt: 0, lastError: null, abortController, key: "" };
+  record.key = waitKey(tabId, record.waitId);
   piBrowserWaits.register(record);
   const onAbort = () => {
     record.status = "cancelled";
@@ -3199,13 +3189,13 @@ function clearWait(record, reason) {
 function cleanupPiBrowserWait(record, reason) {
   return clearWait(record, reason);
 }
-function isWaitRecordForTab(record, tabId2) {
-  return !!record && Number(record.tabId) === Number(tabId2);
+function isWaitRecordForTab(record, tabId) {
+  return !!record && Number(record.tabId) === Number(tabId);
 }
-function cleanupTabWaits(tabId2, reason, options = {}) {
+function cleanupTabWaits(tabId, reason, options = {}) {
   const opts = options || {};
   const cleanupReason = reason || "tab_cleanup";
-  const records = Array.from(piBrowserWaits.values()).filter((r) => isWaitRecordForTab(r, tabId2));
+  const records = Array.from(piBrowserWaits.values()).filter((r) => isWaitRecordForTab(r, tabId));
   let cleaned = 0;
   let aborted = 0;
   let orphaned = 0;
@@ -3224,7 +3214,7 @@ function cleanupTabWaits(tabId2, reason, options = {}) {
     if (wasMissingKey) orphaned += 1;
   }
   for (const [key, r] of Array.from(piBrowserWaits.entries())) {
-    if (!isWaitRecordForTab(r, tabId2)) continue;
+    if (!isWaitRecordForTab(r, tabId)) continue;
     orphaned += 1;
     try {
       r.abortController?.abort(cleanupReason);
@@ -3243,16 +3233,16 @@ function cleanupTabWaits(tabId2, reason, options = {}) {
       }
     }
   }
-  if (opts.includeCdp !== false) cleanupPiBrowserCdpTab(tabId2, cleanupReason);
-  cleanupEventSubscriptionsForTab(tabId2);
-  if (cleaned || orphaned || opts.remember !== false) rememberPiBrowserCdpCleanup({ tabId: Number(tabId2), reason: cleanupReason, action: opts.action || "cleanup_tab_waits", waits_cleaned: cleaned, waits_aborted: aborted, orphan_waits: orphaned, remaining_waits: Array.from(piBrowserWaits.values()).filter((r) => isWaitRecordForTab(r, tabId2)).length });
-  return { tabId: Number(tabId2), reason: cleanupReason, cleaned, aborted, orphaned };
+  if (opts.includeCdp !== false) cleanupPiBrowserCdpTab(tabId, cleanupReason);
+  cleanupEventSubscriptionsForTab(tabId);
+  if (cleaned || orphaned || opts.remember !== false) rememberPiBrowserCdpCleanup({ tabId: Number(tabId), reason: cleanupReason, action: opts.action || "cleanup_tab_waits", waits_cleaned: cleaned, waits_aborted: aborted, orphan_waits: orphaned, remaining_waits: Array.from(piBrowserWaits.values()).filter((r) => isWaitRecordForTab(r, tabId)).length });
+  return { tabId: Number(tabId), reason: cleanupReason, cleaned, aborted, orphaned };
 }
-function cancelWaitsForTab(tabId2, reason) {
-  return cleanupTabWaits(tabId2, reason || "cancelled", { includeCdp: true, action: "cancel_waits_for_tab" }).cleaned;
+function cancelWaitsForTab(tabId, reason) {
+  return cleanupTabWaits(tabId, reason || "cancelled", { includeCdp: true, action: "cancel_waits_for_tab" }).cleaned;
 }
-function cleanupEventSubscriptionsForTab(tabId2) {
-  return piBrowserWaits.cleanupEventSubscriptionsForTab(tabId2);
+function cleanupEventSubscriptionsForTab(tabId) {
+  return piBrowserWaits.cleanupEventSubscriptionsForTab(tabId);
 }
 function waitWithTimeout(record, promise, timeoutMs, label) {
   if (timeoutMs === 0) return promise;
@@ -3263,13 +3253,13 @@ function waitWithTimeout(record, promise, timeoutMs, label) {
   if (timeoutHandle) record.timers.push(timeoutHandle);
   return Promise.race([promise, timeout]).finally(() => timeoutHandle && clearTimeout(timeoutHandle));
 }
-function finishPiBrowserWait(record, ok, data2 = null, errorCode, message, details = {}) {
+function finishPiBrowserWait(record, ok, data = null, errorCode, message, details = {}) {
   const elapsed_ms = Date.now() - record.createdAt;
   const base = { waitId: record.waitId, nativeWaitId: record.waitId, kind: record.kind, tabId: record.tabId, elapsed_ms, criteria: record.criteria };
   const status = ok ? "completed" : errorCode === PI_BROWSER_ERROR_CODES.TIMEOUT ? "timeout" : errorCode === "CANCELLED" ? "cancelled" : "failed";
-  piBrowserWaits.rememberTerminal(record, status, ok ? data2 || {} : details);
+  piBrowserWaits.rememberTerminal(record, status, ok ? data || {} : details);
   clearWait(record, status);
-  if (ok) return { ok: true, data: { ...base, ...data2 || {} } };
+  if (ok) return { ok: true, data: { ...base, ...data || {} } };
   return piBrowserError(errorCode || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message || "wait failed", { ...base, ...details || {} });
 }
 function rejectIfAborted(record) {
@@ -3311,11 +3301,11 @@ function compileNetworkIdleFilter(msg) {
     return { track: true, reason: "tracked", ignoreLongPollingMs };
   };
 }
-async function waitForNetworkIdle(tabId2, msg) {
+async function waitForNetworkIdle(tabId, msg) {
   const timeoutMs = normalizePiBrowserTimeoutMs(msg);
   const idleMs = Math.max(100, Math.min(Math.max(timeoutMs, 100), Number(msg.idleMs || msg.idle_ms || 500)));
   const maxInflight = Math.max(0, Number(msg.maxInflight ?? msg.max_inflight ?? 0));
-  const record = registerWait(tabId2, "network_idle", { idle_ms: idleMs, max_inflight: maxInflight, timeout_ms: timeoutMs, filters: msg.filters || null, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
+  const record = registerWait(tabId, "network_idle", { idle_ms: idleMs, max_inflight: maxInflight, timeout_ms: timeoutMs, filters: msg.filters || null, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
   const shouldTrack = compileNetworkIdleFilter(msg || {});
   const inflight = /* @__PURE__ */ new Map();
   const ignored = [];
@@ -3334,12 +3324,12 @@ async function waitForNetworkIdle(tabId2, msg) {
     record.lastError = e instanceof Error ? e.message : String(e);
   });
   return await new Promise((resolve) => {
-    const complete = (res2) => {
+    const complete = (res) => {
       try {
         if (idleTimer) clearTimeout(idleTimer);
       } catch (_) {
       }
-      resolve(res2);
+      resolve(res);
     };
     const failIfAbort = () => {
       if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, "CANCELLED", waitAbortMessage(record), { inflight: Array.from(inflight.values()) }));
@@ -3360,11 +3350,11 @@ async function waitForNetworkIdle(tabId2, msg) {
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.networkIdle timed out", { timeout_ms: timeoutMs, idle_ms: idleMs, inflight: Array.from(inflight.values()), ignored: ignored.slice(-100), events: record.cdpEvents.slice(-50), last_error: record.lastError })), timeoutMs);
     record.timers.push(timeoutHandle);
     const onEvent = (source, method, params = {}) => {
-      if (!source || Number(source.tabId) !== Number(tabId2)) return;
+      if (!source || Number(source.tabId) !== Number(tabId)) return;
       if (method === "Network.requestWillBeSent") {
         const request = networkRecord(params.request);
         const initiator = networkRecord(params.initiator);
-        const req = { requestId: String(params.requestId || makeWaitId(tabId2, "request")), url: String(request.url || ""), type: String(params.type || params.resourceType || ""), method: String(request.method || "GET"), initiatorType: String(initiator.type || ""), redirectResponse: params.redirectResponse || null };
+        const req = { requestId: String(params.requestId || makeWaitId(tabId, "request")), url: String(request.url || ""), type: String(params.type || params.resourceType || ""), method: String(request.method || "GET"), initiatorType: String(initiator.type || ""), redirectResponse: params.redirectResponse || null };
         const decision = shouldTrack(req);
         recordWaitEvent(record, { method, requestId: req.requestId, url: req.url, type: req.type, decision: decision.reason });
         if (params?.redirectResponse && inflight.has(req.requestId)) inflight.delete(req.requestId);
@@ -3391,7 +3381,7 @@ async function waitForNetworkIdle(tabId2, msg) {
       }
       armIdle();
     };
-    subscribePiBrowserCdp(tabId2, ["Network.requestWillBeSent", "Network.responseReceived", "Network.requestServedFromCache", "Network.loadingFinished", "Network.loadingFailed", "Network.webSocketCreated", "Network.eventSourceMessageReceived"], onEvent, record);
+    subscribePiBrowserCdp(tabId, ["Network.requestWillBeSent", "Network.responseReceived", "Network.requestServedFromCache", "Network.loadingFinished", "Network.loadingFailed", "Network.webSocketCreated", "Network.eventSourceMessageReceived"], onEvent, record);
     armIdle();
   });
 }
@@ -3517,7 +3507,7 @@ function buildSelectorProbe(selector, state, stableMs, options = {}) {
   };
   return PI_BROWSER_SELECTOR_PROBE_SOURCE.replace("__PI_BROWSER_SELECTOR_PROBE_CFG__", JSON.stringify(cfg));
 }
-async function waitForSelector(tabId2, msg) {
+async function waitForSelector(tabId, msg) {
   const selector = msg.selector || msg.css || msg.target;
   if (!selector) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.selector requires selector", {});
   if (msg.frameId || msg.frame_id) return piBrowserError(PI_BROWSER_ERROR_CODES.CROSS_ORIGIN_IFRAME, "waitForSelector currently supports the main frame only; frameId is not supported by DOM bridge", { frameId: msg.frameId || msg.frame_id });
@@ -3527,14 +3517,14 @@ async function waitForSelector(tabId2, msg) {
   const pollMs = Math.max(10, Math.min(1e3, Number(msg.pollMs || msg.poll_ms || 100)));
   const stableMs = Math.max(50, Math.min(5e3, Number(msg.stableMs || msg.stable_ms || 250)));
   const maxStableWaitMs = Math.max(stableMs, Math.min(6e4, Math.max(100, Number(msg.maxStableWaitMs || msg.max_stable_wait_ms || 1e4))));
-  const record = registerWait(tabId2, "selector", { selector: String(selector), state, visible: state === "visible" || msg.visible === true, timeout_ms: timeoutMs, poll_ms: pollMs, stable_ms: stableMs, max_stable_wait_ms: maxStableWaitMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
-  const syntaxCheck = await piBrowserEval(tabId2, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch((e) => ({ ok: false, error: selectorErrorMessage(e) }));
+  const record = registerWait(tabId, "selector", { selector: String(selector), state, visible: state === "visible" || msg.visible === true, timeout_ms: timeoutMs, poll_ms: pollMs, stable_ms: stableMs, max_stable_wait_ms: maxStableWaitMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
+  const syntaxCheck = await piBrowserEval(tabId, `(() => { try { document.querySelector(${JSON.stringify(String(selector))}); return {ok:true}; } catch (e) { return {ok:false,error:e.message}; } })()`, true).catch((e) => ({ ok: false, error: selectorErrorMessage(e) }));
   const syntaxRecord = selectorRecord(syntaxCheck);
   const syntaxData = selectorRecord(syntaxRecord.data || syntaxRecord.result || syntaxCheck);
   if (syntaxData && syntaxData.ok === false) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.INVALID_RULE, "Invalid selector syntax", { selector: String(selector), syntax_error: syntaxData.error });
   let mutationEpoch = 0;
   const visibleForProbe = msg.visible === true || state === "visible" || state === "stable";
-  const evaluate = async () => selectorRecord(await piBrowserEval(tabId2, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch((e) => ({ ok: false, error: selectorErrorMessage(e), method: "Runtime.evaluate" })));
+  const evaluate = async () => selectorRecord(await piBrowserEval(tabId, buildSelectorProbe(selector, state, stableMs, { maxStableWaitMs, mutationEpoch, visible: visibleForProbe, useIntersectionObserver: msg.useIntersectionObserver !== false }), true).catch((e) => ({ ok: false, error: selectorErrorMessage(e), method: "Runtime.evaluate" })));
   const first = await evaluate();
   const firstData = selectorRecord(first.data || first.result);
   if (firstData?.matched) return finishPiBrowserWait(record, true, { element: firstData, state, method: "Runtime.evaluate", immediate: true });
@@ -3556,11 +3546,11 @@ async function waitForSelector(tabId2, msg) {
         timerHandle = null;
       }
     };
-    const complete = (res2) => {
+    const complete = (res) => {
       if (completed) return;
       completed = true;
       clearPollTimer();
-      resolve(res2);
+      resolve(res);
     };
     const failIfAbort = () => {
       if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.CANCELLED || "CANCELLED", waitAbortMessage(record), { selector: String(selector), state }));
@@ -3589,9 +3579,9 @@ async function waitForSelector(tabId2, msg) {
     const installBindingObserver = async () => {
       if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
       await enablePiBrowserCdpDomains(record, ["Runtime"]);
-      const addResp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.addBinding", { name: bindingName }, { persistent: true, name: "selector_binding", timeoutMs: Math.min(5e3, timeoutMs || 5e3) }));
+      const addResp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.addBinding", { name: bindingName }, { persistent: true, name: "selector_binding", timeoutMs: Math.min(5e3, timeoutMs || 5e3) }));
       if (!addResp || addResp.ok === false) throw new Error(String(selectorRecord(addResp?.error).message || addResp?.message || addResp?.error || "Runtime.addBinding failed"));
-      const subId = subscribePiBrowserCdp(tabId2, "Runtime.bindingCalled", (_source, _method, params) => {
+      const subId = subscribePiBrowserCdp(tabId, "Runtime.bindingCalled", (_source, _method, params) => {
         if (completed || params?.name !== bindingName) return;
         let payload;
         try {
@@ -3642,7 +3632,7 @@ async function waitForSelector(tabId2, msg) {
         notify('observer_installed');
         return {ok:true, mutationTick:window.__piBrowserSelectorMutationTick||0, visibilityState:document.visibilityState, bindingName};
       })()`;
-      const installed = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression: installObserver, awaitPromise: true, returnByValue: true }, { persistent: true, name: "selector_binding_install", timeoutMs: Math.min(5e3, timeoutMs || 5e3) }));
+      const installed = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression: installObserver, awaitPromise: true, returnByValue: true }, { persistent: true, name: "selector_binding_install", timeoutMs: Math.min(5e3, timeoutMs || 5e3) }));
       if (!installed || installed.ok === false) throw new Error(String(selectorRecord(installed?.error).message || installed?.message || installed?.error || "selector binding observer install failed"));
       const installedData = selectorRecord(installed.data);
       const installedResult = selectorRecord(installed.result);
@@ -3652,12 +3642,12 @@ async function waitForSelector(tabId2, msg) {
       record.listeners.push({ remove: () => {
         const cleanupExpr = `(() => { const key=${JSON.stringify(bindingCleanupKey)}; const rec=window.__piBrowserSelectorObserverInstalled&&window.__piBrowserSelectorObserverInstalled[key]; if (rec&&typeof rec.cleanup==='function') rec.cleanup(); return true; })()`;
         try {
-          if (cdp.send) void cdp.send(tabId2, "Runtime.evaluate", { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: "selector_binding_cleanup", timeoutMs: 1e3 }).catch(() => {
+          if (cdp.send) void cdp.send(tabId, "Runtime.evaluate", { expression: cleanupExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: "selector_binding_cleanup", timeoutMs: 1e3 }).catch(() => {
           });
         } catch (_error) {
         }
         try {
-          if (cdp.send) void cdp.send(tabId2, "Runtime.removeBinding", { name: bindingName }, { persistent: true, name: "selector_binding_remove", timeoutMs: 1e3 }).catch(() => {
+          if (cdp.send) void cdp.send(tabId, "Runtime.removeBinding", { name: bindingName }, { persistent: true, name: "selector_binding_remove", timeoutMs: 1e3 }).catch(() => {
           });
         } catch (_error) {
         }
@@ -3680,13 +3670,13 @@ async function waitForSelector(tabId2, msg) {
       if (Date.now() >= deadline) return complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.selector timed out", { selector: String(selector), state, timeout_ms: timeoutMs, diagnostics: record.diagnostics, background_throttling_suspected: Date.now() - lastTickAt > Math.max(2e3, pollMs * 5), last_state: lastData }));
       lastTickAt = Date.now();
       inFlight = true;
-      const res2 = await evaluate();
+      const res = await evaluate();
       inFlight = false;
-      const data2 = selectorRecord(res2.data || res2.result);
-      if (data2) lastData = data2;
-      if (data2?.matched) return complete(finishPiBrowserWait(record, true, { element: data2, state, method: "Runtime.evaluate", reason: reason || "poll" }));
-      if (data2?.throttled) record.diagnostics.push({ t: Date.now(), warning: "background_tab_timer_throttling_possible", visibilityState: data2.visibilityState });
-      if (data2?.stableTimedOut) record.diagnostics.push({ t: Date.now(), warning: "selector_stability_max_wait_reached", stableFor: data2.stableFor, maxStableWaitMs: data2.maxStableWaitMs });
+      const data = selectorRecord(res.data || res.result);
+      if (data) lastData = data;
+      if (data?.matched) return complete(finishPiBrowserWait(record, true, { element: data, state, method: "Runtime.evaluate", reason: reason || "poll" }));
+      if (data?.throttled) record.diagnostics.push({ t: Date.now(), warning: "background_tab_timer_throttling_possible", visibilityState: data.visibilityState });
+      if (data?.stableTimedOut) record.diagnostics.push({ t: Date.now(), warning: "selector_stability_max_wait_reached", stableFor: data.stableFor, maxStableWaitMs: data.maxStableWaitMs });
       if (pendingTick) {
         pendingTick = false;
         return triggerTick("pending");
@@ -3705,7 +3695,7 @@ function asRecord(value) {
 function errorText(error) {
   return error instanceof Error ? error.message : String(error);
 }
-async function navigatePiBrowser(tabId2, msg) {
+async function navigatePiBrowser(tabId, msg) {
   const url = msg.url;
   if (!url) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.navigate requires url", {});
   try {
@@ -3713,52 +3703,52 @@ async function navigatePiBrowser(tabId2, msg) {
   } catch {
     return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `wait.navigate requires a valid absolute URL (e.g. https://example.com); got ${JSON.stringify(String(url))}`, { url });
   }
-  cleanupTabWaits(tabId2, "navigate", { includeCdp: false, action: "navigate_cancel_waits" });
+  cleanupTabWaits(tabId, "navigate", { includeCdp: false, action: "navigate_cancel_waits" });
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Page.navigate", { url }, { persistent: true, name: msg.cdpSessionName || "navigate" }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Page.navigate", { url }, { persistent: true, name: msg.cdpSessionName || "navigate" }));
     if (!resp || resp.ok === false) return resp;
-    const data2 = asRecord(resp.data);
-    return { ok: true, data: data2.result || resp.result || resp.data };
+    const data = asRecord(resp.data);
+    return { ok: true, data: data.result || resp.result || resp.data };
   }
-  if (chromeApi.tabs?.update) return { ok: true, data: await chromeApi.tabs.update(tabId2, { url }) };
-  await chromeApi.debugger.attach({ tabId: tabId2 }, "1.3");
+  if (chromeApi.tabs?.update) return { ok: true, data: await chromeApi.tabs.update(tabId, { url }) };
+  await chromeApi.debugger.attach({ tabId }, "1.3");
   try {
-    const result2 = await chromeApi.debugger.sendCommand({ tabId: tabId2 }, "Page.navigate", { url });
-    await chromeApi.debugger.detach({ tabId: tabId2 });
-    return { ok: true, data: result2 };
+    const result = await chromeApi.debugger.sendCommand({ tabId }, "Page.navigate", { url });
+    await chromeApi.debugger.detach({ tabId });
+    return { ok: true, data: result };
   } catch (e) {
     try {
-      await chromeApi.debugger.detach({ tabId: tabId2 });
+      await chromeApi.debugger.detach({ tabId });
     } catch (detachError) {
-      console.warn("[PI-BROWSER-WAIT] Failed to detach debugger after Page.navigate error", tabId2, detachError);
+      console.warn("[PI-BROWSER-WAIT] Failed to detach debugger after Page.navigate error", tabId, detachError);
     }
     throw e;
   }
 }
-async function navigateAndWait(tabId2, msg) {
+async function navigateAndWait(tabId, msg) {
   if (!msg.url) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.navigateAndWait requires url", {});
   const waitUntil = normalizeWaitState(msg.waitUntil || msg.wait_until || msg.state || "load");
   const timeoutMs = normalizePiBrowserTimeoutMs(msg);
-  const navigation = await navigatePiBrowser(tabId2, msg);
+  const navigation = await navigatePiBrowser(tabId, msg);
   if (!navigation.ok) return navigation;
   let waited;
-  if (waitUntil === "networkidle") waited = await waitForNetworkIdle(tabId2, { ...msg, timeoutMs });
-  else if (waitUntil === "selector") waited = await waitForSelector(tabId2, { ...msg, timeoutMs });
-  else waited = await waitForLoadState(tabId2, { ...msg, state: waitUntil === "load" ? "complete" : waitUntil, timeoutMs });
+  if (waitUntil === "networkidle") waited = await waitForNetworkIdle(tabId, { ...msg, timeoutMs });
+  else if (waitUntil === "selector") waited = await waitForSelector(tabId, { ...msg, timeoutMs });
+  else waited = await waitForLoadState(tabId, { ...msg, state: waitUntil === "load" ? "complete" : waitUntil, timeoutMs });
   if (!waited.ok) return waited;
   return { ok: true, data: { navigation: navigation.data, wait: waited.data, url: msg.url, waitUntil } };
 }
-async function waitForNavigation(tabId2, msg) {
+async function waitForNavigation(tabId, msg) {
   const timeoutMs = normalizePiBrowserTimeoutMs(msg);
   const targetUrl = msg.targetUrl || msg.url || msg.target_url || null;
   const urlContains = msg.urlContains || msg.url_contains || "";
   const sameDocument = msg.sameDocument === true || msg.same_document === true;
   const requestId = msg.requestId || msg.request_id || null;
   const waitUntil = normalizeWaitState(msg.waitUntil || msg.wait_until || msg.state || "load");
-  const wait_id = String(msg.waitId || msg.wait_id || makeWaitId(tabId2, "navigation"));
+  const wait_id = String(msg.waitId || msg.wait_id || makeWaitId(tabId, "navigation"));
   const diagnostics2 = { targetUrl, urlContains, sameDocument, waitUntil, request_id: requestId, epoch: Date.now(), sources: ["chrome.webNavigation.onBeforeNavigate", "chrome.webNavigation.onCommitted", "chrome.webNavigation.onCompleted", "chrome.webNavigation.onErrorOccurred", "chrome.webNavigation.onHistoryStateUpdated", "chrome.webNavigation.onReferenceFragmentUpdated", "chrome.tabs.onUpdated", "Page.frameNavigated", "Page.navigatedWithinDocument", "Page.lifecycleEvent", "Page.loadEventFired", "Page.domContentEventFired", "Page.frameStoppedLoading", "same-document", "hash", "redirect"] };
-  const record = registerWait(tabId2, "navigation", { waitId: wait_id, wait_id, requestId, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, timeout_ms: timeoutMs, diagnostics: diagnostics2, epoch: diagnostics2.epoch, abortController: new AbortController(), cleanup: () => {
+  const record = registerWait(tabId, "navigation", { waitId: wait_id, wait_id, requestId, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, timeout_ms: timeoutMs, diagnostics: diagnostics2, epoch: diagnostics2.epoch, abortController: new AbortController(), cleanup: () => {
   } });
   const urlMatches = (url) => {
     const value = String(url || "");
@@ -3769,11 +3759,11 @@ async function waitForNavigation(tabId2, msg) {
     return value === target || value.startsWith(target + "#") || value.startsWith(target + "?");
   };
   const currentNavigationState = async (source) => {
-    const tab = await chromeApi.tabs.get(tabId2).catch((e) => {
+    const tab = await chromeApi.tabs.get(tabId).catch((e) => {
       record.lastError = errorText(e);
       return null;
     });
-    const metrics = await queryLoadMetrics(tabId2).catch(() => null);
+    const metrics = await queryLoadMetrics(tabId).catch(() => null);
     const url = metrics?.url || tab?.url || null;
     recordWaitEvent(record, { method: "wait.navigation.currentUrl", source, url, tabStatus: tab?.status, readyState: metrics?.readyState });
     if (!urlMatches(url)) return { ok: false, url, tab, metrics, stage: null, reason: "url_mismatch" };
@@ -3788,20 +3778,20 @@ async function waitForNavigation(tabId2, msg) {
     if (current.ok) return finishPiBrowserWait(record, true, { wait_id, request_id: requestId, targetUrl, urlContains, sameDocument, waitUntil, source: "immediate", url: current.url, stage: current.stage, immediate: true, tabStatus: current.tab?.status, readyState: current.metrics?.readyState, diagnostics: diagnostics2, events: record.cdpEvents.slice(-50) });
     return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.navigation immediate check failed", { wait_id, request_id: requestId, timeout_ms: 0, targetUrl, urlContains, sameDocument, waitUntil, source: "immediate", url: current.url, tabStatus: current.tab?.status, readyState: current.metrics?.readyState, reason: current.reason, diagnostics: diagnostics2, events: record.cdpEvents.slice(-50) });
   }
-  const isMainWebNavigation = (details) => Number(details?.tabId) === Number(tabId2) && Number(details?.frameId || 0) === 0;
+  const isMainWebNavigation = (details) => Number(details?.tabId) === Number(tabId) && Number(details?.frameId || 0) === 0;
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
     try {
-      const probe = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression: "location.href", returnByValue: true }, { persistent: true, name: "wait_navigation_probe", timeoutMs: Math.min(timeoutMs, 1e3) }));
-      const data2 = asRecord(probe?.data);
-      const dataResult = asRecord(data2.result);
+      const probe = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression: "location.href", returnByValue: true }, { persistent: true, name: "wait_navigation_probe", timeoutMs: Math.min(timeoutMs, 1e3) }));
+      const data = asRecord(probe?.data);
+      const dataResult = asRecord(data.result);
       const dataRuntimeResult = asRecord(dataResult.result);
-      const result2 = asRecord(probe?.result);
-      const resultResult = asRecord(result2.result);
+      const result = asRecord(probe?.result);
+      const resultResult = asRecord(result.result);
       const currentUrl = dataRuntimeResult.value || resultResult.value || null;
       if (currentUrl) record.diagnostics.push({ source: "Runtime.evaluate", currentUrl });
     } catch (error) {
-      console.warn("[PI-BROWSER-WAIT] wait.navigation probe Runtime.evaluate failed", tabId2, error);
+      console.warn("[PI-BROWSER-WAIT] wait.navigation probe Runtime.evaluate failed", tabId, error);
     }
   }
   return await new Promise((resolve) => {
@@ -3840,7 +3830,7 @@ async function waitForNavigation(tabId2, msg) {
     record.timers.push(timeoutHandle);
     const checkCurrent = async (source) => {
       if (completed) return;
-      const tab = await chromeApi.tabs.get(tabId2).catch((e) => {
+      const tab = await chromeApi.tabs.get(tabId).catch((e) => {
         record.lastError = errorText(e);
         return null;
       });
@@ -3849,7 +3839,7 @@ async function waitForNavigation(tabId2, msg) {
       recordWaitEvent(record, { method: "wait.navigation.currentUrl", source, url, tabStatus: tab?.status });
       if (!urlMatches(url)) return;
       if (waitUntil === "commit" || waitUntil === "committed") return finish(true, source || "currentUrl", { url, stage: "commit", tabStatus: tab?.status });
-      const metrics = await queryLoadMetrics(tabId2).catch(() => null);
+      const metrics = await queryLoadMetrics(tabId).catch(() => null);
       if (waitUntil === "domcontentloaded" && (metrics?.readyState === "interactive" || metrics?.readyState === "complete" || tab?.status === "complete")) return finish(true, source || "currentUrl", { url, stage: "domcontentloaded", tabStatus: tab?.status, readyState: metrics?.readyState });
       if ((waitUntil === "load" || waitUntil === "complete") && (metrics?.readyState === "complete" || tab?.status === "complete")) return finish(true, source || "currentUrl", { url, stage: "complete", tabStatus: tab?.status, readyState: metrics?.readyState });
     };
@@ -3868,7 +3858,7 @@ async function waitForNavigation(tabId2, msg) {
     } catch (_) {
     }
     const onTabsUpdated = (changedTabId, changeInfo, updatedTab) => {
-      if (Number(changedTabId) !== Number(tabId2)) return;
+      if (Number(changedTabId) !== Number(tabId)) return;
       const url = changeInfo?.url || updatedTab?.url || lastUrl;
       recordWaitEvent(record, { method: "chrome.tabs.onUpdated", changeInfo, url });
       if (changeInfo?.url) completeIfReady("chrome.tabs.onUpdated", url, "commit", { changeInfo });
@@ -3935,7 +3925,7 @@ async function waitForNavigation(tabId2, msg) {
       } });
     } else record.diagnostics.push({ warning: "chrome.webNavigation unavailable; using tabs/CDP listeners only" });
     enablePiBrowserCdpDomains(record, ["Page"]).then(() => {
-      const sub = subscribePiBrowserCdp(tabId2, ["Page.frameNavigated", "Page.navigatedWithinDocument", "Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], (_source, method, params) => {
+      const sub = subscribePiBrowserCdp(tabId, ["Page.frameNavigated", "Page.navigatedWithinDocument", "Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], (_source, method, params) => {
         const frame = asRecord(params?.frame);
         const frameId = params?.frameId ? String(params.frameId) : frame.id ? String(frame.id) : null;
         const isMainFrame = method === "Page.frameNavigated" ? !frame.parentId : !mainFrameId || !frameId || String(frameId) === String(mainFrameId);
@@ -3962,7 +3952,7 @@ async function waitForNavigation(tabId2, msg) {
         }
       }, record);
       record.diagnostics.push({ cdp_subscription: sub });
-      chromeApi.debugger.sendCommand({ tabId: tabId2 }, "Page.setLifecycleEventsEnabled", { enabled: true }).catch((e) => {
+      chromeApi.debugger.sendCommand({ tabId }, "Page.setLifecycleEventsEnabled", { enabled: true }).catch((e) => {
         record.lastError = errorText(e);
       });
     }).catch((e) => {
@@ -3977,26 +3967,26 @@ function loadStateSatisfied(state, tab, metrics) {
   if (state === "load" || state === "complete") return tab?.status === "complete" || rs === "complete" || metrics?.load === true;
   return false;
 }
-async function queryLoadMetrics(tabId2) {
+async function queryLoadMetrics(tabId) {
   const expr = `(() => ({readyState:document.readyState, url:location.href, title:document.title, domContentLoaded:document.readyState==='interactive'||document.readyState==='complete', load:document.readyState==='complete'}))()`;
-  const res2 = await piBrowserEval(tabId2, expr, true).catch((e) => ({ ok: false, error: errorText(e) }));
-  const value = res2 && res2.ok ? res2.data || res2.result || null : null;
+  const res = await piBrowserEval(tabId, expr, true).catch((e) => ({ ok: false, error: errorText(e) }));
+  const value = res && res.ok ? res.data || res.result || null : null;
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
-async function waitForLoadState(tabId2, msg) {
+async function waitForLoadState(tabId, msg) {
   const targetState = normalizeWaitState(msg.state || msg.loadState || msg.load_state || "complete");
   if (!["domcontentloaded", "load", "complete"].includes(targetState)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.loadState unsupported state", { state: targetState });
   const timeoutMs = normalizePiBrowserTimeoutMs(msg);
-  const record = registerWait(tabId2, "load_state", { state: targetState, timeout_ms: timeoutMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
-  const tab = await chromeApi.tabs.get(tabId2).catch((e) => {
+  const record = registerWait(tabId, "load_state", { state: targetState, timeout_ms: timeoutMs, waitId: msg.waitId, wait_id: msg.wait_id, abortController: msg.abortController });
+  const tab = await chromeApi.tabs.get(tabId).catch((e) => {
     record.lastError = errorText(e);
     return null;
   });
-  const metrics = await queryLoadMetrics(tabId2).catch(() => null);
+  const metrics = await queryLoadMetrics(tabId).catch(() => null);
   if (loadStateSatisfied(targetState, tab, metrics)) return finishPiBrowserWait(record, true, { state: targetState, url: metrics?.url || tab?.url, title: metrics?.title || tab?.title, immediate: true, readyState: metrics?.readyState });
   if (timeoutMs === 0) return finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.loadState immediate check failed", { timeout_ms: 0, targetState, readyState: metrics?.readyState, tabStatus: tab?.status });
   return await new Promise((resolve) => {
-    const complete = (res2) => resolve(res2);
+    const complete = (res) => resolve(res);
     const failIfAbort = () => {
       if (record.abortController?.signal?.aborted) complete(finishPiBrowserWait(record, false, null, "CANCELLED", waitAbortMessage(record), { targetState }));
     };
@@ -4008,14 +3998,14 @@ async function waitForLoadState(tabId2, msg) {
     const timeoutHandle = setTimeout(() => complete(finishPiBrowserWait(record, false, null, PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.loadState timed out", { timeout_ms: timeoutMs, targetState, last_error: record.lastError, events: record.cdpEvents.slice(-50) })), timeoutMs);
     record.timers.push(timeoutHandle);
     void enablePiBrowserCdpDomains(record, ["Page"]).then(() => {
-      const sub = subscribePiBrowserCdp(tabId2, ["Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], (_source, method, params) => {
+      const sub = subscribePiBrowserCdp(tabId, ["Page.lifecycleEvent", "Page.domContentEventFired", "Page.loadEventFired", "Page.frameStoppedLoading"], (_source, method, params) => {
         recordWaitEvent(record, { method, name: params.name, frameId: params.frameId });
         if (targetState === "domcontentloaded" && (method === "Page.domContentEventFired" || params.name === "DOMContentLoaded") || (targetState === "load" || targetState === "complete") && (method === "Page.loadEventFired" || params.name === "load" || method === "Page.frameStoppedLoading")) {
           complete(finishPiBrowserWait(record, true, { state: targetState, method, params, cdp: true }));
         }
       }, record);
       record.diagnostics.push({ cdp_subscription: sub });
-      chromeApi.debugger.sendCommand({ tabId: tabId2 }, "Page.setLifecycleEventsEnabled", { enabled: true }).catch((e) => {
+      chromeApi.debugger.sendCommand({ tabId }, "Page.setLifecycleEventsEnabled", { enabled: true }).catch((e) => {
         record.lastError = errorText(e);
       });
     }).catch((e) => {
@@ -4023,15 +4013,15 @@ async function waitForLoadState(tabId2, msg) {
       record.diagnostics.push({ cdp_error: record.lastError });
     });
     const onUpdated = (changedTabId, changeInfo, updatedTab) => {
-      if (Number(changedTabId) !== Number(tabId2)) return;
+      if (Number(changedTabId) !== Number(tabId)) return;
       recordWaitEvent(record, { method: "chrome.tabs.onUpdated", changeInfo });
       if ((targetState === "complete" || targetState === "load") && (changeInfo.status === "complete" || updatedTab?.status === "complete")) complete(finishPiBrowserWait(record, true, { state: targetState, changeInfo, url: updatedTab?.url, title: updatedTab?.title, fallback: "tabs.onUpdated" }));
     };
     chromeApi.tabs.onUpdated.addListener(onUpdated);
     record.listeners.push({ remove: () => chromeApi.tabs.onUpdated.removeListener(onUpdated) });
     void (async () => {
-      const recheckTab = await chromeApi.tabs.get(tabId2).catch(() => null);
-      const recheckMetrics = await queryLoadMetrics(tabId2).catch(() => null);
+      const recheckTab = await chromeApi.tabs.get(tabId).catch(() => null);
+      const recheckMetrics = await queryLoadMetrics(tabId).catch(() => null);
       if (loadStateSatisfied(targetState, recheckTab, recheckMetrics)) {
         complete(finishPiBrowserWait(record, true, { state: targetState, url: recheckMetrics?.url || recheckTab?.url, title: recheckMetrics?.title || recheckTab?.title, recheck: true, readyState: recheckMetrics?.readyState }));
       }
@@ -4047,14 +4037,14 @@ function waitRecord(value) {
 function waitErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
-async function waitForAny(tabId2, msg) {
+async function waitForAny(tabId, msg) {
   const losers = [];
   const waits = Array.isArray(msg.waits) ? msg.waits : Array.isArray(msg.conditions) ? msg.conditions : [];
   if (!waits.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.any requires waits/conditions", {});
   const parentTimeoutMs = normalizePiBrowserTimeoutMs(msg);
   const deadline = Date.now() + parentTimeoutMs;
   const controllers = waits.map(() => new AbortController());
-  const childWaitIds = waits.map((w, i) => String(w && (w.waitId || w.wait_id) || makeWaitId(tabId2, "any_child_" + i)));
+  const childWaitIds = waits.map((w, i) => String(w && (w.waitId || w.wait_id) || makeWaitId(tabId, "any_child_" + i)));
   const children = waits.map((w, i) => ({ index: i, wait: w, waitId: childWaitIds[i], wait_id: childWaitIds[i] }));
   const childTimeoutMs = (w) => {
     const requested = normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs);
@@ -4062,7 +4052,7 @@ async function waitForAny(tabId2, msg) {
     return Math.min(requested, remaining);
   };
   const cleanupChildRecord = (i, reason) => {
-    const childKey = waitKey(tabId2, childWaitIds[i]);
+    const childKey = waitKey(tabId, childWaitIds[i]);
     const record = piBrowserWaits.get(childKey);
     if (record) {
       try {
@@ -4088,9 +4078,9 @@ async function waitForAny(tabId2, msg) {
       cleanupChildRecord(i, reason || PI_BROWSER_ERROR_CODES.CANCELLED);
     });
   };
-  const tasks = waits.map((w, i) => dispatchPiBrowserWait(tabId2, { ...w, waitId: childWaitIds[i], wait_id: childWaitIds[i], abortController: controllers[i], timeoutMs: childTimeoutMs(w) }, w.cmd || w.type || w.kind || "selector").then((result2) => {
-    if (result2 && result2.ok) return { index: i, result: result2 };
-    throw result2;
+  const tasks = waits.map((w, i) => dispatchPiBrowserWait(tabId, { ...w, waitId: childWaitIds[i], wait_id: childWaitIds[i], abortController: controllers[i], timeoutMs: childTimeoutMs(w) }, w.cmd || w.type || w.kind || "selector").then((result) => {
+    if (result && result.ok) return { index: i, result };
+    throw result;
   }));
   let parentTimer = null;
   const parentTimeout = new Promise((_, reject) => {
@@ -4115,7 +4105,7 @@ async function waitForAny(tabId2, msg) {
     return piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, "wait.any timed out after " + parentTimeoutMs + "ms; no condition matched", { errors, children, losers, timeout_ms: parentTimeoutMs });
   }
 }
-async function waitForAll(tabId2, msg) {
+async function waitForAll(tabId, msg) {
   const waits = Array.isArray(msg.waits) ? msg.waits : Array.isArray(msg.conditions) ? msg.conditions : [];
   if (!waits.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "wait.all requires waits/conditions", {});
   const parentTimeoutMs = normalizePiBrowserTimeoutMs(msg);
@@ -4137,12 +4127,12 @@ async function waitForAll(tabId2, msg) {
     const reason = settled2.reason || {};
     return piBrowserError(reason.error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, reason.error || reason.message || "wait.all child threw", { child_index: i, reason });
   };
-  const tasks = waits.map((w, i) => dispatchPiBrowserWait(tabId2, { ...w, abortController: controllers[i], timeoutMs: Math.min(normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs), Math.max(0, deadline - Date.now())) }, w.cmd || w.type || w.kind || "selector").then((result2) => {
-    if (failFast && (!result2 || result2.ok === false) && failureIndex < 0) {
+  const tasks = waits.map((w, i) => dispatchPiBrowserWait(tabId, { ...w, abortController: controllers[i], timeoutMs: Math.min(normalizePiBrowserTimeoutMs(w || {}, parentTimeoutMs), Math.max(0, deadline - Date.now())) }, w.cmd || w.type || w.kind || "selector").then((result) => {
+    if (failFast && (!result || result.ok === false) && failureIndex < 0) {
       failureIndex = i;
       cleanup(PI_BROWSER_ERROR_CODES.CANCELLED, i);
     }
-    return result2;
+    return result;
   }, (error) => {
     if (failFast && failureIndex < 0) {
       failureIndex = i;
@@ -4161,32 +4151,32 @@ async function waitForAll(tabId2, msg) {
   }
   return { ok: true, data: aggregate };
 }
-async function waitForComposite(tabId2, msg, mode) {
-  return mode === "waitForAny" ? await waitForAny(tabId2, msg) : await waitForAll(tabId2, msg);
+async function waitForComposite(tabId, msg, mode) {
+  return mode === "waitForAny" ? await waitForAny(tabId, msg) : await waitForAll(tabId, msg);
 }
 function normalizePiBrowserWaitKind(kind, msg) {
   const raw = String(kind || msg?.kind || msg?.type || msg?.cmd || "selector").trim().replace(/^piBrowser[._-]/i, "");
   const withoutWaitPrefix = raw.replace(/^wait[._-]/i, "");
   return withoutWaitPrefix.replace(/[._-]/g, "").toLowerCase();
 }
-async function dispatchPiBrowserWait(tabId2, msg, kind) {
+async function dispatchPiBrowserWait(tabId, msg, kind) {
   const k = normalizePiBrowserWaitKind(kind, msg);
   if (k === "waitforloadstate" || k === "loadstate" || k === "load" || k === "domcontentloaded" || k === "complete") {
     const st = String(msg.state ?? msg.loadState ?? msg.load_state ?? "").replace(/[._-]/g, "").toLowerCase();
-    if (st === "networkidle") return await waitForNetworkIdle(tabId2, msg);
-    return await waitForLoadState(tabId2, msg);
+    if (st === "networkidle") return await waitForNetworkIdle(tabId, msg);
+    return await waitForLoadState(tabId, msg);
   }
-  if (k === "waitfornetworkidle" || k === "networkidle") return await waitForNetworkIdle(tabId2, msg);
-  if (k === "waitfornavigation" || k === "navigation") return await waitForNavigation(tabId2, msg);
-  if (k === "waitforselector" || k === "selector" || k === "css") return await waitForSelector(tabId2, msg);
-  if (k === "navigateandwait" || k === "navigate") return await navigateAndWait(tabId2, msg);
+  if (k === "waitfornetworkidle" || k === "networkidle") return await waitForNetworkIdle(tabId, msg);
+  if (k === "waitfornavigation" || k === "navigation") return await waitForNavigation(tabId, msg);
+  if (k === "waitforselector" || k === "selector" || k === "css") return await waitForSelector(tabId, msg);
+  if (k === "navigateandwait" || k === "navigate") return await navigateAndWait(tabId, msg);
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown wait condition: " + kind, { kind, normalized: k, wait: msg });
 }
-async function cancelWait(tabId2, msg) {
+async function cancelWait(tabId, msg) {
   const waitId = msg.waitId || msg.wait_id;
   let cancelled_count = 0;
   if (waitId) {
-    const r = piBrowserWaits.get(waitKey(tabId2, waitId));
+    const r = piBrowserWaits.get(waitKey(tabId, waitId));
     if (r) {
       try {
         r.abortController?.abort("cancelled");
@@ -4195,20 +4185,20 @@ async function cancelWait(tabId2, msg) {
       clearWait(r, "cancelled");
       cancelled_count = 1;
     }
-  } else cancelled_count = cancelWaitsForTab(tabId2, "cancelled");
-  return { ok: true, data: { cancelled: cancelled_count, cancelled_count, waitId: waitId || null, pending: Array.from(piBrowserWaits.values()).filter((r) => Number(r.tabId) === Number(tabId2)).map((r) => ({ waitId: r.waitId, kind: r.kind, age_ms: Date.now() - r.createdAt })) } };
+  } else cancelled_count = cancelWaitsForTab(tabId, "cancelled");
+  return { ok: true, data: { cancelled: cancelled_count, cancelled_count, waitId: waitId || null, pending: Array.from(piBrowserWaits.values()).filter((r) => Number(r.tabId) === Number(tabId)).map((r) => ({ waitId: r.waitId, kind: r.kind, age_ms: Date.now() - r.createdAt })) } };
 }
-function cancelPiBrowserWait(tabId2, msg) {
-  return cancelWait(tabId2, msg);
+function cancelPiBrowserWait(tabId, msg) {
+  return cancelWait(tabId, msg);
 }
 function extractPiBrowserRuntimeValue(resp) {
-  const data2 = waitRecord(resp.data);
-  const result2 = waitRecord(resp.result);
-  return waitRecord(waitRecord(data2.result).result).value || waitRecord(result2.result).value || waitRecord(data2.result).value || result2.value || null;
+  const data = waitRecord(resp.data);
+  const result = waitRecord(resp.result);
+  return waitRecord(waitRecord(data.result).result).value || waitRecord(result.result).value || waitRecord(data.result).value || result.value || null;
 }
-async function cleanupPiBrowserPageListenersForTab(tabId2, reason, timeoutMs) {
+async function cleanupPiBrowserPageListenersForTab(tabId, reason, timeoutMs) {
   const cdp = piBrowserPersistentCdp();
-  if (!cdp?.send) return { ok: true, data: { tabId: Number(tabId2), removed: 0, listenerIds: [], skipped: true, reason: reason || "cleanup", warning: "persistent CDP unavailable" } };
+  if (!cdp?.send) return { ok: true, data: { tabId: Number(tabId), removed: 0, listenerIds: [], skipped: true, reason: reason || "cleanup", warning: "persistent CDP unavailable" } };
   const expression = `(() => {
     const store = window.__piBrowserListeners || {};
     const listenerIds = Object.keys(store);
@@ -4226,15 +4216,15 @@ async function cleanupPiBrowserPageListenersForTab(tabId2, reason, timeoutMs) {
     }
     return { ok:true, removed, listenerIds, errors, reason:${JSON.stringify(reason || "cleanup")} };
   })()`;
-  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener_cleanup", timeoutMs: timeoutMs || 5e3 }));
+  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener_cleanup", timeoutMs: timeoutMs || 5e3 }));
   if (!resp || resp.ok === false) return resp;
   const pageResult = extractPiBrowserRuntimeValue(resp) || { ok: true, removed: 0, listenerIds: [] };
-  return { ok: pageResult.ok !== false, data: { tabId: Number(tabId2), reason: reason || "cleanup", ...pageResult } };
+  return { ok: pageResult.ok !== false, data: { tabId: Number(tabId), reason: reason || "cleanup", ...pageResult } };
 }
-async function addEventListener(tabId2, msg) {
+async function addEventListener(tabId, msg) {
   const eventType = msg.eventType || msg.event_type;
   if (!eventType) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "hook.addEventListener requires eventType", {});
-  const listenerId = msg.listenerId || msg.listener_id || "listener_" + tabId2 + "_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  const listenerId = msg.listenerId || msg.listener_id || "listener_" + tabId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2);
   const selector = msg.selector || null;
   const cdp = piBrowserPersistentCdp();
   let pageResult = null;
@@ -4259,19 +4249,19 @@ async function addEventListener(tabId2, msg) {
       window.__piBrowserListeners[listenerId] = { listenerId, eventType, selector, target, handler, capture:true, addedAt:Date.now(), eventCount:0 };
       return { ok:true, listenerId, eventType, selector, target: selector || 'document', replaced: !!prior };
     })()`;
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener", timeoutMs: msg.timeoutMs || 5e3 }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener", timeoutMs: msg.timeoutMs || 5e3 }));
     if (!resp || resp.ok === false) return resp;
     pageResult = extractPiBrowserRuntimeValue(resp);
     if (pageResult && pageResult.ok === false) return piBrowserError(String(pageResult.code || PI_BROWSER_ERROR_CODES.INVALID_RULE), pageResult.message || "hook.addEventListener failed", pageResult);
   }
-  const sub = { tabId: Number(tabId2), listenerId: String(listenerId), eventType, selector, diagnostics: msg.diagnostics || {}, removeEventListener: true };
+  const sub = { tabId: Number(tabId), listenerId: String(listenerId), eventType, selector, diagnostics: msg.diagnostics || {}, removeEventListener: true };
   piBrowserWaits.registerEventSubscription(listenerId, sub);
-  return { ok: true, data: { tabId: Number(tabId2), listenerId, listener_id: listenerId, eventType, selector, page: pageResult } };
+  return { ok: true, data: { tabId: Number(tabId), listenerId, listener_id: listenerId, eventType, selector, page: pageResult } };
 }
-async function removeEventListener(tabId2, msg) {
+async function removeEventListener(tabId, msg) {
   const listenerId = msg.listenerId || msg.listener_id;
   if (!listenerId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "hook.removeEventListener requires listenerId", {});
-  const existingSub = piBrowserWaits.eventSubscription(listenerId, tabId2);
+  const existingSub = piBrowserWaits.eventSubscription(listenerId, tabId);
   const cdp = piBrowserPersistentCdp();
   let pageRemoved = false;
   let pageResult = null;
@@ -4285,15 +4275,15 @@ async function removeEventListener(tabId2, msg) {
       delete store[listenerId];
       return { removed:true, listenerId, eventType:rec.eventType, selector:rec.selector || null, eventCount:rec.eventCount || 0 };
     })()`;
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener_remove", timeoutMs: msg.timeoutMs || 5e3 }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "event_listener_remove", timeoutMs: msg.timeoutMs || 5e3 }));
     if (!resp || resp.ok === false) return resp;
     pageResult = extractPiBrowserRuntimeValue(resp);
     pageRemoved = pageResult?.removed === true;
   }
-  const existed = existingSub ? piBrowserWaits.deleteEventSubscription(listenerId, tabId2) : false;
-  return { ok: true, data: { tabId: Number(tabId2), listenerId, listener_id: listenerId, removed: existed || pageRemoved, registry_removed: existed, page_removed: pageRemoved, page: pageResult } };
+  const existed = existingSub ? piBrowserWaits.deleteEventSubscription(listenerId, tabId) : false;
+  return { ok: true, data: { tabId: Number(tabId), listenerId, listener_id: listenerId, removed: existed || pageRemoved, registry_removed: existed, page_removed: pageRemoved, page: pageResult } };
 }
-async function getPerformanceEntries(tabId2, msg) {
+async function getPerformanceEntries(tabId, msg) {
   const input = msg || {};
   const hasEntryType = input.entryType !== void 0 || input.entry_type !== void 0;
   const entryType = String(hasEntryType ? input.entryType ?? input.entry_type : "resource");
@@ -4302,12 +4292,12 @@ async function getPerformanceEntries(tabId2, msg) {
   const expression = `(() => { const entries = performance.getEntriesByType(${JSON.stringify(entryType)}); return entries.filter(e => !${JSON.stringify(nameContains)} || String(e.name||'').includes(${JSON.stringify(nameContains)})).map(e => ({ name:e.name, entryType:e.entryType, startTime:e.startTime, duration:e.duration, initiatorType:e.initiatorType || null, transferSize:e.transferSize || 0, encodedBodySize:e.encodedBodySize || 0, decodedBodySize:e.decodedBodySize || 0 })); })()`;
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "performance_entries", timeoutMs }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression, returnByValue: true }, { persistent: true, name: "performance_entries", timeoutMs }));
     if (!resp || resp.ok === false) return resp;
-    const result2 = waitRecord(waitRecord(resp.data).result || resp.result || resp.data);
-    const exceptionDetails = waitRecord(result2.exceptionDetails);
-    if (result2.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, waitRecord(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
-    const value = waitRecord(result2.result).value;
+    const result = waitRecord(waitRecord(resp.data).result || resp.result || resp.data);
+    const exceptionDetails = waitRecord(result.exceptionDetails);
+    if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, waitRecord(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
+    const value = waitRecord(result.result).value;
     const entries = Array.isArray(value) ? value : [];
     return { ok: true, data: { entries, entryType, nameContains, count: entries.length, explicit_entry_type: hasEntryType, native_cmd: "hook.getPerformanceEntries" } };
   }
@@ -4335,18 +4325,18 @@ function selectorDiagnoseExpression(selector) {
     return { selector, validSyntax:true, matchCount:nodes.length, visibleCount:nodes.filter(node => compactNode(node)?.visible).length, firstMatch: compactNode(nodes[0]), sampleMatches:nodes.slice(0,5).map(compactNode), readyState:document.readyState, visibilityState:document.visibilityState };
   })()`;
 }
-async function diagnoseSelectorForWait(tabId2, msg) {
+async function diagnoseSelectorForWait(tabId, msg) {
   const waitId = msg.waitId ?? msg.wait_id;
-  const terminal = waitId ? piBrowserWaits.terminal(waitId, tabId2) : null;
-  const active = waitId ? piBrowserWaits.get(waitKey(tabId2, waitId)) : null;
+  const terminal = waitId ? piBrowserWaits.terminal(waitId, tabId) : null;
+  const active = waitId ? piBrowserWaits.get(waitKey(tabId, waitId)) : null;
   const source = active || terminal || null;
   const criteria = waitRecord(source?.criteria);
   const details = waitRecord(source?.details);
   const explicitSelector = typeof msg.selector === "string" ? msg.selector : "";
   const selector = String(explicitSelector || criteria.selector || criteria.css || criteria.target || "").trim();
   if (!selector) return waitId ? { waitId: String(waitId), foundWait: false, selector: null, note: "no selector was found for waitId; pass selector explicitly for selector diagnostics" } : null;
-  const probe = await callPagePiBrowser(tabId2, "hook.evaluate", { expression: selectorDiagnoseExpression(selector) }).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
-  const data2 = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
+  const probe = await callPagePiBrowser(tabId, "hook.evaluate", { expression: selectorDiagnoseExpression(selector) }).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
+  const data = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
   return {
     waitId: waitId ? String(waitId) : void 0,
     foundWait: !!source,
@@ -4355,7 +4345,7 @@ async function diagnoseSelectorForWait(tabId2, msg) {
     selector,
     expectedState: criteria.state || (criteria.visible === true ? "visible" : void 0),
     lastState: details.last_state || details.snapshot || null,
-    current: data2,
+    current: data,
     recoveryCommands: [
       `browser_observe mode=scan to refresh selectors around ${selector}`,
       `browser_observe mode=html selector=${selector} to inspect the current DOM match`,
@@ -4363,9 +4353,9 @@ async function diagnoseSelectorForWait(tabId2, msg) {
     ]
   };
 }
-async function diagnosePiBrowser(tabId2, msg) {
-  const tab = await chromeApi.tabs.get(tabId2).catch((e) => ({ error: waitErrorMessage(e) }));
-  const status = await callPagePiBrowser(tabId2, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
+async function diagnosePiBrowser(tabId, msg) {
+  const tab = await chromeApi.tabs.get(tabId).catch((e) => ({ error: waitErrorMessage(e) }));
+  const status = await callPagePiBrowser(tabId, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
   const cdp = piBrowserPersistentCdp();
   let debuggerTargets = [];
   let frames = [];
@@ -4384,18 +4374,18 @@ async function diagnosePiBrowser(tabId2, msg) {
   const residue_signatures = Array.isArray(statusData.residue_signatures) ? statusData.residue_signatures : [];
   const version = "wait-goal-v1";
   const epoch = Date.now();
-  const activeWaits = Array.from(piBrowserWaits.values()).filter((r) => Number(r.tabId) === Number(tabId2)).map((r) => ({ waitId: r.waitId, kind: r.kind, criteria: r.criteria, age_ms: Date.now() - r.createdAt, status: r.status, cdpSubscriptions: r.cdpSubscriptions, lastEventAt: r.lastEventAt, diagnostics: r.diagnostics }));
-  const recentWaits = piBrowserWaits.terminalValues(tabId2).slice(-20);
-  const selectorDiagnostics = await diagnoseSelectorForWait(tabId2, msg || {}).catch((e) => ({ error: waitErrorMessage(e) }));
-  const listeners = Array.from(piBrowserWaits.eventSubscriptionValues()).filter((s2) => Number(s2.tabId) === Number(tabId2)).map((s2) => ({ listenerId: s2.listenerId, eventType: s2.eventType, selector: s2.selector, diagnostics: s2.diagnostics }));
-  const diagnostics2 = piBrowserWaits.diagnostics(tabId2);
+  const activeWaits = Array.from(piBrowserWaits.values()).filter((r) => Number(r.tabId) === Number(tabId)).map((r) => ({ waitId: r.waitId, kind: r.kind, criteria: r.criteria, age_ms: Date.now() - r.createdAt, status: r.status, cdpSubscriptions: r.cdpSubscriptions, lastEventAt: r.lastEventAt, diagnostics: r.diagnostics }));
+  const recentWaits = piBrowserWaits.terminalValues(tabId).slice(-20);
+  const selectorDiagnostics = await diagnoseSelectorForWait(tabId, msg || {}).catch((e) => ({ error: waitErrorMessage(e) }));
+  const listeners = Array.from(piBrowserWaits.eventSubscriptionValues()).filter((s) => Number(s.tabId) === Number(tabId)).map((s) => ({ listenerId: s.listenerId, eventType: s.eventType, selector: s.selector, diagnostics: s.diagnostics }));
+  const diagnostics2 = piBrowserWaits.diagnostics(tabId);
   try {
-    if (chromeApi.debugger?.getTargets) debuggerTargets = (await chromeApi.debugger.getTargets()).filter((t) => Number(t.tabId) === Number(tabId2));
+    if (chromeApi.debugger?.getTargets) debuggerTargets = (await chromeApi.debugger.getTargets()).filter((t) => Number(t.tabId) === Number(tabId));
   } catch (e) {
     last_errors.push(waitErrorMessage(e));
   }
   try {
-    const probe = await callPagePiBrowser(tabId2, "hook.evaluate", { expression: `(() => {
+    const probe = await callPagePiBrowser(tabId, "hook.evaluate", { expression: `(() => {
       const nodes = Array.from(document.querySelectorAll ? document.querySelectorAll('iframe') : []);
       const frameCount = window.frames ? Number(window.frames.length || 0) : nodes.length;
       const frames = nodes.map((node, index) => {
@@ -4424,29 +4414,29 @@ async function diagnosePiBrowser(tabId2, msg) {
       });
       return { readyState: document.readyState, frameCount, iframeCount: frames.length, frames, inflight: (window.__piBrowserInflight || 0), last_errors: window.__piBrowserLastErrors || [] };
     })()` }).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.NO_SESSION, waitErrorMessage(e), {}));
-    const data2 = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
-    readyState = data2.readyState || readyState;
-    frames = Array.isArray(data2.frames) ? data2.frames : frames;
-    frameCount = Number(data2.frameCount || frames.length || 0);
-    iframeCount = Number(data2.iframeCount || frames.length || 0);
-    inflight = Number(data2.inflight || inflight || 0);
-    if (Array.isArray(data2.last_errors)) last_errors = last_errors.concat(data2.last_errors);
+    const data = waitRecord(waitRecord(probe.data).result || probe.data || probe.result);
+    readyState = data.readyState || readyState;
+    frames = Array.isArray(data.frames) ? data.frames : frames;
+    frameCount = Number(data.frameCount || frames.length || 0);
+    iframeCount = Number(data.iframeCount || frames.length || 0);
+    inflight = Number(data.inflight || inflight || 0);
+    if (Array.isArray(data.last_errors)) last_errors = last_errors.concat(data.last_errors);
   } catch (e) {
     last_errors.push(waitErrorMessage(e));
   }
   const cdpObservability = {
-    active_subscriptions: diagnosePiBrowserCdpSubscriptions(tabId2),
-    domain_refs: diagnosePiBrowserCdpDomainRefs(tabId2),
-    cleanup_history: diagnosePiBrowserCdpCleanupHistory(tabId2)
+    active_subscriptions: diagnosePiBrowserCdpSubscriptions(tabId),
+    domain_refs: diagnosePiBrowserCdpDomainRefs(tabId),
+    cleanup_history: diagnosePiBrowserCdpCleanupHistory(tabId)
   };
   const activeCdpSubscriptions = cdpObservability.active_subscriptions;
   const cdpDomainRefs = cdpObservability.domain_refs;
   const cdpCleanupHistory = cdpObservability.cleanup_history;
   const cdpLeaks = {
     domain_ref_leaks: cdpDomainRefs.filter((r) => r.count > 0 && !r.holders.length),
-    subscription_leaks: activeCdpSubscriptions.filter((s2) => s2.waitId && !piBrowserWaits.has(waitKey(s2.tabId, s2.waitId)))
+    subscription_leaks: activeCdpSubscriptions.filter((s) => s.waitId && !piBrowserWaits.has(waitKey(s.tabId, s.waitId)))
   };
-  return { ok: true, data: { tabId: Number(tabId2), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s2]) => ({ tabId: tid, ...s2 })), session: piBrowserSessions.get(Number(tabId2)) || null, queue: getPiBrowserQueueStats(tabId2), waits: activeWaits, activeWaits, recentWaits, selectorDiagnostics, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics: diagnostics2, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
+  return { ok: true, data: { tabId: Number(tabId), tab, sessions: Array.from(piBrowserSessions.entries()).map(([tid, s]) => ({ tabId: tid, ...s })), session: piBrowserSessions.get(Number(tabId)) || null, queue: getPiBrowserQueueStats(tabId), waits: activeWaits, activeWaits, recentWaits, selectorDiagnostics, listeners, frames, frameCount, iframeCount, inflight, readyState, last_errors, installed_marker, dispatcher_version, install_epoch, owner_session_id, install_fingerprint, cleanup_warnings, residue_signatures, version, epoch, diagnostics: diagnostics2, cdp: { persistent: !!cdp, debuggerTargets, ...cdpObservability, leaks: cdpLeaks }, active_subscriptions: activeCdpSubscriptions, cdp_domain_refs: cdpDomainRefs, cdp_cleanup_history: cdpCleanupHistory, domain_ref_leaks: cdpLeaks.domain_ref_leaks, subscription_leaks: cdpLeaks.subscription_leaks, debuggerTargets, dispatcher: status, persistent_cdp: !!cdp, timestamp: new Date(epoch).toISOString() } };
 }
 var __piBridgeModule_wait = { name: "wait", symbols: { waitForAny, waitForAll, waitForComposite, normalizePiBrowserWaitKind, dispatchPiBrowserWait, cancelWait, cancelPiBrowserWait, extractPiBrowserRuntimeValue, cleanupPiBrowserPageListenersForTab, addEventListener, removeEventListener, getPerformanceEntries, diagnosePiBrowser } };
 
@@ -4475,8 +4465,8 @@ function setNetworkWaitNotifier(notifier) {
 function notifyNetworkWaits(recorder, eventType, rec) {
   if (piBrowserNetworkWaitNotifier) piBrowserNetworkWaitNotifier(recorder, eventType, rec);
 }
-function networkRecorderKey(tabId2, sessionId) {
-  return Number(tabId2) + ":" + String(sessionId || "default");
+function networkRecorderKey(tabId, sessionId) {
+  return Number(tabId) + ":" + String(sessionId || "default");
 }
 function defaultNetworkSessionId(msg) {
   return String(msg?.sessionId || msg?.session_id || "default");
@@ -4661,16 +4651,16 @@ function normalizeNetworkRecorderConfig(msg = {}) {
   config.filter = makeNetworkRecorderFilter(config);
   return config;
 }
-function makeNetworkCdpRecord(tabId2, sessionId) {
+function makeNetworkCdpRecord(tabId, sessionId) {
   const waitId = "network_recorder_" + String(sessionId || "default");
   return {
-    tabId: Number(tabId2),
+    tabId: Number(tabId),
     waitId,
     wait_id: waitId,
     requestId: "",
     request_id: "",
     kind: "network_recorder",
-    key: networkRecorderKey(tabId2, sessionId),
+    key: networkRecorderKey(tabId, sessionId),
     criteria: {},
     timers: [],
     listeners: [],
@@ -4686,20 +4676,20 @@ function makeNetworkCdpRecord(tabId2, sessionId) {
     lastError: null
   };
 }
-function createNetworkRecorder(tabId2, config) {
+function createNetworkRecorder(tabId, config) {
   const sessionId = config.sessionId || "default";
   const recorder = {
-    tabId: Number(tabId2),
+    tabId: Number(tabId),
     sessionId,
-    key: networkRecorderKey(tabId2, sessionId),
-    recorderId: "netrec_" + Number(tabId2) + "_" + ++piBrowserNetworkRecorderSeq,
+    key: networkRecorderKey(tabId, sessionId),
+    recorderId: "netrec_" + Number(tabId) + "_" + ++piBrowserNetworkRecorderSeq,
     active: false,
     createdAt: Date.now(),
     startedAt: 0,
     stoppedAt: 0,
     config,
     filter: config.filter,
-    cdpRecord: makeNetworkCdpRecord(tabId2, sessionId),
+    cdpRecord: makeNetworkCdpRecord(tabId, sessionId),
     entries: [],
     byRequestId: /* @__PURE__ */ new Map(),
     bodyStore: /* @__PURE__ */ new Map(),
@@ -4722,12 +4712,12 @@ function recorderPublicConfig(config) {
   const { filter: _filter, ...rest } = config || {};
   return redactSensitive(rest);
 }
-function getNetworkRecorder(tabId2, sessionId) {
-  return piBrowserNetworkRecorders.get(networkRecorderKey(tabId2, sessionId || "default")) || null;
+function getNetworkRecorder(tabId, sessionId) {
+  return piBrowserNetworkRecorders.get(networkRecorderKey(tabId, sessionId || "default")) || null;
 }
-function getActiveNetworkRecorder(tabId2, msg) {
+function getActiveNetworkRecorder(tabId, msg) {
   const sessionId = defaultNetworkSessionId(msg);
-  return getNetworkRecorder(tabId2, sessionId);
+  return getNetworkRecorder(tabId, sessionId);
 }
 function rememberNetworkError(recorder, where, error, extra = null) {
   if (!recorder) return;
@@ -4974,8 +4964,8 @@ async function piNetworkMaybeCaptureBody(recorder, rec, deps) {
   setNetworkBodyAvailability(rec, "pending", null);
   recorder.pendingBodyCount += 1;
   try {
-    const result2 = await deps.cdpSendNetworkCommand(recorder.tabId, "Network.getResponseBody", { requestId: rec.requestId }, recorder.config.bodyTimeoutMs);
-    storeNetworkBody(recorder, rec, result2 || {});
+    const result = await deps.cdpSendNetworkCommand(recorder.tabId, "Network.getResponseBody", { requestId: rec.requestId }, recorder.config.bodyTimeoutMs);
+    storeNetworkBody(recorder, rec, result || {});
   } catch (e) {
     rec.bodyError = errorText3(e);
     rec.bodyPending = false;
@@ -5127,16 +5117,16 @@ var findLostNetworkRuntimeSession = typeof findLostRuntimeSession === "function"
 var summarizeLostNetworkRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => void 0;
 setNetworkWaitNotifier(wakeNetworkWaits);
 var NETWORK_RECORDER_EVENTS = ["Network.requestWillBeSent", "Network.requestWillBeSentExtraInfo", "Network.responseReceived", "Network.responseReceivedExtraInfo", "Network.dataReceived", "Network.requestServedFromCache", "Network.loadingFinished", "Network.loadingFailed", "Network.webSocketCreated", "Network.webSocketWillSendHandshakeRequest", "Network.webSocketHandshakeResponseReceived", "Network.webSocketFrameSent", "Network.webSocketFrameReceived", "Network.webSocketFrameError", "Network.webSocketClosed", "Network.eventSourceMessageReceived", "Page.frameNavigated", "Page.loadEventFired", "Page.domContentEventFired", "Page.lifecycleEvent", "Page.frameStoppedLoading"];
-async function cdpSendNetworkCommand(tabId2, method, params = {}, timeoutMs) {
+async function cdpSendNetworkCommand(tabId, method, params = {}, timeoutMs) {
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, method, params || {}, { persistent: true, name: "network_recorder", timeoutMs }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, method, params || {}, { persistent: true, name: "network_recorder", timeoutMs }));
     const error = asRecord3(resp?.error);
     if (!resp || resp.ok === false) throw new Error(String(error.message || resp?.message || resp?.error || method + " failed"));
-    const data2 = asRecord3(resp.data);
-    return asRecord3(data2.result || resp.result || resp.data || {});
+    const data = asRecord3(resp.data);
+    return asRecord3(data.result || resp.result || resp.data || {});
   }
-  return asRecord3(await piWithTimeout(chromeApi.debugger.sendCommand({ tabId: Number(tabId2) }, method, params || {}), timeoutMs || 5e3, method));
+  return asRecord3(await piWithTimeout(chromeApi.debugger.sendCommand({ tabId: Number(tabId) }, method, params || {}), timeoutMs || 5e3, method));
 }
 async function maybeCaptureNetworkBody(recorder, rec) {
   return await piNetworkMaybeCaptureBody(recorder, rec, { cdpSendNetworkCommand, classifyNetworkBodyError, wakeNetworkWaits });
@@ -5144,9 +5134,9 @@ async function maybeCaptureNetworkBody(recorder, rec) {
 function handleNetworkRecorderCdpEvent(recorder, source, method, params = {}) {
   piNetworkHandleRecorderCdpEvent(recorder, source, method, params, { wakeNetworkWaits, maybeCaptureNetworkBody });
 }
-async function startNetworkRecorder(tabId2, msg) {
+async function startNetworkRecorder(tabId, msg) {
   const config = normalizeNetworkRecorderConfig(msg || {});
-  const key = networkRecorderKey(tabId2, config.sessionId);
+  const key = networkRecorderKey(tabId, config.sessionId);
   let recorder = piBrowserNetworkRecorders.get(key);
   if (recorder && recorder.active && msg.reconfigure !== false) {
     recorder.config = config;
@@ -5154,7 +5144,7 @@ async function startNetworkRecorder(tabId2, msg) {
     if (config.clearOnStart) clearNetworkRecorderBuffer(recorder);
     recorder.diagnostics.push({ t: Date.now(), action: "reconfigure", config: recorderPublicConfig(config) });
     try {
-      const persisted = await persist("network", networkRecorderKey(tabId2, config.sessionId), recorderPublicConfig(config), { tabId: tabId2, sessionId: config.sessionId, recoveryPolicy: "auto" });
+      const persisted = await persist("network", networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: "auto" });
       if (persisted.generation !== void 0) recorder.stateGeneration = Number(persisted.generation);
       if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t: Date.now(), action: "persist_failed", error: persisted.error });
     } catch (error) {
@@ -5162,32 +5152,32 @@ async function startNetworkRecorder(tabId2, msg) {
     }
     return { ok: true, data: { ...networkRecorderSummary(recorder), reconfigured: true } };
   }
-  if (recorder && recorder.active) return piBrowserError(PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED, "network recorder already started", { tabId: tabId2, sessionId: config.sessionId });
-  if (recorder) await stopNetworkRecorder(tabId2, { sessionId: config.sessionId, keepBuffer: false, reason: "restart" }).catch(() => {
+  if (recorder && recorder.active) return piBrowserError(PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED, "network recorder already started", { tabId, sessionId: config.sessionId });
+  if (recorder) await stopNetworkRecorder(tabId, { sessionId: config.sessionId, keepBuffer: false, reason: "restart" }).catch(() => {
   });
-  recorder = createNetworkRecorder(tabId2, config);
+  recorder = createNetworkRecorder(tabId, config);
   piBrowserNetworkRecorders.set(key, recorder);
   try {
     await enablePiBrowserCdpDomains(recorder.cdpRecord, ["Network", "Page"]);
     if (config.storePostData) {
       try {
-        await cdpSendNetworkCommand(tabId2, "Network.enable", { maxPostDataSize: config.maxPostDataBytes }, 2e3);
+        await cdpSendNetworkCommand(tabId, "Network.enable", { maxPostDataSize: config.maxPostDataBytes }, 2e3);
       } catch (e) {
         rememberNetworkError(recorder, "Network.enable.maxPostDataSize", e);
       }
     }
-    subscribePiBrowserCdp(tabId2, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+    subscribePiBrowserCdp(tabId, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
     try {
-      await cdpSendNetworkCommand(tabId2, "Page.setLifecycleEventsEnabled", { enabled: true }, 2e3);
+      await cdpSendNetworkCommand(tabId, "Page.setLifecycleEventsEnabled", { enabled: true }, 2e3);
     } catch (e) {
       rememberNetworkError(recorder, "Page.setLifecycleEventsEnabled", e);
     }
     recorder.active = true;
     recorder.startedAt = Date.now();
     recorder.diagnostics.push({ t: Date.now(), action: "start", events: NETWORK_RECORDER_EVENTS, config: recorderPublicConfig(config) });
-    await rememberNetworkRuntimeSession("network", tabId2, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
+    await rememberNetworkRuntimeSession("network", tabId, config.sessionId, { recorderId: recorder.recorderId, config: recorderPublicConfig(config) });
     try {
-      const persisted = await persist("network", networkRecorderKey(tabId2, config.sessionId), recorderPublicConfig(config), { tabId: tabId2, sessionId: config.sessionId, recoveryPolicy: "auto" });
+      const persisted = await persist("network", networkRecorderKey(tabId, config.sessionId), recorderPublicConfig(config), { tabId, sessionId: config.sessionId, recoveryPolicy: "auto" });
       if (persisted.generation !== void 0) recorder.stateGeneration = Number(persisted.generation);
       if (!persisted.ok && persisted.error) recorder.diagnostics.push({ t: Date.now(), action: "persist_failed", error: persisted.error });
     } catch (error) {
@@ -5198,7 +5188,7 @@ async function startNetworkRecorder(tabId2, msg) {
     rememberNetworkError(recorder, "start", e);
     cleanupNetworkRecorder(recorder, "start_failed", { keepBuffer: false });
     piBrowserNetworkRecorders.delete(key);
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "network.start failed", { tabId: tabId2, sessionId: config.sessionId, error: errorText3(e) });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "network.start failed", { tabId, sessionId: config.sessionId, error: errorText3(e) });
   }
 }
 function clearNetworkRecorderBuffer(recorder) {
@@ -5234,24 +5224,24 @@ function cleanupNetworkRecorder(recorder, reason, options = {}) {
   void forgetNetworkRuntimeSession("network", recorder.tabId, recorder.sessionId);
   return { stopped: true, summary: networkRecorderSummary(recorder) };
 }
-async function stopNetworkRecorder(tabId2, msg) {
+async function stopNetworkRecorder(tabId, msg) {
   const sessionId = defaultNetworkSessionId(msg || {});
-  const recorder = getNetworkRecorder(tabId2, sessionId);
-  if (!recorder) return piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, "network recorder is not started", { tabId: tabId2, sessionId });
+  const recorder = getNetworkRecorder(tabId, sessionId);
+  if (!recorder) return piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, "network recorder is not started", { tabId, sessionId });
   const keepBuffer = msg.keepBuffer !== false && msg.keep_buffer !== false && msg.clear !== true;
-  const result2 = cleanupNetworkRecorder(recorder, String(msg.reason || "stop"), { keepBuffer });
+  const result = cleanupNetworkRecorder(recorder, String(msg.reason || "stop"), { keepBuffer });
   if (!keepBuffer || msg.remove === true) piBrowserNetworkRecorders.delete(recorder.key);
   try {
-    await forget("network", networkRecorderKey(tabId2, sessionId));
+    await forget("network", networkRecorderKey(tabId, sessionId));
   } catch (error) {
     console.warn("[PI-BROWSER-NET] Failed to forget recorder state on stop", sessionId, error);
   }
-  return { ok: true, data: { ...result2.summary, stopped: true, keepBuffer } };
+  return { ok: true, data: { ...result.summary, stopped: true, keepBuffer } };
 }
-function cleanupNetworkRecorderTab(tabId2, reason) {
+function cleanupNetworkRecorderTab(tabId, reason) {
   const out = [];
   for (const recorder of Array.from(piBrowserNetworkRecorders.values())) {
-    if (Number(recorder.tabId) !== Number(tabId2)) continue;
+    if (Number(recorder.tabId) !== Number(tabId)) continue;
     cleanupNetworkRecorder(recorder, reason || "tab_cleanup", { keepBuffer: false });
     piBrowserNetworkRecorders.delete(recorder.key);
     void forget("network", recorder.key).catch((error) => console.warn("[PI-BROWSER-NET] Failed to forget recorder state during tab cleanup", recorder.key, error));
@@ -5259,16 +5249,16 @@ function cleanupNetworkRecorderTab(tabId2, reason) {
   }
   return out;
 }
-async function requireNetworkRecorder(tabId2, msg) {
-  const recorder = getActiveNetworkRecorder(tabId2, msg || {});
+async function requireNetworkRecorder(tabId, msg) {
+  const recorder = getActiveNetworkRecorder(tabId, msg || {});
   if (!recorder) {
     const sessionId = defaultNetworkSessionId(msg || {});
-    return { error: piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, "network recorder is not started", { tabId: tabId2, sessionId, lostSession: summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession("network", tabId2, sessionId)) }) };
+    return { error: piBrowserError(PI_BROWSER_ERROR_CODES.NETWORK_RECORDER_NOT_STARTED, "network recorder is not started", { tabId, sessionId, lostSession: summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession("network", tabId, sessionId)) }) };
   }
   return { recorder };
 }
-async function listNetworkRecorderEntries(tabId2, msg) {
-  const found = await requireNetworkRecorder(tabId2, msg);
+async function listNetworkRecorderEntries(tabId, msg) {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const limit = numberInRange(msg.limit, 100, 0, 5e3);
@@ -5277,20 +5267,20 @@ async function listNetworkRecorderEntries(tabId2, msg) {
   const all = recorder.entries.filter((rec) => networkRecordMatchesList(rec, filters));
   const items = all.slice(offset, limit ? offset + limit : void 0).map((rec) => networkRecordSummary(rec, { includeDetails: msg.includeDetails === true || msg.include_details === true, includeBody: msg.includeBody === true || msg.include_body === true }));
   const nextOffset = offset + items.length < all.length ? offset + items.length : null;
-  return { ok: true, data: { tabId: Number(tabId2), sessionId: recorder.sessionId, total: all.length, offset, limit, items, nextOffset, overflowCount: recorder.overflowCount } };
+  return { ok: true, data: { tabId: Number(tabId), sessionId: recorder.sessionId, total: all.length, offset, limit, items, nextOffset, overflowCount: recorder.overflowCount } };
 }
-async function getNetworkRecorderEntry(tabId2, msg) {
-  const found = await requireNetworkRecorder(tabId2, msg);
+async function getNetworkRecorderEntry(tabId, msg) {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const id = String(msg.requestId || msg.request_id || msg.id || "");
-  if (!id) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "network.get requires requestId or id", { tabId: tabId2 });
+  if (!id) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "network.get requires requestId or id", { tabId });
   const rec = recorder.byRequestId.get(id) || recorder.entries.find((x) => String(x.id) === id || String(x.requestId) === id);
-  if (!rec) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND || "REQUEST_NOT_FOUND", "network request not found", { tabId: tabId2, sessionId: recorder.sessionId, requestId: id });
+  if (!rec) return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND || "REQUEST_NOT_FOUND", "network request not found", { tabId, sessionId: recorder.sessionId, requestId: id });
   return { ok: true, data: networkRecordClone(rec, { includeBody: msg.includeBody === true || msg.include_body === true }) };
 }
-async function getNetworkRecorderBody(tabId2, msg) {
-  const found = await requireNetworkRecorder(tabId2, msg);
+async function getNetworkRecorderBody(tabId, msg) {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const ref = String(msg.bodyRef || msg.body_ref || "");
@@ -5299,10 +5289,10 @@ async function getNetworkRecorderBody(tabId2, msg) {
   const bodyRef = ref || rec?.bodyRef || recorder.bodyByRequestId.get(requestId);
   if (!bodyRef) {
     const reason = rec?.bodyUnavailableReason || (requestId ? "body_not_captured" : "missing_request_id");
-    return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, `network body is unavailable (${reason})`, { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef: ref, bodyAvailability: rec?.bodyAvailability || "not_requested", bodyUnavailableReason: reason, bodyError: rec?.bodyError || null, request: rec ? networkRecordSummary(rec) : null });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, `network body is unavailable (${reason})`, { tabId, sessionId: recorder.sessionId, requestId, bodyRef: ref, bodyAvailability: rec?.bodyAvailability || "not_requested", bodyUnavailableReason: reason, bodyError: rec?.bodyError || null, request: rec ? networkRecordSummary(rec) : null });
   }
   const body = recorder.bodyStore.get(bodyRef);
-  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, "network body ref not found (body_ref_missing: the captured body was evicted from the recorder store; re-record with a fresh entry)", { tabId: tabId2, sessionId: recorder.sessionId, requestId, bodyRef, bodyAvailability: "expired", bodyUnavailableReason: "body_ref_missing", request: rec ? networkRecordSummary(rec) : null });
+  if (!body) return piBrowserError(PI_BROWSER_ERROR_CODES.BODY_UNAVAILABLE, "network body ref not found (body_ref_missing: the captured body was evicted from the recorder store; re-record with a fresh entry)", { tabId, sessionId: recorder.sessionId, requestId, bodyRef, bodyAvailability: "expired", bodyUnavailableReason: "body_ref_missing", request: rec ? networkRecordSummary(rec) : null });
   const maxBytesRaw = msg.maxBytes ?? msg.max_bytes;
   let out = { ...body };
   if (maxBytesRaw !== void 0) {
@@ -5347,8 +5337,8 @@ function makeHarEntry(rec, body) {
     _bodyUnavailableReason: rec.bodyUnavailableReason || null
   };
 }
-async function exportNetworkRecorderHar(tabId2, msg) {
-  const found = await requireNetworkRecorder(tabId2, msg);
+async function exportNetworkRecorderHar(tabId, msg) {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const includeBodies = msg.includeBody === true || msg.include_body === true || msg.includeBodies === true || msg.include_bodies === true;
@@ -5442,14 +5432,14 @@ function wakeNetworkWaits(recorder, eventType, rec) {
     }
   }
 }
-async function waitNetworkRecorder(tabId2, msg) {
-  const found = await requireNetworkRecorder(tabId2, msg);
+async function waitNetworkRecorder(tabId, msg) {
+  const found = await requireNetworkRecorder(tabId, msg);
   if (found.error) return found.error;
   const recorder = found.recorder;
   const conditionRaw = msg.condition || msg.state || msg.event || "response";
   const condition = String(conditionRaw).toLowerCase().replace(/[-_]/g, "");
   const timeoutMs = normalizePiBrowserTimeoutMs(msg, 3e4);
-  const waitId = String(msg.waitId || msg.wait_id || makeWaitId(tabId2, "network_recorder"));
+  const waitId = String(msg.waitId || msg.wait_id || makeWaitId(tabId, "network_recorder"));
   const criteria = { ...msg };
   const immediateMatch = () => {
     if (condition === "idle") {
@@ -5500,52 +5490,52 @@ async function waitNetworkRecorder(tabId2, msg) {
     recorder.waits.set(waitId, wait);
   });
 }
-async function handleNetworkRecorderCommand(tabId2, cmd, msg) {
+async function handleNetworkRecorderCommand(tabId, cmd, msg) {
   switch (cmd) {
     case "network.start":
-      return await startNetworkRecorder(tabId2, msg);
+      return await startNetworkRecorder(tabId, msg);
     case "network.stop":
-      return await stopNetworkRecorder(tabId2, msg || {});
+      return await stopNetworkRecorder(tabId, msg || {});
     case "network.status": {
-      const recorder = getActiveNetworkRecorder(tabId2, msg || {});
+      const recorder = getActiveNetworkRecorder(tabId, msg || {});
       if (!recorder) {
         const sessionId = defaultNetworkSessionId(msg || {});
-        const lost = summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession("network", tabId2, sessionId));
-        return { ok: true, data: { tabId: Number(tabId2), sessionId, active: false, stateLost: !!lost, lostSession: lost, recorders: Array.from(piBrowserNetworkRecorders.values()).filter((r) => Number(r.tabId) === Number(tabId2)).map(networkRecorderSummary) } };
+        const lost = summarizeLostNetworkRuntimeSession(await findLostNetworkRuntimeSession("network", tabId, sessionId));
+        return { ok: true, data: { tabId: Number(tabId), sessionId, active: false, stateLost: !!lost, lostSession: lost, recorders: Array.from(piBrowserNetworkRecorders.values()).filter((r) => Number(r.tabId) === Number(tabId)).map(networkRecorderSummary) } };
       }
       return { ok: true, data: networkRecorderSummary(recorder) };
     }
     case "network.clear": {
-      const found = await requireNetworkRecorder(tabId2, msg || {});
+      const found = await requireNetworkRecorder(tabId, msg || {});
       if (found.error) return found.error;
       const cleared = clearNetworkRecorderBuffer(found.recorder);
       return { ok: true, data: { ...networkRecorderSummary(found.recorder), cleared } };
     }
     case "network.list":
-      return await listNetworkRecorderEntries(tabId2, msg || {});
+      return await listNetworkRecorderEntries(tabId, msg || {});
     case "network.get":
-      return await getNetworkRecorderEntry(tabId2, msg || {});
+      return await getNetworkRecorderEntry(tabId, msg || {});
     case "network.body":
-      return await getNetworkRecorderBody(tabId2, msg || {});
+      return await getNetworkRecorderBody(tabId, msg || {});
     case "network.exportHar":
-      return await exportNetworkRecorderHar(tabId2, msg || {});
+      return await exportNetworkRecorderHar(tabId, msg || {});
     case "network.wait":
-      return await waitNetworkRecorder(tabId2, msg || {});
+      return await waitNetworkRecorder(tabId, msg || {});
   }
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown network recorder command: " + cmd, { cmd, tabId: tabId2 });
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown network recorder command: " + cmd, { cmd, tabId });
 }
 registerRecovery(async (results) => {
-  const result2 = await recover("network", {
+  const result = await recover("network", {
     validateTab: true,
     recover: async (record) => {
-      const tabId2 = record.tabId;
+      const tabId = record.tabId;
       const configRecord = record.config;
-      if (!tabId2 || !configRecord) return { recovered: false, historyLost: true, reason: "missing tabId or config" };
+      if (!tabId || !configRecord) return { recovered: false, historyLost: true, reason: "missing tabId or config" };
       const config = normalizeNetworkRecorderConfig(configRecord);
-      const key = networkRecorderKey(tabId2, config.sessionId || "default");
+      const key = networkRecorderKey(tabId, config.sessionId || "default");
       if (piBrowserNetworkRecorders.has(key)) return { recovered: false, historyLost: true, reason: "recorder already exists" };
       try {
-        const recorder = createNetworkRecorder(tabId2, config);
+        const recorder = createNetworkRecorder(tabId, config);
         recorder.recoveredAt = Date.now();
         recorder.historyLost = true;
         recorder.stateGeneration = Number(record.generation || 0);
@@ -5553,21 +5543,20 @@ registerRecovery(async (results) => {
         await enablePiBrowserCdpDomains(recorder.cdpRecord, ["Network", "Page"]);
         if (config.storePostData) {
           try {
-            await cdpSendNetworkCommand(tabId2, "Network.enable", { maxPostDataSize: config.maxPostDataBytes }, 2e3);
+            await cdpSendNetworkCommand(tabId, "Network.enable", { maxPostDataSize: config.maxPostDataBytes }, 2e3);
           } catch (e) {
             rememberNetworkError(recorder, "Network.enable.maxPostDataSize", e);
           }
         }
-        subscribePiBrowserCdp(tabId2, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
+        subscribePiBrowserCdp(tabId, NETWORK_RECORDER_EVENTS, (source, method, params) => handleNetworkRecorderCdpEvent(recorder, source, method, params), recorder.cdpRecord);
         try {
-          await cdpSendNetworkCommand(tabId2, "Page.setLifecycleEventsEnabled", { enabled: true }, 2e3);
+          await cdpSendNetworkCommand(tabId, "Page.setLifecycleEventsEnabled", { enabled: true }, 2e3);
         } catch (e) {
           rememberNetworkError(recorder, "Page.setLifecycleEventsEnabled", e);
         }
         recorder.active = true;
         recorder.startedAt = Date.now();
         recorder.diagnostics.push({ t: Date.now(), action: "recovered", historyLost: true, previousWorkerBootId: record.workerBootId, generation: record.generation });
-        console.log("[PI-BROWSER-NET] Recovered network recorder", key, "historyLost=true");
         return { recovered: true, historyLost: true };
       } catch (error) {
         console.warn("[PI-BROWSER-NET] Failed to recover network recorder", key, error);
@@ -5575,7 +5564,7 @@ registerRecovery(async (results) => {
       }
     }
   });
-  results.push(result2);
+  results.push(result);
 });
 var __piBridgeModule_network = { name: "network", symbols: { cdpSendNetworkCommand, maybeCaptureNetworkBody, appendBounded, handleNetworkRecorderCdpEvent, startNetworkRecorder, clearNetworkRecorderBuffer, cleanupNetworkRecorder, stopNetworkRecorder, cleanupNetworkRecorderTab, requireNetworkRecorder, listNetworkRecorderEntries, getNetworkRecorderEntry, getNetworkRecorderBody, makeHarEntry, exportNetworkRecorderHar, networkWaitMatches, finishNetworkRecorderWait, wakeNetworkWaits, waitNetworkRecorder, handleNetworkRecorderCommand } };
 
@@ -5666,8 +5655,8 @@ function normalizeInterceptRequestPatch(value) {
   }
   return { cdpPatch, summary };
 }
-function interceptSessionKey(tabId2, sessionId) {
-  return `${Number(tabId2)}:${String(sessionId || "default")}`;
+function interceptSessionKey(tabId, sessionId) {
+  return `${Number(tabId)}:${String(sessionId || "default")}`;
 }
 function defaultInterceptSessionId(msg) {
   return String(msg?.sessionId || msg?.session_id || "default");
@@ -5688,11 +5677,11 @@ function normalizeInterceptInstallConfig(msg = {}) {
     stages: normalizeInterceptStages(msg.stages ?? msg.requestStages ?? msg.request_stages)
   };
 }
-function createInterceptSession(tabId2, config) {
+function createInterceptSession(tabId, config) {
   return {
-    tabId: Number(tabId2),
+    tabId: Number(tabId),
     sessionId: config.sessionId,
-    key: interceptSessionKey(tabId2, config.sessionId),
+    key: interceptSessionKey(tabId, config.sessionId),
     active: false,
     createdAt: Date.now(),
     stages: config.stages,
@@ -5705,11 +5694,11 @@ function createInterceptSession(tabId2, config) {
     cdpSubscriptions: []
   };
 }
-function getInterceptSession(tabId2, sessionId) {
-  return piBrowserInterceptSessions.get(interceptSessionKey(tabId2, sessionId)) || null;
+function getInterceptSession(tabId, sessionId) {
+  return piBrowserInterceptSessions.get(interceptSessionKey(tabId, sessionId)) || null;
 }
-function getActiveInterceptSession(tabId2, msg) {
-  return getInterceptSession(tabId2, defaultInterceptSessionId(msg));
+function getActiveInterceptSession(tabId, msg) {
+  return getInterceptSession(tabId, defaultInterceptSessionId(msg));
 }
 function normalizeInterceptRule(msg = {}) {
   const matcher = asRecord4(msg.matcher);
@@ -5795,20 +5784,20 @@ function asRecord5(value) {
 function errorText4(error) {
   return error instanceof Error ? error.message : String(error);
 }
-async function interceptCdpSend(tabId2, method, params = {}, timeoutMs) {
+async function interceptCdpSend(tabId, method, params = {}, timeoutMs) {
   const cdp = piBrowserPersistentCdp();
   if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
-  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, method, params || {}, { persistent: true, name: "intercept", timeoutMs }));
+  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, method, params || {}, { persistent: true, name: "intercept", timeoutMs }));
   const error = asRecord5(resp?.error);
   if (!resp || resp.ok === false) throw new Error(String(error.message || resp?.message || resp?.error || `${method} failed`));
-  const data2 = asRecord5(resp.data);
-  return asRecord5(data2.result || resp.result || resp.data || {});
+  const data = asRecord5(resp.data);
+  return asRecord5(data.result || resp.result || resp.data || {});
 }
-async function recordInterceptPause(sessionId, tabId2, params, options = {}) {
-  const session = getInterceptSession(tabId2, sessionId);
-  if (!session) return piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { tabId: tabId2, sessionId });
+async function recordInterceptPause(sessionId, tabId, params, options = {}) {
+  const session = getInterceptSession(tabId, sessionId);
+  if (!session) return piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { tabId, sessionId });
   const requestId = String(params.requestId || params.request_id || "").trim();
-  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.pause requires params.requestId", { tabId: tabId2, sessionId });
+  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.pause requires params.requestId", { tabId, sessionId });
   const matchedRule = matchRule(session, params);
   const entry = { ...params, requestId, matchedRuleId: matchedRule?.ruleId };
   session.paused.set(requestId, entry);
@@ -5822,29 +5811,29 @@ async function recordInterceptPause(sessionId, tabId2, params, options = {}) {
     resourceType: resourceTypeOf(params)
   });
   if (options.applyAuto !== false && matchedRule) {
-    const autoResult = await applyMatchedInterceptRule(tabId2, sessionId, requestId, params, options.timeoutMs);
+    const autoResult = await applyMatchedInterceptRule(tabId, sessionId, requestId, params, options.timeoutMs);
     if (autoResult) return autoResult;
   }
-  return { ok: true, data: { tabId: tabId2, sessionId, requestId, matchedRuleId: matchedRule?.ruleId || null, pausedCount: session.paused.size } };
+  return { ok: true, data: { tabId, sessionId, requestId, matchedRuleId: matchedRule?.ruleId || null, pausedCount: session.paused.size } };
 }
-function interceptPauseHandler(tabId2, sessionId) {
+function interceptPauseHandler(tabId, sessionId) {
   return (_source, method, params) => {
     if (method !== "Fetch.requestPaused") return;
-    const session = getInterceptSession(tabId2, sessionId);
+    const session = getInterceptSession(tabId, sessionId);
     if (!session || !session.active) return;
     setTimeout(() => {
-      const current = getInterceptSession(tabId2, sessionId);
+      const current = getInterceptSession(tabId, sessionId);
       if (!current || !current.active) return;
-      void recordInterceptPause(sessionId, tabId2, params, { applyAuto: true, timeoutMs: 8e3 }).catch((error) => rememberInterceptDiagnostic(current, { action: "pause_handler_failed", error: errorText4(error) }));
+      void recordInterceptPause(sessionId, tabId, params, { applyAuto: true, timeoutMs: 8e3 }).catch((error) => rememberInterceptDiagnostic(current, { action: "pause_handler_failed", error: errorText4(error) }));
     }, 0);
   };
 }
-async function enableInterceptSession(tabId2, msg) {
+async function enableInterceptSession(tabId, msg) {
   const config = normalizeInterceptInstallConfig(msg || {});
-  const key = `${Number(tabId2)}:${config.sessionId}`;
+  const key = `${Number(tabId)}:${config.sessionId}`;
   let session = piBrowserInterceptSessions.get(key);
   if (!session) {
-    session = createInterceptSession(tabId2, config);
+    session = createInterceptSession(tabId, config);
     piBrowserInterceptSessions.set(key, session);
   } else {
     session.maxTranscript = config.maxTranscript;
@@ -5852,8 +5841,8 @@ async function enableInterceptSession(tabId2, msg) {
   if (session.active) return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
   try {
     const patterns = session.stages.map((stage) => ({ urlPattern: "*", requestStage: stage === "response" ? "Response" : "Request" }));
-    await interceptCdpSend(tabId2, "Fetch.enable", { patterns }, msg.timeoutMs ?? msg.timeout_ms);
-    const subscriptionId = subscribePiBrowserCdp(tabId2, "Fetch.requestPaused", interceptPauseHandler(tabId2, session.sessionId));
+    await interceptCdpSend(tabId, "Fetch.enable", { patterns }, msg.timeoutMs ?? msg.timeout_ms);
+    const subscriptionId = subscribePiBrowserCdp(tabId, "Fetch.requestPaused", interceptPauseHandler(tabId, session.sessionId));
     if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);
     session.active = true;
     session.installedAt = Date.now();
@@ -5861,9 +5850,9 @@ async function enableInterceptSession(tabId2, msg) {
     session.historyLost = false;
     session.pausedLost = false;
     rememberInterceptDiagnostic(session, { action: "install", maxTranscript: session.maxTranscript, stages: session.stages, subscriptionId });
-    await rememberInterceptRuntimeSession("intercept", tabId2, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+    await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
     try {
-      const persisted = await persist("intercept", `${Number(tabId2)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId: tabId2, sessionId: session.sessionId, recoveryPolicy: "auto" });
+      const persisted = await persist("intercept", `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: "auto" });
       if (persisted.generation !== void 0) session.stateGeneration = Number(persisted.generation);
       if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
     } catch (error) {
@@ -5872,89 +5861,89 @@ async function enableInterceptSession(tabId2, msg) {
     return { ok: true, data: { ...interceptSessionSummary(session), reinstalled: false } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "install_failed", error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId: tabId2, sessionId: config.sessionId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId, sessionId: config.sessionId });
   }
 }
-async function disableInterceptSession(tabId2, msg) {
-  const session = getActiveInterceptSession(tabId2, msg);
-  if (!session) return piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: defaultInterceptSessionId(msg) });
+async function disableInterceptSession(tabId, msg) {
+  const session = getActiveInterceptSession(tabId, msg);
+  if (!session) return piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId, sessionId: defaultInterceptSessionId(msg) });
   try {
-    if (session.active) await interceptCdpSend(tabId2, "Fetch.disable", {}, msg.timeoutMs ?? msg.timeout_ms);
+    if (session.active) await interceptCdpSend(tabId, "Fetch.disable", {}, msg.timeoutMs ?? msg.timeout_ms);
     for (const subscriptionId of session.cdpSubscriptions.splice(0)) unsubscribePiBrowserCdp(subscriptionId);
     session.active = false;
     session.paused.clear();
     rememberInterceptDiagnostic(session, { action: "uninstall" });
-    await forgetInterceptRuntimeSession("intercept", tabId2, session.sessionId);
+    await forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
     try {
-      await forget("intercept", `${Number(tabId2)}:${session.sessionId}`);
+      await forget("intercept", `${Number(tabId)}:${session.sessionId}`);
     } catch (error) {
       console.warn("[PI-BROWSER-INTERCEPT] Failed to forget intercept session state", session.sessionId, error);
     }
     return { ok: true, data: { ...interceptSessionSummary(session), uninstalled: true } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "uninstall_failed", error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId, sessionId: session.sessionId });
   }
 }
-async function handleInterceptStatus(tabId2, msg) {
+async function handleInterceptStatus(tabId, msg) {
   const sessionId = defaultInterceptSessionId(msg);
-  const session = getInterceptSession(tabId2, sessionId);
+  const session = getInterceptSession(tabId, sessionId);
   if (!session) {
-    const lost = summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId2, sessionId));
-    return { ok: true, data: { tabId: tabId2, sessionId, active: false, ruleCount: 0, pausedCount: 0, transcriptCount: 0, stateLost: !!lost, lostSession: lost } };
+    const lost = summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId, sessionId));
+    return { ok: true, data: { tabId, sessionId, active: false, ruleCount: 0, pausedCount: 0, transcriptCount: 0, stateLost: !!lost, lostSession: lost } };
   }
   return { ok: true, data: interceptSessionSummary(session) };
 }
-async function requireActiveInterceptSession(tabId2, msg) {
+async function requireActiveInterceptSession(tabId, msg) {
   const sessionId = defaultInterceptSessionId(msg);
-  const session = getInterceptSession(tabId2, sessionId);
-  if (!session || !session.active) return { error: piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId: tabId2, sessionId, lostSession: summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId2, sessionId)) }) };
+  const session = getInterceptSession(tabId, sessionId);
+  if (!session || !session.active) return { error: piBrowserError(PI_BROWSER_ERROR_CODES.SESSION_NOT_FOUND, "intercept session not found", { cmd: msg.cmd, tabId, sessionId, lostSession: summarizeLostInterceptRuntimeSession(await findLostInterceptRuntimeSession("intercept", tabId, sessionId)) }) };
   return { session };
 }
-async function handleInterceptListRules(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptListRules(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
-  return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, rules: interceptSessionSummary(session)?.rules || [], count: session.rules.length } };
+  return { ok: true, data: { tabId, sessionId: session.sessionId, rules: interceptSessionSummary(session)?.rules || [], count: session.rules.length } };
 }
-async function handleInterceptAddRule(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptAddRule(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const rule = normalizeInterceptRule(msg || {});
   session.rules.push(rule);
   rememberInterceptDiagnostic(session, { action: "add_rule", ruleId: rule.ruleId, actionType: rule.action, matcher: rule.matcher });
-  await rememberInterceptRuntimeSession("intercept", tabId2, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+  await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
   try {
-    const persisted = await persist("intercept", `${Number(tabId2)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId: tabId2, sessionId: session.sessionId, recoveryPolicy: "auto" });
+    const persisted = await persist("intercept", `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: "auto" });
     if (persisted.generation !== void 0) session.stateGeneration = Number(persisted.generation);
     if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
   } catch (error) {
     console.warn("[PI-BROWSER-INTERCEPT] Failed to persist intercept session rules", session.sessionId, error);
   }
-  return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, rule, generation: session.stateGeneration } };
+  return { ok: true, data: { tabId, sessionId: session.sessionId, rule, generation: session.stateGeneration } };
 }
-async function handleInterceptRemoveRule(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptRemoveRule(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const ruleId = String(msg.ruleId || msg.rule_id || "").trim();
-  if (!ruleId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.removeRule requires ruleId", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId });
+  if (!ruleId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.removeRule requires ruleId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
   const before = session.rules.length;
   session.rules = session.rules.filter((rule) => rule.ruleId !== ruleId);
   rememberInterceptDiagnostic(session, { action: "remove_rule", ruleId, removed: before !== session.rules.length });
-  await rememberInterceptRuntimeSession("intercept", tabId2, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
+  await rememberInterceptRuntimeSession("intercept", tabId, session.sessionId, { stages: session.stages, maxTranscript: session.maxTranscript, ruleCount: session.rules.length });
   try {
-    const persisted = await persist("intercept", `${Number(tabId2)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId: tabId2, sessionId: session.sessionId, recoveryPolicy: "auto" });
+    const persisted = await persist("intercept", `${Number(tabId)}:${session.sessionId}`, { stages: session.stages, maxTranscript: session.maxTranscript, rules: session.rules }, { tabId, sessionId: session.sessionId, recoveryPolicy: "auto" });
     if (persisted.generation !== void 0) session.stateGeneration = Number(persisted.generation);
     if (!persisted.ok && persisted.error) rememberInterceptDiagnostic(session, { action: "persist_failed", error: persisted.error });
   } catch (error) {
     console.warn("[PI-BROWSER-INTERCEPT] Failed to persist intercept session rules after removal", session.sessionId, error);
   }
-  return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length, generation: session.stateGeneration } };
+  return { ok: true, data: { tabId, sessionId: session.sessionId, ruleId, removed: before !== session.rules.length, count: session.rules.length, generation: session.stateGeneration } };
 }
-async function applyMatchedInterceptRule(tabId2, sessionId, requestId, params, timeoutMs) {
-  const session = getInterceptSession(tabId2, sessionId);
+async function applyMatchedInterceptRule(tabId, sessionId, requestId, params, timeoutMs) {
+  const session = getInterceptSession(tabId, sessionId);
   if (!session) return null;
   const matchedRule = matchRule(session, params);
   if (!matchedRule) return null;
@@ -5964,17 +5953,17 @@ async function applyMatchedInterceptRule(tabId2, sessionId, requestId, params, t
   try {
     if (matchedRule.action === "continue") {
       const normalized = normalizeInterceptRequestPatch(patch);
-      await interceptCdpSend(tabId2, "Fetch.continueRequest", { requestId, ...normalized.cdpPatch }, timeout);
+      await interceptCdpSend(tabId, "Fetch.continueRequest", { requestId, ...normalized.cdpPatch }, timeout);
       session.paused.delete(requestId);
       rememberInterceptTranscript(session, { event: "continue", requestId, ruleId: matchedRule.ruleId, action: "continue", diagnostics: { ...normalized.summary, autoApplied: true } });
-      return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, continued: true, autoApplied: true, mutationSummary: normalized.summary } };
+      return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, continued: true, autoApplied: true, mutationSummary: normalized.summary } };
     }
     if (matchedRule.action === "fail") {
       const errorReason = String(patch.errorReason || patch.error_reason || "Failed");
-      await interceptCdpSend(tabId2, "Fetch.failRequest", { requestId, errorReason }, timeout);
+      await interceptCdpSend(tabId, "Fetch.failRequest", { requestId, errorReason }, timeout);
       session.paused.delete(requestId);
       rememberInterceptTranscript(session, { event: "fail", requestId, ruleId: matchedRule.ruleId, action: "fail", diagnostics: { errorReason, autoApplied: true } });
-      return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, failed: true, errorReason, autoApplied: true } };
+      return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, failed: true, errorReason, autoApplied: true } };
     }
     const isReplaceScript = matchedRule.action === "replaceScript";
     const rawBody = String(patch.body || "");
@@ -5982,17 +5971,17 @@ async function applyMatchedInterceptRule(tabId2, sessionId, requestId, params, t
     const responseCode = Number(patch.responseCode ?? patch.response_code ?? params.responseStatusCode ?? 200);
     const responsePhrase = String(patch.responsePhrase || patch.response_phrase || "OK");
     const responseHeaders = normalizeInterceptHeaders(patch.responseHeaders, isReplaceScript ? "application/javascript; charset=utf-8" : void 0);
-    await interceptCdpSend(tabId2, "Fetch.fulfillRequest", { requestId, responseCode, responsePhrase, responseHeaders, body }, timeout);
+    await interceptCdpSend(tabId, "Fetch.fulfillRequest", { requestId, responseCode, responsePhrase, responseHeaders, body }, timeout);
     session.paused.delete(requestId);
     rememberInterceptTranscript(session, { event: isReplaceScript ? "replace_script" : "fulfill", requestId, ruleId: matchedRule.ruleId, action: matchedRule.action, status: responseCode, diagnostics: { headerCount: responseHeaders.length, bodyBytes: rawBody.length, autoApplied: true } });
-    return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, fulfilled: !isReplaceScript, replacedScript: isReplaceScript, responseCode, autoApplied: true } };
+    return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, fulfilled: !isReplaceScript, replacedScript: isReplaceScript, responseCode, autoApplied: true } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "auto_rule_failed", requestId, ruleId: matchedRule.ruleId, error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: "intercept.auto", tabId: tabId2, sessionId: session.sessionId, requestId, ruleId: matchedRule.ruleId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: "intercept.auto", tabId, sessionId: session.sessionId, requestId, ruleId: matchedRule.ruleId });
   }
 }
-async function handleInterceptCollect(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptCollect(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const afterSeq = Number(msg.afterSeq ?? msg.after_seq ?? 0);
@@ -6001,7 +5990,7 @@ async function handleInterceptCollect(tabId2, msg) {
   return {
     ok: true,
     data: {
-      tabId: tabId2,
+      tabId,
       sessionId: session.sessionId,
       events,
       count: events.length,
@@ -6041,11 +6030,11 @@ function matchRule(session, params) {
   };
   return session.rules.find((rule) => interceptRuleMatches(rule, candidate));
 }
-function interceptPausedRequestMissingError(session, msg, tabId2, requestId) {
+function interceptPausedRequestMissingError(session, msg, tabId, requestId) {
   if (session.pausedLost === true || session.historyLost === true) {
     return piBrowserError(RECOVERY_CODES.LOST, "intercept paused request state was lost after service worker restart", {
       cmd: msg.cmd,
-      tabId: tabId2,
+      tabId,
       sessionId: session.sessionId,
       requestId,
       pausedLost: true,
@@ -6055,105 +6044,105 @@ function interceptPausedRequestMissingError(session, msg, tabId2, requestId) {
       nextAction: "reinstall intercept rules or retry with a new paused request"
     });
   }
-  return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, requestId });
+  return piBrowserError(PI_BROWSER_ERROR_CODES.REQUEST_NOT_FOUND, "intercept paused request not found", { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
 }
-async function handleInterceptContinue(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptContinue(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const requestId = String(msg.requestId || msg.request_id || "").trim();
-  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.continue requires requestId", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId });
-  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId2, requestId);
+  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.continue requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
+  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
   const normalized = normalizeInterceptRequestPatch(msg.patch);
   try {
-    await interceptCdpSend(tabId2, "Fetch.continueRequest", { requestId, ...normalized.cdpPatch }, msg.timeoutMs ?? msg.timeout_ms);
+    await interceptCdpSend(tabId, "Fetch.continueRequest", { requestId, ...normalized.cdpPatch }, msg.timeoutMs ?? msg.timeout_ms);
     session.paused.delete(requestId);
     rememberInterceptTranscript(session, { event: "continue", requestId, action: "continue", diagnostics: normalized.summary });
-    return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, continued: true, pausedCount: session.paused.size, mutationSummary: normalized.summary } };
+    return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, continued: true, pausedCount: session.paused.size, mutationSummary: normalized.summary } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "continue_failed", requestId, error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, requestId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
   }
 }
-async function handleInterceptFail(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptFail(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const requestId = String(msg.requestId || msg.request_id || "").trim();
-  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fail requires requestId", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId });
-  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId2, requestId);
+  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fail requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
+  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
   const errorReason = String(msg.errorReason || msg.error_reason || "Failed");
   try {
-    await interceptCdpSend(tabId2, "Fetch.failRequest", { requestId, errorReason }, msg.timeoutMs ?? msg.timeout_ms);
+    await interceptCdpSend(tabId, "Fetch.failRequest", { requestId, errorReason }, msg.timeoutMs ?? msg.timeout_ms);
     session.paused.delete(requestId);
     rememberInterceptTranscript(session, { event: "fail", requestId, action: "fail", diagnostics: { errorReason } });
-    return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, failed: true, errorReason, pausedCount: session.paused.size } };
+    return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, failed: true, errorReason, pausedCount: session.paused.size } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "fail_failed", requestId, error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, requestId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
   }
 }
-async function handleInterceptFulfill(tabId2, msg) {
-  const resolved = await requireActiveInterceptSession(tabId2, msg);
+async function handleInterceptFulfill(tabId, msg) {
+  const resolved = await requireActiveInterceptSession(tabId, msg);
   if (resolved.error) return resolved.error;
   const session = resolved.session;
   const requestId = String(msg.requestId || msg.request_id || "").trim();
-  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fulfill requires requestId", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId });
-  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId2, requestId);
+  if (!requestId) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "intercept.fulfill requires requestId", { cmd: msg.cmd, tabId, sessionId: session.sessionId });
+  if (!session.paused.has(requestId)) return interceptPausedRequestMissingError(session, msg, tabId, requestId);
   const responseCode = Number(msg.responseCode ?? msg.response_code ?? 200);
   const responsePhrase = String(msg.responsePhrase || msg.response_phrase || "OK");
   const rawBody = String(msg.body || "");
   const body = msg.bodyBase64 ? String(msg.bodyBase64) : btoa(unescape(encodeURIComponent(rawBody)));
   const responseHeaders = normalizeInterceptHeaders(msg.responseHeaders);
   try {
-    await interceptCdpSend(tabId2, "Fetch.fulfillRequest", { requestId, responseCode, responsePhrase, responseHeaders, body }, msg.timeoutMs ?? msg.timeout_ms);
+    await interceptCdpSend(tabId, "Fetch.fulfillRequest", { requestId, responseCode, responsePhrase, responseHeaders, body }, msg.timeoutMs ?? msg.timeout_ms);
     session.paused.delete(requestId);
     rememberInterceptTranscript(session, { event: "fulfill", requestId, action: "fulfill", status: responseCode, diagnostics: { headerCount: responseHeaders.length, bodyBytes: rawBody.length } });
-    return { ok: true, data: { tabId: tabId2, sessionId: session.sessionId, requestId, fulfilled: true, responseCode, pausedCount: session.paused.size } };
+    return { ok: true, data: { tabId, sessionId: session.sessionId, requestId, fulfilled: true, responseCode, pausedCount: session.paused.size } };
   } catch (error) {
     rememberInterceptDiagnostic(session, { action: "fulfill_failed", requestId, error: errorText4(error) });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, requestId });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, errorText4(error), { cmd: msg.cmd, tabId, sessionId: session.sessionId, requestId });
   }
 }
-async function handlePiBrowserInterceptCommand(cmd, tabId2, msg) {
-  if (cmd === "intercept.install") return await enableInterceptSession(tabId2, msg);
-  if (cmd === "intercept.uninstall") return await disableInterceptSession(tabId2, msg);
-  if (cmd === "intercept.status") return await handleInterceptStatus(tabId2, msg);
-  if (cmd === "intercept.listRules") return await handleInterceptListRules(tabId2, msg);
-  if (cmd === "intercept.addRule") return await handleInterceptAddRule(tabId2, msg);
-  if (cmd === "intercept.removeRule") return await handleInterceptRemoveRule(tabId2, msg);
-  if (cmd === "intercept.collect") return await handleInterceptCollect(tabId2, msg);
-  if (cmd === "intercept.pause") return await recordInterceptPause(defaultInterceptSessionId(msg), tabId2, asRecord5(msg.params), { applyAuto: msg.autoApply !== false, timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === "intercept.continue") return await handleInterceptContinue(tabId2, msg);
-  if (cmd === "intercept.fail") return await handleInterceptFail(tabId2, msg);
-  if (cmd === "intercept.fulfill") return await handleInterceptFulfill(tabId2, msg);
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `Unknown intercept command: ${cmd}`, { cmd, tabId: tabId2 });
+async function handlePiBrowserInterceptCommand(cmd, tabId, msg) {
+  if (cmd === "intercept.install") return await enableInterceptSession(tabId, msg);
+  if (cmd === "intercept.uninstall") return await disableInterceptSession(tabId, msg);
+  if (cmd === "intercept.status") return await handleInterceptStatus(tabId, msg);
+  if (cmd === "intercept.listRules") return await handleInterceptListRules(tabId, msg);
+  if (cmd === "intercept.addRule") return await handleInterceptAddRule(tabId, msg);
+  if (cmd === "intercept.removeRule") return await handleInterceptRemoveRule(tabId, msg);
+  if (cmd === "intercept.collect") return await handleInterceptCollect(tabId, msg);
+  if (cmd === "intercept.pause") return await recordInterceptPause(defaultInterceptSessionId(msg), tabId, asRecord5(msg.params), { applyAuto: msg.autoApply !== false, timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
+  if (cmd === "intercept.continue") return await handleInterceptContinue(tabId, msg);
+  if (cmd === "intercept.fail") return await handleInterceptFail(tabId, msg);
+  if (cmd === "intercept.fulfill") return await handleInterceptFulfill(tabId, msg);
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `Unknown intercept command: ${cmd}`, { cmd, tabId });
 }
-function cleanupInterceptSessionTab(tabId2, reason) {
+function cleanupInterceptSessionTab(tabId, reason) {
   let removed = 0;
   for (const [key, session] of Array.from(piBrowserInterceptSessions.entries())) {
-    if (Number(session.tabId) !== Number(tabId2)) continue;
+    if (Number(session.tabId) !== Number(tabId)) continue;
     removed += 1;
     for (const subscriptionId of session.cdpSubscriptions.splice(0)) unsubscribePiBrowserCdp(subscriptionId);
     rememberInterceptDiagnostic(session, { action: "tab_cleanup", reason: reason || "tab_cleanup" });
-    void forgetInterceptRuntimeSession("intercept", tabId2, session.sessionId);
+    void forgetInterceptRuntimeSession("intercept", tabId, session.sessionId);
     void forget("intercept", key).catch((error) => console.warn("[PI-BROWSER-INTERCEPT] Failed to forget intercept state during tab cleanup", key, error));
     piBrowserInterceptSessions.delete(key);
   }
-  return { tabId: Number(tabId2), removed, reason: reason || "tab_cleanup" };
+  return { tabId: Number(tabId), removed, reason: reason || "tab_cleanup" };
 }
 registerRecovery(async (results) => {
-  const result2 = await recover("intercept", {
+  const result = await recover("intercept", {
     validateTab: true,
     recover: async (record) => {
-      const tabId2 = record.tabId;
+      const tabId = record.tabId;
       const config = record.config;
-      if (!tabId2 || !config) return { recovered: false, historyLost: true, reason: "missing tabId or config" };
+      if (!tabId || !config) return { recovered: false, historyLost: true, reason: "missing tabId or config" };
       const sessionId = record.sessionId || "default";
-      const key = `${Number(tabId2)}:${sessionId}`;
+      const key = `${Number(tabId)}:${sessionId}`;
       if (piBrowserInterceptSessions.has(key)) return { recovered: false, historyLost: true, reason: "session already exists" };
       try {
-        const session = createInterceptSession(tabId2, { sessionId, maxTranscript: config.maxTranscript ?? 200, stages: config.stages ?? ["request"] });
+        const session = createInterceptSession(tabId, { sessionId, maxTranscript: config.maxTranscript ?? 200, stages: config.stages ?? ["request"] });
         if (config.rules) session.rules = config.rules;
         session.recoveredAt = Date.now();
         session.historyLost = true;
@@ -6162,17 +6151,16 @@ registerRecovery(async (results) => {
         piBrowserInterceptSessions.set(key, session);
         const patterns = session.stages.map((stage) => ({ urlPattern: "*", requestStage: stage === "response" ? "Response" : "Request" }));
         try {
-          await interceptCdpSend(tabId2, "Fetch.disable", {});
+          await interceptCdpSend(tabId, "Fetch.disable", {});
         } catch (error) {
           console.warn("[PI-BROWSER-INTERCEPT] Failed to disable Fetch before recovery re-enable", key, error);
         }
-        await interceptCdpSend(tabId2, "Fetch.enable", { patterns });
-        const subscriptionId = subscribePiBrowserCdp(tabId2, "Fetch.requestPaused", interceptPauseHandler(tabId2, session.sessionId));
+        await interceptCdpSend(tabId, "Fetch.enable", { patterns });
+        const subscriptionId = subscribePiBrowserCdp(tabId, "Fetch.requestPaused", interceptPauseHandler(tabId, session.sessionId));
         if (subscriptionId) session.cdpSubscriptions.push(subscriptionId);
         session.active = true;
         session.installedAt = Date.now();
         rememberInterceptDiagnostic(session, { action: "recovered", historyLost: true, pausedLost: true, previousWorkerBootId: record.workerBootId, ruleCount: session.rules.length, generation: record.generation });
-        console.log("[PI-BROWSER-INTERCEPT] Recovered intercept session", key, "historyLost=true");
         return { recovered: true, historyLost: true };
       } catch (error) {
         console.warn("[PI-BROWSER-INTERCEPT] Failed to recover intercept session", key, error);
@@ -6180,7 +6168,7 @@ registerRecovery(async (results) => {
       }
     }
   });
-  results.push(result2);
+  results.push(result);
 });
 var __piBridgeModule_intercept = {
   name: "intercept",
@@ -6237,10 +6225,10 @@ function sinkHintsExpression(selector) {
 		return { ok:true, node: { tagName: node.tagName || '', id: node.id || '', text: text.slice(0, 240) }, sinks, hints };
 	})()`;
 }
-async function cdpSend(tabId2, method, params = {}, timeoutMs) {
+async function cdpSend(tabId, method, params = {}, timeoutMs) {
   const cdp = piBrowserPersistentCdp();
   if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
-  const response = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, method, params, { persistent: true, name: "dom_flow", timeoutMs }));
+  const response = normalizePersistentPiBrowserResponse(await cdp.send(tabId, method, params, { persistent: true, name: "dom_flow", timeoutMs }));
   if (!response || response.ok === false) {
     const error = asRecord6(response?.error);
     throw new Error(String(error.message || response?.message || response?.error || `${method} failed`));
@@ -6261,11 +6249,11 @@ function listenerSourceFact(entry, scriptLookup, pageUrl) {
     sourceKind: script.url ? "script" : pageUrl ? "inline-page" : void 0
   };
 }
-async function collectDebuggerScriptLookup(tabId2, timeoutMs) {
+async function collectDebuggerScriptLookup(tabId, timeoutMs) {
   const lookup = /* @__PURE__ */ new Map();
   const cdp = piBrowserPersistentCdp();
   if (!cdp?.send) return lookup;
-  const subscriptionId = subscribePiBrowserCdp(tabId2, "Debugger.scriptParsed", (_source, _method, params) => {
+  const subscriptionId = subscribePiBrowserCdp(tabId, "Debugger.scriptParsed", (_source, _method, params) => {
     const entry = asRecord6(params);
     const scriptId = String(entry.scriptId || "").trim();
     if (!scriptId) return;
@@ -6279,14 +6267,14 @@ async function collectDebuggerScriptLookup(tabId2, timeoutMs) {
     });
   });
   try {
-    await cdpSend(tabId2, "Debugger.enable", {}, timeoutMs);
+    await cdpSend(tabId, "Debugger.enable", {}, timeoutMs);
     await new Promise((resolve) => setTimeout(resolve, 60));
   } finally {
     if (subscriptionId) unsubscribePiBrowserCdp(subscriptionId);
   }
   return lookup;
 }
-async function resolveNodeObjectId(tabId2, selector, timeoutMs) {
+async function resolveNodeObjectId(tabId, selector, timeoutMs) {
   const probeExpression = `(() => {
 		const selector = ${JSON.stringify(selector)};
 		let node;
@@ -6305,36 +6293,36 @@ async function resolveNodeObjectId(tabId2, selector, timeoutMs) {
 			pageUrl: location.href,
 		};
 	})()`;
-  const probe = await piBrowserEval(tabId2, probeExpression, true, { timeoutMs });
+  const probe = await piBrowserEval(tabId, probeExpression, true, { timeoutMs });
   if (!probe.ok) throw new Error(String(probe.error || probe.message || "Runtime.evaluate failed"));
   const probeData = asRecord6(probe.data);
   if (probeData.ok === false && probeData.error_code === "INVALID_SELECTOR") throw new Error(`INVALID_SELECTOR: ${String(probeData.error || "invalid selector")}`);
   if (probeData.ok === false && probeData.error_code === "SELECTOR_NOT_FOUND") throw new Error(`SELECTOR_NOT_FOUND: ${String(probeData.error || "selector did not match an element")}`);
   const resolveExpression = `(() => document.querySelector(${JSON.stringify(selector)}))()`;
-  const response = normalizePersistentPiBrowserResponse(await piBrowserPersistentCdp().send(tabId2, "Runtime.evaluate", { expression: resolveExpression, awaitPromise: true, returnByValue: false }, { persistent: true, name: "dom_flow_resolve", timeoutMs }));
+  const response = normalizePersistentPiBrowserResponse(await piBrowserPersistentCdp().send(tabId, "Runtime.evaluate", { expression: resolveExpression, awaitPromise: true, returnByValue: false }, { persistent: true, name: "dom_flow_resolve", timeoutMs }));
   if (!response || response.ok === false) {
     const error = asRecord6(response?.error);
     throw new Error(String(error.message || response?.message || response?.error || "Runtime.evaluate failed"));
   }
-  const result2 = asRecord6(asRecord6(response.data).result || response.result || response.data || {});
-  const remote = asRecord6(result2.result);
+  const result = asRecord6(asRecord6(response.data).result || response.result || response.data || {});
+  const remote = asRecord6(result.result);
   const objectId = String(remote.objectId || "").trim();
   if (!objectId) throw new Error("failed to resolve selector objectId");
   return { objectId, node: asRecord6(probeData.nodeInfo), pageUrl: typeof probeData.pageUrl === "string" ? probeData.pageUrl : void 0 };
 }
-async function collectNodeListeners(tabId2, msg) {
+async function collectNodeListeners(tabId, msg) {
   try {
     const selector = selectorText(msg.selector);
     const timeoutMs = asPositiveInt(msg.timeoutMs ?? msg.timeout_ms, 1e4, 1, 6e4);
     const maxListeners = asPositiveInt(msg.maxListeners ?? msg.max_listeners, 20, 1, 200);
-    const { objectId, node, pageUrl } = await resolveNodeObjectId(tabId2, selector, timeoutMs);
-    const listenerResult = await cdpSend(tabId2, "DOMDebugger.getEventListeners", { objectId, depth: 1, pierce: true }, timeoutMs);
+    const { objectId, node, pageUrl } = await resolveNodeObjectId(tabId, selector, timeoutMs);
+    const listenerResult = await cdpSend(tabId, "DOMDebugger.getEventListeners", { objectId, depth: 1, pierce: true }, timeoutMs);
     const listeners = Array.isArray(listenerResult.listeners) ? listenerResult.listeners.slice(0, maxListeners).map((item) => asRecord6(item)) : [];
-    const scripts = await collectDebuggerScriptLookup(tabId2, timeoutMs);
+    const scripts = await collectDebuggerScriptLookup(tabId, timeoutMs);
     return {
       ok: true,
       data: {
-        tabId: tabId2,
+        tabId,
         selector,
         node,
         listeners: listeners.map((listener) => ({
@@ -6351,43 +6339,43 @@ async function collectNodeListeners(tabId2, msg) {
     };
   } catch (error) {
     const message = errorText5(error);
-    if (/INVALID_SELECTOR/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, message, { tabId: tabId2, selector: msg.selector });
-    if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId: tabId2, selector: msg.selector });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message, { tabId: tabId2, selector: msg.selector });
+    if (/INVALID_SELECTOR/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, message, { tabId, selector: msg.selector });
+    if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId, selector: msg.selector });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message, { tabId, selector: msg.selector });
   }
 }
-async function collectNodeSinkHints(tabId2, msg) {
+async function collectNodeSinkHints(tabId, msg) {
   try {
     const selector = selectorText(msg.selector);
     const timeoutMs = asPositiveInt(msg.timeoutMs ?? msg.timeout_ms, 1e4, 1, 6e4);
-    const result2 = await piBrowserEval(tabId2, sinkHintsExpression(selector), true, { timeoutMs });
-    if (!result2.ok) return result2;
-    const data2 = asRecord6(result2.data);
-    if (data2.ok === false && data2.error_code === "INVALID_SELECTOR") return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, data2.error || "invalid selector", { tabId: tabId2, selector });
-    if (data2.ok === false && data2.error_code === "SELECTOR_NOT_FOUND") return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, data2.error || "selector did not match an element", { tabId: tabId2, selector });
+    const result = await piBrowserEval(tabId, sinkHintsExpression(selector), true, { timeoutMs });
+    if (!result.ok) return result;
+    const data = asRecord6(result.data);
+    if (data.ok === false && data.error_code === "INVALID_SELECTOR") return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, data.error || "invalid selector", { tabId, selector });
+    if (data.ok === false && data.error_code === "SELECTOR_NOT_FOUND") return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, data.error || "selector did not match an element", { tabId, selector });
     return {
       ok: true,
       data: {
-        tabId: tabId2,
+        tabId,
         selector,
-        node: asRecord6(data2.node),
-        sinks: Array.isArray(data2.sinks) ? data2.sinks.map((item) => asRecord6(item)) : [],
-        hints: Array.isArray(data2.hints) ? data2.hints.map((item) => asRecord6(item)) : [],
-        count: Array.isArray(data2.hints) ? data2.hints.length : 0
+        node: asRecord6(data.node),
+        sinks: Array.isArray(data.sinks) ? data.sinks.map((item) => asRecord6(item)) : [],
+        hints: Array.isArray(data.hints) ? data.hints.map((item) => asRecord6(item)) : [],
+        count: Array.isArray(data.hints) ? data.hints.length : 0
       }
     };
   } catch (error) {
     const message = errorText5(error);
-    if (/INVALID_SELECTOR/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, message, { tabId: tabId2, selector: msg.selector });
-    if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId: tabId2, selector: msg.selector });
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message, { tabId: tabId2, selector: msg.selector });
+    if (/INVALID_SELECTOR/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SELECTOR, message, { tabId, selector: msg.selector });
+    if (/SELECTOR_NOT_FOUND|selector did not match/i.test(message)) return piBrowserError(PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, message, { tabId, selector: msg.selector });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, message, { tabId, selector: msg.selector });
   }
 }
-async function collectNodeListenerChain(tabId2, msg) {
-  const listeners = await collectNodeListeners(tabId2, msg);
+async function collectNodeListenerChain(tabId, msg) {
+  const listeners = await collectNodeListeners(tabId, msg);
   if (!listeners.ok) return listeners;
-  const data2 = asRecord6(listeners.data);
-  const chain = Array.isArray(data2.listeners) ? data2.listeners.map((listener, index) => {
+  const data = asRecord6(listeners.data);
+  const chain = Array.isArray(data.listeners) ? data.listeners.map((listener, index) => {
     const entry = asRecord6(listener);
     const handler = asRecord6(entry.handler);
     return {
@@ -6404,9 +6392,9 @@ async function collectNodeListenerChain(tabId2, msg) {
   return {
     ok: true,
     data: {
-      tabId: tabId2,
-      selector: data2.selector,
-      node: data2.node,
+      tabId,
+      selector: data.selector,
+      node: data.node,
       chain,
       count: chain.length
     }
@@ -6414,14 +6402,14 @@ async function collectNodeListenerChain(tabId2, msg) {
 }
 
 // bridge_src/service_worker/hook.ts
-async function injectPiBrowserDispatcherViaCdp(tabId2) {
+async function injectPiBrowserDispatcherViaCdp(tabId) {
   const code = await (await fetch(chromeApi.runtime.getURL(PI_BROWSER_HOOK_DISPATCHER_FILE))).text();
-  const res2 = await piBrowserEval(tabId2, code, true);
-  if (!res2.ok) return res2;
+  const res = await piBrowserEval(tabId, code, true);
+  if (!res.ok) return res;
   return { ok: true, data: { method: "cdp_fallback" } };
 }
-async function confirmPiBrowserDispatcher(tabId2, method) {
-  const ping = await callPagePiBrowser(tabId2, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, e instanceof Error ? e.message : String(e), { method }));
+async function confirmPiBrowserDispatcher(tabId, method) {
+  const ping = await callPagePiBrowser(tabId, "hook.status", {}).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, e instanceof Error ? e.message : String(e), { method }));
   if (ping && (ping.ok || ping.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || ping.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION)) return { ok: true, data: { method, ping: ping.ok ? "installed" : "loaded" } };
   return piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, "Pi browser dispatcher readiness check failed", { method, ping });
 }
@@ -6504,25 +6492,25 @@ function hookInstallArgsFromMessage(msg, targetOverride) {
     install_fingerprint: msg.install_fingerprint || msg.installFingerprint
   };
 }
-async function ensurePiBrowserDispatcher(tabId2) {
+async function ensurePiBrowserDispatcher(tabId) {
   const timeoutMs = 3e3;
   let scriptingErr;
   try {
     await piWithTimeout(
-      chromeApi.scripting.executeScript({ target: { tabId: tabId2 }, world: "MAIN", files: [PI_BROWSER_HOOK_DISPATCHER_FILE] }),
+      chromeApi.scripting.executeScript({ target: { tabId }, world: "MAIN", files: [PI_BROWSER_HOOK_DISPATCHER_FILE] }),
       timeoutMs,
       "chrome.scripting.executeScript(files)"
     );
-    const confirmed = await confirmPiBrowserDispatcher(tabId2, "scripting");
+    const confirmed = await confirmPiBrowserDispatcher(tabId, "scripting");
     if (confirmed.ok) return confirmed;
     scriptingErr = new Error("readiness check failed");
   } catch (injectErr) {
     scriptingErr = injectErr;
   }
   try {
-    const cdp = await injectPiBrowserDispatcherViaCdp(tabId2);
+    const cdp = await injectPiBrowserDispatcherViaCdp(tabId);
     if (cdp.ok) {
-      const confirmed = await confirmPiBrowserDispatcher(tabId2, "cdp_fallback");
+      const confirmed = await confirmPiBrowserDispatcher(tabId, "cdp_fallback");
       if (confirmed.ok) return { ok: true, data: { ...confirmed.data && typeof confirmed.data === "object" ? confirmed.data : {}, fallback_reason: scriptingErr instanceof Error ? scriptingErr.message : String(scriptingErr) } };
       return piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, "hook.install CDP fallback readiness failed", { scripting: scriptingErr instanceof Error ? scriptingErr.message : String(scriptingErr), confirm: confirmed });
     }
@@ -6531,12 +6519,12 @@ async function ensurePiBrowserDispatcher(tabId2) {
     return piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, "hook.install injection failed", { scripting: scriptingErr instanceof Error ? scriptingErr.message : String(scriptingErr), cdp: cdpErr instanceof Error ? cdpErr.message : String(cdpErr) });
   }
 }
-async function handlePiBrowserHookCommand(cmd, tabId2, msg) {
+async function handlePiBrowserHookCommand(cmd, tabId, msg) {
   if (cmd === "hook.list_sessions") {
     const explicitTab = msg && (msg.tabId !== void 0 || msg.targetTabId !== void 0);
-    const sessionEntries = Array.from(piBrowserSessions.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId2));
-    const queueEntries = Array.from(piBrowserTabQueues.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId2));
-    return { ok: true, data: { tabId: explicitTab ? Number(tabId2) : void 0, sessions: sessionEntries.map(([tid, s2]) => ({ tabId: tid, queue: getPiBrowserQueueStats(tid), ...s2 })), count: sessionEntries.length, queues: queueEntries.map(([tid]) => ({ tabId: tid, ...getPiBrowserQueueStats(tid) })) } };
+    const sessionEntries = Array.from(piBrowserSessions.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId));
+    const queueEntries = Array.from(piBrowserTabQueues.entries()).filter(([tid]) => !explicitTab || Number(tid) === Number(tabId));
+    return { ok: true, data: { tabId: explicitTab ? Number(tabId) : void 0, sessions: sessionEntries.map(([tid, s]) => ({ tabId: tid, queue: getPiBrowserQueueStats(tid), ...s })), count: sessionEntries.length, queues: queueEntries.map(([tid]) => ({ tabId: tid, ...getPiBrowserQueueStats(tid) })) } };
   }
   if (cmd === "hook.list_targets") return { ok: true, data: { targets: listPiBrowserHookTargets(), count: listPiBrowserHookTargets().length, boundary: "static-explicit-targets", rejectedStrategyPresets: ["all", "auto", "aggressive", "ctf", "exploit", "stealth"] } };
   if (cmd === "hook.install" || cmd === "hook.install_targets") {
@@ -6551,14 +6539,14 @@ async function handlePiBrowserHookCommand(cmd, tabId2, msg) {
       rejectedTargets = expanded.rejected;
       targetOverride = expanded.targets;
     }
-    const injected = await ensurePiBrowserDispatcher(tabId2);
+    const injected = await ensurePiBrowserDispatcher(tabId);
     if (!injected.ok) return injected;
     const args = hookInstallArgsFromMessage(msg, targetOverride);
-    const beforeStatus = await callPagePiBrowser(tabId2, "hook.status", piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
-    const res2 = await callPagePiBrowser(tabId2, "hook.install", args);
-    if (res2 && !res2.ok && res2.error_code === PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED) {
-      res2.details = {
-        ...res2.details || {},
+    const beforeStatus = await callPagePiBrowser(tabId, "hook.status", piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms }).catch(() => null);
+    const res = await callPagePiBrowser(tabId, "hook.install", args);
+    if (res && !res.ok && res.error_code === PI_BROWSER_ERROR_CODES.ALREADY_INSTALLED) {
+      res.details = {
+        ...res.details || {},
         recovery: {
           force: true,
           uninstallFirst: true,
@@ -6566,112 +6554,111 @@ async function handlePiBrowserHookCommand(cmd, tabId2, msg) {
         }
       };
     }
-    if (res2 && res2.ok) {
-      const data2 = res2.data && typeof res2.data === "object" ? res2.data : {};
-      data2.reused = data2.idempotent === true || data2.already_installed === true;
-      data2.preinstall_status = beforeStatus && beforeStatus.ok ? "installed" : beforeStatus && beforeStatus.error_code ? String(beforeStatus.error_code) : "unknown";
-      data2.history_lost = false;
+    if (res && res.ok) {
+      const data = res.data && typeof res.data === "object" ? res.data : {};
+      data.reused = data.idempotent === true || data.already_installed === true;
+      data.preinstall_status = beforeStatus && beforeStatus.ok ? "installed" : beforeStatus && beforeStatus.error_code ? String(beforeStatus.error_code) : "unknown";
+      data.history_lost = false;
       if (cmd === "hook.install_targets") {
-        data2.expanded_targets = expandedTargets || [];
-        data2.rejected_targets = rejectedTargets || [];
-        data2.target_boundary = "static-explicit-targets";
-        data2.rejected_strategy_presets = ["all", "auto", "aggressive", "ctf", "exploit", "stealth"];
+        data.expanded_targets = expandedTargets || [];
+        data.rejected_targets = rejectedTargets || [];
+        data.target_boundary = "static-explicit-targets";
+        data.rejected_strategy_presets = ["all", "auto", "aggressive", "ctf", "exploit", "stealth"];
       }
-      piBrowserSessions.set(tabId2, {
-        session_id: String(data2.session_id || args.session_id || ""),
-        state: String(data2.state || "INSTALLED"),
-        installed_at: String(data2.installed_at || (/* @__PURE__ */ new Date()).toISOString()),
+      piBrowserSessions.set(tabId, {
+        session_id: String(data.session_id || args.session_id || ""),
+        state: String(data.state || "INSTALLED"),
+        installed_at: String(data.installed_at || (/* @__PURE__ */ new Date()).toISOString()),
         targets: args.targets,
         options: msg.options,
         buffer_size: msg.buffer_size === void 0 ? void 0 : Number(msg.buffer_size),
-        dispatcher_version: data2.dispatcher_version || data2.pi_browser_version,
-        install_epoch: data2.install_epoch,
-        owner_session_id: data2.owner_session_id,
-        install_fingerprint: data2.install_fingerprint !== void 0 ? String(data2.install_fingerprint) : args.install_fingerprint ? String(args.install_fingerprint) : void 0,
+        dispatcher_version: data.dispatcher_version || data.pi_browser_version,
+        install_epoch: data.install_epoch,
+        owner_session_id: data.owner_session_id,
+        install_fingerprint: data.install_fingerprint !== void 0 ? String(data.install_fingerprint) : args.install_fingerprint ? String(args.install_fingerprint) : void 0,
         install_args: args,
         expanded_targets: expandedTargets
       });
-      const sessionId = String(data2.session_id || args.session_id || "default");
+      const sessionId = String(data.session_id || args.session_id || "default");
       try {
-        await persist("hook", `${Number(tabId2)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId: tabId2, sessionId, recoveryPolicy: "manual" });
+        await persist("hook", `${Number(tabId)}:${sessionId}`, redactConfig({ sessionId, targets: args.targets, options: msg.options, buffer_size: msg.buffer_size }), { tabId, sessionId, recoveryPolicy: "manual" });
       } catch (error) {
         console.warn("[PI-BROWSER-HOOK] Failed to persist hook session state", sessionId, error);
       }
     }
-    return res2;
+    return res;
   }
   if (cmd === "hook.status") {
-    const res2 = await callPagePiBrowser(tabId2, "hook.status", piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-    if (res2 && res2.ok && piBrowserSessions.has(tabId2)) {
-      const session = piBrowserSessions.get(tabId2);
-      const data2 = res2.data && typeof res2.data === "object" ? res2.data : {};
-      if (session) piBrowserSessions.set(tabId2, { ...session, state: String(data2.state || session.state || "") });
+    const res = await callPagePiBrowser(tabId, "hook.status", piBrowserHookSessionArgs(msg), { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
+    if (res && res.ok && piBrowserSessions.has(tabId)) {
+      const session = piBrowserSessions.get(tabId);
+      const data = res.data && typeof res.data === "object" ? res.data : {};
+      if (session) piBrowserSessions.set(tabId, { ...session, state: String(data.state || session.state || "") });
     }
-    return res2;
+    return res;
   }
-  if (cmd === "hook.collect") return await callPagePiBrowser(tabId2, "hook.collect", { ...piBrowserHookSessionArgs(msg), since_seq: msg.since_seq, limit: msg.limit, event_types: msg.event_types, timeout_ms: msg.timeout_ms, min_count: msg.min_count }, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === "hook.clear_buffer") return await callPagePiBrowser(tabId2, "hook.clear_buffer", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.clear_buffer returned no response", { cmd });
-  if (cmd === "hook.pause") return await callPagePiBrowser(tabId2, "hook.pause", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.pause returned no response", { cmd });
-  if (cmd === "hook.resume") return await callPagePiBrowser(tabId2, "hook.resume", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.resume returned no response", { cmd });
+  if (cmd === "hook.collect") return await callPagePiBrowser(tabId, "hook.collect", { ...piBrowserHookSessionArgs(msg), since_seq: msg.since_seq, limit: msg.limit, event_types: msg.event_types, timeout_ms: msg.timeout_ms, min_count: msg.min_count }, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
+  if (cmd === "hook.clear_buffer") return await callPagePiBrowser(tabId, "hook.clear_buffer", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.clear_buffer returned no response", { cmd });
+  if (cmd === "hook.pause") return await callPagePiBrowser(tabId, "hook.pause", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.pause returned no response", { cmd });
+  if (cmd === "hook.resume") return await callPagePiBrowser(tabId, "hook.resume", piBrowserHookSessionArgs(msg)) || piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "hook.resume returned no response", { cmd });
   if (cmd === "hook.uninstall") {
     const requestedSessionId = piBrowserHookSessionId(msg);
-    const localSession = piBrowserSessions.get(Number(tabId2));
+    const localSession = piBrowserSessions.get(Number(tabId));
     if (requestedSessionId && localSession?.session_id && String(localSession.session_id) !== requestedSessionId) {
-      return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SESSION, "hook.uninstall sessionId does not match the installed tab session", { tabId: tabId2, session_id: requestedSessionId, current_session_id: localSession.session_id });
+      return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_SESSION, "hook.uninstall sessionId does not match the installed tab session", { tabId, session_id: requestedSessionId, current_session_id: localSession.session_id });
     }
-    const res2 = await callPagePiBrowser(tabId2, "hook.uninstall", piBrowserHookSessionArgs(msg));
-    const shouldCleanup = res2 && (res2.ok || res2.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res2.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
+    const res = await callPagePiBrowser(tabId, "hook.uninstall", piBrowserHookSessionArgs(msg));
+    const shouldCleanup = res && (res.ok || res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED);
     if (shouldCleanup) {
-      const listenerCleanup = typeof cleanupPiBrowserPageListenersForTab === "function" ? await cleanupPiBrowserPageListenersForTab(tabId2, "hook_uninstall", msg.timeoutMs || msg.timeout_ms || 5e3).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, "hook.uninstall page listener cleanup failed", { tabId: tabId2, reason: e instanceof Error ? e.message : String(e) })) : { ok: true, data: { tabId: Number(tabId2), skipped: true, warning: "page listener cleanup helper unavailable" } };
+      const listenerCleanup = typeof cleanupPiBrowserPageListenersForTab === "function" ? await cleanupPiBrowserPageListenersForTab(tabId, "hook_uninstall", msg.timeoutMs || msg.timeout_ms || 5e3).catch((e) => piBrowserError(PI_BROWSER_ERROR_CODES.EVENT_SUBSCRIPTION_FAILED, "hook.uninstall page listener cleanup failed", { tabId, reason: e instanceof Error ? e.message : String(e) })) : { ok: true, data: { tabId: Number(tabId), skipped: true, warning: "page listener cleanup helper unavailable" } };
       const hookResponse = (
         /** @type {PiBridgeResponse} */
-        res2
+        res
       );
       if (hookResponse && typeof hookResponse === "object") {
         if (hookResponse.ok && hookResponse.data && typeof hookResponse.data === "object") hookResponse.data.listener_cleanup = listenerCleanup?.data || listenerCleanup;
         else if (hookResponse.ok === false) hookResponse.details = { ...hookResponse.details || {}, listener_cleanup: listenerCleanup?.data || listenerCleanup };
       }
-      cleanupWaitsForUninstall(tabId2);
-      cleanupPiBrowserTab(tabId2, "hook_uninstall");
+      cleanupWaitsForUninstall(tabId);
+      cleanupPiBrowserTab(tabId, "hook_uninstall");
       const sessionId = localSession?.session_id ? String(localSession.session_id) : "default";
       try {
-        await forget("hook", `${Number(tabId2)}:${sessionId}`);
+        await forget("hook", `${Number(tabId)}:${sessionId}`);
       } catch (error) {
         console.warn("[PI-BROWSER-HOOK] Failed to forget hook session state", sessionId, error);
       }
     }
-    return res2;
+    return res;
   }
-  if (cmd === "hook.evaluate") return await piBrowserEval(tabId2, String(msg.expression || ""), msg.awaitPromise !== false, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
-  if (cmd === "hook.getNodeListeners") return await collectNodeListeners(tabId2, msg);
-  if (cmd === "hook.getListenerChain") return await collectNodeListenerChain(tabId2, msg);
-  if (cmd === "hook.getSinkHints") return await collectNodeSinkHints(tabId2, msg);
-  if (cmd === "hook.addEventListener") return await addEventListener(tabId2, msg);
-  if (cmd === "hook.removeEventListener") return await removeEventListener(tabId2, msg);
-  if (cmd === "hook.getPerformanceEntries") return await getPerformanceEntries(tabId2, msg);
+  if (cmd === "hook.evaluate") return await piBrowserEval(tabId, String(msg.expression || ""), msg.awaitPromise !== false, { timeoutMs: msg.timeoutMs ?? msg.timeout_ms });
+  if (cmd === "hook.getNodeListeners") return await collectNodeListeners(tabId, msg);
+  if (cmd === "hook.getListenerChain") return await collectNodeListenerChain(tabId, msg);
+  if (cmd === "hook.getSinkHints") return await collectNodeSinkHints(tabId, msg);
+  if (cmd === "hook.addEventListener") return await addEventListener(tabId, msg);
+  if (cmd === "hook.removeEventListener") return await removeEventListener(tabId, msg);
+  if (cmd === "hook.getPerformanceEntries") return await getPerformanceEntries(tabId, msg);
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Pi Browser hook command: " + cmd, { cmd });
 }
 registerRecovery(async (results) => {
-  const result2 = await recover("hook", {
+  const result = await recover("hook", {
     validateTab: true,
     recover: async (record) => {
-      const tabId2 = record.tabId;
-      if (!tabId2) return { recovered: false, historyLost: true, reason: "missing tabId" };
+      const tabId = record.tabId;
+      if (!tabId) return { recovered: false, historyLost: true, reason: "missing tabId" };
       const sessionId = record.sessionId || "default";
-      const key = Number(tabId2);
+      const key = Number(tabId);
       if (piBrowserSessions.has(key)) return { recovered: false, historyLost: true, reason: "session already exists" };
       try {
-        const ping = await callPagePiBrowser(tabId2, "hook.status", { session_id: sessionId }).catch(() => null);
+        const ping = await callPagePiBrowser(tabId, "hook.status", { session_id: sessionId }).catch(() => null);
         if (ping && ping.ok) {
-          const data2 = ping.data && typeof ping.data === "object" ? ping.data : {};
+          const data = ping.data && typeof ping.data === "object" ? ping.data : {};
           piBrowserSessions.set(key, {
-            session_id: String(data2.session_id || sessionId),
-            state: String(data2.state || "INSTALLED"),
-            installed_at: String(data2.installed_at || ""),
+            session_id: String(data.session_id || sessionId),
+            state: String(data.state || "INSTALLED"),
+            installed_at: String(data.installed_at || ""),
             targets: record.config?.targets,
-            install_fingerprint: data2.install_fingerprint !== void 0 ? String(data2.install_fingerprint) : void 0
+            install_fingerprint: data.install_fingerprint !== void 0 ? String(data.install_fingerprint) : void 0
           });
-          console.log("[PI-BROWSER-HOOK] Recovered hook session metadata", key, sessionId);
           return { recovered: true, historyLost: false };
         }
         return { recovered: false, historyLost: true, reason: "dispatcher not found on page" };
@@ -6680,7 +6667,7 @@ registerRecovery(async (results) => {
       }
     }
   });
-  results.push(result2);
+  results.push(result);
 });
 var __piBridgeModule_hook = { name: "hook", symbols: { injectPiBrowserDispatcherViaCdp, confirmPiBrowserDispatcher, piBrowserHookSessionId, piBrowserHookSessionArgs, ensurePiBrowserDispatcher, handlePiBrowserHookCommand } };
 
@@ -6694,14 +6681,14 @@ function evidenceErrorMessage(error) {
 }
 async function safePiBrowserEvidence(label, task) {
   try {
-    const result2 = await task();
-    const error = evidenceRecord(result2?.error);
-    return result2 && result2.ok === false ? { ok: false, source: label, error_code: String(result2.error_code || error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: typeof result2.error === "string" ? result2.error : String(result2.message || error.message || "evidence source failed"), details: result2.details || evidenceRecord(error.details) } : { ok: true, source: label, data: result2?.data !== void 0 ? result2.data : result2 };
+    const result = await task();
+    const error = evidenceRecord(result?.error);
+    return result && result.ok === false ? { ok: false, source: label, error_code: String(result.error_code || error.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: typeof result.error === "string" ? result.error : String(result.message || error.message || "evidence source failed"), details: result.details || evidenceRecord(error.details) } : { ok: true, source: label, data: result?.data !== void 0 ? result.data : result };
   } catch (e) {
     return { ok: false, source: label, error_code: PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, error: evidenceErrorMessage(e), details: { name: e instanceof Error ? e.name : "Error" } };
   }
 }
-async function handlePiBrowserEvidenceCommand(cmd, tabId2, msg) {
+async function handlePiBrowserEvidenceCommand(cmd, tabId, msg) {
   if (cmd !== "evidence.collect") return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Pi Browser evidence command: " + cmd, { cmd });
   const eventTypes = Array.isArray(msg.event_types) ? msg.event_types : Array.isArray(msg.eventTypes) ? msg.eventTypes : PI_BROWSER_EVIDENCE_EVENT_TYPES;
   const limit = Math.max(1, Math.min(5e3, Number(msg.limit || 500)));
@@ -6713,39 +6700,39 @@ async function handlePiBrowserEvidenceCommand(cmd, tabId2, msg) {
   const includePerformance = msg.includePerformance !== false && msg.performance !== false;
   const networkSessionId = msg.networkSessionId || msg.sessionId || msg.session_id || "default";
   const out = {
-    tabId: Number(tabId2),
+    tabId: Number(tabId),
     collected_at: (/* @__PURE__ */ new Date()).toISOString(),
     event_types: eventTypes,
     sources: {}
   };
   if (includeHook) {
-    out.sources.hook_status = await safePiBrowserEvidence("hook.status", () => callPagePiBrowser(tabId2, "hook.status", {}, evaluateOptions));
-    out.sources.hook_events = await safePiBrowserEvidence("hook.collect", () => callPagePiBrowser(tabId2, "hook.collect", { event_types: eventTypes, limit, timeout_ms }, evaluateOptions));
+    out.sources.hook_status = await safePiBrowserEvidence("hook.status", () => callPagePiBrowser(tabId, "hook.status", {}, evaluateOptions));
+    out.sources.hook_events = await safePiBrowserEvidence("hook.collect", () => callPagePiBrowser(tabId, "hook.collect", { event_types: eventTypes, limit, timeout_ms }, evaluateOptions));
   }
   if (includeNetwork) {
-    out.sources.network_status = await safePiBrowserEvidence("network.status", async () => await handleNetworkRecorderCommand(tabId2, "network.status", { sessionId: networkSessionId }));
-    out.sources.network_entries = await safePiBrowserEvidence("network.list", async () => await handleNetworkRecorderCommand(tabId2, "network.list", { sessionId: networkSessionId, limit, includeDetails: true }));
+    out.sources.network_status = await safePiBrowserEvidence("network.status", async () => await handleNetworkRecorderCommand(tabId, "network.status", { sessionId: networkSessionId }));
+    out.sources.network_entries = await safePiBrowserEvidence("network.list", async () => await handleNetworkRecorderCommand(tabId, "network.list", { sessionId: networkSessionId, limit, includeDetails: true }));
   }
   if (includePerformance) {
     const entryType = msg.entryType ?? msg.entry_type;
     const nameContains = msg.nameContains ?? msg.name_contains;
     const performanceArgs = { entryType, entry_type: entryType, nameContains, name_contains: nameContains };
     if (hasTimeout) performanceArgs.timeoutMs = timeout_ms;
-    out.sources.performance = await safePiBrowserEvidence("hook.getPerformanceEntries", async () => await getPerformanceEntries(tabId2, performanceArgs));
+    out.sources.performance = await safePiBrowserEvidence("hook.getPerformanceEntries", async () => await getPerformanceEntries(tabId, performanceArgs));
   }
   return { ok: true, data: out };
 }
 var __piBridgeModule_evidence = { name: "evidence", symbols: { PI_BROWSER_EVIDENCE_EVENT_TYPES, safePiBrowserEvidence, handlePiBrowserEvidenceCommand } };
 
 // bridge_src/service_worker/frame.ts
-async function handlePiBrowserFrameCommand(cmd, tabId2, msg) {
+async function handlePiBrowserFrameCommand(cmd, tabId, msg) {
   if (cmd === "frame.list") {
     const cdp = piBrowserPersistentCdp();
     if (!cdp?.frameTree) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "Persistent CDP bridge is not loaded", { cmd });
-    const fr = normalizePersistentPiBrowserResponse(await cdp.frameTree(tabId2, msg.options && typeof msg.options === "object" ? msg.options : {}));
+    const fr = normalizePersistentPiBrowserResponse(await cdp.frameTree(tabId, msg.options && typeof msg.options === "object" ? msg.options : {}));
     if (fr && fr.ok && fr.data) {
-      const data2 = fr.data;
-      return { ok: true, data: { tabId: Number(tabId2), frameTree: data2.frameTree || null, frames: Array.isArray(data2.frames) ? data2.frames : [], count: Array.isArray(data2.frames) ? data2.frames.length : 0 } };
+      const data = fr.data;
+      return { ok: true, data: { tabId: Number(tabId), frameTree: data.frameTree || null, frames: Array.isArray(data.frames) ? data.frames : [], count: Array.isArray(data.frames) ? data.frames.length : 0 } };
     }
     return fr;
   }
@@ -6758,8 +6745,8 @@ async function handlePiBrowserFrameCommand(cmd, tabId2, msg) {
     if (msg.returnByValue !== void 0) options.returnByValue = msg.returnByValue !== false;
     if (msg.userGesture !== void 0) options.userGesture = Boolean(msg.userGesture);
     if (msg.worldName !== void 0) options.worldName = String(msg.worldName || "");
-    const evaluated = normalizePersistentPiBrowserResponse(await cdp.evaluateInFrame(tabId2, String(msg.expression || ""), options));
-    if (evaluated && evaluated.ok && evaluated.data) return { ok: true, data: { tabId: Number(tabId2), frameId: String(msg.frameId), ...evaluated.data } };
+    const evaluated = normalizePersistentPiBrowserResponse(await cdp.evaluateInFrame(tabId, String(msg.expression || ""), options));
+    if (evaluated && evaluated.ok && evaluated.data) return { ok: true, data: { tabId: Number(tabId), frameId: String(msg.frameId), ...evaluated.data } };
     return evaluated;
   }
   if (cmd === "frame.addNewDocumentScript") {
@@ -6771,8 +6758,8 @@ async function handlePiBrowserFrameCommand(cmd, tabId2, msg) {
     if (msg.worldName !== void 0) options.worldName = String(msg.worldName || "");
     if (msg.includeCommandLineAPI !== void 0) options.includeCommandLineAPI = Boolean(msg.includeCommandLineAPI);
     if (msg.timeoutMs !== void 0 || msg.timeout_ms !== void 0) options.timeoutMs = msg.timeoutMs ?? msg.timeout_ms;
-    const added = normalizePersistentPiBrowserResponse(await cdp.addNewDocumentScript(tabId2, String(msg.source), options));
-    if (added && added.ok && added.data) return { ok: true, data: { tabId: Number(tabId2), ...added.data } };
+    const added = normalizePersistentPiBrowserResponse(await cdp.addNewDocumentScript(tabId, String(msg.source), options));
+    if (added && added.ok && added.data) return { ok: true, data: { tabId: Number(tabId), ...added.data } };
     return added;
   }
   if (cmd === "frame.removeNewDocumentScript") {
@@ -6781,8 +6768,8 @@ async function handlePiBrowserFrameCommand(cmd, tabId2, msg) {
     if (!msg.identifier) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "frame.removeNewDocumentScript requires identifier", {});
     const options = { ...msg.options && typeof msg.options === "object" ? msg.options : {}, persistent: true, name: "new_document" };
     if (msg.timeoutMs !== void 0 || msg.timeout_ms !== void 0) options.timeoutMs = msg.timeoutMs ?? msg.timeout_ms;
-    const removed = normalizePersistentPiBrowserResponse(await cdp.removeNewDocumentScript(tabId2, String(msg.identifier), options));
-    if (removed && removed.ok && removed.data) return { ok: true, data: { tabId: Number(tabId2), ...removed.data } };
+    const removed = normalizePersistentPiBrowserResponse(await cdp.removeNewDocumentScript(tabId, String(msg.identifier), options));
+    if (removed && removed.ok && removed.data) return { ok: true, data: { tabId: Number(tabId), ...removed.data } };
     return removed;
   }
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Pi Browser frame command: " + cmd, { cmd });
@@ -6963,7 +6950,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
   const cleanup = () => {
     clearTimeout(timer);
     try {
-      chromeApi.downloads.onCreated.removeListener(onCreated2);
+      chromeApi.downloads.onCreated.removeListener(onCreated);
     } catch (_error) {
     }
   };
@@ -6979,7 +6966,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
     cleanup();
     rejectPromise(value);
   };
-  const onCreated2 = (item) => {
+  const onCreated = (item) => {
     const normalized = piTransferDownloadItem(item);
     try {
       if (matcher && !matcher(normalized)) return;
@@ -6994,7 +6981,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
     timer = setTimeout(() => {
       finishReject(new Error("Timed out after " + timeoutMs + "ms waiting for download start"));
     }, timeoutMs);
-    chromeApi.downloads.onCreated.addListener(onCreated2);
+    chromeApi.downloads.onCreated.addListener(onCreated);
   });
   return {
     promise,
@@ -7006,7 +6993,7 @@ function piTransferDownloadCreatedWatcher(timeoutMs, matcher) {
 function piTransferWaitDownloadCreated(timeoutMs, matcher) {
   return piTransferDownloadCreatedWatcher(timeoutMs, matcher).promise;
 }
-function piTransferWaitPageDownloadBegin(tabId2, timeoutMs) {
+function piTransferWaitPageDownloadBegin(tabId, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof subscribePiBrowserCdp !== "function") {
       reject(new Error("CDP event subscription is unavailable"));
@@ -7020,7 +7007,7 @@ function piTransferWaitPageDownloadBegin(tabId2, timeoutMs) {
       clearTimeout(timer);
       if (subscriptionId && typeof unsubscribePiBrowserCdp === "function") unsubscribePiBrowserCdp(subscriptionId);
     };
-    const subscriptionId = subscribePiBrowserCdp(tabId2, ["Page.downloadWillBegin", "Browser.downloadWillBegin"], (_source, method, params) => {
+    const subscriptionId = subscribePiBrowserCdp(tabId, ["Page.downloadWillBegin", "Browser.downloadWillBegin"], (_source, method, params) => {
       cleanup();
       resolve({ method, url: params.url ? String(params.url) : "", suggestedFilename: params.suggestedFilename ? String(params.suggestedFilename) : "", guid: params.guid ? String(params.guid) : "", frameId: params.frameId });
     }, { waitId: "transfer-download", kind: "download", cdpSubscriptions: [] });
@@ -7078,21 +7065,21 @@ function piTransferWaitDownloadForPageEvent(event, startedAt, timeoutMs) {
     });
   });
 }
-async function piTransferEvaluate(tabId2, expression, timeoutMs) {
+async function piTransferEvaluate(tabId, expression, timeoutMs) {
   const cdp = piBrowserPersistentCdp();
-  if (!cdp?.send) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { tabId: tabId2 });
-  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", {
+  if (!cdp?.send) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { tabId });
+  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", {
     expression: String(expression || ""),
     awaitPromise: true,
     returnByValue: true,
     userGesture: true
   }, { persistent: true, name: "transfer", timeoutMs }));
   if (!resp || resp.ok === false) return resp;
-  const data2 = asRecord7(resp.data);
-  const result2 = asRecord7(data2.result || resp.result || resp.data);
-  const exceptionDetails = asRecord7(result2.exceptionDetails);
-  if (result2.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, asRecord7(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
-  return { ok: true, data: asRecord7(asRecord7(result2.result).value) };
+  const data = asRecord7(resp.data);
+  const result = asRecord7(data.result || resp.result || resp.data);
+  const exceptionDetails = asRecord7(result.exceptionDetails);
+  if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, asRecord7(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
+  return { ok: true, data: asRecord7(asRecord7(result.result).value) };
 }
 function piTransferClickScript(selector, index) {
   const numericIndex = Number.isInteger(Number(index)) ? Number(index) : 0;
@@ -7180,7 +7167,7 @@ async function piTransferDownloadUrl(msg, timeoutMs) {
   if (typeof msg.conflictAction === "string" && ["uniquify", "overwrite", "prompt"].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
   return await piTransferDownloadWithOptions(options, timeoutMs, "url", null);
 }
-async function piTransferDownloadFromPage(tabId2, msg, timeoutMs) {
+async function piTransferDownloadFromPage(tabId, msg, timeoutMs) {
   if (!chromeApi.downloads?.onCreated) return piBrowserError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, "chrome.downloads API is unavailable; reload the bridge extension after granting downloads permission", {});
   const selector = String(msg.selector || "");
   if (!selector) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "browser_download requires selector or url", {});
@@ -7189,7 +7176,7 @@ async function piTransferDownloadFromPage(tabId2, msg, timeoutMs) {
   if (!("mode" in modeCheck)) return modeCheck;
   const mode = modeCheck.mode;
   if (mode === "media") {
-    const extracted2 = await piTransferEvaluate(tabId2, piTransferMediaUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
+    const extracted2 = await piTransferEvaluate(tabId, piTransferMediaUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
     if (!extracted2 || extracted2.ok === false) return extracted2;
     const extractedData2 = responseData(extracted2);
     const href2 = extractedData2.href;
@@ -7200,7 +7187,7 @@ async function piTransferDownloadFromPage(tabId2, msg, timeoutMs) {
     if (typeof msg.conflictAction === "string" && ["uniquify", "overwrite", "prompt"].includes(msg.conflictAction)) options.conflictAction = msg.conflictAction;
     return await piTransferDownloadWithOptions(options, timeoutMs, "media", extractedData2 || null);
   }
-  const extracted = await piTransferEvaluate(tabId2, piTransferClickDownloadUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
+  const extracted = await piTransferEvaluate(tabId, piTransferClickDownloadUrlScript(selector, msg.index, msg.filename), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
   if (!extracted || extracted.ok === false) return extracted;
   const extractedData = responseData(extracted);
   const href = extractedData.href;
@@ -7213,9 +7200,9 @@ async function piTransferDownloadFromPage(tabId2, msg, timeoutMs) {
   }
   const startedAt = Date.now();
   const cdp = piBrowserPersistentCdp();
-  if (cdp?.send) await cdp.send(tabId2, "Page.enable", {}, { persistent: true, name: "transfer_download", timeoutMs: Math.min(timeoutMs, 1e4) }).catch(() => null);
-  const pageDownload = piTransferWaitPageDownloadBegin(tabId2, timeoutMs).catch((error) => ({ pageDownloadError: errorText6(error) }));
-  const triggered = await piTransferEvaluate(tabId2, piTransferClickScript(selector, msg.index), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
+  if (cdp?.send) await cdp.send(tabId, "Page.enable", {}, { persistent: true, name: "transfer_download", timeoutMs: Math.min(timeoutMs, 1e4) }).catch(() => null);
+  const pageDownload = piTransferWaitPageDownloadBegin(tabId, timeoutMs).catch((error) => ({ pageDownloadError: errorText6(error) }));
+  const triggered = await piTransferEvaluate(tabId, piTransferClickScript(selector, msg.index), Math.min(timeoutMs, 1e4)).catch((error) => ({ ok: false, error_code: String(errorRecord(error).code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), error: errorText6(error), details: asRecord7(errorRecord(error).details || { selector }) }));
   if (!triggered || triggered.ok === false) return triggered;
   const triggeredData = responseData(triggered);
   const begin = await pageDownload;
@@ -7235,16 +7222,16 @@ async function piTransferDownloadFromPage(tabId2, msg, timeoutMs) {
   const candidates = await piTransferDownloadCandidatesSince(startedAt);
   return await piTransferAmbiguousDownload(begin?.pageDownloadError || "tab download event was not observed", { selector, mode, trigger: triggeredData || null, pageDownloadError: begin?.pageDownloadError || null, candidate_count: candidates.length, candidate_ids: candidates.slice(0, 10).map((item) => item.id) });
 }
-async function handlePiBrowserTransferDownload(tabId2, msg) {
+async function handlePiBrowserTransferDownload(tabId, msg) {
   const timeoutMs = piTransferTimeoutMs(msg, 3e4);
   if (msg.url) return await piTransferDownloadUrl(msg, timeoutMs);
-  return await piTransferDownloadFromPage(tabId2, msg, timeoutMs);
+  return await piTransferDownloadFromPage(tabId, msg, timeoutMs);
 }
 function piTransferFiles(msg) {
   const raw = Array.isArray(msg.files) ? msg.files : typeof msg.file === "string" ? [msg.file] : [];
   return raw.map((file) => String(file || "")).filter(Boolean);
 }
-function piTransferFileChooserEvent(tabId2, timeoutMs) {
+function piTransferFileChooserEvent(tabId, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
@@ -7254,27 +7241,27 @@ function piTransferFileChooserEvent(tabId2, timeoutMs) {
       clearTimeout(timer);
       if (subscriptionId) unsubscribePiBrowserCdp(subscriptionId);
     };
-    const subscriptionId = subscribePiBrowserCdp(tabId2, "Page.fileChooserOpened", (_source, _method, params) => {
+    const subscriptionId = subscribePiBrowserCdp(tabId, "Page.fileChooserOpened", (_source, _method, params) => {
       cleanup();
       resolve(asRecord7(params));
     }, { waitId: "transfer-upload", kind: "upload", cdpSubscriptions: [] });
   });
 }
-async function handlePiBrowserTransferUpload(tabId2, msg) {
+async function handlePiBrowserTransferUpload(tabId, msg) {
   const files = piTransferFiles(msg);
   if (!files.length) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "browser_upload requires at least one file", {});
   const selector = String(msg.selector || "");
   if (!selector) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "browser_upload requires selector", {});
   const timeoutMs = piTransferTimeoutMs(msg, 3e4);
   const cdp = piBrowserPersistentCdp();
-  if (!cdp?.send) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { tabId: tabId2 });
-  const pageEnabled = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Page.enable", {}, { persistent: true, name: "transfer_upload", timeoutMs: Math.min(timeoutMs, 1e4) }));
+  if (!cdp?.send) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { tabId });
+  const pageEnabled = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Page.enable", {}, { persistent: true, name: "transfer_upload", timeoutMs: Math.min(timeoutMs, 1e4) }));
   if (!pageEnabled || pageEnabled.ok === false) return pageEnabled;
-  const intercept = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Page.setInterceptFileChooserDialog", { enabled: true }, { persistent: true, name: "transfer_upload", timeoutMs: Math.min(timeoutMs, 1e4) }));
+  const intercept = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Page.setInterceptFileChooserDialog", { enabled: true }, { persistent: true, name: "transfer_upload", timeoutMs: Math.min(timeoutMs, 1e4) }));
   if (!intercept || intercept.ok === false) return intercept;
-  const chooserPromise = piTransferFileChooserEvent(tabId2, timeoutMs);
+  const chooserPromise = piTransferFileChooserEvent(tabId, timeoutMs);
   try {
-    const clicked = await piTransferEvaluate(tabId2, piTransferClickScript(selector, msg.index), Math.min(timeoutMs, 1e4));
+    const clicked = await piTransferEvaluate(tabId, piTransferClickScript(selector, msg.index), Math.min(timeoutMs, 1e4));
     if (!clicked || clicked.ok === false) {
       chooserPromise.catch(() => {
       });
@@ -7285,7 +7272,7 @@ async function handlePiBrowserTransferUpload(tabId2, msg) {
     if (!Number.isInteger(backendNodeId) || backendNodeId <= 0) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "File chooser event did not include backendNodeId", { chooser });
     const isMultiple = chooser.mode === "selectMultiple";
     if (!isMultiple && files.length > 1) return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "File chooser does not accept multiple files", { selector, files_count: files.length });
-    const setFiles = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "DOM.setFileInputFiles", { backendNodeId, files }, { persistent: true, name: "transfer_upload", timeoutMs }));
+    const setFiles = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "DOM.setFileInputFiles", { backendNodeId, files }, { persistent: true, name: "transfer_upload", timeoutMs }));
     if (!setFiles || setFiles.ok === false) {
       const msgText = asRecord7(setFiles?.error).message || setFiles?.message || "";
       if (String(msgText).includes("Not allowed")) return piBrowserError(PI_BROWSER_ERROR_CODES.SAFETY_BLOCKED, PI_BROWSER_FILE_ACCESS_MESSAGE, { selector, files_count: files.length });
@@ -7297,19 +7284,19 @@ async function handlePiBrowserTransferUpload(tabId2, msg) {
     if (errorText6(e).includes("Not allowed")) return piBrowserError(PI_BROWSER_ERROR_CODES.SAFETY_BLOCKED, PI_BROWSER_FILE_ACCESS_MESSAGE, { selector, files_count: files.length });
     return piBrowserError(String(err.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), err.message || errorText6(e), asRecord7(err.details || { selector, files_count: files.length }));
   } finally {
-    await cdp.send(tabId2, "Page.setInterceptFileChooserDialog", { enabled: false }, { persistent: true, name: "transfer_upload_cleanup", timeoutMs: 5e3 }).catch(() => {
+    await cdp.send(tabId, "Page.setInterceptFileChooserDialog", { enabled: false }, { persistent: true, name: "transfer_upload_cleanup", timeoutMs: 5e3 }).catch(() => {
     });
   }
 }
-async function handlePiBrowserTransferCommand(cmd, tabId2, msg) {
-  if (cmd === "transfer.download") return await handlePiBrowserTransferDownload(tabId2, msg || {});
-  if (cmd === "transfer.upload") return await handlePiBrowserTransferUpload(tabId2, msg || {});
+async function handlePiBrowserTransferCommand(cmd, tabId, msg) {
+  if (cmd === "transfer.download") return await handlePiBrowserTransferDownload(tabId, msg || {});
+  if (cmd === "transfer.upload") return await handlePiBrowserTransferUpload(tabId, msg || {});
   return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown transfer command: " + cmd, { cmd });
 }
 var __piBridgeModule_transfer = { name: "transfer", symbols: { PI_BROWSER_FILE_ACCESS_MESSAGE, piTransferTimeoutMs, piTransferIsHttpUrl, piTransferNormalizeDownloadMode, piTransferDownloadItem, piTransferDownload, piTransferSearchDownloads, piTransferSearchDownload, piTransferDownloadTimeMs, piTransferDownloadStartedAfter, piTransferDownloadMatchesPageEvent, piTransferDownloadCandidatesSince, piTransferAmbiguousDownload, piTransferWaitDownloadComplete, piTransferDownloadCreatedWatcher, piTransferWaitDownloadCreated, piTransferWaitPageDownloadBegin, piTransferWaitDownloadForPageEvent, piTransferEvaluate, piTransferClickScript, piTransferClickDownloadUrlScript, piTransferMediaUrlScript, piTransferDownloadWithOptions, piTransferDownloadUrl, piTransferDownloadFromPage, handlePiBrowserTransferDownload, piTransferFiles, piTransferFileChooserEvent, handlePiBrowserTransferUpload, handlePiBrowserTransferCommand } };
 
 // bridge_src/service_worker/html.ts
-async function handlePiBrowserHtml(tabId2, msg) {
+async function handlePiBrowserHtml(tabId, msg) {
   const opts = msg && msg.options && typeof msg.options === "object" ? msg.options : {};
   const pick = (...names) => {
     for (const name of names) {
@@ -7380,11 +7367,11 @@ async function handlePiBrowserHtml(tabId2, msg) {
     if (maxBytes !== null && encoder.encode(html).length > maxBytes) { html = sliceUtf8(html, maxBytes); truncated = true; }
     return { ok: true, data: { html, truncated, original_length, bytes: encoder.encode(html).length, original_bytes, selector, mode, counts, text_length: structure.text_length, text_bytes: structure.text_bytes, titles: structure.titles, structure } };
   })()`;
-  const res2 = await piBrowserEval(tabId2, expression, true);
-  if (!res2 || res2.ok === false) return res2;
-  const data2 = res2.data && typeof res2.data === "object" ? res2.data : void 0;
-  if (data2 && data2.ok === false) return piBrowserError(data2.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, data2.error || "html.get failed", data2.details || { selector, mode: rawMode });
-  return data2 && data2.ok === true ? data2 : { ok: true, data: res2.data };
+  const res = await piBrowserEval(tabId, expression, true);
+  if (!res || res.ok === false) return res;
+  const data = res.data && typeof res.data === "object" ? res.data : void 0;
+  if (data && data.ok === false) return piBrowserError(data.error_code || PI_BROWSER_ERROR_CODES.SELECTOR_NOT_FOUND, data.error || "html.get failed", data.details || { selector, mode: rawMode });
+  return data && data.ok === true ? data : { ok: true, data: res.data };
 }
 var __piBridgeModule_html = { name: "html", symbols: { handlePiBrowserHtml } };
 
@@ -7398,19 +7385,19 @@ function asRecord8(value) {
 function wsSessionId(msg) {
   return String(msg?.sessionId || msg?.session_id || PI_BROWSER_WS_DEFAULT_SESSION_ID);
 }
-function wsSessionKey(tabId2, sessionId) {
-  return `${Number(tabId2)}:${String(sessionId || PI_BROWSER_WS_DEFAULT_SESSION_ID)}`;
+function wsSessionKey(tabId, sessionId) {
+  return `${Number(tabId)}:${String(sessionId || PI_BROWSER_WS_DEFAULT_SESSION_ID)}`;
 }
 function numberInRange3(value, fallback, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
-function createWsSession(tabId2, config) {
+function createWsSession(tabId, config) {
   return {
-    tabId: Number(tabId2),
+    tabId: Number(tabId),
     sessionId: config.sessionId,
-    key: wsSessionKey(tabId2, config.sessionId),
+    key: wsSessionKey(tabId, config.sessionId),
     url: config.url,
     state: "opening",
     createdAt: Date.now(),
@@ -7476,8 +7463,8 @@ function normalizeWsOpenConfig(msg = {}) {
     timeoutMs: numberInRange3(msg.timeoutMs ?? msg.timeout_ms, 5e3, 100, 12e4)
   };
 }
-function getWsSession(tabId2, sessionId) {
-  return piBrowserWsSessions.get(wsSessionKey(tabId2, sessionId)) || null;
+function getWsSession(tabId, sessionId) {
+  return piBrowserWsSessions.get(wsSessionKey(tabId, sessionId)) || null;
 }
 function collectWsSessionTranscript(session, afterSeq, limit) {
   const events = session.transcript.filter((item) => Number(item.seq) > afterSeq).slice(0, limit);
@@ -7489,11 +7476,11 @@ function collectWsSessionTranscript(session, afterSeq, limit) {
     events
   };
 }
-function cleanupWsSessionsForTab(tabId2, reason = "tab_cleanup") {
+function cleanupWsSessionsForTab(tabId, reason = "tab_cleanup") {
   let removed = 0;
   const sessionIds = [];
   for (const [key, session] of Array.from(piBrowserWsSessions.entries())) {
-    if (Number(session.tabId) !== Number(tabId2)) continue;
+    if (Number(session.tabId) !== Number(tabId)) continue;
     removed += 1;
     sessionIds.push(String(session.sessionId || "default"));
     try {
@@ -7503,7 +7490,7 @@ function cleanupWsSessionsForTab(tabId2, reason = "tab_cleanup") {
     }
     piBrowserWsSessions.delete(key);
   }
-  return { tabId: tabId2, removed, reason, sessionIds };
+  return { tabId, removed, reason, sessionIds };
 }
 var __piBridgeModule_ws_model = { name: "ws_model", symbols: { piBrowserWsSessions, PI_BROWSER_WS_DEFAULT_SESSION_ID, PI_BROWSER_WS_DEFAULT_MAX_TRANSCRIPT, wsSessionId, wsSessionKey, numberInRange: numberInRange3, createWsSession, rememberWsTranscript, wsSessionSummary, normalizeWsHeaders, normalizeWsProtocols, normalizeWsOpenConfig, getWsSession, collectWsSessionTranscript, cleanupWsSessionsForTab } };
 
@@ -7535,28 +7522,28 @@ function unsafeMatcherReason(pattern) {
   if ((text.match(/\.\*/g) || []).length > 6) return "too_many_wildcards";
   return void 0;
 }
-function normalizePayload(data2) {
+function normalizePayload(data) {
   const encoder = new TextEncoder();
   let text;
   let binary = false;
   let bytes;
-  if (typeof data2 === "string") {
-    text = data2;
+  if (typeof data === "string") {
+    text = data;
     bytes = encoder.encode(text).length;
-  } else if (data2 instanceof ArrayBuffer) {
+  } else if (data instanceof ArrayBuffer) {
     binary = true;
-    bytes = data2.byteLength;
-    text = new TextDecoder().decode(new Uint8Array(data2));
-  } else if (typeof Blob !== "undefined" && data2 instanceof Blob) {
+    bytes = data.byteLength;
+    text = new TextDecoder().decode(new Uint8Array(data));
+  } else if (typeof Blob !== "undefined" && data instanceof Blob) {
     binary = true;
-    bytes = data2.size;
-    text = `[blob:${data2.type || "application/octet-stream"}:${data2.size}]`;
-  } else if (ArrayBuffer.isView(data2)) {
+    bytes = data.size;
+    text = `[blob:${data.type || "application/octet-stream"}:${data.size}]`;
+  } else if (ArrayBuffer.isView(data)) {
     binary = true;
-    bytes = data2.byteLength;
-    text = new TextDecoder().decode(new Uint8Array(data2.buffer, data2.byteOffset, data2.byteLength));
+    bytes = data.byteLength;
+    text = new TextDecoder().decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   } else {
-    text = String(data2 ?? "");
+    text = String(data ?? "");
     bytes = encoder.encode(text).length;
   }
   try {
@@ -7565,13 +7552,13 @@ function normalizePayload(data2) {
     return { text, bytes, binary };
   }
 }
-function requireSession(tabId2, msg) {
-  return getWsSession(tabId2, wsSessionId(msg));
+function requireSession(tabId, msg) {
+  return getWsSession(tabId, wsSessionId(msg));
 }
-function requireOpenSession(tabId2, msg) {
-  const session = requireSession(tabId2, msg);
-  if (!session) return { error: piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: wsSessionId(msg) }) };
-  if (session.state !== "open") return { error: piBrowserError("WEBSOCKET_SESSION_NOT_OPEN", "ws session is not open", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, state: session.state, url: session.url }) };
+function requireOpenSession(tabId, msg) {
+  const session = requireSession(tabId, msg);
+  if (!session) return { error: piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId, sessionId: wsSessionId(msg) }) };
+  if (session.state !== "open") return { error: piBrowserError("WEBSOCKET_SESSION_NOT_OPEN", "ws session is not open", { cmd: msg.cmd, tabId, sessionId: session.sessionId, state: session.state, url: session.url }) };
   return { session };
 }
 function cleanupWsSocketListeners(session) {
@@ -7602,11 +7589,11 @@ function cleanupWsSocketListeners(session) {
   }
   session.listeners = {};
 }
-async function openWs(tabId2, msg) {
+async function openWs(tabId, msg) {
   const config = normalizeWsOpenConfig(msg);
-  if (!config.url) return piBrowserError("WEBSOCKET_INVALID_INPUT", "ws.open requires explicit url", { cmd: msg.cmd, tabId: tabId2, sessionId: config.sessionId, field: "url" });
-  const existing = getWsSession(tabId2, config.sessionId);
-  if (existing && (existing.state === "opening" || existing.state === "open")) return piBrowserError("WEBSOCKET_SESSION_ALREADY_OPEN", "ws session already open", { cmd: msg.cmd, tabId: tabId2, sessionId: config.sessionId, url: existing.url, state: existing.state });
+  if (!config.url) return piBrowserError("WEBSOCKET_INVALID_INPUT", "ws.open requires explicit url", { cmd: msg.cmd, tabId, sessionId: config.sessionId, field: "url" });
+  const existing = getWsSession(tabId, config.sessionId);
+  if (existing && (existing.state === "opening" || existing.state === "open")) return piBrowserError("WEBSOCKET_SESSION_ALREADY_OPEN", "ws session already open", { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: existing.url, state: existing.state });
   if (existing) {
     try {
       existing.ws?.close();
@@ -7614,7 +7601,7 @@ async function openWs(tabId2, msg) {
     }
     piBrowserWsSessions.delete(String(existing.key || ""));
   }
-  const session = createWsSession(tabId2, config);
+  const session = createWsSession(tabId, config);
   const ws = config.protocols.length ? new WebSocket(config.url, config.protocols) : new WebSocket(config.url);
   session.ws = ws;
   piBrowserWsSessions.set(String(session.key), session);
@@ -7627,16 +7614,16 @@ async function openWs(tabId2, msg) {
     session.closedAt = Date.now();
     rememberWsTranscript(session, { event: "close", code: Number(event.code || 0), reason: String(event.reason || ""), wasClean: !!event.wasClean });
     cleanupWsSocketListeners(session);
-    void forgetWsRuntimeSession("ws", tabId2, session.sessionId);
-    void forget("ws", `${Number(tabId2)}:${session.sessionId}`);
+    void forgetWsRuntimeSession("ws", tabId, session.sessionId);
+    void forget("ws", `${Number(tabId)}:${session.sessionId}`);
   };
   const errorListener = () => {
     session.lastError = session.lastError || "websocket error";
     session.state = "error";
     rememberWsTranscript(session, { event: "error", error: session.lastError, preview: previewText(session.lastError) });
     cleanupWsSocketListeners(session);
-    void forgetWsRuntimeSession("ws", tabId2, session.sessionId);
-    void forget("ws", `${Number(tabId2)}:${session.sessionId}`);
+    void forgetWsRuntimeSession("ws", tabId, session.sessionId);
+    void forget("ws", `${Number(tabId)}:${session.sessionId}`);
   };
   ws.addEventListener("message", messageListener);
   ws.addEventListener("close", closeListener);
@@ -7653,8 +7640,8 @@ async function openWs(tabId2, msg) {
       } catch {
       }
       piBrowserWsSessions.delete(String(session.key));
-      void forgetWsRuntimeSession("ws", tabId2, config.sessionId);
-      resolve(piBrowserError("WEBSOCKET_OPEN_TIMEOUT", `ws open timed out after ${config.timeoutMs}ms`, { cmd: msg.cmd, tabId: tabId2, sessionId: config.sessionId, url: config.url, timeoutMs: config.timeoutMs }));
+      void forgetWsRuntimeSession("ws", tabId, config.sessionId);
+      resolve(piBrowserError("WEBSOCKET_OPEN_TIMEOUT", `ws open timed out after ${config.timeoutMs}ms`, { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url, timeoutMs: config.timeoutMs }));
     }, config.timeoutMs);
     const cleanup = () => {
       clearTimeout(timer);
@@ -7668,8 +7655,8 @@ async function openWs(tabId2, msg) {
       session.state = "open";
       session.openedAt = Date.now();
       rememberWsTranscript(session, { event: "open" });
-      void rememberWsRuntimeSession("ws", tabId2, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
-      void persist("ws", `${Number(tabId2)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId: tabId2, sessionId: session.sessionId, recoveryPolicy: "diagnosticOnly" }).catch((error) => {
+      void rememberWsRuntimeSession("ws", tabId, session.sessionId, { url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript });
+      void persist("ws", `${Number(tabId)}:${session.sessionId}`, redactConfig({ url: session.url, protocols: session.protocols, maxTranscript: session.maxTranscript }), { tabId, sessionId: session.sessionId, recoveryPolicy: "diagnosticOnly" }).catch((error) => {
         console.warn("[PI-BROWSER-WS] Failed to persist websocket session state", session.sessionId, error);
       });
       resolve({ ok: true, data: { session: wsSessionSummary(session) } });
@@ -7680,39 +7667,39 @@ async function openWs(tabId2, msg) {
       cleanup();
       cleanupWsSocketListeners(session);
       piBrowserWsSessions.delete(String(session.key));
-      void forgetWsRuntimeSession("ws", tabId2, config.sessionId);
-      resolve(piBrowserError("WEBSOCKET_OPEN_FAILED", "ws open failed", { cmd: msg.cmd, tabId: tabId2, sessionId: config.sessionId, url: config.url }));
+      void forgetWsRuntimeSession("ws", tabId, config.sessionId);
+      resolve(piBrowserError("WEBSOCKET_OPEN_FAILED", "ws open failed", { cmd: msg.cmd, tabId, sessionId: config.sessionId, url: config.url }));
     };
     ws.addEventListener("open", onOpen, { once: true });
     ws.addEventListener("error", onOpenError, { once: true });
   });
 }
-async function sendWs(tabId2, msg) {
-  const found = requireOpenSession(tabId2, msg);
+async function sendWs(tabId, msg) {
+  const found = requireOpenSession(tabId, msg);
   if (found.error) return found.error;
   const session = found.session;
   const text = String(msg.text ?? msg.message ?? "");
   try {
     session.ws.send(text);
   } catch (error) {
-    return piBrowserError("WEBSOCKET_SEND_FAILED", `ws send failed: ${errorText7(error)}`, { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, url: session.url, error: errorText7(error) });
+    return piBrowserError("WEBSOCKET_SEND_FAILED", `ws send failed: ${errorText7(error)}`, { cmd: msg.cmd, tabId, sessionId: session.sessionId, url: session.url, error: errorText7(error) });
   }
   const entry = rememberWsTranscript(session, { event: "send", direction: "outbound", text, preview: previewText(text), bytes: new TextEncoder().encode(text).length, binary: false });
   return { ok: true, data: { ...wsSessionSummary(session), sent: { seq: entry?.seq, bytes: entry?.bytes, preview: entry?.preview } } };
 }
-function waitWs(tabId2, msg) {
-  const session = requireSession(tabId2, msg);
-  if (!session) return Promise.resolve(piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: wsSessionId(msg) }));
+function waitWs(tabId, msg) {
+  const session = requireSession(tabId, msg);
+  if (!session) return Promise.resolve(piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId, sessionId: wsSessionId(msg) }));
   const afterSeq = numberInRange3(msg.afterSeq ?? msg.after_seq, 0, 0, Number.MAX_SAFE_INTEGER);
   const contains = typeof msg.contains === "string" && msg.contains.length ? msg.contains : void 0;
   const regexText = typeof msg.regex === "string" && msg.regex.length ? msg.regex : void 0;
   const unsafe = regexText ? unsafeMatcherReason(regexText) : void 0;
-  if (unsafe) return Promise.resolve(piBrowserError("WEBSOCKET_INVALID_MATCHER", "unsafe ws regex matcher", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, regex: regexText, reason: unsafe }));
+  if (unsafe) return Promise.resolve(piBrowserError("WEBSOCKET_INVALID_MATCHER", "unsafe ws regex matcher", { cmd: msg.cmd, tabId, sessionId: session.sessionId, regex: regexText, reason: unsafe }));
   const regex = regexText ? new RegExp(regexText) : void 0;
   const timeoutMs = numberInRange3(msg.timeoutMs ?? msg.timeout_ms, 1e4, 50, 3e5);
   const immediate = session.transcript.find((entry) => entry.event === "message" && entry.direction === "inbound" && Number(entry.seq) > afterSeq && (!contains || String(entry.text || "").includes(contains)) && (!regex || regex.test(String(entry.text || ""))));
   if (immediate) return Promise.resolve({ ok: true, data: { session: wsSessionSummary(session), matcher: { contains, regex: regexText, afterSeq }, entry: immediate, waitedMs: 0, matchedImmediately: true } });
-  if (session.state !== "open") return Promise.resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session is not open", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, state: session.state, afterSeq, contains, regex: regexText }));
+  if (session.state !== "open") return Promise.resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session is not open", { cmd: msg.cmd, tabId, sessionId: session.sessionId, state: session.state, afterSeq, contains, regex: regexText }));
   return new Promise((resolve) => {
     const ws = session.ws;
     let settled = false;
@@ -7721,7 +7708,7 @@ function waitWs(tabId2, msg) {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(piBrowserError("WEBSOCKET_WAIT_TIMEOUT", `ws wait timed out after ${timeoutMs}ms`, { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, timeoutMs, afterSeq, contains, regex: regexText }));
+      resolve(piBrowserError("WEBSOCKET_WAIT_TIMEOUT", `ws wait timed out after ${timeoutMs}ms`, { cmd: msg.cmd, tabId, sessionId: session.sessionId, timeoutMs, afterSeq, contains, regex: regexText }));
     }, timeoutMs);
     const cleanup = () => {
       clearTimeout(timer);
@@ -7742,29 +7729,29 @@ function waitWs(tabId2, msg) {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session closed", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, state: session.state, afterSeq, contains, regex: regexText }));
+      resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session closed", { cmd: msg.cmd, tabId, sessionId: session.sessionId, state: session.state, afterSeq, contains, regex: regexText }));
     };
     const onError = () => {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session errored", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, state: session.state, lastError: session.lastError, afterSeq, contains, regex: regexText }));
+      resolve(piBrowserError("WEBSOCKET_WAIT_ABORTED", "ws wait aborted because session errored", { cmd: msg.cmd, tabId, sessionId: session.sessionId, state: session.state, lastError: session.lastError, afterSeq, contains, regex: regexText }));
     };
     ws.addEventListener("message", onMessage);
     ws.addEventListener("close", onClose, { once: true });
     ws.addEventListener("error", onError, { once: true });
   });
 }
-async function replayWs(tabId2, msg) {
-  const session = requireSession(tabId2, msg);
-  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: wsSessionId(msg) });
+async function replayWs(tabId, msg) {
+  const session = requireSession(tabId, msg);
+  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId, sessionId: wsSessionId(msg) });
   const rawSteps = Array.isArray(msg.steps) ? msg.steps : [];
-  if (!rawSteps.length) return piBrowserError("WEBSOCKET_INVALID_INPUT", "ws.replay requires explicit steps", { cmd: msg.cmd, tabId: tabId2, sessionId: session.sessionId, field: "steps" });
+  if (!rawSteps.length) return piBrowserError("WEBSOCKET_INVALID_INPUT", "ws.replay requires explicit steps", { cmd: msg.cmd, tabId, sessionId: session.sessionId, field: "steps" });
   const steps = rawSteps.map((item) => asRecord9(item));
   const results = [];
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
-    const sendResult = await sendWs(tabId2, { ...msg, cmd: "ws.send", text: String(step.text ?? step.message ?? "") });
+    const sendResult = await sendWs(tabId, { ...msg, cmd: "ws.send", text: String(step.text ?? step.message ?? "") });
     if (!sendResult.ok) {
       return {
         ok: false,
@@ -7783,7 +7770,7 @@ async function replayWs(tabId2, msg) {
     const stepResult = { index, sent };
     if (typeof step.contains === "string" || typeof step.regex === "string") {
       const timeoutMs = typeof step.timeoutMs === "number" ? step.timeoutMs : typeof step.timeout_ms === "number" ? step.timeout_ms : void 0;
-      const waitResult = await waitWs(tabId2, { ...msg, cmd: "ws.wait", afterSeq: asRecord9(sent).seq, contains: step.contains, regex: step.regex, timeoutMs });
+      const waitResult = await waitWs(tabId, { ...msg, cmd: "ws.wait", afterSeq: asRecord9(sent).seq, contains: step.contains, regex: step.regex, timeoutMs });
       if (!waitResult.ok) {
         return {
           ok: false,
@@ -7804,16 +7791,16 @@ async function replayWs(tabId2, msg) {
   }
   return { ok: true, data: { session: wsSessionSummary(session), steps: results } };
 }
-function collectWs(tabId2, msg) {
-  const session = requireSession(tabId2, msg);
-  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: wsSessionId(msg) });
+function collectWs(tabId, msg) {
+  const session = requireSession(tabId, msg);
+  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId, sessionId: wsSessionId(msg) });
   const afterSeq = numberInRange3(msg.afterSeq ?? msg.after_seq, 0, 0, Number.MAX_SAFE_INTEGER);
   const limit = numberInRange3(msg.limit, 50, 1, 5e3);
   return { ok: true, data: collectWsSessionTranscript(session, afterSeq, limit) };
 }
-async function closeWs(tabId2, msg) {
-  const session = requireSession(tabId2, msg);
-  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId: tabId2, sessionId: wsSessionId(msg) });
+async function closeWs(tabId, msg) {
+  const session = requireSession(tabId, msg);
+  if (!session) return piBrowserError("WEBSOCKET_SESSION_NOT_FOUND", "ws session not found", { cmd: msg.cmd, tabId, sessionId: wsSessionId(msg) });
   if (session.state === "closed" || session.state === "error") return { ok: true, data: { session: wsSessionSummary(session) } };
   const timeoutMs = numberInRange3(msg.timeoutMs ?? msg.timeout_ms, 2e3, 50, 3e4);
   const code = msg.code === void 0 ? 1e3 : numberInRange3(msg.code, 1e3, 1e3, 4999);
@@ -7837,7 +7824,7 @@ async function closeWs(tabId2, msg) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      void forgetWsRuntimeSession("ws", tabId2, session.sessionId);
+      void forgetWsRuntimeSession("ws", tabId, session.sessionId);
       resolve({ ok: true, data: { session: wsSessionSummary(session) } });
     };
     ws.addEventListener("close", onClose, { once: true });
@@ -7847,27 +7834,27 @@ async function closeWs(tabId2, msg) {
       console.warn("[PI-BROWSER-WS] ws.close failed during explicit close", session.sessionId, error);
       clearTimeout(timer);
       cleanupWsSocketListeners(session);
-      void forgetWsRuntimeSession("ws", tabId2, session.sessionId);
+      void forgetWsRuntimeSession("ws", tabId, session.sessionId);
       resolve({ ok: true, data: { session: wsSessionSummary(session) } });
     }
   });
 }
-async function handlePiBrowserWsCommand(cmd, tabId2, msg) {
-  if (cmd === "ws.open") return await openWs(tabId2, msg);
+async function handlePiBrowserWsCommand(cmd, tabId, msg) {
+  if (cmd === "ws.open") return await openWs(tabId, msg);
   if (cmd === "ws.status") {
     const sessionId = wsSessionId(msg);
-    const session = getWsSession(tabId2, sessionId);
-    const lost = summarizeLostWsRuntimeSession(await findLostWsRuntimeSession("ws", tabId2, sessionId));
+    const session = getWsSession(tabId, sessionId);
+    const lost = summarizeLostWsRuntimeSession(await findLostWsRuntimeSession("ws", tabId, sessionId));
     return { ok: true, data: { session: wsSessionSummary(session, sessionId), stateLost: !!lost, lostSession: lost } };
   }
-  if (cmd === "ws.send") return await sendWs(tabId2, msg);
-  if (cmd === "ws.replay") return await replayWs(tabId2, msg);
-  if (cmd === "ws.wait") return await waitWs(tabId2, msg);
-  if (cmd === "ws.collect") return collectWs(tabId2, msg);
-  if (cmd === "ws.close") return await closeWs(tabId2, msg);
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `Unknown ws command: ${cmd}`, { cmd, tabId: tabId2 });
+  if (cmd === "ws.send") return await sendWs(tabId, msg);
+  if (cmd === "ws.replay") return await replayWs(tabId, msg);
+  if (cmd === "ws.wait") return await waitWs(tabId, msg);
+  if (cmd === "ws.collect") return collectWs(tabId, msg);
+  if (cmd === "ws.close") return await closeWs(tabId, msg);
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, `Unknown ws command: ${cmd}`, { cmd, tabId });
 }
-function cleanupWsSessionsForTab2(tabId2, reason = "tab_cleanup") {
+function cleanupWsSessionsForTab2(tabId, reason = "tab_cleanup") {
   const cleanupState = typeof cleanupWsSessionsForTab === "function" ? cleanupWsSessionsForTab : (_tabId, cleanupReason = "tab_cleanup") => {
     let removed = 0;
     const sessionIds = [];
@@ -7883,18 +7870,18 @@ function cleanupWsSessionsForTab2(tabId2, reason = "tab_cleanup") {
     }
     return { tabId: _tabId, removed, reason: cleanupReason, sessionIds };
   };
-  const result2 = cleanupState(tabId2, reason);
-  for (const sessionId of Array.isArray(result2.sessionIds) ? result2.sessionIds : []) void forgetWsRuntimeSession("ws", tabId2, String(sessionId || "default"));
-  return result2;
+  const result = cleanupState(tabId, reason);
+  for (const sessionId of Array.isArray(result.sessionIds) ? result.sessionIds : []) void forgetWsRuntimeSession("ws", tabId, String(sessionId || "default"));
+  return result;
 }
 registerRecovery(async (results) => {
-  const result2 = await recover("ws", {
+  const result = await recover("ws", {
     validateTab: true,
     recover: async (_record) => {
       return { recovered: false, historyLost: true, reason: "WebSocket sessions are not auto-recovered after restart" };
     }
   });
-  results.push(result2);
+  results.push(result);
 });
 var __piBridgeModule_ws = { name: "ws", symbols: { handlePiBrowserWsCommand, cleanupWsSessionsForTab: cleanupWsSessionsForTab2 } };
 
@@ -7907,30 +7894,30 @@ function isScreenshotMissingTabError(error) {
 function screenshotErrorMessage(error) {
   return error instanceof Error ? error.message : String(error || "");
 }
-function screenshotTabNotFound(tabId2, error) {
-  return piBrowserError(PI_BROWSER_ERROR_CODES.TAB_NOT_FOUND, "screenshot.capture target tab not found", { tabId: tabId2, reason: screenshotErrorMessage(error) });
+function screenshotTabNotFound(tabId, error) {
+  return piBrowserError(PI_BROWSER_ERROR_CODES.TAB_NOT_FOUND, "screenshot.capture target tab not found", { tabId, reason: screenshotErrorMessage(error) });
 }
-async function detachScreenshotDebugger(tabId2) {
+async function detachScreenshotDebugger(tabId) {
   try {
-    await chromeApi.debugger.detach({ tabId: tabId2 });
+    await chromeApi.debugger.detach({ tabId });
     return null;
   } catch (error) {
-    const warning = { ok: false, tabId: tabId2, error: screenshotErrorMessage(error) };
+    const warning = { ok: false, tabId, error: screenshotErrorMessage(error) };
     console.warn("[PI-BROWSER] screenshot debugger detach failed", warning);
     return warning;
   }
 }
-async function getScreenshotTargetTab(tabId2) {
+async function getScreenshotTargetTab(tabId) {
   try {
-    return { ok: true, tab: await chromeApi.tabs.get(tabId2) };
+    return { ok: true, tab: await chromeApi.tabs.get(tabId) };
   } catch (error) {
     return { ok: false, error };
   }
 }
-async function captureVisibleFallback(tabId2, format, quality, timeoutMs) {
-  const target = await getScreenshotTargetTab(tabId2);
+async function captureVisibleFallback(tabId, format, quality, timeoutMs) {
+  const target = await getScreenshotTargetTab(tabId);
   if (!target.ok) {
-    if (isScreenshotMissingTabError(target.error)) return screenshotTabNotFound(tabId2, target.error);
+    if (isScreenshotMissingTabError(target.error)) return screenshotTabNotFound(tabId, target.error);
     throw target.error;
   }
   const actualFormat = format === "jpeg" ? "jpeg" : "png";
@@ -7938,10 +7925,10 @@ async function captureVisibleFallback(tabId2, format, quality, timeoutMs) {
   const dataUrl = await piWithTimeout(chromeApi.tabs.captureVisibleTab(Number(target.tab.windowId || 0), { format: actualFormat, quality }), timeoutMs, "chrome.tabs.captureVisibleTab");
   return { ok: true, data: { screenshot: dataUrl, format: actualFormat, mime, fallback: "captureVisibleTab" } };
 }
-async function captureScreenshotWithRetry(tabId2, msg) {
-  const target = await getScreenshotTargetTab(tabId2);
+async function captureScreenshotWithRetry(tabId, msg) {
+  const target = await getScreenshotTargetTab(tabId);
   if (!target.ok) {
-    if (isScreenshotMissingTabError(target.error)) return screenshotTabNotFound(tabId2, target.error);
+    if (isScreenshotMissingTabError(target.error)) return screenshotTabNotFound(tabId, target.error);
     throw target.error;
   }
   const format = String(msg.format || "png");
@@ -7953,15 +7940,15 @@ async function captureScreenshotWithRetry(tabId2, msg) {
     if (attempt) await piSleep(150 * attempt);
     if (cdp?.send) {
       try {
-        const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Page.captureScreenshot", { format, quality: msg.quality, captureBeyondViewport: msg.captureBeyondViewport === true }, { persistent: true, timeoutMs }));
+        const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Page.captureScreenshot", { format, quality: msg.quality, captureBeyondViewport: msg.captureBeyondViewport === true }, { persistent: true, timeoutMs }));
         if (resp && resp.ok !== false) {
-          const result2 = (resp.data && typeof resp.data === "object" ? resp.data : {}).result || resp.result || resp.data;
-          const resultRecord = result2 && typeof result2 === "object" ? result2 : {};
+          const result = (resp.data && typeof resp.data === "object" ? resp.data : {}).result || resp.result || resp.data;
+          const resultRecord = result && typeof result === "object" ? result : {};
           if (resultRecord.data) return { ok: true, data: { screenshot: "data:image/" + format + ";base64," + resultRecord.data, format, method: "persistent_cdp" } };
         }
         lastErr = resp;
       } catch (e) {
-        if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId2, e);
+        if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId, e);
         lastErr = new Error("persistent screenshot failed: " + screenshotErrorMessage(e));
       }
     }
@@ -7969,16 +7956,16 @@ async function captureScreenshotWithRetry(tabId2, msg) {
     let captureResult = null;
     let detachWarning = null;
     try {
-      await piWithTimeout(chromeApi.debugger.attach({ tabId: tabId2 }, "1.3"), timeoutMs, "chrome.debugger.attach");
+      await piWithTimeout(chromeApi.debugger.attach({ tabId }, "1.3"), timeoutMs, "chrome.debugger.attach");
       attached = true;
-      const result2 = await piWithTimeout(chromeApi.debugger.sendCommand({ tabId: tabId2 }, "Page.captureScreenshot", { format, quality: msg.quality }), timeoutMs, "Page.captureScreenshot");
-      const resultRecord = result2 && typeof result2 === "object" ? result2 : {};
+      const result = await piWithTimeout(chromeApi.debugger.sendCommand({ tabId }, "Page.captureScreenshot", { format, quality: msg.quality }), timeoutMs, "Page.captureScreenshot");
+      const resultRecord = result && typeof result === "object" ? result : {};
       captureResult = { ok: true, data: { screenshot: "data:image/" + format + ";base64," + resultRecord.data, format, method: "chrome.debugger" } };
     } catch (e) {
-      if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId2, e);
+      if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId, e);
       lastErr = e;
     } finally {
-      if (attached) detachWarning = await detachScreenshotDebugger(tabId2);
+      if (attached) detachWarning = await detachScreenshotDebugger(tabId);
     }
     if (captureResult) {
       if (detachWarning && captureResult.data && typeof captureResult.data === "object") captureResult.data.cleanup = { debuggerDetach: detachWarning };
@@ -7987,9 +7974,9 @@ async function captureScreenshotWithRetry(tabId2, msg) {
   }
   if (msg.fallback !== false) {
     try {
-      return await captureVisibleFallback(tabId2, format, msg.quality, timeoutMs);
+      return await captureVisibleFallback(tabId, format, msg.quality, timeoutMs);
     } catch (e) {
-      if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId2, e);
+      if (isScreenshotMissingTabError(e)) return screenshotTabNotFound(tabId, e);
       lastErr = e;
     }
   }
@@ -8025,8 +8012,8 @@ var cspBypassTabs = /* @__PURE__ */ new Map();
 var cspBypassUpdate = null;
 var cspBypassAlarmInstalled = false;
 function activeCspBypassTabIds(now2 = Date.now()) {
-  for (const [tabId2, expiresAt] of Array.from(cspBypassTabs.entries())) {
-    if (expiresAt <= now2) cspBypassTabs.delete(tabId2);
+  for (const [tabId, expiresAt] of Array.from(cspBypassTabs.entries())) {
+    if (expiresAt <= now2) cspBypassTabs.delete(tabId);
   }
   return Array.from(cspBypassTabs.keys()).sort((a, b) => a - b);
 }
@@ -8079,8 +8066,8 @@ function installCspBypassRule() {
   ensureCspBypassAlarmListener();
   void syncCspBypassRule();
 }
-function enableCspBypassForTab(tabId2, ttlMs = CSP_BYPASS_TTL_MS) {
-  const id = typeof tabId2 === "string" ? Number(tabId2) : typeof tabId2 === "number" ? tabId2 : NaN;
+function enableCspBypassForTab(tabId, ttlMs = CSP_BYPASS_TTL_MS) {
+  const id = typeof tabId === "string" ? Number(tabId) : typeof tabId === "number" ? tabId : NaN;
   if (!Number.isInteger(id) || id <= 0) return false;
   const ttl = Math.max(1e3, Math.floor(ttlMs));
   cspBypassTabs.set(id, Date.now() + ttl);
@@ -8157,8 +8144,8 @@ async function loadPiBrowserRuntimeStateMap() {
   const value = raw && typeof raw === "object" ? raw[PI_BROWSER_RUNTIME_STATE_KEY] : void 0;
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
-function piBrowserRuntimeStateKey(kind, tabId2, sessionId) {
-  return `${kind}:${Number(tabId2)}:${String(sessionId || "default")}`;
+function piBrowserRuntimeStateKey(kind, tabId, sessionId) {
+  return `${kind}:${Number(tabId)}:${String(sessionId || "default")}`;
 }
 async function savePiBrowserRuntimeStateMap(map) {
   const session = chromeApi.storage?.session;
@@ -8173,30 +8160,30 @@ function currentPiBrowserWorkerBootId() {
   const bridge = runtimeRecord(piBridgeInfo());
   return typeof bridge.workerBootId === "string" && bridge.workerBootId ? bridge.workerBootId : "unknown";
 }
-async function rememberRuntimeSession(kind, tabId2, sessionId, details = {}) {
+async function rememberRuntimeSession(kind, tabId, sessionId, details = {}) {
   const map = await loadPiBrowserRuntimeStateMap();
-  map[piBrowserRuntimeStateKey(kind, tabId2, sessionId)] = { kind, tabId: Number(tabId2), sessionId: String(sessionId || "default"), active: true, workerBootId: currentPiBrowserWorkerBootId(), updatedAt: Date.now(), details };
+  map[piBrowserRuntimeStateKey(kind, tabId, sessionId)] = { kind, tabId: Number(tabId), sessionId: String(sessionId || "default"), active: true, workerBootId: currentPiBrowserWorkerBootId(), updatedAt: Date.now(), details };
   await savePiBrowserRuntimeStateMap(map);
 }
-async function forgetRuntimeSession(kind, tabId2, sessionId) {
+async function forgetRuntimeSession(kind, tabId, sessionId) {
   const map = await loadPiBrowserRuntimeStateMap();
-  delete map[piBrowserRuntimeStateKey(kind, tabId2, sessionId)];
+  delete map[piBrowserRuntimeStateKey(kind, tabId, sessionId)];
   await savePiBrowserRuntimeStateMap(map);
 }
-async function findLostRuntimeSession(kind, tabId2, sessionId) {
-  const record = (await loadPiBrowserRuntimeStateMap())[piBrowserRuntimeStateKey(kind, tabId2, sessionId)];
+async function findLostRuntimeSession(kind, tabId, sessionId) {
+  const record = (await loadPiBrowserRuntimeStateMap())[piBrowserRuntimeStateKey(kind, tabId, sessionId)];
   return record && record.active === true && record.workerBootId !== currentPiBrowserWorkerBootId() ? record : void 0;
 }
 function summarizeLostRuntimeSession(record) {
   if (!record) return void 0;
   return { stateLost: true, previousWorkerBootId: record.workerBootId, updatedAt: record.updatedAt, kind: record.kind, tabId: record.tabId, sessionId: record.sessionId, details: runtimeRecord(record.details) };
 }
-function getPiBrowserQueueStats(tabId2) {
-  const q = piBrowserTabQueues.get(Number(tabId2));
+function getPiBrowserQueueStats(tabId) {
+  const q = piBrowserTabQueues.get(Number(tabId));
   return q ? { pending: q.pending, depth: q.depth, last_cmd: q.last_cmd || null } : { pending: false, depth: 0, last_cmd: null };
 }
-function enqueuePiBrowserCommand(tabId2, cmd, task) {
-  const key = Number(tabId2);
+function enqueuePiBrowserCommand(tabId, cmd, task) {
+  const key = Number(tabId);
   const current = piBrowserTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null };
   if (current.depth >= PI_BROWSER_QUEUE_MAX_DEPTH) return Promise.resolve(piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, "Pi Browser command queue is full", { tabId: key, cmd, depth: current.depth, max_depth: PI_BROWSER_QUEUE_MAX_DEPTH }));
   current.depth += 1;
@@ -8220,11 +8207,11 @@ function enqueuePiBrowserCommand(tabId2, cmd, task) {
   piBrowserTabQueues.set(key, current);
   return run;
 }
-function cleanupPiBrowserTab(tabId2, reason) {
-  const key = Number(tabId2);
+function cleanupPiBrowserTab(tabId, reason) {
+  const key = Number(tabId);
   const cleanupReason = reason || "tab_cleanup";
   try {
-    const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId2, cleanupReason);
+    const pageCleanup = cleanupPiBrowserPageListenersForTab(tabId, cleanupReason);
     if (pageCleanup?.catch) {
       void pageCleanup.catch((e) => console.warn("[PI-BROWSER] page listener cleanup failed", key, cleanupReason, runtimeErrorPreview(e)));
     }
@@ -8234,27 +8221,27 @@ function cleanupPiBrowserTab(tabId2, reason) {
   piBrowserSessions.delete(key);
   piBrowserTabQueues.delete(key);
   try {
-    cleanupNetworkRecorderTab(tabId2, cleanupReason);
+    cleanupNetworkRecorderTab(tabId, cleanupReason);
   } catch (e) {
     console.warn("[PI-BROWSER-NET] recorder cleanup failed", key, runtimeErrorPreview(e));
   }
   try {
-    cleanupInterceptSessionTab(tabId2, cleanupReason);
+    cleanupInterceptSessionTab(tabId, cleanupReason);
   } catch (e) {
     console.warn("[PI-BROWSER-INTERCEPT] session cleanup failed", key, runtimeErrorPreview(e));
   }
   try {
-    cleanupWsSessionsForTab2(tabId2, cleanupReason);
+    cleanupWsSessionsForTab2(tabId, cleanupReason);
   } catch (e) {
     console.warn("[PI-BROWSER-WS] session cleanup failed", key, runtimeErrorPreview(e));
   }
   try {
-    cleanupPersistentCdpForTab(tabId2, cleanupReason);
+    cleanupPersistentCdpForTab(tabId, cleanupReason);
   } catch (e) {
     console.warn("[PI-BROWSER-CDP] persistent session cleanup failed", key, runtimeErrorPreview(e));
   }
-  const waits = cleanupReason === "tab_cleanup" ? { cleaned: cancelWaitsForTab(tabId2, "tab_cleanup"), orphaned: 0 } : cleanupTabWaits(tabId2, cleanupReason, { includeCdp: true, action: "tab_cleanup" });
-  console.log("[PI-BROWSER] cleaned tab state", key, cleanupReason, { waits_cleaned: waits.cleaned, orphan_waits: waits.orphaned });
+  if (cleanupReason === "tab_cleanup") cancelWaitsForTab(tabId, "tab_cleanup");
+  else cleanupTabWaits(tabId, cleanupReason, { includeCdp: true, action: "tab_cleanup" });
 }
 function canonicalPiBrowserCommand(cmd) {
   const key = String(cmd || "");
@@ -8340,14 +8327,13 @@ function normalizeBridgeResponse(resp, cmd) {
   if (raw && typeof raw === "object") {
     const rawRecord = raw;
     if (rawRecord.name && details.name === void 0) details.name = rawRecord.name;
-    if (rawRecord.stack && details.stack === void 0) details.stack = rawRecord.stack;
     return bridgeError(String(resp.error_code || rawRecord.error_code || rawRecord.code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR), rawRecord.message || String(rawRecord.code || rawRecord.name || "bridge command failed"), details);
   }
   return bridgeError(resp.error_code || PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, raw || "bridge command failed", details);
 }
-function isPiBrowserSessionMissing(res2) {
-  const error = runtimeRecord(res2?.error);
-  return Boolean(res2 && res2.ok === false && (res2.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res2.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || error.code === PI_BROWSER_ERROR_CODES.NO_SESSION || error.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED));
+function isPiBrowserSessionMissing(res) {
+  const error = runtimeRecord(res?.error);
+  return Boolean(res && res.ok === false && (res.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION || res.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || error.code === PI_BROWSER_ERROR_CODES.NO_SESSION || error.code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED));
 }
 function piSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
@@ -8368,71 +8354,71 @@ function normalizePiBrowserEvalTimeoutMs(options) {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : void 0;
 }
-async function piBrowserEval(tabId2, expression, awaitPromise = true, options = {}) {
+async function piBrowserEval(tabId, expression, awaitPromise = true, options = {}) {
   const timeoutMs = normalizePiBrowserEvalTimeoutMs(options);
   const cdp = piBrowserPersistentCdp();
   if (cdp?.send) {
-    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise }, { persistent: true, name: "eval", timeoutMs }));
+    const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise }, { persistent: true, name: "eval", timeoutMs }));
     if (!resp || resp.ok === false) return resp;
-    const result2 = runtimeRecord(runtimeRecord(resp.data).result || resp.result || resp.data);
-    const exceptionDetails = runtimeRecord(result2.exceptionDetails);
-    if (result2.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
-    return { ok: true, data: runtimeRecord(result2.result).value };
+    const result = runtimeRecord(runtimeRecord(resp.data).result || resp.result || resp.data);
+    const exceptionDetails = runtimeRecord(result.exceptionDetails);
+    if (result.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
+    return { ok: true, data: runtimeRecord(result.result).value };
   }
-  await chromeApi.debugger.attach({ tabId: tabId2 }, "1.3");
+  await chromeApi.debugger.attach({ tabId }, "1.3");
   try {
-    const command = chromeApi.debugger.sendCommand({ tabId: tabId2 }, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise });
-    const result2 = timeoutMs === void 0 ? await command : await piWithTimeout(command, timeoutMs, "Runtime.evaluate");
-    await chromeApi.debugger.detach({ tabId: tabId2 });
-    const resultRecord = runtimeRecord(result2);
+    const command = chromeApi.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise });
+    const result = timeoutMs === void 0 ? await command : await piWithTimeout(command, timeoutMs, "Runtime.evaluate");
+    await chromeApi.debugger.detach({ tabId });
+    const resultRecord = runtimeRecord(result);
     const exceptionDetails = runtimeRecord(resultRecord.exceptionDetails);
     if (resultRecord.exceptionDetails) return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeRecord(exceptionDetails.exception).description || "Runtime.evaluate failed", exceptionDetails);
     return { ok: true, data: runtimeRecord(resultRecord.result).value };
   } catch (e) {
     try {
-      await chromeApi.debugger.detach({ tabId: tabId2 });
+      await chromeApi.debugger.detach({ tabId });
     } catch (detachError) {
-      console.warn("[PI-BROWSER] Failed to detach debugger after Runtime.evaluate fallback", tabId2, runtimeErrorPreview(detachError));
+      console.warn("[PI-BROWSER] Failed to detach debugger after Runtime.evaluate fallback", tabId, runtimeErrorPreview(detachError));
     }
     throw e;
   }
 }
-async function callPagePiBrowser(tabId2, command, args, options = {}) {
+async function callPagePiBrowser(tabId, command, args, options = {}) {
   const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Pi browser dispatcher is not installed'}`;
-  const res2 = await piBrowserEval(tabId2, expr, true, options);
-  return res2.ok ? runtimeRecord(res2.data) : res2;
+  const res = await piBrowserEval(tabId, expr, true, options);
+  return res.ok ? runtimeRecord(res.data) : res;
 }
-async function reinstallPiBrowserSession(tabId2) {
-  const sess = piBrowserSessions.get(tabId2);
+async function reinstallPiBrowserSession(tabId) {
+  const sess = piBrowserSessions.get(tabId);
   if (!sess) return null;
-  const injected = await ensurePiBrowserDispatcher(tabId2);
+  const injected = await ensurePiBrowserDispatcher(tabId);
   if (!injected.ok) return injected;
   const args = sess.install_args || { session_id: sess.session_id, targets: sess.targets, options: sess.options, buffer_size: sess.buffer_size, install_fingerprint: sess.install_fingerprint };
-  const res2 = await callPagePiBrowser(tabId2, "hook.install", args);
-  if (res2 && res2.ok) {
-    const data2 = runtimeRecord(res2.data);
-    piBrowserSessions.set(tabId2, { ...sess, session_id: String(data2.session_id || args.session_id || sess.session_id || ""), state: String(data2.state || "INSTALLED"), installed_at: String(data2.installed_at || (/* @__PURE__ */ new Date()).toISOString()), install_fingerprint: String(data2.install_fingerprint || args.install_fingerprint || sess.install_fingerprint || ""), install_args: args });
+  const res = await callPagePiBrowser(tabId, "hook.install", args);
+  if (res && res.ok) {
+    const data = runtimeRecord(res.data);
+    piBrowserSessions.set(tabId, { ...sess, session_id: String(data.session_id || args.session_id || sess.session_id || ""), state: String(data.state || "INSTALLED"), installed_at: String(data.installed_at || (/* @__PURE__ */ new Date()).toISOString()), install_fingerprint: String(data.install_fingerprint || args.install_fingerprint || sess.install_fingerprint || ""), install_args: args });
   }
-  return res2;
+  return res;
 }
-async function callPagePiBrowserWithAutoReinstall(tabId2, command, args) {
-  let res2 = await callPagePiBrowser(tabId2, command, args);
-  if (isPiBrowserSessionMissing(res2) && piBrowserSessions.has(tabId2) && command !== "hook.uninstall") {
-    let last = res2;
+async function callPagePiBrowserWithAutoReinstall(tabId, command, args) {
+  let res = await callPagePiBrowser(tabId, command, args);
+  if (isPiBrowserSessionMissing(res) && piBrowserSessions.has(tabId) && command !== "hook.uninstall") {
+    let last = res;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (attempt) await piSleep(150 * attempt);
-      const reinstall = await reinstallPiBrowserSession(tabId2);
+      const reinstall = await reinstallPiBrowserSession(tabId);
       if (!reinstall || reinstall.ok === false) {
         last = reinstall || last;
         continue;
       }
-      res2 = await callPagePiBrowser(tabId2, command, args);
-      if (!isPiBrowserSessionMissing(res2)) return res2;
-      last = res2;
+      res = await callPagePiBrowser(tabId, command, args);
+      if (!isPiBrowserSessionMissing(res)) return res;
+      last = res;
     }
     return last;
   }
-  return res2;
+  return res;
 }
 function piWithTimeout(promise, timeoutMs, label) {
   let timer;
@@ -8443,20 +8429,20 @@ function piWithTimeout(promise, timeoutMs, label) {
 }
 async function handlePiBrowser(msg, sender) {
   const cmd = canonicalPiBrowserCommand(msg.cmd);
-  const tabId2 = Number(msg.tabId || sender.tab?.id || 0);
-  if (cmd === "hook.list_sessions") return await handlePiBrowserImpl(msg, sender, cmd, tabId2);
-  if (!tabId2) return piBrowserError("NO_SESSION", cmd + " requires tabId", { cmd, details: {} });
-  if (cmd === "wait.diagnose") return await handlePiBrowserImpl(msg, sender, cmd, tabId2);
-  return await enqueuePiBrowserCommand(tabId2, cmd, () => handlePiBrowserImpl(msg, sender, cmd, tabId2));
+  const tabId = Number(msg.tabId || sender.tab?.id || 0);
+  if (cmd === "hook.list_sessions") return await handlePiBrowserImpl(msg, sender, cmd, tabId);
+  if (!tabId) return piBrowserError("NO_SESSION", cmd + " requires tabId", { cmd, details: {} });
+  if (cmd === "wait.diagnose") return await handlePiBrowserImpl(msg, sender, cmd, tabId);
+  return await enqueuePiBrowserCommand(tabId, cmd, () => handlePiBrowserImpl(msg, sender, cmd, tabId));
 }
-async function handlePiBrowserImpl(msg, sender, cmd, tabId2) {
+async function handlePiBrowserImpl(msg, sender, cmd, tabId) {
   try {
-    if (cmd.startsWith("hook.")) return await handlePiBrowserHookCommand(cmd, tabId2, msg);
-    if (cmd.startsWith("intercept.")) return await handlePiBrowserInterceptCommand(cmd, tabId2, msg);
-    if (cmd.startsWith("evidence.")) return await handlePiBrowserEvidenceCommand(cmd, tabId2, msg);
-    if (cmd.startsWith("ws.")) return await handlePiBrowserWsCommand(cmd, tabId2, msg);
-    if (cmd.startsWith("frame.")) return await handlePiBrowserFrameCommand(cmd, tabId2, msg);
-    if (cmd.startsWith("transfer.")) return await handlePiBrowserTransferCommand(cmd, tabId2, msg);
+    if (cmd.startsWith("hook.")) return await handlePiBrowserHookCommand(cmd, tabId, msg);
+    if (cmd.startsWith("intercept.")) return await handlePiBrowserInterceptCommand(cmd, tabId, msg);
+    if (cmd.startsWith("evidence.")) return await handlePiBrowserEvidenceCommand(cmd, tabId, msg);
+    if (cmd.startsWith("ws.")) return await handlePiBrowserWsCommand(cmd, tabId, msg);
+    if (cmd.startsWith("frame.")) return await handlePiBrowserFrameCommand(cmd, tabId, msg);
+    if (cmd.startsWith("transfer.")) return await handlePiBrowserTransferCommand(cmd, tabId, msg);
     switch (cmd) {
       case "network.start":
       case "network.stop":
@@ -8467,33 +8453,33 @@ async function handlePiBrowserImpl(msg, sender, cmd, tabId2) {
       case "network.body":
       case "network.exportHar":
       case "network.wait":
-        return await handleNetworkRecorderCommand(tabId2, cmd, msg);
+        return await handleNetworkRecorderCommand(tabId, cmd, msg);
       case "wait.navigate":
-        return await navigatePiBrowser(tabId2, msg);
+        return await navigatePiBrowser(tabId, msg);
       case "wait.navigateAndWait":
-        return await navigateAndWait(tabId2, msg);
+        return await navigateAndWait(tabId, msg);
       case "wait.navigation":
-        return await waitForNavigation(tabId2, msg);
+        return await waitForNavigation(tabId, msg);
       case "wait.loadState":
-        return await waitForLoadState(tabId2, msg);
+        return await waitForLoadState(tabId, msg);
       case "wait.networkIdle":
-        return await waitForNetworkIdle(tabId2, msg);
+        return await waitForNetworkIdle(tabId, msg);
       case "wait.selector":
-        return await waitForSelector(tabId2, msg);
+        return await waitForSelector(tabId, msg);
       case "wait.any":
-        return await waitForAny(tabId2, msg);
+        return await waitForAny(tabId, msg);
       case "wait.all":
-        return await waitForAll(tabId2, msg);
+        return await waitForAll(tabId, msg);
       case "wait.cancel":
-        return await cancelWait(tabId2, msg);
+        return await cancelWait(tabId, msg);
       case "wait.diagnose":
-        return await diagnosePiBrowser(tabId2, msg);
+        return await diagnosePiBrowser(tabId, msg);
     }
-    if (cmd === "html.get") return await handlePiBrowserHtml(tabId2, msg);
-    if (cmd === "screenshot.capture") return await captureScreenshotWithRetry(tabId2, msg);
+    if (cmd === "html.get") return await handlePiBrowserHtml(tabId, msg);
+    if (cmd === "screenshot.capture") return await captureScreenshotWithRetry(tabId, msg);
     return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Pi Browser command: " + cmd, { cmd });
   } catch (e) {
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId: tabId2 });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId });
   }
 }
 var __piBridgeModule_runtime = { name: "runtime", symbols: { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl } };
@@ -8507,7 +8493,7 @@ function coreErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function coreErrorDetails(error) {
-  return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { message: String(error) };
+  return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) };
 }
 function optionalString(value) {
   return typeof value === "string" ? value : void 0;
@@ -8516,7 +8502,8 @@ function setBridgeWakeProbe(probe) {
   bridgeWakeProbe = typeof probe === "function" ? probe : null;
 }
 async function handleBridgeWake(msg, sender) {
-  if (bridgeWakeProbe) void bridgeWakeProbe(true);
+  if (bridgeWakeProbe) void Promise.resolve(bridgeWakeProbe(true)).catch(() => {
+  });
   return { ok: true, data: { connecting: !!bridgeWakeProbe, bridge: piBridgeInfo(), url: msg.url || sender.tab?.url || null } };
 }
 function normalizePiBrowserCreateTabUrl(value) {
@@ -8536,12 +8523,12 @@ async function handleTabsCommand(msg) {
   try {
     if (!msg.method || msg.method === "list") {
       const tabs = (await chromeApi.tabs.query({})).filter((t) => isScriptable(t.url));
-      const data2 = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }));
-      return { ok: true, data: data2 };
+      const data = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }));
+      return { ok: true, data };
     }
     if (msg.method === "switch") {
-      const tabId2 = Number(msg.tabId || 0);
-      const tab = await chromeApi.tabs.update(tabId2, { active: true });
+      const tabId = Number(msg.tabId || 0);
+      const tab = await chromeApi.tabs.update(tabId, { active: true });
       if (tab.windowId !== void 0) await chromeApi.windows.update(Number(tab.windowId), { focused: true });
       return { ok: true };
     }
@@ -8674,14 +8661,14 @@ async function handleCookies(msg, sender) {
   }
 }
 async function handleCDP(msg, sender) {
-  const tabId2 = Number(msg.tabId || sender.tab?.id || 0);
-  if (!tabId2) return bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, "no tabId", { cmd: msg.cmd, method: msg.method });
+  const tabId = Number(msg.tabId || sender.tab?.id || 0);
+  if (!tabId) return bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, "no tabId", { cmd: msg.cmd, method: msg.method });
   const cdp = piBrowserPersistentCdp();
-  if (!cdp?.send) return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { cmd: msg.cmd, method: msg.method, tabId: tabId2 });
-  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, String(msg.method || ""), coreRecord(msg.params), { name: String(msg.name || "default"), persistent: msg.persistent === true, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
-  const data2 = coreRecord(resp.data);
-  if (resp && resp.ok !== false) return { ok: true, data: data2.result !== void 0 ? data2.result : resp.result || resp.data };
-  return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || "persistent CDP send failed", { cmd: msg.cmd, method: msg.method, tabId: tabId2, persistent: resp });
+  if (!cdp?.send) return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { cmd: msg.cmd, method: msg.method, tabId });
+  const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, String(msg.method || ""), coreRecord(msg.params), { name: String(msg.name || "default"), persistent: msg.persistent === true, timeoutMs: msg.timeoutMs || msg.timeout_ms }));
+  const data = coreRecord(resp.data);
+  if (resp && resp.ok !== false) return { ok: true, data: data.result !== void 0 ? data.result : resp.result || resp.data };
+  return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || "persistent CDP send failed", { cmd: msg.cmd, method: msg.method, tabId, persistent: resp });
 }
 async function handlePersistentCDP(msg, sender) {
   const resp = await handlePersistentCdpCommand(msg, sender);
@@ -8732,20 +8719,20 @@ async function handleBatch(msg, sender) {
         } else if (c.cmd === "tabs") {
           R.push(normalizeBridgeResponse(await handleTabsCommand(c), c.cmd));
         } else if (c.cmd === "cdp") {
-          const tabId2 = Number(c.tabId || msg.tabId || sender.tab?.id || 0);
-          if (!tabId2) {
+          const tabId = Number(c.tabId || msg.tabId || sender.tab?.id || 0);
+          if (!tabId) {
             R.push(bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, "no tabId for batch cdp command", { cmd: c.cmd, method: c.method }));
             continue;
           }
           const cdp = piBrowserPersistentCdp();
           if (!cdp?.send) {
-            R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { cmd: c.cmd, method: c.method, tabId: tabId2 }));
+            R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, "persistent CDP helper is not loaded", { cmd: c.cmd, method: c.method, tabId }));
             continue;
           }
-          const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId2, String(c.method || ""), resolve$N(c.params), { name: String(c.name || "default"), persistent: c.persistent === true, timeoutMs: c.timeoutMs || c.timeout_ms }));
-          const data2 = coreRecord(resp.data);
-          if (resp && resp.ok !== false) R.push({ ok: true, data: data2.result !== void 0 ? data2.result : resp.result || resp.data });
-          else R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || "persistent CDP send failed", { cmd: c.cmd, method: c.method, tabId: tabId2, persistent: resp }));
+          const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, String(c.method || ""), resolve$N(c.params), { name: String(c.name || "default"), persistent: c.persistent === true, timeoutMs: c.timeoutMs || c.timeout_ms }));
+          const data = coreRecord(resp.data);
+          if (resp && resp.ok !== false) R.push({ ok: true, data: data.result !== void 0 ? data.result : resp.result || resp.data });
+          else R.push(bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, resp?.error || resp?.message || "persistent CDP send failed", { cmd: c.cmd, method: c.method, tabId, persistent: resp }));
         } else if (isPiNativeBrowserCommand(optionalString(c.cmd))) {
           const validation = validatePiBridgeProtocolMessage(c);
           if (!validation.ok) R.push(bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, validation.error, validation.details));
@@ -8830,7 +8817,7 @@ function buildExecScript(code, errorHandler) {
         if (seen.has(value)) return '[Circular]';
         if (depth >= MAX_DEPTH) return '[MaxDepth]';
         seen.add(value);
-        if (value instanceof Error) return { __type: 'Error', name: value.name, code: value.code || undefined, message: trim(value.message, MAX_TEXT), details: serialize(value.details || {}, depth + 1), stack: trim(value.stack || '', MAX_HTML) };
+        if (value instanceof Error) return { __type: 'Error', name: value.name, code: value.code || undefined, message: trim(value.message, MAX_TEXT), details: serialize(value.details || {}, depth + 1) };
         if (value instanceof Date) return { __type: 'Date', iso: value.toISOString() };
         if (value instanceof RegExp) return { __type: 'RegExp', source: value.source, flags: value.flags, text: value.toString() };
         if (value instanceof Map) return { __type: 'Map', size: value.size, entries: Array.from(value.entries()).slice(0, 50).map(function(entry) { return [serialize(entry[0], depth + 1), serialize(entry[1], depth + 1)]; }) };
@@ -8890,13 +8877,13 @@ function buildExecScript(code, errorHandler) {
 function buildPageScript(code) {
   return buildExecScript(code, `
       const errMsg = e.message || String(e);
-      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {}, stack: e.stack || '' },
+      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: errMsg, details: e.details || {} },
         csp: errMsg.includes('Refused to evaluate') || errMsg.includes('unsafe-eval') || errMsg.includes('Content Security Policy') };
   `);
 }
 function buildCdpScript(code) {
   return buildExecScript(code, `
-      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {}, stack: e.stack || '' } };
+      return { ok: false, error: { name: e.name || 'Error', code: e.code || undefined, message: e.message || String(e), details: e.details || {} } };
   `);
 }
 function normalizeExecNavigationUrl(rawUrl) {
@@ -8909,7 +8896,6 @@ function normalizeExecNavigationUrl(rawUrl) {
 }
 async function handleWsExec(data, socket) {
   const tabId = data.tabId;
-  console.log("[PI-BROWSER-WS] Exec request", data.id, "on tab", tabId);
   socket.send(JSON.stringify({ type: "ack", id: data.id }));
   if (!tabId) {
     socket.send(JSON.stringify({ type: "error", id: data.id, error: "No tabId provided" }));
@@ -8923,7 +8909,7 @@ async function handleWsExec(data, socket) {
       await chromeApi.tabs.update(tabId, { url: targetUrl });
       socket.send(JSON.stringify({ type: "result", id: data.id, result: { navigated: true, url: targetUrl } }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || "" : "" } }));
+      socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e) } }));
     }
     return;
   }
@@ -8932,10 +8918,10 @@ async function handleWsExec(data, socket) {
     try {
       const targetUrl = normalizeExecNavigationUrl(gmOpenMatch[2]);
       const t = await chromeApi.tabs.create({ url: targetUrl, active: true });
-      const newTabs2 = [{ id: t.id, tabId: t.id, url: t.url || targetUrl, title: t.title || "" }];
-      socket.send(JSON.stringify({ type: "result", id: data.id, result: { opened: true, tabId: t.id, url: targetUrl }, newTabs: newTabs2 }));
+      const newTabs = [{ id: t.id, tabId: t.id, url: t.url || targetUrl, title: t.title || "" }];
+      socket.send(JSON.stringify({ type: "result", id: data.id, result: { opened: true, tabId: t.id, url: targetUrl }, newTabs }));
     } catch (e) {
-      socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || "" : "" } }));
+      socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e) } }));
     }
     return;
   }
@@ -8952,7 +8938,7 @@ async function handleWsExec(data, socket) {
       const executePromise = chromeApi.scripting.executeScript({
         target: { tabId },
         world: "MAIN",
-        func: async (s) => await eval(s),
+        func: async (s) => await (0, eval)(s),
         args: [buildPageScript(data.code)]
       });
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
@@ -8964,16 +8950,13 @@ async function handleWsExec(data, socket) {
       const scriptResults = Array.isArray(result) ? result : [];
       res = scriptResults[0]?.result;
       if (res === null || res === void 0) {
-        console.log("[PI-BROWSER-WS] executeScript returned null/undefined, treating as CSP issue");
-        res = { ok: false, error: { name: "Error", message: "executeScript returned null (possible CSP or context issue)", stack: "" }, csp: true };
+        res = { ok: false, error: { name: "Error", message: "executeScript returned null (possible CSP or context issue)" }, csp: true };
       }
     } catch (e) {
-      console.log("[PI-BROWSER-WS] scripting.executeScript failed:", e instanceof Error ? e.message : String(e));
-      res = { ok: false, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || "" : "" }, csp: true };
+      res = { ok: false, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e) }, csp: true };
     }
     const firstRes = res && typeof res === "object" ? res : {};
     if (res && firstRes.ok === false && firstRes.csp) {
-      console.log("[PI-BROWSER-WS] CDP fallback for tab", tabId);
       const wrappedCode = buildCdpScript(data.code);
       try {
         const cdp = piBrowserPersistentCdp();
@@ -8989,13 +8972,13 @@ async function handleWsExec(data, socket) {
         if (exceptionDetails) {
           const exception = exceptionDetails.exception && typeof exceptionDetails.exception === "object" ? exceptionDetails.exception : {};
           const desc = String(exception.description || "CDP Error");
-          res = { ok: false, error: { name: "Error", message: desc, stack: desc } };
+          res = { ok: false, error: { name: "Error", message: desc } };
         } else {
-          const result2 = cdpRes.result && typeof cdpRes.result === "object" ? cdpRes.result : {};
-          res = result2.value;
+          const result = cdpRes.result && typeof cdpRes.result === "object" ? cdpRes.result : {};
+          res = result.value;
         }
       } catch (cdpErr) {
-        res = { ok: false, error: { name: "Error", message: "CDP fallback failed: " + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)), stack: "" } };
+        res = { ok: false, error: { name: "Error", message: "CDP fallback failed: " + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)) } };
       }
     }
     if (newTabIds.size === 0) await new Promise((r) => setTimeout(r, 200));
@@ -9012,11 +8995,10 @@ async function handleWsExec(data, socket) {
     if (finalRes.ok) {
       socket.send(JSON.stringify({ type: "result", id: data.id, result: finalRes.data, newTabs }));
     } else {
-      console.log(res);
       socket.send(JSON.stringify({ type: "error", id: data.id, error: finalRes.error || "Unknown error", newTabs }));
     }
   } catch (e) {
-    socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack || "" : "" } }));
+    socket.send(JSON.stringify({ type: "error", id: data.id, error: { name: e instanceof Error ? e.name : "Error", message: e instanceof Error ? e.message : String(e) } }));
   } finally {
     chromeApi.tabs.onCreated.removeListener(onCreated);
   }
@@ -9040,17 +9022,17 @@ function installPiBridgeRouter() {
   piBridgeRouterInstalled = true;
   return true;
 }
-function sendPiBridgeWsCommandResult(socket2, id, msg, res2) {
-  const result2 = res2.data ?? res2.results ?? res2;
-  if (isPiNativeBrowserCommand(msg.cmd)) socket2.send(JSON.stringify({ type: res2.ok ? "result" : "error", id, result: result2, error: res2.error ?? res2 }));
-  else socket2.send(JSON.stringify({ type: res2.ok ? "result" : "error", id, result: result2, error: res2.error ?? res2.message }));
+function sendPiBridgeWsCommandResult(socket, id, msg, res) {
+  const result = res.data ?? res.results ?? res;
+  if (isPiNativeBrowserCommand(msg.cmd)) socket.send(JSON.stringify({ type: res.ok ? "result" : "error", id, result, error: res.error ?? res }));
+  else socket.send(JSON.stringify({ type: res.ok ? "result" : "error", id, result, error: res.error ?? res.message }));
 }
-function sendPiBridgeWsInputError(socket2, id, error, details = {}) {
-  socket2.send(JSON.stringify({ type: "error", id, error, details: details || {} }));
+function sendPiBridgeWsInputError(socket, id, error, details = {}) {
+  socket.send(JSON.stringify({ type: "error", id, error, details: details || {} }));
 }
-async function handlePiBridgeWsMessage(data2, socket2) {
-  if (data2.id === void 0 || data2.id === null || data2.code === void 0 || data2.code === null) return;
-  let code = data2.code;
+async function handlePiBridgeWsMessage(data, socket) {
+  if (data.id === void 0 || data.id === null || data.code === void 0 || data.code === null) return;
+  let code = data.code;
   if (typeof code === "string") {
     try {
       const p = JSON.parse(code);
@@ -9061,19 +9043,19 @@ async function handlePiBridgeWsMessage(data2, socket2) {
   if (typeof code === "object" && code !== null) {
     const codeObj = code;
     if (typeof codeObj.cmd !== "string" || !codeObj.cmd.trim()) {
-      sendPiBridgeWsInputError(socket2, data2.id, 'Message object must contain a non-empty "cmd" field', { codeType: "object" });
+      sendPiBridgeWsInputError(socket, data.id, 'Message object must contain a non-empty "cmd" field', { codeType: "object" });
       return;
     }
-    const msg = codeObj.tabId === void 0 && data2.tabId !== void 0 ? { ...codeObj, tabId: data2.tabId } : codeObj;
+    const msg = codeObj.tabId === void 0 && data.tabId !== void 0 ? { ...codeObj, tabId: data.tabId } : codeObj;
     enableCspBypassForTab(msg.tabId);
-    socket2.send(JSON.stringify({ type: "ack", id: data2.id }));
-    const res2 = await handlePiBridgeMessage(msg, {});
-    sendPiBridgeWsCommandResult(socket2, data2.id, msg, res2);
+    socket.send(JSON.stringify({ type: "ack", id: data.id }));
+    const res = await handlePiBridgeMessage(msg, {});
+    sendPiBridgeWsCommandResult(socket, data.id, msg, res);
   } else if (typeof code === "string") {
-    enableCspBypassForTab(data2.tabId);
-    await handleWsExec(data2, socket2);
+    enableCspBypassForTab(data.tabId);
+    await handleWsExec(data, socket);
   } else {
-    sendPiBridgeWsInputError(socket2, data2.id, "Unsupported message code type: " + typeof code, { codeType: typeof code });
+    sendPiBridgeWsInputError(socket, data.id, "Unsupported message code type: " + typeof code, { codeType: typeof code });
   }
 }
 var __piBridgeModule_router = { name: "router", symbols: { installPiBridgeRouter, validatePiBridgeProtocolMessage, handlePiBridgeMessage, sendPiBridgeWsCommandResult, sendPiBridgeWsInputError, handlePiBridgeWsMessage } };
@@ -9091,8 +9073,8 @@ function requirePiBrowserTabSyncTransport() {
 }
 async function sendTabsUpdate() {
   const transport = requirePiBrowserTabSyncTransport();
-  const sockets2 = typeof transport.getSockets === "function" ? transport.getSockets() : [transport.getSocket()].filter((socket2) => !!socket2);
-  const openSockets = sockets2.filter((socket2) => socket2.readyState === WebSocket.OPEN);
+  const sockets2 = typeof transport.getSockets === "function" ? transport.getSockets() : [transport.getSocket()].filter((socket) => !!socket);
+  const openSockets = sockets2.filter((socket) => socket.readyState === WebSocket.OPEN);
   if (!openSockets.length) return;
   const tabs = (await chromeApi.tabs.query({})).filter((t) => isScriptable(t.url || "") && !/streamlit/i.test(t.title || ""));
   const payload = JSON.stringify({
@@ -9100,22 +9082,24 @@ async function sendTabsUpdate() {
     bridge: piBridgeInfo(),
     tabs: tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }))
   });
-  for (const socket2 of openSockets) socket2.send(payload);
+  for (const socket of openSockets) socket.send(payload);
 }
 function piBrowserErrorMessage(error) {
   if (error && typeof error === "object" && "message" in error) return String(error.message || error);
   return String(error);
 }
+function isExpectedTabSyncShutdownError(message) {
+  return /browser is shutting down|extension context invalidated|context invalidated/i.test(message);
+}
 function logTabSyncError(reason, error) {
-  console.debug("[PI-BROWSER] tab sync error", {
-    reason,
-    error: error ? piBrowserErrorMessage(error) : String(error)
-  });
+  const message = error ? piBrowserErrorMessage(error) : String(error);
+  if (isExpectedTabSyncShutdownError(message)) return;
+  console.debug(`[PI-BROWSER] tab sync error reason=${reason} error=${message}`);
 }
 function runTabSyncTask(reason, task) {
   try {
-    const result2 = task();
-    if (result2 && typeof result2.catch === "function") void result2.catch((e) => logTabSyncError(reason, e));
+    const result = task();
+    if (result && typeof result.catch === "function") void result.catch((e) => logTabSyncError(reason, e));
   } catch (e) {
     logTabSyncError(reason, e);
   }
@@ -9136,8 +9120,8 @@ function installPiBrowserTabSync(deps = void 0) {
       safeSendTabsUpdate("tabs.onUpdated");
     }
   });
-  chromeApi.tabs.onRemoved.addListener((tabId2) => {
-    cleanupPiBrowserTab(tabId2, "tab_removed");
+  chromeApi.tabs.onRemoved.addListener((tabId) => {
+    cleanupPiBrowserTab(tabId, "tab_removed");
     safeSendTabsUpdate("tabs.onRemoved");
   });
   chromeApi.tabs.onCreated.addListener(() => {
@@ -9203,21 +9187,39 @@ async function sendOffscreenMessage(message) {
   if (!await ensureOffscreenDocument()) return { ok: false, error: "offscreen unavailable" };
   return await chromeApi.runtime.sendMessage(message);
 }
+function offscreenTransportErrorMessage(error) {
+  return error && typeof error === "object" && "message" in error ? String(error.message || error) : String(error);
+}
+function isExpectedOffscreenTransientError(message) {
+  return /browser is shutting down|extension context invalidated|context invalidated|receiving end does not exist/i.test(message);
+}
+function logTransportAsyncError(reason, error) {
+  const message = offscreenTransportErrorMessage(error);
+  if (isExpectedOffscreenTransientError(message)) return;
+  console.warn(`[PI-BROWSER-WS] ${reason} failed`, message);
+}
+function runTransportTask(reason, task) {
+  void task().catch((error) => logTransportAsyncError(reason, error));
+}
 function ensureSocketAdapter(port) {
   const current = sockets.get(port);
   if (current) {
     current.readyState = SOCKET_OPEN;
     return current;
   }
-  const socket2 = {
+  const socket = {
     port,
     readyState: SOCKET_OPEN,
-    send(data2) {
-      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data: data2 }).catch((error) => console.warn("[PI-BROWSER-WS] offscreen send failed", error));
+    send(data) {
+      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).catch((error) => {
+        const message = offscreenTransportErrorMessage(error);
+        if (isExpectedOffscreenTransientError(message)) return;
+        console.warn("[PI-BROWSER-WS] offscreen send failed", message);
+      });
     }
   };
-  sockets.set(port, socket2);
-  return socket2;
+  sockets.set(port, socket);
+  return socket;
 }
 function responseOpenPorts(response) {
   const record = response && typeof response === "object" ? response : {};
@@ -9227,17 +9229,16 @@ function getPiBrowserTransportSocket() {
   return getPiBrowserTransportSockets()[0] ?? null;
 }
 function getPiBrowserTransportSockets() {
-  return Array.from(sockets.values()).filter((socket2) => socket2.readyState === SOCKET_OPEN);
+  return Array.from(sockets.values()).filter((socket) => socket.readyState === SOCKET_OPEN);
 }
-function cleanupTransportSocket(socket2, reason = "") {
-  if (!socket2) return false;
+function cleanupTransportSocket(socket, _reason = "") {
+  if (!socket) return false;
   let removed = false;
   for (const [port, current] of sockets.entries()) {
-    if (current !== socket2) continue;
+    if (current !== socket) continue;
     current.readyState = SOCKET_CLOSED;
     sockets.delete(port);
     removed = true;
-    console.log("[PI-BROWSER-WS] Disconnected", port, reason || "");
   }
   return removed;
 }
@@ -9249,7 +9250,9 @@ function bumpProbeBackoff() {
   wsReconnectDelayMs = Math.min(WS_RECONNECT_MAX_MS, Math.max(WS_RECONNECT_INITIAL_MS, wsReconnectDelayMs * 2));
 }
 function scheduleKeepalive() {
-  void sendOffscreenMessage({ type: "pi-browser-offscreen-status" }).catch((error) => console.debug("[PI-BROWSER-WS] offscreen status failed", error));
+  runTransportTask("offscreen status", async () => {
+    await sendOffscreenMessage({ type: "pi-browser-offscreen-status" });
+  });
 }
 async function isServerAlive() {
   const response = await sendOffscreenMessage({ type: "pi-browser-offscreen-status" });
@@ -9264,9 +9267,11 @@ async function probeAndConnectWS(resetDelay) {
   scheduleProbe(resetDelay);
 }
 function connectWS(port = PI_BROWSER_BRIDGE_PORT) {
-  void sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false }).then(syncOpenPorts);
+  runTransportTask("offscreen probe", async () => {
+    await syncOpenPorts(await sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false }));
+  });
 }
-async function sendExtReady(socket2, port) {
+async function sendExtReady(socket, port) {
   primaryPort = port;
   if (!startupRecoveryDone) {
     startupRecoveryDone = true;
@@ -9277,16 +9282,15 @@ async function sendExtReady(socket2, port) {
     }
   }
   const tabs = (await chromeApi.tabs.query({})).filter((tab) => isScriptable(tab.url));
-  socket2.send(JSON.stringify({
+  socket.send(JSON.stringify({
     type: "ext_ready",
     bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
     tabs: tabs.map((tab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId }))
   }));
-  console.log("[PI-BROWSER-WS] Sent ext_ready with", tabs.length, "tabs to", port);
 }
 async function handleOffscreenConnected(port) {
-  const socket2 = ensureSocketAdapter(port);
-  await sendExtReady(socket2, port);
+  const socket = ensureSocketAdapter(port);
+  await sendExtReady(socket, port);
 }
 async function handlePiBrowserOffscreenMessage(message) {
   if (message.type === "pi-browser-offscreen-ready") return { ok: true };
@@ -9319,16 +9323,25 @@ function installPiBrowserTransport() {
     return true;
   });
   chromeApi.runtime.onInstalled.addListener(() => {
-    console.log("Pi Browser Bridge installed");
     installCspBypassRule();
-    void probeAndConnectWS(true);
+    runTransportTask("install probe", async () => {
+      await probeAndConnectWS(true);
+    });
   });
   installCspBypassRule();
-  chromeApi.alarms.onAlarm.addListener(handlePiBrowserTransportAlarm);
+  chromeApi.alarms.onAlarm.addListener((alarm) => {
+    runTransportTask("transport alarm", async () => {
+      await handlePiBrowserTransportAlarm(alarm);
+    });
+  });
   setBridgeWakeProbe(probeAndConnectWS);
-  void probeAndConnectWS(true);
+  runTransportTask("initial probe", async () => {
+    await probeAndConnectWS(true);
+  });
   chromeApi.runtime.onStartup.addListener(() => {
-    void probeAndConnectWS(true);
+    runTransportTask("startup probe", async () => {
+      await probeAndConnectWS(true);
+    });
   });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });
   piBrowserTransportInstalled = true;

@@ -1,5 +1,6 @@
 import { createCodedError } from "../../../utils/codedError.js";
 import { normalizeError, suppressErrorStack } from "../../../utils/errors.js";
+import { redactSensitiveText, redactSensitiveValue } from "../../../utils/redaction.js";
 
 export type WebSecurityErrorEnvelopeConfig = {
 	toolName: string;
@@ -7,32 +8,18 @@ export type WebSecurityErrorEnvelopeConfig = {
 };
 
 export function redactWebSecurityDiagnosticText(text: string): string {
-	return text
-		.replace(/((?:^|[\r\n])\s*(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
-		.replace(/("(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|private[_-]?key|token|secret|password|otp|totp)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
-		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|private[_-]?key|token|secret|password|otp|totp)\s*=\s*)[^;\s,"'}]+/gi, "$1[redacted]")
-		.replace(/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]")
-		.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]");
+	return redactSensitiveText(text);
 }
 
-export function redactWebSecurityDiagnosticValue(value: unknown, seen = new WeakSet<object>()): unknown {
-	if (typeof value === "string") return redactWebSecurityDiagnosticText(value);
-	if (value === null || value === undefined || typeof value !== "object") return value;
-	if (seen.has(value)) return "[Circular]";
-	seen.add(value);
-	if (Array.isArray(value)) return value.map((item) => redactWebSecurityDiagnosticValue(item, seen));
-	const out: Record<string, unknown> = {};
-	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-		const lower = key.toLowerCase();
-		out[key] = /cookie|authorization|token|secret|password|api[-_]?key|private[_-]?key|otp|totp/.test(lower) ? "[redacted]" : redactWebSecurityDiagnosticValue(item, seen);
-	}
-	return out;
+export function redactWebSecurityDiagnosticValue(value: unknown): unknown {
+	return redactSensitiveValue(value);
 }
 
 type WebSecurityToolErrorRecord = Error & { code: string; details: Record<string, unknown> };
 
 export function webSecurityToolError(error: unknown, config: WebSecurityErrorEnvelopeConfig): Error {
 	const normalized = normalizeError(error);
+	const recovery = normalized.recovery ? redactWebSecurityDiagnosticValue(normalized.recovery) as Record<string, unknown> : undefined;
 	return suppressErrorStack(createCodedError({
 		name: "WebSecurityToolError",
 		code: normalized.code,
@@ -41,7 +28,7 @@ export function webSecurityToolError(error: unknown, config: WebSecurityErrorEnv
 			domain: "webSecurity",
 			toolName: config.toolName,
 			command: config.command,
-			...(normalized.recovery ? { recovery: normalized.recovery } : {}),
+			...(recovery ? { recovery } : {}),
 			cause: {
 				code: normalized.code,
 				message: redactWebSecurityDiagnosticText(normalized.message),

@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText, memoryEntryDir, resolveMemoryPath } from "./paths.js";
 import { parseMemoryEntry, serializeMemoryEntry } from "./frontmatter.js";
-import { loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "./indexStore.js";
+import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "./indexStore.js";
 import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "./types.js";
 import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs } from "./evidence.js";
+import { normalizeMemoryEntryId } from "./ids.js";
 import { memorySimilarity, DEDUP_SIMILARITY, SIMILAR_SIMILARITY } from "./salience.js";
 import { routeByTokens, situationTokens } from "./routing.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
@@ -157,7 +158,8 @@ const INLINE_BODY_MAX_CHARS = 4_000;
 
 async function topBody(cwd: string | undefined, id: string, kind: MemoryEntry["kind"]): Promise<string | undefined> {
 	// Read just the one entry file for the dominant card (not the whole store).
-	const rel = path.join(memoryEntryDir(kind), `${id}.md`);
+	const safeId = normalizeMemoryEntryId(id);
+	const rel = path.join(memoryEntryDir(kind), `${safeId}.md`);
 	const text = await readFile(resolveMemoryPath(cwd, rel), "utf8").catch(() => undefined);
 	if (!text) return undefined;
 	const lines = parseMemoryEntry(text, rel).body.split(/\r?\n/);
@@ -168,8 +170,11 @@ async function topBody(cwd: string | undefined, id: string, kind: MemoryEntry["k
 }
 
 function indexEntryToCard(entry: MemoryIndexEntry, matchReason: string): MemoryRecallCard {
+	const id = normalizeMemoryEntryId(entry.id);
+	const handlePrefix = `browser-memory://${entry.kind}/${id}`;
+	const handles = entry.handles.filter((handle) => handle === handlePrefix || handle.startsWith(`${handlePrefix}?`));
 	return {
-		id: entry.id,
+		id,
 		title: entry.title,
 		triggers: entry.triggers,
 		scopeKind: entry.scopeKind,
@@ -178,7 +183,7 @@ function indexEntryToCard(entry: MemoryIndexEntry, matchReason: string): MemoryR
 		status: entry.status,
 		confidence: entry.confidence,
 		matchReason,
-		handles: entry.handles,
+		handles: handles.length ? handles : [browserMemoryUriForEntry({ kind: entry.kind, id })],
 		updatedAt: entry.updatedAt,
 	};
 }

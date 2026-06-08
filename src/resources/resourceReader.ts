@@ -10,7 +10,9 @@
  *   offset  — line/byte offset
  *   limit   — max lines
  *   jsonPath — JSON path for json mode
- *   search  — search query for search mode
+ *   query   — search query for search mode
+ *   search  — legacy alias for query
+ *   contextLines/contextChars/maxChars/columnOffset/columnLimit/maxMatches — artifact window controls
  */
 import { resolveRefUriDetailed, resolveResourceUri, isResourceFresh } from "./resourceStore.js";
 import { readBrowserArtifact, ArtifactReaderError } from "../tools/artifactReader.js";
@@ -25,15 +27,62 @@ export type McpResourceReadResult =
 	| { ok: true; content: McpResourceContent }
 	| { ok: false; error: string; code: string };
 
+type ReadableResource = {
+	artifactPath: string;
+	jsonPath?: string;
+	mime?: string;
+	redaction: "default" | "disabled";
+	fresh: boolean;
+};
+
+function numberQuery(query: Record<string, string>, key: string): number | undefined {
+	const raw = query[key];
+	if (raw === undefined || raw.trim() === "") return undefined;
+	const value = Number(raw);
+	return Number.isFinite(value) ? value : undefined;
+}
+
+function booleanQuery(query: Record<string, string>, key: string): boolean | undefined {
+	const raw = query[key];
+	if (raw === undefined || raw.trim() === "") return undefined;
+	if (/^(1|true|yes)$/i.test(raw)) return true;
+	if (/^(0|false|no)$/i.test(raw)) return false;
+	return undefined;
+}
+
+function sanitizedReadError(err: unknown): string {
+	const code = typeof (err as NodeJS.ErrnoException)?.code === "string" ? (err as NodeJS.ErrnoException).code : undefined;
+	if (code === "ENOENT") return "Resource artifact could not be read because it no longer exists.";
+	if (code === "EACCES" || code === "EPERM") return "Resource artifact could not be read because access was denied.";
+	return "Resource artifact could not be read.";
+}
+
 /**
  * Read a browser-result:// resource by URI.
- * Accepts optional query parameters to control mode, offset, limit, jsonPath, search.
+ * Accepts optional query parameters to control mode, offset, limit, jsonPath, query/search.
  */
 export async function readBrowserResultResource(uri: string): Promise<McpResourceReadResult> {
-	let resource = resolveResourceUri(uri);
+	const storedResource = resolveResourceUri(uri);
+	let resource: ReadableResource | undefined = storedResource
+		? {
+			artifactPath: storedResource.artifactPath,
+			jsonPath: storedResource.jsonPath,
+			mime: storedResource.mime,
+			redaction: storedResource.redaction,
+			fresh: isResourceFresh(storedResource),
+		}
+		: undefined;
 	if (!resource && uri.startsWith("pi-ref://")) {
 		const resolved = resolveRefUriDetailed(uri);
-		if (resolved.ok && resolved.ref.resourceUri) resource = resolveResourceUri(resolved.ref.resourceUri);
+		if (resolved.ok && resolved.ref.artifactPath) {
+			resource = {
+				artifactPath: resolved.ref.artifactPath,
+				jsonPath: resolved.ref.jsonPath ?? resolved.ref.descriptor.snapshot?.jsonPath,
+				mime: resolved.ref.mime,
+				redaction: resolved.ref.redaction,
+				fresh: resolved.ref.fresh !== false,
+			};
+		}
 	}
 	if (!resource) {
 		return {
@@ -45,7 +94,7 @@ export async function readBrowserResultResource(uri: string): Promise<McpResourc
 
 	// Staleness: the artifact under this handle was rewritten/replaced since
 	// registration (e.g. a later same-tool call reused the fallback path).
-	if (!isResourceFresh(resource)) {
+	if (!resource.fresh) {
 		return {
 			ok: false,
 			error: `Resource is stale (artifact changed since it was captured): ${uri}`,
@@ -53,22 +102,32 @@ export async function readBrowserResultResource(uri: string): Promise<McpResourc
 		};
 	}
 
-	// Parse query params from the URI for mode/offset/limit/jsonPath/search
+	// Parse query params from the URI for mode/offset/limit/jsonPath/query.
 	const queryStart = uri.indexOf("?");
 	const queryStr = queryStart >= 0 ? uri.slice(queryStart + 1) : "";
 	const query = Object.fromEntries(new URLSearchParams(queryStr));
+	const searchQuery = query.query ?? query.search;
+	const mode = query.mode || (query.jsonPath || resource.jsonPath ? "json" : searchQuery ? "search" : "text");
 
 	try {
 		const result = await readBrowserArtifact(
 			{
 				path: resource.artifactPath,
-				// A section resource (stored jsonPath) defaults to json so it returns its slice;
-				// a whole-artifact resource defaults to text.
-				mode: (query.mode as string) || (resource.jsonPath ? "json" : "text"),
-				offset: query.offset != null ? Number(query.offset) : undefined,
-				limit: query.limit != null ? Number(query.limit) : undefined,
+				// A section resource (stored jsonPath) defaults to json; whole-artifact
+				// resources default to text unless a query/search needle implies search.
+				mode,
+				offset: numberQuery(query, "offset"),
+				limit: numberQuery(query, "limit"),
+				maxChars: numberQuery(query, "maxChars"),
 				jsonPath: query.jsonPath || resource.jsonPath,
-				query: query.search,
+				query: searchQuery,
+				regex: booleanQuery(query, "regex"),
+				ignoreCase: booleanQuery(query, "ignoreCase"),
+				contextLines: numberQuery(query, "contextLines"),
+				contextChars: numberQuery(query, "contextChars"),
+				columnOffset: numberQuery(query, "columnOffset"),
+				columnLimit: numberQuery(query, "columnLimit"),
+				maxMatches: numberQuery(query, "maxMatches"),
 				redact: resource.redaction !== "disabled",
 			},
 			// ctx is not needed when path is absolute
@@ -93,8 +152,8 @@ export async function readBrowserResultResource(uri: string): Promise<McpResourc
 		};
 	} catch (err) {
 		if (err instanceof ArtifactReaderError) {
-			return { ok: false, error: err.message, code: err.code };
+			return { ok: false, error: sanitizedReadError(err), code: "RESOURCE_READ_ERROR" };
 		}
-		return { ok: false, error: String(err), code: "RESOURCE_READ_ERROR" };
+		return { ok: false, error: sanitizedReadError(err), code: "RESOURCE_READ_ERROR" };
 	}
 }

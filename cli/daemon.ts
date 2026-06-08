@@ -26,8 +26,9 @@ import { resolveUsageLogOptions, createUsageLogHook } from "../src/frontend/usag
 import { isRecord } from "../src/utils/records.js";
 import { strippedDeprecatedParamKeys } from "../src/tools/prepareArguments.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
+import { daemonVersion } from "./packageInfo.js";
 
-export const DAEMON_VERSION = "1";
+export const DAEMON_VERSION = daemonVersion();
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
 export interface DaemonHandle {
@@ -44,6 +45,14 @@ export interface StartDaemonOptions {
 	/** Called after /shutdown has closed the server (foreground daemon exits the process here). */
 	onShutdown?: () => void;
 }
+
+type CliInvokeMetadata = {
+	command?: string;
+	routing?: string;
+	naturalSubcommand?: string;
+	action?: string;
+	compatibilityInterface?: string;
+};
 
 let hooksRegistered = false;
 function registerDaemonHooks(): void {
@@ -85,6 +94,43 @@ function safeTabs(server: BrowserBridgeServer): unknown[] {
 	} catch {
 		return [];
 	}
+}
+
+function activeTabFrom(tabs: unknown[]): unknown {
+	return tabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? tabs[0] ?? null;
+}
+
+function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, includeTabs: boolean): Record<string, unknown> {
+	const tabs = safeTabs(server);
+	let snapshot;
+	try {
+		snapshot = server.snapshot();
+	} catch {
+		snapshot = undefined;
+	}
+	const extension = snapshot?.extension;
+	const lastTabSyncAt = server.getLastTabSyncAt();
+	const now = Date.now();
+	return {
+		ok: true,
+		bridgePort: server.running ? server.port : undefined,
+		running: server.running,
+		extensionConnected: snapshot?.extensionConnected === true,
+		tabCount: tabs.length,
+		activeTab: activeTabFrom(tabs),
+		health: {
+			connectedAt: extension?.connectedAt,
+			lastSeenAt: extension?.lastSeenAt,
+			lastPingAt: extension?.lastPingAt,
+			lastPongAt: extension?.lastPongAt,
+			connectedForMs: typeof extension?.connectedAt === "number" ? Math.max(0, now - extension.connectedAt) : undefined,
+			tabSyncAt: lastTabSyncAt,
+			tabSyncAgeMs: typeof lastTabSyncAt === "number" ? Math.max(0, now - lastTabSyncAt) : undefined,
+			connectedClients: snapshot?.connectedClients,
+		},
+		...(includeTabs ? { tabs } : {}),
+		tools: toolCount,
+	};
 }
 
 /** Construct the daemon, start its control server, and (optionally) write the lockfile. */
@@ -139,23 +185,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		};
 		// Loopback + token are the only auth — never expose this server off 127.0.0.1.
 		if (req.headers["x-pi-daemon-token"] !== token) return send(401, { ok: false, error: "unauthorized" });
-		const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+		const url = new URL(req.url ?? "/", "http://127.0.0.1");
+		const pathname = url.pathname;
 		try {
 			if (req.method === "GET" && pathname === "/status") {
-				let extensionConnected = false;
-				try {
-					extensionConnected = bridgeServer.snapshot().extensionConnected;
-				} catch {
-					/* bridge not started yet */
-				}
-				return send(200, {
-					ok: true,
-					bridgePort: bridgeServer.running ? bridgeServer.port : undefined,
-					running: bridgeServer.running,
-					extensionConnected,
-					tabs: safeTabs(bridgeServer),
-					tools: toolCount,
-				});
+				return send(200, bridgeStatusPayload(bridgeServer, toolCount, url.searchParams.get("tabs") === "1"));
 			}
 			if (req.method === "POST" && pathname === "/shutdown") {
 				send(200, { ok: true });
@@ -170,18 +204,36 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 				});
 				return;
 			}
+			if (req.method === "POST" && pathname === "/connect") {
+				const body = await readBody(req);
+				const wait = body.wait === true;
+				const timeoutMs = Math.max(0, Math.min(120_000, Math.floor(Number(body.timeoutMs ?? 0) || 0)));
+				const includeTabs = body.tabs === true;
+				const wasRunning = bridgeServer.running;
+				await ensureStarted();
+				if (wait) await bridgeServer.waitForExtensionReady(undefined, timeoutMs);
+				const status = bridgeStatusPayload(bridgeServer, toolCount, includeTabs);
+				return send(200, { ok: true, startedBridge: !wasRunning && bridgeServer.running, status });
+			}
 			if (req.method === "POST" && pathname === "/invoke") {
 				const body = await readBody(req);
 				const tool = typeof body.tool === "string" ? body.tool : "";
 				const params = isRecord(body.params) ? body.params : {};
 				const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
+				const cli = isRecord(body.cli) ? body.cli as CliInvokeMetadata : undefined;
 				const def = toolByName.get(tool);
 				if (!def) return send(404, { ok: false, error: `unknown tool: ${tool || "(missing)"}` });
 				const prepared = (def.prepareArguments ? def.prepareArguments(params) : params) as Record<string, unknown>;
 				const strippedDeprecatedParams = strippedDeprecatedParamKeys(params, prepared);
 				const validation = validateToolArgs(def.parameters, prepared);
 				if (!validation.ok) return send(400, { ok: false, error: validation.error });
-				const ctx: MiddlewareContext = { method: "invoke", toolName: tool, startedAt: Date.now(), ...(usageEnabled ? { args: validation.args } : {}) };
+				const ctx: MiddlewareContext = {
+					method: "invoke",
+					toolName: tool,
+					startedAt: Date.now(),
+					...(usageEnabled ? { args: validation.args } : {}),
+					...(usageEnabled && cli ? { cli } : {}),
+				};
 				try {
 					const result = await def.execute(`cli-${tool}-${Date.now()}`, validation.args, undefined, undefined, { cwd, hasUI: false });
 					if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;

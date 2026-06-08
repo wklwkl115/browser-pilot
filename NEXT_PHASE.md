@@ -1,10 +1,10 @@
 # NEXT_PHASE
 
-> 下一阶段核心遵循文件。Workstreams A-E 当前主线已完成；完成摘要见 `WORKSTREAMS_A_E_SUMMARY.md`。后续新阶段执行前先读 `AGENTS.md`、`CURRENT.md`、本文件；重大偏离先更新本文件再动代码。
+> 历史阶段遵循文件。Workstreams A-E 当前主线已完成；完成摘要见 `WORKSTREAMS_A_E_SUMMARY.md`。当前执行入口见 `CURRENT.md`，后续路线见 `ROADMAP.md`；新阶段必须另开执行合同，不再把本文件当 active queue。
 
 ## Phase Theme
 
-工具接口治理与内部可组合性重构。Workstreams A-E 与 `docs/tool-surface-consolidation-plan.md` 的 TODO 244-249 均已完成：观察层已收敛到 `browser_observe` canonical surface，JavaScript execution 与 bridge command 已拆清，recovery/artifact/progress/snapshot/operation diagnostics 已补齐，Web Security 可见工具面由显式 profile 管理。当前无激活执行线（见 `CURRENT.md`）；下一阶段方向见 `ROADMAP.md`。本文件保留为该阶段的指导约束记录。
+工具接口治理与内部可组合性重构。Workstreams A-E 与 `docs/tool-surface-consolidation-plan.md` 的 TODO 244-249 均已完成：观察层已收敛到 `browser_observe` canonical surface，JavaScript execution 与 bridge command 已拆清，recovery/artifact/progress/snapshot/operation diagnostics 已补齐。后续 agent-native 架构 B1 已移除 Web Security capability profile，当前 22 个 `browser_*` 工具 always-on。当前无激活执行线（见 `CURRENT.md`）；下一阶段方向见 `ROADMAP.md`。本文件保留为该阶段的历史指导约束记录。
 
 ## Guiding Constraints
 
@@ -35,7 +35,7 @@ The active implementation contract is `docs/tool-surface-consolidation-plan.md`.
 | 246 | Recovery hints and artifact multi-search | Completed: errors expose factual nextActions/recovery and `browser_artifact` supports bounded multi-artifact search. |
 | 247 | Progress and stream-ready evidence | Completed phase 1: tool-level progress lands first; final envelopes and artifacts remain authoritative. |
 | 248 | Explicit snapshots and operation metadata | Completed: snapshot reuse is explicit and artifact-backed, and operation metadata is diagnostic only. |
-| 249 | Web Security capability profiles | Completed: optional visible tool tiers are controlled only by explicit Pi config/profile. |
+| 249 | Web Security exposure boundary | Superseded by later agent-native architecture B1: Web Security tools are always visible as part of the 22-tool surface; no capability profile remains. |
 
 Each TODO must update `CURRENT.md`, `ROADMAP.md`, `docs/tool-boundaries.md`, README, CHANGELOG, generated docs, relevant contracts/evals, and the global `pi-browser-tools` skill when runtime tool selection changes.
 
@@ -214,13 +214,13 @@ Completed current static suite:
 
 - `evals/browser-workflows/spec-template.md` plus 10 independent eval specs.
 - Synthetic local fixtures under `evals/browser-workflows/fixtures/`.
-- `evals/browser-workflows/manifest.json` for manual execution or a future runner.
+- `evals/browser-workflows/manifest.json` for manual execution or the later opt-in runner.
 - `evals/browser-workflows/manual-result-template.json` and `result-schema.json` for compact hand-run evidence records.
 - `evals/browser-workflows/results/README.md` for optional manual result storage rules.
-- `evals/browser-workflows/future-runner.md` to freeze opt-in runner/server boundaries without implementing them.
+- `evals/browser-workflows/future-runner.md` to freeze opt-in runner/server boundaries before implementation.
 - `tests/contracts/tools/check-eval-workflows.mjs` and `check:eval-workflows` in `npm run check`.
 
-Current boundary: no callable tools, no browser execution, no fixture server, no external network, and no scanner/OAST execution. A future runner must be opt-in and separately scoped.
+Historical boundary: the static suite itself added no callable tools, browser execution, fixture server, external network, or scanner/OAST execution. The later runner is opt-in and separately scoped.
 
 ### Metrics
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { redactSensitiveText, redactSensitiveValue, containsSensitiveEvidence } from "../../../src/utils/redaction.ts";
+import { redactSensitiveText, redactSensitiveValue, redactSensitiveValueWithPointers, containsSensitiveEvidence } from "../../../src/utils/redaction.ts";
 
 // ── redactSensitiveText ──────────────────────────────────────────────────────
 
@@ -19,6 +19,13 @@ test("redactSensitiveText redacts Basic auth", () => {
 test("redactSensitiveText redacts cookie header", () => {
 	const result = redactSensitiveText("cookie: session=abc123; token=xyz");
 	assert.ok(result.includes("[redacted]"));
+});
+
+test("redactSensitiveText redacts sensitive header fragments on mixed lines", () => {
+	const result = redactSensitiveText("Cookie: sid=abc Authorization: Bearer secret");
+	assert.equal(result.includes("sid=abc"), false);
+	assert.equal(result.includes("Bearer secret"), false);
+	assert.ok(result.includes("Cookie: [redacted]"));
 });
 
 test("redactSensitiveText redacts PEM private key block", () => {
@@ -91,6 +98,16 @@ test("redactSensitiveValue redacts body field as [redacted body]", () => {
 test("redactSensitiveValue redacts postData field as [redacted postData]", () => {
 	const result = redactSensitiveValue({ postData: "a=1&b=2" }) as Record<string, unknown>;
 	assert.equal(result.postData, "[redacted postData]");
+});
+
+test("redactSensitiveValueWithPointers emits readable bracket jsonPath for complex keys", () => {
+	const artifactValue = { response: { headers: { "Set-Cookie": "sid=secret", "x.api.key": "secret-key" } } };
+	const result = redactSensitiveValueWithPointers(artifactValue, { rawArtifactPath: "/tmp/raw.json", artifactValue }) as {
+		response: { headers: Record<string, { redacted: true; raw: string; jsonPath: string }> };
+	};
+	assert.equal(result.response.headers["Set-Cookie"].jsonPath, "response.headers['Set-Cookie']");
+	assert.equal(result.response.headers["x.api.key"].jsonPath, "response.headers['x.api.key']");
+	assert.equal(result.response.headers["Set-Cookie"].raw, "/tmp/raw.json");
 });
 
 // ── containsSensitiveEvidence ────────────────────────────────────────────────

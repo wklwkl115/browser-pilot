@@ -341,8 +341,7 @@ async function tabExists(tabId: number): Promise<boolean> {
   try {
     const tab = await chrome.tabs.get(tabId);
     return !!tab;
-  } catch (error) {
-    console.warn("[PI-BROWSER-STATE] tabExists lookup failed", tabId, error instanceof Error ? error.message : error);
+  } catch {
     return false;
   }
 }
@@ -511,14 +510,6 @@ async function runStartupRecovery(): Promise<RuntimeRecoverySummary> {
   };
   lastRecoverySummary = summary;
   runtimeRecoveryGlobal().__PI_BROWSER_RUNTIME_RECOVERY_SUMMARY__ = summary;
-  if (summary.totals.recovered + summary.totals.recoveredWithHistoryLoss + summary.totals.lost > 0) {
-    console.log(
-      "[PI-BROWSER-STATE] Startup recovery complete",
-      `recovered=${summary.totals.recovered}`,
-      `historyLoss=${summary.totals.recoveredWithHistoryLoss}`,
-      `lost=${summary.totals.lost}`
-    );
-  }
   return summary;
 }
 

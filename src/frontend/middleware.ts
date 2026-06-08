@@ -21,6 +21,8 @@ export type MiddlewareContext = {
 	startedAt: number;
 	/** Raw tool args, captured for opt-in usage logging (redacted at log time). */
 	args?: unknown;
+	/** CLI-facing route metadata for opt-in usage logging; never affects execution semantics. */
+	cli?: unknown;
 	/** Serialized result size in bytes, for opt-in usage logging. */
 	resultBytes?: number;
 };

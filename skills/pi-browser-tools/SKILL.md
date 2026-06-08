@@ -17,7 +17,7 @@ First real-agent skeptical eval (2026-06-05): `causal` (which APIs an action hit
 ## Invocation
 
 - **Pi-native** → call the tools directly, e.g. `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`.
-- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser execute --script "…"`. For non-trivial JS, prefer `pi-browser execute --script-file path/to/script.js` to avoid shell quoting; this is CLI-only and still calls the normal `script` parameter. The bridge daemon auto-starts on first call; output is human on a TTY and JSON otherwise (`--json`/`--text` to force). `pi-browser --help` / `pi-browser <cmd> --help` lists every command and its flags — there is no discovery step.
+- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands. For multi-step work, start with `pi-browser connect --wait --timeout-ms 15000 --json`; this is the agent readiness gate and returns `ready`, daemon/bridge/extension state, compact `tabCount`/`activeTab`, `health`, and recovery commands. Use `pi-browser status --json` for a read-only compact state check; add `--tabs` only when you need the full `tabs[]` list. Use `pi-browser doctor --json` for broader diagnostics; do not use `daemon stop` as normal cleanup. Then discover with `pi-browser commands --json` / `pi-browser schema <cmd> --json`. Use the installed `pi-browser` binary for machine JSON; in this repo use `npm --silent run cli -- ...` only for debugging, because ordinary `npm run cli` prepends npm banner text to stdout. Use recommended `standard`/`natural` routes from the `agentCli` metadata: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser wait selector --selector "#id"`, `pi-browser network start`, `pi-browser frame list`, `pi-browser frame evaluate --frame-id ... --expression ...`, `pi-browser hook install-targets --targets console,error`, `pi-browser hook collect --session-id ...`, `pi-browser execute --script-file path/to/script.js`. For non-trivial JS/JSON/raw requests/templates, prefer files to avoid shell quoting: `--script-file extract.js`, `command --command @native-command.json`, `http-replay --raw-request @request.txt`, `http-replay --request @captured-request.json`, `http-replay --har-path capture.har`, `template --template-path template.yaml`, and `validate <cmd> --params @params.json --json` for local validation without daemon/browser startup. Natural action subcommands are the preferred CLI path when `agentCli.mode:"natural"` exists; for action-tool root schemas, inspect `subcommands[]` or `schema <cmd> <natural-subcommand> --json` because the root command remains the advanced `--action/--params` interface. Legacy `--action/--params` is **advanced compatibility** for old scripts, low-frequency native actions, and complex JSON params; `pi-browser command --command @native-command.json` is the full native bridge escape hatch. Simple one-off commands still auto-start the bridge daemon for compatibility; output is human on a TTY and JSON otherwise (`--json`/`--text` to force).
 
 ## Loop
 
@@ -49,16 +49,16 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 | Exact DOM/HTML for selector | `browser_observe {mode:"html", selector, htmlMode}` — `htmlMode` ∈ `fragment\|raw\|text\|inner\|outer` (CLI `--html-mode`) |
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
-| Inside iframe | `browser_frame list` (read child `frameId` from `frames[].frameId`) → `browser_frame evaluate` with `--params '{"frameId":"<id>","expression":"<js>"}'`. A top-level scan does NOT structurally cover child frames (`mode=text` only appends same-origin iframe text after a `--- iframe ---` marker — flat, no refs) |
+| Inside iframe | `browser_frame list` (read child `frameId` from `frames[].frameId`) → `browser_frame evaluate` with `frameId` + `expression`. CLI: `pi-browser frame list` → `pi-browser frame evaluate --frame-id <id> --expression <js>`. A top-level scan does NOT structurally cover child frames (`mode=text` only appends same-origin iframe text after a `--- iframe ---` marker — flat, no refs) |
 | Click/type/scroll/mutate state | `browser_execute` (JS) → `browser_wait` → re-observe |
 | Click/input returned ok but page didn't change | trusted-event-gated → `browser_command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the element rect |
 | CDP / native command | `browser_command` with explicit command object |
-| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
+| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop). CLI: `pi-browser wait selector --selector "#id"` / `pi-browser wait navigate --url ...` / `pi-browser wait network-idle` |
 | User points to element | `browser_pick` |
 | Download file | `browser_download` (no hand-scripted clicks) |
 | Upload file | `browser_upload` {absolute path, `confirm:true`} |
-| Record requests/HAR/body | `browser_network start` → act → `list\|get\|body\|exportHar` |
-| Capture console/error/storage/ws/crypto/DOM-sink/listener | `browser_hook installTargets\|install` → act → `collect` or `browser_evidence` |
+| Record requests/HAR/body | `browser_network start` → act → `list\|get\|body\|exportHar`. CLI: `pi-browser network start` → act → `pi-browser network list --session-id ...` |
+| Capture console/error/storage/ws/crypto/DOM-sink/listener | `browser_hook installTargets\|install` → act → `collect` or `browser_evidence`. CLI: `pi-browser hook install-targets --targets ...` → act → `pi-browser hook collect --session-id ...` |
 | Status/title/headers/redirect/TLS/tech | `browser_crawl {action:"fingerprint"}` + `url`/`urls`/`paths` |
 | Links/forms/API/source-maps/SW | `browser_crawl` (scope+bounds; `activeGraphqlIntrospection` for active GraphQL) |
 | Replay/mutate one request | `browser_http_replay` (never page `fetch`) |
@@ -142,10 +142,10 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 
 | Symptom | Do |
 |---|---|
-| No bridge/browser/tab | a command briefly waits for the extension to connect, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them: confirm the extension is loaded/enabled, open or reload a tab so its service worker connects, check `pi-browser daemon status` / `/browser-status`. The bridge can't dial the browser; the extension connects in |
+| No bridge/browser/tab | CLI: run `pi-browser connect --wait --timeout-ms 15000 --json`, then inspect `pi-browser status --json` or `pi-browser doctor --json`. Pi-native: a command briefly waits for the extension to connect, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them. Confirm the extension is loaded/enabled, open or reload a tab so it connects. The bridge can't dial the browser; the extension connects in |
 | Stale tab | `browser_tabs list`; use live `tabId` |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
-| Timeout | re-observe; `browser_wait action=diagnose` (pass the timed-out `waitId` to get selector-specific `selectorDiagnostics`: current match/visible count, iframe clues, recovery commands); narrow/raise bound |
+| Timeout | re-observe; `browser_wait action=diagnose` / CLI `pi-browser wait diagnose` (pass the timed-out `waitId` to get selector-specific `selectorDiagnostics`: current match/visible count, iframe clues, recovery commands); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`etag mismatch`/`HANDLE_NOT_FOUND` or baseline expired | artifact/ref/baseline changed under the handle — re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old one |
 | Tool/command not found | `pi-browser --help`; all 22 commands should be listed unless the package/daemon is stale |

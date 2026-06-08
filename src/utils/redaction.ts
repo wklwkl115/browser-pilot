@@ -134,6 +134,7 @@ function redactUrlQueryValues(text: string): string {
 
 export function redactSensitiveText(text: string): string {
 	return redactUrlQueryValues(String(text))
+		.replace(/(\b(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
 		.replace(/((?:^|[\r\n])[^\r\n]{0,160}\b(?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token)\s*:\s*)[^\r\n]*/gi, "$1[redacted]")
 		.replace(/("(?:cookie|cookies|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp|postData|payloadData|body)"\s*:\s*)"[^"]*"/gi, "$1\"[redacted]\"")
 		.replace(/((?:cookie|authorization|proxy-authorization|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-aws-ec2-metadata-token|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|secret|private[_-]?key|password|api[_-]?key|otp|totp)\s*=\s*)[^;&\s,"'}]+/gi, "$1[redacted]")
@@ -168,13 +169,15 @@ export function redactSensitiveValue(value: unknown, seen = new WeakSet<object>(
 }
 
 function jsonPathSegment(key: string): string {
-	return key;
+	if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) return key;
+	return `['${key.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}']`;
 }
 
 function jsonPathAppend(base: string, token: string | number): string {
 	if (typeof token === "number") return `${base}[${token}]`;
 	const segment = jsonPathSegment(token);
-	return base === "$" ? segment : `${base}.${segment}`;
+	if (base === "$") return segment;
+	return segment.startsWith("[") ? `${base}${segment}` : `${base}.${segment}`;
 }
 
 function samePrimitiveValue(a: unknown, b: unknown): boolean {

@@ -116,7 +116,7 @@ Historical docs may retain MCP history and are **not** migration blockers by the
 
 ### 6. No capability weakening
 
-- CLI exposes every registered tool allowed by `PI_BROWSER_TOOL_PROFILE`.
+- CLI exposes every registered tool. Later agent-native architecture work removed `PI_BROWSER_TOOL_PROFILE`; the current surface is 22 tools always-on.
 - No compact/minimal visibility mode and no `browser_tool_discovery` replacement.
 - No MCP compatibility shim remains after cutover.
 

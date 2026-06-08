@@ -3,10 +3,11 @@
  *
  * --json / non-TTY → print the distilled envelope text verbatim (for agents/
  * scripts). TTY → a compact human view (summary + nextActions + artifact +
- * diagnostics). Errors go to stderr with the recovery hint. Exit codes let
+ * diagnostics). Errors go to stderr with recovery hints/actions. Exit codes let
  * scripts branch.
  */
 import { isRecord } from "../src/utils/records.js";
+import type { CliJsonEnvelope } from "./envelope.js";
 
 export type RenderMode = "json" | "human";
 
@@ -40,6 +41,14 @@ function prettySummary(summary: unknown): string {
 		.join("\n");
 }
 
+function stringList(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function uniqueStrings(values: string[]): string[] {
+	return Array.from(new Set(values));
+}
+
 function renderHumanOk(text: string): number {
 	let env: unknown;
 	try { env = JSON.parse(text); } catch { process.stdout.write(`${text}\n`); return EXIT.ok; }
@@ -64,6 +73,14 @@ function renderHumanError(text: string): number {
 	process.stderr.write(`${red(`✗ ${code}`)} ${msg}\n`);
 	const recovery = isRecord(err.recovery) ? err.recovery : isRecord(root.recovery) ? root.recovery : undefined;
 	if (recovery && typeof recovery.hint === "string") process.stderr.write(`${dim(`  ↳ ${recovery.hint}`)}\n`);
+	const errDiagnostics = isRecord(err.diagnostics) ? err.diagnostics : undefined;
+	const rootDiagnostics = isRecord(root.diagnostics) ? root.diagnostics : undefined;
+	const nextActions = uniqueStrings([
+		...stringList(recovery?.nextActions),
+		...stringList(errDiagnostics?.nextActions),
+		...stringList(rootDiagnostics?.nextActions),
+	]).slice(0, 5);
+	if (nextActions.length) process.stderr.write(`${dim(`  ↳ next: ${nextActions.join(" | ")}`)}\n`);
 	return EXIT.toolError;
 }
 
@@ -83,52 +100,104 @@ function errorCode(env: Record<string, unknown>, fallback: string): string {
 	return fallback;
 }
 
-function cliActionFromText(action: string): Record<string, unknown> | undefined {
+function quoteCliArg(value: string): string {
+	return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function cliActionFromText(action: string, savedPath?: string): Record<string, unknown> | undefined {
 	const artifactJson = action.match(/read_saved_artifact\s+mode=json\s+jsonPath=([^\s]+)/);
-	if (artifactJson) return { kind: "artifact-read", command: `pi-browser artifact --mode json --json-path ${artifactJson[1]} --json`, source: action };
+	if (artifactJson && savedPath) return {
+		kind: "artifact-read",
+		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --mode json --json-path ${quoteCliArg(artifactJson[1])} --json`,
+		argv: ["pi-browser", "artifact", "--path", savedPath, "--mode", "json", "--json-path", artifactJson[1], "--json"],
+		source: action,
+	};
 	const artifactText = action.match(/read_saved_artifact\s+mode=text/);
-	if (artifactText) return { kind: "artifact-read", command: "pi-browser artifact --mode text --json", source: action };
+	if (artifactText && savedPath) return {
+		kind: "artifact-read",
+		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --mode text --json`,
+		argv: ["pi-browser", "artifact", "--path", savedPath, "--mode", "text", "--json"],
+		source: action,
+	};
+	const artifactOffset = action.match(/read_saved_artifact\s+offset=(\d+)/);
+	if (artifactOffset && savedPath) return {
+		kind: "artifact-read",
+		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --offset ${artifactOffset[1]} --json`,
+		argv: ["pi-browser", "artifact", "--path", savedPath, "--offset", artifactOffset[1], "--json"],
+		source: action,
+	};
 	const baseline = action.match(/baseline:"([^"]+)"|baseline=([0-9a-f-]{16,})/i);
-	if (baseline) return { kind: "observe-baseline", command: `pi-browser observe --mode scan --baseline-snapshot-id ${baseline[1] ?? baseline[2]} --json`, source: action };
+	if (baseline) {
+		const snapshotId = baseline[1] ?? baseline[2];
+		return {
+			kind: "observe-baseline",
+			command: `pi-browser observe --mode scan --baseline-snapshot-id ${snapshotId} --json`,
+			argv: ["pi-browser", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshotId, "--json"],
+			source: action,
+		};
+	}
 	return undefined;
+}
+
+const COMMON_ARTIFACT_JSON_PATHS = ["data.content", "data.actionables", "data.list_hints", "operation.operationId", "snapshot.snapshotId"] as const;
+
+function artifactReadCommand(path: string, jsonPath: string): Record<string, unknown> {
+	return {
+		kind: "artifact-read",
+		command: `pi-browser artifact --path ${quoteCliArg(path)} --mode json --json-path ${quoteCliArg(jsonPath)} --json`,
+		argv: ["pi-browser", "artifact", "--path", path, "--mode", "json", "--json-path", jsonPath, "--json"],
+		source: `saved.path:${jsonPath}`,
+	};
 }
 
 function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	const additions: Record<string, unknown> = {};
 	const saved = isRecord(env.saved) ? env.saved : undefined;
 	if (saved && typeof saved.path === "string") {
+		const savedPath = saved.path;
+		const readCommands = [
+			`pi-browser artifact --path ${quoteCliArg(savedPath)} --mode json --json-path data --json`,
+			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => String(artifactReadCommand(savedPath, jsonPath).command)),
+			`pi-browser artifact --path ${quoteCliArg(savedPath)} --mode search --query "<text>" --json`,
+		];
+		const readArgv = [
+			["pi-browser", "artifact", "--path", savedPath, "--mode", "json", "--json-path", "data", "--json"],
+			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => artifactReadCommand(savedPath, jsonPath).argv),
+			["pi-browser", "artifact", "--path", savedPath, "--mode", "search", "--query", "<text>", "--json"],
+		];
 		additions.artifacts = [{
-			path: saved.path,
+			path: savedPath,
 			kind: typeof env.tool === "string" ? env.tool : "browser-result",
 			...(typeof saved.bytes === "number" ? { bytes: saved.bytes } : {}),
 			...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
 			...(saved.privacy ? { privacy: saved.privacy } : {}),
-			readCommands: [
-				`pi-browser artifact --path "${saved.path}" --mode json --json-path data --json`,
-				`pi-browser artifact --path "${saved.path}" --mode search --query "<text>" --json`,
-			],
+			readCommands,
+			readArgv,
 		}];
 	}
 	const cliNextActions: Record<string, unknown>[] = [];
 	if (Array.isArray(env.nextActions)) {
 		for (const action of env.nextActions) {
 			if (typeof action !== "string") continue;
-			const cli = cliActionFromText(action);
+			const cli = cliActionFromText(action, typeof saved?.path === "string" ? saved.path : undefined);
 			if (cli) cliNextActions.push(cli);
 		}
 	}
 	if (saved && typeof saved.path === "string") {
 		cliNextActions.push({
 			kind: "artifact-read",
-			command: `pi-browser artifact --path "${saved.path}" --mode json --json-path data --json`,
+			command: `pi-browser artifact --path ${quoteCliArg(saved.path)} --mode json --json-path data --json`,
+			argv: ["pi-browser", "artifact", "--path", saved.path, "--mode", "json", "--json-path", "data", "--json"],
 			source: "saved.path",
 		});
+		for (const jsonPath of COMMON_ARTIFACT_JSON_PATHS) cliNextActions.push(artifactReadCommand(saved.path, jsonPath));
 	}
 	const snapshot = isRecord(env.snapshot) ? env.snapshot : undefined;
 	if (typeof snapshot?.snapshotId === "string") {
 		cliNextActions.push({
 			kind: "observe-baseline",
 			command: `pi-browser observe --mode scan --baseline-snapshot-id ${snapshot.snapshotId} --json`,
+			argv: ["pi-browser", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
 			source: "snapshot.snapshotId",
 		});
 	}
@@ -136,18 +205,13 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	return { ...env, ...additions };
 }
 
-export function normalizeJsonEnvelope(text: string, exitCode: number, fallbackCode: string): Record<string, unknown> {
+export function normalizeJsonEnvelope(text: string, exitCode: number, fallbackCode: string): CliJsonEnvelope {
 	const env = enrichForCli(parseJsonObject(text));
-	const ok = exitCode === EXIT.ok;
-	return {
-		...env,
-		ok: ok ? (env.ok === false ? false : true) : false,
-		exitCode,
-		...(ok ? {} : { code: errorCode(env, fallbackCode) }),
-	};
+	if (exitCode === EXIT.ok && env.ok !== false) return { ...env, ok: true, exitCode };
+	return { ...env, ok: false, exitCode, code: errorCode(env, fallbackCode) };
 }
 
-export function writeJsonEnvelope(envelope: Record<string, unknown>): void {
+export function writeJsonEnvelope(envelope: CliJsonEnvelope): void {
 	process.stdout.write(`${JSON.stringify(envelope)}\n`);
 }
 
@@ -211,7 +275,7 @@ export function renderUnavailableError(message: string, mode: RenderMode = "huma
 			diagnostics: {},
 			recovery: {
 				hint: "Check daemon and browser bridge readiness.",
-				commands: ["pi-browser daemon status --json", "pi-browser doctor --json"],
+				commands: ["pi-browser connect --wait --timeout-ms 15000 --json", "pi-browser status --json", "pi-browser doctor --json", "pi-browser daemon status --json"],
 			},
 		});
 		return EXIT.unavailable;

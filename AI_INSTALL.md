@@ -26,7 +26,7 @@ npm install
 - `PI_BROWSER_BRIDGE_PORT=18765`
 - `PI_BROWSER_BRIDGE_PORT_RANGE_END=18784`
 - 22 个 `browser_*` 工具默认全部注册；`PI_BROWSER_TOOL_PROFILE` 已下线，不再用于隐藏 Web Security 工具。
-- `PI_BROWSER_USAGE_LOG`（开发期临时用法日志，默认关）：设为 `1` 写入 `.pi/usage/usage-YYYYMMDD.jsonl`，或设为某个 `.jsonl` 路径写到指定文件；每个工具调用一行 JSON（tool/args/result/ms/bytes，args 默认脱敏）。`PI_BROWSER_USAGE_LOG_RAW=1` 关闭脱敏（不建议）。仅挂在 `on_log` 中间件钩子上、best-effort 写入，不影响工具行为。
+- `PI_BROWSER_USAGE_LOG`（开发期临时用法日志，默认关）：设为 `1` 写入 `.pi/usage/usage-YYYYMMDD.jsonl`，或设为某个 `.jsonl` 路径写到指定文件；每个工具调用一行 JSON（tool/args/result/ms/bytes/cli routing，args 默认脱敏）。CLI routing 会区分 `standard`、`natural`、`advancedCompatibility`、`nativeEscapeHatch`，用于观察 agent 是否仍回退 legacy `--action/--params`。`PI_BROWSER_USAGE_LOG_RAW=1` 关闭脱敏（不建议）。仅挂在 `on_log` 中间件钩子上、best-effort 写入，不影响工具行为。
 
 如需改端口：
 
@@ -166,7 +166,7 @@ npm run build:bridge
 npm pack --dry-run --json
 ```
 
-`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 dry-run 验证 `dist/service-worker.js`、`dist/offscreen.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内；干净安装不应依赖手工提前 build。
+`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 `npm pack --dry-run --ignore-scripts --json` 验证 `dist/service-worker.js`、`dist/offscreen.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内，不触发 `prepack` 重建；干净安装不应依赖手工提前 build。发布/安装包边界验证仍使用普通 `npm pack --dry-run --json`，会触发 `prepack` quiet build。
 
 本地发布包验收与回滚演练：
 

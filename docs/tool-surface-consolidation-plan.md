@@ -1,6 +1,6 @@
 # Browser Tool Surface Consolidation Plan
 
-> Status: COMPLETE — TODO 244-249 have all landed (observation-layer consolidation, execute/command split, recovery hints, bounded artifact multi-search, tool-level progress, explicit snapshots/operation metadata, Web Security capability profiles; the 247 streaming phase 2 is intentionally deferred). Per-section Status notes are below; the currently callable tool surface is authoritative in the generated docs.
+> Status: COMPLETE / HISTORICAL — TODO 244-249 have all landed (observation-layer consolidation, execute/command split, recovery hints, bounded artifact multi-search, tool-level progress, explicit snapshots/operation metadata, and the original Web Security exposure-boundary decision; the 247 streaming phase 2 is intentionally deferred). Later agent-native architecture work removed the Web Security capability profile entirely: the current callable surface is 22 tools always-on, authoritative in the generated docs.
 
 ## Decision source
 
@@ -21,7 +21,7 @@ OMO discussion references:
 - Recoverable Diagnostics: failures include structured error facts, target/session state, limits, recovery hints, and artifact paths.
 - Evidence First: large, sensitive, partial, or streaming data is persisted as local artifacts and read with bounded artifact tools.
 - No Silent Fallback: no cache hit, selector fallback, target fallback, reconnect, or retry may hide its basis.
-- No Capability Weakening: Web security tools remain available through explicit configuration/profile choices; no risk-tier gate or hidden task classifier decides capability.
+- No Capability Weakening: Web security tools remain available as explicit scoped follow-up tools; no capability profile, risk-tier gate, or hidden task classifier decides capability.
 
 ## Final decision matrix
 
@@ -29,7 +29,7 @@ OMO discussion references:
 |---|---|---|
 | Observation consolidation | Accept | Add `browser_observe` as the planned canonical observation tool. Migrate `browser_scan`, `browser_content`, and `browser_html` into implementation wrappers, then remove them after the compatibility window. |
 | Execute/command split | Accept via RFC | Add `browser_command` as the planned bridge-command-only surface. Make `browser_execute` JavaScript-only after migration. Remove JSON-string command promotion from tool-level behavior. |
-| Web security exposure tiers | Modify | Keep all security capabilities in the same package. Registration may become explicitly profile/config-driven, never task/risk-classifier-driven. Disabled state must be visible and recoverable. |
+| Web security exposure tiers | Superseded | Keep all security capabilities in the same package. Later B1 removed capability profiles; current behavior is 22 tools always-on, with Web Security identified only by group metadata. |
 | Progress / streaming | Modify | Start with Pi tool-level progress via `_onUpdate` and final artifact-backed envelopes. Add WebSocket stream semantics only after result/finalization/redaction contracts are frozen. |
 | Tab content cache | Modify, default-off | No transparent cache. Only explicit snapshot/artifact-backed cache with target/version metadata, visible cacheHit state, and fail-closed stale handling. |
 | Artifact multi-search | Accept | Extend `browser_artifact` with bounded multi-artifact search using explicit `paths` or constrained artifact root/glob, max files/bytes/matches, streaming reads, and default redaction. |
@@ -259,29 +259,28 @@ Exit criteria:
 - Repeated observations can reuse explicit artifact-backed snapshots without hiding stale state.
 - Existing explicit `tabId` workflow remains the default.
 
-### TODO 249: Explicit Web Security capability profiles
+### TODO 249: Web Security exposure boundary
 
-Status: completed. `PI_BROWSER_TOOL_PROFILE` now controls whether Web Security follow-up tools remain visible.
+Status: completed, then superseded by agent-native architecture B1. `PI_BROWSER_TOOL_PROFILE` no longer exists; Web Security follow-up tools are always registered as part of the 22-tool surface. Group metadata is organizational only.
 
 Goal: reduce daily tool surface only through visible explicit configuration, without weakening capabilities.
 
 Scope:
 
-- Keep all 12 Web Security tools in this package.
-- Optional registration tiers may be introduced only as explicit Pi extension config/profile, not browser page policy, target risk, or LLM task classifier.
-- Disabled state must be discoverable via status/diagnostics and docs must show how to enable before security work.
-- CTF/security profiles may enable security tools by default.
+- Keep all Web Security tools in this package.
+- Do not hide Web Security by prompt, page policy, target risk, LLM task classifier, capability profile, or compact mode.
+- Generated docs and CLI discovery document every registered tool as currently callable.
 
 Verification:
 
-- Contract tests for both core-only and security-enabled registration profiles.
-- Generated docs distinguish always-on and optional profile tools without documenting disabled tools as currently callable.
-- Skill text must state profile requirement only after implementation exists.
+- Contract tests assert all 22 tools are registered and CLI parity exposes them.
+- Generated docs distinguish core/security groups as metadata only, not enablement tiers.
+- Skill text must state Web Security tools are first-class and exposed by default.
 
 Exit criteria:
 
-- Daily automation can use a smaller visible tool surface when configured.
 - Security users get the full explicit tool set with no hidden gating or capability shrinkage.
+- Daily automation sees the same public surface; agents use skill guidance, command groups, and natural CLI routes rather than profile-based hiding.
 
 ## Documentation synchronization policy
 
