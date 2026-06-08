@@ -38,9 +38,10 @@ mess is concentrated, not systemic.
   (correct one-way layering), and ABML's `abml-core`/`abml` boundary (CI-locked single-direction).
 - **The 3 real hotspots:** (1) the tool parameter surface (mechanical params not internalized); (2) the
   observe glue (`observeRunners.ts` 783-line god-file + `summaries/scan.ts` side effects); (3) ABML
-  dead weight + the `templating` coupling knot. (A fourth candidate — the zod/typebox "double
-  validation stack" — was re-classified as an **intentional two-layer design**, not a defect: typebox
-  guards top-level params, zod guards complex nested objects, per README. See the maintainer track.)
+  dead weight + the `templating` coupling knot. The former zod/typebox double validation stack has
+  since been collapsed to a TypeBox-compatible local validation wrapper for nested objects; the
+  remaining boundary is top-level public schema vs nested runtime validation, not two schema
+  libraries.
 
 The redesign is **targeted refactor, not rewrite.**
 
@@ -286,11 +287,10 @@ Agent-invisible. Does not block Workstream A. Only the cheap, isolated ABML dead
   (`actionabilityModel`, `verbs/{click,type,scroll}`, runtime action half) can be removed. Start only
   with its own contract when maintenance cost justifies the risk.
 - **Envelope field consolidation** — the ~25-field `DistilledEnvelope` + budget-compression overload.
-- **Validation stack — NOT a collapse item (corrected 2026-06-07).** The zod (`src/validation/`) /
-  typebox split is **intentional** (per README): TypeBox + framework `Value.Check` guards top-level
-  tool params; Zod `validateOptionalParams()` guards complex nested objects. Keep both layers; do NOT
-  migrate complex schemas back to TypeBox. The work (if any) is documenting the boundary
-  (typebox = top-level, zod = complex), not collapsing it.
+- **Validation stack — collapsed at library level (2026-06-08).** Top-level public tool parameters
+  remain TypeBox schemas consumed by the Pi framework and CLI discovery. Nested runtime validation
+  now uses `src/validation/typeboxCompat.ts`, preserving the local `.safeParse()` contract without
+  carrying a separate Zod runtime dependency.
 - **`observeRunners.ts` split** — extract `observe/{baseline,causal,scan,content,html}.ts`; glue only
   dispatches. (Behavior-preserving; can be done anytime.)
 

@@ -18,7 +18,7 @@ import path from "node:path";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { daemonVersion, packageRoot } from "./packageInfo.js";
+import { packageRoot, DAEMON_PROTOCOL_VERSION } from "./packageInfo.js";
 
 export interface DaemonInfo {
 	pid: number;
@@ -127,7 +127,12 @@ function tryAcquireStartLock(): { release: () => void } | undefined {
 }
 
 export function isDaemonVersionCurrent(info: Pick<DaemonInfo, "version">): boolean {
-	return info.version === daemonVersion();
+	return daemonProtocolVersion(info.version) === DAEMON_PROTOCOL_VERSION;
+}
+
+function daemonProtocolVersion(version: string): string | undefined {
+	const match = /\+daemon\.(\d+)$/.exec(version);
+	return match?.[1];
 }
 
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but is not ours. */

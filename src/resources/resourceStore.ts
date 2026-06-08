@@ -21,6 +21,9 @@ import { computeContentHash, computeEtag, isFreshEtag } from "./resourceFreshnes
 export const RESOURCE_URI_SCHEME = "browser-result";
 export const PI_REF_URI_SCHEME = "pi-ref";
 const TTL_MS = 60 * 60 * 1000; // 1 hour
+export const RESOURCE_STORE_MAX_ENTRIES = 10_000;
+export const REF_STORE_MAX_ENTRIES = 10_000;
+const PRUNE_EXPIRED_EVERY_REGISTRATIONS = 128;
 
 /**
  * True if the artifact on disk still matches the etag recorded at registration.
@@ -91,6 +94,7 @@ export type ResolveRefResult =
 
 const resourceStore = new Map<string, BrowserResultResource>();
 const refStore = new Map<string, RegisteredRefRecord>();
+let registrationsSincePrune = 0;
 
 /** Construct the opaque URI for a given resource id. */
 function makeUri(id: string): string {
@@ -258,7 +262,7 @@ export function registerBrowserResultResource(params: {
 	browserSessionId?: string;
 	redaction?: "default" | "disabled";
 }): string {
-	pruneExpired();
+	pruneExpiredAmortized();
 	const id = randomUUID();
 	const uri = makeUri(id);
 	const now = Date.now();
@@ -285,6 +289,7 @@ export function registerBrowserResultResource(params: {
 		description: params.description,
 	};
 	resourceStore.set(id, resource);
+	enforceMaxEntries(resourceStore, RESOURCE_STORE_MAX_ENTRIES, (item) => item.createdAt);
 	return uri;
 }
 
@@ -303,7 +308,7 @@ export function registerRefDescriptor(params: {
 	immutable?: boolean;
 	browserSessionId?: string;
 }): string {
-	pruneExpired();
+	pruneExpiredAmortized();
 	const refId = params.descriptor.refId || stableRefIdForDescriptor(params.descriptor) || makePiRefUri(params.descriptor.kind, randomUUID());
 	const parsed = parsePiRefUri(refId);
 	if (!parsed) throw new Error(`Invalid pi-ref URI: ${refId}`);
@@ -331,6 +336,7 @@ export function registerRefDescriptor(params: {
 		expiresAt: descriptor.createdAt + descriptor.ttlMs,
 		browserSessionId: params.browserSessionId ?? descriptor.owner.browserSessionId,
 	});
+	enforceMaxEntries(refStore, REF_STORE_MAX_ENTRIES, (item) => item.createdAt);
 	return refId;
 }
 
@@ -377,10 +383,33 @@ export function pruneExpired(): void {
 	for (const [id, record] of refStore) {
 		if (now > record.descriptor.createdAt + record.descriptor.ttlMs) refStore.delete(id);
 	}
+	registrationsSincePrune = 0;
 }
 
 /** Clear all resources and refs (e.g., on server shutdown). */
 export function clearResourceStore(): void {
 	resourceStore.clear();
 	refStore.clear();
+	registrationsSincePrune = 0;
+}
+
+function pruneExpiredAmortized(): void {
+	registrationsSincePrune += 1;
+	if (registrationsSincePrune >= PRUNE_EXPIRED_EVERY_REGISTRATIONS) pruneExpired();
+}
+
+function enforceMaxEntries<T>(store: Map<string, T>, maxEntries: number, createdAt: (item: T) => number): void {
+	while (store.size > maxEntries) {
+		let oldestId: string | undefined;
+		let oldestCreatedAt = Infinity;
+		for (const [id, item] of store) {
+			const itemCreatedAt = createdAt(item);
+			if (itemCreatedAt < oldestCreatedAt) {
+				oldestCreatedAt = itemCreatedAt;
+				oldestId = id;
+			}
+		}
+		if (!oldestId) return;
+		store.delete(oldestId);
+	}
 }

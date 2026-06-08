@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { redactSensitiveText, redactSensitiveValue, redactSensitiveValueWithPointers, containsSensitiveEvidence } from "../../../src/utils/redaction.ts";
+import { stableJson } from "../../../src/utils/json.ts";
 
 // ── redactSensitiveText ──────────────────────────────────────────────────────
 
@@ -126,4 +127,21 @@ test("containsSensitiveEvidence returns true for string with Bearer token", () =
 
 test("containsSensitiveEvidence returns false for plain text", () => {
 	assert.equal(containsSensitiveEvidence("hello world"), false);
+});
+
+test("containsSensitiveEvidence matches redact-then-compare oracle", () => {
+	const circular: Record<string, unknown> = { safe: "ok" };
+	circular.self = circular;
+	const cases = [
+		{ password: "secret", username: "alice" },
+		{ response: { payload: { text: "raw body" } } },
+		{ url: "https://example.test/search?q=%E4%BD%A0%E5%A5%BD+world" },
+		{ nested: [{ headers: { authorization: "Bearer tok" } }] },
+		{ url: "https://example.test/", status: 200 },
+		circular,
+	];
+	for (const item of cases) {
+		const expected = stableJson(item) !== stableJson(redactSensitiveValue(item));
+		assert.equal(containsSensitiveEvidence(item), expected);
+	}
 });

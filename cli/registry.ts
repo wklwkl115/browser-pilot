@@ -23,6 +23,8 @@ export type CliCommand = {
 // the server is used lazily inside execute), so a placeholder is safe here.
 const placeholderServer = {} as unknown as BrowserBridgeServer;
 const noopEnsureStarted = async () => placeholderServer;
+let cachedToolDefs: ToolDefinition[] | undefined;
+let cachedCliCommands: CliCommand[] | undefined;
 
 export function toSubcommand(toolName: string): string {
 	return toolName.replace(/^browser_/, "").replace(/_/g, "-");
@@ -34,14 +36,17 @@ export function fromSubcommand(subcommand: string): string {
 
 /** Collect all registered tool definitions. */
 export function collectToolDefs(): ToolDefinition[] {
+	if (cachedToolDefs) return cachedToolDefs;
 	const adapter = new ToolCollectingAdapter();
 	registerBrowserTools(adapter, placeholderServer, noopEnsureStarted);
-	return adapter.getTools();
+	cachedToolDefs = adapter.getTools();
+	return cachedToolDefs;
 }
 
 /** Build the CLI command list (one per registered tool). */
 export function buildCliCommands(): CliCommand[] {
-	return collectToolDefs()
+	if (cachedCliCommands) return cachedCliCommands;
+	cachedCliCommands = collectToolDefs()
 		.map((def) => ({
 			name: def.name,
 			subcommand: toSubcommand(def.name),
@@ -50,4 +55,5 @@ export function buildCliCommands(): CliCommand[] {
 			def,
 		}))
 		.sort((a, b) => a.subcommand.localeCompare(b.subcommand));
+	return cachedCliCommands;
 }

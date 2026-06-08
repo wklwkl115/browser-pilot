@@ -39,6 +39,7 @@ export class BrowserBridgeServer {
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private readonly commandService: BrowserBridgeCommandService;
 	private readonly clientMessageService: BrowserBridgeClientMessageService;
+	private readonly extensionReadyWaiters = new Set<() => void>();
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -80,6 +81,7 @@ export class BrowserBridgeServer {
 			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			leases: this.leases,
 			logLeaseCleanup: (details) => this.logLeaseCleanup(details),
+			notifyExtensionReady: () => this.notifyExtensionReady(),
 		});
 		this.heartbeat = new BrowserBridgeClientHeartbeat(this.clients, (ws) => this.unregisterClient(ws), { onTick: (now) => this.sweepLeases(now) });
 		this.httpEndpoint = new BrowserBridgeHttpServer(this.host, this.requestedPort, (ws) => this.registerClient(ws), { portRangeEnd: this.portRangeEnd });
@@ -206,11 +208,21 @@ export class BrowserBridgeServer {
 	 * MV3 service worker dial in before a command fails with NO_BROWSER_EXTENSION.
 	 */
 	async waitForExtensionReady(browserSessionId: string | undefined, timeoutMs: number): Promise<boolean> {
-		const deadline = Date.now() + Math.max(0, Math.floor(timeoutMs));
-		while (Date.now() <= deadline) {
-			if (this.snapshot({ browserSessionId }).extensionConnected) return true;
-			await delay(100);
-		}
+		const waitMs = Math.max(0, Math.floor(timeoutMs));
+		if (this.snapshot({ browserSessionId }).extensionConnected) return true;
+		if (waitMs <= 0) return false;
+		await new Promise<void>((resolve) => {
+			let settled = false;
+			const finish = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				this.extensionReadyWaiters.delete(finish);
+				resolve();
+			};
+			const timer = setTimeout(finish, waitMs);
+			this.extensionReadyWaiters.add(finish);
+		});
 		return this.snapshot({ browserSessionId }).extensionConnected;
 	}
 
@@ -305,6 +317,10 @@ export class BrowserBridgeServer {
 
 	private unregisterClient(ws: WebSocket): void {
 		this.clientMessageService.unregisterClient(ws);
+	}
+
+	private notifyExtensionReady(): void {
+		for (const resolve of Array.from(this.extensionReadyWaiters)) resolve();
 	}
 
 	private sweepLeases(now: number): void {

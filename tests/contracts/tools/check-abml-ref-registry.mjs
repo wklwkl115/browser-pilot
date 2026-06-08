@@ -34,6 +34,7 @@ const {
 	resolveRefUriDetailed,
 	parsePiRefUri,
 	clearResourceStore,
+	REF_STORE_MAX_ENTRIES,
 } = await import(new URL("../../../src/resources/resourceStore.ts", import.meta.url).href);
 
 const dir = mkdtempSync(path.join(tmpdir(), "abml-ref-registry-"));
@@ -104,6 +105,48 @@ const staleRef = registerRefDescriptor({
 const staleResolved = resolveRefUriDetailed(staleRef);
 assert(!staleResolved.ok, "expired pi-ref must not resolve");
 assert.equal(staleResolved.code, "REF_STALE", "expired pi-ref must fail with REF_STALE");
+
+// 4. Burst registration is bounded by a size cap; oldest live refs are evicted first.
+clearResourceStore();
+const capNow = Date.now();
+const oldLiveRef = registerRefDescriptor({
+	descriptor: {
+		kind: "data-slice",
+		locators: [],
+		owner: {},
+		policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
+		snapshot: { observationId: "obs-old", immutable: true },
+		observationId: "obs-old",
+		createdAt: capNow,
+		ttlMs: 60_000_000,
+	},
+	artifactPath,
+	resourceKind: "http-request",
+	name: "old live ref",
+});
+let newestRef = "";
+for (let i = 0; i < REF_STORE_MAX_ENTRIES; i += 1) {
+	newestRef = registerRefDescriptor({
+		descriptor: {
+			kind: "data-slice",
+			locators: [],
+			owner: {},
+			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
+			snapshot: { observationId: `obs-cap-${i}`, immutable: true },
+			observationId: `obs-cap-${i}`,
+			createdAt: capNow + 1 + i,
+			ttlMs: 60_000_000,
+		},
+		artifactPath,
+		resourceKind: "http-request",
+		name: `cap ref ${i}`,
+	});
+}
+const oldLiveResolved = resolveRefUriDetailed(oldLiveRef);
+assert(!oldLiveResolved.ok, "oldest live pi-ref must be evicted when the ref store exceeds its cap");
+assert.equal(oldLiveResolved.code, "HANDLE_NOT_FOUND", "capacity-evicted live pi-ref must use the documented not-found recovery path");
+const newestResolved = resolveRefUriDetailed(newestRef);
+assert(newestResolved.ok, "newest pi-ref must remain resolvable after capacity enforcement");
 
 clearResourceStore();
 console.log("abml ref registry ok");

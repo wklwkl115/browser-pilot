@@ -255,10 +255,10 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const builtByKey = new Map<string, BuiltEntity>();
 	const builtNodeByKey = new Map<string, Record<string, unknown>>();
 	const propertyAnchors: RelationAnchor[] = [];
-	for (const node of nodes) {
-		if (!isInterestingAxNode(node)) continue;
+	const interestingNodes = nodes.filter(isInterestingAxNode);
+	const geometryByNode = new Map<Record<string, unknown>, ReturnType<typeof boxModelToGeometry> | undefined>();
+	await Promise.all(interestingNodes.map(async (node) => {
 		const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
-		let geometry: ReturnType<typeof boxModelToGeometry> | undefined;
 		if (Number.isFinite(backendNodeId) && backendNodeId > 0) {
 			try {
 				const box = await sendPersistentCdp(server, {
@@ -268,12 +268,14 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 					cdpMethod: "DOM.getBoxModel",
 					params: { backendNodeId },
 				});
-				geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
+				geometryByNode.set(node, boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data)));
 			} catch {
-				geometry = undefined;
+				geometryByNode.set(node, undefined);
 			}
 		}
-		const built = buildAxEntityFromNode(node, context, geometry);
+	}));
+	for (const node of interestingNodes) {
+		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node));
 		const container = nearestContainer(node, parentByChildId);
 		if (container) built.entity.hints = { ...(built.entity.hints || {}), containerRole: container.role, ...(container.name ? { containerName: container.name } : {}) };
 		out.push(built);

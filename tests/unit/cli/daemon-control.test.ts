@@ -72,7 +72,9 @@ test("readLockfile rejects malformed content", withTempStateDir(() => {
 
 test("daemon version helper identifies stale lockfiles", () => {
 	assert.equal(isDaemonVersionCurrent(sampleInfo()), true);
+	assert.equal(isDaemonVersionCurrent(sampleInfo({ version: "9.9.9+daemon.4" })), true, "same daemon protocol stays compatible across package version changes");
 	assert.equal(isDaemonVersionCurrent(sampleInfo({ version: "0.0.0+daemon.0" })), false);
+	assert.equal(isDaemonVersionCurrent(sampleInfo({ version: "0.3.0+daemon.5" })), false);
 });
 
 test("resolveDaemonStartCommand runs the source tree via tsx and stays single-process where supported", () => {

@@ -33,12 +33,12 @@ const registerSqli = read("src/tools/webSecurity/register/registerSqli.ts");
 assert(registerSqli.includes("probeTypes: sqliProbeTypesParam("), "browser_sqli probeTypes must be a strict enum-or-array param");
 assert(registerSqli.includes("payloadMode: enumParam([\"append\", \"replace\"]"), "browser_sqli payloadMode must be a strict enum");
 assert(registerSqli.includes("locations: fuzzLocationParam("), "browser_sqli locations must be a strict enum-or-array param");
-assert(registerSqli.includes("validateOptionalParams(HttpRequestSchema, current.request)") && registerSqli.includes("validateOptionalParams(FuzzMutationsSchema, current.mutations)"), "browser_sqli must validate request and mutations through existing Zod schemas");
+assert(registerSqli.includes("validateOptionalParams(HttpRequestSchema, current.request)") && registerSqli.includes("validateOptionalParams(FuzzMutationsSchema, current.mutations)"), "browser_sqli must validate request and mutations through existing nested validation schemas");
 
 const registerCrawl = read("src/tools/webSecurity/register/registerCrawl.ts");
 assert(registerCrawl.includes("knownFiles: enumParam([\"none\", \"robotstxt\", \"sitemapxml\", \"all\"]"), "browser_crawl knownFiles must be a strict enum");
 assert.equal(registerCrawl.includes("defaultScheme: webSecurityDefaultSchemeParam("), false, "browser_crawl defaultScheme is mechanical and must not be advertised");
-assert.equal(registerCrawl.includes("validateOptionalParams("), false, "browser_crawl should not invent complex-object Zod validation when no real gap exists");
+assert.equal(registerCrawl.includes("validateOptionalParams("), false, "browser_crawl should not invent complex-object nested validation when no real gap exists");
 
 const registerTemplate = read("src/tools/webSecurity/register/registerTemplate.ts");
 const registerHttpReplay = read("src/tools/webSecurity/register/registerHttpReplay.ts");

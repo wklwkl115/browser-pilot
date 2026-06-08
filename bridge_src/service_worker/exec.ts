@@ -4,6 +4,13 @@ import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentPiBrowserResponse, piBrowserPersistentCdp } from "./runtime";
 import type { JsonRecord, PiChromeTab, PiWebSocketLike } from "./types";
 
+const NEW_TAB_OBSERVE_WAIT_MS = 50;
+
+function mayOpenNewTab(code: unknown): boolean {
+  if (typeof code !== "string") return false;
+  return /\bwindow\s*\.\s*open\s*\(|\bopen\s*\(|target\s*=\s*['"]_blank['"]|\.target\s*=\s*['"]_blank['"]|rel\s*=\s*['"][^'"]*\bnoopener\b/i.test(code);
+}
+
 function buildExecScript(code: unknown, errorHandler: string): string {
   return `(async () => {
     function smartProcessResult(result) {
@@ -236,7 +243,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)) } };
       }
     }
-    if (newTabIds.size === 0) await new Promise(r => setTimeout(r, 200));
+    if (newTabIds.size === 0 && mayOpenNewTab(data.code)) await new Promise(r => setTimeout(r, NEW_TAB_OBSERVE_WAIT_MS));
     chrome.tabs.onCreated.removeListener(onCreated);
     const newTabs: JsonRecord[] = [];
     for (const id of newTabIds) {

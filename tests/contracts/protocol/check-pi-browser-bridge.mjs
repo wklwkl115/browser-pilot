@@ -239,6 +239,8 @@ assert(transport.includes("isExpectedOffscreenTransientError") && transport.incl
 assert(transport.includes("runTransportTask") && !transport.includes("void probeAndConnectWS(true)") && !transport.includes(".then(syncOpenPorts)"), "service-worker transport fire-and-forget probes must be wrapped so offscreen startup races do not create unhandled promises");
 assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own real WebSocket sockets or keep itself warm with intervals");
 assert(offscreenTransport.includes("sockets.set(port, socket)") && offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own real WebSocket sockets and forward inbound frames");
+assert(offscreenTransport.includes("PORT_PROBE_TIMEOUT_MS = 500"), "offscreen transport port probe must use a bounded loopback timeout");
+assert(offscreenTransport.includes("Promise.all(candidates.map"), "offscreen transport must probe bridge port candidates concurrently");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
 assert(scheduleProbeBlock.includes("chrome.alarms.create(\"pi-browser-ws-probe\""), "service-worker transport scheduleProbe must use the single named Chrome alarm for offscreen recovery probes");
 assert(!scheduleProbeBlock.includes("setTimeout("), "transport scheduleProbe must not create untracked setTimeout probe timers");
@@ -273,6 +275,10 @@ assert(hookBridge.includes("const explicitTab = msg && (msg.tabId !== undefined 
 assert(evidenceBridge.includes("callPagePiBrowser(tabId, 'hook.status'") && evidenceBridge.includes("callPagePiBrowser(tabId, 'hook.collect'"), "evidence hook collection must preserve read-only no-reinstall semantics");
 assert(networkBridge.includes("function cleanupNetworkRecorderTab(tabId, reason)") && networkBridge.includes("cleanupNetworkRecorder(recorder, reason || 'tab_cleanup', { keepBuffer:false })") && networkBridge.includes("piBrowserNetworkRecorders.delete(recorder.key)"), "network cleanup must stop and delete tab-scoped recorders on tab removal");
 const interceptBridge = readBridgeRuntimeFile("intercept.js");
+const networkSource = read("bridge_src/service_worker/network.ts");
+const interceptSource = read("bridge_src/service_worker/intercept.ts");
+assert(networkSource.includes("NETWORK_DIAGNOSTICS_MAX = 100") && networkSource.includes("appendBounded(recorder.diagnostics"), "network recorder diagnostics must be write-capped instead of growing unbounded");
+assert(interceptSource.includes("INTERCEPT_PAUSED_MAX = 500") && interceptSource.includes("trimPausedRequests(session, tabId)") && interceptSource.includes('"Fetch.continueRequest"') && interceptSource.includes("overflow_continue"), "intercept paused request buffer must cap overflow and auto-continue the oldest request");
 assert(interceptBridge.includes("normalizeInterceptRequestPatch") && interceptBridge.includes('"Fetch.continueRequest"') && interceptBridge.includes("mutationSummary") && !interceptBridge.includes("{ requestId, ...patch }"), "intercept continue path must normalize request mutation before Fetch.continueRequest and report mutationSummary instead of splatting raw patch");
 assert(interceptBridge.includes("session.stages.map") && interceptBridge.includes('requestStage: stage === "response" ? "Response" : "Request"'), "intercept install must support bounded request/response stage selection when enabling Fetch interception patterns");
 assert(networkBridge.includes("return getNetworkRecorder(tabId, sessionId);") && !networkBridge.includes("sessionId !== 'default' ? getNetworkRecorder(tabId, 'default')"), "network recorder lookup must not fall back from explicit sessionId to default");
@@ -560,6 +566,10 @@ async function testOffscreenTransportLifecycle() {
 	const runtimeMessages = [];
 	let runtimeListener;
 	const timers = [];
+	const timerDelays = [];
+	const fetchedPorts = [];
+	let activeFetches = 0;
+	let maxActiveFetches = 0;
 	class FakeWebSocket {
 		static CONNECTING = 0;
 		static OPEN = 1;
@@ -582,12 +592,20 @@ async function testOffscreenTransportLifecycle() {
 		WebSocket: FakeWebSocket,
 		AbortController,
 		console: { log() {}, warn() {}, debug() {}, error() {} },
-		fetch: async () => ({}),
+		fetch: async (url) => {
+			fetchedPorts.push(Number(String(url).match(/:(\d+)/)?.[1]));
+			activeFetches += 1;
+			maxActiveFetches = Math.max(maxActiveFetches, activeFetches);
+			await Promise.resolve();
+			activeFetches -= 1;
+			return {};
+		},
 		Math,
 		JSON,
 		setTimeout(callback, delay, ...args) {
 			const handle = { callback, delay, args };
 			timers.push(handle);
+			timerDelays.push(delay);
 			return handle;
 		},
 		clearTimeout(handle) {
@@ -606,6 +624,9 @@ async function testOffscreenTransportLifecycle() {
 	};
 	vm.runInNewContext(offscreenTransport, sandbox, { filename: "offscreen-transport.js" });
 	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(fetchedPorts[0] === 18765, "offscreen transport must probe the primary bridge port first");
+	assert(maxActiveFetches > 1, "offscreen transport must probe bridge ports concurrently instead of serially");
+	assert(timerDelays.some((delay) => delay === 500), "offscreen transport must cap each loopback port probe at 500ms");
 	assert(sockets.length === 2, "offscreen transport must create sockets for every live bridge server in the configured port range");
 	assert(sockets.map((socket) => socket.url).join(" ").includes("18765") && sockets.map((socket) => socket.url).join(" ").includes("18766"), "offscreen sockets must target distinct bridge ports");
 	for (const socket of sockets) {
@@ -1416,6 +1437,7 @@ async function testExecHangingScriptFallsBackToCdpWithinBudget() {
 	const execSource = read("bridge_src/service_worker/exec.ts");
 	assert(!/console\.(?:log|debug|warn|error)\s*\(/.test(execBridge), "exec.js must return structured result/error frames instead of writing page execution details to Chrome stderr");
 	assert(execSource.includes("await (0, eval)(s)") && !execSource.includes("await eval(s)"), "executeScript wrapper must use indirect eval so esbuild does not treat the service-worker bundle as direct-eval scoped");
+	assert(execSource.includes("NEW_TAB_OBSERVE_WAIT_MS = 50") && execSource.includes("mayOpenNewTab(data.code)") && !execSource.includes("setTimeout(r, 200)"), "browser_execute must avoid the unconditional 200ms post-eval sleep while preserving a short new-tab observation window");
 	const sent = [];
 	let cdpSendArgs;
 	const sandbox = {
@@ -1458,6 +1480,45 @@ async function testExecHangingScriptFallsBackToCdpWithinBudget() {
 }
 
 await testExecHangingScriptFallsBackToCdpWithinBudget();
+
+async function testExecPostEvalWaitOnlyForLikelyNewTabs() {
+	const execBridge = readBridgeRuntimeFile("exec.js");
+	const sent = [];
+	const timerDelays = [];
+	const sandbox = {
+		chrome: {
+			scripting: { async executeScript() { return [{ result: { ok: true, data: "done" } }]; } },
+			tabs: { onCreated: { addListener() {}, removeListener() {} }, async get() { return {}; }, async update() {}, async create() { return {}; } },
+		},
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => undefined,
+		socket: { send(text) { sent.push(JSON.parse(text)); } },
+		console,
+		setTimeout(callback, delay, ...args) {
+			timerDelays.push(delay);
+			if (delay === 50) queueMicrotask(() => callback(...args));
+			return { delay };
+		},
+		clearTimeout() {},
+		queueMicrotask,
+		Promise,
+		URL,
+		JSON,
+		Number,
+		Math,
+		Array,
+		Object,
+		String,
+	};
+	vm.runInNewContext(`${execBridge}\nglobalThis.handleWsExec = handleWsExec;`, sandbox, { filename: "exec.js" });
+	await sandbox.handleWsExec({ id: "plain", tabId: 7, code: "1+1", timeoutMs: 1_000 }, sandbox.socket);
+	assert(!timerDelays.includes(50), "plain browser_execute scripts must not pay the new-tab observation wait");
+	await sandbox.handleWsExec({ id: "new-tab", tabId: 7, code: "window.open('about:blank'); 1", timeoutMs: 1_000 }, sandbox.socket);
+	assert(timerDelays.includes(50), "likely tab-opening browser_execute scripts must keep the bounded 50ms observation wait");
+	assert(sent.some((frame) => frame.type === "result" && frame.id === "plain") && sent.some((frame) => frame.type === "result" && frame.id === "new-tab"), "exec post-eval wait test must still complete both command results");
+}
+
+await testExecPostEvalWaitOnlyForLikelyNewTabs();
 
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");

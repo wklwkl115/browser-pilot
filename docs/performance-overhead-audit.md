@@ -10,6 +10,77 @@ directly during the verification pass; **[corrected]** marks a first-pass suspic
 did NOT reproduce. Per the project's eval-driven / no-overfit rules, contract-changing
 items (T3) require blind-eval evidence before landing.
 
+## Current Execution State
+
+Status: **active execution queue**. This document is both the audit record and the runnable TODO for
+performance work.
+
+Latest acceptance evidence (2026-06-08):
+- Subagent acceptance pass ran read-only performance gates and live smoke. After rebuilding stale
+  `dist/`, local re-measurement of the actual user entrypoint shows
+  `node dist/cli/bin.js --help` succeeds with six-run median **~56 ms**
+  (`56.4,54.9,53.9,129.9,52.3,57.4` ms after one warm-up) while the internal dispatcher entry
+  `node dist/cli/index.js --help` still costs **~315 ms**. Dev/tsx measurements remain loader
+  dominated but show the same direction: `tsx cli/bin.ts --help` median **~389 ms** vs
+  `tsx cli/index.ts --help` median **~799 ms**.
+- `npm run verify:bridge:dist`, `npm run check:summaries`, `npm run check:token-economy`, and
+  `npm run smoke:browser:scan-summary` passed. Latest smoke result:
+  `.pi/browser-artifacts/smoke-browser-scan-summary-results.json`; saved scan artifact:
+  `.pi/browser-artifacts/scan-summary-smoke-scan-1780923497331.json`.
+
+Completed in the current landing passes:
+- [x] 0.1 option (a): service-worker/offscreen whitespace minify with identifier names preserved;
+  dist contract now enforces a service-worker size budget (current service-worker: 399,864 bytes).
+- [x] 0.2: AX per-node `DOM.getBoxModel` calls are issued concurrently.
+- [x] 0.3 partial: network/hook seq reads are issued concurrently with `Promise.all`; skip/batch
+  optimization remains deferred until a cheap armed-recorder state source exists.
+- [x] 0.4: `containsSensitiveEvidence` now short-circuits with a first-hit predicate and has a
+  redact-then-compare oracle regression.
+- [x] 0.5: CLI JSON render parses the tool envelope once in `renderResult`.
+- [x] 0.6 partial: network recorder diagnostics are write-capped; intercept paused requests are
+  capped with oldest-request auto-continue on overflow.
+- [x] 1.1 default path: `browser_observe mode=scan` reuses the first `scan_extract` payload for ABML
+  structure reads when it is already the ABML-safe superset, eliminating the second DOM scan eval.
+- [x] 1.2 partial: `browser_execute` no longer pays an unconditional 200ms post-eval sleep; only
+  likely tab-opening scripts keep a bounded 50ms observation window.
+- [x] 1.3: `buildCliCommands()` / tool definition collection are memoized, and the actual CLI bin
+  entrypoint handles top-level `--help` through a lightweight dynamic import before loading the
+  dispatcher / registry graph.
+- [x] 1.4: nested validation moved from `zod` to the local TypeBox-compatible schema wrapper;
+  `zod` is removed from runtime dependencies while preserving the `.safeParse()` contract.
+- [x] 1.5: daemon compatibility now compares only `DAEMON_PROTOCOL_VERSION`, not package version.
+- [x] 1.6 adjusted: offscreen bridge port probing is concurrent, primary-port-first, and capped at
+  500ms per loopback probe while preserving existing multi-live-port fan-out semantics.
+- [x] 1.7 partial: `resourceStore` / `refStore` now have 10k entry caps and amortized expiry prune;
+  capacity eviction uses the existing not-found recovery path and is covered by ref/resource tests.
+- [x] 1.8 partial: `summarizeScanData` now precomputes scan lines/actionables/list hints/entities
+  once per summary and reuses ranked action data across budget rungs without changing output shape.
+- [x] 1.8 follow-up: remaining per-rung scan summary loops were collapsed behind the high-entropy
+  byte/shape golden: sorted action ranking, form summary, headings, text-signal candidates,
+  interactive rows, list summaries, action entity lookup, and referenced entity slices are prepared once.
+- [x] 1.9 partial: text/search artifact reads count chars in the same stream pass, and sample mode
+  collects multi-section line ranges in one additional pass instead of one pass per section.
+- [x] 2.2 partial: extension readiness waits are event-driven and back-to-back no-extension commands
+  use a short negative cache instead of each paying the full grace window.
+- [x] 2.3 safe subset: `fitEnvelopeBudget` now reuses a single marked-envelope object per budget
+  check, hoists lifted-value length comparisons to one `stableJson` per side, reuses the 120/5/5
+  compact summary in `fitSummaryBudget`, and keeps CJK `String.length` budget semantics locked.
+
+Next executable queue:
+1. [ ] 0.3 follow-up: add skip/batch optimization only after confirming a cheap armed-recorder
+   state source; current win is the no-contract `Promise.all` concurrency.
+2. [ ] 1.1 follow-up: evaluate superset-capture-and-clamp for text / iframe-disabled / maxNodes scans
+   only after a byte/shape comparison proves output parity.
+3. [ ] 1.7 follow-up: stream signal ref reuse is not a low-risk mechanical change because
+   `check-abml-causal`, `verbs-stream.test`, and live causal smoke currently assert that drain
+   refreshes the captureRef. Treat as contract/eval-first unless the ref lifecycle contract changes.
+4. [ ] 2.2 follow-up: default extension wait shortening still needs slow-extension evidence; keep
+   the event-driven wait / negative-cache improvement as the completed safe subset.
+5. [ ] 2.4 follow-up: defensive clone reduction and CLI-only `details` skipping need targeted
+   clone/render contracts before code changes.
+6. [ ] Tier 3: run blind eval/transcript review first; do not trim output fields until evidence
+   shows agents do not depend on them.
+
 ---
 
 ## Tier 0 — biggest wins, low risk, no agent-facing contract change (do first)
@@ -20,12 +91,25 @@ items (T3) require blind-eval evidence before landing.
   (9,401 lines, full identifiers/comments). `minify` is never set.
 - **Why it matters:** MV3 service workers are torn down after ~30s idle and the whole
   bundle is **re-parsed + re-compiled + top-level-executed on every cold wake**
-  (`installPiBrowserServiceWorker()` runs at `service-worker.js:9401`). 476 KB parsed every
-  wake vs ~150–200 KB minified.
-- **Fix:** add `minify: true` (or `minifyWhitespace + minifyIdentifiers`) to the
-  `service-worker`/`offscreen` esbuild entries. esbuild already a dep; tree-shaking already
-  on. Committed sourcemap keeps stacks readable.
-- **Risk:** Low. Only watch: tests asserting on un-minified function-name strings in stacks.
+  (`installPiBrowserServiceWorker()` runs at `service-worker.js:9401`).
+- **Measured:** un-minified = **476,582 bytes**; a real esbuild `minify:true` dry-run =
+  **282,682 bytes (~40.7% reduction)** — smaller than a raw estimate because the bundle is
+  already ESM + tree-shaken (`treeShaking: entry.name === "service-worker"`, `:64`).
+  `minifyWhitespace:true, minifyIdentifiers:false` currently produces **399,864 bytes** while keeping symbol names.
+- **GOTCHA — a contract test hard-breaks:** `tests/contracts/protocol/check-bridge-build.mjs:120-132`
+  greps the emitted bundle for literal **un-minified symbol names** (`function installPiBrowserServiceWorker`,
+  `function probeAndConnectWS`, `function ensureOffscreenDocument`, `__piBridgeModule_<name>`, …).
+  Full `minify:true` renames/strips these → ~10 assertions fail. (Banner `:113` and the
+  `runtimeSwitched`/`mode:"production"` string markers `:114-115` survive; `check-bridge-files.mjs`
+  reads source not dist, safe.)
+- **Fix (two options):** (a) **recommended low-risk:** `minifyWhitespace:true, minifyIdentifiers:false`
+  — keeps the asserted `function <name>` text, saves ~77 KB in the current bundle, no symbol-name
+  test edit; add a size-budget test (`dist/service-worker.js` < ~405 KB). (b) full `minify:true`
+  or `minifySyntax:true` for a smaller bundle
+  **and** relax `check-bridge-build.mjs:120-132` to assert behavioral/string-literal markers +
+  the import-and-run block (`:245-262`) instead of `function <name>` text. Also extend
+  `treeShaking` to the `offscreen` entry. Keep `sourcemap:true`.
+- **Risk:** Low with option (a); medium with (b) (must rewrite the build contract assertions).
 
 ### 0.2 Scan: parallelize per-node `DOM.getBoxModel`  **[src-confirmed]**
 - **Where:** `src/abml/verbs/axRuntime.ts:258-275` — the geometry `await sendPersistentCdp`
@@ -84,8 +168,13 @@ items (T3) require blind-eval evidence before landing.
   single scan with the **superset** params and feed that `data` into `readStructure({ scanData })`.
   The AX pass (`Accessibility.getFullAXTree` + per-node `DOM.getBoxModel`, `axRuntime.ts:222-298`)
   is **distinct, necessary** work used by `mergeAxIntoDomEntities` — NOT part of this redundancy.
-- **Fix:** add an optional `scanData` input to `readStructure`/`executeBrowserAbmlRead`; when
-  present, skip the `:820` eval. Reconcile params to the superset so neither output regresses.
+- **Done default path:** added optional prefetched scan data to `readStructure` / ABML read. Default
+  `browser_observe mode=scan` now passes the already-collected `scan_extract` data to ABML when it is
+  an ABML-safe superset (`mode !== "text"`, `includeIframes !== false`, no `maxNodes`). In that path,
+  ABML skips the separate `abml_read_scan` eval. Text scans, iframe-disabled scans, and maxNodes-
+  limited scans keep the separate ABML capture.
+- **Follow-up:** reconcile params to the superset for non-default scan modes only with byte/shape
+  comparison coverage.
 - **Risk:** Medium. Covered by abml-scan-envelope + token-economy contract tests; verify text
   summary and entity counts are unchanged.
 
@@ -174,9 +263,13 @@ tests/smokes. Natural follow-on once 1.1 threads scan data through.
 - **Where:** `src/driver/BrowserBridgeCommandService.ts:34` (`DEFAULT_EXTENSION_WAIT_MS=5000`),
   `:124-133`; `BrowserBridgeServer.ts:208-215` (100ms `snapshot()` poll loop). A disconnected
   extension makes **each** `sendCommand` in a scan (6+) re-pay up to 5s.
-- **Fix:** resolve the wait via a Promise fired by `registerClient` (ends instantly on connect,
-  costs nothing idle); lower default to ~1.5–2s (already `PI_BROWSER_EXTENSION_WAIT_MS`-overridable);
-  cache "no extension as of T" for a few hundred ms so back-to-back failing sub-calls don't re-pay.
+- **Done partial:** readiness wait now resolves via a Promise fired by extension registration
+  (`ext_ready` / `tabs_update`) instead of a 100ms polling loop, and `sendCommand` caches a
+  short-lived "no extension as of T" result so back-to-back failing sub-calls do not each pay the
+  full grace window.
+- **Deferred:** do not lower the default 5s grace until a slow-extension smoke/eval shows the shorter
+  window does not regress cold starts. `PI_BROWSER_EXTENSION_WAIT_MS=0` remains the explicit
+  hermetic/strict mode.
 - **Risk:** Low.
 
 ### 2.3 `fitEnvelopeBudget`/`fitSummaryBudget`: serialize-once accounting  **[src-confirmed]**
@@ -184,11 +277,34 @@ tests/smokes. Natural follow-on once 1.1 threads scan data through.
   page the envelope is `stableJson`-ed **30–50×** over progressively-large objects in one observe
   call: the ladder re-serializes each rung, `check()` (`:424`) re-marks omissions AND
   re-stringifies just to measure, the lift loop stringifies both `compacted` and `value` per key.
-- **Fix:** measure `.length`/`Buffer.byteLength` on the already-produced marked string instead of
-  re-marking+re-stringifying in `check()`; cache `stableJson(value).length` across the lift loop;
-  move to a "serialize once, subtract removed-field bytes" accounting model.
-- **Risk:** Medium-high — intricate budget logic with blind-eval regressions baked in; only with
-  full budget-contract test coverage. Biggest per-call CPU sink on large pages.
+- **Fix — SAFE SUBSET ONLY (byte-identical):** (B-1) fold the `check()` measure + the matching
+  `markEnvelopeBudgetOmissions` return into one `tryFinish()` that builds the marked envelope once
+  and returns that exact object; (B-2) hoist `stableJson(value).length` in the lift loop so it's
+  computed once per key, not twice; (B-5) reuse the `{stringChars:120,arrayItems:5,tableRows:5}`
+  compacted summary at `:168` instead of recomputing it. Drops whole-envelope `stableJson` passes
+  from **~30–50 to ~6–10** per overflow call.
+- **DO NOT (byte-unsafe — corrects an earlier draft):** (1) **keep `String.length` (UTF-16), NOT
+  `Buffer.byteLength`** — this project targets CJK/mainland sites where N CJK chars = N in `.length`
+  but 3N in bytes; switching the metric trips budgets earlier on Chinese pages → different omitted
+  fields → not byte-identical. (2) **reject the "subtract removed-field bytes" delta model** —
+  `stableJson` is 2-space pretty-printed, so a field's byte cost includes position-dependent
+  comma/indent framing and `markEnvelopeBudgetOmissions` *adds* bytes each rung; delta accounting
+  can't reproduce the exact truncation point without re-serializing.
+- **Guard:** `check-token-contract.mjs` now includes a CJK-heavy fixture that is under the
+  `String.length` budget but over the UTF-8 byte length budget, so byte-accounting regressions
+  over-trim the preview/rows and fail. Existing coverage: `check-token-contract.mjs`,
+  `check-token-economy.mjs` (±10% layer0), and `envelope-disclosure.test.ts` (which fields survive
+  the squeeze). A larger multi-rung golden can still be added before the serialize-once rewrite if
+  the implementation goes beyond the safe subset.
+- **Risk:** Medium — intricate budget logic; the safe subset returns identical objects, but land it
+  only behind the golden test. Biggest per-call CPU sink on large pages.
+- **Done safe subset:** `fitSummaryBudget` now reuses the already-built `{stringChars:120,
+  arrayItems:5, tableRows:5}` compacted summary for `dropLowPrioritySummaryFields`;
+  `fitEnvelopeBudget` uses a `tryFinish()` helper that marks omissions once per check and returns
+  that exact object, and the lifted-value compaction loop computes `stableJson(compacted)` /
+  `stableJson(value)` once per side. Guarded by `check-token-contract` including the CJK
+  `String.length` fixture, `check-token-economy`, `envelope-disclosure.test.ts`, and
+  `resultMiddleware-advanced.test.ts`.
 
 ### 2.4 Reduce `responseEnvelope` defensive deep clones + skip CLI-only `details`  **[src-confirmed]**
 - `resultMiddleware.ts:269-307,610-616` — 7 lifted fields each `structuredClone`d per observe
@@ -275,3 +391,164 @@ consume the trimmed fields before landing; fix + regression must be general.
    full budget-contract coverage.
 4. **Tier 3** — only after a blind-eval run confirms agents don't read the trimmed fields. 3.1 is
    the biggest token win.
+
+---
+
+## Execution readiness — change specs & test map (verified against current source)
+
+Concrete landing details for the items whose patches were designed. Files are absolute-relative to
+the repo root. "Guard" = existing test that would catch a regression; "New" = test to add.
+
+### Tier 0
+
+**0.1 SW minify** — `scripts/build-bridge.mjs:55-66`. Done: added `minifyWhitespace:true,
+minifyIdentifiers:false` (option a) to the `build()` opts; extended `treeShaking` to `offscreen`.
+Guard: `tests/contracts/protocol/check-bridge-build.mjs:120-132` (keep symbol names readable under
+option a; under full/syntax minify, option b, rewrite these to behavioral markers). New: size-budget
+assert `dist/service-worker.js` < 405 KB. Current savings: ~77 KB re-parsed **every SW wake**.
+
+**0.2 box-model `Promise.all`** — `src/abml/verbs/axRuntime.ts:258-275`. Change: split the loop —
+collect interesting nodes + `backendNodeId`s, `await Promise.all` the `DOM.getBoxModel` calls, then
+build entities from resolved geometry (only the geometry await is async; rest is sync). Guard:
+`tests/unit/tools/observe-abml-integration.test.ts` (entity counts/geometry). Savings: N serial CDP
+roundtrips → 1 concurrent batch per scan.
+
+**0.3 network/hook seq `Promise.all`** — `src/tools/observeRunners.ts:476-478`. Done: read
+`network.status` and `hook.status` concurrently before building the causal baseline. Deferred: skip
+both reads when a cheap armed-recorder source proves neither recorder can be active; do not guess this
+from current envelope state.
+
+**0.4 sensitive-evidence short-circuit** — `src/utils/redaction.ts:245-249`. Change: extract shared
+`isSensitiveFieldKey(k)` + `sensitiveTextHit(s)` helpers (after `shouldRedactPayloadText`, ~`:100`);
+replace `containsSensitiveEvidence` with a first-hit `hasSensitiveEvidence(value, seen, parentPayload)`
+walk that mirrors `redactSensitiveValue` branch-for-branch (same `seen` WeakSet, same payload
+threading). Keep the public symbol name. Guard: `tests/unit/utils/redaction.test.ts:113-129` (4
+predicate cases) + `check-token-contract.mjs:191` (symbol present). New: a **redact-then-compare
+oracle** test over a fixture corpus incl. circular, payload-object, and CJK-query cases. Savings: per
+result, drops a full redaction-clone + 2 full `stableJson` → an allocation-free first-hit walk.
+
+**0.5 CLI parse-once** — `cli/render.ts` (`looksLikeToolError` `:224-235`, `parseJsonObject`
+`:87-94`, `writeJsonEnvelope` `:214-216`). Change: parse once in `renderResult`, thread the object;
+keep `normalizeJsonEnvelope` string-accepting (or update the 4 call sites). Guard:
+`tests/unit/cli/flags-render.test.ts:317-404` (exit codes, `artifacts`/`cliNextActions`, REF_STALE
+output must stay identical). Savings: 1–2 fewer envelope `JSON.parse` per CLI call.
+
+**0.6 buffer caps** — `bridge_src/service_worker/network.ts` (`recorder.diagnostics.push` at
+`:47,51,69,74,96,116,410`) + `bridge_src/service_worker/intercept.ts:53` (`session.paused`). Change:
+**reuse the existing `appendBounded<T>(arr,item,max,overflowTarget)` helper** (already exported from
+`network_events.ts:14`, imported into `network.ts:8`, used for `lifecycleEvents` max 100) for
+diagnostics (cap ~100); cap `session.paused` ~500 + auto-`Fetch.continueRequest` the oldest on
+overflow. Guard: smokes `smoke-intercept-response.mjs:114` assert `pausedCount===0` after fulfill
+(small N, safe). New: push >cap, assert length capped + newest retained.
+
+**1.2 execute post-eval wait** — `bridge_src/service_worker/exec.ts:239`. Done: removed the
+unconditional 200ms sleep and kept a 50ms window only for likely tab-opening scripts. Guard:
+`tests/contracts/protocol/check-pi-browser-bridge.mjs` asserts the 200ms sleep does not return.
+
+**1.3 command registry memoize / lazy top-level help** — `cli/registry.ts`, `cli/index.ts`,
+`cli/bin.ts`, `cli/help.ts`. Done: `collectToolDefs()` and `buildCliCommands()` memoize the
+synchronous registry graph, and the actual user-facing bin entrypoint handles top-level
+`pi-browser --help` by dynamically importing only `cli/help.ts`. Non-help commands dynamically load
+the dispatcher. Guard: `tests/unit/cli/flags-render.test.ts` asserts repeated calls reuse the same
+command graph; `tests/unit/cli/local-commands.test.ts` asserts top-level help stays aligned with the
+22 real registry commands and statically rejects reintroducing a top-level dispatcher import in
+`cli/bin.ts`. Measurement after `npm run build`: `node dist/cli/bin.js --help` median ~56 ms vs
+`node dist/cli/index.js --help` median ~315 ms; dev `tsx` stays loader-dominated but improves from
+~799 ms to ~389 ms on `cli/bin.ts --help`. No further 1.3 cold-start work is queued until profiling
+shows a concrete cost on a real agent entrypoint.
+
+**1.6 offscreen port probe** — `bridge_src/offscreen/transport.ts:133-147`. Done: probe all bridge
+port candidates concurrently with primary port first and a 500ms loopback timeout. It intentionally
+preserves existing port-range fan-out by connecting every live bridge server, so this is not a
+first-live-only short-circuit. Guard: `tests/contracts/protocol/check-pi-browser-bridge.mjs` asserts
+primary-first, concurrent fetches, 500ms timeout, and multi-live-port socket creation.
+
+**1.9 artifact text pass count** — `src/tools/artifactReader.ts`. Done: text/search modes collect
+`chars` from the same stream used by `readline`, and sample mode reads multi-section line ranges in a
+single second pass instead of one pass per section. Guard:
+`tests/unit/tools/artifactReader-advanced.test.ts` preserves CRLF char counts and non-overlapping
+sample snippets.
+
+### Tier 1
+
+**1.1 single scan eval** — edit `src/abml-core/verbs/router.ts:17-24` (add `prefetchedScan?:
+Record<string,unknown>` to `AbmlReadInput` — browserless type, respects the abml-core boundary;
+`read.ts` ignores it, no change), `src/abml/verbs/integration.ts:9-11` (forward it),
+`src/abml/verbs/runtime.ts:820-826` (guard: `data = (input.prefetchedScan && !descriptor) ?
+input.prefetchedScan : (await eval…).data`), `src/tools/observeRunners.ts:464-466` (pass
+`prefetchedScan: result.data`). Done for the default path: only attach when
+`mode==="scan" && params.includeIframes !== false && params.maxNodes === undefined`** — the default
+path. (`mode:"text"` builds `textOnly:true`, which ABML can't consume; the gate inherently excludes
+it. Superset-capture-and-clamp is a follow-up if iframe/maxNodes scans prove hot.) `acknowledged`/
+`target` (`:465,467`) still come from the first eval — no change. Guard:
+`observe-abml-integration.test.ts` (entityCount/focus), `check-abml-scan-envelope.mjs`,
+`check-token-economy.mjs`, `check-content-pick.mjs:71` + `check-abml-internal-integration.mjs:14`
+(keep the literals `evaluatePageScriptDirect(server, scanScript`, `abml.readStructure`,
+`abml: observation.abmlRead`). New guard landed: fake server counts `Runtime.evaluate` command names
+and asserts exactly one (`scan_extract`, no `abml_read_scan`) on the default path, while
+`includeIframes:false` still runs both. Savings: one full DOM-walk `Runtime.evaluate` (~50% of
+post-AX extraction time) eliminated per default scan. Live guard passed via
+`npm run smoke:browser:scan-summary` with latest result
+`.pi/browser-artifacts/smoke-browser-scan-summary-results.json`.
+
+**1.3 CLI lazy graph** — `cli/index.ts:15` + `cli/registry.ts:8`. Change: **keep
+`buildCliCommands` synchronous** (parity check + 4 unit suites call it sync — making it async is
+high blast radius) and memoize it; dynamic-`import()` `registerBrowserTools` only on the **execute**
+path so `--version`/local commands skip the ~341 ms graph. Guard: `check-cli-parity.mjs` (22
+subcommands), `check-param-surface.mjs`, `flags-render.test.ts`, `parity-differential.test.ts`,
+`local-commands.test.ts`. New: assert repeated `buildCliCommands()` returns identical content
+(memo) + a local command doesn't trigger registration.
+
+**1.4 drop zod** — `src/validation/schemas.ts`, `src/validation/middleware.ts` (only 2 zod users).
+Done: ported nested validation to `src/validation/typeboxCompat.ts`, dropped `zod` from
+`package.json` / lockfile, and kept the exported `.safeParse()` schema contract. Guard:
+`tests/unit/validation/schemas.test.ts`, `tests/unit/validation/middleware.test.ts`,
+`npm run check:deps`, and `npm run check:src:types`. Savings: removes one eager runtime dependency
+and one schema library from the install/runtime graph.
+
+**1.5 protocol-only restart** — `cli/daemonControl.ts` `isDaemonVersionCurrent` (~`:79-81` / the
+`info.version === daemonVersion()` compare). Change: compare only the `+daemon.<n>` suffix vs
+`DAEMON_PROTOCOL_VERSION`; keep `expectedVersion: daemonVersion()` display unchanged. Guard:
+`daemon-control.test.ts:73-76`, `local-commands.test.ts:545-553` (proto.0 cases still stale). New:
+`{version:"9.9.9+daemon.4"}===true` (pkg differs, proto same) + `{…+daemon.5}===false`. Savings: one
+2–10 s stop+respawn + bridge/extension teardown avoided per package-version bump.
+
+**1.6 parallel port probe** — `bridge_src/offscreen/transport.ts:133-147`. Change: try 18765 first,
+`Promise.all` the rest, per-probe timeout 2000→~500 ms, short-circuit on first live. Keep the
+`probeAndConnectWS(resetDelay?)` name/signature (structural greps + tab_sync stub depend on it).
+Guard: `check-bridge-build.mjs:131-132`, `check-pi-browser-bridge.mjs` stub. New: fake
+`isServerAlive`/`WebSocket` — assert primary-first, concurrency, stop-after-hit. Savings: cold
+no-daemon walk ~40 s → ~0.5 s ceiling; also kills the ~38 s of dead-port probing **after** a
+successful connect.
+
+**1.7 resourceStore cap** — `src/resources/resourceStore.ts:92-93` + `pruneExpired` `:372-380`.
+Done partial: resource/ref stores have 10k caps, oldest-by-`createdAt` eviction on overflow, and
+expiry prune is amortized to every 128 registrations while resolve paths still check expiry inline.
+Guard: `tests/contracts/tools/check-abml-ref-registry.mjs` asserts oldest live ref eviction, newest
+ref retention, and TTL→`REF_STALE`; `tests/unit/resources/resourceReader.test.ts` asserts evicted
+browser-result/pi-ref reads fail without leaking artifact paths. Deferred: reuse one stream signal
+ref per drain once the exact minting path is isolated.
+
+**1.8 summarizeScanData pass reduction** — `src/tools/summaries/scan.ts`.
+Done: scan content lines, actionables, list hints, ABML entities, ranked action scores, action
+duplicate counts, sorted action ranking, form summary, headings, text-signal candidates, interactive
+rows, list summaries, action entity lookup, and referenced entity slices are precomputed once per
+`summarizeScanData` call and reused across budget rungs. Guard: `check:summaries` includes a
+deterministic high-entropy scan fixture with fixed `entityContext`, output length/hash,
+omitted-field set, and final-rung row/action counts; `npm run check:summaries`,
+`npm run check:summary-boundary`, and `npm run check:src:types` passed.
+
+**2.2 extension grace event wait / negative cache** — `src/driver/BrowserBridgeServer.ts`,
+`src/driver/BrowserBridgeClientMessageService.ts`, `src/driver/BrowserBridgeCommandService.ts`.
+Done partial: `waitForExtensionReady()` now sleeps on an in-process waiter that is resolved by
+`ext_ready` / `tabs_update`, and no-extension `sendCommand` failures set a 500ms negative cache so
+immediate follow-up subcalls skip the full grace. Guard:
+`tests/unit/driver/BrowserBridgeServerConnection.test.ts` covers timeout, zero-bound, event wake, and
+back-to-back no-extension commands. Deferred: default wait reduction needs slow-extension evidence.
+
+**1.9 / 1.2 / 2.3 / 2.4 / 3.x** — see the tiered entries above; 1.9, 1.2, and the 2.3
+safe subset are already landed, while 2.4/3.x stay behind contract/blind-eval gates.
+
+> Net: Tier 0 is ~6 small PRs landing behind `check:all:bridge` + contracts; 0.1 option (a) and 1.1
+> default-gate are the two highest-leverage, lowest-risk changes. All savings above are latency/CPU/
+> bytes/allocations — the agent-facing token contract changes only in Tier 3, gated on blind-eval.

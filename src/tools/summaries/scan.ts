@@ -26,6 +26,39 @@ type RankedAction = {
 	key: string;
 };
 
+type TextSignalCandidate = {
+	index: number;
+	score: number;
+	text: string;
+	normalized: string;
+};
+
+type PreparedForm = {
+	name: string;
+	fields: Record<string, unknown>[];
+	submit?: Record<string, unknown>;
+};
+
+type ScanSummaryPrepared = {
+	item: Record<string, unknown>;
+	tabs: unknown[];
+	content: string;
+	lines: string[];
+	headings: string[];
+	interactive: string[];
+	actionables: Record<string, unknown>[];
+	listHints: Record<string, unknown>[];
+	listSummaries: Record<string, unknown>[];
+	rankedActions: RankedAction[];
+	sortedRankedActions: RankedAction[];
+	actionCounts: Map<string, number>;
+	preparedForm?: PreparedForm;
+	textSignalCandidates: TextSignalCandidate[];
+	scanEntities: ReturnType<typeof buildScanEntities>;
+	actionEntityByPath: Map<string, Entity>;
+	referencedEntities: Entity[];
+};
+
 const ACTION_INTENT_RE = /\b(sign\s*in|log\s*in|login|submit|continue|next|save|search|checkout|buy|pay|send|create|upload|download|apply|confirm|activate)\b/i;
 const LOW_VALUE_ACTION_RE = /\b(cancel|close|dismiss|back|learn\s*more|privacy|terms)\b/i;
 const TEXT_SIGNAL_RE = /\b(error|failed|failure|invalid|required|success|saved|complete|status|loading|empty|warning|checkout|login|sign\s*in|search|upload|download|price|total|cart|modal|dialog)\b/i;
@@ -189,13 +222,16 @@ function rankedActions(actionables: unknown[]): RankedAction[] {
 	});
 }
 
-function selectPrimaryActions(actionables: unknown[], limit: number): Record<string, unknown>[] {
-	const ranked = rankedActions(actionables);
+function actionCounts(ranked: RankedAction[]): Map<string, number> {
 	const counts = new Map<string, number>();
 	for (const item of ranked) counts.set(item.key, (counts.get(item.key) || 0) + 1);
+	return counts;
+}
+
+function selectPrimaryActions(sortedRanked: RankedAction[], counts: Map<string, number>, limit: number): Record<string, unknown>[] {
 	const selected: RankedAction[] = [];
 	const seen = new Set<string>();
-	for (const item of ranked.sort((a, b) => b.score - a.score || a.position - b.position)) {
+	for (const item of sortedRanked) {
 		if (seen.has(item.key)) continue;
 		seen.add(item.key);
 		selected.push(item);
@@ -204,29 +240,30 @@ function selectPrimaryActions(actionables: unknown[], limit: number): Record<str
 	return selected.map((item) => compactAction(item.node, item.position, counts.get(item.key) || 1));
 }
 
-function summarizeForms(actionables: unknown[], limit: number): Record<string, unknown>[] {
-	const ranked = rankedActions(actionables);
-	const fields = ranked
+function prepareFormSummary(sortedRanked: RankedAction[]): PreparedForm | undefined {
+	const fields = sortedRanked
 		.filter((item) => item.node.editable === true && item.node.disabled !== true)
-		.sort((a, b) => b.score - a.score || a.position - b.position)
 		.slice(0, 6)
 		.map((item) => {
 			const action = compactAction(item.node, item.position, 1);
 			return { i: action.i, k: action.k, name: action.name, flags: action.flags, jsonPath: action.jsonPath };
 		});
-	if (!fields.length) return [];
-	const submit = ranked
+	if (!fields.length) return undefined;
+	const submit = sortedRanked
 		.filter((item) => item.node.editable !== true && item.node.disabled !== true)
-		.sort((a, b) => b.score - a.score || a.position - b.position)
 		.map((item) => compactAction(item.node, item.position, 1))
 		.find((item) => item.why || Array.isArray(item.flags) && item.flags.includes("primary"));
 	const form: Record<string, unknown> = { name: submit?.name || fields[0]?.name || "form", fields };
 	if (submit) form.submit = { i: submit.i, name: submit.name, jsonPath: submit.jsonPath };
-	return [form].slice(0, limit);
+	return form as PreparedForm;
 }
 
-function summarizeLists(listHints: unknown[], limit: number): Record<string, unknown>[] {
-	return listHints.filter(isRecord).slice(0, limit).map((item, index) => {
+function summarizeForms(prepared: PreparedForm | undefined, limit: number): Record<string, unknown>[] {
+	return prepared && limit > 0 ? [prepared].slice(0, limit) : [];
+}
+
+function prepareListSummaries(listHints: Record<string, unknown>[]): Record<string, unknown>[] {
+	return listHints.map((item, index) => {
 		const hidden = Number(item.hiddenCount || 0);
 		const sampleHidden = asArray(item.sampleHidden).map((entry) => cleanInlineText(entry, 90)).filter(Boolean).slice(0, 2);
 		const out: Record<string, unknown> = {
@@ -264,22 +301,29 @@ function scoreTextSignal(text: string): number {
 	return score;
 }
 
-function textSignals(lines: string[], actionNames: Set<string>, limit: number): string[] {
+function prepareTextSignalCandidates(lines: string[]): TextSignalCandidate[] {
 	const seen = new Set<string>();
-	const ranked: Array<{ index: number; score: number; text: string }> = [];
+	const ranked: TextSignalCandidate[] = [];
 	for (const [index, line] of lines.entries()) {
 		if (SENSITIVE_LINE_RE.test(line)) continue;
 		const text = lineText(line);
 		if (text.length < 12) continue;
 		const normalized = normalizeText(text);
 		if (!normalized || seen.has(normalized)) continue;
-		if (actionNames.has(normalized)) continue;
 		const score = scoreTextSignal(text);
 		if (score <= 0) continue;
 		seen.add(normalized);
-		ranked.push({ index, score, text: cleanInlineText(text, 140) });
+		ranked.push({ index, score, text: cleanInlineText(text, 140), normalized });
 	}
-	return ranked.sort((a, b) => b.score - a.score || a.index - b.index).slice(0, limit).sort((a, b) => a.index - b.index).map((item) => item.text);
+	return ranked.sort((a, b) => b.score - a.score || a.index - b.index);
+}
+
+function textSignals(candidates: TextSignalCandidate[], actionNames: Set<string>, limit: number): string[] {
+	return candidates
+		.filter((item) => !actionNames.has(item.normalized))
+		.slice(0, limit)
+		.sort((a, b) => a.index - b.index)
+		.map((item) => item.text);
 }
 
 function scanBudget(options: ScanSummaryOptions): number {
@@ -391,30 +435,52 @@ function linkSameOrigin(href: unknown, pageUrl: unknown): boolean | undefined {
 	try { return new URL(href).origin === new URL(pageUrl).origin; } catch { return undefined; }
 }
 
-function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Limits, options: ScanSummaryOptions, omitted: string[] = []): Summary {
+function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], options: ScanSummaryOptions): ScanSummaryPrepared {
 	const content = typeof item.content === "string" ? item.content : "";
-	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	const actionables = asArray(item.actionables).filter(isRecord);
-	const listHints = asArray(item.list_hints).filter(isRecord);
-	const primaryActions = selectPrimaryActions(actionables, limits.primaryActions);
-	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
-	const headings = headingSignals(lines, limits.headings);
+	const ranked = rankedActions(actionables);
+	const sortedRanked = [...ranked].sort((a, b) => b.score - a.score || a.position - b.position);
+	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	const scanEntities = buildScanEntities(item, options);
-	const actionEntityByPath = new Map(scanEntities.entities.map((entity) => [String(entity.hints?.jsonPath || ""), entity]));
+	return {
+		item,
+		tabs,
+		content,
+		lines,
+		headings: headingSignals(lines, Number.MAX_SAFE_INTEGER),
+		interactive: lines.filter((line) => /^<(a|button|input|textarea|select|option)\b/i.test(line)),
+		actionables,
+		listHints: asArray(item.list_hints).filter(isRecord),
+		listSummaries: prepareListSummaries(asArray(item.list_hints).filter(isRecord)),
+		rankedActions: ranked,
+		sortedRankedActions: sortedRanked,
+		actionCounts: actionCounts(ranked),
+		preparedForm: prepareFormSummary(sortedRanked),
+		textSignalCandidates: prepareTextSignalCandidates(lines),
+		scanEntities,
+		actionEntityByPath: new Map(scanEntities.entities.map((entity) => [String(entity.hints?.jsonPath || ""), entity])),
+		referencedEntities: [...scanEntities.referencedEntities, ...scanEntities.controlsSources].slice(0, 40),
+	};
+}
+
+function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: string[] = []): Summary {
+	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
+	const primaryActions = selectPrimaryActions(sortedRankedActions, counts, limits.primaryActions);
+	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntities = primaryActions.map((action) => ({ ...action, ...(actionEntityByPath.get(String(action.jsonPath || "")) ? { entity: actionEntityByPath.get(String(action.jsonPath || "")) } : {}) }));
 	const focus: Record<string, unknown> = {
 		// Cloned so it is not the same reference as summary.top_layer (shared refs render as "[Circular]"
 		// after redaction — blind-eval F2). null/undefined clone through unchanged.
 		top_layer: structuredClone(item.top_layer),
 		primary_actions: primaryActionsWithEntities,
-		forms: summarizeForms(actionables, 2),
-		lists: summarizeLists(listHints, limits.lists),
-		headings,
-		text_signals: textSignals(lines, actionNames, limits.textSignals),
+		forms: summarizeForms(preparedForm, 2),
+		lists: listSummaries.slice(0, limits.lists),
+		headings: headings.slice(0, limits.headings),
+		text_signals: textSignals(textSignalCandidates, actionNames, limits.textSignals),
 		primary_entities: scanEntities.primaryEntities,
 		list_entities: scanEntities.listEntities.slice(0, limits.lists),
 		visual_regions: scanEntities.visualRegions.slice(0, 4),
-		referenced_entities: [...scanEntities.referencedEntities, ...scanEntities.controlsSources].slice(0, 40),
+		referenced_entities: referencedEntities,
 	};
 	return {
 		summaryVersion: 2,
@@ -469,10 +535,10 @@ function buildSummary(item: Record<string, unknown>, tabs: unknown[], limits: Li
 			{ key: "href", value: (node) => node.href },
 			{ key: "sameOrigin", value: (node) => linkSameOrigin(node.href, item.url) },
 		], limits.actionRows),
-		interactive: lines.filter((line) => /^<(a|button|input|textarea|select|option)\b/i.test(line)).slice(0, limits.interactive),
+		interactive: interactive.slice(0, limits.interactive),
 		// Distinct array from focus.headings: a shared reference makes redactSensitiveValue collapse the
 		// second occurrence to "[Circular]" in the model-facing envelope (blind-eval F2).
-		headings: [...headings],
+		headings: headings.slice(0, limits.headings),
 		textPreview: limits.textPreviewChars > 0 ? textPreview(content, limits.textPreviewChars) : "",
 		...(omitted.length ? { summaryOmitted: omitted } : {}),
 	};
@@ -482,10 +548,11 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 	const item = isRecord(data) ? data : {};
 	const budget = scanBudget(options);
 	const sets = limitSets(options);
+	const prepared = prepareScanSummary(item, tabs, options);
 	for (const [index, limits] of sets.entries()) {
 		const omitted = index === 0 ? [] : ["interactive", "textPreview", "legacyRows"];
-		const summary = buildSummary(item, tabs, limits, options, omitted);
+		const summary = buildSummary(prepared, limits, omitted);
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
-	return buildSummary(item, tabs, sets[sets.length - 1], options, ["interactive", "textPreview", "legacyRows"]);
+	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "legacyRows"]);
 }

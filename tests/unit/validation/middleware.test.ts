@@ -11,7 +11,7 @@ import {
 	tryValidateParams,
 } from '../../../src/validation/middleware.ts';
 import { BridgeCommandSchema, HttpRequestSchema } from '../../../src/validation/schemas.ts';
-import { z } from 'zod';
+import { createSchema, Type } from '../../../src/validation/typeboxCompat.ts';
 
 describe('validateParams', () => {
 	it('validates valid parameters', () => {
@@ -107,7 +107,7 @@ describe('validateOptionalParams', () => {
 });
 
 describe('validateArray', () => {
-	const schema = z.object({ cmd: z.string() });
+	const schema = createSchema<{ cmd: string }>(Type.Object({ cmd: Type.String() }, { additionalProperties: false }));
 
 	it('validates array of valid items', () => {
 		const items = [{ cmd: 'tabs' }, { cmd: 'execute' }];

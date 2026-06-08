@@ -97,3 +97,22 @@ test("artifactReader multi-search respects bounded result collection", async () 
 		assert.ok(result.snippets.some((item) => String(item.path).includes("b.txt")));
 	});
 });
+
+test("artifactReader streaming text modes preserve char and sample semantics", async () => {
+	await withArtifactRoot(async (cwd) => {
+		const file = path.join(cwd, ".pi", "browser-artifacts", "crlf.txt");
+		const text = "alpha\r\nbeta needle\r\ngamma\r\ndelta\r\nepsilon";
+		await writeFile(file, text, "utf8");
+		const textResult = await readBrowserArtifact({ path: file, mode: "text", offset: 2, limit: 2 }, { cwd });
+		const searchResult = await readBrowserArtifact({ path: file, mode: "search", query: "needle", contextLines: 1 }, { cwd });
+		const sampleResult = await readBrowserArtifact({ path: file, mode: "sample", limit: 1, maxChars: 1_000 }, { cwd });
+		assert.equal(textResult.summary.chars, text.length);
+		assert.equal(searchResult.summary.chars, text.length);
+		assert.equal(sampleResult.summary.chars, text.length);
+		assert.equal(textResult.summary.lineCount, 5);
+		assert.equal(searchResult.matches, 1);
+		for (let i = 1; i < sampleResult.snippets.length; i += 1) {
+			assert.ok(sampleResult.snippets[i].lineStart > sampleResult.snippets[i - 1].lineEnd, "sample snippets must remain non-overlapping after one-pass collection");
+		}
+	});
+});

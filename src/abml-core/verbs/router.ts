@@ -21,6 +21,7 @@ export type AbmlReadInput = {
 	filter?: Record<string, unknown>;
 	baseline?: Entity[];
 	diffOptions?: EntityDiffOptions;
+	prefetchedScan?: Record<string, unknown>;
 };
 
 export type AbmlClickInput = {

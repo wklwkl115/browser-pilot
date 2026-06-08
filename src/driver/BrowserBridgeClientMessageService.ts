@@ -29,6 +29,7 @@ type BrowserBridgeClientMessageServiceDeps = {
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	leases: BrowserLeaseRegistry;
 	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
+	notifyExtensionReady?: () => void;
 };
 
 export class BrowserBridgeClientMessageService {
@@ -77,6 +78,7 @@ export class BrowserBridgeClientMessageService {
 			this.deps.browserSessions.selectClient(this.deps.browserSessions.defaultSession(), ws);
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
+			this.deps.notifyExtensionReady?.();
 			if (type === "ext_ready") this.deps.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.deps.clients.info(ws), recordValue(message.bridge));
 			return;
 		}

@@ -31,7 +31,7 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 					throw new BrowserBridgeError("INVALID_RULE", "browser_command requires command object", { toolName: "browser_command" });
 				}
 
-				// Runtime validation: validate command structure with Zod
+				// Runtime validation: validate command structure with the local TypeBox schema wrapper.
 				const validatedCommand = validateParams(BridgeCommandSchema, params.command);
 
 				// Type-safe command is now guaranteed to have required fields

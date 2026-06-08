@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { BrowserBridgeError } from '../driver/errors.js';
+import type { ValidationSchema } from './typeboxCompat.js';
 
 /**
  * Validation middleware for runtime type checking.
@@ -7,10 +7,10 @@ import { BrowserBridgeError } from '../driver/errors.js';
  */
 
 /**
- * Validates parameters against a Zod schema.
+ * Validates parameters against a schema exposing the local safeParse contract.
  * Throws BrowserBridgeError with INVALID_PARAMS code on validation failure.
  *
- * @param schema - Zod schema to validate against
+ * @param schema - Schema to validate against
  * @param params - Parameters to validate
  * @returns Validated and typed parameters
  * @throws {BrowserBridgeError} When validation fails
@@ -22,7 +22,7 @@ import { BrowserBridgeError } from '../driver/errors.js';
  * ```
  */
 export function validateParams<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	params: unknown
 ): T {
 	const result = schema.safeParse(params);
@@ -52,7 +52,7 @@ export function validateParams<T>(
  * Validates that a value matches the expected schema before casting.
  *
  * @param value - Value to validate and cast
- * @param schema - Zod schema defining the expected type
+ * @param schema - Schema defining the expected type
  * @returns Validated and typed value
  * @throws {BrowserBridgeError} When validation fails
  *
@@ -64,7 +64,7 @@ export function validateParams<T>(
  */
 export function safeRecordValue<T>(
 	value: unknown,
-	schema: z.ZodSchema<T>
+	schema: ValidationSchema<T>
 ): T {
 	return validateParams(schema, value);
 }
@@ -74,13 +74,13 @@ export function safeRecordValue<T>(
  * Returns undefined if the parameter is null, undefined, or empty string.
  * Otherwise validates against the schema.
  *
- * @param schema - Zod schema to validate against
+ * @param schema - Schema to validate against
  * @param params - Optional parameters to validate
  * @returns Validated parameters or undefined
  * @throws {BrowserBridgeError} When validation fails
  */
 export function validateOptionalParams<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	params: unknown
 ): T | undefined {
 	if (params === null || params === undefined || params === '') {
@@ -93,13 +93,13 @@ export function validateOptionalParams<T>(
  * Validates an array of items against a schema.
  * Collects all validation errors and throws a single error with all failures.
  *
- * @param schema - Zod schema for individual items
+ * @param schema - Schema for individual items
  * @param items - Array of items to validate
  * @returns Array of validated items
  * @throws {BrowserBridgeError} When any validation fails
  */
 export function validateArray<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	items: unknown[]
 ): T[] {
 	const errors: Array<{ index: number; error: string }> = [];
@@ -134,7 +134,7 @@ export function validateArray<T>(
  * Creates a validation function with a pre-bound schema.
  * Useful for creating reusable validators.
  *
- * @param schema - Zod schema to bind
+ * @param schema - Schema to bind
  * @returns Validation function
  *
  * @example
@@ -144,7 +144,7 @@ export function validateArray<T>(
  * ```
  */
 export function createValidator<T>(
-	schema: z.ZodSchema<T>
+	schema: ValidationSchema<T>
 ): (params: unknown) => T {
 	return (params: unknown) => validateParams(schema, params);
 }
@@ -152,14 +152,14 @@ export function createValidator<T>(
 /**
  * Validates parameters with a custom error message.
  *
- * @param schema - Zod schema to validate against
+ * @param schema - Schema to validate against
  * @param params - Parameters to validate
  * @param errorMessage - Custom error message prefix
  * @returns Validated parameters
  * @throws {BrowserBridgeError} When validation fails
  */
 export function validateParamsWithMessage<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	params: unknown,
 	errorMessage: string
 ): T {
@@ -187,12 +187,12 @@ export function validateParamsWithMessage<T>(
 /**
  * Type guard that checks if a value matches a schema without throwing.
  *
- * @param schema - Zod schema to check against
+ * @param schema - Schema to check against
  * @param value - Value to check
  * @returns True if value matches schema
  */
 export function isValidParams<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	value: unknown
 ): value is T {
 	return schema.safeParse(value).success;
@@ -201,12 +201,12 @@ export function isValidParams<T>(
 /**
  * Attempts to validate parameters, returning a result object instead of throwing.
  *
- * @param schema - Zod schema to validate against
+ * @param schema - Schema to validate against
  * @param params - Parameters to validate
  * @returns Result object with success flag and data or error
  */
 export function tryValidateParams<T>(
-	schema: z.ZodSchema<T>,
+	schema: ValidationSchema<T>,
 	params: unknown
 ): { success: true; data: T } | { success: false; error: string; details: unknown } {
 	const result = schema.safeParse(params);

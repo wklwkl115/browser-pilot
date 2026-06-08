@@ -230,20 +230,17 @@ function matchColumns(line: string, params: BrowserArtifactParams, pattern: RegE
 	return index >= 0 ? { matched: true, start: index, end: index + needle.length } : { matched: false };
 }
 
-async function eachLine(absPath: string, onLine: (line: string, lineNumber: number) => void | Promise<void>): Promise<number> {
-	const rl = readline.createInterface({ input: createReadStream(absPath, { encoding: "utf8" }), crlfDelay: Infinity });
+async function eachLine(absPath: string, onLine: (line: string, lineNumber: number) => void | Promise<void>): Promise<{ lineCount: number; chars: number }> {
+	const input = createReadStream(absPath, { encoding: "utf8" });
+	let chars = 0;
+	input.on("data", (chunk) => { chars += String(chunk).length; });
+	const rl = readline.createInterface({ input, crlfDelay: Infinity });
 	let lineNumber = 0;
 	for await (const line of rl) {
 		lineNumber += 1;
 		await onLine(line, lineNumber);
 	}
-	return lineNumber;
-}
-
-async function countTextChars(absPath: string): Promise<number> {
-	let chars = 0;
-	for await (const chunk of createReadStream(absPath, { encoding: "utf8" })) chars += String(chunk).length;
-	return chars;
+	return { lineCount: lineNumber, chars };
 }
 
 export function isSafeArtifactSearchRegexPattern(pattern: unknown): boolean {
@@ -271,13 +268,13 @@ async function readTextRange(absPath: string, fileSize: number, params: BrowserA
 	const offset = Math.max(1, Math.floor(Number(params.offset || 1)));
 	const limit = Math.max(1, Math.floor(Number(params.limit || 120)));
 	const selected: Array<{ line: number; text: string; window?: ReturnType<typeof textLineWindow> }> = [];
-	const lineCount = await eachLine(absPath, (line, lineNumber) => {
+	const stats = await eachLine(absPath, (line, lineNumber) => {
 		if (lineNumber >= offset && lineNumber < offset + limit) {
 			const window = textLineWindow(line, params, maxChars);
 			selected.push({ line: lineNumber, text: window.text, window });
 		}
 	});
-	const chars = await countTextChars(absPath);
+	const { lineCount, chars } = stats;
 	if (!selected.length) return { mode: "text" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), offset, limit, nextOffset: null, snippets: [] };
 	const joined = boundedJoin(selected, maxChars);
 	const nextOffset = offset - 1 + selected.length < lineCount ? joined.lineEnd + 1 : null;
@@ -337,7 +334,7 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		lastRangeEnd = pending.lines[pending.lines.length - 1]?.line || pending.matchLine;
 		pending = undefined;
 	};
-	const lineCount = await eachLine(absPath, (line, lineNumber) => {
+	const stats = await eachLine(absPath, (line, lineNumber) => {
 		if (pending) {
 			pending.lines.push({ line: lineNumber, text: line });
 			pending.remainingAfter -= 1;
@@ -363,7 +360,7 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 		ring.splice(0, ring.length, { line: lineNumber, text: line });
 	});
 	flushPending();
-	const chars = await countTextChars(absPath);
+	const { lineCount, chars } = stats;
 	const nextOffset = matches.length && matches[matches.length - 1].lineEnd < lineCount ? matches[matches.length - 1].lineEnd + 1 : null;
 	return {
 		mode: "search" as const,
@@ -385,13 +382,13 @@ async function searchText(absPath: string, fileSize: number, params: BrowserArti
 
 async function sampleText(absPath: string, fileSize: number, params: BrowserArtifactParams, maxChars: number) {
 	const perSection = Math.max(1, Math.floor(Number(params.limit || 20)));
-	let lineCount = 0;
-	await eachLine(absPath, () => { lineCount += 1; });
-	const chars = await countTextChars(absPath);
+	let onlyLine = "";
+	const stats = await eachLine(absPath, (line, lineNumber) => {
+		if (lineNumber === 1) onlyLine = line;
+	});
+	const { lineCount, chars } = stats;
 	if (lineCount === 0) return { mode: "sample" as const, summary: summaryFromStats(fileSize, absPath, lineCount, chars), limit: perSection, snippets: [] };
 	if (lineCount === 1) {
-		let onlyLine = "";
-		await eachLine(absPath, (line) => { onlyLine = line; });
 		const windowLength = positiveIntParam(params.contextChars ?? params.columnLimit, Math.max(1, Math.floor(maxChars / 3)), 40, Math.max(40, onlyLine.length));
 		const candidates = [
 			{ section: "head", start: 0 },
@@ -425,6 +422,7 @@ async function sampleText(absPath: string, fileSize: number, params: BrowserArti
 	];
 	const snippets: SampleSnippet[] = [];
 	const usedRanges: Array<{ start: number; end: number }> = [];
+	const selectedRanges: Array<{ section: string; requestedStart: number; start: number; end: number; dedupedSections: number }> = [];
 	let dedupedSections = 0;
 	let used = 0;
 	for (const section of sections) {
@@ -439,14 +437,26 @@ async function sampleText(absPath: string, fileSize: number, params: BrowserArti
 			dedupedSections += 1;
 			continue;
 		}
-		const selected: Array<{ line: number; text: string }> = [];
+		selectedRanges.push({ section: section.name, requestedStart: section.start, start, end, dedupedSections });
+		usedRanges.push({ start, end });
+	}
+	const selectedBySection = new Map<string, Array<{ line: number; text: string }>>();
+	if (selectedRanges.length) {
 		await eachLine(absPath, (line, lineNumber) => {
-			if (lineNumber >= start && lineNumber <= end) selected.push({ line: lineNumber, text: line });
+			for (const section of selectedRanges) {
+				if (lineNumber >= section.start && lineNumber <= section.end) {
+					const selected = selectedBySection.get(section.section) || [];
+					selected.push({ line: lineNumber, text: line });
+					selectedBySection.set(section.section, selected);
+				}
+			}
 		});
+	}
+	for (const section of selectedRanges) {
+		const selected = selectedBySection.get(section.section) || [];
 		const joined = boundedJoin(selected, Math.max(0, maxChars - used));
 		if (!joined.text && snippets.length) break;
-		snippets.push({ section: section.name, lineStart: start, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated, deduped: start !== section.start || end !== section.end || dedupedSections > 0 });
-		usedRanges.push({ start, end: joined.lineEnd });
+		snippets.push({ section: section.section, lineStart: section.start, lineEnd: joined.lineEnd, text: joined.text, truncated: joined.truncated, deduped: section.start !== section.requestedStart || section.end !== joined.lineEnd || section.dedupedSections > 0 });
 		used += joined.text.length + 1;
 		if (joined.truncated || used >= maxChars) break;
 	}

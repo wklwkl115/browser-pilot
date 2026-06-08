@@ -5,13 +5,13 @@
 
 ## 目标
 
-在不扩公开 `browser_*` 工具面、不改变既有 WebSecurity TypeBox-外层 / Zod-内层 分工的前提下，收口“参数写不对→工具起不来 / 拿到错结果”的真实缺口。
+在不扩公开 `browser_*` 工具面、不改变既有 WebSecurity TypeBox-外层 / nested runtime validation 分工的前提下，收口“参数写不对→工具起不来 / 拿到错结果”的真实缺口。
 
 本合同只覆盖 3 个主工作流：
 
 1. 顶层未知参数名响亮拒绝（Gap A）
 2. 裸字符串枚举收紧为显式枚举契约（Gap B）
-3. `browser_sqli` 的复杂对象 Zod 内层校验补齐，并核对 `browser_crawl` 无漏项（Gap C 窄）
+3. `browser_sqli` 的复杂对象 nested runtime validation 补齐，并核对 `browser_crawl` 无漏项（Gap C 窄）
 
 以上 3 项全部必做；不因为工作量大删项，也不把后续工效学设计混入本合同。
 
@@ -20,24 +20,24 @@
 仓库当前已形成稳定双层参数校验模式：
 
 - **TypeBox 外层工具契约**：由 Pi 框架在 execute 前执行 `Value.Convert + Check`
-- **Zod 内层复杂对象校验**：`src/validation/{middleware,schemas}.ts` + `validateOptionalParams()`
+- **内层复杂对象运行时校验**：`src/validation/{middleware,schemas,typeboxCompat}.ts` + `validateOptionalParams()`
 
 已确认现状：
 
-- `registerFuzz.ts`、`registerHttpReplay.ts`、`registerTemplate.ts`、`registerCookieAnalyze.ts` 已有复杂对象 Zod 校验
-- Zod schema 已按来源分级：
-  - `.strict()`：构造型对象（如 `HttpRequestSchema` / `MultipartSchema` / `FuzzMutationsSchema`）
-  - `.passthrough()`：透传型对象（如 `CookieSchema` / `TemplateSchema`）
-  - `z.record(z.unknown())`：真开放对象（如 `ClaimMutationsSchema` / `VariablesSchema` / `JsonValuesSchema` / `TechHintsSchema`）
+- `registerFuzz.ts`、`registerHttpReplay.ts`、`registerTemplate.ts`、`registerCookieAnalyze.ts` 已有复杂对象运行时校验
+- nested schema 已按来源分级：
+  - strict object：构造型对象（如 `HttpRequestSchema` / `MultipartSchema` / `FuzzMutationsSchema`）
+  - passthrough/open object：透传型对象（如 `CookieSchema` / `TemplateSchema`）
+  - record object：真开放对象（如 `ClaimMutationsSchema` / `VariablesSchema` / `JsonValuesSchema` / `TechHintsSchema`）
 
-因此，本合同**不做复杂对象 schema 回迁 TypeBox**，只补真实缺口。
+因此，本合同只补真实缺口；后续性能审计已将实现统一到 TypeBox-compatible local wrapper，未改变公开工具面。
 
 ## 非目标
 
 - 不重复框架已覆盖的严格标量类型校验
 - 不对抗 `Value.Convert`
 - 不碰框架内部 `prepareArguments()`
-- 不把复杂对象从 Zod 全量迁回 TypeBox
+- 不把复杂对象校验扩成公开工具面变更
 - 不新增参数错误码族（继续复用 `INVALID_BROWSER_COMMAND` / `INVALID_RULE`）
 - 不引入 profile/预设/高层工效学抽象；如需做，另立 RFC（例如 `tool-ergonomics-presets.md`）
 - 不扩公开 `browser_*` 工具面
@@ -69,7 +69,7 @@
 
 本合同要求对这批“已确认的枚举缺口”收紧；实现过程中若再发现同类裸字符串枚举，可在本合同范围内一并收口。
 
-### Gap C（窄）：`browser_sqli` 缺少与兄弟工具一致的复杂对象 Zod 校验
+### Gap C（窄）：`browser_sqli` 缺少与兄弟工具一致的复杂对象运行时校验
 
 当前 `registerSqli.ts` 只有 `validateSqliParams()` 语义层检查，但没有像 `registerTemplate.ts` / `registerHttpReplay.ts` 一样，对：
 
@@ -138,7 +138,7 @@
 
 共同要求：
 
-- 不处理复杂对象的内层未知字段；那一层继续交给既有 Zod strict/passthrough/open 分级
+- 不处理复杂对象的内层未知字段；那一层继续交给既有 nested validation strict/passthrough/open 分级
 - 不破坏 verbatim 透传类对象的组合性
 
 建议实现落点：
@@ -201,7 +201,7 @@
 - 已确认枚举缺口全部收口
 - 非法枚举值不再落到 execute 内再默默归桶
 
-### W3. `browser_sqli` Zod 内层校验补齐（Gap C 窄）
+### W3. `browser_sqli` 内层运行时校验补齐（Gap C 窄）
 
 目标：让 `browser_sqli` 与 `browser_template` / `browser_http_replay` / `browser_fuzz` 的复杂对象校验保持一致。
 
@@ -219,7 +219,7 @@
 
 要求：
 
-- 继续复用现有 Zod schema / middleware
+- 继续复用现有 nested schema / middleware
 - 不把复杂对象迁回 TypeBox
 - 不新增错误码，继续用 `INVALID_BROWSER_COMMAND`
 
@@ -243,7 +243,7 @@
 实施项：
 
 1. 保持：
-   - `INVALID_BROWSER_COMMAND`：对象 shape / Zod 路径型错误
+   - `INVALID_BROWSER_COMMAND`：对象 shape / nested validation 路径型错误
    - `INVALID_RULE`：存在性/互斥/模式语义错误
 2. 仅在信息明显不足时补充 `details` 字段，例如：
    - `field`
@@ -320,8 +320,8 @@
 
 1. Gap A：顶层未知参数名已能响亮失败（通过 schema helper 或 inspector 二选一）
 2. Gap B：已确认的裸字符串枚举缺口全部收口
-3. Gap C：`browser_sqli` 已补齐 `request/mutations` 的 Zod 内层校验，`browser_crawl` 已完成核对
-4. 继续保持 TypeBox-外层 / Zod-内层 的既有分工，不产生双源 schema 漂移
+3. Gap C：`browser_sqli` 已补齐 `request/mutations` 的内层运行时校验，`browser_crawl` 已完成核对
+4. 继续保持 TypeBox-外层 / nested runtime validation 的既有分工，不扩大公开工具面
 5. 未新增参数错误码族
 6. `npm run quality:local` 通过
 

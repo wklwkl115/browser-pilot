@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { clearResourceStore, registerBrowserResultResource, registerRefDescriptor } from "../../../src/resources/resourceStore.ts";
+import { clearResourceStore, REF_STORE_MAX_ENTRIES, RESOURCE_STORE_MAX_ENTRIES, registerBrowserResultResource, registerRefDescriptor } from "../../../src/resources/resourceStore.ts";
 import { readBrowserResultResource } from "../../../src/resources/resourceReader.ts";
 
 test("browser-result resource search mode accepts canonical query parameter", async () => {
@@ -208,5 +208,80 @@ test("pi-ref stale resource reads return RESOURCE_STALE without local paths", as
 	assert.match(result.ok ? "" : result.error, /Resource is stale/);
 	assert.doesNotMatch(result.ok ? "" : result.error, new RegExp(artifactPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 	assert.doesNotMatch(result.ok ? "" : result.error, /piref-secret-artifact/);
+	clearResourceStore();
+});
+
+test("capacity-evicted browser-result resource reads fail without local paths", async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-resource-cap-"));
+	const artifactPath = path.join(dir, "cap-secret-artifact.txt");
+	await writeFile(artifactPath, "bounded\n", "utf8");
+	const oldUri = registerBrowserResultResource({
+		kind: "raw-result",
+		artifactPath,
+		name: "old bounded artifact",
+		mime: "text/plain",
+	});
+	for (let i = 0; i < RESOURCE_STORE_MAX_ENTRIES; i += 1) {
+		registerBrowserResultResource({
+			kind: "raw-result",
+			artifactPath,
+			name: `bounded artifact ${i}`,
+			mime: "text/plain",
+		});
+	}
+
+	const result = await readBrowserResultResource(`${oldUri}?mode=text`);
+
+	assert.equal(result.ok, false);
+	assert.equal(result.ok ? undefined : result.code, "RESOURCE_NOT_FOUND");
+	assert.doesNotMatch(result.ok ? "" : result.error, new RegExp(artifactPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	assert.doesNotMatch(result.ok ? "" : result.error, /cap-secret-artifact/);
+	clearResourceStore();
+});
+
+test("capacity-evicted pi-ref resource reads fail without local paths", async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), "browser-resource-piref-cap-"));
+	const artifactPath = path.join(dir, "piref-cap-secret-artifact.json");
+	await writeFile(artifactPath, JSON.stringify({ data: { value: "bounded" } }), "utf8");
+	const capNow = Date.now();
+	const oldRef = registerRefDescriptor({
+		descriptor: {
+			kind: "data-slice",
+			locators: [],
+			owner: {},
+			policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
+			snapshot: { observationId: "obs-cap-old", jsonPath: "data.value", immutable: true },
+			observationId: "obs-cap-old",
+			createdAt: capNow,
+			ttlMs: 60_000_000,
+		},
+		artifactPath,
+		resourceKind: "raw-result",
+		name: "old bounded ref",
+	});
+	for (let i = 0; i < REF_STORE_MAX_ENTRIES; i += 1) {
+		registerRefDescriptor({
+			descriptor: {
+				kind: "data-slice",
+				locators: [],
+				owner: {},
+				policy: { redaction: "default", shareableAcrossSessions: true, liveActionsAllowed: false },
+				snapshot: { observationId: `obs-cap-${i}`, jsonPath: "data.value", immutable: true },
+				observationId: `obs-cap-${i}`,
+				createdAt: capNow + 1 + i,
+				ttlMs: 60_000_000,
+			},
+			artifactPath,
+			resourceKind: "raw-result",
+			name: `bounded ref ${i}`,
+		});
+	}
+
+	const result = await readBrowserResultResource(oldRef);
+
+	assert.equal(result.ok, false);
+	assert.equal(result.ok ? undefined : result.code, "RESOURCE_NOT_FOUND");
+	assert.doesNotMatch(result.ok ? "" : result.error, new RegExp(artifactPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	assert.doesNotMatch(result.ok ? "" : result.error, /piref-cap-secret-artifact/);
 	clearResourceStore();
 });

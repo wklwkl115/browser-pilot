@@ -78,6 +78,13 @@ test("buildFlagSpecs maps schema constructs to flag kinds", () => {
 	assert.equal(byName.redact.flag, "--redact");
 });
 
+test("buildCliCommands memoizes the registered command graph", () => {
+	const first = buildCliCommands();
+	const second = buildCliCommands();
+	assert.equal(first, second);
+	assert.ok(first.length >= 20);
+});
+
 test("parseArgs collects values, booleans, --no-, repeatable arrays, and globals", () => {
 	const out = parseArgs(specs, ["--mode", "scan", "--count", "5", "--no-redact", "--tag", "a", "--tag", "b", "--json"]);
 	assert.ok(out.ok);

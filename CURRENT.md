@@ -13,6 +13,22 @@
 
 ## 当前激活项
 
+### Performance & overhead audit execution
+
+决策：
+- `docs/performance-overhead-audit.md` 是当前性能/开销优化执行队列。落地顺序按证据和风险分层：先做非 agent-facing contract 的 CPU/latency/byte 优化，再做需 live smoke 的扫描路径优化，最后才评估会改变 agent JSON/token contract 的输出瘦身。
+- 已完成当前低风险项：bridge dist service-worker/offscreen whitespace minify（保留 symbol names）、AX `DOM.getBoxModel` 并发批处理、observe network/hook seq 并发读取、default scan 的 ABML read 复用首个 `scan_extract` payload、`containsSensitiveEvidence` first-hit predicate、CLI JSON render parse-once、network diagnostics cap、intercept paused cap+overflow continue、`browser_execute` 去掉普通路径 200ms 固定等待、CLI command registry memoize 与实际 bin 顶层 help 轻量动态导入、nested validation 从 zod 迁到 TypeBox-compatible wrapper 并移除 zod 依赖、daemon 版本兼容改为只按 `DAEMON_PROTOCOL_VERSION` 判断、offscreen 端口并发 probe、resource/ref store 容量 cap + amortized prune、scan summary 跨 budget rung 预计算复用并补高熵 byte/shape golden、scan summary 剩余 per-rung loop collapse、CJK budget `String.length` guard、`fitEnvelopeBudget`/`fitSummaryBudget` serialize-once safe subset、extension readiness event-driven wait + no-extension negative cache、artifact text/search/sample 减少重复读。
+- `DAEMON_PROTOCOL_VERSION` 仍是控制/工具契约变化的强制 bump 点；普通 package version 变化不再自动重启 daemon。
+
+边界：
+- Tier 0/Tier 1 的性能优化不得改变公开 `browser_*` 工具名、CLI command surface、默认 JSON envelope 字段含义或 agent SOP。
+- Tier 3 token/output shape 优化（如去重 `cliNextActions`、压缩 `browser_tabs` tab shape、`focus` 用 ref 替代完整 entity）必须先做 blind eval / transcript 检查，证明 agent 不依赖被裁字段。
+- full minify / syntax minify 若需要放宽 dist bundle 字符串合同，必须作为单独改动处理；当前只采用 whitespace minify + size budget。
+
+验证：
+- 当前已通过：`npm run build`、`npm run build:bridge`、`npm run verify:bridge:dist`、`npm run check:src:types`、`npm run check:deps`、`npm run check:summaries`、`npm run check:token`、`npm run check:token-economy`、`node tests/contracts/protocol/check-pi-browser-bridge.mjs`、聚焦 validation/redaction/CLI render/daemon-control/driver connection/artifactReader/resourceReader/ref-registry/CLI local 单测/契约；`node dist/cli/bin.js --help` 重建后 median 约 56ms。
+- 后续每个 P0/P1 项至少补一个 guard 或 regression；扫描路径优化需补 live smoke（至少 `smoke:browser:scan-summary`）或 token-economy 对比；`1.7` stream signal ref reuse 已确认会触碰当前 captureRef-refresh 合同，按 contract/eval-first 处理；Tier 3 需 blind eval 记录。
+
 ### Agent-facing CLI connection control protocol
 
 决策：

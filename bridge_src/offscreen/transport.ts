@@ -20,6 +20,7 @@ let keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
 let wsReconnectDelayMs = 1000;
 const WS_RECONNECT_INITIAL_MS = 1000;
 const WS_RECONNECT_MAX_MS = 30000;
+const PORT_PROBE_TIMEOUT_MS = 500;
 
 function portRange(): number[] {
   const ports: number[] = [];
@@ -68,7 +69,7 @@ function scheduleKeepalive(): void {
 
 async function isServerAlive(port: number): Promise<boolean> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 2000);
+  const timer = setTimeout(() => ctrl.abort(), PORT_PROBE_TIMEOUT_MS);
   try {
     await fetch(httpUrlForPort(port), { signal: ctrl.signal });
     return true;
@@ -132,16 +133,19 @@ function connectWS(port: number): void {
 
 async function probeAndConnectWS(resetDelay = false): Promise<void> {
   if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-  let detected = false;
+  const candidates: number[] = [];
+  let detectedOpenSocket = false;
   for (const port of portRange()) {
     const current = sockets.get(port);
-    if (current && current.readyState <= WebSocket.OPEN) { detected = true; continue; }
+    if (current && current.readyState <= WebSocket.OPEN) { detectedOpenSocket = true; continue; }
     if (current) sockets.delete(port);
-    if (await isServerAlive(port)) {
-      detected = true;
-      connectWS(port);
-    }
+    candidates.push(port);
   }
+  const livePorts = await Promise.all(candidates.map(async (port) => ({ port, alive: await isServerAlive(port) })));
+  for (const { port, alive } of livePorts) {
+    if (alive) connectWS(port);
+  }
+  const detected = detectedOpenSocket || livePorts.some((item) => item.alive);
   if (!detected) bumpProbeBackoff();
   scheduleProbe();
 }

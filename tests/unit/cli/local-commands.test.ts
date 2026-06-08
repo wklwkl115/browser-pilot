@@ -184,6 +184,10 @@ test("top-level help and every command help are local and daemon-free", () => {
 		assert.equal(top.stderr, "");
 
 		const commands = parseOneJson(runCli(["commands", "--json"], repoRoot, { PI_BROWSER_DAEMON_STATE_DIR: dir }).stdout).commands as Array<Record<string, unknown>>;
+		assert.equal(commands.length, 22);
+		for (const cmd of commands) {
+			assert.match(top.stdout, new RegExp(`\\b${String(cmd.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `top-level help must include ${cmd.name}`);
+		}
 		for (const cmd of commands) {
 			const help = runCli([String(cmd.name), "--help"], repoRoot, { PI_BROWSER_DAEMON_STATE_DIR: dir });
 			assert.equal(help.code, 0, `${cmd.name} help failed: ${help.stderr || help.stdout}`);
@@ -194,6 +198,13 @@ test("top-level help and every command help are local and daemon-free", () => {
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("top-level bin help stays on the lightweight dynamic import path", () => {
+	const source = readFileSync(path.join(repoRoot, "cli", "bin.ts"), "utf8");
+	assert.doesNotMatch(source, /import\s+\{\s*main\s*\}\s+from\s+["']\.\/index\.js["']/, "bin must not statically import the dispatcher");
+	assert.match(source, /import\(["']\.\/help\.js["']\)/, "top-level help must import only the lightweight help module");
+	assert.match(source, /import\(["']\.\/index\.js["']\)/, "non-help commands must still route through the dispatcher");
 });
 
 test("npm wrapper JSON mode is documented: normal npm run contaminates stdout, --silent does not", () => {

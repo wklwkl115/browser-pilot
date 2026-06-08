@@ -32,6 +32,7 @@ type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; 
  * `PI_BROWSER_EXTENSION_WAIT_MS` overrides; `0` disables (used by hermetic tests).
  */
 const DEFAULT_EXTENSION_WAIT_MS = 5_000;
+const EXTENSION_WAIT_NEGATIVE_CACHE_MS = 500;
 function extensionWaitMs(): number {
 	const raw = process.env.PI_BROWSER_EXTENSION_WAIT_MS;
 	if (raw === undefined) return DEFAULT_EXTENSION_WAIT_MS;
@@ -58,6 +59,7 @@ type BrowserBridgeCommandServiceDeps = {
 
 export class BrowserBridgeCommandService {
 	private readonly deps: BrowserBridgeCommandServiceDeps;
+	private extensionUnavailableUntil = 0;
 
 	constructor(deps: BrowserBridgeCommandServiceDeps) {
 		this.deps = deps;
@@ -126,7 +128,10 @@ export class BrowserBridgeCommandService {
 		if (this.deps.snapshot({ browserSessionId }).extensionConnected) return;
 		const waitMs = extensionWaitMs();
 		if (waitMs <= 0) return;
-		await this.deps.waitForExtensionReady(browserSessionId, waitMs);
+		const now = Date.now();
+		if (now < this.extensionUnavailableUntil) return;
+		const ready = await this.deps.waitForExtensionReady(browserSessionId, waitMs);
+		this.extensionUnavailableUntil = ready ? 0 : Date.now() + EXTENSION_WAIT_NEGATIVE_CACHE_MS;
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {

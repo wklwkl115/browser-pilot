@@ -165,7 +165,8 @@ function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledS
 		const compacted = compactSummaryValue(summary, limits) as DistilledSummary;
 		if (stableJson(compacted).length <= budget) return compacted;
 	}
-	const dropped = dropLowPrioritySummaryFields(compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary, budget);
+	const compact120 = compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
+	const dropped = dropLowPrioritySummaryFields(compact120, budget);
 	if (stableJson(dropped).length <= budget) return dropped;
 	const keptScalars = scalarIdentityFields(summary);
 	const droppedKeys = Object.keys(summary).filter((key) => !(key in keptScalars));
@@ -421,7 +422,10 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 	if (stableJson(envelope).length <= budget) return envelope;
 	let out: DistilledEnvelope = { ...envelope };
 	const omitted: string[] = [];
-	const check = (): boolean => stableJson(markEnvelopeBudgetOmissions(out, omitted)).length <= budget;
+	const tryFinish = (): DistilledEnvelope | undefined => {
+		const marked = markEnvelopeBudgetOmissions(out, omitted);
+		return stableJson(marked).length <= budget ? marked : undefined;
+	};
 	const nonSummaryChars = stableJson({ ...out, summary: {} }).length;
 	const summaryBudget = Math.max(300, budget - nonSummaryChars);
 	if (stableJson(out.summary).length > summaryBudget) {
@@ -432,10 +436,13 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 		const value = out[key];
 		if (value === undefined) continue;
 		const compacted = compactLiftedEnvelopeValue(key, value);
-		if (stableJson(compacted).length < stableJson(value).length) {
+		const compactedLength = stableJson(compacted).length;
+		const valueLength = stableJson(value).length;
+		if (compactedLength < valueLength) {
 			out = { ...out, [key]: compacted };
 			omitted.push(`${key}:compact`);
-			if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+			const finished = tryFinish();
+			if (finished) return finished;
 		}
 	}
 	for (const key of ENVELOPE_REMOVABLE_KEYS) {
@@ -443,11 +450,13 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 		out = { ...out };
 		delete out[key];
 		omitted.push(key);
-		if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+		const finished = tryFinish();
+		if (finished) return finished;
 	}
 	const overhead = stableJson({ ...out, summary: {}, diagnostics: out.diagnostics }).length;
 	out = { ...out, summary: fitSummaryBudget(out.summary, Math.max(300, budget - overhead)) };
-	if (check()) return markEnvelopeBudgetOmissions(out, omitted);
+	const finished = tryFinish();
+	if (finished) return finished;
 	const essentialWithDiff = markEnvelopeBudgetOmissions({
 		tool: out.tool,
 		command: out.command,

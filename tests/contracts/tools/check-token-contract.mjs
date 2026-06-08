@@ -141,6 +141,27 @@ assert.ok(compactSummary.content[0].text.length < 4_500, "check-token summaryBud
 assert.equal(compactSummary.content[0].text.includes("z".repeat(1_000)), false, "check-token summaryBudget.text: low-value long previews must be trimmed or omitted");
 assert.ok(!compactEnvelope.summary.rows || compactEnvelope.summary.rows.rows.length < 80, "check-token summaryBudget.table: compact tables must not return all rows under summary budget");
 
+const cjkBudgetSummary = await distilledJsonResult({ data: { ok: true } }, {
+	toolName: "browser_execute",
+	command: "dom.snapshot",
+	detailLevel: "summary",
+	maxChars: 4_000,
+	ctx: { cwd: tmp },
+	fallbackName: "cjk-budget.json",
+	distill: () => ({
+		title: "中文预算页",
+		textPreview: "汉字".repeat(1_200),
+		rows: { columns: ["id", "label"], rows: Array.from({ length: 12 }, (_, i) => [`行${i}`, "字段".repeat(60)]), count: 12 },
+	}),
+});
+const cjkBudgetText = cjkBudgetSummary.content[0].text;
+const cjkBudgetEnvelope = JSON.parse(cjkBudgetText);
+assert.ok(cjkBudgetText.length <= 4_000, "check-token summaryBudget.cjk.length: CJK envelope must be measured with String.length");
+assert.ok(Buffer.byteLength(cjkBudgetText, "utf8") > 4_000, "check-token summaryBudget.cjk.bytes: fixture must exceed byte budget so byteLength regressions are caught");
+assert.equal(cjkBudgetEnvelope.summary.title, "中文预算页", "check-token summaryBudget.cjk.title: scalar identity must survive");
+assert.equal(cjkBudgetEnvelope.summary.textPreview.length, 481, "check-token summaryBudget.cjk.preview: CJK preview must not be over-trimmed by byte accounting");
+assert.equal(cjkBudgetEnvelope.summary.rows.rows.length, 12, "check-token summaryBudget.cjk.rows: CJK rows must survive under char budget");
+
 const envelopeBudgetTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-envelope-budget-"));
 try {
 	const noisyEntities = Array.from({ length: 40 }, (_, i) => ({

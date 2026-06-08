@@ -12,7 +12,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { buildCliCommands, type CliCommand } from "./registry.js";
+import type { CliCommand } from "./registry.js";
 import { buildFlagSpecs, parseArgs, coerceParams, resolveParamValueReferences, wantsJson, type GlobalFlags, type FlagSpec } from "./flags.js";
 import { looksLikeToolError, renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode, type ToolResultLike } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
@@ -20,35 +20,21 @@ import { findDaemon, isDaemonVersionCurrent, lockfilePath, stopDaemon } from "./
 import { daemonVersion, packageVersion } from "./packageInfo.js";
 import { connectBrowser, connectionStatus, staleLockfileDiagnostic } from "./connection.js";
 import { nativeToolMetadata } from "../src/protocol/nativeActionMetadata.js";
-import { WEB_SECURITY_TOOL_NAMES } from "../src/tools/toolRegistry.js";
+import { pad, printHelp } from "./help.js";
 
-/** Left-align in a column; if the head already fills the column, keep a 2-space gap so the
- *  description never glues onto a long flag/subcommand. */
-function pad(head: string, width: number): string {
-	return head.length < width ? head.padEnd(width) : `${head}  `;
-}
+const WEB_SECURITY_TOOL_NAMES = new Set([
+	"browser_crawl",
+	"browser_fuzz",
+	"browser_sqli",
+	"browser_template",
+	"browser_callback_oast",
+	"browser_cookie_analyze",
+	"browser_http_replay",
+]);
 
-function printHelp(): void {
-	const cmds = buildCliCommands();
-	const lines = [
-		"pi-browser — drive a live browser via the bridge daemon",
-		"",
-		"Usage:",
-		"  pi-browser <command> [--flags]",
-		"  pi-browser daemon <start|stop|status>",
-		"  pi-browser connect --wait --json",
-		"  pi-browser status --json",
-		"  pi-browser commands --json",
-		"  pi-browser schema <command> --json",
-		"  pi-browser validate <command> --params @params.json --json",
-		"  pi-browser doctor --json",
-		"  pi-browser selftest --confirm --json",
-		"",
-		"Commands:",
-	];
-	for (const c of cmds) lines.push(`  ${pad(c.subcommand, 22)}${c.description ?? ""}`.trimEnd());
-	lines.push("", "Run 'pi-browser <command> --help' for flags. Global: --json | --text | --help");
-	process.stdout.write(`${lines.join("\n")}\n`);
+async function loadCliCommands(): Promise<CliCommand[]> {
+	const registry = await import("./registry.js");
+	return registry.buildCliCommands();
 }
 
 type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
@@ -313,7 +299,7 @@ function commandGroup(cmd: CliCommand): "core" | "security" {
 	return WEB_SECURITY_TOOL_NAMES.has(cmd.name) ? "security" : "core";
 }
 
-function commandGroupCounts(commands = buildCliCommands()): Record<"core" | "security", number> {
+function commandGroupCounts(commands: CliCommand[]): Record<"core" | "security", number> {
 	return commands.reduce<Record<"core" | "security", number>>((counts, cmd) => {
 		counts[commandGroup(cmd)] += 1;
 		return counts;
@@ -415,9 +401,9 @@ function requireSelftestToolOk(step: string, result: ToolResultLike): string {
 	return toolResultText(result);
 }
 
-function runCommandsCommand(argv: string[]): number {
+async function runCommandsCommand(argv: string[]): Promise<number> {
 	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
-	const commands = buildCliCommands().map((cmd) => ({
+	const commands = (await loadCliCommands()).map((cmd) => ({
 		name: cmd.subcommand,
 		toolName: cmd.name,
 		group: commandGroup(cmd),
@@ -432,12 +418,12 @@ function runCommandsCommand(argv: string[]): number {
 	return EXIT.ok;
 }
 
-function runSchemaCommand(argv: string[]): number {
+async function runSchemaCommand(argv: string[]): Promise<number> {
 	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
 	const first = firstPositional(argv);
 	const cmdName = first.value;
 	if (!cmdName) return renderUsageError("usage: pi-browser schema <command> --json", mode);
-	const cmd = buildCliCommands().find((c) => c.subcommand === cmdName);
+	const cmd = (await loadCliCommands()).find((c) => c.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
 	const second = firstPositional(first.rest);
 	const naturalAction = second.value ? naturalActionForToken(cmd, second.value) : undefined;
@@ -472,13 +458,13 @@ function extractParamsArg(argv: string[], mode: RenderMode): { ok: true; params:
 	return { ok: true, params: params as Record<string, unknown> };
 }
 
-function runValidateCommand(argv: string[]): number {
+async function runValidateCommand(argv: string[]): Promise<number> {
 	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
 	const positional = firstPositional(argv);
 	const cmdName = positional.value;
 	const rest = positional.rest;
 	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: pi-browser validate <command> --params @params.json --json", mode);
-	const cmd = buildCliCommands().find((c) => c.subcommand === cmdName);
+	const cmd = (await loadCliCommands()).find((c) => c.subcommand === cmdName);
 	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
 	const extracted = extractParamsArg(rest, mode);
 	if (!extracted.ok) return extracted.code;
@@ -500,7 +486,7 @@ async function runDoctorCommand(argv: string[]): Promise<number> {
 	const staleLockfile = found ? null : staleLockfileDiagnostic();
 	const activeTabs = Array.isArray(found?.status.tabs) ? found.status.tabs : [];
 	const active = found?.status.activeTab ?? activeTabs.find((tab) => typeof tab === "object" && tab && (tab as { active?: unknown }).active === true) ?? activeTabs[0];
-	const commands = buildCliCommands();
+	const commands = await loadCliCommands();
 	const groups = commandGroupCounts(commands);
 	const report = {
 		command: "doctor",
@@ -725,13 +711,13 @@ export async function main(argv: string[]): Promise<number> {
 	}
 	if (sub === "connect") return await runConnectCommand(commandArgv);
 	if (sub === "status") return await runStatusCommand(commandArgv);
-	if (sub === "commands") return runCommandsCommand(commandArgv);
-	if (sub === "schema") return runSchemaCommand(commandArgv);
-	if (sub === "validate") return runValidateCommand(commandArgv);
+	if (sub === "commands") return await runCommandsCommand(commandArgv);
+	if (sub === "schema") return await runSchemaCommand(commandArgv);
+	if (sub === "validate") return await runValidateCommand(commandArgv);
 	if (sub === "doctor") return await runDoctorCommand(commandArgv);
 	if (sub === "selftest") return await runSelftestCommand(commandArgv);
 
-	const cmd = buildCliCommands().find((c) => c.subcommand === sub);
+	const cmd = (await loadCliCommands()).find((c) => c.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`, wantsJson(commandArgv) ? "json" : "human");
 
 	const translated = translateNaturalActionArgv(cmd, commandArgv);

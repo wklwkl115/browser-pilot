@@ -463,7 +463,16 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		await handle.update({ progress: 40 });
 		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "scan_extract" });
 		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
-		const abmlRead = await abml.readStructure({ browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars, baseline: baseline?.entities, diffOptions: baseline?.partialBaseline ? { partialBaseline: true } : undefined });
+		const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined && isRecord(result.data);
+		const abmlRead = await abml.readStructure({
+			browserSessionId,
+			tabId,
+			timeoutMs,
+			maxChars: captureMaxChars,
+			baseline: baseline?.entities,
+			diffOptions: baseline?.partialBaseline ? { partialBaseline: true } : undefined,
+			prefetchedScan: canReuseScanForAbml ? result.data as Record<string, unknown> : undefined,
+		});
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
 		return { result, abmlRead };
 	});
@@ -473,8 +482,10 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	// ABML R3.x causal plane: capture this observation's network + hook seq high-water marks (so it can
 	// anchor a future baseline) and, when a baseline was supplied, the network-delta + event-delta since it.
-	const recorderState = await readNetworkRecorderSeq(server, params, tabId, timeoutMs);
-	const hookState = await readHookRecorderSeq(server, params, tabId, timeoutMs);
+	const [recorderState, hookState] = await Promise.all([
+		readNetworkRecorderSeq(server, params, tabId, timeoutMs),
+		readHookRecorderSeq(server, params, tabId, timeoutMs),
+	]);
 	const hasBaseline = params.baseline !== undefined && params.baseline !== null;
 	let causal = hasBaseline
 		? await buildObserveCausal(server, params, recorderState, baseline?.networkSeq, tabId, timeoutMs)

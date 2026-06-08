@@ -817,13 +817,12 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 				data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", observationId: descriptor.observationId, tabId: target.tabId },
 			};
 		}
-		const scan = await evaluatePageScriptDirect(server as BrowserBridgeServer, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
+		const data = input.prefetchedScan ?? (await evaluatePageScriptDirect(server as BrowserBridgeServer, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 			name: "abml_read_scan",
-		});
-		const data = scan.data as Record<string, unknown>;
+		})).data as Record<string, unknown>;
 		const bridge = server.snapshot({ browserSessionId: target.browserSessionId });
 		const snapshot = server.createObservationSnapshot({
 			browserSessionId: bridge.browserSessionId,

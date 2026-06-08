@@ -1,5 +1,3 @@
-import { stableJson } from "./json.js";
-
 const REDACTED = "[redacted]";
 const REDACTED_BODY = "[redacted body]";
 const REDACTED_POST_DATA = "[redacted postData]";
@@ -71,6 +69,10 @@ function sensitiveFieldPlaceholder(key: string): string | undefined {
 	if (POST_DATA_FIELD_NAMES.has(normalized)) return REDACTED_POST_DATA;
 	if (BODY_FIELD_NAMES.has(normalized)) return REDACTED_BODY;
 	return undefined;
+}
+
+function isSensitiveFieldKey(key: string): boolean {
+	return sensitiveFieldPlaceholder(key) !== undefined;
 }
 
 function sensitiveFieldKind(key: string): RedactionPointerKind | undefined {
@@ -243,7 +245,24 @@ export function redactSensitiveValueWithPointers(
 }
 
 export function containsSensitiveEvidence(value: unknown): boolean {
-	const raw = typeof value === "string" ? value : stableJson(value);
-	const redacted = typeof value === "string" ? redactSensitiveText(value) : stableJson(redactSensitiveValue(value));
-	return raw !== redacted;
+	return hasSensitiveEvidence(value);
+}
+
+function hasSensitiveEvidence(value: unknown, seen = new WeakSet<object>(), parentPayload = false): boolean {
+	if (typeof value === "string") return (parentPayload ? REDACTED_BODY : redactSensitiveText(value)) !== value;
+	if (value === null || value === undefined || typeof value !== "object") return false;
+	if (seen.has(value)) return false;
+	seen.add(value);
+	if (Array.isArray(value)) return value.some((item) => hasSensitiveEvidence(item, seen, parentPayload));
+	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+		const normalized = normalizeFieldName(key);
+		const payloadField = BODY_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized);
+		if (
+			isSensitiveFieldKey(key)
+			&& (item === null || item === undefined || typeof item !== "object" || SENSITIVE_FIELD_NAMES.has(normalized) || POST_DATA_FIELD_NAMES.has(normalized))
+		) return true;
+		if (shouldRedactPayloadText(key, parentPayload)) return true;
+		if (hasSensitiveEvidence(item, seen, payloadField)) return true;
+	}
+	return false;
 }

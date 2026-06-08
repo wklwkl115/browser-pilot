@@ -30,6 +30,20 @@ const fakeServer = {
 	},
 };
 
+function countingServer() {
+	const calls: string[] = [];
+	return {
+		...fakeServer,
+		calls,
+		async sendCommand(command: any, options: any) {
+			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+				calls.push(String(command.name || ""));
+			}
+			return fakeServer.sendCommand(command, options);
+		},
+	};
+}
+
 test("browser_observe scan exposes ABML integration diagnostics internally", async () => {
 	const result = await runScanObservation(fakeServer as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan");
 	const envelope = JSON.parse(result.content[0].text);
@@ -40,6 +54,20 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(typeof result.details?.abml?.frameEntityCount, "number");
 	assert.equal(Array.isArray(envelope.summary?.focus?.primary_entities), true);
 	assert.equal(envelope.summary?.focus?.primary_entities?.length >= 1, true);
+});
+
+test("browser_observe default scan reuses scan_extract data for ABML read", async () => {
+	const server = countingServer();
+	const result = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan");
+	assert.equal(result.details?.abml?.integrated, true);
+	assert.deepEqual(server.calls, ["scan_extract"], "default scan should not run a second abml_read_scan Runtime.evaluate");
+});
+
+test("browser_observe iframe-disabled scan keeps the separate ABML scan", async () => {
+	const server = countingServer();
+	const result = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, includeIframes: false }, { cwd: process.cwd() }, "scan");
+	assert.equal(result.details?.abml?.integrated, true);
+	assert.deepEqual(server.calls, ["scan_extract", "abml_read_scan"], "non-superset scans must keep the separate ABML capture");
 });
 
 test("browser_observe tabs mode returns a tracked scan.tabs envelope", async () => {

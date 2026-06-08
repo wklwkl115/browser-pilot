@@ -205,8 +205,8 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	return { ...env, ...additions };
 }
 
-export function normalizeJsonEnvelope(text: string, exitCode: number, fallbackCode: string): CliJsonEnvelope {
-	const env = enrichForCli(parseJsonObject(text));
+export function normalizeJsonEnvelope(text: string | Record<string, unknown>, exitCode: number, fallbackCode: string): CliJsonEnvelope {
+	const env = enrichForCli(typeof text === "string" ? parseJsonObject(text) : text);
 	if (exitCode === EXIT.ok && env.ok !== false) return { ...env, ok: true, exitCode };
 	return { ...env, ok: false, exitCode, code: errorCode(env, fallbackCode) };
 }
@@ -221,9 +221,8 @@ export function writeJsonEnvelope(envelope: CliJsonEnvelope): void {
  * envelope with an error code / ok:false WITHOUT terminate:true — those must still
  * map to a non-zero exit code so scripts/agents can branch on `$?`.
  */
-export function looksLikeToolError(text: string): boolean {
-	let env: unknown;
-	try { env = JSON.parse(text); } catch { return false; }
+export function looksLikeToolError(text: string | Record<string, unknown>): boolean {
+	const env = typeof text === "string" ? parseJsonObject(text) : text;
 	if (!isRecord(env)) return false;
 	if (env.failed === true || env.ok === false) return true;
 	if (typeof env.error_code === "string") return true;
@@ -237,10 +236,11 @@ export function looksLikeToolError(text: string): boolean {
 /** Render a result; returns the process exit code. */
 export function renderResult(result: ToolResultLike, mode: RenderMode): number {
 	const text = resultText(result);
-	const isError = result.terminate === true || looksLikeToolError(text);
+	const parsed = parseJsonObject(text);
+	const isError = result.terminate === true || looksLikeToolError(parsed);
 	if (mode === "json") {
 		const exitCode = isError ? EXIT.toolError : EXIT.ok;
-		writeJsonEnvelope(normalizeJsonEnvelope(text, exitCode, isError ? "TOOL_ERROR" : "OK"));
+		writeJsonEnvelope(normalizeJsonEnvelope(parsed, exitCode, isError ? "TOOL_ERROR" : "OK"));
 		return exitCode;
 	}
 	return isError ? renderHumanError(text) : renderHumanOk(text);

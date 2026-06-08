@@ -6,8 +6,8 @@ export function createBrowserAbmlIntegration(server: Pick<BrowserBridgeServer, "
 	const runtime = createBrowserAbmlRuntime(server, options);
 	return {
 		runtime,
-		readStructure: async (input: { ref?: string; browserSessionId?: string; tabId?: number | string; timeoutMs?: number; maxChars?: number; baseline?: import("../entity.js").Entity[]; diffOptions?: EntityDiffOptions }) => {
-			return await runtime.read?.({ ref: input.ref, plane: "structure", baseline: input.baseline, diffOptions: input.diffOptions });
+		readStructure: async (input: { ref?: string; browserSessionId?: string; tabId?: number | string; timeoutMs?: number; maxChars?: number; baseline?: import("../entity.js").Entity[]; diffOptions?: EntityDiffOptions; prefetchedScan?: Record<string, unknown> }) => {
+			return await runtime.read?.({ ref: input.ref, plane: "structure", baseline: input.baseline, diffOptions: input.diffOptions, prefetchedScan: input.prefetchedScan });
 		},
 		// R3.x P2-C causal stream plane: arm (no ref) or drain (pass the prior call's captureRef as `ref`) the
 		// network/event causal channel. Symmetric to readStructure; the tab/session is the runtime's bound options.

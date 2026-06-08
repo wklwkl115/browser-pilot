@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -36,6 +37,53 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const tableCell = (table, key, row = 0) => table.rows[row][table.columns.indexOf(key)];
 const parseToolText = (result) => JSON.parse(result.content[0].text);
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+function highEntropyScanFixture() {
+	const actionables = Array.from({ length: 30 }, (_, i) => ({
+		index: i,
+		tag: i % 5 === 0 ? "input" : i % 3 === 0 ? "a" : "button",
+		role: i % 5 === 0 ? "textbox" : i % 3 === 0 ? "link" : "button",
+		action: i % 5 === 0 ? `field ${i}` : i % 3 === 0 ? `Open item ${i}` : `Submit payment ${i}`,
+		label: `Checkout action label ${i} with enough words for scoring`,
+		text: `Checkout action text ${i}`,
+		selector: `main > section.checkout > div.row-${i} > button.action-${i}`,
+		point: { x: 20 + i, y: 80 + i * 20 },
+		rect: { x: 20, y: 80 + i * 20, width: 140, height: 32 },
+		hitOk: i % 7 !== 0,
+		editable: i % 5 === 0,
+		clickable: i % 5 !== 0,
+		disabled: i % 11 === 0,
+		priority: 1000 - i,
+		href: i % 3 === 0 ? `https://example.test/item/${i}` : undefined,
+		hitTarget: i % 7 === 0 ? { tag: "div", id: `cover-${i}`, text: "modal cover" } : undefined,
+	}));
+	const list_hints = Array.from({ length: 8 }, (_, i) => ({
+		selector: `main > ul.group-${i} > li.entry`,
+		itemCount: 12 + i,
+		hiddenCount: 8 + i,
+		firstItemPreview: `Visible row ${i} with price $${10 + i}`,
+		sampleHidden: [`Hidden row ${i} A`, `Hidden row ${i} B`, `Hidden row ${i} C`],
+	}));
+	const content = [
+		"<h1>Checkout</h1>",
+		"Status: payment required",
+		...actionables.map((actionable) => `<${actionable.tag}>${actionable.label}</${actionable.tag}>`),
+		...list_hints.map((hint) => `List ${hint.selector} has ${hint.itemCount} items`),
+		"Warning: 5 errors require attention",
+		"Total $199.00 usd",
+	].join("\n");
+	return {
+		url: "https://example.test/checkout",
+		title: "Checkout",
+		readyState: "complete",
+		content,
+		node_count: 900,
+		truncated: true,
+		actionables,
+		list_hints,
+	};
+}
 
 function assertWebSecuritySummarySplit() {
 	const files = readdirSync(path.join(root, "src/tools/summaries/webSecurity")).filter((file) => file.endsWith(".ts")).sort();
@@ -199,6 +247,22 @@ assert.equal(richScan.focus.lists[0].more.length, 2, "check-summaries scan.lists
 assert.equal(richScan.focus.text_signals.some((item) => /payment|required|items/i.test(item)), true, "check-summaries scan.textSignals: high-signal status/list lines must replace shallow textPreview dependence");
 assert.equal(Array.isArray(richScan.focus.visual_regions), true, "check-summaries scan.visualRegions: internal visual region projections must stay optional but available");
 assert.equal(richScan.focus.visual_regions[0]?.source, "vision", "check-summaries scan.visualRegions.source: canvas region projections must be sourced from vision");
+const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 }, { id: 2 }], {
+	maxChars: 9_000,
+	entityContext: {
+		browserSessionId: "sess-golden",
+		tabId: 7,
+		url: "https://example.test/checkout",
+		observationId: "scan-golden",
+		capturedAt: 1710000000000,
+	},
+});
+const scanBudgetGoldenJson = JSON.stringify(scanBudgetGolden);
+assert.equal(scanBudgetGoldenJson.length, 11793, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
+assert.equal(sha256(scanBudgetGoldenJson), "535819e4a57fa02f56b71b63d8b7416111f2688f096b6b0bcaf27bc2f1ef7b6a", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
+assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "legacyRows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
+assert.equal(scanBudgetGolden.focus.primary_actions.length, 3, "check-summaries scan.budgetGolden.primaryActions: final budget rung action count must stay stable");
+assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung legacy rows stay omitted");
 const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));
 try {
 	const scanEnvelope = parseToolText(await distilledTextResult("scan text", {

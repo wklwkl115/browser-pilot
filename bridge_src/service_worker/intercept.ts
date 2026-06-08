@@ -24,6 +24,7 @@ const rememberInterceptRuntimeSession = typeof rememberRuntimeSession === "funct
 const forgetInterceptRuntimeSession = typeof forgetRuntimeSession === "function" ? forgetRuntimeSession : async () => {};
 const findLostInterceptRuntimeSession = typeof findLostRuntimeSession === "function" ? findLostRuntimeSession : async () => undefined;
 const summarizeLostInterceptRuntimeSession = typeof summarizeLostRuntimeSession === "function" ? summarizeLostRuntimeSession : () => undefined;
+const INTERCEPT_PAUSED_MAX = 500;
 
 function asRecord(value: unknown): JsonRecord {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -51,6 +52,7 @@ async function recordInterceptPause(sessionId: string, tabId: number, params: Js
 	const matchedRule = matchRule(session, params);
 	const entry = { ...params, requestId, matchedRuleId: matchedRule?.ruleId };
 	session.paused.set(requestId, entry);
+	void trimPausedRequests(session, tabId);
 	rememberInterceptTranscript(session, {
 		event: "paused",
 		requestId,
@@ -65,6 +67,20 @@ async function recordInterceptPause(sessionId: string, tabId: number, params: Js
 		if (autoResult) return autoResult;
 	}
 	return { ok: true, data: { tabId, sessionId, requestId, matchedRuleId: matchedRule?.ruleId || null, pausedCount: session.paused.size } };
+}
+
+async function trimPausedRequests(session: InterceptSession, tabId: number): Promise<void> {
+	while (session.paused.size > INTERCEPT_PAUSED_MAX) {
+		const oldestRequestId = session.paused.keys().next().value as string | undefined;
+		if (!oldestRequestId) return;
+		session.paused.delete(oldestRequestId);
+		try {
+			await interceptCdpSend(tabId, "Fetch.continueRequest", { requestId: oldestRequestId }, 2_000);
+			rememberInterceptTranscript(session, { event: "continue", requestId: oldestRequestId, action: "overflow_continue", diagnostics: { reason: "paused_buffer_overflow", maxPaused: INTERCEPT_PAUSED_MAX } });
+		} catch (error) {
+			rememberInterceptDiagnostic(session, { action: "paused_overflow_continue_failed", requestId: oldestRequestId, error: errorText(error), maxPaused: INTERCEPT_PAUSED_MAX });
+		}
+	}
 }
 
 function interceptPauseHandler(tabId: number, sessionId: string) {
