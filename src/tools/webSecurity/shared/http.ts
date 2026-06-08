@@ -25,11 +25,43 @@ function httpInputError(message: string, details: Record<string, unknown> = {}):
 	return createCodedError({ name: "HttpInputError", code: "INVALID_RULE" as Extract<NativeErrorCode, "INVALID_RULE">, message, details, suppressStack: false });
 }
 
+// OpenSSL/Node TLS verification failure codes that mean "the chain itself is not
+// trusted" — typically a TLS-intercepting proxy/AV, a corporate/custom root CA,
+// or a server that omits its intermediate certs. The daemon trusts the OS/browser
+// CA store on Node ≥22 (see daemonControl.daemonExecFlags); if it still fails the
+// root genuinely isn't trusted anywhere this process can see.
+const TLS_UNTRUSTED_CHAIN_CODES = new Set([
+	"UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+	"UNABLE_TO_GET_ISSUER_CERT",
+	"UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+	"SELF_SIGNED_CERT_IN_CHAIN",
+	"DEPTH_ZERO_SELF_SIGNED_CERT",
+	"CERT_UNTRUSTED",
+]);
+
+/**
+ * Map a TLS verification failure to a concrete remediation. Returns undefined for
+ * non-TLS causes so only certificate problems get the extra guidance. Kept factual
+ * and actionable per the Recoverable-Diagnostics rule: name the cause and the fix.
+ */
+export function tlsRemediation(causeCode: string | undefined, causeMessage: string | undefined): string | undefined {
+	const code = causeCode || "";
+	const msg = (causeMessage || "").toLowerCase();
+	if (TLS_UNTRUSTED_CHAIN_CODES.has(code) || msg.includes("unable to verify the first certificate") || msg.includes("self-signed certificate") || msg.includes("self signed certificate")) {
+		return "TLS chain not trusted — likely a TLS-intercepting proxy/AV, a corporate or custom root CA, or a server missing intermediate certificates. The pi-browser daemon trusts your OS/browser CA store on Node ≥22; if this persists, add the root via NODE_EXTRA_CA_CERTS=<path-to-pem> (the same root your browser trusts) or fix the server's certificate chain.";
+	}
+	if (code === "CERT_HAS_EXPIRED" || msg.includes("certificate has expired")) return "The server's TLS certificate has expired — verify the target host or its certificate validity window.";
+	if (code === "CERT_NOT_YET_VALID" || msg.includes("certificate is not yet valid")) return "The server's TLS certificate is not yet valid — check the local system clock and the certificate validity window.";
+	if (code === "ERR_TLS_CERT_ALTNAME_INVALID" || msg.includes("altname") || msg.includes("hostname/ip does not match")) return "TLS hostname mismatch — the certificate is not valid for this host (check SNI / the exact hostname you targeted).";
+	return undefined;
+}
+
 /**
  * Node's global fetch throws a bare TypeError("fetch failed") and hides the real
  * reason (DNS/TLS/connection refused) on error.cause. Surface that cause — and
  * distinguish a timeout abort — so callers get a diagnosable error instead of
- * an opaque "fetch failed".
+ * an opaque "fetch failed". TLS verification failures additionally get a concrete
+ * remediation appended (see tlsRemediation).
  */
 function fetchFailureError(request: FetchRequest, error: unknown, aborted: boolean, timeoutMs: number): Error {
 	if (aborted) {
@@ -40,7 +72,9 @@ function fetchFailureError(request: FetchRequest, error: unknown, aborted: boole
 	const causeCode = cause && typeof cause === "object" && "code" in cause ? String((cause as { code?: unknown }).code) : undefined;
 	const baseMessage = error instanceof Error ? error.message : String(error);
 	const message = causeMessage ? `${baseMessage}: ${causeMessage}` : baseMessage;
-	return createCodedError({ name: "HttpFetchFailed", code: "INTERNAL_ERROR" as Extract<NativeErrorCode, "INTERNAL_ERROR">, message: `fetch ${request.method} ${request.url} failed — ${message}`, details: { url: request.url, method: request.method, cause: causeMessage, causeCode }, suppressStack: false });
+	const remediation = tlsRemediation(causeCode, causeMessage);
+	const fullMessage = `fetch ${request.method} ${request.url} failed — ${message}${remediation ? ` · ${remediation}` : ""}`;
+	return createCodedError({ name: "HttpFetchFailed", code: "INTERNAL_ERROR" as Extract<NativeErrorCode, "INTERNAL_ERROR">, message: fullMessage, details: { url: request.url, method: request.method, cause: causeMessage, causeCode, ...(remediation ? { tls: true, remediation } : {}) }, suppressStack: false });
 }
 
 function isLoopbackAddress(address: string): boolean {

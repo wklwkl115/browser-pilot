@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { browserCookiesToProviderResult, cookieProviderResultHeader, deriveCsrfReflection, mergeCookieHeaders, parseCookieHeader, sanitizeFetchHeaders } from "../../../../src/tools/webSecurity/shared/http.ts";
+import { browserCookiesToProviderResult, cookieProviderResultHeader, deriveCsrfReflection, mergeCookieHeaders, parseCookieHeader, sanitizeFetchHeaders, tlsRemediation } from "../../../../src/tools/webSecurity/shared/http.ts";
 
 test("webSecurity/shared/http parses cookie header pairs", () => {
 	const cookies = parseCookieHeader("a=1; b=2; c=hello");
@@ -60,4 +60,24 @@ test("webSecurity/shared/http preserves structured browser cookie metadata while
 		session: false,
 		expirationDate: 2000000000,
 	});
+});
+
+test("webSecurity/shared/http maps untrusted-chain TLS codes to a NODE_EXTRA_CA_CERTS remediation", () => {
+	for (const code of ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY"]) {
+		const remedy = tlsRemediation(code, undefined);
+		assert.ok(remedy && /NODE_EXTRA_CA_CERTS/.test(remedy), `expected chain-trust remedy for ${code}`);
+	}
+	// Message-only fallback when no cause code is surfaced (undici sometimes omits it).
+	assert.ok(/NODE_EXTRA_CA_CERTS/.test(tlsRemediation(undefined, "unable to verify the first certificate") || ""));
+});
+
+test("webSecurity/shared/http distinguishes expiry and hostname-mismatch TLS failures", () => {
+	assert.match(tlsRemediation("CERT_HAS_EXPIRED", undefined) || "", /expired/i);
+	assert.match(tlsRemediation("ERR_TLS_CERT_ALTNAME_INVALID", undefined) || "", /hostname mismatch/i);
+});
+
+test("webSecurity/shared/http returns no remediation for non-TLS fetch failures", () => {
+	assert.equal(tlsRemediation("ECONNREFUSED", "connect ECONNREFUSED"), undefined);
+	assert.equal(tlsRemediation("ENOTFOUND", "getaddrinfo ENOTFOUND example.test"), undefined);
+	assert.equal(tlsRemediation(undefined, undefined), undefined);
 });

@@ -3,7 +3,9 @@
 // PI_BROWSER_DAEMON_STATE_DIR isolates the user-local state root into a temp dir.
 import test from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -13,8 +15,14 @@ import {
 	removeLockfile,
 	isPidAlive,
 	findDaemon,
+	controlRequest,
+	isDaemonVersionCurrent,
+	resolveDaemonStartCommand,
+	stopDaemon,
+	daemonSpawnEnv,
 	type DaemonInfo,
 } from "../../../cli/daemonControl.ts";
+import { daemonVersion } from "../../../cli/packageInfo.ts";
 
 function withTempStateDir(fn: () => Promise<void> | void): () => Promise<void> {
 	return async () => {
@@ -37,7 +45,7 @@ const sampleInfo = (over: Partial<DaemonInfo> = {}): DaemonInfo => ({
 	controlPort: 65510,
 	token: "deadbeef",
 	startedAt: new Date().toISOString(),
-	version: "1",
+	version: daemonVersion(),
 	...over,
 });
 
@@ -59,6 +67,40 @@ test("readLockfile rejects malformed content", withTempStateDir(() => {
 	writeFileSync(lockfilePath(), JSON.stringify({ pid: "x" }), "utf8");
 	assert.equal(readLockfile(), undefined, "missing required fields → undefined");
 }));
+
+test("daemon version helper identifies stale lockfiles", () => {
+	assert.equal(isDaemonVersionCurrent(sampleInfo()), true);
+	assert.equal(isDaemonVersionCurrent(sampleInfo({ version: "0.0.0+daemon.0" })), false);
+});
+
+test("resolveDaemonStartCommand uses tsx for source-tree CLI runs", () => {
+	const prev = process.env.PI_BROWSER_DAEMON_ENTRY;
+	try {
+		delete process.env.PI_BROWSER_DAEMON_ENTRY;
+		const command = resolveDaemonStartCommand();
+		assert.equal(command.command, process.execPath);
+		assert.match(command.args[0], /node_modules[\\/]+tsx[\\/]+dist[\\/]+cli\.mjs$/);
+		assert.match(command.args[1], /cli[\\/]+bin\.ts$/);
+		assert.deepEqual(command.args.slice(-2), ["daemon", "start"]);
+	} finally {
+		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_ENTRY;
+		else process.env.PI_BROWSER_DAEMON_ENTRY = prev;
+	}
+});
+
+test("resolveDaemonStartCommand honors an explicit daemon entry override", () => {
+	const prev = process.env.PI_BROWSER_DAEMON_ENTRY;
+	try {
+		process.env.PI_BROWSER_DAEMON_ENTRY = "D:\\custom\\daemon-entry.js";
+		assert.deepEqual(resolveDaemonStartCommand(), {
+			command: process.execPath,
+			args: ["D:\\custom\\daemon-entry.js", "daemon", "start"],
+		});
+	} finally {
+		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_ENTRY;
+		else process.env.PI_BROWSER_DAEMON_ENTRY = prev;
+	}
+});
 
 test("isPidAlive: current process alive, absurd pid dead, non-positive dead", () => {
 	assert.equal(isPidAlive(process.pid), true);
@@ -84,3 +126,79 @@ test("findDaemon keeps the lockfile when the pid is still alive but unreachable"
 	assert.equal(found, undefined, "still unreachable → undefined");
 	assert.equal(existsSync(lockfilePath()), true, "live-pid lockfile is preserved");
 }));
+
+test("stopDaemon does not kill a live pid from an unreachable stale lockfile", withTempStateDir(async () => {
+	const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+	try {
+		assert.ok(child.pid, "child process started");
+		writeLockfile(sampleInfo({ pid: child.pid, controlPort: 65513 }));
+		const stopped = await stopDaemon();
+		assert.equal(stopped, false, "unreachable lockfile is not considered an addressed daemon");
+		assert.equal(isPidAlive(child.pid), true, "stale lockfile PID must not be killed without /shutdown acknowledgement");
+		assert.equal(existsSync(lockfilePath()), true, "live-pid lockfile is preserved for diagnostics/slow-start safety");
+	} finally {
+		if (child.pid && isPidAlive(child.pid)) {
+			try {
+				process.kill(child.pid, "SIGTERM");
+			} catch {
+				/* already gone */
+			}
+		}
+		if (child.exitCode === null) {
+			await new Promise<void>((resolve) => {
+				const timer = setTimeout(resolve, 2_000);
+				child.once("exit", () => {
+					clearTimeout(timer);
+					resolve();
+				});
+			});
+		}
+	}
+}));
+
+test("controlRequest rejects oversized non-daemon responses", async () => {
+	const server = http.createServer((_req, res) => {
+		res.writeHead(200, { "content-type": "application/json" });
+		res.end(`"${"x".repeat(1024 * 1024 + 1)}"`);
+	});
+	await new Promise<void>((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			server.off("error", reject);
+			resolve();
+		});
+	});
+	const address = server.address();
+	assert.ok(address && typeof address === "object");
+	try {
+		await assert.rejects(
+			() => controlRequest({ controlHost: "127.0.0.1", controlPort: address.port, token: "unused" }, "GET", "/status", undefined, 2_000),
+			/control response too large/,
+		);
+	} finally {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+});
+
+const systemCaSupported = process.allowedNodeEnvironmentFlags?.has("--use-system-ca") === true;
+
+test("daemonSpawnEnv opts out cleanly when PI_BROWSER_NO_SYSTEM_CA is set", () => {
+	const base = { PI_BROWSER_NO_SYSTEM_CA: "1", NODE_OPTIONS: "--max-old-space-size=512" } as NodeJS.ProcessEnv;
+	assert.equal(daemonSpawnEnv(base), base, "opt-out returns the base env untouched");
+});
+
+test("daemonSpawnEnv appends --use-system-ca to NODE_OPTIONS where supported", () => {
+	const out = daemonSpawnEnv({ NODE_OPTIONS: "--max-old-space-size=512" } as NodeJS.ProcessEnv);
+	if (systemCaSupported) {
+		assert.equal(out.NODE_OPTIONS, "--max-old-space-size=512 --use-system-ca");
+	} else {
+		assert.equal(out.NODE_OPTIONS, "--max-old-space-size=512", "unsupported Node leaves NODE_OPTIONS unchanged");
+	}
+});
+
+test("daemonSpawnEnv sets NODE_OPTIONS from empty and never double-adds the flag", () => {
+	const fromEmpty = daemonSpawnEnv({} as NodeJS.ProcessEnv);
+	assert.equal(fromEmpty.NODE_OPTIONS, systemCaSupported ? "--use-system-ca" : undefined);
+	const already = daemonSpawnEnv({ NODE_OPTIONS: "--use-system-ca" } as NodeJS.ProcessEnv);
+	assert.equal(already.NODE_OPTIONS, "--use-system-ca", "idempotent when the flag is already present");
+});

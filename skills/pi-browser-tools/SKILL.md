@@ -150,6 +150,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 | Resource `stale`/`etag mismatch`/`HANDLE_NOT_FOUND` or baseline expired | artifact/ref/baseline changed under the handle — re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old one |
 | Tool/command not found | `pi-browser --help`; all 22 commands should be listed unless the package/daemon is stale |
 | Mature bridge fail | explicit target/template/path; inspect stdout/stderr artifacts |
+| `browser_crawl`/`browser_fuzz`/`browser_http_replay` fails with `unable to verify the first certificate` / TLS chain not trusted | a TLS-intercepting proxy/AV or corporate root CA is re-signing traffic. The daemon trusts the OS/browser CA store on Node ≥22 automatically; if it persists, set `NODE_EXTRA_CA_CERTS=<path-to-your-root.pem>` (the same root your browser trusts) and restart, or fix the server's cert chain. The error's `remediation` field names the exact fix |
 | Upload/download blocked | dedicated transfer tool + valid selector/path/mode + confirmation |
 
 ## Index

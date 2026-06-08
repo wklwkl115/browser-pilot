@@ -8,8 +8,9 @@
  * artifact/memory roots stay request-scoped.
  *
  * This module is pure control plane (loopback HTTP + lockfile); it does not start
- * a BrowserBridgeServer. Auto-start spawns a detached `node <cli>/bin.js daemon
- * start` via process.execPath — never a shell `pi-browser` by bin name.
+ * a BrowserBridgeServer. Auto-start spawns the resolved local daemon entry via
+ * process.execPath — built dist uses bin.js, source runs use the local tsx CLI;
+ * never shell out to `pi-browser` by bin name.
  */
 import http from "node:http";
 import os from "node:os";
@@ -17,6 +18,7 @@ import path from "node:path";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { daemonVersion, packageRoot } from "./packageInfo.js";
 
 export interface DaemonInfo {
 	pid: number;
@@ -38,6 +40,7 @@ export interface DaemonStatus {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const MAX_CONTROL_RESPONSE_BYTES = 1024 * 1024;
 
 /** User-local state root. Overridable for tests/isolation. */
 export function stateDir(): string {
@@ -73,6 +76,10 @@ export function removeLockfile(): void {
 	}
 }
 
+export function isDaemonVersionCurrent(info: Pick<DaemonInfo, "version">): boolean {
+	return info.version === daemonVersion();
+}
+
 /** True if a process with this pid exists (signal 0 probe). EPERM means it exists but is not ours. */
 export function isPidAlive(pid: number): boolean {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -93,6 +100,17 @@ export function controlRequest(
 	timeoutMs = 120_000,
 ): Promise<{ status: number; json: Record<string, unknown> | undefined }> {
 	return new Promise((resolve, reject) => {
+		let settled = false;
+		const safeResolve = (value: { status: number; json: Record<string, unknown> | undefined }): void => {
+			if (settled) return;
+			settled = true;
+			resolve(value);
+		};
+		const safeReject = (error: Error): void => {
+			if (settled) return;
+			settled = true;
+			reject(error);
+		};
 		const data = body !== undefined ? JSON.stringify(body) : undefined;
 		const req = http.request(
 			{
@@ -107,23 +125,38 @@ export function controlRequest(
 			},
 			(res) => {
 				let buf = "";
+				let responseBytes = 0;
 				res.setEncoding("utf8");
 				res.on("data", (chunk) => {
+					responseBytes += Buffer.byteLength(chunk, "utf8");
+					if (responseBytes > MAX_CONTROL_RESPONSE_BYTES) {
+						const error = new Error(`control response too large (>${MAX_CONTROL_RESPONSE_BYTES} bytes)`);
+						res.destroy(error);
+						req.destroy(error);
+						safeReject(error);
+						return;
+					}
 					buf += chunk;
 				});
 				res.on("end", () => {
+					if (settled) return;
 					let json: Record<string, unknown> | undefined;
 					try {
 						json = buf ? (JSON.parse(buf) as Record<string, unknown>) : undefined;
 					} catch {
 						json = undefined;
 					}
-					resolve({ status: res.statusCode ?? 0, json });
+					safeResolve({ status: res.statusCode ?? 0, json });
 				});
+				res.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
 			},
 		);
-		req.on("error", reject);
-		req.setTimeout(timeoutMs, () => req.destroy(new Error("control request timeout")));
+		req.on("error", (error) => safeReject(error instanceof Error ? error : new Error(String(error))));
+		req.setTimeout(timeoutMs, () => {
+			const error = new Error("control request timeout");
+			req.destroy(error);
+			safeReject(error);
+		});
 		if (data) req.write(data);
 		req.end();
 	});
@@ -152,26 +185,75 @@ export async function findDaemon(): Promise<{ info: DaemonInfo; status: DaemonSt
 	return undefined;
 }
 
-/** Path to the daemon entry that auto-start spawns (the built CLI bin sibling). */
-function daemonEntry(): string {
-	return process.env.PI_BROWSER_DAEMON_ENTRY || path.join(path.dirname(fileURLToPath(import.meta.url)), "bin.js");
+export interface DaemonStartCommand {
+	command: string;
+	args: string[];
+}
+
+/**
+ * Build the daemon child's environment, adding `--use-system-ca` to NODE_OPTIONS.
+ *
+ * `--use-system-ca` (Node ≥22.15) makes the daemon trust the OS/browser CA store
+ * in addition to Node's bundled bundle. This is what lets web-security fetches
+ * (crawl/fuzz/http_replay) work behind a TLS-intercepting proxy/AV or a corporate
+ * root CA — exactly the trust the co-located browser already has — WITHOUT
+ * disabling certificate verification.
+ *
+ * It is injected via NODE_OPTIONS (not an exec arg) so it survives the tsx loader
+ * re-exec in dev/source runs — tsx spawns a child node that inherits env but not
+ * forwarded exec flags — while still applying to the plain `node bin.js` package
+ * path. Gated on flag support so older Node (which would abort on an unknown
+ * NODE_OPTIONS flag) silently skips it; opt out via `PI_BROWSER_NO_SYSTEM_CA=1`.
+ */
+export function daemonSpawnEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	if (baseEnv.PI_BROWSER_NO_SYSTEM_CA) return baseEnv;
+	let supported = false;
+	try {
+		supported = process.allowedNodeEnvironmentFlags?.has("--use-system-ca") === true;
+	} catch {
+		/* allowedNodeEnvironmentFlags unavailable → skip */
+	}
+	if (!supported) return baseEnv;
+	const current = baseEnv.NODE_OPTIONS ?? "";
+	if (current.includes("--use-system-ca")) return baseEnv;
+	return { ...baseEnv, NODE_OPTIONS: current ? `${current} --use-system-ca` : "--use-system-ca" };
+}
+
+/** Command to start the daemon. Built packages use node+bin.js; source/tsx runs use the local tsx CLI. */
+export function resolveDaemonStartCommand(): DaemonStartCommand {
+	const explicit = process.env.PI_BROWSER_DAEMON_ENTRY;
+	if (explicit) return { command: process.execPath, args: [explicit, "daemon", "start"] };
+	const dir = path.dirname(fileURLToPath(import.meta.url));
+	const jsEntry = path.join(dir, "bin.js");
+	if (existsSync(jsEntry)) return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
+	const tsEntry = path.join(dir, "bin.ts");
+	if (existsSync(tsEntry)) {
+		const tsxCli = path.join(packageRoot() ?? path.resolve(dir, ".."), "node_modules", "tsx", "dist", "cli.mjs");
+		if (existsSync(tsxCli)) return { command: process.execPath, args: [tsxCli, tsEntry, "daemon", "start"] };
+		return { command: process.execPath, args: [tsEntry, "daemon", "start"] };
+	}
+	return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
 }
 
 /** Return a live daemon, auto-starting one (detached) if none is reachable. */
 export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Promise<DaemonInfo> {
 	const found = await findDaemon();
-	if (found) return found.info;
-	const child = spawn(process.execPath, [daemonEntry(), "daemon", "start"], {
+	if (found) {
+		if (isDaemonVersionCurrent(found.info)) return found.info;
+		await stopDaemon();
+	}
+	const startCommand = resolveDaemonStartCommand();
+	const child = spawn(startCommand.command, startCommand.args, {
 		detached: true,
 		stdio: "ignore",
-		env: process.env,
+		env: daemonSpawnEnv(),
 	});
 	child.unref();
 	const deadline = Date.now() + (opts.startTimeoutMs ?? 10_000);
 	while (Date.now() < deadline) {
 		await delay(150);
 		const ready = await findDaemon();
-		if (ready) return ready.info;
+		if (ready && isDaemonVersionCurrent(ready.info)) return ready.info;
 		if (child.exitCode !== null && child.exitCode !== 0) break;
 	}
 	throw new Error("pi-browser daemon did not become ready in time");
@@ -202,10 +284,16 @@ function tryKill(pid: number, signal: NodeJS.Signals): void {
 export async function stopDaemon(): Promise<boolean> {
 	const info = readLockfile();
 	if (!info) return false;
+	let shutdownAcknowledged = false;
 	try {
-		await controlRequest(info, "POST", "/shutdown", {}, 2_000);
+		const response = await controlRequest(info, "POST", "/shutdown", {}, 2_000);
+		shutdownAcknowledged = response.status === 200 && response.json?.ok !== false;
 	} catch {
 		/* may already be down */
+	}
+	if (!shutdownAcknowledged) {
+		if (!isPidAlive(info.pid)) removeLockfile();
+		return false;
 	}
 	if (!(await waitForPidDeath(info.pid, 3_000))) {
 		tryKill(info.pid, "SIGTERM");
