@@ -139,7 +139,7 @@ function cliActionFromText(action: string, savedPath?: string): Record<string, u
 	return undefined;
 }
 
-const COMMON_ARTIFACT_JSON_PATHS = ["data.content", "data.actionables", "data.list_hints", "operation.operationId", "snapshot.snapshotId"] as const;
+const COMMON_ARTIFACT_JSON_PATHS = ["data.content", "data.actionables", "data.list_hints"] as const;
 
 function artifactReadCommand(path: string, jsonPath: string): Record<string, unknown> {
 	return {
@@ -153,6 +153,7 @@ function artifactReadCommand(path: string, jsonPath: string): Record<string, unk
 function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	const additions: Record<string, unknown> = {};
 	const saved = isRecord(env.saved) ? env.saved : undefined;
+	const artifactReadCommandStrings = new Set<string>();
 	if (saved && typeof saved.path === "string") {
 		const savedPath = saved.path;
 		const readCommands = [
@@ -160,11 +161,7 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => String(artifactReadCommand(savedPath, jsonPath).command)),
 			`pi-browser artifact --path ${quoteCliArg(savedPath)} --mode search --query "<text>" --json`,
 		];
-		const readArgv = [
-			["pi-browser", "artifact", "--path", savedPath, "--mode", "json", "--json-path", "data", "--json"],
-			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => artifactReadCommand(savedPath, jsonPath).argv),
-			["pi-browser", "artifact", "--path", savedPath, "--mode", "search", "--query", "<text>", "--json"],
-		];
+		for (const command of readCommands) artifactReadCommandStrings.add(command);
 		additions.artifacts = [{
 			path: savedPath,
 			kind: typeof env.tool === "string" ? env.tool : "browser-result",
@@ -172,7 +169,6 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 			...(typeof saved.chars === "number" ? { chars: saved.chars } : {}),
 			...(saved.privacy ? { privacy: saved.privacy } : {}),
 			readCommands,
-			readArgv,
 		}];
 	}
 	const cliNextActions: Record<string, unknown>[] = [];
@@ -180,17 +176,9 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 		for (const action of env.nextActions) {
 			if (typeof action !== "string") continue;
 			const cli = cliActionFromText(action, typeof saved?.path === "string" ? saved.path : undefined);
+			if (cli?.kind === "artifact-read" && typeof cli.command === "string" && artifactReadCommandStrings.has(cli.command)) continue;
 			if (cli) cliNextActions.push(cli);
 		}
-	}
-	if (saved && typeof saved.path === "string") {
-		cliNextActions.push({
-			kind: "artifact-read",
-			command: `pi-browser artifact --path ${quoteCliArg(saved.path)} --mode json --json-path data --json`,
-			argv: ["pi-browser", "artifact", "--path", saved.path, "--mode", "json", "--json-path", "data", "--json"],
-			source: "saved.path",
-		});
-		for (const jsonPath of COMMON_ARTIFACT_JSON_PATHS) cliNextActions.push(artifactReadCommand(saved.path, jsonPath));
 	}
 	const snapshot = isRecord(env.snapshot) ? env.snapshot : undefined;
 	if (typeof snapshot?.snapshotId === "string") {

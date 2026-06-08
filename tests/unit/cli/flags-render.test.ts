@@ -396,16 +396,17 @@ test("normalizeJsonEnvelope adds CLI artifact descriptors and executable next ac
 	}), EXIT.ok, "OK");
 	assert.ok(Array.isArray(env.artifacts));
 	assert.ok(Array.isArray(env.cliNextActions));
-	const commonPaths = ["data.content", "data.actionables", "data.list_hints", "operation.operationId", "snapshot.snapshotId"];
+	const commonPaths = ["data.content", "data.actionables", "data.list_hints"];
 	const artifact = (env.artifacts as Array<Record<string, unknown>>)[0];
 	const readCommands = artifact.readCommands as string[];
+	assert.equal("readArgv" in artifact, false, "artifact descriptors keep one canonical executable command shape");
+	assert.ok(readCommands.some((command) => command.includes("--json-path data")), "artifact readCommands include generic data read");
 	for (const jsonPath of commonPaths) {
 		assert.ok(readCommands.some((command) => command.includes(`--json-path "${jsonPath}"`)), `artifact readCommands include ${jsonPath}`);
-		assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes(jsonPath)), `cliNextActions include ${jsonPath}`);
 	}
-	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("pi-browser artifact")));
-	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--path \"D:\\tmp\\observe.json\"") && String(action.command).includes("--json-path \"data.content\"")));
+	assert.equal(readCommands.some((command) => command.includes("operation.operationId") || command.includes("snapshot.snapshotId")), false, "artifact readCommands skip low-probability generic paths");
+	assert.equal((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--json-path \"data.content\"")), false, "cliNextActions do not duplicate artifact readCommands");
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--path \"D:\\tmp\\observe.json\"") && String(action.command).includes("--offset 20")));
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--baseline-snapshot-id")));
-	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes("D:\\tmp\\observe.json") && action.argv.includes("data.content")));
+	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes("D:\\tmp\\observe.json") && action.argv.includes("20")));
 });

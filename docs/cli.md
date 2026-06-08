@@ -165,8 +165,9 @@ but it also includes `subcommands[]` with the recommended natural routes. Use
 `schema hook install-targets --json` or `schema frame evaluate --json` for the narrowed flag mapping.
 
 The same discovery objects include `artifactBehavior`, which describes the shared result-artifact
-contract: results with `saved.path` are enriched with `artifacts[]`, `readCommands`/`readArgv`, and
-`cliNextActions[]`; bounded follow-up reads use `pi-browser artifact --path <saved.path>`.
+contract: results with `saved.path` are enriched with `artifacts[]` and executable `readCommands`;
+`cliNextActions[]` only carries non-duplicate follow-up actions. Bounded follow-up reads use
+`pi-browser artifact --path <saved.path>`.
 
 ## Output
 
@@ -247,21 +248,19 @@ temporary safe tab, and reports each cleanup step in JSON.
 ## Artifact Reads
 
 When a CLI result writes `saved.path`, JSON mode adds normalized `artifacts[]` and
-`cliNextActions[]` entries. The generic read is:
+deduplicated `cliNextActions[]` entries. The generic read is:
 
 ```bash
 pi-browser artifact --path <saved.path> --mode json --json-path data --json
 ```
 
-Common direct reads are also emitted as executable commands so agents do not have to guess artifact
-shape:
+Common direct reads are also emitted under `artifacts[].readCommands` so agents do not have to guess
+artifact shape:
 
 ```bash
 pi-browser artifact --path <saved.path> --mode json --json-path data.content --json
 pi-browser artifact --path <saved.path> --mode json --json-path data.actionables --json
 pi-browser artifact --path <saved.path> --mode json --json-path data.list_hints --json
-pi-browser artifact --path <saved.path> --mode json --json-path operation.operationId --json
-pi-browser artifact --path <saved.path> --mode json --json-path snapshot.snapshotId --json
 ```
 
 ## Tool Surface

@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startDaemon } from "../../../cli/daemon.ts";
@@ -110,6 +110,30 @@ test("invokeTool preserves daemon /invoke validation errors instead of reporting
 		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_STATE_DIR;
 		else process.env.PI_BROWSER_DAEMON_STATE_DIR = prev;
 		rmSync(dir, { recursive: true, force: true });
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("daemon omits success details for CLI-tagged invokes while preserving direct invoke details", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-daemon-cli-details-"));
+	const artifactPath = path.join(cwd, "artifact.txt");
+	writeFileSync(artifactPath, "hello from artifact\n", "utf8");
+	const handle = await startDaemon({ writeLock: false });
+	const info = { controlHost: handle.controlHost, controlPort: handle.controlPort, token: handle.token };
+	const body = { tool: "browser_artifact", params: { path: artifactPath, mode: "text" }, cwd };
+	try {
+		const direct = await controlRequest(info, "POST", "/invoke", body);
+		assert.equal(direct.status, 200);
+		assert.equal(direct.json?.ok, true);
+		assert.ok(direct.json?.details && typeof direct.json.details === "object", "direct /invoke keeps tool details for diagnostics/parity");
+
+		const cli = await controlRequest(info, "POST", "/invoke", { ...body, cli: { command: "artifact", routing: "standard" } });
+		assert.equal(cli.status, 200);
+		assert.equal(cli.json?.ok, true);
+		assert.equal("details" in (cli.json || {}), false, "CLI success transport omits details that cli/render never reads");
+		assert.deepEqual(cli.json?.content, direct.json?.content, "CLI details omission does not change the rendered envelope text");
+	} finally {
+		await handle.close();
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });

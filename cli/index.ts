@@ -57,12 +57,12 @@ type ArtifactBehavior = {
 
 const ARTIFACT_BEHAVIOR: ArtifactBehavior = {
 	resultField: "saved.path",
-	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "readCommands", "readArgv"],
+	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "readCommands"],
 	readCommand: "pi-browser artifact --path <saved.path> --mode json --json-path data --json",
 	readModes: ["json", "text", "search", "sample"],
-	commonJsonPaths: ["data", "data.content", "data.actionables", "data.list_hints", "operation.operationId", "snapshot.snapshotId"],
+	commonJsonPaths: ["data", "data.content", "data.actionables", "data.list_hints"],
 	notes: [
-		"JSON results that include saved.path are enriched with artifacts[] descriptors and cliNextActions[].",
+		"JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
 		"Large or sensitive raw payloads stay in local artifacts; read bounded paths with pi-browser artifact.",
 	],
 };

@@ -235,10 +235,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 					...(usageEnabled && cli ? { cli } : {}),
 				};
 				try {
-					const result = await def.execute(`cli-${tool}-${Date.now()}`, validation.args, undefined, undefined, { cwd, hasUI: false });
+					const result = await def.execute(`cli-${tool}-${Date.now()}`, validation.args, undefined, undefined, { cwd, hasUI: false, ...(cli ? { omitTransportDetails: true } : {}) });
 					if (usageEnabled) ctx.resultBytes = JSON.stringify(result.content).length;
 					emitLog(ctx, Date.now() - ctx.startedAt, result.terminate ? "error" : "ok", strippedDeprecatedParams.length ? { strippedDeprecatedParams } : undefined);
-					return send(200, { ok: true, content: result.content, details: result.details, terminate: result.terminate === true });
+					const terminate = result.terminate === true;
+					return send(200, { ok: true, content: result.content, ...(cli && !terminate ? {} : { details: result.details }), terminate });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					emitLog(ctx, Date.now() - ctx.startedAt, "error", { error: message, ...(strippedDeprecatedParams.length ? { strippedDeprecatedParams } : {}) });

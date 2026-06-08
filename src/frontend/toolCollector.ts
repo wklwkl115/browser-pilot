@@ -24,7 +24,7 @@ export type ToolDefinition = {
 		params: any,
 		signal?: AbortSignal,
 		onUpdate?: (update: ExtensionToolUpdate) => void | Promise<void>,
-		ctx?: { cwd?: string; hasUI?: boolean },
+		ctx?: { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean },
 	) => Promise<ExtensionToolResult> | ExtensionToolResult;
 };
 

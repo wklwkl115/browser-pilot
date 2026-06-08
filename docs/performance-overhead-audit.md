@@ -65,21 +65,37 @@ Completed in the current landing passes:
 - [x] 2.3 safe subset: `fitEnvelopeBudget` now reuses a single marked-envelope object per budget
   check, hoists lifted-value length comparisons to one `stableJson` per side, reuses the 120/5/5
   compact summary in `fitSummaryBudget`, and keeps CJK `String.length` budget semantics locked.
+- [x] 2.4 safe subset: CLI-tagged daemon `/invoke` success responses omit transport-only `details`,
+  while errors/terminating results and direct daemon invokes still preserve diagnostics. `browser_tabs`
+  also honors `omitTransportDetails` so CLI list/snapshot paths do not build details-only
+  `listObservationSnapshots()` diagnostics.
+- [x] 3.1: CLI artifact enrichment now keeps `artifacts[].readCommands` as the canonical executable
+  artifact-read surface, removes redundant `readArgv`, stops duplicating the same reads in
+  `cliNextActions[]`, and limits generic common paths to high-probability `data.*` reads.
+- [x] 3.2 safe subset: `browser_tabs action=list` now returns compact per-tab fields plus one
+  top-level shared `bridge` block by default; `includeBridgePerTab:true` preserves the old repeated
+  per-tab bridge shape for compatibility.
 
-Next executable queue:
-1. [ ] 0.3 follow-up: add skip/batch optimization only after confirming a cheap armed-recorder
-   state source; current win is the no-contract `Promise.all` concurrency.
-2. [ ] 1.1 follow-up: evaluate superset-capture-and-clamp for text / iframe-disabled / maxNodes scans
-   only after a byte/shape comparison proves output parity.
-3. [ ] 1.7 follow-up: stream signal ref reuse is not a low-risk mechanical change because
-   `check-abml-causal`, `verbs-stream.test`, and live causal smoke currently assert that drain
-   refreshes the captureRef. Treat as contract/eval-first unless the ref lifecycle contract changes.
-4. [ ] 2.2 follow-up: default extension wait shortening still needs slow-extension evidence; keep
-   the event-driven wait / negative-cache improvement as the completed safe subset.
-5. [ ] 2.4 follow-up: defensive clone reduction and CLI-only `details` skipping need targeted
-   clone/render contracts before code changes.
-6. [ ] Tier 3: run blind eval/transcript review first; do not trim output fields until evidence
-   shows agents do not depend on them.
+Evidence-closed / future-gated queue:
+1. [x] 0.3 follow-up closed without code: read-only eval found no existing cheap armed-recorder state
+   source. Skipping `network.status` / `hook.status` would create false negatives and lose baseline
+   seq anchors; a future optimization needs a protocol-level `recorder.state` cheap status.
+2. [x] 1.1 follow-up closed without code: non-default `textOnly`, `includeIframes:false`, and
+   `maxNodes` scan modes are not reversible projections of a superset capture. Keep only the already
+   implemented default-path collapse until a focused parity contract proves a specific non-default
+   case equivalent.
+3. [x] 1.7 follow-up closed without code: stream signal ref reuse changes the current snapshot
+   cursor contract. Existing stream tests and causal smoke assert that drain refreshes `captureRef`;
+   keep the cap + amortized prune improvement unless the ref lifecycle contract is redesigned.
+4. [x] 2.2 follow-up closed without code: do not shorten the default 5s extension wait. Synthetic
+   delay evidence shows shorter windows fail at boundaries, and there is no slow MV3 cold-start smoke
+   proving a lower default safe.
+5. [x] 2.4 clone reduction future-gated: do not broadly remove `structuredClone` from response
+   envelope fitting until compressed/uncompressed non-`[Circular]` contracts prove it safe. The
+   CLI-only details transport/construction subset is landed.
+6. [x] 3.3 current audit closed as future-gated: scan `focus` full entity objects are a documented
+   ABML perception surface. Replacing them with refs requires targeted blind eval plus
+   shape-versioning or migration evidence.
 
 ---
 
@@ -314,6 +330,14 @@ tests/smokes. Natural follow-on once 1.1 threads scan data through.
   `details` object that `cli/render.ts` never reads — don't feed large payloads (e.g.
   `server.snapshot()` for `browser_tabs`) into `details` on the CLI host.
 - **Risk:** Medium (clone removal needs a non-`[Circular]` render test).
+- **Done safe subset:** daemon `/invoke` tags CLI-originated calls with `omitTransportDetails`.
+  Successful non-terminating CLI calls now omit transport-only `details`; direct daemon invokes and
+  failure/terminate paths still preserve details for diagnostics. `browser_tabs list/snapshot` uses
+  that context to avoid details-only `listObservationSnapshots()` construction on the CLI path while
+  still returning the compact top-level bridge state agents need. Guard:
+  `tests/unit/cli/daemon-lifecycle.test.ts` covers direct-vs-CLI details behavior, and
+  `tests/unit/tools/tabs-tool.test.ts` covers the CLI omit path. Broad `structuredClone` removal is
+  deliberately not landed until a stronger non-`[Circular]` contract exists.
 
 ---
 
@@ -324,15 +348,22 @@ consume the trimmed fields before landing; fix + regression must be general.
 
 ### 3.1 `enrichForCli`: stop emitting the same artifact-read commands three times  **[src-confirmed]**
 - **Where:** `cli/render.ts:153-206`. Appended **after** distillation (so `maxChars` never trims
-  it) to nearly every saved-artifact result: `readCommands` (7 strings) + `readArgv` (7 argv
-  arrays, fully redundant with readCommands) + `cliNextActions` re-deriving the **same** ~6
-  artifact-read commands a third time — including `COMMON_ARTIFACT_JSON_PATHS` entries
-  (`operation.operationId`, `snapshot.snapshotId`) that mostly don't exist for the tool. ~1.5–2.5 KB
+  it) to nearly every saved-artifact result: `readCommands` + prior `readArgv`
+  arrays, fully redundant with readCommands, plus `cliNextActions` re-deriving the **same**
+  artifact-read commands a third time — including earlier `COMMON_ARTIFACT_JSON_PATHS` entries
+  (`operation.operationId`, `snapshot.snapshotId`) that mostly didn't exist for the tool. ~1.5–2.5 KB
   of templated JSON on the hot path, the single biggest token waste.
 - **Fix:** emit `argv` **or** `command` (not both); drop `cliNextActions` (duplicate) or cap to
   paths present in this envelope's `saved`/`snapshot`; gate `COMMON_ARTIFACT_JSON_PATHS` on
   existing keys.
 - **Risk:** Med — CLI presentation contract; update `cli/envelope.ts` consumers + parity tests.
+- **Done:** `artifacts[].readCommands` is the one canonical artifact-read descriptor. `readArgv` is
+  removed from `artifactBehavior` and result descriptors; `cliNextActions[]` no longer duplicates
+  artifact reads already listed in `readCommands`; generic common jsonPaths are reduced to
+  `data.content`, `data.actionables`, and `data.list_hints` plus the generic `data` read. Snapshot
+  baseline actions still appear in `cliNextActions[]` when backed by an actual `snapshotId`.
+  Guard: `tests/unit/cli/flags-render.test.ts`, `tests/unit/cli/local-commands.test.ts`, and
+  `tests/unit/cli/json-envelope-contract.test.ts`.
 
 ### 3.2 `browser_tabs`: hoist the shared `bridge` block, project per-tab fields  **[from first pass]**
 - **Where:** `src/tools/registerTabsTool.ts:65,70,97,99` — bypasses the distiller (raw
@@ -342,6 +373,11 @@ consume the trimmed fields before landing; fix + regression must be general.
 - **Fix:** project per tab to `{tabId,url,title,active,windowId,incognito}` + one shared top-level
   `bridge`/`extension`; truncate url/title; cap `snapshot` internals by default.
 - **Risk:** Med — changes the `browser_tabs` contract (callers reading `tabs[i].bridge.*`).
+- **Done safe subset:** default `browser_tabs action=list` now returns compact tab records and hoists
+  shared bridge/session fields to a top-level `bridge` object. `includeBridgePerTab:true` is the
+  compatibility escape for callers that still read `tabs[i].bridge.*`. URL/title are preserved
+  rather than truncated because they are the primary tab-selection signal for agents; the win comes
+  from removing the repeated bridge block. Guard: `tests/unit/tools/tabs-tool.test.ts`.
 
 ### 3.3 Scan `focus`: store entity `ref`s, not duplicated full entities  **[from first pass]**
 - **Where:** `src/tools/summaries/scan.ts:404,414,417` — full `Entity` objects in
@@ -546,9 +582,11 @@ immediate follow-up subcalls skip the full grace. Guard:
 `tests/unit/driver/BrowserBridgeServerConnection.test.ts` covers timeout, zero-bound, event wake, and
 back-to-back no-extension commands. Deferred: default wait reduction needs slow-extension evidence.
 
-**1.9 / 1.2 / 2.3 / 2.4 / 3.x** — see the tiered entries above; 1.9, 1.2, and the 2.3
-safe subset are already landed, while 2.4/3.x stay behind contract/blind-eval gates.
+**1.9 / 1.2 / 2.3 / 2.4 / 3.x** — see the tiered entries above; 1.9, 1.2, 2.3 safe subset,
+2.4 CLI details subset, 3.1 artifact dedupe, and 3.2 `browser_tabs list` compaction are landed.
+The only deferred future candidate is 3.3 scan-focus entity refs, which stays behind targeted blind
+eval and contract migration evidence.
 
-> Net: Tier 0 is ~6 small PRs landing behind `check:all:bridge` + contracts; 0.1 option (a) and 1.1
-> default-gate are the two highest-leverage, lowest-risk changes. All savings above are latency/CPU/
-> bytes/allocations — the agent-facing token contract changes only in Tier 3, gated on blind-eval.
+> Net: the audit queue is closed except for the explicitly future-gated 3.3 shape change. The landed
+> work covers latency/CPU/bytes/allocations plus the evidence-backed Tier 3 output reductions that
+> had compatibility guards.

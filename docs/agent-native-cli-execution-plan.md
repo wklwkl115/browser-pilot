@@ -146,8 +146,9 @@ first-class in-process tool surface.
   - [x] `data.content`
   - [x] `data.actionables`
   - [x] `data.list_hints`
-  - [x] `operation.operationId`
-  - [x] `snapshot.snapshotId`
+  - [x] `operation.operationId` / `snapshot.snapshotId` were validated for targeted correlation
+    artifacts, then removed from the generic CLI artifactBehavior/readCommands hot path by the
+    performance audit because most saved artifacts do not contain those paths.
 - [x] Keep raw payloads out of summaries; route large reads through `pi-browser artifact`.
 - [x] Add contract tests for next-action command rendering.
 

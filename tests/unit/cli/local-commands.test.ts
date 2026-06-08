@@ -237,7 +237,8 @@ test("commands --json exposes agent CLI routing roles", () => {
 	assert.equal(artifactBehavior.readCommand, "pi-browser artifact --path <saved.path> --mode json --json-path data --json");
 	assert.deepEqual(artifactBehavior.readModes, ["json", "text", "search", "sample"]);
 	assert.ok((artifactBehavior.commonJsonPaths as string[]).includes("data.content"));
-	assert.ok((artifactBehavior.commonJsonPaths as string[]).includes("snapshot.snapshotId"));
+	assert.ok((artifactBehavior.commonJsonPaths as string[]).includes("data.actionables"));
+	assert.equal((artifactBehavior.commonJsonPaths as string[]).includes("snapshot.snapshotId"), false);
 	assert.deepEqual(wait.agentCli, {
 		mode: "advancedCompatibility",
 		recommended: false,

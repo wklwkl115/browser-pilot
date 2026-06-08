@@ -34,6 +34,22 @@ function normalizeCreateTabUrl(value: unknown): string {
 	return parsed.href;
 }
 
+function compactTabForList(tab: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const key of ["id", "browserId", "browserSessionId", "tabId", "url", "title", "active", "windowId", "incognito", "type", "connectedAt"]) {
+		if (tab[key] !== undefined) out[key] = tab[key];
+	}
+	return out;
+}
+
+function compactBridgeForTabsList(snapshot: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const key of ["browserSessionId", "host", "port", "running", "connectedClients", "extensionConnected", "extension", "defaultTabId", "latestTabId", "selectionVersion"]) {
+		if (snapshot[key] !== undefined) out[key] = snapshot[key];
+	}
+	return out;
+}
+
 export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
 		name: "browser_tabs",
@@ -51,11 +67,12 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
 			allowExpired: Type.Optional(Type.Boolean({ description: "browser_tabs action=snapshot only: allow returning expired observation snapshot metadata." })),
+			includeBridgePerTab: Type.Optional(Type.Boolean({ description: "browser_tabs action=list only: advanced compatibility; include the repeated per-tab bridge block. Default false keeps tabs compact and hoists bridge to top-level." })),
 			url: Type.Optional(Type.String({ description: "URL for create" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether created tab should be active" })),
 				incognito: Type.Optional(Type.Boolean({ description: "create only: open in a fresh incognito window (isolated cookie jar = logged-out session). Requires the extension to be allowed in incognito at chrome://extensions; if not, returns a recovery hint." })),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return await runTool(async () => {
 				const action = String(params.action || "").trim().toLowerCase();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 5_000);
@@ -67,7 +84,14 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
 				const browserSession = { browserSessionId: typeof params.browserSessionId === "string" ? params.browserSessionId : undefined };
-				if (action === "list") return jsonResult(await server.refreshTabs(timeoutMs, browserSession), { action, snapshot: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots().length }, maxChars);
+				const omitTransportDetails = (ctx as { omitTransportDetails?: boolean } | undefined)?.omitTransportDetails === true;
+				const detailsForTransport = (build: () => Record<string, unknown>): Record<string, unknown> => omitTransportDetails ? {} : build();
+				if (action === "list") {
+					const tabs = await server.refreshTabs(timeoutMs, browserSession);
+					const snapshot = server.snapshot(browserSession);
+					const compactTabs = params.includeBridgePerTab === true ? tabs : tabs.map((tab) => compactTabForList(tab as Record<string, unknown>));
+					return jsonResult({ tabs: compactTabs, tabCount: tabs.length, bridge: compactBridgeForTabsList(snapshot as Record<string, unknown>) }, detailsForTransport(() => ({ action, snapshot, observationSnapshots: server.listObservationSnapshots().length })), maxChars);
+				}
 				if (action === "snapshot") {
 					if (typeof params.snapshotId === "string" && params.snapshotId.trim()) {
 						const snapshot = server.getObservationSnapshot(params.snapshotId);
@@ -94,9 +118,9 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 								],
 							},
 						});
-						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, { action }, maxChars);
+						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, detailsForTransport(() => ({ action })), maxChars);
 					}
-					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, { action }, maxChars);
+					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, detailsForTransport(() => ({ action })), maxChars);
 				}
 				if (action === "listsessions") return jsonResult({ sessions: server.listBrowserSessions() }, { action });
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });

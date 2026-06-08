@@ -13,7 +13,7 @@ import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 
-export type ToolResultContext = { cwd?: string } | undefined;
+export type ToolResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;
 
 export type StandardToolParams = {
 	browserSessionId?: string;
