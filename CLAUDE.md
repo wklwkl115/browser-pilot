@@ -8,9 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **pi-browser-tools** is a native Pi browser automation extension that provides real browser tab control, simplified DOM scanning (GA-style), JavaScript/CDP execution, evidence capture, network recording, file transfer, and a Web security testing tool layer — all backed by a Chrome extension service worker and a Node.js bridge server.
 
-## Active Execution Contract
+## Current Execution State
 
-- Migration contract (now landed): `docs/cli-skill-frontend-migration-plan.md`
+- Current execution entry: `CURRENT.md`; current top-level navigation: `TODO.md`; future routes:
+  `ROADMAP.md`; completed summaries: `ARCHIVE.md`.
+- Active execution line: none at the moment. New large workstreams must first record the decision,
+  boundary, contract, and verification plan in `CURRENT.md`.
+- Historical migration contract: `docs/cli-skill-frontend-migration-plan.md`
 - Current shipping external frontends are **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**. The MCP shell has been removed; CLI usage is documented in `docs/cli.md`.
 - `pi-browser` CLI is shipped and the migration is complete (landed 2026-06-03): code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all passed. No migration items remain.
 - `docs/abml-execution-plan.md` is no longer the active queue; ABML remains an internal substrate / historical execution contract.
@@ -144,7 +148,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `evals/browser-workflows/` — ACI evals: deterministic `runner.mjs` + blind-agent discovery layer (`launch-blind.mjs`/`pb-blind.mjs`/`teardown-blind.mjs`, `blind-tasks-realsite.md`, `blind-findings.md`)
 - `skills/pi-browser-blind-eval/` — operator/cron procedure for the standing blind real-agent eval loop
 - `docs/generated/` — auto-generated protocol and tool contract docs
-- `docs/cli-skill-frontend-migration-plan.md` — active frontend migration execution contract
+- `docs/cli-skill-frontend-migration-plan.md` — historical frontend migration execution contract
 
 ## Development Workflow
 
@@ -153,7 +157,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 3. **Changing protocol**: Edit `bridge/native_command_schema.json`, then `npm run sync:protocol`
 4. **Adding a tool**: Add registrar in `src/tools/toolRegistry.ts`, create `register*Tool.ts`, update tests
 5. **Before merging**: `npm run quality:local` (build + all checks + pack dry-run)
-6. **During the active frontend migration**: update `CURRENT.md` + `docs/cli-skill-frontend-migration-plan.md` before large frontend/package/contract moves
+6. **Before starting a new large workstream**: update `CURRENT.md` with the decision, boundary, contract, and verification plan before large frontend/package/contract moves
 
 ## TypeScript Configuration
 

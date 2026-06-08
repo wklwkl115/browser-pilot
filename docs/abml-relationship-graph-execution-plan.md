@@ -345,11 +345,12 @@ Preferred iteration:
 4. targeted runtime smoke
 5. `npm run check`
 
-## 8. Activation checklist
+## 8. Historical activation checklist
 
-Before coding:
+This workstream is complete; the original activation checklist is retained only to show the
+execution gate that applied while R1 was landing:
 
-- Move this workstream into `CURRENT.md` or explicitly pause the current active queue.
-- Update `TODO.md` only as navigation if this becomes the active queue.
-- Ensure dirty files from other workstreams are not mixed into ABML commits.
-- Record success criteria and smoke artifact paths in final summary.
+- [x] Move this workstream into `CURRENT.md` or explicitly pause the current active queue.
+- [x] Update `TODO.md` only as navigation if this becomes the active queue.
+- [x] Ensure dirty files from other workstreams are not mixed into ABML commits.
+- [x] Record success criteria and smoke artifact paths in final summary.

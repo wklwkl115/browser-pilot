@@ -215,13 +215,13 @@ evidenceRefs:
 
 补上 GA 的 **L1 极简索引**(`src/tools/memory/routing.ts`,回归锁定于 `tests/unit/memory/routing.test.ts`):`index.json` 物化倒排 token 索引 `routing`,recall(query)与 auto-surface 的 task/project 改用 token 重叠路由(token 边界正确、可排序),取代子串扫描;origin 仍精确匹配。纯 token 路由,无 embeddings(语义检索仍延后)。延后项 #3 的"ranking"由此落地一部分。
 
-## 实施阶段
+## 历史实施阶段
 
-### W0. 合同落地与当前入口同步
+### W0. 合同落地与当前入口同步（已完成）
 
-- 新增本文。
-- `.plan/browser-memory-learning-mechanism.md` 标记为讨论记录并指向本文。
-- 更新 `CURRENT.md` / `TODO.md`：列入当前激活项、边界、验证计划。
+- [x] 新增本文。
+- [x] `.plan/browser-memory-learning-mechanism.md` 标记为讨论记录并指向本文。
+- [x] 更新 `CURRENT.md` / `TODO.md`：当时列入当前激活项、边界、验证计划；当前入口状态以 `CURRENT.md` 为准。
 
 验收：`npm run check:doc-structure`。
 
