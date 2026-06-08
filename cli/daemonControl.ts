@@ -188,6 +188,8 @@ export async function findDaemon(): Promise<{ info: DaemonInfo; status: DaemonSt
 export interface DaemonStartCommand {
 	command: string;
 	args: string[];
+	/** Working directory for the spawned daemon, when the launch form needs one (e.g. resolving a bare `tsx` specifier). */
+	cwd?: string;
 }
 
 /**
@@ -228,11 +230,28 @@ export function resolveDaemonStartCommand(): DaemonStartCommand {
 	if (existsSync(jsEntry)) return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
 	const tsEntry = path.join(dir, "bin.ts");
 	if (existsSync(tsEntry)) {
-		const tsxCli = path.join(packageRoot() ?? path.resolve(dir, ".."), "node_modules", "tsx", "dist", "cli.mjs");
-		if (existsSync(tsxCli)) return { command: process.execPath, args: [tsxCli, tsEntry, "daemon", "start"] };
+		const root = packageRoot() ?? path.resolve(dir, "..");
+		const tsxCli = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
+		if (existsSync(tsxCli)) {
+			// Prefer running the tsx loader IN-PROCESS via `node --import tsx` (Node ≥20.6).
+			// The tsx CLI wrapper (tsxCli) re-execs a child node, which escapes the parent's
+			// windowsHide and pops a console window on Windows; the single-process form
+			// inherits windowsHide and stays invisible. cwd=root so the bare `tsx` resolves.
+			// Older Node without `--import` falls back to the (windowed) re-exec wrapper.
+			if (supportsImportFlag()) return { command: process.execPath, args: ["--import", "tsx", tsEntry, "daemon", "start"], cwd: root };
+			return { command: process.execPath, args: [tsxCli, tsEntry, "daemon", "start"] };
+		}
 		return { command: process.execPath, args: [tsEntry, "daemon", "start"] };
 	}
 	return { command: process.execPath, args: [jsEntry, "daemon", "start"] };
+}
+
+function supportsImportFlag(): boolean {
+	try {
+		return process.allowedNodeEnvironmentFlags?.has("--import") === true;
+	} catch {
+		return false;
+	}
 }
 
 /** Return a live daemon, auto-starting one (detached) if none is reachable. */
@@ -246,6 +265,11 @@ export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Prom
 	const child = spawn(startCommand.command, startCommand.args, {
 		detached: true,
 		stdio: "ignore",
+		// On Windows a detached child is given its own console window; hide it so the
+		// background daemon runs invisibly (the process still shows in Task Manager —
+		// it is a long-lived singleton by design). No-op on POSIX.
+		windowsHide: true,
+		...(startCommand.cwd ? { cwd: startCommand.cwd } : {}),
 		env: daemonSpawnEnv(),
 	});
 	child.unref();

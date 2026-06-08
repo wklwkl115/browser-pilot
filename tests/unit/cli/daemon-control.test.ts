@@ -73,15 +73,25 @@ test("daemon version helper identifies stale lockfiles", () => {
 	assert.equal(isDaemonVersionCurrent(sampleInfo({ version: "0.0.0+daemon.0" })), false);
 });
 
-test("resolveDaemonStartCommand uses tsx for source-tree CLI runs", () => {
+test("resolveDaemonStartCommand runs the source tree via tsx and stays single-process where supported", () => {
 	const prev = process.env.PI_BROWSER_DAEMON_ENTRY;
 	try {
 		delete process.env.PI_BROWSER_DAEMON_ENTRY;
 		const command = resolveDaemonStartCommand();
 		assert.equal(command.command, process.execPath);
-		assert.match(command.args[0], /node_modules[\\/]+tsx[\\/]+dist[\\/]+cli\.mjs$/);
-		assert.match(command.args[1], /cli[\\/]+bin\.ts$/);
 		assert.deepEqual(command.args.slice(-2), ["daemon", "start"]);
+		if (process.allowedNodeEnvironmentFlags?.has("--import") === true) {
+			// In-process loader (`node --import tsx cli/bin.ts ...`): no child re-exec, so
+			// the spawn's windowsHide keeps it invisible on Windows. cwd resolves bare tsx.
+			assert.equal(command.args[0], "--import");
+			assert.equal(command.args[1], "tsx");
+			assert.match(command.args[2], /cli[\\/]+bin\.ts$/);
+			assert.ok(command.cwd, "cwd is set so the bare `tsx` specifier resolves");
+		} else {
+			// Legacy fallback on Node without --import: the tsx CLI wrapper (re-execs).
+			assert.match(command.args[0], /node_modules[\\/]+tsx[\\/]+dist[\\/]+cli\.mjs$/);
+			assert.match(command.args[1], /cli[\\/]+bin\.ts$/);
+		}
 	} finally {
 		if (prev === undefined) delete process.env.PI_BROWSER_DAEMON_ENTRY;
 		else process.env.PI_BROWSER_DAEMON_ENTRY = prev;
