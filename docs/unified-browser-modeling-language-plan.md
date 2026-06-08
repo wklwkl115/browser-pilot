@@ -418,7 +418,7 @@ P1 规范详见 `docs/abml-p1-spec.md`。摘要:
 
 ## 11. 迁移与向后兼容
 
-- **协议单一真源**:新动词/`accessibility.tree`/`input.*` 等命令走 `bridge/native_command_schema.json` + `npm run sync:protocol`(遵守 CLAUDE.md 约定),不手改生成文件。
+- **协议单一真源**:新动词/`accessibility.tree`/`input.*` 等命令走 `bridge/native_command_schema.json` + `npm run sync:protocol`(遵守 `AGENTS.md` 与 `docs/document-structure.md` 约定),不手改生成文件。
 - **旧工具不删**:转为内部调动词的薄别名，标 deprecated;现有契约测试继续绿。
 - **ref 兼容**:`browser-result://` 继续可用(data-slice 子类);旧 `selector`/`point` 仍在 Entity 内可见。
 - **envelope 兼容**:`DistilledEnvelope` 是扩展非重写,既有字段保留。

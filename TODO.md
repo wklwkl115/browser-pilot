@@ -1,7 +1,6 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活执行线：Performance & overhead audit execution。目标是把 `docs/performance-overhead-audit.md` 落成可执行、可验证、不过度改变 agent contract 的性能优化队列；当前决策/边界见 `CURRENT.md`。
-- 当前激活执行线：Agent-facing CLI connection control protocol。目标是把浏览器连接 readiness 从隐式 daemon auto-start 改成 agent 可主动确认、可观测、可失败恢复的 CLI 协议；执行队列见 `docs/agent-cli-connection-control-plan.md`，当前决策/边界见 `CURRENT.md`。
+- 当前激活执行线：暂无。Performance & overhead audit execution 与 Agent-facing CLI connection control protocol 均已完成；当前状态见 `CURRENT.md`，未来路线见 `ROADMAP.md`。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。

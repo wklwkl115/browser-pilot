@@ -12,8 +12,9 @@ items (T3) require blind-eval evidence before landing.
 
 ## Current Execution State
 
-Status: **active execution queue**. This document is both the audit record and the runnable TODO for
-performance work.
+Status: **COMPLETE — archived as a finished execution record**. This document was the audit record
+and runnable TODO for performance work; the queue is now closed. Future performance work should open
+a new execution contract instead of appending to this completed plan.
 
 Latest acceptance evidence (2026-06-08):
 - Subagent acceptance pass ran read-only performance gates and live smoke. After rebuilding stale

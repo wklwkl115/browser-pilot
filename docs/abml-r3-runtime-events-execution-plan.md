@@ -243,8 +243,8 @@ Preferred iteration:
 ## 8. Activation checklist
 
 Before coding:
-- This plan is the active ABML queue; `CURRENT.md` and `CLAUDE.md` don't need
-  updating (ABML remains internal substrate, no public surface change).
+- Historical note: this plan was the active ABML queue while R3 runtime events were landing.
+  It is now complete; current activation state belongs in `CURRENT.md` / `TODO.md`.
 - Confirm `check:abml-core-boundary`, `check:abml-relation-graph`, `check:abml-inference`
   all green before starting (they are the load-bearing R1/R2 contracts).
 - Confirm A/B test JSON files cleaned from repo root (done 2026-06-04).

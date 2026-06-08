@@ -2,9 +2,9 @@
 
 ## Status
 
-Implemented queue. Items are marked complete where current code, docs, tests, or runtime smoke prove
-the behavior. This plan turns browser connection readiness into an explicit agent-facing CLI
-protocol while preserving the existing daemon-backed execution model.
+**COMPLETE — archived as a finished execution record.** Current code, docs, tests, and
+runtime smoke prove the implemented behavior. This plan turned browser connection readiness into an
+explicit agent-facing CLI protocol while preserving the daemon-backed execution model.
 
 ## Problem
 

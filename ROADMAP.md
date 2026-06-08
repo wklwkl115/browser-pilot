@@ -27,6 +27,6 @@
 
 ## 历史复核结论
 
-当前仓库中已清理“完成但仍标记为当前”的主要口径。剩余当前项只在 `CURRENT.md` 中维护；本文件只保留 future-facing 路线，不作为执行队列。
+当前仓库中已清理“完成但仍标记为当前”的主要口径。当前激活项以 `CURRENT.md` 为准；目前无激活执行线。本文件只保留 future-facing 路线，不作为执行队列。
 
 历史压缩后的阶段归档见：`docs/archive/bridge-esm-history.md`、`docs/archive/governance-history.md`、`docs/archive/orchestration-history.md`、`docs/archive/tmwd-cdp-bridge-legacy.md`；逐条详档见对应 `*.full.md` 文件。
