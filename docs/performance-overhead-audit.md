@@ -93,9 +93,8 @@ Evidence-closed / future-gated queue:
 5. [x] 2.4 clone reduction future-gated: do not broadly remove `structuredClone` from response
    envelope fitting until compressed/uncompressed non-`[Circular]` contracts prove it safe. The
    CLI-only details transport/construction subset is landed.
-6. [x] 3.3 current audit closed as future-gated: scan `focus` full entity objects are a documented
-   ABML perception surface. Replacing them with refs requires targeted blind eval plus
-   shape-versioning or migration evidence.
+6. [x] 3.3 landed after targeted blind eval: scan `focus` entity projections now use refs-v1;
+   full entity objects remain available via `envelope.entities` and artifacts.
 
 ---
 
@@ -270,10 +269,11 @@ Evidence-closed / future-gated queue:
 
 ## Tier 2 — bigger latency/CPU wins, more rework
 
-### 2.1 Replace the per-node box-model loop with a single geometry pass
-Fold rects from the in-page scan (already computed) instead of N `DOM.getBoxModel` CDP calls —
-removes 0.2's roundtrips entirely. Medium risk: re-derive the AX↔box mapping; gate on AX-merge
-tests/smokes. Natural follow-on once 1.1 threads scan data through.
+### 2.1 Replace the per-node box-model loop with a single geometry pass — **CLOSED, do not do (see verified-clean)**
+Original idea: fold rects from the in-page scan (already computed) instead of N `DOM.getBoxModel`
+CDP calls. Verification killed it — the "fold in-page rects" form is self-contradictory and the
+credible rewrite has a bad risk/reward after 0.2. Full reasoning recorded under "Verified clean /
+corrected" below.
 
 ### 2.2 Cold-start extension grace: event-driven + shorter default + negative cache  **[from first pass]**
 - **Where:** `src/driver/BrowserBridgeCommandService.ts:34` (`DEFAULT_EXTENSION_WAIT_MS=5000`),
@@ -384,14 +384,53 @@ consume the trimmed fields before landing; fix + regression must be general.
   `primary_actions[].entity`, `primary_entities` (≤16), and `referenced_entities.slice(0,40)`,
   while `envelope.entities` already de-dupes/caps to 12 and the artifact has the full list. Hints
   carry uncapped selector arrays (`entity.ts:250-252,364-366`).
-- **Fix:** in `focus`, store entity `ref` strings; cut `referenced_entities` 40→~12; cap hint
-  selector arrays (~8). Verify agents read from `envelope.entities`/artifact vs `focus` first.
-- **Risk:** Med — documented ABML perception surface; no-overfit applies.
+- **Blind-eval evidence:** landed after a targeted two-agent blind run on real `https://linux.do/`
+  (read-only, isolated daemon/browser, agents read the skill first). Both agents completed the
+  "top 5 latest topics + reply counts" task and explicitly reported they did **not** consume
+  `summary.focus.primary_actions[].entity`, `summary.focus.primary_entities`, or
+  `summary.focus.referenced_entities`; they used scan structure/outline, artifact `data.list_hints`,
+  and a final read-only JS row extractor. Evidence is recorded in
+  `evals/browser-workflows/blind-findings.md`.
+- **Done:** `focus.entityShape:"refs-v1"` now marks the migrated shape. `primary_actions` carries
+  `entityRef`; `primary_entities`, `list_entities`, `visual_regions`, and `referenced_entities`
+  carry `pi-ref://...` strings instead of full objects; `referenced_entities` is capped at 12.
+  Full entity objects are still explicitly supplied through top-level `envelope.entities` and mirrored
+  into saved artifacts, so perception data remains recoverable without duplicating it in focus.
+  Relation selector hint arrays (`controlsSelectors` / `ownsSelectors` / `expandedTargetSelectors`)
+  are capped at 8.
+- **Guard:** `check-abml-scan-entities`, `check-abml-scan-envelope`, `observe-abml-integration`,
+  `check-summaries`, and `check-token-economy` lock the refs-v1 shape, full entity disclosure, and
+  byte reduction (`check-summaries` high-entropy scan summary 11793→3522 chars).
 
 ---
 
 ## Verified clean / corrected (do NOT touch — recorded so they aren't re-flagged)
 
+- **[closed — 2.1 single geometry pass, do NOT do]** Source verification killed the "fold the
+  in-page scan rects into the AX entities instead of N `DOM.getBoxModel`" idea on two grounds:
+  - **Chicken-and-egg — geometry IS the merge's primary join key.** `axMatchScore`
+    (`src/abml-core/ax.ts:366-368`) scores a coincident box IoU (`>= COINCIDENT_BOX_IOU`) as the
+    single strongest AX↔DOM match (`return 120 + iou*10`), explicitly so it overrides a mislabeled
+    DOM role / dirty class-name "name" (the `<input type=radio>` scanned as a textbox case the
+    comment at `:359-365` calls out); geometry is also the tie-breaker for the name/role paths
+    (`:377-378`). The two sides have **no cheap common join key**: in-page scan entities are keyed
+    by CSS `selector` (`buildScanScript.ts:316,357` `getBoundingClientRect`) with no
+    `backendNodeId` (page-world JS can't see CDP backend ids); AX entities carry `backendNodeId`
+    but no in-page rect. So to hand an AX node the DOM scan's rect you must first know the
+    correspondence — which is established **by** the geometry you're trying to skip. The literal
+    "fold in-page rects" form breaks the very mechanism it depends on.
+  - **The only credible version is a bigger rewrite with bad risk/reward.** Replacing N
+    `DOM.getBoxModel` with one `DOMSnapshot.captureSnapshot(includeDOMRects:true)` joined by
+    `backendNodeId` is a real columnar-parse + coordinate-space-alignment rewrite. DOMSnapshot
+    rects are document-relative while `getBoxModel` returns content-box quads; getting the space
+    subtly wrong regresses **both** the IoU merge (perception correctness — ABML's north star) and
+    click points (execution landing) at once. Meanwhile **0.2 already made the per-node box-model
+    calls concurrent** (`axRuntime.ts:260-276`, `Promise.all`), so the remaining win is only
+    "concurrent batch → single roundtrip" (tens of ms on large pages). Spending a
+    merge-and-click-correctness risk to shave that, in a mature maintenance phase, is negative ROI.
+  - **Verdict:** not done by design. If a future change ever needs single-pass geometry, it must
+    join by `backendNodeId` (not re-derived geometry) and prove coordinate-space parity against the
+    AX-merge IoU path and the click-point path before landing.
 - **[corrected]** No redundant `server.snapshot()` within a single observe call — `runScanObservation`
   calls it once (`:473`) and reuses `bridge.*`; `currentObserveSnapshotMeta`'s later call captures
   *post-action* state by design. First-pass suspicion did not reproduce.
@@ -423,8 +462,8 @@ consume the trimmed fields before landing; fix + regression must be general.
    (every MV3 wake).
 2. **Tier 1** — 1.1 (single scan pass) is the biggest scan-latency win; pair with 1.2/1.3/1.8.
    1.4/1.5/1.6/1.7/1.9 each need a targeted test + a smoke.
-3. **Tier 2** — 2.1 follows 1.1; 2.2 (cold-start grace); 2.3 (budget serialize-once) only with
-   full budget-contract coverage.
+3. **Tier 2** — 2.1 is CLOSED (do not do; see verified-clean); 2.2 (cold-start grace) and 2.3
+   (budget serialize-once, only with full budget-contract coverage) are landed as safe subsets.
 4. **Tier 3** — only after a blind-eval run confirms agents don't read the trimmed fields. 3.1 is
    the biggest token win.
 
@@ -583,10 +622,8 @@ immediate follow-up subcalls skip the full grace. Guard:
 back-to-back no-extension commands. Deferred: default wait reduction needs slow-extension evidence.
 
 **1.9 / 1.2 / 2.3 / 2.4 / 3.x** — see the tiered entries above; 1.9, 1.2, 2.3 safe subset,
-2.4 CLI details subset, 3.1 artifact dedupe, and 3.2 `browser_tabs list` compaction are landed.
-The only deferred future candidate is 3.3 scan-focus entity refs, which stays behind targeted blind
-eval and contract migration evidence.
+2.4 CLI details subset, 3.1 artifact dedupe, 3.2 `browser_tabs list` compaction, and 3.3 scan
+focus refs-v1 are landed.
 
-> Net: the audit queue is closed except for the explicitly future-gated 3.3 shape change. The landed
-> work covers latency/CPU/bytes/allocations plus the evidence-backed Tier 3 output reductions that
-> had compatibility guards.
+> Net: the audit queue is closed. The landed work covers latency/CPU/bytes/allocations plus the
+> evidence-backed Tier 3 output reductions that had compatibility guards or blind-eval proof.

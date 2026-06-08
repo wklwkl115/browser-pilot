@@ -2,8 +2,8 @@
  * ABML scan summary/envelope schema contract (P3.4/P3.5).
  *
  * Verifies:
- * - ScanSummarySchema accepts the current scan summary with internal entity projections
- * - EntitySchema validates focus.primary_actions[*].entity and primary/list entity arrays
+ * - ScanSummarySchema accepts the current scan summary with focus entity refs
+ * - EntitySchema validates the full envelope entity disclosure
  * - DistilledEnvelope keeps layered artifact hints + nextActions without changing top-level scan surface
  */
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { Value } from "typebox/value";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
-import { summarizeScanData } from "../../../src/tools/summaries/scan.ts";
+import { scanEntitiesForEnvelope, summarizeScanData } from "../../../src/tools/summaries/scan.ts";
 import { EntitySchema, ScanSummarySchema } from "../../../src/tools/summaries/outputSchemas.ts";
 
 const rawScan = {
@@ -42,11 +42,22 @@ const summary = summarizeScanData(rawScan, [{ id: 1 }], {
 		capturedAt: 1710000000000,
 	},
 });
+const entities = scanEntitiesForEnvelope(rawScan, {
+	entityContext: {
+		browserSessionId: "session-1",
+		tabId: 42,
+		url: "https://shop.example.test/checkout",
+		observationId: "snapshot-123",
+		capturedAt: 1710000000000,
+	},
+});
 
 assert(Value.Check(ScanSummarySchema, summary), `scan summary must conform to ScanSummarySchema: ${JSON.stringify([...Value.Errors(ScanSummarySchema, summary)].slice(0, 5).map((e) => `${e.instancePath}: ${e.message}`))}`);
-assert(summary.focus.primary_entities.every((entity) => Value.Check(EntitySchema, entity)), "primary_entities must conform to EntitySchema");
-assert(summary.focus.list_entities.every((entity) => Value.Check(EntitySchema, entity)), "list_entities must conform to EntitySchema");
-assert(summary.focus.primary_actions.every((action) => action.entity == null || Value.Check(EntitySchema, action.entity)), "embedded primary action entities must conform to EntitySchema");
+assert.equal(summary.focus.entityShape, "refs-v1", "focus must version the entity-ref projection");
+assert(summary.focus.primary_entities.every((ref) => typeof ref === "string" && ref.startsWith("pi-ref://")), "primary_entities must be entity refs");
+assert(summary.focus.list_entities.every((ref) => typeof ref === "string" && ref.startsWith("pi-ref://")), "list_entities must be entity refs");
+assert(summary.focus.primary_actions.every((action) => action.entity === undefined && (action.entityRef === undefined || typeof action.entityRef === "string")), "primary action rows must expose entityRef, not embedded entity objects");
+assert(entities.every((entity) => Value.Check(EntitySchema, entity)), "full envelope entities must conform to EntitySchema");
 
 const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-abml-scan-envelope-"));
 try {
@@ -59,6 +70,7 @@ try {
 		outputPath: path.join(tmp, ".pi", "browser-artifacts", "scan-envelope.json"),
 		fallbackName: "scan-summary.json",
 		summary,
+		entities,
 		artifactValue: { data: rawScan },
 	});
 	const envelope = JSON.parse(result.content[0].text);
@@ -66,14 +78,16 @@ try {
 	assert.equal(envelope.summary.summaryVersion, 2, "scan envelope must preserve summary version");
 	assert(Array.isArray(envelope.summary.focus.primary_entities), "scan envelope must keep primary_entities in summary focus");
 	assert(Array.isArray(envelope.summary.focus.list_entities), "scan envelope must keep list_entities in summary focus");
+	assert(envelope.summary.focus.primary_entities.every((ref) => typeof ref === "string"), "scan envelope focus primary_entities must remain refs");
+	assert(envelope.summary.focus.primary_actions.every((action) => action.entity === undefined && (action.entityRef === undefined || typeof action.entityRef === "string")), "scan envelope primary_actions must not embed entity objects");
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.actionables") || String(item).includes("click(pi-ref://") || String(item).includes("read(pi-ref://")), "scan envelope nextActions must retain actionables targeted follow-up");
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.content") || String(item).includes("read_saved_artifact")), "scan envelope nextActions must retain content targeted follow-up");
 	assert(Array.isArray(envelope.entities), "scan envelope must surface entity projections at envelope level in P8");
+	assert(envelope.entities.every((entity) => typeof entity === "object" && typeof entity.ref === "string" && typeof entity.kind === "string"), "envelope.entities must still carry compact full entity objects");
 	// F2: the scan summarizer duplicated `headings`/`top_layer` into both summary top-level AND focus by
 	// SHARED reference, so redactSensitiveValue collapsed the second occurrence to a "[Circular]" string
 	// — unreadable noise. They are now distinct copies; assert none renders as the placeholder.
-	// (Entity objects are still intentionally shared across primary_actions[].entity / primary_entities /
-	// envelope.entities — that de-dup is by design and contracted, so it is NOT asserted away here.)
+	// Entity objects now live in envelope.entities/artifacts; focus carries refs only.
 	for (const value of [envelope.summary.headings, envelope.summary.top_layer, envelope.summary.focus?.headings, envelope.summary.focus?.top_layer]) {
 		assert(value !== "[Circular]", "scan summary headings/top_layer must be real values, never a [Circular] placeholder");
 	}

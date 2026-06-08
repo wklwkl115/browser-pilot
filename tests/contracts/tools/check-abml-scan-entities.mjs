@@ -2,13 +2,13 @@
  * ABML DOM Entity scan contract (P3 internal gate).
  *
  * Verifies:
- * - scan summary builds primary/list Entity projections without changing legacy top-level shape
+ * - scan summary builds primary/list Entity ref projections without changing legacy top-level shape
  * - primary action entities mint pi-ref:// refs with css + textAnchor + point locators when available
  * - entity owner metadata inherits browserSessionId/tabId/url/observationId/capturedAt from observe context
  * - list hints mint region refs and entity de-duplication keeps stable counts
  */
 import assert from "node:assert/strict";
-import { summarizeScanData } from "../../../src/tools/summaries/scan.ts";
+import { scanEntitiesForEnvelope, summarizeScanData } from "../../../src/tools/summaries/scan.ts";
 
 const baseData = {
 	url: "https://shop.example.test/checkout",
@@ -18,7 +18,7 @@ const baseData = {
 	node_count: 40,
 	truncated: false,
 	actionables: [
-		{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500 },
+		{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500, controlsSelectors: Array.from({ length: 10 }, (_, i) => `#panel-${i}`) },
 		{ index: 1, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1400 },
 		{ index: 2, tag: "input", role: "textbox", action: "card", label: "Card number", selector: "#card", point: { x: 100, y: 200 }, rect: { x: 80, y: 180, width: 220, height: 30 }, hitOk: true, editable: true, disabled: false, priority: 1200 },
 	],
@@ -39,20 +39,33 @@ const summary = summarizeScanData(baseData, [{ id: 1 }], {
 			capturedAt: 1710000000000,
 		},
 	});
+const envelopeEntities = scanEntitiesForEnvelope(baseData, {
+		entityContext: {
+			browserSessionId: "session-1",
+			tabId: 42,
+			url: "https://shop.example.test/checkout",
+			observationId: "snapshot-123",
+			capturedAt: 1710000000000,
+		},
+	});
 
 	// legacy top-level surface remains unchanged
 	assert.equal("entities" in summary, false, "scan summary must not add a new top-level entities field before public surface convergence");
 	assert(Array.isArray(summary.focus?.primary_actions), "scan summary must keep legacy focus.primary_actions");
-	assert(Array.isArray(summary.focus?.primary_entities), "scan summary must expose internal primary_entities under focus");
-	assert(Array.isArray(summary.focus?.list_entities), "scan summary must expose internal list_entities under focus");
+	assert.equal(summary.focus?.entityShape, "refs-v1", "scan summary must version the focus entity-ref projection");
+	assert(Array.isArray(summary.focus?.primary_entities), "scan summary must expose primary entity refs under focus");
+	assert(Array.isArray(summary.focus?.list_entities), "scan summary must expose list entity refs under focus");
 
-	const primaryEntities = summary.focus.primary_entities;
-	const listEntities = summary.focus.list_entities;
-	assert(primaryEntities.length >= 2, "scan summary must mint primary action entities");
-	assert.equal(listEntities.length, 1, "scan list entity de-duplication must collapse duplicate list hints");
+	const primaryEntityRefs = summary.focus.primary_entities;
+	const listEntityRefs = summary.focus.list_entities;
+	assert(primaryEntityRefs.length >= 2, "scan summary must mint primary action entity refs");
+	assert.equal(listEntityRefs.length, 1, "scan list entity de-duplication must collapse duplicate list hint refs");
+	assert(primaryEntityRefs.every((ref) => typeof ref === "string" && ref.startsWith("pi-ref://")), "primary_entities must be refs");
+	assert(listEntityRefs.every((ref) => typeof ref === "string" && ref.startsWith("pi-ref://")), "list_entities must be refs");
 
-	const payEntity = primaryEntities.find((entity) => entity.name === "pay" || entity.name === "Pay now");
+	const payEntity = envelopeEntities.find((entity) => entity.name === "pay" || entity.name === "Pay now");
 	assert(payEntity, "scan summary must include a Pay now entity");
+	assert(primaryEntityRefs.includes(payEntity.ref), "focus primary_entities must point at the Pay now entity ref");
 	assert.match(payEntity.ref, /^pi-ref:\/\//, "entity ref must use pi-ref:// scheme");
 	assert.equal(payEntity.kind, "control", "button actionable must become control entity");
 	assert.equal(payEntity.role, "button", "entity role must preserve button role");
@@ -66,13 +79,16 @@ const summary = summarizeScanData(baseData, [{ id: 1 }], {
 	assert.equal(payEntity.hints.jsonPath, "data.actionables[0]", "entity hints must keep actionables jsonPath");
 
 	const payAction = summary.focus.primary_actions.find((action) => action.jsonPath === "data.actionables[0]");
-	assert(payAction?.entity?.ref === payEntity.ref, "primary action summary row must carry the minted entity handle");
+	assert.equal(payAction?.entityRef, payEntity.ref, "primary action summary row must carry the minted entity handle as a ref");
+	assert.equal(payAction?.entity, undefined, "primary action summary row must not embed the full entity object");
 
 	assert.equal(payEntity.hints.selector, "#pay", "minted entity must preserve selector hint");
 	assert.equal(payEntity.hints.jsonPath, "data.actionables[0]", "minted entity must preserve source jsonPath");
+	assert.equal(payEntity.hints.controlsSelectors.length, 8, "selector relation hint arrays must be capped");
 	assert.match(payEntity.ref, /^pi-ref:\/\/control\//, "minted ref must use control pi-ref URI shape");
 
-	const listEntity = listEntities[0];
+	const listEntity = envelopeEntities.find((entity) => entity.ref === listEntityRefs[0]);
+	assert(listEntity, "envelope entities must carry the full list entity object");
 	assert.equal(listEntity.kind, "region", "list hints must mint region entities");
 	assert.equal(listEntity.role, "list", "list hint entity role must be list");
 	assert.equal(listEntity.hints.listContainer, true, "list hint entity must mark listContainer");

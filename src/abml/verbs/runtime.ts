@@ -4,7 +4,7 @@ import { isRecord } from "../../utils/records.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
-import { summarizeScanData } from "../../tools/summaries/scan.js";
+import { scanEntitiesForEnvelope, summarizeScanData } from "../../tools/summaries/scan.js";
 import { registerScanEntityRefs } from "../../tools/scanEntityRefs.js";
 import { normalizeTabId } from "../../utils/params.js";
 import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources/resourceStore.js";
@@ -846,13 +846,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			maxChars: options.maxChars ?? DEFAULT_MAX_CHARS,
 			entityContext,
 		});
-		const focus = summary.focus && typeof summary.focus === "object" ? summary.focus as Record<string, unknown> : {};
-		const entities = [
-			...(Array.isArray(focus.primary_entities) ? focus.primary_entities : []),
-			...(Array.isArray(focus.list_entities) ? focus.list_entities : []),
-			...(Array.isArray(focus.visual_regions) ? focus.visual_regions : []),
-			...(Array.isArray(focus.referenced_entities) ? focus.referenced_entities : []),
-		].filter((item): item is Entity => isRecord(item));
+		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
 		const axRead = await readAxEntities(server, {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,

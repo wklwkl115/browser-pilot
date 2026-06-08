@@ -54,6 +54,10 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(typeof result.details?.abml?.frameEntityCount, "number");
 	assert.equal(Array.isArray(envelope.summary?.focus?.primary_entities), true);
 	assert.equal(envelope.summary?.focus?.primary_entities?.length >= 1, true);
+	assert.equal(envelope.summary?.focus?.entityShape, "refs-v1");
+	assert.equal(typeof envelope.summary?.focus?.primary_entities?.[0], "string");
+	assert.equal(Array.isArray(envelope.entities), true);
+	assert.equal(envelope.entities?.some((entity: any) => entity.kind === "control"), true);
 });
 
 test("browser_observe default scan reuses scan_extract data for ABML read", async () => {
@@ -141,7 +145,7 @@ test("browser_observe P1: actionRef attributes the causal delta to the control a
 	});
 	// Discover the control ref from a plain scan, then attribute a baseline delta to it via actionRef.
 	const env1 = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
-	const candidates = [...(env1.summary?.focus?.primary_entities ?? []), ...(env1.entities ?? [])];
+	const candidates = env1.entities ?? [];
 	const control = candidates.find((e: any) => e.kind === "control") ?? candidates[0];
 	const actionRef = control?.ref;
 	assert.ok(typeof actionRef === "string" && actionRef, "a control ref is available to attribute to");
@@ -190,7 +194,7 @@ test("browser_observe P2-B: a DOM-sink event naming its element → triggered ed
 	// Discover a control with a selector from a plain scan, then have the hook delta name it.
 	const probe = causalServer({ status: { active: true, lastSeq: 8 } });
 	const env1 = JSON.parse((await runScanObservation(probe as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
-	const ctl = (env1.summary?.focus?.primary_entities ?? []).find((e: any) => e.hints?.selector && (e.kind === "control" || e.kind === "element"));
+	const ctl = (env1.entities ?? []).find((e: any) => e.hints?.selector && (e.kind === "control" || e.kind === "element"));
 	assert.ok(ctl?.hints?.selector, "a control with a selector is available to attribute to");
 	const server = causalServer(
 		{ status: { active: true, lastSeq: 8 }, list: { items: [], total: 0 } },

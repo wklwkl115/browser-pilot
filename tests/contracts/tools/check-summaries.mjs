@@ -23,6 +23,7 @@ import {
 	summarizeNetworkData,
 	summarizeNucleiBridgeData,
 	summarizeHookPerformance,
+	scanEntitiesForEnvelope,
 	summarizeScanData,
 	summarizeTransferData,
 	summarizeSqlmapBridgeData,
@@ -224,7 +225,7 @@ assert.equal(linkRows[1][sameCol], false, "check-summaries scan.actionables.same
 assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 assert.equal(scan.artifact_hints.jsonPaths.actionables, "data.actionables", "check-summaries scan.artifactHints: scan summary must provide precise actionables jsonPath");
 
-const richScan = summarizeScanData({
+const richScanData = {
 	url: "https://example.test/checkout",
 	title: "Checkout",
 	readyState: "complete",
@@ -238,7 +239,16 @@ const richScan = summarizeScanData({
 		{ index: 3, tag: "canvas", role: "img", action: "captcha board", label: "Canvas board", selector: "#canvas-board", point: { x: 320, y: 180 }, rect: { x: 260, y: 120, width: 120, height: 120 }, hitOk: true, clickable: true, disabled: false, priority: 900 },
 	],
 	list_hints: [{ selector: "main > div.cart > div.item", itemCount: 20, hiddenCount: 17, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] }],
-}, [{ id: 1 }], { maxChars: 12_000 });
+};
+const richScanEntityContext = {
+	browserSessionId: "sess-rich",
+	tabId: 3,
+	url: "https://example.test/checkout",
+	observationId: "scan-rich",
+	capturedAt: 1710000000000,
+};
+const richScan = summarizeScanData(richScanData, [{ id: 1 }], { maxChars: 12_000, entityContext: richScanEntityContext });
+const richScanEntities = scanEntitiesForEnvelope(richScanData, { entityContext: richScanEntityContext });
 assert.equal(richScan.focus.primary_actions.length >= 2, true, "check-summaries scan.primaryActions: compact high-signal actions must be exposed");
 assert.equal(richScan.focus.primary_actions[0].jsonPath.startsWith("data.actionables["), true, "check-summaries scan.primaryActions.path: action summaries must carry artifact jsonPath");
 assert.equal(JSON.stringify(richScan.focus.primary_actions).includes("4111111111111111"), false, "check-summaries scan.primaryActions.redactValue: editable summaries must not expose raw input values");
@@ -246,7 +256,8 @@ assert.equal(richScan.focus.forms[0].fields.length, 1, "check-summaries scan.for
 assert.equal(richScan.focus.lists[0].more.length, 2, "check-summaries scan.lists: repeated list hints must preserve representative hidden samples");
 assert.equal(richScan.focus.text_signals.some((item) => /payment|required|items/i.test(item)), true, "check-summaries scan.textSignals: high-signal status/list lines must replace shallow textPreview dependence");
 assert.equal(Array.isArray(richScan.focus.visual_regions), true, "check-summaries scan.visualRegions: internal visual region projections must stay optional but available");
-assert.equal(richScan.focus.visual_regions[0]?.source, "vision", "check-summaries scan.visualRegions.source: canvas region projections must be sourced from vision");
+assert.equal(typeof richScan.focus.visual_regions[0], "string", "check-summaries scan.visualRegions: focus visual regions must be refs");
+assert.equal(richScanEntities.find((entity) => entity.ref === richScan.focus.visual_regions[0])?.source, "vision", "check-summaries scan.visualRegions.source: canvas region projections must be sourced from vision");
 const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 }, { id: 2 }], {
 	maxChars: 9_000,
 	entityContext: {
@@ -258,8 +269,8 @@ const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 },
 	},
 });
 const scanBudgetGoldenJson = JSON.stringify(scanBudgetGolden);
-assert.equal(scanBudgetGoldenJson.length, 11793, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
-assert.equal(sha256(scanBudgetGoldenJson), "535819e4a57fa02f56b71b63d8b7416111f2688f096b6b0bcaf27bc2f1ef7b6a", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
+assert.equal(scanBudgetGoldenJson.length, 3522, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
+assert.equal(sha256(scanBudgetGoldenJson), "e88406f9dc5a4cb23ad2d61610f981cf79d2987ca67a0cfc6bbdf15081a69ad5", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
 assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "legacyRows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
 assert.equal(scanBudgetGolden.focus.primary_actions.length, 3, "check-summaries scan.budgetGolden.primaryActions: final budget rung action count must stay stable");
 assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung legacy rows stay omitted");
@@ -273,6 +284,7 @@ try {
 		ctx: { cwd: scanTmp },
 		fallbackName: "scan-summary.json",
 		summary: richScan,
+		entities: richScanEntities,
 		artifactValue: { data: { content: "x".repeat(9_000), actionables: [{ selector: "#pay" }], list_hints: [] } },
 	}));
 	assert.ok(scanEnvelope.saved?.path && existsSync(scanEnvelope.saved.path), "check-summaries scan.artifact: large scan result must save raw artifact");

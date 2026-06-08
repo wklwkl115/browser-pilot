@@ -107,6 +107,12 @@ function numberValue(value: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
+function stringArray(value: unknown, limit = 8): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const out = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, limit);
+	return out.length ? out : undefined;
+}
+
 function roleForTag(tag: string | undefined): string {
 	switch ((tag || "").toLowerCase()) {
 		case "a": return "link";
@@ -229,6 +235,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 	};
 	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text);
 	const value = node.editable === true ? undefined : stringValue(node.value);
+	const controlsSelectors = stringArray(node.controlsSelectors);
+	const ownsSelectors = stringArray(node.ownsSelectors);
+	const expandedTargetSelectors = stringArray(node.expandedTargetSelectors);
 	const entity: Omit<Entity, "ref"> = {
 		kind,
 		role,
@@ -247,9 +256,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			...(node.hitOk === false && stringValue(node.occluderSelector) ? { occluderSelector: stringValue(node.occluderSelector) } : {}),
 			// aria-controls / aria-owns / expanded target selectors (DOM-sourced so they resolve even when
 			// the target is collapsed/hidden — the AX tree omits those). Materialized by selector.
-			...(Array.isArray(node.controlsSelectors) && node.controlsSelectors.length ? { controlsSelectors: node.controlsSelectors } : {}),
-			...(Array.isArray(node.ownsSelectors) && node.ownsSelectors.length ? { ownsSelectors: node.ownsSelectors } : {}),
-			...(Array.isArray(node.expandedTargetSelectors) && node.expandedTargetSelectors.length ? { expandedTargetSelectors: node.expandedTargetSelectors } : {}),
+			...(controlsSelectors ? { controlsSelectors } : {}),
+			...(ownsSelectors ? { ownsSelectors } : {}),
+			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
 			// HTML input type (e.g. "password", "search", "email") — DOM-sourced for R2 intent
 			// detection. AX tree doesn't distinguish input types beyond role (textbox/searchbox).
 			...(stringValue(node.inputKind) ? { inputKind: stringValue(node.inputKind) } : {}),
@@ -351,6 +360,9 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 	const name = stringValue(node.sourceName);
 	const locators: Locator[] = selector ? [{ by: "css", value: selector }] : [];
 	const kind = referencedTargetKind(role);
+	const controlsSelectors = stringArray(node.controlsSelectors);
+	const ownsSelectors = stringArray(node.ownsSelectors);
+	const expandedTargetSelectors = stringArray(node.expandedTargetSelectors);
 	const entity: Omit<Entity, "ref"> = {
 		kind,
 		role,
@@ -361,9 +373,9 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 		hints: {
 			...(selector ? { selector } : {}),
 			controlsSourceOnly: true,
-			...(Array.isArray(node.controlsSelectors) && node.controlsSelectors.length ? { controlsSelectors: node.controlsSelectors } : {}),
-			...(Array.isArray(node.ownsSelectors) && node.ownsSelectors.length ? { ownsSelectors: node.ownsSelectors } : {}),
-			...(Array.isArray(node.expandedTargetSelectors) && node.expandedTargetSelectors.length ? { expandedTargetSelectors: node.expandedTargetSelectors } : {}),
+			...(controlsSelectors ? { controlsSelectors } : {}),
+			...(ownsSelectors ? { ownsSelectors } : {}),
+			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
 		},
 	};
 	const capturedAt = context.capturedAt ?? Date.now();

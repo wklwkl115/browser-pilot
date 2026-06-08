@@ -69,6 +69,7 @@ type TextToolResultOptions = {
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
 	artifactValue?: unknown;
+	entities?: Array<Record<string, unknown>>;
 	summary?: Record<string, unknown>;
 	distill?: TextDistillFn;
 	artifactThreshold?: number;
@@ -261,6 +262,7 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		operation: options.operation,
 		snapshot: options.snapshot,
 		artifactValue: options.artifactValue,
+		entities: options.entities,
 		summary: options.summary,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,

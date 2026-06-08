@@ -21,7 +21,7 @@ import { resolveArtifactPath } from "./artifacts.js";
 import { assertBridgeCommandSucceeded } from "./bridgeResultValidation.js";
 import { evaluatePageScriptDirect } from "./pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "./scanEntityRefs.js";
-import { summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
+import { scanEntitiesForEnvelope, summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
 import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared.js";
 
@@ -278,6 +278,10 @@ function mergeEntitiesByRef(...groups: unknown[][]): Entity[] {
 	return out;
 }
 
+function entityRefs(entities: Entity[], limit = Number.MAX_SAFE_INTEGER): string[] {
+	return entities.map((entity) => entity.ref).filter((ref): ref is string => typeof ref === "string" && !!ref).slice(0, limit);
+}
+
 function baselineEntitiesFromParam(value: unknown): Entity[] | undefined {
 	const direct = entityArrayFromUnknown(value);
 	if (direct) return direct;
@@ -332,6 +336,7 @@ function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, u
 function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 	if (Array.isArray(value)) return entities.length < 10;
 	if (!isRecord(value)) return false;
+	if (entityArrayFromUnknown(value.entities)) return false;
 	if (value.partialBaseline === true || value.partial === true) return true;
 	const diffOptions = isRecord(value.diffOptions) ? value.diffOptions : undefined;
 	if (diffOptions?.partialBaseline === true) return true;
@@ -507,6 +512,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		capturedAt: snapshotMeta.capturedAt,
 	};
 	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
+	const scanEnvelopeEntities = summaryData ? scanEntitiesForEnvelope(summaryData, { entityContext: scanEntityContext }) : [];
 	const baseSummary: Record<string, unknown> = {
 		...withObservationMeta(summarizeScanData(summaryData, tabs, {
 			detailLevel: params.detailLevel,
@@ -560,9 +566,11 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			const snapshotProjection = buildSnapshotProjection(attributedEntities, { treeDiff: abmlTreeDiff });
 			const baseFocus = typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus as Record<string, unknown> : {};
 			const referencedEntities = mergeEntitiesByRef(
-				Array.isArray(baseFocus.referenced_entities) ? baseFocus.referenced_entities : [],
 				entitiesForInferenceEvidence(attributedEntities, inference),
-			).slice(0, 40);
+			).slice(0, 12);
+			const primaryEntities = sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10);
+			const listEntities = attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5);
+			const visualRegions = attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4);
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
@@ -572,8 +580,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...causalBlock,
 				focus: {
 					...baseFocus,
+					entityShape: "refs-v1",
 					gist: buildPageGist(attributedEntities),
-					primary_entities: sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10),
+					primary_entities: entityRefs(primaryEntities),
 					outline: buildEntityOutline(attributedEntities),
 					// R1 relationship graph — emitted ONLY when it carries real edges (triggered / table /
 					// controls / labelledBy / ...). The always-present empty summary was unread token cost; the
@@ -586,14 +595,15 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					// envelope.* by responseEnvelope. Duplicating them here referenced the SAME object, so
 					// redactSensitiveValue collapsed the second occurrence to "[Circular]" and doubled bytes
 					// (blind-eval F2). The envelope lift reads summary top-level first, so focus needs neither.
-					referenced_entities: referencedEntities,
-					list_entities: attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5),
-					visual_regions: attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4),
+					referenced_entities: entityRefs(referencedEntities, 12),
+					list_entities: entityRefs(listEntities),
+					visual_regions: entityRefs(visualRegions),
 				},
 			};
 		})()
 		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
 	const summaryRecord = summary as Record<string, unknown>;
+	const envelopeEntities = attributedEntities ?? scanEnvelopeEntities;
 	// Narrow active capability hints — causal + treeDiff ONLY. A three-round real-agent eval (2026-06-05)
 	// showed these two are valuable when used but agents never reach for them unprompted, and passive skill
 	// docs did NOT move adoption (the new skill was loaded and still skipped 4/4). So push from the result:
@@ -641,6 +651,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		tool: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
 		summary,
+		...(envelopeEntities.length ? { entities: envelopeEntities.slice(0, 12) } : {}),
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),
@@ -656,6 +667,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
+		entities: envelopeEntities,
 		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }

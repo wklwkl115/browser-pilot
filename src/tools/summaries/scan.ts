@@ -59,6 +59,8 @@ type ScanSummaryPrepared = {
 	referencedEntities: Entity[];
 };
 
+const FOCUS_REFERENCED_ENTITY_REF_LIMIT = 12;
+
 const ACTION_INTENT_RE = /\b(sign\s*in|log\s*in|login|submit|continue|next|save|search|checkout|buy|pay|send|create|upload|download|apply|confirm|activate)\b/i;
 const LOW_VALUE_ACTION_RE = /\b(cancel|close|dismiss|back|learn\s*more|privacy|terms)\b/i;
 const TEXT_SIGNAL_RE = /\b(error|failed|failure|invalid|required|success|saved|complete|status|loading|empty|warning|checkout|login|sign\s*in|search|upload|download|price|total|cart|modal|dialog)\b/i;
@@ -374,6 +376,21 @@ function nodeRefId(node: Record<string, unknown>, built: { descriptor: Parameter
 	return stringField(refs?.[slot]) ?? stringField(node.__piEntityRef) ?? stringField(node.entityRef) ?? summaryRefIdForDescriptor(built.descriptor);
 }
 
+function entityRefs(entities: Entity[], limit = Number.MAX_SAFE_INTEGER): string[] {
+	return entities.map((entity) => entity.ref).filter((ref): ref is string => typeof ref === "string" && !!ref).slice(0, limit);
+}
+
+function dedupeEntitiesByRef(entities: Entity[]): Entity[] {
+	const seen = new Set<string>();
+	const out: Entity[] = [];
+	for (const entity of entities) {
+		if (seen.has(entity.ref)) continue;
+		seen.add(entity.ref);
+		out.push(entity);
+	}
+	return out;
+}
+
 function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
 	const actionables = asArray(item.actionables).filter(isRecord);
@@ -459,7 +476,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 		textSignalCandidates: prepareTextSignalCandidates(lines),
 		scanEntities,
 		actionEntityByPath: new Map(scanEntities.entities.map((entity) => [String(entity.hints?.jsonPath || ""), entity])),
-		referencedEntities: [...scanEntities.referencedEntities, ...scanEntities.controlsSources].slice(0, 40),
+		referencedEntities: [...scanEntities.referencedEntities, ...scanEntities.controlsSources].slice(0, FOCUS_REFERENCED_ENTITY_REF_LIMIT),
 	};
 }
 
@@ -467,20 +484,24 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
 	const primaryActions = selectPrimaryActions(sortedRankedActions, counts, limits.primaryActions);
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
-	const primaryActionsWithEntities = primaryActions.map((action) => ({ ...action, ...(actionEntityByPath.get(String(action.jsonPath || "")) ? { entity: actionEntityByPath.get(String(action.jsonPath || "")) } : {}) }));
+	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
+		const entity = actionEntityByPath.get(String(action.jsonPath || ""));
+		return { ...action, ...(entity?.ref ? { entityRef: entity.ref } : {}) };
+	});
 	const focus: Record<string, unknown> = {
+		entityShape: "refs-v1",
 		// Cloned so it is not the same reference as summary.top_layer (shared refs render as "[Circular]"
 		// after redaction — blind-eval F2). null/undefined clone through unchanged.
 		top_layer: structuredClone(item.top_layer),
-		primary_actions: primaryActionsWithEntities,
+		primary_actions: primaryActionsWithEntityRefs,
 		forms: summarizeForms(preparedForm, 2),
 		lists: listSummaries.slice(0, limits.lists),
 		headings: headings.slice(0, limits.headings),
 		text_signals: textSignals(textSignalCandidates, actionNames, limits.textSignals),
-		primary_entities: scanEntities.primaryEntities,
-		list_entities: scanEntities.listEntities.slice(0, limits.lists),
-		visual_regions: scanEntities.visualRegions.slice(0, 4),
-		referenced_entities: referencedEntities,
+		primary_entities: entityRefs(scanEntities.primaryEntities),
+		list_entities: entityRefs(scanEntities.listEntities, limits.lists),
+		visual_regions: entityRefs(scanEntities.visualRegions, 4),
+		referenced_entities: entityRefs(referencedEntities, FOCUS_REFERENCED_ENTITY_REF_LIMIT),
 	};
 	return {
 		summaryVersion: 2,
@@ -555,4 +576,10 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
 	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "legacyRows"]);
+}
+
+export function scanEntitiesForEnvelope(data: unknown, options: ScanSummaryOptions = {}): Entity[] {
+	const item = isRecord(data) ? data : {};
+	const built = buildScanEntities(item, options);
+	return dedupeEntitiesByRef([...built.entities, ...built.primaryEntities, ...built.listEntities, ...built.visualRegions, ...built.referencedEntities, ...built.controlsSources]);
 }
