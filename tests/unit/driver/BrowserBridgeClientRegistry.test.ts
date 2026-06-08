@@ -30,3 +30,26 @@ test("BrowserBridgeClientRegistry tracks client liveness and stale clients", () 
 	registry.unregister(ws);
 	assert.equal(registry.connectedClientsCount(), 0);
 });
+
+test("BrowserBridgeClientRegistry remembers it ever connected and throws an actionable no-extension error", () => {
+	const registry = new BrowserBridgeClientRegistry(18765);
+	assert.equal(registry.hasEverConnected(), false, "cold start: never connected");
+	assert.throws(() => registry.requireExtensionClient(), (err: unknown) => {
+		const e = err as { code?: string; details?: Record<string, unknown> };
+		assert.equal(e.code, "NO_BROWSER_EXTENSION");
+		assert.equal(e.details?.everConnected, false);
+		assert.ok(Array.isArray((e.details?.recovery as Record<string, unknown>)?.nextActions));
+		return true;
+	});
+
+	const ws = fakeSocket();
+	registry.register(ws);
+	registry.unregister(ws);
+	// "ever connected" is sticky across a disconnect so the recovery hint can tell a
+	// dropped service worker apart from a never-installed extension.
+	assert.equal(registry.hasEverConnected(), true);
+	assert.throws(() => registry.requireExtensionClient(), (err: unknown) => {
+		assert.equal((err as { details?: Record<string, unknown> }).details?.everConnected, true);
+		return true;
+	});
+});

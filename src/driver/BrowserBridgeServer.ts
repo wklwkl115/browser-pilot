@@ -70,6 +70,7 @@ export class BrowserBridgeServer {
 			getTabs: (opts) => this.getTabs(opts),
 			listBrowserSessions: () => this.listBrowserSessions(),
 			snapshot: (opts) => this.snapshot(opts),
+			waitForExtensionReady: (browserSessionId, timeoutMs) => this.waitForExtensionReady(browserSessionId, timeoutMs),
 		});
 		this.clientMessageService = new BrowserBridgeClientMessageService({
 			clients: this.clients,
@@ -194,6 +195,21 @@ export class BrowserBridgeServer {
 		return await this.commandService.refreshTabs(timeoutMs, options);
 	}
 
+	/**
+	 * Resolve true once an extension is connected for the session, or false after
+	 * timeoutMs. Unlike waitForExtensionReconnect this never throws and accepts any
+	 * connection (cold-start grace, not reconnect): callers use it to let an idle
+	 * MV3 service worker dial in before a command fails with NO_BROWSER_EXTENSION.
+	 */
+	async waitForExtensionReady(browserSessionId: string | undefined, timeoutMs: number): Promise<boolean> {
+		const deadline = Date.now() + Math.max(0, Math.floor(timeoutMs));
+		while (Date.now() <= deadline) {
+			if (this.snapshot({ browserSessionId }).extensionConnected) return true;
+			await delay(100);
+		}
+		return this.snapshot({ browserSessionId }).extensionConnected;
+	}
+
 	async waitForExtensionReconnect(previousClientId: string | undefined, timeoutMs = 10_000): Promise<BrowserBridgeSnapshot> {
 		const deadline = Date.now() + Math.max(100, Math.floor(timeoutMs));
 		let last = this.snapshot();
@@ -298,6 +314,7 @@ export class BrowserBridgeServer {
 	}
 
 	private logLeaseCleanup(details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }): void {
+		if (process.env.PI_BROWSER_LEASE_CLEANUP_LOG !== "1") return;
 		console.warn("[pi-browser-bridge] Released lease/UI lock state after client disconnect", details);
 	}
 

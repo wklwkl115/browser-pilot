@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { BrowserBridgeError, tabNotFoundError } from "./errors.js";
+import { BrowserBridgeError, noBrowserExtensionError, tabNotFoundError } from "./errors.js";
 import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../protocol/nativeProtocol.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { bridgeResultFailure, recordValue, toTabId } from "./bridgeUtils.js";
@@ -24,6 +24,21 @@ import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
 
+/**
+ * Grace window to let a not-yet-connected extension dial into the bridge before a
+ * command fails with NO_BROWSER_EXTENSION. The MV3 service worker is often merely
+ * idle on a cold start (daemon just up, extension loaded) — a brief wait lets the
+ * first `browser_tabs list` succeed transparently instead of hard-failing. Env
+ * `PI_BROWSER_EXTENSION_WAIT_MS` overrides; `0` disables (used by hermetic tests).
+ */
+const DEFAULT_EXTENSION_WAIT_MS = 5_000;
+function extensionWaitMs(): number {
+	const raw = process.env.PI_BROWSER_EXTENSION_WAIT_MS;
+	if (raw === undefined) return DEFAULT_EXTENSION_WAIT_MS;
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_EXTENSION_WAIT_MS;
+}
+
 type BrowserBridgeCommandServiceDeps = {
 	clients: BrowserBridgeClientRegistry;
 	browserSessions: BrowserSessionRegistry;
@@ -37,6 +52,8 @@ type BrowserBridgeCommandServiceDeps = {
 	getTabs: (options?: { includeDisconnected?: boolean }) => BrowserTabInfo[];
 	listBrowserSessions: () => BrowserAutomationSessionInfo[];
 	snapshot: (options?: { browserSessionId?: string }) => BrowserBridgeSnapshot;
+	/** Resolve once an extension is connected for the session, or after timeoutMs — never throws. */
+	waitForExtensionReady: (browserSessionId: string | undefined, timeoutMs: number) => Promise<boolean>;
 };
 
 export class BrowserBridgeCommandService {
@@ -96,7 +113,24 @@ export class BrowserBridgeCommandService {
 		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write" });
 	}
 
+	/**
+	 * Give a not-yet-connected extension a bounded grace to dial in before a command
+	 * proceeds (and likely fails with the now-actionable NO_BROWSER_EXTENSION). Only
+	 * waits when the bridge is up but no extension is connected for the session, so
+	 * steady-state traffic pays nothing. Reused by sendCommand (the path every
+	 * tab-list / native command flows through). Never throws — on timeout the call
+	 * continues to the normal recovery-bearing error.
+	 */
+	private async ensureExtensionReady(browserSessionId?: string): Promise<void> {
+		if (!this.deps.isRunning()) return;
+		if (this.deps.snapshot({ browserSessionId }).extensionConnected) return;
+		const waitMs = extensionWaitMs();
+		if (waitMs <= 0) return;
+		await this.deps.waitForExtensionReady(browserSessionId, waitMs);
+	}
+
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
+		await this.ensureExtensionReady(options.browserSessionId);
 		const hasOptionTabId = options.tabId !== undefined;
 		const hasCommandTabId = command.tabId !== undefined;
 		const optionTabId = toTabId(options.tabId);
@@ -152,7 +186,9 @@ export class BrowserBridgeCommandService {
 		const selected = this.deps.browserSessions.selectedOpenClient(browserSession);
 		if (selected) return selected;
 		if (browserSession.id !== "default") {
-			throw new BrowserBridgeError("NO_BROWSER_EXTENSION", "Requested browser session has no selected browser extension client", {
+			throw noBrowserExtensionError({
+				port: this.deps.getPort(),
+				everConnected: this.deps.clients.hasEverConnected(),
 				browserSessionId: browserSession.id,
 				sessions: this.deps.listBrowserSessions(),
 			});

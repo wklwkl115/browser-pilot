@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { BrowserBridgeError } from "./errors.js";
+import { BrowserBridgeError, noBrowserExtensionError } from "./errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import type { BrowserBridgeClientInfo } from "./types.js";
 
@@ -8,6 +8,7 @@ export class BrowserBridgeClientRegistry {
 	private readonly clients = new Set<WebSocket>();
 	private readonly clientInfo = new Map<WebSocket, BrowserBridgeClientInfo>();
 	private extensionClient?: WebSocket;
+	private everConnected = false;
 	private readonly getPort: () => number;
 
 	constructor(port: number | (() => number)) {
@@ -19,7 +20,13 @@ export class BrowserBridgeClientRegistry {
 		const info = { id: randomUUID(), connectedAt: now, lastSeenAt: now };
 		this.clients.add(ws);
 		this.clientInfo.set(ws, info);
+		this.everConnected = true;
 		return info;
+	}
+
+	/** True if any extension client has connected during this bridge's lifetime — distinguishes a cold start from a dropped service worker for recovery hints. */
+	hasEverConnected(): boolean {
+		return this.everConnected;
 	}
 
 	unregister(ws: WebSocket): void {
@@ -122,7 +129,7 @@ export class BrowserBridgeClientRegistry {
 		if (isOpen(this.extensionClient)) return this.extensionClient;
 		const open = Array.from(this.clients).find(isOpen);
 		if (open) return open;
-		throw new BrowserBridgeError("NO_BROWSER_EXTENSION", "No connected browser bridge extension", { port: this.getPort() });
+		throw noBrowserExtensionError({ port: this.getPort(), everConnected: this.everConnected });
 	}
 
 	browserIdForClient(client: WebSocket): string {

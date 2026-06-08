@@ -18,6 +18,11 @@ import { validateToolArgs } from "../../../src/frontend/validation.ts";
 import { startDaemon } from "../../../cli/daemon.ts";
 import { controlRequest } from "../../../cli/daemonControl.ts";
 
+// These cases deliberately exercise the no-extension error path; the cold-start
+// connect grace would otherwise add a multi-second wait per tabs command. Disable
+// it so the parity comparison stays hermetic and fast (the envelope is unaffected).
+process.env.PI_BROWSER_EXTENSION_WAIT_MS = "0";
+
 // Cases chosen to be deterministic + browser-free:
 //  - execute/tabs return a structured NO_TAB / NO_BROWSER_EXTENSION envelope (no extension)
 //  - memory recall reads the local (empty) store under cwd/.pi/browser-memory

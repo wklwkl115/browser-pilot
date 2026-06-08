@@ -142,7 +142,7 @@ Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/b
 
 | Symptom | Do |
 |---|---|
-| No bridge/browser/tab | `browser_tabs list`; ask user: `/browser-status`, install, reload, open tab |
+| No bridge/browser/tab | a command briefly waits for the extension to connect, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them: confirm the extension is loaded/enabled, open or reload a tab so its service worker connects, check `pi-browser daemon status` / `/browser-status`. The bridge can't dial the browser; the extension connects in |
 | Stale tab | `browser_tabs list`; use live `tabId` |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
 | Timeout | re-observe; `browser_wait action=diagnose` (pass the timed-out `waitId` to get selector-specific `selectorDiagnostics`: current match/visible count, iframe clues, recovery commands); narrow/raise bound |
