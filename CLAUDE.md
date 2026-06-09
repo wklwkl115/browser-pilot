@@ -52,6 +52,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### ABML Kernel Boundary
+
+`src/abml-core/` is a pure-logic kernel (zero browser/Node dependencies) that holds perception engines (entity extraction, diffing, templating, relations, causal attribution). `src/abml/` is the runtime integration layer that wires the kernel into the browser bridge. The boundary is CI-locked via `npm run check:abml-core-boundary` — `abml-core` must not import from `src/abml`, `src/driver`, `src/tools`, or any browser API.
+
 ### Frontend Migration Boundary
 
 The migration kept one tool core and swapped the external frontend layer (now complete):
@@ -71,6 +75,8 @@ npm run sync:protocol    # generates bridge dist, types, metadata, docs
 npm run check:protocol   # verify no drift
 ```
 
+A `lefthook` pre-commit hook auto-runs `npm run sync:protocol` and stages generated files when `bridge/native_command_schema.json` is in the commit.
+
 Generated files (do NOT edit manually):
 - `bridge/pi_browser_bridge/native_command_schema.json`
 - `bridge_src/service_worker/protocol.ts`
@@ -82,6 +88,13 @@ Generated files (do NOT edit manually):
 ### Build
 ```bash
 npm run build:bridge          # build extension dist from bridge_src/
+npm run build                 # compile outer dist/ (index.ts + src/ + cli/) via tsc
+```
+
+### Lint
+```bash
+npm run lint                  # ESLint (flat config, eslint.config.js)
+npm run lint:fix              # auto-fix
 ```
 
 ### Type Check
@@ -101,7 +114,8 @@ npm run quality:local         # build + check + pack dry-run (no browser)
 
 ### Tests
 ```bash
-npm run test:unit              # run all unit tests
+npm run test:unit              # run all unit tests (Node.js built-in test runner via tsx)
+tsx --test tests/unit/tools/toolRegistry.test.ts   # run a single test file
 npm run check:bridge           # bridge types + build + files + protocol + tools
 npm run check:web-security     # web security layer boundaries
 npm run check:lifecycle        # multi-browser/tab/MV3 fixtures
@@ -143,6 +157,8 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `src/driver/BrowserBridgeServer.ts` — facade delegating to sub-registries
 - `bridge_src/service-worker.ts` — Chrome extension entry point (ESM import graph)
 - `bridge/native_command_schema.json` — native command protocol source of truth
+- `src/abml-core/` — pure-logic ABML kernel (no browser deps); `src/abml/` — runtime integration
+- `src/tools/webSecurity/` — `register/` (schemas), `browserNative/` (core execution), `bridges/` (sqlmap/nuclei), `shared/` (cookie provider, diagnostics)
 - `tests/contracts/` — contract tests (protocol, tools, boundaries)
 - `tests/smoke/` — browser smoke tests
 - `evals/browser-workflows/` — ACI evals: deterministic `runner.mjs` + blind-agent discovery layer (`launch-blind.mjs`/`pb-blind.mjs`/`teardown-blind.mjs`, `blind-tasks-realsite.md`, `blind-findings.md`)
@@ -161,10 +177,13 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 
 ## TypeScript Configuration
 
-- `tsconfig.json` — Node.js source (`src/`, `index.ts`), strict, ES2022, ESNext modules
+- `tsconfig.json` — Node.js source (`src/`, `index.ts`), strict, ES2022, ESNext modules (type checking)
+- `tsconfig.build.json` — compilation to `dist/` for npm/CLI consumers
 - `tsconfig.bridge-src.json` — Extension source (`bridge_src/`), strict, ES2022, ESNext, WebWorker lib
 
-Both use `moduleResolution: "Bundler"` and `noImplicitAny: true`.
+All use `moduleResolution: "Bundler"` and `noImplicitAny: true`.
+
+Pi runtime loads source `.ts` directly via `pi.extensions: ["./index.ts"]`; npm package and `pi-browser` CLI bin use compiled `dist/`. The `prepack` script rebuilds both `dist/` and `bridge/` before publish.
 
 ## Conventions
 
