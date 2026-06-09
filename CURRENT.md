@@ -13,9 +13,17 @@
 
 ## 当前激活项
 
-暂无。最近两条执行线（Performance & overhead audit execution、Agent-facing CLI connection
-control protocol）均已完成并通过最终验证；后续新能力或重大重构必须先在本文件补决策、
-边界、契约与验证计划，再另开执行合同。
+暂无。最近完成的执行线：
+
+### ABML Identity Plane — internal kernel upgrade (2026-06-10, 完成)
+
+决策：在 abml-core 纯核内升级对象追踪基础设施，不加公开工具。三个切片：
+- **I2 (Initiator-Enhanced Causal)**: causal.ts 读 CDP initiator metadata，parser/preload 请求标记 passive 并从 triggered 归因中过滤；script + actionRef 组合提升 confidence 到 medium。
+- **I1 (Anchor Gate 放宽)**: mintingEligible 去掉 containerName 要求，保留 namedUniquely 碰撞防护。覆盖从 ~5-15% 升到 ~15-25%。
+- **I3 (Identity Graph in Artifact)**: 新纯核模块 `abml-core/identityGraph.ts`，observe artifact 写入 `data.identityGraph`（byRef→anchorKey/triggeredRequests），summary 只放标量计数。
+
+边界：不加公开 `browser_*` 工具，不加 `browser_handle`。消费面全部通过既有工具（observe 字段 + browser_artifact jsonPath）。
+验证：quality:local 绿，28/28 eval 绿，16 个新单元测试。
 
 ## 最近完成且仍影响当前规则
 
