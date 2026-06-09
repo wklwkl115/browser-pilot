@@ -1505,6 +1505,43 @@ async function testExecHangingScriptFallsBackToCdpWithinBudget() {
 
 await testExecHangingScriptFallsBackToCdpWithinBudget();
 
+async function testExecBackgroundTabUsesCdpWithFocusEmulation() {
+	// A non-foreground tab throttles page timers (setTimeout/intervals + timeout-guarded fetch/poll), so a
+	// MAIN-world executeScript async script stalls and the bridge times out. The fix routes background tabs
+	// straight to CDP and enables Emulation.setFocusEmulationEnabled to lift the throttle before eval.
+	const execBridge = readBridgeRuntimeFile("exec.js");
+	const sent = [];
+	const cdpCalls = [];
+	let executeScriptCalled = false;
+	const sandbox = {
+		chrome: {
+			scripting: { executeScript() { executeScriptCalled = true; return new Promise(() => {}); } }, // must NOT run for a background tab
+			tabs: { onCreated: { addListener() {}, removeListener() {} }, async get() { return { active: false }; }, async update() {}, async create() { return {}; } },
+		},
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => ({
+			async send(_tabId, method, params) {
+				cdpCalls.push({ method, params });
+				if (method === "Emulation.setFocusEmulationEnabled") return { ok: true };
+				return { ok: true, data: { result: { result: { value: { ok: true, data: 7 } } } } };
+			},
+		}),
+		socket: { send(text) { sent.push(JSON.parse(text)); } },
+		console, setTimeout, Promise, URL, JSON, Number, Math, Array, Object, String,
+	};
+	vm.runInNewContext(`${execBridge}\nglobalThis.handleWsExec = handleWsExec;`, sandbox, { filename: "exec.js" });
+	await sandbox.handleWsExec({ id: "bg", tabId: 9, code: "(async()=>{await new Promise(r=>setTimeout(r,10));return 1})()", timeoutMs: 900 }, sandbox.socket);
+	assert(!executeScriptCalled, "a background tab must skip chrome.scripting.executeScript (which throttles timers) and route straight to CDP");
+	const focusIdx = cdpCalls.findIndex((c) => c.method === "Emulation.setFocusEmulationEnabled");
+	const evalIdx = cdpCalls.findIndex((c) => c.method === "Runtime.evaluate");
+	assert(focusIdx >= 0 && cdpCalls[focusIdx].params?.enabled === true, "background-tab exec must enable Emulation.setFocusEmulationEnabled to lift timer throttling");
+	assert(evalIdx >= 0, "background-tab exec must evaluate via CDP Runtime.evaluate");
+	assert(focusIdx < evalIdx, "focus emulation must be enabled BEFORE the CDP eval");
+	assert(sent.at(-1)?.type === "result" && sent.at(-1)?.result === 7, "background-tab CDP exec must return the script result");
+}
+
+await testExecBackgroundTabUsesCdpWithFocusEmulation();
+
 async function testExecPostEvalWaitOnlyForLikelyNewTabs() {
 	const execBridge = readBridgeRuntimeFile("exec.js");
 	const sent = [];
@@ -1579,7 +1616,7 @@ assert(toolSource.includes("omit tabId to use the selected/active tab"), "tabId 
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
 const skill = read("skills/pi-browser-tools/SKILL.md");
-assert(skill.includes("tabId") && skill.includes("browser_tabs list"), "pi-browser-tools skill must document explicit tabId automation flow");
+assert(skill.includes("tabId") && (skill.includes("browser_tabs list") || skill.includes("browser_tabs {action:\"list\"}")), "pi-browser-tools skill must document explicit tabId automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "pi-browser-tools skill must document pick/observe flows");
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
 	assert(!skill.includes(removed), `pi-browser-tools skill must not document removed split action tool: ${removed}`);

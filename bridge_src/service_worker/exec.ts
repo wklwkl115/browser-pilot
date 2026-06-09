@@ -197,7 +197,16 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
     // Reusing the full timeoutMs here (the prior bug) let a hung executeScript consume the entire budget
     // so the fallback never ran and the client only ever saw BRIDGE_TIMEOUT with no result. [F2]
     const TOTAL_EXEC_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
-    try {
+    // Background (non-foreground) tabs throttle page timers (setTimeout/intervals and any timeout-guarded
+    // fetch/poll), so a MAIN-world chrome.scripting.executeScript async script STALLS. Route straight to
+    // the CDP path (which enables Emulation.setFocusEmulationEnabled to lift the throttle) — this also
+    // avoids double-executing a side-effecting script (the throttled executeScript injection lingering AND
+    // the CDP re-eval). Synchronous scripts are unaffected either way. [bg-throttle]
+    let backgroundTab = false;
+    try { const probe = await chrome.tabs.get(tabId); backgroundTab = probe.active === false; } catch (_probeErr) { /* default to foreground path */ }
+    if (backgroundTab) {
+      res = { ok: false, error: { name: 'BackgroundTab', message: 'background tab — routing via CDP to avoid timer throttling' }, csp: true };
+    } else try {
       const EXECUTE_SCRIPT_TIMEOUT_MS = Math.max(100, Math.min(2500, Math.floor(TOTAL_EXEC_TIMEOUT_MS / 3)));
       const executePromise = chrome.scripting.executeScript({
         target: { tabId },
@@ -225,6 +234,10 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       try {
         const cdp = piBrowserPersistentCdp();
         if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
+        // Lift background-tab timer throttling for the eval: make the page emulate a focused/visible
+        // state so setTimeout/intervals/fetch run normally. This does NOT steal the user's real focus
+        // (it is per-tab CDP emulation). Best-effort — proceed even if unsupported (older Chrome).
+        try { await cdp.send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: true }, { name: 'default', persistent: false, timeoutMs: 2000 }); } catch (_focusErr) { /* best-effort throttle lift */ }
         const resp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, 'Runtime.evaluate', {
           expression: wrappedCode, awaitPromise: true, returnByValue: true
         }, { name: 'default', persistent: false, timeoutMs: TOTAL_EXEC_TIMEOUT_MS }));
