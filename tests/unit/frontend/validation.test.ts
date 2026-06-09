@@ -23,6 +23,27 @@ test("validateToolArgs lists every unknown param when several are passed", () =>
 	assert.match(res.error, /unknown parameters "foo", "bar"/);
 });
 
+test("validateToolArgs names a missing required param and surfaces its description (action enum)", () => {
+	const actionSchema = Type.Object(
+		{ action: Type.String({ description: "One of: list, switch, create" }), tabId: Type.Optional(Type.Number()) },
+		{ additionalProperties: false },
+	);
+	const res = validateToolArgs(actionSchema, {});
+	assert.equal(res.ok, false);
+	if (res.ok) return;
+	assert.match(res.error, /missing required parameter "action"/);
+	assert.match(res.error, /One of: list, switch, create/);
+	assert.doesNotMatch(res.error, /must have required propert/);
+});
+
+test("validateToolArgs lists multiple missing required params", () => {
+	const twoReq = Type.Object({ a: Type.String(), b: Type.String() }, { additionalProperties: false });
+	const res = validateToolArgs(twoReq, {});
+	assert.equal(res.ok, false);
+	if (res.ok) return;
+	assert.match(res.error, /missing required parameters "a", "b"/);
+});
+
 test("validateToolArgs coerces scalars and accepts valid args", () => {
 	const res = validateToolArgs(schema, { script: "x", tabId: "5", redact: "false" });
 	assert.equal(res.ok, true);

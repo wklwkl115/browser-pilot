@@ -296,6 +296,17 @@ try {
 	});
 	sendJson(ws, { type: "result", id: lostWaitOutbound.id, result: { ok: true, late: true } });
 
+		// Node-side reroute: `wait.loadState {state:"networkidle"}` must be normalized to
+		// `wait.networkIdle` BEFORE dispatch, so a STALE loaded extension cannot reintroduce
+		// `INVALID_RULE: wait.loadState unsupported state` (real 2026-06-05 + 2026-06-09 sessions).
+		const rerouteWaitPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.loadState", state: "networkidle", timeoutMs: 2_000 }, { tabId: 101, timeoutMs: 2_000 });
+		const rerouteWaitOutbound = await nextJson(ws, "loadState networkidle reroute outbound");
+		assert.equal(rerouteWaitOutbound.code.cmd, "wait.networkIdle", "wait.loadState state:networkidle must reroute to wait.networkIdle on the Node side (robust to stale extension)");
+		assert.equal(rerouteWaitOutbound.code.state, undefined, "rerouted networkIdle command must drop the loadState state key");
+		sendJson(ws, { type: "result", id: rerouteWaitOutbound.id, result: { ok: true, networkIdle: true, bridge: { workerBootId: "boot-wait-b", workerStartedAt: 2000 } } });
+		const rerouteWaitResult = await rerouteWaitPromise;
+		assert.equal(rerouteWaitResult.data.networkIdle, true, "rerouted wait.networkIdle must resolve normally");
+
 	const navigateBudgetPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: "https://example.test/slow", state: "complete", timeoutMs: 120 }, { tabId: 101, timeoutMs: 120 });
 	const navigateBudgetOutbound = await nextJson(ws, "navigateAndWait budget navigation outbound");
 	assert.equal(navigateBudgetOutbound.code.cmd, "wait.navigate");

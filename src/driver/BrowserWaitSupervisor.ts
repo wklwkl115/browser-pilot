@@ -74,6 +74,25 @@ function waitCommandForNavigateAndWait(command: BridgeCommand): BridgeCommand {
 	return { ...rest, cmd: "wait.loadState", state };
 }
 
+/**
+ * Agents routinely call `wait.loadState` with `state:"networkidle"`, conflating
+ * the load-state wait with the separate network-idle wait. The extension already
+ * reroutes this, but that fix lives in the bridge service worker — a STALE loaded
+ * extension reintroduces the hard `INVALID_RULE: wait.loadState unsupported state`
+ * (observed again in a real 2026-06-09 session). The Node driver is always current
+ * (daemon restart), so normalize here too: a `wait.loadState` whose state resolves
+ * to `networkidle` becomes a `wait.networkIdle` command before dispatch — making
+ * the reroute robust to extension version skew. Mirrors the bridge normalization.
+ */
+function rerouteLoadStateNetworkIdle(command: BridgeCommand): BridgeCommand {
+	if (command.cmd !== "wait.loadState") return command;
+	const c = command as BridgeCommand & { state?: unknown; loadState?: unknown; load_state?: unknown };
+	const state = String(c.state ?? c.loadState ?? c.load_state ?? "").replace(/[._-]/g, "").toLowerCase();
+	if (state !== "networkidle") return command;
+	const { state: _state, loadState: _loadState, load_state: _loadStateSnake, ...rest } = c;
+	return { ...rest, cmd: "wait.networkIdle" } as BridgeCommand;
+}
+
 function bridgeErrorCode(error: unknown): string | undefined {
 	if (error instanceof BrowserBridgeError) {
 		const result = isRecord(error.details.result) ? error.details.result : undefined;
@@ -304,7 +323,8 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 	throw finalWaitError(state, "browser wait timed out");
 }
 
-export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServer, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
+export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServer, commandInput: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
+	const command = rerouteLoadStateNetworkIdle(commandInput);
 	const totalTimeoutMs = commandTimeoutMs(command, waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TIMEOUT_MS, true));
 	if (totalTimeoutMs === 0 && (command.cmd === "wait.navigateAndWait" || SUPERVISED_WAIT_COMMANDS.has(command.cmd))) return runLeasedWait(server, command, options, 0);
 	if (command.cmd === "wait.navigateAndWait") {

@@ -1,122 +1,116 @@
 ---
 name: pi-browser-tools
-description: "Use when operating, inspecting, debugging, automating, or verifying live browser pages through browser_* tools: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. Runtime browser-use only; not for extension source development or repo tests."
+description: "Pi-native in-process frontend for operating live browser pages — use when the agent HAS the browser_* tools and calls them directly to: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A shell-capable agent that instead drives the `pi-browser` command-line tool: use the pi-browser-cli skill. Runtime browser-use only; not for extension source development or repo tests."
 license: MIT
-compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Works on any skill-supporting platform. Invoke as Pi-native `browser_*` tools, or via the `pi-browser` CLI (any shell-capable agent).
+compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Pi-native in-process frontend — call `browser_*` tools directly. For the shell `pi-browser` CLI, see the sibling **pi-browser-cli** skill.
 ---
 
-# Pi Browser Tools
+# Pi Browser Tools (Pi-native)
 
-Live browser operation via `browser_*` tools. HOW only — methodology and route index. For depth, follow the Index.
+Operate live browser pages by calling `browser_*` tools directly, in-process.
 
-Surface decision: public callable surface remains the existing `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary and may appear in result hints as `read(pi-ref://...)` or `click(pi-ref://...)`, but these are not extra Pi tool names.
-Coverage reality: **ABML is observation-only — it does not do execution.** Its **read** path is wired in — `browser_observe` runs through it (AX merge, entities, relations/inference/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For the rare thing JS can't do — a **trusted-event-gated** control that silently ignores a synthetic `el.click()`/input — escalate via **`browser_command` CDP** (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). A structured `action` arm on `browser_execute` was tried and **removed**: real-agent testing showed it didn't earn its keep for clicks (agents reverted to JS). So **there is no public action verb — JS is the action language, CDP is the escape.**
+**This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **pi-browser-cli** skill instead.
 
-First real-agent skeptical eval (2026-06-05): `causal` (which APIs an action hit) and page **reading** — long lists/tables, `templates` — are genuinely useful; prefer them. `templates` are most useful on big lists/tables and stay ARIA-grounded (redundant text-leaf groups are suppressed when structural/actionable groups exist in the same scope). `diff/treeDiff` can be churny on dynamic pages; read `diff.summary` first (value/name/state/focus salience), then raw arrays if needed. The structured action arm was removed (see above) — actions go via JS, with `browser_command` CDP as the trusted-event escape. Full map: `docs/abml-tool-coverage-map.md`.
+Surface decision: the public callable surface is the `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra tool names.
+Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `browser_observe` (AX merge, entities, relations/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For a **trusted-event-gated** control that silently ignores a synthetic `el.click()`/input, escalate via **`browser_command` CDP** (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). A structured `action` arm was tried and **removed** (agents reverted to JS) — **there is no public action verb: JS is the action language, CDP is the escape.** Prefer `causal` (which APIs an action hit) and the reading products (`outline`/`gist`/`templates`) on long lists/tables; `diff`/`treeDiff` churn on dynamic pages, so read `diff.summary` first. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
-- **Pi-native** → call the tools directly, e.g. `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`.
-- **`pi-browser` CLI** (any shell agent) → the same tools as subcommands. For multi-step work, start with `pi-browser connect --wait --timeout-ms 15000 --json`; this is the agent readiness gate and returns `ready`, daemon/bridge/extension state, compact `tabCount`/`activeTab`, `health`, and recovery commands. Use `pi-browser status --json` for a read-only compact state check; add `--tabs` only when you need the full `tabs[]` list. Use `pi-browser doctor --json` for broader diagnostics; do not use `daemon stop` as normal cleanup. Then discover with `pi-browser commands --json` / `pi-browser schema <cmd> --json`. Use the installed `pi-browser` binary for machine JSON; in this repo use `npm --silent run cli -- ...` only for debugging, because ordinary `npm run cli` prepends npm banner text to stdout. Use recommended `standard`/`natural` routes from the `agentCli` metadata: `pi-browser tabs --action list`, `pi-browser observe --mode scan`, `pi-browser wait selector --selector "#id"`, `pi-browser network start`, `pi-browser frame list`, `pi-browser frame evaluate --frame-id ... --expression ...`, `pi-browser hook install-targets --targets console,error`, `pi-browser hook collect --session-id ...`, `pi-browser execute --script-file path/to/script.js`. For non-trivial JS/JSON/raw requests/templates, prefer files to avoid shell quoting: `--script-file extract.js`, `command --command @native-command.json`, `http-replay --raw-request @request.txt`, `http-replay --request @captured-request.json`, `http-replay --har-path capture.har`, `template --template-path template.yaml`, and `validate <cmd> --params @params.json --json` for local validation without daemon/browser startup. Natural action subcommands are the preferred CLI path when `agentCli.mode:"natural"` exists; for action-tool root schemas, inspect `subcommands[]` or `schema <cmd> <natural-subcommand> --json` because the root command remains the advanced `--action/--params` interface. Legacy `--action/--params` is **advanced compatibility** for old scripts, low-frequency native actions, and complex JSON params; `pi-browser command --command @native-command.json` is the full native bridge escape hatch. Simple one-off commands still auto-start the bridge daemon for compatibility; output is human on a TTY and JSON otherwise (`--json`/`--text` to force).
+- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to a compact, redacted summary (the internal `detailLevel:"summary"` shape) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
+- **No connect step** — readiness is ambient. Just call a tool; a not-yet-connected extension gets a brief grace wait, then a command fails `NO_BROWSER_EXTENSION` with `recovery.nextActions`. The bridge is a server the extension dials into; it cannot dial the browser for you — if the extension is genuinely not loaded/enabled, that is a human action, so surface it rather than retry-looping.
 
 ## Loop
 
-1. `browser_tabs list` → note the target `tabId`. A `tabId` is **not stable** — it changes when the tab navigates/reloads — so don't cache it across navigations: omit `tabId` to act on the active tab, or re-read it from `browser_tabs` after navigating. Pass an explicit `tabId` mainly to disambiguate several open tabs. `TAB_NOT_FOUND` returns the live/current tab id in `recovery`.
+1. `browser_tabs {action:"list"}` → note the target `tabId`. A `tabId` is **not stable** (changes on navigation/reload) — omit `tabId` to act on the active tab, or re-read it after navigating; pass it explicitly mainly to disambiguate open tabs. `TAB_NOT_FOUND` returns the live id in `recovery`.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
 4. Verify: `browser_wait` / re-observe / network|hook evidence / read artifact.
 5. Report: `tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
-`browser_tabs create` opens a tab; `switch` only to intentionally change the active one. Omit `browserSessionId` unless juggling concurrent sessions. Default `detailLevel:"summary"`.
+`browser_tabs {action:"create"}` opens a tab; `switch` only to intentionally change the active one. `browserSessionId` is managed via `browser_tabs` session actions — omit it unless juggling concurrent sessions.
 
-Memory is a Loop bookend: on a known/repeat origin `browser_memory recall` before step 2 and apply any SOP; on task success with durable evidence `browser_memory record` at step 5. See Memory.
+Memory is a Loop bookend: on a known origin `browser_memory recall` before step 2 and apply any SOP; on success `browser_memory record` at step 5. See Memory.
 
 ## Memory
 
-Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. Two kinds: `sop` = a reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). Recall and record are default habits — the store stays empty until you record.
+Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). Recall/record are default habits — the store stays empty until you record.
 
-- **Recall (task start):** before acting on a repeat/known origin — or whenever a result's `nextActions` shows a `relevant memory: … top:"…"` hint (it names the top entry, so judge relevance first) — `browser_memory {action:"recall", url|scopeKey}`, or `query="keywords"` to route across scopes via the L1 token index. Cards come ranked and carry `updatedAt` (judge staleness); when one clearly dominates its **body is inlined** — apply it directly, no extra read. Following a `relevant memory:` hint is not optional. Device/variant subdomains (`m.`/`mobile.`/`app.`) share the apex site's memory.
-- **Read** other cards' bodies on demand: `browser_memory {action:"read", id|uri}` (bounded; `offset`/`limit`/`jsonPath`).
-- **Record (crystallize on success):** the moment a multi-step task succeeds, crystallize it — `browser_memory {action:"record", kind:"sop"|"fact", scopeKind:"origin", url, title, triggers, body}`. You hold the trajectory; distill it yourself. Make it reusable: a verb-y `title`; `triggers` = the keywords you'd search by (site name, task, key UI words — these drive recall); a HOW-only `body` of numbered steps with **exact selectors / inputs / waits**, no secrets. **Evidence is optional** (`evidenceRefs` is provenance — add a saved artifact path if handy, never withhold a good SOP for lack of one). Prefer `origin` scope. A `record candidate:` hint means the origin has no SOP yet — act on it when the task was reusable. Recording auto-dedups near-identical SOPs and returns `duplicateCandidates` for merely-similar ones — supersede those, don't pile up copies.
-- **Self-heal:** if a recalled SOP no longer works (page changed), just re-`record` a corrected version — it supersedes the old one. No upkeep, no scoring.
+- **Recall (task start):** before acting on a repeat origin — or whenever a result's `nextActions` shows a `relevant memory: … top:"…"` hint — `browser_memory {action:"recall", url|scopeKey}` (or `query="keywords"` to route across scopes). Cards come ranked with `updatedAt`; a dominant card's **body is inlined** — apply directly. Following a `relevant memory:` hint is not optional. `m.`/`mobile.`/`app.` subdomains share the apex memory.
+- **Record (crystallize on success):** `browser_memory {action:"record", kind:"sop", scopeKind:"origin", url, title, triggers, body}`. Make it reusable: verb-y `title`; `triggers` = the keywords you'd search by; HOW-only `body` of numbered steps with **exact selectors / inputs / waits**, no secrets. Evidence optional. Prefer `origin` scope. A `record candidate:` hint means the origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
+- **Self-heal:** if a recalled SOP no longer works, re-`record` a corrected version — it supersedes the old one.
 
-## Routes
+## Routes (intent → tool)
+
+Pick the tool by intent; its params/enums are in the tool's own schema.
 
 | Intent | Call |
 |---|---|
-| Page structure | `browser_observe {mode:"scan"}` |
+| Page structure / model | `browser_observe {mode:"scan"}` |
 | Main article text | `browser_observe {mode:"content"}` |
-| Exact DOM/HTML for selector | `browser_observe {mode:"html", selector, htmlMode}` — `htmlMode` ∈ `fragment\|raw\|text\|inner\|outer` (CLI `--html-mode`) |
+| Exact DOM/HTML for a selector | `browser_observe {mode:"html", selector, htmlMode}` |
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
-| Inside iframe | `browser_frame list` (read child `frameId` from `frames[].frameId`) → `browser_frame evaluate` with `frameId` + `expression`. CLI: `pi-browser frame list` → `pi-browser frame evaluate --frame-id <id> --expression <js>`. A top-level scan does NOT structurally cover child frames (`mode=text` only appends same-origin iframe text after a `--- iframe ---` marker — flat, no refs) |
-| Click/type/scroll/mutate state | `browser_execute` (JS) → `browser_wait` → re-observe |
-| Click/input returned ok but page didn't change | trusted-event-gated → `browser_command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the element rect |
+| Inside iframe | `browser_frame {action:"list"}` (read child `frameId`) → `browser_frame {action:"evaluate", frameId, expression}`. A top-level scan does NOT cover child frames structurally |
+| Click/type/scroll/mutate | `browser_execute` (JS) → `browser_wait` → re-observe |
+| Action returned ok but page didn't change | trusted-event-gated → `browser_command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the rect |
 | CDP / native command | `browser_command` with explicit command object |
-| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop). CLI: `pi-browser wait selector --selector "#id"` / `pi-browser wait navigate --url ...` / `pi-browser wait network-idle` |
+| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
 | User points to element | `browser_pick` |
-| Download file | `browser_download` (no hand-scripted clicks) |
-| Upload file | `browser_upload` {absolute path, `confirm:true`} |
-| Record requests/HAR/body | `browser_network start` → act → `list\|get\|body\|exportHar`. CLI: `pi-browser network start` → act → `pi-browser network list --session-id ...` |
-| Capture console/error/storage/ws/crypto/DOM-sink/listener | `browser_hook installTargets\|install` → act → `collect` or `browser_evidence`. CLI: `pi-browser hook install-targets --targets ...` → act → `pi-browser hook collect --session-id ...` |
-| Status/title/headers/redirect/TLS/tech | `browser_crawl {action:"fingerprint"}` + `url`/`urls`/`paths` |
+| Download / upload | `browser_download` / `browser_upload` {absolute path, `confirm:true`} (no hand-scripted clicks) |
+| Record requests/HAR/body | `browser_network {action:"start"}` → act → `list\|get\|body\|exportHar` |
+| Capture console/error/storage/ws/crypto/DOM-sink/listener | `browser_hook installTargets\|install` → act → `collect` or `browser_evidence` |
+| Status/title/headers/redirect/TLS/tech | `browser_crawl {action:"fingerprint"}` + scope |
 | Links/forms/API/source-maps/SW | `browser_crawl` (scope+bounds; `activeGraphqlIntrospection` for active GraphQL) |
 | Replay/mutate one request | `browser_http_replay` (never page `fetch`) |
-| Path/file/route discovery | `browser_fuzz {mode:"path"}` + wordlist/bounds/baseline |
-| Virtual hosts | `browser_fuzz {mode:"vhost"}` + host candidates/bounds |
+| Path/file/route discovery | `browser_fuzz {mode:"path"}` + wordlist/baseline |
+| Virtual hosts | `browser_fuzz {mode:"vhost"}` + host candidates |
 | Query/JSON/form/multipart/header params | `browser_fuzz {mode:"param"}` + captured/raw request |
 | SQLi | `browser_sqli` (`engine:"builtin"` default; `"sqlmap"` only for bounded deep) |
-| Exposure/config/custom templates | `browser_template` (`builtin` default; omitted templates = baseline) |
-| Mature nuclei | `browser_template {engine:"nuclei"}` + targets/templates/bounds |
-| OAST callback proof | `browser_callback_oast start` → inject/`trigger` (`triggerTimeoutMs`) → `collect` → `stop` |
-| Cookie/JWT/JWE/PASETO/Rails session + cookie attributes | `browser_cookie_analyze` (Rails AES-GCM/CBC/direct-key; browser-bound cookie `domain/path/secure/httpOnly/sameSite/session/expires`; bounded claim replay) |
+| Exposure/config/custom templates | `browser_template` (`builtin` default) |
+| Mature nuclei | `browser_template {engine:"nuclei"}` |
+| OAST callback proof | `browser_callback_oast {action:"start"}` → inject/`trigger` → `collect` → `stop` |
+| Cookie/JWT/JWE/PASETO/Rails session | `browser_cookie_analyze` |
 | Local browser memory | `browser_memory {action:"recall"}` → `browser_memory {action:"read"}` |
 
 ## Observe products (scan envelope)
 
-`browser_observe {mode:"scan"}` returns an envelope whose **top-level fields are where the page MODEL lives** — reach for them before hand-writing extraction JS. Boundary: observe gives **structure / relations / change / causality**; **per-item data VALUES (prices, ratings, cell text, titles) are JS** — observe won't pull them, so once the structure tells you *where* a value is, extract it with `browser_execute`.
+`browser_observe {mode:"scan"}` returns an envelope whose **top-level fields are where the page MODEL lives** — reach for them before hand-writing extraction JS. Boundary: observe gives **structure / relations / change / causality**; **per-item data VALUES (prices, ratings, cell text, titles) are JS** — once the structure tells you *where* a value is, extract it with `browser_execute`.
 
 | You need | Read this envelope field | Then |
 |---|---|---|
-| Understand a big repeated list/table as a group (how many groups, how big) | `outline` / `gist` (fold by AX container) | per-item values & "which item differs" → `browser_execute` |
-| What changed after operating a control | scan with a baseline → read **`treeDiff`** (template-level appeared/disappeared). CLI: `--baseline-snapshot-id <id>` (a prior scan's snapshotId, daemon-resolved) or `--baseline-path <file>` (a prior `--output-path` artifact) — by reference; do NOT inline the huge prior envelope | raw `diff` churns on dynamic pages (ref turnover) — prefer `treeDiff`; per-item content → `browser_execute` |
-| Row/column/header relations of a table | `relations` (`summary.tableCells` + each cell entity's inline `relations[]`: `cellOf`/`headerFor`) — present only when the page actually has such edges | exact cell values → `browser_execute` |
-| Which requests an action fired | **`browser_network start` FIRST**, then scan with `baseline` → `causal.requests` | — |
+| A big repeated list/table as a group | `outline` / `gist` (fold by AX container) | per-item values → `browser_execute` |
+| What changed after operating a control | scan with a `baseline` → **`treeDiff`** (template-level appeared/disappeared) | raw `diff` churns on dynamic pages — prefer `treeDiff`; per-item content → `browser_execute` |
+| Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
+| Which requests an action fired | **`browser_network {action:"start"}` FIRST**, then scan with `baseline` → `causal.requests` | — |
 
-`treeDiff`/`causal`/`relations` are top-level on the live result (relations only when it carries edges) AND mirrored into the saved artifact's `envelope.*`. An empty/absent field means that signal wasn't present, not an error. The scan result also actively points you at `treeDiff`/`causal` via `nextActions` when they apply.
+Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
 
 ## Read results
 
-Tool results return a `summary` + `resource_link`(s) + `sections`. Sensitive fields are redacted by default; when a redacted field includes `{redacted:true, raw, jsonPath}`, read that exact local artifact path with `browser_artifact mode=json jsonPath` or `pick`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens.
+Results return a `summary` + `resource_link`(s) + `sections`. Sensitive fields are redacted; a redacted field carries `{redacted:true, raw, jsonPath}` — read that exact path with `browser_artifact mode=json jsonPath` or `pick`. Read large/sensitive payloads on demand — never re-run a capture to re-read it, never paste raw bodies/tokens. Non-obvious bits:
 
-- **Artifacts** → `browser_artifact` with `mode` (`text`|`json`|`search`|`sample`) + `jsonPath`/`pick`/`offset` (CLI: `pi-browser artifact …`). Most browser tool artifacts keep primary results under `data`: start with `mode=json jsonPath:"data"`, then `data.<key>` (for example `data.items`, `data.links`). Text/search/sample and whole-JSON reads stay redacted; explicit `jsonPath`/`pick` reads return the named local raw value, which is the right way to follow a redaction pointer. For long scalar strings at a JSON path (`data.content`, `data.markdown`), use `offset`/`limit` as character windows and follow `nextOffset`. CLI `--pick` is repeated once per path, not passed as a JSON array string. **To FIND text in an artifact, use `mode=search` with `query` (CLI `--mode search --query "…"`, not `--search`)** — a plain (non-regex) `query` locates and windows a match even inside a single very long line (minified JS/HTML, a one-line `data.markdown`), bounded by `contextChars`; pass `regex:true` only for short-line patterns (regex is skipped on very long lines). `query` is ignored outside `mode=search` (it errors if combined with a json/jsonPath read). For raw single-line slicing without a needle, use `text` `columnOffset/columnLimit`. Take the path/handle from `summary.saved`, `sections`, `nextActions`, or the redaction pointer.
-- **Browser memory** → `browser_memory {action:"read", id|uri}` for bounded SOP/fact bodies.
-- `read_saved_artifact ...` in `nextActions` means “read the already-saved evidence without re-running capture” → `browser_artifact`.
+- Most artifacts keep primary results under `data` → start `mode=json jsonPath:"data"`, then `data.<key>` (e.g. `data.items`, `data.links`).
+- **Find text** with `mode=search` + `query` — a plain `query` windows a match even inside one very long line (minified JS/HTML, one-line `data.markdown`); `regex:true` only for short-line patterns. `query` errors outside `mode=search`.
+- Long scalar (`data.content`) → `offset`/`limit` char windows, follow `nextOffset`. Explicit `jsonPath`/`pick` returns the named local raw value (the way to follow a redaction pointer).
+- `read_saved_artifact ...` in `nextActions` = read already-saved evidence without re-capturing.
 
 ## Tool visibility
 
-All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step; `pi-browser --help` lists every command.
+All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step. `browser_memory` is local-only under `.pi/browser-memory/`; `record/validate` require durable evidence (a saved artifact path or non-stale snapshot-backed artifact); scopes `origin|task|project`, no repo export/promote.
 
-- `browser_memory {action:"record"|"recall"|"read"|"validate"}` — local-only browser memory under `.pi/browser-memory/`; `record/validate` require durable evidence such as a saved artifact path or a non-stale snapshot-backed artifact. Local scopes `origin|task|project` are supported; repo export/promote is not.
+## Bounds (before expansive routes)
 
-## Bounds (set before expansive routes)
+Bound expansive routes by **explicit scope first** — `url` / captured request / raw request / HAR entry / `paths` / `words` / `templates` / host candidates — then each tool's real knobs (in its schema: e.g. fuzz `matchStatus`/`filter*`, template `maxRequests`/`severities`, sqli `level`/`risk`, OAST `triggerTimeoutMs`/`maxRuntimeMs`). Generic per-run caps (`maxDepth maxPages maxCases maxCandidates timeoutMs rateLimitPerSecond outputPath`) are **deprecated and stripped** — passing them is a no-op.
 
-`maxDepth maxPages maxCases maxCandidates maxRequests timeoutMs rateLimitPerSecond` + match/filter + `outputPath` when output grows. OAST: `triggerTimeoutMs` (wait), `maxRuntimeMs` (long listener).
-
-- Obtain explicit scope first: `url` / captured request / raw request / HAR entry / `paths` / `words` / `templates` / param names.
-- Private/link-local/metadata blocked → `allowPrivateTargets:true` only for explicit internal testing.
-- Launcher overrides (`sqlmapPath`/`nucleiPath`/`PI_*_PATH`) → `allowLauncherOverride:true`.
-- `wordlistPath` limited to CWD or `.pi/`.
-- `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab). It also reflects a double-submit CSRF cookie (XSRF-TOKEN/csrf-token/…) into its matching request header by default (`csrfReflected` in the summary reports the cookie/header names) — so authenticated `browser_http_replay` works without hand-writing in-page `fetch`. Override with `csrfCookie`/`csrfHeader`, or set `reflectCsrf:false` to send the bound session without a CSRF header (e.g. to test CSRF protection).
-- `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint, which you should recall before continuing. Do not fabricate request templates when a captured/HAR request is required.
+- Private/link-local/metadata blocked → `allowPrivateTargets:true` only for explicit internal testing. Launcher overrides (`sqlmapPath`/`nucleiPath`) → `allowLauncherOverride:true`. `wordlistPath` limited to CWD or `.pi/`.
+- `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab) and reflects a double-submit CSRF cookie into its header by default (`csrfReflected` reports the names) — so authenticated `browser_http_replay` works without page `fetch`. Override with `csrfCookie`/`csrfHeader`, or `reflectCsrf:false` to test CSRF protection.
+- `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action
 
-- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after state, give the second scan a baseline to get envelope `diff` (`appeared/disappeared/changed/focusedRef` plus `summary` salience), structure-level `treeDiff` for repeated lists/tables, `snapshotProjection` for persisted template+delta structure, and possible `form-dependency` intent. **Pass the baseline BY REFERENCE** — `--baseline-snapshot-id <id>` (a prior scan's snapshotId, resolved from the daemon's observation store) or `--baseline-path <file>` (a prior scan's `--output-path` artifact). Inlining the full prior entity list / envelope via `baseline` also works but is large (avoid on the CLI — it can exceed the OS argv limit). `pi-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe instead of retrying the old handle.
-- Selector miss → re-observe `scan`/`html` → inspect `browser_frame` → retry verified selector/frame.
-- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `browser_command` → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but the page didn't actually change (a **trusted-event-gated** control), escalate via `browser_command` CDP (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). There is no structured action verb — JS is the action language, CDP the escape.
-- `monitor:true` only when a before/after DOM diff helps. Do not ask tools for `redact:false`; use redaction pointers plus `browser_artifact mode=json jsonPath`/`pick` for explicit local raw evidence.
-- Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion* sourceMode`.
+- Always set `browser_observe.mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. For read-only before/after, give the second scan a baseline to get `diff`/`treeDiff`/`snapshotProjection`/`form-dependency`. Pass the baseline **by reference** (`snapshotId` or `saved.path`). `pi-ref://` and baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle. Selector miss → re-observe `scan`/`html` → `browser_frame` → verified retry.
+- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `browser_command` → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `browser_command` CDP at the rect center.
+- `monitor:true` only when a before/after DOM diff helps. Don't ask for `redact:false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion sourceMode`.
 
 Click:
 ```js
@@ -134,31 +128,27 @@ Click:
 
 ## Native command
 
-`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from failing step.
-
-Do not invent withdrawn or non-public browser tool names. `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file/transcript slash commands, not a public browser tool surface. `/browser-js-ast` accepts explicit local files/editor text, supports `--slice offset:length`, and may return lexical inventory for large bundles instead of AST.
+`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn tool names; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
 
 ## Recovery
 
 | Symptom | Do |
 |---|---|
-| No bridge/browser/tab | CLI: run `pi-browser connect --wait --timeout-ms 15000 --json`, then inspect `pi-browser status --json` or `pi-browser doctor --json`. Pi-native: a command briefly waits for the extension to connect, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them. Confirm the extension is loaded/enabled, open or reload a tab so it connects. The bridge can't dial the browser; the extension connects in |
-| Stale tab | `browser_tabs list`; use live `tabId` |
+| No bridge/browser/tab | A command briefly waits, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them. Confirm the extension is loaded/enabled and a tab is open. If genuinely not loaded, that is a human action — surface it, don't retry-loop |
+| Stale tab | `browser_tabs {action:"list"}`; use live `tabId` |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
-| Timeout | re-observe; `browser_wait action=diagnose` / CLI `pi-browser wait diagnose` (pass the timed-out `waitId` to get selector-specific `selectorDiagnostics`: current match/visible count, iframe clues, recovery commands); narrow/raise bound |
+| Timeout | `browser_wait {action:"diagnose", waitId}` (selector-specific `selectorDiagnostics`: match/visible count, iframe clues, recovery); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
-| Resource `stale`/`etag mismatch`/`HANDLE_NOT_FOUND` or baseline expired | artifact/ref/baseline changed under the handle — re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old one |
-| Tool/command not found | `pi-browser --help`; all 22 commands should be listed unless the package/daemon is stale |
-| Mature bridge fail | explicit target/template/path; inspect stdout/stderr artifacts |
-| `browser_crawl`/`browser_fuzz`/`browser_http_replay` fails with `unable to verify the first certificate` / TLS chain not trusted | a TLS-intercepting proxy/AV or corporate root CA is re-signing traffic. The daemon trusts the OS/browser CA store on Node ≥22 automatically; if it persists, set `NODE_EXTRA_CA_CERTS=<path-to-your-root.pem>` (the same root your browser trusts) and restart, or fix the server's cert chain. The error's `remediation` field names the exact fix |
-| Upload/download blocked | dedicated transfer tool + valid selector/path/mode + confirmation |
+| Resource `stale`/`HANDLE_NOT_FOUND`/baseline expired | re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old handle |
+| Tool not found | all 22 `browser_*` tools should be available unless the package/daemon is stale |
+| `browser_crawl`/`browser_fuzz`/`browser_http_replay` TLS `unable to verify the first certificate` | TLS-intercepting proxy/AV/corporate CA. The runtime trusts the OS/browser CA store on Node ≥22; if it persists set `NODE_EXTRA_CA_CERTS=<root.pem>` and restart. The error's `remediation` names the fix |
 
 ## Index
 
-- Playbooks: `docs/playbooks/` — `first-pass-browser-triage` · `recon-and-discovery` · `request-capture-and-replay` · `sqli-verification` · `ssrf-oast` · `auth-session-jwt` · `evidence-and-reporting`
+- Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- Install/runtime SOP: `AI_INSTALL.md` · CLI usage: `docs/cli.md`
+- Install/runtime SOP: `AI_INSTALL.md` · Shell `pi-browser` CLI frontend: **pi-browser-cli** skill · `docs/cli.md`
 
 ## Output
 

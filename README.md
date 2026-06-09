@@ -6,9 +6,20 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 - 安装、环境变量、浏览器扩展加载、reload、check/smoke、排障：见 `AI_INSTALL.md`。
 - `.pi/public-export/` 仅允许作为本地导出/归档产物，不能作为第二开发仓库或第二真源；当前唯一正式源码仓库是本目录。
-- Pi 正式使用场景、工具选择、输出风格、诊断约定：见 `skills/pi-browser-tools/SKILL.md`。
+- 正式使用场景、工具选择、输出风格、诊断约定写在 skill 里，按 agent 类型二选一（见下「使用哪个 skill」）。
 - 多步骤安全测试方法论：见 `docs/playbooks/README.md`；信号到工具路线映射见 `docs/reference/web-security-methodology-map.md`。
 - 本 README 只作为项目入口、工具清单和维护入口。
+
+## 使用哪个 skill（两个独立 skill，按 agent 类型二选一）
+
+本扩展有两个**完全独立、各自自洽**的使用 skill，分别面向两类 agent。选匹配你的那一个即可，**不需要两个都读**：
+
+| 你的 agent | 用这个 skill | 入口方式 |
+|---|---|---|
+| **Pi 原生 agent** —— 直接拥有 `browser_*` 工具 | [`skills/pi-browser-tools/SKILL.md`](skills/pi-browser-tools/SKILL.md) | 进程内直连，无显式连接步骤；直接调用 `browser_tabs {action:"list"}` 等 |
+| **外部 / shell-capable agent** —— 通过命令行驱动 | [`skills/pi-browser-cli/SKILL.md`](skills/pi-browser-cli/SKILL.md) | 经长驻 daemon 的 `pi-browser` CLI；多步任务先 `pi-browser connect --wait --json` 就绪门，再用子命令 |
+
+两个 skill 共用同一套工具核与方法论，只是**调用前端不同**（对象调用 vs 子命令）。外部使用者把对应 skill 目录挂到自己 agent 的 skill 加载路径即可（Pi 的全局路径只挂 `pi-browser-tools`；CLI skill 挂到外部 agent 自己的 skill 目录，不要挂进 Pi 的全局 skill 目录，否则 Pi 原生会同时读到两份）。
 
 ## 工具边界
 
