@@ -87,6 +87,26 @@ export function nativeActionParamsHelp(toolName: string): string[] {
 	return rows;
 }
 
+// Array flags that hold simple tokens (ids / paths / statuses / names) which NEVER contain a comma in
+// a single value, so a comma-separated string is unambiguously a list. Agents naturally pass
+// `--words a,b,c`; without this they silently parse as ONE element (real dogfooding friction on
+// `--secret-candidates`). Repeated flags and `@file`/`-` still work. Flags whose values CAN contain a
+// comma (headers, values, json-values, mutations, *payloads, raw requests) are deliberately EXCLUDED —
+// an allowlist (not a denylist) so a missed flag merely keeps the old behavior instead of corrupting a
+// value. Mirrors the per-hit `hook installTargets --targets` comma fix, generalized to the safe set.
+const COMMA_SPLIT_ARRAY_FLAGS = new Set([
+	"secretCandidates", "secrets", "wordlist", "words", "paths", "urls",
+	"templates", "templateIds", "templatePaths", "workflowPaths", "paramNames",
+	"hosts", "tags", "excludeTags", "severities", "authors", "schemes", "ports",
+	"knownFiles", "probeTypes",
+]);
+
+function withCommaSplit(spec: FlagSpec): FlagSpec {
+	if (spec.kind !== "array" || spec.split || !COMMA_SPLIT_ARRAY_FLAGS.has(spec.name)) return spec;
+	const note = "Accepts comma-separated values or a repeated flag.";
+	return { ...spec, split: "comma" as const, description: spec.description && !spec.description.includes(note) ? `${spec.description} ${note}` : spec.description ?? note };
+}
+
 export function buildCommandFlagSpecs(cmd: CliCommand): FlagSpec[] {
 	const specs = buildFlagSpecs(cmd.parameters);
 	if (cmd.name === "browser_execute") {
@@ -98,7 +118,7 @@ export function buildCommandFlagSpecs(cmd: CliCommand): FlagSpec[] {
 			required: false,
 		});
 	}
-	return specs;
+	return specs.map(withCommaSplit);
 }
 
 function kebabAction(action: string): string {

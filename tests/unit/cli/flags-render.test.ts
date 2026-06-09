@@ -420,3 +420,21 @@ test("normalizeJsonEnvelope adds CLI artifact descriptors and executable next ac
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => String(action.command).includes("--baseline-snapshot-id")));
 	assert.ok((env.cliNextActions as Array<Record<string, unknown>>).some((action) => Array.isArray(action.argv) && action.argv.includes("D:\\tmp\\observe.json") && action.argv.includes("20")));
 });
+
+test("simple-token array flags comma-split (--secret-candidates); comma-unsafe array flags do not", () => {
+	const cookie = buildCliCommands().find((c) => c.name === "browser_cookie_analyze");
+	assert.ok(cookie, "cookie-analyze command must exist");
+	const specs = buildCommandFlagSpecs(cookie);
+	const secret = specs.find((s) => s.name === "secretCandidates");
+	assert.ok(secret && secret.kind === "array", "secretCandidates must be an array flag");
+	assert.equal(secret.split, "comma", "simple-token array flag must comma-split");
+	const out = parseArgs(specs, ["--secret-candidates", "a,b,c"]);
+	assert.ok(out.ok);
+	if (out.ok) assert.deepEqual(out.value.params.secretCandidates, ["a", "b", "c"], "comma list must split into elements");
+	const rep = parseArgs(specs, ["--secret-candidates", "x", "--secret-candidates", "y"]);
+	assert.ok(rep.ok);
+	if (rep.ok) assert.deepEqual(rep.value.params.secretCandidates, ["x", "y"], "repeated flag must still accumulate");
+	// values can legitimately contain commas → must NOT auto-split (allowlist excludes it)
+	const values = specs.find((s) => s.name === "values");
+	if (values && values.kind === "array") assert.notEqual(values.split, "comma", "comma-containing flags must keep a single value intact");
+});
