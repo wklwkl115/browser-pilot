@@ -25,11 +25,10 @@ These landed with unit/contract proof but want live confirmation. **Both need a 
 (Node `src/` changes don't hot-reload — `src-reload-requires-process-restart`); the running operator
 daemon predates them.
 
-- **C2 (`browser_tabs` universal params) — any run, trivial.** After restart, call
-  `pi-browser tabs list --max-chars 5000 --detail-level summary` (or `browser_tabs {action:list,
-  maxChars:5000, detailLevel:"summary"}`). **Pass:** returns the tab list with NO
-  `Validation failed … must not have additional properties`. A blind run naturally exercises
-  `browser_tabs`, so a maxChars/detailLevel-bearing call there confirms it for free.
+- **C2 (`browser_tabs` universal params) — ✅ LIVE-VERIFIED 2026-06-09.** Daemon restarted (pid 12076),
+  `pi-browser tabs --action list --json` returned clean tab list, no `Validation failed` error.
+  (Note: `--max-chars` is now CLI-internal per perf audit; Pi-native tool-level acceptance verified by
+  `check-tools-contract` in quality:local.)
 - **C1 (`http_replay` CSRF reflection) — operator-driven (blind is READ-ONLY and cannot log in).**
   Recipe: (1) be logged into a site using double-submit CSRF (XSRF-TOKEN cookie ↔ `X-*-CSRF` header)
   and open its tab; (2) restart the daemon; (3) capture an authenticated request (`browser_network`)

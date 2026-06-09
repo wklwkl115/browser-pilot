@@ -426,12 +426,7 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 		const marked = markEnvelopeBudgetOmissions(out, omitted);
 		return stableJson(marked).length <= budget ? marked : undefined;
 	};
-	const nonSummaryChars = stableJson({ ...out, summary: {} }).length;
-	const summaryBudget = Math.max(300, budget - nonSummaryChars);
-	if (stableJson(out.summary).length > summaryBudget) {
-		out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
-		if (stableJson(out).length <= budget) return out;
-	}
+	// Phase 1: compact lifted keys (snapshotProjection, entities, outline, …)
 	for (const key of ENVELOPE_LIFTED_KEYS) {
 		const value = out[key];
 		if (value === undefined) continue;
@@ -445,6 +440,7 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 			if (finished) return finished;
 		}
 	}
+	// Phase 2: remove removable keys (entities, outline, relations, …)
 	for (const key of ENVELOPE_REMOVABLE_KEYS) {
 		if (out[key] === undefined) continue;
 		out = { ...out };
@@ -453,8 +449,16 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 		const finished = tryFinish();
 		if (finished) return finished;
 	}
-	const overhead = stableJson({ ...out, summary: {}, diagnostics: out.diagnostics }).length;
-	out = { ...out, summary: fitSummaryBudget(out.summary, Math.max(300, budget - overhead)) };
+	// Phase 3: fit the summary AFTER freeing budget from lifted/removable fields
+	const overhead = stableJson({ ...out, summary: {} }).length;
+	const summaryBudget = Math.max(300, budget - overhead);
+	if (stableJson(out.summary).length > summaryBudget) {
+		out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
+		if (stableJson(out).length <= budget) return out;
+	}
+	// Phase 4: re-fit summary against post-removal overhead
+	const overhead2 = stableJson({ ...out, summary: {}, diagnostics: out.diagnostics }).length;
+	out = { ...out, summary: fitSummaryBudget(out.summary, Math.max(300, budget - overhead2)) };
 	const finished = tryFinish();
 	if (finished) return finished;
 	const essentialWithDiff = markEnvelopeBudgetOmissions({
