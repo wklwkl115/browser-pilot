@@ -233,10 +233,14 @@ function actionCounts(ranked: RankedAction[]): Map<string, number> {
 function selectPrimaryActions(sortedRanked: RankedAction[], counts: Map<string, number>, limit: number): Record<string, unknown>[] {
 	const selected: RankedAction[] = [];
 	const seen = new Set<string>();
+	const selectedPoints: [number, number][] = [];
 	for (const item of sortedRanked) {
 		if (seen.has(item.key)) continue;
 		seen.add(item.key);
+		const pt = pointTuple(item.node.point);
+		if (pt && selectedPoints.some(([sx, sy]) => Math.abs(pt[0] - sx) < 20 && Math.abs(pt[1] - sy) < 20)) continue;
 		selected.push(item);
+		if (pt) selectedPoints.push(pt);
 		if (selected.length >= limit) break;
 	}
 	return selected.map((item) => compactAction(item.node, item.position, counts.get(item.key) || 1));

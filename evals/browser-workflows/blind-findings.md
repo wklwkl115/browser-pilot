@@ -91,7 +91,9 @@ daemon predates them.
 
 ## Needs more runs (n=1, hypothesis)
 
-*(none currently)*
+| # | finding | runs | evidence | status |
+|---|---------|------|----------|--------|
+| B11 | **`primary_actions` dominated by sidebar/overlay controls on heavy SPAs**: bilibili homepage has 75 controls but all 4-5 primary_actions were palette-button sidebar items (watchlater, pip, scroll-to-top). The scoring is correct per its signals (clickable, hitOk, above-fold), but floating sidebars have the same AX signals as main content controls, so an agent gets no orientation about the page's actual primary surface (search, nav, video cards). | 1 (bilibili 2026-06-10) | primary_actions: watchlater-pip-button, palette-button-wrap, top-btn-wrap, palette-button-outer — all sidebar; search/nav/cards absent | **Needs more runs.** Spatial dedup (20px, general) landed; scoring change requires cross-site evidence that fixed/overlay controls consistently dominate. |
 
 ## Resolved
 
