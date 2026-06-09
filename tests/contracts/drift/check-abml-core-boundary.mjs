@@ -43,6 +43,7 @@ const PURE_CORE = [
 	"treeDiff.ts",
 	"semanticRefAnchor.ts",
 	"snapshotProjection.ts",
+	"identityGraph.ts",
 	"errors.ts",
 	"verbs/router.ts",
 	"verbs/click.ts",

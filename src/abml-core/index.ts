@@ -21,6 +21,7 @@ export * from "./templating.js";
 export * from "./treeDiff.js";
 export * from "./semanticRefAnchor.js";
 export * from "./snapshotProjection.js";
+export * from "./identityGraph.js";
 export * from "./errors.js";
 export * from "./verbs/router.js";
 export * from "./verbs/click.js";

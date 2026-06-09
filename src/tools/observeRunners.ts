@@ -10,6 +10,7 @@ import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inf
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, causalFiredHint, type CausalSummary } from "../abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
+import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -564,6 +565,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			const relSummary = buildRelationSummary(attributedEntities);
 			const inference = buildInferenceSummary(attributedEntities, relSummary, abmlDiff);
 			const snapshotProjection = buildSnapshotProjection(attributedEntities, { treeDiff: abmlTreeDiff });
+			const idGraph = buildIdentityGraph(attributedEntities, causal);
 			const baseFocus = typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus as Record<string, unknown> : {};
 			const referencedEntities = mergeEntitiesByRef(
 				entitiesForInferenceEvidence(attributedEntities, inference),
@@ -571,6 +573,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			const primaryEntities = sortEntitiesBySalience(attributedEntities.filter((entity) => entity.kind !== "region")).slice(0, 10);
 			const listEntities = attributedEntities.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).slice(0, 5);
 			const visualRegions = attributedEntities.filter((entity) => entity.kind === "region" && entity.source === "vision").slice(0, 4);
+			const idSummary = identityGraphSummary(idGraph);
 			return {
 				...baseSummary,
 				abmlIntegrated: true,
@@ -578,6 +581,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 				snapshotProjection,
 				...causalBlock,
+				...(idSummary.anchorCount || idSummary.triggeredCount ? { identity: idSummary } : {}),
+				_identityGraph: idGraph,
 				focus: {
 					...baseFocus,
 					entityShape: "refs-v1",
@@ -638,6 +643,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	})();
 	if (scanHints.length) summaryRecord.nextActions = scanHints;
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
+	const artifactIdentityGraph = isRecord(summaryRecord._identityGraph) ? summaryRecord._identityGraph : undefined;
 	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
 	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +
 	// inference were previously only inside summary.focus — a real-agent eval (2026-06-05, task3) showed
@@ -656,6 +662,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),
 		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
+		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
 		...causalBlock,
 	};
 	return await textToolResult(content, resultParams, ctx, {
@@ -668,7 +675,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		operation,
 		snapshot: snapshotMeta,
 		entities: envelopeEntities,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 }
 
