@@ -24,12 +24,11 @@ export function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId"
 		&& anchor.confidence === "high"
 		&& anchor.mintingEligible === true
 		&& typeof anchor.containerRole === "string"
-		&& typeof anchor.containerName === "string"
 		&& typeof anchor.normalizedName === "string"
 		? {
 			scope: "abml-template",
 			containerRole: anchor.containerRole,
-			containerName: anchor.containerName,
+			containerName: anchor.containerName || "",
 			role: anchor.role || semantic.role,
 			kind: anchor.kind || descriptor.kind,
 			normalizedName: anchor.normalizedName,

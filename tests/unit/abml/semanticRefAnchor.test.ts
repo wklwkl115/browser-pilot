@@ -81,6 +81,54 @@ test("semanticRefAnchor: non-template entities get no anchor", () => {
 	assert.equal(summary.anchors.length, 0);
 });
 
+// ── I1: anchor gate relaxation — unnamed containers ─────────────────────────
+
+function unnamedContainerItem(ref: string, name: string | undefined, index: number): Entity {
+	return item(ref, name, index, { hints: { containerRole: "list" } });
+}
+
+function unnamedContainerList(names: Array<string | undefined>, prefix: string): Entity[] {
+	return names.map((name, index) => unnamedContainerItem(`pi-ref://control/${prefix}${index}`, name, index + 1));
+}
+
+test("I1: unique names in unnamed container (containerRole only, no containerName) are minting eligible", () => {
+	const summary = deriveSemanticRefAnchors(unnamedContainerList(["Alpha", "Bravo", "Charlie", "Delta"], "u"));
+	assert.equal(summary.highConfidenceCount, 4);
+	assert.equal(summary.mintingEligibleCount, 4, "containerRole alone now sufficient for minting");
+	const alpha = summary.anchors.find((c) => c.anchor.name === "Alpha");
+	assert.ok(alpha);
+	assert.equal(alpha.anchor.mintingEligible, true);
+	assert.equal(alpha.anchor.containerRole, "list");
+	assert.equal(alpha.anchor.containerName, undefined, "no containerName present");
+});
+
+test("I1: semanticRefAnchorHashInput works with unnamed container (containerName normalized to empty string)", () => {
+	const summary = deriveSemanticRefAnchors(unnamedContainerList(["Alpha", "Bravo", "Charlie", "Delta"], "u"));
+	const alpha = summary.anchors.find((c) => c.anchor.name === "Alpha");
+	assert.ok(alpha);
+	const input = semanticRefAnchorHashInput(descriptor(), alpha.anchor);
+	assert.ok(input, "hash input produced for unnamed container");
+	assert.equal(input.anchor.containerName, "", "containerName normalized to empty string for hash stability");
+	assert.equal(input.anchor.containerRole, "list");
+	assert.equal(input.anchor.normalizedName, "alpha");
+});
+
+test("I1: ref hash is stable across selector change when entity has unnamed-container anchor", () => {
+	const first = deriveSemanticRefAnchors(unnamedContainerList(["Alpha", "Bravo", "Charlie", "Delta"], "v1-"));
+	const second = deriveSemanticRefAnchors(unnamedContainerList(["Alpha", "Bravo", "Charlie", "Delta"], "v2-"));
+	const firstAlpha = first.anchors.find((c) => c.anchor.name === "Alpha");
+	const secondAlpha = second.anchors.find((c) => c.anchor.name === "Alpha");
+	assert.ok(firstAlpha && secondAlpha);
+	const firstInput = semanticRefAnchorHashInput(descriptor(), firstAlpha.anchor);
+	const secondInput = semanticRefAnchorHashInput(descriptor(), secondAlpha.anchor);
+	assert.deepEqual(firstInput, secondInput, "same anchor input despite different refs (different selector)");
+});
+
+test("I1: duplicate names in unnamed container still ineligible (namedUniquely preserved)", () => {
+	const summary = deriveSemanticRefAnchors(unnamedContainerList(["Same", "Same", "Same", "Same"], "d"));
+	assert.equal(summary.mintingEligibleCount, 0, "duplicate names → ineligible regardless of container naming");
+});
+
 test("semanticRefAnchor: shadow hash input is stable across reorder and insertion, without changing live refs", () => {
 	const before = deriveSemanticRefAnchors(list(["Alpha", "Bravo", "Charlie", "Delta"], "b"));
 	const after = deriveSemanticRefAnchors(list(["Charlie", "Alpha", "Bravo", "Delta", "Echo"], "a"));
