@@ -35,10 +35,13 @@ export class BrowserOperationRegistry {
 	update(operationId: string, patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>): BrowserActiveOperationInfo | undefined {
 		const current = this.operations.get(operationId);
 		if (!current) return undefined;
+		const nextLeaseOwnerHash = Object.prototype.hasOwnProperty.call(patch, "leaseOwnerHash")
+			? ownerHash(typeof patch.leaseOwnerHash === "string" ? patch.leaseOwnerHash : undefined)
+			: current.leaseOwnerHash;
 		const next: BrowserActiveOperationInfo = {
 			...current,
 			...patch,
-			leaseOwnerHash: ownerHash(typeof patch.leaseOwnerHash === "string" ? patch.leaseOwnerHash : current.leaseOwnerHash),
+			leaseOwnerHash: nextLeaseOwnerHash,
 			updatedAt: Date.now(),
 		};
 		this.operations.set(operationId, next);

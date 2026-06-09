@@ -210,7 +210,16 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 				const timeoutMs = Math.max(0, Math.min(120_000, Math.floor(Number(body.timeoutMs ?? 0) || 0)));
 				const includeTabs = body.tabs === true;
 				const wasRunning = bridgeServer.running;
-				await ensureStarted();
+				try {
+					await ensureStarted();
+				} catch (error) {
+					return send(503, {
+						ok: false,
+						code: "CLI_BRIDGE_START_FAILED",
+						error: error instanceof Error ? error.message : String(error),
+						status: bridgeStatusPayload(bridgeServer, toolCount, includeTabs),
+					});
+				}
 				if (wait) await bridgeServer.waitForExtensionReady(undefined, timeoutMs);
 				const status = bridgeStatusPayload(bridgeServer, toolCount, includeTabs);
 				return send(200, { ok: true, startedBridge: !wasRunning && bridgeServer.running, status });

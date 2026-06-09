@@ -234,7 +234,7 @@ function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): FlagSpec[
 	const action = nativeActionToolMeta(cmd.name)?.actions?.find((item) => item.action === actionName);
 	if (!action) return specs;
 	const actionParams = actionParamNames(action);
-	const common = new Set(["tabId", "sessionId", "params"]);
+	const common = new Set(["tabId", "sessionId"]);
 	return specs
 		.filter((spec) => spec.name !== "action")
 		.filter((spec) => common.has(spec.name) || actionParams.has(spec.name))
@@ -251,6 +251,29 @@ function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): FlagSpec[
 			}
 			return required ? { ...spec, required } : spec;
 		});
+}
+
+function schemaForFlagSpec(spec: FlagSpec): Record<string, unknown> {
+	if (spec.kind === "boolean") return { type: "boolean", ...(spec.description ? { description: spec.description } : {}) };
+	if (spec.kind === "number") return { type: "number", ...(spec.description ? { description: spec.description } : {}) };
+	if (spec.kind === "array") return { type: "array", ...(spec.description ? { description: spec.description } : {}) };
+	if (spec.kind === "json") return { type: "object", ...(spec.description ? { description: spec.description } : {}) };
+	if (spec.kind === "enum" && spec.choices) return { anyOf: spec.choices.map((choice) => ({ const: choice })), ...(spec.description ? { description: spec.description } : {}) };
+	return { type: "string", ...(spec.description ? { description: spec.description } : {}) };
+}
+
+function schemaForFlagSpecs(cmd: CliCommand, specs: FlagSpec[]): Record<string, unknown> {
+	const root = isRecord(cmd.parameters) ? cmd.parameters : {};
+	const rootProperties = isRecord(root.properties) ? root.properties as Record<string, unknown> : {};
+	const properties: Record<string, unknown> = {};
+	for (const spec of specs) properties[spec.name] = rootProperties[spec.name] ?? schemaForFlagSpec(spec);
+	const required = specs.filter((spec) => spec.required).map((spec) => spec.name);
+	return {
+		type: "object",
+		properties,
+		...(required.length ? { required } : {}),
+		additionalProperties: false,
+	};
 }
 
 export function invocationFlagSpecs(cmd: CliCommand, naturalAction?: string): FlagSpec[] {
@@ -435,7 +458,7 @@ async function runSchemaCommand(argv: string[]): Promise<number> {
 		...(naturalAction ? { naturalSubcommand: kebabAction(naturalAction), action: naturalAction } : {}),
 		agentCli: naturalAction ? naturalRouting(naturalAction) : commandRouting(cmd),
 		artifactBehavior: artifactBehaviorMetadata(),
-		schema: cmd.parameters ?? {},
+		schema: naturalAction ? schemaForFlagSpecs(cmd, actionSpecificFlagSpecs(cmd, naturalAction)) : cmd.parameters ?? {},
 		flags: flagMetadata(cmd, naturalAction),
 		...(!naturalAction && naturalSubcommandMetadata(cmd) ? { subcommands: naturalSubcommandMetadata(cmd) } : {}),
 	});

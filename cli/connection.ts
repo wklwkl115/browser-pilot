@@ -99,18 +99,19 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 	};
 }
 
-function connectFailureEnvelope(message: string, details: Record<string, unknown>, timeoutMs: number): Record<string, unknown> {
+function connectFailureEnvelope(message: string, details: Record<string, unknown>, timeoutMs: number, code = "CLI_EXTENSION_NOT_CONNECTED"): Record<string, unknown> {
+	const isBridgeStartFailure = code === "CLI_BRIDGE_START_FAILED";
 	return {
 		ok: false,
 		exitCode: EXIT.unavailable,
-		code: "CLI_EXTENSION_NOT_CONNECTED",
+		code,
 		command: "connect",
 		ready: false,
 		message,
-		taxonomy: { domain: "cli", category: "connection", retryable: true, source: "cli" },
+		taxonomy: { domain: "cli", category: isBridgeStartFailure ? "bridge" : "connection", retryable: true, source: "cli" },
 		...details,
 		recovery: {
-			hint: "Ensure the Pi browser extension is installed, enabled, and connected to the reported bridge port.",
+			hint: isBridgeStartFailure ? "Inspect daemon and bridge startup diagnostics before waiting for the browser extension." : "Ensure the Pi browser extension is installed, enabled, and connected to the reported bridge port.",
 			commands: connectionRecoveryCommands(timeoutMs),
 		},
 	};
@@ -176,9 +177,10 @@ export async function connectBrowser(opts: { wait: boolean; timeoutMs: number; c
 		health: status?.health ?? {},
 	};
 	if (response.status !== 200 || json.ok === false) {
+		const code = typeof json.code === "string" ? json.code : "CLI_EXTENSION_NOT_CONNECTED";
 		return {
 			exitCode: EXIT.unavailable,
-			envelope: connectFailureEnvelope(typeof json.error === "string" ? json.error : `daemon /connect failed (HTTP ${response.status})`, common, opts.timeoutMs),
+			envelope: connectFailureEnvelope(typeof json.error === "string" ? json.error : `daemon /connect failed (HTTP ${response.status})`, common, opts.timeoutMs, code),
 		};
 	}
 	if (opts.wait && !ready) {

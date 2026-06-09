@@ -48,6 +48,7 @@ import path from "node:path";
 const stateDir = process.env.PI_BROWSER_DAEMON_STATE_DIR;
 const token = "test-token";
 const extensionConnected = process.env.PI_BROWSER_FAKE_EXTENSION_CONNECTED === "1";
+const connectFail = process.env.PI_BROWSER_FAKE_CONNECT_FAIL === "1";
 const tabs = extensionConnected ? [{ tabId: 7, id: 7, active: true, url: "https://example.test/", title: "Example" }] : [];
 const activeTab = tabs.find((tab) => tab.active) || tabs[0] || null;
 function statusPayload(includeTabs) {
@@ -100,6 +101,16 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       let parsed = {};
       try { parsed = JSON.parse(body); } catch {}
+      if (connectFail) {
+        res.writeHead(503, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false,
+          code: "CLI_BRIDGE_START_FAILED",
+          error: "fake bridge startup failed",
+          status: statusPayload(parsed.tabs === true)
+        }));
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({
         ok: true,
@@ -147,13 +158,14 @@ setInterval(() => {}, 1000);
 	return daemonEntry;
 }
 
-function withFakeDaemonStatus(extensionConnected: boolean, fn: (env: Record<string, string>) => void): void {
+function withFakeDaemonStatus(extensionConnected: boolean, fn: (env: Record<string, string>) => void, extraEnv: Record<string, string> = {}): void {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-fake-daemon-status-"));
 	const daemonEntry = writeFakeDaemonEntry(dir, extensionConnected);
 	const env = {
 		PI_BROWSER_DAEMON_STATE_DIR: dir,
 		PI_BROWSER_DAEMON_ENTRY: daemonEntry,
 		PI_BROWSER_FAKE_EXTENSION_CONNECTED: extensionConnected ? "1" : "0",
+		...extraEnv,
 	};
 	try {
 		const start = runCli(["tabs", "--action", "list", "--json"], repoRoot, env);
@@ -393,6 +405,13 @@ test("schema exposes natural wait selector metadata without daemon startup", () 
 	const flags = env.flags as Array<Record<string, unknown>>;
 	assert.ok(flags.some((flag) => flag.flag === "--selector"), "selector natural schema exposes --selector");
 	assert.ok(!flags.some((flag) => flag.flag === "--action"), "selector natural schema hides legacy --action");
+	assert.ok(!flags.some((flag) => flag.flag === "--params"), "selector natural schema hides legacy --params");
+	const schema = env.schema as Record<string, unknown>;
+	assert.deepEqual(schema.required, ["selector"]);
+	const properties = schema.properties as Record<string, unknown>;
+	assert.ok(properties.selector, "natural schema keeps action-specific selector");
+	assert.equal("action" in properties, false, "natural schema does not expose legacy action");
+	assert.equal("params" in properties, false, "natural schema does not expose legacy params");
 });
 
 test("schema exposes legacy action interface as advanced compatibility", () => {
@@ -704,6 +723,21 @@ test("connect --wait returns parseable unavailable envelope when extension is no
 		const recovery = env.recovery as Record<string, unknown>;
 		assert.ok((recovery.commands as Array<Record<string, unknown>>).some((cmd) => cmd.command === "pi-browser status --json"));
 	});
+});
+
+test("connect preserves daemon bridge-start failure classification", () => {
+	withFakeDaemonStatus(false, (envVars) => {
+		const result = runCli(["connect", "--wait", "--timeout-ms", "100", "--json"], repoRoot, envVars);
+		assert.equal(result.code, 3);
+		assert.equal(result.stderr, "");
+		const env = parseOneJson(result.stdout);
+		assert.equal(env.ok, false);
+		assert.equal(env.code, "CLI_BRIDGE_START_FAILED");
+		assert.equal(env.message, "fake bridge startup failed");
+		assert.deepEqual(env.extension, { connected: false });
+		const taxonomy = env.taxonomy as Record<string, unknown>;
+		assert.equal(taxonomy.category, "bridge");
+	}, { PI_BROWSER_FAKE_CONNECT_FAIL: "1" });
 });
 
 test("daemon accepts leading --json before the lifecycle action", () => {

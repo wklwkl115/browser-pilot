@@ -18,7 +18,13 @@ test("BrowserOperationRegistry hashes lease owner and updates operation state", 
 	const updated = operations.update(started.operationId, { progress: 90, phase: "completed" });
 	assert.equal(updated?.progress, 90);
 	assert.equal(updated?.phase, "completed");
+	assert.equal(updated?.leaseOwnerHash, started.leaseOwnerHash, "progress updates must not re-hash the already-redacted owner id");
+	const reassigned = operations.update(started.operationId, { leaseOwnerHash: "session-b" });
+	assert.equal(typeof reassigned?.leaseOwnerHash, "string");
+	assert.notEqual(reassigned?.leaseOwnerHash, started.leaseOwnerHash, "explicit owner changes should produce a new stable hash");
+	assert.notEqual(reassigned?.leaseOwnerHash, "session-b");
 	const finished = operations.finish(started.operationId);
 	assert.equal(finished?.phase, "completed");
+	assert.equal(finished?.leaseOwnerHash, reassigned?.leaseOwnerHash);
 	assert.equal(operations.get(started.operationId), undefined);
 });

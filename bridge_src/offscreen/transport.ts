@@ -131,11 +131,11 @@ function connectWS(port: number): void {
   };
 }
 
-async function probeAndConnectWS(resetDelay = false): Promise<void> {
+async function probeAndConnectWS(resetDelay = false, onlyPort?: number): Promise<void> {
   if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
   const candidates: number[] = [];
   let detectedOpenSocket = false;
-  for (const port of portRange()) {
+  for (const port of onlyPort !== undefined ? [onlyPort] : portRange()) {
     const current = sockets.get(port);
     if (current && current.readyState <= WebSocket.OPEN) { detectedOpenSocket = true; continue; }
     if (current) sockets.delete(port);
@@ -153,7 +153,7 @@ async function probeAndConnectWS(resetDelay = false): Promise<void> {
 function handleRuntimeMessage(message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void): boolean {
   const msg = (message && typeof message === "object" ? message : {}) as RuntimeMessage;
   if (msg.type === "pi-browser-offscreen-probe") {
-    void probeAndConnectWS(msg.resetDelay === true).then(() => sendResponse({ ok: true, openPorts: openPorts() }));
+    void probeAndConnectWS(msg.resetDelay === true, typeof msg.port === "number" ? msg.port : undefined).then(() => sendResponse({ ok: true, openPorts: openPorts() }));
     return true;
   }
   if (msg.type === "pi-browser-offscreen-send" && typeof msg.port === "number" && typeof msg.data === "string") {

@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft execution contract for making `pi-browser` a first-class external-agent frontend.
+Current external-face contract for the shipped `pi-browser` first-class external-agent frontend.
 
 This spec applies to the `pi-browser` CLI only. Pi-native `browser_*` tool registration remains the
 canonical in-process surface, and this work must not add new public `browser_*` tools or fork browser

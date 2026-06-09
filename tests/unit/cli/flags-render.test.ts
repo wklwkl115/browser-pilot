@@ -321,6 +321,16 @@ test("natural action routing rejects mixing subcommand action with legacy --acti
 	if (!mixed.ok) assert.match(mixed.error, /cannot be combined with --action/);
 });
 
+test("natural action routes reject legacy --params instead of allowing hidden overrides", () => {
+	const wait = buildCliCommands().find((c) => c.subcommand === "wait");
+	assert.ok(wait, "wait command must exist");
+	const translated = translateNaturalActionArgv(wait, ["selector", "--selector", "#a", "--params", "{\"selector\":\"#b\"}"]);
+	assert.ok(translated.ok);
+	const parsed = parseArgs(invocationFlagSpecs(wait, translated.natural?.action), translated.argv);
+	assert.equal(parsed.ok, false);
+	if (!parsed.ok) assert.match(parsed.error, /unknown flag "--params"/);
+});
+
 test("renderResult maps mode + terminate to exit codes", () => {
 	const ok = { content: [{ type: "text", text: JSON.stringify({ tool: "browser_tabs", summary: { tabs: 1 } }) }] };
 	const err = { content: [{ type: "text", text: JSON.stringify({ error: { code: "NO_BROWSER", message: "no extension" } }) }], terminate: true };

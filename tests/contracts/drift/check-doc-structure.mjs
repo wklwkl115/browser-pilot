@@ -14,6 +14,8 @@ const roadmap = read("ROADMAP.md");
 const todo = read("TODO.md");
 const archive = read("ARCHIVE.md");
 const structure = read("docs/document-structure.md");
+const agentNativeArchitecture = read("docs/agent-native-architecture.md");
+const agentNativeCliSpec = read("docs/agent-native-cli-spec.md");
 
 assert(structure.includes("## Canonical layers") && structure.includes("CURRENT.md") && structure.includes("ARCHIVE.md"), "document-structure.md must define canonical layers");
 assert(structure.includes("docs/playbooks/*.md") && structure.includes("docs/reference/*.md"), "document-structure.md must define playbook/reference layers");
@@ -61,6 +63,17 @@ assert(!archive.includes("## 180.") && !archive.includes("## 216.") && !archive.
 assert(archive.split(/\r?\n/).length <= 120, "ARCHIVE.md must stay summary-first and compact");
 assert(todo.split(/\r?\n/).length <= 30, "TODO.md must remain a navigation page");
 assert(roadmap.split(/\r?\n/).length <= 80, "ROADMAP.md must stay compact and future-facing");
+
+const closedAgentNativeForbidden = [
+	"ACTIVE execution contract",
+	"Workstream A — agent line (ACTIVATED)",
+	"Durable fix — ACTIVE",
+	"external-face task queue",
+];
+for (const phrase of closedAgentNativeForbidden) {
+	assert(!agentNativeArchitecture.includes(phrase), `docs/agent-native-architecture.md is a completed/current-reference contract and must not advertise active execution: ${phrase}`);
+}
+assert(!agentNativeCliSpec.includes("Draft execution contract"), "docs/agent-native-cli-spec.md is the shipped CLI contract, not a draft execution contract");
 
 // AGENTS.md is inlined into CLAUDE.md because Claude Code does not auto-read AGENTS.md.
 // Guard the two copies against silent drift: every AGENTS.md `## section` must appear under

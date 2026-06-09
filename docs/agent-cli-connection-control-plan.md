@@ -103,7 +103,7 @@ Draft success fields:
 }
 ```
 
-Draft timeout/error fields:
+Timeout/error fields:
 
 ```json
 {
@@ -132,6 +132,10 @@ Draft timeout/error fields:
   }
 }
 ```
+
+Bridge startup failures keep the same parseable envelope shape and exit code `3`, but use
+`code:"CLI_BRIDGE_START_FAILED"` with taxonomy category `bridge`; this keeps daemon/bridge startup
+diagnostics separate from extension-readiness timeouts.
 
 ### `pi-browser status`
 
@@ -209,6 +213,8 @@ Draft fields:
 - [x] Unit test: stale lockfile status does not leak token.
 - [x] Fake daemon test: `connect --wait` success envelope when extension is connected.
 - [x] Fake daemon test: `connect --wait` timeout/error envelope when extension is not connected.
+- [x] Fake daemon test: `connect --wait` preserves `CLI_BRIDGE_START_FAILED` when daemon `/connect`
+  cannot start the bridge.
 - [x] Contract test: top-level help includes `connect` and `status`; `connect/status` are lifecycle commands, not counted in the 22 public `browser_*` command surface.
 
 ### P5 - Runtime Smoke

@@ -229,7 +229,9 @@ run for a multi-step browser workflow. It returns one JSON object with `ready`, 
 `startedBridge`, `waitedMs`, `daemon`, `bridge`, `extension`, `tabCount`, `activeTab`, `health`, and
 `recovery.commands[]`. Pass `--tabs` to include full `tabs[]`; the default is intentionally compact
 for multi-tab profiles. If the extension does not connect before the timeout, it exits `3` with
-`code:"CLI_EXTENSION_NOT_CONNECTED"` and concrete recovery commands.
+`code:"CLI_EXTENSION_NOT_CONNECTED"` and concrete recovery commands. If the daemon cannot start the
+bridge server, it exits `3` with `code:"CLI_BRIDGE_START_FAILED"` so agents can inspect daemon/bridge
+startup diagnostics before waiting on the browser extension.
 
 `pi-browser status --json` is the fast read-only state check. It never auto-starts daemon or bridge;
 with no daemon it returns `ready:false` and exit `0`. When a daemon is reachable it reports

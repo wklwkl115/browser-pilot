@@ -636,6 +636,10 @@ async function testOffscreenTransportLifecycle() {
 	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-connected" && message.port === 18765), "offscreen open must notify the service worker");
 	runtimeListener({ type: "pi-browser-offscreen-send", port: 18765, data: "{\"type\":\"ext_ready\"}" }, {}, () => {});
 	assert(sockets[0].sent.some((message) => String(message).includes("ext_ready")), "offscreen must write service-worker bytes to the real WebSocket");
+	fetchedPorts.length = 0;
+	sockets[1].readyState = FakeWebSocket.CLOSED;
+	await new Promise((resolve) => runtimeListener({ type: "pi-browser-offscreen-probe", port: 18766, resetDelay: true }, {}, () => resolve()));
+	assert(JSON.stringify(fetchedPorts) === JSON.stringify([18766]), "offscreen single-port probes must not scan the full bridge port range");
 	sockets[0].onmessage({ data: "{\"id\":\"cmd-1\",\"code\":{\"cmd\":\"tabs.list\"}}" });
 	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-ws-message" && message.port === 18765 && message.data?.id === "cmd-1"), "offscreen must forward inbound WebSocket frames to the service worker");
 	sockets[0].readyState = FakeWebSocket.CLOSED;
@@ -693,12 +697,32 @@ async function testTransportSocketCleanupIdentity() {
 	assert(sandbox.bridgeWakeProbe === sandbox.probeAndConnectWS, "transport must register bridge_wake probe through the command-layer hook");
 	assert(sandbox.tabSyncDeps?.getSocket === sandbox.getPiBrowserTransportSocket && sandbox.tabSyncDeps?.getSockets === sandbox.getPiBrowserTransportSockets && sandbox.tabSyncDeps?.probe === sandbox.probeAndConnectWS, "transport must inject socket/probe dependencies into tab sync");
 	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "service-worker transport must expose an open socket adapter after offscreen reports an open port");
-	assert(offscreenSends.some((message) => String(message.data).includes('"ext_ready"')), "service-worker transport must send ext_ready through the offscreen socket adapter");
+	const extReadyCount = () => offscreenSends.filter((message) => String(message.data).includes('"ext_ready"')).length;
+	assert(extReadyCount() === 1, "service-worker transport must send ext_ready through the offscreen socket adapter");
 	assert(alarms.some((alarm) => alarm.name === "pi-browser-ws-probe"), "transport install must schedule the recovery probe alarm");
 	const listener = runtimeListeners[0];
+	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-connected", port: 18765 }, {}, () => resolve()));
+	assert(extReadyCount() === 1, "service-worker transport must not resend ext_ready for an already-open offscreen socket adapter");
 	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-ws-message", port: 18765, data: { id: "cmd-1", code: { cmd: "tabs.list" } } }, {}, (response) => { sandbox.wsResponse = response; resolve(); }));
 	assert(handledWsMessage?.id === "cmd-1", "offscreen inbound WebSocket frames must dispatch through the service-worker router");
 	assert(offscreenSends.some((message) => String(message.data).includes('"ack"') && String(message.data).includes('"cmd-1"')), "router socket replies must be forwarded back to offscreen");
+	sandbox.getPiBrowserTransportSocket().send("{\"type\":\"ack\",\"id\":\"dropped\"}");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "successful offscreen sends must keep the socket adapter open");
+	const originalSendMessage = sandbox.chrome.runtime.sendMessage;
+	sandbox.chrome.runtime.sendMessage = async (message) => {
+		offscreenMessages.push(message);
+		if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
+		return message.type === "pi-browser-offscreen-send" ? { ok: true, sent: false } : { ok: true, openPorts: [18765] };
+	};
+	sandbox.getPiBrowserTransportSocket().send("{\"type\":\"ack\",\"id\":\"stale\"}");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sandbox.getPiBrowserTransportSocket() === null, "service-worker transport must clear stale socket adapters when offscreen reports sent:false");
+	sandbox.chrome.runtime.sendMessage = originalSendMessage;
+	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-connected", port: 18765 }, {}, () => resolve()));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "offscreen reconnect can recreate the socket adapter after sent:false cleanup");
+	assert(extReadyCount() === 2, "service-worker transport must resend ext_ready after a stale adapter is cleared and reconnected");
 	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-disconnected", port: 18765, data: { reason: "close" } }, {}, () => resolve()));
 	assert(sandbox.getPiBrowserTransportSocket() === null, "offscreen disconnect must clear the matching socket adapter");
 }

@@ -2,11 +2,11 @@
 
 ## Status
 
-**ACTIVE execution contract — activated 2026-06-07.** This is the authority for the merged
-"agent-native architecture + CLI" mainline. It defines the internal architecture; the external CLI
-face is contracted in `docs/agent-native-cli-spec.md` and queued in
-`docs/agent-native-cli-execution-plan.md` (both subordinate to this document — where they disagree,
-this document wins, see "Relationship to the CLI docs").
+**COMPLETE — archived/current-reference contract, activated 2026-06-07 and shipped.** This is the
+authority for the completed merged "agent-native architecture + CLI" mainline. It defines the
+internal architecture; the external CLI face is contracted in `docs/agent-native-cli-spec.md` and its
+completed execution record is `docs/agent-native-cli-execution-plan.md` (both subordinate to this
+document — where they disagree, this document wins, see "Relationship to the CLI docs").
 
 No implementation is authorized by this document alone. Each batch lands behavior-preserving, with its
 own verification, per `CURRENT.md` change-workflow.
@@ -154,16 +154,15 @@ not re-accrue it. Drift-proofing is a first-class architecture feature, not an a
 | **I1 — single contract source**: `register*Tool` typebox is the only param/result truth | both faces derive; nothing hand-maintained | `check:cli-parity` |
 | **I2 — two faces derive, never diverge**: CLI flags + Pi-native schema both come from the registration | no per-face param drift (the disease this session fixed) | `check:cli-parity` + B2a backward-compat test |
 | **I3 — mechanical internal / strategic exposed**: the advertised surface is strategic-only | spends agent cognition on strategy, not knobs | C2/H1/C4 re-asserted as *tolerance* (B2) + a param-surface audit check |
-| **I4 — envelope/distillers pure**: no side effects in the result/summary layer | long-lived daemon correctness (cross-request bleed) | **NEW guard needed** — `summaries/*` must not import `resources`/`abml` ref-writers (B3 + a boundary check, mirroring `check:abml-core-boundary`) |
+| **I4 — envelope/distillers pure**: no side effects in the result/summary layer | long-lived daemon correctness (cross-request bleed) | `check:summary-boundary` locks that `summaries/*` does not import ref/resource writers |
 | **I5 — safety gates internal, never removed**: redaction / private-target / confirm / lease / launcher operate, not agent-toggled | safety must not be flattenable away | existing gate contracts stay; B4 keeps redaction operating |
 | **I6 — execution = JS + CDP, ABML observation-only**: no action verbs/params | the B2 action-arm revert lesson | `check:tools-contract` (no `browser_click`/`type`/`action`) |
 | **I7 — no new public `browser_*` without RFC + eval** | surface stays thin | `check:cli-parity` count + `tool-boundaries` |
 
-The one **missing** guard today is I4 (the `summaries/scan.ts` side-effect this session uncovered
-proves it). Adding it is part of B3 — an excellent architecture ships the guard with the fix so the
-class of bug cannot return.
+I4 is now guarded by `check:summary-boundary`; the prior `summaries/scan.ts` side-effect class is
+locked against silent reintroduction.
 
-## Workstream A — agent line (ACTIVATED)
+## Workstream A — agent line (COMPLETE)
 
 All four batches are agent-facing, leverage the single contract (both faces follow), and are
 low/medium risk. Order: **B1 → B2a → B2b → (B2c/B2d) → B3 → B4.** B2a is the gate that B4 reuses.
@@ -309,10 +308,10 @@ Agent-invisible. Does not block Workstream A. Only the cheap, isolated ABML dead
 - **Blind eval for agent-facing batches** — param flattening's success criterion is agent experience;
   contract-green is not sufficient. Validate via a blind-eval pass (`pi-browser-blind-eval`).
 - **No-browser discovery contract + cwd propagation** — preserved (already enforced).
-- **Distiller/envelope purity guard (I4 — the one currently-MISSING guard, ships with B3):** a boundary
-  check that `src/tools/summaries/*` must not import `resources` ref-writers or `abml` side-effecting
-  builders — mirrors `check:abml-core-boundary`. Without it the `summaries/scan.ts` side-effect class
-  can silently return; shipping the guard with the fix is what makes B3 durable, not just done.
+- **Distiller/envelope purity guard (I4):** `check:summary-boundary` asserts that
+  `src/tools/summaries/*` must not import `resources` ref-writers or `abml` side-effecting builders.
+  It mirrors `check:abml-core-boundary` and keeps the `summaries/scan.ts` side-effect class from
+  silently returning.
 
 ## Guard & test specifications (concrete — buildable without further guessing)
 
@@ -355,9 +354,10 @@ step. The pointer carries names/paths only — **never the value** (I5 holds).
   mechanical params (defaults are not just visible — mechanical params leave the advertised surface);
   the Privacy section's `--no-redact`/`--redact false` agent toggle is **replaced** by redaction
   internalization + targeted retrieval (boundary point 3).
-- `docs/agent-native-cli-execution-plan.md` — the **external-face task queue** (P0–P8). It runs under
-  this mainline; its P-items interlock with the batches here (e.g. B1 simplifies P1 command metadata
-  and `check:cli-parity`; B2 shrinks `commands`/`schema` discovery output; B3/B4 align with P2/P6).
+- `docs/agent-native-cli-execution-plan.md` — the **external-face execution record** (P0–P8). It ran
+  under this mainline; its P-items interlocked with the batches here (e.g. B1 simplified P1 command
+  metadata and `check:cli-parity`; B2 shrank `commands`/`schema` discovery output; B3/B4 aligned with
+  P2/P6).
 
 ## Connection reliability (B5 — durable offscreen transport)
 
@@ -372,7 +372,7 @@ it). Earlier `ERR_CONNECTION_REFUSED` console spam is just the benign no-daemon 
 MV3 service worker lifetime model and could not survive Chrome's hard service-worker cap. That code is
 not the durable B5 architecture.
 
-**Durable fix — ACTIVE:** move the real WebSocket lifecycle into an **offscreen document**. The
+**Durable fix — COMPLETE:** move the real WebSocket lifecycle into an **offscreen document**. The
 offscreen context owns local daemon health probes, port-range fan-out, reconnect backoff, ping, socket
 identity cleanup, and inbound/outbound WS frames. The service worker owns only extension capabilities:
 offscreen creation/recovery, router dispatch, startup recovery, tab sync, CDP/CSP/state cleanup, and

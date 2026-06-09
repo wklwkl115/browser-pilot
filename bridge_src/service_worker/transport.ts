@@ -20,9 +20,6 @@ let piBrowserTransportInstalled = false;
 let offscreenCreateInFlight: Promise<boolean> | null = null;
 const WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 const WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
-const WS_RECONNECT_INITIAL_MS = 1000;
-const WS_RECONNECT_MAX_MS = 30000;
-let wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
 
 function isOffscreenBridgeMessage(message: unknown): message is OffscreenMessage {
   return !!message && typeof message === "object" && typeof (message as OffscreenMessage).type === "string" && String((message as OffscreenMessage).type).startsWith("pi-browser-offscreen-");
@@ -91,10 +88,14 @@ function ensureSocketAdapter(port: number): SocketAdapter {
     port,
     readyState: SOCKET_OPEN,
     send(data: string) {
-      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).catch((error: unknown) => {
+      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).then((response: unknown) => {
+        const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
+        if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
+      }).catch((error: unknown) => {
         const message = offscreenTransportErrorMessage(error);
         if (isExpectedOffscreenTransientError(message)) return;
         console.warn("[PI-BROWSER-WS] offscreen send failed", message);
+        cleanupTransportSocket(socket, "offscreen-send-error");
       });
     },
   };
@@ -128,12 +129,12 @@ function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, _reason = 
 }
 
 function scheduleProbe(resetDelay = false): void {
-  if (resetDelay) wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
+  void resetDelay;
   chrome.alarms.create("pi-browser-ws-probe", { delayInMinutes: 1 });
 }
 
 function bumpProbeBackoff(): void {
-  wsReconnectDelayMs = Math.min(WS_RECONNECT_MAX_MS, Math.max(WS_RECONNECT_INITIAL_MS, wsReconnectDelayMs * 2));
+  scheduleProbe(false);
 }
 
 function scheduleKeepalive(): void {
@@ -174,8 +175,10 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
 }
 
 async function handleOffscreenConnected(port: number): Promise<void> {
+  const current = sockets.get(port);
+  const shouldSendReady = !current || current.readyState !== SOCKET_OPEN;
   const socket = ensureSocketAdapter(port);
-  await sendExtReady(socket, port);
+  if (shouldSendReady) await sendExtReady(socket, port);
 }
 
 async function handlePiBrowserOffscreenMessage(message: OffscreenMessage): Promise<unknown> {
@@ -226,4 +229,4 @@ function installPiBrowserTransport(): boolean {
 
 export { installPiBrowserTransport, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS, handlePiBrowserOffscreenMessage, ensureOffscreenDocument };
 // ESM module metadata
-export const __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, sockets, WS_URL, WS_HEALTH_URL, WS_RECONNECT_INITIAL_MS, WS_RECONNECT_MAX_MS, wsReconnectDelayMs, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS, handlePiBrowserOffscreenMessage, ensureOffscreenDocument } };
+export const __piBridgeModule_transport = { name: "transport", symbols: { installPiBrowserTransport, sockets, WS_URL, WS_HEALTH_URL, getPiBrowserTransportSocket, getPiBrowserTransportSockets, cleanupTransportSocket, scheduleProbe, bumpProbeBackoff, scheduleKeepalive, isServerAlive, probeAndConnectWS, handlePiBrowserTransportAlarm, connectWS, handlePiBrowserOffscreenMessage, ensureOffscreenDocument } };
