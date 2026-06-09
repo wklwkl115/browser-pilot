@@ -7,8 +7,8 @@
       "name": "browser_evidence",
       "command": "evidence.collect",
       "rawChars": 6481,
-      "layer0Chars": 1840,
-      "ratio": 0.2839,
+      "layer0Chars": 1850,
+      "ratio": 0.2854,
       "saved": false
     },
     {
@@ -16,8 +16,8 @@
       "name": "browser_network",
       "command": "network.list",
       "rawChars": 58523,
-      "layer0Chars": 6399,
-      "ratio": 0.1093,
+      "layer0Chars": 6494,
+      "ratio": 0.111,
       "saved": true
     },
     {

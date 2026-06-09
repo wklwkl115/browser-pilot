@@ -62,7 +62,6 @@ export type DistilledEnvelope = {
 };
 
 const SUMMARY_MAX_CHARS = 12_000;
-const SUMMARY_BUDGET_CHARS = 8_000;
 // Last-resort orientation snippet cap when the summary overflows even after compaction and falls to the
 // scalar-identity fallback. The real page model lives in the lifted top-level fields (entities/gist/
 // outline/diff/treeDiff/causal) + the saved artifact, so this preview only needs to ORIENT, not carry
@@ -452,13 +451,7 @@ function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): Disti
 	// Phase 3: fit the summary AFTER freeing budget from lifted/removable fields
 	const overhead = stableJson({ ...out, summary: {} }).length;
 	const summaryBudget = Math.max(300, budget - overhead);
-	if (stableJson(out.summary).length > summaryBudget) {
-		out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
-		if (stableJson(out).length <= budget) return out;
-	}
-	// Phase 4: re-fit summary against post-removal overhead
-	const overhead2 = stableJson({ ...out, summary: {}, diagnostics: out.diagnostics }).length;
-	out = { ...out, summary: fitSummaryBudget(out.summary, Math.max(300, budget - overhead2)) };
+	out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
 	const finished = tryFinish();
 	if (finished) return finished;
 	const essentialWithDiff = markEnvelopeBudgetOmissions({
@@ -600,8 +593,6 @@ function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifac
 
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, sensitiveRaw = false): DistilledEnvelope {
 	const maybeRedact = <T>(value: T): T => redactForModel(value, saved, options.rawArtifactValue);
-	const rawBudget = Math.floor(Number(options.maxChars || SUMMARY_BUDGET_CHARS) * 0.7);
-	const budget = Math.max(1_000, Math.min(SUMMARY_BUDGET_CHARS, rawBudget));
 	const redactedSummary = maybeRedact(summary) as DistilledSummary;
 	const redactedEntitiesOption = options.entities ? maybeRedact(options.entities) as Array<Record<string, unknown>> : undefined;
 	const redactedExplicitError = options.error ? maybeRedact(options.error) as Record<string, unknown> : undefined;
@@ -610,7 +601,8 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		: [];
 	const summaryForFitting = { ...redactedSummary };
 	delete summaryForFitting.nextActions;
-	const fittedSummary = fitSummaryBudget(summaryForFitting, budget);
+	const preFitBudget = Math.max(1_000, Math.min(SUMMARY_MAX_CHARS, Math.floor(Number(options.maxChars || SUMMARY_MAX_CHARS) * 0.7)));
+	const fittedSummary = fitSummaryBudget(summaryForFitting, preFitBudget);
 	const redactedOperation = options.operation ? maybeRedact(options.operation) as Record<string, unknown> : undefined;
 	const redactedSnapshot = options.snapshot ? maybeRedact(options.snapshot) as Record<string, unknown> : undefined;
 	const correlation = {
