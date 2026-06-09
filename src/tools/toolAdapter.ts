@@ -222,8 +222,68 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 	return errorResult(error);
 }
 
+/**
+ * Structurally shrink an inline json read result so it serializes within budget as VALID JSON.
+ *
+ * The artifact json read builds a compacted, windowable value (an `{type:"array", items, …}`
+ * window or a key-bounded object), but a large window can still serialize past the budget. The
+ * old path then ran the serialized JSON through the TEXT head/tail truncator, which cut mid-token
+ * and inserted a raw `[truncated …]` marker — producing UNPARSEABLE JSON for the exact read the
+ * tool's own `nextActions` suggest (`mode=json jsonPath=data.items`). Instead, reduce the windowed
+ * array items / object keys (preserving `nextOffset`/`truncatedKeys` so the agent can page) until
+ * the result fits; callers floor the serialize budget at the fitted size so the truncator never
+ * cuts a structurally-minimal value. Small reads (already within budget) are returned untouched.
+ */
+export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknown {
+	if (!isRecord(result) || stableJson(result).length <= maxChars) return result;
+	const payload = result.value;
+	if (isRecord(payload) && payload.type === "array" && Array.isArray(payload.items) && payload.items.length > 1) {
+		const original = payload.items.slice();
+		const offset = Number(payload.offset ?? 0);
+		const count = Number(payload.count ?? original.length);
+		const applyArray = (n: number) => {
+			payload.items = original.slice(0, n);
+			payload.limit = n;
+			payload.nextOffset = offset + n < count ? offset + n : null;
+			payload.budgetTrimmed = n < original.length;
+		};
+		// Largest prefix length that still fits (binary search → optimal window, not a coarse step).
+		let lo = 1, hi = original.length, best = 1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			applyArray(mid);
+			if (stableJson(result).length <= maxChars) { best = mid; lo = mid + 1; } else hi = mid - 1;
+		}
+		applyArray(best);
+		return result;
+	}
+	if (isRecord(payload) && payload.type !== "array") {
+		const keys = Object.keys(payload).filter((k) => k !== "truncatedKeys");
+		if (keys.length <= 1) return result;
+		const applyKeys = (k: number) => {
+			const reduced: Record<string, unknown> = {};
+			for (const key of keys.slice(0, k)) reduced[key] = payload[key];
+			if (k < keys.length) reduced.truncatedKeys = keys.length - k;
+			result.value = reduced;
+		};
+		let lo = 1, hi = keys.length, best = 1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			applyKeys(mid);
+			if (stableJson(result).length <= maxChars) { best = mid; lo = mid + 1; } else hi = mid - 1;
+		}
+		applyKeys(best);
+	}
+	return result;
+}
+
 export function inlineJsonToolResult(value: unknown, details: Record<string, unknown>, params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): PiTextToolResult {
-	return jsonResult(value, details, toolMaxChars(params, budgetName));
+	const maxChars = toolMaxChars(params, budgetName);
+	const fitted = fitInlineJsonToBudget(value, maxChars);
+	// Floor the serialize budget at the fitted size: a structurally-minimal value (e.g. a single
+	// large item) must still emit as VALID JSON rather than be text-truncated mid-token.
+	const serializeBudget = Math.max(maxChars, stableJson(fitted).length);
+	return jsonResult(fitted, details, serializeBudget);
 }
 
 export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
