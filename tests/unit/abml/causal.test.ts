@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq, causalRequestsFiredCount, causalFiredHint } from "../../../src/abml-core/causal.ts";
+import { buildCausalSummary, buildCausalRequest, causalUnavailable, MAX_CAUSAL_REQUESTS, buildTriggeredRelations, resolveActionEntityRef, MAX_TRIGGERED_RELATIONS, buildCausalEvent, buildCausalEvents, MAX_CAUSAL_EVENTS, eventTriggeredByEntity, latestSeq, causalRequestsFiredCount, causalFiredHint, causalUserTriggeredCount } from "../../../src/abml-core/causal.ts";
 
 function hasRequests(c: ReturnType<typeof buildCausalSummary>): c is { sinceSeq: number; requests: ReturnType<typeof buildCausalRequest>[]; requestCount?: number } {
 	return "requests" in c;
@@ -83,6 +83,69 @@ test("causal: unavailable block when no recorder is active", () => {
 	const c = causalUnavailable("network recorder not active — start via browser_network start");
 	assert.ok(!("requests" in c));
 	assert.ok("unavailable" in c && c.unavailable.includes("not active"));
+});
+
+// ── I2: initiator-enhanced causal ─────────────────────────────────────────────
+
+test("causal I2: buildCausalRequest extracts initiatorType from CDP initiator field", () => {
+	const r = buildCausalRequest({ requestId: "a", request: { url: "https://x/a", method: "GET" }, initiator: { type: "script", url: "https://x/app.js" } });
+	assert.equal(r.initiatorType, "script");
+	assert.equal(r.passive, undefined, "script-initiated is not passive");
+});
+
+test("causal I2: parser-initiated requests are marked passive", () => {
+	const r = buildCausalRequest({ requestId: "b", request: { url: "https://x/style.css" }, initiator: { type: "parser" } });
+	assert.equal(r.initiatorType, "parser");
+	assert.equal(r.passive, true);
+});
+
+test("causal I2: preload-initiated requests are marked passive", () => {
+	const r = buildCausalRequest({ requestId: "c", request: { url: "https://x/font.woff2" }, initiator: { type: "preload" } });
+	assert.equal(r.initiatorType, "preload");
+	assert.equal(r.passive, true);
+});
+
+test("causal I2: records without initiator field produce no initiatorType (backward compat)", () => {
+	const r = buildCausalRequest({ requestId: "d", request: { url: "https://x/d", method: "GET" } });
+	assert.equal(r.initiatorType, undefined);
+	assert.equal(r.passive, undefined);
+});
+
+test("causal I2: buildTriggeredRelations filters passive requests from triggered attribution", () => {
+	const causal = buildCausalSummary([
+		{ seq: 1, requestId: "script-req", request: { url: "https://x/api" }, initiator: { type: "script" } },
+		{ seq: 2, requestId: "parser-req", request: { url: "https://x/style.css" }, initiator: { type: "parser" } },
+		{ seq: 3, requestId: "other-req", request: { url: "https://x/img" }, initiator: { type: "other" } },
+	], 0);
+	const relations = buildTriggeredRelations(causal);
+	const refs = relations.map((r) => r.targetRef);
+	assert.ok(!refs.includes("pi-ref://network/parser-req"), "passive parser request excluded");
+	assert.ok(refs.includes("pi-ref://network/script-req"), "script request included");
+	assert.ok(refs.includes("pi-ref://network/other-req"), "other request included");
+});
+
+test("causal I2: confidence elevates to medium when hasActionRef + script initiator", () => {
+	const causal = buildCausalSummary([
+		{ seq: 1, requestId: "s", request: { url: "https://x/api" }, initiator: { type: "script" } },
+		{ seq: 2, requestId: "o", request: { url: "https://x/other" }, initiator: { type: "other" } },
+	], 0);
+	const withAction = buildTriggeredRelations(causal, { hasActionRef: true });
+	assert.equal(withAction[0].confidence, "medium", "script + actionRef → medium");
+	assert.equal(withAction[0].evidence?.initiatorType, "script");
+	assert.equal(withAction[1].confidence, "low", "other + actionRef → still low");
+	assert.equal(withAction[1].evidence?.initiatorType, undefined);
+	const withoutAction = buildTriggeredRelations(causal);
+	assert.equal(withoutAction[0].confidence, "low", "script without actionRef → low");
+});
+
+test("causal I2: causalUserTriggeredCount excludes passive requests", () => {
+	const causal = buildCausalSummary([
+		{ seq: 1, requestId: "a", request: { url: "https://x/a" }, initiator: { type: "script" } },
+		{ seq: 2, requestId: "b", request: { url: "https://x/b" }, initiator: { type: "parser" } },
+		{ seq: 3, requestId: "c", request: { url: "https://x/c" } },
+	], 0);
+	assert.equal(causalUserTriggeredCount(causal), 2, "parser excluded, script + no-initiator counted");
+	assert.equal(causalUserTriggeredCount(causalUnavailable("off")), 0);
 });
 
 // ── R3.x P1 — attribution ────────────────────────────────────────────────────

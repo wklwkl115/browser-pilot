@@ -545,7 +545,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const attributedEntities = (() => {
 		if (!abmlEntities || !causal || !("requests" in causal)) return abmlEntities;
 		const actionEntityRef = causal.requests.length ? resolveActionEntityRef(params.actionRef, abmlDiff?.focusedRef, abmlEntities) : undefined;
-		const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal) : [];
+		const requestTriggered = actionEntityRef ? buildTriggeredRelations(causal, { hasActionRef: !!params.actionRef }) : [];
 		const eventTriggers = eventTriggeredByEntity("events" in causal && Array.isArray(causal.events) ? causal.events : [], abmlEntities);
 		if (!actionEntityRef && eventTriggers.size === 0) return abmlEntities;
 		return abmlEntities.map((entity) => {

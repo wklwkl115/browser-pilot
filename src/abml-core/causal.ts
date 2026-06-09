@@ -1,23 +1,24 @@
-// ABML R3.x causal plane — P0 (passive network-delta).
+// ABML R3.x causal plane — P0 (passive network-delta) + P1 (initiator-enhanced attribution).
 //
 // Given the network records captured since a baseline observation, produce a budget-immune
-// "what fired since baseline" summary for the observe envelope. This is the PASSIVE phase: it
-// reports requests observed in the window with NO attribution to a specific control (that is P1,
-// which needs an action context). Timing/seq-window only — it never parses CDP initiator stacks
-// (a JS call stack, not a DOM element; mapping it would be brittle + per-site) and applies no
-// per-site heuristics. URLs are redacted + truncated; no bodies. Pure core: zero browser/Node deps.
+// "what fired since baseline" summary for the observe envelope. P0 reports requests observed in
+// the window; P1 attributes them to a control when an action context is present. CDP initiator
+// metadata (type/url, NOT full call-stack parsing) filters structural noise and elevates
+// confidence when the initiator confirms a script-triggered request. URLs are redacted + truncated;
+// no bodies. Pure core: zero browser/Node deps.
 import type { Entity, EntityRelation } from "./entity.js";
 import { isRecord } from "../utils/records.js";
 import { redactSensitiveText } from "../utils/redaction.js";
 
 export type CausalRequest = {
-	// Stable id for the network entry; P1 will hang control→request relations on this ref.
 	ref: string;
 	method?: string;
-	url?: string; // redacted (sensitive query values scrubbed) + truncated
+	url?: string;
 	status?: number;
-	type?: string; // resourceType (XHR / Fetch / Document / WebSocket / ...)
-	at?: number; // last-update timestamp of the entry
+	type?: string;
+	at?: number;
+	initiatorType?: string; // CDP initiator.type — "script"|"parser"|"preload"|"other"
+	passive?: boolean; // true for structural requests (parser/preload) — excluded from triggered attribution
 };
 
 // A non-network causal entry (R3.x P2) — a hook event (console / DOM-sink / storage / error / …)
@@ -48,6 +49,11 @@ export const MAX_CAUSAL_EVENTS = 12;
 export function causalRequestsFiredCount(causal: CausalSummary): number {
 	if (!("requests" in causal)) return 0;
 	return typeof causal.requestCount === "number" ? causal.requestCount : causal.requests.length;
+}
+
+export function causalUserTriggeredCount(causal: CausalSummary): number {
+	if (!("requests" in causal)) return 0;
+	return causal.requests.filter((r) => !r.passive).length;
 }
 
 // The agent-facing "what fired since baseline" hint line. Reports the TRUE fired count and, when the
@@ -87,6 +93,8 @@ function redactUrl(url: string): string {
 
 // One network record → a compact, redacted causal request. Tolerant of both the full NetworkRecord
 // shape and the network.list summary shape (fields read defensively, like stream.ts).
+const PASSIVE_INITIATOR_TYPES = new Set(["parser", "preload", "preflight"]);
+
 export function buildCausalRequest(record: Record<string, unknown>): CausalRequest {
 	const request = isRecord(record.request) ? record.request : {};
 	const response = isRecord(record.response) ? record.response : {};
@@ -96,6 +104,9 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 	const status = num(response.status) ?? num(record.status);
 	const type = str(record.type) || str(record.resourceType);
 	const at = num(record.updatedAt) ?? num(record.createdAt) ?? num(record.wallTime);
+	const initiator = isRecord(record.initiator) ? record.initiator : {};
+	const initiatorType = str(initiator.type) || str(record.initiatorType);
+	const passive = initiatorType ? PASSIVE_INITIATOR_TYPES.has(initiatorType) : undefined;
 	return {
 		ref: `pi-ref://network/${requestId}`,
 		...(method ? { method } : {}),
@@ -103,6 +114,8 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 		...(status !== undefined ? { status } : {}),
 		...(type ? { type } : {}),
 		...(at !== undefined ? { at } : {}),
+		...(initiatorType ? { initiatorType } : {}),
+		...(passive ? { passive } : {}),
 	};
 }
 
@@ -208,23 +221,30 @@ export function latestSeq(records: Array<Record<string, unknown>>): number | und
 // control's R1 relations under the per-entity cap. The full list always stays in causal.requests.
 export const MAX_TRIGGERED_RELATIONS = 8;
 
-// Build `triggered` (control → network request) relations from the causal delta. Each points at a
-// `pi-ref://network/<id>` resolvable inline in envelope.causal.requests. source "timing", confidence
-// "low": this is timing-window attribution ("fired after the activated control"), NOT an initiator-
-// stack proof — the honest confidence ceiling for a passive observer. Empty when no requests/unavailable.
-export function buildTriggeredRelations(causal: CausalSummary): EntityRelation[] {
+// Build `triggered` (control → network request) relations from the causal delta. Passive requests
+// (parser/preload initiated) are excluded — they are structural, not action-caused. When
+// hasActionRef is true AND the request has initiatorType "script", confidence is elevated to
+// "medium" (multi-signal: timing window + CDP initiator type confirmation).
+export function buildTriggeredRelations(causal: CausalSummary, options?: { hasActionRef?: boolean }): EntityRelation[] {
 	if (!("requests" in causal)) return [];
-	return causal.requests.slice(0, MAX_TRIGGERED_RELATIONS).map((request) => ({
-		type: "triggered" as const,
-		targetRef: request.ref,
-		source: "timing" as const,
-		confidence: "low" as const,
-		evidence: {
-			since: causal.sinceSeq,
-			...(request.method ? { method: request.method } : {}),
-			...(request.status !== undefined ? { status: request.status } : {}),
-		},
-	}));
+	return causal.requests
+		.filter((r) => !r.passive)
+		.slice(0, MAX_TRIGGERED_RELATIONS)
+		.map((request) => {
+			const initiatorConfirmed = request.initiatorType === "script" && options?.hasActionRef;
+			return {
+				type: "triggered" as const,
+				targetRef: request.ref,
+				source: "timing" as const,
+				confidence: (initiatorConfirmed ? "medium" : "low") as "medium" | "low",
+				evidence: {
+					since: causal.sinceSeq,
+					...(request.method ? { method: request.method } : {}),
+					...(request.status !== undefined ? { status: request.status } : {}),
+					...(initiatorConfirmed ? { initiatorType: "script" as const } : {}),
+				},
+			};
+		});
 }
 
 // Decide which control the causal delta is attributed to. Prefers an explicit `actionRef` (the agent
