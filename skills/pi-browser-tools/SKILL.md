@@ -16,7 +16,7 @@ Coverage reality: **ABML is observation-only — it does not execute.** Its **re
 
 ## Invocation
 
-- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to a compact, redacted summary (the internal `detailLevel:"summary"` shape) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
+- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to a compact, redacted salience summary (`renderer:"salience-v1"` on summary envelopes; `PI_BROWSER_RENDERER=ladder` forces the legacy ladder path) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
 - **No connect step** — readiness is ambient. Just call a tool; a not-yet-connected extension gets a brief grace wait, then a command fails `NO_BROWSER_EXTENSION` with `recovery.nextActions`. The bridge is a server the extension dials into; it cannot dial the browser for you — if the extension is genuinely not loaded/enabled, that is a human action, so surface it rather than retry-looping.
 
 ## Loop

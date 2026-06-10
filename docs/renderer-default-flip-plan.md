@@ -1,6 +1,6 @@
 # Renderer default flip — staged execution contract (post perception-renderer)
 
-> Status: **READY — not yet activated.** Activation = the P0 `CURRENT.md` entry.
+> Status: **ACTIVE — P2 salience default flipped 2026-06-10; P3 session-delta still pending.** Activation = the P0 `CURRENT.md` entry.
 > Successor contract to the **completed** `docs/perception-renderer-plan.md` (IMPLEMENTED,
 > opt-in). This contract flips the salience renderer and session-delta defaults in stages,
 > WITHOUT a pre-flip multi-site blind eval — an explicit owner decision recorded here:
@@ -73,14 +73,14 @@ deterministic gates.
   markers exceed ladder; F3 landed as a session-delta-only recovery fan-out cap, inert
   until session-delta default flips. `bench:distill` now compares ladder-vs-salience per
   fixture and gates chars, fact coverage, and truncation markers.
-- [ ] **P2 — flip salience default.**
-  Default `salience`; `PI_BROWSER_RENDERER=ladder` escape; dual-path goldens (both paths
-  stay golden-locked — the flip swaps which one the default suite exercises); update
-  `check:summaries`/`check:token-economy` expectations through their normal golden-refresh
-  flow with the byte diffs reviewed, never blind-regenerated. Gates: full `npm run check`,
-  `eval:browser-workflows --fixture-server`, `smoke:browser:scan-summary`. Docs in the
-  same change: this plan's checkboxes, `CURRENT.md`, `CHANGELOG`, skill text if it names
-  default output shape.
+- [x] **P2 — flip salience default.**
+  Default is now `salience`; `PI_BROWSER_RENDERER=ladder` forces the old path, and
+  `PI_BROWSER_RENDERER=salience` remains accepted as a no-op. Salience envelopes continue
+  to self-mark with `renderer:"salience-v1"`. Dual-path coverage is locked in unit tests
+  and `bench:distill`: default output must match explicit salience, while ladder remains
+  measurable and bounded by the comparative gates. Final gates passed: `npm run check`,
+  `eval:browser-workflows -- --fixture-server --eval 16-scan-high-entropy-summary`, and
+  `smoke:browser:scan-summary`.
 - [ ] **P3 — flip session-delta default (separate, after soak).**
   Trigger: 2 clean sentinel runs after P2 **or** explicit owner go. Adds the
   long-conversation fixture gate (scripted ≥5-observe mutating-page sequence asserting

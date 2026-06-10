@@ -28,7 +28,8 @@ function textOf(result) {
 async function runFixture(fixture, renderer) {
 	const previous = process.env.PI_BROWSER_RENDERER;
 	try {
-		if (renderer === "salience") process.env.PI_BROWSER_RENDERER = "salience";
+		if (renderer === "ladder") process.env.PI_BROWSER_RENDERER = "ladder";
+		else if (renderer === "salience") process.env.PI_BROWSER_RENDERER = "salience";
 		else delete process.env.PI_BROWSER_RENDERER;
 		const result = await distilledJsonResult(fixture.value, {
 			toolName: fixture.tool,
@@ -59,12 +60,15 @@ for (const fixture of fixtures) {
 	const rawChars = stableJson(fixture.value).length;
 	const ladder = await runFixture(fixture, "ladder");
 	const salience = await runFixture(fixture, "salience");
+	const defaultRenderer = await runFixture(fixture, "default");
 	assert(ladder.summaryChars < rawChars, `${fixture.id}: ladder summary must be smaller than raw`);
 	assert(salience.summaryChars < rawChars, `${fixture.id}: salience summary must be smaller than raw`);
 	assert(salience.chars <= Math.ceil(ladder.chars * 1.05), `${fixture.id}: salience chars ${salience.chars} must stay <= 1.05x ladder ${ladder.chars}`);
 	assert(salience.factsCovered >= ladder.factsCovered, `${fixture.id}: salience facts ${salience.factsCovered} must cover >= ladder ${ladder.factsCovered}`);
 	assert(salience.truncationMarkers <= ladder.truncationMarkers, `${fixture.id}: salience truncation markers ${salience.truncationMarkers} must stay <= ladder ${ladder.truncationMarkers}`);
-	results.push({ id: fixture.id, rawChars, ladder, salience, ratios: { salienceToLadderChars: Number((salience.chars / Math.max(1, ladder.chars)).toFixed(4)) } });
+	assert.equal(defaultRenderer.envelope.renderer, "salience-v1", `${fixture.id}: default renderer must be salience-v1`);
+	assert.equal(stableJson(defaultRenderer.envelope.summary), stableJson(salience.envelope.summary), `${fixture.id}: default summary must match explicit salience`);
+	results.push({ id: fixture.id, rawChars, ladder, salience, defaultRenderer, ratios: { salienceToLadderChars: Number((salience.chars / Math.max(1, ladder.chars)).toFixed(4)) } });
 }
 
 const facts = [

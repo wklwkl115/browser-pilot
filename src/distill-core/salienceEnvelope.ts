@@ -4,6 +4,7 @@ import { compactSummaryValue } from "./granularity.js";
 import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
 
 const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
+const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "diff", "treeDiff"] as const;
 const MIN_MARGINAL_DENSITY = 0.12;
 const MAX_SALIENCE_TO_LADDER_RATIO = 1.05;
 const STRUCTURE_SCORE: Record<(typeof LIFTED_KEYS)[number], number> = {
@@ -25,17 +26,38 @@ type Candidate = {
 	score: number;
 };
 
-function compactLiftedValue(key: string, value: unknown): unknown {
-	if (key === "entities" && Array.isArray(value)) return value.slice(0, 6).filter(isRecord).map((entity) => {
-		const hints = isRecord(entity.hints) ? entity.hints : {};
-		return {
-			...(typeof entity.ref === "string" ? { ref: entity.ref } : {}),
-			...(typeof entity.kind === "string" ? { kind: entity.kind } : {}),
-			...(typeof entity.role === "string" ? { role: entity.role } : {}),
-			...(typeof entity.name === "string" ? { name: entity.name } : {}),
-			...(typeof hints.selector === "string" || typeof hints.listContainer === "boolean" ? { hints: { ...(typeof hints.selector === "string" ? { selector: hints.selector } : {}), ...(typeof hints.listContainer === "boolean" ? { listContainer: hints.listContainer } : {}) } } : {}),
-		};
-	});
+function referencedPiRefs(envelope: BudgetedEnvelope): Set<string> {
+	const refs = new Set<string>();
+	const actions = envelope["nextActions"];
+	for (const action of Array.isArray(actions) ? actions : []) {
+		if (typeof action !== "string") continue;
+		for (const match of action.matchAll(/pi-ref:\/\/[^)\s]+/g)) refs.add(match[0]);
+	}
+	return refs;
+}
+
+function compactEntity(entity: Record<string, unknown>): Record<string, unknown> {
+	const hints = isRecord(entity.hints) ? entity.hints : {};
+	return {
+		...(typeof entity.ref === "string" ? { ref: entity.ref } : {}),
+		...(typeof entity.kind === "string" ? { kind: entity.kind } : {}),
+		...(typeof entity.role === "string" ? { role: entity.role } : {}),
+		...(typeof entity.name === "string" ? { name: entity.name } : {}),
+		...(typeof hints.selector === "string" || typeof hints.listContainer === "boolean" ? { hints: { ...(typeof hints.selector === "string" ? { selector: hints.selector } : {}), ...(typeof hints.listContainer === "boolean" ? { listContainer: hints.listContainer } : {}) } } : {}),
+	};
+}
+
+function compactEntities(value: unknown, envelope: BudgetedEnvelope): unknown {
+	if (!Array.isArray(value)) return compactSummaryValue(value, { stringChars: 160, arrayItems: 6, tableRows: 6 });
+	const records = value.filter(isRecord);
+	const refs = referencedPiRefs(envelope);
+	const targeted = refs.size ? records.filter((entity) => typeof entity.ref === "string" && refs.has(entity.ref)) : [];
+	const rest = records.filter((entity) => !(typeof entity.ref === "string" && refs.has(entity.ref)));
+	return [...targeted, ...rest].slice(0, targeted.length ? Math.min(6, Math.max(1, targeted.length)) : 6).map((entity) => compactEntity(entity));
+}
+
+function compactLiftedValue(key: string, value: unknown, envelope: BudgetedEnvelope): unknown {
+	if (key === "entities") return compactEntities(value, envelope);
 	if (key === "relations" && isRecord(value)) return { ...(isRecord(value.summary) ? { summary: value.summary } : {}) };
 	return compactSummaryValue(value, { stringChars: 160, arrayItems: 6, tableRows: 6 });
 }
@@ -59,6 +81,9 @@ export function countDistillTruncationMarkers(value: unknown): number {
 }
 
 function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T): T {
+	for (const key of REQUIRED_CONTINUITY_KEYS) {
+		if (salience[key] === undefined && ladder[key] !== undefined) return ladder;
+	}
 	const salienceChars = stableJson(salience).length;
 	const ladderChars = stableJson(ladder).length;
 	if (salienceChars > Math.ceil(ladderChars * MAX_SALIENCE_TO_LADDER_RATIO)) return ladder;
@@ -84,7 +109,7 @@ export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: 
 		if (value === undefined) continue;
 		const fullCost = stableJson(value).length;
 		candidates.push({ key, granularity: "full", value, cost: fullCost, score: STRUCTURE_SCORE[key] });
-		const compact = compactLiftedValue(key, value);
+		const compact = compactLiftedValue(key, value, envelope);
 		const compactCost = stableJson(compact).length;
 		if (compactCost < fullCost) candidates.push({ key, granularity: "compact", value: compact, cost: compactCost, score: Math.floor(STRUCTURE_SCORE[key] * 0.75) });
 	}

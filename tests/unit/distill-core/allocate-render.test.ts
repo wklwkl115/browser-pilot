@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { allocateFacts } from "../../../src/distill-core/allocate.ts";
 import { renderFacts } from "../../../src/distill-core/render.ts";
+import { fitSalienceEnvelopeBudget } from "../../../src/distill-core/salienceEnvelope.ts";
 import type { Fact } from "../../../src/distill-core/fact.ts";
 
 function fact(ref: string, plane: Fact["plane"], score: number, costs: { full?: number; compact?: number; ref?: number }): Fact {
@@ -45,4 +46,21 @@ test("renderFacts groups selected renderings by plane and reports omissions", ()
 	assert.deepEqual(rendered.entity, [{ ref: "a" }]);
 	assert.deepEqual(rendered.omitted, [{ ref: "b", plane: "diff", reason: "budget" }]);
 	assert.deepEqual(rendered.stats, { factsRendered: 1, factsOmitted: 1, truncationMarkers: 1 });
+});
+
+test("fitSalienceEnvelopeBudget preserves entities referenced by nextActions", () => {
+	const envelope = {
+		tool: "browser_observe",
+		command: "scan",
+		detailLevel: "summary",
+		renderer: "salience-v1" as const,
+		summary: { abmlIntegrated: true, summaryTruncatedToBudget: true, summaryOmitted: ["focus"] },
+		entities: [
+			...Array.from({ length: 20 }, (_, i) => ({ ref: `pi-ref://control/noise-${i}`, kind: "control", role: "button", name: `noise ${i} ${"pad ".repeat(40)}` })),
+			{ ref: "pi-ref://control/submit-hidden", kind: "control", role: "button", name: "Sign in" },
+		],
+		nextActions: ["read(pi-ref://control/submit-hidden)", "click(pi-ref://control/submit-hidden)"],
+	};
+	const fitted = fitSalienceEnvelopeBudget(envelope, 2_500);
+	assert.equal(fitted.entities?.[0]?.ref, "pi-ref://control/submit-hidden");
 });

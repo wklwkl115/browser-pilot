@@ -381,7 +381,7 @@ function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifac
 }
 
 function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
-	return process.env.PI_BROWSER_RENDERER === "salience" ? "salience-v1" : undefined;
+	return process.env.PI_BROWSER_RENDERER === "ladder" ? undefined : "salience-v1";
 }
 
 function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {

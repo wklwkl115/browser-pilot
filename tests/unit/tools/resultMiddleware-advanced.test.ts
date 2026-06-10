@@ -256,10 +256,13 @@ test("session-delta nextActions cap distinct recovery targets", async () => {
 	}
 });
 
-test("salience renderer marker is opt-in only", async () => {
+test("salience renderer is default and ladder remains an env escape", async () => {
 	const previous = process.env.PI_BROWSER_RENDERER;
 	try {
 		delete process.env.PI_BROWSER_RENDERER;
+		const defaultEnvelope = JSON.parse(textOf(await distilledJsonResult({ ok: true }, { toolName: "browser_execute", command: "execute", maxChars: 4000, fallbackName: "renderer.json", detailLevel: "summary" })));
+		assert.equal(defaultEnvelope.renderer, "salience-v1");
+		process.env.PI_BROWSER_RENDERER = "ladder";
 		const ladder = JSON.parse(textOf(await distilledJsonResult({ ok: true }, { toolName: "browser_execute", command: "execute", maxChars: 4000, fallbackName: "renderer.json", detailLevel: "summary" })));
 		assert.equal(ladder.renderer, undefined);
 		process.env.PI_BROWSER_RENDERER = "salience";

@@ -1,10 +1,11 @@
 # Perception renderer + distill-core — unified token-economy architecture contract
 
-> Status: **IMPLEMENTED — opt-in salience/session-delta substrate landed 2026-06-10.** Activation
-> was recorded in `CURRENT.md`; implementation passed `npm run check`. Default agent-facing output
-> still uses the compatible ladder path. `PI_BROWSER_RENDERER=salience` and
-> `PI_BROWSER_SESSION_DELTA=1` are explicit opt-in/eval surfaces. Fixture + one real-site blind A/B
-> did not justify a default flip, so the default remains `ladder`.
+> Status: **IMPLEMENTED — substrate landed 2026-06-10; salience default later flipped by `docs/renderer-default-flip-plan.md`.** Activation
+> was recorded in `CURRENT.md`; implementation passed `npm run check`. This contract originally
+> landed salience as an opt-in surface after fixture + one real-site blind A/B did not justify a
+> default flip. The successor default-flip contract subsequently fixed the cost regressions and made
+> salience the default; `PI_BROWSER_RENDERER=ladder` is now the compatibility escape, while
+> `PI_BROWSER_SESSION_DELTA=1` remains explicit opt-in/eval.
 >
 > This document is now both the architecture contract and execution record for the token-economy
 > work: it unifies page-model compression (ABML perception planes) and result distillation behind a
@@ -311,11 +312,12 @@ blind-eval decision, not an implementation side effect.
   effects in tool/runtime orchestration, preserving privacy pointers and fallback saves.
 - [x] **K1d — bench:distill.** `bench:distill` runs `tests/contracts/tools/check-distill-bench.mjs`
   over a fixed fixture corpus and records token/char-ratio evidence.
-- [x] **K2a — Fact contract + opt-in renderer substrate.** `fact.ts`, `allocate.ts`, `render.ts`,
-  and `salienceEnvelope.ts` landed in `distill-core`; `PI_BROWSER_RENDERER=salience` marks
-  `envelope.renderer:"salience-v1"` while default output remains ladder-compatible.
-- [x] **K2b — opt-in budget takeover substrate.** Salience rendering can allocate lifted planes by
-  salience/cost density behind the flag; ladder remains the default and fallback safety net.
+- [x] **K2a — Fact contract + renderer substrate.** `fact.ts`, `allocate.ts`, `render.ts`,
+  and `salienceEnvelope.ts` landed in `distill-core`; `envelope.renderer:"salience-v1"` marks
+  the salience renderer. This contract landed it opt-in; the successor default-flip contract later
+  made salience default and retained `PI_BROWSER_RENDERER=ladder` as the compatibility escape.
+- [x] **K2b — budget takeover substrate.** Salience rendering can allocate lifted planes by
+  salience/cost density; ladder remains the fallback safety net and explicit escape path.
 - [x] **K3 — migrate current DistillerDefinitions to factify.** Every currently registered
   `DistillerDefinition` now provides `factify`; coverage is locked by `check:distiller-coverage`.
   Legacy inline/command distillers continue through `distill` + ladder until they are promoted to
@@ -373,9 +375,9 @@ blind-eval decision, not an implementation side effect.
 ## 11. Current source reconciliation notes
 
 - `src/distill-core/` now exists and is protected by `check:distill-core-boundary`.
-- `PI_BROWSER_RENDERER=salience`, optional `factify`, `ArtifactPlan`, `PerceptionLedger`,
-  `delta:"session"`, and `envelope.renderer:"salience-v1"` now exist as opt-in/substrate features;
-  none changes default output.
+- `envelope.renderer:"salience-v1"`, optional `factify`, `ArtifactPlan`, `PerceptionLedger`,
+  and `delta:"session"` now exist as substrate features. Salience default was flipped later by
+  `docs/renderer-default-flip-plan.md`; session delta remains opt-in.
 - `src/tools/resultMiddleware.ts` remains the orchestration chokepoint for artifact save execution,
   privacy pointer production, memory auto-surface, and final model-facing JSON; pure budget and
   artifact intent logic live in `distill-core`.
