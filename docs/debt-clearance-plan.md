@@ -13,7 +13,7 @@
 | Item | Evidence/state | Disposition |
 | --- | --- | --- |
 | B1 real-site row extraction falls back to hand-written JS | **10 blind runs, survives the skill** — strongest item in the ledger; list_hints groups/samples (not DOM-ordered), B6 added href but no row projection | **WORK ITEM D1** (bounded perception version) |
-| ROADMAP lists rejected decisions as "routes" | sources/debugger/intercept/storage/canvas + debugger lifecycle + incognito + orchestration regression are **adjudicated rejections**, not future work | **WORK ITEM D2** (honesty restructure) |
+| ROADMAP lists rejected decisions as "routes" | Several items (see ROADMAP "Closed decisions" section) are **adjudicated rejections**, not future work | **WORK ITEM D2** (honesty restructure) |
 | Dictionary/wordlist hardcoding (~44 sites / 5 classes) | real parked debt, own plan; W1 pipeline (`readWordlist`) already in place | **WORK ITEM D3** (W1 only; W2/W3 stay parked) |
 | Recovery template scatter (19 grandfathered files) | K4 burn-down remainder; mechanism centralized, content scattered | **WORK ITEM D4** (bounded ratchet) |
 | kernel-opt `bench:abml-kernel` | recommended-only; byte-identity evidence (token-economy 0.0607 invariant) already covers regression | **WRITE-OFF D5a** |
@@ -57,10 +57,10 @@ feature is re-examined — not patched site-specifically (`eval-fixes-true-defec
 Rewrite `ROADMAP.md` into two sections: **(a) Future routes** — items with a real reopen
 trigger (web-reversing phase 2, ABML public surface with its *currently-refuting* evidence
 noted, dictionary W2/W3, new eval specs); **(b) Closed decisions** — adjudicated rejections
-stated as such with their reopen evidence bar (browser_sources/debugger/intercept/storage/
-canvas; debugger lifecycle; incognito; orchestration regression). The standing RULES that are
-not routes (#3 hook-target growth rule, quality re-run advice) move under a "standing rules"
-note. Stays ≤80 lines (`check:doc-structure`).
+stated as such with their reopen evidence bar (the rejected tools are enumerated in ROADMAP
+and `docs/jshookmcp-native-absorption.md`; this plan does not re-list them). The standing
+RULES that are not routes move under a "standing rules" note. Stays ≤80 lines
+(`check:doc-structure`).
 
 ### D3 — Dictionary W1: security payload/signature externalization (zero behavior change)
 

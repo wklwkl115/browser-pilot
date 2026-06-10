@@ -8,9 +8,10 @@
 防止未来重复讨论。重开条件写在括号里；无该条件则维持关闭。
 
 - **browser_sources / browser_debugger / browser_intercept / browser_storage /
-  browser_canvas**：jshookmcp 吸收时裁定 canonical tools 已覆盖能力模型；现有
-  `browser_command`、`persistent_cdp`、`browser_evidence`、`browser_artifact` 组合
-  承载全部能力。*(重开条件：blind-eval 出现 canonical tools 无法关闭的真实任务)*
+  browser_canvas**：jshookmcp 吸收时裁定 canonical tools 已覆盖能力模型（见
+  `docs/jshookmcp-native-absorption.md`）；现有 `browser_command`、`persistent_cdp`、
+  `browser_evidence`、`browser_artifact` 组合承载全部能力。
+  *(重开条件：blind-eval 出现 canonical tools 无法关闭的真实任务)*
 - **Debugger pause/breakpoint/step lifecycle 专用工具**：`browser_command`、
   `persistent_cdp`、`browser_frame`、`browser_artifact` 已覆盖；zero 受阻证据。
   *(重开条件：transcript 证明现有组合无法完成 debugger 工作流)*

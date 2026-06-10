@@ -24,7 +24,13 @@ const abmlText = readFileSync(abmlErrors, "utf8");
 assert(abmlText.includes("DEFAULT_RECOVERIES"), "abml-core/errors.ts may keep domain recovery data");
 assert(!abmlText.includes("../distill-core/recovery"), "abml-core must not import the distill-core recovery mechanism");
 
+// Each group below is annotated with WHY it is grandfathered instead of routing through
+// distill-core/recovery.ts. The list may only shrink, never grow (enforced by the contract).
+// Full burn-down is opportunistic (tied to tool edits); see docs/debt-clearance-plan.md D4.
 const GRANDFATHERED_TEMPLATE_FILES = new Set([
+	// ABML domain: DEFAULT_RECOVERIES + verb-specific error guidance that depends on ABML
+	// action semantics (scroll, click, type, read, pierce) — not expressible via the generic
+	// recovery vocabulary; abml-core must not import distill-core (kernel purity rule).
 	"src/abml-core/errors.ts",
 	"src/abml-core/verbs/click.ts",
 	"src/abml-core/verbs/frame.ts",
@@ -34,25 +40,47 @@ const GRANDFATHERED_TEMPLATE_FILES = new Set([
 	"src/abml-core/verbs/scroll.ts",
 	"src/abml-core/verbs/type.ts",
 	"src/abml/verbs/runtime.ts",
+	// distill-core itself: recovery.ts is the mechanism; ladder.ts is a regex false-positive
+	// (nextActions appears as a passthrough field — `out.nextActions?.slice(0, 2)` — not as
+	// a template builder; the type definition `nextActions?: string[]` also matches).
 	"src/distill-core/ladder.ts",
 	"src/distill-core/recovery.ts",
+	// driver layer: extension-connection recovery (BrowserBridgeCommandService is a regex
+	// false-positive — "re-running browser_tabs list" is a code comment, not a template);
+	// BrowserWaitSupervisor builds recoveryCommands with dynamic waitId context; errors.ts
+	// builds nextActions for BROWSER_NOT_FOUND/extension-not-installed — extension-specific.
 	"src/driver/BrowserBridgeCommandService.ts",
 	"src/driver/BrowserWaitSupervisor.ts",
 	"src/driver/errors.ts",
+	// protocol layer: "re-capture" appears in embedded recovery text inside RESOURCE_STALE
+	// error-code definitions — protocol SSOT data, not a code template.
 	"src/protocol/nativeErrorCodes.ts",
 	"src/protocol/nativeProtocol.ts",
+	// tool layer (real recovery templates with call-site context):
+	// artifactReader.ts — recovery with dynamic artifact path context.
+	// memory/autoSurface.ts — browser_memory action=recall with dynamic scopeKind context.
+	// observeRunners.ts — nextActions containing the live snapshotId for re-observe flows.
+	// registerTabsTool.ts — nextActions for snapshot expiry with dynamic snapshotId + CLI paths.
+	// registerObserveTool.ts — "browser_observe mode=..." in error messages / tool guidelines.
 	"src/tools/artifactReader.ts",
-	"src/tools/artifacts/reader.ts",
 	"src/tools/memory/autoSurface.ts",
 	"src/tools/observeRunners.ts",
+	"src/tools/registerObserveTool.ts",
+	"src/tools/registerTabsTool.ts",
+	// tool layer (regex false-positives — no recovery template built, just description text
+	// in promptGuidelines / error messages / nextActions passthrough):
+	// registerArtifactTool.ts — "Use browser_artifact..." is promptGuidelines (tool description).
+	// registerExecuteTool.ts — "browser_execute only accepts..." is a validation error message.
+	// registerScreenshotTool.ts — "Use browser_screenshot..." is promptGuidelines.
+	// resultMiddleware.ts — nextActions: normalizedNextActions(...) is a passthrough call, not
+	//   a template builder; it assembles the output of upstream generators.
 	"src/tools/registerArtifactTool.ts",
 	"src/tools/registerExecuteTool.ts",
-	"src/tools/registerObserveTool.ts",
 	"src/tools/registerScreenshotTool.ts",
-	"src/tools/registerTabsTool.ts",
 	"src/tools/resultMiddleware.ts",
-	"src/tools/summaries/scan.ts",
-	"src/tools/summaries/webSecurity.ts",
+	// webSecurity domain summaries: all have real nextActions for web-security workflows
+	// (sqlmap options, nuclei templates, OAST callbacks, WAF hints, etc.) — domain-specific
+	// vocabulary that belongs with the tool knowledge, not the generic error recovery.
 	"src/tools/summaries/webSecurity/bridges.ts",
 	"src/tools/summaries/webSecurity/cookie.ts",
 	"src/tools/summaries/webSecurity/crawl.ts",
@@ -68,8 +96,16 @@ const GRANDFATHERED_TEMPLATE_FILES = new Set([
 	"src/tools/summaries/webSecurity/ws.ts",
 	"src/tools/webSecurity/browserNative/cookieAnalyze.ts",
 	"src/tools/webSecurity/register/shared.ts",
-	"src/tools/webSecurity/shared/diagnostics.ts",
+	// utils/errors.ts — the public error-normalization layer; it composes through recovery.ts
+	// but also builds recovery from taxonomy metadata and is grandfathered as the composing
+	// boundary (already routes through distill-core/recovery, but the regex still matches
+	// the nextActions assembly code).
 	"src/utils/errors.ts",
+	// Removed from this list (D4 ratchet, 2026-06-10):
+	//   src/tools/summaries/scan.ts — regex does not match current source
+	//   src/tools/summaries/webSecurity.ts — regex does not match current source
+	//   src/tools/webSecurity/shared/diagnostics.ts — regex does not match current source
+	//   src/tools/artifacts/reader.ts — file no longer exists
 ]);
 
 function walk(dir) {
