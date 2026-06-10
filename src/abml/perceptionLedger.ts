@@ -16,6 +16,10 @@ export type PerceptionLedgerFrame = {
 	snapshotId: string;
 	capturedAt: number;
 	facts: Record<string, PerceptionLedgerFactState>;
+	allocation?: {
+		budgetUsedRatio: number;
+		omittedCount: number;
+	};
 };
 
 export type PerceptionTraceTerm = {
@@ -72,6 +76,17 @@ export class PerceptionLedger {
 
 	get(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined {
 		return this.frames.get(keyString(key));
+	}
+
+	recent(key: PerceptionLedgerKey, limit = 3): PerceptionLedgerFrame[] {
+		const scope = frameScopeKey(key);
+		const order = this.frameOrder.get(scope) ?? [];
+		const out: PerceptionLedgerFrame[] = [];
+		for (let index = order.length - 1; index >= 0 && out.length < limit; index--) {
+			const frame = this.frames.get(order[index]!);
+			if (frame) out.push(frame);
+		}
+		return out;
 	}
 
 	record(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {

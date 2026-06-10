@@ -66,6 +66,22 @@ test("allocateFacts redistributes surplus budget past plane maxFacts", () => {
 	assert.equal(plan.get("c"), "compact");
 });
 
+test("allocateFacts honors a granularity ceiling", () => {
+	const facts = [
+		fact("a", "entity", 100, { full: 10, compact: 10, ref: 1 }),
+	];
+	const plan = allocateFacts(facts, 10, [], { granularityCeiling: "compact" });
+	assert.equal(plan.get("a"), "compact");
+});
+
+test("allocateFacts keeps existing behavior when granularity ceiling is omitted", () => {
+	const facts = [
+		fact("a", "entity", 100, { full: 10, compact: 10, ref: 1 }),
+	];
+	const plan = allocateFacts(facts, 10);
+	assert.equal(plan.get("a"), "full");
+});
+
 test("allocateFacts exempts relevant tail facts from redundancy penalty", () => {
 	const facts: Fact[] = Array.from({ length: 5 }, (_, index) => {
 		const n = index + 1;
@@ -110,4 +126,35 @@ test("fitSalienceEnvelopeBudget preserves entities referenced by nextActions", (
 	};
 	const fitted = fitSalienceEnvelopeBudget(envelope, 2_500);
 	assert.equal(fitted.entities?.[0]?.ref, "pi-ref://control/submit-hidden");
+});
+
+test("fitSalienceEnvelopeBudget compacts entities to allocator-priced fields", () => {
+	const envelope = {
+		tool: "browser_observe",
+		command: "scan",
+		detailLevel: "summary",
+		renderer: "salience-v1" as const,
+		summary: { abmlIntegrated: true },
+		entities: [
+			{
+				ref: "pi-ref://control/pay",
+				kind: "control",
+				role: "button",
+				name: "Pay now",
+				label: "Pay immediately",
+				hints: { selector: "#pay", listContainer: true, itemCount: 24 },
+				state: { disabled: false, description: "checkout ".repeat(220) },
+				locators: [{ by: "css", value: "#pay" }],
+				geometry: { box: { x: 1, y: 2, w: 3, h: 4 } },
+			},
+		],
+	};
+	const fitted = fitSalienceEnvelopeBudget(envelope, 1_000, { granularityCeiling: "compact" });
+	assert.deepEqual(fitted.entities?.[0], {
+		ref: "pi-ref://control/pay",
+		kind: "control",
+		role: "button",
+		name: "Pay now",
+		hints: { selector: "#pay" },
+	});
 });

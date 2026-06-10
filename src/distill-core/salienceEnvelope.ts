@@ -1,7 +1,8 @@
 import { stableJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
-import { compactSummaryValue } from "./granularity.js";
+import { compactEntityRenderingValue, compactSummaryValue } from "./granularity.js";
 import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
+import type { FactGranularity } from "./fact.js";
 
 const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
 const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "diff", "treeDiff"] as const;
@@ -26,6 +27,16 @@ type Candidate = {
 	score: number;
 };
 
+export type SalienceEnvelopeOptions = {
+	granularityCeiling?: Exclude<FactGranularity, "omit">;
+};
+
+function allowedByCeiling(granularity: Candidate["granularity"], ceiling?: Exclude<FactGranularity, "omit">): boolean {
+	if (!ceiling) return true;
+	const order: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
+	return order.indexOf(granularity) >= order.indexOf(ceiling);
+}
+
 function referencedPiRefs(envelope: BudgetedEnvelope): Set<string> {
 	const refs = new Set<string>();
 	const actions = envelope["nextActions"];
@@ -37,14 +48,8 @@ function referencedPiRefs(envelope: BudgetedEnvelope): Set<string> {
 }
 
 function compactEntity(entity: Record<string, unknown>): Record<string, unknown> {
-	const hints = isRecord(entity.hints) ? entity.hints : {};
-	return {
-		...(typeof entity.ref === "string" ? { ref: entity.ref } : {}),
-		...(typeof entity.kind === "string" ? { kind: entity.kind } : {}),
-		...(typeof entity.role === "string" ? { role: entity.role } : {}),
-		...(typeof entity.name === "string" ? { name: entity.name } : {}),
-		...(typeof hints.selector === "string" || typeof hints.listContainer === "boolean" ? { hints: { ...(typeof hints.selector === "string" ? { selector: hints.selector } : {}), ...(typeof hints.listContainer === "boolean" ? { listContainer: hints.listContainer } : {}) } } : {}),
-	};
+	const compact = compactEntityRenderingValue(entity);
+	return Object.keys(compact).length ? compact : compactSummaryValue(entity, { stringChars: 80, arrayItems: 2, tableRows: 2 }) as Record<string, unknown>;
 }
 
 function compactEntities(value: unknown, envelope: BudgetedEnvelope): unknown {
@@ -90,7 +95,7 @@ function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T, s
 	return salience;
 }
 
-export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number): T {
+export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number, options: SalienceEnvelopeOptions = {}): T {
 	const budget = Math.max(1_000, Math.floor(maxChars));
 	const envelopeChars = stableJson(envelope).length;
 	if (envelopeChars <= budget) return envelope;
@@ -112,10 +117,10 @@ export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: 
 		const value = envelope[key];
 		if (value === undefined) continue;
 		const fullCost = stableJson(value).length;
-		candidates.push({ key, granularity: "full", value, cost: fullCost, score: STRUCTURE_SCORE[key] });
+		if (allowedByCeiling("full", options.granularityCeiling)) candidates.push({ key, granularity: "full", value, cost: fullCost, score: STRUCTURE_SCORE[key] });
 		const compact = compactLiftedValue(key, value, envelope);
 		const compactCost = stableJson(compact).length;
-		if (compactCost < fullCost) candidates.push({ key, granularity: "compact", value: compact, cost: compactCost, score: Math.floor(STRUCTURE_SCORE[key] * 0.75) });
+		if (compactCost < fullCost && allowedByCeiling("compact", options.granularityCeiling)) candidates.push({ key, granularity: "compact", value: compact, cost: compactCost, score: Math.floor(STRUCTURE_SCORE[key] * 0.75) });
 	}
 	for (const candidate of candidates.sort((a, b) => b.score / Math.max(1, b.cost) - a.score / Math.max(1, a.cost) || b.score - a.score)) {
 		if (chosen.has(candidate.key)) continue;

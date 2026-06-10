@@ -1,3 +1,5 @@
+import { isRecord } from "../utils/records.js";
+
 export type CompactLimits = { stringChars: number; arrayItems: number; tableRows: number };
 
 function cleanLineText(value: unknown, maxChars: number): string | undefined {
@@ -18,6 +20,17 @@ export function lineEncodeEntity(value: unknown): string | undefined {
 		cleanLineText(record.name ?? record.label, 96),
 	].filter((item): item is string => !!item);
 	return parts.join(" | ");
+}
+
+export function compactEntityRenderingValue(entity: Record<string, unknown>): Record<string, unknown> {
+	const hints = isRecord(entity.hints) ? entity.hints : {};
+	const out: Record<string, unknown> = {};
+	if (typeof entity.ref === "string") out.ref = entity.ref;
+	if (typeof entity.kind === "string") out.kind = entity.kind;
+	if (typeof entity.role === "string") out.role = entity.role;
+	if (typeof entity.name === "string") out.name = entity.name;
+	if (typeof hints.selector === "string") out.hints = { selector: hints.selector };
+	return out;
 }
 
 export function compactSummaryValue(value: unknown, limits: CompactLimits, depth = 0): unknown {

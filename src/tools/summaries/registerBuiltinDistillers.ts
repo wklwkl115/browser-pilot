@@ -1,5 +1,5 @@
 import { jsonCost } from "../../distill-core/cost.js";
-import { lineEncodeEntity } from "../../distill-core/granularity.js";
+import { compactEntityRenderingValue, lineEncodeEntity } from "../../distill-core/granularity.js";
 import type { Fact } from "../../distill-core/fact.js";
 import { registerCommandDistiller, registerDistillerDefinition, unwrapDistillData, type Distiller } from "../distillerRegistry.js";
 import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
@@ -29,7 +29,7 @@ const wsDistiller: Distiller = (value, command) => summarizeWsSessionData(String
 const memoryDistiller: Distiller = (value) => summarizeMemoryResult(unwrapDistillData(value));
 
 function summaryFact(ref: string, plane: Fact["plane"], value: Record<string, unknown>, salience: Fact["salience"]): Fact {
-	const compact = { ...value };
+	const compact = plane === "entity" ? compactEntityRenderingValue(value) : { ...value };
 	const line = lineEncodeEntity(compact) || `${plane}:${ref}`;
 	return {
 		ref,

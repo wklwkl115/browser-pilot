@@ -12,6 +12,7 @@ import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection } from "../abml/snapshotProjection.js";
 import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.js";
 import { factsFromEntities, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
+import type { FactGranularity } from "../distill-core/fact.js";
 import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../distill-core/relevance.js";
 import { extractScalarTerm, extractUrlTerms } from "../distill-core/relevanceTaps.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
@@ -473,6 +474,13 @@ function ledgerKey(browserSessionId: string | undefined, tabId: number | undefin
 	return { browserSessionId, tabId, navigationEpoch: url };
 }
 
+function granularityCeilingFromLedger(server: BrowserBridgeServer, key: PerceptionLedgerKey | undefined): Exclude<FactGranularity, "omit"> | undefined {
+	if (!key || typeof server.getRecentPerceptionLedgerFrames !== "function") return undefined;
+	const recent = server.getRecentPerceptionLedgerFrames(key, 3);
+	const pressured = recent.filter((frame) => (frame.allocation?.budgetUsedRatio ?? 0) > 0.92).length;
+	return pressured >= 2 ? "compact" : undefined;
+}
+
 function tabUrlForLedger(tabs: unknown[], tabId: number | undefined, fallbackTabId: number | undefined): string | undefined {
 	const wanted = tabId ?? fallbackTabId;
 	const tab = tabs.find((item) => isRecord(item) && Number(item.tabId ?? item.id) === wanted);
@@ -561,6 +569,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const preBridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const plannedLedgerKey = ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
 	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
+	const granularityCeiling = granularityCeilingFromLedger(server, plannedLedgerKey);
 	const effectiveBaseline: unknown = params.baseline ?? (ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
 	let baseline: BaselineResolution | undefined;
 	try {
@@ -791,11 +800,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...causalBlock,
 	};
 	const finalLedgerKey = ledgerKey(bridge.browserSessionId, tabId, typeof data?.url === "string" ? data.url : undefined);
-	if (finalLedgerKey && attributedEntities && typeof server.recordPerceptionLedgerFrame === "function") {
-		const frame: PerceptionLedgerFrame = { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: factsFromEntities(attributedEntities) };
-		server.recordPerceptionLedgerFrame(frame);
-	}
-	return await textToolResult(content, resultParams, ctx, {
+	let allocation: PerceptionLedgerFrame["allocation"] | undefined;
+	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
 		maxChars,
@@ -804,9 +810,18 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
+		granularityCeiling,
+		onAllocation: (value) => {
+			allocation = value;
+		},
 		entities: envelopeEntities,
 		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
+	if (finalLedgerKey && attributedEntities && typeof server.recordPerceptionLedgerFrame === "function") {
+		const frame: PerceptionLedgerFrame = { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: factsFromEntities(attributedEntities), ...(allocation ? { allocation } : {}) };
+		server.recordPerceptionLedgerFrame(frame);
+	}
+	return toolResult;
 }
 
 export async function runContentObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: ToolResultContext, onUpdate?: ToolOnUpdate) {

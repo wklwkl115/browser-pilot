@@ -196,6 +196,7 @@ test("browser_observe P2: records the hook seq high-water on the snapshot for a 
 test("browser_observe C3: session delta is default and env escape disables it", async () => {
 	const snapshots = new Map<string, any>();
 	const ledger = new Map<string, any>();
+	const frames: any[] = [];
 	let snapshotSeq = 0;
 	const server = {
 		...fakeServer,
@@ -207,19 +208,21 @@ test("browser_observe C3: session delta is default and env escape disables it", 
 		},
 		getObservationSnapshot(snapshotId: string) { return snapshots.get(snapshotId); },
 		getPerceptionLedgerFrame(key: any) { return ledger.get(JSON.stringify(key)); },
-		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); return frame; },
+		getRecentPerceptionLedgerFrames(_key: any, limit = 3) { return frames.slice(-limit).reverse(); },
+		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); frames.push(frame); return frame; },
 	};
 	const previous = process.env.PI_BROWSER_SESSION_DELTA;
 	try {
 		delete process.env.PI_BROWSER_SESSION_DELTA;
-		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd: process.cwd() }, "scan")).content[0].text);
 		assert.equal(first.delta, undefined, "first observe remains an I-frame");
 		assert.equal(typeof first.snapshot?.snapshotId, "string", "I-frame carries a snapshotId");
-		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		assert.equal(typeof frames[0]?.allocation?.budgetUsedRatio, "number", "observe records allocation pressure in the ledger frame");
+		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd: process.cwd() }, "scan")).content[0].text);
 		assert.equal(second.delta, "session", "second observe renders as a default session P-frame");
 		assert.equal(second.baselineSnapshotId, first.snapshot.snapshotId, "P-frame names its I-frame baseline snapshot");
 		process.env.PI_BROWSER_SESSION_DELTA = "0";
-		const disabled = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		const disabled = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd: process.cwd() }, "scan")).content[0].text);
 		assert.equal(disabled.delta, undefined, "PI_BROWSER_SESSION_DELTA=0 forces I-frame behavior");
 		const full = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "full" }, { cwd: process.cwd() }, "scan");
 		assert.ok(full.content[0].text.includes("Checkout"), "detailLevel=full returns the full text payload as the refresh escape hatch");

@@ -1,6 +1,6 @@
 import { stableJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
-import { compactSummaryValue } from "./granularity.js";
+import { compactEntityRenderingValue, compactSummaryValue } from "./granularity.js";
 
 export type DistilledSummary = Record<string, unknown>;
 export type BudgetedEnvelope = {
@@ -116,9 +116,7 @@ export function fitSummaryBudget(summary: DistilledSummary, budget: number): Dis
 }
 
 function compactEntityForEnvelope(entity: Record<string, unknown>): Record<string, unknown> {
-	const out = pickDefined(entity, ["ref", "kind", "role", "name", "label"]);
-	const hints = isRecord(entity.hints) ? pickDefined(entity.hints, ["selector", "listContainer", "itemCount"]) : {};
-	if (Object.keys(hints).length) out.hints = hints;
+	const out = compactEntityRenderingValue(entity);
 	return Object.keys(out).length ? out : compactSummaryValue(entity, { stringChars: 80, arrayItems: 2, tableRows: 2 }) as Record<string, unknown>;
 }
 

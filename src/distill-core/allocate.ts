@@ -6,13 +6,19 @@ import { isRecord } from "../utils/records.js";
 
 const GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
 
+function allowedByCeiling(granularity: Exclude<FactGranularity, "omit">, ceiling?: Exclude<FactGranularity, "omit">): boolean {
+	if (!ceiling) return true;
+	return GRANULARITY_ORDER.indexOf(granularity) >= GRANULARITY_ORDER.indexOf(ceiling);
+}
+
 function cheapestAvailable(fact: Fact): Exclude<FactGranularity, "omit"> | undefined {
 	for (const granularity of [...GRANULARITY_ORDER].reverse()) if (fact.renderings[granularity]) return granularity;
 	return undefined;
 }
 
-function bestAvailableWithin(fact: Fact, remaining: number): Exclude<FactGranularity, "omit"> | undefined {
+function bestAvailableWithin(fact: Fact, remaining: number, ceiling?: Exclude<FactGranularity, "omit">): Exclude<FactGranularity, "omit"> | undefined {
 	for (const granularity of GRANULARITY_ORDER) {
+		if (!allowedByCeiling(granularity, ceiling)) continue;
 		const rendering = fact.renderings[granularity];
 		if (rendering && rendering.cost <= remaining) return granularity;
 	}
@@ -95,7 +101,7 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 
 	const ranked = facts
 		.map((fact) => {
-			const best = bestAvailableWithin(fact, Math.max(0, budget - spent));
+			const best = bestAvailableWithin(fact, Math.max(0, budget - spent), options.granularityCeiling);
 			const cost = best ? renderingDensityCost(fact, best, options) : Number.POSITIVE_INFINITY;
 			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1);
 			return { fact, best, salience, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
@@ -109,7 +115,7 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 			const used = usedByPlane.get(item.fact.plane) ?? 0;
 			if (used >= floor.maxFacts) continue;
 		}
-		const granularity = bestAvailableWithin(item.fact, budget - spent);
+		const granularity = bestAvailableWithin(item.fact, budget - spent, options.granularityCeiling);
 		if (!granularity) continue;
 		const cost = renderingCost(item.fact, granularity);
 		if (options.minDensity !== undefined && item.density < options.minDensity) break;
@@ -122,7 +128,7 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 			if (options.minDensity !== undefined && item.density < options.minDensity) continue;
 			const floor = floorByPlane.get(item.fact.plane);
 			if (floor?.maxFacts === undefined || (usedByPlane.get(item.fact.plane) ?? 0) < floor.maxFacts) continue;
-			const granularity = bestAvailableWithin(item.fact, budget - spent);
+			const granularity = bestAvailableWithin(item.fact, budget - spent, options.granularityCeiling);
 			if (!granularity) continue;
 			assign(item.fact, granularity, renderingCost(item.fact, granularity));
 			if (budget - spent <= budget * 0.12) break;

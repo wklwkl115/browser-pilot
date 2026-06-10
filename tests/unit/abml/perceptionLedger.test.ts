@@ -15,6 +15,14 @@ test("PerceptionLedger keeps at most eight frames per session tab", () => {
 	assert.equal(ledger.get(frame(9).key)?.snapshotId, "snap-9");
 });
 
+test("PerceptionLedger stores allocation stats and returns recent frames by session tab", () => {
+	const ledger = new PerceptionLedger();
+	for (let i = 0; i < 4; i += 1) ledger.record({ ...frame(i), allocation: { budgetUsedRatio: i / 4, omittedCount: i } });
+	const recent = ledger.recent(frame(3).key, 3);
+	assert.deepEqual(recent.map((item) => item.snapshotId), ["snap-3", "snap-2", "snap-1"]);
+	assert.deepEqual(recent.map((item) => item.allocation?.omittedCount), [3, 2, 1]);
+});
+
 test("PerceptionLedger trace ring is session keyed, deduped, and capped", () => {
 	const ledger = new PerceptionLedger();
 	ledger.recordTraceTerms("s", [{ term: "login", kind: "literal" }, { term: "login", kind: "literal" }], 1);

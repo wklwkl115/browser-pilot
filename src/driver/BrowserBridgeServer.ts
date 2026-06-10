@@ -311,6 +311,10 @@ export class BrowserBridgeServer {
 		return this.perceptionLedger.get(key);
 	}
 
+	getRecentPerceptionLedgerFrames(key: PerceptionLedgerKey, limit = 3): PerceptionLedgerFrame[] {
+		return this.perceptionLedger.recent(key, limit);
+	}
+
 	recordPerceptionLedgerFrame(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
 		return this.perceptionLedger.record(frame);
 	}

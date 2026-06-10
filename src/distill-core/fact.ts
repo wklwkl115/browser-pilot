@@ -35,6 +35,7 @@ export type PlaneFloor = {
 export type AllocationOptions = {
 	minDensity?: number;
 	costModel?: "byte" | "token";
+	granularityCeiling?: Exclude<FactGranularity, "omit">;
 };
 
 export function salienceValue(salience: FactSalience): number {

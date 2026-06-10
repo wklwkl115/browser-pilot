@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { BrowserActiveOperationInfo } from "../driver/types.js";
+import type { FactGranularity } from "../distill-core/fact.js";
 import { BrowserBridgeError, errorToPlain } from "../driver/errors.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import type { DetailLevel } from "../utils/params.js";
@@ -74,6 +75,8 @@ type TextToolResultOptions = {
 	distill?: TextDistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
+	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
 export type ToolOnUpdate = ((result: PiTextToolResult) => void | Promise<void>) | undefined;
@@ -340,6 +343,8 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		summary: options.summary,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
+		granularityCeiling: options.granularityCeiling,
+		onAllocation: options.onAllocation,
 		redact: params.redact,
 	});
 }

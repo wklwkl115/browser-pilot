@@ -4,6 +4,7 @@ import { allocateFacts } from "../distill-core/allocate.js";
 import { fitEnvelopeBudget, fitSummaryBudget, SUMMARY_MAX_CHARS, type DistilledSummary } from "../distill-core/ladder.js";
 import { renderFacts, type RenderedFacts } from "../distill-core/render.js";
 import { fitSalienceEnvelopeBudget } from "../distill-core/salienceEnvelope.js";
+import type { FactGranularity } from "../distill-core/fact.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult.js";
 import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "./artifactPrivacy.js";
@@ -87,6 +88,8 @@ type DistillBaseOptions = {
 	 */
 	redact?: boolean;
 	rawArtifactValue?: unknown;
+	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
 type FactRenderingDiagnostics = {
@@ -412,8 +415,22 @@ function factRenderingDiagnostics(options: DistillBaseOptions, value: unknown, m
 	};
 }
 
-function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {
-	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars) : fitEnvelopeBudget(envelope, maxChars);
+function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, options: DistillBaseOptions): DistilledEnvelope {
+	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitEnvelopeBudget(envelope, maxChars);
+}
+
+function renderedOmittedCount(envelope: DistilledEnvelope): number {
+	const omitted = envelope.summary.rendererOmitted;
+	return Array.isArray(omitted) ? omitted.filter((item) => typeof item === "string").length : 0;
+}
+
+function reportAllocation(options: DistillBaseOptions, envelope: DistilledEnvelope, rendered: string): void {
+	if (!options.onAllocation) return;
+	const budget = Math.max(1, Math.floor(options.maxChars));
+	options.onAllocation({
+		budgetUsedRatio: Math.max(0, Math.min(1, rendered.length / budget)),
+		omittedCount: renderedOmittedCount(envelope),
+	});
 }
 
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, sensitiveRaw = false): DistilledEnvelope {
@@ -475,7 +492,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),
 		saved,
-	}, options.maxChars);
+	}, options.maxChars, options);
 }
 
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {
@@ -496,14 +513,19 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
+		const rendered = stableJson(envelope);
+		reportAllocation(options, envelope, rendered);
 		return {
-			content: [{ type: "text", text: stableJson(envelope) }],
+			content: [{ type: "text", text: rendered }],
 			details: { ...(options.details || {}), saved, factRendering },
 		};
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved, factRendering }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		const envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
+		const rendered = stableJson(envelope);
+		reportAllocation(options, envelope, rendered);
+		return jsonResult(envelope, { ...(options.details || {}), saved: fullSaved, factRendering }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return jsonResult(value, { ...(options.details || {}), saved, summary, factRendering }, maxChars);
 }
@@ -525,14 +547,19 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
+		const rendered = stableJson(envelope);
+		reportAllocation(options, envelope, rendered);
 		return {
-			content: [{ type: "text", text: stableJson(envelope) }],
+			content: [{ type: "text", text: rendered }],
 			details: { ...(options.details || {}), saved },
 		};
 	}
 	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
 		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		const envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
+		const rendered = stableJson(envelope);
+		reportAllocation(options, envelope, rendered);
+		return jsonResult(envelope, { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return textResult(text, { ...(options.details || {}), saved, summary }, maxChars);
 }
