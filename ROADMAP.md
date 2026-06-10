@@ -2,31 +2,50 @@
 
 > 后续路线与下一步建议。当前状态见 `CURRENT.md`；历史完成项见 `ARCHIVE.md`。
 
-## 当前非激活路线
+## 已关闭决策（不在执行队列；仅凭下列明确证据才重开）
 
-1. jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：已完成能力思想和证据模型吸收；后续 `browser_sources`、`browser_debugger`、`browser_intercept`、`browser_storage`、`browser_canvas` 仍默认拒绝，必须另开 RFC 并证明现有 canonical tools 不足。
-2. Debugger workflow 更强能力：page-authored provenance、pause/breakpoint/step lifecycle。默认仍由 `browser_command`、`persistent_cdp`、`browser_frame`、`browser_artifact` 承载；不新增公开 `browser_debugger`。
-3. `browser_hook` 后续只能增加显式 hook targets 或静态 target 展开；禁止策略型 preset 名称与黑盒判断。
-4. Real ACI eval runner 已落地主干为全量 manifest opt-in runner：`npm run eval:browser-workflows -- --fixture-server`，local-only ephemeral fixture server，默认无浏览器启动副作用，覆盖 eval `01`-`27` 与 `30`。后续路线是增加新 specs 时同步接入 runner；仍禁止 scanner/OAST/external network 默认运行。
-5. Incognito/profile isolation 不在当前主干路线内；如需要，另开独立能力设计，不挂到默认浏览器会话入口。
-6. 下阶段 Web reversing/security primitives 继续 RFC/eval-first；已完成 phase 1 的项不自动升级 phase 2：
-   - 请求/响应拦截与热补丁原语（phase 1/2 已完成）
-   - JS AST / 反混淆分析原语（phase 1 已完成）
-   - DOM 事件链 / sink-flow 分析辅助（phase 1 已完成）
-   - Wasm 逆向桥接（phase 1 已完成）
-   - Stateful WebSocket replay/fuzz primitives（phase 1 已完成）
-7. 更高层 orchestration/tooling 回归仍保持撤回状态；operation metadata 只能做诊断，不能复活旧 Desired State/Logical Target 默认入口。
-8. ABML 公开 tool surface RFC 当前保持 deferred：已有真实 smoke/eval 证据支持 ABML 继续作为 internal substrate（observe/monitor/frame/vision/AX），但尚无 transcript 证据表明 agent 因缺少公开 ABML verbs 而被真实任务卡住。R1 relationship graph 已完成并 live-verified（见 `docs/abml-relationship-graph-execution-plan.md`）；未来若重启公开面方向，应优先评估“现有 `browser_*` 的迁移/替换性吸收 RFC”，而不是并排新增一套 verb tools。
-9. 词典 / wordlist 治理（非 ABML 主线）：见 `docs/dictionary-and-wordlist-governance-plan.md`。源自 2026-06-04 ABML login 去过拟合衍生的全仓硬编码词典盘点（约 44 处，5 类）。可执行项按 ROI 排序为 W1 安全 payload/签名外部化（最高，`readWordlist` 管道已就位）、W2 ARIA 标准词表构建期 codegen（中，非紧急；纯核禁运行时依赖）、W3 脱敏字段对照 SecLists 校准（低成本一次性）。默认非激活，启动须另开独立执行合同、不搭车 ABML 主线。
+这些项目已经过设计评审或 blind-eval 证据裁定为"不做"。保留在此作为决策记录，
+防止未来重复讨论。重开条件写在括号里；无该条件则维持关闭。
+
+- **browser_sources / browser_debugger / browser_intercept / browser_storage /
+  browser_canvas**：jshookmcp 吸收时裁定 canonical tools 已覆盖能力模型；现有
+  `browser_command`、`persistent_cdp`、`browser_evidence`、`browser_artifact` 组合
+  承载全部能力。*(重开条件：blind-eval 出现 canonical tools 无法关闭的真实任务)*
+- **Debugger pause/breakpoint/step lifecycle 专用工具**：`browser_command`、
+  `persistent_cdp`、`browser_frame`、`browser_artifact` 已覆盖；zero 受阻证据。
+  *(重开条件：transcript 证明现有组合无法完成 debugger 工作流)*
+- **Incognito/profile isolation 默认入口**：另开独立能力设计，不挂默认会话入口。
+  *(重开条件：成立独立能力 RFC，不搭车任何现有主线)*
+- **Orchestration/Desired State/Logical Target 回归**：已撤回；operation metadata
+  只做诊断。*(重开条件：无；保持撤回状态)*
+
+## 当前非激活路线（真实未来项，带重开触发器）
+
+1. **Real ACI eval runner 扩展**：runner 已落地（`npm run eval:browser-workflows
+   --fixture-server`，覆盖 01-27 + 30）；后续是新增 spec 时同步接入；仍禁止
+   scanner/OAST/external network 默认运行。
+2. **Web reversing/security 下阶段原语**：已完成 phase 1（拦截/热补丁/JS AST/DOM
+   事件链/Wasm/WebSocket）；phase 2 须另开 RFC + eval-first。*(触发：phase-1 原语
+   eval 无法关闭的真实任务)*
+3. **ABML 公开 verb surface**：`blind-findings.md` W1（WAI）主动否定需求——agent
+   在 10 次真实 blind 运行中报告"acting 无 friction"，只有返回值渲染痛点（已修）。
+   目前延迟有强正面证据支撑。*(触发：transcript 显示 agent 因缺公开 verb 被真实任务
+   卡住)*
+4. **Renderer `line` 粒度扩展**（entity 面原语已落）：最高理解风险档，零正面证据。
+   *(触发：逐平面盲测 eval 证据)*
+5. **词典/wordlist 治理 W2/W3**：W1（安全 payload/签名外部化）已由 debt-clearance
+   执行；W2（ARIA 词表 codegen，纯核无运行时依赖约束）和 W3（SecLists 校准，外部
+   依赖）维持 parked。*(触发：W2 须独立执行合同；W3 须 SecLists 依赖评审)*
+6. **browser_hook 后续扩展**：只能增加显式 hook targets 或静态 target 展开；禁止
+   策略型 preset 名称与黑盒判断。*(触发：blind-eval 确认新 target 必需)*
+7. **盲测滚动台账中的 n=1 items**（G5 artifact regex / G1 G6 CLI papercuts / B9a
+   媒体候选 / B11 sidebar-dominant）：等待复现确认后才成为工作项。
 
 ## 近期质量建议
 
-- 发布/合并前继续复跑 `npm run quality:local`。
-- 需要 runtime 证据时按需复跑 opt-in smoke/eval：`npm run smoke:browser:isolated`、`npm run smoke:browser:scan-summary`、`npm run smoke:browser:debugger-evidence`、`npm run release:local:smoke`、`npm run eval:browser-workflows -- --fixture-server`。
-- 新能力或重大重构先补 `CURRENT.md` 决策、边界、contracts/evals，再改代码。
-
-## 历史复核结论
-
-当前仓库中已清理“完成但仍标记为当前”的主要口径。当前激活项以 `CURRENT.md` 为准；目前无激活执行线。本文件只保留 future-facing 路线，不作为执行队列。
-
-历史压缩后的阶段归档见：`docs/archive/bridge-esm-history.md`、`docs/archive/governance-history.md`、`docs/archive/orchestration-history.md`、`docs/archive/tmwd-cdp-bridge-legacy.md`；逐条详档见对应 `*.full.md` 文件。
+- 发布/合并前复跑 `npm run quality:local`（含 lint；`npm run check` 不跑 eslint）。
+- 需要 runtime 证据时按需复跑 opt-in smoke/eval：`npm run smoke:browser:isolated`、
+  `npm run smoke:browser:scan-summary`、`npm run eval:browser-workflows
+  -- --fixture-server`。
+- 新能力或重大重构先补 `CURRENT.md` 决策、边界、contracts，再改代码。
+- 历史压缩后的阶段归档见 `docs/archive/` 各摘要与详档（`*.full.md`）文件。

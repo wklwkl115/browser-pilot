@@ -185,12 +185,12 @@ Executed result:
 7. C-tier stayed out of scope.
 8. Final gates passed: `check:all:bridge`, `npm run check`, `npm run smoke:browser:scan-summary`.
 
-**Optional bench harness (recommended, cheap):** the kernel is pure — add `bench:abml-kernel`,
-a node script timing `mergeDomAndAxEntities` / grouping / `buildTreeDiff` /
-`buildSnapshotProjection` over recorded large-page fixtures (the `check:summaries` high-entropy
-fixture is a seed). Run before/after each tier to keep claims honest; numbers are for regression
-detection, not capability claims (per `real-agent-eval-over-self-justification`, perf numbers
-here are internal — no agent-facing claims are made by this plan).
+**Optional bench harness — WRITTEN OFF (debt-clearance-plan.md D5a, 2026-06-10).** The
+byte-identity evidence already exists: `check:token-economy` asserts medianRatio=0.0607 both
+before and after all A/B/B-tier fixes — any compute regression that changes output would break
+that golden. A separate timing harness adds nothing to regression coverage and is therefore not
+worth the maintenance overhead. If profiling ever becomes necessary (e.g. a performance
+incident), the kernel is pure and easy to time ad-hoc; this will not be a standing script.
 
 ## §7 Relationship to other tracks
 

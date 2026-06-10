@@ -13,7 +13,17 @@
 
 ## 当前激活项
 
-当前无激活执行线。最近完成项如下。
+### Debt clearance (2026-06-10, 激活中)
+
+决策：执行 `docs/debt-clearance-plan.md`——全项目债务/悬空/滞后审计后的清债合同。不新增公开 `browser_*` 工具，不改 agent-facing schema，不改变默认输出语义。D1（有界可见行投影）是唯一有设计风险的项，殿后执行且需要盲测结清证明。
+
+执行序：D2+D5a（ROADMAP 诚实化 + bench 注销）→ D4（recovery 棘轮）→ D3（词典 W1 外部化）→ D1（有界行投影，结清 B1）。
+
+边界：D3 字节恒等合同锁（默认输出不变）；D4 粒度合同锁（祖父列表只缩不增）；D1 硬边界（DOM 保序感知，零语义/来源/排序推断，住在现有 scan entry，不触发第 6 entry 闸）。
+
+验证：每项独立通过 `npm run check` + `npm run lint` 再推进下一项；D1 另需一次盲测结清证明。
+
+最近完成项如下。
 
 ### capture-core + fact allocator closure (2026-06-10, 完成)
 
