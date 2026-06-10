@@ -61,9 +61,6 @@ export type DistilledEnvelope = {
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
-	// Layer-1 section handles. Populated only by the MCP adapter (which owns the
-	// resource store); Pi core leaves this unset.
-	sections?: Array<{ name: string; kind: string; count?: number; handle?: string }>;
 	renderer?: "salience-v1";
 	delta?: "session";
 	baselineSnapshotId?: string;
