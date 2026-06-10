@@ -60,14 +60,13 @@ deterministic gates.
 
 ## 4. Phases
 
-- [ ] **P0 — clean baseline + hygiene.**
-  `CURRENT.md` activation entry (decision, boundary, gates, revert rule). Commit the
-  landed perception-renderer implementation as its own baseline commit(s) BEFORE flip work
-  starts — flip diffs must not mix with the implementation diff. Fix the environment-
-  sensitive npm-banner test (`tests/unit/cli/local-commands.test.ts:222` — make the
-  banner-contamination assertion conditional on the banner actually appearing; the
-  load-bearing `--silent`-gives-one-clean-JSON assertion stays unconditional) so
-  `npm run check` is a meaningful green gate on any npm version.
+- [x] **P0 — clean baseline + hygiene.**
+  `CURRENT.md` activation entry (decision, boundary, gates, revert rule) is recorded.
+  The landed perception-renderer implementation is committed as baseline `d5f4ff0`
+  before flip work starts, so flip diffs do not mix with implementation diff. The
+  environment-sensitive npm-banner test (`tests/unit/cli/local-commands.test.ts`) now
+  makes the banner-contamination assertion conditional on the banner actually appearing;
+  the load-bearing `--silent`-gives-one-clean-JSON assertion stays unconditional.
 - [ ] **P1 — regression fixes F1+F2 (+F3 code, inert) + comparative bench.**
   Extend `bench:distill` with a ladder-vs-salience comparative mode per fixture:
   chars, fact coverage, truncation-marker count. Landing gate: on EVERY corpus fixture,

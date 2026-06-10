@@ -219,11 +219,14 @@ test("top-level bin help stays on the lightweight dynamic import path", () => {
 	assert.match(source, /import\(["']\.\/index\.js["']\)/, "non-help commands must still route through the dispatcher");
 });
 
-test("npm wrapper JSON mode is documented: normal npm run contaminates stdout, --silent does not", () => {
+test("npm wrapper JSON mode is documented: normal npm run may contaminate stdout, --silent does not", () => {
 	const noisy = runNpm(["run", "cli", "--", "--json", "schema", "execute"]);
 	assert.equal(noisy.code, 0, noisy.stderr);
-	assert.match(noisy.stdout, /> pi-browser-tools@/);
-	assert.throws(() => parseOneJson(noisy.stdout), /JSON mode must write exactly one JSON document/);
+	if (/> pi-browser-tools@/.test(noisy.stdout)) {
+		assert.throws(() => parseOneJson(noisy.stdout), /JSON mode must write exactly one JSON document/);
+	} else {
+		assert.equal(parseOneJson(noisy.stdout).command, "schema");
+	}
 
 	const silent = runNpm(["--silent", "run", "cli", "--", "--json", "schema", "execute"]);
 	assert.equal(silent.code, 0, silent.stderr);
