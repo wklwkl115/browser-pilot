@@ -37,13 +37,16 @@ assert(!eslintConfig.includes('project: "./tsconfig.build.json"'), "eslint confi
 for (const rule of ["*.ts text eol=lf", "*.mjs text eol=lf", "*.json text eol=lf", "*.map text eol=lf", ".gitattributes text eol=lf", ".gitignore text eol=lf", ".npmignore text eol=lf"]) {
 	assert(gitAttributes.includes(rule), `.gitattributes must pin LF for generated and source text rule: ${rule}`);
 }
-for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/"]) {
+for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/", "capture-src/"]) {
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
 }
+assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "package must expose capture bundle synchronization");
+assert.equal(pkg.scripts?.["check:capture"], "node scripts/sync-capture.mjs --check && node tests/contracts/runtime/check-capture-core-boundary.mjs", "package must expose capture drift and boundary check");
 
 const buildScript = read("scripts/build-bridge.mjs");
 const groupedCheckScript = read("scripts/run-check-groups.mjs");
 assert(groupedCheckScript.includes("const groups =") && groupedCheckScript.includes("bridge") && groupedCheckScript.includes("contracts"), "grouped check runner must define stable named validation groups");
+assert(groupedCheckScript.includes('"check:capture"'), "grouped check runner must include capture-core contracts");
 assert(groupedCheckScript.includes('spawnSync("npm", ["run", script]') || groupedCheckScript.includes("spawnSync(\"npm\", [\"run\", script]"), "grouped check runner must dispatch npm run <script> sequentially");
 assert(groupedCheckScript.includes("--json") && groupedCheckScript.includes("check-groups-summary.json") && groupedCheckScript.includes("summary.results.push"), "grouped check runner must support JSON summary mode and persist a structured artifact");
 assert(buildScript.includes('process.argv.includes("--quiet")'), "build script must support quiet mode for prepack");
@@ -109,6 +112,8 @@ assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm p
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
+assert(packed.has("scripts/sync-capture.mjs"), "npm package must include capture sync script");
+assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capture/generated/scanBundle.ts"), "npm package must include capture source and generated bundles");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");

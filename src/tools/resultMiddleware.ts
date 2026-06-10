@@ -1,12 +1,14 @@
 import { stableJson } from "../utils/json.js";
 import { buildSaveTextArtifactPlan, artifactPlanReasons, type ArtifactPlan, type ArtifactPlanReason } from "../distill-core/artifactPlan.js";
+import { allocateFacts } from "../distill-core/allocate.js";
 import { fitEnvelopeBudget, fitSummaryBudget, SUMMARY_MAX_CHARS, type DistilledSummary } from "../distill-core/ladder.js";
+import { renderFacts, type RenderedFacts } from "../distill-core/render.js";
 import { fitSalienceEnvelopeBudget } from "../distill-core/salienceEnvelope.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult.js";
 import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "./artifactPrivacy.js";
 import { saveTextArtifact } from "./artifacts.js";
-import { distillValue } from "./distillerRegistry.js";
+import { distillValue, getDistillerDefinition } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
@@ -88,6 +90,13 @@ type DistillBaseOptions = {
 	 */
 	redact?: boolean;
 	rawArtifactValue?: unknown;
+};
+
+type FactRenderingDiagnostics = {
+	rendered: number;
+	skipped: number;
+	markerCount: number;
+	planes: string[];
 };
 
 type DistilledJsonOptions = DistillBaseOptions & {
@@ -384,6 +393,24 @@ function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
 	return process.env.PI_BROWSER_RENDERER === "ladder" ? undefined : "salience-v1";
 }
 
+function factRenderingDiagnostics(options: DistillBaseOptions, value: unknown, maxChars: number): FactRenderingDiagnostics | undefined {
+	if (!rendererMarker()) return undefined;
+	const factify = getDistillerDefinition(options.toolName)?.factify;
+	if (!factify) return undefined;
+	const facts = factify(value, options.command);
+	if (!facts.length) return undefined;
+	const budget = Math.max(256, Math.floor(maxChars * 0.25));
+	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01 });
+	const rendered: RenderedFacts = renderFacts(facts, plan);
+	const planes = Object.keys(rendered).filter((key) => key !== "omitted" && key !== "stats").sort();
+	return {
+		rendered: rendered.stats?.factsRendered ?? 0,
+		skipped: rendered.stats?.factsOmitted ?? 0,
+		markerCount: rendered.stats?.truncationMarkers ?? 0,
+		planes,
+	};
+}
+
 function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {
 	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars) : fitEnvelopeBudget(envelope, maxChars);
 }
@@ -456,6 +483,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	const rawValue = options.artifactValue ?? value;
 	const raw = stableJson(rawValue);
 	const summary = options.distill ? options.distill(value) : distillValue(options.toolName, options.command, value);
+	const factRendering = factRenderingDiagnostics(options, value, maxChars);
 	const threshold = Math.max(1, options.artifactThreshold ?? maxChars);
 	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
@@ -469,14 +497,14 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 		}
 		return {
 			content: [{ type: "text", text: stableJson(envelope) }],
-			details: { ...(options.details || {}), saved },
+			details: { ...(options.details || {}), saved, factRendering },
 		};
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
-		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
+		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved, factRendering }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
-	return jsonResult(value, { ...(options.details || {}), saved, summary }, maxChars);
+	return jsonResult(value, { ...(options.details || {}), saved, summary, factRendering }, maxChars);
 }
 
 export async function distilledTextResult(text: string, options: DistilledTextOptions): Promise<PiTextToolResult> {

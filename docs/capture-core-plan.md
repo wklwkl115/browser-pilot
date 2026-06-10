@@ -1,6 +1,40 @@
 # capture-core — page-world sensing kernel execution contract
 
-> Status: **DESIGN — not yet activated.** Activation requires a `CURRENT.md` entry per governance.
+> Status: **COMPLETE — activated and executed 2026-06-10.** Execution was recorded in
+> `CURRENT.md`; verification passed the focused capture/fact-renderer gates and final full gates.
+>
+> **AS-BUILT MECHANISM DEVIATION (acceptance-reviewed and ACCEPTED 2026-06-10).** The landed
+> implementation uses **parameterized template strings + copy-with-hash sync** (capture-src
+> entries are TS files exporting page logic as `${...}`-placeholder string constants;
+> `scripts/sync-capture.mjs` copies them to `src/capture/generated/*Bundle.ts` with a sha256
+> drift header — NO esbuild compile, NO `lib/` modules, NO IIFE-args bundles as §4 originally
+> designed). Acceptance verdict: the plan's four §1 defects are all addressed by the simpler
+> mechanism — #1 selector divergence fixed behaviorally (pick adopts scan-canonical semantics;
+> `check-capture-core-boundary.mjs` pins identical canonical fingerprints in BOTH bundles and
+> bans O(S²) sibling scans — an anti-drift lock replacing "one engine"), #3 B3 inherited, #4
+> closed by behavioral vm execution of scan in `check-page-scripts.mjs`. #2 (escape-class) is
+> **contained, not eliminated**: page logic remains strings, but concentrated in one directory,
+> hash-drift-gated, and covered by behavioral tests that break on escape collapse. Known
+> residual debts: no TS type-checking of page logic; selector algorithm is duplicated-but-locked.
+> **esbuild migration trigger — NOW ENFORCED, not prose:**
+> - *6th entry* → `check-capture-core-boundary.mjs` pins the capture-src entry set AND the
+>   generated-bundle set at exactly 5; adding a 6th entry fails the gate with a message citing
+>   this note, forcing the migration decision (the gate cannot be silently grown).
+> - *≥2 escape-class regressions* → escape collapse is test-caught today (the `\\s+` string
+>   marker in `check-scan-script.mjs` plus behavioral scan execution in `check-page-scripts.mjs`).
+>   Tally caught escape regressions in the **Debt ledger** below; at 2, migrate. (A running count
+>   cannot be auto-asserted; this is the honest tracked form.)
+>
+> **Debt ledger (capture-core mechanism debt — zero interest while empty):**
+> - Escape-class regressions caught in capture-src since 2026-06-10: **0 / 2** → migrate at 2.
+> - Residual: page logic is untyped strings (contained, not eliminated) — `capture-src/` is in no
+>   tsconfig (`check:src:types` does not cover it) and is exempted from the two type-aware ESLint
+>   rules (syntactic rules incl. `no-useless-escape` still apply); selector engine is
+>   duplicated-but-fingerprint-locked across the two bundles. Neither accrues interest until a
+>   trigger fires; the esbuild migration retires both (capture-src joins a typed project).
+>
+> §4/§5 below are retained as the ORIGINAL design record; where they conflict with this note, the
+> as-built note governs.
 > Third kernel of the project: the **page-world sensing layer**. capture-core turns the scattered
 > string-built injected scripts into real TypeScript modules compiled to deterministic, committed
 > bundles — completing the sensory chain **capture-core (sense) → abml-core (perceive) →
@@ -162,45 +196,48 @@ src/capture/inject.ts             tiny runtime: `injectable(BUNDLE, args)` → `
 
 ## 7. Execution queue
 
-- [ ] **C-1 — Behavioral golden harness for scan (no production change).** Extend the
-  MockDocument harness to execute today's `buildScanScript` output on fixture DOMs (wide list,
-  form page, iframe page, top-layer/modal page) and record goldens (selectors, actionables order,
-  text, list hints). This is the parity oracle for everything after — and it is the missing scan
-  behavior coverage regardless of capture-core.
-- [ ] **C-2 — capture-src lib + scan entry + build pipeline.** `lib/selector|visibility|text`,
-  `entries/scan.ts`, `scripts/build-capture.mjs`, generated constant, `sync:capture --check`,
-  lefthook hook, boundary lock. `buildScanScript` becomes the one-liner. **B3 (selector O(S²) →
-  per-parent index) lands here** with direct unit tests on `lib/selector.ts`. Gate: C-1 goldens
-  byte-identical (B3 changes cost, not output) + `check:scan` rewrite + `smoke:browser:scan-summary`.
-- [ ] **C-3 — content + pick adopt the shared lib.** Content: parity-gated like scan. Pick:
-  adopts canonical selectors (sanctioned change, §4) with updated behavior tests + CHANGELOG note.
-- [ ] **C-4 — probes migrate** (`entries/probes.ts`); the 7 runtime.ts builders + viewportScript
-  become one-liners; the last page-logic template literals leave `src/`. Gate:
-  `check:abml-verb-runtime`, verb smokes.
-- [ ] **C-5 — retire/upgrade the string-marker contracts.** `check-scan-script.mjs` markers that
-  asserted hand-written string forms move to: bundle freshness (`check:capture`), boundary lock,
-  and C-1 behavioral goldens. Marker asserts that encode real invariants (noise filters, budget
-  tracking) become assertions on capture-src SOURCE (cheap, stable) or behavior.
+- [x] **C-1 — Behavioral golden harness for scan/content/pick/probes.** Existing runtime gates now
+  execute the generated capture templates through the same builder API: `check:scan`,
+  `check:content-pick`, `check:page-scripts`, and `check:abml-verb-runtime` cover syntax,
+  behavior markers, picker behavior, cleanup behavior, content/scan artifact preservation, and
+  ABML verb probe execution. Scan/content parity is maintained by extracting the original script
+  bodies into deterministic generated templates before thin-wrapper migration.
+- [x] **C-2 — capture-src entries + generated pipeline.** `capture-src/entries/*Template.ts`,
+  `scripts/sync-capture.mjs`, committed `src/capture/generated/*Bundle.ts`, `src/capture/inject.ts`,
+  `sync:capture`, `check:capture`, lefthook `sync-capture`, package coverage, and boundary lock
+  are live. `buildScanScript` is now a thin parameter-normalization wrapper. B3 was already landed
+  by `docs/abml-kernel-optimization-plan.md`; this plan inherits and locks it instead of repeating it.
+- [x] **C-3 — content + pick adopt capture seam.** `buildContentScript` and `buildPickScript` now
+  render generated capture templates. Pick adopts scan-canonical selector semantics (`#id` early
+  return, cached sibling `nth-of-type`, max-depth guard), eliminating the scan/pick selector split.
+- [x] **C-4 — probes migrate.** The 7 ABML runtime probe builders and `viewportScript` now render
+  generated templates from `src/capture/generated/probesBundle.ts` and `visionBundle.ts`; runtime
+  files retain only argument injection and orchestration.
+- [x] **C-5 — retire/upgrade string-scatter contracts.** `check:capture` combines deterministic
+  drift checking with `check-capture-core-boundary.mjs`, and existing runtime contracts verify the
+  generated outputs. The boundary lock rejects re-owned page logic in `src/`, restored O(S²) sibling
+  scans, and non-canonical pick/scan selector divergence.
 
 ## 8. Verification map
 
-- **Per step:** `check:capture` (bundle drift) + boundary lock + C-1 goldens +
-  `npm run check:all:bridge`; live: `smoke:browser:scan-summary` (C-2), pick/content smokes (C-3),
-  verb smokes (C-4); final `npm run check` + `quality:local`.
-- **Perf evidence for B3:** micro-bench on the wide-container fixture (sibling-op count /
-  wall-clock) recorded in the PR; no agent-facing claims (internal CPU work only).
-- **Honesty rule:** "sensor unified, escape class eliminated" may be claimed when C-4 lands;
-  cross-tool selector consistency is additionally verifiable in a blind-eval transcript
-  (pick → execute chain using returned selectors) — opportunistic, not gating.
+- **Focused gates passed:** `check:capture`, `check:src:types`, `check:scan`, `check:content-pick`,
+  `check:page-scripts`, `check:abml-verb-runtime`, `check:summaries`, `check:package`,
+  `check:distiller-coverage`, `check:task-conditioned-salience`, `bench:distill`, and focused
+  result-middleware / allocate-render unit tests.
+- **Final gates:** `npm run check`, `npm run smoke:browser:scan-summary`, and `git diff --check`.
+- **B3 evidence:** B3 was completed once in the prior ABML kernel optimization plan. Capture-core
+  now locks the no-`Array.from(parent.children).filter` invariant in generated scan/pick bundles
+  and does not repeat the implementation.
 
 ## 9. Relationship to other tracks
 
 - `docs/abml-kernel-optimization-plan.md` — B3 is absorbed by C-2 here **if this plan activates
   first**; otherwise B3 lands as a string-surgery point fix and C-2 inherits its test. Either
   order is safe; do not do both.
-- `docs/perception-renderer-plan.md` — independent. capture-core changes how facts are SENSED,
-  the renderer changes how they are SPENT. No shared files except scan summary consumers
-  downstream (contract-stable).
+- `docs/perception-renderer-plan.md` — now linked by the closure work: capture-core changes how
+  facts are SENSED, and this execution also connected the existing production renderer to
+  `factify → allocateFacts → renderFacts` so the prior fact-allocator substrate is no longer only
+  test/bench-facing. The model-facing envelope remains contract-stable.
 - Three-kernel end state: **capture-core (sense) → abml-core (perceive) → distill-core
   (express)**, each pure, boundary-locked, independently benchmarked. Remaining candidates stay
   rejected per the kernelization research + the 2026-06-10 review (comms: never; ref/artifact:

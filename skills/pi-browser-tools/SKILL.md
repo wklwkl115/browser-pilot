@@ -16,7 +16,7 @@ Coverage reality: **ABML is observation-only — it does not execute.** Its **re
 
 ## Invocation
 
-- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to compact, redacted salience/session summaries (`renderer:"salience-v1"`; repeated scan observes may carry `delta:"session"`; `PI_BROWSER_RENDERER=ladder` and `PI_BROWSER_SESSION_DELTA=0` force legacy paths) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
+- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to compact, redacted salience/session summaries (`renderer:"salience-v1"`; repeated scan observes may carry `delta:"session"`; task-conditioned relevance may reorder equal-rank scan actions/entities from URL/trace/intent signals without exposing raw trace terms; `PI_BROWSER_RENDERER=ladder`, `PI_BROWSER_SESSION_DELTA=0`, and `PI_BROWSER_RELEVANCE=0` force legacy paths) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
 - **No connect step** — readiness is ambient. Just call a tool; a not-yet-connected extension gets a brief grace wait, then a command fails `NO_BROWSER_EXTENSION` with `recovery.nextActions`. The bridge is a server the extension dials into; it cannot dial the browser for you — if the extension is genuinely not loaded/enabled, that is a human action, so surface it rather than retry-looping.
 
 ## Loop

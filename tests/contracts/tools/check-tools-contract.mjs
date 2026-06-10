@@ -92,7 +92,7 @@ assert(read("src/tools/registerTabsTool.ts").includes("incognito: params.incogni
 // C2/H1/C4 changed mechanism in the agent-native line: mechanical params leave the advertised schema,
 // but prepareArguments strips the deprecated allowlist before strict validation so habit-callers are
 // accepted-and-ignored instead of hard-rejected.
-assert(registerToolsSource.includes("withDeprecatedParamStrip"), "all tools must be wrapped with deprecated-param prepareArguments tolerance");
+assert(read("src/tools/relevanceTraceAdapter.ts").includes("withDeprecatedParamStrip"), "all tools must be wrapped with deprecated-param prepareArguments tolerance");
 assert(read("src/tools/registerTabsTool.ts").includes("includeBrowserSessionId: true"), "browser_tabs must be the only tool that advertises browserSessionId");
 assert(!/detailLevel:\s*Type\./.test(read("src/tools/registerArtifactTool.ts")), "browser_artifact must not expose deprecated detailLevel in schema");
 assert(!/detailLevel:\s*Type\./.test(read("src/tools/registerMemoryTool.ts")), "browser_memory must not expose deprecated detailLevel in schema");

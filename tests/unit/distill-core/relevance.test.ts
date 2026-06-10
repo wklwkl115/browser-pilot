@@ -1,0 +1,46 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { computeRelevanceMap } from "../../../src/distill-core/relevance.ts";
+import { assertRelevanceTuningBounds } from "../../../src/distill-core/relevanceTuning.ts";
+
+test("computeRelevanceMap returns no boosts for empty terms", () => {
+	const result = computeRelevanceMap([{ ref: "pi-ref://control/pay", fields: { name: "Pay now" } }], []);
+	assert.equal(result.boosted, 0);
+	assert.equal(result.byRef.size, 0);
+	assert.equal(result.scoreFields({ name: "Pay now" }), 0);
+});
+
+test("computeRelevanceMap matches CJK and mixed literals", () => {
+	const result = computeRelevanceMap([
+		{ ref: "pi-ref://control/search", fields: { name: "搜索 商品", role: "searchbox" } },
+		{ ref: "pi-ref://control/login", fields: { name: "登录", role: "button" } },
+	], [{ term: "搜索", kind: "literal", source: "A" }]);
+	assert.equal(result.boosted, 1);
+	assert.ok((result.byRef.get("pi-ref://control/search")?.score ?? 0) > 0);
+	assert.deepEqual(result.sourcesForRef("pi-ref://control/search"), ["A"]);
+});
+
+test("computeRelevanceMap propagates through container neighbors conservatively", () => {
+	const result = computeRelevanceMap([
+		{ ref: "pi-ref://text/billing", fields: { name: "Billing address" }, neighbors: { containerKey: "form checkout" } },
+		{ ref: "pi-ref://control/postcode", fields: { name: "Postcode" }, neighbors: { containerKey: "form checkout" } },
+	], [{ term: "billing", kind: "literal", source: "A" }]);
+	const direct = result.byRef.get("pi-ref://text/billing")?.score ?? 0;
+	const propagated = result.byRef.get("pi-ref://control/postcode")?.score ?? 0;
+	assert.ok(direct > propagated && propagated > 0);
+});
+
+test("computeRelevanceMap supports URL and intent source tags", () => {
+	const result = computeRelevanceMap([
+		{ ref: "pi-ref://control/login", fields: { name: "Sign in", role: "button", selector: "#login" } },
+	], [
+		{ term: "login", kind: "url", source: "D" },
+		{ term: "login", kind: "intent", source: "E" },
+	]);
+	assert.equal(result.boosted, 1);
+	assert.deepEqual(result.sourcesForRef("pi-ref://control/login"), ["D", "E"]);
+});
+
+test("relevance tuning bounds stay conservative", () => {
+	assert.equal(assertRelevanceTuningBounds(), true);
+});

@@ -13,6 +13,28 @@
 
 ## 当前激活项
 
+当前无激活执行线。最近完成项如下。
+
+### capture-core + fact allocator closure (2026-06-10, 完成)
+
+决策：已执行 `docs/capture-core-plan.md`，同时收口前序 `perception-renderer-plan` 与 `task-conditioned-salience-plan` 之间的 production fact allocator / V6 关联悬空项。交付边界保持不新增公开 `browser_*` 工具、不改 tool schema、不改变 scan/content/pick/probe 的 agent-facing 语义；page-world sensing 已迁入 capture-core generated bundle seam，`src/` builder 只保留参数归一化与注入调用；`allocateFacts` 已进入 production salience renderer，`FactSalience.relevance` 同步落地。
+
+落地：新增 `capture-src/entries/*Template.ts`、`scripts/sync-capture.mjs`、`src/capture/inject.ts` 与 committed `src/capture/generated/*Bundle.ts`；`buildScanScript`、`buildContentScript`、`buildPickScript`、ABML 7 个 probe builder 与 `viewportScript` 均改为 generated template 注入；pick 改用 scan-canonical selector 语义并继承 B3 sibling cache；新增 `check:capture` / `check-capture-core-boundary.mjs`、package/check/lefthook 覆盖；default salience summary/preview 路径运行 `factify → allocateFacts → renderFacts`，allocator diagnostics 只进入 tool result `details`，不增加 model-facing envelope 字节。
+
+边界：capture page-world 逻辑只允许位于 `capture-src/` 与 `src/capture/generated/`；`src/scan`、`src/content`、`src/pick`、ABML verb runtime 不得重新拥有 page-world 大模板；B3 已由 ABML kernel optimization 完成，本计划只继承并锁定；fact allocator 接线只在既有 salience renderer 内启用，ladder escape 与 artifact/privacy 语义保持不变。
+
+门禁：已通过 `check:capture`、`check:src:types`、`check:scan`、`check:content-pick`、`check:page-scripts`、`check:abml-verb-runtime`、`check:summaries`、`check:package`、`check:distiller-coverage`、`check:task-conditioned-salience`、`bench:distill`、resultMiddleware/allocate-render 聚焦单测；最终全量门禁见本轮收口记录。
+
+### Task-conditioned salience v3 — implicit relevance (2026-06-10, 完成)
+
+决策：已执行 `docs/task-conditioned-salience-plan.md`，在现有默认 salience + session-delta 上增加内部 task-conditioned relevance。该合同只改变内部排序/预算提示：不新增公开 `browser_*` 工具，不新增 agent-facing schema 参数，不接入模型/会话文本，不改变 ABML 公共工具面；默认路径保持 no-signal neutral，`PI_BROWSER_RELEVANCE=0` 是一键逃生舱。
+
+落地：V1 新增纯核 `src/distill-core/relevance.ts`、`relevanceTuning.ts` 与 `relevanceTaps.ts`；V2 在 `observeRunners.ts` 每次 scan observe 只计算一次 relevance，并通过 `summarizeScanData` 的 lookup surface 调整 action ranking 与 ABML primary entity 同 rank 排序；V3 将既有 `buildInferenceSummary` intents 映射为 source C；V4 通过 `registerTools.ts` chokepoint + `src/tools/relevanceTaps.ts` 统一收集行为 trace，并在 `PerceptionLedger` 上新增 session-keyed capped ring 与 frame LRU；V5 支持内部 `params.intent` source E，并同步 skill 一句提示。
+
+边界：relevance compute 只落在纯核 `src/distill-core/relevance.ts` 与 `relevanceTuning.ts`；工具行为 trace 只通过统一 tap 表收集，禁止各工具散落采集逻辑；`abml-core` 不导入 `distill-core`；trace terms 不进 envelope，artifact 默认只给 source tags，debug terms 仅在 `PI_BROWSER_RELEVANCE_DEBUG=1` 且经现有 redaction 管线时出现；V6 fact-level integration 已随 capture-core closure 完成，生产 fact allocator 接线不新增 agent-facing 参数或 trace 输出。
+
+门禁：已通过 `check:src:types`、`check:task-conditioned-salience`、`docs:sync-indexes`、relevance/ledger/observe 聚焦单测、`npm run check` 与 `npm run smoke:browser:scan-summary`。
+
 ### ABML kernel optimization — point-fix execution (2026-06-10, 完成)
 
 决策：已执行 `docs/abml-kernel-optimization-plan.md`，完成 ABML 感知纯核 `src/abml-core/`、AX runtime `src/abml/verbs/axRuntime.ts` 与 page-side scan selector 的已审计 point-fix 队列。该合同保持 **纯 compute / sensing 内部收敛**：不新增公开 `browser_*` 工具，不改 tool schema，不改 agent-facing summary/envelope 语义；所有落地都保持 observe 输出 contract 不变。
@@ -21,7 +43,7 @@
 
 边界：保持 `distill-core`、`abml-core`、公开工具面现状不变；未改变 AX geometry source；未恢复 `templates`/`inference` agent-facing 输出；`capture-core-plan` 未激活前仅在现有 `buildScanScript.ts` 完成 B3 一次。
 
-门禁：已通过 `check:src:types`、`check:abml-core-boundary`、`check:abml-templating`、`check:abml-snapshot-projection`、`test:observe-abml-integration`、`check:scan`、`check:all:bridge`；最终还会以 `npm run check` 与 `npm run smoke:browser:scan-summary` 收口。
+门禁：已通过 `check:src:types`、`check:abml-core-boundary`、`check:abml-templating`、`check:abml-snapshot-projection`、`test:observe-abml-integration`、`check:scan`、`check:all:bridge`、`npm run check` 与 `npm run smoke:browser:scan-summary`，全量收口。
 ### Renderer default flip — staged salience default (2026-06-10, 激活)
 
 决策：完成 `docs/renderer-default-flip-plan.md`。按 owner 决策以“可检测 + 可回滚”换交付速度：salience 先翻默认，session-delta 后翻默认，`line` 粒度不在本契约；默认翻转前已修 F1/F2，F3 fan-out 控制已落地；多站点盲测从前置门降级为事后哨兵。

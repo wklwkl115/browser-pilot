@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { registerBrowserResultResource } from "../../resources/resourceStore.js";
+import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
+import { VIEWPORT_TEMPLATE } from "../../capture/generated/visionBundle.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { saveDataUrl } from "../../tools/artifacts.js";
@@ -30,17 +32,7 @@ function artifactFileName(prefix: string, format: string): string {
 }
 
 function viewportScript(selector?: string): string {
-	return `(() => {
-		const selector = ${JSON.stringify(selector || "")};
-		const target = selector ? document.querySelector(selector) : null;
-		const rect = target && typeof target.getBoundingClientRect === 'function' ? target.getBoundingClientRect() : null;
-		return {
-			url: location.href,
-			viewport: { width: window.innerWidth || document.documentElement?.clientWidth || 0, height: window.innerHeight || document.documentElement?.clientHeight || 0 },
-			rect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
-			text: target ? String(target.getAttribute?.('aria-label') || target.getAttribute?.('title') || target.innerText || target.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : undefined,
-		};
-	})()`;
+	return renderCaptureTemplate(VIEWPORT_TEMPLATE, { 'JSON.stringify(selector || "")': jsonForInlineScript(selector || "") });
 }
 
 async function evaluatePageObject(server: AbmlVisionRuntimeServer, script: string, options: { browserSessionId?: string; tabId?: number; timeoutMs: number }): Promise<Record<string, unknown>> {

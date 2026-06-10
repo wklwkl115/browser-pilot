@@ -18,8 +18,32 @@ export type PerceptionLedgerFrame = {
 	facts: Record<string, PerceptionLedgerFactState>;
 };
 
+export type PerceptionTraceTerm = {
+	term: string;
+	kind: string;
+	weight?: number;
+	at: number;
+	seq: number;
+};
+
+export type PerceptionTraceSnapshot = {
+	terms: PerceptionTraceTerm[];
+	latestSeq: number;
+};
+
+const MAX_FRAMES_PER_SESSION_TAB = 8;
+const MAX_TRACE_TERMS_PER_SESSION = 32;
+
+function frameScopeKey(key: PerceptionLedgerKey): string {
+	return [key.browserSessionId || "default", key.tabId ?? "tab"].join("\u0000");
+}
+
 function keyString(key: PerceptionLedgerKey): string {
-	return [key.browserSessionId || "default", key.tabId ?? "tab", key.navigationEpoch || "unknown"].join("\u0000");
+	return [frameScopeKey(key), key.navigationEpoch || "unknown"].join("\u0000");
+}
+
+function traceKey(browserSessionId?: string): string {
+	return browserSessionId || "default";
 }
 
 function entityVersionStamp(entity: Entity): string {
@@ -42,17 +66,56 @@ export function factsFromEntities(entities: Entity[], granularity: PerceptionLed
 
 export class PerceptionLedger {
 	private readonly frames = new Map<string, PerceptionLedgerFrame>();
+	private readonly frameOrder = new Map<string, string[]>();
+	private readonly traces = new Map<string, PerceptionTraceTerm[]>();
+	private traceSeq = 0;
 
 	get(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined {
 		return this.frames.get(keyString(key));
 	}
 
 	record(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
-		this.frames.set(keyString(frame.key), frame);
+		const key = keyString(frame.key);
+		this.frames.set(key, frame);
+		const scope = frameScopeKey(frame.key);
+		const order = (this.frameOrder.get(scope) ?? []).filter((item) => item !== key);
+		order.push(key);
+		while (order.length > MAX_FRAMES_PER_SESSION_TAB) {
+			const stale = order.shift();
+			if (stale) this.frames.delete(stale);
+		}
+		this.frameOrder.set(scope, order);
 		return frame;
+	}
+
+	recordTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>, at = Date.now()): PerceptionTraceSnapshot {
+		const key = traceKey(browserSessionId);
+		const existing = this.traces.get(key) ?? [];
+		const seen = new Set(existing.map((item) => `${item.kind}\u0000${item.term.toLocaleLowerCase()}`));
+		const next = [...existing];
+		for (const term of terms) {
+			const text = term.term.trim();
+			if (!text) continue;
+			const dedupeKey = `${term.kind}\u0000${text.toLocaleLowerCase()}`;
+			if (seen.has(dedupeKey)) continue;
+			seen.add(dedupeKey);
+			this.traceSeq += 1;
+			next.push({ term: text, kind: term.kind, weight: term.weight, at, seq: this.traceSeq });
+		}
+		const retained = next.slice(-MAX_TRACE_TERMS_PER_SESSION);
+		this.traces.set(key, retained);
+		return { terms: [...retained].reverse(), latestSeq: this.traceSeq };
+	}
+
+	traceSnapshot(browserSessionId?: string): PerceptionTraceSnapshot {
+		const terms = this.traces.get(traceKey(browserSessionId)) ?? [];
+		return { terms: [...terms].reverse(), latestSeq: this.traceSeq };
 	}
 
 	clear(): void {
 		this.frames.clear();
+		this.frameOrder.clear();
+		this.traces.clear();
+		this.traceSeq = 0;
 	}
 }

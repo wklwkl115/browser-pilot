@@ -18,7 +18,7 @@ import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
-import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../abml/perceptionLedger.js";
+import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
 export class BrowserBridgeServer {
@@ -313,6 +313,14 @@ export class BrowserBridgeServer {
 
 	recordPerceptionLedgerFrame(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
 		return this.perceptionLedger.record(frame);
+	}
+
+	recordPerceptionTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>): PerceptionTraceSnapshot {
+		return this.perceptionLedger.recordTraceTerms(browserSessionId, terms);
+	}
+
+	perceptionTraceSnapshot(browserSessionId?: string): PerceptionTraceSnapshot {
+		return this.perceptionLedger.traceSnapshot(browserSessionId);
 	}
 
 	formatError(error: unknown): string {

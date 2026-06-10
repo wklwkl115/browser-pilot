@@ -6,6 +6,11 @@ export type ScanSummaryOptions = {
 	detailLevel?: unknown;
 	maxChars?: number;
 	entityContext?: Partial<ScanEntityContext>;
+	relevance?: {
+		scoreFields: (fields: Record<string, unknown>) => number;
+		boosted?: number;
+		signals?: string[];
+	};
 };
 
 type Limits = {
@@ -217,10 +222,20 @@ function compactAction(node: Record<string, unknown>, position: number, repeated
 	return out;
 }
 
-function rankedActions(actionables: unknown[]): RankedAction[] {
+function relevanceActionScore(node: Record<string, unknown>, options: ScanSummaryOptions): number {
+	return options.relevance?.scoreFields({
+		name: `${asText(node.action)} ${asText(node.label)} ${asText(node.text)}`,
+		role: asText(node.role),
+		selector: asText(node.selector),
+		href: asText(node.href),
+		value: asText(node.value),
+	}) ?? 0;
+}
+
+function rankedActions(actionables: unknown[], options: ScanSummaryOptions): RankedAction[] {
 	return actionables.filter(isRecord).map((node, position) => {
 		const key = actionKey(node) || `action:${position}`;
-		return { node, position, score: scoreAction(node), key };
+		return { node, position, score: scoreAction(node) + relevanceActionScore(node, options), key };
 	});
 }
 
@@ -459,7 +474,7 @@ function linkSameOrigin(href: unknown, pageUrl: unknown): boolean | undefined {
 function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], options: ScanSummaryOptions): ScanSummaryPrepared {
 	const content = typeof item.content === "string" ? item.content : "";
 	const actionables = asArray(item.actionables).filter(isRecord);
-	const ranked = rankedActions(actionables);
+	const ranked = rankedActions(actionables, options);
 	const sortedRanked = [...ranked].sort((a, b) => b.score - a.score || a.position - b.position);
 	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	const scanEntities = buildScanEntities(item, options);
@@ -507,6 +522,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 		visual_regions: entityRefs(scanEntities.visualRegions, 4),
 		referenced_entities: entityRefs(referencedEntities, FOCUS_REFERENCED_ENTITY_REF_LIMIT),
 	};
+	const relevance = prepared.item && prepared.item.__piRelevance && isRecord(prepared.item.__piRelevance) ? prepared.item.__piRelevance : undefined;
 	return {
 		summaryVersion: 2,
 		url: item.url,
@@ -520,6 +536,7 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 		iframe_notes: item.iframe_notes,
 		top_layer: item.top_layer,
 		tabs_count: tabs.length,
+		...(relevance && Number(relevance.boosted || 0) > 0 ? { relevance: { boosted: relevance.boosted, signals: Array.isArray(relevance.signals) ? relevance.signals : [] } } : {}),
 		page: {
 			contentChars: content.length,
 			lineCount: lines.length,
@@ -570,7 +587,10 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 }
 
 export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: ScanSummaryOptions = {}): Summary {
-	const item = isRecord(data) ? data : {};
+	const relevance = options.relevance && Number(options.relevance.boosted || 0) > 0
+		? { boosted: options.relevance.boosted, signals: options.relevance.signals ?? [] }
+		: undefined;
+	const item = isRecord(data) ? relevance ? { ...data, __piRelevance: relevance } : data : {};
 	const budget = scanBudget(options);
 	const sets = limitSets(options);
 	const prepared = prepareScanSummary(item, tabs, options);

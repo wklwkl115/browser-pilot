@@ -1,6 +1,28 @@
 # Task-conditioned salience v3 — implicit relevance, single-pass architecture
 
-> Status: **DESIGN v3 — not yet activated.** Activation requires a `CURRENT.md` entry.
+> Status: **COMPLETE — activated and executed 2026-06-10.** V6 was subsequently completed by
+> `docs/capture-core-plan.md` closure once `allocateFacts()` gained a production caller.
+>
+> **Acceptance notes (2026-06-10):** (1) V6 is a **shadow-mode** integration — the production
+> `allocateFacts` caller (`resultMiddleware.ts` `factRenderingDiagnostics`) emits allocator
+> diagnostics into tool-result `details` only; the agent-facing envelope still renders through
+> the plane-level salience path. **This invariant is now machine-enforced**:
+> `check-task-conditioned-salience.mjs` asserts every `factRendering` use routes into `details`,
+> so promoting the fact path to drive the envelope FAILS the gate until the promotion checklist
+> below is satisfied in the same change. (2) V5 landed MORE conservatively than designed:
+> `intent` is an internal param (not in the public schema) + one skill sentence.
+>
+> **Shadow→live promotion checklist (3 items; debt settled or enforced):**
+> - **R3 one-rung P-frame arbitration + two-systems fixture** — STILL GATED (cannot be
+>   meaningfully tested until the fact path drives granularity). Enforced by the shadow-mode
+>   guard: promotion edits that guard, surfacing this checklist.
+> - **Feedback-loop / no-narrowing fixture** — **PAID 2026-06-10**: the boost-not-gate
+>   set-preservation test in `observe-abml-integration.test.ts` proves a real trace signal
+>   reorders but never drops an action from the rendered set. (Upgrades to a granularity-narrowing
+>   assertion when the fact path drives the render.)
+> - **Byte-level neutral test** — **PAID 2026-06-10**: the no-signal test now asserts whole-envelope
+>   byte identity to the relevance-disabled path (modulo the timestamped artifact filename), not
+>   just the primary-action name list.
 > v1 (param-first) was rejected as an attention tax. v2 made relevance implicit via three
 > deterministic sources. v3 is the architect pass over v2: it fixes two structural defects
 > v2 was about to introduce (scatter-by-design in scoring and collection — the exact disease
@@ -67,9 +89,9 @@ the anti-scatter pattern: matching/propagation logic may exist only in
 
 ### R2 — Single declarative collection tap (kills tap scatter)
 
-v2 implied 6 imperative taps across 6 tools. v3: **one tap at the verified universal
-chokepoint** (`toolAdapter` — all tools route through it, no bypassers, audited
-2026-06-10) driven by a declarative extraction table:
+v2 implied 6 imperative taps across 6 tools. v3 landed as **one tap at the verified
+registration chokepoint** (`registerTools` installs `relevanceTraceAdapter`, so every
+registered browser tool is wrapped once) driven by a declarative extraction table:
 
 ```ts
 // src/tools/relevanceTaps.ts (orchestration-layer data; entry NAMES are tool-surface
@@ -81,9 +103,10 @@ chokepoint** (`toolAdapter` — all tools route through it, no bypassers, audite
 
 The adapter applies the table and appends to the ledger ring; tools contain zero
 collection code. Adding a signal = one table row (reviewed), not a new imperative tap.
-Lock: attention extraction exists only via this table. (v3.1 correction: the concrete
-table lives in `src/tools/`, not `distill-core/` — tool names in the economy kernel
-would be a layering leak; the kernel owns `TapSpec` types + `extractLiterals` etc.)
+Lock: attention extraction exists only via this table and the single registration adapter.
+(v3.1 correction: the concrete table lives in `src/tools/`, not `distill-core/` — tool
+names in the economy kernel would be a layering leak; the kernel owns `TapSpec` types +
+`extractLiterals` etc.)
 
 ### R3 — P-frame arbitration rule (the missing decision)
 
@@ -160,19 +183,21 @@ ad hoc. Decided here:
 
 ## 4. Stages (resequenced for earliest value + risk isolation)
 
-- [ ] **V1 — relevance kernel.** `relevance.ts` (matcher: NFKC + CJK bigrams + field
+- [x] **V1 — relevance kernel.** `relevance.ts` (matcher: NFKC + CJK bigrams + field
   weights; `computeRelevanceMap` with depth-1 propagation; caps) + `relevanceTuning.ts` +
   `relevanceTaps.ts` types. Unit tests: CJK/mixed/empty/garbage, propagation graphs, caps.
-- [ ] **V2 — wiring skeleton + URL cold-start (first user-visible value).**
+- [x] **V2 — wiring skeleton + URL cold-start (first user-visible value).**
   RelevanceContext built once in observeRunners; scoreAction + targeted-set hooks become
   lookups; source D live; kill switch; feedback field. Contract: no-signal byte-identity.
-- [ ] **V3 — archetype table** (source C onto inference detectors) + completeness test vs
+- [x] **V3 — archetype table** (source C onto inference detectors) + completeness test vs
   detector list.
-- [ ] **V4 — behavioral trace** (source A): toolAdapter tap + ledger ring + decay +
+- [x] **V4 — behavioral trace** (source A): toolAdapter tap + ledger ring + decay +
   **R3 arbitration rule** + two-systems fixture + feedback-loop fixture.
-- [ ] **V5 — explicit `intent` override + one skill sentence.**
-- [ ] **V6 — fact-level integration** when `allocateFacts` gains production callers
-  (FactSalience.relevance as 5th component; unchanged plan).
+- [x] **V5 — explicit `intent` override + one skill sentence.**
+- [x] **V6 — fact-level integration.** Completed by the capture-core closure: default salience
+  rendering now runs `factify → allocateFacts → renderFacts` as a production path, and
+  `FactSalience.relevance` is active in the allocator currency without adding public parameters
+  or model-facing trace terms.
 - **Out of scope:** unchanged v2 list, plus **rejected in v3 — runtime A/B self-guard**
   (computing with/without relevance per observe to pick the smaller, like
   `acceptedCandidate`): doubles allocation work per call for a guarantee the bench
@@ -209,6 +234,16 @@ ad hoc. Decided here:
 | 5 | inference outputs precede relevance consumption | ✅ | abmlRead/attribution completes before summary construction in `runScanObservation` (audited flow :496→:577); archetype hits built into RelevanceContext before `summarizeScanData` runs |
 
 Defect discovered during closure: unbounded ledger `frames` growth (§2 R6) — folded into V4.
+
+## 6.1 Execution record (2026-06-10)
+
+- V1 landed `src/distill-core/relevance.ts`, `relevanceTuning.ts`, and pure tap primitives in `relevanceTaps.ts`; tests cover empty input, CJK/mixed matching, propagation, URL/intent tags, and tuning bounds.
+- V2 computes relevance once per scan observe, feeds `summarizeScanData` through `scoreFields`, reorders ABML primary entities only within existing salience ranks, adds URL cold-start source D, and keeps no-signal output neutral.
+- V3 maps existing `buildInferenceSummary` intent detections into source C terms; no standalone vocabulary table was added.
+- V4 records behavior trace terms only through the `registerTools` chokepoint and declarative `src/tools/relevanceTaps.ts`, stores a session-keyed capped ring on `PerceptionLedger`, and caps ledger frames to 8 per session+tab.
+- V5 accepts internal `params.intent` as source E and updates the Pi-native browser skill sentence.
+- V6 was completed during capture-core closure: `distilledJsonResult()` now runs the production fact allocator path for registered `factify` definitions under the default salience renderer, stores allocator diagnostics only in tool result `details`, and keeps `FactSalience.relevance` active without model-facing bloat.
+- Verification passed for `check:src:types`, `check:task-conditioned-salience`, `docs:sync-indexes`, focused relevance/ledger/observe tests, full `npm run check`, and `smoke:browser:scan-summary`.
 
 ## 7. Relations
 

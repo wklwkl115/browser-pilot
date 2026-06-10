@@ -126,4 +126,17 @@ export default tseslint.config(
 			"@typescript-eslint/no-explicit-any": "off",
 		},
 	},
+	// capture-src/ is page-world string-template source (MAIN-world JS embedded in string
+	// constants, deliberately NOT in the Node type graph — see docs/capture-core-plan.md as-built
+	// note + the "page logic is untyped strings" residual debt). Syntactic rules still apply —
+	// crucially no-useless-escape, which guards the template-literal escape-collapse bug class.
+	// The two type-aware rules cannot run without a project binding; disable them here. When the
+	// esbuild-migration trigger fires, capture-src joins a typed project and these come back.
+	{
+		files: ["capture-src/**/*.ts"],
+		rules: {
+			"@typescript-eslint/no-floating-promises": "off",
+			"@typescript-eslint/no-misused-promises": "off",
+		},
+	},
 );

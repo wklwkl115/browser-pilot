@@ -254,7 +254,11 @@ const schemaReasonSrc = readRepo("src/tools/summaries/outputSchemas.ts");
 assert.ok(schemaReasonSrc.includes("reason: Type.Optional"), "InferenceSummarySchema exposes optional reason");
 
 const scanSrc = readRepo("src/scan/buildScanScript.ts");
-assert.ok(scanSrc.includes("inputKind"), "scan captures inputKind");
+const scanCaptureSrc = readRepo("capture-src/entries/scanTemplate.ts");
+const scanBundleSrc = readRepo("src/capture/generated/scanBundle.ts");
+assert.ok(scanSrc.includes("SCAN_TEMPLATE") && scanSrc.includes("renderCaptureTemplate"), "scan builder must stay a thin capture-template injection wrapper");
+assert.ok(scanCaptureSrc.includes("inputKind"), "capture scan source captures inputKind");
+assert.ok(scanBundleSrc.includes("inputKind"), "generated scan bundle preserves inputKind capture");
 
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-inference"]?.includes("check-abml-inference.mjs"), "check:abml-inference script present");

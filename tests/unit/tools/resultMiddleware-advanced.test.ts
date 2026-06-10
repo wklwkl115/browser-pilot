@@ -273,3 +273,18 @@ test("salience renderer is default and ladder remains an env escape", async () =
 		else process.env.PI_BROWSER_RENDERER = previous;
 	}
 });
+
+test("default salience path runs production fact allocator without model-facing bloat", async () => {
+	const result = await distilledJsonResult({ entries: [{ requestId: "r1", url: "https://example.test/api", status: 200 }] }, {
+		toolName: "browser_network",
+		command: "network.list",
+		maxChars: 4000,
+		fallbackName: "network.json",
+		detailLevel: "summary",
+	});
+	const envelope = JSON.parse(textOf(result));
+	assert.equal(envelope.renderer, "salience-v1");
+	assert.equal(envelope.diagnostics?.factRendering, undefined);
+	assert.equal(result.details?.factRendering?.rendered, 1);
+	assert.deepEqual(result.details?.factRendering?.planes, ["summary"]);
+});

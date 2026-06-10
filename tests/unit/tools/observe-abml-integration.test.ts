@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { runScanObservation } from "../../../src/tools/observeRunners.ts";
 
 let opId = 0;
@@ -223,6 +226,116 @@ test("browser_observe C3: session delta is default and env escape disables it", 
 	} finally {
 		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
 		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
+function relevanceServer(options: { url?: string; traceTerms?: Array<{ term: string; kind: string; weight?: number }> } = {}) {
+	const url = options.url ?? "https://example.test/neutral";
+	return {
+		...fakeServer,
+		async refreshTabs() { return [{ tabId: 7, url, title: "Relevance", active: true }]; },
+		getTabs() { return [{ tabId: 7, url, title: "Relevance", active: true }]; },
+		snapshot() { return { browserSessionId: "default", defaultTabId: 7, selectionVersion: 3, tabs: [{ tabId: 7, url, title: "Relevance", active: true }] }; },
+		perceptionTraceSnapshot() { return { terms: options.traceTerms ?? [], latestSeq: options.traceTerms?.length ?? 0 }; },
+		async sendCommand(command: any, commandOptions: any) {
+			if (command.cmd === "network.status") return { acknowledged: true, data: { active: false } };
+			if (command.cmd === "hook.status") throw new Error("no hook session");
+			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+				return { id: "eval-rel", acknowledged: true, tabId: 7, data: { result: { value: {
+					url,
+					title: "Relevance",
+					readyState: "complete",
+					content: "<h1>Actions</h1>\n<button>Account settings</button>\n<button>Checkout now</button>",
+					node_count: 20,
+					truncated: false,
+					actionables: [
+						{ index: 0, tag: "button", role: "button", action: "account", label: "Account settings", selector: "#account", point: { x: 80, y: 260 }, rect: { x: 40, y: 240, width: 120, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1000 },
+						{ index: 1, tag: "button", role: "button", action: "checkout", label: "Checkout now", selector: "#checkout", point: { x: 240, y: 260 }, rect: { x: 190, y: 240, width: 120, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1000 },
+					],
+					list_hints: [],
+				} } } };
+			}
+			return fakeServer.sendCommand(command, commandOptions);
+		},
+	};
+}
+
+function primaryActionNames(envelope: any): string[] {
+	return (envelope.summary?.focus?.primary_actions ?? []).map((item: any) => String(item.name));
+}
+
+test("browser_observe relevance: no-signal is byte-identical to relevance-disabled (whole envelope)", async () => {
+	const previous = process.env.PI_BROWSER_RELEVANCE;
+	// Normalize the fields that differ between ANY two sequential observe runs regardless of
+	// relevance — artifact filename (Date.now() in artifactFallbackName), the monotonic operation
+	// counter, and epoch-ms timestamps — so the comparison isolates relevance's effect on the
+	// model-facing envelope. Everything semantic (summary/focus/entities/ordering/refs/nextActions)
+	// stays compared byte-for-byte; a real no-signal perturbation (reorder, added relevance field,
+	// changed flags) is NOT normalized and would fail.
+	const normalize = (env: unknown) => JSON.stringify(env)
+		.replace(/observe-scan-\d+\.json/g, "observe-scan-N.json")
+		.replace(/op-\d+/g, "op-N")
+		.replace(/\b\d{13}\b/g, "T");
+	try {
+		process.env.PI_BROWSER_RELEVANCE = "0";
+		const disabled = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		delete process.env.PI_BROWSER_RELEVANCE;
+		const enabledNoSignal = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		assert.equal(normalize(enabledNoSignal), normalize(disabled), "no-signal relevance must not perturb the model-facing envelope byte-for-byte");
+		assert.equal(enabledNoSignal.summary?.relevance, undefined);
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_RELEVANCE;
+		else process.env.PI_BROWSER_RELEVANCE = previous;
+	}
+});
+
+test("browser_observe relevance is boost-not-gate: a signal reorders but never narrows the action set", async () => {
+	// The v3.1 "feedback-loop / repeated-observe-must-not-narrow" fixture, in its meaningful
+	// reorder-mode form: turning relevance ON with a real trace signal may re-rank actions but must
+	// never DROP one from the rendered set (boost-never-gate). Becomes a granularity-narrowing test
+	// once the fact path drives the render (see the salience contract's promotion checklist).
+	const neutral = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	const boosted = JSON.parse((await runScanObservation(relevanceServer({ traceTerms: [{ term: "checkout", kind: "literal", weight: 1 }] }) as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	const neutralNames = primaryActionNames(neutral);
+	const boostedNames = primaryActionNames(boosted);
+	assert.ok((boosted.summary?.relevance?.boosted ?? 0) > 0, "the trace signal must actually activate relevance, else this fixture is vacuous");
+	assert.deepEqual([...boostedNames].sort(), [...neutralNames].sort(), "relevance must preserve the rendered action set — boost reorders, never narrows");
+	assert.equal(boostedNames.length, neutralNames.length, "relevance must not change the rendered action count");
+});
+
+test("browser_observe relevance URL cold-start boosts matching actions without trace terms in envelope", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-relevance-url-"));
+	const envelope = JSON.parse((await runScanObservation(relevanceServer({ url: "https://example.test/checkout" }) as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd }, "scan")).content[0].text);
+	assert.equal(primaryActionNames(envelope)[0], "checkout");
+	assert.equal(envelope.summary?.relevance?.signals?.includes("D"), true);
+	assert.equal(JSON.stringify(envelope).includes("debugTerms"), false);
+	assert.equal(JSON.stringify(envelope).includes("checkout now"), false, "raw trace/debug terms are not serialized into the model-facing envelope");
+	const saved = JSON.parse(readFileSync(envelope.saved.path, "utf8"));
+	assert.equal(saved.relevance?.signals?.includes("D"), true, "artifact carries source tags for boosted refs");
+	assert.equal(saved.relevance?.debugTerms, undefined, "artifact omits raw terms unless debug env is enabled");
+});
+
+test("browser_observe relevance behavioral trace and explicit intent use the same lookup surface", async () => {
+	const traced = JSON.parse((await runScanObservation(relevanceServer({ traceTerms: [{ term: "#checkout", kind: "literal", weight: 1.4 }] }) as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(primaryActionNames(traced)[0], "checkout");
+	assert.equal(traced.summary?.relevance?.signals?.includes("A"), true);
+	const intent = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000, params: { intent: "checkout" } }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(primaryActionNames(intent)[0], "checkout");
+	assert.equal(intent.summary?.relevance?.signals?.includes("E"), true);
+});
+
+test("browser_observe relevance debug terms stay artifact-only", async () => {
+	const previous = process.env.PI_BROWSER_RELEVANCE_DEBUG;
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-relevance-debug-"));
+	try {
+		process.env.PI_BROWSER_RELEVANCE_DEBUG = "1";
+		const envelope = JSON.parse((await runScanObservation(relevanceServer({ traceTerms: [{ term: "#checkout", kind: "literal", weight: 1.4 }] }) as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd }, "scan")).content[0].text);
+		assert.equal(JSON.stringify(envelope).includes("debugTerms"), false, "debug terms never enter the envelope");
+		const saved = JSON.parse(readFileSync(envelope.saved.path, "utf8"));
+		assert.equal(Array.isArray(saved.relevance?.debugTerms), true, "debug terms are available only in the saved artifact under opt-in env");
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_RELEVANCE_DEBUG;
+		else process.env.PI_BROWSER_RELEVANCE_DEBUG = previous;
 	}
 });
 

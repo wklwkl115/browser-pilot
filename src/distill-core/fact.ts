@@ -5,6 +5,7 @@ export type FactSalience = {
 	novelty?: number;
 	consequence?: number;
 	structure?: number;
+	relevance?: number;
 };
 
 export type FactGranularity = "full" | "compact" | "line" | "ref" | "omit";
@@ -36,5 +37,5 @@ export type AllocationOptions = {
 };
 
 export function salienceValue(salience: FactSalience): number {
-	return (salience.actionability || 0) + (salience.novelty || 0) + (salience.consequence || 0) + (salience.structure || 0);
+	return (salience.actionability || 0) + (salience.novelty || 0) + (salience.consequence || 0) + (salience.structure || 0) + (salience.relevance || 0);
 }

@@ -2,6 +2,8 @@ import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { BrowserBridgeError } from "../../driver/errors.js";
 import { isRecord } from "../../utils/records.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
+import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
+import { ACTIONABILITY_PROBE_TEMPLATE, FOCUS_AND_MAYBE_CLEAR_TEMPLATE, SCROLL_INTO_VIEW_TEMPLATE, SCROLL_PROBE_TEMPLATE, SCROLL_STEP_TEMPLATE, SYNTHETIC_CLICK_TEMPLATE, VERIFICATION_PROBE_TEMPLATE } from "../../capture/generated/probesBundle.js";
 import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { scanEntitiesForEnvelope, summarizeScanData } from "../../tools/summaries/scan.js";
@@ -285,192 +287,38 @@ async function sendPersistentCdp(server: AbmlBrowserRuntimeServer, options: { br
 }
 
 function actionabilityProbeScript(selector: string): string {
-	return `(() => {
-		window.__PI_ABML_MUTATION_TICK__ = window.__PI_ABML_MUTATION_TICK__ || 0;
-		if (!window.__PI_ABML_MUTATION_OBSERVER__) {
-			try {
-				window.__PI_ABML_MUTATION_OBSERVER__ = new MutationObserver(() => { window.__PI_ABML_MUTATION_TICK__ += 1; });
-				window.__PI_ABML_MUTATION_OBSERVER__.observe(document.documentElement || document.body || document, { childList: true, subtree: true, attributes: true, characterData: true });
-			} catch (_) {}
-		}
-		const selector = ${JSON.stringify(selector)};
-		let nodes;
-		try { nodes = Array.from(document.querySelectorAll(selector)); }
-		catch (error) { return { syntaxError: String(error && error.message ? error.message : error), selector }; }
-		const node = nodes[0] || null;
-		const count = nodes.length;
-		const editable = (el) => {
-			if (!el) return false;
-			const tag = String(el.tagName || '').toLowerCase();
-			if (tag === 'textarea' || tag === 'select') return true;
-			if (tag === 'input') return !['hidden','button','submit','reset','checkbox','radio','file','image'].includes(String(el.type || '').toLowerCase());
-			return !!el.isContentEditable || el.getAttribute('contenteditable') === 'true';
-		};
-		const disabled = (el) => !!(el && (el.disabled || el.getAttribute('aria-disabled') === 'true' || el.closest('[inert]')));
-		const scrollable = (el) => {
-			let cur = el;
-			while (cur) {
-				try {
-					const cs = getComputedStyle(cur);
-					if ((/(auto|scroll|overlay)/.test(cs.overflowY || '') || /(auto|scroll|overlay)/.test(cs.overflow || '')) && cur.scrollHeight > cur.clientHeight + 1) return true;
-				} catch (_) {}
-				cur = cur.parentElement;
-			}
-			return (document.scrollingElement?.scrollHeight || 0) > (document.scrollingElement?.clientHeight || 0) + 1;
-		};
-		if (!node) return { selector, count, unique: count === 1, attached: false, visible: false, disabled: false, editable: false, inViewport: false, receivesEvents: false, notOccluded: false, focused: false, scrollable: false, mutationTick: window.__PI_ABML_MUTATION_TICK__ || 0, url: location.href };
-		const rect = node.getBoundingClientRect();
-		const cs = getComputedStyle(node);
-		const viewportW = Math.max(document.documentElement?.clientWidth || 0, window.innerWidth || 0);
-		const viewportH = Math.max(document.documentElement?.clientHeight || 0, window.innerHeight || 0);
-		const inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < viewportH && rect.left < viewportW;
-		const visible = !!(rect.width || rect.height) && cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0';
-		const point = { x: Math.round(Math.max(0, Math.min(viewportW - 1, rect.left + rect.width / 2))), y: Math.round(Math.max(0, Math.min(viewportH - 1, rect.top + rect.height / 2))) };
-		const hit = visible && inViewport && document.elementFromPoint ? document.elementFromPoint(point.x, point.y) : null;
-		const receivesEvents = !!hit && (hit === node || node.contains(hit) || (typeof hit.contains === 'function' && hit.contains(node)));
-		const notOccluded = receivesEvents;
-		const tag = String(node.tagName || '').toLowerCase();
-		const role = node.getAttribute && node.getAttribute('role');
-		const value = tag === 'input' || tag === 'textarea' || tag === 'select' ? String(node.value || '') : (editable(node) ? String(node.textContent || '') : (node.getAttribute && node.getAttribute('value')) || '');
-		return {
-			selector,
-			count,
-			unique: count === 1,
-			attached: true,
-			visible,
-			disabled: disabled(node),
-			editable: editable(node),
-			inViewport,
-			receivesEvents,
-			notOccluded,
-			focused: document.activeElement === node,
-			scrollable: scrollable(node),
-			point,
-			rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-			url: location.href,
-			text: String(node.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 500),
-			value,
-			mutationTick: window.__PI_ABML_MUTATION_TICK__ || 0,
-			activeElementMatches: document.activeElement === node,
-			topNode: hit && hit.tagName ? String(hit.tagName).toLowerCase() : undefined,
-			role,
-			tag,
-		};
-	})()`;
+	return renderCaptureTemplate(ACTIONABILITY_PROBE_TEMPLATE, { "JSON.stringify(selector)": jsonForInlineScript(selector) });
 }
 
 function scrollIntoViewScript(selector: string): string {
-	return `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return { scrolled: false, missing: true }; if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'center' }); return { scrolled: true, selector: ${JSON.stringify(selector)} }; })()`;
+	return renderCaptureTemplate(SCROLL_INTO_VIEW_TEMPLATE, { "JSON.stringify(selector)": jsonForInlineScript(selector) });
 }
 
 function syntheticClickScript(selector: string): string {
-	return `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return { clicked: false, missing: true }; if (typeof el.click !== 'function') return { clicked: false, clickable: false }; el.click(); return { clicked: true }; })()`;
+	return renderCaptureTemplate(SYNTHETIC_CLICK_TEMPLATE, { "JSON.stringify(selector)": jsonForInlineScript(selector) });
 }
 
 function focusAndMaybeClearScript(selector: string, clear: boolean): string {
-	return `(() => {
-		const el = document.querySelector(${JSON.stringify(selector)});
-		if (!el) return { focused: false, missing: true };
-		if (typeof el.focus === 'function') el.focus();
-		const tag = String(el.tagName || '').toLowerCase();
-		const isEditable = !!el.isContentEditable || el.getAttribute('contenteditable') === 'true' || tag === 'textarea' || tag === 'select' || (tag === 'input' && !['hidden','button','submit','reset','checkbox','radio','file','image'].includes(String(el.type || '').toLowerCase()));
-		let before = tag === 'input' || tag === 'textarea' || tag === 'select' ? String(el.value || '') : String(el.textContent || '');
-		if (${clear ? "true" : "false"}) {
-			if (tag === 'input' || tag === 'textarea' || tag === 'select') el.value = '';
-			else if (isEditable) el.textContent = '';
-			try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' })); }
-			catch (_) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {} }
-		}
-		return { focused: document.activeElement === el, editable: isEditable, valueBefore: before, valueAfterClear: tag === 'input' || tag === 'textarea' || tag === 'select' ? String(el.value || '') : String(el.textContent || '') };
-	})()`;
+	return renderCaptureTemplate(FOCUS_AND_MAYBE_CLEAR_TEMPLATE, {
+		"JSON.stringify(selector)": jsonForInlineScript(selector),
+		'clear ? "true" : "false"': clear ? "true" : "false",
+	});
 }
 
 function verificationProbeScript(selector: string): string {
-	return `(() => {
-		const el = document.querySelector(${JSON.stringify(selector)});
-		const tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
-		const value = !el ? undefined : (tag === 'input' || tag === 'textarea' || tag === 'select' ? String(el.value || '') : String(el.textContent || ''));
-		const attrBool = (name) => {
-			if (!el || !el.getAttribute) return undefined;
-			const raw = el.getAttribute(name);
-			if (raw === null || raw === '') return undefined;
-			if (raw === 'true') return true;
-			if (raw === 'false') return false;
-			return raw;
-		};
-		const inputBool = (prop, attr) => {
-			if (!el) return undefined;
-			if (typeof el[prop] === 'boolean') return !!el[prop];
-			return attrBool(attr);
-		};
-		const state = {
-			expanded: attrBool('aria-expanded'),
-			checked: inputBool('checked', 'aria-checked'),
-			selected: inputBool('selected', 'aria-selected'),
-			pressed: attrBool('aria-pressed'),
-			current: attrBool('aria-current'),
-		};
-		for (const key of Object.keys(state)) if (state[key] === undefined) delete state[key];
-		return { url: location.href, activeElementMatches: !!el && document.activeElement === el, value, text: !el ? undefined : String(el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 500), state, mutationTick: window.__PI_ABML_MUTATION_TICK__ || 0 };
-	})()`;
+	return renderCaptureTemplate(VERIFICATION_PROBE_TEMPLATE, { "JSON.stringify(selector)": jsonForInlineScript(selector) });
 }
 
 function scrollProbeScript(selector?: string): string {
-	return `(() => {
-		const selector = ${JSON.stringify(selector || "")};
-		const pickScrollable = (node) => {
-			let cur = node;
-			while (cur) {
-				try {
-					const cs = getComputedStyle(cur);
-					if ((/(auto|scroll|overlay)/.test(cs.overflowY || '') || /(auto|scroll|overlay)/.test(cs.overflow || '')) && cur.scrollHeight > cur.clientHeight + 1) return cur;
-				} catch (_) {}
-				cur = cur.parentElement;
-			}
-			return document.scrollingElement || document.documentElement || document.body;
-		};
-		const source = selector ? document.querySelector(selector) : null;
-		const target = pickScrollable(source);
-		const top = Number(target === document.scrollingElement || target === document.documentElement || target === document.body ? (window.scrollY || document.scrollingElement?.scrollTop || 0) : target.scrollTop || 0);
-		const left = Number(target === document.scrollingElement || target === document.documentElement || target === document.body ? (window.scrollX || document.scrollingElement?.scrollLeft || 0) : target.scrollLeft || 0);
-		const scrollHeight = Number(target.scrollHeight || 0);
-		const clientHeight = Number(target.clientHeight || 0);
-		return { selector: selector || undefined, target: target === document.scrollingElement || target === document.documentElement || target === document.body ? 'window' : 'element', scrollTop: top, scrollLeft: left, scrollHeight, clientHeight, atTop: top <= 0, atBottom: top + clientHeight >= scrollHeight - 1 };
-	})()`;
+	return renderCaptureTemplate(SCROLL_PROBE_TEMPLATE, { 'JSON.stringify(selector || "")': jsonForInlineScript(selector || "") });
 }
 
 function scrollStepScript(selector: string | undefined, to: AbmlScrollInput["to"], steps: number): string {
-	return `(() => {
-		const selector = ${JSON.stringify(selector || "")};
-		const to = ${JSON.stringify(to || "next")};
-		const steps = ${Math.max(1, steps)};
-		const pickScrollable = (node) => {
-			let cur = node;
-			while (cur) {
-				try {
-					const cs = getComputedStyle(cur);
-					if ((/(auto|scroll|overlay)/.test(cs.overflowY || '') || /(auto|scroll|overlay)/.test(cs.overflow || '')) && cur.scrollHeight > cur.clientHeight + 1) return cur;
-				} catch (_) {}
-				cur = cur.parentElement;
-			}
-			return document.scrollingElement || document.documentElement || document.body;
-		};
-		const source = selector ? document.querySelector(selector) : null;
-		const target = pickScrollable(source);
-		const isWindow = target === document.scrollingElement || target === document.documentElement || target === document.body;
-		const getTop = () => Number(isWindow ? (window.scrollY || document.scrollingElement?.scrollTop || 0) : target.scrollTop || 0);
-		const viewport = Number(isWindow ? (window.innerHeight || document.documentElement?.clientHeight || 0) : target.clientHeight || 0);
-		const beforeTop = getTop();
-		const delta = Math.max(40, Math.round(viewport * 0.8) * steps);
-		const api = isWindow ? window : target;
-		if (to === 'top') api.scrollTo ? api.scrollTo({ top: 0, behavior: 'instant' }) : (target.scrollTop = 0);
-		else if (to === 'bottom') api.scrollTo ? api.scrollTo({ top: target.scrollHeight, behavior: 'instant' }) : (target.scrollTop = target.scrollHeight);
-		else if (to === 'previous') api.scrollBy ? api.scrollBy({ top: -delta, behavior: 'instant' }) : (target.scrollTop = beforeTop - delta);
-		else if (typeof to === 'object' && to !== null) api.scrollTo ? api.scrollTo({ top: Number(to.y || 0), left: Number(to.x || 0), behavior: 'instant' }) : (target.scrollTop = Number(to.y || 0));
-		else api.scrollBy ? api.scrollBy({ top: delta, behavior: 'instant' }) : (target.scrollTop = beforeTop + delta);
-		const afterTop = getTop();
-		return { selector: selector || undefined, target: isWindow ? 'window' : 'element', beforeTop, afterTop, changed: afterTop !== beforeTop };
-	})()`;
+	return renderCaptureTemplate(SCROLL_STEP_TEMPLATE, {
+		'JSON.stringify(selector || "")': jsonForInlineScript(selector || ""),
+		'JSON.stringify(to || "next")': jsonForInlineScript(to || "next"),
+		"Math.max(1, steps)": String(Math.max(1, steps)),
+	});
 }
 
 function probeToActionability(probe: ActionabilityProbe, stable: boolean, _specRequired: ActionabilityPredicate[]): Partial<Record<ActionabilityPredicate, boolean>> {
