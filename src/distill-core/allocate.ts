@@ -2,6 +2,7 @@ import type { AllocationOptions, Fact, FactGranularity, PlaneFloor, RenderPlan }
 import { salienceValue } from "./fact.js";
 import { tokenEstimate } from "./cost.js";
 import { stableJson } from "../utils/json.js";
+import { isRecord } from "../utils/records.js";
 
 const GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
 
@@ -30,11 +31,46 @@ function renderingDensityCost(fact: Fact, granularity: Exclude<FactGranularity, 
 	return Math.max(1, tokenEstimate(text));
 }
 
+function renderingRecord(fact: Fact): Record<string, unknown> | undefined {
+	for (const granularity of GRANULARITY_ORDER) {
+		const value = fact.renderings[granularity]?.value;
+		if (isRecord(value)) return value;
+	}
+	return undefined;
+}
+
+function redundancyBucketKey(fact: Fact): string {
+	const value = renderingRecord(fact);
+	return [
+		fact.plane,
+		typeof value?.kind === "string" ? value.kind : "",
+		typeof value?.role === "string" ? value.role : "",
+		typeof value?.containerName === "string" ? value.containerName : "",
+	].join("\u0000");
+}
+
+function redundancyFactors(facts: Fact[]): Map<string, number> {
+	const factors = new Map<string, number>();
+	const seen = new Map<string, number>();
+	for (const fact of facts) {
+		if ((fact.salience.relevance ?? 0) > 0) {
+			factors.set(fact.ref, 1);
+			continue;
+		}
+		const key = redundancyBucketKey(fact);
+		const ordinal = (seen.get(key) ?? 0) + 1;
+		seen.set(key, ordinal);
+		factors.set(fact.ref, 1 / Math.sqrt(ordinal));
+	}
+	return factors;
+}
+
 export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[] = [], options: AllocationOptions = {}): RenderPlan {
 	const plan: RenderPlan = new Map();
 	let spent = 0;
 	const floorByPlane = new Map(floors.map((floor) => [floor.plane, floor]));
 	const usedByPlane = new Map<string, number>();
+	const redundancyByRef = redundancyFactors(facts);
 	for (const fact of facts) plan.set(fact.ref, "omit");
 
 	const assign = (fact: Fact, granularity: Exclude<FactGranularity, "omit">, cost: number): void => {
@@ -61,9 +97,10 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 		.map((fact) => {
 			const best = bestAvailableWithin(fact, Math.max(0, budget - spent));
 			const cost = best ? renderingDensityCost(fact, best, options) : Number.POSITIVE_INFINITY;
-			return { fact, best, density: cost > 0 && Number.isFinite(cost) ? salienceValue(fact.salience) / cost : 0 };
+			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1);
+			return { fact, best, salience, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
 		})
-		.sort((a, b) => b.density - a.density || salienceValue(b.fact.salience) - salienceValue(a.fact.salience));
+		.sort((a, b) => b.density - a.density || b.salience - a.salience);
 
 	for (const item of ranked) {
 		if (plan.get(item.fact.ref) !== "omit") continue;

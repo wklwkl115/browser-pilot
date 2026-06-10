@@ -66,6 +66,26 @@ test("allocateFacts redistributes surplus budget past plane maxFacts", () => {
 	assert.equal(plan.get("c"), "compact");
 });
 
+test("allocateFacts exempts relevant tail facts from redundancy penalty", () => {
+	const facts: Fact[] = Array.from({ length: 5 }, (_, index) => {
+		const n = index + 1;
+		return {
+			ref: `p${n}`,
+			plane: "entity",
+			salience: n === 5 ? { actionability: 1, relevance: 100 } : { actionability: 100 },
+			renderings: {
+				compact: {
+					value: { ref: `p${n}`, kind: "item", role: "article", containerName: "Products" },
+					cost: 10,
+				},
+			},
+		};
+	});
+	const plan = allocateFacts(facts, 10);
+	assert.equal(plan.get("p5"), "compact");
+	assert.equal(plan.get("p1"), "omit");
+});
+
 test("renderFacts groups selected renderings by plane and reports omissions", () => {
 	const facts = [fact("a", "entity", 10, { compact: 10 }), fact("b", "diff", 1, { ref: 5 })];
 	const plan = new Map([["a", "compact" as const], ["b", "omit" as const]]);
