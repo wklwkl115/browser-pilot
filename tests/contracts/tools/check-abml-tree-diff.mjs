@@ -80,7 +80,11 @@ assert.ok(observeSrc.includes("buildTreeDiff") && observeSrc.includes("treeDiff:
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeTreeDiff") && middlewareSrc.includes("treeDiff?"), "resultMiddleware lifts treeDiff");
 const treeDiffSrc = readRepo("src/abml-core/treeDiff.ts");
-assert.ok(treeDiffSrc.includes("templateGroupDescriptorForEntity") && treeDiffSrc.includes("partialBaseline"), "treeDiff pure core uses templating groups and handles partial baselines");
+// B1 (kernel-opt 2026-06-10) moved descriptor derivation into the shared grouping engine;
+// treeDiff must consume grouping.js rather than re-deriving descriptors locally.
+assert.ok(treeDiffSrc.includes('from "./grouping.js"') && treeDiffSrc.includes("partialBaseline"), "treeDiff pure core consumes the shared grouping engine and handles partial baselines");
+const groupingSrc = readRepo("src/abml-core/grouping.ts");
+assert.ok(groupingSrc.includes("templateGroupDescriptorForEntity"), "grouping engine owns template group descriptor derivation");
 const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
 assert.ok(boundarySrc.includes('"treeDiff.ts"'), "treeDiff classified as pure core");
 const pkg = JSON.parse(readRepo("package.json"));

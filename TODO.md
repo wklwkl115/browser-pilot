@@ -1,6 +1,11 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活执行线：暂无。Performance & overhead audit execution 与 Agent-facing CLI connection control protocol 均已完成；当前状态见 `CURRENT.md`，未来路线见 `ROADMAP.md`。
+- 当前激活执行线：暂无。`docs/abml-kernel-optimization-plan.md` 已完成并已回收至 `CURRENT.md` 最近完成项；当前状态见 `CURRENT.md`，未来路线见 `ROADMAP.md`。
+
+- Next-cycle portfolio order（2026-06-10 架构评审决议）：kernel-opt（已完成）→
+  `docs/task-conditioned-salience-plan.md` V1-V5 随后；`docs/capture-core-plan.md` 为零文件交叉的
+  独立并行通道（其 C-2 原吸收 kernel-opt B3 —— **B3 已随 kernel-opt 以字符串手术落地，
+  capture-core 不得重做**，C-2 继承其测试即可）。顺序依据详见各计划 relations 节；激活先登记 `CURRENT.md`。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。
