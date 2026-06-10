@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { allocateFacts } from "../../../src/distill-core/allocate.ts";
+import { tokenEstimate } from "../../../src/distill-core/cost.ts";
 import { renderFacts } from "../../../src/distill-core/render.ts";
 import { fitSalienceEnvelopeBudget } from "../../../src/distill-core/salienceEnvelope.ts";
 import type { Fact } from "../../../src/distill-core/fact.ts";
@@ -37,6 +38,32 @@ test("allocateFacts stops below the configured marginal density", () => {
 	const plan = allocateFacts(facts, 200, [], { minDensity: 0.05 });
 	assert.equal(plan.get("a"), "compact");
 	assert.equal(plan.get("b"), "omit");
+});
+
+test("allocateFacts can rank density by estimated token cost without changing byte budget", () => {
+	assert.ok(tokenEstimate("页面") > tokenEstimate("go"));
+	const facts: Fact[] = [
+		{ ref: "cjk", plane: "summary", salience: { actionability: 12 }, renderings: { compact: { text: "项目".repeat(30), cost: 60 } } },
+		{ ref: "latin", plane: "summary", salience: { actionability: 11 }, renderings: { compact: { text: "a".repeat(60), cost: 60 } } },
+	];
+	const bytePlan = allocateFacts(facts, 60);
+	const tokenPlan = allocateFacts(facts, 60, [], { costModel: "token" });
+	assert.equal(bytePlan.get("cjk"), "compact");
+	assert.equal(bytePlan.get("latin"), "omit");
+	assert.equal(tokenPlan.get("cjk"), "omit");
+	assert.equal(tokenPlan.get("latin"), "compact");
+});
+
+test("allocateFacts redistributes surplus budget past plane maxFacts", () => {
+	const facts = [
+		fact("a", "entity", 100, { compact: 10 }),
+		fact("b", "entity", 90, { compact: 10 }),
+		fact("c", "entity", 80, { compact: 10 }),
+	];
+	const plan = allocateFacts(facts, 30, [{ plane: "entity", maxFacts: 1 }]);
+	assert.equal(plan.get("a"), "compact");
+	assert.equal(plan.get("b"), "compact");
+	assert.equal(plan.get("c"), "compact");
 });
 
 test("renderFacts groups selected renderings by plane and reports omissions", () => {
