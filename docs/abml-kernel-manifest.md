@@ -40,7 +40,7 @@ each doc links back here.
 | `docs/abml-kernel-manifest.md` (this) | Layer manifest + CI boundary spec + package-promotion recipe | you need the pure-core ⇄ runtime rule or the file classification |
 | [`docs/abml-p1-spec.md`](abml-p1-spec.md) | AX-authoritative state **language spec** (P1, REVIEWED) | you need the formal contract for entity state / pure-function behavior |
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
-| [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
+| [`docs/archive/abml-execution-plan.md`](archive/abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
 
 ## Pure core (25 — zero browser/Node deps)
 

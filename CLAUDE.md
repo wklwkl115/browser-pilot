@@ -13,10 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Current execution entry: `CURRENT.md`; current top-level navigation: `TODO.md`; future routes:
   `ROADMAP.md`; completed summaries: `ARCHIVE.md`.
 - Active execution line: none at the moment. New large workstreams must first record the decision, boundary, contract, and verification plan in `CURRENT.md`.
-- Historical migration contract: `docs/cli-skill-frontend-migration-plan.md`
+- Historical migration contract: `docs/archive/cli-skill-frontend-migration-plan.md`
 - Current shipping external frontends are **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**. The MCP shell has been removed; CLI usage is documented in `docs/cli.md`.
 - `pi-browser` CLI is shipped and the migration is complete (landed 2026-06-03): code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all passed. No migration items remain.
-- `docs/abml-execution-plan.md` is no longer the active queue; ABML remains an internal substrate / historical execution contract.
+- `docs/archive/abml-execution-plan.md` is no longer the active queue; ABML remains an internal substrate / historical execution contract.
 
 ## Architecture
 
