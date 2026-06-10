@@ -28,10 +28,21 @@ test("allocateFacts keeps plane floors before density fill", () => {
 	assert.equal(plan.get("c"), "ref");
 });
 
+test("allocateFacts stops below the configured marginal density", () => {
+	const facts = [
+		fact("a", "entity", 100, { compact: 10 }),
+		fact("b", "entity", 1, { compact: 100 }),
+	];
+	const plan = allocateFacts(facts, 200, [], { minDensity: 0.05 });
+	assert.equal(plan.get("a"), "compact");
+	assert.equal(plan.get("b"), "omit");
+});
+
 test("renderFacts groups selected renderings by plane and reports omissions", () => {
 	const facts = [fact("a", "entity", 10, { compact: 10 }), fact("b", "diff", 1, { ref: 5 })];
 	const plan = new Map([["a", "compact" as const], ["b", "omit" as const]]);
 	const rendered = renderFacts(facts, plan);
 	assert.deepEqual(rendered.entity, [{ ref: "a" }]);
 	assert.deepEqual(rendered.omitted, [{ ref: "b", plane: "diff", reason: "budget" }]);
+	assert.deepEqual(rendered.stats, { factsRendered: 1, factsOmitted: 1, truncationMarkers: 1 });
 });

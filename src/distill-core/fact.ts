@@ -31,6 +31,10 @@ export type PlaneFloor = {
 	minGranularity?: Exclude<FactGranularity, "omit">;
 };
 
+export type AllocationOptions = {
+	minDensity?: number;
+};
+
 export function salienceValue(salience: FactSalience): number {
 	return (salience.actionability || 0) + (salience.novelty || 0) + (salience.consequence || 0) + (salience.structure || 0);
 }

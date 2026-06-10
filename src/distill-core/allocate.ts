@@ -1,4 +1,4 @@
-import type { Fact, FactGranularity, PlaneFloor, RenderPlan } from "./fact.js";
+import type { AllocationOptions, Fact, FactGranularity, PlaneFloor, RenderPlan } from "./fact.js";
 import { salienceValue } from "./fact.js";
 
 const GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
@@ -20,7 +20,7 @@ function renderingCost(fact: Fact, granularity: Exclude<FactGranularity, "omit">
 	return fact.renderings[granularity]?.cost ?? Number.POSITIVE_INFINITY;
 }
 
-export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[] = []): RenderPlan {
+export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[] = [], options: AllocationOptions = {}): RenderPlan {
 	const plan: RenderPlan = new Map();
 	let spent = 0;
 	const byRef = new Map(facts.map((fact) => [fact.ref, fact]));
@@ -59,7 +59,9 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 		}
 		const granularity = bestAvailableWithin(item.fact, budget - spent);
 		if (!granularity) continue;
-		spent += renderingCost(item.fact, granularity);
+		const cost = renderingCost(item.fact, granularity);
+		if (options.minDensity !== undefined && item.density < options.minDensity) break;
+		spent += cost;
 		plan.set(item.fact.ref, granularity);
 	}
 	return plan;

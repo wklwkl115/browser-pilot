@@ -4,6 +4,8 @@ import { compactSummaryValue } from "./granularity.js";
 import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
 
 const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
+const MIN_MARGINAL_DENSITY = 0.12;
+const MAX_SALIENCE_TO_LADDER_RATIO = 1.05;
 const STRUCTURE_SCORE: Record<(typeof LIFTED_KEYS)[number], number> = {
 	snapshotProjection: 950,
 	causal: 900,
@@ -51,9 +53,23 @@ function markOmitted<T extends BudgetedEnvelope>(envelope: T, omitted: string[])
 	};
 }
 
+export function countDistillTruncationMarkers(value: unknown): number {
+	const text = stableJson(value);
+	return (text.match(/truncated|omitted|…|\.\.\./gi) || []).length;
+}
+
+function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T): T {
+	const salienceChars = stableJson(salience).length;
+	const ladderChars = stableJson(ladder).length;
+	if (salienceChars > Math.ceil(ladderChars * MAX_SALIENCE_TO_LADDER_RATIO)) return ladder;
+	if (countDistillTruncationMarkers(salience) > countDistillTruncationMarkers(ladder)) return ladder;
+	return salience;
+}
+
 export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number): T {
 	const budget = Math.max(1_000, Math.floor(maxChars));
-	if (stableJson(envelope).length <= budget) return envelope;
+	const ladder = fitEnvelopeBudget(envelope, maxChars);
+	if (stableJson(envelope).length <= budget) return acceptedCandidate(envelope, ladder);
 	let out: T = { ...envelope };
 	for (const key of LIFTED_KEYS) delete out[key];
 	const baseCost = stableJson(out).length;
@@ -74,6 +90,8 @@ export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: 
 	}
 	for (const candidate of candidates.sort((a, b) => b.score / Math.max(1, b.cost) - a.score / Math.max(1, a.cost) || b.score - a.score)) {
 		if (chosen.has(candidate.key)) continue;
+		const density = candidate.score / Math.max(1, candidate.cost);
+		if (density < MIN_MARGINAL_DENSITY) break;
 		if (spent + candidate.cost > budget) continue;
 		out = { ...out, [candidate.key]: candidate.value };
 		spent += candidate.cost;
@@ -81,5 +99,6 @@ export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: 
 	}
 	for (const key of LIFTED_KEYS) if (envelope[key] !== undefined && !chosen.has(key)) omitted.push(key);
 	out = markOmitted(out, omitted);
-	return stableJson(out).length <= budget ? out : fitEnvelopeBudget(out, maxChars);
+	const fitted = stableJson(out).length <= budget ? out : fitEnvelopeBudget(out, maxChars);
+	return acceptedCandidate(fitted, ladder);
 }

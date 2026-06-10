@@ -67,11 +67,12 @@ deterministic gates.
   environment-sensitive npm-banner test (`tests/unit/cli/local-commands.test.ts`) now
   makes the banner-contamination assertion conditional on the banner actually appearing;
   the load-bearing `--silent`-gives-one-clean-JSON assertion stays unconditional.
-- [ ] **P1 — regression fixes F1+F2 (+F3 code, inert) + comparative bench.**
-  Extend `bench:distill` with a ladder-vs-salience comparative mode per fixture:
-  chars, fact coverage, truncation-marker count. Landing gate: on EVERY corpus fixture,
-  salience chars ≤ ~1.05× ladder at ≥ ladder fact coverage, truncation markers ≤ ladder.
-  (Bounds principled, recorded in the bench output; tighten rather than loosen.)
+- [x] **P1 — regression fixes F1+F2 (+F3 code, inert) + comparative bench.**
+  F1 landed as marginal-density stopping plus salience-vs-ladder acceptance fallback;
+  F2 landed as unified truncation/omission marker accounting with salience rejection when
+  markers exceed ladder; F3 landed as a session-delta-only recovery fan-out cap, inert
+  until session-delta default flips. `bench:distill` now compares ladder-vs-salience per
+  fixture and gates chars, fact coverage, and truncation markers.
 - [ ] **P2 — flip salience default.**
   Default `salience`; `PI_BROWSER_RENDERER=ladder` escape; dual-path goldens (both paths
   stay golden-locked — the flip swaps which one the default suite exercises); update

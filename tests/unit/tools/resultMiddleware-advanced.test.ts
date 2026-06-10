@@ -221,6 +221,41 @@ test("distilledJsonResult summary mode promotes correlation metadata", async () 
 	assert.ok(text.includes('"selectionVersionAtResolve": 4'));
 });
 
+test("session-delta nextActions cap distinct recovery targets", async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-session-delta-actions-"));
+	try {
+		const result = await distilledJsonResult({ ok: true, data: { value: "saved" } }, {
+			toolName: "browser_observe",
+			command: "scan",
+			maxChars: 4000,
+			ctx: { cwd },
+			outputPath: path.join(cwd, "observe.json"),
+			fallbackName: "observe.json",
+			detailLevel: "summary",
+			entities: [
+				{ ref: "pi-ref://control/a", kind: "control" },
+				{ ref: "pi-ref://control/b", kind: "control" },
+			],
+			distill: () => ({
+				delta: "session",
+				nextActions: [
+					"read_saved_artifact mode=json jsonPath=data.a",
+					"read_saved_artifact mode=json jsonPath=data.b",
+					"read_saved_artifact mode=json jsonPath=data.c",
+					"read_saved_artifact mode=json jsonPath=data.d",
+				],
+			}),
+		});
+		const envelope = JSON.parse(textOf(result));
+		const recoveryTargets = (envelope.nextActions as string[]).filter((item) => item.startsWith("read_saved_artifact") || item.includes("pi-ref://"));
+		assert.equal(envelope.delta, "session");
+		assert.equal(recoveryTargets.length <= 3, true);
+		assert.equal(recoveryTargets.some((item) => item.includes("data.d")), false);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
 test("salience renderer marker is opt-in only", async () => {
 	const previous = process.env.PI_BROWSER_RENDERER;
 	try {

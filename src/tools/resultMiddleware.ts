@@ -326,6 +326,27 @@ function artifactReadActions(summary: DistilledSummary, saved?: Record<string, u
 	return actions.length ? Array.from(new Set(actions)) : ["read_saved_artifact mode=json", "read_saved_artifact mode=text"];
 }
 
+const SESSION_DELTA_RECOVERY_TARGET_LIMIT = 3;
+
+function recoveryTargetKey(action: string): string | undefined {
+	if (action.startsWith("read_saved_artifact")) return action;
+	const ref = action.match(/pi-ref:\/\/[^)\s]+/)?.[0];
+	return ref;
+}
+
+function capSessionDeltaRecoveryFanout(actions: string[], delta?: string): string[] {
+	if (delta !== "session") return actions;
+	const seenTargets = new Set<string>();
+	return actions.filter((action) => {
+		const key = recoveryTargetKey(action);
+		if (!key) return true;
+		if (seenTargets.has(key)) return true;
+		if (seenTargets.size >= SESSION_DELTA_RECOVERY_TARGET_LIMIT) return false;
+		seenTargets.add(key);
+		return true;
+	});
+}
+
 function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = []): string[] | undefined {
 	const actions: string[] = [];
 	const entities = envelopeEntities(summary, options.entities);
@@ -347,7 +368,8 @@ function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSu
 	if (summary.empty === true || summary.notFound === true) actions.push("narrow the target ref/filter or re-read with mode=scan|html");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or inspect the saved artifact by jsonPath/offset");
 	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
-	return actions.length ? Array.from(new Set(actions)).slice(0, 7) : undefined;
+	const unique = capSessionDeltaRecoveryFanout(Array.from(new Set(actions)), typeof summary.delta === "string" ? summary.delta : undefined);
+	return unique.length ? unique.slice(0, 7) : undefined;
 }
 
 function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifactValue?: unknown): T {
