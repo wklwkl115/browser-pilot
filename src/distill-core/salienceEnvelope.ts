@@ -80,25 +80,29 @@ export function countDistillTruncationMarkers(value: unknown): number {
 	return (text.match(/truncated|omitted|…|\.\.\./gi) || []).length;
 }
 
-function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T): T {
+function acceptedCandidate<T extends BudgetedEnvelope>(salience: T, ladder: T, salienceChars?: number): T {
 	for (const key of REQUIRED_CONTINUITY_KEYS) {
 		if (salience[key] === undefined && ladder[key] !== undefined) return ladder;
 	}
-	const salienceChars = stableJson(salience).length;
 	const ladderChars = stableJson(ladder).length;
-	if (salienceChars > Math.ceil(ladderChars * MAX_SALIENCE_TO_LADDER_RATIO)) return ladder;
+	if ((salienceChars ?? stableJson(salience).length) > Math.ceil(ladderChars * MAX_SALIENCE_TO_LADDER_RATIO)) return ladder;
 	if (countDistillTruncationMarkers(salience) > countDistillTruncationMarkers(ladder)) return ladder;
 	return salience;
 }
 
 export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number): T {
 	const budget = Math.max(1_000, Math.floor(maxChars));
-	const ladder = fitEnvelopeBudget(envelope, maxChars);
-	if (stableJson(envelope).length <= budget) return acceptedCandidate(envelope, ladder);
+	const envelopeChars = stableJson(envelope).length;
+	if (envelopeChars <= budget) return envelope;
+	let ladder: T | undefined;
+	const fallbackLadder = (): T => {
+		ladder ??= fitEnvelopeBudget(envelope, maxChars);
+		return ladder;
+	};
 	let out: T = { ...envelope };
 	for (const key of LIFTED_KEYS) delete out[key];
 	const baseCost = stableJson(out).length;
-	if (baseCost >= budget) return fitEnvelopeBudget(envelope, maxChars);
+	if (baseCost >= budget) return fallbackLadder();
 
 	const chosen = new Set<string>();
 	let spent = baseCost;
@@ -124,6 +128,7 @@ export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: 
 	}
 	for (const key of LIFTED_KEYS) if (envelope[key] !== undefined && !chosen.has(key)) omitted.push(key);
 	out = markOmitted(out, omitted);
-	const fitted = stableJson(out).length <= budget ? out : fitEnvelopeBudget(out, maxChars);
-	return acceptedCandidate(fitted, ladder);
+	const fittedChars = stableJson(out).length;
+	const fitted = fittedChars <= budget ? out : fitEnvelopeBudget(out, maxChars);
+	return acceptedCandidate(fitted, fallbackLadder(), fittedChars <= budget ? fittedChars : undefined);
 }
