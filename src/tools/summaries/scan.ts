@@ -54,6 +54,7 @@ type ScanSummaryPrepared = {
 	actionables: Record<string, unknown>[];
 	listHints: Record<string, unknown>[];
 	listSummaries: Record<string, unknown>[];
+	visibleRows: Record<string, unknown>[];
 	rankedActions: RankedAction[];
 	sortedRankedActions: RankedAction[];
 	actionCounts: Map<string, number>;
@@ -488,6 +489,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 		actionables,
 		listHints: asArray(item.list_hints).filter(isRecord),
 		listSummaries: prepareListSummaries(asArray(item.list_hints).filter(isRecord)),
+		visibleRows: asArray(item.rows).filter(isRecord),
 		rankedActions: ranked,
 		sortedRankedActions: sortedRanked,
 		actionCounts: actionCounts(ranked),
@@ -500,7 +502,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 }
 
 function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: string[] = []): Summary {
-	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
+	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, visibleRows, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
 	const primaryActions = selectPrimaryActions(sortedRankedActions, counts, limits.primaryActions);
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
@@ -550,8 +552,10 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 				content: "data.content",
 				actionables: "data.actionables",
 				list_hints: "data.list_hints",
+				rows: "data.rows",
 			},
 			preferredReads: [
+				{ label: "DOM-ordered visible rows (text+href)", jsonPath: "data.rows" },
 				{ label: "all actionables with full selectors", jsonPath: "data.actionables" },
 				{ label: "full simplified DOM/text", jsonPath: "data.content" },
 				{ label: "repeated list hints", jsonPath: "data.list_hints" },
@@ -563,6 +567,16 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 			{ key: "hiddenCount", value: (node) => node.hiddenCount },
 			{ key: "firstItemPreview", value: (node) => node.firstItemPreview },
 		], limits.listRows),
+		// D1: DOM-ordered, capped, viewport-visible text/link rows (settles B1 blind-eval finding).
+		// Hard boundary: perception only — text/href/geometry/container hints, no semantic/source inference.
+		...(!omitted.includes("rows") && visibleRows.length > 0 ? {
+			rows: summaryTable(visibleRows.slice(0, 40), [
+				{ key: "text", value: (node: Record<string, unknown>) => node.text },
+				{ key: "href", value: (node: Record<string, unknown>) => node.href },
+				{ key: "sameOrigin", value: (node: Record<string, unknown>) => node.sameOrigin },
+				{ key: "selector", value: (node: Record<string, unknown>) => node.selector },
+			], 40),
+		} : {}),
 		actionables: summaryTable(actionables, [
 			{ key: "index", value: (node) => node.index },
 			{ key: "tag", value: (node) => node.tag },
@@ -595,11 +609,11 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 	const sets = limitSets(options);
 	const prepared = prepareScanSummary(item, tabs, options);
 	for (const [index, limits] of sets.entries()) {
-		const omitted = index === 0 ? [] : ["interactive", "textPreview", "legacyRows"];
+		const omitted = index === 0 ? [] : ["interactive", "textPreview", "rows"];
 		const summary = buildSummary(prepared, limits, omitted);
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
-	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "legacyRows"]);
+	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "rows"]);
 }
 
 export function scanEntitiesForEnvelope(data: unknown, options: ScanSummaryOptions = {}): Entity[] {

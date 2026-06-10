@@ -224,6 +224,23 @@ assert.equal(linkRows[0][sameCol], true, "check-summaries scan.actionables.sameO
 assert.equal(linkRows[1][sameCol], false, "check-summaries scan.actionables.sameOrigin (B6): cross-origin link must be classified false");
 assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 assert.equal(scan.artifact_hints.jsonPaths.actionables, "data.actionables", "check-summaries scan.artifactHints: scan summary must provide precise actionables jsonPath");
+assert.equal(scan.artifact_hints.jsonPaths.rows, "data.rows", "check-summaries scan.artifactHints.rows (D1): visible-row projection must expose a precise artifact jsonPath");
+
+const rowScan = summarizeScanData({
+	url: "https://example.test/list",
+	title: "Rows",
+	readyState: "complete",
+	content: "rows",
+	node_count: 6,
+	rows: [
+		{ text: "Alpha row", href: "https://example.test/a", sameOrigin: true, rect: { x: 1, y: 10, w: 100, h: 20 }, containerHint: "#list", selector: "#row-a" },
+		{ text: "Beta row", href: "https://other.test/b", sameOrigin: false, rect: { x: 1, y: 40, w: 100, h: 20 }, containerHint: "#list", selector: "#row-b" },
+	],
+}, []);
+assert.deepEqual(rowScan.rows.columns, ["text", "href", "sameOrigin", "selector"], "check-summaries scan.rows.columns (D1): visible-row summary must stay compact and mechanical");
+assert.equal(rowScan.rows.rows[0][0], "Alpha row", "check-summaries scan.rows.order (D1): visible-row summary must preserve DOM order");
+assert.equal(rowScan.rows.rows[1][2], false, "check-summaries scan.rows.sameOrigin (D1): visible-row summary must surface mechanical same-origin classification");
+assert.equal(rowScan.rows.rows[1][3], "#row-b", "check-summaries scan.rows.selector (D1): visible-row summary must surface selectors for follow-up reads");
 
 const richScanData = {
 	url: "https://example.test/checkout",
@@ -269,11 +286,11 @@ const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 },
 	},
 });
 const scanBudgetGoldenJson = JSON.stringify(scanBudgetGolden);
-assert.equal(scanBudgetGoldenJson.length, 3522, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
-assert.equal(sha256(scanBudgetGoldenJson), "e88406f9dc5a4cb23ad2d61610f981cf79d2987ca67a0cfc6bbdf15081a69ad5", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
-assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "legacyRows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
+assert.equal(scanBudgetGoldenJson.length, 3607, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
+assert.equal(sha256(scanBudgetGoldenJson), "6c2deaad3724fd6e631105ca5044ed93610954111ffa75da1bfee7f162e54131", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
+assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "rows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
 assert.equal(scanBudgetGolden.focus.primary_actions.length, 3, "check-summaries scan.budgetGolden.primaryActions: final budget rung action count must stay stable");
-assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung legacy rows stay omitted");
+assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung action rows stay omitted under tight budget");
 const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));
 try {
 	const scanEnvelope = parseToolText(await distilledTextResult("scan text", {

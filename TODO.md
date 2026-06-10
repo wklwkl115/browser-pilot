@@ -1,6 +1,6 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活执行线：暂无。
+- 当前激活执行线：暂无。`docs/debt-clearance-plan.md` 已完成，当前以 `CURRENT.md` 为准。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。

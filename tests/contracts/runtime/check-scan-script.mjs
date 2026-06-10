@@ -53,6 +53,9 @@ for (const options of [
 	assert(script.includes("frameworkHandlers") && script.includes("ACTIONABLE_RE") && script.includes("FRAMEWORK_OWNER_RE") && script.includes("data-e2e") && script.includes("point"), "scan actionables must cover framework delegated clicks, configured actionable controls and CDP-ready center points");
 	assert(script.includes(":-webkit-autofill") && script.includes("data-autofilled") && script.includes("protected-autofill"), "scan script must preserve GA-style autofill protected-state hints");
 	assert(script.includes("collectListHints") && script.includes("list_hints") && script.includes("hiddenCount") && script.includes("map(cssEscape).join('.')"), "scan script must expose GA-style repeated list compression hints with CSS-escaped selector classes");
+	assert(script.includes("collectVisibleRows") && script.includes("const rows = collectVisibleRows(scanRoot)") && script.includes("sameOrigin") && script.includes("containerHint") && script.includes("selector:sel2"), "scan script must expose bounded DOM-ordered visible rows with text/href/origin/container hints and selectors");
+	assert(script.includes("children2.push([child, key2])") && script.includes("for (const pair2 of children2)") && !script.includes("for (const [, items2] of groups2.entries())"), "scan visible rows must filter by repeated groups without reordering sibling DOM order by group");
+	assert(!script.includes("headline") && !script.includes("uploader") && !script.includes("author") && !script.includes("ranking semantics"), "scan row projection must stay perception-only and must not grow semantic extractor fields");
 	assert(script.includes("input:not([type=hidden])"), "scan text mode must preserve visible form controls");
 }
 

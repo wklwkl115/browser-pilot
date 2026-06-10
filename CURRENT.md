@@ -13,17 +13,17 @@
 
 ## 当前激活项
 
-### Debt clearance (2026-06-10, 激活中)
+当前无激活执行线。最近完成项如下。
 
-决策：执行 `docs/debt-clearance-plan.md`——全项目债务/悬空/滞后审计后的清债合同。不新增公开 `browser_*` 工具，不改 agent-facing schema，不改变默认输出语义。D1（有界可见行投影）是唯一有设计风险的项，殿后执行且需要盲测结清证明。
+### Debt clearance (2026-06-10, 完成)
 
-执行序：D2+D5a（ROADMAP 诚实化 + bench 注销）→ D4（recovery 棘轮）→ D3（词典 W1 外部化）→ D1（有界行投影，结清 B1）。
+决策：已执行 `docs/debt-clearance-plan.md`——全项目债务/悬空/滞后审计后的清债合同。不新增公开 `browser_*` 工具，不改 agent-facing schema，不改变默认输出语义；完工后仅保留 machine/evidence-trigger-gated debt。
 
-边界：D3 字节恒等合同锁（默认输出不变）；D4 粒度合同锁（祖父列表只缩不增）；D1 硬边界（DOM 保序感知，零语义/来源/排序推断，住在现有 scan entry，不触发第 6 entry 闸）。
+落地：D2 完成 `ROADMAP.md` 诚实化重构（已关闭决策 / 当前非激活路线 / 近期质量建议）；D3 完成 W1 默认安全词表外部化并继续走 `readWordlist()`；D4 完成 recovery grandfather ratchet 文档化与 shrink-only contract 收口；D5a 将 `bench:abml-kernel` 正式写 off 到 kernel plan；D5b 将 blind findings 的 B1 改为 resolved，并把 B9a 未来边界指向 D1 基础设施；D1 在既有 scan entry 内落地 `data.rows` / summary rows / artifact hints，用真实站点 sentinel 证明无需 custom JS 即可读取 DOM-ordered visible rows。
 
-验证：每项独立通过 `npm run check` + `npm run lint` 再推进下一项；D1 另需一次盲测结清证明。
+边界：D3 默认输出保持字节恒等；D4 grandfather baseline 只缩不增；D1 保持 perception-only——只给 text/href/geometry/visibility/container hints，不做来源/作者/时间/排序语义推断，不新增第 6 capture entry 或公开工具。
 
-最近完成项如下。
+验证：已通过 `npm run check`、`npm run lint`、`check:scan`、`check:summaries`、`check:token-economy`、`bench:distill`、`check:recovery-boundary`、`check:errors`、`smoke:browser:scan-summary`。D1 结清证明：真实 `https://linux.do/latest` 运行 `browser_observe mode=scan` + `browser_artifact mode=json jsonPath=data.rows`，artifact `C:\Users\HUAWEI\.pi\browser-artifacts\observe-scan-1781098809184.json` 返回 14 条 DOM 顺序 rows，全程未使用 custom `browser_execute` JS。
 
 ### capture-core + fact allocator closure (2026-06-10, 完成)
 
@@ -54,7 +54,7 @@
 边界：保持 `distill-core`、`abml-core`、公开工具面现状不变；未改变 AX geometry source；未恢复 `templates`/`inference` agent-facing 输出；`capture-core-plan` 未激活前仅在现有 `buildScanScript.ts` 完成 B3 一次。
 
 门禁：已通过 `check:src:types`、`check:abml-core-boundary`、`check:abml-templating`、`check:abml-snapshot-projection`、`test:observe-abml-integration`、`check:scan`、`check:all:bridge`、`npm run check` 与 `npm run smoke:browser:scan-summary`，全量收口。
-### Renderer default flip — staged salience default (2026-06-10, 激活)
+### Renderer default flip — staged salience default (2026-06-10, 完成)
 
 决策：完成 `docs/renderer-default-flip-plan.md`。按 owner 决策以“可检测 + 可回滚”换交付速度：salience 先翻默认，session-delta 后翻默认，`line` 粒度不在本契约；默认翻转前已修 F1/F2，F3 fan-out 控制已落地；多站点盲测从前置门降级为事后哨兵。
 
