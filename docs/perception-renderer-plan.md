@@ -5,7 +5,7 @@
 > landed salience as an opt-in surface after fixture + one real-site blind A/B did not justify a
 > default flip. The successor default-flip contract subsequently fixed the cost regressions and made
 > salience the default; `PI_BROWSER_RENDERER=ladder` is now the compatibility escape, while
-> `PI_BROWSER_SESSION_DELTA=1` remains explicit opt-in/eval.
+> session-delta was later flipped to default by `docs/renderer-default-flip-plan.md`; `PI_BROWSER_SESSION_DELTA=0` is now the compatibility escape.
 >
 > This document is now both the architecture contract and execution record for the token-economy
 > work: it unifies page-model compression (ABML perception planes) and result distillation behind a
@@ -75,7 +75,7 @@ Additional scatter and structural problems, reconciled against current source:
   future version stamps and ledger diagnostics.
 - **Server-side observation snapshots** — `server.getObservationSnapshot(snapshotId)` with saved
   artifact + `networkSeq`/`hookSeq` high-water marks. `PerceptionLedger` now records the latest
-  per-tab/url frame and last-shown granularity for opt-in session deltas; a stronger explicit
+  per-tab/url frame and last-shown granularity for session deltas; a stronger explicit
   navigation epoch remains the default-flip gate.
 - **Registry dual-path precedent** — `distillerRegistry.ts` keeps the legacy `distill` registry in
   sync when a `DistillerDefinition` is registered. The same pattern now carries the gradual
@@ -330,14 +330,15 @@ blind-eval decision, not an implementation side effect.
 - [x] **C3a — PerceptionLedger substrate.** `src/abml/perceptionLedger.ts` and server accessors now
   record per-session/tab/url frames, snapshot ids, version stamps, and last-shown granularity without
   changing default observe output.
-- [x] **C3b — opt-in auto I/P frames.** `PI_BROWSER_SESSION_DELTA=1` reuses the previous ledger
-  snapshot and emits `delta:"session"` / `baselineSnapshotId`; `detailLevel:"full"` remains the
-  refresh/I-frame escape hatch. Default output is unchanged before C4.
-- [x] **C4 — blind-eval A/B, flip decision.** Fixture blind A/B passed with no usability regression;
-  one real-site linux.do blind A/B showed salience/session opt-in improves page understanding but
-  increases artifact/token pressure and truncation. Decision: **do not flip defaults**; keep
-  `PI_BROWSER_RENDERER=salience` and `PI_BROWSER_SESSION_DELTA=1` opt-in pending broader multi-site
-  evidence.
+- [x] **C3b — auto I/P frames substrate.** The ledger reuses the previous snapshot and emits
+  `delta:"session"` / `baselineSnapshotId`; `detailLevel:"full"` remains the refresh/I-frame
+  escape hatch. This contract landed it opt-in; the successor default-flip contract later made
+  session-delta default and retained `PI_BROWSER_SESSION_DELTA=0` as the compatibility escape.
+- [x] **C4 — blind-eval A/B, original flip decision.** Fixture blind A/B passed with no usability
+  regression; one real-site linux.do blind A/B showed salience/session opt-in improves page
+  understanding but increases artifact/token pressure and truncation. Original decision: do not flip
+  defaults in this contract. Successor `docs/renderer-default-flip-plan.md` later accepted the
+  monitor/revert trade-off, fixed the regressions, and flipped salience plus session-delta defaults.
 - [x] **C5 — first `line` granularity primitive.** `lineEncodeEntity()` landed as the entity-plane
   primitive; broader per-plane line rendering still requires per-plane eval evidence.
 - [x] **Continuous — eval-instrumented salience weights decision.** Initial blind evidence is now
@@ -376,8 +377,9 @@ blind-eval decision, not an implementation side effect.
 
 - `src/distill-core/` now exists and is protected by `check:distill-core-boundary`.
 - `envelope.renderer:"salience-v1"`, optional `factify`, `ArtifactPlan`, `PerceptionLedger`,
-  and `delta:"session"` now exist as substrate features. Salience default was flipped later by
-  `docs/renderer-default-flip-plan.md`; session delta remains opt-in.
+  and `delta:"session"` now exist as substrate features. Salience and session-delta defaults were
+  flipped later by `docs/renderer-default-flip-plan.md`; `PI_BROWSER_RENDERER=ladder` and
+  `PI_BROWSER_SESSION_DELTA=0` are the compatibility escapes.
 - `src/tools/resultMiddleware.ts` remains the orchestration chokepoint for artifact save execution,
   privacy pointer production, memory auto-surface, and final model-facing JSON; pure budget and
   artifact intent logic live in `distill-core`.

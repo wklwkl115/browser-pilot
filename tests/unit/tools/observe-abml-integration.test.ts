@@ -190,7 +190,7 @@ test("browser_observe P2: records the hook seq high-water on the snapshot for a 
 	assert.equal(env.causal, undefined, "no baseline → no causal block");
 });
 
-test("browser_observe C3: opt-in session delta uses the previous ledger snapshot", async () => {
+test("browser_observe C3: session delta is default and env escape disables it", async () => {
 	const snapshots = new Map<string, any>();
 	const ledger = new Map<string, any>();
 	let snapshotSeq = 0;
@@ -210,12 +210,14 @@ test("browser_observe C3: opt-in session delta uses the previous ledger snapshot
 	try {
 		delete process.env.PI_BROWSER_SESSION_DELTA;
 		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
-		assert.equal(first.delta, undefined, "first observe remains an I-frame by default");
+		assert.equal(first.delta, undefined, "first observe remains an I-frame");
 		assert.equal(typeof first.snapshot?.snapshotId, "string", "I-frame carries a snapshotId");
-		process.env.PI_BROWSER_SESSION_DELTA = "1";
 		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
-		assert.equal(second.delta, "session", "opt-in second observe renders as a session P-frame");
+		assert.equal(second.delta, "session", "second observe renders as a default session P-frame");
 		assert.equal(second.baselineSnapshotId, first.snapshot.snapshotId, "P-frame names its I-frame baseline snapshot");
+		process.env.PI_BROWSER_SESSION_DELTA = "0";
+		const disabled = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		assert.equal(disabled.delta, undefined, "PI_BROWSER_SESSION_DELTA=0 forces I-frame behavior");
 		const full = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "full" }, { cwd: process.cwd() }, "scan");
 		assert.ok(full.content[0].text.includes("Checkout"), "detailLevel=full returns the full text payload as the refresh escape hatch");
 	} finally {

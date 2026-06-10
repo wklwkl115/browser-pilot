@@ -1,6 +1,6 @@
 # Renderer default flip — staged execution contract (post perception-renderer)
 
-> Status: **ACTIVE — P2 salience default flipped 2026-06-10; P3 session-delta still pending.** Activation = the P0 `CURRENT.md` entry.
+> Status: **COMPLETE — P2 salience default and P3 session-delta default flipped 2026-06-10.** Activation = the P0 `CURRENT.md` entry.
 > Successor contract to the **completed** `docs/perception-renderer-plan.md` (IMPLEMENTED,
 > opt-in). This contract flips the salience renderer and session-delta defaults in stages,
 > WITHOUT a pre-flip multi-site blind eval — an explicit owner decision recorded here:
@@ -81,11 +81,13 @@ deterministic gates.
   measurable and bounded by the comparative gates. Final gates passed: `npm run check`,
   `eval:browser-workflows -- --fixture-server --eval 16-scan-high-entropy-summary`, and
   `smoke:browser:scan-summary`.
-- [ ] **P3 — flip session-delta default (separate, after soak).**
-  Trigger: 2 clean sentinel runs after P2 **or** explicit owner go. Adds the
-  long-conversation fixture gate (scripted ≥5-observe mutating-page sequence asserting
-  P-frame shape, ref resolution after simulated context loss, auto-I-frame triggers,
-  F3 fan-out cap). `PI_BROWSER_SESSION_DELTA=0` becomes the escape. Same doc set updated.
+- [x] **P3 — flip session-delta default (separate, after soak).**
+  Trigger satisfied by explicit owner goal. Session-delta is now default; `PI_BROWSER_SESSION_DELTA=0`
+  forces I-frame behavior. The long-conversation fixture gate runs a 6-observe scripted sequence,
+  checks default P-frame shape and baseline chaining, simulates context loss by removing the prior
+  snapshot and verifies automatic I-frame refresh, verifies the escape hatch, and keeps the F3
+  recovery fan-out cap locked. Gate: `check:session-delta-long-conversation` is wired into
+  `npm run check`.
 - **Explicitly NOT in this contract:** broader `line` granularity, salience weight tuning,
   any new agent-facing fields, un-gating `templates`/`inference` (stay engine-only).
 

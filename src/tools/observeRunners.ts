@@ -391,7 +391,7 @@ function tabUrlForLedger(tabs: unknown[], tabId: number | undefined, fallbackTab
 }
 
 function sessionDeltaEnabled(params: ObserveToolParams): boolean {
-	return process.env.PI_BROWSER_SESSION_DELTA === "1" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
+	return process.env.PI_BROWSER_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
 }
 
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
@@ -471,7 +471,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const scanScript = buildScanScript({ textOnly: mode === "text", maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
 	const preBridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const plannedLedgerKey = ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
-	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
+	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
 	const effectiveBaseline: unknown = params.baseline ?? (ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
 	let baseline: BaselineResolution | undefined;
 	try {
