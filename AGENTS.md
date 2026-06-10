@@ -68,6 +68,24 @@
 - When changing an implemented tool, update affected contracts/docs in the same workstream; do not document future capability as current callable capability.
 - Keep TODO order actionable; mark completed items and reorder dependent work when scope changes.
 
+## Executability Rule
+
+Every plan item and every eval must be executed **now**. The default is to do the work immediately, not to schedule, stage, or gate it.
+
+**Forbidden patterns — these are avoidance, not planning:**
+- "Needs eval evidence first" — the eval infrastructure exists (`npm run eval:browser-workflows`, `eval:blind:launch`); run it now or drop the dependency.
+- "Pending decision / design / signal" — make the decision now with current information, or write a closed decision; do not leave a placeholder.
+- "Park / defer / suspend / wait for X" — not valid states; work is either executing or closed.
+- "After Y lands / once Z is verified / when the feedback loop matures" — if Y and Z are in the same repo, do them in sequence now, not as future prerequisites.
+- "Run eval first before doing X" when X has a clear contract and the eval can run now — this delays without cause.
+
+**Required form for any plan item:**
+1. The action is fully specified: files, functions, and parameters known from the current codebase.
+2. The verification step is a concrete existing gate: `npm run check:*`, a named test file, or a smoke command.
+3. Execution starts immediately after the item is written.
+
+**The only valid reason not to execute now** is a genuine external blocker: infrastructure that does not exist in the repo, an external service that is unreachable, or a destructive action requiring explicit owner sign-off. Uncertainty, risk, or "needing more data" are not blockers — they are reasons to scope the work more tightly and execute the tighter scope now. If a blocker is real, write a closed decision in `ROADMAP.md` under "Closed decisions + reopen evidence bar" and stop tracking it as a plan item.
+
 ## Sync & Verification
 
 - Tool additions or material changes must update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts when affected.
