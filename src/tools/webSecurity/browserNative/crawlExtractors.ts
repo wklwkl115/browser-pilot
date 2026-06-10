@@ -445,9 +445,22 @@ export function detectGraphqlSchema(bodyText: string): Record<string, unknown> |
 	const subscriptionType = isRecord(schema.subscriptionType) ? asString(schema.subscriptionType.name) : undefined;
 	const fieldsFor = (typeName?: string) => {
 		const found = types.find((type) => type.name === typeName);
-		return isRecord(found) && Array.isArray(found.fields)
-			? found.fields.filter(isRecord).map((field) => ({ name: field.name, args: Array.isArray(field.args) ? field.args.filter(isRecord).map((arg) => arg.name).slice(0, 20) : [] })).slice(0, 100)
-			: [];
+		if (!isRecord(found) || !Array.isArray(found.fields)) return [];
+		const fields: Array<Record<string, unknown>> = [];
+		for (const field of found.fields) {
+			if (!isRecord(field)) continue;
+			const args: unknown[] = [];
+			if (Array.isArray(field.args)) {
+				for (const arg of field.args) {
+					if (!isRecord(arg)) continue;
+					args.push(arg.name);
+					if (args.length >= 20) break;
+				}
+			}
+			fields.push({ name: field.name, args });
+			if (fields.length >= 100) break;
+		}
+		return fields;
 	};
 	return { kind: "graphql-introspection", typeCount: types.length, queryType, mutationType, subscriptionType, queryFields: fieldsFor(queryType), mutationFields: fieldsFor(mutationType), subscriptionFields: fieldsFor(subscriptionType) };
 }

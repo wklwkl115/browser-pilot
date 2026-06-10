@@ -41,18 +41,33 @@ function pickDefined(record: Record<string, unknown>, keys: string[]): Record<st
 	return out;
 }
 
-function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number): DistilledSummary {
+type MeasuredSummary = { summary: DistilledSummary; length: number };
+
+function stableJsonLength(value: unknown): number {
+	return stableJson(value).length;
+}
+
+function measureSummary(summary: DistilledSummary): MeasuredSummary {
+	return { summary, length: stableJsonLength(summary) };
+}
+
+function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number, initialLength = stableJsonLength(summary)): MeasuredSummary {
 	const out: DistilledSummary = { ...summary };
 	const dropped: string[] = [];
+	let length = initialLength;
 	for (const key of SUMMARY_LOW_PRIORITY_KEYS) {
-		if (stableJson(out).length <= budget) break;
+		if (length <= budget) break;
 		if (Object.hasOwn(out, key)) {
 			delete out[key];
 			dropped.push(key);
+			length = stableJsonLength(out);
 		}
 	}
-	if (dropped.length) out.summaryOmitted = dropped;
-	return out;
+	if (dropped.length) {
+		out.summaryOmitted = dropped;
+		length = stableJsonLength(out);
+	}
+	return { summary: out, length };
 }
 
 function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
@@ -65,27 +80,29 @@ function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
 }
 
 export function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
-	if (stableJson(summary).length <= budget) return summary;
+	const original = measureSummary(summary);
+	if (original.length <= budget) return summary;
 	for (const limits of [
 		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
 		{ stringChars: 480, arrayItems: 12, tableRows: 12 },
 		{ stringChars: 240, arrayItems: 8, tableRows: 8 },
 		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
 	]) {
-		const compacted = compactSummaryValue(summary, limits) as DistilledSummary;
-		if (stableJson(compacted).length <= budget) return compacted;
+		const compacted = measureSummary(compactSummaryValue(summary, limits) as DistilledSummary);
+		if (compacted.length <= budget) return compacted.summary;
 	}
 	const compact120 = compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
 	const dropped = dropLowPrioritySummaryFields(compact120, budget);
-	if (stableJson(dropped).length <= budget) return dropped;
+	if (dropped.length <= budget) return dropped.summary;
 	const keptScalars = scalarIdentityFields(summary);
 	const droppedKeys = Object.keys(summary).filter((key) => !(key in keptScalars));
 	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
-	const minimalBase: DistilledSummary = stableJson(scalarBase).length <= budget
+	const scalarBaseLength = stableJsonLength(scalarBase);
+	const minimalBase: DistilledSummary = scalarBaseLength <= budget
 		? scalarBase
 		: {
 			summaryTruncatedToBudget: true,
-			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summaryOmitted) ? dropped.summaryOmitted : []), ...Object.keys(summary)])),
+			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summary.summaryOmitted) ? dropped.summary.summaryOmitted : []), ...Object.keys(summary)])),
 			keys: Object.keys(summary).slice(0, 40),
 		};
 	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));

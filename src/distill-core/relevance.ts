@@ -46,6 +46,11 @@ type PreparedTerm = {
 	weight: number;
 };
 
+type RelevanceAccumulator = {
+	score: number;
+	sources: RelevanceSourceTag[];
+};
+
 function normalizeText(value: unknown): string {
 	return typeof value === "string" ? value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, " ").trim() : "";
 }
@@ -119,34 +124,57 @@ function scoreInputFields(fields: Record<string, unknown>, terms: PreparedTerm[]
 	return { score: Math.min(RELEVANCE_TUNING.maxScore, Math.round(score)), sources };
 }
 
-function addMatch(map: Map<string, RelevanceMatch>, ref: string, score: number, sources: Iterable<RelevanceSourceTag>): void {
+function addRawMatch(map: Map<string, RelevanceAccumulator>, ref: string, score: number, sources: Iterable<RelevanceSourceTag>): void {
 	if (score <= 0) return;
 	const prev = map.get(ref);
-	const sourceSet = new Set([...(prev?.sources ?? []), ...sources]);
-	map.set(ref, { score: Math.min(RELEVANCE_TUNING.maxScore, Math.round((prev?.score ?? 0) + score)), sources: Array.from(sourceSet).sort() as RelevanceSourceTag[] });
+	if (prev) {
+		prev.score = Math.min(RELEVANCE_TUNING.maxScore, Math.round(prev.score + score));
+		for (const source of sources) prev.sources.push(source);
+		return;
+	}
+	map.set(ref, { score: Math.min(RELEVANCE_TUNING.maxScore, Math.round(score)), sources: Array.from(sources) });
+}
+
+function finalizeMatches(raw: Map<string, RelevanceAccumulator>): Map<string, RelevanceMatch> {
+	const out = new Map<string, RelevanceMatch>();
+	for (const [ref, match] of raw) {
+		if (match.score <= 0) continue;
+		out.set(ref, {
+			score: match.score,
+			sources: Array.from(new Set(match.sources)).sort() as RelevanceSourceTag[],
+		});
+	}
+	return out;
 }
 
 export function computeRelevanceMap(inputs: RelevanceInput[], terms: RelevanceTerm[]): RelevanceResult {
 	const prepared = prepareTerms(terms);
-	const byRef = new Map<string, RelevanceMatch>();
+	const rawByRef = new Map<string, RelevanceAccumulator>();
 	if (prepared.length) {
 		const byContainer = new Map<string, string[]>();
+		const containerBoosts = new Map<string, RelevanceAccumulator>();
+		const scoredInputs: Array<{ input: RelevanceInput; score: number; sources: Set<RelevanceSourceTag> }> = [];
 		for (const input of inputs) {
 			const containerKey = input.neighbors?.containerKey;
-			if (!containerKey) continue;
-			const list = byContainer.get(containerKey) ?? [];
-			list.push(input.ref);
-			byContainer.set(containerKey, list);
-		}
-		for (const input of inputs) {
+			if (containerKey) {
+				const list = byContainer.get(containerKey) ?? [];
+				list.push(input.ref);
+				byContainer.set(containerKey, list);
+			}
 			const scored = scoreInputFields(input.fields ?? {}, prepared);
-			addMatch(byRef, input.ref, scored.score, scored.sources);
 			if (scored.score <= 0) continue;
-			const containerKey = input.neighbors?.containerKey;
-			if (containerKey) for (const ref of byContainer.get(containerKey) ?? []) addMatch(byRef, ref, scored.score * RELEVANCE_TUNING.containerPropagation, scored.sources);
-			for (const ref of input.neighbors?.labelledBySources ?? []) addMatch(byRef, ref, scored.score * RELEVANCE_TUNING.relationPropagation, scored.sources);
+			scoredInputs.push({ input, score: scored.score, sources: scored.sources });
+			addRawMatch(rawByRef, input.ref, scored.score, scored.sources);
+			if (containerKey) addRawMatch(containerBoosts, containerKey, scored.score * RELEVANCE_TUNING.containerPropagation, scored.sources);
+		}
+		for (const [containerKey, boost] of containerBoosts) {
+			for (const ref of byContainer.get(containerKey) ?? []) addRawMatch(rawByRef, ref, boost.score, boost.sources);
+		}
+		for (const { input, score, sources } of scoredInputs) {
+			for (const ref of input.neighbors?.labelledBySources ?? []) addRawMatch(rawByRef, ref, score * RELEVANCE_TUNING.relationPropagation, sources);
 		}
 	}
+	const byRef = finalizeMatches(rawByRef);
 	const signals = Array.from(new Set(Array.from(byRef.values()).flatMap((match) => match.sources))).sort() as RelevanceSourceTag[];
 	return {
 		byRef,

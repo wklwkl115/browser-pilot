@@ -61,8 +61,30 @@ export async function harEntriesFromOptions(options: ReplayOptions): Promise<Arr
 
 export function harHeaderValues(value: unknown, headerName: string): string[] {
 	const target = normalizeHeaderName(headerName);
-	if (Array.isArray(value)) return value.filter(isRecord).filter((item) => normalizeHeaderName(String(item.name)) === target).map((item) => asString(item.value)).filter((item): item is string => item !== undefined);
-	if (isRecord(value)) return Object.entries(value).filter(([name]) => normalizeHeaderName(name) === target).flatMap(([, item]) => Array.isArray(item) ? item.map((part) => asString(part)).filter((part): part is string => part !== undefined) : asString(item) !== undefined ? [String(item)] : []);
+	const out: string[] = [];
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			if (!isRecord(item) || normalizeHeaderName(String(item.name)) !== target) continue;
+			const text = asString(item.value);
+			if (text !== undefined) out.push(text);
+		}
+		return out;
+	}
+	if (isRecord(value)) {
+		for (const [name, item] of Object.entries(value)) {
+			if (normalizeHeaderName(name) !== target) continue;
+			if (Array.isArray(item)) {
+				for (const part of item) {
+					const text = asString(part);
+					if (text !== undefined) out.push(text);
+				}
+			} else {
+				const text = asString(item);
+				if (text !== undefined) out.push(text);
+			}
+		}
+		return out;
+	}
 	return [];
 }
 

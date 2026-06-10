@@ -234,8 +234,11 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
  * the result fits; callers floor the serialize budget at the fitted size so the truncator never
  * cuts a structurally-minimal value. Small reads (already within budget) are returned untouched.
  */
-export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknown {
-	if (!isRecord(result) || stableJson(result).length <= maxChars) return result;
+type FittedInlineJson = { value: unknown; length: number };
+
+function fitInlineJsonToBudgetMeasured(result: unknown, maxChars: number): FittedInlineJson {
+	const initialLength = stableJson(result).length;
+	if (!isRecord(result) || initialLength <= maxChars) return { value: result, length: initialLength };
 	const payload = result.value;
 	if (isRecord(payload) && payload.type === "array" && Array.isArray(payload.items) && payload.items.length > 1) {
 		const original = payload.items.slice();
@@ -249,17 +252,20 @@ export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknow
 		};
 		// Largest prefix length that still fits (binary search → optimal window, not a coarse step).
 		let lo = 1, hi = original.length, best = 1;
+		let bestLength = -1;
 		while (lo <= hi) {
 			const mid = (lo + hi) >> 1;
 			applyArray(mid);
-			if (stableJson(result).length <= maxChars) { best = mid; lo = mid + 1; } else hi = mid - 1;
+			const length = stableJson(result).length;
+			if (length <= maxChars) { best = mid; bestLength = length; lo = mid + 1; } else hi = mid - 1;
 		}
 		applyArray(best);
-		return result;
+		if (bestLength < 0) bestLength = stableJson(result).length;
+		return { value: result, length: bestLength };
 	}
 	if (isRecord(payload) && payload.type !== "array") {
 		const keys = Object.keys(payload).filter((k) => k !== "truncatedKeys");
-		if (keys.length <= 1) return result;
+		if (keys.length <= 1) return { value: result, length: initialLength };
 		const applyKeys = (k: number) => {
 			const reduced: Record<string, unknown> = {};
 			for (const key of keys.slice(0, k)) reduced[key] = payload[key];
@@ -267,23 +273,31 @@ export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknow
 			result.value = reduced;
 		};
 		let lo = 1, hi = keys.length, best = 1;
+		let bestLength = -1;
 		while (lo <= hi) {
 			const mid = (lo + hi) >> 1;
 			applyKeys(mid);
-			if (stableJson(result).length <= maxChars) { best = mid; lo = mid + 1; } else hi = mid - 1;
+			const length = stableJson(result).length;
+			if (length <= maxChars) { best = mid; bestLength = length; lo = mid + 1; } else hi = mid - 1;
 		}
 		applyKeys(best);
+		if (bestLength < 0) bestLength = stableJson(result).length;
+		return { value: result, length: bestLength };
 	}
-	return result;
+	return { value: result, length: initialLength };
+}
+
+export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknown {
+	return fitInlineJsonToBudgetMeasured(result, maxChars).value;
 }
 
 export function inlineJsonToolResult(value: unknown, details: Record<string, unknown>, params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): PiTextToolResult {
 	const maxChars = toolMaxChars(params, budgetName);
-	const fitted = fitInlineJsonToBudget(value, maxChars);
+	const fitted = fitInlineJsonToBudgetMeasured(value, maxChars);
 	// Floor the serialize budget at the fitted size: a structurally-minimal value (e.g. a single
 	// large item) must still emit as VALID JSON rather than be text-truncated mid-token.
-	const serializeBudget = Math.max(maxChars, stableJson(fitted).length);
-	return jsonResult(fitted, details, serializeBudget);
+	const serializeBudget = Math.max(maxChars, fitted.length);
+	return jsonResult(fitted.value, details, serializeBudget);
 }
 
 export async function jsonToolResult(value: unknown, params: Pick<StandardToolParams, "browserSessionId" | "detailLevel" | "outputPath" | "maxChars" | "redact">, ctx: ToolResultContext, options: JsonToolResultOptions): Promise<PiTextToolResult> {
