@@ -18,6 +18,7 @@ type Limits = {
 	actionRows: number;
 	lists: number;
 	listRows: number;
+	mediaRows: number;
 	textSignals: number;
 	headings: number;
 	interactive: number;
@@ -54,6 +55,7 @@ type ScanSummaryPrepared = {
 	actionables: Record<string, unknown>[];
 	listHints: Record<string, unknown>[];
 	listSummaries: Record<string, unknown>[];
+	mediaCandidates: Record<string, unknown>[];
 	visibleRows: Record<string, unknown>[];
 	rankedActions: RankedAction[];
 	sortedRankedActions: RankedAction[];
@@ -176,6 +178,7 @@ function scoreAction(node: Record<string, unknown>): number {
 	if (node.hitOk === true) score += 120;
 	if (node.hitOk === false) score -= 200;
 	if (node.disabled === true) score -= 250;
+	if (node.edgeUtility === true) score -= 1_080;
 	if (node.editable === true) score += 260;
 	if (node.clickable === true) score += 180;
 	const role = asText(node.role).toLowerCase();
@@ -187,6 +190,14 @@ function scoreAction(node: Record<string, unknown>): number {
 	if (/^#[A-Za-z0-9_-]+$/.test(selector)) score += 80;
 	if (selector.length > 120) score -= 80;
 	const rect = isRecord(node.rect) ? node.rect : {};
+	const rectWidth = asFiniteNumber(rect.width);
+	const rectHeight = asFiniteNumber(rect.height);
+	const rectX = asFiniteNumber(rect.x);
+	const rectY = asFiniteNumber(rect.y);
+	const fixedSmallEdge = ["fixed", "sticky"].includes(asText(node.position).toLowerCase())
+		&& rectWidth !== undefined && rectHeight !== undefined && rectWidth <= 180 && rectHeight <= 180
+		&& ((rectX !== undefined && rectX <= 32) || (rectY !== undefined && rectY <= 32));
+	if (fixedSmallEdge) score -= 260;
 	const y = asFiniteNumber(rect.y);
 	if (y !== undefined && y >= 0 && y < 900) score += 80;
 	if (y !== undefined && y > 1800) score -= 120;
@@ -359,14 +370,14 @@ function scanBudget(options: ScanSummaryOptions): number {
 function limitSets(options: ScanSummaryOptions): Limits[] {
 	const preview = String(options.detailLevel || "summary").toLowerCase() === "preview";
 	return preview ? [
-		{ primaryActions: 12, actionRows: 8, lists: 5, listRows: 5, textSignals: 8, headings: 8, interactive: 10, textPreviewChars: 520 },
-		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
-		{ primaryActions: 6, actionRows: 4, lists: 3, listRows: 3, textSignals: 4, headings: 4, interactive: 3, textPreviewChars: 180 },
+		{ primaryActions: 12, actionRows: 8, lists: 5, listRows: 5, mediaRows: 10, textSignals: 8, headings: 8, interactive: 10, textPreviewChars: 520 },
+		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, mediaRows: 8, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
+		{ primaryActions: 6, actionRows: 4, lists: 3, listRows: 3, mediaRows: 5, textSignals: 4, headings: 4, interactive: 3, textPreviewChars: 180 },
 	] : [
-		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
-		{ primaryActions: 8, actionRows: 5, lists: 3, listRows: 3, textSignals: 5, headings: 4, interactive: 4, textPreviewChars: 240 },
-		{ primaryActions: 5, actionRows: 3, lists: 2, listRows: 2, textSignals: 3, headings: 3, interactive: 2, textPreviewChars: 120 },
-		{ primaryActions: 3, actionRows: 0, lists: 2, listRows: 0, textSignals: 2, headings: 0, interactive: 0, textPreviewChars: 0 },
+		{ primaryActions: 10, actionRows: 6, lists: 4, listRows: 4, mediaRows: 8, textSignals: 6, headings: 6, interactive: 6, textPreviewChars: 360 },
+		{ primaryActions: 8, actionRows: 5, lists: 3, listRows: 3, mediaRows: 6, textSignals: 5, headings: 4, interactive: 4, textPreviewChars: 240 },
+		{ primaryActions: 5, actionRows: 3, lists: 2, listRows: 2, mediaRows: 4, textSignals: 3, headings: 3, interactive: 2, textPreviewChars: 120 },
+		{ primaryActions: 3, actionRows: 0, lists: 2, listRows: 0, mediaRows: 0, textSignals: 2, headings: 0, interactive: 0, textPreviewChars: 0 },
 	];
 }
 
@@ -489,6 +500,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 		actionables,
 		listHints: asArray(item.list_hints).filter(isRecord),
 		listSummaries: prepareListSummaries(asArray(item.list_hints).filter(isRecord)),
+		mediaCandidates: asArray(item.media_candidates).filter(isRecord),
 		visibleRows: asArray(item.rows).filter(isRecord),
 		rankedActions: ranked,
 		sortedRankedActions: sortedRanked,
@@ -502,7 +514,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 }
 
 function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: string[] = []): Summary {
-	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, visibleRows, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
+	const { item, tabs, content, lines, headings, interactive, actionables, listHints, listSummaries, mediaCandidates, visibleRows, sortedRankedActions, actionCounts: counts, preparedForm, textSignalCandidates, scanEntities, actionEntityByPath, referencedEntities } = prepared;
 	const primaryActions = selectPrimaryActions(sortedRankedActions, counts, limits.primaryActions);
 	const actionNames = new Set(primaryActions.map((action) => normalizeText(action.name)).filter(Boolean));
 	const primaryActionsWithEntityRefs = primaryActions.map((action) => {
@@ -552,12 +564,14 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 				content: "data.content",
 				actionables: "data.actionables",
 				list_hints: "data.list_hints",
+				media_candidates: "data.media_candidates",
 				rows: "data.rows",
 			},
 			preferredReads: [
 				{ label: "DOM-ordered visible rows (text+href)", jsonPath: "data.rows" },
 				{ label: "all actionables with full selectors", jsonPath: "data.actionables" },
 				{ label: "full simplified DOM/text", jsonPath: "data.content" },
+				{ label: "visible media candidates (src+geometry)", jsonPath: "data.media_candidates" },
 				{ label: "repeated list hints", jsonPath: "data.list_hints" },
 			],
 		},
@@ -567,6 +581,18 @@ function buildSummary(prepared: ScanSummaryPrepared, limits: Limits, omitted: st
 			{ key: "hiddenCount", value: (node) => node.hiddenCount },
 			{ key: "firstItemPreview", value: (node) => node.firstItemPreview },
 		], limits.listRows),
+		...(!omitted.includes("media_candidates") && mediaCandidates.length > 0 ? {
+			media_candidates: summaryTable(mediaCandidates.slice(0, 40), [
+				{ key: "tag", value: (node: Record<string, unknown>) => node.tag },
+				{ key: "src", value: (node: Record<string, unknown>) => node.src },
+				{ key: "poster", value: (node: Record<string, unknown>) => node.poster },
+				{ key: "alt", value: (node: Record<string, unknown>) => node.alt || node.title },
+				{ key: "sameOrigin", value: (node: Record<string, unknown>) => node.sameOrigin },
+				{ key: "naturalWidth", value: (node: Record<string, unknown>) => node.naturalWidth ?? node.videoWidth },
+				{ key: "naturalHeight", value: (node: Record<string, unknown>) => node.naturalHeight ?? node.videoHeight },
+				{ key: "selector", value: (node: Record<string, unknown>) => node.selector },
+			], limits.mediaRows),
+		} : {}),
 		// D1: DOM-ordered, capped, viewport-visible text/link rows (settles B1 blind-eval finding).
 		// Hard boundary: perception only — text/href/geometry/container hints, no semantic/source inference.
 		...(!omitted.includes("rows") && visibleRows.length > 0 ? {
@@ -609,11 +635,11 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 	const sets = limitSets(options);
 	const prepared = prepareScanSummary(item, tabs, options);
 	for (const [index, limits] of sets.entries()) {
-		const omitted = index === 0 ? [] : ["interactive", "textPreview", "rows"];
+		const omitted = index === 0 ? [] : ["interactive", "textPreview", "media_candidates", "rows"];
 		const summary = buildSummary(prepared, limits, omitted);
 		if (stableLength(summary) <= budget || index === sets.length - 1) return summary;
 	}
-	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "rows"]);
+	return buildSummary(prepared, sets[sets.length - 1], ["interactive", "textPreview", "media_candidates", "rows"]);
 }
 
 export function scanEntitiesForEnvelope(data: unknown, options: ScanSummaryOptions = {}): Entity[] {

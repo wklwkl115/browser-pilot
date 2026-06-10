@@ -11,7 +11,7 @@ Operate live browser pages by calling `browser_*` tools directly, in-process.
 
 **This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **pi-browser-cli** skill instead.
 
-Surface decision: the public callable surface is the `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra tool names.
+Surface decision: the public callable surface is the `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra tool names; public ABML action verbs are a closed perception-first decision unless that north star is overturned.
 Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `browser_observe` (AX merge, entities, relations/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For a **trusted-event-gated** control that silently ignores a synthetic `el.click()`/input, escalate via **`browser_command` CDP** (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). A structured `action` arm was tried and **removed** (agents reverted to JS) — **there is no public action verb: JS is the action language, CDP is the escape.** Prefer `causal` (which APIs an action hit) and the reading products (`outline`/`gist`/`templates`) on long lists/tables; `diff`/`treeDiff` churn on dynamic pages, so read `diff.summary` first. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
@@ -79,6 +79,8 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | You need | Read this envelope field | Then |
 |---|---|---|
 | A big repeated list/table as a group | `outline` / `gist` (fold by AX container) | per-item values → `browser_execute` |
+| Visible text/link rows already on screen | `summary.rows` or `browser_artifact jsonPath=data.rows` | site-specific values beyond text/href/geometry → `browser_execute` |
+| Visible images/video/audio candidates | `summary.media_candidates` or `browser_artifact jsonPath=data.media_candidates` | associated headline/ranking/source semantics → `browser_execute` |
 | What changed after operating a control | scan with a `baseline` → **`treeDiff`** (template-level appeared/disappeared) | raw `diff` churns on dynamic pages — prefer `treeDiff`; per-item content → `browser_execute` |
 | Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
 | Which requests an action fired | **`browser_network {action:"start"}` FIRST**, then scan with `baseline` → `causal.requests` | — |

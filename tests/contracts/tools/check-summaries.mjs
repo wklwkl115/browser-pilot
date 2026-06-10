@@ -225,6 +225,7 @@ assert.equal(linkRows[1][sameCol], false, "check-summaries scan.actionables.same
 assert.deepEqual(scan.list_hints.columns, ["selector", "itemCount", "hiddenCount", "firstItemPreview"], "check-summaries scan.list_hints: GA-style repeated list hints must be exposed");
 assert.equal(scan.artifact_hints.jsonPaths.actionables, "data.actionables", "check-summaries scan.artifactHints: scan summary must provide precise actionables jsonPath");
 assert.equal(scan.artifact_hints.jsonPaths.rows, "data.rows", "check-summaries scan.artifactHints.rows (D1): visible-row projection must expose a precise artifact jsonPath");
+assert.equal(scan.artifact_hints.jsonPaths.media_candidates, "data.media_candidates", "check-summaries scan.artifactHints.mediaCandidates (B9a): media candidates must expose a precise artifact jsonPath");
 
 const rowScan = summarizeScanData({
 	url: "https://example.test/list",
@@ -241,6 +242,22 @@ assert.deepEqual(rowScan.rows.columns, ["text", "href", "sameOrigin", "selector"
 assert.equal(rowScan.rows.rows[0][0], "Alpha row", "check-summaries scan.rows.order (D1): visible-row summary must preserve DOM order");
 assert.equal(rowScan.rows.rows[1][2], false, "check-summaries scan.rows.sameOrigin (D1): visible-row summary must surface mechanical same-origin classification");
 assert.equal(rowScan.rows.rows[1][3], "#row-b", "check-summaries scan.rows.selector (D1): visible-row summary must surface selectors for follow-up reads");
+
+const mediaScan = summarizeScanData({
+	url: "https://example.test/gallery",
+	title: "Gallery",
+	readyState: "complete",
+	content: "media",
+	node_count: 3,
+	media_candidates: [
+		{ index: 0, tag: "img", src: "https://example.test/a.jpg", sameOrigin: true, alt: "Alpha image", naturalWidth: 640, naturalHeight: 360, rect: { x: 10, y: 20, w: 320, h: 180 }, selector: "#hero" },
+		{ index: 1, tag: "video", src: "https://cdn.example.test/v.mp4", poster: "https://example.test/poster.jpg", sameOrigin: false, videoWidth: 1280, videoHeight: 720, rect: { x: 10, y: 220, w: 320, h: 180 }, selector: "video.feature" },
+	],
+}, []);
+assert.deepEqual(mediaScan.media_candidates.columns, ["tag", "src", "poster", "alt", "sameOrigin", "naturalWidth", "naturalHeight", "selector"], "check-summaries scan.mediaCandidates.columns (B9a): media candidate summary must stay compact and mechanical");
+assert.equal(tableCell(mediaScan.media_candidates, "src"), "https://example.test/a.jpg", "check-summaries scan.mediaCandidates.src (B9a): media candidate src must be surfaced");
+assert.equal(tableCell(mediaScan.media_candidates, "sameOrigin", 1), false, "check-summaries scan.mediaCandidates.sameOrigin (B9a): media candidate origin must be a mechanical compare");
+assert.equal(JSON.stringify(mediaScan.media_candidates).includes("headline"), false, "check-summaries scan.mediaCandidates.boundary (B9a): media candidate list must not grow semantic ranking/headline fields");
 
 const richScanData = {
 	url: "https://example.test/checkout",
@@ -275,6 +292,21 @@ assert.equal(richScan.focus.text_signals.some((item) => /payment|required|items/
 assert.equal(Array.isArray(richScan.focus.visual_regions), true, "check-summaries scan.visualRegions: internal visual region projections must stay optional but available");
 assert.equal(typeof richScan.focus.visual_regions[0], "string", "check-summaries scan.visualRegions: focus visual regions must be refs");
 assert.equal(richScanEntities.find((entity) => entity.ref === richScan.focus.visual_regions[0])?.source, "vision", "check-summaries scan.visualRegions.source: canvas region projections must be sourced from vision");
+const sidebarDominantScan = summarizeScanData({
+	url: "https://example.test/watch",
+	title: "Watch",
+	readyState: "complete",
+	content: "<h1>Watch</h1>\n<input placeholder=\"Search videos\">\n<button>Share</button>",
+	node_count: 12,
+	actionables: [
+		{ index: 0, tag: "button", role: "button", action: "share", label: "Share", selector: "#share", point: { x: 1180, y: 120 }, rect: { x: 1160, y: 100, width: 48, height: 48 }, hitOk: true, clickable: true, priority: 3000, position: "fixed", edgeUtility: true },
+		{ index: 1, tag: "button", role: "button", action: "like", label: "Like", selector: "#like", point: { x: 1180, y: 180 }, rect: { x: 1160, y: 160, width: 48, height: 48 }, hitOk: true, clickable: true, priority: 2900, position: "fixed", edgeUtility: true },
+		{ index: 2, tag: "button", role: "button", action: "next", label: "Next", selector: "#next", point: { x: 1180, y: 240 }, rect: { x: 1160, y: 220, width: 48, height: 48 }, hitOk: true, clickable: true, priority: 2800, position: "fixed", edgeUtility: true },
+		{ index: 3, tag: "input", role: "searchbox", action: "search", label: "Search videos", selector: "#search", point: { x: 240, y: 120 }, rect: { x: 80, y: 100, width: 320, height: 40 }, hitOk: true, editable: true, priority: 200 },
+	],
+}, []);
+assert.equal(sidebarDominantScan.focus.primary_actions[0].jsonPath, "data.actionables[3]", "check-summaries scan.primaryActions.sidebarDominant (B11): edge utility controls must not outrank main page actions");
+assert.equal(sidebarDominantScan.actionables.rows.some((row) => row[sidebarDominantScan.actionables.columns.indexOf("selector")] === "#share"), true, "check-summaries scan.actionables.sidebarStillVisible (B11): edge utility controls remain available in full actionables");
 const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 }, { id: 2 }], {
 	maxChars: 9_000,
 	entityContext: {
@@ -286,9 +318,9 @@ const scanBudgetGolden = summarizeScanData(highEntropyScanFixture(), [{ id: 1 },
 	},
 });
 const scanBudgetGoldenJson = JSON.stringify(scanBudgetGolden);
-assert.equal(scanBudgetGoldenJson.length, 3607, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
-assert.equal(sha256(scanBudgetGoldenJson), "6c2deaad3724fd6e631105ca5044ed93610954111ffa75da1bfee7f162e54131", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
-assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "rows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
+assert.equal(scanBudgetGoldenJson.length, 3756, "check-summaries scan.budgetGolden.length: high-entropy scan summary output length must remain byte-shape stable");
+assert.equal(sha256(scanBudgetGoldenJson), "122493065afa3bfe94b2fe4914c9414ac5f9a8f15dfd83132e6a96afda07a975", "check-summaries scan.budgetGolden.hash: high-entropy scan summary output must stay byte-for-byte stable before loop refactors");
+assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "media_candidates", "rows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
 assert.equal(scanBudgetGolden.focus.primary_actions.length, 3, "check-summaries scan.budgetGolden.primaryActions: final budget rung action count must stay stable");
 assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung action rows stay omitted under tight budget");
 const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));

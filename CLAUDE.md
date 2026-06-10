@@ -12,8 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Current execution entry: `CURRENT.md`; current top-level navigation: `TODO.md`; future routes:
   `ROADMAP.md`; completed summaries: `ARCHIVE.md`.
-- Active execution line: none at the moment. New large workstreams must first record the decision,
-  boundary, contract, and verification plan in `CURRENT.md`.
+- Active execution line: none at the moment. New large workstreams must first record the decision, boundary, contract, and verification plan in `CURRENT.md`.
 - Historical migration contract: `docs/cli-skill-frontend-migration-plan.md`
 - Current shipping external frontends are **Pi-native entry (`index.ts`) + `pi-browser` CLI (`cli/`)**. The MCP shell has been removed; CLI usage is documented in `docs/cli.md`.
 - `pi-browser` CLI is shipped and the migration is complete (landed 2026-06-03): code, contracts, current-facing docs, skill text, and live-browser smoke (`npm run smoke:cli`) all passed. No migration items remain.
@@ -52,9 +51,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### ABML Kernel Boundary
+### Three-Kernel Structure
 
-`src/abml-core/` is a pure-logic kernel (zero browser/Node dependencies) that holds perception engines (entity extraction, diffing, templating, relations, causal attribution). `src/abml/` is the runtime integration layer that wires the kernel into the browser bridge. The boundary is CI-locked via `npm run check:abml-core-boundary` — `abml-core` must not import from `src/abml`, `src/driver`, `src/tools`, or any browser API.
+The project has three pure-logic kernels, all zero browser/Node dependencies, each CI-boundary-locked:
+
+| Kernel | Source | Purpose | Boundary check |
+|--------|--------|---------|----------------|
+| Capture (sense) | `capture-src/` → `src/capture/generated/` | Page-world JS templates injected into the browser | `check:capture` / `check-capture-core-boundary.mjs` (entry set pinned at 5; 6th entry fails gate) |
+| ABML (perceive) | `src/abml-core/` | Entity extraction, diffing, templating, relations, causal | `check:abml-core-boundary` |
+| Distill (express) | `src/distill-core/` | Token economy, salience renderer, fact allocator, recovery | `check:distill-core-boundary` |
+
+`src/abml/` and `src/distill/` are the respective runtime integration layers. Layer import order: `capture → abml-core → distill-core`; neither kernel may import from the others' runtime layers, driver, or tools.
 
 ### Frontend Migration Boundary
 
@@ -120,7 +127,18 @@ npm run check:bridge           # bridge types + build + files + protocol + tools
 npm run check:web-security     # web security layer boundaries
 npm run check:lifecycle        # multi-browser/tab/MV3 fixtures
 npm run check:runtime-fixtures # network/hook/wait/transfer fixtures
+npm run check:capture          # capture-core boundary + entry-set pin
+npm run check:task-conditioned-salience  # relevance/ledger behavior contract
+npm run check:distill-core-boundary      # distill-core import boundary
+npm run check:recovery-boundary          # recovery module boundary
+npm run check:summary-boundary           # summary boundary
+npm run check:session-delta-long-conversation  # session-delta regression
+npm run bench:distill          # token-economy comparative bench (salience vs ladder)
+npm run smoke:cli              # CLI smoke (requires browser)
+npm run smoke:cli:full         # full CLI smoke including connection control
 ```
+
+> **Note:** `npm run check` does NOT run ESLint. Lint only runs via the pre-commit hook, `npm run lint`, or `npm run quality:local`.
 
 ### Smoke Tests (require browser)
 ```bash
@@ -157,14 +175,16 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `src/driver/BrowserBridgeServer.ts` — facade delegating to sub-registries
 - `bridge_src/service-worker.ts` — Chrome extension entry point (ESM import graph)
 - `bridge/native_command_schema.json` — native command protocol source of truth
-- `src/abml-core/` — pure-logic ABML kernel (no browser deps); `src/abml/` — runtime integration
+- `src/abml-core/` — pure-logic ABML perception kernel (no browser deps); `src/abml/` — runtime integration
+- `src/distill-core/` — pure-logic distill kernel: salience renderer, fact allocator, token economy, recovery, `PerceptionLedger`
+- `capture-src/entries/*Template.ts` — page-world sensing templates (source); `src/capture/generated/` — committed bundles (do NOT edit manually); `src/capture/inject.ts` — injection coordinator
 - `src/tools/webSecurity/` — `register/` (schemas), `browserNative/` (core execution), `bridges/` (sqlmap/nuclei), `shared/` (cookie provider, diagnostics)
 - `tests/contracts/` — contract tests (protocol, tools, boundaries)
 - `tests/smoke/` — browser smoke tests
 - `evals/browser-workflows/` — ACI evals: deterministic `runner.mjs` + blind-agent discovery layer (`launch-blind.mjs`/`pb-blind.mjs`/`teardown-blind.mjs`, `blind-tasks-realsite.md`, `blind-findings.md`)
+- `skills/pi-browser-tools/SKILL.md` — Pi-native skill source (junction at `D:/Pi/agent/skills/pi-browser-tools`); `skills/pi-browser-cli/SKILL.md` — CLI-first skill (not in Pi global junction — only for CLI agents)
 - `skills/pi-browser-blind-eval/` — operator/cron procedure for the standing blind real-agent eval loop
 - `docs/generated/` — auto-generated protocol and tool contract docs
-- `docs/cli-skill-frontend-migration-plan.md` — historical frontend migration execution contract
 
 ## Development Workflow
 
@@ -192,10 +212,12 @@ Pi runtime loads source `.ts` directly via `pi.extensions: ["./index.ts"]`; npm 
 - Bridge port range: `127.0.0.1:18765-18784` — first free port is used
 - `browserSessionId` parameter isolates tab selection across concurrent sessions
 - Write operations require lease; concurrent write to same tab returns `TAB_LEASE_CONFLICT`
+- Default renderer is **salience-v1** with session-delta on; escape hatches: `PI_BROWSER_RENDERER=ladder`, `PI_BROWSER_SESSION_DELTA=0`
+- `npm run check` does **not** run ESLint; run `npm run lint` or `npm run quality:local` to catch lint issues
 
 ## Code search & navigation (large, multi-layer codebase)
 
-This repo spans many layers (`abml-core → abml → tools → driver → bridge_src`). To avoid
+This repo spans many layers (`capture-src → abml-core → distill-core → abml/distill → tools → driver → bridge_src`). To avoid
 mislocating or misnaming things in a codebase this size:
 
 - **Verify before naming.** Before referencing any tool / API / param / flag in code, prose,

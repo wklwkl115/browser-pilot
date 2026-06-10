@@ -280,6 +280,8 @@ export const ScanSummarySchema = Type.Object({
 		preferredReads: Type.Array(LooseObject),
 	}, { additionalProperties: true }),
 	list_hints: SummaryTableSchema,
+	media_candidates: OptionalSummaryTable,
+	rows: OptionalSummaryTable,
 	actionables: SummaryTableSchema,
 	interactive: Type.Array(Type.String()),
 	headings: Type.Array(Type.String()),

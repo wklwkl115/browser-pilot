@@ -5,9 +5,9 @@
 > Product of the 2026-06-10 whole-project debt/dangling/lag audit (source-verified: src/ has
 > zero TODO/FIXME, tests have zero skips, all doc references resolve, the dead MCP `sections`
 > field was already removed). This contract disposes of EVERY remaining item — each one is
-> either a completed work item here, a formal close-out, or a kept-deferral with a machine or
-> evidence trigger. After this plan landed, the project's debt ledger contains only
-> trigger-gated entries; nothing is parked without a reopen condition.
+> either a completed work item here, an accepted contract boundary, or a formal close-out with a
+> reopen-evidence bar. After the 2026-06-10 debt-zeroing follow-up, the project has no
+> trigger-gated backlog ledger.
 
 ## 1. Audit result — full disposition table
 
@@ -18,14 +18,14 @@
 | Dictionary/wordlist hardcoding (~44 sites / 5 classes) | W1 externalized into committed default wordlists consumed through `readWordlist()`; default behavior contract-locked byte-identical | **DONE — D3** |
 | Recovery template scatter (current grandfathered baseline) | grandfather list is annotated, shrink-only contract is live, and D4 removed stale exemptions already no longer matching the regex baseline | **DONE — D4** |
 | kernel-opt `bench:abml-kernel` | written off in the kernel plan: byte-identity evidence + `bench:distill` supersede a timing harness | **DONE — D5a** |
-| summaries truncation grandfather (31 files) | other face of the V6 shadow debt — burns when the fact path drives output | KEPT — trigger = V6 promotion (machine-locked) |
-| salience V6 shadow + R3 arbitration | shadow guard machine-enforced; promotion checklist 2 paid / 1 gated | KEPT — trigger = promotion edits the guard |
-| capture esbuild migration | entry-set gate + escape ledger 0/2 | KEPT — machine/ledger triggers |
-| ABML public verb surface | W1 (WAI table) actively REFUTES need: agents report no acting friction | KEPT closed-leaning — trigger = transcript showing an agent BLOCKED by the missing verb |
-| web-reversing phase 2 | phase-1 primitives unrefuted by any eval | KEPT — trigger = eval task phase 1 cannot close |
-| renderer `line` granularity beyond entity primitive | zero positive evidence, highest comprehension risk | KEPT — trigger = per-plane blind evidence |
-| G5 artifact regex on one-line payloads; G1/G6 CLI papercuts | runs=1 each | KEPT in ledger per triage rules (needs recurrence) — NOT plan items |
-| B9a media candidate list; B11 sidebar-dominant primary_actions | n=2 boundary-adjacent / n=1 | KEPT in ledger; D1 infrastructure makes a future bounded B9a cheap |
+| summaries truncation grandfather (31 files) | accepted boundary: per-tool distillers perform deterministic compacting while allocator remains shadow-only for envelope entry; `check-summary-boundary` locks the 31-file allowlist as shrink-only | **ACCEPTED BOUNDARY — no backlog** |
+| salience V6 shadow + R3 arbitration | shadow guard machine-enforced; allocator still never feeds model-facing envelope | **CLOSED CONTRACT — guard-locked** |
+| capture esbuild migration | capture-core generated bundle seam is stable; entry-set and escape-ledger checks protect the current model without an esbuild migration | **CLOSED DECISION** |
+| ABML public verb surface | W1 (WAI table) actively refutes need; B2 public action arm was tried and reverted; north star remains perception-first | **CLOSED DECISION** |
+| web-reversing phase 2 | phase-1 primitives unrefuted by eval; no current product value in speculative expansion | **CLOSED DECISION** |
+| renderer `line` granularity beyond entity primitive | owner decision from renderer-default-flip: line granularity stays out; zero positive evidence and highest comprehension risk | **CLOSED DECISION** |
+| G5 artifact regex on one-line payloads; G1/G6 CLI papercuts | runs=1 each | **CLOSED AS HYPOTHESES** — rolling eval notes only, not backlog |
+| B9a media candidate list; B11 sidebar-dominant primary_actions | B9a now `data.media_candidates` + summary/artifact hints; B11 now edge utility controls are penalized for `primary_actions` while remaining in full `actionables` | **DONE — debt-zeroing follow-up** |
 
 ## 2. Work items
 
@@ -62,13 +62,10 @@ containerHint/selector`, without any custom `browser_execute` JS.
 
 ### D2 — ROADMAP honesty restructure (dangling-decision cleanup) ✅
 
-Rewrite `ROADMAP.md` into two sections: **(a) Future routes** — items with a real reopen
-trigger (web-reversing phase 2, ABML public surface with its *currently-refuting* evidence
-noted, dictionary W2/W3, new eval specs); **(b) Closed decisions** — adjudicated rejections
-stated as such with their reopen evidence bar (the rejected tools are enumerated in ROADMAP
-and `docs/jshookmcp-native-absorption.md`; this plan does not re-list them). The standing
-RULES that are not routes move under a "standing rules" note. Stays ≤80 lines
-(`check:doc-structure`).
+Rewrite `ROADMAP.md` so adjudicated rejections are not disguised as future routes. ABML public
+verbs, web-reversing phase 2, renderer line granularity, and capture esbuild migration now live
+only as closed decisions with reopen-evidence bars; dictionary W2/W3 and explicit hook target
+expansion remain parked governance/RFC areas, not debt backlog.
 
 ### D3 — Dictionary W1: security payload/signature externalization (zero behavior change) ✅
 
@@ -97,8 +94,8 @@ entries are allowed, and future burn-down stays opportunistic.
 - **D5a:** done — `docs/abml-kernel-optimization-plan.md` §6 now records the optional bench
   harness as written off in favor of byte-identity evidence + `bench:distill`.
 - **D5b:** done — `evals/browser-workflows/blind-findings.md` B1 is now resolved with the
-  sentinel run id/path, and B9a explicitly points at D1 row-projection infrastructure as the
-  future bounded substrate.
+  sentinel run id/path; the debt-zeroing follow-up then resolved B9a with bounded visible
+  media candidates and B11 with edge-utility primary-action ranking.
 - **D5c:** done — `CURRENT.md` / `TODO.md` / `CHANGELOG.md` now reflect plan completion and the
   absence of an active execution line.
 
@@ -116,10 +113,9 @@ completion.
 
 ## 4. End state ("clean ledger" definition)
 
-After this plan: every remaining debt in the project is one of —
-(a) **machine-trigger-gated** (capture esbuild, summaries grandfather),
-(b) **evidence-trigger-gated with the trigger written down** (ABML surface, web-reversing
-phase 2, renderer `line` granularity, ledger n=1 items, W2/W3 governance), or
-(c) **gone** (B1 settled, ROADMAP honest, W1 externalized, recovery list ratcheted, kernel
-bench item written off). Nothing is parked without a reopen condition; no dangling references;
-no adjudicated rejection is disguised as a future route.
+After the debt-zeroing follow-up: every prior debt item is either **gone** (B1/B9a/B11/W1/D4/D5),
+an **accepted contract boundary** (31-file summary truncation shrink-only ratchet; salience
+allocator shadow guard), or a **closed decision with a reopen-evidence bar** (ABML public verbs,
+web-reversing phase 2, renderer line granularity, capture esbuild migration, n=1 eval
+hypotheses). No trigger-gated backlog remains, and no adjudicated rejection is disguised as a
+future route.

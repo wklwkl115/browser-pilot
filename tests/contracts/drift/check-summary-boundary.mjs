@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const summariesDir = path.join(root, "src", "tools", "summaries");
 
-// Perception-renderer K1b: staged anti-scatter lock. Existing summary files are grandfathered
-// because this tree already contains many local caps/truncation decisions. New summary files must
-// either use distill-core/granularity primitives or be added here as an explicit reviewed exception
-// that K3 burns down during factify migration.
+// Accepted summary truncation boundary: per-tool distillers intentionally keep summary output compact.
+// This is not a pending fact-level relevance debt while the allocator remains shadow-only; it is a
+// shrink-only ratchet. New local caps/truncation sites must route through distill-core/granularity or
+// explicitly shrink this reviewed allowlist.
+const ACCEPTED_TRUNCATION_BOUNDARY_MAX = 31;
 const GRANDFATHERED_TRUNCATION_FILES = new Set([
 	"src/tools/summaries/common.ts",
 	"src/tools/summaries/content.ts",
@@ -57,17 +58,21 @@ function walk(dir) {
 }
 
 const files = walk(summariesDir);
+assert(
+	GRANDFATHERED_TRUNCATION_FILES.size <= ACCEPTED_TRUNCATION_BOUNDARY_MAX,
+	`summary truncation accepted boundary may shrink only: ${GRANDFATHERED_TRUNCATION_FILES.size} > ${ACCEPTED_TRUNCATION_BOUNDARY_MAX}`,
+);
 for (const file of files) {
 	const rel = path.relative(root, file).replace(/\\/g, "/");
 	const text = readFileSync(file, "utf8");
 	assert(!text.includes("registerRefDescriptor"), `${rel} must not mint pi-ref registry entries`);
 	assert(!/from\s+["'][^"']*resources\//.test(text), `${rel} must not import resource-store writers`);
 	if (TRUNCATION_SCATTER_RE.test(text) && !text.includes("distill-core/granularity") && !GRANDFATHERED_TRUNCATION_FILES.has(rel)) {
-		assert.fail(`${rel} adds local truncation/capping outside the staged grandfather list; route through src/distill-core/granularity.ts or explicitly review the exception`);
+		assert.fail(`${rel} adds local truncation/capping outside the accepted shrink-only boundary; route through src/distill-core/granularity.ts or explicitly shrink/review the boundary`);
 	}
 }
 
 const missingGrandfathered = [...GRANDFATHERED_TRUNCATION_FILES].filter((rel) => !files.some((file) => path.relative(root, file).replace(/\\/g, "/") === rel));
 assert.deepEqual(missingGrandfathered, [], "summary truncation grandfather list contains deleted/moved files");
 
-console.log(`summary boundary ok — distillers do not write ref/resource registries; staged truncation baseline ${GRANDFATHERED_TRUNCATION_FILES.size} file(s)`);
+console.log(`summary boundary ok — distillers do not write ref/resource registries; accepted shrink-only truncation boundary ${GRANDFATHERED_TRUNCATION_FILES.size}/${ACCEPTED_TRUNCATION_BOUNDARY_MAX} file(s)`);

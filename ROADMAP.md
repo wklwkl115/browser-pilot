@@ -19,28 +19,31 @@
   *(重开条件：成立独立能力 RFC，不搭车任何现有主线)*
 - **Orchestration/Desired State/Logical Target 回归**：已撤回；operation metadata
   只做诊断。*(重开条件：无；保持撤回状态)*
+- **ABML 公开 verb surface**：北极星是 perception-first；B2 public action arm 已于
+  2026-06-05 试过并整体回退；W1/WAI 证据显示 agent 未因缺公开 action verb 被真实
+  任务卡住。*(重开证据线：除非 perception-first 北极星本身被推翻，否则不重开)*
+- **Web reversing/security phase 2 扩面**：phase-1 原语已覆盖当前真实 eval 需求；成熟
+  维护期不保留投机性扩面 backlog。*(重开证据线：真实 agent eval 证明
+  source-map/逆向摩擦阻断真实任务)*
+- **Renderer `line` 粒度扩展**：renderer-default-flip owner 已决 line granularity stays
+  out；entity 面原语保留，line 面不进默认渲染。*(重开证据线：per-plane blind evidence
+  证明实体/结构面无法覆盖)*
+- **capture esbuild migration**：当前 capture-core generated bundle seam 足够；entry-set
+  合同与 escape ledger 保护现状。*(重开证据线：capture entry-set 或 escape ledger 证明
+  当前同步模型无法维护)*
 
-## 当前非激活路线（真实未来项，带重开触发器）
+## 当前非激活路线（治理/RFC 区；不是 debt backlog）
 
 1. **Real ACI eval runner 扩展**：runner 已落地（`npm run eval:browser-workflows
    --fixture-server`，覆盖 01-27 + 30）；后续是新增 spec 时同步接入；仍禁止
    scanner/OAST/external network 默认运行。
-2. **Web reversing/security 下阶段原语**：已完成 phase 1（拦截/热补丁/JS AST/DOM
-   事件链/Wasm/WebSocket）；phase 2 须另开 RFC + eval-first。*(触发：phase-1 原语
-   eval 无法关闭的真实任务)*
-3. **ABML 公开 verb surface**：`blind-findings.md` W1（WAI）主动否定需求——agent
-   在 10 次真实 blind 运行中报告"acting 无 friction"，只有返回值渲染痛点（已修）。
-   目前延迟有强正面证据支撑。*(触发：transcript 显示 agent 因缺公开 verb 被真实任务
-   卡住)*
-4. **Renderer `line` 粒度扩展**（entity 面原语已落）：最高理解风险档，零正面证据。
-   *(触发：逐平面盲测 eval 证据)*
-5. **词典/wordlist 治理 W2/W3**：W1（安全 payload/签名外部化）已由 debt-clearance
+2. **词典/wordlist 治理 W2/W3**：W1（安全 payload/签名外部化）已由 debt-clearance
    执行；W2（ARIA 词表 codegen，纯核无运行时依赖约束）和 W3（SecLists 校准，外部
-   依赖）维持 parked。*(触发：W2 须独立执行合同；W3 须 SecLists 依赖评审)*
-6. **browser_hook 后续扩展**：只能增加显式 hook targets 或静态 target 展开；禁止
-   策略型 preset 名称与黑盒判断。*(触发：blind-eval 确认新 target 必需)*
-7. **盲测滚动台账中的 n=1 items**（G5 artifact regex / G1 G6 CLI papercuts / B9a
-   媒体候选 / B11 sidebar-dominant）：等待复现确认后才成为工作项。
+   依赖）维持 parked；启动前必须另开独立执行合同。
+3. **browser_hook 后续扩展**：只能增加显式 hook targets 或静态 target 展开；禁止
+   策略型 preset 名称与黑盒判断；新 target 必须由 blind-eval 或真实任务证据立项。
+4. **盲测滚动台账 n=1 hypotheses**（G5 artifact regex / G1 G6 CLI papercuts 等）：
+   只作为 eval 观察记录；复现前不是工作项，复现后也必须重新立合同。
 
 ## 近期质量建议
 

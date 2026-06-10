@@ -6,18 +6,28 @@
 - 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
 - 当前主链路：`browser_tabs list|switch|create` -> 显式 `tabId` -> `browser_observe` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
 - 当前工具边界：22 个 `browser_*` 工具 always-on；Web Security 是 scoped follow-up 分组，不再有 capability profile / compact mode / discovery mode；不新增公开 `browser_*` 工具，不恢复 orchestration / target resolver。
-- ABML 是内部 substrate，不是公开工具面：继续增强 `browser_observe` / `browser_execute monitor` / `browser_frame` / AX/vision/monitor 盲区；公开 ABML verb surface 仍 deferred。
+- ABML 是内部 substrate，不是公开工具面：继续增强 `browser_observe` / `browser_execute monitor` / `browser_frame` / AX/vision/monitor 盲区；公开 ABML verb surface 已关闭为 perception-first 项目决策。
 - jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：只吸收能力模型与证据路径，不新增被拒绝的公开工具 `browser_sources` / `browser_debugger` / `browser_intercept` / `browser_storage` / `browser_canvas`。
 - 仓库单一源码根：`D:/Pi/agent/extensions/pi-browser-tools` 是唯一正式源码仓库；`.pi/public-export/` 仅作本地导出/归档产物。
 - 修改协议/工具后先跑 `npm run check`；局部回归优先 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`。
 
 ## 当前激活项
 
-当前无激活执行线。最近完成项如下。
+### Debt zeroing — remove trigger-gated backlog (2026-06-10, 完成)
+
+决策：执行用户要求的 trigger-gated debt 清零。原则：能作为确定性机械能力落地的，直接实现并加合同；没有正当产品形态或会扩大公开面/策略面的，直接关闭为项目决策，不再保留“等触发再做”的 backlog。公开 `browser_*` 工具名仍不新增；优先在既有 scan/summary/artifact/contract 面内消化。
+
+落地：B9a 在既有 scan entry 内新增 bounded `data.media_candidates`，summary 提供紧凑 `media_candidates` 表与 `data.media_candidates` artifact hint，边界限定为 visible media identity（selector/src/poster/alt/dims/geometry/sameOrigin），不做 headline/ranking 语义。B11 在 scan actionables 给 fixed/sticky edge utility controls 打机械 `edgeUtility`/`position` 标记，summary 只在 `focus.primary_actions` 排序中降权，完整 `data.actionables` 仍保留这些控件。
+
+清账口径：summary grandfather 的 31 个 per-tool distiller 输出位置接受为既定边界，不强改；`check:summary-boundary` 以 31 为上限做 shrink-only ratchet，并由既有 shadow guard 继续保证 allocator 不进 model-facing envelope。ABML public verb surface、web-reversing phase 2、renderer line 粒度、capture esbuild migration 均关闭为项目决策，只保留 reopen-evidence bar，不再写成 trigger-gated backlog。G 类 n=1 项只作为 rolling eval hypotheses，复现前不是工作项。
+
+验证：已通过 `check:scan`、`check:summaries`、`check:capture`、`check:summary-boundary`、`check:output-schema-conformance`、`check:web-security`、skill quick validate、`npm run lint`、`npm run check`、`npm run smoke:browser:scan-summary`、`git diff --check`（仅 CRLF 归一化提示，退出码 0）。Smoke artifact：`.pi/browser-artifacts/smoke-browser-scan-summary-results.json`。
+
+最近完成项如下。
 
 ### Debt clearance (2026-06-10, 完成)
 
-决策：已执行 `docs/debt-clearance-plan.md`——全项目债务/悬空/滞后审计后的清债合同。不新增公开 `browser_*` 工具，不改 agent-facing schema，不改变默认输出语义；完工后仅保留 machine/evidence-trigger-gated debt。
+决策：已执行 `docs/debt-clearance-plan.md`——全项目债务/悬空/滞后审计后的清债合同。不新增公开 `browser_*` 工具，不改 agent-facing schema，不改变默认输出语义。该段记录的是 debt-zeroing 前的阶段性清账；后续 trigger-gated backlog 已在上一条完成项中清零。
 
 落地：D2 完成 `ROADMAP.md` 诚实化重构（已关闭决策 / 当前非激活路线 / 近期质量建议）；D3 完成 W1 默认安全词表外部化并继续走 `readWordlist()`；D4 完成 recovery grandfather ratchet 文档化与 shrink-only contract 收口；D5a 将 `bench:abml-kernel` 正式写 off 到 kernel plan；D5b 将 blind findings 的 B1 改为 resolved，并把 B9a 未来边界指向 D1 基础设施；D1 在既有 scan entry 内落地 `data.rows` / summary rows / artifact hints，用真实站点 sentinel 证明无需 custom JS 即可读取 DOM-ordered visible rows。
 
