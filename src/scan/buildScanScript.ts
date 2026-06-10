@@ -254,6 +254,24 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
     try { return CSS && CSS.escape ? CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
     catch (_) { return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
   }
+  const SIBLING_SELECTOR_CACHE = new WeakMap();
+  function siblingSelectorInfo(parent, el) {
+    let cache = SIBLING_SELECTOR_CACHE.get(parent);
+    if (!cache) {
+      const counts = new Map();
+      const order = new WeakMap();
+      for (const child of Array.from(parent.children)) {
+        const tag = child.tagName;
+        const next = (counts.get(tag) || 0) + 1;
+        counts.set(tag, next);
+        order.set(child, next);
+      }
+      cache = { counts, order };
+      SIBLING_SELECTOR_CACHE.set(parent, cache);
+    }
+    const tag = el.tagName;
+    return { index: cache.order.get(el) || 1, total: cache.counts.get(tag) || 1 };
+  }
   function selectorFor(el) {
     if (el.id) return '#' + cssEscape(el.id);
     const parts = [];
@@ -264,8 +282,8 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
       if (cls.length) part += '.' + cls.map(cssEscape).join('.');
       const parent = cur.parentElement;
       if (parent) {
-        const siblings = Array.from(parent.children).filter(x => x.tagName === cur.tagName);
-        if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(cur) + 1) + ')';
+        const siblingInfo = siblingSelectorInfo(parent, cur);
+        if (siblingInfo.total > 1) part += ':nth-of-type(' + siblingInfo.index + ')';
       }
       parts.unshift(part);
       cur = parent;

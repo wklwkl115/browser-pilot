@@ -12,7 +12,7 @@
 // or (b) a whitelisted cross-cutting module proven transitively pure. Importing driver/tools/
 // scan/resources/node, an npm package, a runtime sibling, or reaching back into src/abml/ fails.
 //
-// src/abml/ keeps the 6 runtime files plus pure-core re-export shims at the old pure-core paths, so every
+// src/abml/ keeps the runtime files plus pure-core re-export shims at the old pure-core paths, so every
 // existing importer ("../abml/entity.js", "../abml/verbs/router.js", ...) keeps working unchanged.
 // This file IS the machine-readable manifest; keep it in sync with docs/abml-kernel-manifest.md.
 import assert from "node:assert/strict";
@@ -39,6 +39,7 @@ const PURE_CORE = [
 	"diff.ts",
 	"stream.ts",
 	"causal.ts",
+	"grouping.ts",
 	"templating.ts",
 	"treeDiff.ts",
 	"semanticRefAnchor.ts",
@@ -99,7 +100,7 @@ assert.deepEqual(
 assert.deepEqual(
 	walk(abmlDir).sort(),
 	[...RUNTIME, ...PURE_CORE].sort(),
-	"src/abml/ must contain exactly the 6 runtime files + pure-core re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
+	"src/abml/ must contain exactly the runtime files + pure-core re-export shims (one per pure-core path). A new file here is unclassified — add it to RUNTIME, or it belongs in abml-core.",
 );
 
 // --- Import extraction -------------------------------------------------------------------------

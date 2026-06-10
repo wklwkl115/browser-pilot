@@ -12,12 +12,12 @@ one-way dependency direction:
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
   verb decisions, error shaping, temporal entity diff, and mechanism-arm structure diff. Portable,
   unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
-  package. **23 modules + an `index.ts` barrel.**
+  package. **25 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
   data. **6 files.**
 
-`src/abml/` also keeps **23 thin re-export shims** at the old pure-core paths (e.g.
+`src/abml/` also keeps **25 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
 `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
 the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
@@ -42,7 +42,7 @@ each doc links back here.
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/abml-execution-plan.md`](abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
 
-## Pure core (23 — zero browser/Node deps)
+## Pure core (25 — zero browser/Node deps)
 
 | File | Role |
 | --- | --- |
@@ -57,6 +57,7 @@ each doc links back here.
 | `diff.ts` | ABML R3 temporal entity diff: appeared/disappeared/state-changed/name-changed/focusedRef between two entity snapshots. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
+| `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptor derivation, indexed raw grouping, scope helpers, normalized display text helpers, and non-control suppression. |
 | `templating.ts` | ABML mechanism arm (M1): structure templating — folds repeated sibling entities (same AX container / aria-setsize + role/kind) into one template + compact instances + handles. |
 | `treeDiff.ts` | ABML mechanism arm (M2a): template-level living diff over repeated structures; O(change) projection for scan baselines without changing ref minting. |
 | `semanticRefAnchor.ts` | ABML mechanism arm (M2b): pure semantic ref-anchor candidate and shadow-hash input derivation; high-confidence anchors feed gated runtime ref minting. |
@@ -126,7 +127,7 @@ existing consumers still import individual modules through the `src/abml/` shims
   1. add `src/abml-core/package.json` → `{ "name": "@pi/abml-core", "private": true, "type":
      "module", "main": "./index.ts", "sideEffects": false }` (zero `dependencies`);
   2. add `"workspaces": ["src/abml-core"]` to root `package.json`; run `npm install`;
-  3. re-point the 15 `src/abml/` shims to `export * from "@pi/abml-core/<module>.js"` (or keep the
+  3. re-point the `src/abml/` shims to `export * from "@pi/abml-core/<module>.js"` (or keep the
      relative shims — both work);
   4. either vendor the 5 whitelisted pure helpers into the package, or keep importing them
      relatively (the package stays zero **third-party** deps either way — they are first-party pure

@@ -28,6 +28,7 @@ kernel's entire public surface at a glance.
 | `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
+| `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; high-confidence anchors feed gated ref minting in runtime. |
@@ -55,7 +56,7 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   wire it in `verbs/router.ts`, and put the browser I/O in `../abml/verbs/<verb>Runtime.ts`. Keep
   the decision and the I/O on opposite sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
-  `ax.ts` (the merge), `entity.ts` (the model), `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, or `snapshotProjection.ts`. Stay generic —
+  `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, or `snapshotProjection.ts`. Stay generic —
   ABML models ARIA patterns, never per-site/per-framework branches (see the perception roadmap doc).
 - **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).

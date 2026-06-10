@@ -9,7 +9,7 @@ import { buildRelationSummary, addEntityRelations } from "../abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, causalFiredHint, type CausalSummary } from "../abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
-import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
+import { buildSnapshotProjection } from "../abml/snapshotProjection.js";
 import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.js";
 import { factsFromEntities, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../abml/perceptionLedger.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
@@ -559,9 +559,6 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const abmlTreeDiff: TreeDiff | undefined = observation.abmlRead?.ok === true && baseline
 		? buildTreeDiff(baseline.entities, observation.abmlRead.entities ?? [], { partialBaseline: baseline.partialBaseline })
 		: undefined;
-	const abmlSnapshotProjection: SnapshotProjection | undefined = observation.abmlRead?.ok === true
-		? buildSnapshotProjection(observation.abmlRead.entities ?? [], { treeDiff: abmlTreeDiff })
-		: undefined;
 	// R3.x causal attribution — attach `triggered` edges BEFORE the relation summary so they surface in
 	// relations.summary + the controls' inline relations. Two sources, both additive (the delta stays
 	// fully inline in envelope.causal regardless — passive P0 behavior preserved):
@@ -670,7 +667,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		return hints;
 	})();
 	if (scanHints.length) summaryRecord.nextActions = scanHints;
-	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : abmlSnapshotProjection;
+	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : undefined;
 	const artifactIdentityGraph = isRecord(summaryRecord._identityGraph) ? summaryRecord._identityGraph : undefined;
 	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
 	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +

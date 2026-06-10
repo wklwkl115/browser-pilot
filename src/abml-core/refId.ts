@@ -6,15 +6,16 @@ export function makePiRefUri(kind: RefKind, id: string): string {
 
 function stableHash24(value: unknown): string {
 	const text = JSON.stringify(value);
-	const seeds = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b];
-	return seeds.map((seed) => {
-		let hash = seed >>> 0;
-		for (let index = 0; index < text.length; index += 1) {
-			hash ^= text.charCodeAt(index);
-			hash = Math.imul(hash, 0x01000193) >>> 0;
-		}
-		return hash.toString(16).padStart(8, "0");
-	}).join("");
+	let hashA = 0x811c9dc5 >>> 0;
+	let hashB = 0x9e3779b9 >>> 0;
+	let hashC = 0x85ebca6b >>> 0;
+	for (let index = 0; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+		hashB = Math.imul(hashB ^ code, 0x01000193) >>> 0;
+		hashC = Math.imul(hashC ^ code, 0x01000193) >>> 0;
+	}
+	return [hashA, hashB, hashC].map((hash) => hash.toString(16).padStart(8, "0")).join("");
 }
 
 export function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId">): string | undefined {

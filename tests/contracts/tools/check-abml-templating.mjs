@@ -105,15 +105,19 @@ assert.ok(!observeSrc.includes("buildTemplateSummary"), "observeRunners no longe
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(!middlewareSrc.includes("envelopeTemplates"), "resultMiddleware no longer lifts templates");
 const treeDiffSrc = readRepo("src/abml-core/treeDiff.ts");
-assert.ok(treeDiffSrc.includes("./templating.js") && treeDiffSrc.includes("templateGroupDescriptorForEntity"), "treeDiff still consumes the templating engine");
+assert.ok(treeDiffSrc.includes("./grouping.js") && treeDiffSrc.includes("templateFieldValue"), "treeDiff must consume shared grouping + templating helpers");
 const snapshotSrc = readRepo("src/abml-core/snapshotProjection.ts");
-assert.ok(snapshotSrc.includes("./templating.js") && snapshotSrc.includes("buildTemplateSummary"), "snapshotProjection still consumes the templating engine");
+assert.ok(snapshotSrc.includes("./grouping.js") && snapshotSrc.includes("buildTemplate("), "snapshotProjection must consume shared grouping + direct buildTemplate");
 const templatingSrc = readRepo("src/abml-core/templating.ts");
-assert.ok(templatingSrc.includes("buildTemplateSummary") && templatingSrc.includes("containerRole") && templatingSrc.includes("setSize"), "pure-core selector groups by AX container + setSize");
+assert.ok(templatingSrc.includes("buildTemplateSummary") && templatingSrc.includes("groupEntities") && templatingSrc.includes("buildTemplate("), "pure-core selector groups by AX container + setSize through shared grouping");
+const groupingSrc = readRepo("src/abml-core/grouping.ts");
+assert.ok(groupingSrc.includes("templateGroupDescriptorForEntity") && groupingSrc.includes("setSize"), "grouping kernel must own descriptor derivation and repetition signals");
 const barrelSrc = readRepo("src/abml-core/index.ts");
-assert.ok(barrelSrc.includes("./templating.js"), "kernel barrel exports templating");
+assert.ok(barrelSrc.includes("./templating.js") && barrelSrc.includes("./grouping.js"), "kernel barrel exports templating and grouping");
 const shimSrc = readRepo("src/abml/templating.ts");
 assert.ok(shimSrc.includes("../abml-core/templating.js"), "src/abml/templating.ts is a re-export shim");
+const groupingShimSrc = readRepo("src/abml/grouping.ts");
+assert.ok(groupingShimSrc.includes("../abml-core/grouping.js"), "src/abml/grouping.ts is a re-export shim");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-templating"]?.includes("check-abml-templating.mjs"), "check:abml-templating script present");
 

@@ -5,7 +5,14 @@
 // delta buckets where available. It intentionally does not mint refs, resolve actions, or infer DOM
 // structure from tag/class/selector patterns.
 import type { Entity, EntityKind } from "./entity.js";
-import { buildTemplateSummary, isActionableOrStructural, isPureTextLeaf, MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, structureScopeKey, templateGroupDescriptorForEntity, templateRank, type StructureTemplate, type TemplateGroupDescriptor, type TemplateVaryField } from "./templating.js";
+import {
+	groupEntities as rawGroupEntities,
+	isActionableOrStructural,
+	isPureTextLeaf,
+	structureScopeKey,
+	type TemplateGroup,
+} from "./grouping.js";
+import { buildTemplate, MAX_TEMPLATES, templateRank, type StructureTemplate, type TemplateVaryField } from "./templating.js";
 import type { TreeDiff, TreeDiffChangedBucket, TreeDiffInstanceBucket, TreeTemplateDiff } from "./treeDiff.js";
 
 export type SnapshotProjectionDelta = {
@@ -56,8 +63,6 @@ export type SnapshotProjectionOptions = {
 	treeDiff?: TreeDiff;
 };
 
-type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: Entity[] };
-
 function suppressRedundantTextLeafGroups(groups: TemplateGroup[]): TemplateGroup[] {
 	const scopesWithStructuralTemplates = new Set(groups
 		.filter((group) => isActionableOrStructural(group.descriptor))
@@ -67,15 +72,7 @@ function suppressRedundantTextLeafGroups(groups: TemplateGroup[]): TemplateGroup
 }
 
 function groupEntities(entities: Entity[]): TemplateGroup[] {
-	const groups = new Map<string, TemplateGroup>();
-	for (const entity of entities) {
-		const descriptor = templateGroupDescriptorForEntity(entity);
-		if (!descriptor) continue;
-		const group = groups.get(descriptor.key);
-		if (group) group.members.push(entity);
-		else groups.set(descriptor.key, { descriptor, members: [entity] });
-	}
-	return suppressRedundantTextLeafGroups(Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES));
+	return suppressRedundantTextLeafGroups(rawGroupEntities(entities));
 }
 
 function cloneInstanceBucket(bucket: TreeDiffInstanceBucket): TreeDiffInstanceBucket {
@@ -106,9 +103,8 @@ function projectionDelta(diff: TreeTemplateDiff): SnapshotProjectionDelta | unde
 	};
 }
 
-function templateFromGroup(group: TemplateGroup, delta?: SnapshotProjectionDelta): SnapshotProjectionTemplate | undefined {
-	const template = buildTemplateSummary(group.members).templates[0];
-	if (!template) return undefined;
+function templateFromGroup(group: TemplateGroup, delta?: SnapshotProjectionDelta): SnapshotProjectionTemplate {
+	const template = buildTemplate(group.members.map((member) => member.entity));
 	return {
 		templateKey: group.descriptor.key,
 		...(template.container ? { container: template.container } : {}),
@@ -152,7 +148,6 @@ export function buildSnapshotProjection(entities: Entity[], options: SnapshotPro
 	const templates: SnapshotProjectionTemplate[] = [];
 	for (const group of groupEntities(entities)) {
 		const template = templateFromGroup(group, deltaByKey.get(group.descriptor.key));
-		if (!template) continue;
 		templates.push(template);
 		deltaByKey.delete(group.descriptor.key);
 	}

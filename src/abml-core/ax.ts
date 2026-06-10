@@ -12,6 +12,25 @@ export type AxContext = {
 	capturedAt?: number;
 };
 
+type AxPropertyMap = Map<string, unknown>;
+type EntityMatchInfo = {
+	name?: string;
+	role: string;
+	point?: { x: number; y: number };
+	box?: { x: number; y: number; w: number; h: number };
+};
+
+const CONTROL_AX_ROLES = new Set(["button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "listbox", "menuitem", "option", "slider", "spinbutton"]);
+const TEXT_AX_ROLES = new Set(["statictext", "text", "labeltext", "heading"]);
+const MEDIA_AX_ROLES = new Set(["image", "img"]);
+const FRAME_AX_ROLES = new Set(["iframe", "frame", "webarea", "rootwebarea"]);
+const BORING_AX_ROLES = new Set(["rootwebarea", "none", "generic", "group", "pane", "section", "paragraph", "listitemmarker", "inlinetextbox"]);
+const EDITABLE_AX_ROLES = new Set(["textbox", "searchbox", "combobox", "textarea", "spinbutton"]);
+const LANDMARK_ROLES = new Set(["banner", "navigation", "main", "complementary", "contentinfo", "search", "form", "region"]);
+const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded", "current"] as const;
+const GEOMETRY_MATCH_RADIUS_PX = 24;
+const COINCIDENT_BOX_IOU = 0.8;
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return isRecord(value) ? value : undefined;
 }
@@ -50,7 +69,23 @@ function axValueText(value: unknown): string | undefined {
 	return stringValue(record.value) || stringValue(record.text) || stringValue(record.name);
 }
 
-function axProperty(node: AxTreeNode, propertyName: string): unknown {
+function axPropertyMap(node: AxTreeNode): AxPropertyMap {
+	const props = Array.isArray(node.properties) ? node.properties : [];
+	const out = new Map<string, unknown>();
+	for (const item of props) {
+		const record = asRecord(item);
+		const name = record && stringValue(record.name);
+		if (name) out.set(name, record?.value);
+	}
+	return out;
+}
+
+function axPropertyFromMap(propertyMap: AxPropertyMap | undefined, propertyName: string): unknown {
+	return propertyMap?.get(propertyName);
+}
+
+function axProperty(node: AxTreeNode, propertyName: string, propertyMap?: AxPropertyMap): unknown {
+	if (propertyMap) return axPropertyFromMap(propertyMap, propertyName);
 	const props = Array.isArray(node.properties) ? node.properties : [];
 	const hit = props.find((item) => {
 		const record = asRecord(item);
@@ -60,8 +95,8 @@ function axProperty(node: AxTreeNode, propertyName: string): unknown {
 	return record?.value;
 }
 
-function axPropertyBool(node: AxTreeNode, propertyName: string): boolean | undefined {
-	const value = axProperty(node, propertyName);
+function axPropertyBool(node: AxTreeNode, propertyName: string, propertyMap?: AxPropertyMap): boolean | undefined {
+	const value = axProperty(node, propertyName, propertyMap);
 	const text = axValueText(value);
 	if (text === "true") return true;
 	if (text === "false") return false;
@@ -76,8 +111,11 @@ export function axName(node: AxTreeNode): string | undefined {
 	return axValueText(node.name);
 }
 
-export function axValue(node: AxTreeNode): string | undefined {
-	return axValueText(node.value) || axValueText(axProperty(node, "value")) || axValueText(axProperty(node, "valuetext")) || axValueText(axProperty(node, "valuenow"));
+export function axValue(node: AxTreeNode, propertyMap?: AxPropertyMap): string | undefined {
+	return axValueText(node.value)
+		|| axValueText(axProperty(node, "value", propertyMap))
+		|| axValueText(axProperty(node, "valuetext", propertyMap))
+		|| axValueText(axProperty(node, "valuenow", propertyMap));
 }
 
 export function axNodeId(node: AxTreeNode): string | undefined {
@@ -90,10 +128,10 @@ export function axBackendNodeId(node: AxTreeNode): number | undefined {
 
 function kindForAxRole(role: string): EntityKind {
 	const normalized = role.toLowerCase();
-	if (["button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "listbox", "menuitem", "option", "slider", "spinbutton"].includes(normalized)) return "control";
-	if (["statictext", "text", "labeltext", "heading"].includes(normalized)) return "text";
-	if (["image", "img"] .includes(normalized)) return "media";
-	if (["iframe", "frame", "webarea", "rootwebarea"] .includes(normalized)) return "frame";
+	if (CONTROL_AX_ROLES.has(normalized)) return "control";
+	if (TEXT_AX_ROLES.has(normalized)) return "text";
+	if (MEDIA_AX_ROLES.has(normalized)) return "media";
+	if (FRAME_AX_ROLES.has(normalized)) return "frame";
 	return "element";
 }
 
@@ -101,10 +139,9 @@ export function isInterestingAxNode(node: AxTreeNode): boolean {
 	if (node.ignored === true) return false;
 	const role = axRole(node).toLowerCase();
 	const name = axName(node);
-	const value = axValue(node);
-	if (["rootwebarea", "none", "generic", "group", "pane", "section", "paragraph", "listitemmarker", "inlinetextbox"] .includes(role)) return Boolean(name || value);
+	if (BORING_AX_ROLES.has(role)) return Boolean(name || axValue(node));
 	if (kindForAxRole(role) !== "element") return true;
-	return Boolean(name || value || axBackendNodeId(node));
+	return Boolean(name || axValue(node) || axBackendNodeId(node));
 }
 
 function dedupeLocators(locators: Locator[]): Locator[] {
@@ -119,12 +156,12 @@ function dedupeLocators(locators: Locator[]): Locator[] {
 	return out;
 }
 
-export function buildAxLocators(node: AxTreeNode): Locator[] {
+export function buildAxLocators(node: AxTreeNode, propertyMap?: AxPropertyMap): Locator[] {
 	const locators: Locator[] = [];
 	const nodeId = axNodeId(node);
 	const backendNodeId = axBackendNodeId(node);
 	const role = axRole(node);
-	const name = axName(node) || axValue(node);
+	const name = axName(node) || axValue(node, propertyMap);
 	if (backendNodeId !== undefined) locators.push({ by: "backendNodeId", value: backendNodeId });
 	if (nodeId) locators.push({ by: "axNodeId", value: nodeId });
 	if (name) locators.push({ by: "textAnchor", value: name, role, exact: false });
@@ -150,20 +187,24 @@ export function boxModelToGeometry(model: unknown): { box?: { x: number; y: numb
 	};
 }
 
-const LANDMARK_ROLES = new Set(["banner", "navigation", "main", "complementary", "contentinfo", "search", "form", "region"]);
-
-// Structural / document-outline metadata from the AX tree (ARIA structure + landmark
-// spectrum). Authoritative like control state — DOM scan can approximate level/posinset
-// from tags but the AX tree resolves the computed ARIA values.
-function axStructure(node: AxTreeNode, role: string): EntityStructure | undefined {
-	const level = numberValue(axValueText(axProperty(node, "level")));
-	const setSize = numberValue(axValueText(axProperty(node, "setsize")));
-	const posInSet = numberValue(axValueText(axProperty(node, "posinset")));
-	const sortText = axValueText(axProperty(node, "sort"));
-	const colIndex = numberValue(axValueText(axProperty(node, "colindex")));
-	const rowIndex = numberValue(axValueText(axProperty(node, "rowindex")));
+function axStructure(node: AxTreeNode, role: string, propertyMap?: AxPropertyMap): EntityStructure | undefined {
+	const level = numberValue(axValueText(axProperty(node, "level", propertyMap)));
+	const setSize = numberValue(axValueText(axProperty(node, "setsize", propertyMap)));
+	const posInSet = numberValue(axValueText(axProperty(node, "posinset", propertyMap)));
+	const sortText = axValueText(axProperty(node, "sort", propertyMap));
+	const colIndex = numberValue(axValueText(axProperty(node, "colindex", propertyMap)));
+	const rowIndex = numberValue(axValueText(axProperty(node, "rowindex", propertyMap)));
 	const landmark = LANDMARK_ROLES.has(role.toLowerCase()) ? role.toLowerCase() : undefined;
-	const structure: EntityStructure = {
+	if (
+		level === undefined
+		&& setSize === undefined
+		&& posInSet === undefined
+		&& (!sortText || sortText === "none")
+		&& colIndex === undefined
+		&& rowIndex === undefined
+		&& landmark === undefined
+	) return undefined;
+	return {
 		...(level !== undefined ? { level } : {}),
 		...(setSize !== undefined ? { setSize } : {}),
 		...(posInSet !== undefined ? { posInSet } : {}),
@@ -172,15 +213,10 @@ function axStructure(node: AxTreeNode, role: string): EntityStructure | undefine
 		...(rowIndex !== undefined ? { rowIndex } : {}),
 		...(landmark ? { landmark } : {}),
 	};
-	return Object.keys(structure).length ? structure : undefined;
 }
 
-// AX relation properties (labelledby/describedby/controls/owns) expose related nodes — the AX
-// layer resolves the ARIA idref lists to nodes, each carrying a backendDOMNodeId, the stable key
-// shared with entity hints. Read those ids as relation anchor targets; the owning node's own id
-// is the source, attached by the runtime caller after the DOM↔AX merge mints refs.
-function axRelatedBackendIds(node: AxTreeNode, propertyName: string): number[] {
-	const value = axProperty(node, propertyName);
+function axRelatedBackendIds(node: AxTreeNode, propertyName: string, propertyMap?: AxPropertyMap): number[] {
+	const value = axProperty(node, propertyName, propertyMap);
 	const record = asRecord(value);
 	const related = record && Array.isArray(record.relatedNodes) ? record.relatedNodes : Array.isArray(value) ? value : [];
 	const ids: number[] = [];
@@ -194,12 +230,7 @@ function axRelatedBackendIds(node: AxTreeNode, propertyName: string): number[] {
 
 export type AxRelationAnchor = { type: RelationType; targetKey: string };
 
-// Per-node AX relation anchors from the node's own ARIA relation properties. Pure: no cross-node
-// lookup — targets are keyed by "b:<backendDOMNodeId>" and resolved to pi-ref:// later. Table
-// hierarchy (cellOf/rowOf/columnOf) and currentIn need the node graph, so the runtime layer
-// derives those; here we cover the self-contained property relations. expandedTarget piggybacks
-// on aria-controls when the control is expandable (combobox/accordion trigger → its region).
-export function extractAxPropertyRelationAnchors(node: AxTreeNode): AxRelationAnchor[] {
+export function extractAxPropertyRelationAnchors(node: AxTreeNode, propertyMap?: AxPropertyMap): AxRelationAnchor[] {
 	const out: AxRelationAnchor[] = [];
 	const propertyTypes: Array<[string, RelationType]> = [
 		["labelledby", "labelledBy"],
@@ -208,29 +239,31 @@ export function extractAxPropertyRelationAnchors(node: AxTreeNode): AxRelationAn
 		["owns", "owns"],
 	];
 	for (const [property, type] of propertyTypes) {
-		for (const id of axRelatedBackendIds(node, property)) out.push({ type, targetKey: `b:${id}` });
+		for (const id of axRelatedBackendIds(node, property, propertyMap)) out.push({ type, targetKey: `b:${id}` });
 	}
-	if (axPropertyBool(node, "expanded") !== undefined) {
-		for (const id of axRelatedBackendIds(node, "controls")) out.push({ type: "expandedTarget", targetKey: `b:${id}` });
+	if (axPropertyBool(node, "expanded", propertyMap) !== undefined) {
+		for (const id of axRelatedBackendIds(node, "controls", propertyMap)) out.push({ type: "expandedTarget", targetKey: `b:${id}` });
 	}
 	return out;
 }
 
 export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } }): BuiltEntity {
 	const role = axRole(node);
-	const structure = axStructure(node, role);
+	const roleLower = role.toLowerCase();
+	const propertyMap = axPropertyMap(node);
+	const structure = axStructure(node, role, propertyMap);
 	const name = axName(node);
-	const value = axValue(node);
+	const value = axValue(node, propertyMap);
 	const kind = kindForAxRole(role);
-	const locators = buildAxLocators(node);
+	const locators = buildAxLocators(node, propertyMap);
 	const capturedAt = context.capturedAt ?? Date.now();
-	const disabled = axPropertyBool(node, "disabled") === true || axPropertyBool(node, "aria-disabled") === true;
-	const focused = axPropertyBool(node, "focused") === true;
-	const expanded = axPropertyBool(node, "expanded");
-	const checked = axPropertyBool(node, "checked");
-	const selected = axPropertyBool(node, "selected");
-	const pressed = axPropertyBool(node, "pressed");
-	const currentText = axValueText(axProperty(node, "current"));
+	const disabled = axPropertyBool(node, "disabled", propertyMap) === true || axPropertyBool(node, "aria-disabled", propertyMap) === true;
+	const focused = axPropertyBool(node, "focused", propertyMap) === true;
+	const expanded = axPropertyBool(node, "expanded", propertyMap);
+	const checked = axPropertyBool(node, "checked", propertyMap);
+	const selected = axPropertyBool(node, "selected", propertyMap);
+	const pressed = axPropertyBool(node, "pressed", propertyMap);
+	const currentText = axValueText(axProperty(node, "current", propertyMap));
 	const current = currentText === undefined ? undefined : currentText === "false" ? false : currentText === "true" ? true : currentText;
 	const state = {
 		visible: node.hidden !== true && node.invisible !== true,
@@ -242,7 +275,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 		...(typeof pressed === "boolean" ? { pressed } : {}),
 		...(typeof expanded === "boolean" ? { expanded } : {}),
 		...(current !== undefined && current !== false ? { current } : {}),
-		editable: ["textbox", "searchbox", "combobox", "textarea", "spinbutton"].includes(role.toLowerCase()),
+		editable: EDITABLE_AX_ROLES.has(roleLower),
 		inViewport: Boolean(geometry?.point || geometry?.box),
 	};
 	return {
@@ -293,18 +326,25 @@ function entityPoint(entity: Entity | BuiltEntity["entity"]): { x: number; y: nu
 	return entity.geometry?.point;
 }
 
+function entityBox(entity: Entity | BuiltEntity["entity"]): { x: number; y: number; w: number; h: number } | undefined {
+	return entity.geometry?.box;
+}
+
+function buildEntityMatchInfo(entity: Entity | BuiltEntity["entity"]): EntityMatchInfo {
+	return {
+		name: entityName(entity),
+		role: entityRole(entity),
+		point: entityPoint(entity),
+		box: entityBox(entity),
+	};
+}
+
 function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
 	if (!a || !b) return undefined;
 	const dx = a.x - b.x;
 	const dy = a.y - b.y;
 	return Math.sqrt(dx * dx + dy * dy);
 }
-
-// AX is authoritative for control state (DOM input.checked lies under component
-// frameworks) and for role (DOM heuristics mis-label, e.g. radio/checkbox as
-// textbox). Propagating AX state onto the aligned DOM entity is the fix for
-// "aligned but the lying DOM state survived".
-const AX_AUTHORITATIVE_STATE = ["checked", "selected", "pressed", "expanded", "current"] as const;
 
 function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	const mergedLocators = dedupeLocators([...(base.locators || []), ...(ax.locators || [])]);
@@ -335,16 +375,6 @@ function mergedEntity(base: Entity, ax: BuiltEntity["entity"]): Entity {
 	};
 }
 
-const GEOMETRY_MATCH_RADIUS_PX = 24;
-const COINCIDENT_BOX_IOU = 0.8;
-
-function entityBox(entity: Entity | BuiltEntity["entity"]): { x: number; y: number; w: number; h: number } | undefined {
-	return entity.geometry?.box;
-}
-
-// Intersection-over-union of two boxes; ~1 means they cover the same element. Used as the
-// strongest alignment signal — far more discriminating than center distance, which can't
-// tell a dirty-name same element from a distinct control that merely sits nearby.
 function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: number; y: number; w: number; h: number }): number | undefined {
 	if (!a || !b) return undefined;
 	const ix = Math.max(a.x, b.x);
@@ -356,40 +386,34 @@ function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: num
 	return union > 0 ? intersection / union : undefined;
 }
 
-// Score how strongly an AX entity aligns to a DOM entity. AX role/state are authoritative.
-// Coincident geometry (near-identical box) is the strongest signal: it means the SAME
-// element, so a mislabeled DOM role and a dirty class-name "name" (a native <input
-// type=radio> scanned as a textbox named "form-check-input") must NOT block the match —
-// that is exactly the case AX exists to correct. Below that, a conflicting accessible name
-// vetoes the weaker name/geometry paths (overlapping-but-distinct controls); geometry
-// breaks ties (closer = higher). Returns undefined when there is no defensible match.
-function axMatchScore(dom: Entity, ax: BuiltEntity["entity"]): number | undefined {
-	const iou = boxIoU(entityBox(dom), entityBox(ax));
-	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return 120 + iou * 10; // same element, role/name-agnostic
-	const domName = entityName(dom);
-	const axName = entityName(ax);
-	if (domName !== undefined && axName !== undefined && domName !== axName) return undefined;
-	const nameMatch = domName !== undefined && domName === axName;
-	const roleMatch = entityRole(dom) === entityRole(ax);
-	const dist = pointDistance(entityPoint(dom), entityPoint(ax));
+function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): number | undefined {
+	const iou = boxIoU(dom.box, ax.box);
+	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return 120 + iou * 10;
+	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) return undefined;
+	const nameMatch = dom.name !== undefined && dom.name === ax.name;
+	const roleMatch = dom.role === ax.role;
+	const dist = pointDistance(dom.point, ax.point);
 	const geomKnown = dist !== undefined;
 	const geomClose = dist !== undefined && dist <= GEOMETRY_MATCH_RADIUS_PX;
-	if (nameMatch && geomClose) return 100 - dist; // name + position: role-agnostic (corrects DOM mislabel)
-	if (roleMatch && geomClose) return 80 - dist; // role + position
-	if (roleMatch && nameMatch && !geomKnown) return 60; // role + name, geometry unknown
-	if (roleMatch && !geomKnown) return 40; // role only, geometry unknown
+	if (nameMatch && geomClose) return 100 - dist;
+	if (roleMatch && geomClose) return 80 - dist;
+	if (roleMatch && nameMatch && !geomKnown) return 60;
+	if (roleMatch && !geomKnown) return 40;
 	return undefined;
 }
 
 export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEntity[]): { merged: Entity[]; unmatchedAx: BuiltEntity[] } {
 	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
+	const domPrepared = merged.map((entity) => buildEntityMatchInfo(entity));
+	const axPrepared = axEntities.map((ax) => buildEntityMatchInfo(ax.entity));
 	const used = new Set<number>();
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		const ax = axEntities[axIndex];
+		const ax = axEntities[axIndex]!;
+		const axInfo = axPrepared[axIndex]!;
 		let bestIndex = -1;
 		let bestScore = 0;
 		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			const score = axMatchScore(merged[domIndex]!, ax.entity);
+			const score = axMatchScore(domPrepared[domIndex]!, axInfo);
 			if (score !== undefined && score > bestScore) {
 				bestScore = score;
 				bestIndex = domIndex;
@@ -397,6 +421,7 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 		}
 		if (bestIndex >= 0) {
 			merged[bestIndex] = mergedEntity(merged[bestIndex]!, ax.entity);
+			domPrepared[bestIndex] = buildEntityMatchInfo(merged[bestIndex]!);
 			used.add(axIndex);
 		}
 	}

@@ -4,9 +4,16 @@
 // same ARIA-grounded template groups so re-observing a large list/table reports O(change) structure
 // changes instead of O(all) repeated entities. This phase intentionally does NOT change pi-ref
 // minting: stable semantic anchors are used only for diff matching here.
-import type { Entity } from "./entity.js";
-import type { EntityKind } from "./entity.js";
-import { MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, type TemplateVaryField, templateGroupDescriptorForEntity, type TemplateGroupDescriptor } from "./templating.js";
+import type { Entity, EntityKind } from "./entity.js";
+import {
+	displayEntityText,
+	groupEntities as rawGroupEntities,
+	normalizeEntityText,
+	suppressNestedNonControlGroups,
+	type IndexedEntity,
+	type TemplateGroup,
+} from "./grouping.js";
+import { MAX_TEMPLATES, templateFieldValue, type TemplateVaryField } from "./templating.js";
 
 export const MAX_TREE_DIFF_INSTANCES = 20;
 export const MAX_TREE_DIFF_CHANGED_FIELDS = 8;
@@ -93,59 +100,19 @@ export type TreeDiffOptions = {
 	partialBaseline?: boolean;
 };
 
-type GroupedEntity = { entity: Entity; index: number };
-type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: GroupedEntity[] };
 type MatchedInstance = TreeDiffInstance & { entity: Entity; order: number };
 
 const COMPARE_FIELDS: TemplateVaryField[] = ["name", "value", "checked", "selected", "pressed", "current", "disabled"];
 
-function normalizeText(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim().replace(/\s+/g, " ");
-	return text ? text.toLowerCase() : undefined;
-}
-
-function displayText(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim().replace(/\s+/g, " ");
-	return text ? text.slice(0, 120) : undefined;
-}
-
-function fieldValue(entity: Entity, field: TemplateVaryField): unknown {
-	if (field === "name") return entity.name;
-	if (field === "value") return entity.value;
-	return entity.state[field];
-}
-
-function structureScopeKey(descriptor: TemplateGroupDescriptor): string {
-	return descriptor.container
-		? JSON.stringify(["c", descriptor.container, descriptor.containerName || ""])
-		: JSON.stringify(["s", descriptor.setSize ?? ""]);
-}
-
-function suppressNestedNonControlGroups(groups: TemplateGroup[]): TemplateGroup[] {
-	const scopesWithControls = new Set(groups.filter((group) => group.descriptor.kind === "control").map((group) => structureScopeKey(group.descriptor)));
-	if (!scopesWithControls.size) return groups;
-	return groups.filter((group) => group.descriptor.kind === "control" || !scopesWithControls.has(structureScopeKey(group.descriptor)));
-}
-
 function groupEntities(entities: Entity[]): TemplateGroup[] {
-	const groups = new Map<string, TemplateGroup>();
-	entities.forEach((entity, index) => {
-		const descriptor = templateGroupDescriptorForEntity(entity);
-		if (!descriptor) return;
-		const group = groups.get(descriptor.key);
-		if (group) group.members.push({ entity, index });
-		else groups.set(descriptor.key, { descriptor, members: [{ entity, index }] });
-	});
-	return suppressNestedNonControlGroups(Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES));
+	return suppressNestedNonControlGroups(rawGroupEntities(entities));
 }
 
 function buildNameCounts(beforeGroups: TemplateGroup[], afterGroups: TemplateGroup[]): Map<string, { before: number; after: number }> {
 	const counts = new Map<string, { before: number; after: number }>();
 	const bump = (side: "before" | "after", group: TemplateGroup) => {
 		for (const item of group.members) {
-			const name = normalizeText(item.entity.name);
+			const name = normalizeEntityText(item.entity.name);
 			if (!name) continue;
 			const key = `${group.descriptor.key}\u0000${name}`;
 			const count = counts.get(key) || { before: 0, after: 0 };
@@ -158,8 +125,8 @@ function buildNameCounts(beforeGroups: TemplateGroup[], afterGroups: TemplateGro
 	return counts;
 }
 
-function instanceKey(groupKey: string, item: GroupedEntity, counts: Map<string, { before: number; after: number }>): { key: string; anchor: TreeDiffAnchor; confidence: TreeDiffConfidence } {
-	const name = normalizeText(item.entity.name);
+function instanceKey(groupKey: string, item: IndexedEntity, counts: Map<string, { before: number; after: number }>): { key: string; anchor: TreeDiffAnchor; confidence: TreeDiffConfidence } {
+	const name = normalizeEntityText(item.entity.name);
 	if (name) {
 		const count = counts.get(`${groupKey}\u0000${name}`);
 		if ((count?.before ?? 0) <= 1 && (count?.after ?? 0) <= 1) return { key: `name:${name}`, anchor: "name", confidence: "high" };
@@ -175,8 +142,8 @@ function instanceSummary(match: MatchedInstance): TreeDiffInstance {
 		ref: match.ref,
 		anchor: match.anchor,
 		confidence: match.confidence,
-		...(displayText(match.entity.name) ? { name: displayText(match.entity.name) } : {}),
-		...(displayText(match.entity.value) ? { value: displayText(match.entity.value) } : {}),
+		...(displayEntityText(match.entity.name) ? { name: displayEntityText(match.entity.name) } : {}),
+		...(displayEntityText(match.entity.value) ? { value: displayEntityText(match.entity.value) } : {}),
 		...(typeof match.entity.structure?.posInSet === "number" ? { posInSet: match.entity.structure.posInSet } : {}),
 	};
 }
@@ -199,8 +166,8 @@ function changedBucket(items: TreeDiffInstanceChange[]): TreeDiffChangedBucket {
 function fieldChanges(before: Entity, after: Entity): TreeDiffFieldChange[] {
 	const out: TreeDiffFieldChange[] = [];
 	for (const field of COMPARE_FIELDS) {
-		const beforeValue = fieldValue(before, field);
-		const afterValue = fieldValue(after, field);
+		const beforeValue = templateFieldValue(before, field);
+		const afterValue = templateFieldValue(after, field);
 		if (beforeValue === afterValue) continue;
 		out.push({ field, ...(beforeValue !== undefined ? { before: beforeValue } : {}), ...(afterValue !== undefined ? { after: afterValue } : {}) });
 		if (out.length >= MAX_TREE_DIFF_CHANGED_FIELDS) break;
@@ -234,7 +201,15 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 		if (!prior) continue;
 		const fields = fieldChanges(prior.entity, item.entity);
 		if (!fields.length) continue;
-		changed.push({ key: item.key, beforeRef: prior.ref, afterRef: item.ref, anchor: item.anchor, confidence: item.confidence, fields, ...(displayText(item.entity.name) ? { name: displayText(item.entity.name) } : {}) });
+		changed.push({
+			key: item.key,
+			beforeRef: prior.ref,
+			afterRef: item.ref,
+			anchor: item.anchor,
+			confidence: item.confidence,
+			fields,
+			...(displayEntityText(item.entity.name) ? { name: displayEntityText(item.entity.name) } : {}),
+		});
 	}
 	const order = reordered(before, after);
 	if (!appeared.length && !disappeared.length && !changed.length && !order) return undefined;
@@ -278,8 +253,6 @@ export function buildTreeDiff(beforeEntities: Entity[], afterEntities: Entity[],
 		changed: acc.changed + item.changed.count,
 		reordered: acc.reordered + (item.reordered ? 1 : 0),
 	}), { templateCount: allKeys.size, changedTemplateCount: 0, appeared: 0, disappeared: 0, changed: 0, reordered: 0 });
-	// Flatten changed-item names across templates (salient templates lead, since `templates` is sorted by
-	// signal score) into a capped, deduped sample so the "which item" answer is one read away.
 	const collectNames = (pick: (t: TreeTemplateDiff) => Array<{ name?: string }>): string[] => {
 		const out: string[] = [];
 		for (const t of templates) {

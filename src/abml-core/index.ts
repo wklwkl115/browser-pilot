@@ -17,6 +17,7 @@ export * from "./inference.js";
 export * from "./diff.js";
 export * from "./stream.js";
 export * from "./causal.js";
+export * from "./grouping.js";
 export * from "./templating.js";
 export * from "./treeDiff.js";
 export * from "./semanticRefAnchor.js";

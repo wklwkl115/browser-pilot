@@ -5,7 +5,15 @@
 // shadow hash payloads only. Runtime ref minting must not consume these until the P3 gates pass.
 import type { Entity, EntityKind } from "./entity.js";
 import type { RefDescriptor } from "./types.js";
-import { MAX_TEMPLATES, MIN_TEMPLATE_INSTANCES, templateGroupDescriptorForEntity, type TemplateGroupDescriptor } from "./templating.js";
+import {
+	displayEntityText,
+	groupEntities as rawGroupEntities,
+	normalizeEntityText,
+	suppressNestedNonControlGroups,
+	type IndexedEntity,
+	type TemplateGroup,
+} from "./grouping.js";
+import { MAX_TEMPLATES } from "./templating.js";
 
 export type SemanticRefAnchorConfidence = "high" | "low";
 export type SemanticRefAnchorReason = "unique-name" | "duplicate-name" | "missing-name";
@@ -53,43 +61,8 @@ export type SemanticRefAnchorHashInput = {
 	};
 };
 
-type GroupedEntity = { entity: Entity; index: number };
-type TemplateGroup = { descriptor: TemplateGroupDescriptor; members: GroupedEntity[] };
-
-function normalizeName(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim().replace(/\s+/g, " ").toLowerCase();
-	return text || undefined;
-}
-
-function displayName(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const text = value.trim().replace(/\s+/g, " ");
-	return text ? text.slice(0, 120) : undefined;
-}
-
-function structureScopeKey(descriptor: TemplateGroupDescriptor): string {
-	return descriptor.container
-		? JSON.stringify(["c", descriptor.container, descriptor.containerName || ""])
-		: JSON.stringify(["s", descriptor.setSize ?? ""]);
-}
-
-function suppressNestedNonControlGroups(groups: TemplateGroup[]): TemplateGroup[] {
-	const scopesWithControls = new Set(groups.filter((group) => group.descriptor.kind === "control").map((group) => structureScopeKey(group.descriptor)));
-	if (!scopesWithControls.size) return groups;
-	return groups.filter((group) => group.descriptor.kind === "control" || !scopesWithControls.has(structureScopeKey(group.descriptor)));
-}
-
 function groupEntities(entities: Entity[]): TemplateGroup[] {
-	const groups = new Map<string, TemplateGroup>();
-	entities.forEach((entity, index) => {
-		const descriptor = templateGroupDescriptorForEntity(entity);
-		if (!descriptor) return;
-		const group = groups.get(descriptor.key);
-		if (group) group.members.push({ entity, index });
-		else groups.set(descriptor.key, { descriptor, members: [{ entity, index }] });
-	});
-	return suppressNestedNonControlGroups(Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES))
+	return suppressNestedNonControlGroups(rawGroupEntities(entities))
 		.sort((a, b) => b.members.length - a.members.length)
 		.slice(0, MAX_TEMPLATES);
 }
@@ -97,16 +70,16 @@ function groupEntities(entities: Entity[]): TemplateGroup[] {
 function nameCounts(group: TemplateGroup): Map<string, number> {
 	const counts = new Map<string, number>();
 	for (const item of group.members) {
-		const name = normalizeName(item.entity.name);
+		const name = normalizeEntityText(item.entity.name);
 		if (!name) continue;
 		counts.set(name, (counts.get(name) || 0) + 1);
 	}
 	return counts;
 }
 
-function anchorFor(group: TemplateGroup, item: GroupedEntity, counts: Map<string, number>): SemanticRefAnchor | undefined {
-	const normalizedName = normalizeName(item.entity.name);
-	const rawName = displayName(item.entity.name);
+function anchorFor(group: TemplateGroup, item: IndexedEntity, counts: Map<string, number>): SemanticRefAnchor | undefined {
+	const normalizedName = normalizeEntityText(item.entity.name);
+	const rawName = displayEntityText(item.entity.name);
 	const posInSet = item.entity.structure?.posInSet;
 	const namedUniquely = normalizedName && (counts.get(normalizedName) || 0) === 1;
 	const base = {

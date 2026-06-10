@@ -37,27 +37,16 @@ function valueRecord(result: unknown): Record<string, unknown> {
 	return {};
 }
 
-// Container roles that meaningfully "own" their members (item↔list, cell↔row↔table,
-// radio↔radiogroup). Walking the AX childIds graph upward to the nearest one gives each
-// member entity its structural container — the relationship arm of the ARIA spectrum.
 const CONTAINER_ROLES = new Set(["radiogroup", "group", "list", "listbox", "menu", "menubar", "table", "grid", "treegrid", "tree", "tablist", "row", "rowgroup", "feed"]);
+const TABLE_ROLES = new Set(["table", "grid", "treegrid"]);
+const CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
+const CURRENT_CONTAINER_ROLES = new Set(["navigation", "menu", "menubar", "list", "listbox", "tablist", "tree", "radiogroup"]);
 
-export function nearestContainer(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): { role: string; name: string | undefined } | undefined {
-	let current = node;
-	for (let depth = 0; depth < 24; depth += 1) {
-		const id = axNodeId(current);
-		if (!id) return undefined;
-		const parent = parentByChildId.get(id);
-		if (!parent) return undefined;
-		const role = axRole(parent).toLowerCase();
-		if (CONTAINER_ROLES.has(role)) return { role, name: axName(parent) };
-		current = parent;
-	}
-	return undefined;
-}
+type AncestorContainerContext = {
+	nearest?: { role: string; name: string | undefined };
+	currentContainerKeys: string[];
+};
 
-// Relation key for a node: the same "b:<backendDOMNodeId>" | "a:<axNodeId>" space the entity
-// hints register, so anchors resolve to refs in materializeRelations. Backend id preferred.
 function nodeRelationKey(node: Record<string, unknown>): string | undefined {
 	const backend = axBackendNodeId(node);
 	if (backend !== undefined) return `b:${backend}`;
@@ -65,13 +54,30 @@ function nodeRelationKey(node: Record<string, unknown>): string | undefined {
 	return id ? `a:${id}` : undefined;
 }
 
-const TABLE_ROLES = new Set(["table", "grid", "treegrid"]);
-const CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
-// Containers whose aria-current item is a navigation/selection relation (currentIn target).
-const CURRENT_CONTAINER_ROLES = new Set(["navigation", "menu", "menubar", "list", "listbox", "tablist", "tree", "radiogroup"]);
+function ancestorContainerContext(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): AncestorContainerContext {
+	let current = node;
+	let nearest: AncestorContainerContext["nearest"];
+	const currentContainerKeys: string[] = [];
+	for (let depth = 0; depth < 24; depth += 1) {
+		const id = axNodeId(current);
+		if (!id) break;
+		const parent = parentByChildId.get(id);
+		if (!parent) break;
+		const role = axRole(parent).toLowerCase();
+		if (!nearest && CONTAINER_ROLES.has(role)) nearest = { role, name: axName(parent) };
+		if (CURRENT_CONTAINER_ROLES.has(role)) {
+			const key = nodeRelationKey(parent);
+			if (key && !currentContainerKeys.includes(key)) currentContainerKeys.push(key);
+		}
+		current = parent;
+	}
+	return { ...(nearest ? { nearest } : {}), currentContainerKeys };
+}
 
-// Ordered rows of a table/grid, via childIds forward traversal (through rowgroup wrappers),
-// not descending into nested tables. Order = document order ⇒ stable positional indices.
+export function nearestContainer(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>): { role: string; name: string | undefined } | undefined {
+	return ancestorContainerContext(node, parentByChildId).nearest;
+}
+
 function collectTableRows(table: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>): Array<Record<string, unknown>> {
 	const rows: Array<Record<string, unknown>> = [];
 	const visit = (node: Record<string, unknown>, depth: number) => {
@@ -81,9 +87,13 @@ function collectTableRows(table: Record<string, unknown>, nodeById: Map<string, 
 			const child = nodeById.get(typeof childId === "string" ? childId : String(childId));
 			if (!child) continue;
 			const role = axRole(child).toLowerCase();
-			if (TABLE_ROLES.has(role)) continue; // don't cross into a nested table
-			if (role === "row") { rows.push(child); visit(child, depth + 1); }
-			else visit(child, depth + 1);
+			if (TABLE_ROLES.has(role)) continue;
+			if (role === "row") {
+				rows.push(child);
+				visit(child, depth + 1);
+			} else {
+				visit(child, depth + 1);
+			}
 		}
 	};
 	visit(table, 0);
@@ -100,10 +110,6 @@ function collectRowCells(row: Record<string, unknown>, nodeById: Map<string, Rec
 	return cells;
 }
 
-// Table/grid relations: each cell → its table (cellOf), its row (rowOf), and its column header
-// (columnOf); each column header → its table (headerFor). Row/column indices come from the AX
-// structure when present (aria-row/colindex) else from document position — generic, no per-site
-// logic. Mutates cell entities' structure so row/col context rides on the entity too.
 function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): RelationAnchor[] {
 	const anchors: RelationAnchor[] = [];
 	for (const table of nodes) {
@@ -140,40 +146,7 @@ function tableRelationAnchors(nodes: Array<Record<string, unknown>>, nodeById: M
 	return anchors;
 }
 
-// currentIn container: the nearest nav/list/menu ancestor's key. Stashed on every node's entity as
-// hints.currentContainerKey; the DOM-sourced derive step (deriveStateRelationAnchors) turns it into a
-// currentIn relation when the entity carries aria-current. We can't emit the relation here because
-// Chrome's getFullAXTree omits aria-current — the current *state* arrives from the DOM scan, post-merge.
-// All built nav/list/menu ancestor keys, nearest-first. currentIn resolution tries them in order
-// (deriveStateRelationAnchors + materialize fallbacks) — a single "nearest container" is unreliable
-// because the merge can fold an AX container node away and drop its key, so we keep the whole chain
-// of *built* containers as fallbacks; the first that survives to a ref wins.
-function builtCurrentContainerKeys(node: Record<string, unknown>, parentByChildId: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): string[] {
-	const keys: string[] = [];
-	let cursor = node;
-	for (let depth = 0; depth < 24; depth += 1) {
-		const id = axNodeId(cursor);
-		if (!id) break;
-		const parent = parentByChildId.get(id);
-		if (!parent) break;
-		if (CURRENT_CONTAINER_ROLES.has(axRole(parent).toLowerCase())) {
-			const key = nodeRelationKey(parent);
-			if (key && builtByKey.has(key) && !keys.includes(key)) keys.push(key);
-		}
-		cursor = parent;
-	}
-	return keys;
-}
-
-// AX relation properties (aria-labelledby/describedby/controls) reference the target *element*,
-// but that element's AX node is frequently a non-interesting `generic` wrapper whose visible text
-// lives in a child StaticText with a different backend id (e.g. <span id=lbl>Email</span> → generic
-// node + StaticText child). The wrapper isn't a built entity, so the relation target wouldn't
-// resolve. Redirect such targets to the nearest built descendant so labelledBy/describedBy/controls
-// reliably land on the entity that actually carries the name. Breadth-first, bounded.
 function nearestBuiltDescendantKey(node: Record<string, unknown>, nodeById: Map<string, Record<string, unknown>>, builtByKey: Map<string, BuiltEntity>): string | undefined {
-	// BFS but prefer a built descendant that has a name over a nameless wrapper. LabelText/generic
-	// nodes are often nameless wrappers around the real text node — we want the child StaticText.
 	const queue: unknown[] = Array.isArray(node.childIds) ? [...node.childIds] : [];
 	let firstMatch: string | undefined;
 	let steps = 0;
@@ -184,8 +157,8 @@ function nearestBuiltDescendantKey(node: Record<string, unknown>, nodeById: Map<
 		const key = nodeRelationKey(child);
 		if (key && builtByKey.has(key)) {
 			const name = axName(child);
-			if (name) return key; // named entity — prefer immediately
-			if (!firstMatch) firstMatch = key; // nameless wrapper — remember but keep looking
+			if (name) return key;
+			if (!firstMatch) firstMatch = key;
 		}
 		if (Array.isArray(child.childIds)) for (const id of child.childIds) queue.push(id);
 	}
@@ -198,21 +171,19 @@ function resolveAnchorTargets(anchors: RelationAnchor[], builtByKey: Map<string,
 		const match = /^b:(\d+)$/.exec(anchor.targetKey);
 		const node = match ? nodeByBackend.get(Number(match[1])) : undefined;
 		if (builtByKey.has(anchor.targetKey)) {
-			// For label relations (labelledBy/describedBy), the target should carry visible text — if the
-			// directly-built target is a nameless wrapper (e.g. LabelText whose text is in a StaticText
-			// child), prefer the named descendant so the agent can read the label. For structural targets
-			// (rowOf, cellOf, controls, etc.) a nameless entity is correct; don't redirect.
 			const isLabelRelation = anchor.type === "labelledBy" || anchor.type === "describedBy";
 			if (isLabelRelation && node && !axName(node)) {
 				const namedDescendant = nearestBuiltDescendantKey(node, nodeById, builtByKey);
-				if (namedDescendant) { out.push({ ...anchor, targetKey: namedDescendant }); continue; }
+				if (namedDescendant) {
+					out.push({ ...anchor, targetKey: namedDescendant });
+					continue;
+				}
 			}
 			out.push(anchor);
 			continue;
 		}
 		const redirect = node ? nearestBuiltDescendantKey(node, nodeById, builtByKey) : undefined;
 		if (redirect) out.push({ ...anchor, targetKey: redirect });
-		// else drop: an unresolved target would be discarded in materialization anyway.
 	}
 	return out;
 }
@@ -253,8 +224,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	}
 	const out: BuiltEntity[] = [];
 	const builtByKey = new Map<string, BuiltEntity>();
-	const builtNodeByKey = new Map<string, Record<string, unknown>>();
 	const propertyAnchors: RelationAnchor[] = [];
+	const currentContainerCandidatesByKey = new Map<string, string[]>();
 	const interestingNodes = nodes.filter(isInterestingAxNode);
 	const geometryByNode = new Map<Record<string, unknown>, ReturnType<typeof boxModelToGeometry> | undefined>();
 	await Promise.all(interestingNodes.map(async (node) => {
@@ -276,20 +247,18 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	}));
 	for (const node of interestingNodes) {
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node));
-		const container = nearestContainer(node, parentByChildId);
-		if (container) built.entity.hints = { ...(built.entity.hints || {}), containerRole: container.role, ...(container.name ? { containerName: container.name } : {}) };
+		const ancestors = ancestorContainerContext(node, parentByChildId);
+		if (ancestors.nearest) built.entity.hints = { ...(built.entity.hints || {}), containerRole: ancestors.nearest.role, ...(ancestors.nearest.name ? { containerName: ancestors.nearest.name } : {}) };
 		out.push(built);
 		const sourceKey = nodeRelationKey(node);
 		if (sourceKey) {
 			builtByKey.set(sourceKey, built);
-			builtNodeByKey.set(sourceKey, node);
+			if (ancestors.currentContainerKeys.length) currentContainerCandidatesByKey.set(sourceKey, ancestors.currentContainerKeys);
 			for (const anchor of extractAxPropertyRelationAnchors(node)) propertyAnchors.push({ sourceKey, type: anchor.type, targetKey: anchor.targetKey, source: "ax", confidence: "high" });
 		}
 	}
-	// Stash the built nav/list container chain (nearest-first) now that all entities exist, so the
-	// DOM-sourced currentIn relation (deriveStateRelationAnchors) can resolve to a surviving ref.
-	for (const [key, node] of builtNodeByKey) {
-		const containerKeys = builtCurrentContainerKeys(node, parentByChildId, builtByKey).filter((k) => k !== key);
+	for (const [key, candidates] of currentContainerCandidatesByKey) {
+		const containerKeys = candidates.filter((candidate) => candidate !== key && builtByKey.has(candidate));
 		if (containerKeys.length) builtByKey.get(key)!.entity.hints = { ...(builtByKey.get(key)!.entity.hints || {}), currentContainerKeys: containerKeys };
 	}
 	const rawAnchors = [

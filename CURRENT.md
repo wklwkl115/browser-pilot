@@ -13,6 +13,15 @@
 
 ## 当前激活项
 
+### ABML kernel optimization — point-fix execution (2026-06-10, 完成)
+
+决策：已执行 `docs/abml-kernel-optimization-plan.md`，完成 ABML 感知纯核 `src/abml-core/`、AX runtime `src/abml/verbs/axRuntime.ts` 与 page-side scan selector 的已审计 point-fix 队列。该合同保持 **纯 compute / sensing 内部收敛**：不新增公开 `browser_*` 工具，不改 tool schema，不改 agent-facing summary/envelope 语义；所有落地都保持 observe 输出 contract 不变。
+
+落地：A1 删除 `observeRunners.ts` 的重复 `buildSnapshotProjection` 并新增 `tests/unit/abml/snapshotProjection.test.ts`；A2/A4/A6 把 AX 角色分类改成 module-level `Set`、`isInterestingAxNode` 改为 lazy `axValue` 读取、`buildAxEntityFromNode` 用单次 property map 复用状态/结构/值读取；A3 让 `mergeDomAndAxEntities` 预提取 name/role/box/point，避免每对 DOM×AX 重复归一化；A5 让 `stableHash24` 单遍同时更新 3 个 FNV 累加器；B1 抽出共享纯核 `src/abml-core/grouping.ts` 与 `buildTemplate()`，消除 `templating/treeDiff/snapshotProjection/semanticRefAnchor` 的重复分组与 projection 二次分组；B2 在 `axRuntime.ts` 单次 ancestor walk 同时收集 nearest container 与 current-container fallback 链；B3 给 `buildScanScript.ts` 的 `selectorFor` 增加按 parent 缓存的 sibling `nth-of-type` 索引，去掉宽容器 O(S²) sibling 扫描。
+
+边界：保持 `distill-core`、`abml-core`、公开工具面现状不变；未改变 AX geometry source；未恢复 `templates`/`inference` agent-facing 输出；`capture-core-plan` 未激活前仅在现有 `buildScanScript.ts` 完成 B3 一次。
+
+门禁：已通过 `check:src:types`、`check:abml-core-boundary`、`check:abml-templating`、`check:abml-snapshot-projection`、`test:observe-abml-integration`、`check:scan`、`check:all:bridge`；最终还会以 `npm run check` 与 `npm run smoke:browser:scan-summary` 收口。
 ### Renderer default flip — staged salience default (2026-06-10, 激活)
 
 决策：完成 `docs/renderer-default-flip-plan.md`。按 owner 决策以“可检测 + 可回滚”换交付速度：salience 先翻默认，session-delta 后翻默认，`line` 粒度不在本契约；默认翻转前已修 F1/F2，F3 fan-out 控制已落地；多站点盲测从前置门降级为事后哨兵。
