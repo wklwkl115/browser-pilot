@@ -3,11 +3,11 @@ import { RECOVERY_CODES, forget as forgetState, get as getState, persist as pers
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender } from "./types";
 
 type PiCdpResponse = PiBridgeResponse<JsonRecord>;
-type PiCdpSession = { tabId: number; name: string; key: string; attachedAt: number; lastUsed: number; commands: number; pending: number; lockedUntil: number };
+type PiCdpSession = { tabId: number; name: string; key: string; attachedAt: number; lastUsed: number; commands: number; pending: number; lockedUntil: number; compiledScripts: Map<string, string> };
 type PiCdpNewDocumentScript = { key: string; tabId: number; identifier: string; sessionKey?: unknown; cdpSessionName: string; method: string; createdAt: number; runImmediately: boolean; includeCommandLineAPI: boolean; worldName?: string };
 type PiCdpFrame = { id: string; frameId: string; parentId: string | null; url: string; name: string; mimeType: string; securityOrigin: string; childFrames?: PiCdpFrame[]; children?: PiCdpFrame[] };
 type PiCdpFrameTreeNode = JsonRecord & { frame?: JsonRecord; childFrames?: PiCdpFrameTreeNode[] };
-type PiCdpOptions = PiBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; __piRetryAfterNotAttached?: boolean };
+type PiCdpOptions = PiBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; precompile?: boolean; scriptHash?: string; __piRetryAfterNotAttached?: boolean };
 
 function cdpRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function cdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
@@ -30,6 +30,16 @@ function piPersistentCdpHasSessionForTab(tabId: unknown): boolean {
 
 function piCdpNow(): number { return Date.now(); }
 function piCdpSessionKey(tabId: unknown, name?: unknown): string { return String(tabId) + ':' + (name || 'default'); }
+function piCdpScriptCacheKey(expression: string, params: JsonRecord, options: PiCdpOptions): string {
+  const explicit = typeof options.scriptHash === 'string' ? options.scriptHash : '';
+  if (explicit) return [explicit, params.contextId ?? 'main'].join(':');
+  let hash = 2166136261;
+  for (let index = 0; index < expression.length; index += 1) {
+    hash ^= expression.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return [(hash >>> 0).toString(36), expression.length, params.contextId ?? 'main'].join(':');
+}
 function piCdpNewDocumentScriptKey(tabId: unknown, name: unknown, identifier: unknown): string { return piCdpSessionKey(tabId, name || 'new_document') + ':' + String(identifier); }
 function piCdpKnownNewDocumentIdentifiers(tabId: unknown, name?: string): string[] {
   return Array.from(piPersistentCdpNewDocumentScripts.values())
@@ -163,7 +173,7 @@ async function piPersistentCdpAttach(tabId: number, options: PiCdpOptions = {}):
   try {
     if (options?.bringToFront) await chrome.tabs.update(tabId, { active: true });
     await chrome.debugger.attach({ tabId }, options?.protocolVersion || '1.3');
-    const rec = { tabId, name, key, attachedAt: piCdpNow(), lastUsed: piCdpNow(), commands: 0, pending: 0, lockedUntil: 0 };
+    const rec = { tabId, name, key, attachedAt: piCdpNow(), lastUsed: piCdpNow(), commands: 0, pending: 0, lockedUntil: 0, compiledScripts: new Map<string, string>() };
     piPersistentCdpSessions.set(key, rec);
     // Enable Page/Runtime domains immediately. Without this, Chrome may return only
     // the main frame from Page.getFrameTree until domains are explicitly enabled,
@@ -234,13 +244,52 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
   rec.pending = (rec.pending || 0) + 1;
   rec.lockedUntil = Math.max(rec.lockedUntil || 0, piCdpNow() + Number(options?.timeoutMs || 30000));
   try {
-    const data = await piCdpWithTimeout(
-      chrome.debugger.sendCommand({ tabId: rec.tabId }, method, params || {}),
-      options?.timeoutMs,
-      method
-    );
+    const expression = typeof params.expression === 'string' ? params.expression : '';
+    let data: unknown;
+    let precompiled = false;
+    if (options?.precompile === true && method === 'Runtime.evaluate' && expression) {
+      const cacheKey = piCdpScriptCacheKey(expression, params, options);
+      let scriptId = rec.compiledScripts.get(cacheKey);
+      if (!scriptId) {
+        try {
+          const compileParams: JsonRecord = {
+            expression,
+            sourceURL: 'pi-browser://' + encodeURIComponent(String(name || 'script')) + '/' + cacheKey + '.js',
+            persistScript: true,
+          };
+          if (params.contextId !== undefined) compileParams.executionContextId = params.contextId;
+          const compiled = cdpRecord(await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.compileScript', compileParams), options?.timeoutMs, 'Runtime.compileScript'));
+          if (typeof compiled.scriptId === 'string') {
+            scriptId = compiled.scriptId;
+            rec.compiledScripts.set(cacheKey, scriptId);
+          }
+        } catch (compileError) {
+          console.debug('[PI-BROWSER-CDP] Runtime.compileScript fallback to evaluate', key, cdpErrorMessage(compileError));
+        }
+      }
+      if (scriptId) {
+        const runParams: JsonRecord = {
+          scriptId,
+          awaitPromise: params.awaitPromise !== false,
+          returnByValue: params.returnByValue !== false,
+        };
+        if (params.objectGroup !== undefined) runParams.objectGroup = params.objectGroup;
+        if (params.silent !== undefined) runParams.silent = params.silent;
+        if (params.includeCommandLineAPI !== undefined) runParams.includeCommandLineAPI = params.includeCommandLineAPI;
+        if (params.userGesture !== undefined) runParams.userGesture = params.userGesture;
+        data = await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
+        precompiled = true;
+      }
+    }
+    if (data === undefined) {
+      data = await piCdpWithTimeout(
+        chrome.debugger.sendCommand({ tabId: rec.tabId }, method, params || {}),
+        options?.timeoutMs,
+        method
+      );
+    }
     rec.commands += 1; rec.lastUsed = piCdpNow();
-    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method }));
+    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method, ...(precompiled ? { precompiled: true } : {}) }));
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (!retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(msg || ''))) {

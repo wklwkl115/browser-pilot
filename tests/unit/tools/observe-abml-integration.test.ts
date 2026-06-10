@@ -17,7 +17,7 @@ const fakeServer = {
 	snapshot() { return { browserSessionId: "default", defaultTabId: 7, selectionVersion: 3, tabs: [{ tabId: 7, url: "https://example.test/checkout", title: "Checkout", active: true }] }; },
 	createObservationSnapshot(snapshot) { return { snapshotId: "snap-1", ttlMs: 60_000, expired: false, ...snapshot }; },
 	async sendCommand(command) {
-		if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+		if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 			const expression = String(command.params?.expression || "");
 			if (expression.includes("collectActionables") && expression.includes("list_hints")) {
 				return { id: "eval-1", acknowledged: true, tabId: 7, data: { result: { value: { url: "https://example.test/checkout", title: "Checkout", readyState: "complete", content: "<h1>Checkout</h1>\nStatus: payment required", node_count: 12, truncated: false, actionables: [{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500 }], list_hints: [] } } } };
@@ -39,8 +39,8 @@ function countingServer() {
 		...fakeServer,
 		calls,
 		async sendCommand(command: any, options: any) {
-			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
-				calls.push(String(command.name || ""));
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
+				calls.push(calls.length === 0 ? "scan_extract" : "abml_read_scan");
 			}
 			return fakeServer.sendCommand(command, options);
 		},
@@ -232,6 +232,47 @@ test("browser_observe C3: session delta is default and env escape disables it", 
 	}
 });
 
+test("browser_observe change gate reuses cached scan when content fingerprint is unchanged", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-"));
+	const snapshots = new Map<string, any>();
+	const ledger = new Map<string, any>();
+	const frames: any[] = [];
+	let snapshotSeq = 0;
+	let scanEvals = 0;
+	const server = {
+		...fakeServer,
+		createObservationSnapshot(snapshot: any) {
+			snapshotSeq += 1;
+			const record = { snapshotId: `snap-${snapshotSeq}`, ttlMs: 60_000, expired: false, ...snapshot };
+			snapshots.set(record.snapshotId, record);
+			return record;
+		},
+		getObservationSnapshot(snapshotId: string) { return snapshots.get(snapshotId); },
+		getPerceptionLedgerFrame(key: any) { return ledger.get(JSON.stringify(key)); },
+		getRecentPerceptionLedgerFrames(_key: any, limit = 3) { return frames.slice(-limit).reverse(); },
+		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); frames.push(frame); return frame; },
+		async sendCommand(command: any, options: any) {
+			if (command.cmd === "content.fingerprint") return { acknowledged: true, data: { changeSeq: 1, url: "https://example.test/checkout", title: "Checkout", readyState: "complete", visibleCount: 5, interactiveCount: 1, capturedAt: 123 } };
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") scanEvals += 1;
+			return fakeServer.sendCommand(command, options);
+		},
+	};
+	const previous = process.env.PI_BROWSER_SESSION_DELTA;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(first.fromCache, undefined);
+		assert.equal(second.summary?.fromCache, true);
+		assert.equal(second.summary?.cache?.reason, "content-fingerprint-unchanged");
+		assert.equal(scanEvals, 1, "unchanged fingerprint should avoid a second Runtime.evaluate scan");
+		assert.equal(frames.length, 2, "cache hit still records a fresh ledger frame");
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
 function relevanceServer(options: { url?: string; traceTerms?: Array<{ term: string; kind: string; weight?: number }> } = {}) {
 	const url = options.url ?? "https://example.test/neutral";
 	return {
@@ -243,7 +284,7 @@ function relevanceServer(options: { url?: string; traceTerms?: Array<{ term: str
 		async sendCommand(command: any, commandOptions: any) {
 			if (command.cmd === "network.status") return { acknowledged: true, data: { active: false } };
 			if (command.cmd === "hook.status") throw new Error("no hook session");
-			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 				return { id: "eval-rel", acknowledged: true, tabId: 7, data: { result: { value: {
 					url,
 					title: "Relevance",

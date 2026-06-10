@@ -128,6 +128,18 @@ async function handleContentSettingsCommand(msg: PiBridgeCommand): Promise<PiBri
   }
 }
 
+async function handleContentFingerprintCommand(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
+  const tabId = Number(msg.tabId || sender.tab?.id || 0);
+  if (!tabId) return bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, 'content.fingerprint requires a tabId', { cmd: msg.cmd, tabId: msg.tabId });
+  try {
+    const response = coreRecord(await chrome.tabs.sendMessage(tabId, { cmd: 'pi.contentFingerprint' }));
+    if (response.ok === false) return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint responder returned ok:false', { cmd: msg.cmd, tabId, response });
+    return { ok: true, data: coreRecord(response.data ?? response) };
+  } catch (e) {
+    return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(e) });
+  }
+}
+
 function piBrowserCookiePartitionIdentity(cookie: PiChromeCookie | null | undefined): string {
   const key = cookie && cookie.partitionKey;
   if (!key || typeof key !== 'object') return '';
@@ -209,6 +221,7 @@ function validatePiBridgeProtocolMessage(msg: PiBridgeCommand): ValidatedBridgeC
 
 async function dispatchPiBridgeCommand(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
   if (msg.cmd === 'bridge_wake') return await handleBridgeWake(msg, sender);
+  if (msg.cmd === 'content.fingerprint') return await handleContentFingerprintCommand(msg, sender);
   if (msg.cmd === 'cookies') return await handleCookies(msg, sender);
   if (msg.cmd === 'cdp') return await handleCDP(msg, sender);
   if (msg.cmd === 'persistent_cdp') return await handlePersistentCDP(msg, sender);

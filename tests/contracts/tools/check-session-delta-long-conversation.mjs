@@ -41,9 +41,10 @@ function createLongConversationServer() {
 		async sendCommand(command) {
 			if (command.cmd === "network.status") return { acknowledged: true, data: { active: false } };
 			if (command.cmd === "hook.status") throw new Error("no hook session");
-			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
-				calls.push(String(command.name || ""));
-				if (String(command.name || "") === "scan_extract") {
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
+				const expression = String(command.params?.expression || "");
+				calls.push(expression.includes("collectActionables") ? "scan_extract" : "abml_read_scan");
+				if (expression.includes("collectActionables")) {
 					scanSeq += 1;
 					return { id: `eval-${scanSeq}`, acknowledged: true, tabId: 7, data: { result: { value: {
 						url: tab.url,

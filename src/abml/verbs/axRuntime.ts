@@ -16,6 +16,7 @@ export type AxReadRuntimeOptions = {
 	url?: string;
 	capturedAt?: number;
 	timeoutMs?: number;
+	cacheKey?: string;
 };
 
 async function sendPersistentCdp(server: AbmlAxRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
@@ -190,17 +191,48 @@ function resolveAnchorTargets(anchors: RelationAnchor[], builtByKey: Map<string,
 
 export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[] };
 
+type AxRawCacheEntry = {
+	nodes: Array<Record<string, unknown>>;
+	geometryByBackend: Map<number, ReturnType<typeof boxModelToGeometry> | undefined>;
+	createdAt: number;
+};
+
+const AX_RAW_CACHE_MAX = 16;
+const axRawCache = new Map<string, AxRawCacheEntry>();
+
+function axRawCacheKey(options: AxReadRuntimeOptions): string | undefined {
+	if (!options.cacheKey) return undefined;
+	return [options.browserSessionId || "default", options.tabId, options.cacheKey].join("\u0000");
+}
+
+function rememberAxRawCache(key: string, entry: AxRawCacheEntry): void {
+	axRawCache.set(key, entry);
+	while (axRawCache.size > AX_RAW_CACHE_MAX) {
+		const first = axRawCache.keys().next().value;
+		if (first === undefined) break;
+		axRawCache.delete(first);
+	}
+}
+
 export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxReadRuntimeOptions): Promise<AxReadResult> {
 	const timeoutMs = options.timeoutMs ?? 10_000;
-	const tree = await sendPersistentCdp(server, {
-		browserSessionId: options.browserSessionId,
-		tabId: options.tabId,
-		timeoutMs,
-		cdpMethod: "Accessibility.getFullAXTree",
-	});
-	const root = valueRecord(tree.data);
-	const rootResult = valueRecord(root.result);
-	const nodes = Array.isArray(root.nodes) ? root.nodes as Array<Record<string, unknown>> : Array.isArray(rootResult.nodes) ? rootResult.nodes as Array<Record<string, unknown>> : [];
+	const rawCacheKey = axRawCacheKey(options);
+	const cachedRaw = rawCacheKey ? axRawCache.get(rawCacheKey) : undefined;
+	let nodes: Array<Record<string, unknown>>;
+	const rawGeometryByBackend = cachedRaw ? new Map(cachedRaw.geometryByBackend) : new Map<number, ReturnType<typeof boxModelToGeometry> | undefined>();
+	if (cachedRaw) {
+		nodes = cachedRaw.nodes;
+	} else {
+		const tree = await sendPersistentCdp(server, {
+			browserSessionId: options.browserSessionId,
+			tabId: options.tabId,
+			timeoutMs,
+			cdpMethod: "Accessibility.getFullAXTree",
+		});
+		const root = valueRecord(tree.data);
+		const rootResult = valueRecord(root.result);
+		nodes = Array.isArray(root.nodes) ? root.nodes as Array<Record<string, unknown>> : Array.isArray(rootResult.nodes) ? rootResult.nodes as Array<Record<string, unknown>> : [];
+	}
 	const context: AxContext = {
 		browserSessionId: options.browserSessionId,
 		tabId: options.tabId,
@@ -231,6 +263,10 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	await Promise.all(interestingNodes.map(async (node) => {
 		const backendNodeId = Number(node.backendDOMNodeId ?? node.backendNodeId);
 		if (Number.isFinite(backendNodeId) && backendNodeId > 0) {
+			if (rawGeometryByBackend.has(backendNodeId)) {
+				geometryByNode.set(node, rawGeometryByBackend.get(backendNodeId));
+				return;
+			}
 			try {
 				const box = await sendPersistentCdp(server, {
 					browserSessionId: options.browserSessionId,
@@ -239,12 +275,16 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 					cdpMethod: "DOM.getBoxModel",
 					params: { backendNodeId },
 				});
-				geometryByNode.set(node, boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data)));
+				const geometry = boxModelToGeometry(valueRecord(box.data).result ?? valueRecord(box.data));
+				rawGeometryByBackend.set(backendNodeId, geometry);
+				geometryByNode.set(node, geometry);
 			} catch {
+				rawGeometryByBackend.set(backendNodeId, undefined);
 				geometryByNode.set(node, undefined);
 			}
 		}
 	}));
+	if (rawCacheKey && !cachedRaw) rememberAxRawCache(rawCacheKey, { nodes, geometryByBackend: rawGeometryByBackend, createdAt: Date.now() });
 	for (const node of interestingNodes) {
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node));
 		const ancestors = ancestorContainerContext(node, parentByChildId);

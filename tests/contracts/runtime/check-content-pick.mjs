@@ -70,7 +70,7 @@ assert(observeRunnerSource.includes("MIN_CONTENT_TIMEOUT_MS = 100") && observeRu
 assert(observeRunnerSource.includes("evaluatePageScriptDirect(server, script") && !observeRunnerSource.includes("server.executeJavaScript(script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs })") && !observeRunnerSource.includes("Math.max(timeoutMs"), "browser_observe content extraction must use the direct CDP value channel with the normalized user timeout");
 assert(observeRunnerSource.includes("evaluatePageScriptDirect(server, scanScript") && !observeRunnerSource.includes("server.executeJavaScript(scanScript"), "browser_observe scan extraction must use the direct CDP value channel instead of exec.js smart serializer");
 const pageScriptEvaluationSource = read("src/tools/pageScriptEvaluation.ts");
-assert(pageScriptEvaluationSource.includes('cmd: "cdp"') && pageScriptEvaluationSource.includes('method: "Runtime.evaluate"') && pageScriptEvaluationSource.includes("returnByValue: true"), "direct page script evaluation must use CDP Runtime.evaluate returnByValue");
+assert(pageScriptEvaluationSource.includes('cmd: "persistent_cdp"') && pageScriptEvaluationSource.includes('cdpMethod: "Runtime.evaluate"') && pageScriptEvaluationSource.includes("precompile: true") && pageScriptEvaluationSource.includes("returnByValue: true"), "direct page script evaluation must use precompiled persistent CDP Runtime.evaluate returnByValue");
 assert.doesNotThrow(() => assertBridgeCommandSucceeded({ data: { waitId: "ok" } }, "wait.navigateAndWait"), "bridge success data must pass");
 assert.throws(() => assertBridgeCommandSucceeded({ data: { ok: false, error_code: "NAVIGATION_FAILED", error: "bad URL", details: { url: "https://bad.test", raw: { stack: "secret stack", message: "boom" } } } }, "wait.navigateAndWait"), (error) => {
 	assert.equal(error.code, "NAVIGATION_FAILED");
@@ -88,7 +88,8 @@ const fakeServer = {
 	calls: [],
 	async sendCommand(command, options) {
 		this.calls.push({ command, options });
-		const value = command.name === "content_extract" ? {
+		const expression = String(command.params?.expression || "");
+		const value = expression.includes("content-script") ? {
 			url: "https://example.test/content",
 			title: "Content fixture",
 			selector: null,
@@ -153,7 +154,7 @@ try {
 	assert.equal(scanArtifact.data.content.length, largeScanContent.length, "browser_scan outputPath artifact must preserve the direct CDP content length");
 	assert.equal(scanArtifact.data.content.endsWith("[scan truncated]"), true, "browser_scan artifact must keep script-level truncation marker");
 	assert.equal(scanArtifact.data.content.includes("…"), false, "browser_scan artifact must not contain exec.js serializer ellipsis");
-	assert.equal(fakeServer.calls.every((call) => call.command.cmd === "cdp" && call.command.method === "Runtime.evaluate"), true, "content/scan large channel must use direct CDP Runtime.evaluate");
+	assert.equal(fakeServer.calls.every((call) => call.command.cmd === "persistent_cdp" && call.command.cdpMethod === "Runtime.evaluate"), true, "content/scan large channel must use direct persistent CDP Runtime.evaluate");
 } finally {
 	await rm(tmp, { recursive: true, force: true });
 }

@@ -27,6 +27,7 @@ import { __piBridgeModule_ws_model } from "./service_worker/ws_model";
 import { __piBridgeModule_ws } from "./service_worker/ws";
 import { __piBridgeModule_router, installPiBridgeRouter } from "./service_worker/router";
 import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
+import { __piBridgeModule_keepalive, installPiBrowserKeepalivePort } from "./service_worker/keepalive";
 import { __piBridgeModule_transport, installPiBrowserTransport } from "./service_worker/transport";
 import { BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
 
@@ -66,6 +67,7 @@ export const serviceWorkerCommandModuleGraph = [
 export const serviceWorkerStartupModuleGraph = [
 	__piBridgeModule_router,
 	__piBridgeModule_tab_sync,
+	__piBridgeModule_keepalive,
 	__piBridgeModule_transport,
 ] as const;
 
@@ -76,6 +78,7 @@ export const serviceWorkerModuleGraph = [
 ] as const;
 
 function installPiBrowserServiceWorker() {
+	installPiBrowserKeepalivePort();
 	installPiBridgeRouter();
 	installPiBrowserTransport();
 }

@@ -10,6 +10,8 @@ export type FactSalience = {
 
 export type FactGranularity = "full" | "compact" | "line" | "ref" | "omit";
 
+export const FACT_GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
+
 export type FactRendering = {
 	value?: unknown;
 	text?: string;
@@ -36,6 +38,7 @@ export type AllocationOptions = {
 	minDensity?: number;
 	costModel?: "byte" | "token";
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	stableRefs?: Set<string>;
 };
 
 export function salienceValue(salience: FactSalience): number {

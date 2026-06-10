@@ -76,6 +76,7 @@ type TextToolResultOptions = {
 	artifactThreshold?: number;
 	maxChars?: number;
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
@@ -344,6 +345,7 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
 		granularityCeiling: options.granularityCeiling,
+		stableRefs: options.stableRefs,
 		onAllocation: options.onAllocation,
 		redact: params.redact,
 	});

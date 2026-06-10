@@ -82,6 +82,18 @@ test("allocateFacts keeps existing behavior when granularity ceiling is omitted"
 	assert.equal(plan.get("a"), "full");
 });
 
+test("allocateFacts gives stable refs a continuity bonus without locking them", () => {
+	const facts = [
+		fact("stable", "entity", 10, { compact: 10 }),
+		fact("fresh", "entity", 11, { compact: 10 }),
+		fact("winner", "entity", 20, { compact: 10 }),
+	];
+	const plan = allocateFacts(facts, 20, [], { stableRefs: new Set(["stable"]) });
+	assert.equal(plan.get("stable"), "compact");
+	assert.equal(plan.get("winner"), "compact");
+	assert.equal(plan.get("fresh"), "omit");
+});
+
 test("allocateFacts exempts relevant tail facts from redundancy penalty", () => {
 	const facts: Fact[] = Array.from({ length: 5 }, (_, index) => {
 		const n = index + 1;

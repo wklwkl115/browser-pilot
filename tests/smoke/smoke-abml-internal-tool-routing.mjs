@@ -20,7 +20,7 @@ const fakeBridge = {
 	},
 	async sendCommand(command) {
 		commandCalls.push({ kind: "sendCommand", command });
-		if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+		if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 			const expression = String(command.params?.expression || "");
 			if (expression.includes("scan_extract") || expression.includes("collectActionables")) {
 				return { id: "eval-1", acknowledged: true, tabId: 7, data: { result: { value: { url: "https://example.test/checkout", title: "Checkout", readyState: "complete", content: "<h1>Checkout</h1>\nStatus: payment required", node_count: 12, truncated: false, actionables: [{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500 }], list_hints: [] } } } };

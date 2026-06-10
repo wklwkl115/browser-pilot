@@ -12,10 +12,12 @@ function runtimeExceptionMessage(data: Record<string, unknown>): string | undefi
 
 export async function evaluatePageScriptDirect(server: BrowserBridgeServer, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string }): Promise<BrowserBridgeExecutionResult> {
 	const result = await server.sendCommand({
-		cmd: "cdp",
-		method: "Runtime.evaluate",
-		name: options.name,
-		persistent: false,
+		cmd: "persistent_cdp",
+		action: "send",
+		cdpMethod: "Runtime.evaluate",
+		name: "pi-script-eval",
+		persistent: true,
+		precompile: true,
 		timeoutMs: options.timeoutMs,
 		params: { expression: script, awaitPromise: true, returnByValue: true },
 	}, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });

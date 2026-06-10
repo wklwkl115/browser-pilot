@@ -8,6 +8,7 @@ export type PerceptionLedgerKey = {
 
 export type PerceptionLedgerFactState = {
 	versionStamp: string;
+	stableStamp?: string;
 	lastShownGranularity: "full" | "compact" | "line" | "ref";
 };
 
@@ -16,6 +17,20 @@ export type PerceptionLedgerFrame = {
 	snapshotId: string;
 	capturedAt: number;
 	facts: Record<string, PerceptionLedgerFactState>;
+	pageFingerprint?: {
+		changeSeq: number;
+		url?: string;
+		title?: string;
+		readyState?: string;
+		visibleCount?: number;
+		interactiveCount?: number;
+		capturedAt?: number;
+	};
+	renderCache?: {
+		mode: string;
+		detailLevel: string;
+		maxChars: number;
+	};
 	allocation?: {
 		budgetUsedRatio: number;
 		omittedCount: number;
@@ -62,10 +77,32 @@ function entityVersionStamp(entity: Entity): string {
 	});
 }
 
+function entityStableStamp(entity: Entity): string {
+	return JSON.stringify({
+		kind: entity.kind,
+		role: entity.role,
+		name: entity.name,
+		value: entity.value,
+		state: entity.state,
+		structure: entity.structure,
+	});
+}
+
 export function factsFromEntities(entities: Entity[], granularity: PerceptionLedgerFactState["lastShownGranularity"] = "compact"): Record<string, PerceptionLedgerFactState> {
 	const facts: Record<string, PerceptionLedgerFactState> = {};
-	for (const entity of entities) facts[entity.ref] = { versionStamp: entityVersionStamp(entity), lastShownGranularity: granularity };
+	for (const entity of entities) facts[entity.ref] = { versionStamp: entityVersionStamp(entity), stableStamp: entityStableStamp(entity), lastShownGranularity: granularity };
 	return facts;
+}
+
+export function stableRefsFromFrames(current: PerceptionLedgerFrame, prior: PerceptionLedgerFrame | undefined): Set<string> {
+	const out = new Set<string>();
+	if (!prior) return out;
+	for (const [ref, state] of Object.entries(current.facts)) {
+		const previous = prior.facts[ref];
+		if (!previous) continue;
+		if ((state.stableStamp ?? state.versionStamp) === (previous.stableStamp ?? previous.versionStamp)) out.add(ref);
+	}
+	return out;
 }
 
 export class PerceptionLedger {

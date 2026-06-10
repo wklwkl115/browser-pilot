@@ -1,23 +1,21 @@
 import type { AllocationOptions, Fact, FactGranularity, PlaneFloor, RenderPlan } from "./fact.js";
-import { salienceValue } from "./fact.js";
+import { FACT_GRANULARITY_ORDER, salienceValue } from "./fact.js";
 import { tokenEstimate } from "./cost.js";
 import { stableJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 
-const GRANULARITY_ORDER: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
-
 function allowedByCeiling(granularity: Exclude<FactGranularity, "omit">, ceiling?: Exclude<FactGranularity, "omit">): boolean {
 	if (!ceiling) return true;
-	return GRANULARITY_ORDER.indexOf(granularity) >= GRANULARITY_ORDER.indexOf(ceiling);
+	return FACT_GRANULARITY_ORDER.indexOf(granularity) >= FACT_GRANULARITY_ORDER.indexOf(ceiling);
 }
 
 function cheapestAvailable(fact: Fact): Exclude<FactGranularity, "omit"> | undefined {
-	for (const granularity of [...GRANULARITY_ORDER].reverse()) if (fact.renderings[granularity]) return granularity;
+	for (const granularity of [...FACT_GRANULARITY_ORDER].reverse()) if (fact.renderings[granularity]) return granularity;
 	return undefined;
 }
 
 function bestAvailableWithin(fact: Fact, remaining: number, ceiling?: Exclude<FactGranularity, "omit">): Exclude<FactGranularity, "omit"> | undefined {
-	for (const granularity of GRANULARITY_ORDER) {
+	for (const granularity of FACT_GRANULARITY_ORDER) {
 		if (!allowedByCeiling(granularity, ceiling)) continue;
 		const rendering = fact.renderings[granularity];
 		if (rendering && rendering.cost <= remaining) return granularity;
@@ -38,7 +36,7 @@ function renderingDensityCost(fact: Fact, granularity: Exclude<FactGranularity, 
 }
 
 function renderingRecord(fact: Fact): Record<string, unknown> | undefined {
-	for (const granularity of GRANULARITY_ORDER) {
+	for (const granularity of FACT_GRANULARITY_ORDER) {
 		const value = fact.renderings[granularity]?.value;
 		if (isRecord(value)) return value;
 	}
@@ -103,7 +101,8 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 		.map((fact) => {
 			const best = bestAvailableWithin(fact, Math.max(0, budget - spent), options.granularityCeiling);
 			const cost = best ? renderingDensityCost(fact, best, options) : Number.POSITIVE_INFINITY;
-			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1);
+			const continuity = options.stableRefs?.has(fact.ref) ? 1.2 : 1;
+			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1) * continuity;
 			return { fact, best, salience, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
 		})
 		.sort((a, b) => b.density - a.density || b.salience - a.salience);

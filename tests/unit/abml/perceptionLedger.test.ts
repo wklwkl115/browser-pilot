@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PerceptionLedger } from "../../../src/abml/perceptionLedger.ts";
+import { factsFromEntities, PerceptionLedger, stableRefsFromFrames } from "../../../src/abml/perceptionLedger.ts";
 
 function frame(n: number) {
 	return { key: { browserSessionId: "s", tabId: 1, navigationEpoch: `https://example.test/${n}` }, snapshotId: `snap-${n}`, capturedAt: n, facts: {} };
@@ -21,6 +21,21 @@ test("PerceptionLedger stores allocation stats and returns recent frames by sess
 	const recent = ledger.recent(frame(3).key, 3);
 	assert.deepEqual(recent.map((item) => item.snapshotId), ["snap-3", "snap-2", "snap-1"]);
 	assert.deepEqual(recent.map((item) => item.allocation?.omittedCount), [3, 2, 1]);
+});
+
+test("stableRefsFromFrames ignores relation-only changes", () => {
+	const entity = {
+		ref: "pi-ref://control/pay",
+		kind: "control",
+		role: "button",
+		name: "Pay now",
+		state: { disabled: false },
+		structure: {},
+		relations: [{ type: "labelledBy", targetRef: "pi-ref://text/a", source: "dom", confidence: "low" }],
+	} as any;
+	const current = { ...frame(1), facts: factsFromEntities([{ ...entity, relations: [{ type: "labelledBy", targetRef: "pi-ref://text/b", source: "ax", confidence: "medium" }] }]) };
+	const prior = { ...frame(0), facts: factsFromEntities([entity]) };
+	assert.deepEqual(Array.from(stableRefsFromFrames(current, prior)), ["pi-ref://control/pay"]);
 });
 
 test("PerceptionLedger trace ring is session keyed, deduped, and capped", () => {

@@ -688,6 +688,15 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		};
+		const axReadPromise = readAxEntities(server, {
+			browserSessionId: target.browserSessionId,
+			tabId: target.tabId,
+			observationId: snapshot.snapshotId,
+			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
+			capturedAt: snapshot.capturedAt,
+			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+			cacheKey: input.axCacheKey,
+		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
 		const summaryData = registerScanEntityRefs(data, entityContext);
 		const summary = summarizeScanData(summaryData, bridge.tabs || [], {
 			detailLevel: "summary",
@@ -695,14 +704,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			entityContext,
 		});
 		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
-		const axRead = await readAxEntities(server, {
-			browserSessionId: target.browserSessionId,
-			tabId: target.tabId,
-			observationId: snapshot.snapshotId,
-			url: typeof data?.url === "string" ? data.url : descriptor?.documentEpoch?.url,
-			capturedAt: snapshot.capturedAt,
-			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
-		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
+		const axRead = await axReadPromise;
 		const mergedEntitiesRaw = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
 		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
 			browserSessionId: bridge.browserSessionId,

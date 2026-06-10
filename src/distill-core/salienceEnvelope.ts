@@ -2,7 +2,7 @@ import { stableJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import { compactEntityRenderingValue, compactSummaryValue } from "./granularity.js";
 import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
-import type { FactGranularity } from "./fact.js";
+import { FACT_GRANULARITY_ORDER, type FactGranularity } from "./fact.js";
 
 const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
 const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "diff", "treeDiff"] as const;
@@ -33,8 +33,7 @@ export type SalienceEnvelopeOptions = {
 
 function allowedByCeiling(granularity: Candidate["granularity"], ceiling?: Exclude<FactGranularity, "omit">): boolean {
 	if (!ceiling) return true;
-	const order: Array<Exclude<FactGranularity, "omit">> = ["full", "compact", "line", "ref"];
-	return order.indexOf(granularity) >= order.indexOf(ceiling);
+	return FACT_GRANULARITY_ORDER.indexOf(granularity) >= FACT_GRANULARITY_ORDER.indexOf(ceiling);
 }
 
 function referencedPiRefs(envelope: BudgetedEnvelope): Set<string> {

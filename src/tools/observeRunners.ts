@@ -11,7 +11,7 @@ import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolve
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection } from "../abml/snapshotProjection.js";
 import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.js";
-import { factsFromEntities, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
+import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
 import type { FactGranularity } from "../distill-core/fact.js";
 import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../distill-core/relevance.js";
 import { extractScalarTerm, extractUrlTerms } from "../distill-core/relevanceTaps.js";
@@ -491,6 +491,49 @@ function sessionDeltaEnabled(params: ObserveToolParams): boolean {
 	return process.env.PI_BROWSER_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
 }
 
+type PageFingerprint = NonNullable<PerceptionLedgerFrame["pageFingerprint"]>;
+
+function normalizePageFingerprint(value: unknown): PageFingerprint | undefined {
+	const record = isRecord(value) ? value : {};
+	const changeSeq = Number(record.changeSeq);
+	if (!Number.isFinite(changeSeq)) return undefined;
+	return {
+		changeSeq,
+		...(typeof record.url === "string" ? { url: record.url } : {}),
+		...(typeof record.title === "string" ? { title: record.title } : {}),
+		...(typeof record.readyState === "string" ? { readyState: record.readyState } : {}),
+		...(typeof record.visibleCount === "number" ? { visibleCount: record.visibleCount } : {}),
+		...(typeof record.interactiveCount === "number" ? { interactiveCount: record.interactiveCount } : {}),
+		...(typeof record.capturedAt === "number" ? { capturedAt: record.capturedAt } : {}),
+	};
+}
+
+async function readPageFingerprint(server: BrowserBridgeServer, params: ObserveToolParams, tabId: number | undefined, timeoutMs: number): Promise<PageFingerprint | undefined> {
+	if (!tabId) return undefined;
+	try {
+		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId, timeoutMs }, { browserSessionId: params.browserSessionId, tabId, timeoutMs: Math.min(timeoutMs, 2_000) });
+		return normalizePageFingerprint(result.data);
+	} catch {
+		return undefined;
+	}
+}
+
+function renderCacheMatches(frame: PerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, fingerprint: PageFingerprint | undefined): frame is PerceptionLedgerFrame {
+	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
+	return frame.pageFingerprint.changeSeq === fingerprint.changeSeq
+		&& frame.renderCache.mode === mode
+		&& frame.renderCache.detailLevel === detailLevel
+		&& frame.renderCache.maxChars === maxChars;
+}
+
+function cachedEnvelopeFromArtifact(value: unknown): Record<string, unknown> | undefined {
+	const record = isRecord(value) ? value : undefined;
+	if (!record) return undefined;
+	if (isRecord(record.envelope)) return record.envelope as Record<string, unknown>;
+	if (record.tool === "browser_observe") return record;
+	return undefined;
+}
+
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
 	const record = isRecord(value) ? value : {};
 	const tabs = Array.isArray(record.tabs) ? record.tabs : [];
@@ -569,6 +612,63 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const preBridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const plannedLedgerKey = ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
 	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
+	const effectiveTabId = tabId ?? preBridge.defaultTabId;
+	const detailLevel = String(params.detailLevel || "summary");
+	const pageFingerprint = sessionDeltaEnabled(params) ? await readPageFingerprint(server, params, effectiveTabId, timeoutMs) : undefined;
+	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
+		const cacheFingerprint = pageFingerprint!;
+		const priorSnapshot = server.getObservationSnapshot(ledgerFrame.snapshotId);
+		const priorPath = priorSnapshot?.saved?.path;
+		if (priorPath) {
+			try {
+				const cachedArtifact = parseJsonOrThrow(await readFile(priorPath, "utf8"), "browser_observe cached snapshot artifact");
+				const cachedEnvelope = cachedEnvelopeFromArtifact(cachedArtifact);
+				if (cachedEnvelope) {
+					const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, cacheFingerprint.url);
+					const { result: cachedResult } = await withTrackedOperation(server, {
+						toolName: "browser_observe",
+						command: mode === "text" ? "scan.text" : "scan",
+						browserSessionId,
+						tabId: effectiveTabId,
+						phase: "running",
+						progress: 10,
+						queueDepth: server.queueDepth(browserSessionId, effectiveTabId),
+						leaseOwnerHash: server.leaseOwnerHash(browserSessionId, effectiveTabId),
+						snapshotId: snapshotMeta.snapshotId,
+						sourceMode: "scan",
+					}, onUpdate, async (handle): Promise<import("../utils/toolResult.js").PiTextToolResult> => {
+						await handle.update({ progress: 100, details: { fromCache: true, changeSeq: cacheFingerprint.changeSeq } });
+						const value = { ...cachedEnvelope, fromCache: true, cache: { reason: "content-fingerprint-unchanged", changeSeq: cacheFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId } };
+						return await jsonToolResult(value, resultParams, ctx, {
+							toolName: "browser_observe",
+							command: mode === "text" ? "scan.text" : "scan",
+							maxChars,
+							fallbackName,
+							details: { mode, sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId },
+							operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
+							snapshot: snapshotMeta,
+							distill: () => ({ mode, sourceMode: "scan", fromCache: true, cache: value.cache, priorSnapshotId: ledgerFrame.snapshotId }),
+							artifactValue: { ...value, operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId }, snapshot: snapshotMeta },
+						});
+					});
+					if (plannedLedgerKey && typeof server.recordPerceptionLedgerFrame === "function") {
+						server.recordPerceptionLedgerFrame({
+							key: plannedLedgerKey,
+							snapshotId: snapshotMeta.snapshotId,
+							capturedAt: snapshotMeta.capturedAt,
+							facts: ledgerFrame.facts,
+							pageFingerprint: cacheFingerprint,
+							renderCache: { mode, detailLevel, maxChars },
+							allocation: ledgerFrame.allocation,
+						});
+					}
+					return cachedResult;
+				}
+			} catch {
+				// Cache misses must degrade to a normal observe; the fresh path repairs ledger state.
+			}
+		}
+	}
 	const granularityCeiling = granularityCeilingFromLedger(server, plannedLedgerKey);
 	const effectiveBaseline: unknown = params.baseline ?? (ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
 	let baseline: BaselineResolution | undefined;
@@ -602,6 +702,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			baseline: baseline?.entities,
 			diffOptions: baseline?.partialBaseline ? { partialBaseline: true } : undefined,
 			prefetchedScan: canReuseScanForAbml ? result.data as Record<string, unknown> : undefined,
+			axCacheKey: pageFingerprint ? `content:${pageFingerprint.changeSeq}:${pageFingerprint.url || ""}` : undefined,
 		});
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
 		return { result, abmlRead };
@@ -801,6 +902,12 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	};
 	const finalLedgerKey = ledgerKey(bridge.browserSessionId, tabId, typeof data?.url === "string" ? data.url : undefined);
 	let allocation: PerceptionLedgerFrame["allocation"] | undefined;
+	const ledgerFacts = attributedEntities ? factsFromEntities(attributedEntities) : undefined;
+	const ledgerFrameForRecord: PerceptionLedgerFrame | undefined = finalLedgerKey && ledgerFacts
+		? { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: ledgerFacts }
+		: undefined;
+	const priorLedgerFrame = finalLedgerKey && typeof server.getRecentPerceptionLedgerFrames === "function" ? server.getRecentPerceptionLedgerFrames(finalLedgerKey, 1)[0] : undefined;
+	const stableRefs = ledgerFrameForRecord ? stableRefsFromFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
 	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",
@@ -811,15 +918,20 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		operation,
 		snapshot: snapshotMeta,
 		granularityCeiling,
+		stableRefs,
 		onAllocation: (value) => {
 			allocation = value;
 		},
 		entities: envelopeEntities,
 		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
-	if (finalLedgerKey && attributedEntities && typeof server.recordPerceptionLedgerFrame === "function") {
-		const frame: PerceptionLedgerFrame = { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: factsFromEntities(attributedEntities), ...(allocation ? { allocation } : {}) };
-		server.recordPerceptionLedgerFrame(frame);
+	if (ledgerFrameForRecord && typeof server.recordPerceptionLedgerFrame === "function") {
+		server.recordPerceptionLedgerFrame({
+			...ledgerFrameForRecord,
+			...(pageFingerprint ? { pageFingerprint } : {}),
+			renderCache: { mode, detailLevel, maxChars },
+			...(allocation ? { allocation } : {}),
+		});
 	}
 	return toolResult;
 }

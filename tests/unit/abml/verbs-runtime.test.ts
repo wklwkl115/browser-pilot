@@ -47,7 +47,7 @@ function fakeServer(): FakeServer {
 				if (command.frameId === "child-x") return { id: "frame-eval", acknowledged: true, tabId: 7, data: { ok: false, error_code: "FRAME_EVAL_FAILED", error: "cross-origin frame unreachable" } };
 				return { id: "frame-eval", acknowledged: true, tabId: 7, data: { result: { value: { href: "https://example.test/checkout", title: "Checkout" } } } };
 			}
-			if (command.cmd === "cdp" && command.method === "Runtime.evaluate") {
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 				const expression = String((command.params as Record<string, unknown>)?.expression || "");
 				state.evaluateScripts.push(expression);
 				const wrap = (value: Record<string, unknown>) => ({ id: `eval-${state.evaluateScripts.length}`, acknowledged: true, tabId: 7, data: { result: { value } } });

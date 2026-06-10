@@ -89,6 +89,7 @@ type DistillBaseOptions = {
 	redact?: boolean;
 	rawArtifactValue?: unknown;
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
+	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
@@ -404,7 +405,7 @@ function factRenderingDiagnostics(options: DistillBaseOptions, value: unknown, m
 	const facts = factify(value, options.command);
 	if (!facts.length) return undefined;
 	const budget = Math.max(256, Math.floor(maxChars * 0.25));
-	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01, costModel: allocationCostModel() });
+	const plan = allocateFacts(facts, budget, [{ plane: "summary", minFacts: 1, minGranularity: "compact" }], { minDensity: 0.01, costModel: allocationCostModel(), stableRefs: options.stableRefs });
 	const rendered: RenderedFacts = renderFacts(facts, plan);
 	const planes = Object.keys(rendered).filter((key) => key !== "omitted" && key !== "stats").sort();
 	return {

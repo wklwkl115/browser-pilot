@@ -22,6 +22,7 @@ export type AbmlReadInput = {
 	baseline?: Entity[];
 	diffOptions?: EntityDiffOptions;
 	prefetchedScan?: Record<string, unknown>;
+	axCacheKey?: string;
 };
 
 export type AbmlClickInput = {

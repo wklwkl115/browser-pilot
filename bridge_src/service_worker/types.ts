@@ -478,6 +478,12 @@ export type PiWebSocketLike = {
 
 export type PiBridgeWebSocket = WebSocket & PiWebSocketLike;
 
+export type PiChromePort = {
+  name?: string;
+  onDisconnect?: PiChromeEvent<(port?: PiChromePort) => void>;
+  disconnect?(): void;
+};
+
 export type PiChromeRuntime = {
   id?: string;
   lastError?: { message?: string };
@@ -486,6 +492,7 @@ export type PiChromeRuntime = {
   reload(): void;
   sendMessage(message: unknown): Promise<unknown>;
   onMessage: PiChromeEvent<(message: unknown, sender: PiBridgeSender, sendResponse: (response?: unknown) => void) => void | boolean | Promise<unknown>>;
+  onConnect?: PiChromeEvent<(port: PiChromePort) => void>;
   onInstalled: PiChromeEvent<() => void>;
   onStartup: PiChromeEvent<() => void>;
 };
@@ -503,6 +510,7 @@ export type PiChromeTabs = {
   get(tabId: number): Promise<PiChromeTab>;
   remove(tabId: number): Promise<void>;
   captureVisibleTab(windowId?: number, options?: JsonRecord): Promise<string>;
+  sendMessage(tabId: number, message: unknown, options?: JsonRecord): Promise<unknown>;
   onCreated: PiChromeEvent<(tab: PiChromeTab) => void>;
   onUpdated: PiChromeEvent<(tabId: number, changeInfo: JsonRecord, tab: PiChromeTab) => void>;
   onRemoved: PiChromeEvent<(tabId: number, removeInfo?: JsonRecord) => void>;
