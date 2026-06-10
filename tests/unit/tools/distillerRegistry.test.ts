@@ -89,6 +89,19 @@ test("registerDistillerDefinition also makes distillValue work", () => {
 	assert.equal(result.fromDef, 1);
 });
 
+test("registerDistillerDefinition preserves optional factify contract", () => {
+	const toolName = `__def_factify_${Date.now()}`;
+	registerDistillerDefinition({
+		toolName,
+		summarySchema: Type.Object({}),
+		distill: () => ({ fromDef: 1 }),
+		factify: () => [{ ref: "pi-ref://test/1", plane: "summary", salience: { structure: 1 }, renderings: { ref: { text: "pi-ref://test/1", cost: 15 } } }],
+	});
+	const def = getDistillerDefinition(toolName);
+	assert.equal(typeof def?.factify, "function");
+	assert.equal(def?.factify?.({}, undefined)[0]?.plane, "summary");
+});
+
 test("getDistillerDefinition returns undefined for non-definition tool", () => {
 	const toolName = `__legacy_only_${Date.now()}`;
 	registerDistiller(toolName, () => ({}));

@@ -2,8 +2,10 @@ import { summarizeGenericValue } from "./summaries/index.js";
 import { isRecord } from "./summaries/common.js";
 import { registerBuiltinDistillers } from "./summaries/registerBuiltinDistillers.js";
 import type { TSchema } from "typebox";
+import type { Fact } from "../distill-core/fact.js";
 
 export type Distiller = (value: unknown, command?: string) => Record<string, unknown>;
+export type Factifier = (value: unknown, command?: string) => Fact[];
 
 /**
  * Extended distiller definition that pairs a distill function with an explicit
@@ -19,6 +21,7 @@ export type DistillerDefinition = {
 	commandMatcher?: (command: string) => boolean;
 	summarySchema: TSchema;
 	distill: Distiller;
+	factify?: Factifier;
 };
 
 type CommandDistillerRule = {

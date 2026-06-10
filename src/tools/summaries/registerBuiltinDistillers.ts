@@ -1,3 +1,6 @@
+import { jsonCost } from "../../distill-core/cost.js";
+import { lineEncodeEntity } from "../../distill-core/granularity.js";
+import type { Fact } from "../../distill-core/fact.js";
 import { registerCommandDistiller, registerDistillerDefinition, unwrapDistillData, type Distiller } from "../distillerRegistry.js";
 import { summarizeDomFlowData, summarizeEvidenceData, summarizeGenericValue, summarizeHookCollectData, summarizeHookPerformance, summarizeMemoryResult, summarizeNetworkData, summarizeWsSessionData } from "./index.js";
 import { EvidenceSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, NetworkSummarySchema } from "./outputSchemas.js";
@@ -25,6 +28,26 @@ const networkDistiller: Distiller = (value) => summarizeNetworkData(unwrapDistil
 const wsDistiller: Distiller = (value, command) => summarizeWsSessionData(String(command || "ws"), unwrapDistillData(value));
 const memoryDistiller: Distiller = (value) => summarizeMemoryResult(unwrapDistillData(value));
 
+function summaryFact(ref: string, plane: Fact["plane"], value: Record<string, unknown>, salience: Fact["salience"]): Fact {
+	const compact = { ...value };
+	const line = lineEncodeEntity(compact) || `${plane}:${ref}`;
+	return {
+		ref,
+		plane,
+		salience,
+		renderings: {
+			full: { value, cost: jsonCost(value) },
+			compact: { value: compact, cost: jsonCost(compact) },
+			line: { text: line, cost: line.length },
+			ref: { text: ref, cost: ref.length },
+		},
+	};
+}
+
+function factifySummary(toolName: string, value: unknown, command: string | undefined, distiller: Distiller, salience: Fact["salience"]): Fact[] {
+	return [summaryFact(`pi-ref://summary/${toolName}/${String(command || "default").replace(/[^a-z0-9._-]+/gi, "-")}`, "summary", distiller(value, command), salience)];
+}
+
 export function registerBuiltinDistillers(): void {
 	if (builtinDistillersRegistered) return;
 	builtinDistillersRegistered = true;
@@ -35,21 +58,25 @@ export function registerBuiltinDistillers(): void {
 		toolName: "browser_evidence",
 		summarySchema: EvidenceSummarySchema,
 		distill: evidenceDistiller,
+		factify: (value, command) => factifySummary("browser_evidence", unwrapDistillData(value), command, evidenceDistiller, { consequence: 120, structure: 80 }),
 	});
 	registerDistillerDefinition({
 		toolName: "browser_network",
 		summarySchema: NetworkSummarySchema,
 		distill: networkDistiller,
+		factify: (value, command) => factifySummary("browser_network", unwrapDistillData(value), command, networkDistiller, { consequence: 220 }),
 	});
 	registerDistillerDefinition({
 		toolName: "browser_hook",
 		summarySchema: HookDomFlowSummarySchema,
 		distill: hookToolDistiller,
+		factify: (value, command) => factifySummary("browser_hook", value, command, hookToolDistiller, { consequence: 160, actionability: 40 }),
 	});
 	registerDistillerDefinition({
 		toolName: "browser_memory",
 		summarySchema: MemorySummarySchema,
 		distill: memoryDistiller,
+		factify: (value, command) => factifySummary("browser_memory", unwrapDistillData(value), command, memoryDistiller, { structure: 160 }),
 	});
 
 	// Legacy command distillers (no schema — outside Phase-2 scope).

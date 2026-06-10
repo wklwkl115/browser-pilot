@@ -18,6 +18,7 @@ import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
+import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../abml/perceptionLedger.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
 export class BrowserBridgeServer {
@@ -34,6 +35,7 @@ export class BrowserBridgeServer {
 	private readonly pendingRequests: BrowserBridgePendingRequests;
 	private readonly operations: BrowserOperationRegistry;
 	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
+	private readonly perceptionLedger: PerceptionLedger;
 	private readonly runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
@@ -57,6 +59,7 @@ export class BrowserBridgeServer {
 		);
 		this.operations = new BrowserOperationRegistry();
 		this.observationSnapshots = new BrowserObservationSnapshotRegistry();
+		this.perceptionLedger = new PerceptionLedger();
 		this.runtimeRecoveryArtifacts = new BrowserRuntimeRecoveryArtifacts();
 		this.commandService = new BrowserBridgeCommandService({
 			clients: this.clients,
@@ -110,6 +113,7 @@ export class BrowserBridgeServer {
 		this.tabs.clear();
 		this.operations.clear();
 		this.observationSnapshots.clear();
+		this.perceptionLedger.clear();
 		await this.httpEndpoint.stop();
 	}
 
@@ -301,6 +305,14 @@ export class BrowserBridgeServer {
 
 	listObservationSnapshots(): BrowserObservationSnapshotInfo[] {
 		return this.observationSnapshots.list(this.snapshot());
+	}
+
+	getPerceptionLedgerFrame(key: PerceptionLedgerKey): PerceptionLedgerFrame | undefined {
+		return this.perceptionLedger.get(key);
+	}
+
+	recordPerceptionLedgerFrame(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
+		return this.perceptionLedger.record(frame);
 	}
 
 	formatError(error: unknown): string {

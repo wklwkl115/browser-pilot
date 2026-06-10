@@ -1,4 +1,7 @@
 import { stableJson } from "../utils/json.js";
+import { buildSaveTextArtifactPlan, artifactPlanReasons, type ArtifactPlan, type ArtifactPlanReason } from "../distill-core/artifactPlan.js";
+import { fitEnvelopeBudget, fitSummaryBudget, SUMMARY_MAX_CHARS, type DistilledSummary } from "../distill-core/ladder.js";
+import { fitSalienceEnvelopeBudget } from "../distill-core/salienceEnvelope.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type PiTextToolResult } from "../utils/toolResult.js";
 import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "./artifactPrivacy.js";
@@ -11,7 +14,7 @@ import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
 export { distillValue } from "./distillerRegistry.js";
 export { summarizeHtmlSnapshot } from "./summaries/index.js";
 
-export type DistilledSummary = Record<string, unknown>;
+export type { DistilledSummary } from "../distill-core/ladder.js";
 export type DistilledEnvelope = {
 	tool: string;
 	command?: string;
@@ -59,17 +62,10 @@ export type DistilledEnvelope = {
 	// Layer-1 section handles. Populated only by the MCP adapter (which owns the
 	// resource store); Pi core leaves this unset.
 	sections?: Array<{ name: string; kind: string; count?: number; handle?: string }>;
+	renderer?: "salience-v1";
+	delta?: "session";
+	baselineSnapshotId?: string;
 };
-
-const SUMMARY_MAX_CHARS = 12_000;
-// Last-resort orientation snippet cap when the summary overflows even after compaction and falls to the
-// scalar-identity fallback. The real page model lives in the lifted top-level fields (entities/gist/
-// outline/diff/treeDiff/causal) + the saved artifact, so this preview only needs to ORIENT, not carry
-// data — capping it small kills the multi-KB re-dump blob that drowned the answer (blind-eval F2).
-const PREVIEW_FALLBACK_CHARS = 800;
-const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
-const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
-const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
 
 type DistillBaseOptions = {
 	toolName: string;
@@ -105,88 +101,29 @@ type DistilledTextOptions = DistillBaseOptions & {
 	artifactValue?: unknown;
 };
 
-async function saveRawArtifact(options: DistillBaseOptions, raw: string): Promise<Record<string, unknown> | undefined> {
-	return await saveTextArtifact(options.ctx, options.outputPath, options.fallbackName, raw);
+function rawArtifactPlan(options: DistillBaseOptions, raw: string, sensitiveRaw: boolean, threshold: number, level: DetailLevel): ArtifactPlan | undefined {
+	return buildSaveTextArtifactPlan({
+		text: raw,
+		fallbackName: options.fallbackName,
+		outputPath: options.outputPath,
+		reasons: artifactPlanReasons({
+			outputPath: options.outputPath,
+			sensitiveRaw,
+			rawLength: raw.length,
+			threshold,
+			summaryThreshold: Math.min(threshold, 8_000),
+			summaryLike: level === "summary",
+		}),
+	});
 }
 
-function compactSummaryValue(value: unknown, limits: { stringChars: number; arrayItems: number; tableRows: number }, depth = 0): unknown {
-	if (value === null || value === undefined) return value;
-	if (typeof value === "string") return value.length > limits.stringChars ? `${value.slice(0, limits.stringChars)}…` : value;
-	if (typeof value === "number" || typeof value === "boolean") return value;
-	if (typeof value !== "object") return String(value);
-	if (Array.isArray(value)) return value.slice(0, limits.arrayItems).map((item) => compactSummaryValue(item, limits, depth + 1));
-	if (depth >= 5) return { type: "object", keyCount: Object.keys(value as Record<string, unknown>).length };
-	const record = value as Record<string, unknown>;
-	if (Array.isArray(record.columns) && Array.isArray(record.rows)) {
-		const rows = record.rows.slice(0, limits.tableRows).map((row) => Array.isArray(row) ? row.map((cell) => compactSummaryValue(cell, limits, depth + 1)) : row);
-		return { ...record, rows, truncated: Number(record.count || rows.length) > rows.length ? Number(record.count || rows.length) - rows.length : record.truncated };
-	}
-	const out: Record<string, unknown> = {};
-	for (const [key, item] of Object.entries(record)) out[key] = compactSummaryValue(item, limits, depth + 1);
-	return out;
+function forcedArtifactPlan(options: DistillBaseOptions, raw: string, reason: ArtifactPlanReason): ArtifactPlan {
+	return { kind: "saveText", text: raw, fallbackName: options.fallbackName, outputPath: options.outputPath, reasons: [reason] };
 }
 
-function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number): DistilledSummary {
-	const out: DistilledSummary = { ...summary };
-	const dropped: string[] = [];
-	for (const key of SUMMARY_LOW_PRIORITY_KEYS) {
-		if (stableJson(out).length <= budget) break;
-		if (Object.hasOwn(out, key)) {
-			delete out[key];
-			dropped.push(key);
-		}
-	}
-	if (dropped.length) out.summaryOmitted = dropped;
-	return out;
-}
-
-// Cheap scalar identity fields (url/title/readyState/counts/tabId/…) cost almost nothing but tell an
-// agent WHAT page this is + WHERE to look. Keep them even in the extreme budget fallback instead of
-// nuking the whole summary to a generic preview (observed on a 9-iframe page degrading to an unusable
-// summary in a real agent session, 2026-06-05). Operates on the already-redacted summary, so safe.
-function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
-	const out: DistilledSummary = {};
-	for (const [key, value] of Object.entries(summary)) {
-		if (typeof value === "number" || typeof value === "boolean") out[key] = value;
-		else if (typeof value === "string" && value.length <= 200) out[key] = value;
-	}
-	return out;
-}
-
-function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
-	if (stableJson(summary).length <= budget) return summary;
-	for (const limits of [
-		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
-		{ stringChars: 480, arrayItems: 12, tableRows: 12 },
-		{ stringChars: 240, arrayItems: 8, tableRows: 8 },
-		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
-	]) {
-		const compacted = compactSummaryValue(summary, limits) as DistilledSummary;
-		if (stableJson(compacted).length <= budget) return compacted;
-	}
-	const compact120 = compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
-	const dropped = dropLowPrioritySummaryFields(compact120, budget);
-	if (stableJson(dropped).length <= budget) return dropped;
-	const keptScalars = scalarIdentityFields(summary);
-	const droppedKeys = Object.keys(summary).filter((key) => !(key in keptScalars));
-	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
-	// Keep the cheap scalar identity core when it fits; only if even that overflows fall back to the
-	// bare omit-everything shape.
-	const minimalBase: DistilledSummary = stableJson(scalarBase).length <= budget
-		? scalarBase
-		: {
-			summaryTruncatedToBudget: true,
-			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summaryOmitted) ? dropped.summaryOmitted : []), ...Object.keys(summary)])),
-			keys: Object.keys(summary).slice(0, 40),
-		};
-	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
-	let previewChars = Math.max(0, Math.min(previewSource.length, budget, PREVIEW_FALLBACK_CHARS));
-	while (previewChars >= 0) {
-		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
-		if (stableJson(candidate).length <= budget) return candidate;
-		previewChars = previewChars <= 32 ? -1 : Math.floor(previewChars * 0.75);
-	}
-	return { summaryTruncatedToBudget: true };
+async function executeArtifactPlan(options: DistillBaseOptions, plan: ArtifactPlan | undefined): Promise<Record<string, unknown> | undefined> {
+	if (!plan) return undefined;
+	return await saveTextArtifact(options.ctx, plan.outputPath, plan.fallbackName, plan.text);
 }
 
 function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
@@ -314,176 +251,6 @@ function envelopeError(summary: DistilledSummary, explicit?: Record<string, unkn
 	return undefined;
 }
 
-function compactEntityForEnvelope(entity: Record<string, unknown>): Record<string, unknown> {
-	const out = pickDefined(entity, ["ref", "kind", "role", "name", "label"]);
-	const hints = isRecord(entity.hints) ? pickDefined(entity.hints, ["selector", "listContainer", "itemCount"]) : {};
-	if (Object.keys(hints).length) out.hints = hints;
-	return Object.keys(out).length ? out : compactSummaryValue(entity, { stringChars: 80, arrayItems: 2, tableRows: 2 }) as Record<string, unknown>;
-}
-
-function compactLiftedEnvelopeValue(key: string, value: unknown): unknown {
-	if (key === "entities" && Array.isArray(value)) return value.slice(0, 4).filter(isRecord).map((entity) => compactEntityForEnvelope(entity));
-	if (key === "relations" && isRecord(value)) return pickDefined(value, ["summary"]);
-	if (key === "treeDiff" && isRecord(value)) {
-		const compactInstances = (bucket: unknown): unknown => {
-			if (!isRecord(bucket)) return bucket;
-			const instances = Array.isArray(bucket.instances)
-				? bucket.instances.slice(0, 4).filter(isRecord).map((instance) => pickDefined(instance, ["key", "name", "role", "kind", "confidence", "fields"]))
-				: undefined;
-			return {
-				...pickDefined(bucket, ["count"]),
-				...(instances ? { instances } : {}),
-			};
-		};
-		const templates = Array.isArray(value.templates)
-			? value.templates.slice(0, 4).filter(isRecord).map((template) => ({
-				...pickDefined(template, ["templateKey", "container", "containerName", "role", "kind", "beforeCount", "afterCount"]),
-				...(template.appeared ? { appeared: compactInstances(template.appeared) } : {}),
-				...(template.disappeared ? { disappeared: compactInstances(template.disappeared) } : {}),
-				...(template.changed ? { changed: compactInstances(template.changed) } : {}),
-				...(template.reordered ? { reordered: pickDefined(template.reordered as Record<string, unknown>, ["commonCount", "sample"]) } : {}),
-			}))
-			: undefined;
-		return {
-			...(isRecord(value.summary) ? { summary: compactSummaryValue(value.summary, { stringChars: 120, arrayItems: 4, tableRows: 4 }) } : {}),
-			...(templates ? { templates } : {}),
-		};
-	}
-	if (key === "diff" && isRecord(value)) {
-		const summary = isRecord(value.summary) ? value.summary : {};
-		const summaryItems = Array.isArray(summary.items)
-			? summary.items.slice(0, 4).filter(isRecord).map((item) => pickDefined(item, ["kind", "ref", "changeKind", "score", "signal", "entityKind", "role", "name", "fields", "appeared", "disappeared", "sampleAppeared", "sampleDisappeared"]))
-			: undefined;
-		return {
-			...pickDefined(value, ["focusedRef"]),
-			...(Object.keys(summary).length ? {
-				summary: {
-					...pickDefined(summary, ["changed", "appeared", "disappeared", "focusedRef"]),
-					...(summaryItems ? { items: summaryItems } : {}),
-				},
-			} : {}),
-		};
-	}
-	if (key === "snapshotProjection" && isRecord(value)) {
-		const compactInstances = (bucket: unknown): unknown => {
-			if (!isRecord(bucket)) return bucket;
-			const instances = Array.isArray(bucket.instances)
-				? bucket.instances.slice(0, 4).filter(isRecord).map((instance) => pickDefined(instance, ["key", "name", "role", "kind", "confidence", "fields"]))
-				: undefined;
-			return {
-				...pickDefined(bucket, ["count"]),
-				...(instances ? { instances } : {}),
-			};
-		};
-		const compactDelta = (delta: unknown): unknown => {
-			if (!isRecord(delta)) return undefined;
-			return {
-				...pickDefined(delta, ["beforeCount", "afterCount"]),
-				...(delta.appeared ? { appeared: compactInstances(delta.appeared) } : {}),
-				...(delta.disappeared ? { disappeared: compactInstances(delta.disappeared) } : {}),
-				...(delta.changed ? { changed: compactInstances(delta.changed) } : {}),
-				...(delta.reordered && isRecord(delta.reordered) ? { reordered: pickDefined(delta.reordered, ["commonCount", "sample"]) } : {}),
-			};
-		};
-		const templates = Array.isArray(value.templates)
-			? value.templates.slice(0, 4).filter(isRecord).map((template) => ({
-				...pickDefined(template, ["templateKey", "container", "containerName", "role", "kind", "count", "instanceRefCount", "varies", "constantText"]),
-				...(template.delta ? { delta: compactDelta(template.delta) } : {}),
-			}))
-			: undefined;
-		return {
-			...(isRecord(value.summary) ? { summary: compactSummaryValue(value.summary, { stringChars: 120, arrayItems: 4, tableRows: 4 }) } : {}),
-			...(templates ? { templates } : {}),
-		};
-	}
-	return compactSummaryValue(value, { stringChars: 120, arrayItems: 4, tableRows: 4 });
-}
-
-function markEnvelopeBudgetOmissions(envelope: DistilledEnvelope, omitted: string[]): DistilledEnvelope {
-	if (!omitted.length) return envelope;
-	const unique = Array.from(new Set(omitted));
-	const diagnostics = isRecord(envelope.diagnostics) ? { ...envelope.diagnostics } : {};
-	const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings.filter((item): item is string => typeof item === "string") : [];
-	diagnostics.warnings = Array.from(new Set([...warnings, `envelope_omitted:${unique.join(",")}`]));
-	return {
-		...envelope,
-		summary: {
-			...envelope.summary,
-			envelopeTruncatedToBudget: true,
-			envelopeOmitted: unique,
-		},
-		diagnostics,
-	};
-}
-
-function fitEnvelopeBudget(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {
-	const budget = Math.max(1_000, Math.floor(maxChars));
-	if (stableJson(envelope).length <= budget) return envelope;
-	let out: DistilledEnvelope = { ...envelope };
-	const omitted: string[] = [];
-	const tryFinish = (): DistilledEnvelope | undefined => {
-		const marked = markEnvelopeBudgetOmissions(out, omitted);
-		return stableJson(marked).length <= budget ? marked : undefined;
-	};
-	// Phase 1: compact lifted keys (snapshotProjection, entities, outline, …)
-	for (const key of ENVELOPE_LIFTED_KEYS) {
-		const value = out[key];
-		if (value === undefined) continue;
-		const compacted = compactLiftedEnvelopeValue(key, value);
-		const compactedLength = stableJson(compacted).length;
-		const valueLength = stableJson(value).length;
-		if (compactedLength < valueLength) {
-			out = { ...out, [key]: compacted };
-			omitted.push(`${key}:compact`);
-			const finished = tryFinish();
-			if (finished) return finished;
-		}
-	}
-	// Phase 2: remove removable keys (entities, outline, relations, …)
-	for (const key of ENVELOPE_REMOVABLE_KEYS) {
-		if (out[key] === undefined) continue;
-		out = { ...out };
-		delete out[key];
-		omitted.push(key);
-		const finished = tryFinish();
-		if (finished) return finished;
-	}
-	// Phase 3: fit the summary AFTER freeing budget from lifted/removable fields
-	const overhead = stableJson({ ...out, summary: {} }).length;
-	const summaryBudget = Math.max(300, budget - overhead);
-	out = { ...out, summary: fitSummaryBudget(out.summary, summaryBudget) };
-	const finished = tryFinish();
-	if (finished) return finished;
-	const essentialWithDiff = markEnvelopeBudgetOmissions({
-		tool: out.tool,
-		command: out.command,
-		browserSessionId: out.browserSessionId,
-		detailLevel: out.detailLevel,
-		summary: fitSummaryBudget(out.summary, 300),
-		diagnostics: out.diagnostics,
-		limits: out.limits,
-		privacy: out.privacy,
-		...(out.diff ? { diff: out.diff } : {}),
-		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
-		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
-		nextActions: out.nextActions?.slice(0, 2),
-		saved: out.saved,
-	}, [...omitted, "nonessential_metadata"]);
-	if (stableJson(essentialWithDiff).length <= budget) return essentialWithDiff;
-	return markEnvelopeBudgetOmissions({
-		tool: out.tool,
-		command: out.command,
-		browserSessionId: out.browserSessionId,
-		detailLevel: out.detailLevel,
-		summary: fitSummaryBudget(out.summary, 300),
-		diagnostics: out.diagnostics,
-		limits: out.limits,
-		privacy: out.privacy,
-		nextActions: out.nextActions?.slice(0, 2),
-		saved: out.saved,
-	}, [...omitted, "nonessential_metadata", ...(out.diff ? ["diff"] : []), ...(out.treeDiff ? ["treeDiff"] : []), ...(out.snapshotProjection ? ["snapshotProjection"] : [])]);
-}
-
 function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
 	const summaryTarget = isRecord(summary.target) ? summary.target : {};
 	const target = {
@@ -591,6 +358,14 @@ function redactForModel<T>(value: T, saved?: Record<string, unknown>, rawArtifac
 	}) as T;
 }
 
+function rendererMarker(): DistilledEnvelope["renderer"] | undefined {
+	return process.env.PI_BROWSER_RENDERER === "salience" ? "salience-v1" : undefined;
+}
+
+function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number): DistilledEnvelope {
+	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars) : fitEnvelopeBudget(envelope, maxChars);
+}
+
 function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, sensitiveRaw = false): DistilledEnvelope {
 	const maybeRedact = <T>(value: T): T => redactForModel(value, saved, options.rawArtifactValue);
 	const redactedSummary = maybeRedact(summary) as DistilledSummary;
@@ -620,11 +395,16 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
 	const error = envelopeError(redactedSummary, redactedExplicitError);
-	return fitEnvelopeBudget({
+	const delta = redactedSummary.delta === "session" ? "session" : undefined;
+	const baselineSnapshotId = typeof redactedSummary.baselineSnapshotId === "string" ? redactedSummary.baselineSnapshotId : undefined;
+	return fitResponseEnvelope({
 		tool: options.toolName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,
 		detailLevel: normalizeDetailLevel(options.detailLevel),
+		...(rendererMarker() ? { renderer: rendererMarker() } : {}),
+		...(delta ? { delta } : {}),
+		...(baselineSnapshotId ? { baselineSnapshotId } : {}),
 		summary: fittedSummary,
 		diagnostics: normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot),
 		target: normalizedTarget(options, fittedSummary),
@@ -658,11 +438,11 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
 	options.rawArtifactValue = rawValue;
-	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	saved = await executeArtifactPlan(options, rawArtifactPlan(options, raw, sensitiveRaw, threshold, level));
 	if (level === "summary" || level === "preview") {
 		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
-			saved = await saveRawArtifact(options, raw);
+			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
 		return {
@@ -671,7 +451,7 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 		};
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
-		const fullSaved = saved || await saveRawArtifact(options, raw);
+		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
 		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return jsonResult(value, { ...(options.details || {}), saved, summary }, maxChars);
@@ -687,11 +467,11 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	const sensitiveRaw = containsSensitiveEvidence(rawValue);
 	let saved: Record<string, unknown> | undefined;
 	options.rawArtifactValue = rawValue;
-	if (options.outputPath || sensitiveRaw || raw.length > threshold || (level === "summary" && raw.length > Math.min(threshold, 8_000))) saved = await saveRawArtifact(options, raw);
+	saved = await executeArtifactPlan(options, rawArtifactPlan(options, raw, sensitiveRaw, threshold, level));
 	if (level === "summary" || level === "preview") {
 		let envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		if (!saved && stableJson(envelope).length > maxChars) {
-			saved = await saveRawArtifact(options, raw);
+			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
 		return {
@@ -700,7 +480,7 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 		};
 	}
 	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
-		const fullSaved = saved || await saveRawArtifact(options, raw);
+		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
 		return jsonResult(responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw), { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
 	return textResult(text, { ...(options.details || {}), saved, summary }, maxChars);

@@ -54,6 +54,7 @@ const PURE_CORE = [
 	"verbs/pierce.ts",
 ];
 const RUNTIME = [
+	"perceptionLedger.ts",
 	"verbs/axRuntime.ts",
 	"verbs/frameRuntime.ts",
 	"verbs/pierceRuntime.ts",

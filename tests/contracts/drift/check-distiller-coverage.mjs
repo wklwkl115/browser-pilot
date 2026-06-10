@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getDistillerRegistrySnapshot, hasRegisteredDistiller } from "../../../src/tools/distillerRegistry.ts";
+import { getDefinedDistillerToolNames, getDistillerDefinition, getDistillerRegistrySnapshot, hasRegisteredDistiller } from "../../../src/tools/distillerRegistry.ts";
 
 const snapshot = getDistillerRegistrySnapshot();
 assert(snapshot.toolNames.includes("browser_evidence"), "distiller coverage: browser_evidence fallback distiller must be registered");
@@ -27,6 +27,18 @@ for (const [toolName, command] of [
 	["browser_artifact", "json"],
 ]) {
 	assert.equal(hasRegisteredDistiller(toolName, command), false, `distiller coverage: unexpected fallback distiller for ${toolName}:${command}`);
+}
+
+for (const toolName of getDefinedDistillerToolNames()) {
+	const definition = getDistillerDefinition(toolName);
+	assert.equal(typeof definition?.factify, "function", `distiller coverage: ${toolName} DistillerDefinition must provide factify`);
+	const facts = definition.factify({ ok: true, data: {} }, `${toolName}.coverage`);
+	assert(Array.isArray(facts), `distiller coverage: ${toolName} factify must return an array`);
+	for (const fact of facts) {
+		assert.equal(typeof fact.ref, "string", `distiller coverage: ${toolName} fact.ref must be string`);
+		assert.equal(typeof fact.plane, "string", `distiller coverage: ${toolName} fact.plane must be string`);
+		assert(fact.renderings && typeof fact.renderings === "object", `distiller coverage: ${toolName} fact.renderings must exist`);
+	}
 }
 
 console.log("distiller coverage ok");

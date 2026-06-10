@@ -190,6 +190,40 @@ test("browser_observe P2: records the hook seq high-water on the snapshot for a 
 	assert.equal(env.causal, undefined, "no baseline → no causal block");
 });
 
+test("browser_observe C3: opt-in session delta uses the previous ledger snapshot", async () => {
+	const snapshots = new Map<string, any>();
+	const ledger = new Map<string, any>();
+	let snapshotSeq = 0;
+	const server = {
+		...fakeServer,
+		createObservationSnapshot(snapshot: any) {
+			snapshotSeq += 1;
+			const record = { snapshotId: `snap-${snapshotSeq}`, ttlMs: 60_000, expired: false, ...snapshot };
+			snapshots.set(record.snapshotId, record);
+			return record;
+		},
+		getObservationSnapshot(snapshotId: string) { return snapshots.get(snapshotId); },
+		getPerceptionLedgerFrame(key: any) { return ledger.get(JSON.stringify(key)); },
+		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); return frame; },
+	};
+	const previous = process.env.PI_BROWSER_SESSION_DELTA;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		assert.equal(first.delta, undefined, "first observe remains an I-frame by default");
+		assert.equal(typeof first.snapshot?.snapshotId, "string", "I-frame carries a snapshotId");
+		process.env.PI_BROWSER_SESSION_DELTA = "1";
+		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+		assert.equal(second.delta, "session", "opt-in second observe renders as a session P-frame");
+		assert.equal(second.baselineSnapshotId, first.snapshot.snapshotId, "P-frame names its I-frame baseline snapshot");
+		const full = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "full" }, { cwd: process.cwd() }, "scan");
+		assert.ok(full.content[0].text.includes("Checkout"), "detailLevel=full returns the full text payload as the refresh escape hatch");
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
 test("browser_observe P2-B: a DOM-sink event naming its element → triggered edge on that control (source event)", async () => {
 	// Discover a control with a selector from a plain scan, then have the hook delta name it.
 	const probe = causalServer({ status: { active: true, lastSeq: 8 } });

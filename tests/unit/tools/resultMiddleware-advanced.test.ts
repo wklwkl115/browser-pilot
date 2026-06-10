@@ -220,3 +220,18 @@ test("distilledJsonResult summary mode promotes correlation metadata", async () 
 	assert.ok(text.includes('"selectionVersionAtDispatch": 3'));
 	assert.ok(text.includes('"selectionVersionAtResolve": 4'));
 });
+
+test("salience renderer marker is opt-in only", async () => {
+	const previous = process.env.PI_BROWSER_RENDERER;
+	try {
+		delete process.env.PI_BROWSER_RENDERER;
+		const ladder = JSON.parse(textOf(await distilledJsonResult({ ok: true }, { toolName: "browser_execute", command: "execute", maxChars: 4000, fallbackName: "renderer.json", detailLevel: "summary" })));
+		assert.equal(ladder.renderer, undefined);
+		process.env.PI_BROWSER_RENDERER = "salience";
+		const salience = JSON.parse(textOf(await distilledJsonResult({ ok: true }, { toolName: "browser_execute", command: "execute", maxChars: 4000, fallbackName: "renderer.json", detailLevel: "summary" })));
+		assert.equal(salience.renderer, "salience-v1");
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_RENDERER;
+		else process.env.PI_BROWSER_RENDERER = previous;
+	}
+});

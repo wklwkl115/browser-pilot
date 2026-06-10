@@ -13,7 +13,29 @@
 
 ## 当前激活项
 
-暂无。最近完成的执行线：
+### Renderer default flip — staged salience default (2026-06-10, 激活)
+
+决策：激活 `docs/renderer-default-flip-plan.md`。按 owner 决策以“可检测 + 可回滚”换交付速度：salience 先翻默认，session-delta 二期单独翻，`line` 粒度不在本契约；默认翻转前先修 F1/F2，F3 只落 inert 代码；多站点盲测从前置门降级为事后哨兵。
+
+边界：不新增公开 `browser_*` 工具；不恢复 `templates`/`inference` agent-facing 输出；不改变 tool schema；`PI_BROWSER_RENDERER=ladder` 必须成为翻转后的逃生舱；信封继续保留 `renderer:"salience-v1"` 自述；session-delta 默认翻转必须独立触发和可一行回滚。
+
+执行队列：P0 登记本条 CURRENT、提交 perception-renderer 已落地实现基线、修 npm banner 测试；P1 修 F1/F2 并落 F3 inert 控制与 comparative bench；P2 翻 salience 默认；P3 在 2 次干净哨兵或 owner 点头后单独翻 session-delta 默认。
+
+门禁：`npm run check` 必须可信全绿；P1 comparative bench 要求每个 fixture 上 salience chars ≤ 1.05× ladder、事实覆盖 ≥ ladder、截断标记 ≤ ladder；P2 还需 fixture workflow eval 与 `smoke:browser:scan-summary`；任何哨兵发现 salience 藏必要事实或 P-frame 读不懂，先回滚默认再诊断。
+
+## 最近完成且仍影响当前规则
+
+### Perception renderer + distill-core — unified token economy (2026-06-10, 完成)
+
+决策：已执行 `docs/perception-renderer-plan.md` 的激活切片，把 token economy 收敛到新纯核 `src/distill-core/`，默认输出仍走兼容 `ladder`；`PI_BROWSER_RENDERER=salience` 与 `PI_BROWSER_SESSION_DELTA=1` 仅作为 opt-in/eval 面，不改变默认工具契约。
+
+落地：`resultMiddleware.ts` 的预算 ladder/成本/compact helper 已迁入 `distill-core`；新增 `ArtifactPlan` seam、Fact/allocator/renderer、salience envelope、当前 `DistillerDefinition` 全量 `factify`、`PerceptionLedger` substrate、session delta opt-in、entity `line` granularity primitive；新增 recovery 机制集中到 `distill-core/recovery.ts`；新增 distill/recovery/summary boundary、distill bench 与覆盖测试。
+
+边界：不新增公开 `browser_*` 工具；不恢复 `templates`/`inference` agent-facing 输出；默认 envelope 字段语义不变；side effects 继续在 tool/runtime orchestration 执行；`distill-core` 保持无 Node I/O、无 browser/driver/tools/abml imports；`abml-core` 不导入 `distill-core`。
+
+默认翻转决策：fixture blind A/B 通过；真实 linux.do 只读 blind A/B 显示 salience/session opt-in 可用且理解力优于默认，但有 token/artifact 压力与截断成本。结论是不翻转默认，继续保持 `PI_BROWSER_RENDERER=salience`、`PI_BROWSER_SESSION_DELTA=1` 为 opt-in，等待多站点证据。
+
+验证：`npm run check` 已通过；聚焦通过 `check:src:types`、`check:token`、`check:summaries`、`check:token-economy`、`bench:distill`、`check:distill-core-boundary`、`check:recovery-boundary`、`check:summary-boundary`、`check:abml-core-boundary`、`test:observe-abml-integration`、`smoke:browser:scan-summary`、`eval:browser-workflows -- --fixture-server --eval 16-scan-high-entropy-summary`。
 
 ### ABML Identity Plane — internal kernel upgrade (2026-06-10, 完成)
 

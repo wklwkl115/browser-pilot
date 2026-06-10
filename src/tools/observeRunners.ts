@@ -11,6 +11,7 @@ import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolve
 import { buildTreeDiff, type TreeDiff } from "../abml/treeDiff.js";
 import { buildSnapshotProjection, type SnapshotProjection } from "../abml/snapshotProjection.js";
 import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.js";
+import { factsFromEntities, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../abml/perceptionLedger.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -321,7 +322,7 @@ function savedArtifactPathFromBaseline(value: unknown): string | undefined {
 	return typeof saved?.path === "string" && saved.path.trim() ? saved.path.trim() : undefined;
 }
 
-type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number };
+type BaselineResolution = { entities: Entity[]; partialBaseline: boolean; networkSeq?: number; hookSeq?: number; snapshotId?: string };
 
 function baselineRecovery(extra: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
@@ -358,10 +359,10 @@ async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: un
 		}
 		const fromSaved = baselineEntitiesFromParam(parsedSaved);
 		if (!fromSaved) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline saved artifact does not contain ABML entities", baselineRecovery({ path: savedPath }));
-		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved) };
+		return { entities: fromSaved, partialBaseline: false, networkSeq: networkSeqFromBaseline(baseline) ?? networkSeqFromBaseline(parsedSaved), hookSeq: hookSeqFromBaseline(baseline) ?? hookSeqFromBaseline(parsedSaved), snapshotId: baselineSnapshotId(baseline) };
 	}
 	const inline = baselineEntitiesFromParam(baseline);
-	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline) };
+	if (inline) return { entities: inline, partialBaseline: baselinePartialHint(baseline, inline), networkSeq: networkSeqFromBaseline(baseline), hookSeq: hookSeqFromBaseline(baseline), snapshotId: baselineSnapshotId(baseline) };
 	const snapshotId = baselineSnapshotId(baseline);
 	if (!snapshotId) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline must be an entity list, prior scan summary/envelope, or snapshotId", baselineRecovery({ baselineType: typeof baseline }));
 	const snapshot = server.getObservationSnapshot(snapshotId);
@@ -375,7 +376,22 @@ async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: un
 	}
 	const fromArtifact = baselineEntitiesFromParam(parsed);
 	if (!fromArtifact) throw new BrowserBridgeError("INVALID_RULE", "browser_observe baseline snapshot artifact does not contain ABML entities", baselineRecovery({ snapshotId, path: snapshot.saved.path }));
-	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed), hookSeq: typeof snapshot.hookSeq === "number" ? snapshot.hookSeq : hookSeqFromBaseline(parsed) };
+	return { entities: fromArtifact, partialBaseline: false, networkSeq: typeof snapshot.networkSeq === "number" ? snapshot.networkSeq : networkSeqFromBaseline(parsed), hookSeq: typeof snapshot.hookSeq === "number" ? snapshot.hookSeq : hookSeqFromBaseline(parsed), snapshotId };
+}
+
+function ledgerKey(browserSessionId: string | undefined, tabId: number | undefined, url: string | undefined): PerceptionLedgerKey | undefined {
+	if (!url) return undefined;
+	return { browserSessionId, tabId, navigationEpoch: url };
+}
+
+function tabUrlForLedger(tabs: unknown[], tabId: number | undefined, fallbackTabId: number | undefined): string | undefined {
+	const wanted = tabId ?? fallbackTabId;
+	const tab = tabs.find((item) => isRecord(item) && Number(item.tabId ?? item.id) === wanted);
+	return isRecord(tab) && typeof tab.url === "string" ? tab.url : undefined;
+}
+
+function sessionDeltaEnabled(params: ObserveToolParams): boolean {
+	return process.env.PI_BROWSER_SESSION_DELTA === "1" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
 }
 
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
@@ -453,7 +469,17 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
 	const scanScript = buildScanScript({ textOnly: mode === "text", maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
-	const baseline = await resolveBaselineEntities(server, params.baseline);
+	const preBridge = server.snapshot({ browserSessionId: params.browserSessionId });
+	const plannedLedgerKey = ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
+	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
+	const effectiveBaseline: unknown = params.baseline ?? (ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
+	let baseline: BaselineResolution | undefined;
+	try {
+		baseline = await resolveBaselineEntities(server, effectiveBaseline);
+	} catch (error) {
+		if (!ledgerFrame || params.baseline !== undefined) throw error;
+		baseline = undefined;
+	}
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
 	const { result: observation, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
@@ -492,7 +518,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		readNetworkRecorderSeq(server, params, tabId, timeoutMs),
 		readHookRecorderSeq(server, params, tabId, timeoutMs),
 	]);
-	const hasBaseline = params.baseline !== undefined && params.baseline !== null;
+	const hasBaseline = baseline !== undefined;
 	let causal = hasBaseline
 		? await buildObserveCausal(server, params, recorderState, baseline?.networkSeq, tabId, timeoutMs)
 		: undefined;
@@ -560,6 +586,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	// Top-level `causal` block (budget-immune, lifted to envelope alongside diff/relations/inference).
 	// Present only when a baseline was supplied; independent of ABML entity integration.
 	const causalBlock = causal ? { causal } : {};
+	const ledgerDeltaFields = ledgerFrame && baseline?.snapshotId ? { delta: "session", baselineSnapshotId: baseline.snapshotId } : {};
 	const summary = attributedEntities !== null
 		? (() => {
 			const relSummary = buildRelationSummary(attributedEntities);
@@ -576,6 +603,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			const idSummary = identityGraphSummary(idGraph);
 			return {
 				...baseSummary,
+				...ledgerDeltaFields,
 				abmlIntegrated: true,
 				...(envelopeDiff ? { diff: envelopeDiff } : {}),
 				...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
@@ -606,7 +634,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				},
 			};
 		})()
-		: { ...baseSummary, abmlIntegrated: false, ...causalBlock };
+		: { ...baseSummary, ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock };
 	const summaryRecord = summary as Record<string, unknown>;
 	const envelopeEntities = attributedEntities ?? scanEnvelopeEntities;
 	// Narrow active capability hints — causal + treeDiff ONLY. A three-round real-agent eval (2026-06-05)
@@ -665,6 +693,11 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
 		...causalBlock,
 	};
+	const finalLedgerKey = ledgerKey(bridge.browserSessionId, tabId, typeof data?.url === "string" ? data.url : undefined);
+	if (finalLedgerKey && attributedEntities && typeof server.recordPerceptionLedgerFrame === "function") {
+		const frame: PerceptionLedgerFrame = { key: finalLedgerKey, snapshotId: snapshotMeta.snapshotId, capturedAt: snapshotMeta.capturedAt, facts: factsFromEntities(attributedEntities) };
+		server.recordPerceptionLedgerFrame(frame);
+	}
 	return await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: mode === "text" ? "scan.text" : "scan",

@@ -1,0 +1,85 @@
+import { stableJson } from "../utils/json.js";
+import { isRecord } from "../utils/records.js";
+import { compactSummaryValue } from "./granularity.js";
+import { fitEnvelopeBudget, type BudgetedEnvelope } from "./ladder.js";
+
+const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
+const STRUCTURE_SCORE: Record<(typeof LIFTED_KEYS)[number], number> = {
+	snapshotProjection: 950,
+	causal: 900,
+	diff: 850,
+	treeDiff: 820,
+	relations: 650,
+	gist: 600,
+	outline: 520,
+	entities: 500,
+};
+
+type Candidate = {
+	key: (typeof LIFTED_KEYS)[number];
+	granularity: "full" | "compact";
+	value: unknown;
+	cost: number;
+	score: number;
+};
+
+function compactLiftedValue(key: string, value: unknown): unknown {
+	if (key === "entities" && Array.isArray(value)) return value.slice(0, 6).filter(isRecord).map((entity) => {
+		const hints = isRecord(entity.hints) ? entity.hints : {};
+		return {
+			...(typeof entity.ref === "string" ? { ref: entity.ref } : {}),
+			...(typeof entity.kind === "string" ? { kind: entity.kind } : {}),
+			...(typeof entity.role === "string" ? { role: entity.role } : {}),
+			...(typeof entity.name === "string" ? { name: entity.name } : {}),
+			...(typeof hints.selector === "string" || typeof hints.listContainer === "boolean" ? { hints: { ...(typeof hints.selector === "string" ? { selector: hints.selector } : {}), ...(typeof hints.listContainer === "boolean" ? { listContainer: hints.listContainer } : {}) } } : {}),
+		};
+	});
+	if (key === "relations" && isRecord(value)) return { ...(isRecord(value.summary) ? { summary: value.summary } : {}) };
+	return compactSummaryValue(value, { stringChars: 160, arrayItems: 6, tableRows: 6 });
+}
+
+function markOmitted<T extends BudgetedEnvelope>(envelope: T, omitted: string[]): T {
+	if (!omitted.length) return envelope;
+	const unique = Array.from(new Set(omitted));
+	const diagnostics = isRecord(envelope.diagnostics) ? { ...envelope.diagnostics } : {};
+	const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings.filter((item): item is string => typeof item === "string") : [];
+	diagnostics.warnings = Array.from(new Set([...warnings, `salience_omitted:${unique.join(",")}`]));
+	return {
+		...envelope,
+		summary: { ...envelope.summary, rendererOmitted: unique },
+		diagnostics,
+	};
+}
+
+export function fitSalienceEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxChars: number): T {
+	const budget = Math.max(1_000, Math.floor(maxChars));
+	if (stableJson(envelope).length <= budget) return envelope;
+	let out: T = { ...envelope };
+	for (const key of LIFTED_KEYS) delete out[key];
+	const baseCost = stableJson(out).length;
+	if (baseCost >= budget) return fitEnvelopeBudget(envelope, maxChars);
+
+	const chosen = new Set<string>();
+	let spent = baseCost;
+	const omitted: string[] = [];
+	const candidates: Candidate[] = [];
+	for (const key of LIFTED_KEYS) {
+		const value = envelope[key];
+		if (value === undefined) continue;
+		const fullCost = stableJson(value).length;
+		candidates.push({ key, granularity: "full", value, cost: fullCost, score: STRUCTURE_SCORE[key] });
+		const compact = compactLiftedValue(key, value);
+		const compactCost = stableJson(compact).length;
+		if (compactCost < fullCost) candidates.push({ key, granularity: "compact", value: compact, cost: compactCost, score: Math.floor(STRUCTURE_SCORE[key] * 0.75) });
+	}
+	for (const candidate of candidates.sort((a, b) => b.score / Math.max(1, b.cost) - a.score / Math.max(1, a.cost) || b.score - a.score)) {
+		if (chosen.has(candidate.key)) continue;
+		if (spent + candidate.cost > budget) continue;
+		out = { ...out, [candidate.key]: candidate.value };
+		spent += candidate.cost;
+		chosen.add(candidate.key);
+	}
+	for (const key of LIFTED_KEYS) if (envelope[key] !== undefined && !chosen.has(key)) omitted.push(key);
+	out = markOmitted(out, omitted);
+	return stableJson(out).length <= budget ? out : fitEnvelopeBudget(out, maxChars);
+}
