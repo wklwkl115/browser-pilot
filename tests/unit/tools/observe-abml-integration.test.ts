@@ -232,8 +232,7 @@ test("browser_observe C3: session delta is default and env escape disables it", 
 	}
 });
 
-test("browser_observe change gate reuses cached scan when content fingerprint is unchanged", async () => {
-	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-"));
+function changeGateHarness(fingerprintProvider: () => Record<string, unknown> = () => ({ changeSeq: 1, url: "https://example.test/checkout", title: "Checkout", readyState: "complete", visibleCount: 5, interactiveCount: 1, capturedAt: 123 })) {
 	const snapshots = new Map<string, any>();
 	const ledger = new Map<string, any>();
 	const frames: any[] = [];
@@ -252,24 +251,87 @@ test("browser_observe change gate reuses cached scan when content fingerprint is
 		getRecentPerceptionLedgerFrames(_key: any, limit = 3) { return frames.slice(-limit).reverse(); },
 		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); frames.push(frame); return frame; },
 		async sendCommand(command: any, options: any) {
-			if (command.cmd === "content.fingerprint") return { acknowledged: true, data: { changeSeq: 1, url: "https://example.test/checkout", title: "Checkout", readyState: "complete", visibleCount: 5, interactiveCount: 1, capturedAt: 123 } };
+			if (command.cmd === "content.fingerprint") return { acknowledged: true, data: fingerprintProvider() };
 			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") scanEvals += 1;
 			return fakeServer.sendCommand(command, options);
 		},
 	};
+	return { server, frames, get scanEvals() { return scanEvals; } };
+}
+
+test("browser_observe change gate reuses cached scan when content fingerprint is unchanged", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-"));
+	const harness = changeGateHarness();
 	const previous = process.env.PI_BROWSER_SESSION_DELTA;
 	try {
 		delete process.env.PI_BROWSER_SESSION_DELTA;
-		const first = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
-		const second = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		const first = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		const second = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
 		assert.equal(first.fromCache, undefined);
 		assert.equal(second.summary?.fromCache, true);
 		assert.equal(second.summary?.cache?.reason, "content-fingerprint-unchanged");
-		assert.equal(scanEvals, 1, "unchanged fingerprint should avoid a second Runtime.evaluate scan");
-		assert.equal(frames.length, 2, "cache hit still records a fresh ledger frame");
+		assert.equal(harness.scanEvals, 1, "unchanged fingerprint should avoid a second Runtime.evaluate scan");
+		assert.equal(harness.frames.length, 2, "cache hit still records a fresh ledger frame");
+		assert.equal(harness.frames[1].renderCache.renderedAt, harness.frames[0].renderCache.renderedAt, "cache hits preserve the original render timestamp");
 	} finally {
 		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
 		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
+test("browser_observe change gate misses when output-affecting params change", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-params-"));
+	const envPrevious = process.env.PI_BROWSER_SESSION_DELTA;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		const intentHarness = changeGateHarness();
+		await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", params: { intent: "checkout" } }, { cwd }, "scan");
+		const changedIntent = JSON.parse((await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", params: { intent: "account" } }, { cwd }, "scan")).content[0].text);
+		assert.equal(changedIntent.summary?.fromCache, undefined, "changed intent must not reuse the cached render");
+		assert.equal(intentHarness.scanEvals, 2, "changed intent triggers a fresh Runtime.evaluate scan");
+
+		const outputHarness = changeGateHarness();
+		await runScanObservation(outputHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		const outputPath = path.join(cwd, "explicit-observe.json");
+		const changedOutputPath = JSON.parse((await runScanObservation(outputHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", outputPath }, { cwd }, "scan")).content[0].text);
+		assert.equal(changedOutputPath.summary?.fromCache, undefined, "outputPath changes captureMaxChars and must miss");
+		assert.equal(outputHarness.scanEvals, 2, "outputPath-driven capture breadth triggers a fresh Runtime.evaluate scan");
+	} finally {
+		if (envPrevious === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = envPrevious;
+	}
+});
+
+test("browser_observe change gate enforces TTL, kill switch, and fingerprint tuple", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-ttl-"));
+	let interactiveCount = 1;
+	const harness = changeGateHarness(() => ({ changeSeq: 1, url: "https://example.test/checkout", title: "Checkout", readyState: "complete", visibleCount: 5, interactiveCount, capturedAt: 123 }));
+	const previousDelta = process.env.PI_BROWSER_SESSION_DELTA;
+	const previousTtl = process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = "5000";
+		await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		harness.frames[0].renderCache.renderedAt = Date.now() - 10_000;
+		const expired = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(expired.summary?.fromCache, undefined, "expired renderCache must miss");
+		assert.equal(harness.scanEvals, 2, "expired TTL triggers a fresh scan");
+
+		process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = "0";
+		const disabled = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(disabled.summary?.fromCache, undefined, "TTL=0 disables observe cache hits");
+		assert.equal(harness.scanEvals, 3, "disabled cache triggers a fresh scan");
+
+		delete process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+		interactiveCount = 2;
+		const changedTuple = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(changedTuple.summary?.fromCache, undefined, "same changeSeq with changed fingerprint tuple must miss");
+		assert.equal(harness.scanEvals, 4, "changed fingerprint tuple triggers a fresh scan");
+	} finally {
+		if (previousDelta === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = previousDelta;
+		if (previousTtl === undefined) delete process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+		else process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = previousTtl;
 	}
 });
 

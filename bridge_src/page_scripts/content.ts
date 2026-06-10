@@ -96,5 +96,5 @@ function scrubLegacyBridgeNode(root: ParentNode): void {
         if (element.querySelector?.(`#${TID}`)) scrubLegacyBridgeNode(element);
       }
     }
-  }).observe(document.documentElement, { childList: true, subtree: true });
+  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
 })();

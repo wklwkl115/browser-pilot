@@ -492,6 +492,7 @@ function sessionDeltaEnabled(params: ObserveToolParams): boolean {
 }
 
 type PageFingerprint = NonNullable<PerceptionLedgerFrame["pageFingerprint"]>;
+type RenderCache = NonNullable<PerceptionLedgerFrame["renderCache"]>;
 
 function normalizePageFingerprint(value: unknown): PageFingerprint | undefined {
 	const record = isRecord(value) ? value : {};
@@ -518,19 +519,56 @@ async function readPageFingerprint(server: BrowserBridgeServer, params: ObserveT
 	}
 }
 
-function renderCacheMatches(frame: PerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, fingerprint: PageFingerprint | undefined): frame is PerceptionLedgerFrame {
+function observeCacheTtlMs(): number {
+	const raw = process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+	if (raw === undefined) return 2_000;
+	const value = Number(raw);
+	return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 2_000;
+}
+
+function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMode, detailLevel: string, maxChars: number, captureMaxChars: number): string {
+	const maxNodes = Number(params.maxNodes);
+	return JSON.stringify({
+		mode,
+		detailLevel,
+		maxChars,
+		captureMaxChars,
+		includeIframes: params.includeIframes !== false,
+		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
+		...(observeIntent(params) ? { intent: observeIntent(params) } : {}),
+		...(typeof params.actionRef === "string" && params.actionRef ? { actionRef: params.actionRef } : {}),
+	});
+}
+
+function pageFingerprintMatches(a: PageFingerprint, b: PageFingerprint): boolean {
+	return a.changeSeq === b.changeSeq
+		&& (a.url ?? "") === (b.url ?? "")
+		&& (a.title ?? "") === (b.title ?? "")
+		&& (a.readyState ?? "") === (b.readyState ?? "")
+		&& (a.visibleCount ?? -1) === (b.visibleCount ?? -1)
+		&& (a.interactiveCount ?? -1) === (b.interactiveCount ?? -1);
+}
+
+function renderCacheMatches(frame: PerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is PerceptionLedgerFrame & { renderCache: RenderCache } {
 	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
-	return frame.pageFingerprint.changeSeq === fingerprint.changeSeq
+	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number" || now - frame.renderCache.renderedAt > ttlMs) return false;
+	return pageFingerprintMatches(frame.pageFingerprint, fingerprint)
 		&& frame.renderCache.mode === mode
 		&& frame.renderCache.detailLevel === detailLevel
-		&& frame.renderCache.maxChars === maxChars;
+		&& frame.renderCache.maxChars === maxChars
+		&& frame.renderCache.paramsSignature === paramsSignature;
+}
+
+function stripCachedObserveMeta(record: Record<string, unknown>): Record<string, unknown> {
+	const { operation: _operation, snapshot: _snapshot, cache: _cache, fromCache: _fromCache, saved: _saved, ...rest } = record;
+	return rest;
 }
 
 function cachedEnvelopeFromArtifact(value: unknown): Record<string, unknown> | undefined {
 	const record = isRecord(value) ? value : undefined;
 	if (!record) return undefined;
-	if (isRecord(record.envelope)) return record.envelope as Record<string, unknown>;
-	if (record.tool === "browser_observe") return record;
+	if (isRecord(record.envelope)) return stripCachedObserveMeta(record.envelope as Record<string, unknown>);
+	if (record.tool === "browser_observe") return stripCachedObserveMeta(record);
 	return undefined;
 }
 
@@ -614,8 +652,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
 	const effectiveTabId = tabId ?? preBridge.defaultTabId;
 	const detailLevel = String(params.detailLevel || "summary");
+	const paramsSignature = observeRenderParamsSignature(params, mode, detailLevel, maxChars, captureMaxChars);
 	const pageFingerprint = sessionDeltaEnabled(params) ? await readPageFingerprint(server, params, effectiveTabId, timeoutMs) : undefined;
-	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
+	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
 		const cacheFingerprint = pageFingerprint!;
 		const priorSnapshot = server.getObservationSnapshot(ledgerFrame.snapshotId);
 		const priorPath = priorSnapshot?.saved?.path;
@@ -658,7 +697,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 							capturedAt: snapshotMeta.capturedAt,
 							facts: ledgerFrame.facts,
 							pageFingerprint: cacheFingerprint,
-							renderCache: { mode, detailLevel, maxChars },
+							renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: ledgerFrame.renderCache.renderedAt },
 							allocation: ledgerFrame.allocation,
 						});
 					}
@@ -929,7 +968,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		server.recordPerceptionLedgerFrame({
 			...ledgerFrameForRecord,
 			...(pageFingerprint ? { pageFingerprint } : {}),
-			renderCache: { mode, detailLevel, maxChars },
+			renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: snapshotMeta.capturedAt },
 			...(allocation ? { allocation } : {}),
 		});
 	}

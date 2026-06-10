@@ -30,6 +30,8 @@ export type PerceptionLedgerFrame = {
 		mode: string;
 		detailLevel: string;
 		maxChars: number;
+		paramsSignature: string;
+		renderedAt: number;
 	};
 	allocation?: {
 		budgetUsedRatio: number;
