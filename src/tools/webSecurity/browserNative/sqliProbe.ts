@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCodedError } from "../../../utils/codedError.js";
 import { compactStep, extractTitle, responseDistance, responseFingerprint, responsesDiffer } from "../shared/http.js";
-import { asString, isRecord, positiveInt, sleep, splitWords, stringList } from "../shared/normalize.js";
+import { asString, isRecord, positiveInt, readWordlist, sleep, splitWords, stringList } from "../shared/normalize.js";
 import { buildReplayRequest, existingParamNames, inferFuzzParamLocations, mutateParamRequest, normalizeReplayOptions, sendReplayLikeRequest } from "../shared/replay.js";
 import type { FetchStep, SqliProbeOptions } from "../shared/types.js";
 
@@ -224,8 +224,10 @@ async function normalizeSqliProbeOptions(options: SqliProbeOptions): Promise<Nor
 	const payloadMode = String(options.payloadMode || "append").toLowerCase() === "replace" ? "replace" : "append";
 	const requestedDbms = selectedSqlDbms(options.dbms);
 	const booleanPairs = sqliBooleanPairs(options, requestedDbms);
-	const errorPayloads = sqliErrorPayloads(options, requestedDbms);
-	const timePayloads = sqliTimePayloads(options, requestedDbms);
+	const wordlistEntries = await readWordlist(options.wordlistPath);
+	const timeWordlistEntries = await readWordlist(options.timePayloadWordlistPath);
+	const errorPayloads = [...sqliErrorPayloads(options, requestedDbms), ...wordlistEntries];
+	const timePayloads = [...sqliTimePayloads(options, requestedDbms), ...timeWordlistEntries];
 	const unionPayloads = generatedUnionPayloads(options);
 	const maxCases = Math.min(5_000, positiveInt(options.maxCases, 100));
 	const rateLimitPerSecond = positiveInt(options.rateLimitPerSecond, 0);

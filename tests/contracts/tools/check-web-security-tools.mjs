@@ -93,4 +93,17 @@ assert.equal(typeof runCallbackOast, "function");
 assert.equal(typeof runCookieAnalyze, "function");
 assert.equal(typeof runHttpReplay, "function");
 
+// D3 W1 contract: sqli wordlist schema exposed + byte-identity invariant (no wordlist = unchanged defaults)
+const sqliSrc = await readFile(new URL("../../../src/tools/webSecurity/register/registerSqli.ts", import.meta.url), "utf8");
+assert.ok(sqliSrc.includes("wordlistPath") && sqliSrc.includes("timePayloadWordlistPath"), "browser_sqli must expose wordlistPath and timePayloadWordlistPath params for W1 wordlist override support");
+const sqliProbeSrc = await readFile(new URL("../../../src/tools/webSecurity/browserNative/sqliProbe.ts", import.meta.url), "utf8");
+assert.ok(sqliProbeSrc.includes("readWordlist(options.wordlistPath)") && sqliProbeSrc.includes("readWordlist(options.timePayloadWordlistPath)"), "sqliProbe must consume wordlists via readWordlist — byte-identical when options have no wordlistPath");
+
+const { statSync } = await import("node:fs");
+const { fileURLToPath } = await import("node:url");
+const root = fileURLToPath(new URL("../../..", import.meta.url));
+for (const file of ["src/tools/webSecurity/wordlists/sqli-error-payloads.txt", "src/tools/webSecurity/wordlists/sqli-time-payloads.txt"]) {
+	assert.ok(statSync(`${root}/${file}`).isFile(), `W1 committed default wordlist ${file} must exist`);
+}
+
 console.log("web security contract ok");

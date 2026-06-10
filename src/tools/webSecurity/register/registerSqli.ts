@@ -57,6 +57,8 @@ export function registerSqliTool({ pi, ensureStarted }: ToolRegistrarContext) {
 			extractMaxLength: Type.Optional(Type.Number({ description: "engine:builtin only: maximum extracted characters; default 32, hard-capped at 256." })),
 			extractCharset: Type.Optional(Type.String({ description: "engine:builtin only: candidate charset for boolean-blind extraction." })),
 			payloads: Type.Optional(Type.Array(Type.String(), { description: "engine:builtin only: additional payloads appended to error probes." })),
+			wordlistPath: Type.Optional(Type.String({ description: "engine:builtin only: local wordlist file path (one payload per line, # = comment) whose entries are appended to the default error-probe payloads. Use src/tools/webSecurity/wordlists/sqli-error-payloads.txt as a base or provide a community wordlist. No-override default behavior is byte-identical." })),
+			timePayloadWordlistPath: Type.Optional(Type.String({ description: "engine:builtin only: local wordlist file path (one payload per line, # = comment) whose entries are appended to the default time-probe payloads. Use src/tools/webSecurity/wordlists/sqli-time-payloads.txt as a base." })),
 			timeThresholdMs: Type.Optional(Type.Number({ description: "engine:builtin only: elapsed-time delta threshold for time oracle matches; default 2000." })),
 			baselineRepeats: Type.Optional(Type.Number({ description: "engine:builtin only: baseline request repetitions; default 1, hard-capped at 10." })),
 			stopOnFirstMatch: Type.Optional(Type.Boolean({ description: "engine:builtin only: stop probing a confirmed vulnerable parameter after the first oracle match; default false." })),

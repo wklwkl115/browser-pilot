@@ -1,0 +1,9 @@
+# SQLi error-probe payloads — default seed list.
+# Generated from DEFAULT_SQLI_ERROR_PAYLOADS in sqliProbe.ts.
+# Pass this path as wordlistPath on browser_sqli to use these as a base,
+# or create your own file (one payload per line, # = comment) to override.
+'
+"
+')
+")
+`

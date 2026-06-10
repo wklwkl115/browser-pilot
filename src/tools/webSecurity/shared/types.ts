@@ -194,6 +194,8 @@ export type RawSqliProbeOptions = RawFuzzParamsOptions & {
 	extractMaxLength?: unknown;
 	extractCharset?: unknown;
 	payloads?: unknown;
+	// wordlistPath (inherited from RawFuzzParamsOptions) = local file of additional error payloads
+	timePayloadWordlistPath?: unknown;
 	timeThresholdMs?: unknown;
 	baselineRepeats?: unknown;
 	stopOnFirstMatch?: unknown;
