@@ -48,9 +48,30 @@ test("withExecutionEffect reports cheap signal deltas around dispatch", async ()
 	assert.equal(run.effect?.interactiveDelta, 1);
 	assert.equal(run.effect?.requestsFired, 2);
 	assert.equal(run.effect?.hookEventsFired, 1);
+	assert.equal(run.effect?.url, "https://example.test/b");
 	assert.deepEqual(run.effect?.targetDelta, { selectionVersionBefore: 1, selectionVersionAfter: 2, tabIdBefore: 7, tabIdAfter: 8 });
 	assert.deepEqual(run.effect?.anchor, { changeSeq: 3, networkSeq: 12, hookSeq: 5 });
 	assert.equal(commands.filter((cmd) => cmd === "content.fingerprint").length, 3);
+});
+
+test("withExecutionEffect omits url when collected fingerprints have no url", async () => {
+	const fingerprints = [
+		{ changeSeq: 1, visibleCount: 2, interactiveCount: 3 },
+		{ changeSeq: 1, visibleCount: 2, interactiveCount: 3 },
+	];
+	const server = {
+		snapshot: () => ({ selectionVersion: 1, defaultTabId: 7 }),
+		async sendCommand(command: Record<string, unknown>) {
+			if (command.cmd === "content.fingerprint") return { ok: true, data: fingerprints.shift() };
+			if (command.cmd === "network.status") return { ok: true, data: {} };
+			if (command.cmd === "hook.status") return { ok: true, data: {} };
+			return { ok: true, data: {} };
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const run = await withExecutionEffect(server, { browserSessionId: "session-1", tabId: 7, timeoutMs: 1000, quietMs: 0 }, async () => fakeResult());
+
+	assert.equal(run.effect?.url, undefined);
 });
 
 test("withExecutionEffect respects kill switch", async () => {

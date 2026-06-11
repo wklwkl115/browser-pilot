@@ -55,6 +55,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 	const beforeFp = before.fingerprint;
 	const afterFp = after.fingerprint;
 	const quietFp = quiet?.fingerprint;
+	const url = quietFp?.url ?? afterFp?.url ?? beforeFp?.url;
 	const mutations = delta(afterFp?.changeSeq, beforeFp?.changeSeq) ?? 0;
 	const quietDelta = delta(quietFp?.changeSeq, afterFp?.changeSeq) ?? 0;
 	const requestsFired = before.network.active && after.network.active ? delta(after.network.lastSeq, before.network.lastSeq) : undefined;
@@ -70,6 +71,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 		...(after.hook.lastSeq !== undefined ? { hookSeq: after.hook.lastSeq } : {}),
 	};
 	return {
+		...(url ? { url } : {}),
 		mutations,
 		settled: mutations === 0 || quietDelta === 0,
 		navigated: !!(beforeFp?.url && afterFp?.url && beforeFp.url !== afterFp.url),

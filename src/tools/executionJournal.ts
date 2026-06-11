@@ -2,6 +2,7 @@ import type { BrowserBridgeTargetInfo } from "../driver/types.js";
 import { isRecord } from "../utils/params.js";
 
 export type ExecuteEffect = {
+	url?: string;
 	mutations: number;
 	settled: boolean;
 	navigated: boolean;

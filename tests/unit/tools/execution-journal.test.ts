@@ -5,6 +5,7 @@ import { buildExecutionJournal, compactExecutionEffect, executionJournalFromValu
 test("compactExecutionEffect keeps factual nonzero fields only", () => {
 	const compact = compactExecutionEffect({
 		mutations: 1,
+		url: "https://example.test/page",
 		settled: true,
 		navigated: false,
 		visibleDelta: 0,

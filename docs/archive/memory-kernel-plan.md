@@ -51,8 +51,10 @@ Two recorded deviations (accepted, with reopen triggers):
 2. **D6 record-nudge removal clause is unadjudicated-vacuous**: `recordNudgeShown:false` in all M5
    runs — the nudge never fired (read-only tasks ran observe/execute; nudge requires a non-observational
    tool envelope carrying a page url), so zero `recordCalled` is vacuous evidence, and deleting the
-   nudge on it would be evidence-free change. Nudge kept; "why the nudge did not fire on T1 execute
-   results" filed as an n=1 hypothesis in `blind-findings.md`; re-adjudicate at the next blind round.
+   nudge on it would be evidence-free change. Nudge kept. G12 has since fixed the execute-envelope
+   reachability arc by lifting the already-collected execute effect/monitor URL into `summary.url`;
+   re-adjudicate at the next blind round only after `recordNudgeShown:true` appears on an uncovered
+   origin (shown-but-unused => delete; shown-and-used => keep).
 
 Acceptance also fixed one sync gap: `CLAUDE.md` still described a three-kernel structure; updated to
 the four-kernel table (+ `check:memory-core-boundary` / `check:memory-plane` in the test list).

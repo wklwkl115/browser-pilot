@@ -18,6 +18,16 @@
 
 ## 最近完成项
 
+### G12 execute page-context nudge reachability (2026-06-11, 完成)
+
+Decision: make `browser_execute` distilled results carry the acting page URL from already-collected execution effect/monitor data so `appendMemoryAutoSurface()` can resolve page context and the strategic-memory `record candidate:` nudge becomes reachable.
+
+Boundary: no nudge logic/text/excluded-tool changes, no auto-recording, no new bridge/CDP/page read, no `browser_command` expansion, and no public schema change; this is an output-envelope field addition for execute only.
+
+Contract: when effect/fingerprint or monitor data provides a page URL, execute summary includes `url` and result middleware lifts it to `target.url`; when effect is disabled or no URL is available, the field is absent without error.
+
+Verification: focused execute/effect/helper unit coverage, memory auto-surface execute with/without URL contract, `npm run check:tools`, `npm run check:summaries`, `npm run check:token-economy`, `npm run docs:generate`, `npm run check:tool-docs`, `npm run test:unit`, separate `npm run lint`, and full `npm run check` passed. D6 nudge-removal remains a future operator/blind-eval adjudication after a real uncovered-origin run shows `recordNudgeShown:true`.
+
 ### Agent audit inbox workflow (2026-06-11, 完成)
 
 Decision: add root `agent-audits/` as the audit-only workspace for other agents doing static or dynamic code review, plus `skills/pi-browser-audit-fix/SKILL.md` as the asynchronous role contract for user-invoked audit agents and fix agents.

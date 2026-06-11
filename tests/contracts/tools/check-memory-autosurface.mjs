@@ -123,6 +123,14 @@ function savedEnvelope(url, savedPath, tool = "browser_execute") {
 	assert(rec[0].includes("action=record") && !rec[0].includes("evidenceRefs="), `evidence-less record hint must omit evidenceRefs: ${rec[0]}`);
 }
 
+// 9b. G12: execute without page context preserves old behavior and stays quiet.
+{
+	__resetMemoryAutoSurfaceState();
+	const cwd = freshCwd();
+	const out = await appendMemoryAutoSurface({ cwd, envelope: { tool: "browser_execute", detailLevel: "summary", summary: {} } });
+	assert.deepEqual(recordHintsOf(out), [], "execute without url must not emit a record candidate");
+}
+
 // 10. Covered origin -> no recall hint here, never a record nudge.
 {
 	__resetMemoryAutoSurfaceState();

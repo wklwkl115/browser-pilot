@@ -25,6 +25,7 @@ type MonitorScanResult = {
 };
 
 type MonitorMetadata = {
+	url?: string;
 	beforeOk: boolean;
 	afterOk: boolean;
 	beforeChars: number;
@@ -56,6 +57,18 @@ function detectCommandLikeScript(script: string): boolean {
 	if (!trimmed.startsWith("{")) return false;
 	const parsed = tryJson(trimmed);
 	return isRecord(parsed) && typeof parsed.cmd === "string";
+}
+
+export function executeSummaryPageUrl(value: unknown): string | undefined {
+	const record = isRecord(value) ? value : undefined;
+	const effect = isRecord(record?.effect) ? record.effect : undefined;
+	if (typeof effect?.url === "string" && effect.url) return effect.url;
+	const monitor = isRecord(record?.monitor) ? record.monitor : undefined;
+	for (const key of ["url", "urlAfter", "urlBefore"]) {
+		const candidate = monitor?.[key];
+		if (typeof candidate === "string" && candidate) return candidate;
+	}
+	return undefined;
 }
 
 export function executeArtifactHints(data: unknown): Record<string, unknown> | undefined {
@@ -114,6 +127,7 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 		...executed.result,
 		effect: executed.effect,
 		monitor: {
+			...(after.url || before.url ? { url: after.url ?? before.url } : {}),
 			beforeOk: before.ok,
 			afterOk: after.ok,
 			beforeChars: typeof before.content === "string" ? before.content.length : 0,
@@ -204,7 +218,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
 						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
 						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
-						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(effect ? { effect } : {}), ...(preparedScript.stdlib ? { piRuntime: "1", refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : {}), ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
+						const url = executeSummaryPageUrl(value);
+						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(url ? { url } : {}), ...(effect ? { effect } : {}), ...(preparedScript.stdlib ? { piRuntime: "1", refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : {}), ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
 						if (effectHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effectHints];
 						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
 						if (monitor) {
