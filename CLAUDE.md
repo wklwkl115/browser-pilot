@@ -51,17 +51,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Three-Kernel Structure
+### Four-Kernel Structure
 
-The project has three pure-logic kernels, all zero browser/Node dependencies, each CI-boundary-locked:
+The project has four pure-logic kernels, all zero browser/Node dependencies, each CI-boundary-locked:
 
 | Kernel | Source | Purpose | Boundary check |
 |--------|--------|---------|----------------|
 | Capture (sense) | `capture-src/` → `src/capture/generated/` | Page-world JS templates injected into the browser | `check:capture` / `check-capture-core-boundary.mjs` (entry set pinned at 5; 6th entry fails gate) |
 | ABML (perceive) | `src/abml-core/` | Entity extraction, diffing, templating, relations, causal | `check:abml-core-boundary` |
 | Distill (express) | `src/distill-core/` | Token economy, salience renderer, fact allocator, recovery | `check:distill-core-boundary` |
+| Memory (retain) | `src/memory-core/` | Profile distillation, recall scoring/IDF routing, staleness verification | `check:memory-core-boundary` |
 
-`src/abml/` and `src/distill/` are the respective runtime integration layers. Layer import order: `capture → abml-core → distill-core`; neither kernel may import from the others' runtime layers, driver, or tools.
+`src/abml/`, `src/distill/`, and `src/memory/` are the respective runtime integration layers. Layer import order: `capture → abml-core → distill-core`; `memory-core` imports from no other kernel (structural types only); no kernel may import from the others' runtime layers, driver, or tools. The memory plane additionally has a runtime contract gate: `check:memory-plane` (byte-identity when disabled/empty, `livePlaneSignature()` preservation, negative controls).
 
 ### Frontend Migration Boundary
 
@@ -133,6 +134,8 @@ npm run check:distill-core-boundary      # distill-core import boundary
 npm run check:recovery-boundary          # recovery module boundary
 npm run check:summary-boundary           # summary boundary
 npm run check:session-delta-long-conversation  # session-delta regression
+npm run check:memory-core-boundary       # memory-core import boundary
+npm run check:memory-plane               # envelope.memory contract (byte-identity, signature, negative controls)
 npm run bench:distill          # token-economy comparative bench (salience vs ladder)
 npm run smoke:cli              # CLI smoke (requires browser)
 npm run smoke:cli:full         # full CLI smoke including connection control
@@ -177,6 +180,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `bridge/native_command_schema.json` — native command protocol source of truth
 - `src/abml-core/` — pure-logic ABML perception kernel (no browser deps); `src/abml/` — runtime integration
 - `src/distill-core/` — pure-logic distill kernel: salience renderer, fact allocator, token economy, recovery, `PerceptionLedger`
+- `src/memory-core/` — pure-logic memory kernel (retain): profile distillation, IDF recall routing, staleness verification; `src/memory/` — runtime persistence (HMAC stamps, serialized profile flushes)
 - `capture-src/entries/*Template.ts` — page-world sensing templates (source); `src/capture/generated/` — committed bundles (do NOT edit manually); `src/capture/inject.ts` — injection coordinator
 - `src/tools/webSecurity/` — `register/` (schemas), `browserNative/` (core execution), `bridges/` (sqlmap/nuclei), `shared/` (cookie provider, diagnostics)
 - `tests/contracts/` — contract tests (protocol, tools, boundaries)
@@ -298,6 +302,7 @@ mislocating or misnaming things in a codebase this size:
 
 - Before large architecture changes, scope changes, mature substitutions, bridges, or major refactors, update `TODO.md` with the concrete decision and execution path.
 - When changing an implemented tool, update affected contracts/docs in the same workstream; do not document future capability as current callable capability.
+- Audit-only agent reviews belong in `agent-audits/`: auditors may record reports under `agent-audits/runs/` but must not change project code; fix agents/maintainers use `skills/pi-browser-audit-fix/SKILL.md`, verify findings, then fix through normal workstreams.
 - Keep TODO order actionable; mark completed items and reorder dependent work when scope changes.
 
 ### Executability Rule

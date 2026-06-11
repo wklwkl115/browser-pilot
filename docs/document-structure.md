@@ -84,11 +84,27 @@ Do not use for:
 - short runtime routing instructions that belong in the global skill
 - generated callable tool contracts
 
+### `agent-audits/`
+
+Use for:
+- audit-only reports written by other agents during static or dynamic code review
+- templates and local rules that keep audit agents from changing project code
+- maintainer triage input before normal implementation workstreams
+
+Related skill:
+- `skills/pi-browser-audit-fix/SKILL.md` defines the asynchronous audit-agent and fix-agent roles.
+
+Do not use for:
+- active implementation plans
+- source changes, patches, generated outputs, or committed raw runtime evidence
+- replacing `CURRENT.md`, `TODO.md`, `ROADMAP.md`, or `ARCHIVE.md`
+
 ## Naming rules
 
 - Summary archive: `docs/archive/<name>.md`
 - Detailed archive: `docs/archive/<name>.full.md`
 - Summary and full-detail files should exist as pairs for major historical streams.
+- Agent audit reports: `agent-audits/runs/YYYY-MM-DD-<scope>.md`
 
 ## Generated vs manual content
 

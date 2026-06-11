@@ -6,20 +6,22 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 - 安装、环境变量、浏览器扩展加载、reload、check/smoke、排障：见 `AI_INSTALL.md`。
 - `.pi/public-export/` 仅允许作为本地导出/归档产物，不能作为第二开发仓库或第二真源；当前唯一正式源码仓库是本目录。
-- 正式使用场景、工具选择、输出风格、诊断约定写在 skill 里，按 agent 类型二选一（见下「使用哪个 skill」）。
+- 正式使用场景、工具选择、输出风格、诊断约定写在运行 skill 里，按 agent 类型二选一；维护审计/修复另有专用 skill（见下「使用哪个 skill」）。
 - 多步骤安全测试方法论：见 `docs/playbooks/README.md`；信号到工具路线映射见 `docs/reference/web-security-methodology-map.md`。
 - 本 README 只作为项目入口、工具清单和维护入口。
+- 其他 agent 的静态/动态审计只写入 [`agent-audits/`](agent-audits/)；审计报告不是补丁，维护者需独立复核后再按正常 workstream 修复。
 
-## 使用哪个 skill（两个独立 skill，按 agent 类型二选一）
+## 使用哪个 skill
 
-本扩展有两个**完全独立、各自自洽**的使用 skill，分别面向两类 agent。选匹配你的那一个即可，**不需要两个都读**：
+本扩展有两个**完全独立、各自自洽**的运行使用 skill，分别面向 Pi 原生 agent 和外部 CLI agent。另有一个维护用的异步审计/修复 skill，只在用户明确指定审计或消费审计报告时使用：
 
 | 你的 agent | 用这个 skill | 入口方式 |
 |---|---|---|
 | **Pi 原生 agent** —— 直接拥有 `browser_*` 工具 | [`skills/pi-browser-tools/SKILL.md`](skills/pi-browser-tools/SKILL.md) | 进程内直连，无显式连接步骤；直接调用 `browser_tabs {action:"list"}` 等 |
 | **外部 / shell-capable agent** —— 通过命令行驱动 | [`skills/pi-browser-cli/SKILL.md`](skills/pi-browser-cli/SKILL.md) | 经长驻 daemon 的 `pi-browser` CLI；多步任务先 `pi-browser connect --wait --json` 就绪门，再用子命令 |
+| **异步审计/修复 agent** —— 用户指定做审计或消费审计报告 | [`skills/pi-browser-audit-fix/SKILL.md`](skills/pi-browser-audit-fix/SKILL.md) | 审计角色只写 `agent-audits/runs/`；修复角色独立复核报告后按正常 workflow 改代码 |
 
-两个 skill 共用同一套工具核与方法论，只是**调用前端不同**（对象调用 vs 子命令）。外部使用者把对应 skill 目录挂到自己 agent 的 skill 加载路径即可（Pi 的全局路径只挂 `pi-browser-tools`；CLI skill 挂到外部 agent 自己的 skill 目录，不要挂进 Pi 的全局 skill 目录，否则 Pi 原生会同时读到两份）。
+两个运行使用 skill 共用同一套工具核与方法论，只是**调用前端不同**（对象调用 vs 子命令）。外部使用者把对应 skill 目录挂到自己 agent 的 skill 加载路径即可（Pi 的全局路径只挂 `pi-browser-tools`；CLI skill 挂到外部 agent 自己的 skill 目录，不要挂进 Pi 的全局 skill 目录，否则 Pi 原生会同时读到两份）。`pi-browser-audit-fix` 是维护流程 skill，不参与正常浏览器操作路线。
 
 ## 工具边界
 
@@ -134,6 +136,8 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 ## 维护入口
 
 - 当前状态与执行队列：`CURRENT.md`
+- Agent 审计收件箱：`agent-audits/`
+- 审计/修复 skill：`skills/pi-browser-audit-fix/SKILL.md`
 - Node 发布入口当前同时区分源码入口与分发入口：Pi runtime 仍通过 `pi.extensions: ["./index.ts"]` 加载源码入口；npm/package `main`/`types`/`exports` 与 `pi-browser` CLI bin 则指向 `dist/` 编译产物。
 - 历史完成归档：`ARCHIVE.md`
 - 后续路线与建议：`ROADMAP.md`

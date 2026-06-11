@@ -132,6 +132,7 @@ daemon predates them.
 
 | # | finding | runs | evidence | status |
 |---|---------|------|----------|--------|
+| G12 | **`record candidate:` nudge is structurally unreachable from `browser_execute`** (`recordNudgeShown:false` in all M5 runs): the execute distiller builds its summary from `summarizeGenericValue` + operation/effect fields with NO `url`, and sets no `snapshot` — so `pageContext()` (`autoSurface.ts:77-89`) finds no origin on execute envelopes and the nudge can never fire from the most common "did something on a page" tool. The strategic write-ignition arc currently depends on operator action. | 1 (M5 bilibili pairs) — **CODE-CONFIRMED** (`registerExecuteTool.ts:195-222` distiller has no url field; `autoSurface.ts:113-114` returns early without origin) | All M5 blind runs: `recordNudgeShown:false`, `recordCalled:false`; operator recorded the T1 SOP manually. | candidate fix with independent value: execute envelope `target` should carry the acting tab's page url (execute results currently have zero page context); that makes the nudge reachable, and ONLY then can D6's nudge-removal clause be adjudicated with real evidence (shown-but-unused ⇒ delete; shown-and-used ⇒ keep) |
 
 ## Resolved
 

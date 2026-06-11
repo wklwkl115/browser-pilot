@@ -66,6 +66,7 @@
 
 - Before large architecture changes, scope changes, mature substitutions, bridges, or major refactors, update `TODO.md` with the concrete decision and execution path.
 - When changing an implemented tool, update affected contracts/docs in the same workstream; do not document future capability as current callable capability.
+- Audit-only agent reviews belong in `agent-audits/`: auditors may record reports under `agent-audits/runs/` but must not change project code; fix agents/maintainers use `skills/pi-browser-audit-fix/SKILL.md`, verify findings, then fix through normal workstreams.
 - Keep TODO order actionable; mark completed items and reorder dependent work when scope changes.
 
 ## Executability Rule

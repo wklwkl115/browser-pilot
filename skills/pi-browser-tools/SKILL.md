@@ -48,8 +48,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
     triggers: ["<keywords you'd search by>"],
     body: "1. <step with exact selector/input/wait>\n2. <…>"}
   ```
-  **Evidence refs are optional** — cite `saved.path` when you have one; any ref you do cite must resolve. No secrets in `body`. A `record candidate:` hint = this origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
-- **Self-heal:** a recalled SOP that no longer works → `record` the corrected version; it supersedes the old one.
+  Evidence optional; no secrets in `body`. A `record candidate:` hint = this origin has no SOP yet. Dedup/supersede and self-heal mechanics are in the tool's own description — don't relearn them here.
 
 ## Routes (intent → tool)
 
@@ -110,7 +109,7 @@ Results return a `summary` + `resource_link`(s) + `sections`. Sensitive fields a
 
 ## Tool visibility
 
-All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step. `browser_memory` is local-only under `.pi/browser-memory/`; evidence refs are optional, but any ref you cite must resolve (artifact path, `browser-result://`, or non-stale snapshot); scopes `origin|task|project`, no repo export/promote.
+All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step.
 
 ## Bounds (before expansive routes)
 

@@ -6,6 +6,7 @@
 - 文档结构规范：`docs/document-structure.md`；archive 摘要/详档入口由 `npm run docs:sync-indexes` 同步。
 - 当前主链路：`browser_tabs list|switch|create` -> 显式 `tabId` -> `browser_observe` -> `browser_execute` / `browser_wait` -> `browser_network` / `browser_evidence` -> `browser_artifact`。
 - 当前工具边界：22 个 `browser_*` 工具 always-on；Web Security 是 scoped follow-up 分组，不再有 capability profile / compact mode / discovery mode；不新增公开 `browser_*` 工具，不恢复 orchestration / target resolver。
+- Agent 审计收件箱是 `agent-audits/`，异步审计/修复 skill 是 `skills/pi-browser-audit-fix/SKILL.md`：审计 agent 只写报告，不改项目代码；修复 agent 由用户另行指定，独立复核报告后进入普通修复 workstream。
 - ABML 是内部 substrate，不是公开工具面：继续增强 `browser_observe` / `browser_execute monitor` / `browser_frame` / AX/vision/monitor 盲区；公开 ABML verb surface 已关闭为 perception-first 项目决策。
 - jshookmcp 原生吸收边界见 `docs/jshookmcp-native-absorption.md`：只吸收能力模型与证据路径，不新增被拒绝的公开工具 `browser_sources` / `browser_debugger` / `browser_intercept` / `browser_storage` / `browser_canvas`。
 - 仓库单一源码根：`D:/Pi/agent/extensions/pi-browser-tools` 是唯一正式源码仓库；`.pi/public-export/` 仅作本地导出/归档产物。
@@ -16,6 +17,16 @@
 - 当前无激活执行线；新增主线必须先在本节写明决策、边界、契约与验证计划。
 
 ## 最近完成项
+
+### Agent audit inbox workflow (2026-06-11, 完成)
+
+Decision: add root `agent-audits/` as the audit-only workspace for other agents doing static or dynamic code review, plus `skills/pi-browser-audit-fix/SKILL.md` as the asynchronous role contract for user-invoked audit agents and fix agents.
+
+Boundary: audit agents may read the repo and run bounded non-destructive checks, but may only write reports under `agent-audits/runs/`; no source, generated file, docs-outside-inbox, test, package metadata, git, patch, or auto-fix changes. The skill does not launch subagents; the user assigns audit/fix roles asynchronously.
+
+Contract: reports use the committed templates, carry concrete evidence/reproduction/impact/verification, and remain untrusted hypotheses until a fixer/maintainer independently verifies them and performs accepted fixes through normal workstreams.
+
+Verification: `check:doc-structure` locks the directory, templates, role skill, and audit-only wording; skill validation covers `pi-browser-audit-fix`.
 
 ### Memory kernel (retain) (2026-06-11, 完成)
 
@@ -43,6 +54,11 @@ token economy, session delta, package/docs, build/build:bridge, and unit suite. 
 real Bilibili stage proved T1 cold/warm adoption (`memoryPlaneSeen`, `inlineBodyUsed`,
 `readThroughUsed`, `usedInFinalAnswer`) and T2 memory-off control success; linux.do was rejected as
 external Cloudflare 502 site-state. Evidence is in `evals/browser-workflows/blind-findings.md`.
+
+Acceptance review (2026-06-11): independently re-verified code contracts + re-ran all gates green
+(incl. full `npm run check` exit 0 and `npm run lint` exit 0). Accepted with two recorded deviations
+(daemon-mode conversation-once collapse; vacuous record-nudge clause) and one sync fix (CLAUDE.md
+four-kernel table) — details in `docs/archive/memory-kernel-plan.md` §Acceptance review.
 
 ### Execution feedback layer optimization (2026-06-11, 完成)
 

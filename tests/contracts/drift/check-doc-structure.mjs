@@ -8,6 +8,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const archiveDir = path.join(root, "docs", "archive");
 const playbooksDir = path.join(root, "docs", "playbooks");
 const referenceDir = path.join(root, "docs", "reference");
+const auditsDir = path.join(root, "agent-audits");
 
 const current = read("CURRENT.md");
 const roadmap = read("ROADMAP.md");
@@ -19,10 +20,25 @@ const agentNativeCliSpec = read("docs/agent-native-cli-spec.md");
 
 assert(structure.includes("## Canonical layers") && structure.includes("CURRENT.md") && structure.includes("ARCHIVE.md"), "document-structure.md must define canonical layers");
 assert(structure.includes("docs/playbooks/*.md") && structure.includes("docs/reference/*.md"), "document-structure.md must define playbook/reference layers");
+assert(structure.includes("agent-audits/") && structure.includes("agent-audits/runs/YYYY-MM-DD-<scope>.md"), "document-structure.md must define the agent audit inbox layer");
 assert(current.includes("docs/document-structure.md"), "CURRENT.md must link document structure rules");
+assert(current.includes("agent-audits/") && current.includes("审计 agent 只写报告") && current.includes("skills/pi-browser-audit-fix/SKILL.md"), "CURRENT.md must describe the asynchronous audit/fix inbox workflow");
 assert(todo.includes("docs/document-structure.md"), "TODO.md must link document structure rules");
+assert(todo.includes("Agent 审计收件箱：`agent-audits/`"), "TODO.md must link the agent audit inbox");
 assert(archive.includes("docs/archive/bridge-esm-history.md") && archive.includes("docs/archive/bridge-esm-history.full.md"), "ARCHIVE.md must link both summary and full archive entries");
 assert(roadmap.includes("*.full.md") || roadmap.includes("bridge-esm-history.full.md"), "ROADMAP.md must mention detailed archive files");
+assert(existsSync(path.join(auditsDir, "README.md")), "missing audit inbox README: agent-audits/README.md");
+assert(existsSync(path.join(auditsDir, "AGENTS.md")), "missing audit inbox local agent rules: agent-audits/AGENTS.md");
+assert(existsSync(path.join(auditsDir, "templates", "run-report.md")), "missing audit run template");
+assert(existsSync(path.join(auditsDir, "templates", "finding.md")), "missing audit finding template");
+assert(existsSync(path.join(auditsDir, "runs")), "missing audit runs directory");
+assert(existsSync(path.join(root, "skills", "pi-browser-audit-fix", "SKILL.md")), "missing audit/fix skill");
+const auditReadme = read("agent-audits/README.md");
+const auditAgents = read("agent-audits/AGENTS.md");
+const auditFixSkill = read("skills/pi-browser-audit-fix/SKILL.md");
+assert(auditReadme.includes("audit-only") && auditReadme.includes("must not edit project source"), "audit README must state audit-only/no-code-change rules");
+assert(auditAgents.includes("Audit-Only Rule") && auditAgents.includes("You may write only audit reports under `agent-audits/runs/`"), "audit AGENTS.md must constrain audit agents to reports only");
+assert(auditFixSkill.includes("Audit Agent Mode") && auditFixSkill.includes("Fix Agent Mode") && auditFixSkill.includes("Do not spawn or manage subagents"), "audit/fix skill must define async audit/fix roles and forbid subagent orchestration");
 
 const archiveFiles = readdirSync(archiveDir).filter((file) => file.endsWith(".md")).sort();
 const summaryFiles = archiveFiles.filter((file) => !file.endsWith(".full.md"));

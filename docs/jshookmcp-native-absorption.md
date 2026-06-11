@@ -26,6 +26,20 @@ Non-goals:
 - No duplicate CTF or solver policy in this package.
 - No hidden tool chain that decides strategy for the agent.
 
+## Agent Navigation Boundary
+
+Rejecting jshookmcp's runtime router does **not** mean this package has no capability navigation layer.
+
+The navigation layer is skill-first:
+
+- `skills/pi-browser-tools/SKILL.md` tells Pi-native agents how to choose and sequence the always-on `browser_*` tools by intent.
+- `skills/pi-browser-cli/SKILL.md` tells shell/CLI agents how to drive the same tool core through `pi-browser` commands, `commands --json`, and `schema --json`.
+- Generated tool contracts remain the source of exact parameters, enums, defaults, and error/recovery fields.
+- Tool results provide factual `recovery.nextActions` and artifact handles for the next bounded step.
+- Blind agent evals check whether real agents naturally follow these routes or need skill/contract/recovery changes.
+
+Therefore the project keeps a capability radar, but it is not a dynamic MCP `route_tool` / `search_tools` / `activate_tools` layer. If a jshookmcp-derived capability area is hard for agents to use, first improve the relevant skill route, canonical owner mechanics, generated contract, recovery hints, or eval coverage. Do not introduce hidden activation profiles or a strategy-shaped runtime router to solve an agent guidance problem.
+
 ## 能力归属表
 
 | Absorbed capability | Native owner | Public surface decision |
@@ -119,4 +133,4 @@ Absent that proof, the decision remains closed: no public `browser_sources`, `br
 
 ## Closure Statement
 
-The jshookmcp absorption is complete. This package keeps the concrete browser/Web tools and evidence paths; strategic routing, challenge policy, and solver methodology remain outside this extension. Future work should be expressed as improvements to existing native owners or as a new, fully evidenced RFC.
+The jshookmcp absorption is complete. This package keeps the concrete browser/Web tools, evidence paths, and skill-first agent navigation. It does not absorb jshookmcp's dynamic MCP routing/activation architecture, and challenge policy or solver methodology remain outside this extension. Future work should be expressed as improvements to existing native owners, skills/contracts/recovery, or as a new, fully evidenced RFC.
