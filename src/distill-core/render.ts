@@ -12,7 +12,7 @@ function isJsonOmittedValue(value: unknown): boolean {
 	return value === undefined || typeof value === "function" || typeof value === "symbol";
 }
 
-export function countRenderedTruncationMarkers(value: unknown): number {
+function countRenderedTruncationMarkers(value: unknown): number {
 	if (typeof value === "string") return countTextTruncationMarkers(value);
 	if (Array.isArray(value)) return value.reduce((count, item) => count + countRenderedTruncationMarkers(item), 0);
 	if (value && typeof value === "object") {

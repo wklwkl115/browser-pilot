@@ -50,6 +50,8 @@ const changed = buildTreeDiff(before, after);
 assert.equal(changed.summary.changed, 1);
 assert.equal(changed.templates[0].changed.instances[0].key, "name:charlie");
 assert.deepEqual(changed.templates[0].changed.instances[0].fields.map((field) => field.field), ["value", "selected"]);
+assert.equal(changed.templates[0].changed.instances[0].fieldCount, 2, "changed fieldCount exposes total changed fields");
+assert.equal(changed.templates[0].changed.instances[0].fieldsTruncated, undefined, "fieldsTruncated omitted when fields are complete");
 assert.ok(changed.summary.sample?.changed?.includes("Charlie"), "summary.sample surfaces the changed item name at the summary level");
 
 // Partial baselines are explicit: treeDiff needs a full baseline.

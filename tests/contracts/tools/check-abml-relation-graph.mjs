@@ -95,6 +95,7 @@ assert.equal(summary.summary.tableCells, 2, "tableCells = distinct cells with ta
 assert.equal(summary.summary.currentIn, 1, "summary counts currentIn");
 assert.ok(Array.isArray(summary.highlights) && summary.highlights.length > 0, "highlights present");
 assert.ok(summary.highlights.length <= 8, "highlights capped");
+assert.equal(summary.highlightCount, undefined, "highlightCount omitted when no highlight truncation occurred");
 
 // End-to-end surfacing: relations.summary reaches the envelope top-level (budget-immune), and is
 // always present when abmlIntegrated, sibling to gist/outline.
@@ -110,6 +111,7 @@ const envelope = JSON.parse(result.content[0].text);
 assert.equal(typeof envelope.relations, "object", "relations surfaced at envelope top-level");
 assert.equal(envelope.relations.summary.cellOf, undefined, "cellOf omitted from envelope summary — encoded as tableCells");
 assert.equal(envelope.relations.summary.tableCells, 2, "relations.summary.tableCells survives to the envelope");
+assert.equal(envelope.relations.highlightCount, undefined, "relations.highlightCount remains absent when highlights are complete");
 
 // --- Static wiring: the runtime pipeline + live smoke + fixture + scripts stay in place --------
 const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");

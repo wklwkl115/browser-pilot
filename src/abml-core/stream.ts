@@ -27,7 +27,7 @@ export type CaptureRefContext = {
 	browserSessionId?: string;
 	tabId?: number;
 	observationId: string;
-	capturedAt?: number;
+	capturedAt: number;
 	url?: string;
 };
 
@@ -40,7 +40,7 @@ export function createCaptureRef(params: {
 	lastSeq?: number;
 	context: CaptureRefContext;
 }): CaptureRef {
-	const capturedAt = params.context.capturedAt ?? params.startedAt;
+	const capturedAt = params.context.capturedAt;
 	return {
 		refId: params.refId,
 		kind: "signal",
@@ -65,7 +65,7 @@ export function createCaptureRef(params: {
 	};
 }
 
-export function mapCaptureState(value: unknown, now = Date.now(), expiresAt?: number): CaptureState {
+export function mapCaptureState(value: unknown, now: number, expiresAt?: number): CaptureState {
 	const text = stringValue(value)?.toLowerCase();
 	if (text === "active" || text === "stopped" || text === "expired" || text === "lost") return text;
 	if (expiresAt !== undefined && now > expiresAt) return "expired";
@@ -78,7 +78,7 @@ export function buildNetworkEntryEntity(entry: Record<string, unknown>, context:
 	const url = stringValue(entry.url) || stringValue(request.url);
 	const method = stringValue(entry.method) || stringValue(request.method);
 	const status = numberValue(entry.status) ?? numberValue(response.status);
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	const bodyHandle = stringValue(entry.bodyRef) || stringValue(entry._bodyRef);
 	const requestId = stringValue(entry.requestId) || stringValue(entry._requestId) || stringValue(entry.id) || "network-entry";
 	const entity: Omit<Entity, "ref"> = {
@@ -126,7 +126,7 @@ export function buildEventEntity(event: Record<string, unknown>, context: Captur
 	const eventType = stringValue(event.type) || stringValue(event.event) || stringValue(event.eventType) || "event";
 	const phase = stringValue(event.phase) || stringValue(event.kind);
 	const payloadHandle = stringValue(event.payloadHandle) || stringValue(event.handle) || stringValue(event.bodyRef);
-	const at = numberValue(event.timestamp) ?? numberValue(event.t) ?? numberValue(event.at) ?? context.capturedAt ?? Date.now();
+	const at = numberValue(event.timestamp) ?? numberValue(event.t) ?? numberValue(event.at) ?? context.capturedAt;
 	const summaryText = stringValue(event.summary) || stringValue(event.message) || stringValue(event.preview);
 	const entity: Omit<Entity, "ref"> = {
 		kind: "event",

@@ -35,6 +35,8 @@ export function stableRefIdForDescriptor(descriptor: Omit<RefDescriptor, "refId"
 			normalizedName: anchor.normalizedName,
 		}
 		: undefined;
+	// Ref identity prioritizes persistent page-authored anchors over session-scoped backend/AX ids.
+	// Runtime resolution may still try backend/AX locators first; this path optimizes ref stability.
 	const locator = semanticAnchor ? undefined : descriptor.locators.find((item) => item.by === "css")
 		|| descriptor.locators.find((item) => item.by === "backendNodeId")
 		|| descriptor.locators.find((item) => item.by === "axNodeId")

@@ -24,7 +24,7 @@ export type RelationAnchor = {
 
 // Deterministic ordering for per-entity caps and envelope highlights — interaction edges
 // (controls/owns/expanded) lead, then labels, then table structure. Keeps output stable
-// across runs (no Date.now()/random) so contract snapshots don't flake.
+// across runs (no clock or random reads) so contract snapshots don't flake.
 const TYPE_ORDER: RelationType[] = [
 	"controls",
 	"owns",
@@ -175,7 +175,7 @@ export function addEntityRelations(entity: Entity, added: EntityRelation[]): Ent
 	if (!added.length) return entity;
 	return { ...entity, relations: capRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
 }
-export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[] };
+export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[]; highlightCount?: number };
 
 // Table-structural relation types are already encoded in `tableCells` (distinct cell count).
 // Their per-type counts add noise to the summary (a documentation page with 100 table cells
@@ -216,5 +216,6 @@ export function buildRelationSummary(entities: Entity[]): RelationSummary {
 		seen.add(key);
 		return true;
 	});
-	return { summary, highlights: dedupedHighlights.slice(0, MAX_HIGHLIGHTS) };
+	const cappedHighlights = dedupedHighlights.slice(0, MAX_HIGHLIGHTS);
+	return { summary, highlights: cappedHighlights, ...(dedupedHighlights.length > cappedHighlights.length ? { highlightCount: dedupedHighlights.length } : {}) };
 }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fitInlineJsonToBudget, inlineJsonToolResult } from "../../../src/tools/toolAdapter.ts";
+import { fitInlineJsonToBudget } from "../../../src/distill-core/fit.ts";
+import { inlineJsonToolResult } from "../../../src/tools/toolAdapter.ts";
 
 function arrayReadResult(n: number, blobChars = 200) {
 	const items = Array.from({ length: n }, (_, i) => ({ id: i, blob: "x".repeat(blobChars) }));

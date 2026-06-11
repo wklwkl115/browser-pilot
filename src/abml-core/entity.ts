@@ -88,7 +88,7 @@ export type ScanEntityContext = {
 	tabId?: number;
 	url?: string;
 	observationId: string;
-	capturedAt?: number;
+	capturedAt: number;
 };
 
 export type BuiltEntity = {
@@ -264,7 +264,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			...(stringValue(node.inputKind) ? { inputKind: stringValue(node.inputKind) } : {}),
 		},
 	};
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	return {
 		entity,
 		descriptor: {
@@ -318,7 +318,7 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 			selector: stringValue(node.selector),
 		},
 	};
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	return {
 		entity,
 		descriptor: {
@@ -378,7 +378,7 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 			...(expandedTargetSelectors ? { expandedTargetSelectors } : {}),
 		},
 	};
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	return {
 		entity,
 		descriptor: {
@@ -420,7 +420,7 @@ export function buildReferencedTargetEntity(node: Record<string, unknown>, conte
 		locators,
 		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
 	};
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	return {
 		entity,
 		descriptor: {
@@ -472,7 +472,7 @@ export function buildVisionRegionFromCanvasActionable(node: Record<string, unkno
 			selector: stringValue(node.selector),
 		},
 	};
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	return {
 		entity,
 		descriptor: {

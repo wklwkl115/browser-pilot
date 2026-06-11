@@ -25,7 +25,7 @@ export type RelevanceInput = {
 	};
 };
 
-export type RelevanceMatch = {
+type RelevanceMatch = {
 	score: number;
 	sources: RelevanceSourceTag[];
 };
@@ -35,7 +35,6 @@ export type RelevanceResult = {
 	boosted: number;
 	signals: RelevanceSourceTag[];
 	scoreFields: (fields: Record<string, unknown>) => number;
-	sourcesForRef: (ref: string) => RelevanceSourceTag[];
 };
 
 type PreparedTerm = {
@@ -52,7 +51,7 @@ type RelevanceAccumulator = {
 };
 
 function normalizeText(value: unknown): string {
-	return typeof value === "string" ? value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, " ").trim() : "";
+	return typeof value === "string" ? value.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, " ").trim() : "";
 }
 
 function cjkBigrams(value: string): string[] {
@@ -183,6 +182,5 @@ export function computeRelevanceMap(inputs: RelevanceInput[], terms: RelevanceTe
 		boosted: Array.from(byRef.values()).filter((match) => match.score > 0).length,
 		signals,
 		scoreFields: (fields) => scoreInputFields(fields, prepared).score,
-		sourcesForRef: (ref) => byRef.get(ref)?.sources ?? [],
 	};
 }

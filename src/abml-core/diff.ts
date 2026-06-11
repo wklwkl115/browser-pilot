@@ -141,6 +141,10 @@ function signalForChange(change: EntityChange, fields: string[]): string {
 	return `${change.kind}:${change.ref}${fields.length ? `:${fields.join(",")}` : ""}`;
 }
 
+function compareCodepoint(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function summarizeEntityDiff(diff: EntityDiff, before: Entity[] = [], after: Entity[] = []): EntityDiffSalience {
 	const entityByRef = new Map([...before, ...after].map((entity) => [entity.ref, entity]));
 	const changedItems: EntityDiffSalienceItem[] = diff.changed.map((change) => {
@@ -158,7 +162,7 @@ export function summarizeEntityDiff(diff: EntityDiff, before: Entity[] = [], aft
 			after: change.after,
 		};
 	});
-	changedItems.sort((a, b) => b.score - a.score || a.signal.localeCompare(b.signal));
+	changedItems.sort((a, b) => b.score - a.score || compareCodepoint(a.signal, b.signal));
 	const churn = diff.appeared.length || diff.disappeared.length
 		? [{
 			kind: "churn" as const,

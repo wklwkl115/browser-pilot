@@ -17,7 +17,7 @@ test("computeRelevanceMap matches CJK and mixed literals", () => {
 	], [{ term: "搜索", kind: "literal", source: "A" }]);
 	assert.equal(result.boosted, 1);
 	assert.ok((result.byRef.get("pi-ref://control/search")?.score ?? 0) > 0);
-	assert.deepEqual(result.sourcesForRef("pi-ref://control/search"), ["A"]);
+	assert.deepEqual(result.byRef.get("pi-ref://control/search")?.sources, ["A"]);
 });
 
 test("computeRelevanceMap propagates through container neighbors conservatively", () => {
@@ -38,7 +38,7 @@ test("computeRelevanceMap supports URL and intent source tags", () => {
 		{ term: "login", kind: "intent", source: "E" },
 	]);
 	assert.equal(result.boosted, 1);
-	assert.deepEqual(result.sourcesForRef("pi-ref://control/login"), ["D", "E"]);
+	assert.deepEqual(result.byRef.get("pi-ref://control/login")?.sources, ["D", "E"]);
 });
 
 test("computeRelevanceMap supports memory source F below direct live signals", () => {
@@ -48,7 +48,7 @@ test("computeRelevanceMap supports memory source F below direct live signals", (
 	const live = computeRelevanceMap([
 		{ ref: "pi-ref://control/checkout", fields: { name: "Checkout" } },
 	], [{ term: "checkout", kind: "urlPathToken", source: "D" }]);
-	assert.deepEqual(memory.sourcesForRef("pi-ref://control/checkout"), ["F"]);
+	assert.deepEqual(memory.byRef.get("pi-ref://control/checkout")?.sources, ["F"]);
 	assert((memory.byRef.get("pi-ref://control/checkout")?.score ?? 0) < (live.byRef.get("pi-ref://control/checkout")?.score ?? 0));
 });
 

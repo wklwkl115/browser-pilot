@@ -9,7 +9,7 @@ export type AxContext = {
 	tabId?: number;
 	url?: string;
 	observationId: string;
-	capturedAt?: number;
+	capturedAt: number;
 };
 
 type AxPropertyMap = Map<string, unknown>;
@@ -256,7 +256,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const value = axValue(node, propertyMap);
 	const kind = kindForAxRole(role);
 	const locators = buildAxLocators(node, propertyMap);
-	const capturedAt = context.capturedAt ?? Date.now();
+	const capturedAt = context.capturedAt;
 	const disabled = axPropertyBool(node, "disabled", propertyMap) === true || axPropertyBool(node, "aria-disabled", propertyMap) === true;
 	const focused = axPropertyBool(node, "focused", propertyMap) === true;
 	const expanded = axPropertyBool(node, "expanded", propertyMap);

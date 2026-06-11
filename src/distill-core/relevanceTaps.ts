@@ -28,7 +28,7 @@ export function dedupeTapTerms(terms: RelevanceTapTerm[], limit = MAX_LITERAL_TE
 	for (const term of terms) {
 		const cleaned = cleanTerm(term.term);
 		if (!cleaned) continue;
-		const key = `${term.kind}\u0000${cleaned.toLocaleLowerCase()}`;
+		const key = `${term.kind}\u0000${cleaned.toLowerCase()}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		out.push({ ...term, term: cleaned });

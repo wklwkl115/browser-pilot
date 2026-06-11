@@ -20,7 +20,9 @@ assert(!helper.includes("newTabs: executed.newTabs"), "monitor helper must not m
 assert(helper.includes("const navigated = !!(before.url && after.url && before.url !== after.url)"), "monitor must detect navigation via before/after page url change");
 assert(helper.includes("navigated: true") && helper.includes("urlBefore") && helper.includes("urlAfter"), "monitor must surface navigated + the before/after urls instead of a misleading changed:0");
 assert(source.includes("export function executeSummaryPageUrl(value: unknown): string | undefined"), "execute distiller must use a helper for summary page url extraction");
+assert(source.includes("target?.url") && source.indexOf("target?.url") < source.indexOf("effect?.url"), "execute summary url helper must prefer the resolved tab target url over effect/frame urls");
 assert(source.includes("effect?.url") && source.includes('["url", "urlAfter", "urlBefore"]'), "execute summary url helper must cover effect url plus monitor fallbacks");
 assert(source.includes("const url = executeSummaryPageUrl(value);") && source.includes("...(url ? { url } : {})"), "execute distiller must lift page url into the base summary record");
+assert(source.includes("executeResultNeedsArtifact(resultValue)") && source.includes("artifactThreshold: needsResultArtifact ? 1 : undefined"), "execute non-inline data projections must force a raw artifact so data.* frontier reads are actionable");
 
 console.log("execute tool contract ok");

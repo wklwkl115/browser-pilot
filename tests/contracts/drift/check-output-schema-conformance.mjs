@@ -38,6 +38,7 @@ const outputSchemasSrc = read("src/tools/summaries/outputSchemas.ts");
 assert(outputSchemasSrc.includes("EvidenceSummarySchema"), "outputSchemas.ts must define EvidenceSummarySchema");
 assert(outputSchemasSrc.includes("NetworkSummarySchema"), "outputSchemas.ts must define NetworkSummarySchema");
 assert(outputSchemasSrc.includes("HookDomFlowSummarySchema"), "outputSchemas.ts must define HookDomFlowSummarySchema");
+assert(outputSchemasSrc.includes("selected: Type.Optional(Type.Boolean())") && outputSchemasSrc.includes("pressed: Type.Optional(Type.Boolean())") && outputSchemasSrc.includes("current: Type.Optional(Type.Union([Type.Boolean(), Type.String()]))"), "EntityStateSchema must expose selected/pressed/current state emitted by ABML entities");
 assert(!outputSchemasSrc.includes("ReturnType<"), "outputSchemas.ts must NOT derive schemas from TypeScript return types");
 
 // ── Runtime conformance ───────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ assert.equal(Value.Check(hookDef.summarySchema, hookResult), true,
 // ── Schema structure verification ─────────────────────────────────────────────
 
 // Evidence schema must require source_count (core stable field)
-const { EvidenceSummarySchema, NetworkSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema } = await import(
+const { EvidenceSummarySchema, NetworkSummarySchema, HookDomFlowSummarySchema, MemorySummarySchema, EntityStateSchema } = await import(
 	new URL("../../../src/tools/summaries/outputSchemas.ts", import.meta.url).href
 );
 
@@ -152,6 +153,7 @@ const memoryResult = memoryDef.distill({ action: "recall", scopeKind: "task", sc
 assert.equal(Value.Check(memoryDef.summarySchema, memoryResult), true,
 	`browser_memory distill output must pass summarySchema. Errors: ${JSON.stringify([...Value.Errors(memoryDef.summarySchema, memoryResult)].map(e => e.message))}`);
 assert(Value.Check(MemorySummarySchema, memoryResult), "MemorySummarySchema must accept recall summary output");
+assert(Value.Check(EntityStateSchema, { visible: true, occluded: false, disabled: false, focused: false, checked: false, selected: true, pressed: false, expanded: false, current: "page", editable: false, inViewport: true }), "EntityStateSchema must accept full ABML widget state");
 
 // ── REAL emission path conformance (not just bare distiller output) ───────────
 //

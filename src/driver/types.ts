@@ -134,6 +134,7 @@ export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "non
 export type BrowserBridgeTargetInfo = {
 	browserSessionId?: string;
 	tabId?: number;
+	url?: string;
 	source: BrowserBridgeTargetSource;
 	implicit: boolean;
 	selectionVersionAtDispatch: number;

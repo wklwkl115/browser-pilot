@@ -2,10 +2,11 @@ import { createReadStream, type Stats } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
-import { tryJson } from "../utils/json.js";
+import { stableJson, tryJson } from "../utils/json.js";
 import { getJsonPath, parseJsonPath, type JsonPathToken } from "../utils/jsonPath.js";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params.js";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex.js";
+import { projectJsonValue } from "../distill-core/projection.js";
 import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy.js";
 
 export const MAX_ARTIFACT_READ_BYTES = 25 * 1024 * 1024;
@@ -521,6 +522,40 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 	return out;
 }
 
+function jsonProjectionEnabled(): boolean {
+	return process.env.PI_BROWSER_JSON_PROJECTION !== "0";
+}
+
+function projectedArraySourceCost(value: unknown, params: BrowserArtifactParams): number {
+	if (!Array.isArray(value) || value.length === 0) return Number.POSITIVE_INFINITY;
+	const offset = Math.max(0, Math.floor(Number(params.offset || 0)));
+	const limit = Math.max(1, Math.floor(Number(params.limit ?? Math.max(1, value.length - offset))));
+	const selected = value.slice(offset, offset + limit);
+	return stableJson({
+		type: "array",
+		count: value.length,
+		offset,
+		limit,
+		nextOffset: offset + limit < value.length ? offset + limit : null,
+		items: selected,
+	}).length;
+}
+
+function compactJsonValueForArtifact(value: unknown, params: BrowserArtifactParams, jsonPath?: string): unknown {
+	const legacy = compactJsonValue(value, params);
+	if (!jsonProjectionEnabled() || typeof value === "string") return legacy;
+	const budget = asPositiveInt(params.maxChars, 8_000);
+	const projection = projectJsonValue(value, {
+		jsonPath,
+		offset: params.offset,
+		limit: params.limit,
+		maxChars: budget,
+	});
+	if (!projection) return legacy;
+	const projectedLength = stableJson(projection).length;
+	return projectedLength < projectedArraySourceCost(value, params) ? projection : legacy;
+}
+
 function formatJsonPath(tokens: JsonPathToken[]): string {
 	if (!tokens.length) return "$";
 	return tokens.map((token, index) => {
@@ -608,7 +643,7 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 		const entries = params.pick.map((item) => {
 			const selected = getJsonPath(parsed, item);
 			return [item, selected.exists
-				? { exists: true, jsonPath: item, value: compactJsonValue(selected.value, params) }
+				? { exists: true, jsonPath: item, value: compactJsonValueForArtifact(selected.value, params, item) }
 				: missingJsonPathValue(parsed, item)];
 		});
 		const value = Object.fromEntries(entries);
@@ -641,7 +676,7 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 			value,
 		};
 	}
-	const value = typeof selected.value === "string" ? jsonStringWindow(selected.value, params) : compactJsonValue(selected.value, params);
+	const value = typeof selected.value === "string" ? jsonStringWindow(selected.value, params) : compactJsonValueForArtifact(selected.value, params, jsonPath);
 	return {
 		mode: "json" as const,
 		summary: { ...summarizeJsonValue(selected.value, absPath, fileSize), exists: true, jsonPath },

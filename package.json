@@ -80,6 +80,7 @@
     "check:tool-parameter-contract": "tsx tests/contracts/drift/check-tool-parameter-contract.mjs",
     "check:tool-parameter-framework-validation": "node tests/contracts/drift/check-tool-parameter-framework-validation.mjs",
     "check:summary-boundary": "node tests/contracts/drift/check-summary-boundary.mjs",
+    "check:compaction-ledger": "tsx tests/contracts/drift/check-compaction-ledger.mjs",
     "check:recovery-boundary": "node tests/contracts/drift/check-recovery-boundary.mjs",
     "check:cli-parity": "tsx tests/contracts/cli/check-cli-parity.mjs",
     "check:param-surface": "tsx tests/contracts/cli/check-param-surface.mjs",

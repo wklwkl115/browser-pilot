@@ -9,7 +9,7 @@ test("abml stream creates capture refs with lifecycle state", () => {
 		startedAt: 1710000000000,
 		expiresAt: 1710003600000,
 		lastSeq: 12,
-		context: { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", url: "https://example.test/" },
+		context: { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1710000000000, url: "https://example.test/" },
 	});
 	assert.equal(ref.kind, "signal");
 	assert.equal(ref.streamState.state, "active");
@@ -40,7 +40,7 @@ test("abml stream maps hook/evidence events into event entities", () => {
 		message: "boom",
 		payloadHandle: "browser-result://evt-1",
 		timestamp: 1710000002000,
-	}, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", url: "https://example.test/" });
+	}, { browserSessionId: "session-1", tabId: 7, observationId: "obs-1", capturedAt: 1710000000000, url: "https://example.test/" });
 	assert.equal(built.entity.kind, "event");
 	assert.equal(built.entity.name, "console.error");
 	assert.equal(built.entity.stream?.phase, "collect");

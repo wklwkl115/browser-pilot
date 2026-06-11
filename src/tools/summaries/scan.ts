@@ -6,6 +6,7 @@ export type ScanSummaryOptions = {
 	detailLevel?: unknown;
 	maxChars?: number;
 	entityContext?: Partial<ScanEntityContext>;
+	scanEntities?: ReturnType<typeof buildScanEntities>;
 	relevance?: {
 		scoreFields: (fields: Record<string, unknown>) => number;
 		boosted?: number;
@@ -422,7 +423,7 @@ function dedupeEntitiesByRef(entities: Entity[]): Entity[] {
 	return out;
 }
 
-function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
+export function buildScanEntities(item: Record<string, unknown>, options: ScanSummaryOptions): { entities: Entity[]; primaryEntities: Entity[]; listEntities: Entity[]; visualRegions: Entity[]; referencedEntities: Entity[]; controlsSources: Entity[] } {
 	const context = scanEntityContext(item, options);
 	const actionables = asArray(item.actionables).filter(isRecord);
 	const references = asArray(item.references).filter(isRecord);
@@ -489,7 +490,7 @@ function prepareScanSummary(item: Record<string, unknown>, tabs: unknown[], opti
 	const ranked = rankedActions(actionables, options);
 	const sortedRanked = [...ranked].sort((a, b) => b.score - a.score || a.position - b.position);
 	const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-	const scanEntities = buildScanEntities(item, options);
+	const scanEntities = options.scanEntities ?? buildScanEntities(item, options);
 	return {
 		item,
 		tabs,
@@ -644,6 +645,10 @@ export function summarizeScanData(data: unknown, tabs: unknown[] = [], options: 
 
 export function scanEntitiesForEnvelope(data: unknown, options: ScanSummaryOptions = {}): Entity[] {
 	const item = isRecord(data) ? data : {};
-	const built = buildScanEntities(item, options);
+	const built = options.scanEntities ?? buildScanEntities(item, options);
+	return scanEntitiesFromGroups(built);
+}
+
+export function scanEntitiesFromGroups(built: ReturnType<typeof buildScanEntities>): Entity[] {
 	return dedupeEntitiesByRef([...built.entities, ...built.primaryEntities, ...built.listEntities, ...built.visualRegions, ...built.referencedEntities, ...built.controlsSources]);
 }

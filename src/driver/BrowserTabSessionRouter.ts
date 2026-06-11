@@ -36,9 +36,11 @@ export class BrowserTabSessionRouter {
 	}
 
 	targetInfo(source: BrowserBridgeTargetSource, tabId?: number, session = this.browserSession()): BrowserBridgeTargetInfo {
+		const url = this.targetUrl(tabId, session);
 		return {
 			browserSessionId: session.id,
 			tabId,
+			...(url ? { url } : {}),
 			source,
 			implicit: source === "default" || source === "latest",
 			selectionVersionAtDispatch: session.selectionVersion,
@@ -232,6 +234,15 @@ export class BrowserTabSessionRouter {
 	private tabIdForSessionId(sessionId: string | undefined): number | undefined {
 		if (!sessionId) return undefined;
 		return this.sessions.get(sessionId)?.tabId;
+	}
+
+	private targetUrl(tabId: number | undefined, browserSession: BrowserAutomationSession): string | undefined {
+		if (tabId === undefined) return undefined;
+		const live = Array.from(this.sessions.values()).filter((session) => session.tabId === tabId && !session.disconnectedAt && isOpen(session.client));
+		const scopeClient = this.browserSessions.selectedOpenClient(browserSession);
+		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
+		const selected = scoped ?? (live.length === 1 ? live[0] : undefined);
+		return selected?.url || undefined;
 	}
 
 	private preferredImplicitSessionId(candidates: BrowserTabSession[], browserSession: BrowserAutomationSession): string | undefined {

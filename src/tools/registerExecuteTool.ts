@@ -61,13 +61,15 @@ function detectCommandLikeScript(script: string): boolean {
 
 export function executeSummaryPageUrl(value: unknown): string | undefined {
 	const record = isRecord(value) ? value : undefined;
-	const effect = isRecord(record?.effect) ? record.effect : undefined;
-	if (typeof effect?.url === "string" && effect.url) return effect.url;
+	const target = isRecord(record?.target) ? record.target : undefined;
+	if (typeof target?.url === "string" && target.url) return target.url;
 	const monitor = isRecord(record?.monitor) ? record.monitor : undefined;
 	for (const key of ["url", "urlAfter", "urlBefore"]) {
 		const candidate = monitor?.[key];
 		if (typeof candidate === "string" && candidate) return candidate;
 	}
+	const effect = isRecord(record?.effect) ? record.effect : undefined;
+	if (typeof effect?.url === "string" && effect.url) return effect.url;
 	return undefined;
 }
 
@@ -83,6 +85,17 @@ export function executeArtifactHints(data: unknown): Record<string, unknown> | u
 		preferredReads.push({ label: "script return value", jsonPath: "data", kind: "execute-result" });
 	}
 	return preferredReads.length ? { preferredReads } : undefined;
+}
+
+export function executeSummaryDataInline(data: unknown): boolean {
+	return data !== undefined && data !== null &&
+		!(isRecord(data) && (data.type === "array" || data.type === "object" || data.type === "string"));
+}
+
+export function executeResultNeedsArtifact(value: unknown): boolean {
+	const generic = summarizeGenericValue(value);
+	if (executeSummaryDataInline(generic.data)) return false;
+	return !!executeArtifactHints(isRecord(value) ? value.data : undefined);
 }
 
 async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, scanScript: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<MonitorScanResult> {
@@ -197,12 +210,14 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					stdlib: preparedScript.stdlib ? { used: true, refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : undefined,
 				});
 				const resultValue = { ...jsResult, execution, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) };
+				const needsResultArtifact = executeResultNeedsArtifact(resultValue);
 				return await jsonToolResult(resultValue, params, ctx, {
 					toolName: "browser_execute",
 					command: "javascript",
 					defaultDetailLevel: "preview",
 					maxChars,
 					fallbackName: artifactFallbackName("execute"),
+					artifactThreshold: needsResultArtifact ? 1 : undefined,
 					details: { mode: "javascript", monitor: params.monitor === true, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) },
 					operation,
 					artifactValue: { ...resultValue, operation },
@@ -213,8 +228,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						// (blind-eval H1, n=2). The generic summarizer inlines small values; large ones
 						// collapse to shape placeholders — detect inline by checking data is not a shape.
 						const data = generic.data;
-						const dataInline = data !== undefined && data !== null &&
-							!(isRecord(data) && (data.type === "array" || data.type === "object" || data.type === "string"));
+						const dataInline = executeSummaryDataInline(data);
 						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
 						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
 						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;

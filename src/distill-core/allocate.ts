@@ -43,6 +43,10 @@ function renderingRecord(fact: Fact): Record<string, unknown> | undefined {
 	return undefined;
 }
 
+function compareCodepoint(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function redundancyBucketKey(fact: Fact): string {
 	const value = renderingRecord(fact);
 	return [
@@ -87,7 +91,7 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 		if (!floor.minFacts) continue;
 		const candidates = facts
 			.filter((fact) => fact.plane === floor.plane)
-			.sort((a, b) => salienceValue(b.salience) - salienceValue(a.salience));
+			.sort((a, b) => salienceValue(b.salience) - salienceValue(a.salience) || compareCodepoint(a.ref, b.ref));
 		for (const fact of candidates.slice(0, floor.minFacts)) {
 			const wanted = floor.minGranularity && fact.renderings[floor.minGranularity] ? floor.minGranularity : cheapestAvailable(fact);
 			if (!wanted) continue;
@@ -105,7 +109,7 @@ export function allocateFacts(facts: Fact[], budget: number, floors: PlaneFloor[
 			const salience = salienceValue(fact.salience) * (redundancyByRef.get(fact.ref) ?? 1) * continuity;
 			return { fact, best, salience, density: cost > 0 && Number.isFinite(cost) ? salience / cost : 0 };
 		})
-		.sort((a, b) => b.density - a.density || b.salience - a.salience);
+		.sort((a, b) => b.density - a.density || b.salience - a.salience || compareCodepoint(a.fact.ref, b.fact.ref));
 
 	for (const item of ranked) {
 		if (plan.get(item.fact.ref) !== "omit") continue;

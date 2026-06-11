@@ -360,9 +360,8 @@ function capSessionDeltaRecoveryFanout(actions: string[], delta?: string): strin
 	});
 }
 
-function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = []): string[] | undefined {
+function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = [], entities = envelopeEntities(summary, options.entities)): string[] | undefined {
 	const actions: string[] = [];
-	const entities = envelopeEntities(summary, options.entities);
 	actions.push(...summaryHintActions.filter((item) => !item.includes("path=")));
 	actions.push(...artifactReadActions(summary, saved, operation, snapshot));
 	if (entities?.length) {
@@ -522,7 +521,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(treeDiff ? { treeDiff } : {}),
 		...(snapshotProjection ? { snapshotProjection } : {}),
 		...(error ? { error } : {}),
-		nextActions: normalizedNextActions({ ...options, entities }, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions),
+		nextActions: normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities),
 		operation: redactedOperation,
 		snapshot: redactedSnapshot,
 		...(Object.keys(correlation).length ? { correlation } : {}),

@@ -238,7 +238,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 		tabId: options.tabId,
 		url: options.url,
 		observationId: options.observationId,
-		capturedAt: options.capturedAt,
+		capturedAt: options.capturedAt ?? Date.now(),
 	};
 	const parentByChildId = new Map<string, Record<string, unknown>>();
 	const nodeById = new Map<string, Record<string, unknown>>();

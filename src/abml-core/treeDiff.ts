@@ -48,6 +48,8 @@ export type TreeDiffInstanceChange = {
 	anchor: TreeDiffAnchor;
 	confidence: TreeDiffConfidence;
 	fields: TreeDiffFieldChange[];
+	fieldCount: number;
+	fieldsTruncated?: boolean;
 	name?: string;
 };
 
@@ -163,16 +165,15 @@ function changedBucket(items: TreeDiffInstanceChange[]): TreeDiffChangedBucket {
 	return { count: items.length, instances: items.slice(0, MAX_TREE_DIFF_INSTANCES), ...(items.length > MAX_TREE_DIFF_INSTANCES ? { truncated: true } : {}) };
 }
 
-function fieldChanges(before: Entity, after: Entity): TreeDiffFieldChange[] {
+function fieldChanges(before: Entity, after: Entity): { fields: TreeDiffFieldChange[]; fieldCount: number } {
 	const out: TreeDiffFieldChange[] = [];
 	for (const field of COMPARE_FIELDS) {
 		const beforeValue = templateFieldValue(before, field);
 		const afterValue = templateFieldValue(after, field);
 		if (beforeValue === afterValue) continue;
 		out.push({ field, ...(beforeValue !== undefined ? { before: beforeValue } : {}), ...(afterValue !== undefined ? { after: afterValue } : {}) });
-		if (out.length >= MAX_TREE_DIFF_CHANGED_FIELDS) break;
 	}
-	return out;
+	return { fields: out.slice(0, MAX_TREE_DIFF_CHANGED_FIELDS), fieldCount: out.length };
 }
 
 function reordered(before: MatchedInstance[], after: MatchedInstance[]): TreeTemplateDiff["reordered"] | undefined {
@@ -199,7 +200,7 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 	for (const item of after) {
 		const prior = beforeByKey.get(item.key);
 		if (!prior) continue;
-		const fields = fieldChanges(prior.entity, item.entity);
+		const { fields, fieldCount } = fieldChanges(prior.entity, item.entity);
 		if (!fields.length) continue;
 		changed.push({
 			key: item.key,
@@ -208,6 +209,8 @@ function buildTemplateDiff(beforeGroup: TemplateGroup | undefined, afterGroup: T
 			anchor: item.anchor,
 			confidence: item.confidence,
 			fields,
+			fieldCount,
+			...(fieldCount > fields.length ? { fieldsTruncated: true } : {}),
 			...(displayEntityText(item.entity.name) ? { name: displayEntityText(item.entity.name) } : {}),
 		});
 	}

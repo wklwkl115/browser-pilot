@@ -67,6 +67,14 @@ const suggestionSalience = summarizeEntityDiff(suggestionDiff, suggestionBefore,
 assert.equal(suggestionSalience.items[0].kind, "changed", "salience leads with semantic value change");
 assert.equal(suggestionSalience.items[0].ref, "pi-ref://control/search");
 assert.equal(suggestionSalience.items.at(-1)?.kind, "churn", "appeared/disappeared churn summarized after changed items");
+const tieSalience = summarizeEntityDiff(diffEntities([
+	entity("pi-ref://control/b", { state: { disabled: true } }),
+	entity("pi-ref://control/a", { state: { disabled: true } }),
+], [
+	entity("pi-ref://control/b", { state: { disabled: false } }),
+	entity("pi-ref://control/a", { state: { disabled: false } }),
+]));
+assert.deepEqual(tieSalience.items.slice(0, 2).map((item) => item.ref), ["pi-ref://control/a", "pi-ref://control/b"], "equal-score diff salience uses deterministic codepoint order");
 
 const read = await runAbmlRead({ plane: "structure", baseline: before }, async () => ({ entities: after }));
 assert.equal(read.ok, true, "runAbmlRead with baseline succeeds");

@@ -39,6 +39,7 @@ export async function pierceRefEntities(server: AbmlPierceRuntimeServer, descrip
 	const selector = selectorFromRef(descriptor);
 	if (!selector) return { ok: false, error: normalizeAbmlError({ code: "INVALID_INPUT", message: "ABML pierce currently requires a css locator" }) };
 	const timeoutMs = options.timeoutMs ?? 10_000;
+	const capturedAt = options.capturedAt ?? Date.now();
 	try {
 		const tree = await sendPersistentCdp(server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs, cdpMethod: "Accessibility.getFullAXTree" });
 		const treeRoot = recordValue(tree.data);
@@ -62,7 +63,7 @@ export async function pierceRefEntities(server: AbmlPierceRuntimeServer, descrip
 				const dist = pointDistance(targetPoint, geometry.point);
 				if (dist !== undefined && dist > 80) continue;
 			}
-			const builtAx = buildAxEntityFromNode(node, { browserSessionId: options.browserSessionId, tabId: options.tabId, observationId: options.observationId, capturedAt: options.capturedAt }, geometry);
+			const builtAx = buildAxEntityFromNode(node, { browserSessionId: options.browserSessionId, tabId: options.tabId, observationId: options.observationId, capturedAt }, geometry);
 			const refId = registerRefDescriptor({ descriptor: builtAx.descriptor, resourceKind: "scan", name: builtAx.entity.name || builtAx.entity.role });
 			built.push({ ...builtAx.entity, ref: refId, source: "ax", hints: { ...(builtAx.entity.hints || {}), piercedFrom: descriptor.refId, selector } });
 		}

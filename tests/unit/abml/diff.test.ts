@@ -128,6 +128,19 @@ test("summarizeEntityDiff ranks focused control value changes before churn", () 
 	assert.equal(salience.appeared, 8);
 });
 
+test("summarizeEntityDiff breaks equal-score ties by codepoint signal order", () => {
+	const before = [
+		entity("pi-ref://control/b", { state: { disabled: true } }),
+		entity("pi-ref://control/a", { state: { disabled: true } }),
+	];
+	const after = [
+		entity("pi-ref://control/b", { state: { disabled: false } }),
+		entity("pi-ref://control/a", { state: { disabled: false } }),
+	];
+	const salience = summarizeEntityDiff(diffEntities(before, after), before, after);
+	assert.deepEqual(salience.items.slice(0, 2).map((item) => item.kind === "changed" ? item.ref : undefined), ["pi-ref://control/a", "pi-ref://control/b"]);
+});
+
 test("diffEntities reports focusedRef from after snapshot without requiring a change", () => {
 	const before = [entity("pi-ref://control/a", { state: { focused: true } })];
 	const after = [entity("pi-ref://control/a", { state: { focused: true } })];

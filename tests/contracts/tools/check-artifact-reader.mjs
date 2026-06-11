@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { stableJson } from "../../../src/utils/json.ts";
 import { ArtifactReaderError, isSafeArtifactSearchRegexPattern, MAX_ARTIFACT_READ_BYTES, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, readBrowserArtifact } from "../../../src/tools/artifactReader.ts";
 import { saveDataUrl, saveTextArtifact } from "../../../src/tools/artifacts.ts";
 
@@ -12,6 +13,9 @@ try {
 	const artifactPath = path.join(tmp, ".pi", "browser-artifacts", "network.json");
 	const payload = { items: Array.from({ length: 80 }, (_, i) => ({ requestId: String(i), url: `https://h${i % 3}.test/r${i}`, method: "GET", status: i % 10 === 0 ? 500 : 200, handlers: [] })) };
 	await writeFile(artifactPath, JSON.stringify(payload, null, 2), "utf8");
+	const replayFixturePath = path.resolve("tests", "fixtures", "observe-scan-1781174652248.redacted.json");
+	const replayArtifactPath = path.join(tmp, ".pi", "browser-artifacts", "observe-scan-1781174652248.redacted.json");
+	await writeFile(replayArtifactPath, await readFile(replayFixturePath, "utf8"), "utf8");
 	assert.equal(existsSync(artifactPath), true);
 	const atomic = await saveTextArtifact({ cwd: tmp }, ".pi/browser-artifacts/atomic.txt", "unused.txt", "atomic-ok");
 	assert.equal(await readFile(atomic.path, "utf8"), "atomic-ok", "check-artifact write.atomic: content must be committed");
@@ -32,9 +36,38 @@ try {
 	const jsonArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", jsonPath: "items", offset: 2, limit: 5 }, { cwd: tmp });
 	assert.equal(jsonArtifact.mode, "json", "check-artifact json.mode: expected json");
 	assert.equal(jsonArtifact.value.count, 80, "check-artifact json.value.count: expected full array count");
-	assert.equal(jsonArtifact.value.items.length, 5, "check-artifact json.value.items.length: expected window size 5");
-	assert.deepEqual(jsonArtifact.value.items[0].handlers, [], "check-artifact json.value.empty-array: nested empty arrays must stay [] instead of window envelopes");
+	assert.equal(jsonArtifact.value.items.length, 5, "check-artifact json.value.items.length: expected explicit item window size 5");
+	if (jsonArtifact.value.projection === "folded-v1") {
+		assert.deepEqual(jsonArtifact.value.items.map((item) => item.i), [2, 3, 4, 5, 6], "check-artifact json.value.items.order: projected tuples must stay in source order");
+		assert.deepEqual(jsonArtifact.value.template.constants.handlers, [], "check-artifact json.value.empty-array: nested empty arrays must fold as [] instead of window envelopes");
+	} else {
+		assert.deepEqual(jsonArtifact.value.items[0].handlers, [], "check-artifact json.value.empty-array: nested empty arrays must stay [] instead of window envelopes");
+	}
 	assert.equal(jsonArtifact.value.nextOffset, 7, "check-artifact json.value.nextOffset: expected 7");
+
+	const replayDefault = await readBrowserArtifact({ path: replayArtifactPath, mode: "json", jsonPath: "data.actionables", maxChars: 8_000 }, { cwd: tmp });
+	const replayRepeat = await readBrowserArtifact({ path: replayArtifactPath, mode: "json", jsonPath: "data.actionables", maxChars: 8_000 }, { cwd: tmp });
+	const replayFull = JSON.parse(await readFile(replayArtifactPath, "utf8")).data.actionables;
+	const oldSevenItemPage = { type: "array", count: replayFull.length, offset: 0, limit: 7, nextOffset: 7, items: replayFull.slice(0, 7) };
+	assert.equal(replayDefault.value.projection, "folded-v1", "check-artifact json.replay.projection: replay golden must fold");
+	assert.equal(replayDefault.value.items.length, 80, "check-artifact json.replay.items: replay golden must return all 80 tuples in one read");
+	assert.ok(stableJson(replayDefault.value).length <= stableJson(oldSevenItemPage).length, "check-artifact json.replay.bytes: folded 80-item read must be no larger than the old 7-item page");
+	assert.equal(stableJson(replayDefault.value), stableJson(replayRepeat.value), "check-artifact json.replay.determinism: repeated projection reads must be byte-identical");
+
+	const heterPath = path.join(tmp, ".pi", "browser-artifacts", "heterogeneous.json");
+	await writeFile(heterPath, JSON.stringify({ items: [{ a: 1 }, 2, { b: 3 }] }, null, 2), "utf8");
+	const heter = await readBrowserArtifact({ path: heterPath, mode: "json", jsonPath: "items", offset: 1, limit: 2 }, { cwd: tmp });
+	assert.deepEqual(heter.value, { type: "array", count: 3, offset: 1, limit: 2, nextOffset: null, items: [2, { b: 3 }] }, "check-artifact json.heterogeneous: mixed arrays must keep the old window shape byte-for-byte");
+	const previousProjectionEnv = process.env.PI_BROWSER_JSON_PROJECTION;
+	try {
+		process.env.PI_BROWSER_JSON_PROJECTION = "0";
+		const legacyJsonArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", jsonPath: "items", offset: 2, limit: 5 }, { cwd: tmp });
+		assert.equal(legacyJsonArtifact.value.type, "array", "check-artifact json.escape: projection escape hatch must force old array window");
+		assert.deepEqual(legacyJsonArtifact.value.items[0].handlers, [], "check-artifact json.escape.empty-array: old path must still keep nested empty arrays as []");
+	} finally {
+		if (previousProjectionEnv === undefined) delete process.env.PI_BROWSER_JSON_PROJECTION;
+		else process.env.PI_BROWSER_JSON_PROJECTION = previousProjectionEnv;
+	}
 
 	const longJsonStringPath = path.join(tmp, ".pi", "browser-artifacts", "long-string.json");
 	await writeFile(longJsonStringPath, JSON.stringify({ data: { content: `${"A".repeat(900)}NEEDLE${"B".repeat(900)}` } }), "utf8");

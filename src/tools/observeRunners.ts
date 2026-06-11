@@ -31,7 +31,7 @@ import { assertBridgeCommandSucceeded } from "./bridgeResultValidation.js";
 import { queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type PageFingerprint } from "./pageSignals.js";
 import { evaluatePageScriptDirect } from "./pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "./scanEntityRefs.js";
-import { scanEntitiesForEnvelope, summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
+import { buildScanEntities, scanEntitiesFromGroups, summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
 import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared.js";
 import { consumeMemoryProfileDiagnostics, readCachedMemoryProfile, recordMemoryProfileFrame, recordMemoryProfileStrike } from "../memory/profileService.js";
@@ -637,6 +637,14 @@ function observeCacheTtlMs(): number {
 	return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 2_000;
 }
 
+function observeRendererCacheMarker(): string {
+	return process.env.PI_BROWSER_RENDERER === "ladder" ? "ladder" : "salience-v1";
+}
+
+function observeCostModelCacheMarker(): string {
+	return process.env.PI_BROWSER_TOKEN_COST === "1" ? "token" : "byte";
+}
+
 function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMode, detailLevel: string, maxChars: number, captureMaxChars: number): string {
 	const maxNodes = Number(params.maxNodes);
 	return JSON.stringify({
@@ -644,6 +652,8 @@ function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMo
 		detailLevel,
 		maxChars,
 		captureMaxChars,
+		renderer: observeRendererCacheMarker(),
+		costModel: observeCostModelCacheMarker(),
 		includeIframes: params.includeIframes !== false,
 		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
 		...(observeIntent(params) ? { intent: observeIntent(params) } : {}),
@@ -897,7 +907,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		capturedAt: snapshotMeta.capturedAt,
 	};
 	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
-	const scanEnvelopeEntities = summaryData ? scanEntitiesForEnvelope(summaryData, { entityContext: scanEntityContext }) : [];
+	const summaryScanEntities = summaryData && isRecord(summaryData) ? buildScanEntities(summaryData, { entityContext: scanEntityContext }) : undefined;
+	const scanEnvelopeEntities = summaryScanEntities ? scanEntitiesFromGroups(summaryScanEntities) : [];
 	const pageUrl = typeof data?.url === "string" ? data.url : undefined;
 	const currentTrace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(bridge.browserSessionId) : undefined;
 	const memoryTerms = relevanceEnabled(params) ? await memoryWarmStartTerms(ctx?.cwd, pageUrl, currentTrace) : [];
@@ -908,6 +919,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			detailLevel: params.detailLevel,
 			maxChars,
 			entityContext: scanEntityContext,
+			scanEntities: summaryScanEntities,
 			relevance: relevance?.result,
 		}), mode, "scan"),
 		browserSessionId: bridge.browserSessionId,

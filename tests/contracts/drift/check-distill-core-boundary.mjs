@@ -53,10 +53,20 @@ const files = walk(distillCoreDir).sort();
 assert(files.length > 0, "src/distill-core/ must contain classified pure kernel files");
 
 const violations = [];
+const forbiddenRuntimeReads = [
+	[/\bDate\.now\s*\(/, "Date.now("],
+	[/\bMath\.random\s*\(/, "Math.random("],
+	[/\bnew\s+Date\s*\(/, "new Date("],
+	[/\.localeCompare\s*\(/, "localeCompare("],
+	[/\.toLocale[A-Za-z]*\s*\(/, "toLocale*("],
+];
 for (const fileRel of files) {
 	const abs = path.join(distillCoreDir, fileRel);
 	const text = readFileSync(abs, "utf8");
 	assert(!/\b(process|window|document|chrome|browser)\b/.test(stripStringLiterals(text)), `src/distill-core/${fileRel} must not touch runtime/browser globals`);
+	for (const [pattern, label] of forbiddenRuntimeReads) {
+		assert(!pattern.test(stripStringLiterals(text)), `src/distill-core/${fileRel} must not use ${label}`);
+	}
 	for (const spec of importSources(text)) {
 		if (spec.startsWith("node:")) {
 			violations.push(`src/distill-core/${fileRel} imports node builtin ${spec}`);

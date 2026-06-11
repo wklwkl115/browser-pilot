@@ -288,6 +288,8 @@ test("browser_observe change gate reuses cached scan when content fingerprint is
 test("browser_observe change gate misses when output-affecting params change", async () => {
 	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-change-gate-params-"));
 	const envPrevious = process.env.PI_BROWSER_SESSION_DELTA;
+	const rendererPrevious = process.env.PI_BROWSER_RENDERER;
+	const tokenCostPrevious = process.env.PI_BROWSER_TOKEN_COST;
 	try {
 		delete process.env.PI_BROWSER_SESSION_DELTA;
 		const intentHarness = changeGateHarness();
@@ -302,9 +304,30 @@ test("browser_observe change gate misses when output-affecting params change", a
 		const changedOutputPath = JSON.parse((await runScanObservation(outputHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", outputPath }, { cwd }, "scan")).content[0].text);
 		assert.equal(changedOutputPath.summary?.fromCache, undefined, "outputPath changes captureMaxChars and must miss");
 		assert.equal(outputHarness.scanEvals, 2, "outputPath-driven capture breadth triggers a fresh Runtime.evaluate scan");
+
+		const rendererHarness = changeGateHarness();
+		delete process.env.PI_BROWSER_RENDERER;
+		await runScanObservation(rendererHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		process.env.PI_BROWSER_RENDERER = "ladder";
+		const changedRenderer = JSON.parse((await runScanObservation(rendererHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(changedRenderer.summary?.fromCache, undefined, "renderer env changes must not reuse the cached render");
+		assert.equal(rendererHarness.scanEvals, 2, "renderer env changes trigger a fresh Runtime.evaluate scan");
+
+		const tokenHarness = changeGateHarness();
+		delete process.env.PI_BROWSER_RENDERER;
+		delete process.env.PI_BROWSER_TOKEN_COST;
+		await runScanObservation(tokenHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		process.env.PI_BROWSER_TOKEN_COST = "1";
+		const changedCost = JSON.parse((await runScanObservation(tokenHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(changedCost.summary?.fromCache, undefined, "token-cost env changes must not reuse the cached render");
+		assert.equal(tokenHarness.scanEvals, 2, "token-cost env changes trigger a fresh Runtime.evaluate scan");
 	} finally {
 		if (envPrevious === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
 		else process.env.PI_BROWSER_SESSION_DELTA = envPrevious;
+		if (rendererPrevious === undefined) delete process.env.PI_BROWSER_RENDERER;
+		else process.env.PI_BROWSER_RENDERER = rendererPrevious;
+		if (tokenCostPrevious === undefined) delete process.env.PI_BROWSER_TOKEN_COST;
+		else process.env.PI_BROWSER_TOKEN_COST = tokenCostPrevious;
 	}
 });
 

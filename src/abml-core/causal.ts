@@ -165,9 +165,9 @@ function eventSelector(record: Record<string, unknown>): string | undefined {
 
 // One hook event → a compact, redacted causal event. Tolerant of the HookEvent shape
 // (`{ seq, type, timestamp, data }`) and defensive field aliases, like buildCausalRequest.
-export function buildCausalEvent(record: Record<string, unknown>): CausalEvent {
+export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?: number): CausalEvent {
 	const seq = num(record.seq);
-	const id = str(record.id) || (seq !== undefined ? String(seq) : "event");
+	const id = str(record.id) || (seq !== undefined ? String(seq) : fallbackIndex !== undefined ? `event-${fallbackIndex}` : "event");
 	const type = str(record.type) || str(record.event) || str(record.eventType) || "event";
 	const at = num(record.timestamp) ?? num(record.t) ?? num(record.at);
 	const summary = eventSummary(record.data ?? record.summary ?? record.message);
@@ -190,7 +190,7 @@ export function buildCausalEvents(records: Array<Record<string, unknown>>, since
 			return seq === undefined || seq > sinceSeq;
 		})
 		.sort((a, b) => (num(a.seq) ?? 0) - (num(b.seq) ?? 0));
-	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map((r) => buildCausalEvent(r));
+	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map((r, index) => buildCausalEvent(r, index));
 	return {
 		events,
 		...(delta.length > events.length ? { eventCount: delta.length } : {}),

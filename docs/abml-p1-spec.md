@@ -40,11 +40,17 @@ type Locator =
   | { by: "point"; x: number; y: number };
 ```
 
-定位优先级固定为：
+Locator 没有一个跨所有 concern 的固定优先级；当前实现使用两类真实顺序：
 
 ```text
-backendNodeId > axNodeId > attrSignature > css > xpath > textAnchor > point
+identity minting: semanticAnchor > css > backendNodeId > axNodeId > textAnchor > first locator
+runtime resolution: descriptor.locators array order
 ```
+
+原因：
+- identity minting 优先页面稳定锚点。`backendNodeId` / `axNodeId` 是会话或 AX 重建作用域，直接作为首选 identity 会增加 ref churn；因此 `refId.ts` 在无 semantic anchor 时先取 `css`。
+- runtime resolution 优先命中准确性。DOM builder 按 `css -> textAnchor -> point` 产出 locators；AX builder 按 `backendNodeId -> axNodeId -> textAnchor` 产出 locators；执行侧按数组顺序尝试。
+- `attrSignature` / `xpath` 是保留的 resolution 兼容入口；当前不是默认 producer。
 
 `point` 只作为几何兜底；不能单独把 point 命中当作高置信唯一结构实体，除非目标 `kind:"region"` 或调用视觉地板。
 
@@ -150,17 +156,6 @@ type ResolveStatus =
   | "privacyBlocked"
   | "backendUnavailable";
 
-type CandidateSummary = {
-  candidateId: string;
-  locatorHits: Array<{ by: Locator["by"]; weight: number }>;
-  score: number;
-  role?: string;
-  name?: string;
-  source?: "dom" | "ax" | "vision" | "network" | "hook" | "evidence";
-  geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
-  documentOrder?: number;
-};
-
 type ResolveResult =
   | { status: "unique"; ref: RefDescriptor; candidate: CandidateSummary; refreshed?: RefDescriptor }
   | { status: "ambiguous"; ref: RefDescriptor; candidates: CandidateSummary[]; reason: string }
@@ -170,37 +165,13 @@ type ResolveResult =
   | { status: "backendUnavailable"; ref: RefDescriptor; backend: string; reason: string };
 ```
 
-### 2.2 候选评分
+`CandidateSummary` 及候选评分表是保留类型，当前 runtime 不构造该结果；见附录 A。
 
-定位器权重固定：
+### 2.2 候选评分（保留，未实现）
 
-| locator | weight |
-|---|---:|
-| backendNodeId | 100 |
-| axNodeId | 95 |
-| attrSignature | 90 |
-| css | 80 |
-| xpath | 70 |
-| textAnchor | 60 |
-| point | 40 |
-
-候选 `score` 计算：
-
-```text
-score = sum(unique locator hit weights)
-      + semanticBonus
-      + geometryBonus
-      + ownerFrameBonus
-```
-
-| bonus | 条件 | 分值 |
-|---|---|---:|
-| semanticBonus | role 精确匹配 | +10 |
-| semanticBonus | name/text 精确匹配 | +10 |
-| semanticBonus | textAnchor exact=false 模糊匹配 | +4 |
-| geometryBonus | 与 cached point 距离 <= 8px | +8 |
-| geometryBonus | 与 cached box IoU >= 0.8 | +8 |
-| ownerFrameBonus | frameRef/frameId 匹配 | +15 |
+当前实现没有通用 candidate scoring engine。执行侧按 `descriptor.locators` 数组顺序解析，
+并由 actionability / scope / policy 层继续约束。未来若恢复通用重解析评分，必须按附录 A
+把 `CandidateSummary` 与权重表作为 explicit migration 落地，不能把 reserved 表述当作当前能力。
 
 ### 2.3 唯一性规则
 
@@ -587,3 +558,55 @@ P2 entry conditions：
 3. P2 任务只允许实现本文已冻结字段/错误/决策表，不得新增隐式语义。
 
 P1 若未冻结，P2/P3/P4 均不得开工。
+
+---
+
+## 附录 A. Reserved / Unimplemented Candidate Scoring
+
+本附录记录保留类型和未实现评分表。它们存在于类型面用于 forward compatibility，
+但当前 runtime 不构造 `CandidateSummary`，也没有通用候选评分引擎。
+
+```ts
+type CandidateSummary = {
+  candidateId: string;
+  locatorHits: Array<{ by: Locator["by"]; weight: number }>;
+  score: number;
+  role?: string;
+  name?: string;
+  source?: "dom" | "ax" | "vision" | "network" | "hook" | "evidence";
+  geometry?: { box?: { x: number; y: number; w: number; h: number }; point?: { x: number; y: number } };
+  documentOrder?: number;
+};
+```
+
+Reserved locator weights:
+
+| locator | weight |
+|---|---:|
+| backendNodeId | 100 |
+| axNodeId | 95 |
+| attrSignature | 90 |
+| css | 80 |
+| xpath | 70 |
+| textAnchor | 60 |
+| point | 40 |
+
+Reserved score formula:
+
+```text
+score = sum(unique locator hit weights)
+      + semanticBonus
+      + geometryBonus
+      + ownerFrameBonus
+```
+
+Reserved bonuses:
+
+| bonus | 条件 | 分值 |
+|---|---|---:|
+| semanticBonus | role 精确匹配 | +10 |
+| semanticBonus | name/text 精确匹配 | +10 |
+| semanticBonus | textAnchor exact=false 模糊匹配 | +4 |
+| geometryBonus | 与 cached point 距离 <= 8px | +8 |
+| geometryBonus | 与 cached box IoU >= 0.8 | +8 |
+| ownerFrameBonus | frameRef/frameId 匹配 | +15 |

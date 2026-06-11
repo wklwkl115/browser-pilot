@@ -10,10 +10,13 @@ import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
 import { errorResult, jsonResult, type PiTextToolResult } from "../utils/toolResult.js";
 import { stableJson } from "../utils/json.js";
+import { fitInlineJsonToBudgetMeasured } from "../distill-core/fit.js";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 import type { MemoryAugmentationPlan } from "../memory-core/types.js";
+
+export { fitInlineJsonToBudget } from "../distill-core/fit.js";
 
 export type ToolResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;
 
@@ -227,75 +230,6 @@ export function bridgeNestedErrorResult(error: unknown, options: { command?: str
 		}
 	}
 	return errorResult(error);
-}
-
-/**
- * Structurally shrink an inline json read result so it serializes within budget as VALID JSON.
- *
- * The artifact json read builds a compacted, windowable value (an `{type:"array", items, …}`
- * window or a key-bounded object), but a large window can still serialize past the budget. The
- * old path then ran the serialized JSON through the TEXT head/tail truncator, which cut mid-token
- * and inserted a raw `[truncated …]` marker — producing UNPARSEABLE JSON for the exact read the
- * tool's own `nextActions` suggest (`mode=json jsonPath=data.items`). Instead, reduce the windowed
- * array items / object keys (preserving `nextOffset`/`truncatedKeys` so the agent can page) until
- * the result fits; callers floor the serialize budget at the fitted size so the truncator never
- * cuts a structurally-minimal value. Small reads (already within budget) are returned untouched.
- */
-type FittedInlineJson = { value: unknown; length: number };
-
-function fitInlineJsonToBudgetMeasured(result: unknown, maxChars: number): FittedInlineJson {
-	const initialLength = stableJson(result).length;
-	if (!isRecord(result) || initialLength <= maxChars) return { value: result, length: initialLength };
-	const payload = result.value;
-	if (isRecord(payload) && payload.type === "array" && Array.isArray(payload.items) && payload.items.length > 1) {
-		const original = payload.items.slice();
-		const offset = Number(payload.offset ?? 0);
-		const count = Number(payload.count ?? original.length);
-		const applyArray = (n: number) => {
-			payload.items = original.slice(0, n);
-			payload.limit = n;
-			payload.nextOffset = offset + n < count ? offset + n : null;
-			payload.budgetTrimmed = n < original.length;
-		};
-		// Largest prefix length that still fits (binary search → optimal window, not a coarse step).
-		let lo = 1, hi = original.length, best = 1;
-		let bestLength = -1;
-		while (lo <= hi) {
-			const mid = (lo + hi) >> 1;
-			applyArray(mid);
-			const length = stableJson(result).length;
-			if (length <= maxChars) { best = mid; bestLength = length; lo = mid + 1; } else hi = mid - 1;
-		}
-		applyArray(best);
-		if (bestLength < 0) bestLength = stableJson(result).length;
-		return { value: result, length: bestLength };
-	}
-	if (isRecord(payload) && payload.type !== "array") {
-		const keys = Object.keys(payload).filter((k) => k !== "truncatedKeys");
-		if (keys.length <= 1) return { value: result, length: initialLength };
-		const applyKeys = (k: number) => {
-			const reduced: Record<string, unknown> = {};
-			for (const key of keys.slice(0, k)) reduced[key] = payload[key];
-			if (k < keys.length) reduced.truncatedKeys = keys.length - k;
-			result.value = reduced;
-		};
-		let lo = 1, hi = keys.length, best = 1;
-		let bestLength = -1;
-		while (lo <= hi) {
-			const mid = (lo + hi) >> 1;
-			applyKeys(mid);
-			const length = stableJson(result).length;
-			if (length <= maxChars) { best = mid; bestLength = length; lo = mid + 1; } else hi = mid - 1;
-		}
-		applyKeys(best);
-		if (bestLength < 0) bestLength = stableJson(result).length;
-		return { value: result, length: bestLength };
-	}
-	return { value: result, length: initialLength };
-}
-
-export function fitInlineJsonToBudget(result: unknown, maxChars: number): unknown {
-	return fitInlineJsonToBudgetMeasured(result, maxChars).value;
 }
 
 export function inlineJsonToolResult(value: unknown, details: Record<string, unknown>, params: Pick<StandardToolParams, "maxChars">, budgetName: ToolResultBudgetName): PiTextToolResult {

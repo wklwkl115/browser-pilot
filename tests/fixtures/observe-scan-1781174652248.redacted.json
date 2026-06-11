@@ -1,0 +1,2650 @@
+{
+  "source": "observe-scan-1781174652248",
+  "redacted": true,
+  "data": {
+    "actionables": [
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-0]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 0,
+        "label": "",
+        "point": {
+          "x": 718,
+          "y": 208
+        },
+        "position": "relative",
+        "priority": 1480,
+        "rect": {
+          "height": 35,
+          "width": 590,
+          "x": 423,
+          "y": 191
+        },
+        "role": null,
+        "selector": "[selector-00] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-0",
+        "tag": "div",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-1]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 1,
+        "label": "",
+        "point": {
+          "x": 718,
+          "y": 208
+        },
+        "position": "static",
+        "priority": 1480,
+        "rect": {
+          "height": 35,
+          "width": 590,
+          "x": 423,
+          "y": 191
+        },
+        "role": null,
+        "selector": "[selector-01] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-1",
+        "tag": "div",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-2]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 2,
+        "label": "",
+        "point": {
+          "x": 718,
+          "y": 436
+        },
+        "position": "relative",
+        "priority": 1480,
+        "rect": {
+          "height": 35,
+          "width": 590,
+          "x": 423,
+          "y": 418
+        },
+        "role": null,
+        "selector": "[selector-02] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-2",
+        "tag": "div",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-3]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 3,
+        "label": "",
+        "point": {
+          "x": 718,
+          "y": 436
+        },
+        "position": "static",
+        "priority": 1480,
+        "rect": {
+          "height": 35,
+          "width": 590,
+          "x": 423,
+          "y": 418
+        },
+        "role": null,
+        "selector": "[selector-03] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-3",
+        "tag": "div",
+        "text": ""
+      },
+      {
+        "action": "",
+        "clickable": true,
+        "disabled": false,
+        "editable": true,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-4]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 4,
+        "inputKind": "text",
+        "label": "[label-4]",
+        "point": {
+          "x": 718,
+          "y": 436
+        },
+        "position": "static",
+        "priority": 1348,
+        "rect": {
+          "height": 33,
+          "width": 568,
+          "x": 434,
+          "y": 419
+        },
+        "role": "textbox",
+        "selector": "[selector-04] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-4",
+        "tag": "input",
+        "text": ""
+      },
+      {
+        "action": "",
+        "clickable": true,
+        "disabled": false,
+        "editable": true,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-5]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 5,
+        "inputKind": "text",
+        "label": "[label-5]",
+        "point": {
+          "x": 718,
+          "y": 208
+        },
+        "position": "static",
+        "priority": 1347,
+        "rect": {
+          "height": 33,
+          "width": 568,
+          "x": 434,
+          "y": 192
+        },
+        "role": "textbox",
+        "selector": "[selector-05] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-5",
+        "tag": "input",
+        "text": ""
+      },
+      {
+        "action": "字体大小12pt",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-6]"
+        },
+        "index": 6,
+        "label": "[label-6]",
+        "point": {
+          "x": 790,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1308,
+        "rect": {
+          "height": 28,
+          "width": 100,
+          "x": 740,
+          "y": 521
+        },
+        "role": "button",
+        "selector": "[selector-06] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-6",
+        "tag": "button",
+        "text": "[text-6]"
+      },
+      {
+        "action": "字体颜色 黑色",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 7,
+        "label": "[label-7]",
+        "point": {
+          "x": 625,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1307,
+        "rect": {
+          "height": 28,
+          "width": 50,
+          "x": 600,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-07] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-7",
+        "tag": "div",
+        "text": "[text-7]"
+      },
+      {
+        "action": "背景颜色 黑色",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 8,
+        "label": "[label-8]",
+        "point": {
+          "x": 676,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1307,
+        "rect": {
+          "height": 28,
+          "width": 50,
+          "x": 651,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-08] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-8",
+        "tag": "div",
+        "text": "[text-8]"
+      },
+      {
+        "action": "插入/编辑链接",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 9,
+        "label": "[label-9]",
+        "point": {
+          "x": 743,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1307,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 726,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-09] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-9",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "字体（默认）",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-10]"
+        },
+        "index": 10,
+        "label": "[label-10]",
+        "point": {
+          "x": 685,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1306,
+        "rect": {
+          "height": 28,
+          "width": 100,
+          "x": 635,
+          "y": 521
+        },
+        "role": "button",
+        "selector": "[selector-10] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-10",
+        "tag": "button",
+        "text": "[text-10]"
+      },
+      {
+        "action": "文本块段落",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-11]"
+        },
+        "index": 11,
+        "label": "[label-11]",
+        "point": {
+          "x": 580,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1305,
+        "rect": {
+          "height": 28,
+          "width": 100,
+          "x": 530,
+          "y": 521
+        },
+        "role": "button",
+        "selector": "[selector-11] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-11",
+        "tag": "button",
+        "text": "[text-11]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": true,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-12]"
+        },
+        "index": 12,
+        "label": "[label-12]",
+        "point": {
+          "x": 776,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1304,
+        "rect": {
+          "height": 83,
+          "width": 99,
+          "x": 726,
+          "y": 41
+        },
+        "role": "menuitem",
+        "selector": "[selector-12] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-12",
+        "tag": "li",
+        "text": "[text-12]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-13]"
+        },
+        "index": 13,
+        "label": "[label-13]",
+        "point": {
+          "x": 965,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1304,
+        "rect": {
+          "height": 83,
+          "width": 99,
+          "x": 915,
+          "y": 41
+        },
+        "role": "menuitem",
+        "selector": "[selector-13] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-13",
+        "tag": "li",
+        "text": "[text-13]"
+      },
+      {
+        "action": "有序列表",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 14,
+        "label": "[label-14]",
+        "point": {
+          "x": 510,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1304,
+        "rect": {
+          "height": 28,
+          "width": 50,
+          "x": 486,
+          "y": 560
+        },
+        "role": "button",
+        "selector": "[selector-14] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-14",
+        "tag": "div",
+        "text": "[text-14]"
+      },
+      {
+        "action": "无序列表",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 15,
+        "label": "[label-15]",
+        "point": {
+          "x": 561,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1304,
+        "rect": {
+          "height": 28,
+          "width": 50,
+          "x": 536,
+          "y": 560
+        },
+        "role": "button",
+        "selector": "[selector-15] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-15",
+        "tag": "div",
+        "text": "[text-15]"
+      },
+      {
+        "action": "插入图片",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 16,
+        "label": "[label-16]",
+        "point": {
+          "x": 778,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1304,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 761,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-16] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-16",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-17]"
+        },
+        "index": 17,
+        "label": "[label-17]",
+        "point": {
+          "x": 870,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1303,
+        "rect": {
+          "height": 83,
+          "width": 83,
+          "x": 829,
+          "y": 41
+        },
+        "role": "menuitem",
+        "selector": "[selector-17] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-17",
+        "tag": "li",
+        "text": "[text-17]"
+      },
+      {
+        "action": "对齐左",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 18,
+        "label": "[label-18]",
+        "point": {
+          "x": 461,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1303,
+        "rect": {
+          "height": 28,
+          "width": 48,
+          "x": 437,
+          "y": 560
+        },
+        "role": "button",
+        "selector": "[selector-18] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-18",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "下划线",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 19,
+        "label": "[label-19]",
+        "point": {
+          "x": 524,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1303,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 507,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-19] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-19",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "删除线",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 20,
+        "label": "[label-20]",
+        "point": {
+          "x": 559,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1303,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 542,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-20] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-20",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-21]"
+        },
+        "index": 21,
+        "label": "[label-21]",
+        "point": {
+          "x": 690,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1302,
+        "rect": {
+          "height": 83,
+          "width": 66,
+          "x": 656,
+          "y": 41
+        },
+        "role": "menuitem",
+        "selector": "[selector-21] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-21",
+        "tag": "li",
+        "text": "[text-21]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-22]"
+        },
+        "index": 22,
+        "label": "[label-22]",
+        "point": {
+          "x": 1051,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1302,
+        "rect": {
+          "height": 83,
+          "width": 66,
+          "x": 1018,
+          "y": 41
+        },
+        "role": "menuitem",
+        "selector": "[selector-22] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-22",
+        "tag": "li",
+        "text": "[text-22]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-23]"
+        },
+        "index": 23,
+        "label": "[label-23]",
+        "point": {
+          "x": 455,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 36,
+          "x": 437,
+          "y": 480
+        },
+        "role": "menuitem",
+        "selector": "[selector-23] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-23",
+        "tag": "button",
+        "text": "[text-23]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-24]"
+        },
+        "index": 24,
+        "label": "[label-24]",
+        "point": {
+          "x": 492,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 36,
+          "x": 474,
+          "y": 480
+        },
+        "role": "menuitem",
+        "selector": "[selector-24] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-24",
+        "tag": "button",
+        "text": "[text-24]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-25]"
+        },
+        "index": 25,
+        "label": "[label-25]",
+        "point": {
+          "x": 529,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 36,
+          "x": 511,
+          "y": 480
+        },
+        "role": "menuitem",
+        "selector": "[selector-25] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-25",
+        "tag": "button",
+        "text": "[text-25]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-26]"
+        },
+        "index": 26,
+        "label": "[label-26]",
+        "point": {
+          "x": 565,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 36,
+          "x": 548,
+          "y": 480
+        },
+        "role": "menuitem",
+        "selector": "[selector-26] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-26",
+        "tag": "button",
+        "text": "[text-26]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-27]"
+        },
+        "index": 27,
+        "label": "[label-27]",
+        "point": {
+          "x": 602,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 36,
+          "x": 584,
+          "y": 480
+        },
+        "role": "menuitem",
+        "selector": "[selector-27] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-27",
+        "tag": "button",
+        "text": "[text-27]"
+      },
+      {
+        "action": "撤销",
+        "clickable": true,
+        "disabled": true,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 28,
+        "label": "[label-28]",
+        "point": {
+          "x": 454,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 437,
+          "y": 521
+        },
+        "role": "button",
+        "selector": "[selector-28] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-28",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "重做",
+        "clickable": true,
+        "disabled": true,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 29,
+        "label": "[label-29]",
+        "point": {
+          "x": 489,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 472,
+          "y": 521
+        },
+        "role": "button",
+        "selector": "[selector-29] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-29",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "粗体",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 30,
+        "label": "[label-30]",
+        "point": {
+          "x": 454,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 437,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-30] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-30",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "斜体",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 31,
+        "label": "[label-31]",
+        "point": {
+          "x": 489,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 472,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-31] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-31",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "表格",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 32,
+        "label": "[label-32]",
+        "point": {
+          "x": 820,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 48,
+          "x": 796,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-32] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-32",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "行高",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 33,
+        "label": "[label-33]",
+        "point": {
+          "x": 892,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1302,
+        "rect": {
+          "height": 28,
+          "width": 48,
+          "x": 868,
+          "y": 599
+        },
+        "role": "button",
+        "selector": "[selector-33] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-33",
+        "tag": "button",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 34,
+        "label": "",
+        "point": {
+          "x": 503,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 486,
+          "y": 560
+        },
+        "role": "presentation",
+        "selector": "[selector-34] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-34",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 35,
+        "label": "",
+        "point": {
+          "x": 527,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 16,
+          "x": 519,
+          "y": 560
+        },
+        "role": "presentation",
+        "selector": "[selector-35] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-35",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 36,
+        "label": "",
+        "point": {
+          "x": 553,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 536,
+          "y": 560
+        },
+        "role": "presentation",
+        "selector": "[selector-36] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-36",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 37,
+        "label": "",
+        "point": {
+          "x": 578,
+          "y": 574
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 16,
+          "x": 570,
+          "y": 560
+        },
+        "role": "presentation",
+        "selector": "[selector-37] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-37",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 38,
+        "label": "",
+        "point": {
+          "x": 617,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 600,
+          "y": 599
+        },
+        "role": "presentation",
+        "selector": "[selector-38] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-38",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 39,
+        "label": "",
+        "point": {
+          "x": 642,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 16,
+          "x": 634,
+          "y": 599
+        },
+        "role": "presentation",
+        "selector": "[selector-39] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-39",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "path",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 40,
+        "label": "",
+        "point": {
+          "x": 668,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 34,
+          "x": 651,
+          "y": 599
+        },
+        "role": "presentation",
+        "selector": "[selector-40] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-40",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "svg",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 41,
+        "label": "",
+        "point": {
+          "x": 693,
+          "y": 613
+        },
+        "position": "static",
+        "priority": 1300,
+        "rect": {
+          "height": 28,
+          "width": 16,
+          "x": 685,
+          "y": 599
+        },
+        "role": "presentation",
+        "selector": "[selector-41] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-41",
+        "tag": "span",
+        "text": ""
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "iframe",
+          "id": "[id-42]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 42,
+        "label": "[label-42]",
+        "point": {
+          "x": 668,
+          "y": 720
+        },
+        "position": "static",
+        "priority": 1261,
+        "rect": {
+          "height": 500,
+          "width": 690,
+          "x": 323,
+          "y": 470
+        },
+        "role": "group",
+        "selector": "[selector-42] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-42",
+        "tag": "div",
+        "text": "[text-42]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-43]"
+        },
+        "index": 43,
+        "label": "[label-43]",
+        "point": {
+          "x": 1155,
+          "y": 253
+        },
+        "position": "static",
+        "priority": 1240,
+        "rect": {
+          "height": 23,
+          "width": 172,
+          "x": 1069,
+          "y": 241
+        },
+        "role": null,
+        "selector": "[selector-43] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-43",
+        "tag": "li",
+        "text": "[text-43]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-44]"
+        },
+        "index": 44,
+        "label": "[label-44]",
+        "point": {
+          "x": 1155,
+          "y": 197
+        },
+        "position": "static",
+        "priority": 1234,
+        "rect": {
+          "height": 23,
+          "width": 172,
+          "x": 1069,
+          "y": 186
+        },
+        "role": null,
+        "selector": "[selector-44] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-44",
+        "tag": "li",
+        "text": "[text-44]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-45]"
+        },
+        "index": 45,
+        "label": "[label-45]",
+        "point": {
+          "x": 1155,
+          "y": 225
+        },
+        "position": "static",
+        "priority": 1234,
+        "rect": {
+          "height": 23,
+          "width": 172,
+          "x": 1069,
+          "y": 213
+        },
+        "role": null,
+        "selector": "[selector-45] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-45",
+        "tag": "li",
+        "text": "[text-45]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "li",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-46]"
+        },
+        "index": 46,
+        "label": "[label-46]",
+        "point": {
+          "x": 1155,
+          "y": 281
+        },
+        "position": "static",
+        "priority": 1233,
+        "rect": {
+          "height": 23,
+          "width": 172,
+          "x": 1069,
+          "y": 269
+        },
+        "role": null,
+        "selector": "[selector-46] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-46",
+        "tag": "li",
+        "text": "[text-46]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "",
+          "text": "[text-47]"
+        },
+        "index": 47,
+        "label": "[label-47]",
+        "point": {
+          "x": 513,
+          "y": 263
+        },
+        "position": "static",
+        "priority": 1232,
+        "rect": {
+          "height": 42,
+          "width": 380,
+          "x": 323,
+          "y": 242
+        },
+        "role": null,
+        "selector": "[selector-47] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-47",
+        "tag": "div",
+        "text": "[text-47]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "",
+          "text": "[text-48]"
+        },
+        "index": 48,
+        "label": "[label-48]",
+        "point": {
+          "x": 513,
+          "y": 322
+        },
+        "position": "static",
+        "priority": 1232,
+        "rect": {
+          "height": 42,
+          "width": 380,
+          "x": 323,
+          "y": 301
+        },
+        "role": null,
+        "selector": "[selector-48] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-48",
+        "tag": "div",
+        "text": "[text-48]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "",
+          "text": "[text-49]"
+        },
+        "index": 49,
+        "label": "[label-49]",
+        "point": {
+          "x": 513,
+          "y": 381
+        },
+        "position": "static",
+        "priority": 1232,
+        "rect": {
+          "height": 42,
+          "width": 380,
+          "x": 323,
+          "y": 360
+        },
+        "role": null,
+        "selector": "[selector-49] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-49",
+        "tag": "div",
+        "text": "[text-49]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-50]"
+        },
+        "index": 50,
+        "label": "[label-50]",
+        "point": {
+          "x": 563,
+          "y": 263
+        },
+        "position": "relative",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 281,
+          "x": 423,
+          "y": 242
+        },
+        "role": null,
+        "selector": "[selector-50] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-50",
+        "tag": "div",
+        "text": "[text-50]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-51]"
+        },
+        "index": 51,
+        "label": "[label-51]",
+        "point": {
+          "x": 870,
+          "y": 263
+        },
+        "position": "static",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 287,
+          "x": 726,
+          "y": 242
+        },
+        "role": null,
+        "selector": "[selector-51] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-51",
+        "tag": "div",
+        "text": "[text-51]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-52]"
+        },
+        "index": 52,
+        "label": "[label-52]",
+        "point": {
+          "x": 870,
+          "y": 263
+        },
+        "position": "relative",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 287,
+          "x": 726,
+          "y": 242
+        },
+        "role": null,
+        "selector": "[selector-52] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-52",
+        "tag": "div",
+        "text": "[text-52]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-53]"
+        },
+        "index": 53,
+        "label": "[label-53]",
+        "point": {
+          "x": 553,
+          "y": 263
+        },
+        "position": "absolute",
+        "priority": 1227,
+        "rect": {
+          "height": 24,
+          "width": 237,
+          "x": 435,
+          "y": 251
+        },
+        "role": null,
+        "selector": "[selector-53] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-53",
+        "tag": "div",
+        "text": "[text-53]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-54]"
+        },
+        "index": 54,
+        "label": "[label-54]",
+        "point": {
+          "x": 860,
+          "y": 263
+        },
+        "position": "absolute",
+        "priority": 1227,
+        "rect": {
+          "height": 24,
+          "width": 243,
+          "x": 738,
+          "y": 251
+        },
+        "role": null,
+        "selector": "[selector-54] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-54",
+        "tag": "div",
+        "text": "[text-54]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-55]"
+        },
+        "index": 55,
+        "label": "[label-55]",
+        "point": {
+          "x": 563,
+          "y": 322
+        },
+        "position": "relative",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 281,
+          "x": 423,
+          "y": 301
+        },
+        "role": null,
+        "selector": "[selector-55] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-55",
+        "tag": "div",
+        "text": "[text-55]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-56]"
+        },
+        "index": 56,
+        "label": "[label-56]",
+        "point": {
+          "x": 870,
+          "y": 322
+        },
+        "position": "static",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 287,
+          "x": 726,
+          "y": 301
+        },
+        "role": null,
+        "selector": "[selector-56] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-56",
+        "tag": "div",
+        "text": "[text-56]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-57]"
+        },
+        "index": 57,
+        "label": "[label-57]",
+        "point": {
+          "x": 870,
+          "y": 322
+        },
+        "position": "relative",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 287,
+          "x": 726,
+          "y": 301
+        },
+        "role": null,
+        "selector": "[selector-57] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-57",
+        "tag": "div",
+        "text": "[text-57]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-58]"
+        },
+        "index": 58,
+        "label": "[label-58]",
+        "point": {
+          "x": 553,
+          "y": 322
+        },
+        "position": "absolute",
+        "priority": 1227,
+        "rect": {
+          "height": 24,
+          "width": 237,
+          "x": 435,
+          "y": 310
+        },
+        "role": null,
+        "selector": "[selector-58] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-58",
+        "tag": "div",
+        "text": "[text-58]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-59]"
+        },
+        "index": 59,
+        "label": "[label-59]",
+        "point": {
+          "x": 860,
+          "y": 322
+        },
+        "position": "absolute",
+        "priority": 1227,
+        "rect": {
+          "height": 24,
+          "width": 243,
+          "x": 738,
+          "y": 310
+        },
+        "role": null,
+        "selector": "[selector-59] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-59",
+        "tag": "div",
+        "text": "[text-59]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-60]"
+        },
+        "index": 60,
+        "label": "[label-60]",
+        "point": {
+          "x": 563,
+          "y": 381
+        },
+        "position": "relative",
+        "priority": 1227,
+        "rect": {
+          "height": 42,
+          "width": 281,
+          "x": 423,
+          "y": 360
+        },
+        "role": null,
+        "selector": "[selector-60] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-60",
+        "tag": "div",
+        "text": "[text-60]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-61]"
+        },
+        "index": 61,
+        "label": "[label-61]",
+        "point": {
+          "x": 553,
+          "y": 381
+        },
+        "position": "absolute",
+        "priority": 1227,
+        "rect": {
+          "height": 24,
+          "width": 237,
+          "x": 435,
+          "y": 369
+        },
+        "role": null,
+        "selector": "[selector-61] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-61",
+        "tag": "div",
+        "text": "[text-61]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-62]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 62,
+        "label": "[label-62]",
+        "point": {
+          "x": 668,
+          "y": 436
+        },
+        "position": "static",
+        "priority": 1225,
+        "rect": {
+          "height": 35,
+          "width": 690,
+          "x": 323,
+          "y": 418
+        },
+        "role": null,
+        "selector": "[selector-62] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-62",
+        "tag": "div",
+        "text": "[text-62]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "label",
+          "id": "[id-63]",
+          "class": "[class-placeholder]",
+          "text": "[text-63]"
+        },
+        "index": 63,
+        "label": "[label-63]",
+        "point": {
+          "x": 377,
+          "y": 434
+        },
+        "position": "static",
+        "priority": 1225,
+        "rect": {
+          "height": 32,
+          "width": 91,
+          "x": 332,
+          "y": 418
+        },
+        "role": null,
+        "selector": "[selector-63] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-63",
+        "tag": "label",
+        "text": "[text-63]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-64]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 64,
+        "label": "[label-64]",
+        "point": {
+          "x": 668,
+          "y": 208
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 35,
+          "width": 690,
+          "x": 323,
+          "y": 191
+        },
+        "role": null,
+        "selector": "[selector-64] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-64",
+        "tag": "div",
+        "text": "[text-64]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "label",
+          "id": "[id-65]",
+          "class": "[class-placeholder]",
+          "text": "[text-65]"
+        },
+        "index": 65,
+        "label": "[label-65]",
+        "point": {
+          "x": 373,
+          "y": 207
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 32,
+          "width": 99,
+          "x": 323,
+          "y": 191
+        },
+        "role": null,
+        "selector": "[selector-65] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-65",
+        "tag": "label",
+        "text": "[text-65]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "label",
+          "id": "[id-66]",
+          "class": "[class-placeholder]",
+          "text": "[text-66]"
+        },
+        "index": 66,
+        "label": "[label-66]",
+        "point": {
+          "x": 373,
+          "y": 258
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 32,
+          "width": 99,
+          "x": 323,
+          "y": 242
+        },
+        "role": null,
+        "selector": "[selector-66] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-66",
+        "tag": "label",
+        "text": "[text-66]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "label",
+          "id": "[id-67]",
+          "class": "[class-placeholder]",
+          "text": "[text-67]"
+        },
+        "index": 67,
+        "label": "[label-67]",
+        "point": {
+          "x": 373,
+          "y": 317
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 32,
+          "width": 99,
+          "x": 323,
+          "y": 301
+        },
+        "role": null,
+        "selector": "[selector-67] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-67",
+        "tag": "label",
+        "text": "[text-67]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "label",
+          "id": "[id-68]",
+          "class": "[class-placeholder]",
+          "text": "[text-68]"
+        },
+        "index": 68,
+        "label": "[label-68]",
+        "point": {
+          "x": 373,
+          "y": 376
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 32,
+          "width": 99,
+          "x": 323,
+          "y": 360
+        },
+        "role": null,
+        "selector": "[selector-68] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-68",
+        "tag": "label",
+        "text": "[text-68]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "div",
+          "id": "[id-69]",
+          "class": "[class-placeholder]",
+          "text": "[text-69]"
+        },
+        "index": 69,
+        "label": "[label-69]",
+        "point": {
+          "x": 373,
+          "y": 486
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 32,
+          "width": 99,
+          "x": 323,
+          "y": 470
+        },
+        "role": null,
+        "selector": "[selector-69] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-69",
+        "tag": "div",
+        "text": "[text-69]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-70]"
+        },
+        "index": 70,
+        "label": "[label-70]",
+        "point": {
+          "x": 679,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 20,
+          "width": 72,
+          "x": 643,
+          "y": 525
+        },
+        "role": null,
+        "selector": "[selector-70] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-70",
+        "tag": "span",
+        "text": "[text-70]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-71]"
+        },
+        "index": 71,
+        "label": "[label-71]",
+        "point": {
+          "x": 784,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1224,
+        "rect": {
+          "height": 18,
+          "width": 72,
+          "x": 748,
+          "y": 526
+        },
+        "role": null,
+        "selector": "[selector-71] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-71",
+        "tag": "span",
+        "text": "[text-71]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-72]"
+        },
+        "index": 72,
+        "label": "[label-72]",
+        "point": {
+          "x": 455,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 28,
+          "x": 441,
+          "y": 484
+        },
+        "role": null,
+        "selector": "[selector-72] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-72",
+        "tag": "span",
+        "text": "[text-72]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-73]"
+        },
+        "index": 73,
+        "label": "[label-73]",
+        "point": {
+          "x": 492,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 28,
+          "x": 478,
+          "y": 484
+        },
+        "role": null,
+        "selector": "[selector-73] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-73",
+        "tag": "span",
+        "text": "[text-73]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-74]"
+        },
+        "index": 74,
+        "label": "[label-74]",
+        "point": {
+          "x": 529,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 28,
+          "x": 515,
+          "y": 484
+        },
+        "role": null,
+        "selector": "[selector-74] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-74",
+        "tag": "span",
+        "text": "[text-74]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-75]"
+        },
+        "index": 75,
+        "label": "[label-75]",
+        "point": {
+          "x": 565,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 28,
+          "x": 551,
+          "y": 484
+        },
+        "role": null,
+        "selector": "[selector-75] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-75",
+        "tag": "span",
+        "text": "[text-75]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-76]"
+        },
+        "index": 76,
+        "label": "[label-76]",
+        "point": {
+          "x": 602,
+          "y": 494
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 28,
+          "x": 588,
+          "y": 484
+        },
+        "role": null,
+        "selector": "[selector-76] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-76",
+        "tag": "span",
+        "text": "[text-76]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "span",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": "[text-77]"
+        },
+        "index": 77,
+        "label": "[label-77]",
+        "point": {
+          "x": 574,
+          "y": 535
+        },
+        "position": "static",
+        "priority": 1222,
+        "rect": {
+          "height": 20,
+          "width": 72,
+          "x": 538,
+          "y": 525
+        },
+        "role": null,
+        "selector": "[selector-77] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-77",
+        "tag": "span",
+        "text": "[text-77]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "img",
+          "id": "",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 78,
+        "label": "[label-78]",
+        "point": {
+          "x": 1170,
+          "y": 83
+        },
+        "position": "relative",
+        "priority": 1221,
+        "rect": {
+          "height": 33,
+          "width": 33,
+          "x": 1153,
+          "y": 66
+        },
+        "role": null,
+        "selector": "[selector-78] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-78",
+        "tag": "div",
+        "text": "[text-78]"
+      },
+      {
+        "action": "token",
+        "clickable": true,
+        "disabled": false,
+        "editable": false,
+        "focused": false,
+        "handlers": [],
+        "hitOk": true,
+        "hitTarget": {
+          "tag": "input",
+          "id": "[id-79]",
+          "class": "[class-placeholder]",
+          "text": ""
+        },
+        "index": 79,
+        "label": "",
+        "point": {
+          "x": 718,
+          "y": 208
+        },
+        "position": "relative",
+        "priority": 1220,
+        "rect": {
+          "height": 35,
+          "width": 590,
+          "x": 423,
+          "y": 191
+        },
+        "role": null,
+        "selector": "[selector-79] section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > section.redacted > div.form-item > div.control-wrapper > span.target-79",
+        "tag": "div",
+        "text": ""
+      }
+    ]
+  }
+}

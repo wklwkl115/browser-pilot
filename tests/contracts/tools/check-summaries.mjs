@@ -417,7 +417,9 @@ assert.equal(generic.count, 2, "check-summaries generic.metadata.count: count mu
 assert.equal(generic.targetSource, "explicit", "check-summaries generic.metadata.target: target source must be visible");
 assert.equal(generic.selectionVersionAtDispatch, undefined, "check-summaries generic.metadata.selectionVersion: absent selection versions must stay absent");
 assert.equal(generic.data.type, "object", "check-summaries generic.data: data object must be summarized");
+assert.equal(generic.data.rows.projection, "folded-v1", "check-summaries generic.array.projection: large homogeneous bridge-result arrays must use distill-core folded projection");
 assert.equal(generic.data.rows.count, 20, "check-summaries generic.array: arrays must expose count");
+assert.equal(generic.data.rows.frontier.retrieve.jsonPath, "data.rows", "check-summaries generic.array.frontier: projected arrays must keep artifact retrieval path");
 assert.equal(generic.data.html.truncated, true, "check-summaries generic.string: large strings must be compacted");
 assert.equal(JSON.stringify(generic).includes("v".repeat(500)), false, "check-summaries generic.raw: summary must not retain large raw samples");
 

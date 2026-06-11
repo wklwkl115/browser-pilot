@@ -14,9 +14,55 @@
 
 ## 当前激活项
 
-- 当前无激活执行线；新增主线必须先在本节写明决策、边界、契约与验证计划。
+当前无激活执行线；新增主线必须先在本节写明决策、边界、契约与验证计划。
 
 ## 最近完成项
+
+### Value-ordered compaction plan（2026-06-11，完成）
+
+Decision: completed `docs/value-ordered-compaction-plan.md`. Remaining
+position-ordered presentation truncation moved toward distill-core value-ordered
+projection: artifact JSON homogeneous arrays, generic bridge-result arrays, shared
+fit mechanics, and the compaction ledger ratchet are now in one auditable path.
+
+Boundary: no new public `browser_*` tools. Artifacts stay full-fidelity local
+evidence; projection affects model-facing presentation only. Class-A work bounds
+remain registered at their work sites. K6 intentionally changed the output schema
+state surface by adding `selected`/`pressed`/`current`, because AX already captured
+those fields and the active-state probe made the omission agent-visible.
+
+Contract: folded projection emits `projection:"folded-v1"`, constants/exceptions,
+ranked variant fields, source-ordered items, and concrete frontier retrieval. Generic
+execute projections now force a raw artifact when the result is non-inline, so
+`data.*` and frontier hints are executable. Execute target URL now prefers the known
+top-level tab URL over effect/fingerprint frame URLs.
+
+Verification: focused gates passed for artifact projection, generic summaries,
+output schema conformance, token economy, distill boundary, distill bench, ABML
+relation/tree-diff, execute URL/artifact helpers, and `test:unit`. Blind eval used
+two fresh Codex subagents on isolated real Bilibili: the list-heavy card task
+completed without enumeration abandonment, and the active-tab K6 probe completed
+with the separate CSS-class active-state gap recorded as n=1 in `blind-findings.md`.
+Runtime artifact evidence: `.pi/browser-artifacts/execute-1781193991324.json`.
+
+### Distill kernel hygiene plan（2026-06-11，完成）
+
+Decision: completed `docs/distill-kernel-hygiene-plan.md` before value-ordered P1
+because it touched the same observe/result-middleware dataflow.
+
+Boundary: no public tool, schema, or envelope semantic changes. The work stayed in
+distill-core purity/allocation coverage and internal observe/result dataflow reuse.
+
+Contract: distill-core is locale/runtime-read pure by contract; allocation ties are
+total-ordered by ref; observe render cache keys include effective renderer and token
+cost model; scan entities are built once per render; result nextActions reuse the
+already-computed envelope entity list.
+
+Verification: passed `check:distill-core-boundary`, distill-core focused unit tests,
+`test:observe-abml-integration`, resultMiddleware advanced unit tests, `check:scan`,
+`check:abml-scan-entities`, `check:token-economy`, `bench:distill`,
+`check:task-conditioned-salience`, `check:recovery-boundary`, `test:unit`, and
+`check:all:contracts`.
 
 ### Real-session friction plan（2026-06-11，完成）
 

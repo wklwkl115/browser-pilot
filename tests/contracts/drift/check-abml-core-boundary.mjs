@@ -168,4 +168,21 @@ for (const fileRel of PURE_CORE) {
 }
 assert.deepEqual(shimIssues, [], `ABML shim contract violated:\n  - ${shimIssues.join("\n  - ")}`);
 
+// Pure-core replay determinism: the kernel may consume caller-supplied timestamps and sorted
+// strings, but it must not read host clock/random/locale state directly.
+const forbiddenRuntimeReads = [
+	["Date.now(", "clock read"],
+	["Math.random(", "random read"],
+	["new Date(", "host date construction"],
+	["localeCompare(", "locale-dependent ordering"],
+];
+const runtimeReadIssues = [];
+for (const fileRel of [...PURE_CORE, BARREL]) {
+	const text = read(path.join(abmlCoreDir, fileRel));
+	for (const [needle, label] of forbiddenRuntimeReads) {
+		if (text.includes(needle)) runtimeReadIssues.push(`abml-core/${fileRel} contains ${label} (${needle}) — pass deterministic inputs from runtime instead.`);
+	}
+}
+assert.deepEqual(runtimeReadIssues, [], `ABML core determinism violated:\n  - ${runtimeReadIssues.join("\n  - ")}`);
+
 console.log(`abml kernel boundary ok — ${PURE_CORE.length} pure-core files + 1 barrel (src/abml-core), ${RUNTIME.length} runtime files (src/abml), ${PURE_CORE.length} re-export shims, ${PURE_CROSSCUTTING.size} whitelisted cross-cutting modules`);

@@ -25,6 +25,66 @@ test("summarizeGenericValue inlines small data values from bridge result", () =>
 	assert.equal(inner.key, "value");
 });
 
+test("summarizeGenericValue projects large homogeneous bridge-result arrays", () => {
+	const rows = Array.from({ length: 20 }, (_, index) => ({
+		id: index,
+		kind: "row",
+		value: `${index}-${"x".repeat(260)}`,
+	}));
+	const result = summarizeGenericValue({ ok: true, data: { rows } });
+	const data = result.data as Record<string, unknown>;
+	const projected = data.rows as Record<string, unknown>;
+	assert.equal(projected.projection, "folded-v1");
+	assert.equal(projected.count, 20);
+	assert.equal(projected.limit, 5);
+	assert.equal(projected.nextOffset, 5);
+	assert.equal((projected.items as unknown[]).length, 5);
+	assert.equal((projected.frontier as Record<string, Record<string, unknown>>).retrieve.jsonPath, "data.rows");
+	assert.equal(JSON.stringify(projected).includes("x".repeat(260)), false);
+});
+
+test("summarizeGenericValue projects large all-variant object arrays with values", () => {
+	const cards = Array.from({ length: 20 }, (_, index) => ({
+		i: index,
+		title: `Video title ${index} ${"x".repeat(180)}`,
+		uploader: `Uploader ${index}`,
+		href: `https://example.test/video/${index}`,
+	}));
+	const result = summarizeGenericValue({ ok: true, data: { cards } });
+	const data = result.data as Record<string, unknown>;
+	const projected = data.cards as Record<string, unknown>;
+	assert.equal(projected.projection, "folded-v1");
+	assert.equal(projected.count, 20);
+	assert.equal(projected.limit, 5);
+	assert.equal(projected.nextOffset, 5);
+	assert.equal((projected.fields as string[]).includes("title"), true);
+	assert.equal(JSON.stringify(projected).includes("Video title 0"), true);
+});
+
+test("summarizeGenericValue keeps selector-only action arrays compact", () => {
+	const actionables = Array.from({ length: 20 }, (_, index) => ({
+		selector: `#action-${index}`,
+		text: `Action ${index}`,
+		role: index % 2 ? "button" : "link",
+		visible: true,
+	}));
+	const result = summarizeGenericValue({ ok: true, data: { actionables, text: "x".repeat(5000) } });
+	const data = result.data as Record<string, unknown>;
+	const summary = data.actionables as Record<string, unknown>;
+	assert.equal(summary.projection, undefined);
+	assert.equal(summary.type, "array");
+	assert.equal(summary.count, 20);
+	assert.deepEqual(summary.keys, ["selector", "text", "role", "visible"]);
+});
+
+test("summarizeGenericValue keeps large heterogeneous arrays as shape summaries", () => {
+	const result = summarizeGenericValue([{ id: 1, text: "x".repeat(5000) }, "plain"]);
+	assert.equal(result.type, "array");
+	assert.equal(result.count, 2);
+	assert.equal(result.projection, undefined);
+	assert.deepEqual(result.elementTypes, { object: 1, string: 1 });
+});
+
 // ── plain value inlining ──────────────────────────────────────────────────────
 
 test("summarizeGenericValue inlines small plain objects verbatim", () => {

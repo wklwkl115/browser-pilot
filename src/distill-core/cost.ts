@@ -1,9 +1,5 @@
 import { stableJson } from "../utils/json.js";
 
-export function charCost(text: string): number {
-	return text.length;
-}
-
 export function tokenEstimate(text: string): number {
 	let tokens = 0;
 	for (const ch of text) {

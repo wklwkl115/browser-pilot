@@ -40,6 +40,26 @@ test("allocateFacts stops below the configured marginal density", () => {
 	assert.equal(plan.get("b"), "omit");
 });
 
+test("allocateFacts tie-breaks floor candidates by ref", () => {
+	const facts = [
+		fact("b", "entity", 10, { compact: 10 }),
+		fact("a", "entity", 10, { compact: 10 }),
+	];
+	const plan = allocateFacts(facts, 10, [{ plane: "entity", minFacts: 1, minGranularity: "compact" }]);
+	assert.equal(plan.get("a"), "compact");
+	assert.equal(plan.get("b"), "omit");
+});
+
+test("allocateFacts tie-breaks density candidates by ref", () => {
+	const facts: Fact[] = [
+		{ ref: "b", plane: "entity", salience: { actionability: 10 }, renderings: { compact: { value: { ref: "b", kind: "b" }, cost: 10 } } },
+		{ ref: "a", plane: "entity", salience: { actionability: 10 }, renderings: { compact: { value: { ref: "a", kind: "a" }, cost: 10 } } },
+	];
+	const plan = allocateFacts(facts, 10);
+	assert.equal(plan.get("a"), "compact");
+	assert.equal(plan.get("b"), "omit");
+});
+
 test("allocateFacts can rank density by estimated token cost without changing byte budget", () => {
 	assert.ok(tokenEstimate("页面") > tokenEstimate("go"));
 	const facts: Fact[] = [

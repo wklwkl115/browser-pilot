@@ -518,7 +518,7 @@ function captureCursor(descriptor: RefDescriptor | undefined): { lastSeq?: numbe
 // Mint a refreshed signal capture-ref at the given cursor. registerRefDescriptor mints the pi-ref://signal/<id>
 // URI (locators are empty → no stable-hash reuse); the cursor round-trips in streamState.lastSeq.
 function mintStreamCapture(lastSeq: number, startedAt: number, context: CaptureRefContext): string {
-	const now = context.capturedAt ?? startedAt;
+	const now = context.capturedAt;
 	const captureRef = createCaptureRef({ refId: "pi-ref://signal/pending", state: "active", startedAt, expiresAt: now + STREAM_CAPTURE_TTL_MS, lastSeq, context });
 	const { refId: _drop, ...descriptor } = captureRef;
 	return registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
@@ -537,7 +537,7 @@ function shapeNetworkStreamEntity(record: Record<string, unknown>, context: Capt
 		...built.descriptor,
 		refId: causalReq.ref,
 		semantic: { ...(built.descriptor.semantic || {}), name: label },
-		documentEpoch: { ...built.descriptor.documentEpoch, url: causalReq.url ?? context.url, capturedAt: built.descriptor.documentEpoch?.capturedAt ?? context.capturedAt ?? 0 },
+		documentEpoch: { ...built.descriptor.documentEpoch, url: causalReq.url ?? context.url, capturedAt: built.descriptor.documentEpoch?.capturedAt ?? context.capturedAt },
 	};
 	const refId = registerRefDescriptor({ descriptor, browserSessionId: context.browserSessionId });
 	return { ...built.entity, ref: refId, name: label, ...(stream ? { stream } : {}) };
@@ -545,8 +545,8 @@ function shapeNetworkStreamEntity(record: Record<string, unknown>, context: Capt
 
 // One hook event → a redacted event entity. buildCausalEvent's redacted summary replaces the raw message/value;
 // the ref is pinned to pi-ref://event/<seq|id> so it matches data.causal.events[].ref.
-function shapeEventStreamEntity(record: Record<string, unknown>, context: CaptureRefContext): Entity {
-	const causalEv = buildCausalEvent(record);
+function shapeEventStreamEntity(record: Record<string, unknown>, context: CaptureRefContext, fallbackIndex?: number): Entity {
+	const causalEv = buildCausalEvent(record, fallbackIndex);
 	const built = buildEventEntity(record, context);
 	const descriptor = {
 		...built.descriptor,
@@ -627,7 +627,7 @@ async function readStreamPlane(server: AbmlBrowserRuntimeServer, input: AbmlRead
 	const delta = records.filter((record) => { const seq = Number(record.seq); return !Number.isFinite(seq) || seq > since; });
 	const newCursor = latestSeq(delta) ?? since;
 	const startedAt = cursor.startedAt ?? capturedAt;
-	const entities: Entity[] = delta.map((record) => plane === "network" ? shapeNetworkStreamEntity(record, context) : shapeEventStreamEntity(record, context));
+	const entities: Entity[] = delta.map((record, index) => plane === "network" ? shapeNetworkStreamEntity(record, context) : shapeEventStreamEntity(record, context, index));
 	const causal = plane === "network" ? buildCausalSummary(delta, since) : { sinceSeq: since, ...buildCausalEvents(delta, since) };
 	const captureRef = mintStreamCapture(newCursor, startedAt, context);
 	return {

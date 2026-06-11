@@ -42,7 +42,10 @@ export const EntityStateSchema = Type.Object({
 	disabled: Type.Boolean(),
 	focused: Type.Boolean(),
 	checked: Type.Optional(Type.Boolean()),
+	selected: Type.Optional(Type.Boolean()),
+	pressed: Type.Optional(Type.Boolean()),
 	expanded: Type.Optional(Type.Boolean()),
+	current: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
 	editable: Type.Boolean(),
 	inViewport: Type.Boolean(),
 }, { additionalProperties: true });

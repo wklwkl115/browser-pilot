@@ -172,6 +172,8 @@ assert.deepEqual(evDelta.events.map((e) => e.ref), ["pi-ref://event/5", "pi-ref:
 const evCapped = buildCausalEvents(Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, type: "console", data: { message: `m${i}` } })), 0);
 assert.equal(evCapped.events.length, MAX_CAUSAL_EVENTS, "capped at MAX_CAUSAL_EVENTS");
 assert.equal(evCapped.eventCount, 20, "true count when capped");
+const evNoIds = buildCausalEvents([{ type: "console", data: { message: "first" } }, { type: "console", data: { message: "second" } }], 0);
+assert.deepEqual(evNoIds.events.map((e) => e.ref), ["pi-ref://event/event-0", "pi-ref://event/event-1"], "id-less/seq-less events get distinct deterministic fallback refs");
 
 // Envelope: causal.events lifts to envelope.causal.events (budget-immune, redacted) alongside requests.
 const evLift = await distilledTextResult("body", {

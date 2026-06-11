@@ -15,6 +15,7 @@ export function registerArtifactTool({ pi }: ToolRegistrarContext) {
 			"Use browser_artifact after browser tools return saved.path; prefer search/json/text offsets over re-running full browser captures.",
 			"Default text/search/sample/whole-json output redacts cookie/token/authorization/body/postData/websocket payload values; explicit jsonPath/pick reads return the named local raw value.",
 			"JSON path misses return explicit exists:false/notFound:true; pick results stay aligned one entry per requested path.",
+			"Large homogeneous JSON arrays may render as projection:\"folded-v1\" with template constants, source-ordered item tuples, and value.frontier.retrieve for exact offset/jsonPath expansion.",
 			"Use paths or bounded root/glob plus maxFiles/maxBytes/maxMatchesPerFile/maxTotalMatches for multi-artifact search; do not run unbounded search.",
 			"For minified JS or long single-line artifacts, use search contextChars or text columnOffset/columnLimit instead of loading the whole file.",
 			"Keep maxChars small and request the next offset, column window, or a narrower jsonPath/query when more detail is needed.",

@@ -221,6 +221,14 @@ test("causal P2: buildCausalEvents windows seq>sinceSeq, sorts, caps + true coun
 	assert.equal(many.eventCount, 20, "true delta count reported when capped");
 });
 
+test("causal P2: id-less and seq-less events get deterministic distinct fallback refs", () => {
+	const r = buildCausalEvents([
+		{ type: "console", data: { message: "first" } },
+		{ type: "console", data: { message: "second" } },
+	], 0);
+	assert.deepEqual(r.events.map((event) => event.ref), ["pi-ref://event/event-0", "pi-ref://event/event-1"]);
+});
+
 test("causal P2: console event summary comes from args[0] (the message), redacted", () => {
 	const e = buildCausalEvent({ seq: 4, type: "console.error", data: { args: ["login failed token=SECRETXY"], stack: "…" } });
 	assert.equal(e.type, "console.error");
