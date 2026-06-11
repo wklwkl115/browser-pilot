@@ -538,6 +538,7 @@ test("browser_observe relevance debug terms stay artifact-only", async () => {
 		assert.equal(JSON.stringify(envelope).includes("debugTerms"), false, "debug terms never enter the envelope");
 		const saved = JSON.parse(readFileSync(envelope.saved.path, "utf8"));
 		assert.equal(Array.isArray(saved.relevance?.debugTerms), true, "debug terms are available only in the saved artifact under opt-in env");
+		assert.equal(saved.relevance.debugTerms.some((term: Record<string, unknown>) => Object.hasOwn(term, "term")), false, "debug terms must not include raw term text");
 	} finally {
 		if (previous === undefined) delete process.env.PI_BROWSER_RELEVANCE_DEBUG;
 		else process.env.PI_BROWSER_RELEVANCE_DEBUG = previous;

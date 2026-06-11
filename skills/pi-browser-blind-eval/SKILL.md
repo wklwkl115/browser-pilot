@@ -13,9 +13,6 @@ it guards regressions but **cannot find new friction**, and its "the runner used
 author asserting good behavior (the self-justification trap). This skill instead lets an agent that
 operates **exactly like a real Pi agent** discover where the tool actually hurts.
 
-Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-over-self-justification]]`,
-`[[eval-friction-triage-perception-vs-execution]]`, `[[project-maturity-optimization-focus]]`.
-
 ## Invariants (do not violate)
 
 - **Real sites, China-reachable.** Target REAL public websites, NOT self-written/local fixtures (they
@@ -37,8 +34,7 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
   cause that generalizes, not noise. No change-for-change; no special-casing the site/DOM/task/shape
   that surfaced it; the fix + its regression must be general (synthetic/representative inputs, not the
   live page); a tuned threshold must be principled/bounded, never fitted to make one case pass. A
-  change that narrows generality is worse than the friction. See
-  [[eval-fixes-true-defect-no-overfit]].
+  change that narrows generality is worse than the friction.
 - **Do NOT fix execution-authoring friction.** "Had to hand-write the click/form-fill JS, no
   click/type helper" is WORKING-AS-INTENDED — tag `WAI`, never add an execution verb/helper.
 
@@ -65,12 +61,15 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
    `network` / `frame` / `hook` calls used natural subcommands (`wait selector`,
    `wait network-idle`, `network list`, `network export-har`, `frame list`, `frame evaluate`,
    `hook install-targets`, `hook collect`) or fell back to legacy `--action` / `--params`, and why.
+   For memory-kernel runs, require a **MEMORY ADOPTION** block with the six fields:
+   `memoryPlaneSeen`, `inlineBodyUsed`, `readThroughUsed`, `recordNudgeShown`, `recordCalled`,
+   `usedInFinalAnswer`; operator-verify each true value against the transcript.
    Triage each friction item `fixable | WAI | reliability`, AND record skill↔tool fidelity gaps.
    Append to
    `evals/browser-workflows/blind-findings.md` (dedupe; bump the cross-run count when a finding recurs
    across agents/sites).
 7. **Distill — but gate the fix.** Before writing any code, clear the true-defect/no-overfit gates
-   ([[eval-fixes-true-defect-no-overfit]]): (a) confirmed root cause that GENERALIZES (n≥2 across
+   (the Invariants above): (a) confirmed root cause that GENERALIZES (n≥2 across
    different agent+task+site, not a one-off); (b) the fix measurably improves real outcomes, not
    change-for-change; (c) the fix AND its regression are GENERAL — no special-casing the site/DOM/task/
    shape that surfaced it, regression uses synthetic/representative inputs (never the live page), any

@@ -13,9 +13,36 @@
 
 ## 当前激活项
 
-- 无。
+- 当前无激活执行线；新增主线必须先在本节写明决策、边界、契约与验证计划。
 
 ## 最近完成项
+
+### Memory kernel (retain) (2026-06-11, 完成)
+
+Decision: completed `docs/archive/memory-kernel-plan.full.md`. Browser memory is now the fourth
+kernel on the default observe path: sense -> perceive -> express -> retain. The read path is a
+perception source (cap-isolated relevance `F`, structural-anchor verification, and runner-built
+`MemoryAugmentationPlan`); the write path splits mechanical auto-profile persistence from explicit
+strategic `browser_memory record`.
+
+Boundary: new pure `src/memory-core` and runtime `src/memory`; `distill-core` remains memory-agnostic.
+Automatic profiles persist only whitelisted `PersistableMemoryTerm` values, path-only canonical URLs,
+and local-secret HMAC stamps. `PI_BROWSER_MEMORY=0` disables kernel automatic read/write paths only;
+explicit `browser_memory record|recall|read|validate` remains functional. Automatic reads are
+no-repair/no-write/no-throw.
+
+Contract: disabled/no-hit observe output is byte-identical and does not materialize
+`.pi/browser-memory`; accepted `envelope.memory` variants must preserve `livePlaneSignature()`;
+memory cards carry `fresh|unverified|stale`; stale strikes suppress inline bodies at strike 3;
+same-origin alone is not enough for automatic memory-plane injection, which now requires current
+URL/intent token overlap.
+
+Verification: focused gates passed for no-repair, privacy, persistence concurrency, relevance cap
+isolation, memory verification, memory-plane negative controls, task-conditioned salience, summaries,
+token economy, session delta, package/docs, build/build:bridge, and unit suite. M5 blind eval on a
+real Bilibili stage proved T1 cold/warm adoption (`memoryPlaneSeen`, `inlineBodyUsed`,
+`readThroughUsed`, `usedInFinalAnswer`) and T2 memory-off control success; linux.do was rejected as
+external Cloudflare 502 site-state. Evidence is in `evals/browser-workflows/blind-findings.md`.
 
 ### Execution feedback layer optimization (2026-06-11, 完成)
 

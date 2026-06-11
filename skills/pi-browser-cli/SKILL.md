@@ -11,8 +11,12 @@ Drive live browser pages with the `pi-browser` shell CLI — the same tool core 
 
 **This skill complements the CLI; it does not restate it.** The CLI is self-describing: `pi-browser commands --json` lists every command + its `agentCli` routing, and `pi-browser schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
 
-Surface decision: callable surface is the `pi-browser` subcommands (one per `browser_*` tool). ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra subcommands.
-Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `pi-browser observe`. **Page actions are the JavaScript you pass to `pi-browser execute`** (prefer `--script-file`). For a **trusted-event-gated** control that ignores a synthetic `el.click()`/input, escalate via **`pi-browser command` CDP** (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). There is no public action verb — JS is the action language, CDP is the escape.
+Three facts shape everything below:
+- **Perception is `pi-browser observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
+- **Action is the JavaScript you pass to `pi-browser execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS.
+- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, send `pi-browser command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
+
+On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Driving the CLI
 
@@ -31,15 +35,17 @@ Coverage reality: **ABML is observation-only — it does not execute.** Its **re
 
 Sessions are managed via `tabs` session subcommands, not a per-command flag. Outputs default to a compact, redacted summary; size reads with `--limit`/`--offset`/`--json-path` (`detailLevel`/`maxChars` are internal, not flags).
 
-Memory is a Loop bookend: on a known origin `pi-browser memory --action recall` before step 2 and apply any SOP; on success `pi-browser memory --action record` at step 5. See Memory.
+Memory is a Loop bookend: `observe --mode scan|text` may surface current URL/intent-matched SOPs in `envelope.memory`; on success `pi-browser memory --action record` at step 5. See Memory.
 
 ## Memory
 
-Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). Recall/record are default habits — the store stays empty until you record. Exact flags: `schema memory --json`.
+Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). The store stays empty until you record — recall only pays after you have paid into it. Exact flags: `schema memory --json`.
 
-- **Recall (task start):** before acting on a repeat origin — or whenever a result's `nextActions` shows a `relevant memory: … top:"…"` hint — `pi-browser memory --action recall --url <url>` (or `--query "keywords"` to route across scopes). Cards come ranked with `updatedAt`; a dominant card's **body is inlined** — apply directly. Following a `relevant memory:` hint is not optional. `m.`/`mobile.`/`app.` subdomains share the apex memory.
-- **Record (crystallize on success):** `pi-browser memory --action record --kind sop --scope-kind origin --url <url> --title <t> --triggers <kw,...> --body <text>`. Make it reusable: verb-y `title`; `triggers` = the keywords you'd search by; HOW-only `body` of numbered steps with **exact selectors / inputs / waits**, no secrets. Prefer `origin` scope. A `record candidate:` hint means the origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
-- **Self-heal:** if a recalled SOP no longer works, re-`record` a corrected version — it supersedes the old one.
+- **Recall (observe):** `observe --mode scan|text` automatically surfaces current URL/intent-matched memory in `envelope.memory` with verification status; same-origin alone is not enough. Inline cards are bounded; collapsed cards carry `browser-memory://...` handles. Use `memory --action read --uri <browser-memory://...>` for a surfaced handle, or `memory --action recall --url <url> --query "<keywords>"` for manual cross-scope follow-up.
+- **Record (on success — fill and send, ~30s):**
+  `pi-browser memory --action record --kind sop --scope-kind origin --url <url> --title "<verb-y outcome>" --triggers "<keywords you'd search by>" --body "1. <step with exact selector/input/wait>\n2. <…>"`.
+  **Evidence refs are optional** — cite a `saved.path` when you have one; any ref you do cite must resolve. No secrets in `--body`. A `record candidate:` hint = this origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
+- **Self-heal:** a recalled SOP that no longer works → `record` the corrected version; it supersedes the old one.
 
 ## Routes (intent → subcommand)
 
@@ -53,8 +59,8 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 | Visible text fast | `observe --mode text` |
 | Visual layout | `screenshot` |
 | Inside iframe | `frame list` (read child `frameId`) → `frame evaluate --frame-id <id> --expression <js>`. A top-level scan does NOT cover child frames structurally |
-| Click/type/scroll/mutate | `execute --script-file act.js` → `wait ...` → re-observe |
-| Action returned ok but page didn't change | trusted-event-gated → `command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the rect |
+| Click/type/scroll/mutate | `execute --script-file act.js` → read cheap `effect` in the result → `wait ...` / re-observe |
+| Action returned ok but page didn't change | trusted-event-gated/canvas → `command --command @file` with `input.pointer` / `input.keys` |
 | CDP / native command | `command --command @native-command.json` |
 | Wait nav/selector/load/idle | `wait selector --selector "#id"` / `wait navigate --url ...` / `wait network-idle` (never sleep-loop) |
 | User points to element | `pick` |
@@ -81,6 +87,8 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 | You need | Read this envelope field | Then |
 |---|---|---|
 | A big repeated list/table as a group | `outline` / `gist` (fold by AX container) | per-item values → `execute` |
+| Visible text/link rows already on screen | `summary.rows` or `artifact --mode json --json-path data.rows` | site-specific values beyond text/href/geometry → `execute` |
+| Visible images/video/audio candidates | `summary.media_candidates` or `artifact --mode json --json-path data.media_candidates` | associated headline/ranking/source semantics → `execute` |
 | What changed after operating a control | scan with a baseline → **`treeDiff`** | raw `diff` churns on dynamic pages — prefer `treeDiff`; per-item content → `execute` |
 | Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact values → `execute` |
 | Which requests an action fired | **`network start` FIRST**, then scan with baseline → `causal.requests` | — |
@@ -102,12 +110,12 @@ Bound expansive routes by **explicit scope first** — `--url` / captured reques
 
 - Private/link-local/metadata blocked → `--allow-private-targets` only for explicit internal testing. Launcher overrides (`--sqlmap-path`/`--nuclei-path`) → `--allow-launcher-override`. `--wordlist-path` limited to CWD or `.pi/`.
 - `--bind-browser-session` injects browser cookies only (traffic does not route through the tab) and reflects a double-submit CSRF cookie into its header by default (`csrfReflected` reports the names) — so authenticated `http-replay` works without page `fetch`. Override with `--csrf-cookie`/`--csrf-header`, or `--reflect-csrf false` to test CSRF protection.
-- `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint. Do not fabricate request templates when a captured/HAR request is required.
+- `nextActions` are suggestions, not a mandatory pipeline. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action
 
 - Always set `observe --mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. Selector miss → re-observe `scan`/`html` → `frame` → verified retry. `pi-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle.
-- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `command` → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `command` CDP at the rect center.
+- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block in the result (`mutations`, `settled`, navigation/recorder deltas) before paying for a full re-observe. Input: focus → native setter → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `command --command @file` with `input.pointer`/`input.keys` at the rect center.
 - Don't ask for `--redact false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId selectionVersion sourceMode`.
 
 Click (`act.js` for `--script-file`):
@@ -126,7 +134,7 @@ Click (`act.js` for `--script-file`):
 
 ## Native command
 
-`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn subcommands; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
+`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for trusted physical input; summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn subcommands; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
 
 ## Recovery
 

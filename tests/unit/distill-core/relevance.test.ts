@@ -34,11 +34,34 @@ test("computeRelevanceMap supports URL and intent source tags", () => {
 	const result = computeRelevanceMap([
 		{ ref: "pi-ref://control/login", fields: { name: "Sign in", role: "button", selector: "#login" } },
 	], [
-		{ term: "login", kind: "url", source: "D" },
+		{ term: "login", kind: "urlPathToken", source: "D" },
 		{ term: "login", kind: "intent", source: "E" },
 	]);
 	assert.equal(result.boosted, 1);
 	assert.deepEqual(result.sourcesForRef("pi-ref://control/login"), ["D", "E"]);
+});
+
+test("computeRelevanceMap supports memory source F below direct live signals", () => {
+	const memory = computeRelevanceMap([
+		{ ref: "pi-ref://control/checkout", fields: { name: "Checkout" } },
+	], [{ term: "checkout", kind: "urlPathToken", source: "F" }]);
+	const live = computeRelevanceMap([
+		{ ref: "pi-ref://control/checkout", fields: { name: "Checkout" } },
+	], [{ term: "checkout", kind: "urlPathToken", source: "D" }]);
+	assert.deepEqual(memory.sourcesForRef("pi-ref://control/checkout"), ["F"]);
+	assert((memory.byRef.get("pi-ref://control/checkout")?.score ?? 0) < (live.byRef.get("pi-ref://control/checkout")?.score ?? 0));
+});
+
+test("computeRelevanceMap keeps memory F from displacing a full live term ring", () => {
+	const inputs = [
+		{ ref: "pi-ref://control/live", fields: { name: "live31" } },
+		{ ref: "pi-ref://control/memory", fields: { name: "memorytarget" } },
+	];
+	const liveTerms = Array.from({ length: 32 }, (_, index) => ({ term: `live${index}`, kind: "literal" as const, source: "A" as const }));
+	const baseline = computeRelevanceMap(inputs, liveTerms);
+	const withMemory = computeRelevanceMap(inputs, [...liveTerms, { term: "memorytarget", kind: "urlPathToken", source: "F" }]);
+	assert.deepEqual(withMemory.byRef, baseline.byRef);
+	assert(!withMemory.signals.includes("F"));
 });
 
 test("relevance tuning bounds stay conservative", () => {

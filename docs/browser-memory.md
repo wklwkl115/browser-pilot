@@ -1,6 +1,7 @@
 # Browser Memory v1
 
-本文件描述 `browser_memory` 的运行时边界；实现 source of truth 见 `docs/browser-memory-learning-mechanism-plan.md`。
+本文件描述 `browser_memory` 的运行时边界；已完成的 memory-kernel 设计与验收记录见
+`docs/archive/memory-kernel-plan.full.md`。
 
 ## 范围
 
@@ -42,23 +43,23 @@
 - 不同流程(如 `login flow` vs `checkout payment`)相似度低,正常共存。
 - **催记仅在"做了事"时**:纯读工具(observe / screenshot / wait / frame / pick / artifact)即便带 evidence 也不触发 `record candidate`——只是看页面不值得结晶;recall 浮现不受此限。
 
-## 自动提示（auto-surface）
+## 自动召回（memory kernel）
 
-任意带页面上下文的工具结果（`browser_memory` / `browser_tabs` 与 observe `mode=tabs` 除外）都会按当前页匹配活跃记忆，命中则在 `nextActions` 追加轻量 recall 指针（每个 scope 一条，至多 3 条），不注入正文：
+`browser_observe mode=scan|text` 会在 runner 内预构建 `MemoryAugmentationPlan`：按当前 URL/intent token 对本地 `index.json` 做 IDF recall，再用当前 origin profile 的 structural anchors 验证，最后通过 `envelope.memory` 注入。自动注入必须有当前 URL/intent token overlap；仅同源不会弹出旧任务记忆。这个路径不再使用 `nextActions` recall 提示。
 
-- `origin` scope：按归一化 origin 精确匹配;归一化会剥掉常见设备/变体子域(`www`/`www2`/`m`/`mobile`/`app`),`m.site.com` 与 `site.com` 共享记忆。
-- `task` / `project` scope：经 L1 token 路由(页面 token 与 entry 路由 token 重叠),token 边界正确。
-- 每条 recall 提示带 `top: "<标题>"`，agent 在召回前即可判断相关性。
-- `index.json` 每次读取保持新鲜；本会话内新 `record` 立即可被提示。
-- `PI_BROWSER_MEMORY_AUTOSURFACE=0` 关闭；无记忆时不创建 `index.json`。
+- no-hit / disabled：默认 observe envelope 字节不变，且不物化 `.pi/browser-memory/`。
+- 命中：最多 2 张 card，带 `verification:"fresh"|"unverified"|"stale"`；首次同 conversation+origin 可 inline 有界 body，后续折叠为 `browser-memory://...` handle。
+- 预算保护：`livePlaneSignature()` 验证 inline→handle→omit，每个 accepted variant 都不得改变 live page planes。
+- stale 反馈：structural anchors drift 会走 profile strikes；3 次后 stale card 不再带 body。
+- `PI_BROWSER_MEMORY=0` 关闭 kernel 自动读写；显式 `browser_memory record|recall|read|validate` 不受影响。
 
 ### 写入侧催记（record candidate）
 
 当结果带 durable evidence(`saved.path` 或 snapshot `saved.path`)、且其 origin 尚无活跃记忆时，追加一条 `record candidate:` 提示，把可用的 evidence path 直接写进建议的 `record` 调用：
 
-- 每个 origin 每会话至多催一次；该 origin 一旦录过即转为 recall 提示，不再催。
-- 无 durable evidence 不催（避免建议一个填不出 evidenceRefs 的 record）。
-- 与 recall 共用 `PI_BROWSER_MEMORY_AUTOSURFACE=0` 开关。
+- 每个 origin 每会话至多催一次；该 origin 一旦录过即不再催。
+- evidence refs 是推荐 provenance，不是硬前置；没有 durable evidence 时 hint 省略 `evidenceRefs`。
+- `PI_BROWSER_MEMORY=0` 或 `PI_BROWSER_MEMORY_AUTOSURFACE=0` 会关闭写入侧催记。
 
 ## 使用示例
 

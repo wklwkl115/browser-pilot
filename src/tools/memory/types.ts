@@ -1,3 +1,5 @@
+import type { MemoryAnchors, MemoryVerificationStatus } from "../../memory-core/types.js";
+
 export type MemoryScopeKind = "origin" | "task" | "project";
 export type MemoryEntryKind = "sop" | "fact";
 export type MemoryEntryStatus = "active" | "deprecated";
@@ -24,6 +26,7 @@ export type MemoryFrontmatter = {
 	verifiedAt: string;
 	updatedAt: string;
 	evidenceRefs: MemoryEvidenceRef[];
+	anchors?: MemoryAnchors;
 };
 
 export type MemoryEntry = MemoryFrontmatter & {
@@ -66,6 +69,7 @@ export type MemoryRecallCard = {
 	matchReason: string;
 	handles: string[];
 	updatedAt: string;
+	verification?: MemoryVerificationStatus;
 	// Inlined bounded body, present only on the top card when it clearly dominates
 	// — saves a follow-up read for the common single-relevant-memory case.
 	body?: string;

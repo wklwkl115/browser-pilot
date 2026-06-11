@@ -13,6 +13,7 @@ import { distillValue, getDistillerDefinition } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
+import type { MemoryAugmentationPlan } from "../memory-core/types.js";
 
 export { distillValue } from "./distillerRegistry.js";
 export { summarizeHtmlSnapshot } from "./summaries/index.js";
@@ -62,6 +63,7 @@ export type DistilledEnvelope = {
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
 	saved?: Record<string, unknown>;
+	memory?: Record<string, unknown>;
 	renderer?: "salience-v1";
 	delta?: "session";
 	baselineSnapshotId?: string;
@@ -90,6 +92,7 @@ type DistillBaseOptions = {
 	rawArtifactValue?: unknown;
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
 	stableRefs?: Set<string>;
+	memoryAugmentationPlan?: MemoryAugmentationPlan;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
 };
 
@@ -420,6 +423,36 @@ function fitResponseEnvelope(envelope: DistilledEnvelope, maxChars: number, opti
 	return rendererMarker() ? fitSalienceEnvelopeBudget(envelope, maxChars, { granularityCeiling: options.granularityCeiling }) : fitEnvelopeBudget(envelope, maxChars);
 }
 
+export function livePlaneSignature(envelope: DistilledEnvelope): string {
+	return stableJson({
+		entities: envelope.entities,
+		gist: envelope.gist,
+		outline: envelope.outline,
+		relations: envelope.relations,
+		diff: envelope.diff,
+		causal: envelope.causal,
+		treeDiff: envelope.treeDiff,
+		snapshotProjection: envelope.snapshotProjection,
+		rendererOmitted: envelope.summary.rendererOmitted,
+		envelopeOmitted: envelope.summary.envelopeOmitted,
+		warnings: Array.isArray(envelope.diagnostics?.warnings) ? envelope.diagnostics.warnings : undefined,
+	});
+}
+
+function fitResponseEnvelopeWithMemory(base: DistilledEnvelope, maxChars: number, options: DistillBaseOptions): DistilledEnvelope {
+	const fittedBase = fitResponseEnvelope(base, maxChars, options);
+	const plan = options.memoryAugmentationPlan;
+	const memoryAllowed = options.toolName === "browser_observe" && (!options.command || ["scan", "scan.text", "navigate+scan", "navigate+text"].includes(options.command));
+	if (!memoryAllowed || (!plan?.inline && !plan?.handleOnly)) return fittedBase;
+	const baseSignature = livePlaneSignature(fittedBase);
+	for (const variant of [plan.inline, plan.handleOnly]) {
+		if (!variant) continue;
+		const candidate = fitResponseEnvelope({ ...base, memory: variant }, maxChars, options);
+		if (candidate.memory && livePlaneSignature(candidate) === baseSignature) return candidate;
+	}
+	return fittedBase;
+}
+
 function renderedOmittedCount(envelope: DistilledEnvelope): number {
 	const omitted = envelope.summary.rendererOmitted;
 	return Array.isArray(omitted) ? omitted.filter((item) => typeof item === "string").length : 0;
@@ -465,7 +498,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const error = envelopeError(redactedSummary, redactedExplicitError);
 	const delta = redactedSummary.delta === "session" ? "session" : undefined;
 	const baselineSnapshotId = typeof redactedSummary.baselineSnapshotId === "string" ? redactedSummary.baselineSnapshotId : undefined;
-	return fitResponseEnvelope({
+	return fitResponseEnvelopeWithMemory({
 		tool: options.toolName,
 		command: options.command,
 		browserSessionId: options.browserSessionId,

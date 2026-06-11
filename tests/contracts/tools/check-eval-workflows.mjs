@@ -75,6 +75,10 @@ assert(!runnerText.includes("nuclei"), "runner must not invoke nuclei by default
 for (const requiredText of ["CLI ROUTING ADOPTION", "`wait`", "`network`", "`frame`", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`", "`commands --json` / `schema --json` metadata"]) {
 	assert(blindAgentPromptText.includes(requiredText), `blind-agent-prompt.md must capture route-adoption signal: ${requiredText}`);
 }
+for (const requiredText of ["MEMORY ADOPTION", "memoryPlaneSeen", "inlineBodyUsed", "readThroughUsed", "recordNudgeShown", "recordCalled", "usedInFinalAnswer"]) {
+	assert(blindAgentPromptText.includes(requiredText), `blind-agent-prompt.md must capture memory-adoption signal: ${requiredText}`);
+	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require memory-adoption triage: ${requiredText}`);
+}
 for (const requiredText of ["CLI natural-routing", "`wait` /", "`network` /", "`frame` /", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`"]) {
 	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require route-adoption triage: ${requiredText}`);
 }

@@ -19,6 +19,7 @@ import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
+import { drainMemoryProfileFlushes } from "../memory/profileService.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
 export class BrowserBridgeServer {
@@ -113,6 +114,7 @@ export class BrowserBridgeServer {
 		this.tabs.clear();
 		this.operations.clear();
 		this.observationSnapshots.clear();
+		await drainMemoryProfileFlushes();
 		this.perceptionLedger.clear();
 		await this.httpEndpoint.stop();
 	}

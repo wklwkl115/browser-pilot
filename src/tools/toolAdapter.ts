@@ -13,6 +13,7 @@ import { stableJson } from "../utils/json.js";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
+import type { MemoryAugmentationPlan } from "../memory-core/types.js";
 
 export type ToolResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;
 
@@ -57,6 +58,7 @@ type JsonToolResultOptions = {
 	distill?: DistillFn;
 	artifactThreshold?: number;
 	maxChars?: number;
+	memoryAugmentationPlan?: MemoryAugmentationPlan;
 };
 
 type TextToolResultOptions = {
@@ -78,6 +80,7 @@ type TextToolResultOptions = {
 	granularityCeiling?: Exclude<FactGranularity, "omit">;
 	stableRefs?: Set<string>;
 	onAllocation?: (allocation: { budgetUsedRatio: number; omittedCount: number }) => void;
+	memoryAugmentationPlan?: MemoryAugmentationPlan;
 };
 
 export type ToolOnUpdate = ((result: PiTextToolResult) => void | Promise<void>) | undefined;
@@ -321,6 +324,7 @@ export async function jsonToolResult(value: unknown, params: Pick<StandardToolPa
 		artifactValue: options.artifactValue,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
+		memoryAugmentationPlan: options.memoryAugmentationPlan,
 		redact: params.redact,
 	});
 }
@@ -347,6 +351,7 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		granularityCeiling: options.granularityCeiling,
 		stableRefs: options.stableRefs,
 		onAllocation: options.onAllocation,
+		memoryAugmentationPlan: options.memoryAugmentationPlan,
 		redact: params.redact,
 	});
 }

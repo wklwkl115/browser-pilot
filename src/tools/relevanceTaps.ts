@@ -2,24 +2,25 @@ import { extractScalarTerm, extractStringLiteralTerms, extractUrlTerms, type Rel
 import { isRecord } from "../utils/records.js";
 
 export type ToolRelevanceTapSpec = {
-	params?: Record<string, "scalar" | "url" | "jsonPath" | "query" | "ref" | "scriptLiterals">;
-	nestedParams?: Record<string, "scalar" | "url" | "jsonPath" | "query" | "ref">;
+	params?: Record<string, "scalar" | "selector" | "url" | "jsonPath" | "query" | "ref" | "scriptLiterals">;
+	nestedParams?: Record<string, "scalar" | "selector" | "url" | "jsonPath" | "query" | "ref">;
 };
 
 export const TOOL_RELEVANCE_TAPS: Record<string, ToolRelevanceTapSpec> = {
 	browser_execute: { params: { script: "scriptLiterals" } },
 	browser_artifact: { params: { jsonPath: "jsonPath", query: "query", path: "scalar" } },
-	browser_observe: { params: { url: "url", selector: "scalar", actionRef: "ref", intent: "scalar" }, nestedParams: { intent: "scalar" } },
-	browser_wait: { params: { url: "url", selector: "scalar" } },
+	browser_observe: { params: { url: "url", selector: "selector", actionRef: "ref", intent: "scalar" }, nestedParams: { intent: "scalar" } },
+	browser_wait: { params: { url: "url", selector: "selector" } },
 	browser_network: { params: { sessionId: "scalar" } },
-	browser_hook: { params: { selector: "scalar", eventType: "scalar" } },
-	browser_frame: { params: { selector: "scalar", frameId: "scalar" } },
+	browser_hook: { params: { selector: "selector", eventType: "scalar" } },
+	browser_frame: { params: { selector: "selector", frameId: "scalar" } },
 	browser_pick: { params: { message: "scalar" } },
 };
 
 function termsForValue(value: unknown, mode: NonNullable<ToolRelevanceTapSpec["params"]>[string]): RelevanceTapTerm[] {
 	if (mode === "scriptLiterals") return extractStringLiteralTerms(value);
 	if (mode === "url") return extractUrlTerms(value);
+	if (mode === "selector") return extractScalarTerm(value, "selectorLiteral", 1.2);
 	if (mode === "jsonPath") return extractScalarTerm(value, "jsonPath", 1.25);
 	if (mode === "query") return extractScalarTerm(value, "query", 1.2);
 	if (mode === "ref") return extractScalarTerm(value, "ref", 1.1);

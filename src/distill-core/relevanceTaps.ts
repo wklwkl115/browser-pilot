@@ -1,4 +1,4 @@
-export type RelevanceTapKind = "literal" | "jsonPath" | "query" | "url" | "ref" | "intent";
+export type RelevanceTapKind = "literal" | "selectorLiteral" | "jsonPath" | "query" | "urlPathToken" | "urlQueryToken" | "ref" | "intent";
 
 export type RelevanceTapTerm = {
 	term: string;
@@ -59,10 +59,10 @@ export function extractUrlTerms(value: unknown): RelevanceTapTerm[] {
 	try {
 		const url = new URL(value, "https://local.invalid/");
 		const terms: RelevanceTapTerm[] = [];
-		for (const part of url.pathname.split(/[/%._-]+/)) terms.push(...extractScalarTerm(part, "url", 1.15));
-		for (const [, item] of url.searchParams) terms.push(...extractScalarTerm(item, "url", 1.1));
+		for (const part of url.pathname.split(/[/%._-]+/)) terms.push(...extractScalarTerm(part, "urlPathToken", 1.15));
+		for (const [, item] of url.searchParams) terms.push(...extractScalarTerm(item, "urlQueryToken", 1.1));
 		return dedupeTapTerms(terms, 10);
 	} catch {
-		return extractScalarTerm(value, "url", 1);
+		return extractScalarTerm(value, "urlPathToken", 1);
 	}
 }

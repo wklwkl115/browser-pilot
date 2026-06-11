@@ -11,12 +11,16 @@ Operate live browser pages by calling `browser_*` tools directly, in-process.
 
 **This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **pi-browser-cli** skill instead.
 
-Surface decision: the public callable surface is the `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra tool names; public ABML action verbs are a closed perception-first decision unless that north star is overturned.
-Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `browser_observe` (AX merge, entities, relations/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For a **trusted-event-gated** control, canvas, WebGL, or cross-origin iframe target that silently ignores a synthetic `el.click()`/input, escalate via **`browser_command` physical input** (`input.pointer` / `input.keys`) at measured coordinates or focused controls. A structured semantic `action` arm was tried and **removed** (agents reverted to JS) — **there is no public action verb: JS is the action language, physical input is the escape.** Prefer `causal` (which APIs an action hit) and the reading products (`outline`/`gist`/`templates`) on long lists/tables; `diff`/`treeDiff` churn on dynamic pages, so read `diff.summary` first. Full map: `docs/abml-tool-coverage-map.md`.
+Three facts shape everything below:
+- **Perception is `browser_observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not callable tools.
+- **Action is the JavaScript you write in `browser_execute`** (run verbatim). There are no separate click/type tools and none are planned — a structured action arm was tried and removed because agents reverted to JS.
+- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser_command` `input.pointer` / `input.keys` at measured coordinates.
+
+On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
-- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs default to compact, redacted salience/session summaries (`renderer:"salience-v1"`; repeated scan observes may carry `delta:"session"`; task-conditioned relevance may reorder equal-rank scan actions/entities from URL/trace/top-level `intent` signals without exposing raw trace terms; `PI_BROWSER_RENDERER=ladder`, `PI_BROWSER_SESSION_DELTA=0`, and `PI_BROWSER_RELEVANCE=0` force legacy paths) — size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail (`detailLevel`/`maxChars` input knobs are deprecated and stripped).
+- Call tools directly: `browser_tabs {action:"list"}`, `browser_observe {mode:"scan"}`, `browser_execute {script}`. Outputs are compact, redacted salience summaries (`renderer:"salience-v1"`); repeated scans may be delta-compressed (`delta:"session"`), and equal-rank scan actions/entities may be reordered toward your URL / top-level `intent` / recent-call context. Size reads with `offset`/`limit`/`jsonPath`, not by asking for more detail — `detailLevel`/`maxChars` input knobs are deprecated and stripped.
 - **No connect step** — readiness is ambient. Just call a tool; a not-yet-connected extension gets a brief grace wait, then a command fails `NO_BROWSER_EXTENSION` with `recovery.nextActions`. The bridge is a server the extension dials into; it cannot dial the browser for you — if the extension is genuinely not loaded/enabled, that is a human action, so surface it rather than retry-looping.
 
 ## Loop
@@ -29,15 +33,23 @@ Coverage reality: **ABML is observation-only — it does not execute.** Its **re
 
 `browser_tabs {action:"create"}` opens a tab; `switch` only to intentionally change the active one. `browserSessionId` is managed via `browser_tabs` session actions — omit it unless juggling concurrent sessions.
 
-Memory is a Loop bookend: on a known origin `browser_memory recall` before step 2 and apply any SOP; on success `browser_memory record` at step 5. See Memory.
+Memory is a Loop bookend: `browser_observe` may surface matched local memory in `envelope.memory`; on success `browser_memory record` at step 5. See Memory.
 
 ## Memory
 
-Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). Recall/record are default habits — the store stays empty until you record.
+Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). The store stays empty until you record — automatic recall only pays after you have paid into it.
 
-- **Recall (task start):** before acting on a repeat origin — or whenever a result's `nextActions` shows a `relevant memory: … top:"…"` hint — `browser_memory {action:"recall", url|scopeKey}` (or `query="keywords"` to route across scopes). Cards come ranked with `updatedAt`; a dominant card's **body is inlined** — apply directly. Following a `relevant memory:` hint is not optional. `m.`/`mobile.`/`app.` subdomains share the apex memory.
-- **Record (crystallize on success):** `browser_memory {action:"record", kind:"sop", scopeKind:"origin", url, title, triggers, body}`. Make it reusable: verb-y `title`; `triggers` = the keywords you'd search by; HOW-only `body` of numbered steps with **exact selectors / inputs / waits**, no secrets. Evidence optional. Prefer `origin` scope. A `record candidate:` hint means the origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
-- **Self-heal:** if a recalled SOP no longer works, re-`record` a corrected version — it supersedes the old one.
+- **Recall (observe):** `browser_observe mode=scan|text` automatically surfaces current URL/intent-matched memory in `envelope.memory` with `verification:"fresh"|"unverified"|"stale"`; same-origin alone is not enough. Inline cards are bounded; collapsed cards carry `browser-memory://...` handles. Use `browser_memory {action:"read", uri}` for a full body, or `browser_memory {action:"recall", url, query}` only for manual cross-scope follow-up.
+- **Record (on success — fill this template and send, ~30s):**
+  ```
+  browser_memory {action:"record", kind:"sop", scopeKind:"origin",
+    url: "<page url>",
+    title: "<verb-y outcome, e.g. 'Export linux.do topic list as rows'>",
+    triggers: ["<keywords you'd search by>"],
+    body: "1. <step with exact selector/input/wait>\n2. <…>"}
+  ```
+  **Evidence refs are optional** — cite `saved.path` when you have one; any ref you do cite must resolve. No secrets in `body`. A `record candidate:` hint = this origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
+- **Self-heal:** a recalled SOP that no longer works → `record` the corrected version; it supersedes the old one.
 
 ## Routes (intent → tool)
 
@@ -98,7 +110,7 @@ Results return a `summary` + `resource_link`(s) + `sections`. Sensitive fields a
 
 ## Tool visibility
 
-All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step. `browser_memory` is local-only under `.pi/browser-memory/`; `record/validate` require durable evidence (a saved artifact path or non-stale snapshot-backed artifact); scopes `origin|task|project`, no repo export/promote.
+All 22 `browser_*` tools — including web-security — are first-class and exposed by default. There is no capability profile, compact/minimal mode, or discovery step. `browser_memory` is local-only under `.pi/browser-memory/`; evidence refs are optional, but any ref you cite must resolve (artifact path, `browser-result://`, or non-stale snapshot); scopes `origin|task|project`, no repo export/promote.
 
 ## Bounds (before expansive routes)
 
@@ -106,7 +118,7 @@ Bound expansive routes by **explicit scope first** — `url` / captured request 
 
 - Private/link-local/metadata blocked → `allowPrivateTargets:true` only for explicit internal testing. Launcher overrides (`sqlmapPath`/`nucleiPath`) → `allowLauncherOverride:true`. `wordlistPath` limited to CWD or `.pi/`.
 - `bindBrowserSession:true` injects browser cookies only (traffic does not route through the tab) and reflects a double-submit CSRF cookie into its header by default (`csrfReflected` reports the names) — so authenticated `browser_http_replay` works without page `fetch`. Override with `csrfCookie`/`csrfHeader`, or `reflectCsrf:false` to test CSRF protection.
-- `nextActions` are suggestions, not a mandatory pipeline — except a `relevant memory:` hint. Do not fabricate request templates when a captured/HAR request is required.
+- `nextActions` are suggestions, not a mandatory pipeline. A `record candidate:` hint means this origin has no SOP yet; record only after a real success. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action
 

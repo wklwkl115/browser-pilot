@@ -3,10 +3,13 @@ import { readdir, readFile, mkdir, rm, stat, open } from "node:fs/promises";
 import { parseJsonOrThrow, stableJson } from "../../utils/json.js";
 import { computeEtag } from "../../utils/fileFreshness.js";
 import { createCodedError } from "../../utils/codedError.js";
+import { atomicWriteText } from "../../utils/fsAtomic.js";
 import { parseMemoryEntry } from "./frontmatter.js";
-import { atomicWriteText, memoryEntryDir, resolveMemoryPath } from "./paths.js";
+import { memoryEntryDir, resolveMemoryPath } from "./paths.js";
 import type { MemoryEntry, MemoryIndex, MemoryIndexEntry, MemoryTombstone } from "./types.js";
 import { buildMemoryRoutingIndex } from "./routing.js";
+
+export const EMPTY_MEMORY_INDEX: MemoryIndex = { schemaVersion: 1, generatedAt: "", entries: [], byScope: {}, routing: {} };
 
 const LOCK_STALE_MS = 30_000;
 // Generous retry budget: the lock is a local file and real contention is rare,
@@ -137,6 +140,17 @@ export async function readMemoryIndex(cwd: string | undefined): Promise<MemoryIn
 		return parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath);
 	} catch {
 		return await writeDerivedMemoryIndex(cwd);
+	}
+}
+
+export async function readMemoryIndexNoRepair(cwd: string | undefined): Promise<{ index: MemoryIndex; warning?: string }> {
+	const filePath = resolveMemoryPath(cwd, "index.json");
+	try {
+		return { index: parseJsonOrThrow<MemoryIndex>(await readFile(filePath, "utf8"), filePath) };
+	} catch (error) {
+		const code = (error as { code?: string } | undefined)?.code;
+		if (code === "ENOENT") return { index: EMPTY_MEMORY_INDEX };
+		return { index: EMPTY_MEMORY_INDEX, warning: "memory_index_unreadable" };
 	}
 }
 

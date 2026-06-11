@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { atomicWriteText, memoryEntryDir, resolveMemoryPath } from "./paths.js";
+import { atomicWriteText } from "../../utils/fsAtomic.js";
+import { memoryEntryDir, resolveMemoryPath } from "./paths.js";
 import { parseMemoryEntry, serializeMemoryEntry } from "./frontmatter.js";
 import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "./indexStore.js";
 import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "./types.js";
@@ -13,6 +14,9 @@ import { normalizeOriginKeyFromUrl } from "./origin.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import type { MemoryResultResourceResolver } from "../toolShared.js";
 import { stableJson } from "../../utils/json.js";
+import { readCachedMemoryProfile } from "../../memory/profileService.js";
+import { memoryStampSetId, verifyMemoryAnchors } from "../../memory-core/staleness.js";
+import type { MemoryAnchors, MemoryOriginProfile } from "../../memory-core/types.js";
 
 function newMemoryId(kind: "sop" | "fact"): string {
 	return `${kind}_${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}_${randomUUID().slice(0, 8)}`;
@@ -27,6 +31,42 @@ async function writeTombstone(cwd: string | undefined, value: MemoryTombstone): 
 	return abs;
 }
 
+function preciseOriginFromUrl(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		return new URL(url).origin;
+	} catch {
+		return undefined;
+	}
+}
+
+function canonicalUrlFromUrl(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		const parsed = new URL(url);
+		return `${parsed.origin}${parsed.pathname || "/"}`;
+	} catch {
+		return undefined;
+	}
+}
+
+function anchorsFromProfile(profile: MemoryOriginProfile | undefined, url: string | undefined): MemoryAnchors | undefined {
+	if (!profile) return undefined;
+	const canonicalUrl = canonicalUrlFromUrl(url);
+	const digest = (canonicalUrl ? profile.urls.find((item) => item.canonicalUrl === canonicalUrl) : undefined) ?? profile.urls[0];
+	if (!digest) return undefined;
+	const stampSetId = memoryStampSetId(digest.factStamps);
+	return {
+		canonicalUrl: digest.canonicalUrl,
+		...(digest.fingerprintSummary ? { fingerprintSummary: digest.fingerprintSummary } : {}),
+		...(stampSetId ? { stampSetId } : {}),
+	};
+}
+
+export function verifyMemoryEntryAgainstProfile(entry: Pick<MemoryEntry, "anchors">, profile: MemoryOriginProfile | undefined, url?: string) {
+	return verifyMemoryAnchors(entry.anchors, anchorsFromProfile(profile, url) ?? {});
+}
+
 export async function validateMemoryRecord(options: {
 	cwd?: string;
 	server?: BrowserBridgeServer;
@@ -35,6 +75,8 @@ export async function validateMemoryRecord(options: {
 }): Promise<{ scopeKey: string; entry: Omit<MemoryEntry, "relPath" | "etag">; existingIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[] }> {
 	const { scopeKey, scopeKind, confidence } = validateMemoryRecordPayloadShape(options.payload);
 	const evidenceRefs = await resolveMemoryEvidenceRefs({ cwd: options.cwd, server: options.server, resolver: options.resolver, evidenceRefs: options.payload.evidenceRefs });
+	const anchorOrigin = preciseOriginFromUrl(options.payload.url);
+	const anchors = anchorOrigin ? anchorsFromProfile(await readCachedMemoryProfile(options.cwd, anchorOrigin), options.payload.url) : undefined;
 	const now = new Date().toISOString();
 	const entry: Omit<MemoryEntry, "relPath" | "etag"> = {
 		schemaVersion: 1,
@@ -50,6 +92,7 @@ export async function validateMemoryRecord(options: {
 		verifiedAt: now,
 		updatedAt: now,
 		evidenceRefs,
+		anchors,
 		body: options.payload.body.trim(),
 	};
 	// Salience/dedup: compare against active same-scope, same-kind memory. An exact

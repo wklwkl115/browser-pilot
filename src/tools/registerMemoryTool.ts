@@ -34,11 +34,11 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 	defineBrowserTool(pi, {
 		name: "browser_memory",
 		label: "Browser Memory",
-		description: "Record, recall, read, or validate local browser memory entries with local-only persistence, near-duplicate dedup, optional provenance evidence, and bounded reads.",
-		promptSnippet: "Record, recall, read, or validate local browser memory entries.",
+		description: "Record, recall, read, or validate local browser memory entries. Recall is automatic for browser_observe scan/text through envelope.memory with verification status; record remains explicit, local-only, deduped, and evidence-backed when evidence is supplied.",
+		promptSnippet: "Record durable browser memory entries; browser_observe automatically surfaces matched memory in envelope.memory, while recall/read remain available for manual follow-up.",
 		promptGuidelines: [
 			"Use browser_memory record only after a task succeeded. Durable evidence such as saved.path, browser-result://, or a non-stale snapshot with saved artifact is recommended provenance, and any evidenceRefs you provide must resolve successfully. Recording auto-dedups near-identical SOPs and returns duplicateCandidates for merely-similar ones — supersede those instead of piling up copies. If a recalled SOP no longer works, just record a corrected version; it supersedes the old one.",
-			"Use browser_memory recall to get bounded cards first; use read for full bodies.",
+			"browser_observe scan/text automatically surfaces matched memory in envelope.memory with verification fresh|unverified|stale; use browser_memory read when an envelope.memory handle needs the full body, or recall for manual cross-scope queries.",
 			"browser_memory is local-only under .pi/browser-memory/; local scopes origin|task|project are supported, but v1 does not export/promote to repo.",
 		],
 		parameters: strictToolParameters({

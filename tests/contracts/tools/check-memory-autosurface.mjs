@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
-const { recordMemoryEntry, recallMemory } = await import(new URL("../../../src/tools/memory/store.ts", import.meta.url).href);
+const { recordMemoryEntry } = await import(new URL("../../../src/tools/memory/store.ts", import.meta.url).href);
 const { appendMemoryAutoSurface, __resetMemoryAutoSurfaceState } = await import(new URL("../../../src/tools/memory/autoSurface.ts", import.meta.url).href);
 
 function freshCwd() {
@@ -42,22 +42,14 @@ function savedEnvelope(url, savedPath, tool = "browser_execute") {
 	assert(!existsSync(path.join(cwd, ".pi", "browser-memory", "index.json")), "auto-surface must not materialize index.json for non-memory users");
 }
 
-// 2. Origin SOP surfaces exact-origin hint with counts.
+// 2. Origin SOP no longer surfaces recall hints here; recall moved into
+//    browser_observe envelope.memory so nextActions stays focused on record nudge.
 {
 	const cwd = freshCwd();
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", url: "https://www.xiaohongshu.com/explore", title: "xhs like", triggers: ["xiaohongshu", "like"], body: "1. step\n", evidenceRefs: [makeArtifact(cwd)] } });
 	const out = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://www.xiaohongshu.com/explore") });
-	const hints = hintsOf(out);
-	assert.equal(hints.length, 1, "exact-origin match must surface one hint");
-	assert(hints[0].includes("scopeKind=origin scopeKey=xiaohongshu.com") && hints[0].includes("(1 SOPs, 0 facts)"), `origin hint must carry scopeKind+scopeKey + counts: ${hints[0]}`);
-	assert(hints[0].includes('top: "xhs like"'), `hint must name the top entry: ${hints[0]}`);
-	// Mobile subdomain folds to the same origin and still surfaces.
-	assert.equal(hintsOf(await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://m.xiaohongshu.com/explore") })).length, 1, "a device/variant subdomain must surface the apex origin's memory");
-	// The hint must be executable: recalling with its args returns the entry.
-	assert.equal((await recallMemory({ cwd, scopeKind: "origin", scopeKey: "xiaohongshu.com" })).length, 1, "origin hint's recall args must return the recorded card");
-	// Robustness: a bare scopeKey (hint copied without scopeKind) must still resolve.
-	assert.equal((await recallMemory({ cwd, scopeKey: "xiaohongshu.com" })).length, 1, "recall with bare scopeKey must default to origin scope and resolve");
-	// Different origin -> no hint.
+	assert.deepEqual(hintsOf(out), [], "exact-origin memory must not surface a recall hint from autoSurface");
+	assert.deepEqual(hintsOf(await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://m.xiaohongshu.com/explore") })), [], "device/variant subdomain must not surface recall hints from autoSurface");
 	const miss = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://example.com/") });
 	assert.deepEqual(hintsOf(miss), [], "non-matching origin must not surface origin-scope memory");
 }
@@ -74,36 +66,35 @@ function savedEnvelope(url, savedPath, tool = "browser_execute") {
 	assert.deepEqual(hintsOf(off), [], "PI_BROWSER_MEMORY_AUTOSURFACE=0 must disable surfacing");
 }
 
-// 5. Freshness (#4 regression): newly recorded memory surfaces in the SAME process.
+// 5. Freshness regression now belongs to envelope.memory; autoSurface remains silent.
 {
 	const cwd = freshCwd();
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", url: "https://www.xiaohongshu.com/explore", title: "first", triggers: ["a"], body: "x\n", evidenceRefs: [makeArtifact(cwd, "a.json")] } });
 	const first = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://www.xiaohongshu.com/explore") });
-	assert(hintsOf(first)[0].includes("(1 SOPs, 0 facts)"), "first surface must see one SOP");
+	assert.deepEqual(hintsOf(first), [], "first recorded memory must not use autoSurface recall hints");
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", url: "https://www.xiaohongshu.com/explore", title: "second", triggers: ["b"], body: "y\n", evidenceRefs: [makeArtifact(cwd, "b.json")] } });
 	const second = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://www.xiaohongshu.com/explore") });
-	assert(hintsOf(second)[0].includes("(2 SOPs, 0 facts)"), `freshly recorded memory must surface without restart: ${hintsOf(second)[0]}`);
+	assert.deepEqual(hintsOf(second), [], "freshly recorded memory must not use autoSurface recall hints");
 }
 
-// 6. Broadened triggers (#3 regression): non-observe tool with a target url surfaces.
+// 6. Non-observe tool with a covered target url stays quiet: no recall hint and no record nudge.
 {
 	const cwd = freshCwd();
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", url: "https://www.xiaohongshu.com/explore", title: "xhs", triggers: ["like"], body: "x\n", evidenceRefs: [makeArtifact(cwd)] } });
 	const exec = await appendMemoryAutoSurface({ cwd, envelope: { tool: "browser_execute", detailLevel: "summary", summary: {}, target: { url: "https://www.xiaohongshu.com/explore" } } });
-	assert.equal(hintsOf(exec).length, 1, "non-observe tool with origin must still surface memory");
+	assert.deepEqual(hintsOf(exec), [], "non-observe tool must not surface recall memory through autoSurface");
+	assert.deepEqual(recordHintsOf(exec), [], "covered origin must not emit a record nudge");
 	// browser_memory itself is skipped to avoid self-referential noise.
 	const self = await appendMemoryAutoSurface({ cwd, envelope: { tool: "browser_memory", detailLevel: "summary", summary: { url: "https://www.xiaohongshu.com/explore" } } });
 	assert.deepEqual(hintsOf(self), [], "browser_memory results must not self-surface");
 }
 
-// 7. Task/project scope (#2 regression): surfaces via trigger match on the page.
+// 7. Task/project scope recall hints are not emitted by autoSurface.
 {
 	const cwd = freshCwd();
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", scopeKind: "task", scopeKey: "web-recon", title: "recon flow", triggers: ["recon", "endpoints"], body: "x\n", evidenceRefs: [makeArtifact(cwd)] } });
 	const hit = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://example.com/recon", { title: "Recon dashboard" }) });
-	const hints = hintsOf(hit);
-	assert.equal(hints.length, 1, "task-scope memory must surface when a trigger matches the page");
-	assert(hints[0].includes("scopeKind=task scopeKey=web-recon"), `task hint must carry scopeKind+scopeKey: ${hints[0]}`);
+	assert.deepEqual(hintsOf(hit), [], "task-scope memory must not surface from autoSurface");
 	const miss = await appendMemoryAutoSurface({ cwd, envelope: observeEnvelope("https://example.com/profile", { title: "User profile" }) });
 	assert.deepEqual(hintsOf(miss), [], "task-scope memory must stay silent when no trigger matches the page");
 }
@@ -132,13 +123,13 @@ function savedEnvelope(url, savedPath, tool = "browser_execute") {
 	assert(rec[0].includes("action=record") && !rec[0].includes("evidenceRefs="), `evidence-less record hint must omit evidenceRefs: ${rec[0]}`);
 }
 
-// 10. Covered origin -> recall hint, never a record nudge.
+// 10. Covered origin -> no recall hint here, never a record nudge.
 {
 	__resetMemoryAutoSurfaceState();
 	const cwd = freshCwd();
 	await recordMemoryEntry({ cwd, payload: { kind: "sop", url: "https://www.xiaohongshu.com/explore", title: "xhs", triggers: ["like"], body: "x\n", evidenceRefs: [makeArtifact(cwd)] } });
 	const out = await appendMemoryAutoSurface({ cwd, envelope: savedEnvelope("https://www.xiaohongshu.com/explore", path.join(cwd, ".pi/browser-artifacts/scan.json")) });
-	assert.equal(hintsOf(out).length, 1, "covered origin must still surface its recall hint");
+	assert.deepEqual(hintsOf(out), [], "covered origin must not surface recall hints from autoSurface");
 	assert.deepEqual(recordHintsOf(out), [], "covered origin must not emit a record candidate");
 }
 

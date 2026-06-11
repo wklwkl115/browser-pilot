@@ -24,6 +24,7 @@
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
 - Execution Feedback Layer Plan历史摘要见 `docs/archive/execution-feedback-layer-plan.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
+- Memory Kernel Plan历史摘要见 `docs/archive/memory-kernel-plan.md`
 - 已撤回 orchestration / target resolver / profile isolation历史摘要见 `docs/archive/orchestration-history.md`
 - Perception Layer Optimization Plan历史摘要见 `docs/archive/perception-layer-optimization-plan.md`
 - Protocol Single Source Plan历史摘要见 `docs/archive/protocol-single-source-plan.md`
@@ -39,6 +40,7 @@
 - `docs/archive/bridge-esm-history.full.md`
 - `docs/archive/execution-feedback-layer-plan.full.md`
 - `docs/archive/governance-history.full.md`
+- `docs/archive/memory-kernel-plan.full.md`
 - `docs/archive/orchestration-history.full.md`
 - `docs/archive/perception-layer-optimization-plan.full.md`
 - `docs/archive/protocol-single-source-plan.full.md`

@@ -14,7 +14,11 @@ import { buildIdentityGraph, identityGraphSummary } from "../abml/identityGraph.
 import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
 import type { FactGranularity } from "../distill-core/fact.js";
 import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../distill-core/relevance.js";
+import { RELEVANCE_TUNING } from "../distill-core/relevanceTuning.js";
 import { extractScalarTerm, extractUrlTerms } from "../distill-core/relevanceTaps.js";
+import { recallByTokens } from "../memory-core/recall.js";
+import { situationTokens } from "../memory-core/routing.js";
+import type { MemoryAugmentationPlan, MemoryRecallEntry, MemoryVerificationStatus } from "../memory-core/types.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
@@ -30,9 +34,20 @@ import { registerScanEntityRefs } from "./scanEntityRefs.js";
 import { scanEntitiesForEnvelope, summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
 import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "./toolShared.js";
+import { consumeMemoryProfileDiagnostics, readCachedMemoryProfile, recordMemoryProfileFrame, recordMemoryProfileStrike } from "../memory/profileService.js";
+import { memoryKernelEnabled } from "../memory/secret.js";
+import { containsSensitiveEvidence } from "../utils/redaction.js";
+import { browserMemoryUriForEntry, readMemoryIndexNoRepair } from "./memory/indexStore.js";
+import { parseMemoryEntry } from "./memory/frontmatter.js";
+import { memoryEntryDir, resolveMemoryPath } from "./memory/paths.js";
+import { normalizeMemoryEntryId } from "./memory/ids.js";
+import { verifyMemoryEntryAgainstProfile } from "./memory/store.js";
+import { normalizeOriginKeyFromUrl } from "./memory/origin.js";
 
 export const DEFAULT_CONTENT_TIMEOUT_MS = 35_000;
 export const MIN_CONTENT_TIMEOUT_MS = 100;
+const PROCESS_MEMORY_CONVERSATION_ID = `${process.pid}:${Date.now()}`;
+const memoryFullShown = new Set<string>();
 
 export type ObserveMode = "scan" | "content" | "html" | "text" | "tabs";
 
@@ -120,6 +135,155 @@ function urlTerms(url: string | undefined): RelevanceTerm[] {
 	return extractUrlTerms(url).map((term) => ({ ...term, source: "D" }));
 }
 
+function memoryAgreementToken(value: string): string {
+	return value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, " ").trim();
+}
+
+function memoryOrigin(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		return new URL(url).origin;
+	} catch {
+		return undefined;
+	}
+}
+
+function isSensitiveWarmStartTerm(term: string): boolean {
+	if (containsSensitiveEvidence(term)) return true;
+	if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(term)) return true;
+	if (/\b(?:token|secret|password|passwd|pwd|auth|session|cookie|api[_-]?key)\b\s*[:=]/i.test(term)) return true;
+	return false;
+}
+
+async function memoryWarmStartTerms(cwd: string | undefined, url: string | undefined, trace: PerceptionTraceSnapshot | undefined): Promise<RelevanceTerm[]> {
+	if (!memoryKernelEnabled()) return [];
+	const origin = memoryOrigin(url);
+	if (!origin) return [];
+	const profile = await readCachedMemoryProfile(cwd, origin);
+	if (!profile) return [];
+	const candidates = Object.values(profile.termStats)
+		.filter((term) => term.sessionCount >= 2 && !isSensitiveWarmStartTerm(term.term))
+		.sort((a, b) => b.sessionCount - a.sessionCount || b.lastSeenAt - a.lastSeenAt || a.term.localeCompare(b.term));
+	if (!candidates.length) return [];
+	const liveTokens = new Set([
+		...urlTerms(url).map((term) => memoryAgreementToken(term.term)),
+		...traceTerms(trace).map((term) => memoryAgreementToken(term.term)),
+	].filter(Boolean));
+	if (!candidates.some((term) => liveTokens.has(memoryAgreementToken(term.term)))) return [];
+	const ageOffset = (trace?.terms.length ?? 0) + 1;
+	return candidates.slice(0, RELEVANCE_TUNING.maxMemoryTerms).map((term, index) => ({
+		term: term.term,
+		kind: term.kind,
+		source: "F" as const,
+		weight: Math.max(0.1, (term.weight ?? 1) * 0.5),
+		age: ageOffset + index,
+	}));
+}
+
+function normalizedMemoryScope(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		return normalizeOriginKeyFromUrl(url);
+	} catch {
+		return undefined;
+	}
+}
+
+function memoryRecallTokens(url: string | undefined, query: string | undefined): string[] {
+	return situationTokens([
+		...urlTerms(url).map((term) => term.term),
+		query,
+	].join(" "));
+}
+
+async function loadMemoryEntryForRecall(cwd: string | undefined, entry: MemoryRecallEntry) {
+	const id = normalizeMemoryEntryId(entry.id);
+	const relPath = `${memoryEntryDir(entry.kind)}/${id}.md`;
+	const text = await readFile(resolveMemoryPath(cwd, relPath), "utf8").catch(() => undefined);
+	return text ? parseMemoryEntry(text, relPath) : undefined;
+}
+
+function boundedMemoryBody(body: string): string | undefined {
+	const lines = body.split(/\r?\n/);
+	let text = lines.slice(0, 60).join("\n").trim();
+	if (!text) return undefined;
+	if (text.length > 4000) text = `${text.slice(0, 4000)}...`;
+	else if (lines.length > 60) text = `${text}\n...`;
+	return text;
+}
+
+function nextStrikeCount(current: number, status: MemoryVerificationStatus): number {
+	if (status === "fresh") return 0;
+	if (status === "stale") return current + 1;
+	return current;
+}
+
+async function buildMemoryAugmentationPlan(cwd: string | undefined, url: string | undefined, query: string | undefined): Promise<MemoryAugmentationPlan | undefined> {
+	if (!memoryKernelEnabled()) return undefined;
+	const origin = memoryOrigin(url);
+	const scopeKey = normalizedMemoryScope(url);
+	if (!origin || !scopeKey) return undefined;
+	const loaded = await readMemoryIndexNoRepair(cwd);
+	const tokens = memoryRecallTokens(url, query);
+	if (!loaded.index.entries.length || !tokens.length) return undefined;
+	const recalled = recallByTokens(loaded.index.entries.map((entry): MemoryRecallEntry => ({
+		id: entry.id,
+		title: entry.title,
+		triggers: entry.triggers,
+		scopeKind: entry.scopeKind,
+		scopeKey: entry.scopeKey,
+		kind: entry.kind,
+		status: entry.status,
+		updatedAt: entry.updatedAt,
+	})), { origin: scopeKey, tokens, limit: 10 }).filter((item) => item.matchReason.includes("idf")).slice(0, 2);
+	if (!recalled.length) return undefined;
+	const profile = await readCachedMemoryProfile(cwd, origin);
+	const cards: Array<Record<string, unknown> & { body?: string }> = [];
+	for (const item of recalled) {
+		const entry = await loadMemoryEntryForRecall(cwd, item.entry);
+		if (!entry) continue;
+		const verification = verifyMemoryEntryAgainstProfile(entry, profile, url);
+		if (verification.status !== "unverified") {
+			void recordMemoryProfileStrike({ cwd, origin, entryId: entry.id, status: verification.status });
+		}
+		const strikeCount = nextStrikeCount(profile?.strikes[entry.id] ?? 0, verification.status);
+		const handle = browserMemoryUriForEntry(entry);
+		const card: Record<string, unknown> & { body?: string } = {
+			id: entry.id,
+			title: entry.title,
+			kind: entry.kind,
+			confidence: entry.confidence,
+			verification: verification.status,
+			reasons: verification.reasons,
+			matchReason: item.matchReason,
+			handle,
+			updatedAt: entry.updatedAt,
+		};
+		if (!(verification.status === "stale" && strikeCount >= 3)) {
+			const body = boundedMemoryBody(entry.body);
+			if (body) card.body = body;
+		}
+		cards.push(card);
+	}
+	if (!cards.length) return undefined;
+	const conversationKey = PROCESS_MEMORY_CONVERSATION_ID;
+	const seenKey = `${conversationKey}\u0000${origin}`;
+	const showInline = !memoryFullShown.has(seenKey);
+	memoryFullShown.add(seenKey);
+	const handleOnly = { status: "matched", origin, collapsed: true, cards: cards.map(({ body: _body, ...card }) => card) };
+	return {
+		...(showInline ? { inline: { status: "matched", origin, cards } } : {}),
+		handleOnly,
+	};
+}
+
+export const __buildMemoryAugmentationPlanForTests = buildMemoryAugmentationPlan;
+export const __memoryWarmStartTermsForTests = memoryWarmStartTerms;
+
+export function __resetMemoryAugmentationStateForTests(): void {
+	memoryFullShown.clear();
+}
+
 function intentTerms(intent: string | undefined): RelevanceTerm[] {
 	return extractScalarTerm(intent, "intent", 1.35).map((term) => ({ ...term, source: "E" }));
 }
@@ -166,7 +330,7 @@ type ObserveRelevance = {
 	artifact: Record<string, unknown>;
 };
 
-function buildObserveRelevance(server: BrowserBridgeServer, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>): ObserveRelevance | undefined {
+function buildObserveRelevance(server: BrowserBridgeServer, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>, memoryTerms: RelevanceTerm[] = []): ObserveRelevance | undefined {
 	if (!relevanceEnabled(params)) return undefined;
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [
@@ -174,6 +338,7 @@ function buildObserveRelevance(server: BrowserBridgeServer, params: ObserveToolP
 		...urlTerms(url),
 		...archetypeTerms(inference),
 		...intentTerms(observeIntent(params)),
+		...memoryTerms,
 	];
 	if (!terms.length) return undefined;
 	const result = computeRelevanceMap(entityRelevanceInputs(entities), terms);
@@ -185,7 +350,7 @@ function buildObserveRelevance(server: BrowserBridgeServer, params: ObserveToolP
 			boosted: result.boosted,
 			signals: result.signals,
 			boostedRefs,
-			...(process.env.PI_BROWSER_RELEVANCE_DEBUG === "1" ? { debugTerms: terms.map((term) => ({ term: term.term, kind: term.kind, source: term.source, age: term.age })).slice(0, 32) } : {}),
+			...(process.env.PI_BROWSER_RELEVANCE_DEBUG === "1" ? { debugTerms: terms.map((term) => ({ kind: term.kind, source: term.source, age: term.age })).slice(0, 32) } : {}),
 		},
 	};
 }
@@ -625,12 +790,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 					}, onUpdate, async (handle): Promise<import("../utils/toolResult.js").PiTextToolResult> => {
 						await handle.update({ progress: 100, details: { fromCache: true, changeSeq: cacheFingerprint.changeSeq } });
 						const value = { ...cachedEnvelope, fromCache: true, cache: { reason: "content-fingerprint-unchanged", changeSeq: cacheFingerprint.changeSeq, priorSnapshotId: ledgerFrame.snapshotId } };
+						const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 						return await jsonToolResult(value, resultParams, ctx, {
 							toolName: "browser_observe",
 							command: mode === "text" ? "scan.text" : "scan",
 							maxChars,
 							fallbackName,
-							details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId },
+							details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId, ...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}) },
 							operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 							snapshot: snapshotMeta,
 							distill: () => ({ mode, sourceMode: "scan", fromCache: true, cache: value.cache, priorSnapshotId: ledgerFrame.snapshotId }),
@@ -733,6 +899,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const summaryData = data ? registerScanEntityRefs(data, scanEntityContext) : data;
 	const scanEnvelopeEntities = summaryData ? scanEntitiesForEnvelope(summaryData, { entityContext: scanEntityContext }) : [];
 	const pageUrl = typeof data?.url === "string" ? data.url : undefined;
+	const currentTrace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(bridge.browserSessionId) : undefined;
+	const memoryTerms = relevanceEnabled(params) ? await memoryWarmStartTerms(ctx?.cwd, pageUrl, currentTrace) : [];
+	const memoryAugmentationPlan = String(params.detailLevel || "summary") === "full" ? undefined : await buildMemoryAugmentationPlan(ctx?.cwd, pageUrl, observeIntent(params));
 	let artifactRelevance: Record<string, unknown> | undefined;
 	const baseSummaryFor = (relevance?: ObserveRelevance): Record<string, unknown> => ({
 		...withObservationMeta(summarizeScanData(summaryData, tabs, {
@@ -783,7 +952,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		? (() => {
 			const relSummary = buildRelationSummary(attributedEntities);
 			const inference = buildInferenceSummary(attributedEntities, relSummary, abmlDiff);
-			const relevance = buildObserveRelevance(server, params, bridge.browserSessionId, pageUrl, attributedEntities, inference);
+			const relevance = buildObserveRelevance(server, params, bridge.browserSessionId, pageUrl, attributedEntities, inference, memoryTerms);
 			artifactRelevance = relevance?.artifact;
 			const baseSummary = baseSummaryFor(relevance);
 			const snapshotProjection = buildSnapshotProjection(attributedEntities, { treeDiff: abmlTreeDiff });
@@ -830,7 +999,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			};
 		})()
 		: (() => {
-			const relevance = buildObserveRelevance(server, params, bridge.browserSessionId, pageUrl, scanEnvelopeEntities);
+			const relevance = buildObserveRelevance(server, params, bridge.browserSessionId, pageUrl, scanEnvelopeEntities, undefined, memoryTerms);
 			artifactRelevance = relevance?.artifact;
 			return { ...baseSummaryFor(relevance), ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock };
 		})();
@@ -902,17 +1071,19 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		: undefined;
 	const priorLedgerFrame = finalLedgerKey && typeof server.getRecentPerceptionLedgerFrames === "function" ? server.getRecentPerceptionLedgerFrames(finalLedgerKey, 1)[0] : undefined;
 	const stableRefs = ledgerFrameForRecord ? stableRefsFromFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
+	const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
 	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: scanCommandName(mode, hasNavigation),
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "scan_extract", ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
+		details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "scan_extract", ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false }, ...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}) },
 		operation,
 		snapshot: snapshotMeta,
 		granularityCeiling,
 		stableRefs,
+		memoryAugmentationPlan,
 		onAllocation: (value) => {
 			allocation = value;
 		},
@@ -920,12 +1091,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		artifactValue: { ...observation.result, ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 	if (ledgerFrameForRecord && typeof server.recordPerceptionLedgerFrame === "function") {
-		server.recordPerceptionLedgerFrame({
+		const recordedFrame = server.recordPerceptionLedgerFrame({
 			...ledgerFrameForRecord,
 			...(pageFingerprint ? { pageFingerprint } : {}),
 			renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: snapshotMeta.capturedAt },
 			...(allocation ? { allocation } : {}),
 		});
+		void recordMemoryProfileFrame({ cwd: ctx?.cwd, browserSessionId: bridge.browserSessionId, frame: recordedFrame, trace: typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(bridge.browserSessionId) : undefined });
 	}
 	return toolResult;
 }

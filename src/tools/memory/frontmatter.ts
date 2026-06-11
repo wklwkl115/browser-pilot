@@ -3,6 +3,7 @@ import { createCodedError } from "../../utils/codedError.js";
 import { isRecord } from "../../utils/records.js";
 import { normalizeMemoryEntryId } from "./ids.js";
 import type { MemoryEntry, MemoryFrontmatter } from "./types.js";
+import type { MemoryAnchors } from "../../memory-core/types.js";
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -25,8 +26,17 @@ export function serializeMemoryEntry(entry: Omit<MemoryEntry, "relPath" | "etag"
 		verifiedAt: entry.verifiedAt,
 		updatedAt: entry.updatedAt,
 		evidenceRefs: entry.evidenceRefs,
+		...(entry.anchors ? { anchors: entry.anchors } : {}),
 	};
 	return `---\n${yaml.dump(frontmatter, { lineWidth: 120, noRefs: true }).trimEnd()}\n---\n${entry.body.endsWith("\n") ? entry.body : `${entry.body}\n`}`;
+}
+
+function parseAnchors(value: unknown): MemoryAnchors | undefined {
+	const record = asRecord(value);
+	const canonicalUrl = typeof record.canonicalUrl === "string" ? record.canonicalUrl : undefined;
+	const stampSetId = typeof record.stampSetId === "string" ? record.stampSetId : undefined;
+	const fingerprintSummary = isRecord(record.fingerprintSummary) ? record.fingerprintSummary : undefined;
+	return canonicalUrl || stampSetId || fingerprintSummary ? { canonicalUrl, stampSetId, fingerprintSummary } : undefined;
 }
 
 export function parseMemoryEntry(text: string, relPath: string): MemoryEntry {
@@ -49,6 +59,7 @@ export function parseMemoryEntry(text: string, relPath: string): MemoryEntry {
 		verifiedAt: String(frontmatter.verifiedAt || "").trim(),
 		updatedAt: String(frontmatter.updatedAt || "").trim(),
 		evidenceRefs,
+		anchors: parseAnchors(frontmatter.anchors),
 		body: match[2] || "",
 		relPath,
 	};

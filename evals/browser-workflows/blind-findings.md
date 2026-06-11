@@ -75,6 +75,30 @@ daemon predates them.
 
 ## Harness notes (eval infra, not tool findings)
 
+- **Memory kernel M5 acceptance — PASSED WITH ONE TIGHTENING 2026-06-11.** First attempted
+  real-site target `https://linux.do/latest` was externally unavailable: the blind agent saw
+  Cloudflare `502 Bad gateway` on the page and on `/latest.json`, so it was recorded as an
+  invalid site-state run, not a tool failure. The valid READ-ONLY paired run used an isolated
+  real `https://www.bilibili.com/` stage and child agents operating only through
+  `pb-blind.mjs`, CLI `--help`, JSON outputs, and the `pi-browser-tools` skill. **Pair 1:**
+  T1-cold extracted five visible Bilibili video/card titles and URLs with memory adoption all
+  false; after the operator recorded a SOP from the successful T1, T1-warm surfaced
+  `envelope.memory` (`browser-memory://sop/sop_20260611063905_9d25270d`), used the inline body,
+  attempted read-through, and reported `usedInFinalAnswer:true`. `recordNudgeShown:false` and
+  `recordCalled:false` stayed false in all blind runs, confirming the nudge is still not adopted
+  by blind agents. **Pair 2:** T2-warm (different task: visible navigation/search affordances)
+  succeeded; it saw the T1 card collapsed, did not read it, and did not use it in the answer.
+  A first memory-off control was invalid because setting `PI_BROWSER_MEMORY=0` on individual CLI
+  calls does not affect an already-running memory-on daemon; this exposed a harness boundary. The
+  corrected control launched a fresh isolated daemon/browser with `PI_BROWSER_MEMORY=0`, produced
+  no memory plane, and completed T2 successfully in roughly 10 wrapper invocations with
+  `effect.mutations:0`. Operator decision: memory adoption is proven for relevant T1 warm; T2
+  showed no success harm, but the irrelevant same-origin collapsed card was too eager, so M3c was
+  tightened after the run to require current observe URL/intent token overlap before automatic
+  `envelope.memory` injection. The tightening is locked by `npm run check:memory-plane`, including
+  wrong-origin/no-agreement, stale-strike body suppression, and common-token flood negative
+  controls.
+
 - **Execution feedback adoption gate — SPLIT RESULT 2026-06-11.** Two implementation-blind
   subagents worked against the isolated local fixture stage
   (`.pi/browser-artifacts/eval-blind/stage.json`, fixture base `http://127.0.0.1:8296`) using only
