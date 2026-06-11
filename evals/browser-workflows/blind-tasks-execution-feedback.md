@@ -1,7 +1,8 @@
 # Blind-agent execution feedback adoption tasks
 
-These tasks are for the `execution-feedback-layer-plan.md` Track F adoption gate. They run against the
-isolated local fixture stage, not a real website, because they intentionally mutate page state. Launch:
+These archived tasks covered the `docs/archive/execution-feedback-layer-plan.full.md` Track F
+adoption gate. They run against the isolated local fixture stage, not a real website, because they
+intentionally mutate page state. Launch:
 
 ```bash
 npm run eval:blind:launch -- --confirm --fixtures --url <fixture-url>

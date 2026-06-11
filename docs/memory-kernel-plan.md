@@ -5,7 +5,7 @@ v3 = owner architect review accepted 7/7: memory plane budget subordination hard
 point corrected to ephemeral relevance assembly (the v2 design would have polluted the trace ring
 AND self-reinforced sessionCounts), session-once retied to a real conversation key, M3b anchors made
 structural, profile privacy schema hardened, kill-switch semantics defined against the existing
-autosurface switch, coordination recomputed against the now-ACTIVE execution feedback plan.
+autosurface switch, coordination recomputed after the completed execution feedback plan.
 v2 = adversarial self-review of v1: task-bias pollution and conversation-continuity defects fixed,
 M3b repurposed to verification, IDF routing and negative-feedback strikes added, three-arm eval.
 
@@ -177,10 +177,11 @@ hints — it is topology: move memory onto the default path, as a fourth kernel 
   `scoreCard` (`store.ts:101-127`) ignores confidence/verifiedAt (D8 gap). `safeSlug` truncates at 80
   (`paths.ts:19-27`) — collision risk fixed by D2 hash suffix.
 - Storage root `.pi/browser-memory` (`paths.ts:5`); `atomicWriteText` is generic fs logic there.
-- **Execution feedback plan is ACTIVE** (`CURRENT.md:16`): `src/tools/executionJournal.ts`,
-  `executionEffect.ts` exist; its touched set includes `registerExecuteTool.ts`,
-  `registerCommandTool.ts`, **`observeRunners.ts`**, and `resultMiddleware.ts` is pending for its
-  later tracks — see §8.
+- **Execution feedback plan is complete and archived**:
+  `docs/archive/execution-feedback-layer-plan.full.md`. `src/tools/executionJournal.ts` and
+  `executionEffect.ts` exist; the completed touched set includes `registerExecuteTool.ts`,
+  `registerCommandTool.ts`, **`observeRunners.ts`**, and the current result middleware boundary —
+  see §8 for the remaining coordination shape.
 - Boundary-check models: `tests/contracts/drift/check-{distill,abml}-core-boundary.mjs`
   (`package.json:110-111`). Byte-identity test model: `check-task-conditioned-salience.mjs`.
 
@@ -336,18 +337,18 @@ per conversation+origin. Net new envelope bytes on no-hit pages: **zero, contrac
 - Cross-session treeDiff/snapshotProjection baselines — P1 violation class; permanently out unless a
   mechanism only ADDS (M3b's "structure unchanged since memory recorded" already covers the useful case).
 
-## 8. Coordination with the ACTIVE execution feedback plan (recomputed v3)
+## 8. Coordination with the completed execution feedback layer (recomputed v3)
 
-`docs/execution-feedback-layer-plan.md` is ACTIVE in `CURRENT.md` and has already landed
-`executionJournal.ts` / `executionEffect.ts`; its touched set includes `registerExecuteTool.ts`,
-`registerCommandTool.ts`, **`observeRunners.ts`**, and later tracks will touch `resultMiddleware.ts`.
-Overlap with this plan is therefore TWO hot files: `observeRunners.ts` (their effect wiring vs our
-M3a splice + M2 service calls — different functions, same file) and `resultMiddleware.ts` (their
-journal/effect surfacing vs our memory plane — independent envelope fields). Rule: **this plan does
-not activate while an execution-feedback track that edits either file is in flight**; activation
-slots in after their current track lands, and each side rebases mechanically. Deeper synergy
-(fresh-verified anchors raising `pi.resolve` confidence; journal facts as v2 profile input) is
-staged behind both plans' acceptance, a dependency of neither.
+`docs/archive/execution-feedback-layer-plan.full.md` is complete and has landed
+`executionJournal.ts` / `executionEffect.ts`; its touched set included `registerExecuteTool.ts`,
+`registerCommandTool.ts`, **`observeRunners.ts`**, and result-middleware-facing summary/artifact
+behavior. Overlap with this plan is therefore TWO hot files: `observeRunners.ts` (completed effect
+wiring vs our M3a splice + M2 service calls — different functions, same file) and
+`resultMiddleware.ts` (completed journal/effect surfacing vs our memory plane — independent envelope
+fields). The former activation block has cleared: there is no active execution-feedback track left
+to wait on, but memory-kernel implementation must rebase against the completed execution feedback
+state. Deeper synergy (fresh-verified anchors raising `pi.resolve` confidence; journal facts as v2
+profile input) is staged behind both plans' acceptance, a dependency of neither.
 
 ## 9. Activation block for CURRENT.md
 
@@ -372,7 +373,7 @@ staged behind both plans' acceptance, a dependency of neither.
   fixture); check:task-conditioned-salience, check:session-delta-long-conversation, check:summaries,
   check:token-economy, bench:distill, check-memory-plane contract; acceptance = three-arm blind eval
   (cold / warm-same / warm-different) with harm bound and pre-committed removal clauses.
-- Coordination: does not activate while an execution-feedback track editing observeRunners.ts or
-  resultMiddleware.ts is in flight (plan §8).
+- Coordination: execution-feedback is complete; rebase against its archived final state before
+  editing observeRunners.ts or resultMiddleware.ts (plan §8).
 - Plan: docs/memory-kernel-plan.md
 ```

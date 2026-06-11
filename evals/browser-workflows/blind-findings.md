@@ -82,7 +82,7 @@ daemon predates them.
   (`execution-feedback-form.html`) succeeded but did NOT adopt `pi.resolve` / `pi.setValue`:** the
   agent observed `#full-name`, wrote selector-based `browser_execute` JS, and verified
   `Status: filled:Pi Agent`. This fails Track C's public-guidance adoption bar; `pi.*` stays
-  internal/underdocumented per `docs/execution-feedback-layer-plan.md`. **Canvas fixture
+  internal/underdocumented per `docs/archive/execution-feedback-layer-plan.full.md`. **Canvas fixture
   (`execution-feedback-canvas.html`) succeeded and DID adopt `input.pointer`:** the agent measured
   the blue rectangle with JS, then used `browser_command --command '{"cmd":"input.pointer",
   "gesture":"press","x":138.5,"y":159.3}'` and verified `Status: target hit`, without raw CDP

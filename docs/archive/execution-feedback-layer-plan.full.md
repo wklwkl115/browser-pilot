@@ -576,11 +576,12 @@ Each phase is independently revertable:
 ```markdown
 ### Execution feedback layer optimization (2026-06-11, 完成)
 
-Decision: execute the broadened execution feedback plan in `docs/execution-feedback-layer-plan.md`
-v3. Default execution gains cheap factual effect reporting built on existing page fingerprint,
-network seq, hook seq, operation, and artifact substrates. Physical input is exposed only as
-coordinate-addressed `input.*` bridge commands. `pi.*` was implemented as an explicit-marker
-internal page-world stdlib, but it did not pass the blind adoption bar for public guidance.
+Decision: execute the broadened execution feedback plan v3, now archived at
+`docs/archive/execution-feedback-layer-plan.full.md`. Default execution gains cheap factual effect
+reporting built on existing page fingerprint, network seq, hook seq, operation, and artifact
+substrates. Physical input is exposed only as coordinate-addressed `input.*` bridge commands. `pi.*`
+was implemented as an explicit-marker internal page-world stdlib, but it did not pass the blind
+adoption bar for public guidance.
 
 Boundary: no public semantic action verbs, no `mode=auto`-style execution guessing, no
 `diagnose:true`, no failure taxonomy, no intent verification, no auto-retry, no ref-addressed
