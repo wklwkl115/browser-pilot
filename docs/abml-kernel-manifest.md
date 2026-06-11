@@ -1,5 +1,7 @@
 # ABML kernel manifest
 
+> Doc-class: contract
+
 ABML (the perception substrate under `browser_*`) splits into **two layers** with a strict
 one-way dependency direction:
 
@@ -14,8 +16,8 @@ one-way dependency direction:
   unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
   package. **25 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
-  `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`. Drives the pure core with real page
-  data. **6 files.**
+  `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`, or owns live session ledger state.
+  Drives the pure core with real page data. **7 files.**
 
 `src/abml/` also keeps **25 thin re-export shims** at the old pure-core paths (e.g.
 `src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
@@ -71,10 +73,11 @@ each doc links back here.
 | `verbs/frame.ts` | Frame verb decision logic. |
 | `verbs/pierce.ts` | Pierce verb decision logic. |
 
-## Runtime (6 — talk to the live browser)
+## Runtime (7 — talk to the live browser)
 
 | File | Why runtime (forbidden-for-core imports) |
 | --- | --- |
+| `perceptionLedger.ts` | Live per-session perception ledger, render cache, and trace state. |
 | `verbs/runtime.ts` | Orchestrator: `driver`, `scan/buildScanScript`, `tools/*`, `resources/resourceStore`. |
 | `verbs/axRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
 | `verbs/frameRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |

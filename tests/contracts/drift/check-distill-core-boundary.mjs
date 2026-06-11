@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { forbiddenRuntimeReadLabels, stripStringLiterals } from "./purity-vocabulary.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const distillCoreDir = path.join(root, "src", "distill-core");
@@ -41,31 +42,17 @@ function importSources(text) {
 	return sources;
 }
 
-function stripStringLiterals(text) {
-	return text
-		.replace(/"(?:\\.|[^"\\])*"/g, "\"\"")
-		.replace(/'(?:\\.|[^'\\])*'/g, "''")
-		.replace(/`(?:\\.|[^`\\])*`/g, "``");
-}
-
 const stripExt = (value) => value.replace(/\.(ts|js|mjs)$/i, "");
 const files = walk(distillCoreDir).sort();
 assert(files.length > 0, "src/distill-core/ must contain classified pure kernel files");
 
 const violations = [];
-const forbiddenRuntimeReads = [
-	[/\bDate\.now\s*\(/, "Date.now("],
-	[/\bMath\.random\s*\(/, "Math.random("],
-	[/\bnew\s+Date\s*\(/, "new Date("],
-	[/\.localeCompare\s*\(/, "localeCompare("],
-	[/\.toLocale[A-Za-z]*\s*\(/, "toLocale*("],
-];
 for (const fileRel of files) {
 	const abs = path.join(distillCoreDir, fileRel);
 	const text = readFileSync(abs, "utf8");
 	assert(!/\b(process|window|document|chrome|browser)\b/.test(stripStringLiterals(text)), `src/distill-core/${fileRel} must not touch runtime/browser globals`);
-	for (const [pattern, label] of forbiddenRuntimeReads) {
-		assert(!pattern.test(stripStringLiterals(text)), `src/distill-core/${fileRel} must not use ${label}`);
+	for (const label of forbiddenRuntimeReadLabels(text)) {
+		assert.fail(`src/distill-core/${fileRel} must not use ${label}`);
 	}
 	for (const spec of importSources(text)) {
 		if (spec.startsWith("node:")) {

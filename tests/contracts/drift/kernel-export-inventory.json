@@ -1,0 +1,1573 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": [
+    "src/abml-core",
+    "src/distill-core",
+    "src/memory-core"
+  ],
+  "reservedCount": 2,
+  "modules": {
+    "src/abml-core/actionabilityModel.ts": {
+      "exports": [
+        {
+          "name": "ACTIONABILITY_VERB_MATRIX",
+          "status": "test-harness"
+        },
+        {
+          "name": "ACTION_POLL_MS",
+          "status": "test-harness"
+        },
+        {
+          "name": "ACTION_TIMEOUT_MS",
+          "status": "test-harness"
+        },
+        {
+          "name": "AbmlActionVerb",
+          "status": "internal"
+        },
+        {
+          "name": "STABLE_EPSILON_PX",
+          "status": "test-harness"
+        },
+        {
+          "name": "STABLE_WINDOW_MS",
+          "status": "test-harness"
+        },
+        {
+          "name": "actionabilitySpecForVerb",
+          "status": "test-harness"
+        },
+        {
+          "name": "isActionVerb",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/ax.ts": {
+      "exports": [
+        {
+          "name": "AxContext",
+          "status": "internal"
+        },
+        {
+          "name": "AxRelationAnchor",
+          "status": "internal"
+        },
+        {
+          "name": "AxTreeNode",
+          "status": "internal"
+        },
+        {
+          "name": "axBackendNodeId",
+          "status": "internal"
+        },
+        {
+          "name": "axName",
+          "status": "internal"
+        },
+        {
+          "name": "axNodeId",
+          "status": "internal"
+        },
+        {
+          "name": "axRole",
+          "status": "internal"
+        },
+        {
+          "name": "axValue",
+          "status": "internal"
+        },
+        {
+          "name": "boxModelToGeometry",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildAxEntityFromNode",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildAxLocators",
+          "status": "test-harness"
+        },
+        {
+          "name": "extractAxPropertyRelationAnchors",
+          "status": "internal"
+        },
+        {
+          "name": "isInterestingAxNode",
+          "status": "test-harness"
+        },
+        {
+          "name": "mergeDomAndAxEntities",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/causal.ts": {
+      "exports": [
+        {
+          "name": "CausalEvent",
+          "status": "internal"
+        },
+        {
+          "name": "CausalRequest",
+          "status": "internal"
+        },
+        {
+          "name": "CausalSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "MAX_CAUSAL_EVENTS",
+          "status": "test-harness"
+        },
+        {
+          "name": "MAX_CAUSAL_REQUESTS",
+          "status": "test-harness"
+        },
+        {
+          "name": "MAX_TRIGGERED_RELATIONS",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildCausalEvent",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildCausalEvents",
+          "status": "consumed"
+        },
+        {
+          "name": "buildCausalRequest",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildCausalSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "buildTriggeredRelations",
+          "status": "consumed"
+        },
+        {
+          "name": "causalFiredHint",
+          "status": "consumed"
+        },
+        {
+          "name": "causalRequestsFiredCount",
+          "status": "test-harness"
+        },
+        {
+          "name": "causalUnavailable",
+          "status": "consumed"
+        },
+        {
+          "name": "causalUserTriggeredCount",
+          "status": "test-harness"
+        },
+        {
+          "name": "eventTriggeredByEntity",
+          "status": "consumed"
+        },
+        {
+          "name": "latestSeq",
+          "status": "test-harness"
+        },
+        {
+          "name": "resolveActionEntityRef",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/diff.ts": {
+      "exports": [
+        {
+          "name": "EntityChange",
+          "status": "internal"
+        },
+        {
+          "name": "EntityChangeKind",
+          "status": "internal"
+        },
+        {
+          "name": "EntityDiff",
+          "status": "consumed"
+        },
+        {
+          "name": "EntityDiffOptions",
+          "status": "internal"
+        },
+        {
+          "name": "EntityDiffSalience",
+          "status": "internal"
+        },
+        {
+          "name": "EntityDiffSalienceItem",
+          "status": "internal"
+        },
+        {
+          "name": "EntityNameChange",
+          "status": "internal"
+        },
+        {
+          "name": "EntityValueChange",
+          "status": "internal"
+        },
+        {
+          "name": "diffEntities",
+          "status": "test-harness"
+        },
+        {
+          "name": "summarizeEntityDiff",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/entity.ts": {
+      "exports": [
+        {
+          "name": "BuiltEntity",
+          "status": "internal"
+        },
+        {
+          "name": "Entity",
+          "status": "consumed"
+        },
+        {
+          "name": "EntityKind",
+          "status": "internal"
+        },
+        {
+          "name": "EntityRelation",
+          "status": "internal"
+        },
+        {
+          "name": "EntitySource",
+          "status": "internal"
+        },
+        {
+          "name": "EntityState",
+          "status": "test-harness"
+        },
+        {
+          "name": "EntityStructure",
+          "status": "internal"
+        },
+        {
+          "name": "RelationType",
+          "status": "internal"
+        },
+        {
+          "name": "ScanEntityContext",
+          "status": "consumed"
+        },
+        {
+          "name": "buildActionableLocators",
+          "status": "internal"
+        },
+        {
+          "name": "buildControlsSourceEntity",
+          "status": "consumed"
+        },
+        {
+          "name": "buildDomEntityFromScanActionable",
+          "status": "consumed"
+        },
+        {
+          "name": "buildListHintLocators",
+          "status": "internal"
+        },
+        {
+          "name": "buildReferencedTargetEntity",
+          "status": "consumed"
+        },
+        {
+          "name": "buildRegionEntityFromListHint",
+          "status": "consumed"
+        },
+        {
+          "name": "buildVisionRegionFromCanvasActionable",
+          "status": "consumed"
+        },
+        {
+          "name": "dedupeEntities",
+          "status": "consumed"
+        },
+        {
+          "name": "withRegisteredRef",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/errors.ts": {
+      "exports": [
+        {
+          "name": "AbmlNormalizeErrorOptions",
+          "status": "internal"
+        },
+        {
+          "name": "normalizeAbmlError",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/grouping.ts": {
+      "exports": [
+        {
+          "name": "IndexedEntity",
+          "status": "internal"
+        },
+        {
+          "name": "MIN_TEMPLATE_INSTANCES",
+          "status": "internal"
+        },
+        {
+          "name": "TemplateGroup",
+          "status": "internal"
+        },
+        {
+          "name": "TemplateGroupDescriptor",
+          "status": "internal"
+        },
+        {
+          "name": "displayEntityText",
+          "status": "internal"
+        },
+        {
+          "name": "groupEntities",
+          "status": "internal"
+        },
+        {
+          "name": "isActionableOrStructural",
+          "status": "internal"
+        },
+        {
+          "name": "isPureTextLeaf",
+          "status": "internal"
+        },
+        {
+          "name": "normalizeEntityText",
+          "status": "internal"
+        },
+        {
+          "name": "structureScopeKey",
+          "status": "internal"
+        },
+        {
+          "name": "suppressNestedNonControlGroups",
+          "status": "internal"
+        },
+        {
+          "name": "templateGroupDescriptorForEntity",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/identityGraph.ts": {
+      "exports": [
+        {
+          "name": "IdentityGraph",
+          "status": "internal"
+        },
+        {
+          "name": "IdentityGraphEntry",
+          "status": "internal"
+        },
+        {
+          "name": "IdentityGraphSummary",
+          "status": "internal"
+        },
+        {
+          "name": "buildIdentityGraph",
+          "status": "consumed"
+        },
+        {
+          "name": "identityGraphSummary",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/index.ts": {
+      "exports": [
+        {
+          "name": "* from ./actionabilityModel.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./ax.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./causal.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./diff.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./entity.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./errors.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./grouping.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./identityGraph.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./inference.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./refId.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./refPolicy.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./relations.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./semanticRefAnchor.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./snapshotProjection.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./stream.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./templating.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./treeDiff.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./types.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/click.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/frame.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/pierce.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/read.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/router.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/scroll.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./verbs/type.js",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/inference.ts": {
+      "exports": [
+        {
+          "name": "DetectedIntent",
+          "status": "internal"
+        },
+        {
+          "name": "InferenceSummary",
+          "status": "test-harness"
+        },
+        {
+          "name": "PageIntent",
+          "status": "internal"
+        },
+        {
+          "name": "buildInferenceSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "entitiesForInferenceEvidence",
+          "status": "consumed"
+        },
+        {
+          "name": "inferenceEvidenceRefs",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/refId.ts": {
+      "exports": [
+        {
+          "name": "makePiRefUri",
+          "status": "consumed"
+        },
+        {
+          "name": "stableRefIdForDescriptor",
+          "status": "consumed"
+        },
+        {
+          "name": "summaryRefIdForDescriptor",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/refPolicy.ts": {
+      "exports": [
+        {
+          "name": "DEFAULT_IMMUTABLE_REF_TTL_MS",
+          "status": "internal"
+        },
+        {
+          "name": "DEFAULT_LIVE_REF_TTL_MS",
+          "status": "internal"
+        },
+        {
+          "name": "RefPolicyDecision",
+          "status": "internal"
+        },
+        {
+          "name": "classifyRefScope",
+          "status": "internal"
+        },
+        {
+          "name": "decideRefAccess",
+          "status": "test-harness"
+        },
+        {
+          "name": "defaultRefPolicyForKind",
+          "status": "consumed"
+        },
+        {
+          "name": "isRefExpired",
+          "status": "internal"
+        },
+        {
+          "name": "isSameSessionScope",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/relations.ts": {
+      "exports": [
+        {
+          "name": "RelationAnchor",
+          "status": "test-harness"
+        },
+        {
+          "name": "RelationHighlight",
+          "status": "internal"
+        },
+        {
+          "name": "RelationSummary",
+          "status": "test-harness"
+        },
+        {
+          "name": "addEntityRelations",
+          "status": "consumed"
+        },
+        {
+          "name": "buildRelationSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "deriveStateRelationAnchors",
+          "status": "test-harness"
+        },
+        {
+          "name": "entityRelationKeys",
+          "status": "test-harness"
+        },
+        {
+          "name": "materializeRelations",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/semanticRefAnchor.ts": {
+      "exports": [
+        {
+          "name": "SemanticRefAnchor",
+          "status": "internal"
+        },
+        {
+          "name": "SemanticRefAnchorCandidate",
+          "status": "internal"
+        },
+        {
+          "name": "SemanticRefAnchorConfidence",
+          "status": "internal"
+        },
+        {
+          "name": "SemanticRefAnchorHashInput",
+          "status": "test-harness"
+        },
+        {
+          "name": "SemanticRefAnchorReason",
+          "status": "internal"
+        },
+        {
+          "name": "SemanticRefAnchorSummary",
+          "status": "internal"
+        },
+        {
+          "name": "deriveSemanticRefAnchors",
+          "status": "test-harness"
+        },
+        {
+          "name": "semanticRefAnchorHashInput",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/snapshotProjection.ts": {
+      "exports": [
+        {
+          "name": "SnapshotProjection",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotProjectionDelta",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotProjectionOptions",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotProjectionSummary",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotProjectionTemplate",
+          "status": "internal"
+        },
+        {
+          "name": "buildSnapshotProjection",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/stream.ts": {
+      "exports": [
+        {
+          "name": "CaptureRefContext",
+          "status": "internal"
+        },
+        {
+          "name": "buildEventEntity",
+          "status": "test-harness"
+        },
+        {
+          "name": "buildNetworkEntryEntity",
+          "status": "test-harness"
+        },
+        {
+          "name": "createCaptureRef",
+          "status": "test-harness"
+        },
+        {
+          "name": "mapCaptureState",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/templating.ts": {
+      "exports": [
+        {
+          "name": "MAX_TEMPLATES",
+          "status": "test-harness"
+        },
+        {
+          "name": "MAX_TEMPLATE_INSTANCE_REFS",
+          "status": "test-harness"
+        },
+        {
+          "name": "MIN_TEMPLATE_INSTANCES",
+          "status": "test-harness"
+        },
+        {
+          "name": "StructureTemplate",
+          "status": "internal"
+        },
+        {
+          "name": "TemplateGroupDescriptor",
+          "status": "internal"
+        },
+        {
+          "name": "TemplateSummary",
+          "status": "internal"
+        },
+        {
+          "name": "TemplateVaryField",
+          "status": "internal"
+        },
+        {
+          "name": "buildTemplate",
+          "status": "internal"
+        },
+        {
+          "name": "buildTemplateSummary",
+          "status": "test-harness"
+        },
+        {
+          "name": "isActionableOrStructural",
+          "status": "internal"
+        },
+        {
+          "name": "isPureTextLeaf",
+          "status": "internal"
+        },
+        {
+          "name": "structureScopeKey",
+          "status": "internal"
+        },
+        {
+          "name": "templateFieldValue",
+          "status": "internal"
+        },
+        {
+          "name": "templateGroupDescriptorForEntity",
+          "status": "internal"
+        },
+        {
+          "name": "templateRank",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/treeDiff.ts": {
+      "exports": [
+        {
+          "name": "MAX_TREE_DIFF_CHANGED_FIELDS",
+          "status": "internal"
+        },
+        {
+          "name": "MAX_TREE_DIFF_INSTANCES",
+          "status": "internal"
+        },
+        {
+          "name": "MAX_TREE_DIFF_SUMMARY_NAMES",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiff",
+          "status": "consumed"
+        },
+        {
+          "name": "TreeDiffAnchor",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffChangedBucket",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffConfidence",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffFieldChange",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffInstance",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffInstanceBucket",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffInstanceChange",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffOptions",
+          "status": "internal"
+        },
+        {
+          "name": "TreeDiffSummary",
+          "status": "internal"
+        },
+        {
+          "name": "TreeTemplateDiff",
+          "status": "internal"
+        },
+        {
+          "name": "buildTreeDiff",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/types.ts": {
+      "exports": [
+        {
+          "name": "AbmlError",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlErrorCategory",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlErrorCode",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlRecovery",
+          "status": "internal"
+        },
+        {
+          "name": "ActionabilityBlockerCode",
+          "status": "internal"
+        },
+        {
+          "name": "ActionabilityPredicate",
+          "status": "internal"
+        },
+        {
+          "name": "ActionabilityReport",
+          "status": "internal"
+        },
+        {
+          "name": "ActionabilitySpec",
+          "status": "internal"
+        },
+        {
+          "name": "CandidateSource",
+          "status": "internal"
+        },
+        {
+          "name": "CandidateSummary",
+          "status": "internal"
+        },
+        {
+          "name": "CaptureRef",
+          "status": "internal"
+        },
+        {
+          "name": "CaptureState",
+          "status": "internal"
+        },
+        {
+          "name": "DocumentEpoch",
+          "status": "internal"
+        },
+        {
+          "name": "Locator",
+          "status": "internal"
+        },
+        {
+          "name": "RefDescriptor",
+          "status": "consumed"
+        },
+        {
+          "name": "RefGeometry",
+          "status": "internal"
+        },
+        {
+          "name": "RefKind",
+          "status": "consumed"
+        },
+        {
+          "name": "RefOwner",
+          "status": "internal"
+        },
+        {
+          "name": "RefPolicy",
+          "status": "internal"
+        },
+        {
+          "name": "ResolveContext",
+          "status": "test-harness"
+        },
+        {
+          "name": "ResolveResult",
+          "status": "internal"
+        },
+        {
+          "name": "ResolveStatus",
+          "status": "internal"
+        },
+        {
+          "name": "SemanticState",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotBinding",
+          "status": "internal"
+        },
+        {
+          "name": "VerificationResult",
+          "status": "internal"
+        },
+        {
+          "name": "VerificationStatus",
+          "status": "internal"
+        }
+      ],
+      "members": [
+        {
+          "name": "Locator.xpath",
+          "status": "reserved",
+          "bar": "default producer or runtime resolver uses xpath locators with regression coverage"
+        }
+      ]
+    },
+    "src/abml-core/verbs/click.ts": {
+      "exports": [
+        {
+          "name": "AbmlClickExecutor",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/verbs/frame.ts": {
+      "exports": [
+        {
+          "name": "AbmlFrameExecutor",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/verbs/pierce.ts": {
+      "exports": [
+        {
+          "name": "AbmlPierceExecutor",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/verbs/read.ts": {
+      "exports": [
+        {
+          "name": "AbmlReadResolver",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/verbs/router.ts": {
+      "exports": [
+        {
+          "name": "AbmlClickInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlFrameInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlPierceInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlReadInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlRuntimeContext",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlScrollInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlTypeInput",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlVerbFailure",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlVerbRequest",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlVerbResult",
+          "status": "internal"
+        },
+        {
+          "name": "AbmlVerbSuccess",
+          "status": "internal"
+        },
+        {
+          "name": "actionabilityFailure",
+          "status": "test-harness"
+        },
+        {
+          "name": "isAbmlActionVerb",
+          "status": "internal"
+        },
+        {
+          "name": "verificationFailure",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/abml-core/verbs/scroll.ts": {
+      "exports": [
+        {
+          "name": "AbmlScrollExecutor",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/abml-core/verbs/type.ts": {
+      "exports": [
+        {
+          "name": "AbmlTypeExecutor",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/distill-core/allocate.ts": {
+      "exports": [
+        {
+          "name": "allocateFacts",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/artifactPlan.ts": {
+      "exports": [
+        {
+          "name": "ArtifactPlan",
+          "status": "consumed"
+        },
+        {
+          "name": "ArtifactPlanReason",
+          "status": "consumed"
+        },
+        {
+          "name": "artifactPlanReasons",
+          "status": "consumed"
+        },
+        {
+          "name": "buildSaveTextArtifactPlan",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/compactionTuning.ts": {
+      "exports": [
+        {
+          "name": "COMPACTION_TUNING",
+          "status": "internal"
+        },
+        {
+          "name": "assertCompactionTuningBounds",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/distill-core/cost.ts": {
+      "exports": [
+        {
+          "name": "jsonCost",
+          "status": "consumed"
+        },
+        {
+          "name": "tokenEstimate",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/distill-core/fact.ts": {
+      "exports": [
+        {
+          "name": "AllocationOptions",
+          "status": "internal"
+        },
+        {
+          "name": "FACT_GRANULARITY_ORDER",
+          "status": "internal"
+        },
+        {
+          "name": "Fact",
+          "status": "consumed"
+        },
+        {
+          "name": "FactGranularity",
+          "status": "consumed"
+        },
+        {
+          "name": "FactPlane",
+          "status": "internal"
+        },
+        {
+          "name": "FactRendering",
+          "status": "internal"
+        },
+        {
+          "name": "FactSalience",
+          "status": "internal"
+        },
+        {
+          "name": "PlaneFloor",
+          "status": "internal"
+        },
+        {
+          "name": "RenderPlan",
+          "status": "internal"
+        },
+        {
+          "name": "salienceValue",
+          "status": "internal"
+        }
+      ],
+      "members": [
+        {
+          "name": "FactSalience.novelty",
+          "status": "reserved",
+          "bar": "production fact source writes novelty and allocator behavior is covered by paid fixture or unit negative control"
+        }
+      ]
+    },
+    "src/distill-core/fit.ts": {
+      "exports": [
+        {
+          "name": "FittedInlineJson",
+          "status": "consumed"
+        },
+        {
+          "name": "fitInlineJsonToBudget",
+          "status": "consumed"
+        },
+        {
+          "name": "fitInlineJsonToBudgetMeasured",
+          "status": "consumed"
+        },
+        {
+          "name": "jsonBudgetLength",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/frontier.ts": {
+      "exports": [
+        {
+          "name": "DistillFrontier",
+          "status": "internal"
+        },
+        {
+          "name": "FrontierRetrieve",
+          "status": "internal"
+        },
+        {
+          "name": "artifactJsonRetrieve",
+          "status": "internal"
+        },
+        {
+          "name": "buildProjectionFrontier",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/distill-core/granularity.ts": {
+      "exports": [
+        {
+          "name": "CompactLimits",
+          "status": "internal"
+        },
+        {
+          "name": "compactEntityRenderingValue",
+          "status": "consumed"
+        },
+        {
+          "name": "compactSummaryValue",
+          "status": "test-harness"
+        },
+        {
+          "name": "lineEncodeEntity",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/ladder.ts": {
+      "exports": [
+        {
+          "name": "BudgetedEnvelope",
+          "status": "consumed"
+        },
+        {
+          "name": "DistilledSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "SUMMARY_MAX_CHARS",
+          "status": "consumed"
+        },
+        {
+          "name": "fitEnvelopeBudget",
+          "status": "consumed"
+        },
+        {
+          "name": "fitSummaryBudget",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/projection.ts": {
+      "exports": [
+        {
+          "name": "FoldedJsonProjection",
+          "status": "internal"
+        },
+        {
+          "name": "JsonProjectionOptions",
+          "status": "internal"
+        },
+        {
+          "name": "projectJsonValue",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/recovery.ts": {
+      "exports": [
+        {
+          "name": "ErrorRecovery",
+          "status": "consumed"
+        },
+        {
+          "name": "RecoveryTaxonomyLike",
+          "status": "consumed"
+        },
+        {
+          "name": "isAbmlRecoveryCode",
+          "status": "consumed"
+        },
+        {
+          "name": "isWebSocketRecoveryCode",
+          "status": "consumed"
+        },
+        {
+          "name": "mergeRecoveries",
+          "status": "consumed"
+        },
+        {
+          "name": "nextActionsForExecutionEffect",
+          "status": "consumed"
+        },
+        {
+          "name": "recoveryForNormalized",
+          "status": "consumed"
+        },
+        {
+          "name": "uniqueRecoveryActions",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/relevance.ts": {
+      "exports": [
+        {
+          "name": "RelevanceInput",
+          "status": "consumed"
+        },
+        {
+          "name": "RelevanceResult",
+          "status": "consumed"
+        },
+        {
+          "name": "RelevanceSourceTag",
+          "status": "internal"
+        },
+        {
+          "name": "RelevanceTerm",
+          "status": "consumed"
+        },
+        {
+          "name": "computeRelevanceMap",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/relevanceTaps.ts": {
+      "exports": [
+        {
+          "name": "RelevanceTapKind",
+          "status": "internal"
+        },
+        {
+          "name": "RelevanceTapTerm",
+          "status": "consumed"
+        },
+        {
+          "name": "dedupeTapTerms",
+          "status": "internal"
+        },
+        {
+          "name": "extractScalarTerm",
+          "status": "consumed"
+        },
+        {
+          "name": "extractStringLiteralTerms",
+          "status": "consumed"
+        },
+        {
+          "name": "extractUrlTerms",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/relevanceTuning.ts": {
+      "exports": [
+        {
+          "name": "RELEVANCE_TUNING",
+          "status": "consumed"
+        },
+        {
+          "name": "assertRelevanceTuningBounds",
+          "status": "test-harness"
+        }
+      ]
+    },
+    "src/distill-core/render.ts": {
+      "exports": [
+        {
+          "name": "RenderedFacts",
+          "status": "consumed"
+        },
+        {
+          "name": "renderFacts",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/distill-core/salienceEnvelope.ts": {
+      "exports": [
+        {
+          "name": "SalienceEnvelopeOptions",
+          "status": "internal"
+        },
+        {
+          "name": "countDistillTruncationMarkers",
+          "status": "test-harness"
+        },
+        {
+          "name": "fitSalienceEnvelopeBudget",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/index.ts": {
+      "exports": [
+        {
+          "name": "* from ./profile.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./recall.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./routing.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./salience.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./staleness.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./types.js",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/memory-core/profile.ts": {
+      "exports": [
+        {
+          "name": "distillFrameIntoProfile",
+          "status": "consumed"
+        },
+        {
+          "name": "emptyMemoryOriginProfile",
+          "status": "consumed"
+        },
+        {
+          "name": "memoryTermKey",
+          "status": "test-harness"
+        },
+        {
+          "name": "mergeProfiles",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/recall.ts": {
+      "exports": [
+        {
+          "name": "recallByTokens",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/routing.ts": {
+      "exports": [
+        {
+          "name": "MemoryRoutingIndex",
+          "status": "consumed"
+        },
+        {
+          "name": "buildMemoryRoutingIndex",
+          "status": "consumed"
+        },
+        {
+          "name": "memoryRoutingTokens",
+          "status": "consumed"
+        },
+        {
+          "name": "routeByTokens",
+          "status": "consumed"
+        },
+        {
+          "name": "situationTokens",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/salience.ts": {
+      "exports": [
+        {
+          "name": "DEDUP_SIMILARITY",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryTextParts",
+          "status": "consumed"
+        },
+        {
+          "name": "SIMILAR_SIMILARITY",
+          "status": "consumed"
+        },
+        {
+          "name": "memorySimilarity",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/staleness.ts": {
+      "exports": [
+        {
+          "name": "applyVerificationStrike",
+          "status": "consumed"
+        },
+        {
+          "name": "memoryStampSetId",
+          "status": "consumed"
+        },
+        {
+          "name": "transitionStrikeCount",
+          "status": "test-harness"
+        },
+        {
+          "name": "verifyMemoryAnchors",
+          "status": "consumed"
+        }
+      ]
+    },
+    "src/memory-core/types.ts": {
+      "exports": [
+        {
+          "name": "MemoryAnchors",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryAugmentationPlan",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryFrameView",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryOriginProfile",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryRecallEntry",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryRecallQuery",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryScoredRecall",
+          "status": "internal"
+        },
+        {
+          "name": "MemorySessionDigest",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryTermCandidate",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryTermStat",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryTraceView",
+          "status": "consumed"
+        },
+        {
+          "name": "MemoryUrlDigest",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryVerification",
+          "status": "internal"
+        },
+        {
+          "name": "MemoryVerificationStatus",
+          "status": "consumed"
+        },
+        {
+          "name": "PersistableMemoryTerm",
+          "status": "test-harness"
+        },
+        {
+          "name": "PersistableMemoryTermKind",
+          "status": "internal"
+        },
+        {
+          "name": "toPersistableMemoryTerm",
+          "status": "consumed"
+        }
+      ]
+    }
+  }
+}

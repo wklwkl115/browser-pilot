@@ -1,9 +1,13 @@
 import type { MemoryAnchors, MemoryOriginProfile, MemoryVerification, MemoryVerificationStatus } from "./types.js";
 
+function compareCodepoint(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function stableString(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(stableString).join(",")}]`;
 	if (value && typeof value === "object") {
-		return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableString(item)}`).join(",")}}`;
+		return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => compareCodepoint(a, b)).map(([key, item]) => `${JSON.stringify(key)}:${stableString(item)}`).join(",")}}`;
 	}
 	return JSON.stringify(value);
 }
@@ -20,7 +24,7 @@ export function verifyMemoryAnchors(anchors: MemoryAnchors | undefined, live: Me
 
 export function memoryStampSetId(factStamps: Record<string, string> | undefined): string | undefined {
 	if (!factStamps) return undefined;
-	const entries = Object.entries(factStamps).filter(([, stamp]) => !!stamp).sort(([a], [b]) => a.localeCompare(b));
+	const entries = Object.entries(factStamps).filter(([, stamp]) => !!stamp).sort(([a], [b]) => compareCodepoint(a, b));
 	if (!entries.length) return undefined;
 	return entries.map(([ref, stamp]) => `${ref}:${stamp}`).join("|");
 }

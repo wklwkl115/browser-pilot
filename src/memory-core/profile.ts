@@ -4,8 +4,12 @@ const MAX_SESSIONS = 8;
 const MAX_TERMS = 48;
 const MAX_URLS = 8;
 
+function compareCodepoint(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function memoryTermKey(term: Pick<PersistableMemoryTerm, "kind" | "term">): string {
-	return `${term.kind}\u0000${term.term.toLocaleLowerCase()}`;
+	return `${term.kind}\u0000${term.term.toLowerCase()}`;
 }
 
 export function emptyMemoryOriginProfile(origin: string): MemoryOriginProfile {
@@ -32,11 +36,11 @@ function mergeSession(existing: MemorySessionDigest | undefined, next: MemorySes
 }
 
 function capSessions(sessions: MemorySessionDigest[]): MemorySessionDigest[] {
-	return [...sessions].sort((a, b) => b.capturedAt - a.capturedAt || a.sessionId.localeCompare(b.sessionId)).slice(0, MAX_SESSIONS);
+	return [...sessions].sort((a, b) => b.capturedAt - a.capturedAt || compareCodepoint(a.sessionId, b.sessionId)).slice(0, MAX_SESSIONS);
 }
 
 function capUrls(urls: MemoryUrlDigest[]): MemoryUrlDigest[] {
-	return [...urls].sort((a, b) => b.capturedAt - a.capturedAt || a.canonicalUrl.localeCompare(b.canonicalUrl)).slice(0, MAX_URLS);
+	return [...urls].sort((a, b) => b.capturedAt - a.capturedAt || compareCodepoint(a.canonicalUrl, b.canonicalUrl)).slice(0, MAX_URLS);
 }
 
 function recomputeTermStats(sessions: MemorySessionDigest[], sourceTerms: Map<string, PersistableMemoryTerm>, prior: Record<string, MemoryTermStat> = {}): Record<string, MemoryTermStat> {
@@ -62,7 +66,7 @@ function recomputeTermStats(sessions: MemorySessionDigest[], sourceTerms: Map<st
 		}
 	}
 	return Object.fromEntries([...stats.entries()]
-		.sort((a, b) => b[1].sessionCount - a[1].sessionCount || b[1].lastSeenAt - a[1].lastSeenAt || a[0].localeCompare(b[0]))
+		.sort((a, b) => b[1].sessionCount - a[1].sessionCount || b[1].lastSeenAt - a[1].lastSeenAt || compareCodepoint(a[0], b[0]))
 		.slice(0, MAX_TERMS));
 }
 

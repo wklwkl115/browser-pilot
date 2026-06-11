@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { forbiddenRuntimeReadLabels } from "./purity-vocabulary.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const abmlCoreDir = path.join(root, "src", "abml-core");
@@ -170,17 +171,11 @@ assert.deepEqual(shimIssues, [], `ABML shim contract violated:\n  - ${shimIssues
 
 // Pure-core replay determinism: the kernel may consume caller-supplied timestamps and sorted
 // strings, but it must not read host clock/random/locale state directly.
-const forbiddenRuntimeReads = [
-	["Date.now(", "clock read"],
-	["Math.random(", "random read"],
-	["new Date(", "host date construction"],
-	["localeCompare(", "locale-dependent ordering"],
-];
 const runtimeReadIssues = [];
 for (const fileRel of [...PURE_CORE, BARREL]) {
 	const text = read(path.join(abmlCoreDir, fileRel));
-	for (const [needle, label] of forbiddenRuntimeReads) {
-		if (text.includes(needle)) runtimeReadIssues.push(`abml-core/${fileRel} contains ${label} (${needle}) — pass deterministic inputs from runtime instead.`);
+	for (const label of forbiddenRuntimeReadLabels(text)) {
+		runtimeReadIssues.push(`abml-core/${fileRel} contains runtime read (${label}) — pass deterministic inputs from runtime instead.`);
 	}
 }
 assert.deepEqual(runtimeReadIssues, [], `ABML core determinism violated:\n  - ${runtimeReadIssues.join("\n  - ")}`);

@@ -118,6 +118,11 @@ These stay human-authored:
 - skill text
 - explanatory design docs
 
+Manual docs that serve as living contracts may add:
+- `> Doc-class: contract`
+
+Only docs registered in `tests/contracts/drift/spec-claims.js` are gated as contract docs.
+
 ### Generated / mechanically synced
 
 These may be partially script-maintained:

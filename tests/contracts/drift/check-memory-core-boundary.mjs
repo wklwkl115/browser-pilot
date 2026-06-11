@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { forbiddenRuntimeReadLabels, stripStringLiterals } from "./purity-vocabulary.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const memoryCoreDir = path.join(root, "src", "memory-core");
@@ -44,7 +45,10 @@ const violations = [];
 for (const fileRel of files) {
 	const abs = path.join(memoryCoreDir, fileRel);
 	const text = readFileSync(abs, "utf8");
-	assert(!/\b(process|window|document|chrome|browser)\b/.test(text), `src/memory-core/${fileRel} must not touch runtime/browser globals`);
+	assert(!/\b(process|window|document|chrome|browser)\b/.test(stripStringLiterals(text)), `src/memory-core/${fileRel} must not touch runtime/browser globals`);
+	for (const label of forbiddenRuntimeReadLabels(text)) {
+		assert.fail(`src/memory-core/${fileRel} must not use ${label}`);
+	}
 	for (const spec of importSources(text)) {
 		if (spec.startsWith("node:")) {
 			violations.push(`src/memory-core/${fileRel} imports node builtin ${spec}`);

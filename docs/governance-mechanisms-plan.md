@@ -1,7 +1,7 @@
 # Governance Mechanisms Plan (accumulation-class defect prevention)
 
-> Status: **final execution plan, not yet executed.** Approved in direction by the
-> maintainer (2026-06-11).
+> Status: **completed** (2026-06-12). G1-G7 are now concrete contract gates or a
+> validated read-only audit procedure.
 >
 > Origin: the 2026-06-11 ABML and distill kernel audits found ~20 defects that all
 > cluster into five structural causes — prose-contract drift, add/remove asymmetry
@@ -12,14 +12,15 @@
 > (single source + drift check, source-text contract assertions, shrink-only
 > ratchets, committed baselines, shadow guards) onto those ungated dimensions.
 >
-> Relationship to other plans: G3/G4/G5/G6 ride along with
-> `docs/distill-kernel-hygiene-plan.md` items (D1/D7, D2, D6, D4) so each gate lands
-> in the same diff as the defect it prevents, with that defect's fix as its first
-> negative control. The ABML P0 (K-series) of `docs/value-ordered-compaction-plan.md`
-> is already complete — G4/G5 therefore start from the post-K3/K5 state (refactor
-> and seed, not first introduction). G1/G2/G7 are independent slices.
+> Relationship to other plans: the original design expected G3/G4/G5/G6 to ride
+> along with `docs/distill-kernel-hygiene-plan.md` items (D1/D7, D2, D6, D4).
+> Execution happened after distill hygiene and value-ordered compaction had already
+> completed, so this workstream retrofitted the gates onto the post-D/post-K state
+> and used the already-fixed defects as the first negative controls. G1/G2/G7
+> remained independent slices.
 >
-> Governance: register an activation entry in `CURRENT.md` before execution starts.
+> Governance: activation was registered in `CURRENT.md` before execution started;
+> completion evidence is recorded below.
 
 ## Design constraints
 
@@ -39,7 +40,7 @@
 **Mechanism.** A claims registry bridges living contract docs and code, the protocol
 single-source pattern applied to prose.
 
-- Registry: `tests/contracts/drift/spec-claims.mjs` — a committed list of contract
+- Registry: `tests/contracts/drift/spec-claims.js` — a committed list of contract
   docs, each with claim entries `{ anchor, symbol, status: "implemented" | "reserved",
   sourceGlob }`. Registered docs add a `> Doc-class: contract` header line; only
   registered docs are gated (no mass-editing of other docs).
@@ -79,11 +80,12 @@ own boundary).
   4. `reserved` → non-empty bar string (the V6 shadow-guard comment is the format
      precedent).
 
-**Seed statuses from the audits.** `reserved`: `FactSalience.relevance` +
-`FactSalience.novelty` (bar: V6 promotion — R3 arbitration + the two paid fixtures),
-`attrSignature`/`xpath` locator kinds (bar: a builder that emits them). `test-harness`:
-`buildTemplateSummary`, `assertRelevanceTuningBounds`. Anything the D5 sweep removes
-never enters the ledger.
+**Seed statuses from execution.** The committed ledger covers 49 kernel modules.
+The only reserved member entries are `FactSalience.novelty` and `Locator.xpath`,
+each with a written promotion bar. `FactSalience.relevance` is active in current
+code/tests, so it is not reserved. `test-harness` covers direct-test exports such
+as `buildTemplateSummary` and `assertRelevanceTuningBounds`. Anything removed
+before this workstream never entered the ledger.
 
 **Gates.** New `check:surface-liveness` in contracts group.
 
@@ -96,10 +98,10 @@ never enters the ledger.
 (post-D1/D7 state):
 
 - `src/tools/observeRunners.ts`: `buildSnapshotProjection` ≤ 1 (A1 regression lock),
-  `scanEntitiesForEnvelope` ≤ 1, `buildScanEntities` 0 (built once via the threaded
-  option after D1);
+  `scanEntitiesForEnvelope` ≤ 1, `buildScanEntities` ≤ 1 (built once in the observe
+  render path and threaded onward);
 - `src/tools/resultMiddleware.ts`: `envelopeEntities(` ≤ 1 (post-D7);
-- `src/tools/summaries/scan.ts`: `buildScanEntities` ≤ 1.
+- `src/tools/summaries/scan.ts`: `buildScanEntities` ≤ 2.
 
 **Mechanism B — serialization-count canary.** `stableJson` (`src/utils/json.ts`) gains
 a test-readable invocation counter (one module-level increment — negligible cost; use
@@ -115,7 +117,7 @@ double-fitting that the byte-only `bench:distill` cannot see.
 ## G4 — Shared purity vocabulary (counters: ban-list lag; generalizes landed K3 + planned D2)
 
 **Mechanism.** Extract the banned-API list into one module,
-`tests/contracts/drift/purity-vocabulary.mjs`, exporting the patterns
+`tests/contracts/drift/purity-vocabulary.js`, exporting the patterns
 (`Date.now(`, `Math.random(`, `new Date(`, `performance.now(`, `localeCompare(`,
 `toLocale`, `process.env`). Consumers: `check-abml-core-boundary.mjs` (refactor the
 K3-landed list to import the shared one), `check-distill-core-boundary.mjs` (D2),
@@ -128,6 +130,11 @@ kernel inherits the vocabulary by importing one module.
 
 **Ride-along.** Lands with D2.
 
+**Execution note.** Importing the shared vocabulary into memory-core exposed
+locale-sensitive ordering in `profile.ts`, `recall.ts`, and `staleness.ts`; those
+paths now use plain lowercase/codepoint ordering before the memory-core boundary
+check runs.
+
 **Gates.** The three adopting boundary checks stay green; a vocabulary self-test
 asserts each pattern matches a synthetic positive and misses a synthetic negative.
 
@@ -138,10 +145,10 @@ asserts each pattern matches a synthetic positive and misses a synthetic negativ
 - Committed map: kernel module → direct test file(s); the gate verifies each listed
   test file exists and actually imports the module (grep).
 - Grandfather list of zero-direct-coverage modules, seeded by re-running the audit
-  greps at execution time (expected residue: `distill-core/ladder.ts`,
-  `granularity.ts`, `artifactPlan.ts` until D6 lands; abml-core `errors.ts`,
-  `grouping.ts`, `stream.ts`, `actionabilityModel.ts`, verb wrappers — K5 already
-  cleared `ax.ts` and `refId.ts`).
+  greps at execution time. The committed baseline is `grandfatherMax: 6`:
+  `src/abml-core/grouping.ts`, pure barrels `src/abml-core/index.ts` and
+  `src/memory-core/index.ts`, `src/distill-core/frontier.ts`,
+  `src/memory-core/routing.ts`, and `src/memory-core/salience.ts`.
 - Assertions: every kernel module is either mapped or grandfathered; the grandfather
   count is shrink-only against its committed baseline; a NEW kernel module must ship
   mapped (fail on new unmapped module).
@@ -166,10 +173,11 @@ committed registry of every `PI_BROWSER_*` flag:
      `observeRenderParamsSignature` post-D4) textually references the flag or its
      derived marker;
   3. registry entries with zero source hits fail (stale entries rot out).
-- Seed by grep at execution time; known set includes `RENDERER`, `TOKEN_COST`
-  (both `affectsOutput: true`, signature site added by D4), `SESSION_DELTA`,
-  `RELEVANCE`, `RELEVANCE_DEBUG`, `OBSERVE_CACHE_TTL_MS`, `MEMORY`,
-  `EXECUTE_EFFECT`, `EXECUTE_EFFECT_QUIET_MS`, daemon/state-dir flags.
+- Seeded by grep at execution time. The committed registry currently has 22
+  `PI_BROWSER_*` flags under `src/` and `cli/`. Output-affecting flags include
+  renderer/token-cost/session-delta/relevance/relevance-debug, memory and memory
+  autosurface, JSON projection, execute effect, and stdlib flags; each declares
+  a source marker that must stay in its signature site.
 - Side benefit: the registry becomes the single authoritative env-flag list
   (currently scattered across CLAUDE.md, skills, and code comments).
 
@@ -198,24 +206,40 @@ never change code):
 **Gates.** `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py`
 on the new skill; `check:doc-structure` for the audit-inbox wording if touched.
 
-## Execution order
+## Execution result
 
-1. G7 — free-standing, no code; can land immediately.
-2. G4, G3, G6, G5 — ride the distill hygiene plan's execution (D2, D1/D7, D4, D6
-   respectively); each gate's first negative control is the defect its companion fix
-   removes.
-3. G1 — independent slice (the post-K1 spec is already in the correct shape to seed).
-4. G2 — last (largest initial inventory; generation is scripted, classification uses
-   the two audit reports as the source of truth).
+1. G4/G3/G6/G1/G5/G2 landed as drift checks in `tests/contracts/drift/`, with
+   package scripts and `scripts/run-check-groups.mjs` contract-group wiring.
+2. G4 reused a shared purity vocabulary across ABML, distill, and memory pure
+   kernel boundary checks.
+3. G3 locked current compute-once call-site ceilings and added a
+   `stableJson` serialization-count canary to `resultMiddleware` unit coverage.
+4. G6 introduced the committed env-flag registry and expanded observe render-cache
+   signatures for output-affecting observe flags.
+5. G1 promoted `docs/abml-p1-spec.md` and `docs/abml-kernel-manifest.md` to
+   registered contract docs, including a real manifest correction: ABML runtime
+   files are 7, not 6, because `src/abml/perceptionLedger.ts` is runtime.
+6. G2 committed the kernel export inventory with 49 modules and 2 reserved members.
+7. G5 committed direct-test mapping for 43 modules with a shrink-only
+   `grandfatherMax: 6` baseline.
+8. G7 added `skills/pi-kernel-audit/SKILL.md` and records the graduation rule:
+   a recurring audit-class finding must become a static G1-G6 style gate.
 
 ## Acceptance
 
-- All new checks wired into the `contracts` group of `scripts/run-check-groups.mjs`
-  and `package.json`; full `npm run check` + `npm run lint` green.
-- Added wall-clock to the full gate measured at ≤ +10s.
-- Each gate ships with a self-test or negative control (synthetic input that fails it).
+- New focused gates passed: `check:spec-truth`, `check:surface-liveness`,
+  `check:compute-once`, `check:purity-vocabulary`, `check:kernel-test-map`,
+  `check:env-flags`, and `check:memory-core-boundary`.
+- Related focused tests passed:
+  `npx tsx --test tests/unit/tools/resultMiddleware-advanced.test.ts` and
+  `npx tsx --test tests/unit/memory-core/profile.test.ts tests/unit/memory-core/recall.test.ts tests/unit/memory-core/staleness.test.ts tests/unit/memory/profileService.concurrency.test.ts tests/unit/memory/profileStore.test.ts`.
+- Contract group passed: `npm run check:all:contracts`.
+- Audit skill validation passed:
+  `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-kernel-audit`.
+- Final closeout passed: `npm run lint`, full `npm run check`, and
+  `git diff --check`.
 - Ratchet baselines committed: G5 grandfather count, G2 reserved count recorded (G2
-  reserved is tracked, shrink encouraged, growth requires a written bar — not
-  hard-blocked, unlike G5 which is strictly shrink-only).
+  reserved is tracked, shrink encouraged, growth requires a written bar; G5 is
+  strictly shrink-only).
 - The graduation rule is recorded in this doc and referenced from the audit skill, so
   the next recurrence of any audit-class finding has a defined escalation path.

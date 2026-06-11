@@ -8,6 +8,10 @@ const VERIFICATION_RANK: Record<MemoryVerificationStatus | "none", number> = {
 	none: 0,
 };
 
+function compareCodepoint(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function recallByTokens(entries: MemoryRecallEntry[], query: MemoryRecallQuery): MemoryScoredRecall[] {
 	const active = entries.filter((entry) => entry.status === "active");
 	const routing = buildMemoryRoutingIndex(active);
@@ -30,6 +34,6 @@ export function recallByTokens(entries: MemoryRecallEntry[], query: MemoryRecall
 		out.push({ entry, score: Number(score.toFixed(3)), matchReason: reasons.join("+") });
 	}
 	return out
-		.sort((a, b) => b.score - a.score || b.entry.updatedAt.localeCompare(a.entry.updatedAt) || a.entry.id.localeCompare(b.entry.id))
+		.sort((a, b) => b.score - a.score || compareCodepoint(b.entry.updatedAt, a.entry.updatedAt) || compareCodepoint(a.entry.id, b.entry.id))
 		.slice(0, query.limit ?? 10);
 }

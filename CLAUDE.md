@@ -137,6 +137,26 @@ npm run check:session-delta-long-conversation  # session-delta regression
 npm run check:memory-core-boundary       # memory-core import boundary
 npm run check:memory-plane               # envelope.memory contract (byte-identity, signature, negative controls)
 npm run bench:distill          # token-economy comparative bench (salience vs ladder)
+```
+
+### Governance gates (G1–G7)
+```bash
+npm run check:spec-truth        # G1: prose-contract drift — registered claims exist in code/docs
+npm run check:surface-liveness  # G2: dead-surface accumulation — every kernel export has a declared status
+npm run check:compute-once      # G3: slice-scoped recomputation — call-site count ledger + serialization canary
+npm run check:purity-vocabulary # G4: shared banned-API list consumed by all three pure kernels
+npm run check:kernel-test-map   # G5: every kernel module mapped or grandfathered; grandfather list shrink-only
+npm run check:env-flags         # G6: every PI_BROWSER_* flag registered; affectsOutput flags have signature sites
+```
+
+All six run as part of `check:all:contracts`. Shared governance modules live in `tests/contracts/drift/`:
+- `purity-vocabulary.js` — re-exported by all three kernel boundary checks (G4)
+- `spec-claims.js` — registered contract-doc claims (G1)
+- `kernel-export-inventory.json` — surface-liveness ledger with `consumed|internal|test-harness|reserved` statuses (G2)
+- `kernel-test-map.json` — kernel module → test-file map (G5)
+- `env-flags.json` — authoritative `PI_BROWSER_*` flag registry (G6)
+
+```bash
 npm run smoke:cli              # CLI smoke (requires browser)
 npm run smoke:cli:full         # full CLI smoke including connection control
 ```
@@ -188,6 +208,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `evals/browser-workflows/` — ACI evals: deterministic `runner.mjs` + blind-agent discovery layer (`launch-blind.mjs`/`pb-blind.mjs`/`teardown-blind.mjs`, `blind-tasks-realsite.md`, `blind-findings.md`)
 - `skills/pi-browser-tools/SKILL.md` — Pi-native skill source (junction at `D:/Pi/agent/skills/pi-browser-tools`); `skills/pi-browser-cli/SKILL.md` — CLI-first skill (not in Pi global junction — only for CLI agents)
 - `skills/pi-browser-blind-eval/` — operator/cron procedure for the standing blind real-agent eval loop
+- `skills/pi-kernel-audit/SKILL.md` — G7 operator/cron audit procedure; auditors write read-only reports under `agent-audits/runs/`; findings recurring a second time must graduate to a static G1–G6 gate
 - `docs/generated/` — auto-generated protocol and tool contract docs
 
 ## Development Workflow
@@ -217,6 +238,7 @@ Pi runtime loads source `.ts` directly via `pi.extensions: ["./index.ts"]`; npm 
 - `browserSessionId` parameter isolates tab selection across concurrent sessions
 - Write operations require lease; concurrent write to same tab returns `TAB_LEASE_CONFLICT`
 - Default renderer is **salience-v1** with session-delta on; escape hatches: `PI_BROWSER_RENDERER=ladder`, `PI_BROWSER_SESSION_DELTA=0`
+- `PI_BROWSER_*` env flags are registered in `tests/contracts/drift/env-flags.json` (single authoritative list); `affectsOutput: true` flags must have a declared signature site — adding a new flag without registering it fails `check:env-flags`
 - `npm run check` does **not** run ESLint; run `npm run lint` or `npm run quality:local` to catch lint issues
 
 ## Code search & navigation (large, multi-layer codebase)

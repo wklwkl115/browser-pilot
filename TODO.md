@@ -1,6 +1,6 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活执行线：无；新增主线必须先登记到 `CURRENT.md`。
+- 当前激活执行线：无，见 `CURRENT.md`。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。

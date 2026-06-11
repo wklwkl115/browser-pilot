@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { distilledJsonResult, distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 import { summarizeMemoryResult } from "../../../src/tools/summaries/memory.ts";
+import { resetStableJsonInvocationCounter, stableJsonInvocationCounter } from "../../../src/utils/json.ts";
 
 function textOf(result: { content: Array<{ text: string }> }) {
 	return result.content.map((item) => item.text).join("\n");
@@ -301,4 +302,40 @@ test("default salience path runs production fact allocator without model-facing 
 	assert.equal(envelope.diagnostics?.factRendering, undefined);
 	assert.equal(result.details?.factRendering?.rendered, 1);
 	assert.deepEqual(result.details?.factRendering?.planes, ["summary"]);
+});
+
+test("distilledJsonResult scan path keeps serialization passes bounded", async () => {
+	resetStableJsonInvocationCounter();
+	const highEntropyScan = {
+		ok: true,
+		url: "https://example.test/products",
+		title: "Products",
+		readyState: "complete",
+		content: Array.from({ length: 80 }, (_, i) => `<button>Buy ${i}</button>`).join("\n"),
+		node_count: 320,
+		actionables: Array.from({ length: 80 }, (_, i) => ({
+			index: i,
+			tag: i % 5 === 0 ? "a" : "button",
+			role: i % 5 === 0 ? "link" : "button",
+			action: `Buy item ${i}`,
+			label: `Item ${i}`,
+			selector: `#item-${i}`,
+			point: { x: 40 + i, y: 80 + i },
+			rect: { x: 20 + i, y: 60 + i, width: 90, height: 24 },
+			hitOk: true,
+			href: `https://example.test/products/${i}`,
+			priority: 1000 - i,
+		})),
+		list_hints: Array.from({ length: 12 }, (_, i) => ({ selector: `.row-${i}`, itemCount: 20 + i, firstItemPreview: `Row ${i}` })),
+		rows: Array.from({ length: 40 }, (_, i) => ({ text: `Visible row ${i}`, href: `https://example.test/r/${i}`, selector: `.visible-${i}` })),
+	};
+	await distilledJsonResult(highEntropyScan, {
+		toolName: "browser_observe",
+		command: "scan",
+		maxChars: 8_000,
+		fallbackName: "scan-serialization-canary.json",
+		detailLevel: "summary",
+	});
+	const count = stableJsonInvocationCounter();
+	assert.ok(count <= 16, `stableJson invocation count ${count} exceeded committed ceiling 16`);
 });

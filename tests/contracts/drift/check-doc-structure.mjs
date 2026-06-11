@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SPEC_CLAIMS } from "./spec-claims.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -21,6 +22,10 @@ const agentNativeCliSpec = read("docs/agent-native-cli-spec.md");
 assert(structure.includes("## Canonical layers") && structure.includes("CURRENT.md") && structure.includes("ARCHIVE.md"), "document-structure.md must define canonical layers");
 assert(structure.includes("docs/playbooks/*.md") && structure.includes("docs/reference/*.md"), "document-structure.md must define playbook/reference layers");
 assert(structure.includes("agent-audits/") && structure.includes("agent-audits/runs/YYYY-MM-DD-<scope>.md"), "document-structure.md must define the agent audit inbox layer");
+assert(structure.includes("Doc-class: contract") && structure.includes("tests/contracts/drift/spec-claims.js"), "document-structure.md must define contract-doc registration");
+for (const entry of SPEC_CLAIMS) {
+	assert(read(entry.doc).includes("> Doc-class: contract"), `${entry.doc} must carry the contract-doc header`);
+}
 assert(current.includes("docs/document-structure.md"), "CURRENT.md must link document structure rules");
 assert(current.includes("agent-audits/") && current.includes("审计 agent 只写报告") && current.includes("skills/pi-browser-audit-fix/SKILL.md"), "CURRENT.md must describe the asynchronous audit/fix inbox workflow");
 assert(todo.includes("docs/document-structure.md"), "TODO.md must link document structure rules");

@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "grandfatherMax": 6,
+  "mapped": {
+    "src/abml-core/actionabilityModel.ts": [
+      "tests/unit/abml/actionabilityModel.test.ts"
+    ],
+    "src/abml-core/ax.ts": [
+      "tests/unit/abml/ax.test.ts"
+    ],
+    "src/abml-core/causal.ts": [
+      "tests/unit/abml/causal.test.ts"
+    ],
+    "src/abml-core/diff.ts": [
+      "tests/unit/abml/diff.test.ts"
+    ],
+    "src/abml-core/entity.ts": [
+      "tests/unit/abml/templating.test.ts"
+    ],
+    "src/abml-core/errors.ts": [
+      "tests/unit/abml/errors.test.ts"
+    ],
+    "src/abml-core/identityGraph.ts": [
+      "tests/unit/abml/identityGraph.test.ts"
+    ],
+    "src/abml-core/inference.ts": [
+      "tests/unit/abml/inference.test.ts"
+    ],
+    "src/abml-core/refId.ts": [
+      "tests/unit/abml/refId.test.ts"
+    ],
+    "src/abml-core/refPolicy.ts": [
+      "tests/unit/abml/refPolicy.test.ts"
+    ],
+    "src/abml-core/relations.ts": [
+      "tests/unit/abml/relations.test.ts"
+    ],
+    "src/abml-core/semanticRefAnchor.ts": [
+      "tests/unit/abml/semanticRefAnchor.test.ts"
+    ],
+    "src/abml-core/snapshotProjection.ts": [
+      "tests/unit/abml/snapshotProjection.test.ts"
+    ],
+    "src/abml-core/stream.ts": [
+      "tests/unit/abml/stream.test.ts"
+    ],
+    "src/abml-core/templating.ts": [
+      "tests/unit/abml/templating.test.ts"
+    ],
+    "src/abml-core/treeDiff.ts": [
+      "tests/unit/abml/treeDiff.test.ts"
+    ],
+    "src/abml-core/types.ts": [
+      "tests/unit/abml/refId.test.ts"
+    ],
+    "src/abml-core/verbs/click.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/frame.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/pierce.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/read.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/router.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/scroll.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/abml-core/verbs/type.ts": [
+      "tests/unit/abml/verbs.test.ts"
+    ],
+    "src/distill-core/allocate.ts": [
+      "tests/unit/distill-core/allocate-render.test.ts"
+    ],
+    "src/distill-core/artifactPlan.ts": [
+      "tests/unit/distill-core/artifactPlan.test.ts"
+    ],
+    "src/distill-core/compactionTuning.ts": [
+      "tests/contracts/drift/check-compaction-ledger.mjs"
+    ],
+    "src/distill-core/cost.ts": [
+      "tests/unit/distill-core/allocate-render.test.ts"
+    ],
+    "src/distill-core/fact.ts": [
+      "tests/unit/distill-core/allocate-render.test.ts"
+    ],
+    "src/distill-core/fit.ts": [
+      "tests/unit/tools/inline-json-budget.test.ts"
+    ],
+    "src/distill-core/granularity.ts": [
+      "tests/unit/distill-core/granularity.test.ts"
+    ],
+    "src/distill-core/ladder.ts": [
+      "tests/unit/distill-core/ladder.test.ts"
+    ],
+    "src/distill-core/projection.ts": [
+      "tests/unit/distill-core/projection.test.ts"
+    ],
+    "src/distill-core/recovery.ts": [
+      "tests/unit/tools/execute-effect.test.ts"
+    ],
+    "src/distill-core/relevance.ts": [
+      "tests/unit/distill-core/relevance.test.ts"
+    ],
+    "src/distill-core/relevanceTaps.ts": [
+      "tests/unit/distill-core/relevanceTaps.kindSplit.test.ts"
+    ],
+    "src/distill-core/relevanceTuning.ts": [
+      "tests/unit/distill-core/relevance.test.ts"
+    ],
+    "src/distill-core/render.ts": [
+      "tests/unit/distill-core/allocate-render.test.ts"
+    ],
+    "src/distill-core/salienceEnvelope.ts": [
+      "tests/unit/distill-core/allocate-render.test.ts"
+    ],
+    "src/memory-core/profile.ts": [
+      "tests/unit/memory-core/profile.test.ts"
+    ],
+    "src/memory-core/recall.ts": [
+      "tests/unit/memory-core/recall.test.ts"
+    ],
+    "src/memory-core/staleness.ts": [
+      "tests/unit/memory-core/staleness.test.ts"
+    ],
+    "src/memory-core/types.ts": [
+      "tests/unit/memory-core/profile.test.ts"
+    ]
+  },
+  "grandfathered": {
+    "src/abml-core/grouping.ts": "covered indirectly through templating/treeDiff; add direct grouping tests before removing from grandfather",
+    "src/abml-core/index.ts": "pure barrel only; direct import adds no behavior until package identity is promoted",
+    "src/distill-core/frontier.ts": "frontier descriptors are not directly emitted yet; add direct tests when projection frontier is public in artifacts",
+    "src/memory-core/index.ts": "pure barrel only; direct import adds no behavior until memory-core package identity is promoted",
+    "src/memory-core/routing.ts": "covered through memory profile/recall workflow; add direct routing token tests before removing from grandfather",
+    "src/memory-core/salience.ts": "covered through memory profile service; add direct similarity threshold tests before removing from grandfather"
+  }
+}

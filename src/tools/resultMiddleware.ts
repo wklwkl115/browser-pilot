@@ -360,7 +360,7 @@ function capSessionDeltaRecoveryFanout(actions: string[], delta?: string): strin
 	});
 }
 
-function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = [], entities = envelopeEntities(summary, options.entities)): string[] | undefined {
+function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, summaryHintActions: string[] = [], entities?: Array<Record<string, unknown>>): string[] | undefined {
 	const actions: string[] = [];
 	actions.push(...summaryHintActions.filter((item) => !item.includes("path=")));
 	actions.push(...artifactReadActions(summary, saved, operation, snapshot));

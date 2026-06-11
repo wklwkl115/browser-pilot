@@ -2,6 +2,7 @@
 
 *ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
 
+> Doc-class: contract
 > 状态: REVIEWED，P1 Gate 已通过；作为 ABML P2+ 的基础语义 source of truth。  
 > 上游计划: `docs/unified-browser-modeling-language-plan.md`。  
 > 范围: 只定义文档契约、纯函数契约、测试矩阵；**不要求、不允许直接改运行时**。

@@ -14,9 +14,30 @@
 
 ## 当前激活项
 
-当前无激活执行线；新增主线必须先在本节写明决策、边界、契约与验证计划。
+当前无激活执行线。
 
 ## 最近完成项
+
+### Governance mechanisms plan（2026-06-12，完成）
+
+Decision: completed `docs/governance-mechanisms-plan.md`, converting the accepted
+accumulation-defect prevention patterns into concrete repo governance instead of
+leaving them as a planning artifact.
+
+Boundary: no new public `browser_*` tools, no runtime strategy routing, no challenge
+policy, and no browser/Web behavior change. The work stayed in deterministic repo
+governance: contract drift checks, shrink-only or declared ledgers, pure-kernel
+boundary vocabulary, a read-only kernel-audit skill, package/check wiring, and
+current documentation state.
+
+Contract: G1-G7 are now executable gates or a validated operator procedure. New
+mechanisms live in the contracts group, fail with factual remediation, keep ratchet
+baselines committed, preserve existing grouped check entrypoints, and record the
+audit graduation rule so recurring audit-class defects become static gates.
+
+Verification: focused governance gates, memory-core/resultMiddleware focused unit
+tests, `npm run check:all:contracts`, `pi-kernel-audit` skill validation,
+`npm run lint`, full `npm run check`, and `git diff --check` passed before commit.
 
 ### Value-ordered compaction plan（2026-06-11，完成）
 

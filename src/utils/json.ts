@@ -1,4 +1,5 @@
 const DEFAULT_MAX_CHARS = 50_000;
+let stableJsonInvocationCount = 0;
 
 export function tryJson(text: string): unknown | undefined {
 	try {
@@ -17,6 +18,7 @@ export function parseJsonOrThrow<T = unknown>(text: string, context: string): T 
 }
 
 export function stableJson(value: unknown, spaces = 2): string {
+	stableJsonInvocationCount += 1;
 	const ancestors: unknown[] = [];
 	return JSON.stringify(value, function (this: unknown, _key, item) {
 		if (typeof item === "bigint") return item.toString();
@@ -27,6 +29,14 @@ export function stableJson(value: unknown, spaces = 2): string {
 		ancestors.push(item);
 		return item;
 	}, spaces);
+}
+
+export function stableJsonInvocationCounter(): number {
+	return stableJsonInvocationCount;
+}
+
+export function resetStableJsonInvocationCounter(): void {
+	stableJsonInvocationCount = 0;
 }
 
 export function truncateText(text: string, maxChars = DEFAULT_MAX_CHARS): { text: string; truncated: boolean; originalLength: number } {

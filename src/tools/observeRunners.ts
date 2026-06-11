@@ -645,6 +645,26 @@ function observeCostModelCacheMarker(): string {
 	return process.env.PI_BROWSER_TOKEN_COST === "1" ? "token" : "byte";
 }
 
+function observeSessionDeltaCacheMarker(params: ObserveToolParams): string {
+	return sessionDeltaEnabled(params) ? "on" : "off";
+}
+
+function observeRelevanceCacheMarker(params: ObserveToolParams): string {
+	return relevanceEnabled(params) ? "on" : "off";
+}
+
+function observeRelevanceDebugCacheMarker(): string {
+	return process.env.PI_BROWSER_RELEVANCE_DEBUG === "1" ? "on" : "off";
+}
+
+function observeMemoryCacheMarker(): string {
+	return process.env.PI_BROWSER_MEMORY === "0" ? "off" : "on";
+}
+
+function observeMemoryAutoSurfaceCacheMarker(): string {
+	return process.env["PI_BROWSER_MEMORY_AUTOSURFACE"] === "0" ? "off" : "on";
+}
+
 function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMode, detailLevel: string, maxChars: number, captureMaxChars: number): string {
 	const maxNodes = Number(params.maxNodes);
 	return JSON.stringify({
@@ -654,6 +674,11 @@ function observeRenderParamsSignature(params: ObserveToolParams, mode: ObserveMo
 		captureMaxChars,
 		renderer: observeRendererCacheMarker(),
 		costModel: observeCostModelCacheMarker(),
+		sessionDelta: observeSessionDeltaCacheMarker(params),
+		relevance: observeRelevanceCacheMarker(params),
+		relevanceDebug: observeRelevanceDebugCacheMarker(),
+		memory: observeMemoryCacheMarker(),
+		memoryAutoSurface: observeMemoryAutoSurfaceCacheMarker(),
 		includeIframes: params.includeIframes !== false,
 		...(Number.isFinite(maxNodes) ? { maxNodes } : {}),
 		...(observeIntent(params) ? { intent: observeIntent(params) } : {}),
