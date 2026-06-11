@@ -31,6 +31,11 @@
 - **capture esbuild migration**：当前 capture-core generated bundle seam 足够；entry-set
   合同与 escape ledger 保护现状。*(重开证据线：capture entry-set 或 escape ledger 证明
   当前同步模型无法维护)*
+- **Check acceleration hot daemon**：`docs/check-acceleration-plan.md` 评审后关闭
+  daemon 阶段；P1 direct spawn、P2 cache、TypeScript `--incremental`、落盘 import graph
+  已覆盖主要收益，常驻 daemon 会引入 stale state、watcher 可靠性和与 browser daemon
+  概念混淆。*(重开条件：P0'-P4 落地后 trace 显示进程冷启动 + 图重算仍占
+  `check:smart` 代表性 wall time >30%)*
 
 ## 当前非激活路线（治理/RFC 区；不是 debt backlog）
 
@@ -44,6 +49,10 @@
    策略型 preset 名称与黑盒判断；新 target 必须由 blind-eval 或真实任务证据立项。
 4. **盲测滚动台账 n=1 hypotheses**（G5 artifact regex / G1 G6 CLI papercuts 等）：
    只作为 eval 观察记录；复现前不是工作项，复现后也必须重新立合同。
+5. **Check acceleration implementation**：`docs/check-acceleration-plan.md` 已完成
+   设计评审收口；实施顺序为 P0' in-place trace、P1' single-source DAG、P2'
+   coarse git-tree cache、P4 impact graph/ABI-as-edge、P5 miss recorder、P7 docs。
+   启动前必须先在 `CURRENT.md` 当前激活项登记决策、边界、契约和验证计划。
 
 ## 近期质量建议
 

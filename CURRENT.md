@@ -18,6 +18,26 @@
 
 ## 最近完成项
 
+### Check acceleration plan (2026-06-11, 完成计划)
+
+Decision: completed `docs/check-acceleration-plan.md` as the reviewed execution
+blueprint for accelerating the local verification loop without weakening
+`npm run check` as the final full gate.
+
+Boundary: planning/documentation only; no check runner, package script, CI,
+TypeScript, ESLint, cache, import graph, or gate behavior changed. Implementation
+is not active until a future workstream registers decision/boundary/contract/
+verification here under 当前激活项.
+
+Contract: the accepted plan uses measured baseline evidence (`66` scripts,
+`185s`, green), makes `check-graph.mjs` the planned single source of truth,
+starts with P0' in-place tracing and P1' DAG execution, uses P2' coarse
+git-tree fingerprints for zero false skips, folds ABI into P4 impact edges, and
+closes the hot check daemon unless a trace reopen bar is met.
+
+Verification: `npm run check:doc-structure` passed for the new manual design
+doc; full `npm run check` is required before committing the plan.
+
 ### G12 execute page-context nudge reachability (2026-06-11, 完成)
 
 Decision: make `browser_execute` distilled results carry the acting page URL from already-collected execution effect/monitor data so `appendMemoryAutoSurface()` can resolve page context and the strategic-memory `record candidate:` nudge becomes reachable.
