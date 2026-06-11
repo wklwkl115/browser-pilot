@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runScanObservation } from "../../../src/tools/observeRunners.ts";
+import { runHtmlObservation, runScanObservation } from "../../../src/tools/observeRunners.ts";
 
 let opId = 0;
 const fakeServer = {
@@ -17,6 +17,12 @@ const fakeServer = {
 	snapshot() { return { browserSessionId: "default", defaultTabId: 7, selectionVersion: 3, tabs: [{ tabId: 7, url: "https://example.test/checkout", title: "Checkout", active: true }] }; },
 	createObservationSnapshot(snapshot) { return { snapshotId: "snap-1", ttlMs: 60_000, expired: false, ...snapshot }; },
 	async sendCommand(command) {
+		if (command.cmd === "wait.navigate") {
+			return { id: "nav-1", acknowledged: true, tabId: 7, data: { url: command.url, state: "complete" } };
+		}
+		if (command.cmd === "wait.loadState") {
+			return { id: "wait-1", acknowledged: true, tabId: 7, data: { state: command.state ?? "complete" } };
+		}
 		if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 			const expression = String(command.params?.expression || "");
 			if (expression.includes("collectActionables") && expression.includes("list_hints")) {
@@ -285,8 +291,8 @@ test("browser_observe change gate misses when output-affecting params change", a
 	try {
 		delete process.env.PI_BROWSER_SESSION_DELTA;
 		const intentHarness = changeGateHarness();
-		await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", params: { intent: "checkout" } }, { cwd }, "scan");
-		const changedIntent = JSON.parse((await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", params: { intent: "account" } }, { cwd }, "scan")).content[0].text);
+		await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", intent: "checkout" }, { cwd }, "scan");
+		const changedIntent = JSON.parse((await runScanObservation(intentHarness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary", intent: "account" }, { cwd }, "scan")).content[0].text);
 		assert.equal(changedIntent.summary?.fromCache, undefined, "changed intent must not reuse the cached render");
 		assert.equal(intentHarness.scanEvals, 2, "changed intent triggers a fresh Runtime.evaluate scan");
 
@@ -333,6 +339,99 @@ test("browser_observe change gate enforces TTL, kill switch, and fingerprint tup
 		if (previousTtl === undefined) delete process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
 		else process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = previousTtl;
 	}
+});
+
+function navigationObserveServer() {
+	let currentUrl = "https://example.test/checkout";
+	let snapshotSeq = 0;
+	let scanEvals = 0;
+	let fingerprintReads = 0;
+	let navigations = 0;
+	const snapshots = new Map<string, any>();
+	const ledger = new Map<string, any>();
+	const frames: any[] = [];
+	const scanPayload = () => ({
+		url: currentUrl,
+		title: "Navigation",
+		readyState: "complete",
+		content: "<h1>Navigation</h1>\nStatus: payment required",
+		node_count: 12,
+		truncated: false,
+		actionables: [{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500 }],
+		list_hints: [],
+	});
+	const server = {
+		...fakeServer,
+		async refreshTabs() { return [{ tabId: 7, url: currentUrl, title: "Navigation", active: true }]; },
+		getTabs() { return [{ tabId: 7, url: currentUrl, title: "Navigation", active: true }]; },
+		snapshot() { return { browserSessionId: "default", defaultTabId: 7, selectionVersion: 3, tabs: [{ tabId: 7, url: currentUrl, title: "Navigation", active: true }] }; },
+		createObservationSnapshot(snapshot: any) {
+			snapshotSeq += 1;
+			const record = { snapshotId: `nav-snap-${snapshotSeq}`, ttlMs: 60_000, expired: false, ...snapshot };
+			snapshots.set(record.snapshotId, record);
+			return record;
+		},
+		getObservationSnapshot(snapshotId: string) { return snapshots.get(snapshotId); },
+		getPerceptionLedgerFrame(key: any) { return ledger.get(JSON.stringify(key)); },
+		getRecentPerceptionLedgerFrames(_key: any, limit = 3) { return frames.slice(-limit).reverse(); },
+		recordPerceptionLedgerFrame(frame: any) { ledger.set(JSON.stringify(frame.key), frame); frames.push(frame); return frame; },
+		async sendCommand(command: any, options: any) {
+			if (command.cmd === "wait.navigate") {
+				navigations += 1;
+				currentUrl = String(command.url);
+				return { id: "nav", acknowledged: true, tabId: 7, data: { url: currentUrl, state: "complete" } };
+			}
+			if (command.cmd === "wait.loadState") return { id: "wait", acknowledged: true, tabId: 7, data: { state: command.state ?? "complete" } };
+			if (command.cmd === "content.fingerprint") {
+				fingerprintReads += 1;
+				return { acknowledged: true, data: { changeSeq: 1, url: currentUrl, title: "Navigation", readyState: "complete", visibleCount: 5, interactiveCount: 1, capturedAt: 123 } };
+			}
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
+				scanEvals += 1;
+				return { id: "eval-nav", acknowledged: true, tabId: 7, data: { result: { value: scanPayload() } } };
+			}
+			if (command.cmd === "html.get") return { id: "html", acknowledged: true, tabId: 7, data: { url: currentUrl, html: "<main>Navigation</main>" } };
+			return fakeServer.sendCommand(command, options);
+		},
+	};
+	return { server, frames, get scanEvals() { return scanEvals; }, get fingerprintReads() { return fingerprintReads; }, get navigations() { return navigations; } };
+}
+
+test("browser_observe scan url navigates first and skips old cache/baseline", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-observe-nav-scan-"));
+	const harness = navigationObserveServer();
+	const previous = process.env.PI_BROWSER_SESSION_DELTA;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		const first = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		const fingerprintReadsAfterFirst = harness.fingerprintReads;
+		const secondResult = await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, url: "https://example.test/after", maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		const second = JSON.parse(secondResult.content[0].text);
+		assert.equal(first.snapshot?.url, "https://example.test/checkout");
+		assert.equal(second.command, "navigate+scan");
+		assert.equal(second.snapshot?.url, "https://example.test/after");
+		assert.equal(second.delta, undefined, "navigation observe must not use the prior URL frame as implicit baseline");
+		assert.equal(second.summary?.fromCache, undefined, "navigation observe must not serve the old render cache");
+		assert.equal(harness.fingerprintReads, fingerprintReadsAfterFirst, "navigation observe skips the pre-navigation content fingerprint cache gate");
+		assert.equal(harness.navigations, 1);
+		assert.equal(harness.scanEvals, 2);
+		assert.equal(harness.frames.at(-1)?.key?.navigationEpoch, "https://example.test/after", "ledger frame records the post-navigation URL");
+	} finally {
+		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
+test("browser_observe html url navigates before html.get", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-observe-nav-html-"));
+	const harness = navigationObserveServer();
+	const result = await runHtmlObservation(harness.server as any, { mode: "html", tabId: 7, url: "https://example.test/html", htmlMode: "outer", maxChars: 12_000 }, { cwd });
+	const envelope = JSON.parse(result.content[0].text);
+	assert.equal(envelope.command, "navigate+html");
+	assert.equal(envelope.snapshot?.url, "https://example.test/html");
+	assert.equal(result.details?.mode, "html");
+	assert.equal(result.details?.modeInferred, null);
+	assert.equal(harness.navigations, 1);
 });
 
 function relevanceServer(options: { url?: string; traceTerms?: Array<{ term: string; kind: string; weight?: number }> } = {}) {
@@ -425,7 +524,7 @@ test("browser_observe relevance behavioral trace and explicit intent use the sam
 	const traced = JSON.parse((await runScanObservation(relevanceServer({ traceTerms: [{ term: "#checkout", kind: "literal", weight: 1.4 }] }) as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
 	assert.equal(primaryActionNames(traced)[0], "checkout");
 	assert.equal(traced.summary?.relevance?.signals?.includes("A"), true);
-	const intent = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000, params: { intent: "checkout" } }, { cwd: process.cwd() }, "scan")).content[0].text);
+	const intent = JSON.parse((await runScanObservation(relevanceServer() as any, { mode: "scan", tabId: 7, maxChars: 12_000, intent: "checkout" }, { cwd: process.cwd() }, "scan")).content[0].text);
 	assert.equal(primaryActionNames(intent)[0], "checkout");
 	assert.equal(intent.summary?.relevance?.signals?.includes("E"), true);
 });

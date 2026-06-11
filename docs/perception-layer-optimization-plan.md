@@ -32,7 +32,7 @@ This document is the execution record for Round 2 perception-layer optimization 
 - AX cache stores raw AX nodes and backend box geometry by explicit cache key; it does not cache constructed entities.
 - Content fingerprint is exposed through internal bridge command `content.fingerprint`.
 - Observe cache hits require matching ledger key, observe mode, detail level, maxChars, params signature, full cheap fingerprint tuple, and TTL.
-- The params signature includes output-affecting request shape: mode, detail level, maxChars, captureMaxChars, includeIframes, maxNodes, normalized intent, and actionRef.
+- The params signature includes output-affecting request shape: mode, detail level, maxChars, captureMaxChars, includeIframes, maxNodes, normalized top-level intent, and actionRef.
 - Cache hits strip stale top-level observe metadata from reused artifacts before adding the new operation, snapshot, saved, cache, and fromCache metadata.
 - The content-script fingerprint observer watches child-list, attribute, and text-node mutations. Extra mutation noise is fail-safe because it causes cache misses.
 - Observe cache TTL is anchored to `renderCache.renderedAt`, the Node-side fresh render time, not to `pageFingerprint.capturedAt` because the latter is the page's last-change timestamp.
@@ -50,7 +50,7 @@ The completed implementation was accepted, and the cache gate hardening pass has
 
 **Problem:** `renderCacheMatches()` checked `changeSeq`, observe mode, detail level, and maxChars. That was not enough to distinguish requests whose output can differ despite an unchanged DOM.
 
-**Resolved behavior:** Cache reuse now requires a `paramsSignature` match. The signature covers scan-affecting params such as `includeIframes`, `maxNodes`, normalized `params.intent`, and outputPath-driven capture breadth through `captureMaxChars`. `actionRef` remains in the signature as defensive metadata, although causal attribution only matters when a baseline is present and explicit baselines disable the gate.
+**Resolved behavior:** Cache reuse now requires a `paramsSignature` match. The signature covers scan-affecting params such as `includeIframes`, `maxNodes`, normalized top-level `intent`, and outputPath-driven capture breadth through `captureMaxChars`. `actionRef` remains in the signature as defensive metadata, although causal attribution only matters when a baseline is present and explicit baselines disable the gate.
 
 **Implemented:**
 
@@ -62,7 +62,7 @@ The completed implementation was accepted, and the cache gate hardening pass has
   - `includeIframes`
   - `maxNodes`
   - `captureMaxChars` or the normalized `hasOutputPath` bit, because `outputPath` changes scan capture breadth via `captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000)`
-  - normalized `params.intent`
+  - normalized top-level `intent`
   - `actionRef`
   - `baseline` presence is excluded because the change gate is disabled when an explicit baseline is passed.
 - `renderCacheMatches()` requires exact `paramsSignature` equality.
@@ -79,7 +79,7 @@ The completed implementation was accepted, and the cache gate hardening pass has
   - `renderCacheMatches()` requires signature equality.
   - `cachedEnvelopeFromArtifact()` sanitizes cached envelope reuse.
 - `tests/unit/tools/observe-abml-integration.test.ts`
-  - Covers same `changeSeq` with changed `params.intent` causing a fresh scan.
+  - Covers same `changeSeq` with changed top-level `intent` causing a fresh scan.
   - Covers outputPath presence changing `captureMaxChars` under the same `maxChars`.
 
 **Verification:**

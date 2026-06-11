@@ -50,8 +50,10 @@ export type ObserveToolParams = {
 	includeIframes?: boolean;
 	htmlMode?: string;
 	params?: unknown;
+	intent?: string;
 	baseline?: unknown;
 	actionRef?: string;
+	modeInferred?: { mode: ObserveMode; reason: string } | null;
 };
 
 type ObserveRunnerError = Error & { code: "INVALID_TIMEOUT"; details: Record<string, unknown> };
@@ -104,6 +106,7 @@ function relevanceEnabled(params: ObserveToolParams): boolean {
 }
 
 function observeIntent(params: ObserveToolParams): string | undefined {
+	if (typeof params.intent === "string" && params.intent.trim()) return params.intent.trim();
 	const nested = isRecord(params.params) ? params.params : undefined;
 	return typeof nested?.intent === "string" && nested.intent.trim() ? nested.intent.trim() : undefined;
 }
@@ -519,6 +522,19 @@ async function readPageFingerprint(server: BrowserBridgeServer, params: ObserveT
 	}
 }
 
+function modeInferredDetails(params: ObserveToolParams): ObserveToolParams["modeInferred"] {
+	return params.modeInferred ?? null;
+}
+
+function modeInferredSummary(params: ObserveToolParams): Record<string, unknown> {
+	return params.modeInferred ? { modeInferred: params.modeInferred.mode } : {};
+}
+
+function scanCommandName(mode: Extract<ObserveMode, "scan" | "text">, hasNavigation: boolean): string {
+	if (hasNavigation) return mode === "text" ? "navigate+text" : "navigate+scan";
+	return mode === "text" ? "scan.text" : "scan";
+}
+
 function observeCacheTtlMs(): number {
 	const raw = process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
 	if (raw === undefined) return 2_000;
@@ -635,7 +651,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				command: "scan.tabs",
 				maxChars,
 				fallbackName,
-				details: { mode: "tabs", sourceMode: "scan", sourceCommand: "tabs.list" },
+				details: { mode: "tabs", modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "tabs.list" },
 				operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 				snapshot: snapshotMeta,
 				distill: (value) => summarizeObserveTabsData(value),
@@ -645,15 +661,16 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		return toolResult;
 	}
 	const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
+	const hasNavigation = typeof params.url === "string" && params.url.trim().length > 0;
 	const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 100_000);
 	const scanScript = buildScanScript({ textOnly: mode === "text", maxChars: captureMaxChars, maxNodes: params.maxNodes, includeIframes: params.includeIframes });
 	const preBridge = server.snapshot({ browserSessionId: params.browserSessionId });
-	const plannedLedgerKey = ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
-	const ledgerFrame = sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
+	const plannedLedgerKey = hasNavigation ? undefined : ledgerKey(preBridge.browserSessionId, tabId, tabUrlForLedger(tabs, tabId, preBridge.defaultTabId));
+	const ledgerFrame = !hasNavigation && sessionDeltaEnabled(params) && plannedLedgerKey && typeof server.getPerceptionLedgerFrame === "function" ? server.getPerceptionLedgerFrame(plannedLedgerKey) : undefined;
 	const effectiveTabId = tabId ?? preBridge.defaultTabId;
 	const detailLevel = String(params.detailLevel || "summary");
 	const paramsSignature = observeRenderParamsSignature(params, mode, detailLevel, maxChars, captureMaxChars);
-	const pageFingerprint = sessionDeltaEnabled(params) ? await readPageFingerprint(server, params, effectiveTabId, timeoutMs) : undefined;
+	const pageFingerprint = !hasNavigation && sessionDeltaEnabled(params) ? await readPageFingerprint(server, params, effectiveTabId, timeoutMs) : undefined;
 	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
 		const cacheFingerprint = pageFingerprint!;
 		const priorSnapshot = server.getObservationSnapshot(ledgerFrame.snapshotId);
@@ -683,7 +700,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 							command: mode === "text" ? "scan.text" : "scan",
 							maxChars,
 							fallbackName,
-							details: { mode, sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId },
+							details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "content.fingerprint", fromCache: true, priorSnapshotId: ledgerFrame.snapshotId },
 							operation: { ...handle.operation, snapshotId: snapshotMeta.snapshotId },
 							snapshot: snapshotMeta,
 							distill: () => ({ mode, sourceMode: "scan", fromCache: true, cache: value.cache, priorSnapshotId: ledgerFrame.snapshotId }),
@@ -709,7 +726,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		}
 	}
 	const granularityCeiling = granularityCeilingFromLedger(server, plannedLedgerKey);
-	const effectiveBaseline: unknown = params.baseline ?? (ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
+	const effectiveBaseline: unknown = params.baseline ?? (!hasNavigation && ledgerFrame ? { snapshotId: ledgerFrame.snapshotId } : undefined);
 	let baseline: BaselineResolution | undefined;
 	try {
 		baseline = await resolveBaselineEntities(server, effectiveBaseline);
@@ -720,7 +737,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
 	const { result: observation, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
-		command: mode === "text" ? "scan.text" : "scan",
+		command: scanCommandName(mode, hasNavigation),
 		browserSessionId,
 		tabId,
 		phase: "running",
@@ -729,7 +746,14 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
 		sourceMode: "scan",
 	}, onUpdate, async (handle) => {
-		await handle.update({ progress: 40 });
+		let navigationData: unknown;
+		if (hasNavigation) {
+			await handle.update({ progress: 20, phase: "navigating" });
+			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+			assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
+			navigationData = navigation.data;
+		}
+		await handle.update({ progress: hasNavigation ? 50 : 40 });
 		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "scan_extract" });
 		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
 		const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined && isRecord(result.data);
@@ -744,7 +768,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			axCacheKey: pageFingerprint ? `content:${pageFingerprint.changeSeq}:${pageFingerprint.url || ""}` : undefined,
 		});
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
-		return { result, abmlRead };
+		return { result, abmlRead, navigationData };
 	});
 	const data = observation.result.data as Record<string, unknown> | undefined;
 	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
@@ -881,6 +905,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			return { ...baseSummaryFor(relevance), ...ledgerDeltaFields, abmlIntegrated: false, ...causalBlock };
 		})();
 	const summaryRecord = summary as Record<string, unknown>;
+	Object.assign(summaryRecord, modeInferredSummary(params));
 	const envelopeEntities = attributedEntities ?? scanEnvelopeEntities;
 	// Narrow active capability hints — causal + treeDiff ONLY. A three-round real-agent eval (2026-06-05)
 	// showed these two are valuable when used but agents never reach for them unprompted, and passive skill
@@ -928,7 +953,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const artifactRelations = isRecord(artifactFocus?.relations) ? artifactFocus!.relations : undefined;
 	const artifactEnvelopeMirror = {
 		tool: "browser_observe",
-		command: mode === "text" ? "scan.text" : "scan",
+		command: scanCommandName(mode, hasNavigation),
 		summary,
 		...(envelopeEntities.length ? { entities: envelopeEntities.slice(0, 12) } : {}),
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
@@ -949,11 +974,11 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const stableRefs = ledgerFrameForRecord ? stableRefsFromFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
 	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
-		command: mode === "text" ? "scan.text" : "scan",
+		command: scanCommandName(mode, hasNavigation),
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode, sourceMode: "scan", sourceCommand: "scan_extract", tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
+		details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "scan_extract", ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false } },
 		operation,
 		snapshot: snapshotMeta,
 		granularityCeiling,
@@ -962,7 +987,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			allocation = value;
 		},
 		entities: envelopeEntities,
-		artifactValue: { ...observation.result, tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue: { ...observation.result, ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
 	});
 	if (ledgerFrameForRecord && typeof server.recordPerceptionLedgerFrame === "function") {
 		server.recordPerceptionLedgerFrame({
@@ -1020,6 +1045,7 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const summary = {
 		...withObservationMeta(summarizeContentData(data), "content", "content"),
+		...modeInferredSummary(params),
 		browserSessionId: bridge.browserSessionId,
 		tabId,
 		selectionVersion: bridge.selectionVersion,
@@ -1032,7 +1058,7 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode: "content", sourceMode: "content", sourceCommand: "content_extract", url: params.url, selector: params.selector, navigation: result.navigationData, content: meta },
+		details: { mode: "content", modeInferred: modeInferredDetails(params), sourceMode: "content", sourceCommand: "content_extract", url: params.url, selector: params.selector, navigation: result.navigationData, content: meta },
 		operation,
 		snapshot: snapshotMeta,
 		artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },
@@ -1052,13 +1078,15 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 	const tabId = normalizeTabId(targetTabId(params, body));
 	const commandName = nativeCommandToolMetadata.browser_observe_html.command;
+	const hasNavigation = typeof params.url === "string" && params.url.trim().length > 0;
+	const observeCommandName = hasNavigation ? "navigate+html" : commandName;
 	const textFallbackName = artifactFallbackName(nativeCommandToolMetadata.browser_observe_html.artifactPrefix);
 	const resultFallbackName = artifactFallbackName(`${nativeCommandToolMetadata.browser_observe_html.artifactPrefix}-result`);
 	const outputPath = params.outputPath ?? resolveArtifactPath(ctx, undefined, textFallbackName);
 	const resultParams = { ...params, outputPath };
 	const { result, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
-		command: commandName,
+		command: observeCommandName,
 		browserSessionId,
 		tabId,
 		phase: "running",
@@ -1067,19 +1095,27 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 		leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
 		sourceMode: "html",
 	}, onUpdate, async (handle) => {
+		let navigationData: unknown;
+		if (hasNavigation) {
+			await handle.update({ progress: 20, phase: "navigating" });
+			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+			assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
+			navigationData = navigation.data;
+		}
 		await handle.update({ progress: 45 });
 		const result = await server.sendCommand({ ...body, cmd: commandName }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body) as number | string | undefined, timeoutMs });
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
-		return result;
+		return { result, navigationData };
 	});
-	const data = result.data as Record<string, unknown> | undefined;
+	const data = result.result.data as Record<string, unknown> | undefined;
 	const html = typeof data?.html === "string" ? data.html : undefined;
-	const resultMeta = data ? { ...result, data: { ...data, html: html === undefined ? undefined : `[${html.length} chars]` } } : result;
-	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "html", outputPath, typeof data?.url === "string" ? data.url : undefined);
+	const resultMeta = data ? { ...result.result, data: { ...data, html: html === undefined ? undefined : `[${html.length} chars]` } } : result.result;
+	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "html", outputPath, typeof data?.url === "string" ? data.url : params.url);
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	if (html !== undefined) {
 		const summary = {
 			...withObservationMeta(summarizeHtmlSnapshot(html, data), "html", "html"),
+			...modeInferredSummary(params),
 			browserSessionId: bridge.browserSessionId,
 			tabId,
 			selectionVersion: bridge.selectionVersion,
@@ -1088,25 +1124,25 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 		};
 		return await textToolResult(html, resultParams, ctx, {
 			toolName: "browser_observe",
-			command: commandName,
+			command: observeCommandName,
 			maxChars,
 			fallbackName: textFallbackName,
 			summary,
-			details: { mode: "html", sourceMode: "html", sourceCommand: commandName, command: commandName, result: resultMeta },
+			details: { mode: "html", modeInferred: modeInferredDetails(params), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData, result: resultMeta },
 			operation,
 			snapshot: snapshotMeta,
-			artifactValue: { ...result, operation, snapshot: snapshotMeta },
+			artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },
 		});
 	}
-	return await jsonToolResult(result, resultParams, ctx, {
+	return await jsonToolResult(result.result, resultParams, ctx, {
 		toolName: "browser_observe",
-		command: commandName,
+		command: observeCommandName,
 		defaultDetailLevel: "preview",
 		maxChars,
 		fallbackName: resultFallbackName,
-		details: { mode: "html", sourceMode: "html", sourceCommand: commandName, command: commandName },
+		details: { mode: "html", modeInferred: modeInferredDetails(params), sourceMode: "html", sourceCommand: commandName, command: commandName, navigation: result.navigationData },
 		operation,
 		snapshot: snapshotMeta,
-		artifactValue: { ...result, operation, snapshot: snapshotMeta },
+		artifactValue: { ...result.result, navigation: result.navigationData, operation, snapshot: snapshotMeta },
 	});
 }

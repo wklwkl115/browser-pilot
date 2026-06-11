@@ -9,7 +9,7 @@ export type ToolRelevanceTapSpec = {
 export const TOOL_RELEVANCE_TAPS: Record<string, ToolRelevanceTapSpec> = {
 	browser_execute: { params: { script: "scriptLiterals" } },
 	browser_artifact: { params: { jsonPath: "jsonPath", query: "query", path: "scalar" } },
-	browser_observe: { params: { url: "url", selector: "scalar", actionRef: "ref" }, nestedParams: { intent: "scalar" } },
+	browser_observe: { params: { url: "url", selector: "scalar", actionRef: "ref", intent: "scalar" }, nestedParams: { intent: "scalar" } },
 	browser_wait: { params: { url: "url", selector: "scalar" } },
 	browser_network: { params: { sessionId: "scalar" } },
 	browser_hook: { params: { selector: "scalar", eventType: "scalar" } },

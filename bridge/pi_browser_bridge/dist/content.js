@@ -5,6 +5,40 @@
   var TID = "__pi_browser_bridge_request__";
 
   // bridge_src/page_scripts/content.ts
+  var piBrowserChangeSeq = 1;
+  var piBrowserLastChangedAt = Date.now();
+  function bumpPiBrowserFingerprint() {
+    piBrowserChangeSeq += 1;
+    piBrowserLastChangedAt = Date.now();
+  }
+  function countVisibleElements(elements) {
+    let count = 0;
+    for (const element of elements) {
+      const rect = element.getBoundingClientRect();
+      if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) count += 1;
+    }
+    return count;
+  }
+  function currentPiBrowserFingerprint() {
+    const interactive = Array.from(document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]"));
+    return {
+      changeSeq: piBrowserChangeSeq,
+      url: location.href,
+      title: document.title,
+      readyState: document.readyState,
+      visibleCount: countVisibleElements(Array.from(document.body?.querySelectorAll("*") ?? []).slice(0, 500)),
+      interactiveCount: interactive.length,
+      capturedAt: piBrowserLastChangedAt
+    };
+  }
+  function installPiBrowserFingerprintResponder() {
+    chrome.runtime.onMessage?.addListener((message, _sender, sendResponse) => {
+      const record = message && typeof message === "object" ? message : {};
+      if (record.cmd !== "pi.contentFingerprint") return false;
+      sendResponse({ ok: true, data: currentPiBrowserFingerprint() });
+      return true;
+    });
+  }
   function scrubLegacyBridgeNode(root) {
     const selectors = [`#${TID}`];
     for (const selector of selectors) {
@@ -23,7 +57,9 @@
     void chrome.runtime.sendMessage({ cmd: "bridge_wake", url: location.href, title: document.title }).catch(() => {
     });
     if (document.documentElement) scrubLegacyBridgeNode(document.documentElement);
+    installPiBrowserFingerprintResponder();
     new MutationObserver((mutations) => {
+      bumpPiBrowserFingerprint();
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           const element = node && typeof node.querySelector === "function" ? node : null;
@@ -38,7 +74,7 @@
           if (element.querySelector?.(`#${TID}`)) scrubLegacyBridgeNode(element);
         }
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
   })();
 })();
 //# sourceMappingURL=content.js.map

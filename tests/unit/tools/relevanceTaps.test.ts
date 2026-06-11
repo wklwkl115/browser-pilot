@@ -22,6 +22,9 @@ test("extractToolRelevanceTerms uses the declarative tool table", () => {
 	const artifact = extractToolRelevanceTerms("browser_artifact", { jsonPath: "data.actionables", query: "login" });
 	assert.ok(artifact.some((term) => term.kind === "jsonPath"));
 	assert.ok(artifact.some((term) => term.term === "login"));
+	const observe = extractToolRelevanceTerms("browser_observe", { intent: "checkout", params: { intent: "legacy" } });
+	assert.ok(observe.some((term) => term.term === "checkout"));
+	assert.ok(observe.some((term) => term.term === "legacy"));
 });
 
 test("extractToolRelevanceTerms returns no terms for tools without tap rows", () => {

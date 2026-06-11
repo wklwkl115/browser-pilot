@@ -24,7 +24,10 @@ export async function evaluatePageScriptDirect(server: BrowserBridgeServer, scri
 	const data = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : {};
 	const exceptionMessage = runtimeExceptionMessage(data);
 	if (exceptionMessage) throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", exceptionMessage, { command: options.name, exceptionDetails: data.exceptionDetails });
-	const remote = data.result && typeof data.result === "object" ? data.result as Record<string, unknown> : undefined;
+	const resultEnvelope = data.result && typeof data.result === "object" ? data.result as Record<string, unknown> : undefined;
+	const remote = resultEnvelope && "result" in resultEnvelope && typeof resultEnvelope.result === "object" && resultEnvelope.result !== null
+		? resultEnvelope.result as Record<string, unknown>
+		: resultEnvelope;
 	if (!remote || !Object.prototype.hasOwnProperty.call(remote, "value")) {
 		throw new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "Runtime.evaluate did not return a by-value result", { command: options.name, result: data.result });
 	}

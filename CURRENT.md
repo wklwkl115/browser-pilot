@@ -13,6 +13,16 @@
 
 ## 当前激活项
 
+### browser_observe mode-friction reduction v2 (2026-06-11, 完成)
+
+决策：执行 `browser_observe` mode 摩擦收敛 v2。`mode` 保留为显式参数；当 `mode` 缺省时，仅由参数蕴含集合交集做确定性推导，不做页面启发式、不新增 `mode=auto`、不新增公开工具。显式传入 `mode` 时现有严格校验保持不变；跨模式混合参数若蕴含交集为空仍硬拒。
+
+落地边界：`intent` 升为顶层一等参数，修复 task-conditioned salience E 源在公开 `browser_observe` 面不可达的缺陷；`intent` 合法域为 `scan`/`text`，缺省 `mode` 时不参与内容模式推导并继续落到默认 `scan`。`params` 维持 html-only 协议透传语义，因此 `params` 可在缺省 mode 时推导为 `html`。`url` 放开至 `scan`/`text`/`html`/`content`，导航语义复用 `wait.navigateAndWait state:"complete"`；导航请求跳过 observe render cache 与隐式 session baseline，ledger frame 以导航后的 URL 记录，显式 baseline 仍允许。
+
+合同：推导回显进入 tool `details.modeInferred`（无推导为 `null`，有推导为 `{mode, reason}`）；model-facing summary 只在发生推导时携带短字段 `modeInferred:"..."`。感知层 H1 `paramsSignature` 纳入顶层 `intent`，并保留内部直调 `params.intent` 兼容。`text` 模式不吸收、不弃用。
+
+验证：已通过 `check:src:types`、observe/relevance 聚焦单测、`docs:generate`、`check:tool-docs`、`check:all:contracts`、skill quick validate、`build:bridge`、`smoke:browser:observe-navigation`。Smoke artifact：`.pi/browser-artifacts/smoke-observe-navigation-results.json`，覆盖公开 `browser_observe` 省略 mode 的 `url -> navigate+scan` 与 `selector+htmlMode+url -> navigate+html` 推导路径；真实 bridge smoke 同步修正 `persistent_cdp` 的 nested CDP result 解包。
+
 ### Debt zeroing — remove trigger-gated backlog (2026-06-10, 完成)
 
 决策：执行用户要求的 trigger-gated debt 清零。原则：能作为确定性机械能力落地的，直接实现并加合同；没有正当产品形态或会扩大公开面/策略面的，直接关闭为项目决策，不再保留“等触发再做”的 backlog。公开 `browser_*` 工具名仍不新增；优先在既有 scan/summary/artifact/contract 面内消化。

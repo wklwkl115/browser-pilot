@@ -111,6 +111,7 @@
     "check:abml-core-boundary": "node tests/contracts/drift/check-abml-core-boundary.mjs",
     "check:cli-migration-drift": "node tests/contracts/drift/check-cli-migration-drift.mjs",
     "smoke:browser:isolated": "tsx tests/smoke/smoke-browser-isolated.mjs",
+    "smoke:browser:observe-navigation": "tsx tests/smoke/smoke-observe-navigation.mjs",
     "smoke:browser:scan-summary": "tsx tests/smoke/smoke-scan-summary.mjs",
     "smoke:browser:debugger-evidence": "tsx tests/smoke/smoke-debugger-evidence.mjs",
     "smoke:browser:correlation-chain": "tsx tests/smoke/smoke-correlation-chain.mjs",
