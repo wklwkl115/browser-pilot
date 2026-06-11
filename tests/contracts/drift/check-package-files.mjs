@@ -21,6 +21,9 @@ assert.equal(pkg.exports?.["."]?.import, "./dist/index.js", "package exports imp
 assert.equal(pkg.exports?.["."]?.types, "./dist/index.d.ts", "package exports types must point to dist/index.d.ts");
 assert.equal(pkg.scripts?.["check:package"], "node tests/contracts/drift/check-package-files.mjs", "package file contract must be exposed as check:package");
 assert.equal(pkg.scripts?.["check:all"], "node scripts/run-check-groups.mjs", "check:all must route grouped validation through the shared runner");
+assert.equal(pkg.scripts?.["check:trace"], "node scripts/run-check-groups.mjs --json", "check:trace must expose grouped trace JSON mode");
+assert.equal(pkg.scripts?.["check:dag"], "node scripts/check-dag.mjs", "check:dag must expose graph-backed DAG execution");
+assert.equal(pkg.scripts?.["check:smart"], "node scripts/check-dag.mjs --smart", "check:smart must expose graph-backed impact execution");
 assert.equal(pkg.scripts?.["check:all:bridge"], "node scripts/run-check-groups.mjs bridge unit", "check:all:bridge must expose bridge+unit grouped validation");
 assert.equal(pkg.scripts?.["check:all:package"], "node scripts/run-check-groups.mjs package docs", "check:all:package must expose package+docs grouped validation");
 assert.equal(pkg.scripts?.["check:all:contracts"], "node scripts/run-check-groups.mjs contracts", "check:all:contracts must expose contract grouped validation");
@@ -44,11 +47,14 @@ assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "pa
 assert.equal(pkg.scripts?.["check:capture"], "node scripts/sync-capture.mjs --check && node tests/contracts/runtime/check-capture-core-boundary.mjs", "package must expose capture drift and boundary check");
 
 const buildScript = read("scripts/build-bridge.mjs");
+const checkGraphScript = read("scripts/check-graph.mjs");
+const checkDagScript = read("scripts/check-dag.mjs");
 const groupedCheckScript = read("scripts/run-check-groups.mjs");
-assert(groupedCheckScript.includes("const groups =") && groupedCheckScript.includes("bridge") && groupedCheckScript.includes("contracts"), "grouped check runner must define stable named validation groups");
-assert(groupedCheckScript.includes('"check:capture"'), "grouped check runner must include capture-core contracts");
+assert(groupedCheckScript.includes("CHECK_GROUPS") && checkGraphScript.includes("const CHECK_GROUPS") && checkGraphScript.includes("bridge") && checkGraphScript.includes("contracts"), "grouped check runner must read stable named validation groups from check-graph.mjs");
+assert(checkGraphScript.includes('"check:capture"') && checkGraphScript.includes('"check:check-graph"'), "check graph must include capture-core and graph-drift contracts");
 assert(groupedCheckScript.includes('spawnSync("npm", ["run", script]') || groupedCheckScript.includes("spawnSync(\"npm\", [\"run\", script]"), "grouped check runner must dispatch npm run <script> sequentially");
-assert(groupedCheckScript.includes("--json") && groupedCheckScript.includes("check-groups-summary.json") && groupedCheckScript.includes("summary.results.push"), "grouped check runner must support JSON summary mode and persist a structured artifact");
+assert(groupedCheckScript.includes("--json") && groupedCheckScript.includes("CHECK_GROUPS_SUMMARY_PATH") && groupedCheckScript.includes("summary.results.push"), "grouped check runner must support JSON summary mode and persist a structured artifact");
+assert(checkDagScript.includes("CHECK_DAG_SUMMARY_PATH") && checkDagScript.includes("CHECK_IMPACT_SUMMARY_PATH") && checkGraphScript.includes("CHECK_MISS_DIR"), "DAG runner must persist DAG, impact, and miss artifacts");
 assert(buildScript.includes('process.argv.includes("--quiet")'), "build script must support quiet mode for prepack");
 assert(buildScript.includes('path.join(distDir, ".npmignore")') && buildScript.includes("include the generated dist runtime"), "build script must generate dist/.npmignore so npm pack does not inherit dist/.gitignore");
 const workflow = read(".github/workflows/check.yml");
@@ -112,6 +118,7 @@ assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm p
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
+assert(packed.has("scripts/check-graph.mjs") && packed.has("scripts/check-dag.mjs") && packed.has("scripts/run-check-groups.mjs"), "npm package must include graph-backed check runners");
 assert(packed.has("scripts/sync-capture.mjs"), "npm package must include capture sync script");
 assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capture/generated/scanBundle.ts"), "npm package must include capture source and generated bundles");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");

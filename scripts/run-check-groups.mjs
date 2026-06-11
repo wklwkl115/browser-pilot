@@ -1,45 +1,56 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { spawnSync } from "node:child_process";
+import {
+	CHECK_GROUPS,
+	CHECK_GROUPS_SUMMARY_PATH,
+	DEFAULT_GROUP_SEQUENCE,
+	packageScripts,
+	recordMissIfApplicable,
+	writeJsonFile,
+} from "./check-graph.mjs";
 
 const root = process.cwd();
-const artifactDir = path.join(root, ".pi", "browser-artifacts");
-const summaryPath = path.join(artifactDir, "check-groups-summary.json");
+const summaryPath = CHECK_GROUPS_SUMMARY_PATH;
 const jsonMode = process.argv.includes("--json");
-
-const groups = {
-	src: ["check:src:types", "check:registry-drift"],
-	bridge: ["check:bridge"],
-	unit: ["test:unit"],
-	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
-	docs: ["check:tool-docs", "check:doc-structure", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:cli-migration-drift"],
-	contracts: ["check:jshookmcp-closure", "check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:abml-ax-smoke", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:spec-truth", "check:surface-liveness", "check:compute-once", "check:purity-vocabulary", "check:kernel-test-map", "check:env-flags", "check:abml-ref-registry", "check:abml-scan-entities", "check:abml-scan-envelope", "check:abml-verb-runtime", "check:abml-ax-runtime", "check:abml-relation-graph", "check:abml-inference", "check:abml-diff", "check:abml-causal", "check:abml-templating", "check:abml-tree-diff", "check:abml-semantic-ref-anchor", "check:abml-snapshot-projection", "check:abml-stream-plane", "check:abml-p6p7-runtime", "check:abml-internal-integration", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
-};
-
-const defaultSequence = ["src", "bridge", "unit", "package", "docs", "contracts"];
+const groups = CHECK_GROUPS;
+const defaultSequence = DEFAULT_GROUP_SEQUENCE;
 const requested = process.argv.slice(2).filter((arg) => arg !== "--json");
 const sequence = requested.length ? requested : defaultSequence;
 const startedAt = new Date().toISOString();
-const summary = { ok: false, startedAt, finishedAt: undefined, sequence, results: [] };
+const runId = startedAt.replace(/[:.]/g, "-");
+const packageScriptMap = packageScripts(root);
+const summary = { schemaVersion: 1, ok: false, runId, startedAt, finishedAt: undefined, sequence, results: [], summaryPath };
 
 function flushSummary() {
-	mkdirSync(artifactDir, { recursive: true });
-	writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+	writeJsonFile(summaryPath, summary);
 }
 
 for (const name of sequence) {
-	const scripts = groups[name];
-	if (!scripts) {
+	const groupScripts = groups[name];
+	if (!groupScripts) {
 		console.error(`Unknown check group: ${name}`);
 		summary.finishedAt = new Date().toISOString();
 		summary.error = `Unknown check group: ${name}`;
 		flushSummary();
 		process.exit(1);
 	}
-	for (const script of scripts) {
+	for (const script of groupScripts) {
 		console.log(`\n[check-all] npm run ${script}`);
+		const scriptStartedAt = new Date().toISOString();
+		const start = performance.now();
 		const result = spawnSync("npm", ["run", script], { encoding: "utf8", stdio: jsonMode ? "pipe" : "inherit", shell: process.platform === "win32" });
-		summary.results.push({ script, ok: (result.status ?? 1) === 0, status: result.status ?? 1, signal: result.signal ?? null, stdoutTail: String(result.stdout || "").slice(-4000), stderrTail: String(result.stderr || "").slice(-4000) });
+		const item = {
+			script,
+			command: packageScriptMap[script],
+			ok: (result.status ?? 1) === 0,
+			status: result.status ?? 1,
+			signal: result.signal ?? null,
+			startedAt: scriptStartedAt,
+			finishedAt: new Date().toISOString(),
+			durationMs: Math.round(performance.now() - start),
+			stdoutTail: String(result.stdout || "").slice(-4000),
+			stderrTail: String(result.stderr || "").slice(-4000),
+		};
+		summary.results.push(item);
 		if (jsonMode) {
 			if (result.stdout) process.stdout.write(result.stdout);
 			if (result.stderr) process.stderr.write(result.stderr);
@@ -48,6 +59,8 @@ for (const name of sequence) {
 			summary.finishedAt = new Date().toISOString();
 			summary.ok = false;
 			flushSummary();
+			const miss = recordMissIfApplicable({ root, fullRunId: runId, failingScript: script, fullSummaryPath: summaryPath });
+			if (miss) console.error(`[check-all] smart/full miss recorded: ${miss.path}`);
 			process.exit(result.status ?? 1);
 		}
 	}

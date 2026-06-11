@@ -1,9 +1,8 @@
 # Check Acceleration Plan
 
-> Status: completed planning artifact after maintainer architecture review and
-> measured full check baseline. Implementation is not active until `CURRENT.md`
-> records a new active item with the decision, boundary, contract, and verification
-> plan required by the project workflow.
+> Status: **completed implementation** (2026-06-12). The graph-backed trace,
+> DAG, cache, smart-selection, and miss-recording path is live. `npm run check`
+> remains the final full gate.
 
 ## Goal
 
@@ -27,14 +26,17 @@ The target system:
 
 ## Activation Contract
 
-This document is the implementation blueprint, not an active execution queue.
-Before P0' starts, the maintainer or agent must:
+This section records the activation rule that was followed before implementation.
+Before P0' started, the maintainer or agent had to:
 
 1. Record the active line in `CURRENT.md` with decision, boundary, contract, and
    verification plan.
 2. Keep `TODO.md` as navigation only unless a new top-level pointer is needed.
 3. Treat `ROADMAP.md` as the non-active route and closed-decision record until
    activation.
+
+Execution record: `CURRENT.md` was updated with the active decision, boundary,
+contract, and verification plan before code changes for this workstream began.
 
 ## Measured Baseline
 
@@ -109,6 +111,50 @@ Generated evidence stays local:
 - `.pi/check-cache/objects/<hash>.json`
 
 These are runtime artifacts, not committed output.
+
+## Implementation Result
+
+The implementation keeps one machine source of truth:
+
+- `scripts/check-graph.mjs` owns `CHECK_GROUPS`, default group order, graph
+  exclusions with reasons, local command overrides, fingerprint scope, and miss
+  recording helpers.
+- `scripts/run-check-groups.mjs` now reads `CHECK_GROUPS` and records per-script
+  command, status, start/end, duration, and stdout/stderr tails to
+  `.pi/browser-artifacts/check-groups-summary.json`.
+- `scripts/check-dag.mjs` runs the graph directly with async `spawn`, local
+  package binaries resolved as `node <package bin>` on Windows, bounded
+  concurrency, exclusive handling for reviewed fixed-artifact writers, TypeScript
+  incremental build info under `.pi/tsbuildinfo/`, and an ESLint node.
+- The DAG decomposes npm compound scripts into cacheable graph nodes such as
+  `check:protocol#1`, `check:tools#2`, and `check:capture#1`; package scripts
+  remain user-facing aliases.
+- The coarse cache hashes tracked and untracked relevant files under the declared
+  source/test/doc/config roots. Any relevant content change changes the repo-wide
+  fingerprint and causes broad misses; exact no-change repeats hit all eligible
+  passing nodes.
+- `check:smart` records `changedFiles`, `selectedReasons`, selected/skipped nodes,
+  and cache decisions. Unknown impact expands to the full graph. For deterministic
+  selection checks without mutating the worktree, `--changed-file=<path>` supplies
+  representative synthetic changed paths.
+- `recordMissIfApplicable()` compares the last successful non-dry-run smart
+  fingerprint with a later failing full/DAG fingerprint and writes
+  `.pi/browser-artifacts/check-misses/<run-id>.json` only when the failed full node
+  was not selected by smart.
+- `tests/contracts/drift/check-check-graph.mjs` locks graph/package-script
+  coverage, exclusion reasons, graph-backed runner wiring, coarse fingerprinting,
+  and a synthetic miss artifact.
+
+Measured execution evidence on this machine:
+
+- `npm run check:dag` no-cache: 85 node results, about 111s wall time. This is
+  roughly 60% of the documented 185s baseline while also running ESLint.
+- `npm run check:dag -- --cache`: 85/85 cache hits, about 1s.
+- `npm run check:smart -- --cache` while the graph implementation was dirty:
+  conservative full selection, 85 node results, 0 hits after a runner edit changed
+  the fingerprint, then subsequent same-fingerprint DAG cache hit 85/85.
+- `node scripts/check-dag.mjs --self-test-miss-recorder`: wrote a synthetic miss
+  artifact and restored the previous smart impact summary.
 
 ## P0' - Trace Existing Gate In Place
 
@@ -539,6 +585,11 @@ Do not wait until P7 for activation bookkeeping.
 
 ## Acceptance Criteria
 
+Status: completed. The implementation satisfies P0'-P2' directly and ships the
+P4/P5/P7 surfaces in the same workstream. Representative clean-tree smart runs are
+available through `--changed-file=<path>` overrides; during implementation the
+real dirty worktree correctly expanded smart selection to the full graph.
+
 ### First Milestone: P0'-P2'
 
 - `npm run check:dag` covers the same obligations as current full check.
@@ -563,3 +614,19 @@ Do not wait until P7 for activation bookkeeping.
 - Local graph grouping remains aligned with CI job groups.
 - `npm run check` remains the final verification command for completed
   workstreams.
+
+## Final Verification
+
+Focused gates and acceleration runs completed before final full closeout:
+
+- `node scripts/run-check-groups.mjs --json src`
+- `npm run check:dag`
+- `npm run check:dag -- --cache` twice
+- `npm run check:smart -- --cache`
+- `node scripts/check-dag.mjs --self-test-miss-recorder`
+- `npm run check:check-graph`
+- `npm run check:boundaries`
+- `npm run check:package`
+
+Final closeout passed before commit: `npm run lint`, full `npm run check`, and
+`git diff --check`.

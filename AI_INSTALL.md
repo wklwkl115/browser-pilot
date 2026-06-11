@@ -82,7 +82,7 @@ npm run check:all:contracts
 npm run quality:local
 ```
 
-该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；当前 `prepack` 会先执行 `npm run build` 生成 outer `dist/`，再 quiet build bridge dist。成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/run-check-groups.mjs` 聚合 bridge/unit、package/docs、contracts 三组，可按故障域单独运行 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这三组入口。需要结构化回归摘要时可运行 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
+该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；当前 `prepack` 会先执行 `npm run build` 生成 outer `dist/`，再 quiet build bridge dist。成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/run-check-groups.mjs` 读取 `scripts/check-graph.mjs` 的 bridge/unit、package/docs、contracts 分组，可按故障域单独运行 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这三组入口。需要结构化回归摘要时可运行 `npm run check:trace` 或 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。本地加速可用 `npm run check:dag`、`npm run check:dag -- --cache`、`npm run check:smart`，分别写 `.pi/browser-artifacts/check-dag-summary.json` / `check-impact-summary.json`；它们只加速反馈，最终收口仍以 `npm run check` 为准。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
 
 
 

@@ -18,6 +18,28 @@
 
 ## 最近完成项
 
+### Check acceleration plan implementation（2026-06-12，完成）
+
+Decision: completed `docs/check-acceleration-plan.md` implementation after the
+governance mechanisms commit. Local verification now has graph-backed trace, DAG,
+cache, smart selection, miss recording, and workflow documentation while preserving
+`npm run check` as the final full gate.
+
+Boundary: no runtime browser-tool behavior, public `browser_*` schema, or final
+full-check semantics changed. Acceleration commands may skip only by explicit,
+recorded graph/cache/impact logic; unknown impact expands conservatively.
+
+Contract: `scripts/check-graph.mjs` is the single machine-maintained check
+inventory. `run-check-groups.mjs`, `check-dag.mjs`, cache, smart selection, and
+`check:check-graph` all read or verify that graph. Artifacts stay local under
+`.pi/`; every hit, miss, selected node, skipped node, and impact reason is visible.
+
+Verification: passed graph/package/boundary/doc focused gates, `npm run lint`,
+`npm run check:dag` no-cache, repeated `npm run check:dag -- --cache` with 85/85
+hits, `npm run check:smart -- --cache`, synthetic miss recorder,
+representative `--changed-file` smart selection checks, full `npm run check`, and
+`git diff --check` before commit.
+
 ### Governance mechanisms plan（2026-06-12，完成）
 
 Decision: completed `docs/governance-mechanisms-plan.md`, converting the accepted

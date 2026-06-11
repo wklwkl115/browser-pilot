@@ -8,11 +8,12 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const list = (rel) => readdirSync(path.join(root, rel));
 
 const scripts = list("scripts").sort();
-assert.deepEqual(scripts, ["build-bridge.mjs", "generate-tool-docs.mjs", "run-check-groups.mjs", "sync-bridge-config.mjs", "sync-capture.mjs", "sync-doc-indexes.mjs", "sync-native-protocol.mjs"], "scripts/ must contain only generators/build/check runners; move tests to tests/");
+assert.deepEqual(scripts, ["build-bridge.mjs", "check-dag.mjs", "check-graph.mjs", "generate-tool-docs.mjs", "run-check-groups.mjs", "sync-bridge-config.mjs", "sync-capture.mjs", "sync-doc-indexes.mjs", "sync-native-protocol.mjs"], "scripts/ must contain only generators/build/check runners; move tests to tests/");
 const usesTsx = (script) => /(^|\s)tsx(\s|$)/.test(String(script || ""));
 assert(existsSync(path.join(root, ".github", "actions", "setup-node-build", "action.yml")), "CI reusable setup action must exist under .github/actions/setup-node-build/action.yml");
 assert(!existsSync(path.join(root, "scripts", "smoke-browser.mjs")), "smoke tests must live under tests/smoke/");
-assert(!scripts.some((file) => /^check-.*\.mjs$/.test(file)), "contract tests must live under tests/contracts/");
+const scriptCheckFiles = scripts.filter((file) => /^check-.*\.mjs$/.test(file));
+assert.deepEqual(scriptCheckFiles, ["check-dag.mjs", "check-graph.mjs"], "only graph runner/check inventory scripts may use check-*.mjs under scripts/; contract tests must live under tests/contracts/");
 
 assert(existsSync(path.join(root, "tests", "smoke", "smoke-browser.mjs")), "browser smoke must live under tests/smoke/");
 assert(existsSync(path.join(root, "tests", "release", "release-local-acceptance.mjs")), "local release acceptance must live under tests/release/");
@@ -65,7 +66,7 @@ for (const file of contractFiles) {
 	assert(scriptText.includes(file), `${file} must be reachable from package.json scripts`);
 }
 for (const [name, command] of Object.entries(pkg.scripts || {})) {
-	if (name.startsWith("check") && name !== "check") assert(!String(command).includes("scripts/check-"), `${name} must not point to scripts/check-*`);
+	if (name.startsWith("check") && name !== "check" && name !== "check:dag" && name !== "check:smart") assert(!String(command).includes("scripts/check-"), `${name} must not point to scripts/check-*`);
 	if (name === "smoke:browser" || name === "smoke:browser:transfer") assert(String(command).includes("tests/smoke/smoke-browser.mjs"), `${name} must point to tests/smoke/smoke-browser.mjs`);
 	if (name === "smoke:browser:isolated") assert(String(command).includes("tests/smoke/smoke-browser-isolated.mjs"), `${name} must point to tests/smoke/smoke-browser-isolated.mjs`);
 	if (name === "release:local" || name === "release:local:smoke") assert(String(command).includes("tests/release/release-local-acceptance.mjs"), `${name} must point to tests/release/release-local-acceptance.mjs`);

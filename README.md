@@ -161,6 +161,10 @@ npm run check
 npm run check:all:bridge   # bridge + unit 分组门禁
 npm run check:all:package  # package + docs 分组门禁
 npm run check:all:contracts # contracts/runtime-fixture 分组门禁
+npm run check:trace        # 旧 grouped runner + per-script duration，写 check-groups-summary.json
+npm run check:dag          # graph-backed DAG runner；含 ESLint 节点，直接 spawn 本地 node/tsx/tsc/eslint
+npm run check:dag -- --cache # coarse repo fingerprint cache；命中/未命中写 check-dag-summary.json
+npm run check:smart        # impact-selected graph subset；unknown impact 保守扩展，写 check-impact-summary.json
 node scripts/run-check-groups.mjs --json bridge contracts # 输出结构化摘要到 .pi/browser-artifacts/check-groups-summary.json
 npm run quality:local   # 本地发布/合并前门禁：build:bridge + check + pack dry-run；不启动浏览器
 npm run release:local   # 本地发布包验收：clean cwd pack dry-run/实际 pack/manifest dist/build manifest/回滚候选
@@ -206,7 +210,7 @@ npm run eval:blind:teardown                                      # 收掉舞台
 
 `src/tools/distillerRegistry.ts` 是 fallback 摘要分发的唯一注册表：`registerBuiltinDistillers()` 在 runtime 与 direct-import contract 两条路径都会初始化，避免新增 fallback 摘要器时静默退回 `summarizeGenericValue()`。对应 drift contract 为 `npm run check:distiller-coverage`。
 
-`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 现已通过 `scripts/run-check-groups.mjs` 拆成 bridge/unit、package/docs、contracts 三组，可按故障域局部复跑。
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 仍是最终全量门禁，并通过 `scripts/run-check-groups.mjs` 读取 `scripts/check-graph.mjs` 的分组；局部复跑可用 bridge/unit、package/docs、contracts 三组。新加速入口同样读 `check-graph.mjs`：`check:dag` 做 graph-backed 并发执行，`check:dag -- --cache` 用粗粒度 repo fingerprint 做零假跳过的 no-change cache，`check:smart` 记录 impact selection；所有命中、未命中和选择原因都写入 `.pi/browser-artifacts/`，未知影响保守扩展。
 
 `BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
 
