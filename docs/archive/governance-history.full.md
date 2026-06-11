@@ -53,7 +53,7 @@
 ## 209. 支柱五：协议单源化终态设计与实现
 
 - [x] 性质判定：协议治理重构；目标是把 native command、tool 参数、错误码、文档片段和测试 fixture 尽量收敛到单一可生成源。
-- [x] 设计：已新增 `docs/protocol-single-source-plan.md`，明确继续以 `bridge/native_command_schema.json` 为单源，不引入外部 IDL；记录生成产物、人工维护边界、兼容策略和回滚方式。
+- [x] 设计：已新增并归档为 `docs/archive/protocol-single-source-plan.full.md`，明确继续以 `bridge/native_command_schema.json` 为单源，不引入外部 IDL；记录生成产物、人工维护边界、兼容策略和回滚方式。
 - [x] 生成范围：`scripts/sync-native-protocol.mjs` 支持 `--check` 并生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts`、`docs/generated/native-protocol.generated.md`。
 - [x] 迁移边界：首批只迁移 `browser_wait`、`browser_network` 与 `browser_download`/`browser_upload`；wait/network action alias、actionDescription、transfer command/artifact metadata 已从生成产物消费，hook/frame/html/screenshot/evidence 后续按域迁移。
 - [x] 错误码：`bridge/native_command_schema.json` 已维护 60 个结构化错误码，覆盖 driver/runtime/tool 当前公开错误码；`check-protocol-contract.mjs` 会扫描 `src` 与 `bridge_src` 中结构化 code，发现 schema 漏项即失败。

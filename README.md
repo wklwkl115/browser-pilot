@@ -145,7 +145,7 @@ CDP 输入最小闭环：先用 `browser_execute` JS 定位并 `focus()`，再�
 - 维护者入口图：`docs/maintainer-map.md`
 - 生成器/build/check 脚本：`scripts/`
 - 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`
-- 协议单源设计：`docs/protocol-single-source-plan.md`
+- 协议单源设计：`docs/archive/protocol-single-source-plan.full.md`
 - 生成 native 协议契约文档：`docs/generated/native-protocol.generated.md`
 - Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
 - Tool Registry / Adapter 边界：`src/tools/toolRegistry.ts` 只维护 always-on 工具注册顺序与 WebSecurity 分组元数据；`src/tools/toolAdapter.ts` 只放共享参数、timeout/maxChars、错误包装、result middleware 与 artifact fallback；各 `register*Tool.ts` 仍保留 schema 组合和领域逻辑。

@@ -55,7 +55,7 @@ These are not unfinished bugs; they are future design or optional work items sti
 
 3. Protocol single-source migration is only partial by domain
    - hook/frame/html/screenshot/evidence are still documented as later domain migrations
-   - source: `docs/protocol-single-source-plan.md`, `README.md`
+   - source: `docs/archive/protocol-single-source-plan.full.md`, `README.md`
 
 4. Browser session auto-routing from invocation context is still future-facing in historical notes
    - current runtime works; auto-session dispatch is not the active workstream
