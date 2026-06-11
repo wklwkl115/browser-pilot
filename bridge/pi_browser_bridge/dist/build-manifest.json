@@ -64,6 +64,7 @@
     "bridge_info",
     "core_commands",
     "exec",
+    "input",
     "ws_model",
     "ws"
   ],

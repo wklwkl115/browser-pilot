@@ -76,6 +76,11 @@ const schema = {
       "batch",
       "contentSettings"
     ],
+    "input": [
+      "input.pointer",
+      "input.keys",
+      "input.touch"
+    ],
     "wait": [
       "wait.navigate",
       "wait.navigateAndWait",
@@ -249,6 +254,39 @@ const schema = {
       "domain": "core",
       "tabScoped": true,
       "accessMode": "write"
+    },
+    "input.pointer": {
+      "domain": "input",
+      "tabScoped": true,
+      "accessMode": "write",
+      "required": [
+        "gesture",
+        "x",
+        "y"
+      ]
+    },
+    "input.keys": {
+      "domain": "input",
+      "tabScoped": true,
+      "accessMode": "write",
+      "requiredAny": [
+        [
+          "text"
+        ],
+        [
+          "keys"
+        ]
+      ]
+    },
+    "input.touch": {
+      "domain": "input",
+      "tabScoped": true,
+      "accessMode": "write",
+      "required": [
+        "gesture",
+        "x",
+        "y"
+      ]
     },
     "batch": {
       "domain": "core",

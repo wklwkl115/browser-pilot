@@ -75,6 +75,19 @@ daemon predates them.
 
 ## Harness notes (eval infra, not tool findings)
 
+- **Execution feedback adoption gate — SPLIT RESULT 2026-06-11.** Two implementation-blind
+  subagents worked against the isolated local fixture stage
+  (`.pi/browser-artifacts/eval-blind/stage.json`, fixture base `http://127.0.0.1:8296`) using only
+  the `pi-browser-tools` skill, `--help`, JSON output, and `pb-blind.mjs`. **Form-fill fixture
+  (`execution-feedback-form.html`) succeeded but did NOT adopt `pi.resolve` / `pi.setValue`:** the
+  agent observed `#full-name`, wrote selector-based `browser_execute` JS, and verified
+  `Status: filled:Pi Agent`. This fails Track C's public-guidance adoption bar; `pi.*` stays
+  internal/underdocumented per `docs/execution-feedback-layer-plan.md`. **Canvas fixture
+  (`execution-feedback-canvas.html`) succeeded and DID adopt `input.pointer`:** the agent measured
+  the blue rectangle with JS, then used `browser_command --command '{"cmd":"input.pointer",
+  "gesture":"press","x":138.5,"y":159.3}'` and verified `Status: target hit`, without raw CDP
+  `Input.dispatchMouseEvent` expansion. This supports public guidance for Track B physical input.
+
 - **Scan focus entity-ref shape evidence — ✅ PASSED and landed 2026-06-08.** Two implementation-blind
   subagents worked against the isolated real `https://linux.do/` stage using only the
   `pi-browser-tools` skill, `--help`, JSON output, and `pb-blind.mjs` for a read-only "top 5 latest

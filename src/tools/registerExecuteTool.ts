@@ -1,12 +1,16 @@
 import { Type } from "typebox";
 import type { BrowserBridgeExecutionResult } from "../driver/types.js";
 import { BrowserBridgeError } from "../driver/errors.js";
+import { nextActionsForExecutionEffect } from "../distill-core/recovery.js";
 import { buildScanScript } from "../scan/buildScanScript.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { compactError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
 import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
+import { compactExecutionEffect, buildExecutionJournal, type ExecuteEffect } from "./executionJournal.js";
+import { withExecutionEffect } from "./executionEffect.js";
+import { prepareExecuteStdlib } from "./executeStdlib.js";
 import { summarizeGenericValue } from "./summaries/index.js";
 import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
@@ -86,11 +90,16 @@ async function monitorScan(server: Awaited<ReturnType<ToolRegistrarContext["ensu
 	}
 }
 
-async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number }): Promise<BrowserBridgeExecutionResult & { monitor: MonitorMetadata }> {
+type ExecuteResultWithFeedback = BrowserBridgeExecutionResult & {
+	effect?: ExecuteEffect;
+	monitor?: MonitorMetadata;
+};
+
+async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { browserSessionId?: string; tabId?: number; timeoutMs: number }): Promise<ExecuteResultWithFeedback> {
 	const monitorTimeoutMs = Math.min(Math.max(500, options.timeoutMs), 5_000);
 	const scanScript = buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 });
 	const before = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
-	const executed = await server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs });
+	const executed = await withExecutionEffect(server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs }, () => server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs }));
 	const after = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
 	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
 	// A script that navigates/reloads makes the same-document line diff meaningless: the after-read
@@ -102,7 +111,8 @@ async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegis
 	const navigated = !!(before.url && after.url && before.url !== after.url);
 	const afterUnreliable = before.ok && !after.ok;
 	return {
-		...executed,
+		...executed.result,
+		effect: executed.effect,
 		monitor: {
 			beforeOk: before.ok,
 			afterOk: after.ok,
@@ -142,6 +152,7 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const maxChars = toolMaxChars(params, "browser_execute");
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const tabId = normalizeTabId(params.tabId);
+				const preparedScript = prepareExecuteStdlib(params.script);
 				const { result: jsResult, operation } = await withTrackedOperation(server, {
 					toolName: "browser_execute",
 					command: "javascript",
@@ -154,20 +165,33 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				}, _onUpdate, async (handle) => {
 					await handle.update({ progress: params.monitor === true ? 15 : 35 });
 					const result = params.monitor === true
-						? await executeJavaScriptWithMonitor(server, params.script, { browserSessionId, tabId: params.tabId, timeoutMs })
-						: await server.executeJavaScript(params.script, { browserSessionId, tabId: params.tabId, timeoutMs });
+						? await executeJavaScriptWithMonitor(server, preparedScript.script, { browserSessionId, tabId, timeoutMs })
+						: await (async () => {
+							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.executeJavaScript(preparedScript.script, { browserSessionId, tabId: params.tabId, timeoutMs }));
+							return { ...executed.result, effect: executed.effect };
+						})();
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
-				return await jsonToolResult(jsResult, params, ctx, {
+				const jsFeedback = jsResult as ExecuteResultWithFeedback;
+				const execution = buildExecutionJournal({
+					operationId: operation.operationId,
+					target: jsFeedback.target,
+					dispatch: { kind: "javascript", command: "javascript" },
+					effect: jsFeedback.effect,
+					monitor: jsFeedback.monitor,
+					stdlib: preparedScript.stdlib ? { used: true, refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : undefined,
+				});
+				const resultValue = { ...jsResult, execution, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) };
+				return await jsonToolResult(resultValue, params, ctx, {
 					toolName: "browser_execute",
 					command: "javascript",
 					defaultDetailLevel: "preview",
 					maxChars,
 					fallbackName: artifactFallbackName("execute"),
-					details: { mode: "javascript", monitor: params.monitor === true },
+					details: { mode: "javascript", monitor: params.monitor === true, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) },
 					operation,
-					artifactValue: { ...jsResult, operation },
+					artifactValue: { ...resultValue, operation },
 					distill: (value) => {
 						const generic = summarizeGenericValue(value);
 						// H1: mark when the script's return value is already fully inline in summary.data so
@@ -178,7 +202,10 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 						const dataInline = data !== undefined && data !== null &&
 							!(isRecord(data) && (data.type === "array" || data.type === "object" || data.type === "string"));
 						const hints = dataInline ? undefined : executeArtifactHints(isRecord(value) ? value.data : undefined);
-						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
+						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+						const base = { ...generic, operationId: operation.operationId, sourceMode: operation.sourceMode, ...(effect ? { effect } : {}), ...(preparedScript.stdlib ? { piRuntime: "1", refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : {}), ...(dataInline ? { dataInline: true } : {}), ...(hints ? { artifact_hints: hints } : {}) } as Record<string, unknown>;
+						if (effectHints) base.nextActions = [...(Array.isArray(base.nextActions) ? base.nextActions : []), ...effectHints];
 						const monitor = isRecord(value) && isRecord(value.monitor) ? value.monitor : undefined;
 						if (monitor) {
 							base.monitorSource = {

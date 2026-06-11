@@ -12,7 +12,7 @@ Operate live browser pages by calling `browser_*` tools directly, in-process.
 **This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **pi-browser-cli** skill instead.
 
 Surface decision: the public callable surface is the `browser_*` tools. ABML `read/click/type/scroll/pierce/frame` is internal/runtime vocabulary that may surface in result hints as `read(pi-ref://...)`, not extra tool names; public ABML action verbs are a closed perception-first decision unless that north star is overturned.
-Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `browser_observe` (AX merge, entities, relations/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For a **trusted-event-gated** control that silently ignores a synthetic `el.click()`/input, escalate via **`browser_command` CDP** (`Input.dispatchMouseEvent` / `Input.insertText` at the element's rect center). A structured `action` arm was tried and **removed** (agents reverted to JS) — **there is no public action verb: JS is the action language, CDP is the escape.** Prefer `causal` (which APIs an action hit) and the reading products (`outline`/`gist`/`templates`) on long lists/tables; `diff`/`treeDiff` churn on dynamic pages, so read `diff.summary` first. Full map: `docs/abml-tool-coverage-map.md`.
+Coverage reality: **ABML is observation-only — it does not execute.** Its **read** path is wired into `browser_observe` (AX merge, entities, relations/diff/templates), so perception is genuinely strengthened. **Page actions are the JavaScript you write via `browser_execute`** (run verbatim). For a **trusted-event-gated** control, canvas, WebGL, or cross-origin iframe target that silently ignores a synthetic `el.click()`/input, escalate via **`browser_command` physical input** (`input.pointer` / `input.keys`) at measured coordinates or focused controls. A structured semantic `action` arm was tried and **removed** (agents reverted to JS) — **there is no public action verb: JS is the action language, physical input is the escape.** Prefer `causal` (which APIs an action hit) and the reading products (`outline`/`gist`/`templates`) on long lists/tables; `diff`/`treeDiff` churn on dynamic pages, so read `diff.summary` first. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
@@ -51,8 +51,8 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | Visible text fast | `browser_observe {mode:"text"}` |
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame {action:"list"}` (read child `frameId`) → `browser_frame {action:"evaluate", frameId, expression}`. A top-level scan does NOT cover child frames structurally |
-| Click/type/scroll/mutate | `browser_execute` (JS) → `browser_wait` → re-observe |
-| Action returned ok but page didn't change | trusted-event-gated → `browser_command` CDP `Input.dispatchMouseEvent`/`Input.insertText` at the rect |
+| Click/type/scroll/mutate | `browser_execute` (JS) → read cheap `effect` → `browser_wait` / re-observe |
+| Action returned ok but page didn't change | trusted-event-gated/canvas → `browser_command` `input.pointer` / `input.keys` |
 | CDP / native command | `browser_command` with explicit command object |
 | Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
 | User points to element | `browser_pick` |
@@ -111,8 +111,8 @@ Bound expansive routes by **explicit scope first** — `url` / captured request 
 ## Action
 
 - Prefer explicit `browser_observe.mode` when you know it (`scan`/`content`/`html`/`text`/`tabs`), but omitting mode is valid for mechanical cases: `selector`/`includeLinks` infer `content`, `htmlMode`/`params` infer `html`, and `url` alone defaults to navigate+scan. No `auto`, no page-shape guessing, no cross-mode selector fallback. For read-only before/after, give the second scan a baseline to get `diff`/`treeDiff`/`snapshotProjection`/`form-dependency`. Pass the baseline **by reference** (`snapshotId` or `saved.path`). `pi-ref://` and baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle. Selector miss → re-observe `scan`/`html` → `browser_frame` → verified retry.
-- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. Input: focus → native setter or CDP `Input.insertText` via `browser_command` → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `browser_command` CDP at the rect center.
-- `monitor:true` only when a before/after DOM diff helps. Don't ask for `redact:false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion sourceMode`.
+- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block (`mutations`, `settled`, navigation/recorder deltas) before paying for a full re-observe. Use normal page JS selectors/DOM APIs; `pi-ref://` handles are short-lived observation evidence, not a public action API.
+- `monitor:true` only when a semantic before/after DOM diff helps; it is heavier than the default `effect`. Don't ask for `redact:false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion sourceMode`.
 
 Click:
 ```js
@@ -130,7 +130,7 @@ Click:
 
 ## Native command
 
-`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings intercept.* ws.*`. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn tool names; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
+`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for trusted physical input; summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn tool names; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
 
 ## Recovery
 

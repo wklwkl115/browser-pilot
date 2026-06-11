@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Execution Feedback Form Fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Execution Feedback Form Fixture</h1>
+    <label for="full-name">Full name</label>
+    <input id="full-name" name="fullName" autocomplete="off" value="">
+    <p id="status" data-state="empty">Status: empty</p>
+  </main>
+  <script>
+    const input = document.getElementById('full-name');
+    const status = document.getElementById('status');
+    function updateStatus() {
+      const value = input.value.trim();
+      status.dataset.state = value ? 'filled' : 'empty';
+      status.textContent = value ? `Status: filled:${value}` : 'Status: empty';
+    }
+    input.addEventListener('input', updateStatus);
+    input.addEventListener('change', updateStatus);
+  </script>
+</body>
+</html>

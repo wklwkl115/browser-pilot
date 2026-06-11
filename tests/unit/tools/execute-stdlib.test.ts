@@ -1,0 +1,56 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { clearResourceStore, registerRefDescriptor } from "../../../src/resources/resourceStore.ts";
+import { prepareExecuteStdlib } from "../../../src/tools/executeStdlib.ts";
+
+function registerElementRef(refId = "pi-ref://element/stdlib-test"): string {
+	return registerRefDescriptor({
+		descriptor: {
+			refId,
+			kind: "element",
+			locators: [{ by: "css", value: "#submit" }],
+			owner: { browserSessionId: "session-1", tabId: 7 },
+			policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true },
+			observationId: "obs-1",
+			createdAt: Date.now(),
+			ttlMs: 60_000,
+		},
+		browserSessionId: "session-1",
+	});
+}
+
+test("execute stdlib stays out of ordinary scripts", () => {
+	const prepared = prepareExecuteStdlib("return document.title");
+	assert.equal(prepared.script, "return document.title");
+	assert.equal(prepared.stdlib, undefined);
+});
+
+test("execute stdlib embeds referenced pi refs", () => {
+	clearResourceStore();
+	const ref = registerElementRef();
+	const prepared = prepareExecuteStdlib(`return pi.box("${ref}")`);
+	assert.equal(prepared.stdlib?.used, true);
+	assert.equal(prepared.stdlib?.refsEmbedded, 1);
+	assert.deepEqual(prepared.stdlib?.resolveMisses, []);
+	assert.ok(prepared.script.includes("const pi ="));
+	assert.ok(prepared.script.includes('"by":"css"'));
+	assert.ok(prepared.script.includes("#submit"));
+});
+
+test("execute stdlib records unresolved ref misses without hiding them", () => {
+	clearResourceStore();
+	const ref = "pi-ref://element/not-registered";
+	const prepared = prepareExecuteStdlib(`return pi.resolve("${ref}")`);
+	assert.equal(prepared.stdlib?.used, true);
+	assert.equal(prepared.stdlib?.refsEmbedded, 0);
+	assert.deepEqual(prepared.stdlib?.resolveMisses, [ref]);
+	assert.ok(prepared.script.includes("HANDLE_NOT_FOUND"));
+});
+
+test("execute stdlib namespace is pinned to perception helpers", () => {
+	clearResourceStore();
+	const prepared = prepareExecuteStdlib("return pi.resolve(window.__targetRef)");
+	assert.deepEqual(prepared.stdlib?.namespace, ["resolve", "box", "setValue", "settled"]);
+	assert.ok(prepared.script.includes("Object.freeze({ resolve, box, setValue, settled"));
+	assert.equal(/\bclick\s*[:(]/.test(prepared.script), false);
+});

@@ -59,6 +59,22 @@ export function uniqueRecoveryActions(actions: Array<string | undefined | false>
 	return Array.from(new Set(actions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)));
 }
 
+type ExecutionEffectRecoveryLike = {
+	navigated?: boolean;
+	targetDelta?: unknown;
+	requestsFired?: number;
+	hookEventsFired?: number;
+};
+
+export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLike | undefined): string[] | undefined {
+	if (!effect) return undefined;
+	const actions = uniqueRecoveryActions([
+		effect.navigated || effect.targetDelta ? "tab identity may have changed; list/switch tabs before the next tab-scoped call if targeting is ambiguous" : undefined,
+		(effect.requestsFired ?? 0) > 0 || (effect.hookEventsFired ?? 0) > 0 ? "effect anchor is available for browser_observe baseline/causal follow-up" : undefined,
+	]);
+	return actions.length ? actions : undefined;
+}
+
 function abmlRecoveryActions(code: string, details: Record<string, unknown>): string[] {
 	if (!isAbmlRecoveryCode(code)) return [];
 	const ref = typeof details.ref === "string" ? redactSensitiveText(details.ref) : undefined;

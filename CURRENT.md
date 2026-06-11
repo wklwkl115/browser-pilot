@@ -13,6 +13,40 @@
 
 ## 当前激活项
 
+- 无。
+
+## 最近完成项
+
+### Execution feedback layer optimization (2026-06-11, 完成)
+
+Decision: execute the broadened execution feedback plan in `docs/execution-feedback-layer-plan.md`
+v3. Default execution gains cheap factual effect reporting built on existing page fingerprint,
+network seq, hook seq, operation, and artifact substrates. Physical input is exposed only as
+coordinate-addressed `input.*` bridge commands. `pi.*` was implemented as an explicit-marker
+internal page-world stdlib, but it did not pass the blind adoption bar for public guidance.
+
+Boundary: no public semantic action verbs, no `mode=auto`-style execution guessing, no
+`diagnose:true`, no failure taxonomy, no intent verification, no auto-retry, no ref-addressed
+gestures. Existing `browser_execute monitor:true` remains the heavy semantic before/after read.
+Default effect facts are cheap and factual only. Track C remains internal/underdocumented and does
+not claim a security boundary against pre-existing page-world prototype poisoning.
+
+Contract: `browser_execute` and tab-scoped write `browser_command` calls may include compact
+`effect` facts unless `PI_BROWSER_EXECUTE_EFFECT=0`. Full execution journal lives under artifact
+`execution`. `input.*` commands are write access and inherit tab lease/queue semantics.
+`piRuntime:"1"` appears only when stdlib is injected; namespace is pinned to `resolve`, `box`,
+`setValue`, `settled`, but skill/README guidance does not promote `pi.*` after the blind result.
+
+Verification: passed focused effect/journal/stdlib/command tests, `npm run sync:protocol`,
+`npm run check:protocol`, `npm run check:all:bridge`, `npm run check:tools`,
+`npm run check:runtime-fixtures`, `npm run check:page-scripts`, `npm run check:summaries`,
+`npm run check:token-economy`, skill quick validate, `npm run eval:browser-workflows -- --fixture-server --eval 02-scan-execute-wait`,
+`npm run smoke:browser`, `npm run smoke:browser:scan-summary`,
+`npm run smoke:browser:correlation-chain`, and `npm run smoke:browser:abml-monitor-comparison`.
+The blind adoption gate produced a split result: form-fill succeeded but ignored `pi.resolve` /
+`pi.setValue`, so Track C stayed internal; canvas/trusted-event succeeded with `input.pointer`, so
+Track B public guidance remains.
+
 ### browser_observe mode-friction reduction v2 (2026-06-11, 完成)
 
 决策：执行 `browser_observe` mode 摩擦收敛 v2。`mode` 保留为显式参数；当 `mode` 缺省时，仅由参数蕴含集合交集做确定性推导，不做页面启发式、不新增 `mode=auto`、不新增公开工具。显式传入 `mode` 时现有严格校验保持不变；跨模式混合参数若蕴含交集为空仍硬拒。
@@ -32,8 +66,6 @@
 清账口径：summary grandfather 的 31 个 per-tool distiller 输出位置接受为既定边界，不强改；`check:summary-boundary` 以 31 为上限做 shrink-only ratchet，并由既有 shadow guard 继续保证 allocator 不进 model-facing envelope。ABML public verb surface、web-reversing phase 2、renderer line 粒度、capture esbuild migration 均关闭为项目决策，只保留 reopen-evidence bar，不再写成 trigger-gated backlog。G 类 n=1 项只作为 rolling eval hypotheses，复现前不是工作项。
 
 验证：已通过 `check:scan`、`check:summaries`、`check:capture`、`check:summary-boundary`、`check:output-schema-conformance`、`check:web-security`、skill quick validate、`npm run lint`、`npm run check`、`npm run smoke:browser:scan-summary`、`git diff --check`（仅 CRLF 归一化提示，退出码 0）。Smoke artifact：`.pi/browser-artifacts/smoke-browser-scan-summary-results.json`。
-
-最近完成项如下。
 
 ### Debt clearance (2026-06-10, 完成)
 

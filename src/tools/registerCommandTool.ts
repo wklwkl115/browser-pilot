@@ -1,11 +1,14 @@
 import { Type } from "typebox";
 import { BrowserBridgeError } from "../driver/errors.js";
+import { nextActionsForExecutionEffect } from "../distill-core/recovery.js";
 import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
+import { buildExecutionJournal, compactExecutionEffect, type ExecuteEffect } from "./executionJournal.js";
+import { commandCollectsExecutionEffect, withExecutionEffect } from "./executionEffect.js";
 import { summarizeGenericValue } from "./summaries/index.js";
 import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
-import { normalizeTabId } from "../utils/params.js";
+import { isRecord, normalizeTabId } from "../utils/params.js";
 import { validateParams } from "../validation/middleware.js";
 import { BridgeCommandSchema } from "../validation/schemas.js";
 
@@ -38,6 +41,7 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 				rejectUnsafeExecuteCommand(validatedCommand);
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const tabId = normalizeTabId(params.tabId ?? validatedCommand.tabId);
+				const shouldCollectEffect = commandCollectsExecutionEffect(validatedCommand) && tabId !== undefined;
 				const { result, operation } = await withTrackedOperation(server, {
 					toolName: "browser_command",
 					command: String(validatedCommand.cmd || "command"),
@@ -49,20 +53,45 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 					leaseOwnerHash: server.leaseOwnerHash(browserSessionId, tabId),
 				}, _onUpdate, async (handle) => {
 					await handle.update({ progress: 65 });
-					const result = await server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+					const result = shouldCollectEffect
+						? await (async () => {
+							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs }));
+							return { ...executed.result, effect: executed.effect };
+						})()
+						: await server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
-				return await jsonToolResult(result, params, ctx, {
+				const commandName = String(validatedCommand.cmd || "command");
+				const dispatchKind = commandName.startsWith("input.") ? "input" : "native-command";
+				const text = commandName === "input.keys" && typeof validatedCommand.text === "string" ? { redacted: true as const, charCount: validatedCommand.text.length } : undefined;
+				const execution = buildExecutionJournal({
+					operationId: operation.operationId,
+					target: result.target,
+					dispatch: { kind: dispatchKind, command: commandName, ...(text ? { text } : {}) },
+					effect: (result as typeof result & { effect?: ExecuteEffect }).effect,
+				});
+				const resultValue = { ...result, execution };
+				return await jsonToolResult(resultValue, params, ctx, {
 					toolName: "browser_command",
-					command: String(validatedCommand.cmd || "command"),
+					command: commandName,
 					defaultDetailLevel: "preview",
 					maxChars,
 					fallbackName: artifactFallbackName("command"),
 					details: { mode: "command" },
 					operation,
-					artifactValue: { ...result, operation },
-					distill: (value) => ({ ...summarizeGenericValue(value), operationId: operation.operationId, sourceMode: operation.sourceMode }),
+					artifactValue: { ...resultValue, operation },
+					distill: (value) => {
+						const effect = isRecord(value) ? compactExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+						const effectHints = isRecord(value) ? nextActionsForExecutionEffect(value.effect as ExecuteEffect | undefined) : undefined;
+						return {
+							...summarizeGenericValue(value),
+							operationId: operation.operationId,
+							sourceMode: operation.sourceMode,
+							...(effect ? { effect } : {}),
+							...(effectHints ? { nextActions: effectHints } : {}),
+						};
+					},
 				});
 			});
 		},

@@ -127,7 +127,7 @@ assert(manifest.permissions?.includes("webNavigation"), "manifest must include w
 assert(manifest.permissions?.includes("offscreen"), "manifest must include offscreen permission for durable B5 transport");
 assert(read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen.html must load the generated offscreen transport");
 
-const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "input.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 const background = serviceWorkerBridgeFiles.join(" ");
 const transport = readBridgeRuntimeFile("transport.js");
 const offscreenTransport = readOffscreenRuntimeFile("transport.js");

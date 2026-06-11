@@ -12,6 +12,7 @@ import { handlePiBrowserEvidenceCommand } from "./evidence";
 import { handlePiBrowserFrameCommand } from "./frame";
 import { handlePiBrowserTransferCommand } from "./transfer";
 import { handlePiBrowserHtml } from "./html";
+import { handlePiBrowserInputCommand } from "./input";
 import { cleanupWsSessionsForTab, handlePiBrowserWsCommand } from "./ws";
 import { cleanupPersistentCdpForTab } from "./cdp";
 import { captureScreenshotWithRetry } from "./screenshot";
@@ -346,6 +347,7 @@ async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender,
     if (cmd.startsWith('ws.')) return await handlePiBrowserWsCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('frame.')) return await handlePiBrowserFrameCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('transfer.')) return await handlePiBrowserTransferCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('input.')) return await handlePiBrowserInputCommand(cmd, tabId, msg) as PiBridgeResponse;
     switch (cmd) {
       case 'network.start':
       case 'network.stop':

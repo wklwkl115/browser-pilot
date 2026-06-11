@@ -24,6 +24,7 @@ import { parseJsonOrThrow } from "../utils/json.js";
 import { isRecord, normalizeTabId } from "../utils/params.js";
 import { resolveArtifactPath } from "./artifacts.js";
 import { assertBridgeCommandSucceeded } from "./bridgeResultValidation.js";
+import { queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type PageFingerprint } from "./pageSignals.js";
 import { evaluatePageScriptDirect } from "./pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "./scanEntityRefs.js";
 import { scanEntitiesForEnvelope, summarizeContentData, summarizeHtmlSnapshot, summarizeScanData } from "./summaries/index.js";
@@ -271,29 +272,6 @@ function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: Observe
 	});
 }
 
-// ABML R3.x causal plane — read the network recorder's current seq high-water mark (and whether a
-// recorder is active) for the default network session on the observed tab. Best-effort: any failure
-// degrades to "no recorder" so observe never fails because of the causal read. `network.status`
-// returns the recorder summary (active + lastSeq) when running, or `{ active: false }` otherwise.
-async function readNetworkRecorderSeq(server: BrowserBridgeServer, params: ObserveToolParams, tabId: number | undefined, timeoutMs: number): Promise<{ active: boolean; lastSeq?: number }> {
-	try {
-		const res = await server.sendCommand({ cmd: "network.status" }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
-		const data = isRecord(res.data) ? res.data : {};
-		if (data.active === false) return { active: false };
-		return { active: true, lastSeq: typeof data.lastSeq === "number" ? data.lastSeq : undefined };
-	} catch {
-		return { active: false };
-	}
-}
-
-// Query the network-delta window (entries with seq > sinceSeq) via the existing recorder command.
-// Returns the raw record summaries; the pure-core buildCausalSummary shapes/redacts/caps them.
-async function queryNetworkDelta(server: BrowserBridgeServer, params: ObserveToolParams, sinceSeq: number, tabId: number | undefined, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
-	const res = await server.sendCommand({ cmd: "network.list", sinceSeq, limit: 500 }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
-	const data = isRecord(res.data) ? res.data : {};
-	return Array.isArray(data.items) ? data.items.filter(isRecord) : [];
-}
-
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
 // or the baseline carries no seq high-water mark (e.g. a raw entity-list baseline).
@@ -301,7 +279,7 @@ async function buildObserveCausal(server: BrowserBridgeServer, params: ObserveTo
 	if (!recorderState.active) return causalUnavailable("network recorder not active — start via browser_network start");
 	if (baselineNetworkSeq === undefined) return causalUnavailable("baseline has no network seq high-water mark — capture a baseline observation after browser_network start");
 	try {
-		const items = await queryNetworkDelta(server, params, baselineNetworkSeq, tabId, timeoutMs);
+		const items = await queryNetworkDelta(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs, sinceSeq: baselineNetworkSeq });
 		return buildCausalSummary(items, baselineNetworkSeq);
 	} catch {
 		return causalUnavailable("network recorder delta query failed");
@@ -318,28 +296,6 @@ function networkSeqFromBaseline(value: unknown): number | undefined {
 	const correlation = isRecord(value.correlation) ? value.correlation : undefined;
 	if (typeof correlation?.networkSeq === "number") return correlation.networkSeq;
 	return undefined;
-}
-
-// ABML R3.x P2 — read the hook event-buffer seq high-water mark (+ whether a hook session is armed)
-// for the observed tab. Best-effort like the network read: `hook.status` returns `last_seq` only when
-// a session is installed; its absence (no session / page injection failed) means hooks are inactive.
-async function readHookRecorderSeq(server: BrowserBridgeServer, params: ObserveToolParams, tabId: number | undefined, timeoutMs: number): Promise<{ active: boolean; lastSeq?: number }> {
-	try {
-		const res = await server.sendCommand({ cmd: "hook.status" }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
-		const data = isRecord(res.data) ? res.data : {};
-		const lastSeq = typeof data.last_seq === "number" ? data.last_seq : undefined;
-		return { active: lastSeq !== undefined, lastSeq };
-	} catch {
-		return { active: false };
-	}
-}
-
-// Query the hook event-delta window (events with seq > sinceSeq) via the existing recorder command.
-// Returns the raw HookEvent records; pure-core buildCausalEvents shapes/redacts/caps them.
-async function queryHookDelta(server: BrowserBridgeServer, params: ObserveToolParams, sinceSeq: number, tabId: number | undefined, timeoutMs: number): Promise<Array<Record<string, unknown>>> {
-	const res = await server.sendCommand({ cmd: "hook.collect", since_seq: sinceSeq, limit: 200 }, { browserSessionId: params.browserSessionId, tabId, timeoutMs });
-	const data = isRecord(res.data) ? res.data : {};
-	return Array.isArray(data.events) ? data.events.filter(isRecord) : [];
 }
 
 // Recover a baseline's hook seq high-water mark from an inline baseline (prior envelope/summary
@@ -494,33 +450,7 @@ function sessionDeltaEnabled(params: ObserveToolParams): boolean {
 	return process.env.PI_BROWSER_SESSION_DELTA !== "0" && String(params.detailLevel || "summary") !== "full" && params.baseline === undefined;
 }
 
-type PageFingerprint = NonNullable<PerceptionLedgerFrame["pageFingerprint"]>;
 type RenderCache = NonNullable<PerceptionLedgerFrame["renderCache"]>;
-
-function normalizePageFingerprint(value: unknown): PageFingerprint | undefined {
-	const record = isRecord(value) ? value : {};
-	const changeSeq = Number(record.changeSeq);
-	if (!Number.isFinite(changeSeq)) return undefined;
-	return {
-		changeSeq,
-		...(typeof record.url === "string" ? { url: record.url } : {}),
-		...(typeof record.title === "string" ? { title: record.title } : {}),
-		...(typeof record.readyState === "string" ? { readyState: record.readyState } : {}),
-		...(typeof record.visibleCount === "number" ? { visibleCount: record.visibleCount } : {}),
-		...(typeof record.interactiveCount === "number" ? { interactiveCount: record.interactiveCount } : {}),
-		...(typeof record.capturedAt === "number" ? { capturedAt: record.capturedAt } : {}),
-	};
-}
-
-async function readPageFingerprint(server: BrowserBridgeServer, params: ObserveToolParams, tabId: number | undefined, timeoutMs: number): Promise<PageFingerprint | undefined> {
-	if (!tabId) return undefined;
-	try {
-		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId, timeoutMs }, { browserSessionId: params.browserSessionId, tabId, timeoutMs: Math.min(timeoutMs, 2_000) });
-		return normalizePageFingerprint(result.data);
-	} catch {
-		return undefined;
-	}
-}
 
 function modeInferredDetails(params: ObserveToolParams): ObserveToolParams["modeInferred"] {
 	return params.modeInferred ?? null;
@@ -670,7 +600,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const effectiveTabId = tabId ?? preBridge.defaultTabId;
 	const detailLevel = String(params.detailLevel || "summary");
 	const paramsSignature = observeRenderParamsSignature(params, mode, detailLevel, maxChars, captureMaxChars);
-	const pageFingerprint = !hasNavigation && sessionDeltaEnabled(params) ? await readPageFingerprint(server, params, effectiveTabId, timeoutMs) : undefined;
+	const pageFingerprint = !hasNavigation && sessionDeltaEnabled(params) ? await readPageFingerprint(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }) : undefined;
 	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
 		const cacheFingerprint = pageFingerprint!;
 		const priorSnapshot = server.getObservationSnapshot(ledgerFrame.snapshotId);
@@ -777,8 +707,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	// ABML R3.x causal plane: capture this observation's network + hook seq high-water marks (so it can
 	// anchor a future baseline) and, when a baseline was supplied, the network-delta + event-delta since it.
 	const [recorderState, hookState] = await Promise.all([
-		readNetworkRecorderSeq(server, params, tabId, timeoutMs),
-		readHookRecorderSeq(server, params, tabId, timeoutMs),
+		readNetworkRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs }),
+		readHookRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs }),
 	]);
 	const hasBaseline = baseline !== undefined;
 	let causal = hasBaseline
@@ -788,7 +718,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	// baseline carries a hook seq. Best-effort — a failed event read never fails the observe.
 	if (causal && "requests" in causal && hasBaseline && hookState.active && baseline?.hookSeq !== undefined) {
 		try {
-			const ev = buildCausalEvents(await queryHookDelta(server, params, baseline.hookSeq, tabId, timeoutMs), baseline.hookSeq);
+			const ev = buildCausalEvents(await queryHookDelta(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs, sinceSeq: baseline.hookSeq }), baseline.hookSeq);
 			if (ev.events.length) causal = { ...causal, ...ev };
 		} catch { /* event delta is additive; never fail the observe on it */ }
 	}

@@ -23,6 +23,7 @@ import { __piBridgeModule_transfer } from "./service_worker/transfer";
 import { __piBridgeModule_bridge_info } from "./service_worker/bridge_info";
 import { __piBridgeModule_core_commands } from "./service_worker/core_commands";
 import { __piBridgeModule_exec } from "./service_worker/exec";
+import { __piBridgeModule_input } from "./service_worker/input";
 import { __piBridgeModule_ws_model } from "./service_worker/ws_model";
 import { __piBridgeModule_ws } from "./service_worker/ws";
 import { __piBridgeModule_router, installPiBridgeRouter } from "./service_worker/router";
@@ -60,6 +61,7 @@ export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_bridge_info,
 	__piBridgeModule_core_commands,
 	__piBridgeModule_exec,
+	__piBridgeModule_input,
 	__piBridgeModule_ws_model,
 	__piBridgeModule_ws,
 ] as const;

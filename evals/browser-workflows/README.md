@@ -13,8 +13,10 @@ These evals measure agent-computer-interface quality for `pi-browser-tools` work
    `pi-browser-blind-eval` skill. Files: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`
    (`npm run eval:blind:launch -- --confirm --url <site>` / `npm run eval:blind:teardown`),
    `blind-agent-prompt.md` (prompt), `blind-tasks-realsite.md` (targets), `blind-findings.md` (rolling
-   triaged backlog). Boundary in `future-runner.md` → "Blind-agent discovery layer". The spec files
-   below are the deterministic layer's; the blind layer uses real sites, not these fixtures.
+   triaged backlog). Execution-feedback adoption uses the same harness against local isolated
+   fixtures via `blind-tasks-execution-feedback.md` because those tasks intentionally mutate page
+   state. Boundary in `future-runner.md` → "Blind-agent discovery layer". The spec files below are
+   the deterministic layer's; ordinary blind discovery uses real sites, not these fixtures.
 
 ## Eval format
 

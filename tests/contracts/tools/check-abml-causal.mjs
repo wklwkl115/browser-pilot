@@ -8,7 +8,7 @@
 //   - P1 attribution: buildTriggeredRelations (timing/low edges, capped), resolveActionEntityRef
 //     (actionRef > focusedRef, focus robustness rejecting frame/region), triggered lifted to
 //     envelope.relations.summary with its target resolvable inline in causal.requests;
-//   - static wiring: observeRunners queries the recorder + builds/attributes causal, resultMiddleware
+//   - static wiring: observeRunners queries recorder signals through pageSignals + builds/attributes causal, resultMiddleware
 //     lifts it, the bridge exposes lastSeq, the snapshot carries networkSeq, and the check is registered.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -151,6 +151,7 @@ assert.equal(p1Envelope.causal?.requests?.[0]?.ref, "pi-ref://network/pay-1", "t
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 const observeSrc = readRepo("src/tools/observeRunners.ts");
+const pageSignalsSrc = readRepo("src/tools/pageSignals.ts");
 // ── R3.x P2 — event causal entries (pure + envelope) ─────────────────────────────
 
 // buildCausalEvent: shape + redaction + selector; never dumps a raw payload object.
@@ -238,7 +239,8 @@ assert.ok(streamInactive.ok && /not active/.test(String(streamInactive.data.unav
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
 assert.ok(observeSrc.includes("buildCausalSummary") && observeSrc.includes("causal"), "observeRunners builds causal");
-assert.ok(observeSrc.includes("network.status") && observeSrc.includes("network.list"), "observeRunners reads recorder high-water + delta");
+assert.ok(observeSrc.includes("readNetworkRecorderSeq") && observeSrc.includes("queryNetworkDelta"), "observeRunners reads recorder signals through pageSignals");
+assert.ok(pageSignalsSrc.includes("network.status") && pageSignalsSrc.includes("network.list"), "pageSignals reads recorder high-water + delta");
 assert.ok(observeSrc.includes("networkSeq"), "observeRunners records/resolves networkSeq baseline anchor");
 assert.ok(observeSrc.includes("resolveActionEntityRef") && observeSrc.includes("buildTriggeredRelations") && observeSrc.includes("addEntityRelations"), "observeRunners wires P1 attribution");
 assert.ok(observeSrc.includes("actionRef"), "observeRunners reads the actionRef attribution signal");

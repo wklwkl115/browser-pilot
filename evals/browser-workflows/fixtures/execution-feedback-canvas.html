@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Execution Feedback Canvas Fixture</title>
+  <style>
+    body { font-family: sans-serif; }
+    canvas { border: 1px solid #555; touch-action: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Execution Feedback Canvas Fixture</h1>
+    <canvas id="target-canvas" width="260" height="150" aria-label="Canvas target area"></canvas>
+    <p id="status" data-state="waiting">Status: waiting</p>
+  </main>
+  <script>
+    const canvas = document.getElementById('target-canvas');
+    const status = document.getElementById('status');
+    const ctx = canvas.getContext('2d');
+    const target = { x: 95, y: 45, width: 70, height: 50 };
+    window.__piCanvasTarget = target;
+    function draw() {
+      ctx.fillStyle = '#f8f8f8';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#1d4ed8';
+      ctx.fillRect(target.x, target.y, target.width, target.height);
+      ctx.fillStyle = '#111';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('Hit the blue target', 20, 130);
+    }
+    function localPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+    canvas.addEventListener('pointerdown', (event) => {
+      const point = localPoint(event);
+      const hit = point.x >= target.x && point.x <= target.x + target.width && point.y >= target.y && point.y <= target.y + target.height;
+      status.dataset.state = hit ? 'hit' : 'miss';
+      status.textContent = hit ? 'Status: target hit' : `Status: miss:${Math.round(point.x)},${Math.round(point.y)}`;
+    });
+    draw();
+  </script>
+</body>
+</html>

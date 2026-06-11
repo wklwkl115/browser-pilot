@@ -271,18 +271,29 @@ async function evaluatePageObject(server: AbmlBrowserRuntimeServer, script: stri
 	return { value: result.data };
 }
 
-async function sendPersistentCdp(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId?: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }) {
+async function sendInputPointer(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId?: number; timeoutMs: number; gesture: "press"; x: number; y: number; button?: string; count?: number }) {
 	const result = await server.sendCommand({
-		cmd: "persistent_cdp",
-		action: "send",
+		cmd: "input.pointer",
 		tabId: options.tabId,
-		cdpMethod: options.cdpMethod,
-		params: options.params || {},
-		persistent: false,
-		bringToFront: true,
+		gesture: options.gesture,
+		x: options.x,
+		y: options.y,
+		button: options.button,
+		count: options.count,
 		timeoutMs: options.timeoutMs,
 	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
-	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
+	assertBridgeCommandSucceeded(result, "input.pointer");
+	return result;
+}
+
+async function sendInputKeys(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId?: number; timeoutMs: number; text: string }) {
+	const result = await server.sendCommand({
+		cmd: "input.keys",
+		tabId: options.tabId,
+		text: options.text,
+		timeoutMs: options.timeoutMs,
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	assertBridgeCommandSucceeded(result, "input.keys");
 	return result;
 }
 
@@ -762,10 +773,7 @@ async function executeBrowserAbmlClick(server: AbmlBrowserRuntimeServer, input: 
 		if (!selector) {
 			const fallbackPoint = pointFromRef(descriptor);
 			if (!fallbackPoint) return { verification: { status: "failed", verb: "click", observed: { reason: "missing point" }, evidence: [{ kind: "point", summary: "point-backed region ref is missing geometry" }], elapsedMs: 0 } };
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click bringToFront"), cdpMethod: "Page.bringToFront" });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mouseMoved"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: fallbackPoint.x, y: fallbackPoint.y, button: "none", buttons: 0, clickCount: 0, pointerType: "mouse" } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mousePressed"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", buttons: 1, clickCount: input.count ?? 1, pointerType: "mouse" } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click mouseReleased"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", buttons: 0, clickCount: input.count ?? 1, pointerType: "mouse" } });
+			await sendInputPointer(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "visual click input.pointer"), gesture: "press", x: fallbackPoint.x, y: fallbackPoint.y, button: input.button || "left", count: input.count ?? 1 });
 			return {
 				data: { transport: "cdp", selector: undefined, point: fallbackPoint, visualFloor: true },
 				actionability: {
@@ -805,10 +813,7 @@ async function executeBrowserAbmlClick(server: AbmlBrowserRuntimeServer, input: 
 		if (verification.status !== "verified") {
 			const actionPoint = actionability.probe.point || pointFromRef(descriptor);
 			if (!actionPoint) return { data: { transport, domResult }, actionability: actionability.report, verification };
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click bringToFront"), cdpMethod: "Page.bringToFront" });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mouseMoved"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: actionPoint.x, y: actionPoint.y, button: "none", buttons: 0, clickCount: 0, pointerType: "mouse" } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mousePressed"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mousePressed", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", buttons: 1, clickCount: input.count ?? 1, pointerType: "mouse" } });
-			await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click mouseReleased"), cdpMethod: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", buttons: 0, clickCount: input.count ?? 1, pointerType: "mouse" } });
+			await sendInputPointer(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "trusted click input.pointer"), gesture: "press", x: actionPoint.x, y: actionPoint.y, button: input.button || "left", count: input.count ?? 1 });
 			after = await clickVerificationProbe(server, target, selector, timeoutFor(deadline, "trusted click verify probe"));
 			verification = verifyClick(before, after);
 			transport = "cdp";
@@ -853,7 +858,7 @@ async function executeBrowserAbmlType(server: AbmlBrowserRuntimeServer, input: A
 		const before = await typeVerificationProbe(server, target, selector, timeoutFor(deadline, "type before verify probe"));
 		const focusResult = await evaluatePageObject(server, focusAndMaybeClearScript(selector, input.clear === true), { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type focus"), name: "abml_type_focus" });
 		if (focusResult.focused !== true) throw { code: "TARGET_NOT_EDITABLE", message: "ABML type could not focus the target", details: { selector } };
-		await sendPersistentCdp(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type insertText"), cdpMethod: "Input.insertText", params: { text: input.text } });
+		await sendInputKeys(server, { browserSessionId: target.browserSessionId, tabId: target.tabId, timeoutMs: timeoutFor(deadline, "type input.keys"), text: input.text });
 		const after = await typeVerificationProbe(server, target, selector, timeoutFor(deadline, "type after verify probe"));
 		const verification = verifyType(before, after, input.text, input.clear === true);
 		if (beforeEntities && deadline.remainingMs() < MIN_ACTION_SUBCALL_MS) diffUnavailable = "deadline_exhausted_after_action";

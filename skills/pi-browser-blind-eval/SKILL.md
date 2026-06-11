@@ -56,8 +56,10 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
    `node evals/browser-workflows/pb-blind.mjs tabs --action list --json` → must show ONLY the stage's
    own tab. Then `pb-blind.mjs observe --mode scan --tab-id <id>` → if `url` is `chrome-error://…` the
    site did NOT load on this network; tear down and pick another China-reachable target.
-5. **Spawn ONE blind subagent** (general-purpose) using `blind-agent-prompt.md`, filling `{{TAB_ID}}` /
-   `{{SITE_URL}}` / `{{GOAL}}`. Run independent targets' subagents in parallel.
+5. **Launch ONE blind child agent per target** using `blind-agent-prompt.md`, filling `{{TAB_ID}}` /
+   `{{SITE_URL}}` / `{{GOAL}}` — via **your own harness's child-agent mechanism** (see "Launching the
+   blind agent" below). Run independent targets in parallel if your harness supports concurrent
+   child runs.
 6. **Grade + triage** the returned report: did it complete the task? tool path / call count /
    first-wrong-tool-choice? For CLI natural-routing work, also record whether action-style `wait` /
    `network` / `frame` / `hook` calls used natural subcommands (`wait selector`,
@@ -79,11 +81,41 @@ Read first: `[[blind-eval-protocol-realsite-skill-china]]`, `[[real-agent-eval-o
    skill-fidelity gap becomes a `pi-browser-tools` skill edit.
 8. **Teardown ALWAYS**: `node evals/browser-workflows/teardown-blind.mjs` (even on failure).
 
+## Launching the blind agent (harness-agnostic)
+
+This project is developed with different operator agents (Claude Code, Codex, Pi, others), and each
+has a different child-agent mechanism. The blind run is defined by **isolation properties, not by any
+specific mechanism** — use whatever your harness provides, as long as ALL of these hold:
+
+- **Fresh context**: the child starts with ONLY the filled prompt — it must NOT inherit the
+  operator's conversation (your context contains implementation knowledge, plans, and findings;
+  inheriting it un-blinds the run).
+- **Shell + file read**: the child can run `node evals/browser-workflows/pb-blind.mjs …` and read
+  `skills/pi-browser-tools/SKILL.md` (Step 0 of the prompt).
+- **Report return**: the child's final report comes back to you verbatim for grading (step 6).
+- **Implementation blindness**: enforced by the prompt's FORBIDDEN list; if your harness can also
+  restrict the child's readable paths, do so as defense in depth.
+
+Mechanism mapping (examples, not exhaustive):
+
+- **Claude Code**: the `Agent` tool (general-purpose subagent), one call per target; put multiple
+  calls in one message for parallel targets.
+- **Codex / CLI-only harnesses**: start a FRESH non-interactive session of the same agent binary
+  (e.g. `codex exec` or equivalent) with the filled prompt file as its sole input; capture its final
+  output as the report.
+- **Pi**: a fresh Pi subagent/session given only the filled prompt.
+- **No child mechanism at all**: launch a separate fresh agent process yourself (new conversation,
+  prompt file in, transcript out). The process boundary IS the isolation.
+
+If you cannot create a fresh-context run at all, **do not run the eval inline in your own
+implementation-aware context** — an un-blind run is self-justification and is worse than no data.
+Record "blind run unavailable on this harness" in `blind-findings.md` instead.
+
 ## Scheduling (常驻)
 
-Schedule a Claude that invokes this skill on a cadence (e.g. via the `schedule` skill / cron): pick
-targets → launch → pre-flight → run → write `blind-findings.md` → teardown. Keep runs bounded (a handful
-of sites) so token cost stays predictable.
+Schedule any agent harness that can invoke this skill on a cadence (cron, the harness's scheduler,
+etc.): pick targets → launch → pre-flight → run → write `blind-findings.md` → teardown. Keep runs
+bounded (a handful of sites) so token cost stays predictable.
 
 ## Files
 

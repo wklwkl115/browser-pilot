@@ -277,8 +277,18 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
         if (params.silent !== undefined) runParams.silent = params.silent;
         if (params.includeCommandLineAPI !== undefined) runParams.includeCommandLineAPI = params.includeCommandLineAPI;
         if (params.userGesture !== undefined) runParams.userGesture = params.userGesture;
-        data = await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
-        precompiled = true;
+        try {
+          data = await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
+          precompiled = true;
+        } catch (runError) {
+          const runMessage = cdpErrorMessage(runError);
+          if (/No script with given id/i.test(runMessage)) {
+            rec.compiledScripts.delete(cacheKey);
+            console.debug('[PI-BROWSER-CDP] Runtime.runScript script cache stale; fallback to evaluate', key, runMessage);
+          } else {
+            throw runError;
+          }
+        }
       }
     }
     if (data === undefined) {

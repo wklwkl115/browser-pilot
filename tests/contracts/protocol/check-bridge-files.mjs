@@ -15,7 +15,7 @@ function assertBackgroundOrder(background, files, message) {
 
 const waitBridgeRuntimeFiles = ["wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js"];
 const networkBridgeRuntimeFiles = ["network_model.js", "network_events.js", "network.js"];
-const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
+const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", ...waitBridgeRuntimeFiles, ...networkBridgeRuntimeFiles, "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "input.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 function stripBridgeSource(text) {
 	return text
 		.replace(/^\/\/ @ts-nocheck\r?\n/, "")

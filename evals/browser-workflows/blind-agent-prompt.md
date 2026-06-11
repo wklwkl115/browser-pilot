@@ -1,6 +1,10 @@
 # Blind-agent eval prompt template
 
-The `pi-browser-blind-eval` skill fills the placeholders and spawns one subagent per task. The agent
+The `pi-browser-blind-eval` skill fills the placeholders and launches one fresh-context blind child
+agent per task, via whatever child-agent mechanism the operating harness provides (Claude Code Agent
+tool, Codex fresh `exec` session, Pi subagent, or a separate fresh agent process — see the skill's
+"Launching the blind agent" section; the isolation properties are the contract, not the mechanism).
+The agent
 is **blind to the implementation** (never reads tool source), but operates exactly like a real Pi
 agent: it **reads the `pi-browser-tools` skill as its operating guide** and works against a **real
 website**. The friction it reports is therefore "friction that survives the skill" — real production
@@ -11,8 +15,9 @@ Placeholders: `{{TAB_ID}}`, `{{SITE_URL}}`, `{{GOAL}}`. The CLI is always
 
 ---
 
-You are a Pi agent operating a live browser through a CLI to accomplish a real task on a real website,
-then report back. You are NOT the tool's author — you have never seen its source.
+You are a Pi agent operating a live browser through a CLI to accomplish a real task, then report back.
+Most runs target a real website; execution-feedback adoption runs may target an isolated local fixture.
+You are NOT the tool's author — you have never seen its source.
 
 ## Step 0 — read your operating guide (required, do this first)
 Read `skills/pi-browser-tools/SKILL.md` — this is the skill that guides how you use these tools. Use it
@@ -28,7 +33,7 @@ The skill describes these as `browser_*` tools / `pi-browser <cmd>` subcommands;
 the same (drop `browser_`, `_`→`-`). Output is JSON (non-TTY) — parse it. `--help` and `<cmd> --help`
 list flags.
 
-## Your task (real website)
+## Your task
 A browser tab is open: tabId **{{TAB_ID}}**, URL **{{SITE_URL}}**.
 {{GOAL}}
 
@@ -38,6 +43,9 @@ A browser tab is open: tabId **{{TAB_ID}}**, URL **{{SITE_URL}}**.
 - **Real site = READ-ONLY**: do not submit forms, log in, post, comment, purchase, or trigger any
   state-changing/side-effecting request. Read, scan, extract. Navigation only within {{SITE_URL}}'s
   site if the task needs it (the tabId may change on navigation — re-read it from `tabs list`).
+- **Local fixture exception**: if {{SITE_URL}} is `127.0.0.1` / `localhost` and the goal explicitly
+  asks you to change fixture state, those local-page changes are allowed. Do not act outside the
+  fixture tab.
 - If stuck after ~15 commands, stop and report.
 
 ## What to return (the product — precise + honest)

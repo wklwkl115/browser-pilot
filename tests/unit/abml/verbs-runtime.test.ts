@@ -86,10 +86,15 @@ function fakeServer(): FakeServer {
 				}
 				throw new Error(`Unexpected Runtime.evaluate script: ${expression.slice(0, 120)}`);
 			}
+			if (command.cmd === "input.keys") {
+				state.commentValue += String(command.text || "");
+				return { id: "input-keys", acknowledged: true, tabId: 7, data: { input: { command: "input.keys" }, dispatched: true, redacted: true } };
+			}
+			if (command.cmd === "input.pointer") {
+				if (command.gesture === "press") state.resultValue = "clicked";
+				return { id: "input-pointer", acknowledged: true, tabId: 7, data: { input: { command: "input.pointer", gesture: command.gesture }, dispatched: true, point: { x: command.x, y: command.y } } };
+			}
 			if (command.cmd === "persistent_cdp" && command.action === "send") {
-				if (command.cdpMethod === "Input.insertText") {
-					state.commentValue += String((command.params as Record<string, unknown>)?.text || "");
-				}
 				if (command.cdpMethod === "Accessibility.getFullAXTree") {
 					return { id: "ax-tree", acknowledged: true, tabId: 7, data: { result: { nodes: [{ nodeId: "ax-shadow", backendDOMNodeId: 91, role: { value: "button" }, name: { value: "Shadow pay" } }, { nodeId: "ax-far", backendDOMNodeId: 92, role: { value: "button" }, name: { value: "Far away" } }] } } };
 				}
@@ -144,13 +149,16 @@ test("abml runtime probe scripts normalize text with a real whitespace regex", a
 	assert(!server.evaluateScripts.some((s) => s.includes("replace(/s+/g, ' ')")), "no probe script may emit the collapsed /s+/g");
 });
 
-test("abml runtime type focuses target and uses Input.insertText", async () => {
+test("abml runtime type focuses target and uses shared input.keys", async () => {
 	const server = fakeServer();
 	const runtime = createBrowserAbmlRuntime(server as any, { timeoutMs: 5_000 });
 	const typed = await runtime.type?.({ ref: { refId: "pi-ref://control/type", kind: "control", locators: [{ by: "css", value: "#card" }], owner: {}, policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true }, observationId: "obs", createdAt: Date.now(), ttlMs: 60_000 }, text: "abc", clear: true });
 	assert.equal(typed?.ok, true);
 	assert.equal(typed?.verification?.status, "verified");
-	assert.equal(server.commandCalls.some((call) => call.command.cdpMethod === "Input.insertText"), true);
+	assert.equal(server.commandCalls.some((call) => {
+		const command = call.command as Record<string, unknown>;
+		return command.cmd === "input.keys" && command.text === "abc";
+	}), true);
 });
 
 test("abml runtime scroll default uses probe-only verification", async () => {
@@ -185,6 +193,10 @@ test("abml runtime click supports point-backed vision region refs", async () => 
 	assert.equal((clicked?.data as Record<string, unknown>)?.transport, "cdp");
 	assert.equal((clicked?.data as Record<string, unknown>)?.visualFloor, true);
 	assert.equal(clicked?.verification?.status, "verified");
+	assert.equal(server.commandCalls.some((call) => {
+		const command = call.command as Record<string, unknown>;
+		return command.cmd === "input.pointer" && command.gesture === "press" && command.x === 320 && command.y === 180;
+	}), true);
 	const inspected = await runtime.read?.({ ref: { refId: "pi-ref://region/vision-1", kind: "region", locators: [{ by: "point", x: 320, y: 180 }], owner: { tabId: 7 }, policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true }, geometry: { point: { x: 320, y: 180 } }, observationId: "obs", createdAt: Date.now(), ttlMs: 60_000 } });
 	assert.equal(inspected?.ok, true);
 	assert.equal((inspected?.data as Record<string, unknown>)?.source, "vision-floor");

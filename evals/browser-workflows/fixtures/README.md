@@ -6,6 +6,8 @@ Fixtures in this directory must be local, deterministic, synthetic, and safe to 
 
 - `article.html`: article page with title, byline, body, navigation noise, and footer noise.
 - `interactive.html`: deterministic UI state change for scan/execute/wait and lease-conflict evals.
+- `execution-feedback-form.html`: local form state fixture for `pi.resolve` / `pi.setValue` adoption.
+- `execution-feedback-canvas.html`: local canvas pointer target fixture for `input.pointer` adoption.
 - `network.html`: page that triggers a same-origin JSON request against a local fixture server.
 - `selector-recovery.html`: page with a misleading absent selector and a discoverable correct selector.
 - `download.html`: page linking to `files/report.txt`.

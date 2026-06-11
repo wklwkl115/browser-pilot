@@ -11,6 +11,7 @@
 - Observe / ABML / salience / session-delta / cache-gate / mode-friction 等感知层收口已完成；当前行为以 `CURRENT.md` 和 tool contracts 为准。
 - Web/security primitive phase 1 workstreams 已完成为 internal/native primitives 或现有 canonical tools 的增强；不新增被拒绝的公开工具名。
 - 工程治理、lint、protocol single-source、tool parameter contract、performance audit、debt-zeroing 均已关闭；未来工作必须重新进入 `CURRENT.md` 执行合同或 `ROADMAP.md` 非激活路线。
+- 发布包验证保持在 package gate 中执行；历史归档记录以 `npm pack --dry-run --ignore-scripts --json` 覆盖生成产物与包文件边界。
 
 ## 早期编号 TODO 归档
 
