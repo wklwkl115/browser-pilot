@@ -50,3 +50,44 @@ test("withTrackedOperation preserves BrowserBridgeError and appends operation de
 		},
 	);
 });
+
+test("withTrackedOperation heartbeat does not keep the event loop alive", async () => {
+	const operations = new Map<string, Record<string, unknown>>();
+	const server = {
+		beginOperation(meta: Record<string, unknown>) {
+			const operation = { operationId: "op-1", startedAt: Date.now(), updatedAt: Date.now(), ...meta };
+			operations.set("op-1", operation);
+			return operation as any;
+		},
+		updateOperation(operationId: string, patch: Record<string, unknown>) {
+			const current = operations.get(operationId);
+			if (!current) return undefined;
+			const next = { ...current, ...patch, updatedAt: Date.now() };
+			operations.set(operationId, next);
+			return next as any;
+		},
+		finishOperation(operationId: string) {
+			const current = operations.get(operationId);
+			operations.delete(operationId);
+			return current as any;
+		},
+	} as any;
+	const originalSetInterval = globalThis.setInterval;
+	let unrefCalled = false;
+	globalThis.setInterval = ((handler: any, timeout?: any, ...args: any[]) => {
+		const timer = originalSetInterval(handler, timeout, ...args) as any;
+		const originalUnref = timer.unref?.bind(timer);
+		timer.unref = () => {
+			unrefCalled = true;
+			return originalUnref?.() ?? timer;
+		};
+		return timer;
+	}) as typeof setInterval;
+	try {
+		const run = await withTrackedOperation(server, { toolName: "browser_wait", phase: "running" }, undefined, async () => ({ ok: true }));
+		assert.equal(run.result.ok, true);
+		assert.equal(unrefCalled, true);
+	} finally {
+		globalThis.setInterval = originalSetInterval;
+	}
+});

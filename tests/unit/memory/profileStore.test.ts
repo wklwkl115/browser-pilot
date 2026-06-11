@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { emptyMemoryOriginProfile } from "../../../src/memory-core/profile.ts";
 import { memoryProfileFilePath, readMemoryProfile, writeMemoryProfile } from "../../../src/memory/profileStore.ts";
-import { readOrCreateMemorySecret } from "../../../src/memory/secret.ts";
+import { memorySecretPath, readOrCreateMemorySecret } from "../../../src/memory/secret.ts";
 
 async function tempCwd(): Promise<string> {
 	return await mkdtemp(path.join(os.tmpdir(), "pi-memory-profile-store-"));
@@ -28,6 +28,19 @@ test("profile automatic paths do not materialize storage when disabled", async (
 	} finally {
 		if (old === undefined) delete process.env.PI_BROWSER_MEMORY;
 		else process.env.PI_BROWSER_MEMORY = old;
+		await cleanup(cwd);
+	}
+});
+
+test("memory secret creation is stable under concurrent callers", async () => {
+	const cwd = await tempCwd();
+	try {
+		const results = await Promise.all(Array.from({ length: 20 }, () => readOrCreateMemorySecret(cwd)));
+		const hex = results.map((item) => item?.toString("hex"));
+		const disk = (await readFile(memorySecretPath(cwd), "utf8")).trim();
+		assert.equal(new Set(hex).size, 1);
+		assert.equal(hex[0], disk);
+	} finally {
 		await cleanup(cwd);
 	}
 });

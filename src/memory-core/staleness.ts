@@ -11,9 +11,9 @@ function stableString(value: unknown): string {
 export function verifyMemoryAnchors(anchors: MemoryAnchors | undefined, live: MemoryAnchors): MemoryVerification {
 	if (!anchors || (!anchors.canonicalUrl && !anchors.fingerprintSummary && !anchors.stampSetId)) return { status: "unverified", reasons: ["no-anchors"] };
 	const stale: string[] = [];
-	if (anchors.canonicalUrl && live.canonicalUrl && anchors.canonicalUrl !== live.canonicalUrl) stale.push("canonicalUrl");
-	if (anchors.stampSetId && live.stampSetId && anchors.stampSetId !== live.stampSetId) stale.push("stampSetId");
-	if (anchors.fingerprintSummary && live.fingerprintSummary && stableString(anchors.fingerprintSummary) !== stableString(live.fingerprintSummary)) stale.push("fingerprintSummary");
+	if (anchors.canonicalUrl && (!live.canonicalUrl || anchors.canonicalUrl !== live.canonicalUrl)) stale.push("canonicalUrl");
+	if (anchors.stampSetId && (!live.stampSetId || anchors.stampSetId !== live.stampSetId)) stale.push("stampSetId");
+	if (anchors.fingerprintSummary && (!live.fingerprintSummary || stableString(anchors.fingerprintSummary) !== stableString(live.fingerprintSummary))) stale.push("fingerprintSummary");
 	if (stale.length) return { status: "stale", reasons: stale };
 	return { status: "fresh", reasons: ["anchors-match"] };
 }

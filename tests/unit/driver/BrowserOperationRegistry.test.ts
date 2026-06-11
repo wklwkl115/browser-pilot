@@ -28,3 +28,23 @@ test("BrowserOperationRegistry hashes lease owner and updates operation state", 
 	assert.equal(finished?.leaseOwnerHash, reassigned?.leaseOwnerHash);
 	assert.equal(operations.get(started.operationId), undefined);
 });
+
+test("BrowserOperationRegistry prunes stale operations and caps retained entries", () => {
+	let now = 1_000;
+	const stale = new BrowserOperationRegistry({ ttlMs: 1_000, now: () => now });
+	const old = stale.begin({ operationId: "old", toolName: "browser_wait", phase: "running" });
+	now += 1_001;
+	assert.equal(stale.get(old.operationId), undefined, "stale entries are pruned on reads");
+	assert.deepEqual(stale.snapshot(), []);
+
+	now = 2_000;
+	const capped = new BrowserOperationRegistry({ maxOperations: 2, now: () => now });
+	capped.begin({ operationId: "first", toolName: "browser_wait", phase: "running" });
+	now += 1;
+	capped.begin({ operationId: "second", toolName: "browser_wait", phase: "running" });
+	now += 1;
+	capped.begin({ operationId: "third", toolName: "browser_wait", phase: "running" });
+
+	assert.deepEqual(capped.snapshot().map((item) => item.operationId), ["second", "third"]);
+	assert.equal(capped.get("first"), undefined);
+});

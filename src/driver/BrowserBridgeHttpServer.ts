@@ -119,8 +119,18 @@ export class BrowserBridgeHttpServer {
 	async stop(): Promise<void> {
 		await new Promise<void>((resolve) => {
 			if (!this.wss && !this.httpServer) { resolve(); return; }
+			const wss = this.wss;
+			if (wss) {
+				for (const client of wss.clients) {
+					try {
+						client.close(1001, "server stopping");
+					} catch {
+						/* best-effort websocket client close during stop */
+					}
+				}
+			}
 			try {
-				this.wss?.close();
+				wss?.close();
 			} catch {
 				/* best-effort websocket server close during stop */
 			}

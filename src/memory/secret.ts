@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText } from "../utils/fsAtomic.js";
 
 const MEMORY_ROOT = ".pi/browser-memory";
 const SECRET_FILE = ".secret";
 const SECRET_BYTES = 32;
+const secretCreateLocks = new Map<string, Promise<Buffer | undefined>>();
 
 export function memoryKernelEnabled(): boolean {
 	return process.env.PI_BROWSER_MEMORY !== "0";
@@ -30,7 +31,30 @@ export async function readOrCreateMemorySecret(cwd?: string): Promise<Buffer | u
 	if (!memoryKernelEnabled()) return undefined;
 	const existing = await readMemorySecret(cwd);
 	if (existing) return existing;
+	const filePath = memorySecretPath(cwd);
+	const pending = secretCreateLocks.get(filePath);
+	if (pending) return pending;
+	const created = createMemorySecret(filePath).finally(() => {
+		if (secretCreateLocks.get(filePath) === created) secretCreateLocks.delete(filePath);
+	});
+	secretCreateLocks.set(filePath, created);
+	return created;
+}
+
+async function createMemorySecret(filePath: string): Promise<Buffer | undefined> {
+	const existing = await readFile(filePath, "utf8").then(normalizeSecret).catch(() => undefined);
+	if (existing) return existing;
 	const secret = randomBytes(SECRET_BYTES);
-	await atomicWriteText(memorySecretPath(cwd), `${secret.toString("hex")}\n`);
-	return secret;
+	const content = `${secret.toString("hex")}\n`;
+	await mkdir(path.dirname(filePath), { recursive: true });
+	try {
+		await writeFile(filePath, content, { encoding: "utf8", flag: "wx" });
+	} catch (error) {
+		if ((error as { code?: unknown }).code === "EEXIST") {
+			const raced = await readFile(filePath, "utf8").then(normalizeSecret).catch(() => undefined);
+			if (raced) return raced;
+		}
+		await atomicWriteText(filePath, content);
+	}
+	return await readFile(filePath, "utf8").then(normalizeSecret).then((persisted) => persisted ?? secret);
 }

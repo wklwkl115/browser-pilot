@@ -31,3 +31,23 @@ test("BrowserBridgeHttpServer enforces max websocket connections", async () => {
 	first.close();
 	await server.stop();
 });
+
+test("BrowserBridgeHttpServer stop closes active websocket clients", async () => {
+	const accepted: WebSocket[] = [];
+	const server = new BrowserBridgeHttpServer(HOST, DEFAULT_BROWSER_BRIDGE_PORT + 240, (ws) => accepted.push(ws), { portRangeEnd: DEFAULT_BROWSER_BRIDGE_PORT + 260 });
+	await server.start();
+	const ws = new WebSocket(`ws://${HOST}:${server.port}`, { headers: { origin: "chrome-extension://fixture" } });
+	try {
+		await onceOpen(ws);
+		assert.equal(accepted.length, 1);
+		const stopped = await Promise.race([
+			server.stop().then(() => "stopped"),
+			new Promise((resolve) => setTimeout(() => resolve("timeout"), 1_000)),
+		]);
+		assert.equal(stopped, "stopped");
+		assert.notEqual(ws.readyState, WebSocket.OPEN, "server stop must close accepted websocket clients");
+	} finally {
+		ws.terminate();
+		await server.stop();
+	}
+});

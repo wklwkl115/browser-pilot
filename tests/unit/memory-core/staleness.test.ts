@@ -7,6 +7,10 @@ test("verifyMemoryAnchors reports fresh, stale, and unverified tiers", () => {
 	assert.deepEqual(verifyMemoryAnchors(undefined, { canonicalUrl: "https://example.test/a" }), { status: "unverified", reasons: ["no-anchors"] });
 	assert.deepEqual(verifyMemoryAnchors({ canonicalUrl: "https://example.test/a", stampSetId: "s1" }, { canonicalUrl: "https://example.test/a", stampSetId: "s1" }), { status: "fresh", reasons: ["anchors-match"] });
 	assert.deepEqual(verifyMemoryAnchors({ canonicalUrl: "https://example.test/a", stampSetId: "s1" }, { canonicalUrl: "https://example.test/b", stampSetId: "s2" }), { status: "stale", reasons: ["canonicalUrl", "stampSetId"] });
+	assert.deepEqual(
+		verifyMemoryAnchors({ canonicalUrl: "https://example.test/a", stampSetId: "s1", fingerprintSummary: { changeSeq: 1 } }, {}),
+		{ status: "stale", reasons: ["canonicalUrl", "stampSetId", "fingerprintSummary"] },
+	);
 });
 
 test("verification strike transitions increment stale and reset on fresh", () => {

@@ -422,6 +422,7 @@ export async function withTrackedOperation<T>(server: BrowserBridgeServer, meta:
 		heartbeat = setInterval(() => {
 			void handle.update({ details: { heartbeatAt: Date.now() } });
 		}, 1_000);
+		heartbeat.unref?.();
 		const result = await run(handle);
 		const completed = await handle.update({ phase: "completed", progress: 100 });
 		const finalOperation = handle.finish() || completed || handle.operation;
