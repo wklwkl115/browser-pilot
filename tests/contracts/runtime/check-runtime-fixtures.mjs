@@ -89,6 +89,7 @@ assert(!interceptSource.includes("Recovered intercept session"), "intercept reco
 const frameSource = readServiceWorkerSource("frame");
 const screenshotSource = readServiceWorkerSource("screenshot");
 const transferSource = readServiceWorkerSource("transfer");
+const coreCommandsSource = readServiceWorkerSource("core_commands");
 
 function sanitize(value, depth = 0) {
 	if (depth > 8) return "[MaxDepth]";
@@ -916,6 +917,62 @@ globalThis.__stateStoreFixture = { persist, getAll };`, sandbox, { filename: 'ru
 	diagnostics.stateStore = { networkRecords: records.length };
 }
 
+async function testContentFingerprintFallbackMonotonicity(diagnostics) {
+	let observerCallback = null;
+	const bodyChildren = [
+		{ getBoundingClientRect: () => ({ width: 80, height: 24, top: 10, left: 10, right: 90, bottom: 34 }) },
+	];
+	class MutationObserver {
+		constructor(callback) { observerCallback = callback; }
+		observe() {}
+	}
+	const sandbox = {
+		console,
+		Date,
+		MutationObserver,
+		window: { innerHeight: 768, innerWidth: 1024 },
+		location: { href: "https://fixture.test/form" },
+		document: {
+			title: "Fixture",
+			readyState: "complete",
+			documentElement: { nodeName: "HTML" },
+			body: {
+				querySelectorAll: () => bodyChildren,
+				appendChild(node) {
+					bodyChildren.push(node);
+					if (observerCallback) observerCallback();
+					return node;
+				},
+			},
+			querySelectorAll: () => bodyChildren,
+		},
+		PI_BROWSER_ERROR_CODES: { NO_SESSION: "NO_SESSION", INTERNAL_ERROR: "INTERNAL_ERROR", INVALID_RULE: "INVALID_RULE" },
+		bridgeError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
+		piBridgeInfo: () => ({}),
+		isScriptable: () => true,
+		isPiNativeBrowserCommand: () => false,
+		handlePiNativeBrowserCommand: async () => ({ ok: false, error: "unexpected native" }),
+		normalizeBridgeResponse: (value) => value,
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => null,
+		handlePersistentCdpCommand: async () => ({ ok: false, error: "unexpected persistent cdp" }),
+		chrome: {
+			tabs: { async sendMessage() { throw new Error("receiving end does not exist"); } },
+			scripting: { async executeScript(options) { return [{ result: options.func() }]; } },
+		},
+	};
+	vm.runInNewContext(`${coreCommandsSource}
+globalThis.__contentFingerprintFixture = { dispatchPiBridgeCommand };`, sandbox, { filename: "runtime-fixture-core-commands.js" });
+	const before = await sandbox.__contentFingerprintFixture.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 7 }, {});
+	assert.equal(before.ok, true);
+	sandbox.document.body.appendChild({ getBoundingClientRect: () => ({ width: 48, height: 20, top: 44, left: 10, right: 58, bottom: 64 }) });
+	const after = await sandbox.__contentFingerprintFixture.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 7 }, {});
+	assert.equal(after.ok, true);
+	assert(after.data.changeSeq > before.data.changeSeq, "content.fingerprint fallback must report monotonic changeSeq after execute-style DOM mutation");
+	assert(after.data.visibleCount > before.data.visibleCount, "content.fingerprint fallback must expose visibleCount deltas after execute-style DOM mutation");
+	diagnostics.contentFingerprintFallback = { beforeChangeSeq: before.data.changeSeq, afterChangeSeq: after.data.changeSeq, visibleDelta: after.data.visibleCount - before.data.visibleCount };
+}
+
 async function main() {
 	const diagnostics = { startedAt: new Date().toISOString() };
 	const temp = await mkdtemp(path.join(os.tmpdir(), "pi-runtime-fixtures-"));
@@ -928,6 +985,7 @@ async function main() {
 		await testTransferDownloadUploadFixture(diagnostics);
 		await testCallbackWorkerStateFixture(diagnostics);
 		await testStateStoreSerializesConcurrentWrites(diagnostics);
+		await testContentFingerprintFallbackMonotonicity(diagnostics);
 		await testRuntimeRecoveryContracts(diagnostics);
 		await mkdir(artifactDir, { recursive: true });
 		await rm(failureArtifact, { force: true });

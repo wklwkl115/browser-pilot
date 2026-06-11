@@ -63,6 +63,7 @@ for (const removed of ["browser_query", "browser_click", "browser_type", "browse
 }
 assert(generatedContract.includes("| `REF_STALE` | abml | abml.ref | yes | schema |"), "generated contract must classify ABML ref errors as abml, not unknown");
 assert(generatedContract.includes("| `WEBSOCKET_WAIT_TIMEOUT` | websocket | bridge.ws | yes | schema |"), "generated contract must classify WebSocket errors as websocket, not unknown");
+assert(!generatedContract.includes("`content.fingerprint`"), "generated contract must not publish internal native commands");
 const migration = read("docs/browser-usage.md");
 assert(migration.includes("迁移指引") && migration.includes("AI_INSTALL.md") && migration.includes("SKILL.md"), "docs/browser-usage.md must only be a migration pointer");
 console.log("tool doc drift contract ok");

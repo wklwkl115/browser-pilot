@@ -3,11 +3,12 @@ import { isRecord } from "../utils/params.js";
 
 export type ExecuteEffect = {
 	url?: string;
-	mutations: number;
-	settled: boolean;
+	signals?: "partial";
+	mutations?: number;
+	settled?: boolean;
 	navigated: boolean;
-	visibleDelta: number;
-	interactiveDelta: number;
+	visibleDelta?: number;
+	interactiveDelta?: number;
 	requestsFired?: number;
 	hookEventsFired?: number;
 	targetDelta?: {
@@ -51,11 +52,12 @@ export type ExecutionJournal = {
 export function compactExecutionEffect(effect: ExecuteEffect | undefined): Record<string, unknown> | undefined {
 	if (!effect) return undefined;
 	return {
-		mutations: effect.mutations,
-		settled: effect.settled,
+		...(effect.signals ? { signals: effect.signals } : {}),
+		...(effect.mutations !== undefined ? { mutations: effect.mutations } : {}),
+		...(effect.settled !== undefined ? { settled: effect.settled } : {}),
 		...(effect.navigated ? { navigated: true } : {}),
-		...(effect.visibleDelta ? { visibleDelta: effect.visibleDelta } : {}),
-		...(effect.interactiveDelta ? { interactiveDelta: effect.interactiveDelta } : {}),
+		...(effect.visibleDelta !== undefined ? { visibleDelta: effect.visibleDelta } : {}),
+		...(effect.interactiveDelta !== undefined ? { interactiveDelta: effect.interactiveDelta } : {}),
 		...(effect.requestsFired !== undefined ? { requestsFired: effect.requestsFired } : {}),
 		...(effect.hookEventsFired !== undefined ? { hookEventsFired: effect.hookEventsFired } : {}),
 		...(effect.targetDelta && Object.keys(effect.targetDelta).length ? { targetDelta: effect.targetDelta } : {}),

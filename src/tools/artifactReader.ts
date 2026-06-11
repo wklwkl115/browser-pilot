@@ -3,7 +3,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import { tryJson } from "../utils/json.js";
-import { getJsonPath } from "../utils/jsonPath.js";
+import { getJsonPath, parseJsonPath, type JsonPathToken } from "../utils/jsonPath.js";
 import { asPositiveInt, normalizeArtifactMode } from "../utils/params.js";
 import { SAFE_REGEX_DEFAULT_MAX_INPUT_CHARS, SAFE_REGEX_DEFAULT_MAX_PATTERN_CHARS, unsafeRegexReason } from "../utils/safeRegex.js";
 import { browserArtifactPrivacyMetadata, redactSensitiveText, redactSensitiveValue } from "./artifactPrivacy.js";
@@ -504,6 +504,7 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 	if (typeof value !== "object") return String(value);
 	if (depth >= 5) return "[MaxDepth]";
 	if (Array.isArray(value)) {
+		if (value.length === 0) return [];
 		return {
 			type: "array",
 			count: value.length,
@@ -518,6 +519,43 @@ function compactJsonValue(value: unknown, params: BrowserArtifactParams, depth =
 	for (const [key, item] of entries.slice(0, limit)) out[key] = compactJsonValue(item, params, depth + 1);
 	if (entries.length > limit) out.truncatedKeys = entries.length - limit;
 	return out;
+}
+
+function formatJsonPath(tokens: JsonPathToken[]): string {
+	if (!tokens.length) return "$";
+	return tokens.map((token, index) => {
+		if (typeof token === "number") return `[${token}]`;
+		if (/^[A-Za-z_$][\w$]*$/.test(token)) return index === 0 ? token : `.${token}`;
+		return `['${token.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}']`;
+	}).join("");
+}
+
+function jsonValueType(value: unknown): string {
+	if (Array.isArray(value)) return "array";
+	if (value === null) return "null";
+	return typeof value;
+}
+
+function nearestJsonPathInfo(root: unknown, jsonPath: string): Record<string, unknown> {
+	const tokens = parseJsonPath(jsonPath);
+	for (let length = tokens.length; length >= 0; length -= 1) {
+		const path = formatJsonPath(tokens.slice(0, length));
+		const selected = getJsonPath(root, path);
+		if (!selected.exists) continue;
+		const nearestType = jsonValueType(selected.value);
+		const nearestKeys = selected.value && typeof selected.value === "object" ? Object.keys(selected.value).slice(0, 40) : undefined;
+		return {
+			nearestPath: path,
+			nearestType,
+			...(nearestKeys ? { nearestKeys } : {}),
+		};
+	}
+	return {};
+}
+
+function missingJsonPathValue(root: unknown, jsonPath: string): Record<string, unknown> {
+	const nearest = nearestJsonPathInfo(root, jsonPath);
+	return { exists: false, notFound: true, jsonPath, ...nearest, value: null };
 }
 
 function correlationValueAtPath(root: unknown, jsonPath: string): unknown {
@@ -571,7 +609,7 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 			const selected = getJsonPath(parsed, item);
 			return [item, selected.exists
 				? { exists: true, jsonPath: item, value: compactJsonValue(selected.value, params) }
-				: { exists: false, notFound: true, jsonPath: item, value: null }];
+				: missingJsonPathValue(parsed, item)];
 		});
 		const value = Object.fromEntries(entries);
 		const missingCount = Object.values(value).filter((item) => (item as { exists?: boolean }).exists === false).length;
@@ -585,11 +623,22 @@ function readJson(text: string, fileSize: number, absPath: string, params: Brows
 	const jsonPath = params.jsonPath || "$";
 	const selected = getJsonPath(parsed, jsonPath);
 	if (!selected.exists) {
+		const value = missingJsonPathValue(parsed, jsonPath);
 		return {
 			mode: "json" as const,
-			summary: { path: absPath, bytes: fileSize, type: "missing", exists: false, notFound: true, jsonPath },
+			summary: {
+				path: absPath,
+				bytes: fileSize,
+				type: "missing",
+				exists: false,
+				notFound: true,
+				jsonPath,
+				...(typeof value.nearestPath === "string" ? { nearestPath: value.nearestPath } : {}),
+				...(typeof value.nearestType === "string" ? { nearestType: value.nearestType } : {}),
+				...(Array.isArray(value.nearestKeys) ? { nearestKeys: value.nearestKeys } : {}),
+			},
 			jsonPath,
-			value: { exists: false, notFound: true, jsonPath, value: null },
+			value,
 		};
 	}
 	const value = typeof selected.value === "string" ? jsonStringWindow(selected.value, params) : compactJsonValue(selected.value, params);

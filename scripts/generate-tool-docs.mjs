@@ -222,6 +222,7 @@ function commandRequired(spec) {
 
 function collectNativeCommands(schema) {
 	return Object.entries(schema.commands)
+		.filter(([, spec]) => spec.internal !== true)
 		.map(([name, spec]) => ({
 			name,
 			domain: spec.domain || "",

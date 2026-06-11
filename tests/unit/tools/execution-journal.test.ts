@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildExecutionJournal, compactExecutionEffect, executionJournalFromValue } from "../../../src/tools/executionJournal.ts";
 
-test("compactExecutionEffect keeps factual nonzero fields only", () => {
+test("compactExecutionEffect keeps factual fields including known zero deltas", () => {
 	const compact = compactExecutionEffect({
 		mutations: 1,
 		url: "https://example.test/page",
@@ -17,6 +17,7 @@ test("compactExecutionEffect keeps factual nonzero fields only", () => {
 	assert.deepEqual(compact, {
 		mutations: 1,
 		settled: true,
+		visibleDelta: 0,
 		interactiveDelta: 2,
 		requestsFired: 0,
 		hookEventsFired: 3,

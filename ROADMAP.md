@@ -36,6 +36,11 @@
   已覆盖主要收益，常驻 daemon 会引入 stale state、watcher 可靠性和与 browser daemon
   概念混淆。*(重开条件：P0'-P4 落地后 trace 显示进程冷启动 + 图重算仍占
   `check:smart` 代表性 wall time >30%)*
+- **更重的 popup ownership 感知面**：真实 form-fill 会话证明 Element Plus 类 shared
+  popper 需要用 trigger 的 `aria-controls`/`aria-expanded` 锚定 popup；本轮已通过 skill
+  方法论、`data.controls_pairs` nearest-path 诊断和动态 fixture effect 证据收口，不新增
+  entity-level expanded/controls 字段或 post-open auto-pairing。*(重开条件：E3/E4 落地后，
+  第二个不同组件库的真实 agent run 仍因 popup ownership 混淆受阻)*
 
 ## 当前非激活路线（治理/RFC 区；不是 debt backlog）
 

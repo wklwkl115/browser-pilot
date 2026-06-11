@@ -18,9 +18,21 @@ async function withArtifactRoot(run: (root: string) => Promise<void>) {
 test("artifactReader returns explicit notFound JSON path values", async () => {
 	await withArtifactRoot(async (cwd) => {
 		const file = path.join(cwd, ".pi", "browser-artifacts", "data.json");
-		await writeFile(file, JSON.stringify({ items: [{ id: 1 }] }), "utf8");
+		await writeFile(file, JSON.stringify({ items: [{ id: 1 }], data: { controls_pairs: [], actionables: [] } }), "utf8");
 		const result = await readBrowserArtifact({ path: file, mode: "json", jsonPath: "items[9].id" }, { cwd });
-		assert.deepEqual(result.value, { exists: false, notFound: true, jsonPath: "items[9].id", value: null });
+		assert.equal(result.value.exists, false);
+		assert.equal(result.value.notFound, true);
+		assert.equal(result.value.jsonPath, "items[9].id");
+		assert.equal(result.value.nearestPath, "items");
+		assert.equal(result.value.nearestType, "array");
+		assert.ok(result.value.nearestKeys.includes("0"));
+		assert.equal(result.value.value, null);
+
+		const relationMiss = await readBrowserArtifact({ path: file, mode: "json", jsonPath: "data.relations" }, { cwd });
+		assert.equal(relationMiss.value.nearestPath, "data");
+		assert.equal(relationMiss.value.nearestType, "object");
+		assert.ok(relationMiss.value.nearestKeys.includes("controls_pairs"));
+		assert.deepEqual(relationMiss.value.value, null);
 	});
 });
 
@@ -31,6 +43,7 @@ test("artifactReader keeps pick outputs aligned", async () => {
 		const result = await readBrowserArtifact({ path: file, mode: "json", pick: ["items[0].id", "items[9].id"] }, { cwd });
 		assert.equal(result.value["items[0].id"].exists, true);
 		assert.equal(result.value["items[9].id"].notFound, true);
+		assert.equal(result.value["items[9].id"].nearestPath, "items");
 	});
 });
 

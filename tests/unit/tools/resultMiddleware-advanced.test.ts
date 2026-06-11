@@ -199,6 +199,20 @@ test("distilled result fallback artifact nextActions are directly executable", a
 	}
 });
 
+test("distilledJsonResult notFound summaries suggest nearest jsonPath reread", async () => {
+	const result = await distilledJsonResult({ exists: false }, {
+		toolName: "browser_artifact",
+		command: "artifact.json",
+		maxChars: 4000,
+		fallbackName: "artifact.json",
+		detailLevel: "summary",
+		distill: () => ({ exists: false, notFound: true, jsonPath: "data.relations", nearestPath: "data", nearestType: "object", nearestKeys: ["controls_pairs"] }),
+	});
+	const envelope = JSON.parse(textOf(result));
+	assert.ok(envelope.nextActions.includes("read_saved_artifact mode=json jsonPath=data"));
+	assert.ok(envelope.nextActions.includes("narrow the target ref/filter or re-read with mode=scan|html"));
+});
+
 test("distilledJsonResult summary mode promotes correlation metadata", async () => {
 	const result = await distilledJsonResult({
 		ok: true,

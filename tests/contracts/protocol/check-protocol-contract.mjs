@@ -60,12 +60,15 @@ assert(schema.toolMetadata?.transferTools?.browser_upload?.command === "transfer
 assert(schema.errorCodes?.TAB_NOT_FOUND?.category === "driver.tab" && schema.errorCodes?.UPLOAD_REQUIRES_BROWSER_UPLOAD?.category === "tool.transfer", "schema must define generated error taxonomy");
 assert(schema.errorCodes?.MATURE_BRIDGE_LAUNCHER_NOT_FOUND?.category === "tool.security" && schema.errorCodes?.MATURE_BRIDGE_TEMPLATE_SELECTION_REQUIRED?.category === "tool.security", "schema must define mature bridge diagnostic error taxonomy");
 assert(schema.errorCodes?.WEBSOCKET_SESSION_NOT_FOUND?.category === "bridge.ws" && schema.errorCodes?.WEBSOCKET_WAIT_TIMEOUT?.category === "bridge.ws", "schema must define websocket diagnostic error taxonomy");
+assert(schema.commands?.["content.fingerprint"]?.internal === true && schema.commands?.["content.fingerprint"]?.tabScoped === true && schema.commands?.["content.fingerprint"]?.accessMode === "read", "schema must keep content.fingerprint as an internal tab-scoped read command for effect collection");
 
 const protocolSandbox = { self: {} };
 vm.runInNewContext(transformBridgeSourceForVm(readServiceWorkerSource("protocol"), "bridge_src/service_worker/protocol.ts"), protocolSandbox, { filename: "protocol.js" });
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "wait.selector", tabId: 1, selector: "body" })?.ok === true, "protocol validator must accept valid native commands");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "transfer.download", tabId: 1, selector: "a[download]" })?.ok === true, "protocol validator must accept transfer commands");
+assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "content.fingerprint", tabId: 1 })?.ok === true, "protocol validator must accept internal content.fingerprint for driver-owned signal reads");
+assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "content.fingerprint" }, { allowMissingTabId: false })?.ok === false, "content.fingerprint must remain tab-scoped");
 assert(protocolSandbox.self.PiNativeProtocol?.validateCommand?.({ cmd: "missing.command" })?.ok === false, "protocol validator must reject unknown commands");
 
 const runtime = readServiceWorkerSource("runtime");
@@ -87,6 +90,7 @@ assert(actionMetadataSource.includes('export const nativeCommandToolMetadata = n
 assert(actionMetadataSource.includes('export function metadataForNativeCommandTool(toolName: NativeCommandToolName)') && actionMetadataSource.includes('export function metadataForNativeTransferTool(toolName: NativeTransferToolName)'), "native action metadata must export typed metadata helper accessors");
 assert(errorCodesSource.includes('"TAB_NOT_FOUND"') && errorCodesSource.includes('"UPLOAD_REQUIRES_BROWSER_UPLOAD"') && errorCodesSource.includes('"MATURE_BRIDGE_LAUNCHER_NOT_FOUND"'), "native error codes must be generated from schema");
 assert(protocolDoc.includes("## Native commands") && protocolDoc.includes("## Tool metadata slice") && protocolDoc.includes("## Error codes") && protocolDoc.includes("README snippet"), "native protocol generated docs must include command/tool/error/doc sections");
+assert(!protocolDoc.includes("`content.fingerprint`"), "native protocol generated docs must not publish internal content.fingerprint as a user-facing native command");
 assert(protocolDoc.includes("browser_frame") && protocolDoc.includes("browser_evidence") && protocolDoc.includes("browser_screenshot") && protocolDoc.includes("browser_observe_html"), "native protocol docs must include migrated hook/frame/html/screenshot/evidence tool metadata rows");
 const actionCommands = read("src/tools/actionCommands.ts");
 assert(actionCommands.includes("commandForNativeToolAction") && !actionCommands.includes('waitforselector: "wait.selector"') && !actionCommands.includes('exporthar: "network.exportHar"'), "wait/network action mapping must come from generated metadata");

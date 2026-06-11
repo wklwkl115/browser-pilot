@@ -32,6 +32,7 @@ type PiCommandSpec = JsonRecord & {
   domain?: string;
   tabScoped?: boolean;
   accessMode?: 'read' | 'write';
+  internal?: boolean;
   methods?: string[];
   defaultMethod?: string;
   methodRequired?: boolean;
@@ -171,6 +172,7 @@ type CommandSpec = {
 	domain?: string;
 	tabScoped?: boolean;
 	accessMode?: "read" | "write";
+	internal?: boolean;
 	methods?: string[];
 	defaultMethod?: string;
 	methodRequired?: boolean;
@@ -366,6 +368,7 @@ function table(headers, rows) {
 
 function commandRows() {
 	return Object.entries(schema.commands || {})
+		.filter(([, spec]) => spec.internal !== true)
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([name, spec]) => [
 			`\`${name}\``,

@@ -210,6 +210,7 @@ assert(schema.commands && typeof schema.commands === "object", "schema must defi
 for (const command of Object.values(schema.domains).flat()) {
 	assert(schema.commands[command], `schema domains command missing spec: ${command}`);
 }
+assert(schema.commands?.["content.fingerprint"]?.internal === true && schema.commands?.["content.fingerprint"]?.tabScoped === true && schema.commands?.["content.fingerprint"]?.accessMode === "read", "content.fingerprint must be registered as an internal tab-scoped read command");
 const protocolSandbox = { self: {} };
 vm.runInNewContext(readBridgeRuntimeFile("protocol.js"), protocolSandbox, { filename: "protocol.js" });
 assert(JSON.stringify(protocolSandbox.self.PiNativeProtocol?.schema) === JSON.stringify(schema), "protocol.js must embed generated root schema");
@@ -228,6 +229,7 @@ assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDisp
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 assert(coreCommands.includes("Promise.resolve(bridgeWakeProbe(true)).catch"), "bridge_wake must catch async probe rejection so offscreen startup races do not create unhandled promises");
+assert(coreCommands.includes("chrome.tabs.sendMessage(tabId, { cmd: 'pi.contentFingerprint' })") && coreCommands.includes("chrome.scripting.executeScript") && coreCommands.includes("__piBrowserFingerprintFallbackState__"), "content.fingerprint must try the content-script responder first, then use a persistent executeScript fallback state");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "service-worker transport must retain generated bridge metadata without hardcoding the port");
 assert(offscreenTransport.includes("PI_BROWSER_BRIDGE_WS_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !offscreenTransport.includes("127.0.0.1:18765"), "offscreen transport must read generated bridge URLs and port range instead of hardcoding the port");
 assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "service-worker transport must stay focused on offscreen lifecycle and socket adapters");
@@ -1373,6 +1375,84 @@ globalThis.__batchTabsTest = { handleBatch };`, sandbox, { filename: "core_comma
 
 await testBatchTabsMethodsPreserveSemantics();
 
+async function testContentFingerprintFallbackState() {
+	let mode = "responder";
+	let sendMessageCalls = 0;
+	let scriptCalls = 0;
+	let observerCallback = null;
+	const observed = [];
+	const elements = [
+		{ getBoundingClientRect: () => ({ width: 80, height: 24, top: 10, left: 10, right: 90, bottom: 34 }) },
+		{ getBoundingClientRect: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) },
+	];
+	class MutationObserver {
+		constructor(callback) { observerCallback = callback; }
+		observe(target, options) { observed.push({ target, options }); }
+	}
+	const sandbox = {
+		console,
+		Date,
+		MutationObserver,
+		window: { innerHeight: 768, innerWidth: 1024 },
+		location: { href: "https://example.test/form" },
+		document: {
+			title: "Form",
+			readyState: "complete",
+			documentElement: { nodeName: "HTML" },
+			body: { querySelectorAll: () => elements },
+			querySelectorAll: () => [{}, {}],
+		},
+		PI_BROWSER_ERROR_CODES: { NO_SESSION: "NO_SESSION", INTERNAL_ERROR: "INTERNAL_ERROR", INVALID_RULE: "INVALID_RULE" },
+		bridgeError: (error_code, error, details) => ({ ok: false, error_code, error, details }),
+		piBridgeInfo: () => ({}),
+		isScriptable: () => true,
+		isPiNativeBrowserCommand: () => false,
+		handlePiNativeBrowserCommand: async () => ({ ok: false, error: "unexpected native" }),
+		normalizeBridgeResponse: (value) => value,
+		normalizePersistentPiBrowserResponse: (value) => value,
+		piBrowserPersistentCdp: () => null,
+		handlePersistentCdpCommand: async () => ({ ok: false, error: "unexpected persistent cdp" }),
+		chrome: {
+			tabs: {
+				async sendMessage(tabId, message) {
+					sendMessageCalls += 1;
+					if (mode === "responder") return { ok: true, data: { changeSeq: 10, url: "https://example.test/content", readyState: "complete", visibleCount: 1, interactiveCount: 1 } };
+					if (mode === "okFalse") return { ok: false, error: "missing responder" };
+					throw new Error("receiving end does not exist");
+				},
+			},
+			scripting: {
+				async executeScript(options) {
+					scriptCalls += 1;
+					return [{ result: options.func() }];
+				},
+			},
+		},
+	};
+	vm.runInNewContext(`${coreCommands}
+globalThis.__contentFingerprintTest = { dispatchPiBridgeCommand };`, sandbox, { filename: "core_commands.js" });
+	const responder = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
+	assert(responder.ok === true && responder.data?.changeSeq === 10, "content.fingerprint must prefer the content-script responder when available");
+	assert(sendMessageCalls === 1 && scriptCalls === 0, "content.fingerprint responder success must not run the fallback script");
+
+	mode = "throw";
+	const fallbackBefore = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
+	assert(fallbackBefore.ok === true && fallbackBefore.data?.changeSeq === 1, "content.fingerprint fallback must return a finite initial changeSeq");
+	assert(observed.length === 1 && observed[0].options?.subtree === true, "content.fingerprint fallback must install a broad MutationObserver once");
+	observerCallback();
+	const fallbackAfter = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
+	assert(fallbackAfter.ok === true && fallbackAfter.data?.changeSeq === 2, "content.fingerprint fallback changeSeq must persist and increment across calls");
+	assert(fallbackAfter.data?.visibleCount === 1 && fallbackAfter.data?.interactiveCount === 2, "content.fingerprint fallback must include visible/interactive counts for effect deltas");
+
+	mode = "okFalse";
+	observerCallback();
+	const okFalseFallback = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
+	assert(okFalseFallback.ok === true && okFalseFallback.data?.changeSeq === 3, "content.fingerprint fallback must also cover ok:false responder results");
+	assert(sendMessageCalls === 4 && scriptCalls === 3, "content.fingerprint fallback must run only after responder failure");
+}
+
+await testContentFingerprintFallbackState();
+
 async function testRouterWsMalformedInputErrors() {
 	const sent = [];
 	const execRequests = [];
@@ -1582,8 +1662,10 @@ async function testExecPostEvalWaitOnlyForLikelyNewTabs() {
 await testExecPostEvalWaitOnlyForLikelyNewTabs();
 
 const serverSource = read("src/driver/BrowserBridgeServer.ts");
+const commandServiceSource = read("src/driver/BrowserBridgeCommandService.ts");
 assert(serverSource.includes("validateBridgeCommand"), "server must validate bridge commands through protocol schema");
 assert(serverSource.includes('methodAccessMode') && serverSource.includes('spec.accessMode'), "driver command access mode must come from protocol schema metadata");
+assert(commandServiceSource.includes("validation.spec.internal") && commandServiceSource.includes("options.internal !== true"), "driver must reject schema-internal commands unless the caller opts into the internal path");
 assert(!serverSource.includes('schemaDrivenCommandAccessMode') && !serverSource.includes('cmd.startsWith("intercept.")'), "driver must not keep local write-command hardcoded routing once schema accessMode exists");
 assert(!serverSource.includes("sendCommand(command: Record<string, unknown>"), "server sendCommand must not accept free-form Record commands");
 

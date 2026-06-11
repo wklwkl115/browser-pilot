@@ -428,14 +428,17 @@ async function eval02(env, entry) {
 	const tabId = await createTab(env, metrics, "interactive.html");
 	try {
 		const before = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: path.join(env.runDir, `${entry.id}-before.json`), maxChars: 12_000, timeoutMs: 20_000 }), "browser_observe scan"));
-		const execute = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { document.querySelector('#activate').click(); return { state: document.querySelector('#status')?.dataset.state, text: document.querySelector('#status')?.textContent }; })()", monitor: true, outputPath: path.join(env.runDir, `${entry.id}-execute.json`), maxChars: 8_000, timeoutMs: 20_000 }), "browser_execute activate"));
-		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#status[data-state='activated']", state: "attached" }, outputPath: path.join(env.runDir, `${entry.id}-wait.json`), timeoutMs: 15_000 }), "browser_wait activated");
-		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "#status", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-after.txt`), maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe html after"));
-		const ok = /Status: activated/.test(JSON.stringify(after)) && /Activate workflow/.test(JSON.stringify(before)) && /activated/.test(JSON.stringify(execute));
+		const executePath = path.join(env.runDir, `${entry.id}-execute.json`);
+		const execute = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { document.querySelector('#activate').click(); return { state: document.querySelector('#status')?.dataset.state, text: document.querySelector('#status')?.textContent, popupOptions: document.querySelectorAll('#activation-popup [role=option]').length }; })()", monitor: true, outputPath: executePath, maxChars: 8_000, timeoutMs: 20_000 }), "browser_execute activate"));
+		const executeArtifact = JSON.parse(await readFile(executePath, "utf8"));
+		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#activation-popup[role='listbox']", state: "attached" }, outputPath: path.join(env.runDir, `${entry.id}-wait.json`), timeoutMs: 15_000 }), "browser_wait activated popup");
+		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "main", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-after.txt`), maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe html after"));
+		const mutationCount = Number(executeArtifact?.effect?.mutations ?? executeArtifact?.execution?.effect?.mutations);
+		const ok = /Status: activated/.test(JSON.stringify(after)) && /Confirm activation/.test(JSON.stringify(after)) && /Activate workflow/.test(JSON.stringify(before)) && /activated/.test(JSON.stringify(execute)) && Number.isFinite(mutationCount) && mutationCount > 0;
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
-		metrics.summary.push("Scan identified the interactive fixture, browser_execute clicked #activate, and browser_wait verified #status[data-state='activated'].");
-		metrics.diagnostics.push(`Post-state evidence contains activated status: ${/Status: activated/.test(JSON.stringify(after))}.`);
+		metrics.summary.push("Scan identified the interactive fixture, browser_execute clicked #activate, and browser_wait verified the dynamically inserted #activation-popup.");
+		metrics.diagnostics.push(`Post-state evidence contains activated status: ${/Status: activated/.test(JSON.stringify(after))}; execute effect mutations=${Number.isFinite(mutationCount) ? mutationCount : "missing"}.`);
 		metrics.notes.push("State change was verified by wait/observe evidence, not assumed from JavaScript execution alone.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {

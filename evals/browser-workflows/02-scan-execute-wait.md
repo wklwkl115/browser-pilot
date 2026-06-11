@@ -2,13 +2,13 @@
 
 ## Goal
 
-Inspect a local interactive fixture, identify an element, execute a JavaScript action, and wait for a visible state change.
+Inspect a local interactive fixture, identify an element, execute a JavaScript action, and wait for a visible state change plus a dynamically inserted popup.
 
 ## Fixture
 
 - Local target: `fixtures/interactive.html`
-- Required files: page with a button or control that changes visible status text after click or script action.
-- Setup notes: state change should be deterministic and observable in DOM text.
+- Required files: page with a button or control that changes visible status text and inserts a popup/listbox after click or script action.
+- Setup notes: state change should be deterministic and observable in DOM text; the execute effect must report a nonzero mutation count.
 
 ## Allowed starting tools
 
@@ -30,11 +30,12 @@ Inspect a local interactive fixture, identify an element, execute a JavaScript a
 
 - The element choice is grounded in scan evidence.
 - The action is narrow and targeted.
-- The state change is verified independently after execution.
+- The state change and popup insertion are verified independently after execution.
+- The execute result includes factual effect evidence for the DOM mutation.
 
 ## Required evidence
 
-- Summary evidence: before-state and after-state text.
+- Summary evidence: before-state and after-state text, including the popup option text.
 - Artifact evidence: optional scan/html artifact if summaries are truncated.
 - Diagnostics evidence: wait target and timeout if a wait fails.
 
@@ -51,3 +52,4 @@ Inspect a local interactive fixture, identify an element, execute a JavaScript a
 - recovery after ambiguous element selection
 - artifact sufficiency
 - verification after action
+- execute effect mutation informativeness

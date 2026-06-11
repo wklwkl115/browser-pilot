@@ -38,6 +38,30 @@ daemon predates them.
   `reflectCsrf:false` should reproduce the 403. Real-session evidence that motivated it is in the C1
   entry below.
 
+## Real-session friction closure (not blind)
+
+These entries come from a real skill-guided Pi session, not from the blind-agent protocol, so they
+do not increment blind `runs`. They are recorded here because they are the same friction ledger that
+feeds mature-maintenance fixes.
+
+- **RSF1 — execute effect vacuity on form-fill interactions (2026-06-11, real session
+  `019eb646-84a4-7cf5-a648-dc70a8861ef2`; RESOLVED).** The session saw 35
+  `browser_execute` calls and every result claimed `mutations:0/settled:true`, including dropdown
+  opens. Fix: fingerprint absence is now `signals:"partial"` rather than a zero claim, and
+  internal `content.fingerprint` falls back to a page-world MutationObserver state when the content
+  responder is unavailable. Regression: execution-effect unit coverage, runtime fixture monotonicity,
+  `check:all:bridge`, and Eval 02 dynamic popup evidence
+  `.pi/browser-artifacts/eval-browser-workflows/2026-06-11T12-56-07-377Z-ccfc90d9/02-scan-execute-wait-execute.json`
+  with `effect.mutations:1`, `visibleDelta:3`.
+- **RSF2 — shared-popper component dropdown ownership (2026-06-11, same real session;
+  RESOLVED as skill methodology, heavier perception surface closed).** The agent burned calls
+  reconstructing Element Plus popup ownership by hand after guessing stale visible poppers. Fix:
+  both frontend skills now teach `aria-controls` + `aria-expanded` on the trigger, close/reopen the
+  target control, then query by popup id; missing artifact paths now expose nearest keys so
+  `data.controls_pairs` is discoverable. Heavier entity-level popup pairing remains closed in
+  `ROADMAP.md` unless a second different component library reproduces the confusion after these
+  fixes.
+
 ## fixable (work items)
 
 | # | finding | runs | evidence | candidate fix |

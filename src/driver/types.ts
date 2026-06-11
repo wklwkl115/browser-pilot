@@ -171,6 +171,7 @@ export type ExecuteOptions = {
 	tabId?: number | string;
 	timeoutMs?: number;
 	accessMode?: "read" | "write";
+	internal?: boolean;
 };
 
 export type PendingRequest = {

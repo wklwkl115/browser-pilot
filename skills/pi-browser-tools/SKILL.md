@@ -96,6 +96,8 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
 | Which requests an action fired | **`browser_network {action:"start"}` FIRST**, then scan with `baseline` → `causal.requests` | — |
 
+Component-library selects/dropdowns (Element Plus / Ant Design / MUI style): popup DOM is often lazy and the first visible popper can be stale from the previous control. Identify the popup from the trigger, not visual heuristics: read `aria-controls` plus `aria-expanded`; body-click/close, reopen the target trigger, then query the popup by that id. `browser_observe mode=scan` records page-wide `data.controls_pairs` (including off-screen sources); read it with `browser_artifact mode=json jsonPath=data.controls_pairs`, and re-scan after opening if the first scan had no resolvable pair.
+
 Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
 
 ## Read results

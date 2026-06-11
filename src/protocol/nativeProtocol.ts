@@ -10,6 +10,7 @@ type CommandSpec = {
 	domain?: string;
 	tabScoped?: boolean;
 	accessMode?: "read" | "write";
+	internal?: boolean;
 	methods?: string[];
 	defaultMethod?: string;
 	methodRequired?: boolean;
@@ -74,6 +75,7 @@ const schema = {
       "cdp",
       "persistent_cdp",
       "batch",
+      "content.fingerprint",
       "contentSettings"
     ],
     "input": [
@@ -171,6 +173,13 @@ const schema = {
       "domain": "core",
       "tabScoped": false,
       "accessMode": "read"
+    },
+    "content.fingerprint": {
+      "domain": "core",
+      "tabScoped": true,
+      "accessMode": "read",
+      "internal": true,
+      "notes": "Internal page fingerprint signal used by execute/observe effect collection."
     },
     "tabs": {
       "domain": "core",

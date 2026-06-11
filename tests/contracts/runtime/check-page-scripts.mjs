@@ -371,6 +371,25 @@ assert(actionableScan.actionables.some((node) => node.editable === true && node.
 assert(actionableScan.actionables.some((node) => node.action === "comment-reply-expand-btn" && node.point?.y >= 0), "scan behavior: actionables must include visible controls inside scroll containers");
 assert(actionableScan.list_hints.some((hint) => String(hint.selector).includes("article.result-card") && String(hint.selector).includes("w-1\\/2") && hint.hiddenCount === 3), "scan behavior: repeated lists must expose GA-style hidden item hints with CSS-escaped class selectors");
 
+const svgHitTarget = mockEl("svg", {}, []);
+svgHitTarget.className = { baseVal: "toolbar-icon svg-action" };
+const svgToolbarButton = mockEl("button", { id: "svg-toolbar-action" }, [svgHitTarget]);
+const svgHitDoc = new MockDocument([svgToolbarButton]);
+svgHitDoc._pointElement = svgHitTarget;
+const svgHitScan = await runPageScript(buildScanScript({ maxChars: 4_000, maxNodes: 20 }), svgHitDoc);
+const svgHitAction = svgHitScan.actionables.find((node) => node.selector === "#svg-toolbar-action");
+assert.equal(svgHitAction?.hitTarget?.class, "toolbar-icon svg-action", "scan behavior: SVG hit target className must use SVGAnimatedString.baseVal");
+
+const wrapperInput = mockEl("input", { placeholder: "请输入漏洞名称", name: "vulnName" });
+const inputWrapper = mockEl("div", { class: "el-input" }, [wrapperInput]);
+const wrapperInputDoc = new MockDocument([inputWrapper]);
+wrapperInputDoc._pointElement = wrapperInput;
+const wrapperInputScan = await runPageScript(buildScanScript({ maxChars: 4_000, maxNodes: 20 }), wrapperInputDoc);
+const wrapperInputAction = wrapperInputScan.actionables.find((node) => node.action === "el-input" && node.selector === "div.el-input");
+assert.equal(wrapperInputAction?.label, "", "scan behavior: wrapper input must not change the identity label");
+assert.equal(wrapperInputAction?.displayLabel, "请输入漏洞名称", "scan behavior: wrapper input must borrow a display-only label from the hit target placeholder");
+assert.equal(wrapperInputAction?.hitTarget?.inputLabel, "请输入漏洞名称", "scan behavior: hit target form-control metadata must expose the borrowed label source");
+
 const content = buildContentScript({ selector: "main", maxChars: 4_000, includeLinks: true });
 new Function(content);
 assert(content.includes("DROP_SELECTOR"), "page-scripts content: must drop noisy nodes");

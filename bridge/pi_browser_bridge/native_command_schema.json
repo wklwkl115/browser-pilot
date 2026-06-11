@@ -36,6 +36,7 @@
       "cdp",
       "persistent_cdp",
       "batch",
+      "content.fingerprint",
       "contentSettings"
     ],
     "input": [
@@ -133,6 +134,13 @@
       "domain": "core",
       "tabScoped": false,
       "accessMode": "read"
+    },
+    "content.fingerprint": {
+      "domain": "core",
+      "tabScoped": true,
+      "accessMode": "read",
+      "internal": true,
+      "notes": "Internal page fingerprint signal used by execute/observe effect collection."
     },
     "tabs": {
       "domain": "core",

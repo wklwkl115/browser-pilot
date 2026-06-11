@@ -10,7 +10,7 @@ const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-artifact-"));
 try {
 	await mkdir(path.join(tmp, ".pi", "browser-artifacts"), { recursive: true });
 	const artifactPath = path.join(tmp, ".pi", "browser-artifacts", "network.json");
-	const payload = { items: Array.from({ length: 80 }, (_, i) => ({ requestId: String(i), url: `https://h${i % 3}.test/r${i}`, method: "GET", status: i % 10 === 0 ? 500 : 200 })) };
+	const payload = { items: Array.from({ length: 80 }, (_, i) => ({ requestId: String(i), url: `https://h${i % 3}.test/r${i}`, method: "GET", status: i % 10 === 0 ? 500 : 200, handlers: [] })) };
 	await writeFile(artifactPath, JSON.stringify(payload, null, 2), "utf8");
 	assert.equal(existsSync(artifactPath), true);
 	const atomic = await saveTextArtifact({ cwd: tmp }, ".pi/browser-artifacts/atomic.txt", "unused.txt", "atomic-ok");
@@ -33,6 +33,7 @@ try {
 	assert.equal(jsonArtifact.mode, "json", "check-artifact json.mode: expected json");
 	assert.equal(jsonArtifact.value.count, 80, "check-artifact json.value.count: expected full array count");
 	assert.equal(jsonArtifact.value.items.length, 5, "check-artifact json.value.items.length: expected window size 5");
+	assert.deepEqual(jsonArtifact.value.items[0].handlers, [], "check-artifact json.value.empty-array: nested empty arrays must stay [] instead of window envelopes");
 	assert.equal(jsonArtifact.value.nextOffset, 7, "check-artifact json.value.nextOffset: expected 7");
 
 	const longJsonStringPath = path.join(tmp, ".pi", "browser-artifacts", "long-string.json");
@@ -67,9 +68,16 @@ try {
 	assert.equal(pickArtifact.summary.keyCount, Object.keys(pickArtifact.value).length, "check-artifact json.pick.summary: summary keyCount must match serialized value keys");
 
 	const missingJsonPathArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", jsonPath: "items[999].requestId" }, { cwd: tmp });
-	assert.deepEqual(missingJsonPathArtifact.value, { exists: false, notFound: true, jsonPath: "items[999].requestId", value: null }, "check-artifact json.missing: missing jsonPath must return an explicit notFound value");
+	assert.equal(missingJsonPathArtifact.value.exists, false, "check-artifact json.missing: missing jsonPath must return exists=false");
+	assert.equal(missingJsonPathArtifact.value.notFound, true, "check-artifact json.missing: missing jsonPath must return notFound=true");
+	assert.equal(missingJsonPathArtifact.value.jsonPath, "items[999].requestId", "check-artifact json.missing: missing jsonPath must echo the requested path");
+	assert.equal(missingJsonPathArtifact.value.value, null, "check-artifact json.missing: missing jsonPath must not return a broader parent object");
+	assert.equal(missingJsonPathArtifact.value.nearestPath, "items", "check-artifact json.missing: missing jsonPath must expose nearest existing parent path");
+	assert.equal(missingJsonPathArtifact.value.nearestType, "array", "check-artifact json.missing: nearest parent must expose its JSON type");
+	assert.ok(missingJsonPathArtifact.value.nearestKeys.includes("0"), "check-artifact json.missing: nearest parent must expose capped keys");
 	assert.equal(missingJsonPathArtifact.summary.exists, false, "check-artifact json.missing: summary must expose exists=false");
 	assert.equal(missingJsonPathArtifact.summary.notFound, true, "check-artifact json.missing: summary must expose notFound=true");
+	assert.equal(missingJsonPathArtifact.summary.nearestPath, "items", "check-artifact json.missing: summary must expose nearest parent path");
 
 	const observeArtifactPath = path.join(tmp, ".pi", "browser-artifacts", "observe-scan.json");
 	await writeFile(observeArtifactPath, JSON.stringify({
@@ -85,7 +93,9 @@ try {
 
 	const mixedPickArtifact = await readBrowserArtifact({ path: artifactPath, mode: "json", pick: ["items[0].requestId", "items[999].requestId"], limit: 4 }, { cwd: tmp });
 	assert.deepEqual(mixedPickArtifact.value["items[0].requestId"], { exists: true, jsonPath: "items[0].requestId", value: "0" }, "check-artifact json.pick.mixed: existing path must stay aligned with requested key");
-	assert.deepEqual(mixedPickArtifact.value["items[999].requestId"], { exists: false, notFound: true, jsonPath: "items[999].requestId", value: null }, "check-artifact json.pick.mixed: missing path must not disappear during JSON serialization");
+	assert.equal(mixedPickArtifact.value["items[999].requestId"].notFound, true, "check-artifact json.pick.mixed: missing path must not disappear during JSON serialization");
+	assert.equal(mixedPickArtifact.value["items[999].requestId"].nearestPath, "items", "check-artifact json.pick.mixed: missing pick path must expose nearest existing parent path");
+	assert.equal(mixedPickArtifact.value["items[999].requestId"].value, null, "check-artifact json.pick.mixed: missing pick path must not return a broader parent object");
 	assert.equal(mixedPickArtifact.summary.keyCount, Object.keys(mixedPickArtifact.value).length, "check-artifact json.pick.mixed: summary keyCount must match value key count");
 	assert.equal(JSON.parse(JSON.stringify(mixedPickArtifact.value))["items[999].requestId"].notFound, true, "check-artifact json.pick.mixed: missing placeholder must survive JSON serialization");
 
@@ -127,7 +137,10 @@ try {
 	const sensitiveBracketTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "response.headers['Set-Cookie']" }, { cwd: tmp });
 	assert.equal(sensitiveBracketTargeted.value, "sid=response-secret", "check-artifact privacy.targeted-jsonPath.bracket: bracket jsonPath must resolve keys that are not dot-safe identifiers");
 	const sensitiveMalformedTargeted = await readBrowserArtifact({ path: sensitivePath, mode: "json", jsonPath: "request.headers['Cookie'" }, { cwd: tmp });
-	assert.deepEqual(sensitiveMalformedTargeted.value, { exists: false, notFound: true, jsonPath: "request.headers['Cookie'", value: null }, "check-artifact privacy.targeted-jsonPath.malformed: malformed bracket paths must not return a broader raw parent object");
+	assert.equal(sensitiveMalformedTargeted.value.notFound, true, "check-artifact privacy.targeted-jsonPath.malformed: malformed bracket paths must return notFound");
+	assert.equal(sensitiveMalformedTargeted.value.value, null, "check-artifact privacy.targeted-jsonPath.malformed: malformed bracket paths must not return a broader raw parent object");
+	assert.equal(sensitiveMalformedTargeted.value.nearestPath, "request.headers", "check-artifact privacy.targeted-jsonPath.malformed: malformed bracket paths may expose nearest parent path only");
+	assert.ok(sensitiveMalformedTargeted.value.nearestKeys.includes("Cookie"), "check-artifact privacy.targeted-jsonPath.malformed: nearest keys help recover without exposing raw values");
 	const sensitivePick = await readBrowserArtifact({ path: sensitivePath, mode: "json", pick: ["response.body.text"] }, { cwd: tmp });
 	assert.equal(sensitivePick.value["response.body.text"].value, "token=body-secret", "check-artifact privacy.targeted-pick: explicit pick must return one raw value");
 	const sensitiveText = await readBrowserArtifact({ path: sensitivePath, mode: "text", maxChars: 4_000 }, { cwd: tmp });

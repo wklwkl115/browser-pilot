@@ -140,7 +140,7 @@ function actionIntent(node: Record<string, unknown>): string | undefined {
 
 function actionDisplayName(node: Record<string, unknown>): string {
 	const editable = node.editable === true;
-	const candidates = editable ? [node.action, node.role, node.tag, node.selector] : [node.action, node.label, node.text, node.role, node.tag, node.selector];
+	const candidates = editable ? [node.displayLabel, node.action, node.role, node.tag, node.selector] : [node.displayLabel, node.action, node.label, node.text, node.role, node.tag, node.selector];
 	for (const candidate of candidates) {
 		const text = cleanInlineText(candidate, 96);
 		if (!text) continue;

@@ -5,6 +5,7 @@ type PiCommandSpec = JsonRecord & {
   domain?: string;
   tabScoped?: boolean;
   accessMode?: 'read' | 'write';
+  internal?: boolean;
   methods?: string[];
   defaultMethod?: string;
   methodRequired?: boolean;
@@ -59,6 +60,7 @@ type PiProtocolSchema = JsonRecord & {
       "cdp",
       "persistent_cdp",
       "batch",
+      "content.fingerprint",
       "contentSettings"
     ],
     "input": [
@@ -156,6 +158,13 @@ type PiProtocolSchema = JsonRecord & {
       "domain": "core",
       "tabScoped": false,
       "accessMode": "read"
+    },
+    "content.fingerprint": {
+      "domain": "core",
+      "tabScoped": true,
+      "accessMode": "read",
+      "internal": true,
+      "notes": "Internal page fingerprint signal used by execute/observe effect collection."
     },
     "tabs": {
       "domain": "core",

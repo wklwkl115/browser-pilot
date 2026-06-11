@@ -56,8 +56,9 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 	const afterFp = after.fingerprint;
 	const quietFp = quiet?.fingerprint;
 	const url = quietFp?.url ?? afterFp?.url ?? beforeFp?.url;
-	const mutations = delta(afterFp?.changeSeq, beforeFp?.changeSeq) ?? 0;
-	const quietDelta = delta(quietFp?.changeSeq, afterFp?.changeSeq) ?? 0;
+	const hasFingerprintPair = beforeFp !== undefined && afterFp !== undefined;
+	const mutations = hasFingerprintPair ? delta(afterFp.changeSeq, beforeFp.changeSeq) : undefined;
+	const quietDelta = quietFp && afterFp ? delta(quietFp.changeSeq, afterFp.changeSeq) : undefined;
 	const requestsFired = before.network.active && after.network.active ? delta(after.network.lastSeq, before.network.lastSeq) : undefined;
 	const hookEventsFired = before.hook.active && after.hook.active ? delta(after.hook.lastSeq, before.hook.lastSeq) : undefined;
 	const targetDelta = {
@@ -72,11 +73,12 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 	};
 	return {
 		...(url ? { url } : {}),
-		mutations,
-		settled: mutations === 0 || quietDelta === 0,
+		...(!hasFingerprintPair ? { signals: "partial" as const } : {}),
+		...(mutations !== undefined ? { mutations } : {}),
+		...(mutations !== undefined ? { settled: mutations === 0 || quietDelta === 0 } : {}),
 		navigated: !!(beforeFp?.url && afterFp?.url && beforeFp.url !== afterFp.url),
-		visibleDelta: delta(afterFp?.visibleCount, beforeFp?.visibleCount) ?? 0,
-		interactiveDelta: delta(afterFp?.interactiveCount, beforeFp?.interactiveCount) ?? 0,
+		...(hasFingerprintPair ? { visibleDelta: delta(afterFp.visibleCount, beforeFp.visibleCount) ?? 0 } : {}),
+		...(hasFingerprintPair ? { interactiveDelta: delta(afterFp.interactiveCount, beforeFp.interactiveCount) ?? 0 } : {}),
 		...(requestsFired !== undefined ? { requestsFired } : {}),
 		...(hookEventsFired !== undefined ? { hookEventsFired } : {}),
 		...(Object.keys(targetDelta).length ? { targetDelta } : {}),
@@ -94,8 +96,8 @@ export async function withExecutionEffect<T extends BrowserBridgeExecutionResult
 	const result = await dispatch();
 	const after = await readExecutionSignals(server, options);
 	let quiet: ExecutionSignalSnapshot | undefined;
-	const mutationDelta = delta(after.fingerprint?.changeSeq, before.fingerprint?.changeSeq) ?? 0;
-	if (mutationDelta > 0) {
+	const mutationDelta = delta(after.fingerprint?.changeSeq, before.fingerprint?.changeSeq);
+	if (mutationDelta !== undefined && mutationDelta > 0) {
 		await delay(options.quietMs ?? 150);
 		quiet = await readExecutionSignals(server, options);
 	}

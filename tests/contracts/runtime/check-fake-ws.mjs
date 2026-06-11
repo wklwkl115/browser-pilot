@@ -166,6 +166,19 @@ try {
 		assert.match(error.message, /Unsupported method/);
 		return true;
 	});
+	await assert.rejects(server.sendCommand({ cmd: "content.fingerprint", tabId: 101 }, { tabId: 101, timeoutMs: 1_000 }), (error) => {
+		assert.equal(error.code, "INVALID_BROWSER_COMMAND");
+		assert.match(error.message, /internal-only/);
+		return true;
+	});
+	const internalFingerprintPromise = server.sendCommand({ cmd: "content.fingerprint", tabId: 101 }, { tabId: 101, timeoutMs: 1_000, internal: true });
+	const fingerprintOutbound = await nextJson(ws, "internal content fingerprint outbound");
+	assert.equal(fingerprintOutbound.code.cmd, "content.fingerprint");
+	assert.equal(fingerprintOutbound.code.tabId, 101);
+	sendJson(ws, { type: "ack", id: fingerprintOutbound.id });
+	sendJson(ws, { type: "result", id: fingerprintOutbound.id, result: { changeSeq: 4, url: "https://example.test/one" } });
+	const internalFingerprintResult = await internalFingerprintPromise;
+	assert.equal(internalFingerprintResult.data.changeSeq, 4);
 	await assert.rejects(server.sendCommand({ cmd: "wait.selector", tabId: 101 }, { timeoutMs: 1_000 }), (error) => {
 		assert.equal(error.code, "INVALID_BROWSER_COMMAND");
 		assert.deepEqual(error.details.missing, ["selector"]);

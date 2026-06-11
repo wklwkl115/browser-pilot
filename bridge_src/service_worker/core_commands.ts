@@ -16,6 +16,51 @@ function coreErrorMessage(error: unknown): string { return error instanceof Erro
 function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 function optionalString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 
+async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecord> {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      type PiBrowserFallbackFingerprintState = { changeSeq: number; lastChangedAt: number; observer?: MutationObserver };
+      const key = '__piBrowserFingerprintFallbackState__';
+      const holder = globalThis as unknown as Record<string, PiBrowserFallbackFingerprintState | undefined>;
+      let state = holder[key];
+      if (!state) {
+        state = { changeSeq: 1, lastChangedAt: Date.now() };
+        holder[key] = state;
+      }
+      if (!state.observer && document.documentElement) {
+        state.observer = new MutationObserver(() => {
+          state.changeSeq += 1;
+          state.lastChangedAt = Date.now();
+        });
+        state.observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+      }
+      const visibleElements = Array.from(document.body?.querySelectorAll('*') ?? []).slice(0, 500);
+      let visibleCount = 0;
+      for (const element of visibleElements) {
+        try {
+          const rect = element.getBoundingClientRect();
+          if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) visibleCount += 1;
+        } catch {
+          /* ignore per-node geometry errors */
+        }
+      }
+      const interactiveCount = document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length;
+      return {
+        changeSeq: state.changeSeq,
+        url: location.href,
+        title: document.title,
+        readyState: document.readyState,
+        visibleCount,
+        interactiveCount,
+        capturedAt: state.lastChangedAt,
+      };
+    },
+  });
+  const first = Array.isArray(results) ? results[0] as { result?: unknown } | undefined : undefined;
+  return coreRecord(first?.result);
+}
+
 function setBridgeWakeProbe(probe: unknown): void {
   bridgeWakeProbe = typeof probe === 'function' ? probe as BridgeWakeProbe : null;
 }
@@ -131,12 +176,18 @@ async function handleContentSettingsCommand(msg: PiBridgeCommand): Promise<PiBri
 async function handleContentFingerprintCommand(msg: PiBridgeCommand, sender: PiBridgeSender): Promise<PiBridgeResponse> {
   const tabId = Number(msg.tabId || sender.tab?.id || 0);
   if (!tabId) return bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, 'content.fingerprint requires a tabId', { cmd: msg.cmd, tabId: msg.tabId });
+  let messageError: unknown;
   try {
     const response = coreRecord(await chrome.tabs.sendMessage(tabId, { cmd: 'pi.contentFingerprint' }));
-    if (response.ok === false) return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint responder returned ok:false', { cmd: msg.cmd, tabId, response });
-    return { ok: true, data: coreRecord(response.data ?? response) };
+    if (response.ok !== false) return { ok: true, data: coreRecord(response.data ?? response) };
+    messageError = new Error('content fingerprint responder returned ok:false');
   } catch (e) {
-    return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(e) });
+    messageError = e;
+  }
+  try {
+    return { ok: true, data: await readContentFingerprintViaScript(tabId) };
+  } catch (scriptError) {
+    return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(messageError), fallbackError: coreErrorDetails(scriptError) });
   }
 }
 

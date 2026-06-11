@@ -18,6 +18,27 @@
 
 ## 最近完成项
 
+### Real-session friction plan（2026-06-11，完成）
+
+Decision: completed `docs/real-session-friction-plan.md` E1-E7, consuming real
+skill-guided form-fill session `019eb646-84a4-7cf5-a648-dc70a8861ef2` friction without
+adding public tools or action sugar.
+
+Boundary: popup ownership stayed in the two frontend skills; tools only gained general
+mechanical sensing/diagnostics/output fixes. Wrapper-input label borrowing is display-only
+and ref-id stability is locked by ABML scan-entity tests.
+
+Contract: scan normalizes SVG `className.baseVal` for hit/top-layer class reads; artifact
+JSON renders empty arrays as `[]` and missing jsonPath returns nearest parent path/type/keys
+with a concrete reread action; execute effect now reports `signals:"partial"` instead of
+zero/settled claims when fingerprints are unavailable, and `content.fingerprint` has an
+internal fallback path; wrapper-pattern controls may surface `displayLabel` from the hit
+form control without changing identity labels.
+
+Verification: focused gates, dynamic fixture eval, real `smoke:browser`, skill validation,
+`check:all:contracts`, rerun-clean `check:all:bridge`, final `npm run check`, and
+`npm run lint` are the closure gates for this workstream.
+
 ### Check acceleration plan (2026-06-11, 完成计划)
 
 Decision: completed `docs/check-acceleration-plan.md` as the reviewed execution

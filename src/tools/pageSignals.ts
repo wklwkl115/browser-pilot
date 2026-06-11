@@ -40,7 +40,7 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 export async function readPageFingerprint(server: BrowserBridgeServer, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
 	if (!options.tabId) return undefined;
 	try {
-		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000) });
+		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true });
 		return normalizePageFingerprint(result.data);
 	} catch {
 		return undefined;

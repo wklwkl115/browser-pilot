@@ -93,6 +93,8 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 | Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact values → `execute` |
 | Which requests an action fired | **`network start` FIRST**, then scan with baseline → `causal.requests` | — |
 
+Component-library selects/dropdowns (Element Plus / Ant Design / MUI style): popup DOM is often lazy and the first visible popper can be stale from the previous control. Identify the popup from the trigger, not visual heuristics: read `aria-controls` plus `aria-expanded`; body-click/close, reopen the target trigger, then query the popup by that id. `observe --mode scan` records page-wide `data.controls_pairs` (including off-screen sources); read it with `artifact --mode json --json-path data.controls_pairs`, and re-scan after opening if the first scan had no resolvable pair.
+
 Pass a baseline **by reference**: `--baseline-snapshot-id <id>` (a prior scan's snapshotId) or `--baseline-path <file>` (the prior scan's auto-saved artifact — its path is the result's `saved.path`; there is no `--output-path`). Never inline the prior envelope (argv limit). `treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
 
 ## Read results

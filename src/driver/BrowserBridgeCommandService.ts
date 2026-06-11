@@ -153,6 +153,9 @@ export class BrowserBridgeCommandService {
 		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
 		const validation = validateBridgeCommand(payload, { allowMissingTabId: tabId === undefined });
 		if (!validation.ok) throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", validation.error, validation.details);
+		if (validation.spec.internal === true && options.internal !== true) {
+			throw new BrowserBridgeError("INVALID_BROWSER_COMMAND", "Bridge command is internal-only", { cmd: validation.command.cmd });
+		}
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.deps.getTabs() });
 		const plan = this.commandExecutionPlan(validation.command, target, options.accessMode);
 		return this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode });

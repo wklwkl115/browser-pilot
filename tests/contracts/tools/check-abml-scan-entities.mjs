@@ -49,6 +49,56 @@ const envelopeEntities = scanEntitiesForEnvelope(baseData, {
 		},
 	});
 
+const wrapperAction = {
+	index: 3,
+	tag: "div",
+	role: null,
+	action: "el-input",
+	label: "",
+	displayLabel: "请输入漏洞名称",
+	text: "",
+	selector: "#vuln-wrapper",
+	point: { x: 120, y: 320 },
+	rect: { x: 80, y: 300, width: 260, height: 34 },
+	hitOk: true,
+	clickable: true,
+	editable: false,
+	disabled: false,
+	priority: 1450,
+	hitTarget: { tag: "input", inputLabel: "请输入漏洞名称" },
+};
+const wrapperData = { ...baseData, actionables: [...baseData.actionables, wrapperAction] };
+const wrapperDataWithoutDisplay = { ...baseData, actionables: [...baseData.actionables, { ...wrapperAction, displayLabel: undefined, hitTarget: { tag: "input" } }] };
+const wrapperSummary = summarizeScanData(wrapperData, [], {
+	detailLevel: "summary",
+	maxChars: 12_000,
+	entityContext: {
+		browserSessionId: "session-1",
+		tabId: 42,
+		url: "https://shop.example.test/checkout",
+		observationId: "snapshot-123",
+		capturedAt: 1710000000000,
+	},
+});
+const wrapperEntities = scanEntitiesForEnvelope(wrapperData, {
+	entityContext: {
+		browserSessionId: "session-1",
+		tabId: 42,
+		url: "https://shop.example.test/checkout",
+		observationId: "snapshot-123",
+		capturedAt: 1710000000000,
+	},
+});
+const wrapperEntitiesWithoutDisplay = scanEntitiesForEnvelope(wrapperDataWithoutDisplay, {
+	entityContext: {
+		browserSessionId: "session-1",
+		tabId: 42,
+		url: "https://shop.example.test/checkout",
+		observationId: "snapshot-123",
+		capturedAt: 1710000000000,
+	},
+});
+
 	// legacy top-level surface remains unchanged
 	assert.equal("entities" in summary, false, "scan summary must not add a new top-level entities field before public surface convergence");
 	assert(Array.isArray(summary.focus?.primary_actions), "scan summary must keep legacy focus.primary_actions");
@@ -81,6 +131,13 @@ const envelopeEntities = scanEntitiesForEnvelope(baseData, {
 	const payAction = summary.focus.primary_actions.find((action) => action.jsonPath === "data.actionables[0]");
 	assert.equal(payAction?.entityRef, payEntity.ref, "primary action summary row must carry the minted entity handle as a ref");
 	assert.equal(payAction?.entity, undefined, "primary action summary row must not embed the full entity object");
+
+	const wrapperActionSummary = wrapperSummary.focus.primary_actions.find((action) => action.jsonPath === "data.actionables[3]");
+	assert.equal(wrapperActionSummary?.name, "请输入漏洞名称", "displayLabel must improve the primary action display name for wrapper-pattern inputs");
+	const wrapperEntity = wrapperEntities.find((entity) => entity.hints?.jsonPath === "data.actionables[3]");
+	const wrapperEntityWithoutDisplay = wrapperEntitiesWithoutDisplay.find((entity) => entity.hints?.jsonPath === "data.actionables[3]");
+	assert.equal(wrapperEntity?.name, "el-input", "displayLabel must not replace the entity identity name");
+	assert.equal(wrapperEntity?.ref, wrapperEntityWithoutDisplay?.ref, "displayLabel must not participate in pi-ref minting");
 
 	assert.equal(payEntity.hints.selector, "#pay", "minted entity must preserve selector hint");
 	assert.equal(payEntity.hints.jsonPath, "data.actionables[0]", "minted entity must preserve source jsonPath");
