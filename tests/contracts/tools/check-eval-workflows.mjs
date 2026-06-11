@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -63,6 +64,7 @@ for (const requiredText of ["Require an explicit opt-in flag", "Bind to `127.0.0
 
 const runnerText = read(path.join("evals", "browser-workflows", "runner.mjs"));
 const launchBlindText = read(path.join("evals", "browser-workflows", "launch-blind.mjs"));
+const pbBlindText = read(path.join("evals", "browser-workflows", "pb-blind.mjs"));
 const teardownBlindText = read(path.join("evals", "browser-workflows", "teardown-blind.mjs"));
 const blindAgentPromptText = read(path.join("evals", "browser-workflows", "blind-agent-prompt.md"));
 const blindEvalSkillText = read(path.join("skills", "pi-browser-blind-eval", "SKILL.md"));
@@ -197,6 +199,31 @@ for (const flag of ["--disable-background-networking", "--disable-sync", "--disa
 }
 assert(isolatedSmokeText.includes("stopProcessTree(smokeChild)") && !isolatedSmokeText.includes("smokeChild.kill"), "smoke-browser-isolated must clean up the nested smoke process tree instead of sending a direct SIGTERM that leaks children on Windows");
 assert(teardownBlindText.includes("stopProcessTree(pid)") && !teardownBlindText.includes("taskkill.exe") && !/process\.kill\(pid/.test(teardownBlindText), "blind eval teardown must reuse the shared process-tree cleanup helper for tracked pids");
+assert(pbBlindText.includes("PI_BROWSER_BLIND_CLI_TIMEOUT_MS") && pbBlindText.includes("timeout: timeoutMs") && pbBlindText.includes("TIMEOUT_EXIT_CODE = 124"), "pb-blind wrapper must bound forwarded CLI commands with an overridable timeout and conventional timeout exit code");
+{
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-pb-blind-timeout-"));
+	try {
+		const tempEvalDir = path.join(tempDir, "evals", "browser-workflows");
+		const tempCliDir = path.join(tempDir, "dist", "cli");
+		const tempStageDir = path.join(tempDir, ".pi", "browser-artifacts", "eval-blind");
+		mkdirSync(tempEvalDir, { recursive: true });
+		mkdirSync(tempCliDir, { recursive: true });
+		mkdirSync(tempStageDir, { recursive: true });
+		writeFileSync(path.join(tempEvalDir, "pb-blind.mjs"), pbBlindText, "utf8");
+		writeFileSync(path.join(tempCliDir, "bin.js"), "setInterval(() => {}, 1000);\n", "utf8");
+		writeFileSync(path.join(tempStageDir, "stage.json"), JSON.stringify({ stateDir: path.join(tempDir, "state") }), "utf8");
+		const result = spawnSync(process.execPath, [path.join(tempEvalDir, "pb-blind.mjs"), "tabs", "--action", "list"], {
+			env: { ...process.env, PI_BROWSER_BLIND_CLI_TIMEOUT_MS: "50" },
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: 2000,
+		});
+		assert(result.status === 124, `pb-blind must exit 124 when the forwarded CLI hangs; got status=${result.status} signal=${result.signal} error=${result.error?.message || ""}`);
+		assert(result.stderr.includes("timed out after 50ms"), "pb-blind timeout must print a concrete diagnostic");
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+}
 assert(launchBlindText.includes("stageState: \"daemon-started\"") && launchBlindText.includes("stageState: \"browser-started\"") && launchBlindText.includes("stageState: \"ready\"") && launchBlindText.includes("stageState: \"launch-failed\""), "blind eval launch must write partial/final stage states so teardown can clean failed launches");
 assert(launchBlindText.includes("latestStage") && launchBlindText.includes("writeStage("), "blind eval launch must keep a latest partial stage manifest for failure cleanup");
 assert(launchBlindText.includes("parsed.value"), "blind eval launch must accept the pi-browser CLI JSON result envelope shape from tabs list");

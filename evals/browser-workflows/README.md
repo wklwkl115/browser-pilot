@@ -17,6 +17,9 @@ These evals measure agent-computer-interface quality for `pi-browser-tools` work
    fixtures via `blind-tasks-execution-feedback.md` because those tasks intentionally mutate page
    state. Boundary in `future-runner.md` → "Blind-agent discovery layer". The spec files below are
    the deterministic layer's; ordinary blind discovery uses real sites, not these fixtures.
+   `pb-blind.mjs` bounds each forwarded CLI call to 300000ms by default; set
+   `PI_BROWSER_BLIND_CLI_TIMEOUT_MS=<positive-ms>` for a specific blind run when a different hard cap
+   is needed.
 
 ## Eval format
 

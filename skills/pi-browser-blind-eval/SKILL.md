@@ -27,8 +27,10 @@ operates **exactly like a real Pi agent** discover where the tool actually hurts
 - **READ-ONLY on real sites.** No login, form submit, post/reply/vote, purchase, or any
   state-changing request. Read, scan, extract only.
 - **Isolated.** The agent drives the tool ONLY through `node evals/browser-workflows/pb-blind.mjs …`,
-  which pins it to the isolated stage daemon — it never sees the operator's real browser. Verify
-  isolation before fanning out (the stage daemon must list only the stage's own tab).
+  which pins it to the isolated stage daemon and hard-caps each forwarded CLI call at 300000ms by
+  default (`PI_BROWSER_BLIND_CLI_TIMEOUT_MS=<positive-ms>` may override one run). It never sees the
+  operator's real browser. Verify isolation before fanning out (the stage daemon must list only the
+  stage's own tab).
 - **Honest, n>1.** Don't conclude from one run. Re-run a finding with a second agent / a second site.
 - **True defect, no overfit (core).** Only fix what is a TRUE, GENERAL project defect — confirmed root
   cause that generalizes, not noise. No change-for-change; no special-casing the site/DOM/task/shape
