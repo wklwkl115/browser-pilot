@@ -97,7 +97,7 @@ function rejectModeParam(mode: ObserveMode, param: string, reason: string): neve
 }
 
 export function validateObserveParams(mode: ObserveMode, params: ObserveToolParams): void {
-	if (params.fresh === true && params.baseline !== undefined) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with baseline/baselineSnapshotId/baselinePath");
+	if (params.fresh === true && (params.baseline !== undefined || params.baselineSnapshotId !== undefined || params.baselinePath !== undefined)) rejectModeParam(mode, "fresh", "fresh:true cannot be combined with baseline/baselineSnapshotId/baselinePath");
 	if (params.fresh === true && mode !== "scan" && mode !== "text") rejectModeParam(mode, "fresh", "fresh:true is only valid for scan/text re-anchor observations");
 	if (mode !== "scan" && params.baseline !== undefined) rejectModeParam(mode, "baseline", "baseline diff is only valid for scan mode");
 	if (mode !== "scan" && params.actionRef !== undefined) rejectModeParam(mode, "actionRef", "actionRef causal attribution is only valid for scan mode");

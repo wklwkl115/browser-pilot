@@ -50,6 +50,8 @@ export type ObserveToolParams = {
 	params?: unknown;
 	intent?: string;
 	baseline?: unknown;
+	baselineSnapshotId?: string;
+	baselinePath?: string;
 	actionRef?: string;
 	fresh?: boolean;
 	modeInferred?: { mode: ObserveMode; reason: string } | null;

@@ -157,6 +157,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		code === "DOWNLOAD_TARGET_REQUIRED" ? "use browser_download with explicit selector or url" : undefined,
 		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT", "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT", "MATURE_BRIDGE_PROCESS_TIMEOUT"].includes(code) ? "retry with explicit timeoutMs and tabId/browserSessionId" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=snapshot" : undefined,
+		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,
 		code === "BROWSER_COMMAND_FAILED" ? "use browser_command with a validated command object" : undefined,
 		code === "BROWSER_EXECUTION_ERROR" ? "inspect the page error in this result; if selectors targeted stale DOM, refresh with browser_observe mode=scan" : undefined,

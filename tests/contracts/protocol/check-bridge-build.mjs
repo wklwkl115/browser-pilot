@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { computeBuildId } from "../../../scripts/build-bridge.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -82,6 +85,33 @@ assert.equal(buildManifest.metadataOnlyModuleLists, true, "build manifest must l
 const buildScript = read("scripts/build-bridge.mjs");
 assert(!buildScript.includes("stdin:") && !buildScript.includes("service-worker.generated"), "TODO 199 build script must not assemble the service worker from source text");
 assert(buildScript.includes("unexpectedDistJs") && buildScript.includes("buildIdPlaceholder"), "build script must guard extra dist *.js files and compute a placeholder-based buildId");
+
+{
+	const tmpBase = path.join(os.tmpdir(), `pi-bridge-build-contract-${Date.now()}`);
+	const tmpDist = path.join(tmpBase, "dist");
+	try {
+		await mkdir(tmpDist, { recursive: true });
+		const distJsNames = buildManifest.inputs.filter((r) => r.includes("/dist/")).map((r) => path.basename(r));
+		for (const jsName of distJsNames) {
+			const committed = readFileSync(path.join(root, "bridge", "pi_browser_bridge", "dist", jsName), "utf8");
+			await writeFile(path.join(tmpDist, jsName), committed.replaceAll(buildManifest.buildId, buildManifest.buildIdPlaceholder), "utf8");
+		}
+		await cp(path.join(root, "bridge", "pi_browser_bridge", "manifest.json"), path.join(tmpBase, "manifest.json"));
+		const extraJs = path.join(tmpDist, "extra.js");
+		await writeFile(extraJs, "// synthetic extra\n", "utf8");
+		await assert.rejects(
+			() => computeBuildId(tmpDist),
+			(err) => err instanceof Error && err.message.includes("extra.js"),
+			"computeBuildId must throw on unexpected dist *.js file",
+		);
+		await rm(extraJs);
+		const tmpBuildId = await computeBuildId(tmpDist);
+		assert.equal(tmpBuildId, buildManifest.buildId, "computeBuildId must reproduce the committed buildId when dist is clean");
+	} finally {
+		await rm(tmpBase, { recursive: true, force: true });
+	}
+}
+
 assert(buildScript.includes("minifyWhitespace") && buildScript.includes("minifyIdentifiers: false"), "bridge service-worker/offscreen bundles must keep whitespace minification without identifier renaming");
 assert(buildScript.includes('entry.name === "service-worker" || entry.name === "offscreen"'), "bridge build must tree-shake service-worker and offscreen entries");
 assert.deepEqual(buildManifest.entries.map((entry) => entry.name), ["service-worker", "content", "offscreen", "hook-dispatcher", "disable-dialogs"], "build manifest must record independent service-worker, offscreen, and page-script bundle entries");

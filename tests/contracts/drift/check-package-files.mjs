@@ -56,7 +56,7 @@ assert(groupedCheckScript.includes('spawnSync("npm", ["run", script]') || groupe
 assert(groupedCheckScript.includes("--json") && groupedCheckScript.includes("CHECK_GROUPS_SUMMARY_PATH") && groupedCheckScript.includes("summary.results.push"), "grouped check runner must support JSON summary mode and persist a structured artifact");
 assert(checkDagScript.includes("CHECK_DAG_SUMMARY_PATH") && checkDagScript.includes("CHECK_IMPACT_SUMMARY_PATH") && checkGraphScript.includes("CHECK_MISS_DIR"), "DAG runner must persist DAG, impact, and miss artifacts");
 assert(buildScript.includes('process.argv.includes("--quiet")'), "build script must support quiet mode for prepack");
-assert(buildScript.includes('path.join(distDir, ".npmignore")') && buildScript.includes("include the generated dist runtime"), "build script must generate dist/.npmignore so npm pack does not inherit dist/.gitignore");
+assert(buildScript.includes('path.join(defaultDistDir, ".npmignore")') && buildScript.includes("include the generated dist runtime"), "build script must generate dist/.npmignore so npm pack does not inherit dist/.gitignore");
 const workflow = read(".github/workflows/check.yml");
 const setupAction = read(".github/actions/setup-node-build/action.yml");
 assert(workflow.includes("uses: ./.github/actions/setup-node-build"), "CI workflow must reuse the local setup/build composite action");

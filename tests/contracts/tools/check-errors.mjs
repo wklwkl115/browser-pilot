@@ -142,6 +142,16 @@ const tabCrashed = normalizeError(new BrowserBridgeError("TAB_CRASHED", "tab cra
 assertNormalized(tabCrashed, "tab crashed");
 assert.equal(tabCrashed.recovery?.nextActions?.includes("browser_tabs action=list"), true, "crashed tabs must suggest tab re-resolution");
 
+const leaseConflict = normalizeError(new BrowserBridgeError("TAB_LEASE_CONFLICT", "tab lease conflict", { tabId: 2, remainingMs: 3000 }));
+assertNormalized(leaseConflict, "tab lease conflict");
+assert.equal(leaseConflict.recovery?.nextActions?.includes("browser_tabs action=snapshot"), true, "lease conflict must suggest snapshot of current tab state");
+assert.equal(leaseConflict.recovery?.nextActions?.includes("browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses"), true, "lease conflict must suggest listing unleased tabs or retrying after remainingMs");
+
+const uiLockConflict = normalizeError(new BrowserBridgeError("UI_LOCK_CONFLICT", "ui lock conflict", { tabId: 3 }));
+assertNormalized(uiLockConflict, "ui lock conflict");
+assert.equal(uiLockConflict.recovery?.nextActions?.includes("browser_tabs action=snapshot"), true, "ui lock conflict must suggest snapshot of current tab state");
+assert.equal(uiLockConflict.recovery?.nextActions?.includes("browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses"), true, "ui lock conflict must suggest listing unleased tabs or retrying after remainingMs");
+
 const plainError = normalizeError(new Error("plain boom"));
 assertNormalized(plainError, "plain Error");
 assert.equal(plainError.code, "INTERNAL_ERROR");

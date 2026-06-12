@@ -6,8 +6,11 @@
 > resilience, concurrency semantics, version skew, telemetry/cold-start); pass 3
 > (same day) from four scouts over implementation structure (mixed-domain
 > hotspots, git churn/co-change coupling, entrypoint thinness, prior structural
-> decisions). Activated through `CURRENT.md` per governance rules, then completed
-> in the same workstream. The governance-mechanisms workstream that overlapped pass-1 files has
+> decisions). Executed and closed same-day without a prior 当前激活项 entry — a process
+> deviation recorded in CURRENT.md; the completion record was written at close.
+> Same-day acceptance audit (4-scout fan-out + independent full-gate re-run)
+> returned conditional acceptance with findings F1–F6, fixed in the follow-up
+> workstream (this fix batch). The governance-mechanisms workstream that overlapped pass-1 files has
 > since landed (working tree clean at pass 3). Pass-3 amendments: the static
 > audit `agent-audits/runs/2026-06-12-agent-harness-plan-static.md`
 > (AUDIT-001..005) was consumed same-day — all four code-level claims

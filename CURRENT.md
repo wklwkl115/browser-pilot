@@ -54,6 +54,12 @@ and `pi-browser-blind-eval`; `npm run test:unit`, `npm run check:check-graph`,
 `.pi/browser-artifacts/fresh-observe-runtime-1781240457763.json`, and
 `.pi/browser-artifacts/observe-scan-1781240458624.json`.
 
+Process deviation: the governance "activation entry before work starts" rule was
+not followed — work was activated and completed in one same-day workstream with
+no prior 当前激活项 entry; recorded here so the deviation is visible rather than
+papered over. Same-day acceptance audit (conditional, F1–F6) also ran; fixes for
+F1–F6 landed same day in a follow-up workstream.
+
 ### Check acceleration plan implementation（2026-06-12，完成）
 
 Decision: completed `docs/check-acceleration-plan.md` implementation after the
