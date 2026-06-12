@@ -13,7 +13,7 @@ import { stableJson } from "../utils/json.js";
 import { fitInlineJsonToBudgetMeasured } from "../distill-core/fit.js";
 import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
-import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
+import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 import type { MemoryAugmentationPlan } from "../memory-core/types.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
@@ -25,6 +25,7 @@ export type ToolResultContext = { cwd?: string; hasUI?: boolean; omitTransportDe
 export type StandardToolParams = {
 	browserSessionId?: string;
 	tabId?: number | string;
+	targetRef?: string;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -34,11 +35,13 @@ export type StandardToolParams = {
 
 type SharedToolParamOptions = {
 	tabIdDescription?: string;
+	targetRefDescription?: string;
 	timeoutDescription?: string;
 	outputPathDescription?: string;
 	maxCharsDescription?: string;
 	includeBrowserSessionId?: boolean;
 	includeTabId?: boolean;
+	includeTargetRef?: boolean;
 	includeDetailLevel?: boolean;
 	includeOutputPath?: boolean;
 	includeTimeout?: boolean;
@@ -59,6 +62,7 @@ type JsonToolResultOptions = {
 	details?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
+	diagnostics?: Record<string, unknown>;
 	artifactValue?: unknown;
 	distill?: DistillFn;
 	artifactThreshold?: number;
@@ -76,6 +80,7 @@ type TextToolResultOptions = {
 	details?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
+	diagnostics?: Record<string, unknown>;
 	artifactValue?: unknown;
 	entities?: Array<Record<string, unknown>>;
 	summary?: Record<string, unknown>;
@@ -175,6 +180,7 @@ export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) 
 	const params: Record<string, unknown> = {};
 	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session." }));
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
+	if (options.includeTargetRef !== false) params.targetRef = optionalTargetRef(options.targetRefDescription);
 	if (options.includeDetailLevel === true) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
 	if (options.includeOutputPath === true) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
 	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Deprecated compatibility only; stripped before tool validation. Tools use their built-in timeout contracts." }));
@@ -205,8 +211,14 @@ export function applyDefaultTimeout(body: Record<string, unknown>, timeoutMs: nu
 	if (body.timeoutMs === undefined && body.timeout_ms === undefined) body.timeoutMs = timeoutMs;
 }
 
-export function targetTabId(params: Pick<StandardToolParams, "tabId">, body?: Record<string, unknown>): unknown {
-	return params.tabId ?? body?.tabId;
+export function targetTabId(params: Pick<StandardToolParams, "tabId" | "targetRef">, body?: Record<string, unknown>): unknown {
+	return params.targetRef ?? params.tabId ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
+}
+
+export function resolveLocalTargetTabId(server: Partial<Pick<BrowserBridgeServer, "resolveTargetTabId">>, value: unknown, browserSessionId?: string): number | undefined {
+	if (value === undefined) return undefined;
+	if (typeof server.resolveTargetTabId === "function") return server.resolveTargetTabId(value, browserSessionId);
+	return normalizeTabId(value);
 }
 
 export async function runTool(handler: () => Promise<PiTextToolResult>, onError: (error: unknown) => PiTextToolResult | Promise<PiTextToolResult> = errorResult): Promise<PiTextToolResult> {
@@ -257,6 +269,7 @@ export async function jsonToolResult(value: unknown, params: Pick<StandardToolPa
 		details: options.details,
 		operation: options.operation,
 		snapshot: options.snapshot,
+		diagnostics: options.diagnostics,
 		artifactValue: options.artifactValue,
 		distill: options.distill,
 		artifactThreshold: options.artifactThreshold,
@@ -279,6 +292,7 @@ export async function textToolResult(text: string, params: Pick<StandardToolPara
 		details: options.details,
 		operation: options.operation,
 		snapshot: options.snapshot,
+		diagnostics: options.diagnostics,
 		artifactValue: options.artifactValue,
 		entities: options.entities,
 		summary: options.summary,
@@ -412,7 +426,7 @@ export async function runBrowserTool<TParams extends Partial<StandardToolParams>
 			return await spec.finalize({ ...runArgs, result, operation: undefined });
 		}
 		const rawTabId = spec.operation.tabId?.(spec.params, prepared);
-		const tabId = normalizeTabId(rawTabId);
+		const tabId = resolveLocalTargetTabId(server, rawTabId, browserSessionId);
 		const command = resolveOperationValue(spec.operation.command, spec.params, prepared) || spec.toolName;
 		const sourceMode = resolveOperationValue(spec.operation.sourceMode, spec.params, prepared);
 		const snapshotId = resolveOperationValue(spec.operation.snapshotId, spec.params, prepared);
@@ -443,7 +457,7 @@ export async function runWebSecurityTool<TParams extends StandardToolParams & { 
 		defaultTimeoutMs: spec.defaultTimeoutMs ?? 15_000,
 		operation: {
 			command: spec.command,
-			tabId: (params) => params.tabId,
+			tabId: (params) => targetTabId(params),
 			initialProgress: 5,
 		},
 		error: spec.error,

@@ -14,29 +14,7 @@
 
 ## 当前激活项
 
-### Dev-harness acceptance follow-up
-
-Decision: consume the acceptance findings F-1..F-6 as a maintainer fix pass,
-independently verify each finding, and close the accepted gaps without reopening
-the completed 22-item implementation.
-Scope: CURRENT.md, AGENTS.md, CLAUDE.md, docs/agent-development.md,
-docs/agent-dev-harness-optimization-plan.md, scripts/build-bridge.mjs,
-scripts/check-dag.mjs, scripts/workstream-scope.mjs,
-tests/contracts/drift/check-package-files.mjs,
-tests/contracts/drift/check-check-graph.mjs,
-tests/contracts/drift/check-doc-structure.mjs,
-tests/contracts/drift/check-impact-map.json,
-tests/unit/utils/workstream-scope.test.ts
-Boundary: dev-harness docs/contracts/tests only; no public `browser_*` tool,
-schema, envelope, bridge protocol, or browser runtime behavior changes.
-Contract: remove the remaining `defaultDistDir` source-text pin, land and gate a
-real `// contract:` breadcrumb, gate the DAG bad-node exit negative, add the C5
-baseline-dirty regression, pin the AGENTS->CLAUDE guidance, and record the D4 /
-demo / phase-activation deviations honestly.
-Verification: focused `node tests/contracts/drift/check-check-graph.mjs`,
-`npx tsx --test tests/unit/utils/workstream-scope.test.ts`,
-`npm run check:doc-structure`, `npm run check:package`, `npm run docs:sync`,
-then final `npm run check`.
+- 当前无激活执行线；新主线启动前先在此处写明决策、边界、契约与验证计划。
 
 ## 最近完成索引
 

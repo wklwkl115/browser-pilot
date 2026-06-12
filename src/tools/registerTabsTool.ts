@@ -12,12 +12,10 @@ function tabsToolError(code: NativeErrorCode, message: string, details: Record<s
 	return new BrowserBridgeError(code, message, details);
 }
 
-function requireTabsActionTabId(action: string, value: unknown): number {
-	const tabId = typeof value === "string" ? Number(value.trim()) : typeof value === "number" ? value : NaN;
-	if (!Number.isInteger(tabId) || tabId <= 0) {
-		throw tabsToolError("TAB_ID_REQUIRED", `browser_tabs ${action} requires a valid tabId`, { action, tabId: value });
-	}
-	return tabId;
+function requireTabsActionTargetRef(action: string, value: unknown): number | string {
+	if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+	if (typeof value === "string" && value.trim()) return value.trim();
+	throw tabsToolError("TAB_ID_REQUIRED", `browser_tabs ${action} requires a valid targetRef or tabId`, { action, targetRef: value });
 }
 
 function normalizeCreateTabUrl(value: unknown): string {
@@ -38,7 +36,7 @@ function normalizeCreateTabUrl(value: unknown): string {
 
 function compactTabForList(tab: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const key of ["id", "browserId", "browserSessionId", "tabId", "url", "title", "active", "windowId", "incognito", "type", "connectedAt"]) {
+	for (const key of ["id", "browserId", "browserSessionId", "tabId", "tabHandle", "targetRef", "logicalTabId", "generation", "url", "title", "active", "windowId", "openerTabId", "incognito", "type", "connectedAt", "replacedFromTabId", "replacedAt", "activatedAt"]) {
 		if (tab[key] !== undefined) out[key] = tab[key];
 	}
 	return out;
@@ -46,7 +44,7 @@ function compactTabForList(tab: Record<string, unknown>): Record<string, unknown
 
 function compactBridgeForTabsList(snapshot: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const key of ["browserSessionId", "host", "port", "running", "connectedClients", "extensionConnected", "extension", "defaultTabId", "latestTabId", "selectionVersion"]) {
+	for (const key of ["browserSessionId", "host", "port", "running", "connectedClients", "extensionConnected", "extension", "defaultTabId", "defaultTabHandle", "latestTabId", "latestTabHandle", "selectionVersion"]) {
 		if (snapshot[key] !== undefined) out[key] = snapshot[key];
 	}
 	return out;
@@ -71,11 +69,11 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 		promptSnippet: "Control connected browser tabs and scoped browser sessions: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
 		promptGuidelines: [
 			"Start automation with browser_tabs list; use switch only when you intentionally change the browser active tab.",
-			"Keep the target tabId and pass it explicitly to later tab-scoped browser_* calls.",
+			"Prefer the returned tabHandle as targetRef for later tab-scoped browser_* calls; numeric tabId remains compatibility input.",
 		],
 		parameters: strictToolParameters({
 			action: Type.String({ description: "One of: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab" }),
-			...sharedTabScopedToolParams({ includeBrowserSessionId: true, tabIdDescription: "Target tab id for switch/close; use browser_tabs list to identify it first." }),
+			...sharedTabScopedToolParams({ includeBrowserSessionId: true, tabIdDescription: "Compatibility target for switch/close: numeric tabId or tabHandle string.", targetRefDescription: "Preferred stable tabHandle for switch/close/attach/detach/lease/release." }),
 			name: Type.Optional(Type.String({ description: "Browser session display name for createSession." })),
 			browserId: Type.Optional(Type.String({ description: "Browser client id or extension id for selectBrowser" })),
 			snapshotId: Type.Optional(Type.String({ description: "Optional observation snapshot id for browser_tabs action=snapshot." })),
@@ -93,7 +91,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				// redact are accepted for cross-tool consistency but are no-ops here (tab metadata is a small,
 				// non-secret JSON list, not a distilled/redacted summary).
 				const maxChars = asPositiveInt(params.maxChars, 50_000);
-				const tabId = action === "switch" || action === "close" || action === "attachtab" || action === "detachtab" || action === "leasetab" || action === "releasetab" ? requireTabsActionTabId(action, params.tabId) : undefined;
+				const tabRef = action === "switch" || action === "close" || action === "attachtab" || action === "detachtab" || action === "leasetab" || action === "releasetab" ? requireTabsActionTargetRef(action, params.targetRef ?? params.tabId) : undefined;
 				const createUrl = action === "create" ? normalizeCreateTabUrl(params.url) : undefined;
 				const server = await ensureStarted();
 				const browserSession = { browserSessionId: typeof params.browserSessionId === "string" ? params.browserSessionId : undefined };
@@ -139,17 +137,17 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });
 				if (action === "selectsession") return jsonResult({ session: server.selectBrowserSession(params.browserSessionId || ""), snapshot: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
 				if (action === "closesession") return jsonResult({ closed: server.closeBrowserSession(params.browserSessionId || ""), sessions: server.listBrowserSessions() }, { action });
-				if (action === "attachtab" && tabId !== undefined) return jsonResult({ tab: server.attachTabToBrowserSession(tabId, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
-				if (action === "detachtab" && tabId !== undefined) return jsonResult({ session: server.detachTabFromBrowserSession(tabId, browserSession) }, { action });
-				if (action === "leasetab" && tabId !== undefined) return jsonResult({ lease: defaultLeaseIdRedactor.tabLease(server.leaseTab(tabId, browserSession) as BrowserTabLeaseInfo), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
-				if (action === "releasetab" && tabId !== undefined) {
-					const released = server.releaseTab(tabId, browserSession);
+				if (action === "attachtab" && tabRef !== undefined) return jsonResult({ tab: server.attachTabToBrowserSession(tabRef, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
+				if (action === "detachtab" && tabRef !== undefined) return jsonResult({ session: server.detachTabFromBrowserSession(tabRef, browserSession) }, { action });
+				if (action === "leasetab" && tabRef !== undefined) return jsonResult({ lease: defaultLeaseIdRedactor.tabLease(server.leaseTab(tabRef, browserSession) as BrowserTabLeaseInfo), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
+				if (action === "releasetab" && tabRef !== undefined) {
+					const released = server.releaseTab(tabRef, browserSession);
 					return jsonResult({ released: released ? defaultLeaseIdRedactor.tabLease(released as BrowserTabLeaseInfo) : undefined, session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
 				}
 				if (action === "selectbrowser" || action === "browser" || action === "select") return jsonResult({ selected: server.selectBrowser(params.browserId || "", browserSession), snapshot: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
-				if (action === "switch" && tabId !== undefined) return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
+				if (action === "switch" && tabRef !== undefined) return jsonResult(await server.switchTab(tabRef, timeoutMs, browserSession), { action });
 				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true }), { action });
-				if (action === "close" && tabId !== undefined) return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });
+				if (action === "close" && tabRef !== undefined) return jsonResult(await server.closeTab(tabRef, timeoutMs, browserSession), { action });
 				throw tabsToolError("INVALID_RULE", `Unsupported browser_tabs action: ${params.action}`, { action: params.action });
 			});
 		},

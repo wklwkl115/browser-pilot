@@ -7,7 +7,7 @@ import { nativeToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
 import { readFrameEntities } from "../abml/verbs/frameRuntime.js";
 import type { ToolResultBudgetName } from "./budgets.js";
-import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserTool, jsonToolResult, resolveLocalTargetTabId, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
@@ -35,7 +35,7 @@ function actionTimeoutMs(value: unknown, fallback: number, allowZero: boolean): 
 }
 
 // Reserved top-level keys an action tool already owns — never treated as a per-action passthrough.
-const ACTION_RESERVED_KEYS = new Set(["action", "params", "browserSessionId", "tabId", "detailLevel", "outputPath", "timeoutMs", "maxChars", "redact", "sessionId"]);
+const ACTION_RESERVED_KEYS = new Set(["action", "params", "browserSessionId", "tabId", "targetRef", "detailLevel", "outputPath", "timeoutMs", "maxChars", "redact", "sessionId"]);
 
 // The per-action REQUIRED keys for a tool, derived from the generated native metadata (the same
 // source-of-truth F4 surfaces in --help). Agents primed by other tools routinely place these at the
@@ -93,8 +93,7 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 				const maxChars = toolMaxChars(params, config.budgetName);
 				const command = { ...body, cmd: commandName };
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const normalizedTabId = typeof tabId === "string" ? Number(tabId) : typeof tabId === "number" ? tabId : undefined;
-				const trackedTabId = typeof normalizedTabId === "number" && Number.isInteger(normalizedTabId) && normalizedTabId > 0 ? normalizedTabId : undefined;
+				const trackedTabId = resolveLocalTargetTabId(server, tabId, browserSessionId);
 				const resolvedTabId = tabId as string | number | undefined;
 				const { result, operation } = await withTrackedOperation(server, {
 					toolName: config.name,

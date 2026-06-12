@@ -192,6 +192,19 @@
       ]
     },
     {
+      "name": "PI_BROWSER_STANDING_PERCEPTION",
+      "affectsOutput": true,
+      "signatureSites": [
+        {
+          "file": "src/tools/observe/renderCache.ts",
+          "markers": [
+            "observeStandingPerceptionCacheMarker",
+            "PI_BROWSER_STANDING_PERCEPTION"
+          ]
+        }
+      ]
+    },
+    {
       "name": "PI_BROWSER_STDLIB",
       "affectsOutput": true,
       "signatureSites": [

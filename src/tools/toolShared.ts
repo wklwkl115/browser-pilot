@@ -34,8 +34,9 @@ export function objectParam(value: unknown): Record<string, unknown> {
 export const NativeStringList = Type.Array(Type.String());
 export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties: true });
 
-export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list/switch to pick a target tab. A tabId is NOT stable — it changes when the tab navigates, reloads, or is replaced — so do not cache one across navigations: re-read it from browser_tabs or the navigation result, or omit tabId to use the selected/active tab. Pass an explicit tabId mainly to disambiguate when several tabs are open.";
-export const TAB_ID_DESCRIPTION = "Target tab id. Not stable across navigation/reload — re-resolve via browser_tabs or omit to use the selected/active tab; pass explicitly mainly to disambiguate multiple open tabs.";
+export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list to get a stable tabHandle/targetRef. Omit targetRef/tabId to use the selected active tab; pass an explicit target mainly to disambiguate several open tabs. Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains.";
+export const TAB_ID_DESCRIPTION = "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.";
+export const TARGET_REF_DESCRIPTION = "Stable target reference from browser_tabs list (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.";
 export const DETAIL_LEVEL_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current summaries use tool-specific budgets and artifact handles.";
 export const OUTPUT_PATH_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Full raw evidence is saved by tool-managed artifacts when needed.";
 export const MAX_CHARS_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current tools use committed per-tool budgets.";
@@ -59,4 +60,8 @@ export function enumOrEnumArrayParam<const TValue extends readonly [string, stri
 
 export function optionalTargetTabId(description = TAB_ID_DESCRIPTION) {
 	return Type.Optional(Type.Union([Type.Number(), Type.String()], { description }));
+}
+
+export function optionalTargetRef(description = TARGET_REF_DESCRIPTION) {
+	return Type.Optional(Type.String({ description }));
 }

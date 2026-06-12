@@ -958,19 +958,20 @@ async function testContentFingerprintFallbackMonotonicity(diagnostics) {
 		handlePersistentCdpCommand: async () => ({ ok: false, error: "unexpected persistent cdp" }),
 		chrome: {
 			tabs: { async sendMessage() { throw new Error("receiving end does not exist"); } },
-			scripting: { async executeScript(options) { return [{ result: options.func() }]; } },
+			scripting: { async executeScript(options) { return [{ result: options.func(...(options.args || [])) }]; } },
 		},
 	};
 	vm.runInNewContext(`${coreCommandsSource}
 globalThis.__contentFingerprintFixture = { dispatchPiBridgeCommand };`, sandbox, { filename: "runtime-fixture-core-commands.js" });
 	const before = await sandbox.__contentFingerprintFixture.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 7 }, {});
 	assert.equal(before.ok, true);
-	sandbox.document.body.appendChild({ getBoundingClientRect: () => ({ width: 48, height: 20, top: 44, left: 10, right: 58, bottom: 64 }) });
+	sandbox.document.body.appendChild({ nodeType: 1, tagName: "DIV", id: "dynamic", parentElement: sandbox.document.body, getBoundingClientRect: () => ({ width: 48, height: 20, top: 44, left: 10, right: 58, bottom: 64 }) });
 	const after = await sandbox.__contentFingerprintFixture.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 7 }, {});
 	assert.equal(after.ok, true);
 	assert(after.data.changeSeq > before.data.changeSeq, "content.fingerprint fallback must report monotonic changeSeq after execute-style DOM mutation");
 	assert(after.data.visibleCount > before.data.visibleCount, "content.fingerprint fallback must expose visibleCount deltas after execute-style DOM mutation");
-	diagnostics.contentFingerprintFallback = { beforeChangeSeq: before.data.changeSeq, afterChangeSeq: after.data.changeSeq, visibleDelta: after.data.visibleCount - before.data.visibleCount };
+	assert.equal(JSON.stringify(after.data.dirty), JSON.stringify({ roots: [], overflow: false, sinceSeq: 1 }), "content.fingerprint fallback must include dirty metadata even when the fixture observer supplies no mutation records");
+	diagnostics.contentFingerprintFallback = { beforeChangeSeq: before.data.changeSeq, afterChangeSeq: after.data.changeSeq, visibleDelta: after.data.visibleCount - before.data.visibleCount, dirty: after.data.dirty };
 }
 
 async function main() {

@@ -27,11 +27,11 @@ On long lists/tables prefer the reading products (`outline`/`gist`) and `causal`
 
 ## Loop
 
-1. `pi-browser connect --wait --json` once for multi-step work → `pi-browser tabs --action list --json` → note the target `tabId`. A `tabId` is **not stable** (changes on navigation/reload) — omit `--tab-id` to act on the active tab, or re-read after navigating; pass it explicitly mainly to disambiguate open tabs. `TAB_NOT_FOUND` returns the live id in `recovery`.
+1. `pi-browser connect --wait --json` once for multi-step work → `pi-browser tabs --action list --json` → note the target `tabHandle` and pass it as `targetRef` / `--target-ref` when disambiguation is needed. Numeric `tabId` remains accepted for compatibility and auto-follows unambiguous in-place replacement; omit target flags to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
 4. Verify: `pi-browser wait ...` / re-observe / network|hook evidence / read artifact.
-5. Report: `tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
+5. Report: `targetRef`/`tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
 Sessions are managed via `tabs` session subcommands, not a per-command flag. Outputs default to a compact, redacted summary; size reads with `--limit`/`--offset`/`--json-path` (`detailLevel`/`maxChars` are internal, not flags).
 
@@ -117,7 +117,7 @@ Bound expansive routes by **explicit scope first** — `--url` / captured reques
 ## Action
 
 - Always set `observe --mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. Selector miss → re-observe `scan`/`html` → `frame` → verified retry. `pi-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle.
-- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block in the result (`mutations`, `settled`, navigation/recorder deltas) before paying for a full re-observe. Input: focus → native setter → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `command --command @file` with `input.pointer`/`input.keys` at the rect center.
+- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block in the result (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true` appears after a script used `pi-ref://`, refresh with `observe --mode scan` before reusing that ref. Input: focus → native setter → dispatch `input`/`change` → read back. If a synthetic `el.click()`/input returns `ok` but nothing changed (trusted-event-gated), escalate via `command --command @file` with `input.pointer`/`input.keys` at the rect center.
 - Don't ask for `--redact false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId selectionVersion sourceMode`.
 
 Click (`act.js` for `--script-file`):
@@ -145,7 +145,8 @@ Click (`act.js` for `--script-file`):
 | No bridge/browser/tab | `connect --wait --json`, then `status --json` / `doctor --json`. `--wait` covers the fresh-bridge dial-in window; the non-waiting form can falsely report `ready:false`. If the extension is genuinely not loaded, that is a human action — surface it, don't retry-loop |
 | `CLI_EXTENSION_NOT_CONNECTED` (exit 3) | daemon/bridge up, extension not connected before timeout — load/enable it, open a tab, re-`connect --wait` |
 | `CLI_BRIDGE_START_FAILED` | bridge failed to start (category `bridge`) — `doctor --json` before waiting on the extension |
-| Stale tab | `tabs --action list`; use live `tabId` |
+| Stale tab | `tabs --action list`; use live `tabHandle` / `--target-ref` |
+| `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `pi-ref://`; the action was not blocked, but the observed region changed |
 | Selector missing | re-observe `scan`/`html`; `frame`; verified retry |
 | Timeout | `wait diagnose --params '{"waitId":"<id>"}'` (selector-specific `selectorDiagnostics`); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |

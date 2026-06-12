@@ -139,7 +139,7 @@ export class BrowserBridgeClientRegistry {
 		if (isOpen(this.extensionClient)) return this.extensionClient;
 		const open = Array.from(this.clients).find(isOpen);
 		if (open) return open;
-		throw noBrowserExtensionError({ port: this.getPort(), everConnected: this.everConnected });
+		throw noBrowserExtensionError({ port: this.getPort(), everConnected: this.everConnected, extensionConnected: false });
 	}
 
 	browserIdForClient(client: WebSocket): string {

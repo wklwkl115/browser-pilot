@@ -1,7 +1,7 @@
 import type { PerceptionLedgerFrame } from "../../abml/perceptionLedger.js";
 import { isRecord } from "../../utils/records.js";
 import type { PageFingerprint } from "../pageSignals.js";
-import type { ObserveMode, ObserveToolParams } from "./scanRunner.js";
+import type { ObserveMode, ObserveToolParams } from "./common.js";
 
 type RenderCache = NonNullable<PerceptionLedgerFrame["renderCache"]>;
 
@@ -27,6 +27,14 @@ function observeCacheTtlMs(): number {
 	if (raw === undefined) return 2_000;
 	const value = Number(raw);
 	return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 2_000;
+}
+
+function standingPerceptionEnabled(): boolean {
+	return process.env.PI_BROWSER_STANDING_PERCEPTION !== "0";
+}
+
+function observeStandingPerceptionCacheMarker(): string {
+	return standingPerceptionEnabled() ? "on" : "off";
 }
 
 function observeRendererCacheMarker(): string {
@@ -77,6 +85,7 @@ export function observeRenderParamsSignature(params: ObserveToolParams, mode: Ob
 		renderer: observeRendererCacheMarker(),
 		costModel: observeCostModelCacheMarker(),
 		sessionDelta: observeSessionDeltaCacheMarker(params),
+		standingPerception: observeStandingPerceptionCacheMarker(),
 		relevance: observeRelevanceCacheMarker(params),
 		relevanceDebug: observeRelevanceDebugCacheMarker(),
 		memory: observeMemoryCacheMarker(),
@@ -97,9 +106,16 @@ function pageFingerprintMatches(a: PageFingerprint, b: PageFingerprint): boolean
 		&& (a.interactiveCount ?? -1) === (b.interactiveCount ?? -1);
 }
 
+function dirtyWindowClean(fingerprint: PageFingerprint): boolean {
+	const dirty = fingerprint.dirty;
+	return !!dirty && dirty.overflow !== true && dirty.roots.length === 0;
+}
+
 export function renderCacheMatches(frame: PerceptionLedgerFrame | undefined, mode: ObserveMode, detailLevel: string, maxChars: number, paramsSignature: string, fingerprint: PageFingerprint | undefined, now = Date.now(), ttlMs = observeCacheTtlMs()): frame is PerceptionLedgerFrame & { renderCache: RenderCache } {
 	if (!frame?.pageFingerprint || !frame.renderCache || !fingerprint) return false;
-	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number" || now - frame.renderCache.renderedAt > ttlMs) return false;
+	if (ttlMs <= 0 || typeof frame.renderCache.renderedAt !== "number") return false;
+	const withinTtl = now - frame.renderCache.renderedAt <= ttlMs;
+	if (!withinTtl && !(standingPerceptionEnabled() && dirtyWindowClean(fingerprint))) return false;
 	return pageFingerprintMatches(frame.pageFingerprint, fingerprint)
 		&& frame.renderCache.mode === mode
 		&& frame.renderCache.detailLevel === detailLevel

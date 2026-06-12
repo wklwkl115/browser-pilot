@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { createCodedError } from "../../../utils/codedError.js";
 import { isRecord } from "../../../utils/records.js";
-import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, type ToolOnUpdate } from "../../toolAdapter.js";
+import { runWebSecurityTool as runWebSecurityToolAdapter, sharedTabScopedToolParams, targetTabId, type ToolOnUpdate } from "../../toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, enumOrEnumArrayParam, enumParam } from "../../toolShared.js";
 import type { EnsureStarted } from "../../toolShared.js";
 import { browserCookiesToProviderResult } from "../../webSecurityCore.js";
@@ -108,7 +108,7 @@ export function stringNumberOrListParam(description: string) {
 
 export function sharedWebSecurityBrowserSessionParams(timeoutDescription: string) {
 	return sharedTabScopedToolParams({
-		tabIdDescription: "Target tab id used when bindBrowserSession injects browser cookies into HTTP requests; otherwise omitted is allowed.",
+		tabIdDescription: "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
 		timeoutDescription,
 	});
 }
@@ -120,7 +120,7 @@ export function sharedWebSecurityResultParams() {
 export function sharedWebSecurityParams() {
 	return {
 		...sharedTabScopedToolParams({
-			tabIdDescription: "Target tab id used when bindBrowserSession injects browser cookies into HTTP requests; otherwise omitted is allowed.",
+			tabIdDescription: "Compatibility target used when bindBrowserSession injects browser cookies into HTTP requests; prefer targetRef/tabHandle when provided.",
 			timeoutDescription: "Per-request timeout in milliseconds",
 		}),
 		allowPrivateTargets: Type.Optional(Type.Boolean({ description: "Allow requests to private, link-local, or cloud-metadata-adjacent targets. Default false; loopback remains allowed for local fixtures and callback listeners." })),
@@ -212,6 +212,7 @@ export function maxTemplatesParam(description: string) {
 export type WebSecuritySharedToolParams = {
 	browserSessionId?: string;
 	tabId?: number | string;
+	targetRef?: string;
 	detailLevel?: string;
 	outputPath?: string;
 	timeoutMs?: number;
@@ -314,7 +315,7 @@ export function resolveBooleanParam(value: unknown, defaultValue: boolean) {
 function createBrowserCookieProvider(ensureStarted: EnsureStarted, params: WebSecuritySharedToolParams, timeoutMs: number): CookieProvider {
 	return async (url: string) => {
 		const server = await ensureStarted();
-		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+		const cookies = await server.sendCommand({ cmd: "cookies", url, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
 		return browserCookiesToProviderResult(cookies.data, url);
 	};
 }

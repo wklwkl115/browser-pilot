@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { BrowserBridgeError } from "../driver/errors.js";
 import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript.js";
 import { summarizePickData } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 import { isRecord } from "../utils/params.js";
@@ -84,9 +84,10 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 				const server = await ensureStarted();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, 120_000);
 				const maxChars = toolMaxChars(params, "browser_pick");
+				const rawTargetRef = targetTabId(params);
 				server.acquireUiLock(params.browserSessionId, "browser_pick");
 				try {
-				if (params.tabId !== undefined && params.focus !== false) await server.switchTab(params.tabId, 5_000, { browserSessionId: params.browserSessionId });
+				if (rawTargetRef !== undefined && params.focus !== false) await server.switchTab(rawTargetRef as string | number, 5_000, { browserSessionId: params.browserSessionId });
 				const pickId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 				const script = buildPickScript({ message, multiple: params.multiple, timeoutMs, pickId });
 				const cdpTimeoutMs = params.focus === false ? timeoutMs + PICK_FOCUS_FALSE_CDP_GRACE_MS : timeoutMs;
@@ -95,7 +96,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 					method: "Runtime.evaluate",
 					params: { expression: script, awaitPromise: true, returnByValue: true, userGesture: true },
 					timeoutMs: cdpTimeoutMs,
-				}, { browserSessionId: params.browserSessionId, tabId: params.tabId as string | number | undefined, timeoutMs: cdpTimeoutMs + 1_000 });
+				}, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as string | number | undefined, timeoutMs: cdpTimeoutMs + 1_000 });
 				let raw: unknown;
 				let timedOut = false;
 				if (params.focus === false) {
@@ -105,7 +106,7 @@ export function registerPickTool({ pi, ensureStarted }: ToolRegistrarContext) {
 						if (raced === PICK_TIMEOUT) {
 							timedOut = true;
 							void rawPromise.catch(() => {});
-							const cleanup = await cleanupPick(server, params.browserSessionId, params.tabId, pickId);
+							const cleanup = await cleanupPick(server, params.browserSessionId, rawTargetRef, pickId);
 							raw = { data: { result: { value: buildTimedOutPickResult(message, timeoutMs, cleanup) } } };
 						} else {
 							deadline.cancel();

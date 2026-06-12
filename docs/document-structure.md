@@ -84,6 +84,23 @@ Do not use for:
 - short runtime routing instructions that belong in the global skill
 - generated callable tool contracts
 
+### `docs/<name>-plan.md` (active workstream plans)
+
+Use for:
+- active multi-step workstreams: optimization plans, architecture changes, major refactors
+- items that have an execution order, a boundary, focused verification gates, and a governance-gate impact table
+
+Do not use for:
+- completed plans (archive them)
+- single-step tasks (record directly in `CURRENT.md`)
+- design notes without an execution sequence
+
+Lifecycle:
+1. **Create** using `docs/templates/workstream-plan-template.md`; place in `docs/` root
+2. **Activate** by adding an entry to `CURRENT.md` (decision, boundary, plan doc path, verification); the plan must exist before implementation starts
+3. **Execute** items in the plan; update item status in place as they complete
+4. **Close** with full `npm run check`; then move the plan to `docs/archive/<name>.full.md` and add a compressed summary to `ARCHIVE.md`
+
 ### `agent-audits/`
 
 Use for:
@@ -104,6 +121,8 @@ Do not use for:
 - Summary archive: `docs/archive/<name>.md`
 - Detailed archive: `docs/archive/<name>.full.md`
 - Summary and full-detail files should exist as pairs for major historical streams.
+- Active plans: `docs/<name>-plan.md`
+- Plan template: `docs/templates/workstream-plan-template.md`
 - Agent audit reports: `agent-audits/runs/YYYY-MM-DD-<scope>.md`
 
 ## Generated vs manual content

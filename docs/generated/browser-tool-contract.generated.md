@@ -178,7 +178,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `INVALID_SESSION` | native | runtime.session | no | schema |  |
 | `INVALID_TAB_ID` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_TAB_URL` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
-| `INVALID_TIMEOUT` | tool | tool.validation | no | schema | `src/tools/observe/scanRunner.ts` |
+| `INVALID_TIMEOUT` | tool | tool.validation | no | schema | `src/tools/observe/common.ts` |
 | `MATURE_BRIDGE_LAUNCHER_NOT_FOUND` | security | tool.security | no | schema |  |
 | `MATURE_BRIDGE_LAUNCHER_OVERRIDE_REQUIRED` | security | tool.security | no | schema |  |
 | `MATURE_BRIDGE_LAUNCHER_PROBE_FAILED` | security | tool.security | no | schema |  |

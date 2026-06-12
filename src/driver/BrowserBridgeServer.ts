@@ -84,6 +84,10 @@ export class BrowserBridgeServer {
 			pendingRequests: this.pendingRequests,
 			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			leases: this.leases,
+			queues: this.queues,
+			migratePerceptionLedger: (fromTabId, toTabId, browserSessionIds) => {
+				this.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds });
+			},
 			logLeaseCleanup: (details) => this.logLeaseCleanup(details),
 			notifyExtensionReady: () => this.notifyExtensionReady(),
 		});
@@ -132,7 +136,9 @@ export class BrowserBridgeServer {
 			extension: this.browserSessions.selectedInfo(browserSession, this.clients),
 			clients: this.clients.connectedClientInfos(),
 			defaultTabId: this.tabs.defaultTabId(options.browserSessionId),
+			defaultTabHandle: this.tabs.defaultTabHandle(options.browserSessionId),
 			latestTabId: this.tabs.latestTabId(options.browserSessionId),
+			latestTabHandle: this.tabs.latestTabHandle(options.browserSessionId),
 			selectionVersion: this.tabs.selectionVersion,
 			tabs: this.getTabs({ includeDisconnected: true }),
 			leases: this.leases.listTabLeases(),
@@ -169,27 +175,27 @@ export class BrowserBridgeServer {
 	}
 
 	attachTabToBrowserSession(tabId: number | string, options: { browserSessionId?: string; browserId?: string } = {}): BrowserTabInfo {
-		const id = this.requireTabId(tabId);
+		const id = this.resolveAttachTargetTabId(tabId, options);
 		const attached = this.tabs.attachTab(id, options.browserSessionId, options.browserId);
-		if (!attached) throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId) });
+		if (!attached) throw tabNotFoundError({ tabId: id, browserSessionId: options.browserSessionId, tabs: this.getTabs(), latestTabId: this.tabs.latestTabId(options.browserSessionId), replacedByTabId: this.tabs.replacedByTabId(id, options.browserSessionId) });
 		return this.tabInfo(attached);
 	}
 
 	detachTabFromBrowserSession(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserAutomationSessionInfo {
-		const id = this.requireTabId(tabId);
+		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
 		this.tabs.detachTab(id, options.browserSessionId);
 		return this.browserSessionInfo(this.browserSession(options.browserSessionId));
 	}
 
 	leaseTab(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserTabLeaseInfo {
-		const id = this.requireTabId(tabId);
+		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
 		const browserSession = this.browserSession(options.browserSessionId);
 		const tab = this.requireLiveTabSession(id, browserSession.id);
 		return this.leases.leaseTab(browserSession.id, tab, true);
 	}
 
 	releaseTab(tabId: number | string, options: { browserSessionId?: string } = {}): BrowserTabLeaseInfo | undefined {
-		const id = this.requireTabId(tabId);
+		const id = this.resolveTargetTabId(tabId, options.browserSessionId);
 		const browserSession = this.browserSession(options.browserSessionId);
 		const tab = this.requireLiveTabSession(id, browserSession.id);
 		return this.leases.releaseTab(browserSession.id, tab);
@@ -272,6 +278,12 @@ export class BrowserBridgeServer {
 
 	async sendCommand(command: import("../protocol/nativeProtocol.js").BridgeCommand, options = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.sendCommand(command, options);
+	}
+
+	resolveTargetTabId(value: unknown, browserSessionId?: string): number {
+		const target = this.tabs.resolveTargetRef(value, browserSessionId, "explicit");
+		if (target?.tabId !== undefined) return target.tabId;
+		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
 	}
 
 	beginOperation(operation: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt"> & { operationId?: string }): BrowserActiveOperationInfo {
@@ -370,7 +382,7 @@ export class BrowserBridgeServer {
 
 	private tabInfo(session: BrowserTabSession): BrowserTabInfo {
 		const { client: _client, ...info } = session;
-		return info;
+		return { ...info, targetRef: info.tabHandle };
 	}
 
 	private startHeartbeat(): void {
@@ -381,10 +393,10 @@ export class BrowserBridgeServer {
 		this.heartbeat.stop();
 	}
 
-	private requireTabId(value: unknown): number {
-		const tabId = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
-		if (!Number.isInteger(tabId) || tabId <= 0) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value });
-		return tabId;
+	private resolveAttachTargetTabId(value: unknown, options: { browserSessionId?: string; browserId?: string }): number {
+		const numeric = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+		if (options.browserId && Number.isInteger(numeric) && numeric > 0) return numeric;
+		return this.resolveTargetTabId(value, options.browserSessionId);
 	}
 
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
@@ -396,6 +408,7 @@ export class BrowserBridgeServer {
 			selectedBrowser: this.browserSessions.selectedInfo(this.browserSession(browserSessionId), this.clients),
 			tabs: this.getTabs(),
 			latestTabId: this.tabs.latestTabId(browserSessionId),
+			replacedByTabId: this.tabs.replacedByTabId(tabId, browserSessionId),
 		});
 	}
 

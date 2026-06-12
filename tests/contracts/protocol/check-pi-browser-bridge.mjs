@@ -230,7 +230,7 @@ assert(!/\bimport\s+|\bimport\s*\(|\bexport\s+|importScripts\s*\(/.test(hookDisp
 assert(!/chrome\./.test(hookDispatcher), "hook dispatcher must stay free of background-only Chrome APIs");
 assert(router.includes("validatePiBridgeProtocolMessage"), "router must validate commands through protocol schema");
 assert(coreCommands.includes("Promise.resolve(bridgeWakeProbe(true)).catch"), "bridge_wake must catch async probe rejection so offscreen startup races do not create unhandled promises");
-assert(coreCommands.includes("chrome.tabs.sendMessage(tabId, { cmd: 'pi.contentFingerprint' })") && coreCommands.includes("chrome.scripting.executeScript") && coreCommands.includes("__piBrowserFingerprintFallbackState__"), "content.fingerprint must try the content-script responder first, then use a persistent executeScript fallback state");
+assert(coreCommands.includes("pi.contentFingerprint") && coreCommands.includes("drainDirty") && coreCommands.includes("chrome.scripting.executeScript") && coreCommands.includes("__piBrowserFingerprintFallbackState__"), "content.fingerprint must try the content-script responder first, then use a persistent executeScript fallback state with dirty metadata");
 assert(transport.includes("PI_BROWSER_BRIDGE_WS_URL") && transport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && !transport.includes("127.0.0.1:18765"), "service-worker transport must retain generated bridge metadata without hardcoding the port");
 assert(offscreenTransport.includes("PI_BROWSER_BRIDGE_WS_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_HTTP_URL") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && !offscreenTransport.includes("127.0.0.1:18765"), "offscreen transport must read generated bridge URLs and port range instead of hardcoding the port");
 assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "service-worker transport must stay focused on offscreen lifecycle and socket adapters");
@@ -1417,7 +1417,7 @@ async function testContentFingerprintFallbackState() {
 			tabs: {
 				async sendMessage(tabId, message) {
 					sendMessageCalls += 1;
-					if (mode === "responder") return { ok: true, data: { changeSeq: 10, url: "https://example.test/content", readyState: "complete", visibleCount: 1, interactiveCount: 1 } };
+					if (mode === "responder") return { ok: true, data: { changeSeq: 10, url: "https://example.test/content", readyState: "complete", visibleCount: 1, interactiveCount: 1, dirty: { roots: ["#responder"], overflow: false, sinceSeq: 9 } } };
 					if (mode === "okFalse") return { ok: false, error: "missing responder" };
 					throw new Error("receiving end does not exist");
 				},
@@ -1425,7 +1425,7 @@ async function testContentFingerprintFallbackState() {
 			scripting: {
 				async executeScript(options) {
 					scriptCalls += 1;
-					return [{ result: options.func() }];
+					return [{ result: options.func(...(options.args || [])) }];
 				},
 			},
 		},
@@ -1434,22 +1434,28 @@ async function testContentFingerprintFallbackState() {
 globalThis.__contentFingerprintTest = { dispatchPiBridgeCommand };`, sandbox, { filename: "core_commands.js" });
 	const responder = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
 	assert(responder.ok === true && responder.data?.changeSeq === 10, "content.fingerprint must prefer the content-script responder when available");
+	assert(JSON.stringify(responder.data?.dirty) === JSON.stringify({ roots: ["#responder"], overflow: false, sinceSeq: 9 }), "content.fingerprint responder must preserve dirty channel metadata");
 	assert(sendMessageCalls === 1 && scriptCalls === 0, "content.fingerprint responder success must not run the fallback script");
 
 	mode = "throw";
 	const fallbackBefore = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
 	assert(fallbackBefore.ok === true && fallbackBefore.data?.changeSeq === 1, "content.fingerprint fallback must return a finite initial changeSeq");
 	assert(observed.length === 1 && observed[0].options?.subtree === true, "content.fingerprint fallback must install a broad MutationObserver once");
-	observerCallback();
+	observerCallback([{ target: { nodeType: 1, tagName: "SECTION", id: "dirty-root", parentElement: null }, addedNodes: [], removedNodes: [] }]);
 	const fallbackAfter = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
 	assert(fallbackAfter.ok === true && fallbackAfter.data?.changeSeq === 2, "content.fingerprint fallback changeSeq must persist and increment across calls");
 	assert(fallbackAfter.data?.visibleCount === 1 && fallbackAfter.data?.interactiveCount === 2, "content.fingerprint fallback must include visible/interactive counts for effect deltas");
+	assert(JSON.stringify(fallbackAfter.data?.dirty) === JSON.stringify({ roots: [], overflow: true, sinceSeq: 1 }), "content.fingerprint fallback must report dirty overflow instead of synthesizing imprecise roots");
 
 	mode = "okFalse";
 	observerCallback();
 	const okFalseFallback = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
 	assert(okFalseFallback.ok === true && okFalseFallback.data?.changeSeq === 3, "content.fingerprint fallback must also cover ok:false responder results");
 	assert(sendMessageCalls === 4 && scriptCalls === 3, "content.fingerprint fallback must run only after responder failure");
+	const drained = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5, drainDirty: true }, {});
+	assert(drained.ok === true && Array.isArray(drained.data?.dirty?.roots), "content.fingerprint drain read must still return dirty metadata before clearing");
+	const afterDrain = await sandbox.__contentFingerprintTest.dispatchPiBridgeCommand({ cmd: "content.fingerprint", tabId: 5 }, {});
+	assert(JSON.stringify(afterDrain.data?.dirty?.roots) === JSON.stringify([]), "content.fingerprint drainDirty must clear fallback dirty roots for the next read");
 }
 
 await testContentFingerprintFallbackState();
@@ -1657,7 +1663,12 @@ async function testExecPostEvalWaitOnlyForLikelyNewTabs() {
 	assert(!timerDelays.includes(50), "plain browser_execute scripts must not pay the new-tab observation wait");
 	await sandbox.handleWsExec({ id: "new-tab", tabId: 7, code: "window.open('about:blank'); 1", timeoutMs: 1_000 }, sandbox.socket);
 	assert(timerDelays.includes(50), "likely tab-opening browser_execute scripts must keep the bounded 50ms observation wait");
-	assert(sent.some((frame) => frame.type === "result" && frame.id === "plain") && sent.some((frame) => frame.type === "result" && frame.id === "new-tab"), "exec post-eval wait test must still complete both command results");
+	const plain = sent.find((frame) => frame.type === "result" && frame.id === "plain");
+	const newTab = sent.find((frame) => frame.type === "result" && frame.id === "new-tab");
+	assert(plain && newTab, "exec post-eval wait test must still complete both command results");
+	assert(plain.diagnostics?.execute?.newTabObservationWaitTriggered === false, "plain execute diagnostics must record that residual new-tab wait did not trigger");
+	assert(newTab.diagnostics?.execute?.newTabObservationWaitTriggered === true, "tab-opening execute diagnostics must record that residual new-tab wait triggered");
+	assert(newTab.diagnostics?.execute?.newTabObservationWaitMs >= 0, "tab-opening execute diagnostics must record residual wait duration");
 }
 
 await testExecPostEvalWaitOnlyForLikelyNewTabs();
@@ -1693,13 +1704,13 @@ assert(usesJsonDistillation(read("src/tools/registerPickTool.ts")), "browser_pic
 assert(usesJsonDistillation(read("src/tools/registerEvidenceTool.ts")), "browser_evidence must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerNativeActionTools.ts")), "browser_network must use result distillation middleware through native action tools");
 assert(read("src/tools/resultMiddleware.ts").includes("./summaries/index"), "result middleware must use split summary modules");
-assert(toolSource.includes("call browser_tabs list/switch to pick a target tab"), "tab-scoped tools must warn agents to list/switch before automation");
-assert(toolSource.includes("A tabId is NOT stable"), "tab-scoped tools must warn that a tabId is not stable across navigation");
-assert(toolSource.includes("omit tabId to use the selected/active tab"), "tabId fallback warning missing from tool prompts");
-assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit tabId guidance");
+assert(toolSource.includes("call browser_tabs list to get a stable tabHandle/targetRef"), "tab-scoped tools must teach stable targetRef discovery before automation");
+assert(toolSource.includes("Omit targetRef/tabId to use the selected active tab"), "target fallback warning missing from tool prompts");
+assert(toolSource.includes("Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains"), "tab-scoped tools must explain numeric tabId compatibility and auto-follow");
+assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit targetRef guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
 const skill = read("skills/pi-browser-tools/SKILL.md");
-assert(skill.includes("tabId") && (skill.includes("browser_tabs list") || skill.includes("browser_tabs {action:\"list\"}")), "pi-browser-tools skill must document explicit tabId automation flow");
+assert(skill.includes("tabHandle") && skill.includes("targetRef") && (skill.includes("browser_tabs list") || skill.includes("browser_tabs {action:\"list\"}")), "pi-browser-tools skill must document explicit tabHandle/targetRef automation flow");
 assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "pi-browser-tools skill must document pick/observe flows");
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
 	assert(!skill.includes(removed), `pi-browser-tools skill must not document removed split action tool: ${removed}`);

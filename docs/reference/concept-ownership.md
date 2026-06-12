@@ -92,7 +92,7 @@ observe scan summary contract.
 <!-- BEGIN GENERATED: concept-fields-hook-dom-flow-summary-schema (npm run docs:sync) -->
 | Field | Required | Type | Schema description | Producer candidates | Hand notes |
 | --- | --- | --- | --- | --- | --- |
-| `HookDomFlowSummarySchema.nodeCount` | no | number | Number of nodes with listeners | `src/tools/summaries/webSecurity/replay.ts` | Number of nodes with listener/sink data in the summarized hook result. |
+| `HookDomFlowSummarySchema.nodeCount` | no | number | Number of nodes with listeners | `src/tools/observe/timings.ts`<br>`src/tools/summaries/webSecurity/replay.ts` | Number of nodes with listener/sink data in the summarized hook result. |
 | `HookDomFlowSummarySchema.listenerCount` | no | number | Total listener count across all nodes | `src/tools/summaries/outputSchemas.ts` (schema only) | Total listener count across returned nodes. |
 | `HookDomFlowSummarySchema.nodes` | no | array<object+> | - | `src/tools/summaries/outputSchemas.ts` (schema only) | Loose node samples; preserve bounded sample semantics. |
 | `HookDomFlowSummarySchema.rows` | no | array<object+> | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | Open-tail row samples for table-style hook commands. |
@@ -156,7 +156,7 @@ observe scan summary contract.
 | `ScanSummarySchema.contentChars` | yes | number | - | `src/tools/summaries/scan.ts` | Top-level content length for quick budget diagnostics. |
 | `ScanSummarySchema.lineCount` | yes | number | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/webSecurity/bridges.ts` | Top-level visible text line count. |
 | `ScanSummarySchema.truncated` | no | unknown | - | `src/tools/summaries/webSecurity/jsAst.ts`<br>`src/tools/summaries/scan.ts`<br>`src/tools/summaries/webSecurity/replay.ts`<br>`src/tools/summaries/common.ts` | Signals capped page text/structure; use artifact_hints for full reads. |
-| `ScanSummarySchema.node_count` | no | unknown | - | `src/tools/summaries/scan.ts` | Approximate scanned DOM node count from page-world extraction. |
+| `ScanSummarySchema.node_count` | no | unknown | - | `src/tools/summaries/scan.ts`<br>`src/tools/observe/timings.ts` | Approximate scanned DOM node count from page-world extraction. |
 | `ScanSummarySchema.iframe_notes` | no | unknown | - | `src/tools/summaries/scan.ts` | Frame visibility/access notes; detailed frame work belongs in browser_frame. |
 | `ScanSummarySchema.top_layer` | no | unknown | - | `src/tools/summaries/scan.ts` | Top-layer/dialog hint from scan extraction. |
 | `ScanSummarySchema.tabs_count` | yes | number | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Bridge tab count mirrored into scan summary for context. |

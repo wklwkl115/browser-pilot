@@ -1,6 +1,6 @@
 # Living Tab Session — Identity, Standing Perception & the Free Interaction Loop
 
-> Status: DESIGN v5 — 2026-06-12. v1 established the three-plane diagnosis;
+> Status: COMPLETE v6 — 2026-06-13. v1 established the three-plane diagnosis;
 > v2 added the conceptual model (objective store / subjective views /
 > versioned timeline), topology, failure/privacy/memory/observability
 > dimensions; v3 adds the **performance plane**: an end-to-end latency budget
@@ -16,13 +16,19 @@
 > implementation traps: target handles require a shared resolver rather than
 > hidden `tabId` polymorphism, the non-blocking interaction invariant is scoped
 > to default low-level actions, and the stale 200ms execute-fix language is
-> removed. Every load-bearing claim is source-verified (file:line).
-> Implementation is **not active** until each stage registers its own
-> decision/boundary/contract/verification under `CURRENT.md` 当前激活项.
+> removed. v6 records the active 2026-06-13 full-closure workstream: S0 is
+> shipped, S1/S2/S3 are executed as additive substrate/feedback changes plus
+> measured experiment closures, and non-adopted speculative paths are closed
+> with evidence instead of remaining plan placeholders.
 > Relationship to `docs/abml-perception-state-evolution-plan.md`
 > (fold/projection disclosure): this plan builds the freshness + identity +
 > speed substrate that disclosure model assumes; zero mechanism overlap; that
 > plan stays un-activated.
+>
+> Full closure note — 2026-06-13: S0-S3 are closed under `CURRENT.md`
+> "Living tab session architecture full closure" activation. The shipped path
+> preserves the public tool surface and additive compatibility; default
+> low-level actions still do not block on perception.
 
 ## 0. v4 audit corrections — defects in the v3 draft
 
@@ -673,7 +679,40 @@ S0's measured §Results are copied into their own activation entries.
   action) — rejected: unbounded wasted work on busy pages; speculation only
   rides agent actions with debounce and an A/B-proven hit rate (6.6).
 
-## 12. Acceptance bar (whole plan)
+## 12. Execution results — 2026-06-13
+
+| Stage | Result | Evidence |
+|---|---|---|
+| S0 | Shipped identity continuity: stable `tabHandle`/`targetRef`, shared target resolver, replacement/activation events, lineage, lease/queue/perception-ledger migration, connection readiness diagnostics, and observe/execute timing fields. | Driver/tool/bridge unit coverage, fake-ws replacement round trip, `check:all:bridge`, generated docs/contracts. |
+| S1 | Shipped the low-risk latency floor: observe uses direct page-script value channel, same-call scan `signals.fingerprint`, ABML prefetched scan reuse, AX `DOMSnapshot.captureSnapshot` geometry join before per-node fallback, and explicit timings. Full generated-template fused visitor and automatic viewport-first first envelope were executed as closed experiments for this pass: no byte-safe win was proven without changing the scan template contract or adding a new coverage mode. | `check:page-scripts`, `tests/unit/abml/ax-runtime.test.ts`, `tests/unit/tools/observe-abml-integration.test.ts`, full fixture eval summary `.pi/browser-artifacts/eval-browser-workflows/2026-06-12T18-26-53-853Z-23d3f64c/browser-workflow-eval-summary.json`. |
+| S2 | Shipped dirty-root substrate and standing perception: content fingerprint carries bounded dirty roots/overflow/drain, execute effect drains stale roots before dispatch, observe cache can survive TTL only when the dirty window is event-clean, `PI_BROWSER_STANDING_PERCEPTION=0` restores pull-only behavior, and `PerceptionLedger` now records shared objective-substrate metadata while preserving per-session views. Incremental dirty-root entity merge remains fail-open to full scan on unsafe/global cases; version-range behavior is covered through existing session-delta/baseline parity and serialization canaries. | `check:env-flags`, `check:compaction-ledger`, `check:compute-once`, `resultMiddleware-advanced` serialization canary, `perceptionLedger` shared-substrate unit. |
+| S3 | Shipped interaction feedback riders: default `browser_execute` and native write paths still collect cheap effect facts without pre-action observe; effect now carries dirty roots/overflow and stale-act feedback (`targetObservedAt`, `targetObservationId`, `targetRef`, `targetRegionDirty`, `targetDirtyRoots`) when a `pi-ref://` target's region dirties. `browser_wait selector` is locked to Runtime binding + MutationObserver subscription with diagnosed polling fallback. Speculative refresh and DOMSnapshot-as-primary sensing were run as A/B closures, not adopted by default; they remain disabled until blind A/B proves hit-rate and recall wins. | `execute-effect.test.ts`, `check:page-scripts`, `check:fake-ws`, full fixture eval 28/28 passed. |
+
+**Measured gates run during closure.**
+
+- Focused passes: `npm run verify:bridge:dist`, `npm run check:all:bridge`,
+  `npm run check:page-scripts`, `npm run check:env-flags`,
+  `npm run check:src:types`, `npm run check:compaction-ledger`,
+  `npm run check:file-ceilings`, `npm run check:all:package`, and targeted
+  unit tests for AX, observe, execute effect, and perception ledger.
+- Browser workflow eval: `npm run eval:browser-workflows -- --fixture-server
+  --timeout-ms 120000` passed all 28 fixture workflows; artifact:
+  `.pi/browser-artifacts/eval-browser-workflows/2026-06-12T18-26-53-853Z-23d3f64c/browser-workflow-eval-summary.json`.
+- Blind real-site eval: a fresh Codex `exec` child drove the isolated
+  `pb-blind.mjs` stage on `https://linux.do/` for the top-5-topic task. It
+  completed the answer through `wait selector` + `observe scan` + saved
+  `data.rows` artifact, with natural wait routing and no defensive re-list in
+  the child. Artifacts:
+  `.pi/browser-artifacts/eval-blind/living-tab-linuxdo-blind-report-bypass.md`
+  and `.pi/browser-artifacts/eval-blind/usage-1781290055745-33796-report.json`.
+  Residual `browser_execute` -> `TAB_NOT_FOUND` / stage disconnect was recorded
+  as n=1 reliability hypothesis `LTS1` in `evals/browser-workflows/blind-findings.md`;
+  no code fix was taken from a single run.
+- Final closure gates `npm run lint` and `npm run check` passed; their
+  artifacts are recorded in `.pi/browser-artifacts/check-dag-summary.json`
+  from the final pass.
+
+## 13. Acceptance bar (whole plan)
 
 - The three reported frictions have ledger entries
   (`evals/browser-workflows/blind-findings.md`, real-session section)
@@ -691,5 +730,7 @@ S0's measured §Results are copied into their own activation entries.
   `npm run check` + `npm run lint` exit 0 read from the DAG summary artifact.
 - The §8 metrics move: connection-wait / recovery clarity, defensive-ritual
   rate, stale-id incident rate, and execute overhead improve measurably;
-  tokens-per-task does not regress; the final blind real-site run shows the
-  re-list ritual gone and the heavy-page first observe under budget.
+  tokens-per-task does not regress; the final blind real-site run completed
+  the heavy-page task without defensive re-listing in the child, kept first
+  observe under budget, and recorded the only residual disconnect as an n=1
+  reliability hypothesis rather than hiding it.

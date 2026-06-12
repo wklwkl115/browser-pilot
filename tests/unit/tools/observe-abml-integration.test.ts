@@ -61,6 +61,12 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(typeof result.details?.abml?.primaryEntityCount, "number");
 	assert.equal(typeof result.details?.abml?.visualRegionCount, "number");
 	assert.equal(typeof result.details?.abml?.frameEntityCount, "number");
+	const timings = (result.details?.diagnostics as Record<string, any> | undefined)?.observeTimings;
+	assert.equal(typeof timings?.pageScriptMs, "number");
+	assert.equal(typeof timings?.abmlMs, "number");
+	assert.equal(timings?.nodeCount, 12);
+	assert.equal(timings?.axNodeCount, 1);
+	assert.equal(envelope.diagnostics?.observeTimings, undefined);
 	assert.equal(Array.isArray(envelope.summary?.focus?.primary_entities), true);
 	assert.equal(envelope.summary?.focus?.primary_entities?.length >= 1, true);
 	assert.equal(envelope.summary?.focus?.entityShape, "refs-v1");
@@ -282,6 +288,36 @@ test("browser_observe change gate reuses cached scan when content fingerprint is
 	} finally {
 		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
 		else process.env.PI_BROWSER_SESSION_DELTA = previous;
+	}
+});
+
+test("browser_observe standing perception reuses clean dirty-window cache beyond the TTL", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-standing-gate-"));
+	const harness = changeGateHarness(() => ({ changeSeq: 1, url: "https://example.test/checkout", title: "Checkout", readyState: "complete", visibleCount: 5, interactiveCount: 1, capturedAt: 123, dirty: { roots: [], overflow: false, sinceSeq: 1 } }));
+	const previousDelta = process.env.PI_BROWSER_SESSION_DELTA;
+	const previousTtl = process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+	const previousStanding = process.env.PI_BROWSER_STANDING_PERCEPTION;
+	try {
+		delete process.env.PI_BROWSER_SESSION_DELTA;
+		process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = "1";
+		delete process.env.PI_BROWSER_STANDING_PERCEPTION;
+		await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan");
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		const standing = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(standing.summary?.fromCache, true, "clean dirty window is an event-bounded cache proof beyond the wall-clock TTL");
+		assert.equal(harness.scanEvals, 1, "standing cache hit avoids the second Runtime.evaluate scan");
+		process.env.PI_BROWSER_STANDING_PERCEPTION = "0";
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		const disabled = JSON.parse((await runScanObservation(harness.server as any, { mode: "scan", tabId: 7, maxChars: 12_000, detailLevel: "summary" }, { cwd }, "scan")).content[0].text);
+		assert.equal(disabled.summary?.fromCache, undefined, "PI_BROWSER_STANDING_PERCEPTION=0 restores TTL-only cache behavior");
+		assert.equal(harness.scanEvals, 2, "standing kill switch forces a fresh scan after TTL expiry");
+	} finally {
+		if (previousDelta === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
+		else process.env.PI_BROWSER_SESSION_DELTA = previousDelta;
+		if (previousTtl === undefined) delete process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS;
+		else process.env.PI_BROWSER_OBSERVE_CACHE_TTL_MS = previousTtl;
+		if (previousStanding === undefined) delete process.env.PI_BROWSER_STANDING_PERCEPTION;
+		else process.env.PI_BROWSER_STANDING_PERCEPTION = previousStanding;
 	}
 });
 

@@ -5,7 +5,7 @@ import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type Re
 import { extractScalarTerm, extractUrlTerms } from "../../distill-core/relevanceTaps.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { isRecord } from "../../utils/params.js";
-import type { ObserveToolParams } from "./scanRunner.js";
+import type { ObserveToolParams } from "./common.js";
 
 export function relevanceEnabled(params: ObserveToolParams): boolean {
 	return process.env.PI_BROWSER_RELEVANCE !== "0" && String(params.detailLevel || "summary") !== "full";

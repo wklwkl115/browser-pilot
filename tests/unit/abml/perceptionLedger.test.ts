@@ -23,6 +23,48 @@ test("PerceptionLedger stores allocation stats and returns recent frames by sess
 	assert.deepEqual(recent.map((item) => item.allocation?.omittedCount), [3, 2, 1]);
 });
 
+test("PerceptionLedger shares objective substrate across browser sessions while keeping session views", () => {
+	const ledger = new PerceptionLedger();
+	const facts = { pay: { versionStamp: "v1", lastShownGranularity: "compact" as const } };
+	const first = ledger.record({ ...frame(1), snapshotId: "snap-a", facts, pageFingerprint: { changeSeq: 4, url: "https://example.test/1" } });
+	const second = ledger.record({ ...frame(1), key: { ...frame(1).key, browserSessionId: "other" }, snapshotId: "snap-b", facts, pageFingerprint: { changeSeq: 4, url: "https://example.test/1" } });
+
+	assert.equal(ledger.objectiveFrameCount(), 1, "same tab/url/facts across two sessions must share one objective substrate");
+	assert.equal(first.objective?.shared, false);
+	assert.equal(second.objective?.shared, true);
+	assert.equal(second.objective?.snapshotId, "snap-a", "second session view references the existing objective snapshot");
+	assert.equal(ledger.get(frame(1).key)?.snapshotId, "snap-a", "first session frame remains addressable");
+	assert.equal(ledger.get({ ...frame(1).key, browserSessionId: "other" })?.snapshotId, "snap-b", "second session view remains separate");
+});
+
+test("PerceptionLedger migrates frames across tab replacement", () => {
+	const ledger = new PerceptionLedger();
+	const first = { ...frame(1), facts: { a: { versionStamp: "v1", lastShownGranularity: "compact" as const } } };
+	const second = { ...frame(2), facts: { b: { versionStamp: "v2", lastShownGranularity: "line" as const } }, allocation: { budgetUsedRatio: 0.5, omittedCount: 2 } };
+	ledger.record(first);
+	ledger.record(second);
+
+	assert.equal(ledger.migrateTabId(1, 4), 2);
+	assert.equal(ledger.get(first.key), undefined);
+	assert.equal(ledger.get({ ...first.key, tabId: 4 })?.snapshotId, "snap-1");
+	assert.equal(ledger.get({ ...second.key, tabId: 4 })?.allocation?.omittedCount, 2);
+	assert.deepEqual(ledger.recent({ browserSessionId: "s", tabId: 4, navigationEpoch: "ignored" }, 2).map((item) => item.snapshotId), ["snap-2", "snap-1"]);
+});
+
+test("PerceptionLedger scopes tab replacement migration by browser session", () => {
+	const ledger = new PerceptionLedger();
+	const source = { ...frame(1), snapshotId: "source" };
+	const other = { ...frame(2), key: { ...frame(2).key, browserSessionId: "other" }, snapshotId: "other" };
+	ledger.record(source);
+	ledger.record(other);
+
+	assert.equal(ledger.migrateTabId(1, 4, { browserSessionIds: ["s"] }), 1);
+	assert.equal(ledger.get(source.key), undefined);
+	assert.equal(ledger.get({ ...source.key, tabId: 4 })?.snapshotId, "source");
+	assert.equal(ledger.get(other.key)?.snapshotId, "other");
+	assert.equal(ledger.get({ ...other.key, tabId: 4 }), undefined);
+});
+
 test("stableRefsFromFrames ignores relation-only changes", () => {
 	const entity = {
 		ref: "pi-ref://control/pay",

@@ -65,16 +65,16 @@ export class BrowserBridgePendingRequests {
 		}
 	}
 
-	resolve(id: string, result: unknown, newTabs: unknown[]): void {
+	resolve(id: string, result: unknown, newTabs: unknown[], diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
-		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target) });
+		pending.resolve({ id, tabId: pending.tabId, acknowledged: pending.acked, data: result, newTabs, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) });
 	}
 
-	rejectBrowserError(id: string, error: unknown, result: unknown): void {
+	rejectBrowserError(id: string, error: unknown, result: unknown, diagnostics?: Record<string, unknown>): void {
 		const pending = this.take(id);
 		if (!pending) return;
-		pending.reject(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target) }));
+		pending.reject(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", normalizeErrorMessage(error), { id, tabId: pending.tabId, error, result, target: this.resolvedTarget(pending.target), ...(diagnostics ? { diagnostics } : {}) }));
 	}
 
 	rejectForClient(ws: WebSocket): void {

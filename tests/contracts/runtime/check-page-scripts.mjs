@@ -341,6 +341,8 @@ assert.equal(scanBehavior.text_only, true, "scan behavior: textOnly result must 
 assert(scanBehavior.content.includes("Keep body text"), "scan behavior: visible text must be collected");
 assert(!scanBehavior.content.includes("Noise text"), "scan behavior: known extension noise must be ignored");
 assert(scanBehavior.node_count > 0, "scan behavior: textOnly traversal must count visited elements");
+assert.equal(scanBehavior.signals?.fingerprint?.url, "http://example.test/page", "scan behavior: return value must carry same-call fingerprint signals");
+assert(Number.isFinite(scanBehavior.signals?.fingerprint?.changeSeq), "scan behavior: fingerprint signal must expose a finite changeSeq");
 const textOnlyNoIframeDoc = new MockDocument([mockEl("input", { name: "q", placeholder: "Search", value: "pi" })]);
 const textOnlyNoIframeScan = await runPageScript(buildScanScript({ textOnly: true, includeIframes: false, maxChars: 4_000, maxNodes: 20 }), textOnlyNoIframeDoc);
 assert(textOnlyNoIframeScan.content.includes("[input name=q"), "scan behavior: textOnly must include main-document control summaries when iframe traversal is disabled");
@@ -465,6 +467,8 @@ const waitNavigation = readServiceWorkerSource("wait_navigation");
 assert(waitSelector.includes("textWithoutNoise") && waitSelector.includes("sanitizedOuterHtml") && waitSelector.includes("read-frog-translated"), "page-scripts wait.selector: element snapshots must filter translation plugin noise");
 assert(waitSelector.includes("const visible = rectVisible") && waitSelector.includes("hitTarget") && waitSelector.includes("IntersectionObserver can lag"), "page-scripts wait.selector: visible must be CSS/rect based with IO kept as diagnostics");
 assert(!waitSelector.includes("text:(el.innerText||el.textContent||'').slice"), "page-scripts wait.selector: must not return raw innerText snapshots");
+assert(waitSelector.includes("Runtime.addBinding") && waitSelector.includes("Runtime.bindingCalled") && waitSelector.includes("new MutationObserver") && waitSelector.includes("runtime_binding_observer_installed"), "page-scripts wait.selector: selector waits must subscribe to page mutation events before falling back to polling");
+assert(waitSelector.includes("warning:'runtime_binding_observer_unavailable_poll_fallback_active'") && waitSelector.includes("setTimeout(tickFromPollTimer, pollMs)"), "page-scripts wait.selector: polling must remain an explicit diagnosed fallback");
 assert(waitNavigation.includes("chrome.webNavigation.onCommitted") && waitNavigation.includes("chrome.tabs.onUpdated.addListener(onTabsUpdated)") && waitNavigation.includes("Page.frameNavigated") && waitNavigation.includes("Page.navigatedWithinDocument"), "wait.navigation must register webNavigation/tabs/CDP success listeners instead of timeout-only waiting");
 assert(waitNavigation.includes("if (!value) return !targetUrl && !urlContains") && !waitNavigation.includes("target.startsWith(value)"), "wait.navigation must not match targetUrl against an empty or partial current URL before navigation starts");
 assert(/const\s+checkCurrent\s*=\s*async\s*\(\s*source(?:\s*:\s*string)?\s*\)/.test(waitNavigation) && waitNavigation.includes("wait.navigation.currentUrl") && waitNavigation.includes("setInterval(() => { void checkCurrent('poll'); }"), "wait.navigation must poll current URL/readyState as a deterministic fallback for missed navigation events");

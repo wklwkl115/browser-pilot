@@ -30,9 +30,21 @@ When a fragile source-text pin is intentionally kept, put the breadcrumb at the 
 
 The core ledgers are `tests/contracts/drift/kernel-export-inventory.json`, `tests/contracts/drift/input-surface-budget.json`, `tests/contracts/drift/kernel-test-map.json`, `tests/contracts/drift/file-ceilings.json`, and `docs/compaction-ledger.json`; token economy also has an explicit `--update` flow. Use each gate's `--propose` mode when available, but commit baseline growth only with an in-diff justification.
 
+## Workstream Plans
+
+For multi-step workstreams (optimization, architecture, major refactor), create a plan doc before writing code:
+
+1. Copy `docs/templates/workstream-plan-template.md` to a named plan file under the docs directory, using the suffix `-plan.md`.
+2. Fill in the status header, execution order, per-item Problem/Design/Verification, and governance-gate impact.
+3. Add an activation entry to `CURRENT.md` (decision, boundary, path to the plan doc, focused verification gates).
+
+The plan is the single source of truth for the workstream's scope. Single-step tasks skip the plan file and record directly in `CURRENT.md`.
+
 ## Closing A Workstream
 
 Record the activation entry before implementation: decision, boundary, contract, verification, and when useful a `Scope:` line. Closing requires full `npm run check`, reading the DAG summary artifact, and explaining any non-empty `scope.outOfScope` in the completion record.
+
+For workstreams that used a plan doc: after `npm run check` exits 0, move the plan to the docs archive with a `.full.md` suffix and add a compressed summary to `ARCHIVE.md`. Remove the activation entry from `CURRENT.md`.
 
 When touching generated doc indexes, generated contract docs, or managed blocks, run `npm run docs:sync`. When touching `skills/pi-browser-tools/SKILL.md`, validate it with `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools`.
 

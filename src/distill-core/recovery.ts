@@ -64,13 +64,15 @@ type ExecutionEffectRecoveryLike = {
 	targetDelta?: unknown;
 	requestsFired?: number;
 	hookEventsFired?: number;
+	targetRegionDirty?: boolean;
 };
 
 export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLike | undefined): string[] | undefined {
 	if (!effect) return undefined;
 	const actions = uniqueRecoveryActions([
-		effect.navigated || effect.targetDelta ? "tab identity may have changed; list/switch tabs before the next tab-scoped call if targeting is ambiguous" : undefined,
+		effect.navigated || effect.targetDelta ? "tab identity may have changed; list tabs and use targetRef/tabHandle before the next tab-scoped call if targeting is ambiguous" : undefined,
 		(effect.requestsFired ?? 0) > 0 || (effect.hookEventsFired ?? 0) > 0 ? "effect anchor is available for browser_observe baseline/causal follow-up" : undefined,
+		effect.targetRegionDirty === true ? "target ref region changed after the action; refresh with browser_observe mode=scan before reusing the same pi-ref" : undefined,
 	]);
 	return actions.length ? actions : undefined;
 }
@@ -144,7 +146,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		...websocketRecoveryActions(code),
 		...memoryRecoveryActions(code, details),
 		["NO_TAB", "TAB_NOT_FOUND", "INVALID_TAB_ID", "TAB_ID_REQUIRED", "BROWSER_NOT_FOUND"].includes(code) ? "browser_tabs action=list" : undefined,
-		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with explicit tabId" : undefined,
+		code === "AMBIGUOUS_TAB_ID" ? "browser_tabs action=selectBrowser then retry with explicit targetRef/tabHandle" : undefined,
 		["SELECTOR_NOT_FOUND", "INVALID_SELECTOR", "ELEMENT_NOT_FOUND"].includes(code) ? "browser_observe mode=scan|html" : undefined,
 		selector ? `verify selector=${selector} against the current DOM` : undefined,
 		["BODY_UNAVAILABLE", "REQUEST_NOT_FOUND", "NETWORK_RECORDER_NOT_STARTED"].includes(code) ? "browser_network action=list|body with a fresh recorder session" : undefined,
@@ -155,7 +157,7 @@ export function recoveryForNormalized(code: string, details: Record<string, unkn
 		query && (code.startsWith("ARTIFACT_SEARCH_") || code === "ARTIFACT_QUERY_REQUIRES_SEARCH_MODE") ? `retry browser_artifact search with query=${query}` : undefined,
 		["UPLOAD_CONFIRMATION_REQUIRED", "UPLOAD_REQUIRES_BROWSER_UPLOAD"].includes(code) ? "use browser_upload confirm:true with explicit absolute file paths" : undefined,
 		code === "DOWNLOAD_TARGET_REQUIRED" ? "use browser_download with explicit selector or url" : undefined,
-		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT", "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT", "MATURE_BRIDGE_PROCESS_TIMEOUT"].includes(code) ? "retry with explicit timeoutMs and tabId/browserSessionId" : undefined,
+		["INVALID_TIMEOUT", "TIMEOUT", "BRIDGE_TIMEOUT", "NAVIGATION_TIMEOUT", "NETWORK_IDLE_TIMEOUT", "SELECTOR_TIMEOUT", "MATURE_BRIDGE_LAUNCHER_PROBE_TIMEOUT", "MATURE_BRIDGE_PROCESS_TIMEOUT"].includes(code) ? "retry with explicit timeoutMs and targetRef/browserSessionId" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=snapshot" : undefined,
 		["TAB_LEASE_CONFLICT", "UI_LOCK_CONFLICT"].includes(code) ? "browser_tabs action=list to target an unleased tab, or retry after the lease's remainingMs elapses" : undefined,
 		code === "INVALID_BROWSER_COMMAND" ? "use browser_command with a validated command object" : undefined,

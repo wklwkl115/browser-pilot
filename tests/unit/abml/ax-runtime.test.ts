@@ -43,6 +43,44 @@ test("abml ax runtime reads AX tree and box model through persistent CDP", async
 	assert.equal(server.calls.filter((call) => call.cdpMethod === "DOM.getBoxModel").length, 2);
 });
 
+test("abml ax runtime joins DOMSnapshot bounds before falling back to per-node box models", async () => {
+	const calls: Array<Record<string, unknown>> = [];
+	const server = {
+		async sendCommand(command: Record<string, any>) {
+			calls.push(command);
+			if (command.cdpMethod === "Accessibility.getFullAXTree") {
+				return {
+					id: "ax-tree",
+					acknowledged: true,
+					tabId: 7,
+					data: { result: { nodes: [{ nodeId: "ax-1", backendDOMNodeId: 81, role: { value: "button" }, name: { value: "Pay now" } }] } },
+				};
+			}
+			if (command.cdpMethod === "DOMSnapshot.captureSnapshot") {
+				return {
+					id: "snapshot",
+					acknowledged: true,
+					tabId: 7,
+					data: {
+						result: {
+							documents: [{
+								nodes: { backendNodeId: [80, 81] },
+								layout: { nodeIndex: [1], bounds: [[100, 180, 80, 32]] },
+							}],
+						},
+					},
+				};
+			}
+			if (command.cdpMethod === "DOM.getBoxModel") throw new Error("DOM.getBoxModel should not be called when snapshot geometry covers the AX node");
+			throw new Error(`unexpected command ${JSON.stringify(command)}`);
+		},
+	};
+	const { entities, diagnostics } = await readAxEntities(server as any, { tabId: 7, observationId: "snap-1", url: "https://example.test/canvas", timeoutMs: 5_000 });
+	assert.deepEqual(entities[0]?.entity.geometry?.point, { x: 140, y: 196 });
+	assert.equal(diagnostics?.snapshotGeometryCount, 1);
+	assert.equal(calls.filter((call) => call.cdpMethod === "DOM.getBoxModel").length, 0);
+});
+
 function makeAxTreeServer(nodes: Array<Record<string, unknown>>) {
 	return {
 		async sendCommand(command: Record<string, unknown>) {

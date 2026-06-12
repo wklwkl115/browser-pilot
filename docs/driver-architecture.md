@@ -12,7 +12,7 @@
 | `BrowserBridgeHttpServer.ts` | transport ingress | HTTP/WS server、端口绑定、upgrade 接入 |
 | `BrowserBridgeClientRegistry.ts` | browser client registry | 已连接扩展 client、selected extension client、ping/pong/stale 观测 |
 | `BrowserSessionRegistry.ts` | logical browser session | selected browser session、default session、browser session 生命周期 |
-| `BrowserTabSessionRouter.ts` | tab routing | tab session、implicit target、default/latest、browser-scoped duplicate tab 解析 |
+| `BrowserTabSessionRouter.ts` | tab routing | tab session、stable `tabHandle`/`targetRef`、replacement follow、activation-driven implicit target、browser-scoped duplicate tab 解析 |
 | `BrowserLeaseRegistry.ts` | write ownership | tab lease、UI lock、TTL/disconnect cleanup |
 | `BrowserCommandQueueRegistry.ts` | write serialization | `(browserSessionId, tabId)` 维度串行队列 |
 | `BrowserBridgePendingRequests.ts` | in-flight request tracking | ACK/timeout/disconnect cleanup、bridge request lifecycle |
@@ -27,7 +27,7 @@
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `BrowserBridgeServer` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `BrowserBridgeCommandService` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - |
-| `BrowserBridgeClientMessageService` | ✓ | ✓ | ✓ | ✓ | - | ✓ | ✓ | - | - |
+| `BrowserBridgeClientMessageService` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - |
 | `BrowserBridgeClientHeartbeat` | ✓ | - | - | ✓ | - | - | - | - | - |
 
 ## 三套状态机
@@ -36,9 +36,9 @@
 
 | 状态 | 持有者 | 说明 |
 |---|---|---|
-| 选择态 | `BrowserTabSessionRouter` | default/latest/selected browser 下的 implicit target |
+| 选择态 | `BrowserTabSessionRouter` | default/latest/selected browser 下的 implicit target；手动 activation 事件会更新 |
 | 租约态 | `BrowserLeaseRegistry` | explicit lease、auto lease、UI lock、TTL/disconnect cleanup |
-| 队列态 | `BrowserCommandQueueRegistry` | write 命令按 `(browserSessionId, tabId)` 串行化 |
+| 队列态 | `BrowserCommandQueueRegistry` | write 命令按 `(browserSessionId, tabId)` 串行化；tab replacement 时旧队列 alias 到新 physical tab |
 
 ### 合法组合
 
@@ -46,7 +46,7 @@
 |---|---|---|---|
 | read + explicit tab | 只用于 target metadata | 可无 lease；若本 session 已持有 lease 会 touch | 不入队 |
 | read + implicit target | 以 dispatch 时捕获的 target/source/selectionVersion 为准 | 可无 lease | 不入队 |
-| write + explicit tab | 必须解析到单一 live tab | 必须不存在 foreign-session lease；执行时使用 auto lease 或已有 explicit lease | 必须入队 |
+| write + explicit target | `targetRef`/`tabHandle` 或兼容 numeric `tabId` 必须经同一 resolver 解析到单一 live tab；numeric id 只在无歧义 replacement chain 内 auto-follow | 必须不存在 foreign-session lease；执行时使用 auto lease 或已有 explicit lease；replacement 后可迁移到新 tab session | 必须入队；replacement 中的旧队列 alias 到新 tab |
 | write + implicit target | dispatch 时固定 implicit target；后续切 tab 不回写当前请求 | 与上同 | 必须入队 |
 | `browser_tabs switch` / `pick` / `upload` 等 UI 改动 | 会变更选择态 | 受 UI lock 保护 | 视命令类型决定 |
 
@@ -55,9 +55,10 @@
 `BrowserBridgeCommandService.sendPayload()` 是三者交汇点，write 分支在入队前和 queued closure 内都执行复合断言：
 
 1. 目标 tab 已解析为当前 browser session 下的 live tab
-2. 若 tab 已有 lease，则 lease owner 必须等于当前 `browserSessionId`
-3. target diagnostics 中的 `browserSessionId` 不能与 dispatch browser session 冲突
-4. queued closure 真正 dispatch 前再次复核，避免“入队时正确、执行时状态已漂移”
+2. `targetRef`/`tabHandle` 与 numeric `tabId` 兼容路径共用 resolver，replacement 诊断写入 `target.replacedFrom/replacedByTabId`
+3. 若 tab 已有 lease，则 lease owner 必须等于当前 `browserSessionId`
+4. target diagnostics 中的 `browserSessionId` 不能与 dispatch browser session 冲突
+5. queued closure 真正 dispatch 前再次复核，避免“入队时正确、执行时状态已漂移”
 
 断言失败优先返回既有 `TAB_LEASE_CONFLICT` 并附 `invariant` / `target` / `lease` 诊断。
 

@@ -187,6 +187,12 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   const onCreated = (tab: PiChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };
   chrome.tabs.onCreated.addListener(onCreated);
   try {
+    const execStartedAt = Date.now();
+    const execDiagnostics: JsonRecord = {
+      mayOpenNewTab: mayOpenNewTab(data.code),
+      newTabObservationWaitTriggered: false,
+      newTabObservationWaitMs: 0,
+    };
     let res: unknown;
     // The caller-supplied timeout is the TOTAL budget for this exec (it is also the outer client
     // pending-request timeout). chrome.scripting.executeScript (MAIN world) is the fast primary path,
@@ -256,7 +262,12 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         res = { ok: false, error: { name: 'Error', message: 'CDP fallback failed: ' + (cdpErr instanceof Error ? cdpErr.message : String(cdpErr)) } };
       }
     }
-    if (newTabIds.size === 0 && mayOpenNewTab(data.code)) await new Promise(r => setTimeout(r, NEW_TAB_OBSERVE_WAIT_MS));
+    if (newTabIds.size === 0 && execDiagnostics.mayOpenNewTab) {
+      const waitStartedAt = Date.now();
+      await new Promise(r => setTimeout(r, NEW_TAB_OBSERVE_WAIT_MS));
+      execDiagnostics.newTabObservationWaitTriggered = true;
+      execDiagnostics.newTabObservationWaitMs = Date.now() - waitStartedAt;
+    }
     chrome.tabs.onCreated.removeListener(onCreated);
     const newTabs: JsonRecord[] = [];
     for (const id of newTabIds) {
@@ -267,11 +278,12 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         /* best-effort new tab metadata read */
       }
     }
+    execDiagnostics.totalMs = Date.now() - execStartedAt;
     const finalRes = res && typeof res === 'object' ? res as JsonRecord : {};
     if (finalRes.ok) {
-      socket.send(JSON.stringify({ type: 'result', id: data.id, result: finalRes.data, newTabs }));
+      socket.send(JSON.stringify({ type: 'result', id: data.id, result: finalRes.data, newTabs, diagnostics: { execute: execDiagnostics } }));
     } else {
-      socket.send(JSON.stringify({ type: 'error', id: data.id, error: finalRes.error || 'Unknown error', newTabs }));
+      socket.send(JSON.stringify({ type: 'error', id: data.id, error: finalRes.error || 'Unknown error', newTabs, diagnostics: { execute: execDiagnostics } }));
     }
   } catch (e) {
     socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));

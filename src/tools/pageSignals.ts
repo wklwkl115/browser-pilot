@@ -9,6 +9,11 @@ export type PageFingerprint = {
 	visibleCount?: number;
 	interactiveCount?: number;
 	capturedAt?: number;
+	dirty?: {
+		roots: string[];
+		overflow: boolean;
+		sinceSeq?: number;
+	};
 };
 
 export type RecorderSeq = {
@@ -20,7 +25,28 @@ export type PageSignalOptions = {
 	browserSessionId?: string;
 	tabId?: number;
 	timeoutMs: number;
+	drainDirty?: boolean;
 };
+
+function normalizeDirtyFingerprint(value: unknown): PageFingerprint["dirty"] | undefined {
+	const record = isRecord(value) ? value : {};
+	const roots: string[] = [];
+	if (Array.isArray(record.roots)) {
+		for (const item of record.roots) {
+			if (typeof item !== "string" || item.trim().length === 0) continue;
+			roots.push(item);
+			if (roots.length >= 32) break;
+		}
+	}
+	const overflow = record.overflow === true;
+	const sinceSeq = Number(record.sinceSeq);
+	if (!roots.length && !overflow && !Number.isFinite(sinceSeq)) return undefined;
+	return {
+		roots,
+		overflow,
+		...(Number.isFinite(sinceSeq) ? { sinceSeq } : {}),
+	};
+}
 
 export function normalizePageFingerprint(value: unknown): PageFingerprint | undefined {
 	const record = isRecord(value) ? value : {};
@@ -34,13 +60,14 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 		...(typeof record.visibleCount === "number" ? { visibleCount: record.visibleCount } : {}),
 		...(typeof record.interactiveCount === "number" ? { interactiveCount: record.interactiveCount } : {}),
 		...(typeof record.capturedAt === "number" ? { capturedAt: record.capturedAt } : {}),
+		...(normalizeDirtyFingerprint(record.dirty) ? { dirty: normalizeDirtyFingerprint(record.dirty) } : {}),
 	};
 }
 
 export async function readPageFingerprint(server: BrowserBridgeServer, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
 	if (!options.tabId) return undefined;
 	try {
-		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true });
+		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs, ...(options.drainDirty === true ? { drainDirty: true } : {}) }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true });
 		return normalizePageFingerprint(result.data);
 	} catch {
 		return undefined;

@@ -151,12 +151,13 @@ try {
 	assert.equal(outbound.code.cmd, "tabs");
 	assert.equal(outbound.code.method, "list");
 	sendJson(ws, { type: "ack", id: outbound.id });
-	sendJson(ws, { type: "result", id: outbound.id, result: [{ id: 101, active: true }], newTabs: [{ id: 102 }] });
+	sendJson(ws, { type: "result", id: outbound.id, result: [{ id: 101, active: true }], newTabs: [{ id: 102 }], diagnostics: { execute: { newTabObservationWaitTriggered: false, newTabObservationWaitMs: 0 } } });
 	const commandResult = await commandPromise;
 	assert.equal(commandResult.id, outbound.id);
 	assert.equal(commandResult.acknowledged, true);
 	assert.deepEqual(commandResult.data, [{ id: 101, active: true }]);
 	assert.deepEqual(commandResult.newTabs, [{ id: 102 }]);
+	assert.deepEqual(commandResult.diagnostics?.execute, { newTabObservationWaitTriggered: false, newTabObservationWaitMs: 0 });
 
 	await assert.rejects(server.sendCommand({ cmd: "missing.command" }, { timeoutMs: 1_000 }), (error) => {
 		assert.equal(error.code, "INVALID_BROWSER_COMMAND");
@@ -584,6 +585,48 @@ try {
 		return true;
 	});
 	assert.equal(server.snapshot().defaultTabId, 7150, "failed switchTab result must not update default tab");
+
+	const replaceSource = server.getTabs().find((tab) => tab.tabId === 7150 && !tab.disconnectedAt);
+	assert.ok(replaceSource?.tabHandle, "replacement fixture source must expose a stable tabHandle");
+	const heldReplacementLease = server.leaseTab(7150);
+	assert.equal(heldReplacementLease.tabId, 7150);
+	sendJson(ws, {
+		type: "tabs_update",
+		bridge: { id: "fake-extension", name: "Pi Native Browser Bridge", version: "test-2" },
+		replaced: [{ from: 7150, to: 7151, at: Date.now() }],
+		tabs: [{ id: 7151, url: "https://example.test/prune/replaced", title: "Prune Replaced", active: true, windowId: 1, openerTabId: 7000 }],
+	});
+	await waitUntil(() => server.snapshot().defaultTabId === 7151, "tabs_update replacement follows default tab");
+	const replacedTab = server.getTabs().find((tab) => tab.tabId === 7151 && !tab.disconnectedAt);
+	assert.equal(replacedTab?.tabHandle, replaceSource.tabHandle, "replacement must preserve stable tabHandle");
+	assert.equal(replacedTab?.openerTabId, 7000, "replacement tab list must expose lineage openerTabId");
+	assert.equal(server.snapshot().leases?.[0]?.tabId, 7151, "replacement must migrate held tab lease");
+	const staleNumericFollowPromise = server.executeJavaScript("return 'followed-old-id'", { tabId: 7150, timeoutMs: 1_000 });
+	const staleNumericFollowOutbound = await nextJson(ws, "replacement stale numeric follow outbound");
+	assert.equal(staleNumericFollowOutbound.tabId, 7151);
+	sendJson(ws, { type: "ack", id: staleNumericFollowOutbound.id });
+	sendJson(ws, { type: "result", id: staleNumericFollowOutbound.id, result: "followed-old-id" });
+	const staleNumericFollowResult = await staleNumericFollowPromise;
+	assert.equal(staleNumericFollowResult.target.replacedFrom, 7150);
+	assert.equal(staleNumericFollowResult.target.replacedByTabId, 7151);
+	assert.equal(staleNumericFollowResult.target.tabHandle, replaceSource.tabHandle);
+	const staleSwitchPromise = server.switchTab(7150, 1_000);
+	const staleSwitchOutbound = await nextJson(ws, "replacement stale switch outbound");
+	assert.equal(staleSwitchOutbound.code.cmd, "tabs");
+	assert.equal(staleSwitchOutbound.code.method, "switch");
+	assert.equal(staleSwitchOutbound.code.tabId, 7151);
+	sendJson(ws, { type: "ack", id: staleSwitchOutbound.id });
+	sendJson(ws, { type: "result", id: staleSwitchOutbound.id, result: { ok: true, id: 7151 } });
+	const staleSwitchResult = await staleSwitchPromise;
+	assert.equal(staleSwitchResult.target.replacedFrom, 7150);
+	assert.equal(staleSwitchResult.target.replacedByTabId, 7151);
+	const handleFollowPromise = server.executeJavaScript("return 'followed-handle'", { tabId: replaceSource.tabHandle, timeoutMs: 1_000 });
+	const handleFollowOutbound = await nextJson(ws, "replacement handle follow outbound");
+	assert.equal(handleFollowOutbound.tabId, 7151);
+	sendJson(ws, { type: "ack", id: handleFollowOutbound.id });
+	sendJson(ws, { type: "result", id: handleFollowOutbound.id, result: "followed-handle" });
+	assert.equal((await handleFollowPromise).data, "followed-handle");
+	server.releaseTab(replaceSource.tabHandle);
 
 	sendJson(ws, readyMessage([{ id: 909, url: "https://example.test/nine", title: "Nine", active: true, windowId: 1 }]));
 	await waitUntil(() => server.snapshot().defaultTabId === 909 && server.snapshot().latestTabId === 909, "single-tab registration before close fallback test");

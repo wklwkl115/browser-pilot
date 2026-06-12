@@ -5,10 +5,10 @@ import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
 import { buildExecutionJournal, compactExecutionEffect, type ExecuteEffect } from "./executionJournal.js";
 import { commandCollectsExecutionEffect, withExecutionEffect } from "./executionEffect.js";
 import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, resolveLocalTargetTabId, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
-import { isRecord, normalizeTabId } from "../utils/params.js";
+import { isRecord } from "../utils/params.js";
 import { validateParams } from "../validation/middleware.js";
 import { BridgeCommandSchema } from "../validation/schemas.js";
 
@@ -40,7 +40,8 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 				// Type-safe command is now guaranteed to have required fields
 				rejectUnsafeExecuteCommand(validatedCommand);
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const tabId = normalizeTabId(params.tabId ?? validatedCommand.tabId);
+				const rawTargetRef = targetTabId(params, validatedCommand);
+				const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 				const shouldCollectEffect = commandCollectsExecutionEffect(validatedCommand) && tabId !== undefined;
 				const { result, operation } = await withTrackedOperation(server, {
 					toolName: "browser_command",
@@ -55,10 +56,10 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 					await handle.update({ progress: 65 });
 					const result = shouldCollectEffect
 						? await (async () => {
-							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs }));
+							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs }));
 							return { ...executed.result, effect: executed.effect };
 						})()
-						: await server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+						: await server.sendCommand(validatedCommand, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});

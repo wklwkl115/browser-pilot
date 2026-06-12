@@ -25,6 +25,7 @@ test("withExecutionEffect reports cheap signal deltas around dispatch", async ()
 	const hookSeq = [4, 5, 5];
 	let snapshots = 0;
 	const commands: string[] = [];
+	const fingerprintCommands: Record<string, unknown>[] = [];
 	const fingerprintOptions: Record<string, unknown>[] = [];
 	const server = {
 		snapshot() {
@@ -34,6 +35,7 @@ test("withExecutionEffect reports cheap signal deltas around dispatch", async ()
 		async sendCommand(command: Record<string, unknown>, options: Record<string, unknown>) {
 			commands.push(String(command.cmd));
 			if (command.cmd === "content.fingerprint") {
+				fingerprintCommands.push(command);
 				fingerprintOptions.push(options);
 				return { ok: true, data: fingerprints.shift() };
 			}
@@ -57,7 +59,68 @@ test("withExecutionEffect reports cheap signal deltas around dispatch", async ()
 	assert.deepEqual(run.effect?.targetDelta, { selectionVersionBefore: 1, selectionVersionAfter: 2, tabIdBefore: 7, tabIdAfter: 8 });
 	assert.deepEqual(run.effect?.anchor, { changeSeq: 3, networkSeq: 12, hookSeq: 5 });
 	assert.equal(commands.filter((cmd) => cmd === "content.fingerprint").length, 3);
+	assert.equal(fingerprintCommands[0]?.drainDirty, true, "effect baseline read must drain stale dirty roots before dispatch");
 	assert.equal(fingerprintOptions.every((options) => options.internal === true), true);
+});
+
+test("withExecutionEffect carries dirty roots and overflow honesty from the dirty channel", async () => {
+	const fingerprints = [
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: ["#old"], overflow: false, sinceSeq: 9 } },
+		{ changeSeq: 11, url: "https://example.test/app", visibleCount: 4, interactiveCount: 2, dirty: { roots: ["#popup", "main > section"], overflow: true, sinceSeq: 10 } },
+		{ changeSeq: 11, url: "https://example.test/app", visibleCount: 4, interactiveCount: 2, dirty: { roots: ["#popup", "main > section"], overflow: true, sinceSeq: 10 } },
+	];
+	const server = {
+		snapshot: () => ({ selectionVersion: 1, defaultTabId: 7 }),
+		async sendCommand(command: Record<string, unknown>) {
+			if (command.cmd === "content.fingerprint") return { ok: true, data: fingerprints.shift() };
+			if (command.cmd === "network.status") return { ok: true, data: {} };
+			if (command.cmd === "hook.status") return { ok: true, data: {} };
+			return { ok: true, data: {} };
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const run = await withExecutionEffect(server, { browserSessionId: "session-1", tabId: 7, timeoutMs: 1000, quietMs: 0 }, async () => fakeResult());
+
+	assert.equal(run.effect?.signals, "partial");
+	assert.equal(run.effect?.coverage, "overflow");
+	assert.deepEqual(run.effect?.dirty, { roots: ["#popup", "main > section"], overflow: true, sinceSeq: 10 });
+	assert.deepEqual(compactExecutionEffect(run.effect)?.dirty, { roots: ["#popup", "main > section"], overflow: true, sinceSeq: 10 });
+});
+
+test("withExecutionEffect reports stale-act feedback for pi-ref targets covered by dirty roots", async () => {
+	const fingerprints = [
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: [], overflow: false, sinceSeq: 10 } },
+		{ changeSeq: 11, url: "https://example.test/app", visibleCount: 3, interactiveCount: 1, dirty: { roots: ["#checkout .total"], overflow: false, sinceSeq: 10 } },
+		{ changeSeq: 11, url: "https://example.test/app", visibleCount: 3, interactiveCount: 1, dirty: { roots: ["#checkout .total"], overflow: false, sinceSeq: 10 } },
+	];
+	const server = {
+		snapshot: () => ({ selectionVersion: 1, defaultTabId: 7 }),
+		async sendCommand(command: Record<string, unknown>) {
+			if (command.cmd === "content.fingerprint") return { ok: true, data: fingerprints.shift() };
+			if (command.cmd === "network.status") return { ok: true, data: {} };
+			if (command.cmd === "hook.status") return { ok: true, data: {} };
+			return { ok: true, data: {} };
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const run = await withExecutionEffect(server, {
+		browserSessionId: "session-1",
+		tabId: 7,
+		timeoutMs: 1000,
+		quietMs: 0,
+		targetRefs: [{ refId: "pi-ref://control/pay", observedAt: 1234, observationId: "snap-1", cssRoots: ["#checkout"] }],
+	}, async () => fakeResult());
+	const compact = compactExecutionEffect(run.effect);
+
+	assert.equal(run.effect?.targetRef, "pi-ref://control/pay");
+	assert.equal(run.effect?.targetObservedAt, 1234);
+	assert.equal(run.effect?.targetObservationId, "snap-1");
+	assert.equal(run.effect?.targetRegionDirty, true);
+	assert.deepEqual(run.effect?.targetDirtyRoots, ["#checkout .total"]);
+	assert.equal(compact?.targetRegionDirty, true);
+	assert.deepEqual(nextActionsForExecutionEffect(run.effect), [
+		"target ref region changed after the action; refresh with browser_observe mode=scan before reusing the same pi-ref",
+	]);
 });
 
 test("withExecutionEffect omits url when collected fingerprints have no url", async () => {
@@ -137,6 +200,6 @@ test("commandCollectsExecutionEffect follows protocol write access", () => {
 test("nextActionsForExecutionEffect stays factual", () => {
 	assert.deepEqual(nextActionsForExecutionEffect({ mutations: 0, settled: true, navigated: false, visibleDelta: 0, interactiveDelta: 0 }), undefined);
 	assert.deepEqual(nextActionsForExecutionEffect({ mutations: 0, settled: true, navigated: true, visibleDelta: 0, interactiveDelta: 0 }), [
-		"tab identity may have changed; list/switch tabs before the next tab-scoped call if targeting is ambiguous",
+		"tab identity may have changed; list tabs and use targetRef/tabHandle before the next tab-scoped call if targeting is ambiguous",
 	]);
 });

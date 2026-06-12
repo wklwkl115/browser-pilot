@@ -1,14 +1,13 @@
 import { executeBrowserWaitWithSupervisor } from "../../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { nativeCommandToolMetadata } from "../../protocol/nativeActionMetadata.js";
-import { normalizeTabId } from "../../utils/params.js";
 import { resolveArtifactPath } from "../artifacts.js";
 import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
 import { summarizeHtmlSnapshot } from "../summaries/index.js";
-import { artifactFallbackName, jsonToolResult, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
+import { artifactFallbackName, jsonToolResult, resolveLocalTargetTabId, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "../toolShared.js";
 import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
-import { currentObserveSnapshotMeta, withObservationMeta, type ObserveToolParams } from "./scanRunner.js";
+import { currentObserveSnapshotMeta, withObservationMeta, type ObserveToolParams } from "./common.js";
 
 export async function runHtmlObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: ToolResultContext, onUpdate?: ToolOnUpdate) {
 	const body = objectParam(params.params);
@@ -17,7 +16,8 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 	const maxChars = toolMaxChars(params, "browser_observe");
 	const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-	const tabId = normalizeTabId(targetTabId(params, body));
+	const rawTargetRef = targetTabId(params, body);
+	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	const commandName = nativeCommandToolMetadata.browser_observe_html.command;
 	const hasNavigation = typeof params.url === "string" && params.url.trim().length > 0;
 	const observeCommandName = hasNavigation ? "navigate+html" : commandName;
@@ -39,12 +39,12 @@ export async function runHtmlObservation(server: BrowserBridgeServer, params: Ob
 		let navigationData: unknown;
 		if (hasNavigation) {
 			await handle.update({ progress: 20, phase: "navigating" });
-			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
 			assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
 			navigationData = navigation.data;
 		}
 		await handle.update({ progress: 45 });
-		const result = await server.sendCommand({ ...body, cmd: commandName }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params, body) as number | string | undefined, timeoutMs });
+		const result = await server.sendCommand({ ...body, cmd: commandName }, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 		return { result, navigationData };
 	});

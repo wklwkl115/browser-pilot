@@ -67,6 +67,21 @@ export class BrowserLeaseRegistry {
 		return existing;
 	}
 
+	migrateTabLeaseForReplacement(fromTabSessionId: string, toTab: BrowserTabSession, now = Date.now()): BrowserTabLeaseInfo | undefined {
+		const existing = this.tabLeases.get(fromTabSessionId);
+		if (!existing) return undefined;
+		this.tabLeases.delete(fromTabSessionId);
+		const migrated: BrowserTabLeaseInfo = {
+			...existing,
+			tabSessionId: toTab.id,
+			browserId: toTab.browserId,
+			tabId: toTab.tabId,
+			lastSeenAt: now,
+		};
+		this.tabLeases.set(this.tabKey(toTab), migrated);
+		return migrated;
+	}
+
 	async withAutoTabLease<T>(browserSessionId: string, tab: BrowserTabSession, fn: () => Promise<T>): Promise<T> {
 		const lease = this.leaseTab(browserSessionId, tab, false);
 		try {

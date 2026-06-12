@@ -25,14 +25,13 @@ export function errorToPlain(error: unknown): Record<string, unknown> {
 /**
  * Build the canonical TAB_NOT_FOUND error with an actionable recovery hint.
  *
- * A bridge tabId is not stable: it changes when a tab navigates, reloads, or is
- * replaced, so agents that cache a numeric id eventually hit a stale one. Beyond
- * the live `tabs` diagnostics, surface the current/latest tab id and tell the
- * caller it can simply omit tabId to use the active tab.
+ * A numeric bridge tabId can still churn when Chrome replaces a physical tab.
+ * Stable tabHandle/targetRef values survive in-place replacement while numeric
+ * ids auto-follow only when the replacement chain is unambiguous.
  */
 function compactTabForError(tab: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const key of ["id", "browserId", "tabId", "title", "active", "windowId", "incognito", "type", "connectedAt"] as const) {
+	for (const key of ["id", "browserId", "tabId", "tabHandle", "targetRef", "title", "active", "windowId", "openerTabId", "incognito", "type", "connectedAt"] as const) {
 		if (tab[key] !== undefined) out[key] = tab[key];
 	}
 	if (typeof tab.url === "string") out.url = compactUrlForError(tab.url);
@@ -58,21 +57,45 @@ export function tabNotFoundError(args: {
 	selectedBrowser?: unknown;
 	tabs: Array<{ tabId?: number } & Record<string, unknown>>;
 	latestTabId?: number;
+	replacedByTabId?: number;
 }): BrowserBridgeError {
 	const liveTabIds = args.tabs.map((tab) => tab.tabId).filter((id): id is number => typeof id === "number");
 	const hint = liveTabIds.length
-		? `tabId ${args.tabId} is no longer connected — a tab's id changes when it navigates, reloads, or is replaced. Omit tabId to target the active tab${args.latestTabId ? `, or use the current tab id ${args.latestTabId}` : ""}. Live tab ids: ${liveTabIds.join(", ")}.`
+		? `tabId ${args.tabId} is not connected. Use a stable tabHandle/targetRef from browser_tabs list, omit tabId to target the active tab${args.replacedByTabId ? `, or retry with replacement tabId ${args.replacedByTabId}` : args.latestTabId ? `, or use the current tab id ${args.latestTabId}` : ""}. Live tab ids: ${liveTabIds.join(", ")}.`
 		: "No browser tabs are currently connected. Open or attach one with browser_tabs first.";
 	return new BrowserBridgeError("TAB_NOT_FOUND", "Target browser tab is not connected", {
 		tabId: args.tabId,
+		...(args.replacedByTabId ? { replacedByTabId: args.replacedByTabId } : {}),
 		browserSessionId: args.browserSessionId,
 		selectedBrowser: args.selectedBrowser,
 		tabs: args.tabs.map((tab) => compactTabForError(tab)),
 		recovery: {
 			retryable: true,
 			hint,
-			...(args.latestTabId ? { suggestedTabId: args.latestTabId } : {}),
+			...(args.replacedByTabId ? { suggestedTabId: args.replacedByTabId } : args.latestTabId ? { suggestedTabId: args.latestTabId } : {}),
 			liveTabIds,
+		},
+	});
+}
+
+export function targetHandleNotFoundError(args: {
+	tabHandle: string;
+	browserSessionId?: string;
+	tabs: Array<{ tabHandle?: string; tabId?: number } & Record<string, unknown>>;
+}): BrowserBridgeError {
+	const liveTabHandles = args.tabs.map((tab) => tab.tabHandle).filter((handle): handle is string => typeof handle === "string");
+	return new BrowserBridgeError("TAB_NOT_FOUND", "Target tab handle is not connected", {
+		tabHandle: args.tabHandle,
+		browserSessionId: args.browserSessionId,
+		tabs: args.tabs.map((tab) => compactTabForError(tab)),
+		recovery: {
+			retryable: true,
+			hint: "The stable target reference is no longer connected. Use browser_tabs list to get a live tabHandle, or omit targetRef/tabId to use the active tab.",
+			nextActions: [
+				"browser_tabs action=list",
+				"retry with targetRef set to a live tabHandle, or omit targetRef/tabId to use the selected active tab",
+			],
+			liveTabHandles,
 		},
 	});
 }
@@ -90,6 +113,11 @@ export function tabNotFoundError(args: {
 export function noBrowserExtensionError(args: {
 	port?: number;
 	everConnected?: boolean;
+	extensionConnected?: boolean;
+	extensionWaitMs?: number;
+	connectionWaitMs?: number;
+	negativeCacheActive?: boolean;
+	negativeCacheRemainingMs?: number;
 	browserSessionId?: string;
 	sessions?: unknown;
 } = {}): BrowserBridgeError {
@@ -103,6 +131,11 @@ export function noBrowserExtensionError(args: {
 		...(args.browserSessionId ? { browserSessionId: args.browserSessionId } : {}),
 		...(args.sessions ? { sessions: args.sessions } : {}),
 		everConnected: args.everConnected === true,
+		extensionConnected: args.extensionConnected === true,
+		...(typeof args.extensionWaitMs === "number" ? { extensionWaitMs: args.extensionWaitMs } : {}),
+		...(typeof args.connectionWaitMs === "number" ? { connectionWaitMs: args.connectionWaitMs } : {}),
+		...(typeof args.negativeCacheActive === "boolean" ? { negativeCacheActive: args.negativeCacheActive } : {}),
+		...(typeof args.negativeCacheRemainingMs === "number" ? { negativeCacheRemainingMs: args.negativeCacheRemainingMs } : {}),
 		recovery: {
 			retryable: true,
 			hint,

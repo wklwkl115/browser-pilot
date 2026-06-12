@@ -6,13 +6,12 @@ import { buildScanScript } from "../scan/buildScanScript.js";
 import { createBrowserAbmlIntegration } from "../abml/verbs/integration.js";
 import { compactError } from "../utils/errors.js";
 import { tryJson } from "../utils/json.js";
-import { normalizeTabId } from "../utils/params.js";
 import { isRecord } from "../utils/records.js";
 import { compactExecutionEffect, buildExecutionJournal, type ExecuteEffect } from "./executionJournal.js";
 import { withExecutionEffect } from "./executionEffect.js";
-import { prepareExecuteStdlib } from "./executeStdlib.js";
+import { prepareExecuteStdlib, type ExecuteStdlibTargetRef } from "./executeStdlib.js";
 import { summarizeGenericValue } from "./summaries/index.js";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, resolveLocalTargetTabId, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
@@ -121,11 +120,12 @@ type ExecuteResultWithFeedback = BrowserBridgeExecutionResult & {
 	monitor?: MonitorMetadata;
 };
 
-async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { browserSessionId?: string; tabId?: number; timeoutMs: number }): Promise<ExecuteResultWithFeedback> {
+async function executeJavaScriptWithMonitor(server: Awaited<ReturnType<ToolRegistrarContext["ensureStarted"]>>, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; targetRefs?: ExecuteStdlibTargetRef[] }): Promise<ExecuteResultWithFeedback> {
 	const monitorTimeoutMs = Math.min(Math.max(500, options.timeoutMs), 5_000);
 	const scanScript = buildScanScript({ textOnly: false, maxChars: 50_000, maxNodes: 3_000 });
 	const before = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
-	const executed = await withExecutionEffect(server, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs }, () => server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs }));
+	const effectTabId = resolveLocalTargetTabId(server, options.tabId, options.browserSessionId);
+	const executed = await withExecutionEffect(server, { browserSessionId: options.browserSessionId, tabId: effectTabId, timeoutMs: options.timeoutMs, targetRefs: options.targetRefs }, () => server.executeJavaScript(script, { browserSessionId: options.browserSessionId, tabId: options.tabId as number | string | undefined, timeoutMs: options.timeoutMs }));
 	const after = await monitorScan(server, scanScript, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: monitorTimeoutMs });
 	const diff = before.ok && after.ok ? diffScanContent(before.content, after.content) : { changed: 0, top_change: undefined };
 	// A script that navigates/reloads makes the same-document line diff meaningless: the after-read
@@ -178,7 +178,8 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const maxChars = toolMaxChars(params, "browser_execute");
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-				const tabId = normalizeTabId(params.tabId);
+				const rawTargetRef = targetTabId(params);
+				const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 				const preparedScript = prepareExecuteStdlib(params.script);
 				const { result: jsResult, operation } = await withTrackedOperation(server, {
 					toolName: "browser_execute",
@@ -192,15 +193,16 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 				}, _onUpdate, async (handle) => {
 					await handle.update({ progress: params.monitor === true ? 15 : 35 });
 					const result = params.monitor === true
-						? await executeJavaScriptWithMonitor(server, preparedScript.script, { browserSessionId, tabId, timeoutMs })
+						? await executeJavaScriptWithMonitor(server, preparedScript.script, { browserSessionId, tabId: rawTargetRef, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs })
 						: await (async () => {
-							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs }, () => server.executeJavaScript(preparedScript.script, { browserSessionId, tabId: params.tabId, timeoutMs }));
+							const executed = await withExecutionEffect(server, { browserSessionId, tabId, timeoutMs, targetRefs: preparedScript.stdlib?.targetRefs }, () => server.executeJavaScript(preparedScript.script, { browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs }));
 							return { ...executed.result, effect: executed.effect };
 						})();
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
 				const jsFeedback = jsResult as ExecuteResultWithFeedback;
+				const executeDiagnostics = isRecord(jsFeedback.diagnostics) ? jsFeedback.diagnostics : undefined;
 				const execution = buildExecutionJournal({
 					operationId: operation.operationId,
 					target: jsFeedback.target,
@@ -218,8 +220,9 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					maxChars,
 					fallbackName: artifactFallbackName("execute"),
 					artifactThreshold: needsResultArtifact ? 1 : undefined,
-					details: { mode: "javascript", monitor: params.monitor === true, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) },
+					details: { mode: "javascript", monitor: params.monitor === true, ...(executeDiagnostics ? { diagnostics: executeDiagnostics } : {}), ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) },
 					operation,
+					diagnostics: executeDiagnostics,
 					artifactValue: { ...resultValue, operation },
 					distill: (value) => {
 						const generic = summarizeGenericValue(value);

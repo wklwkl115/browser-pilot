@@ -83,6 +83,7 @@ type DistillBaseOptions = {
 	details?: Record<string, unknown>;
 	operation?: Record<string, unknown>;
 	snapshot?: Record<string, unknown>;
+	diagnostics?: Record<string, unknown>;
 	artifactThreshold?: number;
 	entities?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
@@ -269,8 +270,8 @@ function envelopeError(summary: DistilledSummary, explicit?: Record<string, unkn
 function normalizedTarget(options: DistillBaseOptions, summary: DistilledSummary): Record<string, unknown> | undefined {
 	const summaryTarget = isRecord(summary.target) ? summary.target : {};
 	const target = {
-		...pickDefined(summary, ["browserId", "tabId", "frameId", "url", "origin", "targetSource", "targetImplicit", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
-		...pickDefined(summaryTarget, ["browserSessionId", "browserId", "tabId", "frameId", "url", "origin", "source", "implicit", "selectionVersion", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
+		...pickDefined(summary, ["browserId", "tabId", "tabHandle", "targetRef", "requestedTabId", "replacedFrom", "replacedByTabId", "replacementHops", "openerTabId", "frameId", "url", "origin", "targetSource", "targetImplicit", "browserSessionId", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
+		...pickDefined(summaryTarget, ["browserSessionId", "browserId", "tabId", "tabHandle", "targetRef", "requestedTabId", "replacedFrom", "replacedByTabId", "replacementHops", "openerTabId", "frameId", "url", "origin", "source", "implicit", "selectionVersion", "selectionVersionAtDispatch", "selectionVersionAtResolve"]),
 	};
 	if (options.browserSessionId !== undefined) target.browserSessionId = options.browserSessionId;
 	return Object.keys(target).length ? target : undefined;
@@ -285,7 +286,7 @@ function normalizedLimits(options: DistillBaseOptions, summary: DistilledSummary
 	return Object.keys(limits).length ? limits : undefined;
 }
 
-function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>): Record<string, unknown> | undefined {
+function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string, unknown>, operation?: Record<string, unknown>, snapshot?: Record<string, unknown>, extra?: Record<string, unknown>): Record<string, unknown> | undefined {
 	const warnings: string[] = [];
 	const omitted = firstDefined(summary, ["summaryOmitted"]);
 	if (Array.isArray(omitted) && omitted.length) warnings.push(`summary_omitted:${omitted.join(",")}`);
@@ -293,13 +294,15 @@ function normalizedDiagnostics(summary: DistilledSummary, saved?: Record<string,
 	if (summary.empty === true) warnings.push("empty_result");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) warnings.push("truncated");
 	if (saved?.path) warnings.push("raw_result_saved_to_artifact");
-	const diagnostics = {
+	const diagnostics: Record<string, unknown> = {
+		...(extra || {}),
 		...pickDefined(summary, ["ok", "error_code", "message", "bodyAvailability", "bodyUnavailableReason", "failureCount", "matchedCount", "entryCount", "source_count", "waitId", "sessionId", "requestId", "listenerId", "selectionVersionAtDispatch", "selectionVersionAtResolve", "sourceMode"]),
 		...pickDefined(operation || {}, ["operationId", "snapshotId", "sourceMode"]),
 		...pickDefined(snapshot || {}, ["snapshotId", "sourceMode"]),
-		...(warnings.length ? { warnings: Array.from(new Set(warnings)) } : {}),
 		...(saved ? { artifact: compactArtifactDescriptor(saved) } : {}),
 	};
+	const extraWarnings = Array.isArray(extra?.warnings) ? extra.warnings.filter((item): item is string => typeof item === "string") : [];
+	if (warnings.length || extraWarnings.length) diagnostics.warnings = Array.from(new Set([...extraWarnings, ...warnings]));
 	return Object.keys(diagnostics).length ? diagnostics : undefined;
 }
 
@@ -382,7 +385,7 @@ function normalizedNextActions(options: DistillBaseOptions, summary: DistilledSu
 	if (summary.notFound === true && typeof summary.nearestPath === "string" && summary.nearestPath) actions.push(`read_saved_artifact mode=json jsonPath=${summary.nearestPath}`);
 	if (summary.empty === true || summary.notFound === true) actions.push("narrow the target ref/filter or re-read with mode=scan|html");
 	if (summary.truncated === true || summary.bodyTruncated === true || summary.truncatedCases === true || summary.truncatedCandidates) actions.push("increase maxChars/maxBodyBytes or inspect the saved artifact by jsonPath/offset");
-	if (options.browserSessionId === undefined && (summary.tabId !== undefined || isRecord(summary.target))) actions.push("pass explicit tabId/browserSessionId for follow-up tab-scoped calls");
+	if (options.browserSessionId === undefined && (summary.tabId !== undefined || summary.targetRef !== undefined || isRecord(summary.target))) actions.push("pass explicit targetRef/browserSessionId for follow-up tab-scoped calls");
 	const unique = capSessionDeltaRecoveryFanout(Array.from(new Set(actions)), typeof summary.delta === "string" ? summary.delta : undefined);
 	return unique.length ? unique.slice(0, 7) : undefined;
 }
@@ -509,7 +512,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(delta ? { delta } : {}),
 		...(baselineSnapshotId ? { baselineSnapshotId } : {}),
 		summary: fittedSummary,
-		diagnostics: normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot),
+		diagnostics: normalizedDiagnostics(fittedSummary, saved, redactedOperation, redactedSnapshot, options.diagnostics),
 		target: normalizedTarget(options, fittedSummary),
 		limits: normalizedLimits(options, fittedSummary),
 		privacy: normalizedPrivacy(saved, sensitiveRaw),
@@ -531,6 +534,29 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	}, options.maxChars, options);
 }
 
+function attachSerializeTiming(envelope: DistilledEnvelope, options: DistillBaseOptions, serializeMs: number): DistilledEnvelope {
+	const timings = isRecord(options.diagnostics?.observeTimings) ? options.diagnostics.observeTimings as Record<string, unknown> : undefined;
+	if (!timings) return envelope;
+	return {
+		...envelope,
+		diagnostics: {
+			...(envelope.diagnostics || {}),
+			observeTimings: {
+				...timings,
+				serializeMs,
+			},
+		},
+	};
+}
+
+function renderEnvelopeWithSerializeTiming(envelope: DistilledEnvelope, options: DistillBaseOptions): { envelope: DistilledEnvelope; rendered: string } {
+	const serializeStartedAt = Date.now();
+	const renderedWithoutTiming = stableJson(envelope);
+	const withTiming = attachSerializeTiming(envelope, options, Date.now() - serializeStartedAt);
+	if (withTiming === envelope) return { envelope, rendered: renderedWithoutTiming };
+	return { envelope: withTiming, rendered: stableJson(withTiming) };
+}
+
 export async function distilledJsonResult(value: unknown, options: DistilledJsonOptions): Promise<PiTextToolResult> {
 	const level = normalizeDetailLevel(options.detailLevel);
 	const maxChars = Math.max(1, Math.floor(options.maxChars));
@@ -549,7 +575,9 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
-		const rendered = stableJson(envelope);
+		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
+		envelope = renderedEnvelope.envelope;
+		const rendered = renderedEnvelope.rendered;
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],
@@ -558,8 +586,10 @@ export async function distilledJsonResult(value: unknown, options: DistilledJson
 	}
 	if (level === "full" && (sensitiveRaw || raw.length > maxChars)) {
 		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
-		const envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
-		const rendered = stableJson(envelope);
+		let envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
+		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
+		envelope = renderedEnvelope.envelope;
+		const rendered = renderedEnvelope.rendered;
 		reportAllocation(options, envelope, rendered);
 		return jsonResult(envelope, { ...(options.details || {}), saved: fullSaved, factRendering }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}
@@ -583,7 +613,9 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 			saved = await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "fallback-over-budget"));
 			envelope = await appendMemoryAutoSurface({ cwd: options.ctx?.cwd, envelope: responseEnvelope(options, summary, saved, sensitiveRaw) });
 		}
-		const rendered = stableJson(envelope);
+		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
+		envelope = renderedEnvelope.envelope;
+		const rendered = renderedEnvelope.rendered;
 		reportAllocation(options, envelope, rendered);
 		return {
 			content: [{ type: "text", text: rendered }],
@@ -592,8 +624,10 @@ export async function distilledTextResult(text: string, options: DistilledTextOp
 	}
 	if (level === "full" && (sensitiveRaw || text.length > maxChars)) {
 		const fullSaved = saved || await executeArtifactPlan(options, forcedArtifactPlan(options, raw, "full-sensitive-or-over-budget"));
-		const envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
-		const rendered = stableJson(envelope);
+		let envelope = responseEnvelope(options, { ...summary, fullResult: "saved_to_artifact", ...(sensitiveRaw ? { privacy: { sensitiveEvidence: true } } : {}) }, fullSaved, sensitiveRaw);
+		const renderedEnvelope = renderEnvelopeWithSerializeTiming(envelope, options);
+		envelope = renderedEnvelope.envelope;
+		const rendered = renderedEnvelope.rendered;
 		reportAllocation(options, envelope, rendered);
 		return jsonResult(envelope, { ...(options.details || {}), saved: fullSaved }, Math.min(maxChars, SUMMARY_MAX_CHARS));
 	}

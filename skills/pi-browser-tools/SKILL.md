@@ -25,11 +25,11 @@ On long lists/tables prefer the reading products (`outline`/`gist`) and `causal`
 
 ## Loop
 
-1. `browser_tabs {action:"list"}` → note the target `tabId`. A `tabId` is **not stable** (changes on navigation/reload) — omit `tabId` to act on the active tab, or re-read it after navigating; pass it explicitly mainly to disambiguate open tabs. `TAB_NOT_FOUND` returns the live id in `recovery`.
+1. `browser_tabs {action:"list"}` → note the target `tabHandle` and pass it as `targetRef` when you must disambiguate. Numeric `tabId` is still accepted for compatibility and auto-follows unambiguous in-place replacement; omit `targetRef`/`tabId` to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
 4. Verify: `browser_wait` / re-observe / network|hook evidence / read artifact.
-5. Report: `tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
+5. Report: `targetRef`/`tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
 `browser_tabs {action:"create"}` opens a tab; `switch` only to intentionally change the active one. `browserSessionId` is managed via `browser_tabs` session actions — omit it unless juggling concurrent sessions.
 
@@ -124,7 +124,7 @@ Bound expansive routes by **explicit scope first** — `url` / captured request 
 ## Action
 
 - Prefer explicit `browser_observe.mode` when you know it (`scan`/`content`/`html`/`text`/`tabs`), but omitting mode is valid for mechanical cases: `selector`/`includeLinks` infer `content`, `htmlMode`/`params` infer `html`, and `url` alone defaults to navigate+scan. No `auto`, no page-shape guessing, no cross-mode selector fallback. For read-only before/after, give the second scan a baseline to get `diff`/`treeDiff`/`snapshotProjection`/`form-dependency`. Pass the baseline **by reference** (`snapshotId` or `saved.path`). `pi-ref://` and baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle. Selector miss → re-observe `scan`/`html` → `browser_frame` → verified retry.
-- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block (`mutations`, `settled`, navigation/recorder deltas) before paying for a full re-observe. Use normal page JS selectors/DOM APIs; `pi-ref://` handles are short-lived observation evidence, not a public action API.
+- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true` appears after a script used `pi-ref://`, refresh with `browser_observe mode=scan` before reusing that ref. Use normal page JS selectors/DOM APIs; `pi-ref://` handles are short-lived observation evidence, not a public action API.
 - `monitor:true` only when a semantic before/after DOM diff helps; it is heavier than the default `effect`. Don't ask for `redact:false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion sourceMode`.
 
 Click:
@@ -150,7 +150,8 @@ Click:
 | Symptom | Do |
 |---|---|
 | No bridge/browser/tab | A command briefly waits, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them. Confirm the extension is loaded/enabled and a tab is open. If genuinely not loaded, that is a human action — surface it, don't retry-loop |
-| Stale tab | `browser_tabs {action:"list"}`; use live `tabId` |
+| Stale tab | `browser_tabs {action:"list"}`; use live `tabHandle` as `targetRef` |
+| `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `pi-ref://`; the action was not blocked, but the observed region changed |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
 | Timeout | `browser_wait {action:"diagnose", waitId}` (selector-specific `selectorDiagnostics`: match/visible count, iframe clues, recovery); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |

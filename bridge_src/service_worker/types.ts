@@ -438,6 +438,8 @@ export type PiChromeTab = {
   title?: string;
   active?: boolean;
   windowId?: number;
+  openerTabId?: number;
+  incognito?: boolean;
   status?: string;
   pendingUrl?: string;
   favIconUrl?: string;
@@ -514,6 +516,8 @@ export type PiChromeTabs = {
   onCreated: PiChromeEvent<(tab: PiChromeTab) => void>;
   onUpdated: PiChromeEvent<(tabId: number, changeInfo: JsonRecord, tab: PiChromeTab) => void>;
   onRemoved: PiChromeEvent<(tabId: number, removeInfo?: JsonRecord) => void>;
+  onReplaced?: PiChromeEvent<(addedTabId: number, removedTabId: number) => void>;
+  onActivated?: PiChromeEvent<(activeInfo: { tabId: number; windowId: number }) => void>;
 };
 
 export type PiChromeDebugger = {

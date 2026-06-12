@@ -47,7 +47,7 @@ export function bridgeResultFailure(data: unknown): { message: string; details: 
 
 export function browserTabInfo(session: BrowserTabSession): BrowserTabInfo {
 	const { client: _client, ...info } = session;
-	return info;
+	return { ...info, targetRef: info.tabHandle };
 }
 
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -75,8 +75,10 @@ export function tabSessionSummary(session: BrowserTabSession): Record<string, un
 		extensionId: session.bridge?.extensionId,
 		name: session.bridge?.name,
 		tabId: session.tabId,
+		tabHandle: session.tabHandle,
 		url: session.url,
 		active: session.active,
+		openerTabId: session.openerTabId,
 		incognito: session.incognito,
 	};
 }

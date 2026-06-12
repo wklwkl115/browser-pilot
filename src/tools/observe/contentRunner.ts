@@ -3,20 +3,21 @@ import { BrowserBridgeError } from "../../driver/errors.js";
 import { executeBrowserWaitWithSupervisor } from "../../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { normalizeNativeErrorCode } from "../../protocol/nativeErrorCodes.js";
-import { isRecord, normalizeTabId } from "../../utils/params.js";
+import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../artifacts.js";
 import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
 import { evaluatePageScriptDirect } from "../pageScriptEvaluation.js";
 import { summarizeContentData } from "../summaries/index.js";
-import { artifactFallbackName, textToolResult, toolMaxChars, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
+import { artifactFallbackName, resolveLocalTargetTabId, targetTabId, textToolResult, toolMaxChars, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
 import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
-import { currentObserveSnapshotMeta, normalizeContentTimeoutMs, withObservationMeta, type ObserveToolParams } from "./scanRunner.js";
+import { currentObserveSnapshotMeta, normalizeContentTimeoutMs, withObservationMeta, type ObserveToolParams } from "./common.js";
 
 export async function runContentObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: ToolResultContext, onUpdate?: ToolOnUpdate) {
 	const timeoutMs = normalizeContentTimeoutMs(params.timeoutMs);
 	const maxChars = toolMaxChars(params, "browser_observe");
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-	const tabId = normalizeTabId(params.tabId);
+	const rawTargetRef = targetTabId(params);
+	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	const fallbackName = artifactFallbackName("observe-content");
 	const outputPath = params.outputPath ?? resolveArtifactPath(ctx, undefined, fallbackName);
 	const resultParams = { ...params, outputPath };
@@ -34,14 +35,14 @@ export async function runContentObservation(server: BrowserBridgeServer, params:
 		let navigationData: unknown;
 		if (params.url) {
 			await handle.update({ progress: 20, phase: "navigating" });
-			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
 			assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
 			navigationData = navigation.data;
 		}
 		await handle.update({ progress: 55, phase: "extracting" });
 		const captureMaxChars = params.outputPath ? 500_000 : Math.max(maxChars, 120_000);
 		const script = buildContentScript({ selector: params.selector, includeLinks: params.includeLinks, maxChars: captureMaxChars });
-		const result = await evaluatePageScriptDirect(server, script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "content_extract" });
+		const result = await evaluatePageScriptDirect(server, script, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "content_extract" });
 		return { result, navigationData };
 	});
 	const data = result.result.data as Record<string, unknown> | undefined;

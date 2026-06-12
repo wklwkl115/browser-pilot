@@ -100,7 +100,7 @@ export function actionSpecificFlagSpecs(cmd: CliCommand, actionName: string): Fl
 	const action = nativeActionToolMeta(cmd.name)?.actions?.find((item) => item.action === actionName);
 	if (!action) return specs;
 	const actionParams = actionParamNames(action);
-	const common = new Set(["tabId", "sessionId"]);
+	const common = new Set(["tabId", "targetRef", "sessionId"]);
 	return specs
 		.filter((spec) => spec.name !== "action")
 		.filter((spec) => common.has(spec.name) || actionParams.has(spec.name))

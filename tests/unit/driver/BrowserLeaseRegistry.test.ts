@@ -9,6 +9,9 @@ function fakeTab(id = "browserA:7"): BrowserTabSession {
 		id,
 		browserId: "browserA",
 		tabId: 7,
+		logicalTabId: "logical-a",
+		tabHandle: "tabh_browserA_logicala_g1",
+		generation: 1,
 		url: "https://example.test",
 		title: "Example",
 		type: "ext_ws",
@@ -90,4 +93,18 @@ test("BrowserLeaseRegistry releases lease and ui lock state for disconnected ses
 	assert.equal(releasedUiLocks[0].releaseReason, "disconnect");
 	assert.equal(leases.peekTabLease(tab), undefined);
 	assert.equal(leases.uiLockInfo(), undefined);
+});
+
+test("BrowserLeaseRegistry migrates a tab lease across tab replacement", () => {
+	const leases = new BrowserLeaseRegistry();
+	const from = fakeTab("browserA:7");
+	const to = { ...fakeTab("browserA:8"), tabId: 8 };
+	const leased = leases.leaseTab("session-a", from, true);
+	const migrated = leases.migrateTabLeaseForReplacement(from.id, to, leased.createdAt + 25);
+	assert.equal(migrated?.id, leased.id);
+	assert.equal(migrated?.tabSessionId, to.id);
+	assert.equal(migrated?.tabId, 8);
+	assert.equal(migrated?.explicit, true);
+	assert.equal(leases.peekTabLease(from), undefined);
+	assert.equal(leases.peekTabLease(to)?.id, leased.id);
 });

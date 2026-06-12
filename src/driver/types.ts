@@ -23,10 +23,17 @@ export type BrowserTabSession = {
 	id: string;
 	browserId: string;
 	tabId: number;
+	logicalTabId: string;
+	tabHandle: string;
+	generation: number;
 	url: string;
 	title: string;
 	active?: boolean;
 	windowId?: number;
+	openerTabId?: number;
+	replacedFromTabId?: number;
+	replacedAt?: number;
+	activatedAt?: number;
 	incognito?: boolean;
 	type: "ext_ws";
 	connectedAt: number;
@@ -35,7 +42,9 @@ export type BrowserTabSession = {
 	client: WebSocket;
 };
 
-export type BrowserTabInfo = Omit<BrowserTabSession, "client">;
+export type BrowserTabInfo = Omit<BrowserTabSession, "client"> & {
+	targetRef: string;
+};
 
 export type BrowserAutomationSession = {
 	id: string;
@@ -52,7 +61,9 @@ export type BrowserAutomationSessionInfo = {
 	id: string;
 	name?: string;
 	defaultTabId?: number;
+	defaultTabHandle?: string;
 	latestTabId?: number;
+	latestTabHandle?: string;
 	selectionVersion: number;
 	createdAt: number;
 	lastSeenAt: number;
@@ -139,6 +150,14 @@ export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "non
 export type BrowserBridgeTargetInfo = {
 	browserSessionId?: string;
 	tabId?: number;
+	tabHandle?: string;
+	targetRef?: string;
+	requestedTabId?: number;
+	replacedFrom?: number;
+	replacedByTabId?: number;
+	replacementHops?: number;
+	browserId?: string;
+	openerTabId?: number;
 	url?: string;
 	source: BrowserBridgeTargetSource;
 	implicit: boolean;
@@ -156,7 +175,9 @@ export type BrowserBridgeSnapshot = {
 	extension?: BrowserBridgeClientInfo;
 	clients: BrowserBridgeClientInfo[];
 	defaultTabId?: number;
+	defaultTabHandle?: string;
 	latestTabId?: number;
+	latestTabHandle?: string;
 	selectionVersion: number;
 	tabs: BrowserTabInfo[];
 	leases?: BrowserTabLeaseInfo[];
@@ -175,6 +196,7 @@ export type BrowserBridgeSnapshot = {
 export type ExecuteOptions = {
 	browserSessionId?: string;
 	tabId?: number | string;
+	targetRef?: string;
 	timeoutMs?: number;
 	accessMode?: "read" | "write";
 	internal?: boolean;
@@ -200,4 +222,5 @@ export type BrowserBridgeExecutionResult<TData = unknown, TNewTabs = unknown[]> 
 	data?: TData;
 	newTabs?: TNewTabs;
 	target?: BrowserBridgeTargetInfo;
+	diagnostics?: Record<string, unknown>;
 };

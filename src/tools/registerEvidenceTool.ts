@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { summarizeEvidenceData } from "./summaries/index.js";
-import { applyDefaultTimeout, artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
+import { applyDefaultTimeout, artifactFallbackName, defineBrowserTool, jsonToolResult, resolveLocalTargetTabId, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs, withTrackedOperation } from "./toolAdapter.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 import { isRecord } from "../utils/params.js";
@@ -37,8 +37,7 @@ export function registerEvidenceTool({ pi, ensureStarted }: ToolRegistrarContext
 				const commandName = nativeCommandToolMetadata.browser_evidence.command;
 				const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
 				const rawTabId = targetTabId(params, body);
-				const normalizedTabId = typeof rawTabId === "string" ? Number(rawTabId) : typeof rawTabId === "number" ? rawTabId : undefined;
-				const trackedTabId = typeof normalizedTabId === "number" && Number.isInteger(normalizedTabId) && normalizedTabId > 0 ? normalizedTabId : undefined;
+				const trackedTabId = resolveLocalTargetTabId(server, rawTabId, browserSessionId);
 				const command = { ...body, cmd: commandName };
 				const { result, operation } = await withTrackedOperation(server, {
 					toolName: "browser_evidence",

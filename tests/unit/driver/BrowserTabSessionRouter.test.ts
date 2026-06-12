@@ -42,3 +42,48 @@ test("BrowserTabSessionRouter prunes stale disconnected tab sessions", () => {
 
 	assert.equal(router.getTabs({ includeDisconnected: true }).length, 0);
 });
+
+test("BrowserTabSessionRouter preserves tabHandle across replacement and follows stale numeric ids", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+	const ws = fakeSocket();
+	clients.register(ws);
+	clients.updateClientInfo(ws, { id: "browser-a" });
+	router.updateTabs([{ id: 3, active: true, url: "https://example.test/old" }], ws);
+	const before = router.getTabs()[0]!;
+	assert.match(before.tabHandle, /^tabh_/);
+
+	router.applyTabReplacements([{ from: 3, to: 4, at: 1000 }], ws, 1000);
+	router.updateTabs([{ id: 4, active: true, url: "https://example.test/old" }], ws);
+	const after = router.getTabs()[0]!;
+	assert.equal(after.tabId, 4);
+	assert.equal(after.tabHandle, before.tabHandle);
+	assert.equal(after.replacedFromTabId, 3);
+	assert.equal(router.defaultTabId(), 4);
+
+	const resolved = router.resolveTargetRef(3, undefined, "explicit");
+	assert.equal(resolved?.tabId, 4);
+	assert.equal(resolved?.replacedFrom, 3);
+	assert.equal(resolved?.replacedByTabId, 4);
+	assert.equal(resolved?.tabHandle, before.tabHandle);
+	assert.equal(router.resolveTargetRef(before.tabHandle, undefined, "explicit")?.tabId, 4);
+});
+
+test("BrowserTabSessionRouter tracks manual activation as the implicit target", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+	const ws = fakeSocket();
+	clients.register(ws);
+	clients.updateClientInfo(ws, { id: "browser-a" });
+	router.updateTabs([
+		{ id: 10, active: true, url: "https://example.test/a", windowId: 1 },
+		{ id: 11, active: false, url: "https://example.test/b", windowId: 1 },
+	], ws);
+	assert.equal(router.defaultTabId(), 10);
+
+	router.recordTabActivation({ tabId: 11, windowId: 1, at: 1234 }, ws);
+	assert.equal(router.defaultTabId(), 11);
+	assert.equal(router.fallbackExecutionTarget()?.tabId, 11);
+});

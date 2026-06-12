@@ -14,6 +14,24 @@ export function jsonForInlineScript(value: unknown): string {
 	return captureJsonForInlineScript(value);
 }
 
+function injectScanSignals(script: string): string {
+	const marker = "  return {\n    url: location.href,";
+	const injected = `  const piScanFingerprint = {
+    changeSeq: Number((globalThis.__piBrowserScanFingerprintSeq = (Number(globalThis.__piBrowserScanFingerprintSeq || 0) + 1))),
+    url: location.href,
+    title: document.title,
+    readyState: document.readyState,
+    visibleCount: actionables.length,
+    interactiveCount: document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length,
+    capturedAt: Date.now()
+  };
+  return {
+    signals: { fingerprint: piScanFingerprint },
+    url: location.href,`;
+	if (!script.includes(marker)) throw new Error("scan template return marker missing; update scan signal injection");
+	return script.replace(marker, injected);
+}
+
 function boundedInt(value: unknown, fallback: number, min: number, max: number): number {
 	const n = Number(value);
 	const safe = Number.isFinite(n) ? Math.floor(n) : fallback;
@@ -27,7 +45,7 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 		maxNodes: boundedInt(options.maxNodes, 4_000, 100, 20_000),
 		includeIframes: options.includeIframes !== false,
 	};
-	return renderCaptureTemplate(SCAN_TEMPLATE, {
+	const rendered = renderCaptureTemplate(SCAN_TEMPLATE, {
 		optionsJson: jsonForInlineScript(opts),
 		ignoreIdsJson: jsonForInlineScript(SCAN_IGNORE_IDS),
 		ignoreTagsJson: jsonForInlineScript(SCAN_IGNORE_TAGS),
@@ -43,4 +61,5 @@ export function buildScanScript(options: BrowserScanOptions = {}): string {
 		frameworkOwnerPatternJson: jsonForInlineScript(FRAMEWORK_HANDLER_OWNER_PATTERN),
 		frameworkActionPatternJson: jsonForInlineScript(FRAMEWORK_ACTION_HANDLER_PATTERN),
 	});
+	return injectScanSignals(rendered);
 }

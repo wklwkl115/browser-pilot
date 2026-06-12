@@ -4,11 +4,17 @@ import { isRecord } from "../utils/params.js";
 export type ExecuteEffect = {
 	url?: string;
 	signals?: "partial";
+	coverage?: "overflow";
 	mutations?: number;
 	settled?: boolean;
 	navigated: boolean;
 	visibleDelta?: number;
 	interactiveDelta?: number;
+	dirty?: {
+		roots: string[];
+		overflow: boolean;
+		sinceSeq?: number;
+	};
 	requestsFired?: number;
 	hookEventsFired?: number;
 	targetDelta?: {
@@ -22,6 +28,11 @@ export type ExecuteEffect = {
 		networkSeq?: number;
 		hookSeq?: number;
 	};
+	targetObservedAt?: number;
+	targetObservationId?: string;
+	targetRef?: string;
+	targetRegionDirty?: boolean;
+	targetDirtyRoots?: string[];
 };
 
 export type ExecutionJournal = {
@@ -53,15 +64,22 @@ export function compactExecutionEffect(effect: ExecuteEffect | undefined): Recor
 	if (!effect) return undefined;
 	return {
 		...(effect.signals ? { signals: effect.signals } : {}),
+		...(effect.coverage ? { coverage: effect.coverage } : {}),
 		...(effect.mutations !== undefined ? { mutations: effect.mutations } : {}),
 		...(effect.settled !== undefined ? { settled: effect.settled } : {}),
 		...(effect.navigated ? { navigated: true } : {}),
 		...(effect.visibleDelta !== undefined ? { visibleDelta: effect.visibleDelta } : {}),
 		...(effect.interactiveDelta !== undefined ? { interactiveDelta: effect.interactiveDelta } : {}),
+		...(effect.dirty && (effect.dirty.roots.length || effect.dirty.overflow) ? { dirty: effect.dirty } : {}),
 		...(effect.requestsFired !== undefined ? { requestsFired: effect.requestsFired } : {}),
 		...(effect.hookEventsFired !== undefined ? { hookEventsFired: effect.hookEventsFired } : {}),
 		...(effect.targetDelta && Object.keys(effect.targetDelta).length ? { targetDelta: effect.targetDelta } : {}),
 		...(effect.anchor ? { anchor: effect.anchor } : {}),
+		...(effect.targetObservedAt !== undefined ? { targetObservedAt: effect.targetObservedAt } : {}),
+		...(effect.targetObservationId ? { targetObservationId: effect.targetObservationId } : {}),
+		...(effect.targetRef ? { targetRef: effect.targetRef } : {}),
+		...(effect.targetRegionDirty === true ? { targetRegionDirty: true } : {}),
+		...(effect.targetDirtyRoots?.length ? { targetDirtyRoots: effect.targetDirtyRoots } : {}),
 	};
 }
 

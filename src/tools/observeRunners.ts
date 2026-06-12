@@ -2,6 +2,9 @@ export {
 	DEFAULT_CONTENT_TIMEOUT_MS,
 	MIN_CONTENT_TIMEOUT_MS,
 	normalizeContentTimeoutMs,
+} from "./observe/common.js";
+
+export {
 	observeErrorResult,
 	runScanObservation,
 } from "./observe/scanRunner.js";
@@ -22,4 +25,4 @@ export {
 	__resetMemoryAugmentationStateForTests,
 } from "./observe/memoryAugmentation.js";
 
-export type { ObserveMode, ObserveToolParams } from "./observe/scanRunner.js";
+export type { ObserveMode, ObserveToolParams } from "./observe/common.js";

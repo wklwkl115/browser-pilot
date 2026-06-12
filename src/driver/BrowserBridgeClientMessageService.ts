@@ -5,6 +5,7 @@ import { BrowserSessionRegistry } from "./BrowserSessionRegistry.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { BrowserLeaseRegistry } from "./BrowserLeaseRegistry.js";
+import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
 import { errorToPlain } from "./errors.js";
 import { parseJsonOrThrow } from "../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
@@ -14,6 +15,7 @@ type IncomingMessage = {
 	id?: unknown;
 	error?: unknown;
 	result?: unknown;
+	diagnostics?: unknown;
 	newTabs?: unknown;
 	tabs?: unknown;
 	bridge?: unknown;
@@ -28,6 +30,8 @@ type BrowserBridgeClientMessageServiceDeps = {
 	pendingRequests: BrowserBridgePendingRequests;
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	leases: BrowserLeaseRegistry;
+	queues: BrowserCommandQueueRegistry;
+	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
 	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
 	notifyExtensionReady?: () => void;
 };
@@ -77,7 +81,18 @@ export class BrowserBridgeClientMessageService {
 		if (type === "ext_ready" || type === "tabs_update") {
 			this.deps.browserSessions.selectClient(this.deps.browserSessions.defaultSession(), ws);
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);
+			const replacements = Array.isArray(message.replaced) ? this.deps.tabs.applyTabReplacements(message.replaced, ws) : [];
 			this.deps.tabs.updateTabs(Array.isArray(message.tabs) ? message.tabs : [], ws);
+			this.deps.tabs.recordTabActivation(message.activation, ws);
+			const affectedBrowserSessionIds = this.deps.browserSessions.list()
+				.filter((session) => this.deps.browserSessions.selectedOpenClient(session) === ws)
+				.map((session) => session.id);
+			for (const replacement of replacements) {
+				const next = this.deps.tabs.sessions.get(replacement.toSessionId);
+				if (next) this.deps.leases.migrateTabLeaseForReplacement(replacement.fromSessionId, next);
+				for (const session of this.deps.browserSessions.list()) this.deps.queues.migrateTabQueue(session.id, replacement.from, replacement.to);
+				this.deps.migratePerceptionLedger?.(replacement.from, replacement.to, affectedBrowserSessionIds);
+			}
 			this.deps.notifyExtensionReady?.();
 			if (type === "ext_ready") this.deps.runtimeRecoveryArtifacts.recordRuntimeRecovery(this.deps.clients.info(ws), recordValue(message.bridge));
 			return;
@@ -88,11 +103,12 @@ export class BrowserBridgeClientMessageService {
 		}
 		if (type === "result" || type === "error") {
 			const id = String(message.id || "");
+			const diagnostics = recordValue(message.diagnostics);
 			if (type === "error") {
-				this.deps.pendingRequests.rejectBrowserError(id, message.error, message.result);
+				this.deps.pendingRequests.rejectBrowserError(id, message.error, message.result, diagnostics);
 				return;
 			}
-			this.deps.pendingRequests.resolve(id, message.result, Array.isArray(message.newTabs) ? message.newTabs : []);
+			this.deps.pendingRequests.resolve(id, message.result, Array.isArray(message.newTabs) ? message.newTabs : [], diagnostics);
 		}
 	}
 

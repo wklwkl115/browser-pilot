@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { nativeTransferToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { summarizeTransferData } from "./summaries/index.js";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation.js";
-import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
+import { artifactFallbackName, defineBrowserTool, jsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolMaxChars, toolTimeoutMs } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 import { isRecord } from "../utils/records.js";
@@ -57,7 +57,7 @@ export function registerDownloadTool({ pi, ensureStarted }: ToolRegistrarContext
 				const maxChars = toolMaxChars(params, "browser_download");
 				command.timeoutMs = timeoutMs;
 				const server = await ensureStarted();
-				const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+				const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
 				const expectMime = typeof params.expectMime === "string" && params.expectMime.trim()
 					? params.expectMime.trim().toLowerCase()
 					: (command.mode === "media" ? "image" : undefined);
@@ -103,7 +103,7 @@ export function registerUploadTool({ pi, ensureStarted }: ToolRegistrarContext) 
 				try {
 					const command = buildTransferUploadCommand(selector, files, params.index);
 					command.timeoutMs = timeoutMs;
-					const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+					const result = await server.sendCommand(command as typeof command & { cmd: string }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
 					return await jsonToolResult(result, params, ctx, {
 						toolName: "browser_upload",
 						command: nativeTransferToolMetadata.browser_upload.command,

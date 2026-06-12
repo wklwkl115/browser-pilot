@@ -60,6 +60,7 @@ type BrowserBridgeCommandServiceDeps = {
 export class BrowserBridgeCommandService {
 	private readonly deps: BrowserBridgeCommandServiceDeps;
 	private extensionUnavailableUntil = 0;
+	private lastConnectionWaitMs = 0;
 
 	constructor(deps: BrowserBridgeCommandServiceDeps) {
 		this.deps = deps;
@@ -73,16 +74,17 @@ export class BrowserBridgeCommandService {
 	}
 
 	async switchTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
-		const id = this.requireTabId(tabId);
 		const browserSession = this.browserSession(options.browserSessionId);
+		const target = this.requireTargetRef(tabId, options.browserSessionId);
+		const id = this.requireTargetTabId(target, tabId);
 		this.deps.leases.acquireUiLock(browserSession.id, "browser_tabs.switch");
 		try {
 			const previousDefaultTabId = this.deps.tabs.previousDefaultTabId(options.browserSessionId);
-			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId: id, browserSessionId: options.browserSessionId });
+			const result = await this.sendCommand({ cmd: "tabs", method: "switch", tabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId });
 			const failure = bridgeResultFailure(result.data);
 			if (failure) throw new BrowserBridgeError("BROWSER_COMMAND_FAILED", failure.message, { cmd: "tabs", method: "switch", tabId: id, ...failure.details });
 			this.deps.tabs.selectTab(id, options.browserSessionId);
-			const selection = { selectedTabId: id, previousDefaultTabId, selectionVersion: this.deps.tabs.selectionVersion };
+			const selection = { selectedTabId: id, selectedTabHandle: target.tabHandle, previousDefaultTabId, selectionVersion: this.deps.tabs.selectionVersion };
 			const dataRecord = recordValue(result.data);
 			const data = dataRecord ? { ...dataRecord, ...selection } : selection;
 			return { ...result, data };
@@ -104,14 +106,15 @@ export class BrowserBridgeCommandService {
 	}
 
 	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
-		const id = this.requireTabId(tabId);
-		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId: id, browserSessionId: options.browserSessionId });
+		const target = this.requireTargetRef(tabId, options.browserSessionId);
+		const id = this.requireTargetTabId(target, tabId);
+		const result = await this.sendCommand({ cmd: "tabs", method: "close", targetTabId: id }, { timeoutMs, tabId, browserSessionId: options.browserSessionId });
 		this.deps.tabs.markTabDisconnected(id, options.browserSessionId);
 		return result;
 	}
 
 	async executeJavaScript(script: string, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
-		const target = this.requireExecutionTarget(options.tabId, options.browserSessionId);
+		const target = this.requireExecutionTarget(options.targetRef ?? options.tabId, options.browserSessionId);
 		return this.sendPayload(script, { browserSessionId: options.browserSessionId, tabId: target.tabId, timeoutMs: options.timeoutMs, target, accessMode: options.accessMode ?? "write" });
 	}
 
@@ -124,30 +127,32 @@ export class BrowserBridgeCommandService {
 	 * continues to the normal recovery-bearing error.
 	 */
 	private async ensureExtensionReady(browserSessionId?: string): Promise<void> {
+		this.lastConnectionWaitMs = 0;
 		if (!this.deps.isRunning()) return;
 		if (this.deps.snapshot({ browserSessionId }).extensionConnected) return;
 		const waitMs = extensionWaitMs();
 		if (waitMs <= 0) return;
 		const now = Date.now();
 		if (now < this.extensionUnavailableUntil) return;
+		const startedAt = Date.now();
 		const ready = await this.deps.waitForExtensionReady(browserSessionId, waitMs);
+		this.lastConnectionWaitMs = Date.now() - startedAt;
 		this.extensionUnavailableUntil = ready ? 0 : Date.now() + EXTENSION_WAIT_NEGATIVE_CACHE_MS;
 	}
 
 	async sendCommand(command: BridgeCommand, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
 		await this.ensureExtensionReady(options.browserSessionId);
-		const hasOptionTabId = options.tabId !== undefined;
+		const optionRef = options.targetRef ?? options.tabId;
+		const hasOptionTabId = optionRef !== undefined;
 		const hasCommandTabId = command.tabId !== undefined;
-		const optionTabId = toTabId(options.tabId);
-		const commandTabId = toTabId(command.tabId);
-		if (hasOptionTabId && optionTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { cmd: command.cmd, tabId: options.tabId, source: "options" });
-		if (hasCommandTabId && commandTabId === undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid command tabId is required", { cmd: command.cmd, tabId: command.tabId, source: "command" });
-		if (optionTabId !== undefined && commandTabId !== undefined && optionTabId !== commandTabId) {
-			throw new BrowserBridgeError("TAB_ID_CONFLICT", "Top-level tabId conflicts with command tabId", { cmd: command.cmd, tabId: optionTabId, commandTabId });
+		const optionTarget = hasOptionTabId ? this.deps.tabs.resolveTargetRef(optionRef, options.browserSessionId, "explicit") : undefined;
+		const commandTarget = hasCommandTabId ? this.deps.tabs.resolveTargetRef(command.tabId, options.browserSessionId, "explicit") : undefined;
+		if (hasOptionTabId && !optionTarget) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { cmd: command.cmd, tabId: optionRef, source: "options" });
+		if (hasCommandTabId && !commandTarget) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid command tabId or targetRef is required", { cmd: command.cmd, tabId: command.tabId, source: "command" });
+		if (optionTarget?.tabId !== undefined && commandTarget?.tabId !== undefined && optionTarget.tabId !== commandTarget.tabId) {
+			throw new BrowserBridgeError("TAB_ID_CONFLICT", "Top-level targetRef/tabId conflicts with command tabId", { cmd: command.cmd, tabId: optionTarget.tabId, commandTabId: commandTarget.tabId, optionTarget, commandTarget });
 		}
-		const browserSession = this.browserSession(options.browserSessionId);
-		const requestedTabId = optionTabId ?? commandTabId;
-		const explicitTarget = requestedTabId !== undefined ? this.deps.tabs.targetInfo("explicit", requestedTabId, browserSession) : undefined;
+		const explicitTarget = optionTarget ?? commandTarget;
 		const target = explicitTarget ?? this.optionalExecutionTarget(command, options.browserSessionId);
 		const tabId = target?.tabId;
 		const payload: BridgeCommand = tabId !== undefined ? { ...command, tabId } : command;
@@ -175,10 +180,22 @@ export class BrowserBridgeCommandService {
 			if (options.accessMode === "write") {
 				this.assertWriteInvariants(browserSession.id, tab, target);
 				return recordResult(this.deps.queues.enqueue(browserSession.id, tabId, async () => {
-					this.assertWriteInvariants(browserSession.id, tab, target);
-					return await this.deps.leases.withAutoTabLease(browserSession.id, tab, async () => {
-						this.deps.leases.touchTabLease(browserSession.id, tab);
-						return await this.deps.pendingRequests.send(tab.client, code, { tabId, timeoutMs: options.timeoutMs, target });
+					const resolvedQueuedTarget = this.deps.tabs.resolveTargetRef(target.targetRef ?? target.tabHandle ?? target.tabId, browserSession.id, target.source);
+					const queuedTarget = resolvedQueuedTarget ? {
+						...resolvedQueuedTarget,
+						...(target.requestedTabId !== undefined ? { requestedTabId: target.requestedTabId } : {}),
+						...(target.replacedFrom !== undefined ? { replacedFrom: target.replacedFrom } : {}),
+						...(target.replacedByTabId !== undefined ? { replacedByTabId: target.replacedByTabId } : {}),
+						...(target.replacementHops !== undefined ? { replacementHops: target.replacementHops } : {}),
+					} : target;
+					const queuedTabId = queuedTarget.tabId ?? tabId;
+					const queuedTab = this.requireLiveTabSession(queuedTabId, browserSession.id);
+					this.assertWriteInvariants(browserSession.id, queuedTab, queuedTarget);
+					const queuedCodeRecord = recordValue(code);
+					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
+					return await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
+						this.deps.leases.touchTabLease(browserSession.id, queuedTab);
+						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget });
 					});
 				}));
 			}
@@ -197,6 +214,11 @@ export class BrowserBridgeCommandService {
 			throw noBrowserExtensionError({
 				port: this.deps.getPort(),
 				everConnected: this.deps.clients.hasEverConnected(),
+				extensionConnected: false,
+				extensionWaitMs: extensionWaitMs(),
+				connectionWaitMs: this.lastConnectionWaitMs,
+				negativeCacheActive: Date.now() < this.extensionUnavailableUntil,
+				negativeCacheRemainingMs: Math.max(0, this.extensionUnavailableUntil - Date.now()),
 				browserSessionId: browserSession.id,
 				sessions: this.deps.listBrowserSessions(),
 			});
@@ -207,20 +229,21 @@ export class BrowserBridgeCommandService {
 	private requireLiveTabSession(tabId: number, browserSessionId?: string): BrowserTabSession {
 		const session = this.deps.tabs.liveSessionForTabId(tabId, browserSessionId);
 		if (session) return session;
+		const replacedByTabId = this.deps.tabs.replacedByTabId(tabId, browserSessionId);
 		throw tabNotFoundError({
 			tabId,
 			browserSessionId,
 			selectedBrowser: this.deps.browserSessions.selectedInfo(this.browserSession(browserSessionId), this.deps.clients),
 			tabs: this.deps.getTabs(),
 			latestTabId: this.deps.tabs.latestTabId(browserSessionId),
+			replacedByTabId,
 		});
 	}
 
 	private requireExecutionTarget(value: unknown, browserSessionId?: string): BrowserBridgeTargetInfo {
-		const browserSession = this.browserSession(browserSessionId);
-		const requested = toTabId(value);
-		if (requested) return this.deps.tabs.targetInfo("explicit", requested, browserSession);
-		if (value !== undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value, source: "options" });
+		const requested = this.deps.tabs.resolveTargetRef(value, browserSessionId, "explicit");
+		if (requested) return requested;
+		if (value !== undefined) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value, source: "options" });
 		const fallback = this.deps.tabs.fallbackExecutionTarget(browserSessionId);
 		if (fallback) return fallback;
 		throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { tabs: this.deps.getTabs() });
@@ -277,10 +300,15 @@ export class BrowserBridgeCommandService {
 		}
 	}
 
-	private requireTabId(value: unknown): number {
-		const tabId = toTabId(value);
-		if (!tabId) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId is required", { tabId: value });
-		return tabId;
+	private requireTargetRef(value: unknown, browserSessionId?: string): BrowserBridgeTargetInfo {
+		const target = this.deps.tabs.resolveTargetRef(value, browserSessionId, "explicit");
+		if (!target) throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
+		return target;
+	}
+
+	private requireTargetTabId(target: BrowserBridgeTargetInfo, value: unknown): number {
+		if (target.tabId !== undefined) return target.tabId;
+		throw new BrowserBridgeError("INVALID_TAB_ID", "A valid tabId or targetRef is required", { tabId: value });
 	}
 
 	private browserSession(browserSessionId?: string): BrowserAutomationSession {

@@ -23,6 +23,20 @@ the active execution contract, and a compact archive pointer.
   gates, usage-log distillation, build-skew surfacing, observe runner
   decomposition, CLI thinning, and file ceilings. Runtime artifact evidence was
   recorded under `.pi/browser-artifacts/`.
+- **Living tab session architecture full closure**: completed
+  `docs/living-tab-session-architecture-plan.md` S0-S3 under the 2026-06-13
+  active contract. Landed stable `tabHandle` / `targetRef` identity,
+  replacement/activation/lineage events, unambiguous numeric-id auto-follow,
+  lease/queue/perception migration, connection readiness diagnostics, observe
+  timing/fused fingerprint, AX DOMSnapshot geometry join, dirty-root standing
+  perception with `PI_BROWSER_STANDING_PERCEPTION`, objective-substrate ledger
+  metadata, stale-act execution feedback, and wait selector subscription
+  contracts. Viewport-first/fused-template/speculative/channel experiments were
+  closed by evidence without changing the public tool surface. Final evidence
+  includes fixture workflow eval 28/28 and a fresh blind real-site linux.do run
+  that completed the top-5-topic task via natural `wait selector`, `observe
+  scan`, and saved `data.rows`; its residual stage disconnect was recorded as
+  n=1 `LTS1` rather than promoted to a fix.
 - **Check acceleration implementation**: completed graph-backed trace, DAG,
   cache, smart selection, miss recording, and workflow documentation while
   preserving `npm run check` as the final gate. The later dev-harness A4 work

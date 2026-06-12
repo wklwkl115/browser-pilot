@@ -12,90 +12,23 @@ import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, ty
 import type { FactGranularity } from "../../distill-core/fact.js";
 import { createBrowserAbmlIntegration } from "../../abml/verbs/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
-import { createCodedError } from "../../utils/codedError.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
-import { isRecord, normalizeTabId } from "../../utils/params.js";
+import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../artifacts.js";
 import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
-import { queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint } from "../pageSignals.js";
+import { normalizePageFingerprint, queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "../scanEntityRefs.js";
 import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData } from "../summaries/index.js";
-import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
+import { artifactFallbackName, bridgeNestedErrorResult, jsonToolResult, resolveLocalTargetTabId, targetTabId, textToolResult, toolMaxChars, toolTimeoutMs, withTrackedOperation, type ToolOnUpdate, type ToolResultContext } from "../toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS } from "../toolShared.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
 import { cachedEnvelopeFromArtifact, modeInferredDetails, modeInferredSummary, observeRenderParamsSignature, renderCacheMatches, scanCommandName, sessionDeltaEnabled } from "./renderCache.js";
 import { entityRefs, mergeEntitiesByRef, resolveBaselineEntities, type BaselineResolution } from "./baseline.js";
 import { buildMemoryAugmentationPlan, consumeMemoryProfileDiagnostics, memoryWarmStartTerms, recordMemoryProfileFrame } from "./memoryAugmentation.js";
 import { buildObserveRelevance, observeIntent, relevanceEnabled, type ObserveRelevance } from "./relevanceFusion.js";
-
-export const DEFAULT_CONTENT_TIMEOUT_MS = 35_000;
-export const MIN_CONTENT_TIMEOUT_MS = 100;
-export type ObserveMode = "scan" | "content" | "html" | "text" | "tabs";
-
-export type ObserveToolParams = {
-	mode?: string;
-	browserSessionId?: string;
-	tabId?: number | string;
-	detailLevel?: string;
-	outputPath?: string;
-	timeoutMs?: number;
-	maxChars?: number;
-	selector?: string;
-	url?: string;
-	includeLinks?: boolean;
-	maxNodes?: number;
-	includeIframes?: boolean;
-	htmlMode?: string;
-	params?: unknown;
-	intent?: string;
-	baseline?: unknown;
-	baselineSnapshotId?: string;
-	baselinePath?: string;
-	actionRef?: string;
-	fresh?: boolean;
-	modeInferred?: { mode: ObserveMode; reason: string } | null;
-};
-
-type ObserveRunnerError = Error & { code: "INVALID_TIMEOUT"; details: Record<string, unknown> };
-
-function contentTimeoutError(message: string, value: unknown): ObserveRunnerError {
-	return createCodedError({
-		name: "ObserveRunnerError",
-		code: "INVALID_TIMEOUT",
-		message,
-		details: { timeoutMs: value, minTimeoutMs: MIN_CONTENT_TIMEOUT_MS },
-	}) as ObserveRunnerError;
-}
-
-export function normalizeContentTimeoutMs(value: unknown): number {
-	if (value === undefined || value === null) return DEFAULT_CONTENT_TIMEOUT_MS;
-	const n = Number(value);
-	if (!Number.isFinite(n) || n <= 0) throw contentTimeoutError("browser_observe content timeoutMs must be a positive number", value);
-	const timeoutMs = Math.ceil(n);
-	if (timeoutMs < MIN_CONTENT_TIMEOUT_MS) throw contentTimeoutError(`browser_observe content timeoutMs must be at least ${MIN_CONTENT_TIMEOUT_MS}ms`, value);
-	return timeoutMs;
-}
-
-export function withObservationMeta(summary: Record<string, unknown>, mode: ObserveMode, sourceMode: "scan" | "content" | "html"): Record<string, unknown> {
-	return { mode, sourceMode, ...summary };
-}
-
-export function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number) {
-	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
-	return server.createObservationSnapshot({
-		browserSessionId: bridge.browserSessionId,
-		tabId: normalizeTabId(params.tabId) ?? bridge.defaultTabId,
-		url,
-		frameScope: "tab",
-		selectionVersion: bridge.selectionVersion,
-		sourceMode,
-		capturedAt: Date.now(),
-		networkSeq,
-		hookSeq,
-		saved: savedPath ? { path: savedPath } : undefined,
-	});
-}
+import { addBridgeRoundTrips, elapsedMs, finalizedObserveTimings, type ObserveTimingMetrics } from "./timings.js";
+import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type ObserveToolParams } from "./common.js";
 
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
@@ -129,6 +62,12 @@ function tabUrlForLedger(tabs: unknown[], tabId: number | undefined, fallbackTab
 	return isRecord(tab) && typeof tab.url === "string" ? tab.url : undefined;
 }
 
+function scanResultFingerprint(value: unknown) {
+	const record = isRecord(value) ? value : {};
+	const signals = isRecord(record.signals) ? record.signals : {};
+	return normalizePageFingerprint(signals.fingerprint);
+}
+
 function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
 	const record = isRecord(value) ? value : {};
 	const tabs = Array.isArray(record.tabs) ? record.tabs : [];
@@ -154,10 +93,14 @@ function summarizeObserveTabsData(value: unknown): Record<string, unknown> {
 }
 
 export async function runScanObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: ToolResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: ToolOnUpdate) {
+	const observeTimings: ObserveTimingMetrics = {};
+	const tabRefreshStartedAt = Date.now();
 	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch(() => server.getTabs());
+	observeTimings.tabRefreshMs = elapsedMs(tabRefreshStartedAt);
 	const maxChars = toolMaxChars(params, "browser_observe");
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;
-	const tabId = normalizeTabId(params.tabId);
+	const rawTargetRef = targetTabId(params);
+	const tabId = resolveLocalTargetTabId(server, rawTargetRef, browserSessionId);
 	const fallbackName = artifactFallbackName(mode === "tabs" ? "observe-tabs" : mode === "text" ? "observe-text" : "observe-scan");
 	const outputPath = params.outputPath ?? resolveArtifactPath(ctx, undefined, fallbackName);
 	const resultParams = { ...params, outputPath };
@@ -211,7 +154,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const effectiveTabId = tabId ?? preBridge.defaultTabId;
 	const detailLevel = String(params.detailLevel || "summary");
 	const paramsSignature = observeRenderParamsSignature(params, mode, detailLevel, maxChars, captureMaxChars);
-	const pageFingerprint = !hasNavigation && sessionDeltaEnabled(params) ? await readPageFingerprint(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs }) : undefined;
+	let pageFingerprint = undefined as ReturnType<typeof normalizePageFingerprint>;
+	if (!hasNavigation && sessionDeltaEnabled(params)) {
+		const fingerprintStartedAt = Date.now();
+		pageFingerprint = await readPageFingerprint(server, { browserSessionId: params.browserSessionId, tabId: effectiveTabId, timeoutMs });
+		observeTimings.fingerprintMs = elapsedMs(fingerprintStartedAt);
+		addBridgeRoundTrips(observeTimings, 1);
+	}
 	if (renderCacheMatches(ledgerFrame, mode, detailLevel, maxChars, paramsSignature, pageFingerprint) && typeof server.getObservationSnapshot === "function") {
 		const cacheFingerprint = pageFingerprint!;
 		const priorSnapshot = server.getObservationSnapshot(ledgerFrame.snapshotId);
@@ -277,6 +226,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		baseline = undefined;
 	}
 	const abml = createBrowserAbmlIntegration(server, { browserSessionId, tabId, timeoutMs, maxChars: captureMaxChars });
+	let fusedPageFingerprint = undefined as ReturnType<typeof normalizePageFingerprint>;
 	const { result: observation, operation } = await withTrackedOperation(server, {
 		toolName: "browser_observe",
 		command: scanCommandName(mode, hasNavigation),
@@ -291,14 +241,24 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		let navigationData: unknown;
 		if (hasNavigation) {
 			await handle.update({ progress: 20, phase: "navigating" });
-			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+			const navigationStartedAt = Date.now();
+			const navigation = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: params.url!, state: "complete", timeoutMs }, { browserSessionId: params.browserSessionId, tabId: rawTargetRef as number | string | undefined, timeoutMs });
+			observeTimings.navigationMs = elapsedMs(navigationStartedAt);
+			addBridgeRoundTrips(observeTimings, 1);
 			assertBridgeCommandSucceeded(navigation, "wait.navigateAndWait");
 			navigationData = navigation.data;
 		}
 		await handle.update({ progress: hasNavigation ? 50 : 40 });
-		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs, name: "scan_extract" });
+		const pageScriptStartedAt = Date.now();
+		const result = await evaluatePageScriptDirect(server, scanScript, { browserSessionId: params.browserSessionId, tabId: rawTargetRef, timeoutMs, name: "scan_extract" });
+		observeTimings.pageScriptMs = elapsedMs(pageScriptStartedAt);
+		addBridgeRoundTrips(observeTimings, 1);
+		fusedPageFingerprint = scanResultFingerprint(result.data);
+		if (fusedPageFingerprint) observeTimings.fusedFingerprint = true;
 		await handle.update({ progress: 70, details: { acknowledged: result.acknowledged, target: result.target } });
 		const canReuseScanForAbml = mode !== "text" && params.includeIframes !== false && params.maxNodes === undefined && isRecord(result.data);
+		observeTimings.abmlPrefetchedScan = canReuseScanForAbml;
+		const abmlStartedAt = Date.now();
 		const abmlRead = await abml.readStructure({
 			browserSessionId,
 			tabId,
@@ -307,34 +267,49 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			baseline: baseline?.entities,
 			diffOptions: baseline?.partialBaseline ? { partialBaseline: true } : undefined,
 			prefetchedScan: canReuseScanForAbml ? result.data as Record<string, unknown> : undefined,
-			axCacheKey: pageFingerprint ? `content:${pageFingerprint.changeSeq}:${pageFingerprint.url || ""}` : undefined,
+			axCacheKey: (pageFingerprint ?? fusedPageFingerprint) ? `content:${(pageFingerprint ?? fusedPageFingerprint)!.changeSeq}:${(pageFingerprint ?? fusedPageFingerprint)!.url || ""}` : undefined,
 		});
+		observeTimings.abmlMs = elapsedMs(abmlStartedAt);
+		if (!canReuseScanForAbml) addBridgeRoundTrips(observeTimings, 1);
 		await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target, abml: abmlRead?.ok === true ? { entityCount: abmlRead.entities?.length ?? 0 } : { ok: false } } });
 		return { result, abmlRead, navigationData };
 	});
 	const data = observation.result.data as Record<string, unknown> | undefined;
+	const scanPageFingerprint = fusedPageFingerprint ?? scanResultFingerprint(data);
+	const effectivePageFingerprint = pageFingerprint ?? scanPageFingerprint;
 	const content = typeof data?.content === "string" ? data.content : JSON.stringify(data ?? observation.result.data, null, 2);
 	const scanMeta = data ? { ...data, content: `[${content.length} chars]` } : undefined;
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	// ABML R3.x causal plane: capture this observation's network + hook seq high-water marks (so it can
 	// anchor a future baseline) and, when a baseline was supplied, the network-delta + event-delta since it.
+	const recorderStartedAt = Date.now();
 	const [recorderState, hookState] = await Promise.all([
 		readNetworkRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs }),
 		readHookRecorderSeq(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs }),
 	]);
+	observeTimings.recorderMs = elapsedMs(recorderStartedAt);
+	addBridgeRoundTrips(observeTimings, 2);
 	const hasBaseline = baseline !== undefined;
-	let causal = hasBaseline
-		? await buildObserveCausal(server, params, recorderState, baseline?.networkSeq, tabId, timeoutMs)
-		: undefined;
+	let causal: CausalSummary | undefined;
+	if (hasBaseline) {
+		const causalStartedAt = Date.now();
+		causal = await buildObserveCausal(server, params, recorderState, baseline?.networkSeq, tabId, timeoutMs);
+		observeTimings.causalMs = elapsedMs(causalStartedAt);
+		addBridgeRoundTrips(observeTimings, 1);
+	}
 	// P2: attach the hook event-delta to the (requests-variant) causal block when hooks are armed and the
 	// baseline carries a hook seq. Best-effort — a failed event read never fails the observe.
 	if (causal && "requests" in causal && hasBaseline && hookState.active && baseline?.hookSeq !== undefined) {
 		try {
+			const eventStartedAt = Date.now();
 			const ev = buildCausalEvents(await queryHookDelta(server, { browserSessionId: params.browserSessionId, tabId, timeoutMs, sinceSeq: baseline.hookSeq }), baseline.hookSeq);
+			observeTimings.eventCausalMs = elapsedMs(eventStartedAt);
+			addBridgeRoundTrips(observeTimings, 1);
 			if (ev.events.length) causal = { ...causal, ...ev };
 		} catch { /* event delta is additive; never fail the observe on it */ }
 	}
 	const snapshotMeta = currentObserveSnapshotMeta(server, resultParams, "scan", outputPath, typeof data?.url === "string" ? data.url : undefined, recorderState.lastSeq, hookState.lastSeq);
+	const renderStartedAt = Date.now();
 	const scanEntityContext = {
 		browserSessionId: bridge.browserSessionId,
 		tabId,
@@ -520,13 +495,61 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const priorLedgerFrame = finalLedgerKey && typeof server.getRecentPerceptionLedgerFrames === "function" ? server.getRecentPerceptionLedgerFrames(finalLedgerKey, 1)[0] : undefined;
 	const stableRefs = ledgerFrameForRecord ? stableRefsFromFrames(ledgerFrameForRecord, priorLedgerFrame) : undefined;
 	const memoryProfileWarnings = consumeMemoryProfileDiagnostics(ctx?.cwd);
+	observeTimings.renderMs = elapsedMs(renderStartedAt);
+	const observeDiagnostics = { observeTimings: finalizedObserveTimings(observeTimings, data, observation.abmlRead) };
+	const abmlDetails = observation.abmlRead?.ok === true
+		? {
+			integrated: true,
+			entityCount: observation.abmlRead.entities?.length ?? 0,
+			primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0,
+			listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0,
+			visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0,
+			frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0,
+			diagnostics: observeDiagnostics.observeTimings,
+		}
+		: { integrated: false, diagnostics: observeDiagnostics.observeTimings };
+	const resultDetails = {
+		mode,
+		modeInferred: modeInferredDetails(params),
+		sourceMode: "scan",
+		sourceCommand: "scan_extract",
+		...(hasNavigation ? { navigation: observation.navigationData } : {}),
+		tabs_count: tabs.length,
+		tabs,
+		active_tab: bridge.defaultTabId,
+		browserSessionId: bridge.browserSessionId,
+		scan: scanMeta,
+		abml: abmlDetails,
+		...(scanPageFingerprint ? { signals: { fingerprint: scanPageFingerprint } } : {}),
+		diagnostics: observeDiagnostics,
+		...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}),
+	};
+	const artifactValue = {
+		...observation.result,
+		...(hasNavigation ? { navigation: observation.navigationData } : {}),
+		tabs_count: tabs.length,
+		tabs,
+		active_tab: bridge.defaultTabId,
+		browserSessionId: bridge.browserSessionId,
+		operation,
+		snapshot: snapshotMeta,
+		envelope: artifactEnvelopeMirror,
+		...(envelopeDiff ? { diff: envelopeDiff } : {}),
+		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
+		...(artifactRelations ? { relations: artifactRelations } : {}),
+		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
+		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
+		...(artifactRelevance ? { relevance: artifactRelevance } : {}),
+		...causalBlock,
+		abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead,
+	};
 	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",
 		command: scanCommandName(mode, hasNavigation),
 		maxChars,
 		fallbackName,
 		summary,
-		details: { mode, modeInferred: modeInferredDetails(params), sourceMode: "scan", sourceCommand: "scan_extract", ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, scan: scanMeta, abml: observation.abmlRead?.ok === true ? { integrated: true, entityCount: observation.abmlRead.entities?.length ?? 0, primaryEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind !== "region" && entity.kind !== "frame").length ?? 0, listEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.hints?.listContainer === true).length ?? 0, visualRegionCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "region" && entity.source === "vision").length ?? 0, frameEntityCount: observation.abmlRead.entities?.filter((entity) => entity.kind === "frame").length ?? 0 } : { integrated: false }, ...(memoryProfileWarnings.length ? { memory: { warnings: memoryProfileWarnings } } : {}) },
+		details: resultDetails,
 		operation,
 		snapshot: snapshotMeta,
 		granularityCeiling,
@@ -536,12 +559,12 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 			allocation = value;
 		},
 		entities: envelopeEntities,
-		artifactValue: { ...observation.result, ...(hasNavigation ? { navigation: observation.navigationData } : {}), tabs_count: tabs.length, tabs, active_tab: bridge.defaultTabId, browserSessionId: bridge.browserSessionId, operation, snapshot: snapshotMeta, envelope: artifactEnvelopeMirror, ...(envelopeDiff ? { diff: envelopeDiff } : {}), ...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}), ...(artifactRelations ? { relations: artifactRelations } : {}), ...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}), ...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}), ...(artifactRelevance ? { relevance: artifactRelevance } : {}), ...causalBlock, abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection } : observation.abmlRead },
+		artifactValue,
 	});
 	if (ledgerFrameForRecord && typeof server.recordPerceptionLedgerFrame === "function") {
 		const recordedFrame = server.recordPerceptionLedgerFrame({
 			...ledgerFrameForRecord,
-			...(pageFingerprint ? { pageFingerprint } : {}),
+			...(effectivePageFingerprint ? { pageFingerprint: effectivePageFingerprint } : {}),
 			renderCache: { mode, detailLevel, maxChars, paramsSignature, renderedAt: snapshotMeta.capturedAt },
 			...(allocation ? { allocation } : {}),
 		});

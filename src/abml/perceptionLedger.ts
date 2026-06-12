@@ -6,6 +6,11 @@ export type PerceptionLedgerKey = {
 	navigationEpoch?: string;
 };
 
+export type PerceptionObjectiveKey = {
+	tabId?: number;
+	navigationEpoch?: string;
+};
+
 export type PerceptionLedgerFactState = {
 	versionStamp: string;
 	stableStamp?: string;
@@ -25,6 +30,11 @@ export type PerceptionLedgerFrame = {
 		visibleCount?: number;
 		interactiveCount?: number;
 		capturedAt?: number;
+		dirty?: {
+			roots: string[];
+			overflow: boolean;
+			sinceSeq?: number;
+		};
 	};
 	renderCache?: {
 		mode: string;
@@ -36,6 +46,11 @@ export type PerceptionLedgerFrame = {
 	allocation?: {
 		budgetUsedRatio: number;
 		omittedCount: number;
+	};
+	objective?: {
+		key: PerceptionObjectiveKey;
+		snapshotId: string;
+		shared: boolean;
 	};
 };
 
@@ -65,6 +80,25 @@ function keyString(key: PerceptionLedgerKey): string {
 
 function traceKey(browserSessionId?: string): string {
 	return browserSessionId || "default";
+}
+
+function objectiveKey(key: PerceptionLedgerKey): PerceptionObjectiveKey {
+	return { tabId: key.tabId, navigationEpoch: key.navigationEpoch };
+}
+
+function objectiveKeyString(key: PerceptionObjectiveKey): string {
+	return [key.tabId ?? "tab", key.navigationEpoch || "unknown"].join("\u0000");
+}
+
+function objectiveFingerprint(frame: PerceptionLedgerFrame): string {
+	return JSON.stringify({
+		facts: frame.facts,
+		pageFingerprint: frame.pageFingerprint,
+	});
+}
+
+function objectiveEquivalent(a: PerceptionLedgerFrame | undefined, b: PerceptionLedgerFrame): boolean {
+	return !!a && objectiveFingerprint(a) === objectiveFingerprint(b);
 }
 
 function entityVersionStamp(entity: Entity): string {
@@ -110,6 +144,8 @@ export function stableRefsFromFrames(current: PerceptionLedgerFrame, prior: Perc
 export class PerceptionLedger {
 	private readonly frames = new Map<string, PerceptionLedgerFrame>();
 	private readonly frameOrder = new Map<string, string[]>();
+	private readonly objectiveFrames = new Map<string, PerceptionLedgerFrame>();
+	private readonly objectiveOrder: string[] = [];
 	private readonly traces = new Map<string, PerceptionTraceTerm[]>();
 	private traceSeq = 0;
 
@@ -130,7 +166,29 @@ export class PerceptionLedger {
 
 	record(frame: PerceptionLedgerFrame): PerceptionLedgerFrame {
 		const key = keyString(frame.key);
-		this.frames.set(key, frame);
+		const objective = objectiveKey(frame.key);
+		const objectiveMapKey = objectiveKeyString(objective);
+		const priorObjective = this.objectiveFrames.get(objectiveMapKey);
+		const objectiveSnapshotId = objectiveEquivalent(priorObjective, frame) ? priorObjective!.snapshotId : frame.snapshotId;
+		const recorded = {
+			...frame,
+			objective: {
+				key: objective,
+				snapshotId: objectiveSnapshotId,
+				shared: !!priorObjective,
+			},
+		};
+		if (!priorObjective || !objectiveEquivalent(priorObjective, frame)) {
+			this.objectiveFrames.set(objectiveMapKey, { ...recorded, key: { tabId: objective.tabId, navigationEpoch: objective.navigationEpoch } });
+			const existing = this.objectiveOrder.indexOf(objectiveMapKey);
+			if (existing >= 0) this.objectiveOrder.splice(existing, 1);
+			this.objectiveOrder.push(objectiveMapKey);
+			while (this.objectiveOrder.length > MAX_FRAMES_PER_SESSION_TAB) {
+				const stale = this.objectiveOrder.shift();
+				if (stale) this.objectiveFrames.delete(stale);
+			}
+		}
+		this.frames.set(key, recorded);
 		const scope = frameScopeKey(frame.key);
 		const order = (this.frameOrder.get(scope) ?? []).filter((item) => item !== key);
 		order.push(key);
@@ -139,7 +197,38 @@ export class PerceptionLedger {
 			if (stale) this.frames.delete(stale);
 		}
 		this.frameOrder.set(scope, order);
-		return frame;
+		return recorded;
+	}
+
+	objective(key: PerceptionObjectiveKey): PerceptionLedgerFrame | undefined {
+		return this.objectiveFrames.get(objectiveKeyString(key));
+	}
+
+	objectiveFrameCount(): number {
+		return this.objectiveFrames.size;
+	}
+
+	migrateTabId(fromTabId: number, toTabId: number, options: { browserSessionIds?: Iterable<string | undefined> } = {}): number {
+		if (!Number.isInteger(fromTabId) || !Number.isInteger(toTabId) || fromTabId === toTabId) return 0;
+		const scopedSessionIds = options.browserSessionIds ? new Set(Array.from(options.browserSessionIds).map((id) => id || "default")) : undefined;
+		const frames = Array.from(this.frames.entries())
+			.filter(([, frame]) => frame.key.tabId === fromTabId && (!scopedSessionIds || scopedSessionIds.has(frame.key.browserSessionId || "default")))
+			.map(([key, frame]) => ({ key, frame }));
+		for (const { key } of frames) this.frames.delete(key);
+		for (const orderKey of Array.from(this.frameOrder.keys())) {
+			this.frameOrder.set(orderKey, (this.frameOrder.get(orderKey) ?? []).filter((item) => !frames.some((frame) => frame.key === item)));
+		}
+		for (const { frame } of frames.sort((a, b) => a.frame.capturedAt - b.frame.capturedAt)) {
+			this.record({ ...frame, key: { ...frame.key, tabId: toTabId } });
+		}
+		for (const [key, frame] of Array.from(this.objectiveFrames.entries())) {
+			if (frame.key.tabId !== fromTabId) continue;
+			this.objectiveFrames.delete(key);
+			const moved = { ...frame, key: { ...frame.key, tabId: toTabId }, objective: undefined };
+			const nextKey = objectiveKeyString(objectiveKey(moved.key));
+			this.objectiveFrames.set(nextKey, { ...moved, objective: { key: objectiveKey(moved.key), snapshotId: moved.snapshotId, shared: false } });
+		}
+		return frames.length;
 	}
 
 	recordTraceTerms(browserSessionId: string | undefined, terms: Array<{ term: string; kind: string; weight?: number }>, at = Date.now()): PerceptionTraceSnapshot {
@@ -169,6 +258,8 @@ export class PerceptionLedger {
 	clear(): void {
 		this.frames.clear();
 		this.frameOrder.clear();
+		this.objectiveFrames.clear();
+		this.objectiveOrder.splice(0, this.objectiveOrder.length);
 		this.traces.clear();
 		this.traceSeq = 0;
 	}

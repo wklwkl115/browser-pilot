@@ -9,11 +9,21 @@ export type ExecuteStdlibInfo = {
 	refsEmbedded: number;
 	resolveMisses: string[];
 	namespace: readonly string[];
+	targetRefs?: ExecuteStdlibTargetRef[];
 };
 
 export type PreparedExecuteScript = {
 	script: string;
 	stdlib?: ExecuteStdlibInfo;
+};
+
+export type ExecuteStdlibTargetRef = {
+	refId: string;
+	observedAt?: number;
+	observationId?: string;
+	url?: string;
+	mutationEpoch?: number;
+	cssRoots: string[];
 };
 
 function shouldInjectStdlib(script: string): boolean {
@@ -44,9 +54,31 @@ function safeDescriptor(descriptor: RefDescriptor): RefDescriptor {
 	};
 }
 
-function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown>; embedded: number; misses: string[] } {
+function boundedCssRoots(descriptor: RefDescriptor): string[] {
+	const roots: string[] = [];
+	for (const locator of descriptor.locators) {
+		if (locator.by !== "css" || !locator.value.trim()) continue;
+		roots.push(locator.value.trim());
+		if (roots.length >= 8) break;
+	}
+	return roots;
+}
+
+function targetRefFromDescriptor(descriptor: RefDescriptor): ExecuteStdlibTargetRef {
+	return {
+		refId: descriptor.refId,
+		observedAt: descriptor.documentEpoch?.capturedAt ?? descriptor.createdAt,
+		observationId: descriptor.observationId,
+		url: descriptor.documentEpoch?.url,
+		mutationEpoch: descriptor.documentEpoch?.mutationEpoch,
+		cssRoots: boundedCssRoots(descriptor),
+	};
+}
+
+function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown>; embedded: number; misses: string[]; targetRefs: ExecuteStdlibTargetRef[] } {
 	const registry: Record<string, unknown> = {};
 	const misses: string[] = [];
+	const targetRefs: ExecuteStdlibTargetRef[] = [];
 	for (const uri of refUris) {
 		const resolved = resolveRefUriDetailed(uri);
 		if (!resolved.ok) {
@@ -54,13 +86,14 @@ function buildRefRegistry(refUris: string[]): { registry: Record<string, unknown
 			registry[uri] = { ok: false, code: resolved.code, error: resolved.error };
 			continue;
 		}
+		targetRefs.push(targetRefFromDescriptor(resolved.ref.descriptor));
 		registry[uri] = {
 			ok: true,
 			fresh: resolved.ref.fresh !== false,
 			descriptor: safeDescriptor(resolved.ref.descriptor),
 		};
 	}
-	return { registry, embedded: refUris.length - misses.length, misses };
+	return { registry, embedded: refUris.length - misses.length, misses, targetRefs };
 }
 
 function stdlibPrelude(registry: Record<string, unknown>): string {
@@ -184,6 +217,7 @@ export function prepareExecuteStdlib(script: string, options: { enabled?: boolea
 			refsEmbedded: registry.embedded,
 			resolveMisses: registry.misses,
 			namespace: PI_STDLIB_NAMES,
+			...(registry.targetRefs.length ? { targetRefs: registry.targetRefs } : {}),
 		},
 	};
 }

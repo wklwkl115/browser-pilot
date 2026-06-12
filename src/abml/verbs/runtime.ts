@@ -709,7 +709,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			capturedAt: snapshot.capturedAt,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 			cacheKey: input.axCacheKey,
-		}).catch((): AxReadResult => ({ entities: [], anchors: [] }));
+		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, nodeCount: 0, interestingNodeCount: 0, cacheHit: false } }));
 		const summaryData = registerScanEntityRefs(data, entityContext);
 		const summary = summarizeScanData(summaryData, bridge.tabs || [], {
 			detailLevel: "summary",
@@ -735,7 +735,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 		const filtered = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
 		return {
 			entities: filtered,
-			data: { summary, snapshotId: snapshot.snapshotId, observationId: snapshot.snapshotId, tabId: target.tabId, url: data?.url, axEntityCount: axRead.entities.length, mergedEntityCount: mergedEntities.length, relationCount },
+			data: { summary, snapshotId: snapshot.snapshotId, observationId: snapshot.snapshotId, tabId: target.tabId, url: data?.url, axEntityCount: axRead.entities.length, mergedEntityCount: mergedEntities.length, relationCount, axDiagnostics: axRead.diagnostics },
 		};
 	});
 }

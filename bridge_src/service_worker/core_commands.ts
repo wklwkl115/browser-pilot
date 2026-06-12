@@ -16,45 +16,59 @@ function coreErrorMessage(error: unknown): string { return error instanceof Erro
 function coreErrorDetails(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 function optionalString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 
-async function readContentFingerprintViaScript(tabId: number): Promise<JsonRecord> {
+async function readContentFingerprintViaScript(tabId: number, drainDirty = false): Promise<JsonRecord> {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => {
-      type PiBrowserFallbackFingerprintState = { changeSeq: number; lastChangedAt: number; observer?: MutationObserver };
+    args: [drainDirty],
+    func: (d: boolean) => {
+      type PiBrowserFallbackFingerprintState = { seq: number; at: number; since: number; overflow: boolean; o?: MutationObserver };
       const key = '__piBrowserFingerprintFallbackState__';
       const holder = globalThis as unknown as Record<string, PiBrowserFallbackFingerprintState | undefined>;
       let state = holder[key];
       if (!state) {
-        state = { changeSeq: 1, lastChangedAt: Date.now() };
+        state = { seq: 1, at: Date.now(), since: 1, overflow: false };
         holder[key] = state;
       }
-      if (!state.observer && document.documentElement) {
-        state.observer = new MutationObserver(() => {
-          state.changeSeq += 1;
-          state.lastChangedAt = Date.now();
+      if (!state.o && document.documentElement) {
+        state.o = new MutationObserver((m = []) => {
+          const p = state!.seq;
+          state.seq += 1;
+          state.at = Date.now();
+          if (!state.overflow) state.since = p;
+          if (m.length) state.overflow = true;
         });
-        state.observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+        state.o.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
       }
-      const visibleElements = Array.from(document.body?.querySelectorAll('*') ?? []).slice(0, 500);
-      let visibleCount = 0;
-      for (const element of visibleElements) {
+      const els = Array.from(document.body?.querySelectorAll('*') ?? []).slice(0, 500);
+      let vc = 0;
+      for (const element of els) {
         try {
           const rect = element.getBoundingClientRect();
-          if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) visibleCount += 1;
+          if ((rect.width > 0 || rect.height > 0) && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) vc += 1;
         } catch {
           /* ignore per-node geometry errors */
         }
       }
-      const interactiveCount = document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length;
-      return {
-        changeSeq: state.changeSeq,
+      const ic = document.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[tabindex]").length;
+      const data = {
+        changeSeq: state.seq,
         url: location.href,
         title: document.title,
         readyState: document.readyState,
-        visibleCount,
-        interactiveCount,
-        capturedAt: state.lastChangedAt,
+        visibleCount: vc,
+        interactiveCount: ic,
+        capturedAt: state.at,
+        dirty: {
+          roots: [],
+          overflow: state.overflow,
+          sinceSeq: state.since,
+        },
       };
+      if (d) {
+        state.overflow = false;
+        state.since = state.seq;
+      }
+      return data;
     },
   });
   const first = Array.isArray(results) ? results[0] as { result?: unknown } | undefined : undefined;
@@ -85,7 +99,7 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
   try {
     if (!msg.method || msg.method === 'list') {
       const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
-      const data = tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, incognito: t.incognito === true }));
+      const data = tabs.map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId, openerTabId: t.openerTabId, incognito: t.incognito === true }));
       return { ok: true, data };
     }
     if (msg.method === 'switch') {
@@ -111,10 +125,10 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
         const win = await chrome.windows.create({ url: normalized.url, incognito: true, focused: msg.active !== false });
         const incognitoTab = win && Array.isArray(win.tabs) ? win.tabs[0] : undefined;
         if (!incognitoTab || incognitoTab.id === undefined) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito window was created but no tab was returned', { cmd: msg.cmd, method: msg.method });
-        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, incognito: true } };
+        return { ok: true, data: { id: incognitoTab.id, tabId: incognitoTab.id, url: incognitoTab.url || normalized.url, title: incognitoTab.title || '', windowId: incognitoTab.windowId, openerTabId: incognitoTab.openerTabId, incognito: true } };
       }
       const tab = await chrome.tabs.create({ url: normalized.url, active: msg.active !== false });
-      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, incognito: tab.incognito === true } };
+      return { ok: true, data: { id: tab.id, tabId: tab.id, url: tab.url || normalized.url, title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId, incognito: tab.incognito === true } };
     }
     if (msg.method === 'close') {
       const rawTarget = msg.targetTabId ?? msg.closeTabId ?? msg.tabId;
@@ -124,7 +138,7 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
       }
       const tab = await chrome.tabs.get(targetTabId);
       await chrome.tabs.remove(targetTabId);
-      return { ok: true, data: { id: targetTabId, tabId: targetTabId, url: tab.url || '', title: tab.title || '', windowId: tab.windowId } };
+      return { ok: true, data: { id: targetTabId, tabId: targetTabId, url: tab.url || '', title: tab.title || '', windowId: tab.windowId, openerTabId: tab.openerTabId } };
     }
     return bridgeError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown tabs method: ' + String(msg.method), { cmd: msg.cmd, method: msg.method });
   } catch (e) {
@@ -178,14 +192,14 @@ async function handleContentFingerprintCommand(msg: PiBridgeCommand, sender: PiB
   if (!tabId) return bridgeError(PI_BROWSER_ERROR_CODES.NO_SESSION, 'content.fingerprint requires a tabId', { cmd: msg.cmd, tabId: msg.tabId });
   let messageError: unknown;
   try {
-    const response = coreRecord(await chrome.tabs.sendMessage(tabId, { cmd: 'pi.contentFingerprint' }));
+    const response = coreRecord(await chrome.tabs.sendMessage(tabId, msg.drainDirty === true ? { cmd: 'pi.contentFingerprint', drainDirty: true } : { cmd: 'pi.contentFingerprint' }));
     if (response.ok !== false) return { ok: true, data: coreRecord(response.data ?? response) };
     messageError = new Error('content fingerprint responder returned ok:false');
   } catch (e) {
     messageError = e;
   }
   try {
-    return { ok: true, data: await readContentFingerprintViaScript(tabId) };
+    return { ok: true, data: await readContentFingerprintViaScript(tabId, msg.drainDirty === true) };
   } catch (scriptError) {
     return bridgeError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, 'content fingerprint unavailable', { cmd: msg.cmd, tabId, error: coreErrorDetails(messageError), fallbackError: coreErrorDetails(scriptError) });
   }

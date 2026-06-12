@@ -195,6 +195,13 @@ function savedPathFromEnvelope(text) {
 	}
 }
 
+async function artifactTextFromSaved(value, fallbackPath) {
+	const savedPath = typeof value?.saved?.path === "string" ? value.saved.path : fallbackPath;
+	if (!savedPath) return "";
+	const absPath = path.isAbsolute(savedPath) ? savedPath : path.resolve(root, savedPath);
+	return await readFile(absPath, "utf8").catch(() => "");
+}
+
 function sanitizeParams(params) {
 	const copy = { ...params };
 	if (typeof copy.script === "string") copy.script = `${copy.script.slice(0, 120)}${copy.script.length > 120 ? "…" : ""}`;
@@ -433,13 +440,16 @@ async function eval02(env, entry) {
 		const execute = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { document.querySelector('#activate').click(); return { state: document.querySelector('#status')?.dataset.state, text: document.querySelector('#status')?.textContent, popupOptions: document.querySelectorAll('#activation-popup [role=option]').length }; })()", monitor: true, outputPath: executePath, maxChars: 8_000, timeoutMs: 20_000 }), "browser_execute activate"));
 		const executeArtifact = JSON.parse(await readFile(executePath, "utf8"));
 		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#activation-popup[role='listbox']", state: "attached" }, outputPath: path.join(env.runDir, `${entry.id}-wait.json`), timeoutMs: 15_000 }), "browser_wait activated popup");
-		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "main", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-after.txt`), maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe html after"));
+		const afterPath = path.join(env.runDir, `${entry.id}-after.txt`);
+		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "main", htmlMode: "text", outputPath: afterPath, maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe html after"));
+		const beforeText = `${JSON.stringify(before)}\n${await artifactTextFromSaved(before, path.join(env.runDir, `${entry.id}-before.json`))}`;
+		const afterText = `${JSON.stringify(after)}\n${await artifactTextFromSaved(after, afterPath)}`;
 		const mutationCount = Number(executeArtifact?.effect?.mutations ?? executeArtifact?.execution?.effect?.mutations);
-		const ok = /Status: activated/.test(JSON.stringify(after)) && /Confirm activation/.test(JSON.stringify(after)) && /Activate workflow/.test(JSON.stringify(before)) && /activated/.test(JSON.stringify(execute)) && Number.isFinite(mutationCount) && mutationCount > 0;
+		const ok = /Status: activated/.test(afterText) && /Confirm activation/.test(afterText) && /Activate workflow/.test(beforeText) && /activated/.test(JSON.stringify(execute)) && Number.isFinite(mutationCount) && mutationCount > 0;
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
 		metrics.summary.push("Scan identified the interactive fixture, browser_execute clicked #activate, and browser_wait verified the dynamically inserted #activation-popup.");
-		metrics.diagnostics.push(`Post-state evidence contains activated status: ${/Status: activated/.test(JSON.stringify(after))}; execute effect mutations=${Number.isFinite(mutationCount) ? mutationCount : "missing"}.`);
+		metrics.diagnostics.push(`Post-state artifact contains activated status: ${/Status: activated/.test(afterText)}; execute effect mutations=${Number.isFinite(mutationCount) ? mutationCount : "missing"}.`);
 		metrics.notes.push("State change was verified by wait/observe evidence, not assumed from JavaScript execution alone.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {
@@ -512,12 +522,14 @@ async function eval06(env, entry) {
 	const tabId = await createTab(env, metrics, "wait-timeout.html");
 	try {
 		const timedOut = parseToolJson(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#never-appears", state: "attached" }, outputPath: path.join(env.runDir, `${entry.id}-timeout.json`), timeoutMs: 750, maxChars: 8_000 }));
-		const observed = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "main", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-diagnostic.txt`), maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe wait diagnostic"));
-		const ok = /TIMEOUT|timeout|ok\s*[:=]\s*false/i.test(JSON.stringify(timedOut)) && /intentionally absent/.test(JSON.stringify(observed));
+		const diagnosticPath = path.join(env.runDir, `${entry.id}-diagnostic.txt`);
+		const observed = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "main", htmlMode: "text", outputPath: diagnosticPath, maxChars: 4_000, timeoutMs: 10_000 }), "browser_observe wait diagnostic"));
+		const observedText = `${JSON.stringify(observed)}\n${await artifactTextFromSaved(observed, diagnosticPath)}`;
+		const ok = /TIMEOUT|timeout|ok\s*[:=]\s*false/i.test(JSON.stringify(timedOut)) && /intentionally absent/.test(observedText);
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
 		metrics.summary.push("Bounded wait timeout produced diagnostics, then targeted observe evidence explained that #never-appears is intentionally absent.");
-		metrics.diagnostics.push(`Timeout surfaced: ${/TIMEOUT|timeout/i.test(JSON.stringify(timedOut))}; diagnostic text present: ${/intentionally absent/.test(JSON.stringify(observed))}.`);
+		metrics.diagnostics.push(`Timeout surfaced: ${/TIMEOUT|timeout/i.test(JSON.stringify(timedOut))}; diagnostic artifact text present: ${/intentionally absent/.test(observedText)}.`);
 		metrics.notes.push("No retry loop was used after timeout; the runner moved to diagnostic observation.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {
@@ -817,14 +829,16 @@ async function eval20(env, entry) {
 	const metrics = beginMetrics(env, entry.id);
 	const tabId = await createTab(env, metrics, "debugger-navigation.html");
 	try {
-		const before = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "#status", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-before.txt`), timeoutMs: 10_000, maxChars: 4_000 }), "browser_observe nav before"));
+		const beforePath = path.join(env.runDir, `${entry.id}-before.txt`);
+		const before = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "#status", htmlMode: "text", outputPath: beforePath, timeoutMs: 10_000, maxChars: 4_000 }), "browser_observe nav before"));
 		const enabled = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "Debugger.enable", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-enable.json`), timeoutMs: 15_000, maxChars: 8_000 }), "browser_command Debugger.enable navigation"));
 		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { document.querySelector('#nav-next').click(); return { href: location.href }; })()", timeoutMs: 10_000, maxChars: 4_000 }), "browser_execute nav next");
 		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#status[data-state='page-b']", state: "attached" }, outputPath: path.join(env.runDir, `${entry.id}-wait.json`), timeoutMs: 20_000, maxChars: 6_000 }), "browser_wait nav page-b");
-		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "#status", htmlMode: "text", outputPath: path.join(env.runDir, `${entry.id}-after.txt`), timeoutMs: 10_000, maxChars: 4_000 }), "browser_observe nav after"));
+		const afterPath = path.join(env.runDir, `${entry.id}-after.txt`);
+		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId, selector: "#status", htmlMode: "text", outputPath: afterPath, timeoutMs: 10_000, maxChars: 4_000 }), "browser_observe nav after"));
 		const disabled = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "Debugger.disable", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-disable.json`), timeoutMs: 15_000, maxChars: 8_000 }));
 		await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "detach", tabId, timeoutMs: 8_000 }, timeoutMs: 12_000, maxChars: 6_000 });
-		const text = JSON.stringify({ before, enabled, after, disabled });
+		const text = `${JSON.stringify({ before, enabled, after, disabled })}\n${await artifactTextFromSaved(before, beforePath)}\n${await artifactTextFromSaved(after, afterPath)}`;
 		const ok = /page-a/.test(text) && /page-b/.test(text);
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";

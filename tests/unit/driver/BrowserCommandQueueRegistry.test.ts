@@ -46,3 +46,33 @@ test("BrowserCommandQueueRegistry rejects when queue depth reaches the configure
 	assert.equal(await first, "first");
 	assert.equal(queue.depth("s1", 1), 0);
 });
+
+test("BrowserCommandQueueRegistry aliases replacement tab queues until the old chain drains", async () => {
+	const queue = new BrowserCommandQueueRegistry();
+	const events: string[] = [];
+	let releaseFirst!: () => void;
+	const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+	const first = queue.enqueue("s1", 1, async () => {
+		events.push("old:start");
+		await firstGate;
+		events.push("old:end");
+		return "old";
+	});
+
+	assert.equal(queue.migrateTabQueue("s1", 1, 2)?.tabId, 2);
+	const second = queue.enqueue("s1", 2, async () => {
+		events.push("new:start");
+		events.push("new:end");
+		return "new";
+	});
+
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.deepEqual(events, ["old:start"]);
+	assert.equal(queue.depth("s1", 2), 2);
+	assert.equal(queue.snapshot()[0]?.tabId, 2);
+	releaseFirst();
+	assert.equal(await first, "old");
+	assert.equal(await second, "new");
+	assert.deepEqual(events, ["old:start", "old:end", "new:start", "new:end"]);
+	assert.equal(queue.depth("s1", 2), 0);
+});

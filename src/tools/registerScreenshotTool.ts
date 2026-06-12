@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "../protocol/nativeActionMetadata.js";
 import { resolveArtifactPath, saveDataUrl } from "./artifacts.js";
-import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter.js";
+import { defineBrowserTool, inlineJsonToolResult, runTool, sharedTabScopedToolParams, targetTabId, toolTimeoutMs } from "./toolAdapter.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
@@ -51,7 +51,7 @@ export function registerScreenshotTool({ pi, ensureStarted }: ToolRegistrarConte
 				const format = String(params.format || "png").toLowerCase();
 				const timeoutMs = toolTimeoutMs(params.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
 				const commandName = nativeCommandToolMetadata.browser_screenshot.command;
-				const result = await server.sendCommand({ cmd: commandName, format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs });
+				const result = await server.sendCommand({ cmd: commandName, format, quality: params.quality, captureBeyondViewport: params.captureBeyondViewport, fallback: params.fallback, timeoutMs }, { browserSessionId: params.browserSessionId, tabId: targetTabId(params) as string | number | undefined, timeoutMs });
 				const data = result.data as Record<string, unknown> | undefined;
 				const screenshot = typeof data?.screenshot === "string" ? data.screenshot : undefined;
 				let saved: Record<string, unknown> | undefined;

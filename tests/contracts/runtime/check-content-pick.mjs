@@ -59,6 +59,7 @@ assert(bridgeResultValidationSource.includes("suppressErrorStack(error)"), "brid
 assert(!bridgeResultValidationSource.includes("delete error.stack"), "bridge ok:false errors must not use strict-mode delete on Error.stack");
 const observeRunnerSource = read("src/tools/observe/scanRunner.ts");
 const contentRunnerSource = read("src/tools/observe/contentRunner.ts");
+const observeCommonSource = read("src/tools/observe/common.ts");
 const toolAdapterSource = read("src/tools/toolAdapter.ts");
 function usesTextDistillation(source) {
 	return source.includes("distilledTextResult") || (source.includes("textToolResult") && toolAdapterSource.includes("distilledTextResult"));
@@ -67,7 +68,7 @@ assert(usesTextDistillation(`${observeRunnerSource}\n${contentRunnerSource}`), "
 assert(contentRunnerSource.includes("executeBrowserWaitWithSupervisor") && !contentRunnerSource.includes("server.sendCommand({ cmd: \"wait.navigateAndWait\""), "browser_observe content URL navigation must use the TS wait supervisor instead of direct bridge wait.navigateAndWait");
 assert(contentRunnerSource.includes("assertBridgeCommandSucceeded(navigation, \"wait.navigateAndWait\")"), "browser_observe content must fail when URL navigation returns ok:false instead of extracting the old page");
 assert(contentRunnerSource.includes("navigation: navigationData") || contentRunnerSource.includes("navigation: result.navigationData"), "browser_observe content must preserve wait supervisor navigation metadata in tool details");
-assert(observeRunnerSource.includes("MIN_CONTENT_TIMEOUT_MS = 100") && contentRunnerSource.includes("normalizeContentTimeoutMs(params.timeoutMs)"), "browser_observe content must explicitly validate tiny timeoutMs values instead of silently expanding them");
+assert(observeCommonSource.includes("MIN_CONTENT_TIMEOUT_MS = 100") && contentRunnerSource.includes("normalizeContentTimeoutMs(params.timeoutMs)"), "browser_observe content must explicitly validate tiny timeoutMs values instead of silently expanding them");
 assert(contentRunnerSource.includes("evaluatePageScriptDirect(server, script") && !contentRunnerSource.includes("server.executeJavaScript(script, { browserSessionId: params.browserSessionId, tabId: params.tabId, timeoutMs })") && !contentRunnerSource.includes("Math.max(timeoutMs"), "browser_observe content extraction must use the direct CDP value channel with the normalized user timeout");
 assert(observeRunnerSource.includes("evaluatePageScriptDirect(server, scanScript") && !observeRunnerSource.includes("server.executeJavaScript(scanScript"), "browser_observe scan extraction must use the direct CDP value channel instead of exec.js smart serializer");
 const pageScriptEvaluationSource = read("src/tools/pageScriptEvaluation.ts");
