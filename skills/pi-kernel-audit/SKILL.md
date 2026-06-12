@@ -10,7 +10,7 @@ Use this skill as an audit-only procedure. It does not launch subagents by itsel
 ## Hard Boundary
 
 - Work in `D:/Pi/agent/extensions/pi-browser-tools`.
-- Read `AGENTS.md`, `CURRENT.md`, `TODO.md`, `docs/governance-mechanisms-plan.md`, and `agent-audits/AGENTS.md` first.
+- Read `AGENTS.md`, `CURRENT.md`, `TODO.md`, `docs/archive/governance-mechanisms-plan.full.md`, and `agent-audits/AGENTS.md` first.
 - Write only `agent-audits/runs/YYYY-MM-DD-kernel-<scope>.md`.
 - Do not edit source, tests, docs outside `agent-audits/runs/`, generated files, package metadata, git state, or lockfiles.
 - Treat every finding as a hypothesis until a maintainer/fix agent independently verifies it.

@@ -329,7 +329,7 @@ Track B public guidance remains.
 ### Performance & overhead audit execution
 
 决策：
-- `docs/performance-overhead-audit.md` 是已完成的性能/开销优化审计与执行记录。落地顺序按证据和风险分层：先做非 agent-facing contract 的 CPU/latency/byte 优化，再做需 live smoke 的扫描路径优化，最后才评估会改变 agent JSON/token contract 的输出瘦身。
+- `docs/archive/performance-overhead-audit.full.md` 是已完成的性能/开销优化审计与执行记录。落地顺序按证据和风险分层：先做非 agent-facing contract 的 CPU/latency/byte 优化，再做需 live smoke 的扫描路径优化，最后才评估会改变 agent JSON/token contract 的输出瘦身。
 - 已完成当前执行项：bridge dist service-worker/offscreen whitespace minify（保留 symbol names）、AX `DOM.getBoxModel` 并发批处理、observe network/hook seq 并发读取、default scan 的 ABML read 复用首个 `scan_extract` payload、`containsSensitiveEvidence` first-hit predicate、CLI JSON render parse-once、network diagnostics cap、intercept paused cap+overflow continue、`browser_execute` 去掉普通路径 200ms 固定等待、CLI command registry memoize 与实际 bin 顶层 help 轻量动态导入、nested validation 从 zod 迁到 TypeBox-compatible wrapper 并移除 zod 依赖、daemon 版本兼容改为只按 `DAEMON_PROTOCOL_VERSION` 判断、offscreen 端口并发 probe、resource/ref store 容量 cap + amortized prune、scan summary 跨 budget rung 预计算复用并补高熵 byte/shape golden、scan summary 剩余 per-rung loop collapse、CJK budget `String.length` guard、`fitEnvelopeBudget`/`fitSummaryBudget` serialize-once safe subset、extension readiness event-driven wait + no-extension negative cache、artifact text/search/sample 减少重复读、CLI-only success details 省略、CLI artifact read 建议去重、`browser_tabs list` compact+top-level bridge、scan `focus` entity refs-v1 输出瘦身（blind-eval 取证后落地）。
 - `DAEMON_PROTOCOL_VERSION` 仍是控制/工具契约变化的强制 bump 点；普通 package version 变化不再自动重启 daemon。
 

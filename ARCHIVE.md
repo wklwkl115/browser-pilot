@@ -22,14 +22,20 @@
 
 - 2026 06 02 Real Session Fixes Verification历史摘要见 `docs/archive/2026-06-02-real-session-fixes-verification.md`
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
+- Check Acceleration Plan历史摘要见 `docs/archive/check-acceleration-plan.md`
+- Distill Kernel Hygiene Plan历史摘要见 `docs/archive/distill-kernel-hygiene-plan.md`
 - Execution Feedback Layer Plan历史摘要见 `docs/archive/execution-feedback-layer-plan.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
+- Governance Mechanisms Plan历史摘要见 `docs/archive/governance-mechanisms-plan.md`
 - Memory Kernel Plan历史摘要见 `docs/archive/memory-kernel-plan.md`
 - 已撤回 orchestration / target resolver / profile isolation历史摘要见 `docs/archive/orchestration-history.md`
 - Perception Layer Optimization Plan历史摘要见 `docs/archive/perception-layer-optimization-plan.md`
+- Performance Overhead Audit历史摘要见 `docs/archive/performance-overhead-audit.md`
 - Protocol Single Source Plan历史摘要见 `docs/archive/protocol-single-source-plan.md`
+- Real Session Friction Plan历史摘要见 `docs/archive/real-session-friction-plan.md`
 - Recent Completed Workstreams历史摘要见 `docs/archive/recent-completed-workstreams.md`
 - Tmwd Cdp Bridge Legacy历史摘要见 `docs/archive/tmwd-cdp-bridge-legacy.md`
+- Value Ordered Compaction Plan历史摘要见 `docs/archive/value-ordered-compaction-plan.md`
 - 更细历史拆分建议与仍保持 future-facing 的非激活项见 `docs/archive-history-compression-plan.md`。
 
 ## 详细历史记录已迁出
@@ -38,13 +44,19 @@
 
 - `docs/archive/2026-06-02-real-session-fixes-verification.full.md`
 - `docs/archive/bridge-esm-history.full.md`
+- `docs/archive/check-acceleration-plan.full.md`
+- `docs/archive/distill-kernel-hygiene-plan.full.md`
 - `docs/archive/execution-feedback-layer-plan.full.md`
 - `docs/archive/governance-history.full.md`
+- `docs/archive/governance-mechanisms-plan.full.md`
 - `docs/archive/memory-kernel-plan.full.md`
 - `docs/archive/orchestration-history.full.md`
 - `docs/archive/perception-layer-optimization-plan.full.md`
+- `docs/archive/performance-overhead-audit.full.md`
 - `docs/archive/protocol-single-source-plan.full.md`
+- `docs/archive/real-session-friction-plan.full.md`
 - `docs/archive/recent-completed-workstreams.full.md`
 - `docs/archive/tmwd-cdp-bridge-legacy.full.md`
+- `docs/archive/value-ordered-compaction-plan.full.md`
 
 主 `ARCHIVE.md` 只保留阶段摘要与入口索引，避免继续膨胀。
