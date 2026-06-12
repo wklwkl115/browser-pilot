@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { BrowserBridgeError, noBrowserExtensionError } from "./errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
+import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
 import type { BrowserBridgeClientInfo } from "./types.js";
 
 export class BrowserBridgeClientRegistry {
@@ -10,9 +11,11 @@ export class BrowserBridgeClientRegistry {
 	private extensionClient?: WebSocket;
 	private everConnected = false;
 	private readonly getPort: () => number;
+	private readonly expectedBuild: ExpectedExtensionBuild;
 
 	constructor(port: number | (() => number)) {
 		this.getPort = typeof port === "function" ? port : () => port;
+		this.expectedBuild = readExpectedExtensionBuild();
 	}
 
 	register(ws: WebSocket): BrowserBridgeClientInfo {
@@ -80,6 +83,13 @@ export class BrowserBridgeClientRegistry {
 		if (typeof raw.id === "string") current.extensionId = raw.id;
 		if (typeof raw.name === "string") current.name = raw.name;
 		if (typeof raw.version === "string") current.version = raw.version;
+		if (raw.build !== undefined) current.build = raw.build;
+		const buildComparison = compareExtensionBuild(raw, this.expectedBuild);
+		if (buildComparison.extensionStale !== undefined) current.extensionStale = buildComparison.extensionStale;
+		if (buildComparison.expectedBuild !== undefined) current.expectedBuild = buildComparison.expectedBuild;
+		if (buildComparison.reportedBuild !== undefined) current.reportedBuild = buildComparison.reportedBuild;
+		else delete current.reportedBuild;
+		if (buildComparison.manifestPath !== undefined) current.buildManifestPath = buildComparison.manifestPath;
 		if (typeof raw.userAgent === "string") current.userAgent = raw.userAgent;
 		if (typeof raw.workerBootId === "string") current.workerBootId = raw.workerBootId;
 		if (typeof raw.workerStartedAt === "number" && Number.isFinite(raw.workerStartedAt)) current.workerStartedAt = raw.workerStartedAt;

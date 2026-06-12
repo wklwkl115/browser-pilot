@@ -30,7 +30,7 @@ import { __piBridgeModule_router, installPiBridgeRouter } from "./service_worker
 import { __piBridgeModule_tab_sync } from "./service_worker/tab_sync";
 import { __piBridgeModule_keepalive, installPiBrowserKeepalivePort } from "./service_worker/keepalive";
 import { __piBridgeModule_transport, installPiBrowserTransport } from "./service_worker/transport";
-import { BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
+import { BRIDGE_BUILD_ID, BRIDGE_BUILD_PIPELINE_VERSION, type BridgeBuildInfo } from "./shared/buildInfo";
 
 export const serviceWorkerFoundationModuleGraph = [
 	__piBridgeModule_config,
@@ -89,6 +89,7 @@ installPiBrowserServiceWorker();
 
 const buildInfo: BridgeBuildInfo = {
 	version: BRIDGE_BUILD_PIPELINE_VERSION,
+	buildId: BRIDGE_BUILD_ID,
 	mode: "production",
 	runtimeSwitched: true,
 };

@@ -1,6 +1,8 @@
 import { Type } from "typebox";
 import { type NativeErrorCode } from "../protocol/nativeErrorCodes.js";
 import { BrowserBridgeError } from "../driver/errors.js";
+import { defaultLeaseIdRedactor } from "../driver/leaseDiagnostics.js";
+import type { BrowserTabLeaseInfo, BrowserUiLockInfo } from "../driver/types.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserTool, runTool, sharedTabScopedToolParams, toolTimeoutMs } from "./toolAdapter.js";
 import { asPositiveInt, strictToolParameters } from "./toolShared.js";
@@ -48,6 +50,17 @@ function compactBridgeForTabsList(snapshot: Record<string, unknown>): Record<str
 		if (snapshot[key] !== undefined) out[key] = snapshot[key];
 	}
 	return out;
+}
+
+function publicSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+	const now = Date.now();
+	const leases = Array.isArray(snapshot.leases) ? snapshot.leases.map((lease) => defaultLeaseIdRedactor.tabLease(lease as BrowserTabLeaseInfo, undefined, now)) : undefined;
+	const uiLock = snapshot.uiLock && typeof snapshot.uiLock === "object" ? defaultLeaseIdRedactor.uiLock(snapshot.uiLock as BrowserUiLockInfo, undefined, now) : undefined;
+	return {
+		...snapshot,
+		...(leases ? { leases } : {}),
+		...(uiLock ? { uiLock } : {}),
+	};
 }
 
 export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
@@ -118,19 +131,22 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 								],
 							},
 						});
-						return jsonResult({ snapshot, bridge: server.snapshot(browserSession) }, detailsForTransport(() => ({ action })), maxChars);
+						return jsonResult({ snapshot, bridge: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, detailsForTransport(() => ({ action })), maxChars);
 					}
-					return jsonResult({ bridge: server.snapshot(browserSession), observationSnapshots: server.listObservationSnapshots() }, detailsForTransport(() => ({ action })), maxChars);
+					return jsonResult({ bridge: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>), observationSnapshots: server.listObservationSnapshots() }, detailsForTransport(() => ({ action })), maxChars);
 				}
 				if (action === "listsessions") return jsonResult({ sessions: server.listBrowserSessions() }, { action });
 				if (action === "createsession") return jsonResult({ session: server.createBrowserSession(params.name) }, { action });
-				if (action === "selectsession") return jsonResult({ session: server.selectBrowserSession(params.browserSessionId || ""), snapshot: server.snapshot(browserSession) }, { action });
+				if (action === "selectsession") return jsonResult({ session: server.selectBrowserSession(params.browserSessionId || ""), snapshot: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
 				if (action === "closesession") return jsonResult({ closed: server.closeBrowserSession(params.browserSessionId || ""), sessions: server.listBrowserSessions() }, { action });
-				if (action === "attachtab" && tabId !== undefined) return jsonResult({ tab: server.attachTabToBrowserSession(tabId, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: server.snapshot(browserSession) }, { action });
+				if (action === "attachtab" && tabId !== undefined) return jsonResult({ tab: server.attachTabToBrowserSession(tabId, { ...browserSession, browserId: typeof params.browserId === "string" ? params.browserId : undefined }), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
 				if (action === "detachtab" && tabId !== undefined) return jsonResult({ session: server.detachTabFromBrowserSession(tabId, browserSession) }, { action });
-				if (action === "leasetab" && tabId !== undefined) return jsonResult({ lease: server.leaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
-				if (action === "releasetab" && tabId !== undefined) return jsonResult({ released: server.releaseTab(tabId, browserSession), session: server.snapshot(browserSession) }, { action });
-				if (action === "selectbrowser" || action === "browser" || action === "select") return jsonResult({ selected: server.selectBrowser(params.browserId || "", browserSession), snapshot: server.snapshot(browserSession) }, { action });
+				if (action === "leasetab" && tabId !== undefined) return jsonResult({ lease: defaultLeaseIdRedactor.tabLease(server.leaseTab(tabId, browserSession) as BrowserTabLeaseInfo), session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
+				if (action === "releasetab" && tabId !== undefined) {
+					const released = server.releaseTab(tabId, browserSession);
+					return jsonResult({ released: released ? defaultLeaseIdRedactor.tabLease(released as BrowserTabLeaseInfo) : undefined, session: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
+				}
+				if (action === "selectbrowser" || action === "browser" || action === "select") return jsonResult({ selected: server.selectBrowser(params.browserId || "", browserSession), snapshot: publicSnapshot(server.snapshot(browserSession) as Record<string, unknown>) }, { action });
 				if (action === "switch" && tabId !== undefined) return jsonResult(await server.switchTab(tabId, timeoutMs, browserSession), { action });
 				if (action === "create") return jsonResult(await server.createTab(createUrl || "about:blank", params.active !== false, timeoutMs, { ...browserSession, incognito: params.incognito === true }), { action });
 				if (action === "close" && tabId !== undefined) return jsonResult(await server.closeTab(tabId, timeoutMs, browserSession), { action });

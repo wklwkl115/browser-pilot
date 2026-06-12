@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 const CALL_SITE_LIMITS = [
-	{ file: "src/tools/observeRunners.ts", callee: "buildSnapshotProjection", maxCallSites: 1 },
-	{ file: "src/tools/observeRunners.ts", callee: "scanEntitiesForEnvelope", maxCallSites: 1 },
-	{ file: "src/tools/observeRunners.ts", callee: "buildScanEntities", maxCallSites: 1 },
+	{ file: "src/tools/observe/scanRunner.ts", callee: "buildSnapshotProjection", maxCallSites: 1 },
+	{ file: "src/tools/observe/scanRunner.ts", callee: "scanEntitiesForEnvelope", maxCallSites: 1 },
+	{ file: "src/tools/observe/scanRunner.ts", callee: "buildScanEntities", maxCallSites: 1 },
 	{ file: "src/tools/resultMiddleware.ts", callee: "envelopeEntities", maxCallSites: 1 },
 	{ file: "src/tools/summaries/scan.ts", callee: "buildScanEntities", maxCallSites: 2 },
 ];

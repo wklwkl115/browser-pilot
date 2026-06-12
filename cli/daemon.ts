@@ -116,6 +116,16 @@ function bridgeStatusPayload(server: BrowserBridgeServer, toolCount: number, inc
 		bridgePort: server.running ? server.port : undefined,
 		running: server.running,
 		extensionConnected: snapshot?.extensionConnected === true,
+		extension: extension ? {
+			id: extension.extensionId,
+			name: extension.name,
+			version: extension.version,
+			build: extension.build,
+			extensionStale: extension.extensionStale,
+			expectedBuild: extension.expectedBuild,
+			reportedBuild: extension.reportedBuild,
+			buildManifestPath: extension.buildManifestPath,
+		} : undefined,
 		tabCount: tabs.length,
 		activeTab: activeTabFrom(tabs),
 		health: {

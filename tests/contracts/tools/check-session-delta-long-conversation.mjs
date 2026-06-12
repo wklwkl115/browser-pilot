@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runScanObservation } from "../../../src/tools/observeRunners.ts";
+import { validateObserveParams } from "../../../src/tools/registerObserveTool.ts";
 import { distilledJsonResult } from "../../../src/tools/resultMiddleware.ts";
 
 let opId = 0;
@@ -94,7 +95,18 @@ try {
 		assert.equal(typeof envelope.saved?.path, "string", "P-frame keeps a saved artifact for ref/detail recovery under tight budgets");
 		assert.ok((envelope.nextActions || []).some((action) => action.startsWith("read_saved_artifact")), "P-frame exposes artifact recovery actions");
 	}
-	server.deleteSnapshot(envelopes.at(-1).snapshot.snapshotId);
+	const fresh = JSON.parse(textOf(await runScanObservation(server, { mode: "scan", tabId: 7, fresh: true, maxChars: 12_000 }, { cwd }, "scan")));
+	assert.equal(fresh.delta, undefined, "fresh:true forces a full I-frame re-anchor");
+	assert.equal(typeof fresh.snapshot?.snapshotId, "string", "fresh:true creates a reusable fresh snapshot");
+	assert.ok(Array.isArray(fresh.entities) && fresh.entities.some((entity) => typeof entity.ref === "string" && entity.kind === "control"), "fresh:true restores inline entities");
+	const afterFresh = JSON.parse(textOf(await runScanObservation(server, { mode: "scan", tabId: 7, maxChars: 6_000 }, { cwd }, "scan")));
+	assert.equal(afterFresh.delta, "session", "no-fresh follow-up resumes session delta after the fresh frame");
+	assert.equal(afterFresh.baselineSnapshotId, fresh.snapshot.snapshotId, "no-fresh follow-up uses the fresh frame as baseline");
+	assert.doesNotThrow(() => validateObserveParams("scan", { fresh: false, baseline: { snapshotId: "snap-ok" } }), "fresh:false keeps absent-fresh baseline behavior");
+	assert.throws(() => validateObserveParams("scan", { fresh: true, baseline: { snapshotId: "snap-old" } }), (error) => error?.code === "INVALID_RULE" && /fresh:true cannot be combined/.test(String(error.details?.reason)), "fresh:true rejects explicit baseline");
+	assert.throws(() => validateObserveParams("content", { fresh: true }), (error) => error?.code === "INVALID_RULE" && /fresh:true is only valid/.test(String(error.details?.reason)), "fresh:true rejects content mode");
+	assert.throws(() => validateObserveParams("html", { fresh: true }), (error) => error?.code === "INVALID_RULE" && /fresh:true is only valid/.test(String(error.details?.reason)), "fresh:true rejects html mode");
+	server.deleteSnapshot(afterFresh.snapshot.snapshotId);
 	const escaped = JSON.parse(textOf(await runScanObservation(server, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd }, "scan")));
 	assert.equal(escaped.delta, undefined, "missing previous snapshot degrades to an I-frame instead of failing");
 	assert.equal(typeof escaped.snapshot?.snapshotId, "string", "context-loss I-frame refreshes the baseline");

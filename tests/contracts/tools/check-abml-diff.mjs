@@ -133,7 +133,7 @@ const coreBoundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary
 assert.ok(coreBoundarySrc.includes('"diff.ts"'), "diff.ts must be classified in ABML pure core boundary");
 const barrelSrc = readRepo("src/abml-core/index.ts");
 assert.ok(barrelSrc.includes('./diff.js'), "abml-core barrel must export diff");
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("resolveBaselineEntities") && observeSrc.includes("partialBaseline") && observeSrc.includes("abmlRead.diff") && observeSrc.includes("summarizeEntityDiff") && /buildInferenceSummary\((abmlEntities|attributedEntities), relSummary, abmlDiff\)/.test(observeSrc), "observeRunners must thread baseline → readStructure → diff → inference with partial-baseline support and salience");
 const observeToolSrc = readRepo("src/tools/registerObserveTool.ts");
 assert.ok(observeToolSrc.includes("baseline") && observeToolSrc.includes("baseline diff is only valid for scan mode"), "browser_observe schema must expose scan-only baseline");

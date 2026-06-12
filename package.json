@@ -90,6 +90,8 @@
     "check:purity-vocabulary": "node tests/contracts/drift/check-purity-vocabulary.mjs",
     "check:kernel-test-map": "node tests/contracts/drift/check-kernel-test-map.mjs",
     "check:env-flags": "node tests/contracts/drift/check-env-flags.mjs",
+    "check:input-surface": "node tests/contracts/drift/check-input-surface.mjs",
+    "check:file-ceilings": "node tests/contracts/drift/check-file-ceilings.mjs",
     "check:check-graph": "node tests/contracts/drift/check-check-graph.mjs",
     "check:recovery-boundary": "node tests/contracts/drift/check-recovery-boundary.mjs",
     "check:cli-parity": "tsx tests/contracts/cli/check-cli-parity.mjs",

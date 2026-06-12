@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "toolCount": 21,
+  "totalChars": 38907,
+  "tools": {
+    "browser_artifact": {
+      "advertisedChars": 3676,
+      "file": "src/tools/registerArtifactTool.ts"
+    },
+    "browser_callback_oast": {
+      "advertisedChars": 3803,
+      "file": "src/tools/webSecurity/register/registerCallbackOast.ts"
+    },
+    "browser_command": {
+      "advertisedChars": 517,
+      "file": "src/tools/registerCommandTool.ts"
+    },
+    "browser_cookie_analyze": {
+      "advertisedChars": 2538,
+      "file": "src/tools/webSecurity/register/registerCookieAnalyze.ts"
+    },
+    "browser_crawl": {
+      "advertisedChars": 2090,
+      "file": "src/tools/webSecurity/register/registerCrawl.ts"
+    },
+    "browser_download": {
+      "advertisedChars": 1284,
+      "file": "src/tools/registerTransferTools.ts"
+    },
+    "browser_evidence": {
+      "advertisedChars": 614,
+      "file": "src/tools/registerEvidenceTool.ts"
+    },
+    "browser_frame": {
+      "advertisedChars": 286,
+      "file": "src/tools/registerNativeActionTools.ts"
+    },
+    "browser_fuzz": {
+      "advertisedChars": 3576,
+      "file": "src/tools/webSecurity/register/registerFuzz.ts"
+    },
+    "browser_hook": {
+      "advertisedChars": 508,
+      "file": "src/tools/registerNativeActionTools.ts"
+    },
+    "browser_http_replay": {
+      "advertisedChars": 2677,
+      "file": "src/tools/webSecurity/register/registerHttpReplay.ts"
+    },
+    "browser_memory": {
+      "advertisedChars": 2498,
+      "file": "src/tools/registerMemoryTool.ts"
+    },
+    "browser_network": {
+      "advertisedChars": 322,
+      "file": "src/tools/registerNativeActionTools.ts"
+    },
+    "browser_observe": {
+      "advertisedChars": 2314,
+      "file": "src/tools/registerObserveTool.ts"
+    },
+    "browser_pick": {
+      "advertisedChars": 659,
+      "file": "src/tools/registerPickTool.ts"
+    },
+    "browser_screenshot": {
+      "advertisedChars": 539,
+      "file": "src/tools/registerScreenshotTool.ts"
+    },
+    "browser_sqli": {
+      "advertisedChars": 4727,
+      "file": "src/tools/webSecurity/register/registerSqli.ts"
+    },
+    "browser_tabs": {
+      "advertisedChars": 1627,
+      "file": "src/tools/registerTabsTool.ts"
+    },
+    "browser_template": {
+      "advertisedChars": 3436,
+      "file": "src/tools/webSecurity/register/registerTemplate.ts"
+    },
+    "browser_upload": {
+      "advertisedChars": 744,
+      "file": "src/tools/registerTransferTools.ts"
+    },
+    "browser_wait": {
+      "advertisedChars": 472,
+      "file": "src/tools/registerNativeActionTools.ts"
+    }
+  }
+}

@@ -79,7 +79,7 @@ const liftedEnv = JSON.parse(lifted.content[0].text);
 assert.equal(liftedEnv.snapshotProjection.summary.appeared, 1, "snapshotProjection lifts to envelope under tight budget");
 assert.equal(liftedEnv.snapshotProjection.templates[0].delta.appeared.instances[0].name, "Echo");
 
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("buildSnapshotProjection") && observeSrc.includes("snapshotProjection"), "observeRunners builds and persists snapshotProjection");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeSnapshotProjection") && middlewareSrc.includes("snapshotProjection?"), "resultMiddleware lifts snapshotProjection");

@@ -263,7 +263,7 @@ export class BrowserBridgeCommandService {
 		if (lease && lease.browserSessionId !== browserSessionId) {
 			throw new BrowserBridgeError("TAB_LEASE_CONFLICT", "Target tab is leased by another browser session", {
 				requestedBrowserSessionId: browserSessionId,
-				lease,
+				lease: this.deps.leases.describeTabLease(lease),
 				target,
 				invariant: "write_target_foreign_lease",
 			});

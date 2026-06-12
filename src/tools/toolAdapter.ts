@@ -90,7 +90,7 @@ export type ToolOnUpdate = ((result: PiTextToolResult) => void | Promise<void>) 
 
 export type TrackedOperationHandle = {
 	operation: BrowserActiveOperationInfo;
-	update: (patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>) => Promise<BrowserActiveOperationInfo | undefined>;
+	update: (patch: Partial<Omit<BrowserActiveOperationInfo, "operationId" | "startedAt">>, options?: { content?: boolean }) => Promise<BrowserActiveOperationInfo | undefined>;
 	finish: () => BrowserActiveOperationInfo | undefined;
 };
 
@@ -171,11 +171,11 @@ export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
 
 export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) {
 	const params: Record<string, unknown> = {};
-	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Advanced: browser session id used for scoped browser state/routing. Ordinary agents should omit this; runtime defaults to the default session." }));
+	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session." }));
 	if (options.includeTabId !== false) params.tabId = optionalTargetTabId(options.tabIdDescription);
 	if (options.includeDetailLevel === true) params.detailLevel = Type.Optional(Type.String({ description: DETAIL_LEVEL_DESCRIPTION }));
 	if (options.includeOutputPath === true) params.outputPath = Type.Optional(Type.String({ description: options.outputPathDescription ?? OUTPUT_PATH_DESCRIPTION }));
-	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Bridge timeout in milliseconds" }));
+	if (options.includeTimeout === true) params.timeoutMs = Type.Optional(Type.Number({ description: options.timeoutDescription ?? "Deprecated compatibility only; stripped before tool validation. Tools use their built-in timeout contracts." }));
 	if (options.includeMaxChars === true) params.maxChars = Type.Optional(Type.Number({ description: options.maxCharsDescription ?? MAX_CHARS_DESCRIPTION }));
 	if (options.includeRedact === true) params.redact = Type.Optional(Type.Boolean({ description: "Deprecated compatibility only; model-facing output is redacted by default and targeted raw reads use browser_artifact jsonPath/pick." }));
 	return params;
@@ -304,18 +304,20 @@ function compactOperationForEnvelope(operation: BrowserActiveOperationInfo): Rec
 		conflictReason: operation.conflictReason,
 		snapshotId: operation.snapshotId,
 		sourceMode: operation.sourceMode,
+		details: operation.details,
 		startedAt: operation.startedAt,
 		updatedAt: operation.updatedAt,
 	};
 }
 
-async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserActiveOperationInfo): Promise<void> {
+async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserActiveOperationInfo, options: { content?: boolean } = {}): Promise<void> {
 	if (!onUpdate) return;
 	const payload = compactOperationForEnvelope(operation);
-	await onUpdate({
-		content: [{ type: "text", text: stableJson({ progress: payload }) }],
-		details: { progress: payload },
-	});
+	if (options.content === false) {
+		await onUpdate({ details: { progress: payload } } as unknown as PiTextToolResult);
+		return;
+	}
+	await onUpdate({ content: [{ type: "text", text: stableJson({ progress: payload }) }], details: { progress: payload } });
 }
 
 function attachOperationToError(error: unknown, operation: BrowserActiveOperationInfo): unknown {
@@ -337,11 +339,11 @@ export async function startTrackedOperation(server: BrowserBridgeServer, meta: O
 	await emitTrackedProgress(onUpdate, current);
 	return {
 		get operation() { return current; },
-		update: async (patch) => {
+		update: async (patch, options) => {
 			const next = server.updateOperation(current.operationId, patch);
 			if (next) {
 				current = next;
-				await emitTrackedProgress(onUpdate, next);
+				await emitTrackedProgress(onUpdate, next, options);
 			}
 			return next;
 		},
@@ -354,7 +356,7 @@ export async function withTrackedOperation<T>(server: BrowserBridgeServer, meta:
 	let heartbeat: NodeJS.Timeout | undefined;
 	try {
 		heartbeat = setInterval(() => {
-			void handle.update({ details: { heartbeatAt: Date.now() } });
+			void handle.update({ details: { heartbeatAt: Date.now() } }, { content: false });
 		}, 1_000);
 		heartbeat.unref?.();
 		const result = await run(handle);

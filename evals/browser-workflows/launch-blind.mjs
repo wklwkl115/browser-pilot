@@ -114,11 +114,13 @@ async function main() {
 	await mkdir(tempRoot, { recursive: true });
 
 	const runId = `${Date.now()}-${process.pid}`;
+	const usageLogPath = path.join(outDir, `usage-${runId}.jsonl`);
+	const usageReportPath = path.join(outDir, `usage-${runId}-report.json`);
 	const stateDir = path.join(tempRoot, `blind-state-${runId}`);
 	const profileDir = path.join(tempRoot, `blind-profile-${runId}`);
 	const extensionDir = path.join(tempRoot, `blind-extension-${runId}`);
 	await mkdir(stateDir, { recursive: true });
-	const env = { PI_BROWSER_DAEMON_STATE_DIR: stateDir };
+	const env = { PI_BROWSER_DAEMON_STATE_DIR: stateDir, PI_BROWSER_USAGE_LOG: usageLogPath, PI_BROWSER_USAGE_RUN_ID: runId };
 
 	const bridgePort = await freePort();
 	const daemonEnv = { ...env, PI_BROWSER_BRIDGE_PORT: String(bridgePort), PI_BROWSER_BRIDGE_PORT_RANGE_END: String(bridgePort) };
@@ -137,7 +139,10 @@ async function main() {
 	const extensionSource = path.resolve(process.env.PI_BROWSER_EVAL_EXTENSION_DIR || path.join(root, "bridge", "pi_browser_bridge"));
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`extension source missing manifest.json: ${extensionSource}`);
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(env, extensionPatch.env);
+	Object.assign(daemonEnv, extensionPatch.env);
+	Object.assign(process.env, extensionPatch.env);
 
 	// Auto-start the ISOLATED daemon + bind the bridge on our port (env is inherited by auto-start).
 	const boot = cli(["tabs", "--action", "list", "--json"], daemonEnv);
@@ -152,13 +157,14 @@ async function main() {
 		schemaVersion: 1,
 		stageState: "daemon-started",
 		startedAt: new Date().toISOString(),
+		runId, stagePath, usageLogPath, usageReportPath,
 		stateDir, bridgePort,
 		startUrl,
 		fixtures: useFixtures, fixturePort: fixture?.port, fixtureBaseUrl: fixture?.baseUrl, fixtureWsUrl: fixture?.wsUrl,
 		daemonPid: lock.pid, launchPid: process.pid,
 		profileDir, extensionDir,
-		cliEnv: { PI_BROWSER_DAEMON_STATE_DIR: stateDir },
-		cliExample: `PI_BROWSER_DAEMON_STATE_DIR="${stateDir}" node dist/cli/bin.js tabs --action list --json`,
+		cliEnv: env,
+		cliExample: `PI_BROWSER_DAEMON_STATE_DIR="${stateDir}" PI_BROWSER_USAGE_LOG="${usageLogPath}" PI_BROWSER_USAGE_RUN_ID="${runId}" node dist/cli/bin.js tabs --action list --json`,
 	});
 
 	// Launch the isolated browser pointed at the fixture root.
@@ -195,6 +201,7 @@ async function main() {
 		schemaVersion: 1,
 		stageState: "ready",
 		startedAt: new Date().toISOString(),
+		runId, stagePath, usageLogPath, usageReportPath,
 		stateDir, bridgePort,
 		startUrl, currentUrl: tab.url,
 		fixtures: useFixtures, fixturePort: fixture?.port, fixtureBaseUrl: fixture?.baseUrl, fixtureWsUrl: fixture?.wsUrl,
@@ -202,8 +209,8 @@ async function main() {
 		daemonPid: lock.pid, browserPid, launchPid: process.pid,
 		profileDir, extensionDir,
 		// Env every blind-agent CLI call MUST carry so it only ever sees this isolated browser:
-		cliEnv: { PI_BROWSER_DAEMON_STATE_DIR: stateDir },
-		cliExample: `PI_BROWSER_DAEMON_STATE_DIR="${stateDir}" node dist/cli/bin.js tabs --action list --json`,
+		cliEnv: env,
+		cliExample: `PI_BROWSER_DAEMON_STATE_DIR="${stateDir}" PI_BROWSER_USAGE_LOG="${usageLogPath}" PI_BROWSER_USAGE_RUN_ID="${runId}" node dist/cli/bin.js tabs --action list --json`,
 	};
 	await writeStage(stage);
 	console.error(`[blind] stage ready → ${path.relative(root, stagePath)}`);

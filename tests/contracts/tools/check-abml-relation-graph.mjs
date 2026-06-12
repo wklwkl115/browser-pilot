@@ -125,7 +125,7 @@ const scanBundleSrc = readRepo("src/capture/generated/scanBundle.ts");
 assert.ok(scanSrc.includes("SCAN_TEMPLATE") && scanSrc.includes("renderCaptureTemplate"), "scan builder must stay a thin capture-template injection wrapper");
 assert.ok(scanCaptureSrc.includes("aria-current") && scanCaptureSrc.includes("occluderSelector"), "capture scan source must capture aria-current + the occluder selector");
 assert.ok(scanBundleSrc.includes("aria-current") && scanBundleSrc.includes("occluderSelector"), "generated scan bundle must preserve aria-current + occluder selector capture");
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("buildRelationSummary") && observeSrc.includes("relations:"), "observe runner must surface focus.relations via buildRelationSummary");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeRelations") && middlewareSrc.includes("relations?"), "resultMiddleware must lift relations to the envelope top-level");

@@ -26,7 +26,7 @@ try {
   const fixtureUrl = `http://127.0.0.1:${fixturePort}/abml-vision-floor.html`;
   fixture = createHttpServer((_req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(fixtureHtml) }); res.end(fixtureHtml); });
   await new Promise((resolve, reject) => { fixture.once("error", reject); fixture.listen(fixturePort, "127.0.0.1", resolve); });
-  await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) }); await patchExtensionDistPort(extensionDir, bridgePort);
+  await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) }); const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort); Object.assign(process.env, extensionPatch.env);
   bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort }); await bridge.start();
   const chromeExe = chromePath(); chrome = spawn(chromeExe, [`--user-data-dir=${windowsPathForChrome(profileDir, chromeExe)}`, `--disable-extensions-except=${windowsPathForChrome(extensionDir, chromeExe)}`, `--load-extension=${windowsPathForChrome(extensionDir, chromeExe)}`, "--no-first-run", "--no-default-browser-check", ...browserLaunchHardeningArgs(), "--enable-logging=stderr", "--v=0", fixtureUrl], { stdio: ["ignore", "pipe", "pipe"], detached: false });
   const connected = await waitUntil(() => { const snapshot = bridge.snapshot(); return snapshot.extensionConnected ? snapshot : undefined; }, 20000); if (!connected) throw new Error("Browser extension did not connect");

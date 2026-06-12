@@ -5,6 +5,11 @@ export type BrowserBridgeClientInfo = {
 	extensionId?: string;
 	name?: string;
 	version?: string;
+	build?: unknown;
+	extensionStale?: boolean;
+	expectedBuild?: string;
+	reportedBuild?: string;
+	buildManifestPath?: string;
 	userAgent?: string;
 	workerBootId?: string;
 	workerStartedAt?: number;

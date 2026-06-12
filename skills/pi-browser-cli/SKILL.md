@@ -150,6 +150,8 @@ Click (`act.js` for `--script-file`):
 | Timeout | `wait diagnose --params '{"waitId":"<id>"}'` (selector-specific `selectorDiagnostics`); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`HANDLE_NOT_FOUND`/baseline expired | re-capture with `observe --mode scan` or the original command to mint fresh evidence; never retry the old handle |
+| Context lost / delta baseline forgotten | run `pi-browser observe --mode scan --fresh --json` once to re-anchor the page; do not turn off relevance or memory globally |
+| Unexplained `INVALID_RULE` / unsupported action | inspect `pi-browser status --json` / `tabs --action snapshot --json` for `extension.extensionStale`; if true or `reportedBuild` is missing, reload the browser extension and retry |
 | Command not found | `pi-browser --help`; all 22 commands listed unless package/daemon is stale |
 | `crawl`/`fuzz`/`http-replay` TLS `unable to verify the first certificate` | TLS-intercepting proxy/AV/corporate CA. Daemon trusts the OS/browser CA store on Node ≥22; if it persists set `NODE_EXTRA_CA_CERTS=<root.pem>` and restart. The error's `remediation` names the fix |
 

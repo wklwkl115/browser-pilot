@@ -53,6 +53,7 @@ test("withTrackedOperation preserves BrowserBridgeError and appends operation de
 
 test("withTrackedOperation heartbeat does not keep the event loop alive", async () => {
 	const operations = new Map<string, Record<string, unknown>>();
+	const updates: Array<Record<string, unknown>> = [];
 	const server = {
 		beginOperation(meta: Record<string, unknown>) {
 			const operation = { operationId: "op-1", startedAt: Date.now(), updatedAt: Date.now(), ...meta };
@@ -76,6 +77,7 @@ test("withTrackedOperation heartbeat does not keep the event loop alive", async 
 	let unrefCalled = false;
 	globalThis.setInterval = ((handler: any, timeout?: any, ...args: any[]) => {
 		const timer = originalSetInterval(handler, timeout, ...args) as any;
+		queueMicrotask(() => handler());
 		const originalUnref = timer.unref?.bind(timer);
 		timer.unref = () => {
 			unrefCalled = true;
@@ -84,9 +86,19 @@ test("withTrackedOperation heartbeat does not keep the event loop alive", async 
 		return timer;
 	}) as typeof setInterval;
 	try {
-		const run = await withTrackedOperation(server, { toolName: "browser_wait", phase: "running" }, undefined, async () => ({ ok: true }));
+		const run = await withTrackedOperation(server, { toolName: "browser_wait", phase: "running" }, (update) => {
+			updates.push(update as Record<string, unknown>);
+		}, async () => {
+			await new Promise((resolve) => setImmediate(resolve));
+			return { ok: true };
+		});
 		assert.equal(run.result.ok, true);
 		assert.equal(unrefCalled, true);
+		const heartbeat = updates.find((update) => JSON.stringify(update.details || {}).includes("heartbeatAt"));
+		assert.ok(heartbeat, "heartbeat update must be emitted");
+		assert.equal("content" in heartbeat, false, "heartbeat update must be liveness-only");
+		const milestone = updates.find((update) => "content" in update);
+		assert.ok(milestone, "milestone updates must still carry content");
 	} finally {
 		globalThis.setInterval = originalSetInterval;
 	}

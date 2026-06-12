@@ -33,6 +33,27 @@ const generatedContract = read("docs/generated/browser-tool-contract.generated.m
 const skillPath = "skills/pi-browser-tools/SKILL.md";
 assert(existsSync(resolveReadPath(skillPath)), "tool drift: pi-browser-tools skill must exist in repo");
 const skill = read(skillPath);
+const cliSkillPath = "skills/pi-browser-cli/SKILL.md";
+assert(existsSync(resolveReadPath(cliSkillPath)), "tool drift: pi-browser-cli skill must exist in repo");
+const cliSkill = read(cliSkillPath);
+
+function cliSubcommand(toolName) {
+	return toolName.replace(/^browser_/, "").replace(/_/g, "-");
+}
+
+function markdownTableFirstColumn(markdown, heading) {
+	const start = markdown.indexOf(heading);
+	assert(start >= 0, `skill table missing heading: ${heading}`);
+	const rest = markdown.slice(start + heading.length);
+	const nextHeading = rest.search(/\n##\s+/);
+	const section = nextHeading >= 0 ? rest.slice(0, nextHeading) : rest;
+	return section.split(/\r?\n/)
+		.filter((line) => line.trim().startsWith("|"))
+		.filter((line) => !/^\|\s*-+/.test(line.trim()))
+		.slice(1)
+		.map((line) => line.split("|")[1]?.trim())
+		.filter(Boolean);
+}
 
 assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");
 assert(readme.includes("skills/pi-browser-tools/SKILL.md"), "README must link in-repo Pi skill");
@@ -49,6 +70,7 @@ function boundaryRowsForTool(tool) {
 for (const tool of registered) {
 	assert(readme.includes(tool), `tool drift: README missing ${tool}`);
 	assert(skill.includes(tool), `tool drift: skill missing ${tool}`);
+	assert(cliSkill.includes(cliSubcommand(tool)), `tool drift: CLI skill missing ${cliSubcommand(tool)} for ${tool}`);
 	assert.equal(boundaryRowsForTool(tool).length, 1, `tool drift: docs/tool-boundaries.md must contain exactly one table row for ${tool}`);
 }
 
@@ -60,7 +82,15 @@ for (const forbidden of ["npm run check", "npm run smoke:browser", "npm install"
 }
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type", "browser_orchestrate"]) {
 	assert(!boundaries.includes(removed), `tool boundaries must not document removed tool: ${removed}`);
+	assert(!skill.includes(removed), `Pi skill must not document removed tool: ${removed}`);
+	assert(!cliSkill.includes(removed), `CLI skill must not document removed tool: ${removed}`);
 }
+for (const removed of ["browser_recon_probe", "browser_fuzz_paths", "browser_fuzz_vhosts", "browser_fuzz_params", "browser_sqli_probe", "browser_sqlmap_bridge", "browser_nuclei_bridge", "browser_template_check"]) {
+	assert(!skill.includes(removed), `Pi skill must not document removed/merged WebSecurity tool: ${removed}`);
+	assert(!cliSkill.includes(removed), `CLI skill must not document removed/merged WebSecurity tool: ${removed}`);
+}
+assert.deepEqual(markdownTableFirstColumn(cliSkill, "## Routes (intent → subcommand)"), markdownTableFirstColumn(skill, "## Routes (intent → tool)"), "Pi and CLI skills must keep the same Routes intent rows");
+assert.deepEqual(markdownTableFirstColumn(cliSkill, "## Observe products (scan envelope)"), markdownTableFirstColumn(skill, "## Observe products (scan envelope)"), "Pi and CLI skills must keep the same Observe-products rows");
 assert(generatedContract.includes("| `REF_STALE` | abml | abml.ref | yes | schema |"), "generated contract must classify ABML ref errors as abml, not unknown");
 assert(generatedContract.includes("| `WEBSOCKET_WAIT_TIMEOUT` | websocket | bridge.ws | yes | schema |"), "generated contract must classify WebSocket errors as websocket, not unknown");
 assert(!generatedContract.includes("`content.fingerprint`"), "generated contract must not publish internal native commands");

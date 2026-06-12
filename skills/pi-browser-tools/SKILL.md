@@ -155,6 +155,8 @@ Click:
 | Timeout | `browser_wait {action:"diagnose", waitId}` (selector-specific `selectorDiagnostics`: match/visible count, iframe clues, recovery); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`HANDLE_NOT_FOUND`/baseline expired | re-capture with `browser_observe mode=scan` or the original capture tool to mint fresh `browser-result://`/`pi-ref://` evidence; never retry the old handle |
+| Context lost / delta baseline forgotten | call `browser_observe {mode:"scan", fresh:true}` once to re-anchor the page; do not turn off relevance or memory globally |
+| Unexplained `INVALID_RULE` / unsupported action | inspect `browser_tabs {action:"snapshot"}` or list `bridge.extension.extensionStale`; if true or `reportedBuild` is missing, reload the browser extension and retry |
 | Tool not found | all 22 `browser_*` tools should be available unless the package/daemon is stale |
 | `browser_crawl`/`browser_fuzz`/`browser_http_replay` TLS `unable to verify the first certificate` | TLS-intercepting proxy/AV/corporate CA. The runtime trusts the OS/browser CA store on Node ≥22; if it persists set `NODE_EXTRA_CA_CERTS=<root.pem>` and restart. The error's `remediation` names the fix |
 

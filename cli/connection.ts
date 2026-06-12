@@ -61,8 +61,10 @@ function publicBridge(status: DaemonStatus | undefined): Record<string, unknown>
 }
 
 function publicExtension(status: DaemonStatus | undefined): Record<string, unknown> {
+	const extension = status?.extension && typeof status.extension === "object" ? status.extension : {};
 	return {
 		connected: status?.extensionConnected === true,
+		...extension,
 	};
 }
 

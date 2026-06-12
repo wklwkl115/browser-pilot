@@ -98,7 +98,7 @@ const nativeActionToolSource = read("src/tools/registerNativeActionTools.ts");
 assert(nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_wait.actionDescription") && nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_hook.actionDescription") && nativeActionToolSource.includes("nativeToolMetadata.nativeActionTools.browser_frame.actionDescription"), "native action tool descriptions must consume generated metadata");
 assert(read("src/tools/registerEvidenceTool.ts").includes("nativeCommandToolMetadata.browser_evidence.command"), "browser_evidence must consume generated native command metadata");
 assert(read("src/tools/registerScreenshotTool.ts").includes("nativeCommandToolMetadata.browser_screenshot.command"), "browser_screenshot must consume generated native command metadata");
-assert(read("src/tools/observeRunners.ts").includes("nativeCommandToolMetadata.browser_observe_html.command"), "browser_observe html mode must consume generated native command metadata");
+assert(read("src/tools/observe/htmlRunner.ts").includes("nativeCommandToolMetadata.browser_observe_html.command"), "browser_observe html mode must consume generated native command metadata");
 assert(read("src/tools/transferValidation.ts").includes("nativeTransferToolMetadata.browser_upload.command"), "transfer validation must consume generated command metadata");
 assert(read("src/tools/registerTransferTools.ts").includes("nativeTransferToolMetadata.browser_download.artifactPrefix"), "transfer tools must consume generated artifact metadata");
 const structuredCodePatterns = [

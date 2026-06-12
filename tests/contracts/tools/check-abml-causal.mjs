@@ -150,7 +150,7 @@ assert.equal(p1Envelope.causal?.requests?.[0]?.ref, "pi-ref://network/pay-1", "t
 
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 const pageSignalsSrc = readRepo("src/tools/pageSignals.ts");
 // ── R3.x P2 — event causal entries (pure + envelope) ─────────────────────────────
 

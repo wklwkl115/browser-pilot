@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BrowserLeaseRegistry } from "../../../src/driver/BrowserLeaseRegistry.ts";
+import { createLeaseIdRedactor } from "../../../src/driver/leaseDiagnostics.ts";
 import type { BrowserTabSession } from "../../../src/driver/types.ts";
 
 function fakeTab(id = "browserA:7"): BrowserTabSession {
@@ -17,20 +18,45 @@ function fakeTab(id = "browserA:7"): BrowserTabSession {
 }
 
 test("BrowserLeaseRegistry rejects cross-session lease conflicts", () => {
-	const leases = new BrowserLeaseRegistry();
+	const leases = new BrowserLeaseRegistry({ tabLeaseTtlMs: 500 });
 	const tab = fakeTab();
 	const first = leases.leaseTab("session-a", tab, true);
 	assert.equal(first.browserSessionId, "session-a");
-	assert.throws(() => leases.leaseTab("session-b", tab, false), (error: any) => error.code === "TAB_LEASE_CONFLICT");
+	assert.throws(() => leases.leaseTab("session-b", tab, false), (error: any) => {
+		assert.equal(error.code, "TAB_LEASE_CONFLICT");
+		assert.equal(JSON.stringify(error.details).includes("session-a"), false, "foreign browserSessionId must be redacted");
+		assert.equal(JSON.stringify(error.details).includes(tab.id), false, "foreign tabSessionId must be redacted");
+		assert.equal(typeof error.details.lease.browserSessionHash, "string");
+		assert.equal(typeof error.details.lease.tabSessionHash, "string");
+		assert.equal(error.details.lease.expiresAt, first.lastSeenAt + 500);
+		assert.equal(typeof error.details.lease.remainingMs, "number");
+		return true;
+	});
 });
 
 test("BrowserLeaseRegistry enforces UI lock ownership", () => {
 	const leases = new BrowserLeaseRegistry();
 	const lock = leases.acquireUiLock("session-a", "browser_pick");
 	assert.equal(lock.browserSessionId, "session-a");
-	assert.throws(() => leases.acquireUiLock("session-b", "browser_pick"), (error: any) => error.code === "UI_LOCK_CONFLICT");
+	assert.throws(() => leases.acquireUiLock("session-b", "browser_pick"), (error: any) => {
+		assert.equal(error.code, "UI_LOCK_CONFLICT");
+		assert.equal(JSON.stringify(error.details).includes("session-a"), false, "foreign uiLock browserSessionId must be redacted");
+		assert.equal(typeof error.details.lock.browserSessionHash, "string");
+		assert.equal(typeof error.details.lock.expiresAt, "number");
+		return true;
+	});
 	leases.releaseUiLock("session-a");
 	assert.equal(leases.uiLockInfo(), undefined);
+});
+
+test("lease id redaction is stable per salt and unlinkable across salts", () => {
+	const first = createLeaseIdRedactor("salt-a");
+	const same = createLeaseIdRedactor("salt-a");
+	const other = createLeaseIdRedactor("salt-b");
+	assert.equal(first.hash("session-a"), first.hash("session-a"));
+	assert.equal(first.hash("session-a"), same.hash("session-a"));
+	assert.notEqual(first.hash("session-a"), other.hash("session-a"));
+	assert.notEqual(first.hash("session-a"), "session-a");
 });
 
 test("BrowserLeaseRegistry exposes peek/touch and sweeps expired state", () => {

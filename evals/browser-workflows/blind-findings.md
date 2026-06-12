@@ -10,6 +10,13 @@ generalizes, no change-for-change, no overfit to the site/DOM/task/shape that su
 regression stay general). If it can't clear that bar, leave it here as "needs more runs", don't patch.
 See `eval-fixes-true-defect-no-overfit`.
 
+**Class graduation rule.** At triage, first match a new finding against resolved findings'
+root-cause classes. On a second hit in the same class, write the work item against the shared
+chokepoint and require a class-level regression with the historical instances as named negative
+controls. Seed classes from the 2026-06 ledger: envelope verbosity; artifact-path discoverability;
+CLI flag ergonomics; universal output params; real-site perception fallback; bridge reliability;
+memory-nudge adoption.
+
 > **Protocol (corrected 2026-06-06, see `blind-eval-protocol-realsite-skill-china`):** blind eval now
 > runs on REAL, mainland-China-reachable sites (READ-ONLY) with the agent READING the
 > `pi-browser-tools` skill. The first two runs below predate that and are **legacy** (no skill,

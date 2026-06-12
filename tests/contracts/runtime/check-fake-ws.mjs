@@ -143,6 +143,8 @@ try {
 	await waitUntil(() => server.snapshot().extensionConnected && server.getTabs().length === 1, "ext_ready tabs registration");
 	assert.equal(server.snapshot().defaultTabId, 101);
 	assert.equal(server.getTabs()[0]?.bridge?.name, "Pi Native Browser Bridge");
+	assert.equal(server.snapshot().extension?.extensionStale, true, "missing ext_ready build field must mark the loaded extension stale");
+	assert.ok(server.snapshot().extension?.expectedBuild, "stale extension diagnostics must expose the expected build id");
 
 	const commandPromise = server.sendCommand({ cmd: "tabs", method: "list" }, { timeoutMs: 1_000 });
 	const outbound = await nextJson(ws, "tabs command outbound");
@@ -250,6 +252,7 @@ try {
 	sendJson(ws, readyMessage([{ id: 101, url: "https://example.test/one", title: "One", active: true, windowId: 1 }], { workerBootId: "boot-wait-a", workerStartedAt: 1000 }));
 	await waitUntil(() => server.snapshot().extensionConnected && server.getTabs().some((tab) => tab.tabId === 101 && !tab.disconnectedAt), "reconnect after pending cleanup");
 	assert.equal(server.snapshot().extension?.workerBootId, "boot-wait-a", "bridge snapshot must expose service worker boot identity");
+	assert.equal(server.snapshot().extension?.extensionStale, true, "missing build on reconnect remains stale");
 
 	const durableWaitPromise = executeBrowserWaitWithSupervisor(server, { cmd: "wait.selector", selector: "#ready", timeoutMs: 60_000 }, { tabId: 101, timeoutMs: 60_000 });
 	const durableWaitFirstOutbound = await nextJson(ws, "durable wait first lease outbound");

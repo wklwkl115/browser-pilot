@@ -8,7 +8,9 @@ import os from "node:os";
 import path from "node:path";
 import { buildFlagSpecs, coerceParams, parseArgs } from "../../../cli/flags.ts";
 import { normalizeJsonEnvelope, renderResult, EXIT } from "../../../cli/render.ts";
-import { applyCliOnlyParams, buildCommandFlagSpecs, invocationFlagSpecs, nativeActionParamsHelp, selftestToolError, translateNaturalActionArgv } from "../../../cli/index.ts";
+import { applyCliOnlyParams, selftestToolError } from "../../../cli/localCommands.ts";
+import { buildCommandFlagSpecs, invocationFlagSpecs, nativeActionParamsHelp } from "../../../cli/commandMetadata.ts";
+import { translateNaturalActionArgv } from "../../../cli/naturalRouting.ts";
 import { buildCliCommands } from "../../../cli/registry.ts";
 import { nativeToolMetadata } from "../../../src/protocol/nativeActionMetadata.ts";
 

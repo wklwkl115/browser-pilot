@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-const observe = read("src/tools/observeRunners.ts");
+const observe = read("src/tools/observe/scanRunner.ts");
 const execute = read("src/tools/registerExecuteTool.ts");
 const integration = read("src/abml/verbs/integration.ts");
 

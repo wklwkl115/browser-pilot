@@ -54,7 +54,8 @@ try {
 	fixture = createHttpServer((_req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(fixtureHtml) }); res.end(fixtureHtml); });
 	await new Promise((resolve, reject) => { fixture.once("error", reject); fixture.listen(fixturePort, "127.0.0.1", resolve); });
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(process.env, extensionPatch.env);
 	bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort });
 	await bridge.start();
 	const chromeExe = chromePath();

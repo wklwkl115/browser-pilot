@@ -100,7 +100,7 @@ assert.equal(JSON.parse(notLifted.content[0].text).templates, undefined, "templa
 
 // ── Static wiring guards ────────────────────────────────────────────────────────
 
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(!observeSrc.includes("buildTemplateSummary"), "observeRunners no longer builds focus.templates");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(!middlewareSrc.includes("envelopeTemplates"), "resultMiddleware no longer lifts templates");

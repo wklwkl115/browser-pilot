@@ -33,26 +33,32 @@
    - 共享参数/结果/错误包装走 `toolAdapter.ts`
    - native action 工具优先消费 `src/protocol/nativeActionMetadata.ts`
 
-5. `src/tools/webSecurity/*`
+5. `src/tools/observe/*` 与 `src/tools/observeRunners.ts`
+   - `observeRunners.ts` 是兼容 façade
+   - `observe/scanRunner.ts`、`observe/contentRunner.ts`、`observe/htmlRunner.ts` 分别持有对应 runner
+   - `observe/entityViews.ts`、`memoryAugmentation.ts`、`relevanceFusion.ts`、`baseline.ts`、`renderCache.ts` 是已声明 seam；新增 observe 逻辑优先落到对应 seam
+
+6. `src/tools/webSecurity/*`
    - `register/`：WebSecurity tool register shell
    - `browserNative/`：Pi-native HTTP/replay/fuzz/template/cookie/OAST
    - `bridges/`：`sqlmap` / `nuclei` mature bridge
    - `shared/`：HTTP/replay/HAR/template/artifact/diagnostics/mature bridge helper
 
-6. `src/protocol/*`
+7. `src/protocol/*`
    - 从 `bridge/native_command_schema.json` 生成
    - Node 侧 validator / metadata / error codes
    - 手改无效；改 schema 后跑 `npm run sync:protocol`
 
-7. `bridge_src/*`
+8. `bridge_src/*`
    - 浏览器扩展 MV3 runtime 源码
    - `service-worker.ts` 为入口
    - `service_worker/*` 为 runtime domain 模块
    - `page_scripts/*` 为 content / hook dispatcher / disable dialogs 页面脚本
 
-8. `bridge/pi_browser_bridge/dist/*`
+9. `bridge/pi_browser_bridge/dist/*`
    - 运行时产物
    - 修改 `bridge_src/**` 后先 `npm run build:bridge`
+   - `dist/build-manifest.json.buildId` 是 extension skew 诊断依据
 
 ## 改动落点
 
@@ -76,6 +82,11 @@
 - 先看：`bridge_src/service_worker/*`
 - 构建：`npm run build:bridge`
 - 验证：contracts → isolated smoke
+
+### 改 CLI 本地命令 / routing / metadata
+- 先看：`cli/localCommands.ts`、`cli/naturalRouting.ts`、`cli/commandMetadata.ts`
+- `cli/index.ts` 只保留 thin `main` export
+- 验证：`tests/unit/cli/*`、`check:cli-parity`、`check:param-surface`
 
 ### 改 WebSecurity mature bridge
 - 先看：`src/tools/webSecurity/bridges/*`

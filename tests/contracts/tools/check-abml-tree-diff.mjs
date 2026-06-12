@@ -77,7 +77,7 @@ assert.equal(liftedEnv.treeDiff.summary.appeared, 1, "treeDiff lifted to envelop
 assert.equal(liftedEnv.treeDiff.templates[0].appeared.instances[0].name, "Echo");
 
 // Static wiring guards.
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("buildTreeDiff") && observeSrc.includes("treeDiff:"), "observeRunners computes and attaches treeDiff");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeTreeDiff") && middlewareSrc.includes("treeDiff?"), "resultMiddleware lifts treeDiff");

@@ -66,7 +66,8 @@ try {
 	const bridgePort = await freePort();
 	wsFixture = await startWsFixture();
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(process.env, extensionPatch.env);
 	bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort });
 	await bridge.start();
 	const chromeExe = chromePath();

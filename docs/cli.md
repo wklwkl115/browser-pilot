@@ -197,7 +197,7 @@ a valid single-JSON transport.
 pi-browser connect --wait --timeout-ms 15000 --json  # agent readiness gate
 pi-browser status --json                             # compact read-only readiness state
 pi-browser status --tabs --json                      # include full tabs[] when needed
-pi-browser daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, tabCount, activeTab, health, tools}
+pi-browser daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, extension, tabCount, activeTab, health, tools}
 pi-browser daemon start      # foreground (auto-start spawns this detached)
 pi-browser daemon stop       # stop the singleton daemon
 ```
@@ -214,7 +214,11 @@ Concurrent cold starts coordinate through a user-local start lock so two agents 
 detached daemon while the first one is still writing its lockfile.
 CLI tool invocations automatically replace a lockfile-backed daemon whose recorded version does
 not match the current CLI package + daemon protocol version; `doctor --json` and
-`daemon status --json` expose `versionStale` for read-only diagnostics.
+`status` / `connect` / `doctor` / `daemon status --json` expose daemon
+`versionStale` and extension build-skew diagnostics (`extension.extensionStale`,
+`expectedBuild`, `reportedBuild`, `buildManifestPath`) for read-only diagnosis.
+If a command fails with unexplained `INVALID_RULE` / unsupported action while the
+package is current, reload the extension and re-check these fields.
 `daemon stop` only escalates to process signals after the token-guarded `/shutdown` control
 request is acknowledged. A stale lockfile whose PID is still alive but whose control port is
 unreachable is left untouched to avoid killing an unrelated PID that the OS may have reused.

@@ -319,7 +319,8 @@ async function startBrowserEnv(args, runDir, fixture) {
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
 	await mkdir(tempRoot, { recursive: true });
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(process.env, extensionPatch.env);
 	const bridge = new BrowserBridgeServer({ port: bridgePort, portRangeEnd: bridgePort });
 	await bridge.start();
 	const chromeExe = chromePath({ envNames: ["PI_BROWSER_EVAL_CHROME", "PI_BROWSER_SMOKE_CHROME"] });

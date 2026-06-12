@@ -58,7 +58,10 @@ operates **exactly like a real Pi agent** discover where the tool actually hurts
    `{{SITE_URL}}` / `{{GOAL}}` — via **your own harness's child-agent mechanism** (see "Launching the
    blind agent" below). Run independent targets in parallel if your harness supports concurrent
    child runs.
-6. **Grade + triage** the returned report: did it complete the task? tool path / call count /
+6. **Grade + triage** the returned report: first distill the stage usage log with
+   `node evals/browser-workflows/distill-usage-log.mjs <usageLogPath> --stage <stage.json> --out <usageReportPath>`,
+   then use that report for call count, per-tool errors, routing adoption, p50/p95 durations, and
+   repeated-call patterns. Did the agent complete the task? tool path /
    first-wrong-tool-choice? For CLI natural-routing work, also record whether action-style `wait` /
    `network` / `frame` / `hook` calls used natural subcommands (`wait selector`,
    `wait network-idle`, `network list`, `network export-har`, `frame list`, `frame evaluate`,
@@ -67,6 +70,11 @@ operates **exactly like a real Pi agent** discover where the tool actually hurts
    `memoryPlaneSeen`, `inlineBodyUsed`, `readThroughUsed`, `recordNudgeShown`, `recordCalled`,
    `usedInFinalAnswer`; operator-verify each true value against the transcript.
    Triage each friction item `fixable | WAI | reliability`, AND record skill↔tool fidelity gaps.
+   Before opening a fix, match the item against resolved findings' root-cause classes. On the
+   second hit in a class, the work item must target the shared chokepoint and its regression must
+   cover the class, naming the historical instances as negative controls. Seed classes: envelope
+   verbosity, artifact-path discoverability, CLI flag ergonomics, universal output params,
+   real-site perception fallback, bridge reliability, memory-nudge adoption.
    Append to
    `evals/browser-workflows/blind-findings.md` (dedupe; bump the cross-run count when a finding recurs
    across agents/sites).
@@ -80,6 +88,8 @@ operates **exactly like a real Pi agent** discover where the tool actually hurts
    `reliability` finding becomes a work item; where it is a deterministic output behavior, seed a new
    assertion in the deterministic runner so the fix is regression-guarded without an agent. A
    skill-fidelity gap becomes a `pi-browser-tools` skill edit.
+   Per-finding patches are allowed only for the first known instance of a class; recurrence means the
+   class has graduated and must be fixed at the common emission/parsing/recovery boundary.
 8. **Teardown ALWAYS**: `node evals/browser-workflows/teardown-blind.mjs` (even on failure).
 
 ## Launching the blind agent (harness-agnostic)

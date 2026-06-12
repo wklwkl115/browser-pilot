@@ -41,7 +41,8 @@ const targetPlain = normalizeError(new BrowserBridgeError("TAB_NOT_FOUND", "miss
 assert.equal(targetPlain.taxonomy.domain, "driver");
 assert.equal(targetPlain.diagnostics.target.tabId, 7, "driver target diagnostics must preserve tabId");
 assert.equal(targetPlain.diagnostics.target.browserId, "browser-1", "driver target diagnostics must preserve browserId");
-assert.equal(targetPlain.diagnostics.nextActions?.includes("browser_tabs action=list"), true, "driver target errors must expose factual nextActions");
+assert.equal(targetPlain.recovery?.nextActions?.includes("browser_tabs action=list"), true, "driver target errors must expose factual recovery nextActions");
+assert.equal(targetPlain.diagnostics.nextActions, undefined, "diagnostics must not duplicate recovery.nextActions");
 
 const artifactError = new ArtifactReaderError("ARTIFACT_TOO_LARGE", "too large", { bytes: 10, maxBytes: 5 });
 const artifactPlain = normalizeError(artifactError);
@@ -59,8 +60,8 @@ assert.equal(artifactQueryModeError.taxonomy.domain, "artifact", "artifact query
 assert.equal(artifactQueryModeError.recovery?.nextActions?.some((item) => item.includes("mode=search")), true, "query/mode errors must tell agents to switch to search mode");
 assert.equal(artifactQueryModeError.recovery?.nextActions?.includes("retry browser_artifact search with query=needle"), true, "query/mode errors must preserve the actionable search query");
 const compactArtifactSecretQuery = compactError(new ArtifactReaderError("ARTIFACT_QUERY_REQUIRES_SEARCH_MODE", "query ignored outside search", { mode: "json", query: "token=artifact-secret" }));
-assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("artifact-secret"), false, "compactError must redact secrets embedded in recovery/diagnostics nextActions");
-assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("token=[redacted]"), true, "compactError must preserve redacted query shape in recovery/diagnostics nextActions");
+assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("artifact-secret"), false, "compactError must redact secrets embedded in recovery nextActions");
+assert.equal(JSON.stringify(compactArtifactSecretQuery).includes("token=[redacted]"), true, "compactError must preserve redacted query shape in recovery nextActions");
 
 const artifactJsonInvalidError = normalizeError(new ArtifactReaderError("ARTIFACT_JSON_INVALID", "invalid json", { path: "/tmp/not-json.txt", bytes: 12 }));
 assertNormalized(artifactJsonInvalidError, "ArtifactReaderError invalid json");
@@ -121,10 +122,31 @@ assert.equal(protocolError.taxonomy.domain, "protocol");
 assert.equal(protocolError.taxonomy.category, "driver.command");
 assert.equal(protocolError.recovery?.nextActions?.includes("use browser_command with a validated command object"), true, "protocol validation errors must suggest browser_command recovery");
 
+const browserCommandFailed = normalizeError(new BrowserBridgeError("BROWSER_COMMAND_FAILED", "command failed", { cmd: "tabs", method: "switch" }));
+assertNormalized(browserCommandFailed, "browser command failed");
+assert.equal(browserCommandFailed.recovery?.nextActions?.includes("use browser_command with a validated command object"), true, "browser command failures must suggest validated browser_command recovery");
+
+const browserExecutionError = normalizeError(new BrowserBridgeError("BROWSER_EXECUTION_ERROR", "script failed", { selector: "#go" }));
+assertNormalized(browserExecutionError, "browser execution error");
+assert.equal(browserExecutionError.recovery?.nextActions?.some((item) => item.includes("browser_observe mode=scan")), true, "browser execution errors must suggest scan refresh when stale DOM is possible");
+
+const frameDetached = normalizeError(new BrowserBridgeError("FRAME_DETACHED", "frame detached", { frameId: "f1" }));
+assertNormalized(frameDetached, "frame detached");
+assert.equal(frameDetached.recovery?.nextActions?.includes("browser_frame action=list"), true, "detached frames must suggest frame listing");
+
+const sessionMissing = normalizeError(new BrowserBridgeError("SESSION_NOT_FOUND", "missing session", { browserSessionId: "session-1" }));
+assertNormalized(sessionMissing, "session missing");
+assert.equal(sessionMissing.recovery?.nextActions?.includes("browser_tabs action=list"), true, "missing sessions must suggest tab re-resolution");
+
+const tabCrashed = normalizeError(new BrowserBridgeError("TAB_CRASHED", "tab crashed", { tabId: 1 }));
+assertNormalized(tabCrashed, "tab crashed");
+assert.equal(tabCrashed.recovery?.nextActions?.includes("browser_tabs action=list"), true, "crashed tabs must suggest tab re-resolution");
+
 const plainError = normalizeError(new Error("plain boom"));
 assertNormalized(plainError, "plain Error");
 assert.equal(plainError.code, "INTERNAL_ERROR");
 assert.equal(plainError.taxonomy.domain, "native");
+assert.equal(plainError.recovery, undefined, "INTERNAL_ERROR must not invent mechanical recovery");
 const toolError = normalizeError({ code: "CONTENT_EXTRACTION_FAILED", message: "content failed", details: { selector: "main" } });
 assert.equal(toolError.taxonomy.domain, "tool", "tool errors must keep tool taxonomy domain");
 const cdpError = normalizeError({ error: { code: "SEND_FAILED", message: "CDP send failed", details: { method: "Runtime.evaluate", tabId: 4 } } });

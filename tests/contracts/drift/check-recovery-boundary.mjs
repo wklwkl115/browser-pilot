@@ -59,12 +59,14 @@ const GRANDFATHERED_TEMPLATE_FILES = new Set([
 	// tool layer (real recovery templates with call-site context):
 	// artifactReader.ts — recovery with dynamic artifact path context.
 	// memory/autoSurface.ts — browser_memory action=recall with dynamic scopeKind context.
-	// observeRunners.ts — nextActions containing the live snapshotId for re-observe flows.
+	// observe/baseline.ts — baseline recovery with dynamic snapshotId/artifact path context.
+	// observe/scanRunner.ts — nextActions containing the live snapshotId for re-observe flows.
 	// registerTabsTool.ts — nextActions for snapshot expiry with dynamic snapshotId + CLI paths.
 	// registerObserveTool.ts — "browser_observe mode=..." in error messages / tool guidelines.
 	"src/tools/artifactReader.ts",
 	"src/tools/memory/autoSurface.ts",
-	"src/tools/observeRunners.ts",
+	"src/tools/observe/baseline.ts",
+	"src/tools/observe/scanRunner.ts",
 	"src/tools/registerObserveTool.ts",
 	"src/tools/registerTabsTool.ts",
 	// tool layer (regex false-positives — no recovery template built, just description text

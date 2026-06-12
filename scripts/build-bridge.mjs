@@ -1,5 +1,6 @@
 import { build } from "esbuild";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,16 @@ const quiet = process.argv.includes("--quiet");
 const distDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
 const serviceWorkerBuildMode = "esm-import-graph";
 const targetServiceWorkerBuildMode = "esm-import-graph";
+const buildIdPlaceholder = "__PI_BROWSER_BRIDGE_BUILD_ID_PLACEHOLDER__";
+const fingerprintInputs = [
+	"bridge/pi_browser_bridge/dist/content.js",
+	"bridge/pi_browser_bridge/dist/disable_dialogs.js",
+	"bridge/pi_browser_bridge/dist/hook_dispatcher.js",
+	"bridge/pi_browser_bridge/dist/offscreen.js",
+	"bridge/pi_browser_bridge/dist/service-worker.js",
+	"bridge/pi_browser_bridge/manifest.json",
+].sort();
+const allowedDistJs = new Set(fingerprintInputs.filter((rel) => rel.includes("/dist/")).map((rel) => path.basename(rel)));
 const metadataOnlyServiceWorkerFoundationModules = [
 	"config", "protocol", "patterns", "cdp", "state_store", "runtime", "wait_cdp", "wait_coordinator", "wait_navigation", "wait_network_idle", "wait_selector", "wait",
 ];
@@ -68,9 +79,43 @@ for (const entry of entries) {
 	});
 }
 
+const distJsFiles = (await readdir(distDir)).filter((file) => file.endsWith(".js")).sort();
+const unexpectedDistJs = distJsFiles.filter((file) => !allowedDistJs.has(file));
+if (unexpectedDistJs.length) throw new Error(`Unexpected bridge dist JavaScript bundle(s) outside fingerprint inputs: ${unexpectedDistJs.join(", ")}`);
+
+async function computeBuildId() {
+	const hash = createHash("sha256");
+	for (const rel of fingerprintInputs) {
+		const absolute = path.join(root, rel);
+		const bytes = await readFile(absolute);
+		hash.update(rel.replace(/\\/g, "/"));
+		hash.update("\0");
+		hash.update(bytes);
+		hash.update("\0");
+	}
+	return hash.digest("hex");
+}
+
+const buildId = await computeBuildId();
+for (const rel of fingerprintInputs.filter((item) => item.includes("/dist/"))) {
+	const absolute = path.join(root, rel);
+	const source = await readFile(absolute, "utf8");
+	await writeFile(absolute, source.replaceAll(buildIdPlaceholder, buildId), "utf8");
+}
+
 await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	generated: true,
 	generatedBy: "scripts/build-bridge.mjs",
+	buildId,
+	buildIdAlgorithm: "sha256:fingerprint-inputs-with-placeholder",
+	buildIdPlaceholder,
+	inputs: fingerprintInputs,
+	exclusions: {
+		"dist/build-manifest.json": "Carries buildId; excluded to avoid self-reference.",
+		"dist/*.js.map": "Dev-only sourcemaps are not loaded by the browser and may contain checkout-local paths.",
+		"dist/.gitignore": "Generated-file marker, not browser-loaded runtime.",
+		"dist/.npmignore": "Packaging include override, not browser-loaded runtime.",
+	},
 	runtimeSwitched: true,
 	manifestTarget: "dist/service-worker.js",
 	serviceWorkerBuildMode,
@@ -89,4 +134,4 @@ await writeFile(path.join(distDir, "build-manifest.json"), JSON.stringify({
 	offscreenEntry: entries.find((entry) => entry.name === "offscreen"),
 }, null, 2) + "\n", "utf8");
 
-if (!quiet) console.log(JSON.stringify({ ok: true, distDir: path.relative(root, distDir), entries: entries.map((entry) => entry.outfile) }, null, 2));
+if (!quiet) console.log(JSON.stringify({ ok: true, distDir: path.relative(root, distDir), buildId, entries: entries.map((entry) => entry.outfile) }, null, 2));

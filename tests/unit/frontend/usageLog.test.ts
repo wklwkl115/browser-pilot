@@ -24,13 +24,14 @@ test("usageLog resolves the default dated path for PI_BROWSER_USAGE_LOG=1", () =
 
 test("usageLog honors an explicit .jsonl path and the RAW flag", () => {
 	const opts = resolveUsageLogOptions(
-		{ PI_BROWSER_USAGE_LOG: "logs/run.jsonl", PI_BROWSER_USAGE_LOG_RAW: "1" },
+		{ PI_BROWSER_USAGE_LOG: "logs/run.jsonl", PI_BROWSER_USAGE_LOG_RAW: "1", PI_BROWSER_USAGE_RUN_ID: "run-1" },
 		path.resolve("/work"),
 		NOW,
 		7,
 	);
 	assert.equal(opts.filePath, path.resolve("/work", "logs/run.jsonl"));
 	assert.equal(opts.raw, true);
+	assert.equal(opts.runId, "run-1");
 });
 
 test("usageLog redacts secrets in args by default but keeps structural signal", () => {
@@ -44,6 +45,7 @@ test("usageLog redacts secrets in args by default but keeps structural signal", 
 		resultBytes: 1234,
 	};
 	const record = buildUsageRecord(opts, ctx, 42, "ok", { code: "OK" }, NOW.toISOString());
+	assert.equal(record.runId, undefined, "records without PI_BROWSER_USAGE_RUN_ID remain unattributed for distillation");
 	assert.equal(record.tool, "browser_http_replay");
 	assert.equal(record.result, "ok");
 	assert.equal(record.ms, 42);
@@ -78,10 +80,11 @@ test("usageLog records CLI routing metadata for natural-vs-legacy adoption", () 
 });
 
 test("usageLog raw mode preserves args verbatim", () => {
-	const opts = { enabled: true, filePath: "/x.jsonl", raw: true, sessionId: "s" };
+	const opts = { enabled: true, filePath: "/x.jsonl", raw: true, sessionId: "s", runId: "run-raw" };
 	const ctx: MiddlewareContext = { method: "tools/call", toolName: "browser_observe", startedAt: 0, args: { token: "abc" } };
 	const record = buildUsageRecord(opts, ctx, 1, "ok", undefined, NOW.toISOString());
 	assert.deepEqual(record.args, { token: "abc" });
+	assert.equal(record.runId, "run-raw");
 	assert.equal("details" in record, false, "empty details are omitted");
 });
 

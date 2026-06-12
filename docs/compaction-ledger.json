@@ -132,9 +132,9 @@
     {
       "id": "observe-runner-envelope-caps",
       "class": "B",
-      "file": "src/tools/observeRunners.ts",
+      "filePrefix": "src/tools/observe/",
       "status": "accepted",
-      "reason": "Observe envelope summaries and hints; ABML/salience work remains internal and budget-immune."
+      "reason": "Observe envelope summaries, hints, relevance diagnostics, memory cards, and extracted runner helpers; ABML/salience work remains internal and budget-immune."
     },
     {
       "id": "abml-verb-runtime-caps",

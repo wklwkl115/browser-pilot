@@ -57,6 +57,16 @@ function statusPayload(includeTabs) {
     bridgePort: extensionConnected ? 18765 : undefined,
     running: extensionConnected,
     extensionConnected,
+    extension: extensionConnected ? {
+      id: "fake-extension",
+      name: "Fake Extension",
+      version: "test",
+      build: { buildId: "reported-build" },
+      extensionStale: true,
+      expectedBuild: "expected-build",
+      reportedBuild: "reported-build",
+      buildManifestPath: "fake-build-manifest.json"
+    } : undefined,
     tabCount: tabs.length,
     activeTab,
     health: {
@@ -617,6 +627,7 @@ test("doctor reports extension-connected daemon and active tab summary", () => {
 		assert.equal(daemon.bridgePort, 18765);
 		assert.equal(daemon.bridgeRunning, true);
 		assert.equal(daemon.extensionConnected, true);
+		assert.deepEqual(daemon.extension, { id: "fake-extension", name: "Fake Extension", version: "test", build: { buildId: "reported-build" }, extensionStale: true, expectedBuild: "expected-build", reportedBuild: "reported-build", buildManifestPath: "fake-build-manifest.json" });
 		assert.deepEqual(env.activeTab, { tabId: 7, id: 7, active: true, url: "https://example.test/", title: "Example" });
 	});
 });
@@ -654,7 +665,7 @@ test("status reports extension-connected daemon with active tab without mutating
 		const bridge = env.bridge as Record<string, unknown>;
 		assert.equal(bridge.running, true);
 		assert.equal(bridge.port, 18765);
-		assert.deepEqual(env.extension, { connected: true });
+		assert.deepEqual(env.extension, { connected: true, id: "fake-extension", name: "Fake Extension", version: "test", build: { buildId: "reported-build" }, extensionStale: true, expectedBuild: "expected-build", reportedBuild: "reported-build", buildManifestPath: "fake-build-manifest.json" });
 		assert.equal(env.tabCount, 1);
 		assert.equal("tabs" in env, false, "status defaults to tabCount/activeTab without full tabs[]");
 		assert.deepEqual(env.activeTab, { tabId: 7, id: 7, active: true, url: "https://example.test/", title: "Example" });
@@ -688,6 +699,8 @@ test("connect --wait returns ready envelope when fake daemon extension is connec
 		assert.equal(env.startedDaemon, false);
 		const extension = env.extension as Record<string, unknown>;
 		assert.equal(extension.connected, true);
+		assert.equal(extension.extensionStale, true);
+		assert.equal(extension.expectedBuild, "expected-build");
 		const bridge = env.bridge as Record<string, unknown>;
 		assert.equal(bridge.running, true);
 		assert.equal(bridge.port, 18765);

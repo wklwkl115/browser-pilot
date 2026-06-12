@@ -27,6 +27,7 @@ export type UsageLogOptions = {
 	filePath: string;
 	raw: boolean;
 	sessionId: string;
+	runId?: string;
 };
 
 function looksLikePath(value: string): boolean {
@@ -55,6 +56,7 @@ export function resolveUsageLogOptions(
 		filePath,
 		raw: env["PI_BROWSER_USAGE_LOG_RAW"] === "1",
 		sessionId: `${iso.replace(/[:.]/g, "-")}-${pid}`,
+		runId: env["PI_BROWSER_USAGE_RUN_ID"]?.trim() || undefined,
 	};
 }
 
@@ -73,6 +75,7 @@ export function buildUsageRecord(
 		result,
 		ms: durationMs,
 	};
+	if (options.runId) record.runId = options.runId;
 	if (ctx.toolName) record.tool = ctx.toolName;
 	if (ctx.cli !== undefined) record.cli = options.raw ? ctx.cli : redactSensitiveValue(ctx.cli);
 	if (ctx.args !== undefined) record.args = options.raw ? ctx.args : redactSensitiveValue(ctx.args);

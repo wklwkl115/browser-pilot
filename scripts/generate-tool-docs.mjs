@@ -71,6 +71,20 @@ function stringProp(block, prop) {
 	return match ? match[2].replace(/\\`/g, "`").replace(/\\"/g, '"') : "";
 }
 
+function stringArrayProp(block, prop) {
+	const propIndex = block.indexOf(prop);
+	if (propIndex < 0) return [];
+	const arrayStart = block.indexOf("[", propIndex);
+	const arrayEnd = arrayStart >= 0 ? findMatching(block, arrayStart, "[", "]") : -1;
+	if (arrayEnd < arrayStart) return [];
+	const arrayText = block.slice(arrayStart + 1, arrayEnd);
+	return [...arrayText.matchAll(/(["`])([\s\S]*?)\1/g)].map((match) => match[2].replace(/\\`/g, "`").replace(/\\"/g, '"'));
+}
+
+function descriptionStrings(block) {
+	return [...block.matchAll(/\bdescription\s*:\s*(["`])([\s\S]*?)\1/g)].map((match) => match[2].replace(/\\`/g, "`").replace(/\\"/g, '"'));
+}
+
 function extractActionDescription(block) {
 	return stringProp(block, "actionDescription");
 }
@@ -184,6 +198,8 @@ function extractToolsFromSource(file, text) {
 			label: stringProp(block, "label"),
 			description: stringProp(block, "description"),
 			promptSnippet: stringProp(block, "promptSnippet"),
+			promptGuidelines: stringArrayProp(block, "promptGuidelines"),
+			descriptionStrings: descriptionStrings(block),
 			parameters: parameterKeys(block, file),
 			actions: extractActionDescription(block),
 			artifact: artifactInfo(block, file),
@@ -193,7 +209,7 @@ function extractToolsFromSource(file, text) {
 	return tools;
 }
 
-async function collectTools() {
+export async function collectTools() {
 	const files = await walk("src/tools", (rel) => rel.endsWith(".ts"));
 	const all = [];
 	for (const file of files) {
@@ -356,20 +372,24 @@ async function generate() {
 		`- Lifecycle fixture failure evidence is written to \`.pi/browser-artifacts/lifecycle-fixture-failure.json\` with cookie/token/authorization/body/postData-style fields redacted by key.\n`;
 }
 
-const output = await generate();
-if (checkOnly) {
-	if (!existsSync(outFile)) {
-		console.error(`generated docs missing: ${path.relative(root, outFile)}`);
-		process.exit(1);
+async function main() {
+	const output = await generate();
+	if (checkOnly) {
+		if (!existsSync(outFile)) {
+			console.error(`generated docs missing: ${path.relative(root, outFile)}`);
+			process.exit(1);
+		}
+		const current = await readFile(outFile, "utf8");
+		if (current !== output) {
+			console.error(`generated docs are stale: run npm run docs:generate`);
+			process.exit(1);
+		}
+		console.log("generated tool docs contract ok");
+	} else {
+		await mkdir(path.dirname(outFile), { recursive: true });
+		await writeFile(outFile, output, "utf8");
+		console.log(JSON.stringify({ ok: true, file: path.relative(root, outFile) }, null, 2));
 	}
-	const current = await readFile(outFile, "utf8");
-	if (current !== output) {
-		console.error(`generated docs are stale: run npm run docs:generate`);
-		process.exit(1);
-	}
-	console.log("generated tool docs contract ok");
-} else {
-	await mkdir(path.dirname(outFile), { recursive: true });
-	await writeFile(outFile, output, "utf8");
-	console.log(JSON.stringify({ ok: true, file: path.relative(root, outFile) }, null, 2));
 }
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

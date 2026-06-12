@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BrowserBridgeError } from "./errors.js";
+import { DEFAULT_TAB_LEASE_TTL_MS, DEFAULT_UI_LOCK_TTL_MS, defaultLeaseIdRedactor } from "./leaseDiagnostics.js";
 import type { BrowserReleasedTabLeaseInfo, BrowserReleasedUiLockInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
-
-const DEFAULT_TAB_LEASE_TTL_MS = 30 * 60_000;
-const DEFAULT_UI_LOCK_TTL_MS = 5 * 60_000;
 
 type SweepExpiredResult = {
 	releasedLeases: BrowserReleasedTabLeaseInfo[];
@@ -30,6 +28,14 @@ export class BrowserLeaseRegistry {
 		return lease ? { ...lease } : undefined;
 	}
 
+	describeTabLease(lease: BrowserTabLeaseInfo, now = Date.now()): Record<string, unknown> {
+		return defaultLeaseIdRedactor.tabLease(lease, this.tabLeaseTtlMs, now);
+	}
+
+	describeUiLock(lock: BrowserUiLockInfo, now = Date.now()): Record<string, unknown> {
+		return defaultLeaseIdRedactor.uiLock(lock, this.uiLockTtlMs, now);
+	}
+
 	touchTabLease(browserSessionId: string, tab: BrowserTabSession, now = Date.now()): BrowserTabLeaseInfo | undefined {
 		const key = this.tabKey(tab);
 		const existing = this.tabLeases.get(key);
@@ -43,7 +49,7 @@ export class BrowserLeaseRegistry {
 		const key = this.tabKey(tab);
 		const existing = this.tabLeases.get(key);
 		if (existing && existing.browserSessionId !== browserSessionId) {
-			throw new BrowserBridgeError("TAB_LEASE_CONFLICT", "Target tab is leased by another browser session", { requestedBrowserSessionId: browserSessionId, lease: existing });
+			throw new BrowserBridgeError("TAB_LEASE_CONFLICT", "Target tab is leased by another browser session", { requestedBrowserSessionId: browserSessionId, lease: this.describeTabLease(existing) });
 		}
 		const now = Date.now();
 		const lease: BrowserTabLeaseInfo = existing
@@ -101,7 +107,7 @@ export class BrowserLeaseRegistry {
 	acquireUiLock(browserSessionId: string, toolName: string): BrowserUiLockInfo {
 		const now = Date.now();
 		if (this.uiLock && this.uiLock.browserSessionId !== browserSessionId) {
-			throw new BrowserBridgeError("UI_LOCK_CONFLICT", "Browser UI is locked by another browser session", { requestedBrowserSessionId: browserSessionId, lock: this.uiLock });
+			throw new BrowserBridgeError("UI_LOCK_CONFLICT", "Browser UI is locked by another browser session", { requestedBrowserSessionId: browserSessionId, lock: this.describeUiLock(this.uiLock, now) });
 		}
 		this.uiLock = this.uiLock
 			? { ...this.uiLock, toolName, lastSeenAt: now, count: this.uiLock.count + 1 }

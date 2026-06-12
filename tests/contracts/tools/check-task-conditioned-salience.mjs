@@ -10,7 +10,8 @@ const relevance = read("src/distill-core/relevance.ts");
 const tuning = read("src/distill-core/relevanceTuning.ts");
 const coreTaps = read("src/distill-core/relevanceTaps.ts");
 const toolTaps = read("src/tools/relevanceTaps.ts");
-const observe = read("src/tools/observeRunners.ts");
+const observe = read("src/tools/observe/scanRunner.ts");
+const observeRelevance = read("src/tools/observe/relevanceFusion.ts");
 const registerTools = read("src/tools/registerTools.ts");
 const relevanceTraceAdapter = read("src/tools/relevanceTraceAdapter.ts");
 const ledger = read("src/abml/perceptionLedger.ts");
@@ -26,7 +27,7 @@ assert(registerTools.includes("withRelevanceTraceTap"), "registerTools must inst
 assert(relevanceTraceAdapter.includes("extractToolRelevanceTerms") && relevanceTraceAdapter.includes("recordPerceptionTraceTerms"), "toolAdapter registration chokepoint must record relevance trace terms through one adapter");
 assert(!/recordPerceptionTraceTerms/.test(read("src/tools/registerExecuteTool.ts")), "browser_execute must not own imperative relevance trace collection");
 assert(!/recordPerceptionTraceTerms/.test(read("src/tools/registerArtifactTool.ts")), "browser_artifact must not own imperative relevance trace collection");
-assert(observe.includes("buildObserveRelevance") && observe.includes("computeRelevanceMap") && observe.includes("sortEntitiesBySalience(attributedEntities"), "observe must compute relevance once and feed ABML ordering");
+assert(observe.includes("buildObserveRelevance") && observeRelevance.includes("computeRelevanceMap") && observe.includes("sortEntitiesBySalience(attributedEntities"), "observe must compute relevance once and feed ABML ordering");
 assert(scan.includes("relevanceActionScore") && scan.includes("options.relevance?.scoreFields"), "scan summary action ranking must consume the lookup surface only");
 assert(ledger.includes("MAX_FRAMES_PER_SESSION_TAB = 8") && ledger.includes("MAX_TRACE_TERMS_PER_SESSION = 32"), "ledger must cap session frames and trace ring");
 assert(resultMiddleware.includes("rendererMarker") && !resultMiddleware.includes("PI_BROWSER_RELEVANCE_DEBUG"), "result envelope must not serialize trace debug terms directly");

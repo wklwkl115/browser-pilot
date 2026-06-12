@@ -35,7 +35,7 @@ try {
 }
 const timeoutMs = cliTimeoutMs();
 const r = spawnSync(process.execPath, [path.join(root, "dist", "cli", "bin.js"), ...process.argv.slice(2)], {
-	env: { ...process.env, PI_BROWSER_DAEMON_STATE_DIR: stage.stateDir },
+	env: { ...process.env, ...(stage.cliEnv || {}), PI_BROWSER_DAEMON_STATE_DIR: stage.stateDir },
 	stdio: "inherit",
 	timeout: timeoutMs,
 	killSignal: "SIGTERM",

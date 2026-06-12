@@ -14,9 +14,45 @@
 
 ## 当前激活项
 
-当前无激活执行线。
+无。
 
 ## 最近完成项
+
+### Agent harness optimization plan（2026-06-12，完成）
+
+Decision: completed `docs/agent-harness-optimization-plan.md` ACI-1 through
+ACI-12 in order: heartbeat byte bound, recovery coverage, lease diagnostics,
+input-surface ratchet, fresh observe re-anchor, CLI-skill drift gates,
+usage-log distillation, extension build skew surfacing, observe runner
+decomposition, CLI entrypoint thinning, and structural file ceilings.
+
+Boundary: no new public `browser_*` tools, no strategy-shaped orchestration, no
+challenge policy, and no unrelated runtime behavior changes. Tool contracts,
+envelopes, CLI command surface, help bytes, and recovery semantics are preserved
+except for the explicit harness diagnostics and `fresh:true` behavior.
+
+Contract: new and extended gates are wired into the contracts group and
+`scripts/check-graph.mjs`; ratchet baselines are committed; both browser skills
+stay hand-authored but drift-checked; usage logs remain opt-in and redacted;
+extension build skew is surfaced through deterministic build IDs; `fresh:true`
+provides per-call re-anchoring without disabling relevance/memory globally;
+lease-conflict diagnostics expose actionable expiry and process-local hashes
+instead of raw foreign session IDs. Post-split structure is pinned by
+`check:file-ceilings`: `cli/index.ts` is 1 line, `cli/localCommands.ts` 480,
+`cli/commandMetadata.ts` 241, `cli/naturalRouting.ts` 119,
+`src/tools/observeRunners.ts` 25, `observe/scanRunner.ts` 553,
+`observe/contentRunner.ts` 78, and `observe/htmlRunner.ts` 89.
+
+Verification: passed skill validation for `pi-browser-tools`, `pi-browser-cli`,
+and `pi-browser-blind-eval`; `npm run test:unit`, `npm run check:check-graph`,
+`npm run lint`, `npm run build:bridge`, `npm run verify:bridge:dist`,
+`npm run check:all:contracts`, `npm run smoke:cli`, and
+`npm run smoke:browser:scan-summary`; final `npm run check`, rerun
+`npm run lint`, and `git diff --check` passed before commit. Runtime artifact evidence:
+`.pi/browser-artifacts/smoke-browser-scan-summary-results.json`,
+`.pi/browser-artifacts/scan-summary-smoke-scan-1781240339346.json`,
+`.pi/browser-artifacts/fresh-observe-runtime-1781240457763.json`, and
+`.pi/browser-artifacts/observe-scan-1781240458624.json`.
 
 ### Check acceleration plan implementation（2026-06-12，完成）
 

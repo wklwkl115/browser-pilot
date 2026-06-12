@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { registerTabsTool } from "../../../src/tools/registerTabsTool.ts";
 import { ToolCollectingAdapter } from "../../../src/frontend/toolCollector.ts";
 
-function registerFakeTabsTool() {
+function registerFakeTabsTool(snapshotOverride?: Record<string, unknown>) {
 	const adapter = new ToolCollectingAdapter();
 	let snapshotCalls = 0;
 	let observationSnapshotCalls = 0;
@@ -13,7 +13,7 @@ function registerFakeTabsTool() {
 		},
 		snapshot() {
 			snapshotCalls += 1;
-			return { running: true, extensionConnected: true, tabs: [{ id: 7, url: "https://example.test/" }] };
+			return snapshotOverride ?? { running: true, extensionConnected: true, tabs: [{ id: 7, url: "https://example.test/" }] };
 		},
 		listObservationSnapshots() {
 			observationSnapshotCalls += 1;
@@ -55,4 +55,41 @@ test("browser_tabs list hoists bridge by default and keeps per-tab bridge behind
 	const fullResult = await full.tool.execute("tabs-full", { action: "list", includeBridgePerTab: true, maxChars: 10_000 }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
 	const fullJson = JSON.parse(fullResult.content[0].text) as Record<string, any>;
 	assert.equal(fullJson.tabs[0].bridge?.id, "bridge-1", "compatibility flag preserves old per-tab bridge block");
+});
+
+test("browser_tabs snapshot redacts lease and uiLock owners while preserving expiry diagnostics", async () => {
+	const rawSnapshot = {
+		browserSessionId: "current-session",
+		running: true,
+		extensionConnected: true,
+		tabs: [],
+		leases: [{
+			id: "lease-1",
+			browserSessionId: "foreign-session",
+			tabSessionId: "foreign-tab-session",
+			browserId: "browser-1",
+			tabId: 7,
+			explicit: true,
+			createdAt: 1_000,
+			lastSeenAt: 2_000,
+		}],
+		uiLock: {
+			browserSessionId: "foreign-session",
+			toolName: "browser_pick",
+			createdAt: 1_100,
+			lastSeenAt: 2_100,
+			count: 1,
+		},
+	};
+	const { tool } = registerFakeTabsTool(rawSnapshot);
+	const result = await tool.execute("tabs-snapshot", { action: "snapshot", maxChars: 10_000 }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+	const json = JSON.parse(result.content[0].text) as Record<string, any>;
+	assert.equal(JSON.stringify(json).includes("foreign-session"), false, "snapshot output must not expose raw foreign browserSessionId");
+	assert.equal(JSON.stringify(json).includes("foreign-tab-session"), false, "snapshot output must not expose raw foreign tabSessionId");
+	assert.equal(typeof json.bridge.leases[0].browserSessionHash, "string");
+	assert.equal(typeof json.bridge.leases[0].tabSessionHash, "string");
+	assert.equal(typeof json.bridge.leases[0].expiresAt, "number");
+	assert.equal(typeof json.bridge.leases[0].remainingMs, "number");
+	assert.equal(typeof json.bridge.uiLock.browserSessionHash, "string");
+	assert.equal(typeof json.bridge.uiLock.expiresAt, "number");
 });

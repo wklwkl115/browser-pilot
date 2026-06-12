@@ -1,13 +1,13 @@
 # Agent Harness Optimization Plan (ACI governance extension)
 
-> Status: **decision draft — execution-ready, not yet active.** Architect pass 1
+> Status: **completed 2026-06-12.** Architect pass 1
 > (2026-06-12) from six read-only fact-scout reports; pass 2 (same day) from five
 > more scouts over previously unexamined dimensions (turn economy, context-loss
 > resilience, concurrency semantics, version skew, telemetry/cold-start); pass 3
 > (same day) from four scouts over implementation structure (mixed-domain
 > hotspots, git churn/co-change coupling, entrypoint thinness, prior structural
-> decisions). Activation requires a `CURRENT.md` 当前激活项 entry per governance
-> rules. The governance-mechanisms workstream that overlapped pass-1 files has
+> decisions). Activated through `CURRENT.md` per governance rules, then completed
+> in the same workstream. The governance-mechanisms workstream that overlapped pass-1 files has
 > since landed (working tree clean at pass 3). Pass-3 amendments: the static
 > audit `agent-audits/runs/2026-06-12-agent-harness-plan-static.md`
 > (AUDIT-001..005) was consumed same-day — all four code-level claims

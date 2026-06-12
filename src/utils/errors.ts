@@ -34,7 +34,6 @@ export type ErrorDiagnostics = {
 	target?: Record<string, unknown>;
 	session?: Record<string, unknown>;
 	pending?: Record<string, unknown>;
-	nextActions?: string[];
 };
 
 export type NormalizedError = {
@@ -166,7 +165,7 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 			message: error.message || code,
 			details,
 			taxonomy,
-			diagnostics: { ...errorDiagnosticsFromDetails(details, code), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) },
+			diagnostics: errorDiagnosticsFromDetails(details, code),
 			recovery,
 			name: error.name || "Error",
 		};
@@ -191,12 +190,12 @@ export function normalizeError(error: unknown, fallbackCode = "INTERNAL_ERROR"):
 		const generatedRecovery = recoveryForNormalized(code, details, taxonomy);
 		const existingRecovery = isRecord(details.recovery) ? details.recovery as ErrorRecovery : undefined;
 		const recovery = mergeRecoveries(existingRecovery, generatedRecovery);
-		return { code, message, details, taxonomy, diagnostics: { ...errorDiagnosticsFromDetails(details, code), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) }, recovery, name: typeof error.name === "string" ? error.name : undefined };
+		return { code, message, details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, code), recovery, name: typeof error.name === "string" ? error.name : undefined };
 	}
 	const details = {};
 	const taxonomy = errorTaxonomyForCode(fallbackCode, details);
 	const recovery = recoveryForNormalized(fallbackCode, details, taxonomy);
-	return { code: fallbackCode, message: String(error), details, taxonomy, diagnostics: { ...errorDiagnosticsFromDetails(details, fallbackCode), ...(recovery?.nextActions?.length ? { nextActions: recovery.nextActions } : {}) }, recovery, name: "Error" };
+	return { code: fallbackCode, message: String(error), details, taxonomy, diagnostics: errorDiagnosticsFromDetails(details, fallbackCode), recovery, name: "Error" };
 }
 
 export function suppressErrorStack<T extends Error>(error: T): T {

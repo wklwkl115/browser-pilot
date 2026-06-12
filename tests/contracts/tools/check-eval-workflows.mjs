@@ -64,6 +64,7 @@ for (const requiredText of ["Require an explicit opt-in flag", "Bind to `127.0.0
 
 const runnerText = read(path.join("evals", "browser-workflows", "runner.mjs"));
 const launchBlindText = read(path.join("evals", "browser-workflows", "launch-blind.mjs"));
+const usageDistillerText = read(path.join("evals", "browser-workflows", "distill-usage-log.mjs"));
 const pbBlindText = read(path.join("evals", "browser-workflows", "pb-blind.mjs"));
 const teardownBlindText = read(path.join("evals", "browser-workflows", "teardown-blind.mjs"));
 const blindAgentPromptText = read(path.join("evals", "browser-workflows", "blind-agent-prompt.md"));
@@ -80,6 +81,13 @@ for (const requiredText of ["CLI ROUTING ADOPTION", "`wait`", "`network`", "`fra
 for (const requiredText of ["MEMORY ADOPTION", "memoryPlaneSeen", "inlineBodyUsed", "readThroughUsed", "recordNudgeShown", "recordCalled", "usedInFinalAnswer"]) {
 	assert(blindAgentPromptText.includes(requiredText), `blind-agent-prompt.md must capture memory-adoption signal: ${requiredText}`);
 	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require memory-adoption triage: ${requiredText}`);
+}
+for (const requiredText of ["PI_BROWSER_USAGE_LOG", "PI_BROWSER_USAGE_RUN_ID", "usageLogPath", "usageReportPath", "runId"]) {
+	assert(launchBlindText.includes(requiredText), `launch-blind.mjs must stage usage-log metadata: ${requiredText}`);
+}
+assert(pbBlindText.includes("stage.cliEnv"), "pb-blind must propagate stage cliEnv, including usage-log attribution");
+for (const requiredText of ["unattributed", "repeatedCalls", "p50", "p95", "advancedCompatibility", "runId"]) {
+	assert(usageDistillerText.includes(requiredText), `distill-usage-log.mjs must report usage metric: ${requiredText}`);
 }
 for (const requiredText of ["CLI natural-routing", "`wait` /", "`network` /", "`frame` /", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`"]) {
 	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require route-adoption triage: ${requiredText}`);
@@ -137,11 +145,29 @@ assert(EXTENSION_PORT_PATCH_BUNDLES.includes("offscreen.js"), "extension port pa
 	try {
 		const distDir = path.join(tempDir, "dist");
 		mkdirSync(distDir, { recursive: true });
+		writeFileSync(path.join(tempDir, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "fixture", version: "1.0.0", background: { service_worker: "dist/service-worker.js" } }), "utf8");
 		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
 			writeFileSync(path.join(distDir, bundle), "const PI_BROWSER_BRIDGE_PORT = 18765; const PI_BROWSER_BRIDGE_PORT_RANGE_END = 18784; const url = 'ws://127.0.0.1:18765';\n", "utf8");
 		}
+		writeFileSync(path.join(distDir, "content.js"), "console.log('content');\n", "utf8");
+		writeFileSync(path.join(distDir, "hook_dispatcher.js"), "console.log('hook');\n", "utf8");
+		writeFileSync(path.join(distDir, "disable_dialogs.js"), "console.log('dialogs');\n", "utf8");
+		writeFileSync(path.join(distDir, "build-manifest.json"), JSON.stringify({
+			buildId: "0".repeat(64),
+			buildIdPlaceholder: "__PI_BROWSER_BRIDGE_BUILD_ID_PLACEHOLDER__",
+			inputs: [
+				"bridge/pi_browser_bridge/dist/content.js",
+				"bridge/pi_browser_bridge/dist/disable_dialogs.js",
+				"bridge/pi_browser_bridge/dist/hook_dispatcher.js",
+				"bridge/pi_browser_bridge/dist/offscreen.js",
+				"bridge/pi_browser_bridge/dist/service-worker.js",
+				"bridge/pi_browser_bridge/manifest.json",
+			],
+		}), "utf8");
 		const patch = await patchExtensionDistPort(tempDir, 19001);
 		assert(patch.patched.length === EXTENSION_PORT_PATCH_BUNDLES.length && patch.patched.every((item) => item.replacements >= 3), "extension port patch helper must report replacement diagnostics for every runtime bundle");
+		assert(/^[0-9a-f]{64}$/.test(patch.buildId) && patch.manifestPath.endsWith(path.join("dist", "build-manifest.json")), "extension port patch helper must return staged buildId and manifestPath");
+		assert(patch.env?.PI_BROWSER_EXPECTED_EXTENSION_BUILD_MANIFEST === patch.manifestPath, "extension port patch helper must return ready-to-spread expected manifest env");
 		for (const bundle of EXTENSION_PORT_PATCH_BUNDLES) {
 			const text = readFileSync(path.join(distDir, bundle), "utf8");
 			assert(text.includes("19001") && !text.includes("18784") && !text.includes("127.0.0.1:18765"), `extension port patch helper must rewrite bridge markers in ${bundle}`);
@@ -184,6 +210,7 @@ assert(isolatedPatchScripts.length >= 20, "isolated smoke/eval scripts that stag
 for (const file of isolatedPatchScripts) {
 	const text = read(file);
 	assert(text.includes("patchExtensionDistPort"), `${file} must use the shared extension port patch helper`);
+	assert(text.includes("extensionPatch") && text.includes(".env"), `${file} must propagate patchExtensionDistPort().env so staged extension build skew is compared against the staged manifest`);
 	assert(!/function\s+patchExtensionPort\s*\(/.test(text), `${file} must not keep a local pass-through patchExtensionPort wrapper; call patchExtensionDistPort directly`);
 	assert(!text.includes('path.join(extensionDir, "dist", "service-worker.js")'), `${file} must not patch only dist/service-worker.js; B5 WebSocket transport lives in dist/offscreen.js`);
 }
@@ -327,5 +354,35 @@ assert(JSON.stringify(cookies).includes("Synthetic") || JSON.stringify(cookies).
 
 const routeMap = readJson(path.join("evals", "browser-workflows", "fixtures", "path-fuzz-routes.json"));
 assert(routeMap.routes && routeMap.wordlist, "path fuzz route fixture must include routes and wordlist");
+
+{
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-usage-distill-"));
+	try {
+		const logA = path.join(tempDir, "usage-a.jsonl");
+		const logB = path.join(tempDir, "usage-b.jsonl");
+		const stage = path.join(tempDir, "stage.json");
+		writeFileSync(stage, JSON.stringify({ runId: "run-a", startUrl: "https://example.test/", goal: "read" }), "utf8");
+		writeFileSync(logA, [
+			{ runId: "run-a", tool: "browser_wait", result: "ok", ms: 10, cli: { routing: "natural", command: "wait" }, args: { action: "selector" } },
+			{ runId: "run-a", tool: "browser_wait", result: "ok", ms: 20, cli: { routing: "natural", command: "wait" }, args: { action: "selector" } },
+			{ runId: "run-a", tool: "browser_tabs", result: "error", ms: 30, details: { code: "TAB_NOT_FOUND" }, args: { action: "list" } },
+		].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf8");
+		writeFileSync(logB, `${JSON.stringify({ tool: "browser_observe", result: "ok", ms: 5, args: { mode: "scan" } })}\n`, "utf8");
+		const outPath = path.join(tempDir, "usage-report.json");
+		const result = spawnSync(process.execPath, [path.join(root, "evals", "browser-workflows", "distill-usage-log.mjs"), logA, logB, "--stage", stage, "--out", outPath], { encoding: "utf8" });
+		assert(result.status === 0, `usage distiller must exit 0: ${result.stderr}`);
+		const report = JSON.parse(readFileSync(outPath, "utf8"));
+		assert(report.runCount === 2 && report.totalCalls === 4, "usage distiller must keep attributed and unattributed runs separate");
+		const runA = report.runs.find((run) => run.runId === "run-a");
+		assert(runA?.stage?.startUrl === "https://example.test/", "usage distiller must annotate runs from stage sidecars by embedded runId");
+		assert(runA.callsByTool.browser_wait === 2 && runA.errorCodesByTool.browser_tabs.TAB_NOT_FOUND === 1, "usage distiller must aggregate calls and error-code histograms");
+		assert(runA.routing.natural === 2 && runA.durationMs.p50 === 20 && runA.durationMs.p95 === 30, "usage distiller must report routing and duration percentiles");
+		assert(runA.repeatedCalls.some((item) => item.tool === "browser_wait" && item.count === 2), "usage distiller must detect repeated tool+params within the same run");
+		const unattributed = report.runs.find((run) => run.runId === "unattributed");
+		assert(unattributed?.attributed === false && unattributed.totalCalls === 1, "usage distiller must not join missing-runId lines to stage sidecars");
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+}
 
 console.log("browser workflow eval contract ok");

@@ -36,9 +36,9 @@ export const NativeCommandParamsSchema = Type.Object({}, { additionalProperties:
 
 export const TAB_SCOPED_TOOL_GUIDELINE = "For automation, call browser_tabs list/switch to pick a target tab. A tabId is NOT stable — it changes when the tab navigates, reloads, or is replaced — so do not cache one across navigations: re-read it from browser_tabs or the navigation result, or omit tabId to use the selected/active tab. Pass an explicit tabId mainly to disambiguate when several tabs are open.";
 export const TAB_ID_DESCRIPTION = "Target tab id. Not stable across navigation/reload — re-resolve via browser_tabs or omit to use the selected/active tab; pass explicitly mainly to disambiguate multiple open tabs.";
-export const DETAIL_LEVEL_DESCRIPTION = "summary | preview | full; summary is default to reduce token usage";
-export const OUTPUT_PATH_DESCRIPTION = "Optional artifact output path for full raw results";
-export const MAX_CHARS_DESCRIPTION = "Maximum characters returned to the model";
+export const DETAIL_LEVEL_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current summaries use tool-specific budgets and artifact handles.";
+export const OUTPUT_PATH_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Full raw evidence is saved by tool-managed artifacts when needed.";
+export const MAX_CHARS_DESCRIPTION = "Deprecated compatibility only; stripped before tool validation. Current tools use committed per-tool budgets.";
 
 function enumLiteralSchemas<const TValue extends readonly [string, string, ...string[]]>(values: TValue): [TSchema, TSchema, ...TSchema[]] {
 	return values.map((value) => Type.Literal(value)) as unknown as [TSchema, TSchema, ...TSchema[]];

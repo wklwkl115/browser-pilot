@@ -231,10 +231,11 @@ assert.equal(evidenceEntityEnvelope.entities?.[0]?.ref, "pi-ref://control/submit
 
 // ── Static wiring guards ──────────────────────────────────────────────────────
 
-const observeSrc = readRepo("src/tools/observeRunners.ts");
+const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
+const baselineSrc = readRepo("src/tools/observe/baseline.ts");
 assert.ok(observeSrc.includes("buildInferenceSummary") && observeSrc.includes("const inference"), "observeRunners wires inference");
 assert.ok(observeSrc.includes("entitiesForInferenceEvidence") && observeSrc.includes("referenced_entities"), "observeRunners carries inference evidence entities into referenced_entities");
-assert.ok(observeSrc.includes("savedArtifactPathFromBaseline") && observeSrc.includes("baseline saved artifact"), "observeRunners prefers full saved baseline artifacts over capped envelope entities");
+assert.ok(baselineSrc.includes("savedArtifactPathFromBaseline") && baselineSrc.includes("baseline saved artifact"), "observeRunners prefers full saved baseline artifacts over capped envelope entities");
 
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(!middlewareSrc.includes("envelopeInference"), "resultMiddleware no longer lifts inference to the envelope");

@@ -212,7 +212,8 @@ async function launchBrowser() {
 	profileDir = path.join(tempRoot, `cli-full-profile-${runId}`);
 	extensionDir = path.join(tempRoot, `cli-full-extension-${runId}`);
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(process.env, extensionPatch.env);
 	const chromeExe = chromePath();
 	const fixture = await startFixture();
 	fixtureServer = fixture.server;

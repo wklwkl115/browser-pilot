@@ -1,6 +1,7 @@
 // bridge_info.js - shared bridge metadata and tab helpers.
 
 import { PI_BROWSER_WORKER_BOOT_ID, PI_BROWSER_WORKER_STARTED_AT, chromeApi as chrome } from "./runtimeEnv";
+import { BRIDGE_BUILD_ID, BRIDGE_BUILD_PIPELINE_VERSION } from "../shared/buildInfo";
 
 const CSP_BYPASS_ALARM = "pi-browser-csp-bypass-prune";
 
@@ -22,6 +23,10 @@ function piBridgeInfo() {
     name: manifest.name,
     version: manifest.version_name || manifest.version,
     manifestVersion: manifest.version,
+    build: {
+      buildId: BRIDGE_BUILD_ID,
+      pipelineVersion: BRIDGE_BUILD_PIPELINE_VERSION,
+    },
     userAgent: navigator.userAgent,
     workerBootId: PI_BROWSER_WORKER_BOOT_ID,
     workerStartedAt: PI_BROWSER_WORKER_STARTED_AT,

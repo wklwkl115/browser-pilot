@@ -35,6 +35,7 @@ export interface DaemonStatus {
 	bridgePort?: number;
 	running?: boolean;
 	extensionConnected?: boolean;
+	extension?: Record<string, unknown>;
 	tabs?: unknown[];
 	tabCount?: number;
 	activeTab?: unknown;

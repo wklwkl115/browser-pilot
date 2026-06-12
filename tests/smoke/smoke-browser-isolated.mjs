@@ -72,7 +72,8 @@ try {
 	const fixturePort = await freePort();
 	result = { ...result, bridgePort, fixturePort };
 	await cp(extensionSource, extensionDir, { recursive: true, filter: (src) => !src.includes(`${path.sep}.git`) });
-	await patchExtensionDistPort(extensionDir, bridgePort);
+	const extensionPatch = await patchExtensionDistPort(extensionDir, bridgePort);
+	Object.assign(process.env, extensionPatch.env);
 	const chromeExe = chromePath();
 	const chromeProfileDir = windowsPathForChrome(profileDir, chromeExe);
 	const chromeExtensionDir = windowsPathForChrome(extensionDir, chromeExe);

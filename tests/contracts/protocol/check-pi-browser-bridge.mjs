@@ -1687,7 +1687,7 @@ for (const removed of ["browser_query", "browser_click", "browser_type", "browse
 assert(!toolSource.includes("PI_BROWSER_ENABLE_COMPAT_PRO"), "browser_pro compatibility gate must be removed");
 assert(!toolSource.includes("name: \"browser_pro\""), "browser_pro tool must be removed");
 assert(toolSource.includes("selectBrowser"), "browser selection action missing");
-assert(usesTextDistillation(read("src/tools/observeRunners.ts")), "browser_observe must use result distillation middleware across scan/content/html modes");
+assert(usesTextDistillation(read("src/tools/observe/scanRunner.ts")), "browser_observe must use result distillation middleware across scan/content/html modes");
 assert(usesJsonDistillation(read("src/tools/registerPickTool.ts")), "browser_pick must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerEvidenceTool.ts")), "browser_evidence must use result distillation middleware");
 assert(usesJsonDistillation(read("src/tools/registerNativeActionTools.ts")), "browser_network must use result distillation middleware through native action tools");

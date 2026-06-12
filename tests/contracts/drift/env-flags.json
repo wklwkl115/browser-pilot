@@ -54,6 +54,11 @@
       "signatureSites": []
     },
     {
+      "name": "PI_BROWSER_EXPECTED_EXTENSION_BUILD_MANIFEST",
+      "affectsOutput": false,
+      "signatureSites": []
+    },
+    {
       "name": "PI_BROWSER_JSON_PROJECTION",
       "affectsOutput": true,
       "signatureSites": [
@@ -83,7 +88,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeMemoryCacheMarker",
             "PI_BROWSER_MEMORY"
@@ -103,7 +108,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeMemoryAutoSurfaceCacheMarker",
             "PI_BROWSER_MEMORY_AUTOSURFACE"
@@ -132,7 +137,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeRelevanceCacheMarker",
             "PI_BROWSER_RELEVANCE"
@@ -145,7 +150,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeRelevanceDebugCacheMarker",
             "PI_BROWSER_RELEVANCE_DEBUG"
@@ -158,7 +163,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeRendererCacheMarker",
             "PI_BROWSER_RENDERER"
@@ -178,7 +183,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeSessionDeltaCacheMarker",
             "PI_BROWSER_SESSION_DELTA"
@@ -204,7 +209,7 @@
       "affectsOutput": true,
       "signatureSites": [
         {
-          "file": "src/tools/observeRunners.ts",
+          "file": "src/tools/observe/renderCache.ts",
           "markers": [
             "observeCostModelCacheMarker",
             "PI_BROWSER_TOKEN_COST"
@@ -226,6 +231,11 @@
     },
     {
       "name": "PI_BROWSER_USAGE_LOG_RAW",
+      "affectsOutput": false,
+      "signatureSites": []
+    },
+    {
+      "name": "PI_BROWSER_USAGE_RUN_ID",
       "affectsOutput": false,
       "signatureSites": []
     }
