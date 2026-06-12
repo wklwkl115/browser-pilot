@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const map = JSON.parse(readFileSync(path.join(root, "tests/contracts/drift/kernel-test-map.json"), "utf8"));
+const mapRel = "tests/contracts/drift/kernel-test-map.json";
+const proposeMode = process.argv.includes("--propose");
 const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core"];
 
 function walk(relDir, prefix = "") {
@@ -50,15 +52,35 @@ const modules = KERNEL_ROOTS.flatMap((relDir) => walk(relDir)).sort();
 const mapped = new Set(Object.keys(map.mapped || {}));
 const grandfathered = new Set(Object.keys(map.grandfathered || {}));
 const actual = new Set(modules);
+const stale = [...mapped, ...grandfathered].filter((moduleRel) => !actual.has(moduleRel)).sort();
+const missing = modules.filter((moduleRel) => !mapped.has(moduleRel) && !grandfathered.has(moduleRel));
 
-for (const moduleRel of [...mapped, ...grandfathered]) {
-	assert(actual.has(moduleRel), `kernel-test-map stale entry: ${moduleRel}`);
+if (proposeMode) {
+	if (!stale.length && !missing.length && grandfathered.size <= map.grandfatherMax) {
+		console.log("kernel-test-map propose: no changes needed");
+		process.exit(0);
+	}
+	const proposed = JSON.parse(JSON.stringify(map));
+	for (const moduleRel of stale) {
+		delete proposed.mapped?.[moduleRel];
+		delete proposed.grandfathered?.[moduleRel];
+	}
+	for (const moduleRel of missing) {
+		proposed.mapped = proposed.mapped || {};
+		proposed.mapped[moduleRel] = ["TODO: add direct test path importing this module"];
+	}
+	console.log(`kernel-test-map propose: update ${mapRel}; replace TODO entries with real direct tests or a justified grandfather entry:`);
+	console.log(JSON.stringify({ ...proposed, justification: "TODO: justify any added grandfathered module and its removal bar" }, null, 2));
+	process.exit(0);
 }
 
-const missing = modules.filter((moduleRel) => !mapped.has(moduleRel) && !grandfathered.has(moduleRel));
-assert.deepEqual(missing, [], `kernel module(s) need direct test map or grandfather decision: ${missing.join(", ")}`);
+for (const moduleRel of [...mapped, ...grandfathered]) {
+	assert(actual.has(moduleRel), `kernel-test-map stale entry: ${moduleRel} (run npm run check:kernel-test-map -- --propose for a draft)`);
+}
 
-assert(grandfathered.size <= map.grandfatherMax, `kernel test grandfather count may only shrink: ${grandfathered.size} > ${map.grandfatherMax}`);
+assert.deepEqual(missing, [], `kernel module(s) need direct test map or grandfather decision: ${missing.join(", ")} (run npm run check:kernel-test-map -- --propose for a draft)`);
+
+assert(grandfathered.size <= map.grandfatherMax, `kernel test grandfather count may only shrink: ${grandfathered.size} > ${map.grandfatherMax} (run npm run check:kernel-test-map -- --propose for a draft)`);
 for (const [moduleRel, reason] of Object.entries(map.grandfathered || {})) {
 	assert(typeof reason === "string" && reason.trim().length >= 12, `${moduleRel} grandfather entry must carry a concrete reason/removal bar`);
 }

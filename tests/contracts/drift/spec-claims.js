@@ -10,7 +10,7 @@ export const SPEC_CLAIMS = [
 			},
 			{
 				anchor: "identity minting: semanticAnchor > css > backendNodeId > axNodeId > textAnchor > first locator",
-				symbol: "semanticAnchor ? undefined : descriptor.locators.find((item) => item.by === \"css\")",
+				symbol: "Ref identity prioritizes persistent page-authored anchors",
 				status: "implemented",
 				sourceGlob: ["src/abml-core/refId.ts"],
 			},
@@ -22,7 +22,7 @@ export const SPEC_CLAIMS = [
 			},
 			{
 				anchor: "refId: string;             // pi-ref://...",
-				symbol: "return `pi-ref://${kind}/${id}`;",
+				symbol: "export function makePiRefUri",
 				status: "implemented",
 				sourceGlob: ["src/abml-core/refId.ts"],
 			},
@@ -33,21 +33,38 @@ export const SPEC_CLAIMS = [
 		claims: [
 			{
 				anchor: "## Pure core (25 — zero browser/Node deps)",
-				symbol: "const PURE_CORE = [",
+				symbol: "export const PURE_CORE = [",
 				status: "implemented",
-				sourceGlob: ["tests/contracts/drift/check-abml-core-boundary.mjs"],
+				sourceGlob: ["tests/contracts/drift/abml-core-manifest.js"],
 			},
 			{
 				anchor: "## Runtime (7 — talk to the live browser)",
-				symbol: "const RUNTIME = [",
+				symbol: "export const RUNTIME = [",
 				status: "implemented",
-				sourceGlob: ["tests/contracts/drift/check-abml-core-boundary.mjs"],
+				sourceGlob: ["tests/contracts/drift/abml-core-manifest.js"],
 			},
 			{
 				anchor: "## Whitelisted cross-cutting modules (5 — a pure-core file MAY import these)",
-				symbol: "const PURE_CROSSCUTTING = new Set([",
+				symbol: "export const PURE_CROSSCUTTING = [",
 				status: "implemented",
-				sourceGlob: ["tests/contracts/drift/check-abml-core-boundary.mjs"],
+				sourceGlob: ["tests/contracts/drift/abml-core-manifest.js"],
+			},
+		],
+	},
+	{
+		doc: "docs/agent-native-architecture.md",
+		claims: [
+			{
+				anchor: "**CLI wiring — fixed (2026-06-07):**",
+				symbol: "def.prepareArguments ? def.prepareArguments(params)",
+				status: "implemented",
+				sourceGlob: ["cli/daemon.ts"],
+			},
+			{
+				anchor: "**CLI wiring — fixed (2026-06-07):**",
+				symbol: "cmd.def.prepareArguments ? cmd.def.prepareArguments(resolved.params)",
+				status: "implemented",
+				sourceGlob: ["cli/localCommands.ts"],
 			},
 		],
 	},

@@ -18,6 +18,8 @@ const archive = read("ARCHIVE.md");
 const structure = read("docs/document-structure.md");
 const agentNativeArchitecture = read("docs/agent-native-architecture.md");
 const agentNativeCliSpec = read("docs/agent-native-cli-spec.md");
+const agentDevelopment = read("docs/agent-development.md");
+const buildBridge = read("scripts/build-bridge.mjs");
 
 assert(structure.includes("## Canonical layers") && structure.includes("CURRENT.md") && structure.includes("ARCHIVE.md"), "document-structure.md must define canonical layers");
 assert(structure.includes("docs/playbooks/*.md") && structure.includes("docs/reference/*.md"), "document-structure.md must define playbook/reference layers");
@@ -30,6 +32,14 @@ assert(current.includes("docs/document-structure.md"), "CURRENT.md must link doc
 assert(current.includes("agent-audits/") && current.includes("审计 agent 只写报告") && current.includes("skills/pi-browser-audit-fix/SKILL.md"), "CURRENT.md must describe the asynchronous audit/fix inbox workflow");
 assert(todo.includes("docs/document-structure.md"), "TODO.md must link document structure rules");
 assert(todo.includes("Agent 审计收件箱：`agent-audits/`"), "TODO.md must link the agent audit inbox");
+assert(existsSync(path.join(root, "docs", "agent-development.md")), "missing dev-harness handbook: docs/agent-development.md");
+for (const heading of ["## Dev Loop", "## Writing A Check", "## Contract Test Conventions", "## Ledgers And Ratchets", "## Closing A Workstream", "## Multi-Agent Parallel Work", "## Change-path Playbooks"]) {
+	assert(agentDevelopment.includes(heading), `docs/agent-development.md missing required heading: ${heading}`);
+}
+for (const required of ["check:smart --", "query:markers", "npm run new:check", "NON_PARALLEL_NODE_IDS", "red-first", "docs:sync", "check:doc-paths", "Narrow gates are iteration evidence, not closure evidence", "Capture the gate exit code before piping"]) {
+	assert(agentDevelopment.includes(required), `docs/agent-development.md missing required dev-harness guidance: ${required}`);
+}
+assert(buildBridge.includes("// contract: tests/contracts/drift/check-package-files.mjs"), "fragile source-text pins must have a source-site contract breadcrumb");
 assert(archive.includes("docs/archive/bridge-esm-history.md") && archive.includes("docs/archive/bridge-esm-history.full.md"), "ARCHIVE.md must link both summary and full archive entries");
 assert(roadmap.includes("*.full.md") || roadmap.includes("bridge-esm-history.full.md"), "ROADMAP.md must mention detailed archive files");
 assert(existsSync(path.join(auditsDir, "README.md")), "missing audit inbox README: agent-audits/README.md");
@@ -37,6 +47,7 @@ assert(existsSync(path.join(auditsDir, "AGENTS.md")), "missing audit inbox local
 assert(existsSync(path.join(auditsDir, "templates", "run-report.md")), "missing audit run template");
 assert(existsSync(path.join(auditsDir, "templates", "finding.md")), "missing audit finding template");
 assert(existsSync(path.join(auditsDir, "runs")), "missing audit runs directory");
+assert(existsSync(path.join(auditsDir, "runs", "index.json")), "missing audit findings lifecycle index: agent-audits/runs/index.json");
 assert(existsSync(path.join(root, "skills", "pi-browser-audit-fix", "SKILL.md")), "missing audit/fix skill");
 const auditReadme = read("agent-audits/README.md");
 const auditAgents = read("agent-audits/AGENTS.md");
@@ -81,6 +92,7 @@ for (const file of requiredPlaybooks.filter((file) => file !== "README.md")) {
 
 assert(!current.includes("## 180.") && !current.includes("## 216.") && !current.includes("## 203."), "CURRENT.md must not expand into detailed historical TODO logs again");
 assert(!archive.includes("## 180.") && !archive.includes("## 216.") && !archive.includes("## 203."), "ARCHIVE.md must not keep detailed 180-240 execution logs after migration to full archive docs");
+assert(current.split(/\r?\n/).length <= 180, "CURRENT.md must stay compact (<=180 lines); move completed workstream details to docs/archive/*.full.md");
 assert(archive.split(/\r?\n/).length <= 120, "ARCHIVE.md must stay summary-first and compact");
 assert(todo.split(/\r?\n/).length <= 30, "TODO.md must remain a navigation page");
 assert(roadmap.split(/\r?\n/).length <= 80, "ROADMAP.md must stay compact and future-facing");
@@ -108,6 +120,8 @@ function parseSections(text, prefix) {
 			if (name !== null) sections[name] = buf.join("\n").trim();
 			name = line.slice(prefix.length).trim();
 			buf = [];
+		} else if (/^<!-- (BEGIN|END) GENERATED: /.test(line.trim())) {
+			continue;
 		} else if (name !== null) {
 			buf.push(line);
 		}
@@ -119,6 +133,8 @@ function parseSections(text, prefix) {
 const claudeMd = read("CLAUDE.md");
 const agentsMd = read("AGENTS.md");
 const inlineMarker = "## Design, Governance & Workflow Rules (inlined from AGENTS.md)";
+assert(agentsMd.includes("`AGENTS.md` is the single editing surface") && agentsMd.includes("regenerate the `CLAUDE.md` inlined block"), "AGENTS.md must tell agents to edit AGENTS.md and regenerate CLAUDE.md via docs:sync");
+assert(claudeMd.includes("edit `AGENTS.md` and run `npm run docs:sync`"), "CLAUDE.md must point back to AGENTS.md as the generated governance source");
 const inlineIdx = claudeMd.indexOf(inlineMarker);
 assert(inlineIdx !== -1, "CLAUDE.md must inline AGENTS.md under a 'Design, Governance & Workflow Rules (inlined from AGENTS.md)' section");
 const agentsSections = parseSections(agentsMd, "## ");

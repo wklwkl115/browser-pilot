@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "reports": [
+    {
+      "path": "agent-audits/runs/2026-06-11-top10-defects.md",
+      "findings": [
+        {
+          "id": "AUDIT-001",
+          "title": "Heartbeat interval not unref'd prevents process exit",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-002",
+          "title": "Raw params.tabId passed to executeJavaScript while normalized tabId used for monitoring",
+          "status": "unverified"
+        },
+        {
+          "id": "AUDIT-003",
+          "title": "Unbounded operations Map in BrowserOperationRegistry",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-004",
+          "title": "WebSocket connections not forcefully closed on server stop",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-005",
+          "title": "leaseOwnerHash returns raw session UUID instead of hash",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-006",
+          "title": "verifyMemoryAnchors reports fresh when live anchor is absent",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-007",
+          "title": "causalUserTriggeredCount silently undercounts on capped requests array",
+          "status": "unverified"
+        },
+        {
+          "id": "AUDIT-008",
+          "title": "safeRegex misses ReDoS-vulnerable nested alternation patterns",
+          "status": "unverified"
+        },
+        {
+          "id": "AUDIT-009",
+          "title": "Diff churn salience score hardcoded to 0",
+          "status": "unverified"
+        },
+        {
+          "id": "AUDIT-010",
+          "title": "TOCTOU race in readOrCreateMemorySecret",
+          "status": "fixed",
+          "evidenceCommit": "e1733e2",
+          "verifiedByGate": "test:unit"
+        }
+      ]
+    },
+    {
+      "path": "agent-audits/runs/2026-06-12-agent-harness-plan-redteam-pass2.md",
+      "findings": [
+        {
+          "id": "AUDIT-006",
+          "title": "ACI-5 buildId is incompatible with staged post-build extension patching",
+          "status": "fixed",
+          "evidenceCommit": "84c8c0b",
+          "verifiedByGate": "verify:bridge:dist"
+        },
+        {
+          "id": "AUDIT-007",
+          "title": "ACI-8 usage logs lack a run/task attribution contract",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "check:eval-workflows"
+        },
+        {
+          "id": "AUDIT-008",
+          "title": "Sync checklist names the check graph consumer as an edit target",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "check:check-graph"
+        }
+      ]
+    },
+    {
+      "path": "agent-audits/runs/2026-06-12-agent-harness-plan-static.md",
+      "findings": [
+        {
+          "id": "AUDIT-001",
+          "title": "ACI-5 does not define a non-self-referential fingerprint",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "verify:bridge:dist"
+        },
+        {
+          "id": "AUDIT-002",
+          "title": "ACI-7 redacts conflict details but not public snapshot/session surfaces",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "test:unit"
+        },
+        {
+          "id": "AUDIT-003",
+          "title": "ACI-6 omits fresh conflicts with by-reference baseline params",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "check:session-delta-long-conversation"
+        },
+        {
+          "id": "AUDIT-004",
+          "title": "ACI-10/11 undercount static source-text contracts that will break after splits",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "check:check-graph"
+        },
+        {
+          "id": "AUDIT-005",
+          "title": "Acceptance omits repo-required docs/runtime sync for material tool and bridge changes",
+          "status": "fixed",
+          "evidenceCommit": "11553f8",
+          "verifiedByGate": "check:docs-sync"
+        }
+      ]
+    }
+  ]
+}

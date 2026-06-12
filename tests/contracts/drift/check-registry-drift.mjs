@@ -18,6 +18,6 @@ assert(current.includes("唯一正式源码仓库"), "CURRENT.md must lock the o
 const pkg = JSON.parse(read("package.json"));
 assert.equal(pkg.scripts?.["check:src:types"], "tsc -p tsconfig.json", "package must typecheck outer src/** through tsconfig.json");
 assert.equal(pkg.scripts?.["check:registry-drift"], "node tests/contracts/drift/check-registry-drift.mjs", "package must expose registry drift check");
-assert(String(pkg.scripts?.["check:all"] || "").includes("run-check-groups") || String(pkg.scripts?.check || "") === "npm run check:all", "npm run check must continue routing through grouped validation runner");
+assert(String(pkg.scripts?.["check:all"] || "").includes("check-dag") && String(pkg.scripts?.check || "") === "npm run check:all", `npm run check must route through the DAG closing gate: expected check="npm run check:all" and check:all="node scripts/check-dag.mjs"`);
 
 console.log("registry drift contract ok");

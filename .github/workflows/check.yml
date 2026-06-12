@@ -35,11 +35,23 @@ jobs:
       - name: Setup Node + install + build
         uses: ./.github/actions/setup-node-build
 
-      - name: Run static lint/boundary gates
-        run: npm run check:lint
+      - name: Run static lint/source gates
+        run: |
+          npm run lint
+          npm run check:all:src
+          npm run check:boundaries
+          npm run check:bridge:files
+          npm run check:page-scripts
 
-      - name: Run ESLint
-        run: npm run lint
+      - name: Upload check DAG artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-static-check-dag-artifacts
+          path: |
+            .pi/browser-artifacts/check-dag-summary.json
+            .pi/browser-artifacts/check-dag/**
+          if-no-files-found: ignore
 
   contracts-and-unit:
     runs-on: ubuntu-latest
@@ -47,6 +59,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node + install + build
         uses: ./.github/actions/setup-node-build
@@ -55,6 +69,16 @@ jobs:
         run: |
           npm run check:all:bridge
           npm run check:all:contracts
+
+      - name: Upload check DAG artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts-and-unit-check-dag-artifacts
+          path: |
+            .pi/browser-artifacts/check-dag-summary.json
+            .pi/browser-artifacts/check-dag/**
+          if-no-files-found: ignore
 
   package-acceptance:
     runs-on: ubuntu-latest
@@ -70,6 +94,16 @@ jobs:
         run: |
           npm run check:all:package
           npm run release:local
+
+      - name: Upload check DAG artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-acceptance-check-dag-artifacts
+          path: |
+            .pi/browser-artifacts/check-dag-summary.json
+            .pi/browser-artifacts/check-dag/**
+          if-no-files-found: ignore
 
   browser-smoke:
     if: github.event_name == 'workflow_dispatch' && inputs.run_browser_smoke == true

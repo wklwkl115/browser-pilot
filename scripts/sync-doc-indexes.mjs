@@ -8,6 +8,7 @@ const roadmapPath = path.join(root, "ROADMAP.md");
 const todoPath = path.join(root, "TODO.md");
 const currentPath = path.join(root, "CURRENT.md");
 const archiveDir = path.join(root, "docs", "archive");
+const checkOnly = process.argv.includes("--check");
 
 const files = {
 	compressionPlan: "docs/archive-history-compression-plan.md",
@@ -55,8 +56,17 @@ const archiveHistoryBlock = `${archiveHistoryHeading}\n\n${archivePairs.map((pai
 
 const roadmapArchiveSentence = `这些不是“遗漏未完成 bug”，而是**明确延后或保持未激活**的 future work；需要新需求时再开新 TODO/RFC，不建议重新塞回当前执行队列。历史压缩后的阶段归档见：${archivePairs.map((pair) => `\`${pair.summary}\``).join("、")}；逐条详档见对应 \`*.full.md\` 文件。`;
 
-const todoEntryLine = `- 文档结构规范：\`${files.docStructure}\`；索引同步脚本：\`npm run docs:sync-indexes\`。`;
-const currentEntryLine = `- 文档结构规范：\`${files.docStructure}\`；archive 摘要/详档入口由 \`npm run docs:sync-indexes\` 同步。`;
+const todoEntryLine = `- 文档结构规范：\`${files.docStructure}\`；文档同步脚本：\`npm run docs:sync\`。`;
+const currentEntryLine = `- 文档结构规范：\`${files.docStructure}\`；archive 摘要/详档入口由 \`npm run docs:sync\` 同步。`;
+
+function writeOrCheck(file, next, label) {
+	const current = readFileSync(file, "utf8");
+	if (current === next) return;
+	if (checkOnly) {
+		throw new Error(`${label} is stale; run npm run docs:sync`);
+	}
+	writeFileSync(file, next, "utf8");
+}
 
 function syncArchive() {
 	const text = readFileSync(archivePath, "utf8");
@@ -67,41 +77,41 @@ function syncArchive() {
 	const detailNext = text.indexOf("\n## ", detailStart + 1);
 	const end = detailNext >= 0 ? detailNext : text.length;
 	const next = `${text.slice(0, blockStart)}${archiveHistoryBlock}\n${text.slice(end)}`;
-	writeFileSync(archivePath, next, "utf8");
+	writeOrCheck(archivePath, next, "ARCHIVE.md archive index");
 }
 
 function syncRoadmap() {
 	const text = readFileSync(roadmapPath, "utf8");
 	const next = text.replace(/这些不是“遗漏未完成 bug”[\s\S]*?\n?$/, `${roadmapArchiveSentence}\n`);
-	writeFileSync(roadmapPath, next, "utf8");
+	writeOrCheck(roadmapPath, next, "ROADMAP.md archive index");
 }
 
 function syncTodo() {
 	const text = readFileSync(todoPath, "utf8");
 	const lines = text.split(/\r?\n/).filter(Boolean);
 	const filtered = lines.filter(
-		(line) => !(line.startsWith("- 文档结构规范：") && line.includes(files.docStructure) && line.includes("npm run docs:sync-indexes")),
+		(line) => !(line.startsWith("- 文档结构规范：") && line.includes(files.docStructure)),
 	);
 	const roadmapIndex = filtered.findIndex((line) => line.startsWith("- 后续路线与建议："));
 	const maintainIndex = filtered.findIndex((line) => line.startsWith("维护规则："));
 	const insertAt = roadmapIndex >= 0 ? roadmapIndex + 1 : maintainIndex >= 0 ? maintainIndex : filtered.length;
 	filtered.splice(insertAt, 0, todoEntryLine);
-	writeFileSync(todoPath, `${filtered.join("\n")}\n`, "utf8");
+	writeOrCheck(todoPath, `${filtered.join("\n")}\n`, "TODO.md structure link");
 }
 
 function syncCurrent() {
 	const text = readFileSync(currentPath, "utf8");
 	const lines = text.split(/\r?\n/);
-	const filtered = lines.filter((line) => line !== currentEntryLine);
+	const filtered = lines.filter((line) => !(line.startsWith("- 文档结构规范：") && line.includes(files.docStructure)));
 	let insertAt = filtered.findIndex((line) => line.startsWith("- 当前主链路："));
 	if (insertAt < 0) insertAt = filtered.findIndex((line) => line.startsWith("## ")) + 1;
 	if (insertAt < 1) insertAt = 2;
 	filtered.splice(insertAt, 0, currentEntryLine);
-	writeFileSync(currentPath, `${filtered.join("\n").trimEnd()}\n`, "utf8");
+	writeOrCheck(currentPath, `${filtered.join("\n").trimEnd()}\n`, "CURRENT.md structure link");
 }
 
 syncArchive();
 syncRoadmap();
 syncTodo();
 syncCurrent();
-console.log("doc indexes synced");
+console.log(checkOnly ? "doc indexes ok" : "doc indexes synced");

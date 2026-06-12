@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { computeBuildId } from "../../../scripts/build-bridge.mjs";
+import { EXPECTED_PACKAGE_FACTS } from "../drift/expected-package-facts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -30,11 +31,12 @@ for (const distRel of [
 }
 
 const manifest = readJson("bridge/pi_browser_bridge/manifest.json");
-assert.equal(manifest.background?.service_worker, "dist/service-worker.js", "manifest must use the generated dist service worker after TODO 191");
+assert.equal(manifest.version, pkg.version, "manifest version must match package.json version");
+assert.equal(manifest.background?.service_worker, EXPECTED_PACKAGE_FACTS.manifestServiceWorker.value, `manifest must use the generated dist service worker after TODO 191 (${EXPECTED_PACKAGE_FACTS.manifestServiceWorker.rationale})`);
 assert.equal(manifest.background?.type, "module", "dist service worker must run as an MV3 module service worker");
-assert(manifest.permissions?.includes("offscreen"), "manifest must request offscreen permission for durable B5 transport");
-assert(existsSync(path.join(root, "bridge/pi_browser_bridge/offscreen.html")), "offscreen transport document must exist");
-assert(read("bridge/pi_browser_bridge/offscreen.html").includes('type="module"') && read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen document must load the generated offscreen module");
+assert(manifest.permissions?.includes(EXPECTED_PACKAGE_FACTS.offscreenPermission.value), `manifest must request offscreen permission (${EXPECTED_PACKAGE_FACTS.offscreenPermission.rationale})`);
+assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", EXPECTED_PACKAGE_FACTS.offscreenDocument.value)), `offscreen transport document must exist (${EXPECTED_PACKAGE_FACTS.offscreenDocument.rationale})`);
+assert(read(`bridge/pi_browser_bridge/${EXPECTED_PACKAGE_FACTS.offscreenDocument.value}`).includes('type="module"') && read(`bridge/pi_browser_bridge/${EXPECTED_PACKAGE_FACTS.offscreenDocument.value}`).includes(EXPECTED_PACKAGE_FACTS.offscreenBundle.value), `offscreen document must load the generated offscreen module (${EXPECTED_PACKAGE_FACTS.offscreenBundle.rationale})`);
 assert.deepEqual(manifest.content_scripts?.[0]?.js, ["dist/disable_dialogs.js"], "manifest document_start content script must use dist disable-dialogs bundle");
 assert.deepEqual(manifest.content_scripts?.[1]?.js, ["dist/content.js"], "manifest document_idle content script must use dist content bundle without ambient config.js");
 
@@ -267,7 +269,7 @@ globalThis.clearInterval = (handle) => {
 globalThis.chrome = {
 	runtime: {
 		id: "bridge-build-contract",
-		getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0", version_name: "0.3.0-test" }),
+		getManifest: () => ({ name: "Pi Native Browser Bridge", version: pkg.version, version_name: `${pkg.version}-test` }),
 		getURL: (item) => `chrome-extension://fixture/${item}`,
 		reload() {},
 		sendMessage: async () => ({ ok: true, data: [] }),

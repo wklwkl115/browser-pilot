@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const inventory = JSON.parse(readFileSync(path.join(root, "tests/contracts/drift/kernel-export-inventory.json"), "utf8"));
+const proposeMode = process.argv.includes("--propose");
+const ledgerRel = "tests/contracts/drift/kernel-export-inventory.json";
+const inventory = JSON.parse(readFileSync(path.join(root, ledgerRel), "utf8"));
 const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core"];
 const STATUSES = new Set(["consumed", "internal", "test-harness", "reserved"]);
 
@@ -114,17 +116,25 @@ const actualModules = new Map(KERNEL_ROOTS
 	.flatMap((dir) => walk(dir, (name) => name.endsWith(".ts")))
 	.map((file) => [file, exportedSymbols(readFileSync(path.join(root, file), "utf8"))]));
 
+const actualModuleKeys = [...actualModules.keys()].sort();
+const ledgerModuleKeys = Object.keys(inventory.modules).sort();
+if (proposeMode) {
+	if (JSON.stringify(actualModuleKeys) === JSON.stringify(ledgerModuleKeys)) console.log("surface-liveness propose: no changes needed");
+	else console.log(`surface-liveness propose: update ${ledgerRel}; preserve existing statuses, classify new exports, then rerun npm run check:surface-liveness`);
+	process.exit(0);
+}
+
 assert.deepEqual(
-	[...actualModules.keys()].sort(),
-	Object.keys(inventory.modules).sort(),
-	"kernel export inventory module set drifted; regenerate/classify the ledger",
+	actualModuleKeys,
+	ledgerModuleKeys,
+	`kernel export inventory module set drifted; update ${ledgerRel} (run npm run check:surface-liveness -- --propose for a draft)`,
 );
 
 let reservedCount = 0;
 for (const [moduleRel, actualExports] of actualModules) {
 	const entry = inventory.modules[moduleRel];
 	const listedExports = (entry.exports || []).map((item) => item.name).sort();
-	assert.deepEqual(listedExports, actualExports, `${moduleRel} export ledger drifted; classify added/removed exports`);
+	assert.deepEqual(listedExports, actualExports, `${moduleRel} export ledger drifted in ${ledgerRel}; classify added/removed exports (run npm run check:surface-liveness -- --propose for a draft)`);
 	for (const item of entry.exports || []) {
 		assert(STATUSES.has(item.status), `${moduleRel}:${item.name} has invalid status ${item.status}`);
 		if (item.status === "consumed") {

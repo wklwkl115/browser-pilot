@@ -1,5 +1,7 @@
 # Agent-Native Unified Architecture
 
+> Doc-class: contract
+
 ## Status
 
 **COMPLETE — archived/current-reference contract, activated 2026-06-07 and shipped.** This is the
@@ -99,12 +101,10 @@ Therefore flattening = **lean schema + `prepareArguments`** (no hand-rolled hidd
 3. CLI: add `ABSENT_FLAG_HINTS` (`cli/flags.ts:163`) entries so a legacy `--detail-level` gets a helpful redirect.
 4. Operator-level overrides (e.g. a longer global timeout for slow CI/sites) move to config/env, not per-call agent params.
 
-**CLI wiring — verified gap (2026-06-07):** `cli/daemon.ts:183` validates RAW params
-(`validateToolArgs(def.parameters, params)`) and then `execute`s — it does **NOT** call
-`prepareArguments` (only the Pi harness does). So B2 tolerance on the CLI face needs one explicit line
-in the daemon: `const prepared = def.prepareArguments?.(params) ?? params;` before
-`validateToolArgs(def.parameters, prepared)`. With that single line, the **same shim serves both faces**
-(harness on Pi-native, daemon on CLI). Without it, CLI callers passing a lean-removed key hard-reject.
+**CLI wiring — fixed (2026-06-07):** the CLI face now calls `prepareArguments` before strict
+validation in both `cli/daemon.ts` and `cli/localCommands.ts`. Done: the same deprecated-param strip
+shim serves Pi-native harness calls and CLI calls, so lean-removed compatibility keys are tolerated
+before validation instead of hard-rejected.
 
 This fits BOTH faces via a first-class harness hook + that one daemon line; the advertised surface
 flattens immediately, existing callers do not break, migration is auditable — satisfying the

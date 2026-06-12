@@ -18,6 +18,7 @@ import { runAbmlRead } from "../../../src/abml-core/verbs/read.ts";
 import { registerRefDescriptor, resolveRefUriDetailed, clearResourceStore } from "../../../src/resources/resourceStore.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 import { EntityDiffSchema } from "../../../src/tools/summaries/outputSchemas.ts";
+import { PURE_CORE } from "../drift/abml-core-manifest.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -129,8 +130,7 @@ assert(resolveRefUriDetailed(stableA).ok, "stable ref remains resolvable after r
 clearResourceStore();
 
 // Static wiring guards.
-const coreBoundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
-assert.ok(coreBoundarySrc.includes('"diff.ts"'), "diff.ts must be classified in ABML pure core boundary");
+assert.ok(PURE_CORE.includes("diff.ts"), "diff.ts must be classified in ABML pure core boundary");
 const barrelSrc = readRepo("src/abml-core/index.ts");
 assert.ok(barrelSrc.includes('./diff.js'), "abml-core barrel must export diff");
 const observeSrc = readRepo("src/tools/observe/scanRunner.ts");

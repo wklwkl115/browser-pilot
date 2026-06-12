@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BARREL, PURE_CORE, PURE_CROSSCUTTING, RUNTIME } from "./abml-core-manifest.js";
 import { forbiddenRuntimeReadLabels } from "./purity-vocabulary.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -27,56 +28,9 @@ const abmlDir = path.join(root, "src", "abml");
 const srcRoot = path.join(root, "src");
 const read = (abs) => readFileSync(abs, "utf8");
 
-// --- The manifest (abml-core-relative paths for pure core; abml-relative for runtime) ----------
-const PURE_CORE = [
-	"types.ts",
-	"refId.ts",
-	"refPolicy.ts",
-	"actionabilityModel.ts",
-	"entity.ts",
-	"ax.ts",
-	"relations.ts",
-	"inference.ts",
-	"diff.ts",
-	"stream.ts",
-	"causal.ts",
-	"grouping.ts",
-	"templating.ts",
-	"treeDiff.ts",
-	"semanticRefAnchor.ts",
-	"snapshotProjection.ts",
-	"identityGraph.ts",
-	"errors.ts",
-	"verbs/router.ts",
-	"verbs/click.ts",
-	"verbs/type.ts",
-	"verbs/scroll.ts",
-	"verbs/read.ts",
-	"verbs/frame.ts",
-	"verbs/pierce.ts",
-];
-const RUNTIME = [
-	"perceptionLedger.ts",
-	"verbs/axRuntime.ts",
-	"verbs/frameRuntime.ts",
-	"verbs/pierceRuntime.ts",
-	"verbs/visionRuntime.ts",
-	"verbs/runtime.ts",
-	"verbs/integration.ts",
-];
-// Public barrel — the single kernel entry point ("@pi/abml-core in waiting"). Pure (re-exports
-// only the core modules); has no re-export shim because no prior consumer imported this path.
-const BARREL = "index.ts";
-
 // Cross-cutting modules a pure-core file MAY import. Each verified transitively pure (no
 // driver/tools/scan/resources/node in its own closure). Adding here requires re-verifying that.
-const PURE_CROSSCUTTING = new Set([
-	"utils/records",
-	"utils/errors",
-	"utils/redaction",
-	"utils/json",
-	"protocol/nativeErrorCodes",
-]);
+const pureCrosscuttingSet = new Set(PURE_CROSSCUTTING);
 
 const FORBIDDEN_SRC_PREFIXES = ["driver/", "tools/", "scan/", "resources/"];
 const NODE_BUILTINS = new Set(["fs", "path", "os", "crypto", "http", "https", "net", "child_process", "url", "stream", "events", "util", "buffer"]);
@@ -148,7 +102,7 @@ for (const fileRel of [...PURE_CORE, BARREL]) {
 		else {
 			const forbidden = FORBIDDEN_SRC_PREFIXES.find((p) => c.srcRel.startsWith(p));
 			if (forbidden) violations.push(`abml-core/${fileRel} imports forbidden layer "${spec}" (src/${c.srcRel}) — pure core must never reach ${forbidden}*.`);
-			else if (!PURE_CROSSCUTTING.has(c.srcRel)) violations.push(`abml-core/${fileRel} imports non-whitelisted cross-cutting module "${spec}" (src/${c.srcRel}) — verify it is transitively pure and add to PURE_CROSSCUTTING, or move the consumer to RUNTIME.`);
+			else if (!pureCrosscuttingSet.has(c.srcRel)) violations.push(`abml-core/${fileRel} imports non-whitelisted cross-cutting module "${spec}" (src/${c.srcRel}) — verify it is transitively pure and add to PURE_CROSSCUTTING, or move the consumer to RUNTIME.`);
 		}
 	}
 }
@@ -180,4 +134,4 @@ for (const fileRel of [...PURE_CORE, BARREL]) {
 }
 assert.deepEqual(runtimeReadIssues, [], `ABML core determinism violated:\n  - ${runtimeReadIssues.join("\n  - ")}`);
 
-console.log(`abml kernel boundary ok — ${PURE_CORE.length} pure-core files + 1 barrel (src/abml-core), ${RUNTIME.length} runtime files (src/abml), ${PURE_CORE.length} re-export shims, ${PURE_CROSSCUTTING.size} whitelisted cross-cutting modules`);
+console.log(`abml kernel boundary ok — ${PURE_CORE.length} pure-core files + 1 barrel (src/abml-core), ${RUNTIME.length} runtime files (src/abml), ${PURE_CORE.length} re-export shims, ${PURE_CROSSCUTTING.length} whitelisted cross-cutting modules`);

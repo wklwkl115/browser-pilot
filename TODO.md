@@ -1,10 +1,10 @@
 # TODO
 当前 TODO 入口已更新：
-- 当前激活执行线：无，见 `CURRENT.md`。
+- 当前无激活执行线；新主线启动前先在 `CURRENT.md` 写明执行合同。
 - 当前状态与执行队列：`CURRENT.md`。
 - 历史完成归档：`ARCHIVE.md`。
 - 后续路线与建议：`ROADMAP.md`。
-- 文档结构规范：`docs/document-structure.md`；索引同步脚本：`npm run docs:sync-indexes`。
+- 文档结构规范：`docs/document-structure.md`；文档同步脚本：`npm run docs:sync`。
 - Agent 审计收件箱：`agent-audits/`；异步审计/修复 skill：`skills/pi-browser-audit-fix/SKILL.md`。
 ## Maintenance Rules
 - 新增能力、重大架构变更、成熟替代/bridge 引入、既有工具实质变更，先更新 `CURRENT.md` 中的决策、边界、契约与验证计划。

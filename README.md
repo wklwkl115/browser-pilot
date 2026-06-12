@@ -44,6 +44,34 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ## 工具清单
 
+<!-- BEGIN GENERATED: readme-tool-index (npm run docs:sync) -->
+| Tool | Group | Source |
+| --- | --- | --- |
+| `browser_artifact` | core | `src/tools/registerArtifactTool.ts` |
+| `browser_callback_oast` | security | `src/tools/webSecurity/register/registerCallbackOast.ts` |
+| `browser_command` | core | `src/tools/registerCommandTool.ts` |
+| `browser_cookie_analyze` | security | `src/tools/webSecurity/register/registerCookieAnalyze.ts` |
+| `browser_crawl` | security | `src/tools/webSecurity/register/registerCrawl.ts` |
+| `browser_download` | core | `src/tools/registerTransferTools.ts` |
+| `browser_evidence` | core | `src/tools/registerEvidenceTool.ts` |
+| `browser_execute` | core | `src/tools/registerExecuteTool.ts` |
+| `browser_frame` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_fuzz` | security | `src/tools/webSecurity/register/registerFuzz.ts` |
+| `browser_hook` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_http_replay` | security | `src/tools/webSecurity/register/registerHttpReplay.ts` |
+| `browser_memory` | core | `src/tools/registerMemoryTool.ts` |
+| `browser_network` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_observe` | core | `src/tools/registerObserveTool.ts` |
+| `browser_pick` | core | `src/tools/registerPickTool.ts` |
+| `browser_screenshot` | core | `src/tools/registerScreenshotTool.ts` |
+| `browser_sqli` | security | `src/tools/webSecurity/register/registerSqli.ts` |
+| `browser_tabs` | core | `src/tools/registerTabsTool.ts` |
+| `browser_template` | security | `src/tools/webSecurity/register/registerTemplate.ts` |
+| `browser_upload` | core | `src/tools/registerTransferTools.ts` |
+| `browser_wait` | core | `src/tools/registerNativeActionTools.ts` |
+<!-- END GENERATED: readme-tool-index -->
+
+
 - `browser_tabs`：list / snapshot / switch / create / close / selectBrowser；list 返回 `tabId`、browser-scoped `id` 与 `browserId`，可区分多浏览器相同数值 tabId；`snapshot` 返回 bridge snapshot、active operations，以及按 `snapshotId` 读取 explicit observation snapshot metadata（默认 stale fail-closed，可 `allowExpired:true` 只读旧证据元数据）；create 省略 URL 时创建并持续列出 `about:blank`；`selectBrowser` 优先使用该浏览器上报的 `active:true` tab 作为隐式目标，无活动 tab 时清空隐式目标并返回 `NO_TAB`，避免省略 `tabId` 时落到后台 tab 或跨浏览器回落。
 - Bridge 默认监听 `127.0.0.1:18765-18784` 的首个空闲端口；浏览器扩展会扫描同一范围并同时连接多个 Pi bridge server，因此两个 Pi 对话窗口/进程可以共享同一个已加载扩展，状态分别显示 `browser:<实际端口>`，不再因固定 `18765` 争用进入 `browser:error`。
 - 高级参数 `browserSessionId` 可把 selected/default/latest fallback 隔离到指定 browser session；普通 agent 默认省略，运行时使用当前 selected browser session，初始为 `default`。显式 `browserSessionId` 用于调试、测试、编排或外部运行时自动分派，不作为 prompt 手写隔离机制。
@@ -80,7 +108,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - `webSecurityCore.ts` 只作为兼容 re-export 层，不注册工具、不依赖 `BrowserBridgeServer`/`ensureStarted`/bridge runtime；`toolRegistry.ts` 维护声明式工具注册表，`registerTools.ts` 只消费注册表并组合入口，不直接导入实现层。
 - WebSecurity 响应摘要按能力族拆入 `src/tools/summaries/webSecurity`，共享脱敏、artifact 与表格裁剪 helper，summary 只做压缩展示，完整证据继续走 artifact
 - `npm run check:web-security` 锁定 register/browserNative/bridges/shared 分层、cookie/HAR/raw-request/artifact/browser-native adapter、domain failure envelope 与 sqlmap/nuclei bridge artifact/timeout 边界。
-- `.github/workflows/check.yml` 现直接复用 `npm run lint`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts` 与 `npm run check:lint`，并把 Node 安装/依赖安装/build 抽到 `.github/actions/setup-node-build`；ESLint 债务规则已 ratchet 为阻断错误，`check:lint` 仍只承担 boundary/page-script contracts 语义。
+- `.github/workflows/check.yml` 现直接复用 `npm run lint`、`npm run check:all:src`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`，并把 Node 安装/依赖安装/build 抽到 `.github/actions/setup-node-build`；DAG 分组运行会上传 `.pi/browser-artifacts/check-dag-summary.json` 与 `.pi/browser-artifacts/check-dag/**` 作为 CI 证据。
 - 这里收敛的是实现分层、维护面和成熟替代接入方式；不在工具层增加能力弱化默认值、风险分级闸门或安全收缩文案
 
 ## Bridge JS 内部边界
@@ -147,8 +175,12 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 - 最终全量 smoke 结果：`.pi/browser-artifacts/final-smoke/results.json`
 - Skill 验证：`PYTHONUTF8=1 python <pi-root>/skills/skill-creator/scripts/quick_validate.py skills/pi-browser-tools`
 - 维护者入口图：`docs/maintainer-map.md`
+- 概念归属与 envelope/summary 字段地图：`docs/reference/concept-ownership.md`
+- Agent-native 架构权威说明：`docs/agent-native-architecture.md`
+- ABML 工具覆盖图：`docs/abml-tool-coverage-map.md`
 - 生成器/build/check 脚本：`scripts/`
 - 生成工具/协议契约文档：`docs/generated/browser-tool-contract.generated.md`
+- 生成代码地图：`docs/generated/code-map.generated.md`
 - 协议单源设计：`docs/archive/protocol-single-source-plan.full.md`
 - 生成 native 协议契约文档：`docs/generated/native-protocol.generated.md`
 - Driver 内部边界：`src/driver/BrowserBridgeServer.ts` facade + `BrowserBridgeHttpServer.ts` / `BrowserBridgeClientRegistry.ts` / `BrowserTabSessionRouter.ts` / `BrowserBridgePendingRequests.ts` / `BrowserBridgeDiagnostics.ts`
@@ -158,13 +190,16 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 ```bash
 npm run build            # 生成 outer dist/（index.ts + src/** + cli/**）
 npm run check
+npm run check:all:src      # src typecheck + registry drift 分组门禁
 npm run check:all:bridge   # bridge + unit 分组门禁
 npm run check:all:package  # package + docs 分组门禁
 npm run check:all:contracts # contracts/runtime-fixture 分组门禁
-npm run check:trace        # 旧 grouped runner + per-script duration，写 check-groups-summary.json
+npm run check:serial       # 旧 serial grouped runner escape hatch，写 check-groups-summary.json
+npm run check:trace        # serial grouped runner + per-script duration，写 check-groups-summary.json
 npm run check:dag          # graph-backed DAG runner；含 ESLint 节点，直接 spawn 本地 node/tsx/tsc/eslint
-npm run check:dag -- --cache # coarse repo fingerprint cache；命中/未命中写 check-dag-summary.json
+npm run check:dag -- --cache # v2 per-node impact-map cache；global-scope 节点仍用整仓 key，命中/未命中写 check-dag-summary.json
 npm run check:smart        # impact-selected graph subset；unknown impact 保守扩展，写 check-impact-summary.json
+npm run sync:impact-map    # regenerate derived file->check impact map
 node scripts/run-check-groups.mjs --json bridge contracts # 输出结构化摘要到 .pi/browser-artifacts/check-groups-summary.json
 npm run quality:local   # 本地发布/合并前门禁：build:bridge + check + pack dry-run；不启动浏览器
 npm run release:local   # 本地发布包验收：clean cwd pack dry-run/实际 pack/manifest dist/build manifest/回滚候选
@@ -174,7 +209,7 @@ npm run check:runtime-fixtures # 可重放 runtime fixture：network/hook/wait/t
 npm run check:web-security # WebSecurity 分层/domain envelope/bridge artifact 边界
 npm run sync:protocol     # 从 bridge/native_command_schema.json 生成 native protocol/type/metadata/docs
 npm run check:protocol    # native protocol 生成产物 drift + protocol contract
-npm run docs:generate     # 从工具注册元数据与 native command schema 生成契约文档
+npm run docs:sync         # 从工具注册元数据与 native command schema 生成契约文档并同步 managed blocks
 npm run check:deps         # 本地依赖/lockfile/npm ls/生产 audit 检查
 npm run check:token        # 结果预算与隐私脱敏契约
 npm run check:artifact     # artifact 读取/脱敏/安全正则契约
@@ -200,7 +235,7 @@ npm run eval:blind:teardown                                      # 收掉舞台
 
 `npm run release:local:smoke` 在上述验收基础上对当前解包扩展运行 full isolated smoke，并对 `previous/` 上一包运行最小 tabs/wait/execute 回滚 smoke；artifact 为 `.pi/browser-artifacts/release-acceptance/current-smoke-browser-isolated-results.json` 与 `rollback-smoke-browser-isolated-results.json`。失败摘要包含 pack 文件列表、build manifest、Chrome profile、bridge port 和 smoke artifact；需要保留失败临时 profile/扩展时加 `--keep-temp-on-failure` 或 `PI_BROWSER_SMOKE_KEEP_TEMP_ON_FAILURE=1`。CI 可通过 `PI_BROWSER_CI_BROWSER_SMOKE=1` / `PI_BROWSER_CI_RELEASE_SMOKE=1` / `PI_BROWSER_CI_ROLLBACK_SMOKE=1` 显式启用最小 isolated smoke 或 release smoke。
 
-`npm run docs:generate` 从实际 `pi.registerTool` 元数据、`bridge/native_command_schema.json` 与源码中的结构化错误码生成 `docs/generated/browser-tool-contract.generated.md`；其中 `Structured error taxonomy` 表保留公开 code，并列出 domain/category/retryable/source。`npm run check:tool-docs` 会执行 drift check，手改生成产物或 schema/tool 元数据未同步会失败。文档结构规则见 `docs/document-structure.md`；修改 archive/roadmap/todo 入口后先运行 `npm run docs:sync-indexes && npm run check`。
+`npm run docs:sync` 从实际 `pi.registerTool` 元数据、`bridge/native_command_schema.json` 与源码中的结构化错误码生成 `docs/generated/browser-tool-contract.generated.md`，执行注册收集并刷新 `docs/generated/code-map.generated.md`，同步 `docs/reference/concept-ownership.md` 的 envelope/summary 字段地图，并同步 archive/roadmap/todo/current 索引和 managed blocks；其中 `Structured error taxonomy` 表保留公开 code，并列出 domain/category/retryable/source。`npm run check:docs-sync` 会执行 drift check，手改生成产物或 schema/tool 元数据未同步会失败。文档结构规则见 `docs/document-structure.md`；修改生成文档、索引或 managed blocks 后先运行 `npm run docs:sync && npm run check`。
 
 `npm run check:errors` 锁定错误归一化契约：`normalizeError` / `compactError` 保留 `code/message/details/name`，追加紧凑 `taxonomy` 与 `diagnostics`；覆盖 driver/tool/native/page/CDP/network/transfer/security/artifact/protocol 分类、nested bridge/native response、ArtifactReader、transfer、WebSecurity、stack strip、secret redaction 和 circular details。
 
@@ -210,7 +245,7 @@ npm run eval:blind:teardown                                      # 收掉舞台
 
 `src/tools/distillerRegistry.ts` 是 fallback 摘要分发的唯一注册表：`registerBuiltinDistillers()` 在 runtime 与 direct-import contract 两条路径都会初始化，避免新增 fallback 摘要器时静默退回 `summarizeGenericValue()`。对应 drift contract 为 `npm run check:distiller-coverage`。
 
-`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 仍是最终全量门禁，并通过 `scripts/run-check-groups.mjs` 读取 `scripts/check-graph.mjs` 的分组；局部复跑可用 bridge/unit、package/docs、contracts 三组。新加速入口同样读 `check-graph.mjs`：`check:dag` 做 graph-backed 并发执行，`check:dag -- --cache` 用粗粒度 repo fingerprint 做零假跳过的 no-change cache，`check:smart` 记录 impact selection；所有命中、未命中和选择原因都写入 `.pi/browser-artifacts/`，未知影响保守扩展。
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 是最终全量门禁，通过 `scripts/check-dag.mjs` 读取 `scripts/check-graph.mjs` 的分组并包含 `lint:eslint`；局部复跑可用 `check:all:src`、bridge/unit、package/docs、contracts 四组。`check:serial` 保留旧串行引擎用于诊断；`check:smart` 消费 `tests/contracts/drift/check-impact-map.json` 记录 impact selection。所有命中、未命中和选择原因都写入 `.pi/browser-artifacts/`，未知影响保守扩展。
 
 `BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
 

@@ -48,6 +48,16 @@ function findMatching(text, start, open = "{", close = "}") {
 			if (ch === quote) quote = "";
 			continue;
 		}
+		if (ch === "/" && text[i + 1] === "/") {
+			const next = text.indexOf("\n", i + 2);
+			i = next >= 0 ? next : text.length;
+			continue;
+		}
+		if (ch === "/" && text[i + 1] === "*") {
+			const next = text.indexOf("*/", i + 2);
+			i = next >= 0 ? next + 1 : text.length;
+			continue;
+		}
 		if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue; }
 		if (ch === open) depth += 1;
 		if (ch === close) {
@@ -381,7 +391,7 @@ async function main() {
 		}
 		const current = await readFile(outFile, "utf8");
 		if (current !== output) {
-			console.error(`generated docs are stale: run npm run docs:generate`);
+			console.error(`generated docs are stale: run npm run docs:sync`);
 			process.exit(1);
 		}
 		console.log("generated tool docs contract ok");

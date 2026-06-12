@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> The **Design, Governance & Workflow Rules** section at the end of this file is inlined from the project's `AGENTS.md` (shared with other agent tools such as Codex). Claude Code does not auto-read `AGENTS.md`, so the rules are copied here directly — if you edit one, mirror the change in the other. These rules inherit the parent `D:/Pi/agent/AGENTS.md`.
+> The **Design, Governance & Workflow Rules** section at the end of this file is generated from the project's `AGENTS.md` (shared with other agent tools such as Codex). Claude Code does not auto-read `AGENTS.md`, so edit `AGENTS.md` and run `npm run docs:sync` to refresh this copy. These rules inherit the parent `D:/Pi/agent/AGENTS.md`.
 
 ## Project Overview
 
@@ -119,14 +119,14 @@ npm run check:all:package     # package + docs checks only
 npm run check:all:contracts   # contract tests only
 npm run check:trace           # grouped runner trace with per-script durations
 npm run check:dag             # graph-backed DAG runner with direct local binaries + ESLint
-npm run check:dag -- --cache  # no-change coarse fingerprint cache
+npm run check:dag -- --cache  # v2 per-node impact-map cache; global-scope nodes still use whole-repo keys
 npm run check:smart           # impact-selected graph subset with conservative expansion
 npm run quality:local         # build + check + pack dry-run (no browser)
 ```
 
 ### Tests
 ```bash
-npm run test:unit              # run all unit tests (Node.js built-in test runner via tsx)
+npm run test:unit              # run all unit tests (umbrella; DAG uses test:unit:* shards)
 tsx --test tests/unit/tools/toolRegistry.test.ts   # run a single test file
 npm run check:bridge           # bridge types + build + files + protocol + tools
 npm run check:web-security     # web security layer boundaries
@@ -165,7 +165,7 @@ npm run smoke:cli              # CLI smoke (requires browser)
 npm run smoke:cli:full         # full CLI smoke including connection control
 ```
 
-> **Note:** `npm run check` does NOT run ESLint. Lint only runs via the pre-commit hook, `npm run lint`, or `npm run quality:local`.
+> **Note:** `npm run check` now runs through the DAG closing gate and includes ESLint as `lint:eslint`.
 
 ### Smoke Tests (require browser)
 ```bash
@@ -190,15 +190,16 @@ site and report triaged friction. The blind loop is operator-/cron-driven via th
 
 ### Docs & Protocol
 ```bash
-npm run docs:generate         # regenerate tool contract docs
+npm run docs:sync             # regenerate tool contract docs, doc indexes, and managed blocks
 npm run sync:protocol         # regenerate protocol from native_command_schema.json
-npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 ```
 
 ## Key Files & Directories
 
 - `src/tools/toolRegistry.ts` — declarative always-on tool registration order + core/security group metadata
 - `src/tools/toolAdapter.ts` — shared param handling, timeout, error wrapping, artifact fallback
+- `src/tools/resultMiddleware.ts` — shared envelope/result middleware; read with `src/tools/toolAdapter.ts`
+- `src/tools/observe/` — observe runners, memory/relevance augmentation, render cache, and scan split
 - `src/driver/BrowserBridgeServer.ts` — facade delegating to sub-registries
 - `bridge_src/service-worker.ts` — Chrome extension entry point (ESM import graph)
 - `bridge/native_command_schema.json` — native command protocol source of truth
@@ -213,6 +214,7 @@ npm run docs:sync-indexes     # sync archive/roadmap/todo index blocks
 - `skills/pi-browser-tools/SKILL.md` — Pi-native skill source (junction at `D:/Pi/agent/skills/pi-browser-tools`); `skills/pi-browser-cli/SKILL.md` — CLI-first skill (not in Pi global junction — only for CLI agents)
 - `skills/pi-browser-blind-eval/` — operator/cron procedure for the standing blind real-agent eval loop
 - `skills/pi-kernel-audit/SKILL.md` — G7 operator/cron audit procedure; auditors write read-only reports under `agent-audits/runs/`; findings recurring a second time must graduate to a static G1–G6 gate
+- `docs/maintainer-map.md`, `docs/reference/concept-ownership.md`, `docs/generated/browser-tool-contract.generated.md`, `docs/generated/native-protocol.generated.md`, `docs/generated/code-map.generated.md` — discovery indexes for landing changes, concept ownership, callable tools, native protocol, and code inventory
 - `docs/generated/` — auto-generated protocol and tool contract docs
 
 ## Development Workflow
@@ -243,13 +245,23 @@ Pi runtime loads source `.ts` directly via `pi.extensions: ["./index.ts"]`; npm 
 - Write operations require lease; concurrent write to same tab returns `TAB_LEASE_CONFLICT`
 - Default renderer is **salience-v1** with session-delta on; escape hatches: `PI_BROWSER_RENDERER=ladder`, `PI_BROWSER_SESSION_DELTA=0`
 - `PI_BROWSER_*` env flags are registered in `tests/contracts/drift/env-flags.json` (single authoritative list); `affectsOutput: true` flags must have a declared signature site — adding a new flag without registering it fails `check:env-flags`
-- `npm run check` does **not** run ESLint; run `npm run lint` or `npm run quality:local` to catch lint issues
+- `npm run check` includes ESLint through the DAG graph node `lint:eslint`
 
 ## Code search & navigation (large, multi-layer codebase)
 
 This repo spans many layers (`capture-src → abml-core → distill-core → abml/distill → tools → driver → bridge_src`). To avoid
 mislocating or misnaming things in a codebase this size:
 
+- **Semantic search first.** For concept-level location questions ("where is the tab lease
+  conflict thrown", "how does the scan summary fit its token budget"), use the `acemcp` MCP
+  semantic search (`mcp__acemcp__search_context` with
+  `project_root_path: "D:/Pi/agent/extensions/pi-browser-tools"` and a natural-language query
+  plus keywords) BEFORE blind grepping. It incrementally indexes the working tree (uncommitted
+  files included) and returns scored file:line snippets across all layers — typically the full
+  multi-file chain in one query. Hits are leads, not verification: results can miss one layer
+  of a chain, so read the source before naming anything a hit suggested. Exact-string questions
+  (contract marker pins, known identifiers, gate impact) stay with `npm run query:markers`,
+  `Grep`, and `npm run check:smart -- --dry-run --changed-file=<path>`.
 - **Verify before naming.** Before referencing any tool / API / param / flag in code, prose,
   or a prompt handed to another agent, confirm it exists (`Grep` / read the source) — never
   from memory. The public tool surface is `browser_*`. There is **no `browser_click` /
@@ -260,8 +272,7 @@ mislocating or misnaming things in a codebase this size:
 
 ## Design, Governance & Workflow Rules (inlined from AGENTS.md)
 
-> Inlined verbatim from `AGENTS.md` so Claude Code (which does not auto-read `AGENTS.md`) follows the same rules as other agent tools. Keep the two files in sync: edit here and mirror in `AGENTS.md` (and vice versa). These rules inherit the parent `D:/Pi/agent/AGENTS.md`.
-
+<!-- BEGIN GENERATED: claude-agents-inline (npm run docs:sync) -->
 ### Scope
 
 - Applies to `D:/Pi/agent/extensions/pi-browser-tools` and all child paths.
@@ -324,6 +335,13 @@ mislocating or misnaming things in a codebase this size:
 - Excessive fragmentation that makes tool choice the task.
 - Static design without evals, transcript review, or production feedback.
 
+### Code Search
+
+- For concept-level location questions ("where is X thrown", "which files implement Y across layers"), use semantic code search FIRST when available: the `acemcp` MCP tool `search_context` (exposed in Claude Code as `mcp__acemcp__search_context`). Call it with `project_root_path` set to this repo root using forward slashes and a natural-language query plus optional keywords, e.g. query "Where is the tab lease conflict thrown and where is its recovery text generated? Keywords: TAB_LEASE_CONFLICT, recovery nextActions".
+- It incrementally indexes the working tree before each search (uncommitted and untracked files included) and returns scored file/line snippets across src, tests, contracts, scripts, and docs — use it instead of blind directory grepping when you do not yet know the identifiers.
+- Treat hits as leads, not verification: results can miss one layer of a multi-layer chain, so open the files and apply the verify-before-naming rule before referencing or editing anything a hit suggested.
+- Exact-string questions stay with exact tools: `npm run query:markers` for contract marker pins, plain grep for known identifiers, `npm run check:smart -- --dry-run --changed-file=<path>` for gate impact. Semantic search routes you to the neighborhood; the exact tools and the source decide.
+
 ### Change Workflow
 
 - Before large architecture changes, scope changes, mature substitutions, bridges, or major refactors, update `TODO.md` with the concrete decision and execution path.
@@ -352,10 +370,14 @@ Every plan item and every eval must be executed **now**. The default is to do th
 ### Sync & Verification
 
 - Tool additions or material changes must update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts when affected.
-- Document structure rules live in `docs/document-structure.md`. When changing archive/roadmap/todo/current index blocks or archive file layout, run `npm run docs:sync-indexes` before `npm run check`.
+- Document structure rules live in `docs/document-structure.md`. When changing generated doc indexes or managed blocks, run `npm run docs:sync` before `npm run check`.
+- For mirrored governance rules, `AGENTS.md` is the single editing surface: edit this file, then run `npm run docs:sync` to regenerate the `CLAUDE.md` inlined block.
+- Development-harness authoring rules live in `docs/agent-development.md`; use it for check wiring, marker queries, ledger ratchets, and workstream closure.
 - After code or contract changes run `npm run check` in this extension.
 - For fast local iteration, use the narrowest grouped gate first when sufficient: `npm run check:all:bridge`, `npm run check:all:package`, `npm run check:all:contracts`; keep `npm run check` as the final full gate.
-- When a structured local verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`.
-- For accelerated local verification, use the graph-backed runners after the relevant narrow gate: `npm run check:trace` records grouped per-script durations, `npm run check:dag` executes the graph with direct local binaries and ESLint, `npm run check:dag -- --cache` may skip only exact coarse-fingerprint repeats, and `npm run check:smart` records impact-selected nodes plus conservative expansion reasons. These are acceleration aids; completed workstreams still close with full `npm run check`.
+- For external CLI/tool parameter surface changes, include `npm run check:param-surface` and `npm run check:input-surface` in the focused verification set.
+- When a structured serial verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`. The closing `npm run check` artifact is `.pi/browser-artifacts/check-dag-summary.json` plus per-run copies under `.pi/browser-artifacts/check-dag/`.
+- For accelerated local verification, use the graph-backed runners after the relevant narrow gate: `npm run check:trace` records grouped per-script durations, `npm run check:dag` executes the graph with direct local binaries and ESLint, `npm run check:dag -- --cache` may skip nodes by v2 per-node impact-map scope while global-scope nodes still use the whole-repo key, and `npm run check:smart` records impact-selected nodes plus conservative expansion reasons. These are acceleration aids; completed workstreams still close with full `npm run check`.
 - The `pi-browser-tools` skill source lives in-repo at `skills/pi-browser-tools/SKILL.md`; the global load path `D:/Pi/agent/skills/pi-browser-tools` is a directory junction to it. When touching skill text, edit the repo file and run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools`.
 - After runtime reload for new/enhanced tools, run bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts; summarize artifact paths.
+<!-- END GENERATED: claude-agents-inline -->

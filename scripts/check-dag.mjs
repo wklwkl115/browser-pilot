@@ -1,24 +1,31 @@
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
 	ARTIFACT_DIR,
 	CHECK_CACHE_INDEX_PATH,
+	CHECK_CACHE_SCHEMA_VERSION,
 	CHECK_DAG_SUMMARY_PATH,
+	CHECK_DAG_RUN_DIR,
 	CHECK_GROUPS,
 	CHECK_IMPACT_SUMMARY_PATH,
 	DAG_EXTRA_NODE_IDS,
 	DEFAULT_GROUP_SEQUENCE,
 	ROOT,
+	collectFingerprintFiles,
 	computeCoarseFingerprint,
+	computeNodeCacheFingerprint,
 	ensureArtifactDir,
 	groupScriptSequence,
 	packageScripts,
 	recordMissIfApplicable,
+	readImpactMap,
 	resolveScriptSteps,
+	selectSmartScripts,
 	writeJsonFile,
 } from "./check-graph.mjs";
+import { summarizeWorkstreamScope } from "./workstream-scope.mjs";
 
 const args = process.argv.slice(2);
 const cacheEnabled = args.includes("--cache");
@@ -26,6 +33,7 @@ const smartMode = args.includes("--smart");
 const jsonMode = args.includes("--json");
 const dryRun = args.includes("--dry-run");
 const selfTestMissRecorder = args.includes("--self-test-miss-recorder");
+const selfTestBadNodeExit = args.includes("--self-test-bad-node-exit");
 const maxConcurrencyArg = args.find((arg) => arg.startsWith("--max-concurrency="));
 const maxConcurrency = Math.max(1, Number(maxConcurrencyArg?.split("=")[1] || Math.max(2, Math.floor((os.cpus()?.length || 4) / 2))) || 2);
 const requestedGroups = args.filter((arg) => !arg.startsWith("--") && CHECK_GROUPS[arg]);
@@ -61,12 +69,12 @@ if (selfTestMissRecorder) {
 }
 
 function readCacheIndex() {
-	if (!existsSync(CHECK_CACHE_INDEX_PATH)) return { schemaVersion: 1, records: {} };
+	if (!existsSync(CHECK_CACHE_INDEX_PATH)) return { schemaVersion: CHECK_CACHE_SCHEMA_VERSION, records: {} };
 	try {
 		const parsed = JSON.parse(readFileSync(CHECK_CACHE_INDEX_PATH, "utf8"));
-		return parsed && typeof parsed === "object" && parsed.records ? parsed : { schemaVersion: 1, records: {} };
+		return parsed && typeof parsed === "object" && parsed.schemaVersion === CHECK_CACHE_SCHEMA_VERSION && parsed.records ? parsed : { schemaVersion: CHECK_CACHE_SCHEMA_VERSION, records: {} };
 	} catch {
-		return { schemaVersion: 1, records: {} };
+		return { schemaVersion: CHECK_CACHE_SCHEMA_VERSION, records: {} };
 	}
 }
 
@@ -81,108 +89,6 @@ function changedFiles() {
 	return Array.from(new Set([...tracked, ...untracked])).sort();
 }
 
-function selectSmartScripts(files) {
-	const selected = new Map();
-	const add = (script, reason) => {
-		if (!selected.has(script)) selected.set(script, []);
-		selected.get(script).push(reason);
-	};
-	add("check:src:types", "base type proof");
-	add("check:registry-drift", "base registry drift proof");
-	add("lint:eslint", "base lint proof");
-	add("check:boundaries", "base repository boundary proof");
-
-	if (!files.length) {
-		add("check:check-graph", "clean-tree graph integrity proof");
-		return selected;
-	}
-
-	for (const file of files) {
-		const rel = file.replace(/\\/g, "/");
-		if (/^(package\.json|package-lock\.json|tsconfig.*\.json|eslint\.config\.js|\.github\/)/.test(rel)) {
-			for (const script of groupScriptSequence(DEFAULT_GROUP_SEQUENCE)) add(script, `${rel}: package/config/toolchain change expands to full graph`);
-			continue;
-		}
-		if (rel.startsWith("scripts/")) {
-			add("check:check-graph", `${rel}: graph/runner script change`);
-			add("check:boundaries", `${rel}: script boundary check`);
-			for (const script of groupScriptSequence(DEFAULT_GROUP_SEQUENCE)) add(script, `${rel}: script change expands to full graph`);
-			continue;
-		}
-		if (rel.startsWith("bridge_src/")) {
-			add("check:bridge:types", `${rel}: bridge source typecheck`);
-			add("check:bridge:build", `${rel}: bridge generated dist contract`);
-			add("check:bridge:files", `${rel}: bridge file contract`);
-			add("check:protocol", `${rel}: bridge protocol drift`);
-			continue;
-		}
-		if (rel.startsWith("capture-src/")) {
-			add("check:capture", `${rel}: capture source drift`);
-			add("check:scan", `${rel}: scan runtime contract`);
-			add("check:content-pick", `${rel}: content/pick runtime contract`);
-			continue;
-		}
-		if (rel.startsWith("src/tools/") || rel.startsWith("src/frontend/") || rel.startsWith("src/resources/")) {
-			add("check:tools", `${rel}: tool registration/runtime surface`);
-			add("check:tool-docs", `${rel}: generated tool docs`);
-			add("check:tool-parameter-contract", `${rel}: tool parameter contract`);
-			add("check:summaries", `${rel}: tool summary contract`);
-			add("check:errors", `${rel}: tool error contract`);
-			add("test:unit", `${rel}: source unit coverage`);
-			continue;
-		}
-		if (rel.startsWith("src/abml-core/") || rel.startsWith("src/abml/")) {
-			add("check:abml-core-boundary", `${rel}: ABML boundary`);
-			add("check:abml-internal-integration", `${rel}: ABML integration`);
-			add("test:unit", `${rel}: ABML unit coverage`);
-			continue;
-		}
-		if (rel.startsWith("src/distill-core/")) {
-			add("check:distill-core-boundary", `${rel}: distill-core boundary`);
-			add("check:token-economy", `${rel}: token economy`);
-			add("bench:distill", `${rel}: distill bench`);
-			add("test:unit", `${rel}: distill unit coverage`);
-			continue;
-		}
-		if (rel.startsWith("src/memory-core/") || rel.startsWith("src/memory/")) {
-			add("check:memory-core-boundary", `${rel}: memory-core boundary`);
-			add("check:memory-plane", `${rel}: memory plane contract`);
-			add("check:memory-lifecycle", `${rel}: memory lifecycle contract`);
-			add("test:unit", `${rel}: memory unit coverage`);
-			continue;
-		}
-		if (rel.startsWith("src/") || rel.startsWith("cli/")) {
-			add("test:unit", `${rel}: source unit coverage`);
-			add("check:cli-parity", `${rel}: CLI parity if affected`);
-			continue;
-		}
-		if (rel.startsWith("tests/unit/")) {
-			add("test:unit", `${rel}: changed unit test`);
-			continue;
-		}
-		if (rel.startsWith("tests/contracts/")) {
-			const script = contractScriptFor(rel);
-			if (script) add(script, `${rel}: changed contract script`);
-			add("check:check-graph", `${rel}: graph drift coverage`);
-			continue;
-		}
-		if (rel.startsWith("docs/") || rel.startsWith("README") || rel === "AGENTS.md" || rel === "CLAUDE.md" || rel === "TODO.md" || rel === "CURRENT.md" || rel === "CHANGELOG.md") {
-			add("check:doc-structure", `${rel}: document structure`);
-			add("check:tool-docs", `${rel}: generated doc drift if affected`);
-			continue;
-		}
-		for (const script of groupScriptSequence(DEFAULT_GROUP_SEQUENCE)) add(script, `${rel}: unknown impact expands to full graph`);
-	}
-	return selected;
-}
-
-function contractScriptFor(file) {
-	const base = path.basename(file);
-	if (!base.startsWith("check-") || !base.endsWith(".mjs")) return undefined;
-	const scriptName = `check:${base.slice("check-".length, -".mjs".length)}`;
-	return packageScripts()[scriptName] ? scriptName : undefined;
-}
-
 function buildNodes(scriptIds) {
 	const scripts = packageScripts();
 	const out = [];
@@ -191,10 +97,23 @@ function buildNodes(scriptIds) {
 		for (const step of resolveScriptSteps(scriptId, { scripts })) {
 			if (seen.has(step.id)) continue;
 			seen.add(step.id);
-			out.push({ ...step });
+			out.push({ ...step, impactScript: scriptId });
 		}
 	}
 	return out;
+}
+
+function pruneDagRunArtifacts(activePath) {
+	if (!existsSync(CHECK_DAG_RUN_DIR)) return;
+	const files = readdirSync(CHECK_DAG_RUN_DIR, { withFileTypes: true })
+		.filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+		.map((entry) => path.join(CHECK_DAG_RUN_DIR, entry.name))
+		.sort();
+	const keep = new Set(files.slice(-20));
+	if (activePath) keep.add(activePath);
+	for (const file of files) {
+		if (!keep.has(file)) unlinkSync(file);
+	}
 }
 
 function runNode(node) {
@@ -290,16 +209,25 @@ async function runNodes(nodes, options) {
 }
 
 function cacheKey(node, fingerprint) {
-	return `${fingerprint}\0${node.id}\0${node.commandLine}`;
+	return `${CHECK_CACHE_SCHEMA_VERSION}\0${fingerprint.fingerprint}\0${node.id}\0${node.commandLine}`;
 }
 
-function applyCache(nodes, fingerprint, cacheIndex) {
+function applyCache(nodes, fingerprints, cacheIndex) {
 	const executable = [];
 	const hits = [];
 	for (const node of nodes) {
-		const record = cacheIndex.records[cacheKey(node, fingerprint)];
+		const fingerprint = fingerprints.get(node.id);
+		const record = fingerprint ? cacheIndex.records[cacheKey(node, fingerprint)] : undefined;
 		if (cacheEnabled && node.cacheable !== false && record?.status === "passed") {
-			hits.push({ nodeId: node.id, script: node.script, durationMs: 0, hitReason: "same coarse repo fingerprint and same node command" });
+			hits.push({
+				nodeId: node.id,
+				script: node.script,
+				durationMs: 0,
+				hitReason: record.hitReason || fingerprint?.reason || "same scoped cache fingerprint and same node command",
+				cacheScope: record.scope || fingerprint?.cacheScope,
+				impactScript: record.impactScript || fingerprint?.impactScript,
+				fingerprint: fingerprint?.fingerprint,
+			});
 		} else {
 			executable.push(node);
 		}
@@ -307,23 +235,48 @@ function applyCache(nodes, fingerprint, cacheIndex) {
 	return { executable, hits };
 }
 
-function updateCache(results, nodesById, fingerprint, cacheIndex) {
+function updateCache(results, nodesById, fingerprints, cacheIndex) {
+	cacheIndex.schemaVersion = CHECK_CACHE_SCHEMA_VERSION;
 	for (const result of results) {
 		const node = nodesById.get(result.nodeId);
+		const fingerprint = fingerprints.get(result.nodeId);
 		if (!node || !result.ok || node.cacheable === false) continue;
+		if (!fingerprint) continue;
 		cacheIndex.records[cacheKey(node, fingerprint)] = {
-			schemaVersion: 1,
+			schemaVersion: CHECK_CACHE_SCHEMA_VERSION,
 			nodeId: node.id,
-			fingerprint,
-			scope: "repo-coarse-v1",
+			fingerprint: fingerprint.fingerprint,
+			scope: fingerprint.cacheScope,
+			impactScript: fingerprint.impactScript,
+			inputCount: fingerprint.inputCount,
+			fileCount: fingerprint.fileCount,
+			untrackedCount: fingerprint.untrackedCount,
 			command: node.commandLine,
 			status: "passed",
 			durationMs: result.durationMs,
 			recordedAt: new Date().toISOString(),
-			hitReason: "same coarse repo fingerprint and same node command",
+			hitReason: `${fingerprint.reason}; same node command`,
 		};
 	}
 	return cacheIndex;
+}
+
+if (selfTestBadNodeExit) {
+	const [result] = await runNodes([{
+		id: "synthetic:bad-node",
+		script: "synthetic:bad-node",
+		command: process.execPath,
+		args: ["-e", "process.exit(7)"],
+		commandLine: "node -e process.exit(7)",
+		parallelSafe: true,
+		cacheable: false,
+	}], { maxConcurrency: 1 });
+	if (!result || result.status !== 7) {
+		console.error(`[check-dag] synthetic bad-node self-test failed: ${JSON.stringify(result)}`);
+		process.exit(1);
+	}
+	if (jsonMode) process.stdout.write(`${JSON.stringify({ ok: false, nodeId: result.nodeId, status: result.status }, null, 2)}\n`);
+	process.exit(result.status);
 }
 
 const startedAt = new Date().toISOString();
@@ -336,7 +289,15 @@ const selectedReasons = smartMode ? Object.fromEntries([...selectedMap.entries()
 const nodes = buildNodes(selectedScripts);
 const nodesById = new Map(nodes.map((node) => [node.id, node]));
 const cacheIndex = readCacheIndex();
-const { executable, hits } = applyCache(nodes, fingerprint.fingerprint, cacheIndex);
+const impactMapForCache = readImpactMap(ROOT);
+const allCacheFileEntries = collectFingerprintFiles(ROOT);
+const nodeFingerprints = new Map(nodes.map((node) => [node.id, computeNodeCacheFingerprint(node, {
+	root: ROOT,
+	impactMap: impactMapForCache,
+	allFileEntries: allCacheFileEntries,
+	coarseFingerprint: fingerprint,
+})]));
+const { executable, hits } = applyCache(nodes, nodeFingerprints, cacheIndex);
 const skippedScripts = smartMode ? groupScriptSequence(DEFAULT_GROUP_SEQUENCE).filter((script) => !selectedScripts.includes(script)) : [];
 const summary = {
 	schemaVersion: 1,
@@ -352,20 +313,44 @@ const summary = {
 	fingerprint,
 	changedFiles: changed,
 	changedFilesSource: changedFileOverrides.length ? "override" : smartMode ? "git" : "none",
+	requestedGroups: smartMode ? [] : (requestedGroups.length ? requestedGroups : [...DEFAULT_GROUP_SEQUENCE]),
 	selectedScripts,
 	selectedReasons,
 	selectedNodes: nodes.map((node) => node.id),
 	skippedScripts,
 	cacheHits: hits,
+	cacheScopes: Object.fromEntries(nodes.map((node) => {
+		const item = nodeFingerprints.get(node.id);
+		return [node.id, item ? {
+			schemaVersion: item.schemaVersion,
+			cacheScope: item.cacheScope,
+			impactScript: item.impactScript,
+			reason: item.reason,
+			fingerprint: item.fingerprint,
+			inputCount: item.inputCount,
+			fileCount: item.fileCount,
+			untrackedCount: item.untrackedCount,
+		} : undefined];
+	})),
 	results: hits.map((hit) => ({ ...hit, ok: true, status: 0, cacheHit: true })),
 	summaryPath: smartMode ? CHECK_IMPACT_SUMMARY_PATH : CHECK_DAG_SUMMARY_PATH,
+	perRunSummaryPath: smartMode ? undefined : path.join(CHECK_DAG_RUN_DIR, `${runId}.json`),
+	scope: summarizeWorkstreamScope(ROOT),
 };
+
+function writeSummary() {
+	writeJsonFile(summary.summaryPath, summary);
+	if (summary.perRunSummaryPath) {
+		writeJsonFile(summary.perRunSummaryPath, summary);
+		pruneDagRunArtifacts(summary.perRunSummaryPath);
+	}
+}
 
 ensureArtifactDir();
 if (dryRun) {
 	summary.ok = true;
 	summary.finishedAt = new Date().toISOString();
-	writeJsonFile(summary.summaryPath, summary);
+	writeSummary();
 	process.stdout.write(`${JSON.stringify({ ok: true, dryRun: true, summaryPath: summary.summaryPath, selectedNodes: summary.selectedNodes }, null, jsonMode ? 2 : 0)}\n`);
 	process.exit(0);
 }
@@ -374,7 +359,7 @@ const runResults = await runNodes(executable, { maxConcurrency });
 summary.results.push(...runResults);
 summary.ok = summary.results.every((result) => result.ok);
 summary.finishedAt = new Date().toISOString();
-writeJsonFile(summary.summaryPath, summary);
+writeSummary();
 
 if (!summary.ok) {
 	const firstFailure = summary.results.find((result) => !result.ok);
@@ -383,6 +368,6 @@ if (!summary.ok) {
 	process.exit(firstFailure?.status || 1);
 }
 
-writeCacheIndex(updateCache(runResults, nodesById, fingerprint.fingerprint, cacheIndex));
+writeCacheIndex(updateCache(runResults, nodesById, nodeFingerprints, cacheIndex));
 if (jsonMode) process.stdout.write(`${JSON.stringify({ ok: true, summaryPath: summary.summaryPath, selectedNodes: summary.selectedNodes, cacheHits: hits.length }, null, 2)}\n`);
 console.log(`\n[check-dag] ok (${summary.results.length} node result(s), cache hits=${hits.length}, artifact=${summary.summaryPath})`);

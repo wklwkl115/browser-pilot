@@ -129,8 +129,10 @@ These may be partially script-maintained:
 - archive index blocks in `ARCHIVE.md`
 - archive link blocks in `ROADMAP.md`
 - top-level structure links in `TODO.md`
+- managed generated blocks in `README.md` and `CLAUDE.md`
 
 Use:
+- `npm run docs:sync`
 - `npm run docs:sync-indexes`
 - `npm run check:doc-structure`
 

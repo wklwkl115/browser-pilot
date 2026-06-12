@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
+import { EXPECTED_PACKAGE_FACTS } from "../drift/expected-package-facts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const bridge = path.join(root, "bridge", "pi_browser_bridge");
@@ -49,7 +50,7 @@ for (const file of serviceWorkerBridgeFiles) assert(existsSync(path.join(root, "
 for (const file of ["content.js", "hook_dispatcher.js", "disable_dialogs.js"]) assert(existsSync(path.join(root, "bridge_src", "page_scripts", `${file.replace(/\.js$/, "")}.ts`)), `missing page script source: ${file}`);
 
 const pkg = JSON.parse(read("package.json"));
-assert(pkg.version === "0.3.0", "package version must be 0.3.0");
+assert(typeof pkg.version === "string" && pkg.version.length > 0, "package version must be declared");
 assert(pkg.keywords?.includes("pi-package"), "package must declare pi-package keyword");
 assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must expose index.ts");
 assert(pkg.main === "./dist/index.js", "package main must point to compiled dist entry");
@@ -57,7 +58,7 @@ assert(pkg.types === "./dist/index.d.ts", "package types must point to compiled 
 assert(pkg.exports?.["."]?.import === "./dist/index.js" && pkg.exports?.["."]?.types === "./dist/index.d.ts", "package exports must point to compiled dist entry and declarations");
 assert(pkg.bin?.["pi-browser"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
 assert(pkg.devDependencies?.tsx, "package must include tsx for runtime TypeScript execution");
-assert(pkg.scripts?.["sync:protocol"] === "node scripts/sync-native-protocol.mjs", "package must expose protocol sync script");
+assert(pkg.scripts?.["sync:protocol"] === EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
 assert(String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge-src.json"), "bridge type checks must include the ESM TypeScript source graph");
 assert(!String(pkg.scripts?.["check:bridge:types"] || "").includes("tsconfig.bridge.json"), "bridge type checks must not depend on deleted legacy JS ambient globals");
@@ -85,14 +86,14 @@ const runtimeEnvSource = read('bridge_src/service_worker/runtimeEnv.ts');
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
-assert(manifest.version === "0.3.0", "manifest version must be 0.3.0");
-assert(manifest.background?.service_worker === "dist/service-worker.js" && manifest.background?.type === "module", "manifest must use the generated dist module service worker");
+assert(manifest.version === pkg.version, "manifest version must match package.json version");
+assert(manifest.background?.service_worker === EXPECTED_PACKAGE_FACTS.manifestServiceWorker.value && manifest.background?.type === "module", `manifest must use the generated dist module service worker (${EXPECTED_PACKAGE_FACTS.manifestServiceWorker.rationale})`);
 assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["dist/disable_dialogs.js"]), "manifest document_start script must use dist disable-dialogs bundle");
 assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must declare downloads permission for browser_download path return");
-assert(manifest.permissions?.includes("offscreen"), "manifest must declare offscreen permission for durable B5 transport");
-assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", "offscreen.html")), "offscreen.html must exist for durable B5 transport");
-assert(read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen.html must load the generated offscreen bundle");
+assert(manifest.permissions?.includes(EXPECTED_PACKAGE_FACTS.offscreenPermission.value), `manifest must declare offscreen permission (${EXPECTED_PACKAGE_FACTS.offscreenPermission.rationale})`);
+assert(existsSync(path.join(root, "bridge", "pi_browser_bridge", EXPECTED_PACKAGE_FACTS.offscreenDocument.value)), `offscreen document must exist (${EXPECTED_PACKAGE_FACTS.offscreenDocument.rationale})`);
+assert(read(`bridge/pi_browser_bridge/${EXPECTED_PACKAGE_FACTS.offscreenDocument.value}`).includes(EXPECTED_PACKAGE_FACTS.offscreenBundle.value), `offscreen document must load the generated offscreen bundle (${EXPECTED_PACKAGE_FACTS.offscreenBundle.rationale})`);
 
 const bridgeInfo = readServiceWorkerSource("bridge_info.js");
 const transport = readServiceWorkerSource("transport.js");

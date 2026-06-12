@@ -16,6 +16,9 @@
 
 ## Findings
 
+Finding ID rule: use stable IDs of the form `AUDIT-###`; keep the same ID when
+updating lifecycle status in `agent-audits/runs/index.json`.
+
 | ID | Severity | Confidence | Area | Status |
 |---|---|---|---|---|
 | AUDIT-001 | P2 | medium | | unverified |

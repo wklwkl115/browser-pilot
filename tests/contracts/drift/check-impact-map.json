@@ -1,0 +1,4922 @@
+{
+  "schemaVersion": 1,
+  "source": "scripts/sync-impact-map.mjs",
+  "groups": {
+    "src": [
+      "check:src:types",
+      "check:registry-drift"
+    ],
+    "bridge": [
+      "check:bridge"
+    ],
+    "unit": [
+      "test:unit:abml",
+      "test:unit:cli",
+      "test:unit:distill",
+      "test:unit:driver",
+      "test:unit:memory",
+      "test:unit:tools",
+      "test:unit:web-security",
+      "test:unit:misc"
+    ],
+    "package": [
+      "check:package",
+      "check:deps",
+      "check:pi-browser-bridge"
+    ],
+    "docs": [
+      "check:tool-docs",
+      "check:doc-structure",
+      "check:audit-inbox",
+      "check:doc-paths",
+      "check:code-map",
+      "check:boundaries",
+      "check:distill-core-boundary",
+      "check:recovery-boundary",
+      "check:abml-core-boundary",
+      "check:memory-core-boundary",
+      "check:cli-migration-drift",
+      "check:docs-sync"
+    ],
+    "contracts": [
+      "check:jshookmcp-closure",
+      "check:capture",
+      "check:scan",
+      "check:content-pick",
+      "check:transfer",
+      "check:web-security",
+      "check:page-scripts",
+      "check:fake-ws",
+      "check:lifecycle",
+      "check:runtime-fixtures",
+      "check:abml-ax-smoke",
+      "check:smoke-diagnostics",
+      "check:paths",
+      "check:token",
+      "check:summaries",
+      "check:artifact",
+      "check:errors",
+      "check:eval-workflows",
+      "check:browser-workflow-results",
+      "check:browser-commands",
+      "check:distiller-coverage",
+      "check:output-schema-conformance",
+      "check:tool-parameter-contract",
+      "check:tool-parameter-framework-validation",
+      "check:summary-boundary",
+      "check:compaction-ledger",
+      "check:spec-truth",
+      "check:surface-liveness",
+      "check:compute-once",
+      "check:purity-vocabulary",
+      "check:kernel-test-map",
+      "check:env-flags",
+      "check:input-surface",
+      "check:file-ceilings",
+      "check:check-graph",
+      "check:impact-map",
+      "check:abml-ref-registry",
+      "check:abml-scan-entities",
+      "check:abml-scan-envelope",
+      "check:abml-verb-runtime",
+      "check:abml-ax-runtime",
+      "check:abml-relation-graph",
+      "check:abml-inference",
+      "check:abml-diff",
+      "check:abml-causal",
+      "check:abml-templating",
+      "check:abml-tree-diff",
+      "check:abml-semantic-ref-anchor",
+      "check:abml-snapshot-projection",
+      "check:abml-stream-plane",
+      "check:abml-p6p7-runtime",
+      "check:abml-internal-integration",
+      "check:cli-parity",
+      "check:param-surface",
+      "check:cli-json-envelopes",
+      "check:memory-autosurface",
+      "check:memory-plane",
+      "check:memory-lifecycle",
+      "check:token-economy",
+      "bench:distill",
+      "check:session-delta-long-conversation",
+      "check:task-conditioned-salience"
+    ]
+  },
+  "nodes": {
+    "lint:eslint": {
+      "script": "lint:eslint",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "lint:eslint",
+          "nodeId": "lint:eslint",
+          "commandLine": "eslint .",
+          "reason": "ESLint command has config-managed input expansion"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "lint:eslint",
+          "commandLine": "eslint ."
+        }
+      ]
+    },
+    "check:src:types": {
+      "script": "check:src:types",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "check:src:types",
+          "nodeId": "check:src:types",
+          "commandLine": "tsc -p tsconfig.json --incremental --tsBuildInfoFile .pi/tsbuildinfo/tsconfig.tsbuildinfo",
+          "reason": "TypeScript project command has compiler-managed input expansion"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:src:types",
+          "commandLine": "tsc -p tsconfig.json --incremental --tsBuildInfoFile .pi/tsbuildinfo/tsconfig.tsbuildinfo"
+        }
+      ]
+    },
+    "check:registry-drift": {
+      "script": "check:registry-drift",
+      "scope": "paths",
+      "inputs": [
+        "CURRENT.md",
+        "README.md",
+        "package.json",
+        "tests/contracts/drift/.gitignore",
+        "tests/contracts/drift/check-registry-drift.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:registry-drift",
+          "commandLine": "node tests/contracts/drift/check-registry-drift.mjs"
+        }
+      ]
+    },
+    "check:bridge": {
+      "script": "check:bridge",
+      "scope": "global",
+      "inputs": [
+        "AI_INSTALL.md",
+        "README.md",
+        "bridge/native_command_schema.json",
+        "bridge/pi_browser_bridge/",
+        "bridge/pi_browser_bridge/dist/",
+        "bridge/pi_browser_bridge/dist/.gitignore",
+        "bridge/pi_browser_bridge/dist/.npmignore",
+        "bridge/pi_browser_bridge/dist/build-manifest.json",
+        "bridge/pi_browser_bridge/dist/content.js",
+        "bridge/pi_browser_bridge/dist/disable_dialogs.js",
+        "bridge/pi_browser_bridge/dist/hook_dispatcher.js",
+        "bridge/pi_browser_bridge/dist/offscreen.js",
+        "bridge/pi_browser_bridge/dist/offscreen.js.map",
+        "bridge/pi_browser_bridge/dist/service-worker.js",
+        "bridge/pi_browser_bridge/dist/service-worker.js.map",
+        "bridge/pi_browser_bridge/manifest.json",
+        "bridge/pi_browser_bridge/native_command_schema.json",
+        "bridge_info.js",
+        "bridge_src/offscreen/transport.ts",
+        "bridge_src/page_scripts/",
+        "bridge_src/page_scripts/content.ts",
+        "bridge_src/page_scripts/disable_dialogs.ts",
+        "bridge_src/page_scripts/hook_dispatcher.ts",
+        "bridge_src/service-worker.ts",
+        "bridge_src/service_worker/",
+        "bridge_src/service_worker/core_commands.ts",
+        "bridge_src/service_worker/protocol.ts",
+        "bridge_src/service_worker/router.ts",
+        "bridge_src/service_worker/runtime.ts",
+        "bridge_src/service_worker/runtimeEnv.ts",
+        "bridge_src/service_worker/transport.ts",
+        "bridge_src/service_worker/types.ts",
+        "bridge_src/shared/buildInfo.ts",
+        "docs/archive/bridge-esm-bundler-plan.full.md",
+        "docs/archive/hook-dispatcher-boundary.full.md",
+        "docs/browser-usage.md",
+        "docs/generated/native-protocol.generated.md",
+        "hook.js",
+        "hook_dispatcher.js",
+        "network.js",
+        "network_events.js",
+        "network_model.js",
+        "package.json",
+        "protocol",
+        "router",
+        "router.js",
+        "runtime",
+        "runtime.js",
+        "scripts/build-bridge.mjs",
+        "scripts/sync-native-protocol.mjs",
+        "skills/pi-browser-tools/SKILL.md",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/protocol/nativeActionMetadata.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/tools/actionCommands.ts",
+        "src/tools/budgets.ts",
+        "src/tools/executeStdlib.ts",
+        "src/tools/observe/htmlRunner.ts",
+        "src/tools/prepareArguments.ts",
+        "src/tools/registerArtifactTool.ts",
+        "src/tools/registerCommandTool.ts",
+        "src/tools/registerEvidenceTool.ts",
+        "src/tools/registerExecuteTool.ts",
+        "src/tools/registerMemoryTool.ts",
+        "src/tools/registerNativeActionTools.ts",
+        "src/tools/registerObserveTool.ts",
+        "src/tools/registerScreenshotTool.ts",
+        "src/tools/registerTabsTool.ts",
+        "src/tools/registerTools.ts",
+        "src/tools/registerTransferTools.ts",
+        "src/tools/registerWebSecurityTools.ts",
+        "src/tools/relevanceTraceAdapter.ts",
+        "src/tools/summaries/",
+        "src/tools/toolAdapter.ts",
+        "src/tools/toolRegistry.ts",
+        "src/tools/transferValidation.ts",
+        "src/tools/webSecurity/register/index.ts",
+        "src/tools/webSecurity/register/shared.ts",
+        "tests/contracts/drift/expected-package-facts.js",
+        "tests/contracts/protocol/check-bridge-build.mjs",
+        "tests/contracts/protocol/check-bridge-files.mjs",
+        "tests/contracts/protocol/check-protocol-contract.mjs",
+        "tests/contracts/tools/check-execute-stdlib.mjs",
+        "tests/contracts/tools/check-execute-tool.mjs",
+        "tests/contracts/tools/check-tools-contract.mjs",
+        "transport.js",
+        "tsconfig.bridge-src.json",
+        "wait.js",
+        "wait_cdp.js",
+        "wait_coordinator.js",
+        "wait_navigation.js",
+        "wait_network_idle.js",
+        "wait_selector.js",
+        "ws.js",
+        "ws_model.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:bridge",
+          "nodeId": "check:bridge:types",
+          "commandLine": "tsc -p tsconfig.bridge-src.json --incremental --tsBuildInfoFile .pi/tsbuildinfo/tsconfig.bridge-src.tsbuildinfo",
+          "reason": "TypeScript project command has compiler-managed input expansion"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:protocol#1",
+          "file": "scripts/sync-native-protocol.mjs",
+          "line": 425,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:protocol#1",
+          "file": "scripts/sync-native-protocol.mjs",
+          "line": 8,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:protocol#1",
+          "file": "scripts/sync-native-protocol.mjs",
+          "specifier": "./types",
+          "reason": "unresolved relative import"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:protocol#2",
+          "file": "tests/contracts/protocol/check-protocol-contract.mjs",
+          "line": 24,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:tools#1",
+          "file": "tests/contracts/tools/check-tools-contract.mjs",
+          "line": 30,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:tools#2",
+          "file": "tests/contracts/tools/check-execute-tool.mjs",
+          "specifier": "../driver/types.js",
+          "reason": "unresolved relative import"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "check:tools#2",
+          "file": "tests/contracts/tools/check-execute-tool.mjs",
+          "specifier": "../driver/types",
+          "reason": "unresolved relative import"
+        },
+        {
+          "script": "check:bridge",
+          "nodeId": "verify:bridge:dist",
+          "file": "tests/contracts/protocol/check-bridge-build.mjs",
+          "line": 192,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:bridge:types",
+          "commandLine": "tsc -p tsconfig.bridge-src.json --incremental --tsBuildInfoFile .pi/tsbuildinfo/tsconfig.bridge-src.tsbuildinfo"
+        },
+        {
+          "nodeId": "verify:bridge:dist",
+          "commandLine": "node tests/contracts/protocol/check-bridge-build.mjs"
+        },
+        {
+          "nodeId": "check:bridge:files",
+          "commandLine": "node tests/contracts/protocol/check-bridge-files.mjs"
+        },
+        {
+          "nodeId": "check:protocol#1",
+          "commandLine": "node scripts/sync-native-protocol.mjs --check"
+        },
+        {
+          "nodeId": "check:protocol#2",
+          "commandLine": "node tests/contracts/protocol/check-protocol-contract.mjs"
+        },
+        {
+          "nodeId": "check:tools#1",
+          "commandLine": "node tests/contracts/tools/check-tools-contract.mjs"
+        },
+        {
+          "nodeId": "check:tools#2",
+          "commandLine": "tsx tests/contracts/tools/check-execute-tool.mjs"
+        },
+        {
+          "nodeId": "check:tools#3",
+          "commandLine": "node tests/contracts/tools/check-execute-stdlib.mjs"
+        }
+      ]
+    },
+    "test:unit:abml": {
+      "script": "test:unit:abml",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:abml",
+          "nodeId": "test:unit:abml",
+          "commandLine": "tsx --test tests/unit/abml/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:abml",
+          "commandLine": "tsx --test tests/unit/abml/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:cli": {
+      "script": "test:unit:cli",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:cli",
+          "nodeId": "test:unit:cli",
+          "commandLine": "tsx --test tests/unit/cli/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:cli",
+          "commandLine": "tsx --test tests/unit/cli/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:distill": {
+      "script": "test:unit:distill",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:distill",
+          "nodeId": "test:unit:distill",
+          "commandLine": "tsx --test tests/unit/distill-core/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:distill",
+          "commandLine": "tsx --test tests/unit/distill-core/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:driver": {
+      "script": "test:unit:driver",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:driver",
+          "nodeId": "test:unit:driver",
+          "commandLine": "tsx --test tests/unit/driver/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:driver",
+          "commandLine": "tsx --test tests/unit/driver/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:memory": {
+      "script": "test:unit:memory",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:memory",
+          "nodeId": "test:unit:memory",
+          "commandLine": "tsx --test tests/unit/memory/**/*.test.ts tests/unit/memory-core/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:memory",
+          "commandLine": "tsx --test tests/unit/memory/**/*.test.ts tests/unit/memory-core/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:tools": {
+      "script": "test:unit:tools",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:tools",
+          "nodeId": "test:unit:tools",
+          "commandLine": "tsx --test tests/unit/tools/**/*.test.ts tests/unit/toolAdapter/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:tools",
+          "commandLine": "tsx --test tests/unit/tools/**/*.test.ts tests/unit/toolAdapter/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:web-security": {
+      "script": "test:unit:web-security",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:web-security",
+          "nodeId": "test:unit:web-security",
+          "commandLine": "tsx --test tests/unit/webSecurity/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:web-security",
+          "commandLine": "tsx --test tests/unit/webSecurity/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:misc": {
+      "script": "test:unit:misc",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:misc",
+          "nodeId": "test:unit:misc",
+          "commandLine": "tsx --test tests/unit/frontend/**/*.test.ts tests/unit/resources/**/*.test.ts tests/unit/utils/**/*.test.ts tests/unit/validation/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:misc",
+          "commandLine": "tsx --test tests/unit/frontend/**/*.test.ts tests/unit/resources/**/*.test.ts tests/unit/utils/**/*.test.ts tests/unit/validation/**/*.test.ts"
+        }
+      ]
+    },
+    "check:package": {
+      "script": "check:package",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/",
+        ".pi/check-cache/",
+        "AI_INSTALL.md",
+        "README.md",
+        "bridge/pi_browser_bridge/dist/.npmignore",
+        "bridge/pi_browser_bridge/manifest.json",
+        "eslint.config.js",
+        "package.json",
+        "scripts/build-bridge.mjs",
+        "scripts/check-graph.mjs",
+        "scripts/lib/repo-introspection.mjs",
+        "tests/contracts/drift/.gitattributes",
+        "tests/contracts/drift/.github/actions/setup-node-build/action.yml",
+        "tests/contracts/drift/.github/workflows/check.yml",
+        "tests/contracts/drift/check-impact-map.json",
+        "tests/contracts/drift/check-package-files.mjs",
+        "tests/contracts/drift/expected-package-facts.js",
+        "tests/release/release-local-acceptance.mjs",
+        "tests/smoke/smoke-browser-isolated.mjs",
+        "tests/smoke/smoke-browser.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "scripts/check-graph.mjs",
+          "line": 167,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "scripts/check-graph.mjs",
+          "line": 397,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "scripts/check-graph.mjs",
+          "line": 514,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 38,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "tests/contracts/drift/check-package-files.mjs",
+          "line": 103,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:package",
+          "nodeId": "check:package",
+          "file": "tests/contracts/drift/check-package-files.mjs",
+          "line": 114,
+          "reason": "subprocess execution"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:package",
+          "commandLine": "node tests/contracts/drift/check-package-files.mjs"
+        }
+      ]
+    },
+    "check:deps": {
+      "script": "check:deps",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/dependency-audit-summary.json",
+        "package-lock.json",
+        "package.json",
+        "tests/contracts/drift/check-dependencies.mjs",
+        "tests/support/npm-runner.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:deps",
+          "nodeId": "check:deps",
+          "file": "tests/support/npm-runner.mjs",
+          "line": 18,
+          "reason": "subprocess execution"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:deps",
+          "commandLine": "node tests/contracts/drift/check-dependencies.mjs"
+        }
+      ]
+    },
+    "check:pi-browser-bridge": {
+      "script": "check:pi-browser-bridge",
+      "scope": "global",
+      "inputs": [
+        "bridge/native_command_schema.json",
+        "bridge/pi_browser_bridge/",
+        "bridge/pi_browser_bridge/manifest.json",
+        "bridge/pi_browser_bridge/native_command_schema.json",
+        "bridge_src/service_worker/exec.ts",
+        "bridge_src/service_worker/intercept.ts",
+        "bridge_src/service_worker/network.ts",
+        "package.json",
+        "skills/pi-browser-tools/SKILL.md",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/tools/",
+        "src/tools/artifactReader.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/registerEvidenceTool.ts",
+        "src/tools/registerNativeActionTools.ts",
+        "src/tools/registerPickTool.ts",
+        "src/tools/registerTools.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/toolAdapter.ts",
+        "tests/contracts/drift/expected-package-facts.js",
+        "tests/contracts/protocol/check-pi-browser-bridge.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:pi-browser-bridge",
+          "nodeId": "check:pi-browser-bridge",
+          "file": "tests/contracts/protocol/check-pi-browser-bridge.mjs",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:pi-browser-bridge",
+          "commandLine": "node tests/contracts/protocol/check-pi-browser-bridge.mjs"
+        }
+      ]
+    },
+    "check:tool-docs": {
+      "script": "check:tool-docs",
+      "scope": "global",
+      "inputs": [
+        "AI_INSTALL.md",
+        "README.md",
+        "bridge/native_command_schema.json",
+        "docs/browser-usage.md",
+        "docs/generated/browser-tool-contract.generated.md",
+        "docs/tool-boundaries.md",
+        "scripts/generate-tool-docs.mjs",
+        "src/tools/",
+        "tests/contracts/drift/check-tool-doc-drift.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:tool-docs",
+          "nodeId": "check:tool-docs#1",
+          "file": "tests/contracts/drift/check-tool-doc-drift.mjs",
+          "line": 17,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:tool-docs#1",
+          "commandLine": "node tests/contracts/drift/check-tool-doc-drift.mjs"
+        },
+        {
+          "nodeId": "check:tool-docs#2",
+          "commandLine": "node scripts/generate-tool-docs.mjs --check"
+        }
+      ]
+    },
+    "check:doc-structure": {
+      "script": "check:doc-structure",
+      "scope": "global",
+      "inputs": [
+        "AGENTS.md",
+        "ARCHIVE.md",
+        "CLAUDE.md",
+        "CURRENT.md",
+        "ROADMAP.md",
+        "TODO.md",
+        "agent-audits/",
+        "agent-audits/AGENTS.md",
+        "agent-audits/README.md",
+        "docs/agent-development.md",
+        "docs/agent-native-architecture.md",
+        "docs/agent-native-cli-spec.md",
+        "docs/archive-history-compression-plan.md",
+        "docs/archive/",
+        "docs/document-structure.md",
+        "docs/playbooks/",
+        "docs/playbooks/README.md",
+        "docs/reference/",
+        "scripts/build-bridge.mjs",
+        "skills/pi-browser-audit-fix/SKILL.md",
+        "tests/contracts/drift/check-doc-structure.mjs",
+        "tests/contracts/drift/spec-claims.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:doc-structure",
+          "nodeId": "check:doc-structure",
+          "file": "tests/contracts/drift/check-doc-structure.mjs",
+          "line": 59,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:doc-structure",
+          "commandLine": "node tests/contracts/drift/check-doc-structure.mjs"
+        }
+      ]
+    },
+    "check:audit-inbox": {
+      "script": "check:audit-inbox",
+      "scope": "global",
+      "inputs": [
+        "agent-audits/runs/",
+        "agent-audits/templates/finding.md",
+        "agent-audits/templates/run-report.md",
+        "package.json",
+        "tests/contracts/drift/.github/workflows/check.yml",
+        "tests/contracts/drift/check-audit-inbox.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:audit-inbox",
+          "nodeId": "check:audit-inbox",
+          "file": "tests/contracts/drift/check-audit-inbox.mjs",
+          "line": 15,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:audit-inbox",
+          "nodeId": "check:audit-inbox",
+          "file": "tests/contracts/drift/check-audit-inbox.mjs",
+          "line": 19,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:audit-inbox",
+          "nodeId": "check:audit-inbox",
+          "file": "tests/contracts/drift/check-audit-inbox.mjs",
+          "line": 27,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:audit-inbox",
+          "commandLine": "node tests/contracts/drift/check-audit-inbox.mjs"
+        }
+      ]
+    },
+    "check:doc-paths": {
+      "script": "check:doc-paths",
+      "scope": "paths",
+      "inputs": [
+        "package.json",
+        "tests/contracts/drift/check-doc-paths.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:doc-paths",
+          "commandLine": "node tests/contracts/drift/check-doc-paths.mjs"
+        }
+      ]
+    },
+    "check:code-map": {
+      "script": "check:code-map",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "scripts/lib/repo-introspection.mjs",
+        "scripts/sync-code-map.mjs",
+        "src/",
+        "src/abml-core/actionabilityModel.ts",
+        "src/abml-core/ax.ts",
+        "src/abml-core/causal.ts",
+        "src/abml-core/diff.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/errors.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/identityGraph.ts",
+        "src/abml-core/inference.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/semanticRefAnchor.ts",
+        "src/abml-core/snapshotProjection.ts",
+        "src/abml-core/stream.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
+        "src/abml-core/types.ts",
+        "src/abml-core/verbs/click.ts",
+        "src/abml-core/verbs/frame.ts",
+        "src/abml-core/verbs/pierce.ts",
+        "src/abml-core/verbs/read.ts",
+        "src/abml-core/verbs/router.ts",
+        "src/abml-core/verbs/scroll.ts",
+        "src/abml-core/verbs/type.ts",
+        "src/abml/actionabilityModel.ts",
+        "src/abml/ax.ts",
+        "src/abml/causal.ts",
+        "src/abml/diff.ts",
+        "src/abml/entity.ts",
+        "src/abml/errors.ts",
+        "src/abml/identityGraph.ts",
+        "src/abml/inference.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/relations.ts",
+        "src/abml/semanticRefAnchor.ts",
+        "src/abml/snapshotProjection.ts",
+        "src/abml/stream.ts",
+        "src/abml/treeDiff.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/axRuntime.ts",
+        "src/abml/verbs/click.ts",
+        "src/abml/verbs/frame.ts",
+        "src/abml/verbs/frameRuntime.ts",
+        "src/abml/verbs/integration.ts",
+        "src/abml/verbs/pierce.ts",
+        "src/abml/verbs/pierceRuntime.ts",
+        "src/abml/verbs/read.ts",
+        "src/abml/verbs/router.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/scroll.ts",
+        "src/abml/verbs/type.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "src/capture/generated/contentBundle.ts",
+        "src/capture/generated/pickBundle.ts",
+        "src/capture/generated/probesBundle.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/capture/generated/visionBundle.ts",
+        "src/capture/inject.ts",
+        "src/content/buildContentScript.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/relevance.ts",
+        "src/distill-core/relevanceTaps.ts",
+        "src/distill-core/relevanceTuning.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserWaitSupervisor.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/recall.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/salience.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/pick/buildPickScript.ts",
+        "src/protocol/nativeActionMetadata.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/scan/actionableRules.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/actionCommands.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifactReader.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/budgets.ts",
+        "src/tools/commands.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/executeStdlib.ts",
+        "src/tools/executionEffect.ts",
+        "src/tools/executionJournal.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/evidence.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/reader.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/salience.ts",
+        "src/tools/memory/store.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/baseline.ts",
+        "src/tools/observe/contentRunner.ts",
+        "src/tools/observe/entityViews.ts",
+        "src/tools/observe/htmlRunner.ts",
+        "src/tools/observe/memoryAugmentation.ts",
+        "src/tools/observe/relevanceFusion.ts",
+        "src/tools/observe/renderCache.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/observeRunners.ts",
+        "src/tools/pageScriptEvaluation.ts",
+        "src/tools/pageSignals.ts",
+        "src/tools/prepareArguments.ts",
+        "src/tools/registerArtifactTool.ts",
+        "src/tools/registerCommandTool.ts",
+        "src/tools/registerEvidenceTool.ts",
+        "src/tools/registerExecuteTool.ts",
+        "src/tools/registerMemoryTool.ts",
+        "src/tools/registerNativeActionTools.ts",
+        "src/tools/registerObserveTool.ts",
+        "src/tools/registerPickTool.ts",
+        "src/tools/registerScreenshotTool.ts",
+        "src/tools/registerTabsTool.ts",
+        "src/tools/registerTools.ts",
+        "src/tools/registerTransferTools.ts",
+        "src/tools/registerWebSecurityTools.ts",
+        "src/tools/relevanceTaps.ts",
+        "src/tools/relevanceTraceAdapter.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/scanEntityRefs.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/toolAdapter.ts",
+        "src/tools/toolRegistry.ts",
+        "src/tools/toolShared.ts",
+        "src/tools/transferValidation.ts",
+        "src/tools/webSecurity/bridges/nucleiBridge.ts",
+        "src/tools/webSecurity/bridges/sqlmapBridge.ts",
+        "src/tools/webSecurity/browserNative/callbackOast.ts",
+        "src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
+        "src/tools/webSecurity/browserNative/cookieAnalyze.ts",
+        "src/tools/webSecurity/browserNative/crawl.ts",
+        "src/tools/webSecurity/browserNative/crawlExtractors.ts",
+        "src/tools/webSecurity/browserNative/fuzzParams.ts",
+        "src/tools/webSecurity/browserNative/fuzzPaths.ts",
+        "src/tools/webSecurity/browserNative/fuzzVhosts.ts",
+        "src/tools/webSecurity/browserNative/httpReplay.ts",
+        "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+        "src/tools/webSecurity/browserNative/recon.ts",
+        "src/tools/webSecurity/browserNative/sqliProbe.ts",
+        "src/tools/webSecurity/browserNative/templateCheck.ts",
+        "src/tools/webSecurity/register/index.ts",
+        "src/tools/webSecurity/register/registerCallbackOast.ts",
+        "src/tools/webSecurity/register/registerCookieAnalyze.ts",
+        "src/tools/webSecurity/register/registerCrawl.ts",
+        "src/tools/webSecurity/register/registerFuzz.ts",
+        "src/tools/webSecurity/register/registerHttpReplay.ts",
+        "src/tools/webSecurity/register/registerSqli.ts",
+        "src/tools/webSecurity/register/registerTemplate.ts",
+        "src/tools/webSecurity/register/shared.ts",
+        "src/tools/webSecurity/shared/artifacts.ts",
+        "src/tools/webSecurity/shared/baseline.ts",
+        "src/tools/webSecurity/shared/cookieTokens.ts",
+        "src/tools/webSecurity/shared/diagnostics.ts",
+        "src/tools/webSecurity/shared/har.ts",
+        "src/tools/webSecurity/shared/http.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/tools/webSecurity/shared/jsAstShell.ts",
+        "src/tools/webSecurity/shared/matureBridge.ts",
+        "src/tools/webSecurity/shared/multipart.ts",
+        "src/tools/webSecurity/shared/normalize.ts",
+        "src/tools/webSecurity/shared/railsCookieTokens.ts",
+        "src/tools/webSecurity/shared/replay.ts",
+        "src/tools/webSecurity/shared/requestTemplate.ts",
+        "src/tools/webSecurity/shared/template.ts",
+        "src/tools/webSecurity/shared/types.ts",
+        "src/tools/webSecurity/shared/wasmArtifact.ts",
+        "src/tools/webSecurity/shared/wasmBridge.ts",
+        "src/tools/webSecurity/shared/wasmShell.ts",
+        "src/tools/webSecurity/shared/wsSession.ts",
+        "src/tools/webSecurity/shared/wsShell.ts",
+        "src/tools/webSecurityCore.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/safeRegex.ts",
+        "src/utils/toolResult.ts",
+        "src/validation/middleware.ts",
+        "src/validation/schemas.ts",
+        "src/validation/typeboxCompat.ts",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 38,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "scripts/sync-code-map.mjs",
+          "line": 14,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "scripts/sync-code-map.mjs",
+          "line": 202,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/tools/webSecurity/bridges/nucleiBridge.ts",
+          "line": 295,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/tools/webSecurity/bridges/sqlmapBridge.ts",
+          "line": 285,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+          "line": 137,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/tools/webSecurity/shared/matureBridge.ts",
+          "line": 56,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/tools/webSecurity/shared/wasmBridge.ts",
+          "line": 67,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:code-map",
+          "nodeId": "check:code-map",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:code-map",
+          "commandLine": "tsx scripts/sync-code-map.mjs --check"
+        }
+      ]
+    },
+    "check:boundaries": {
+      "script": "check:boundaries",
+      "scope": "global",
+      "inputs": [
+        ".github/actions/setup-node-build/action.yml",
+        "bridge/tmwd_cdp_bridge",
+        "docs/archive/tmwd-cdp-bridge-legacy.full.md",
+        "docs/archive/tmwd-cdp-bridge-legacy.md",
+        "package.json",
+        "scripts/smoke-browser.mjs",
+        "src/utils/params.ts",
+        "tests/contracts/drift/check-boundaries.mjs",
+        "tests/release/release-local-acceptance.mjs",
+        "tests/smoke/smoke-browser.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:boundaries",
+          "nodeId": "check:boundaries",
+          "file": "tests/contracts/drift/check-boundaries.mjs",
+          "line": 8,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:boundaries",
+          "nodeId": "check:boundaries",
+          "file": "tests/contracts/drift/check-boundaries.mjs",
+          "line": 86,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:boundaries",
+          "commandLine": "node tests/contracts/drift/check-boundaries.mjs"
+        }
+      ]
+    },
+    "check:distill-core-boundary": {
+      "script": "check:distill-core-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/",
+        "src/distill-core/",
+        "tests/contracts/drift/check-distill-core-boundary.mjs",
+        "tests/contracts/drift/purity-vocabulary.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:distill-core-boundary",
+          "nodeId": "check:distill-core-boundary",
+          "file": "tests/contracts/drift/check-distill-core-boundary.mjs",
+          "line": 23,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:distill-core-boundary",
+          "nodeId": "check:distill-core-boundary",
+          "file": "tests/contracts/drift/check-distill-core-boundary.mjs",
+          "line": 52,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:distill-core-boundary",
+          "commandLine": "node tests/contracts/drift/check-distill-core-boundary.mjs"
+        }
+      ]
+    },
+    "check:recovery-boundary": {
+      "script": "check:recovery-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/",
+        "src/abml-core/errors.ts",
+        "src/distill-core/recovery.ts",
+        "src/utils/errors.ts",
+        "tests/contracts/drift/check-recovery-boundary.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:recovery-boundary",
+          "nodeId": "check:recovery-boundary",
+          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
+          "line": 115,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:recovery-boundary",
+          "nodeId": "check:recovery-boundary",
+          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
+          "line": 129,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:recovery-boundary",
+          "nodeId": "check:recovery-boundary",
+          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
+          "line": 13,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:recovery-boundary",
+          "nodeId": "check:recovery-boundary",
+          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:recovery-boundary",
+          "nodeId": "check:recovery-boundary",
+          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
+          "line": 23,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:recovery-boundary",
+          "commandLine": "node tests/contracts/drift/check-recovery-boundary.mjs"
+        }
+      ]
+    },
+    "check:abml-core-boundary": {
+      "script": "check:abml-core-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/",
+        "src/abml-core/",
+        "src/abml/",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/drift/check-abml-core-boundary.mjs",
+        "tests/contracts/drift/purity-vocabulary.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-core-boundary",
+          "nodeId": "check:abml-core-boundary",
+          "file": "tests/contracts/drift/check-abml-core-boundary.mjs",
+          "line": 43,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-core-boundary",
+          "commandLine": "node tests/contracts/drift/check-abml-core-boundary.mjs"
+        }
+      ]
+    },
+    "check:memory-core-boundary": {
+      "script": "check:memory-core-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/",
+        "src/memory-core/",
+        "tests/contracts/drift/check-memory-core-boundary.mjs",
+        "tests/contracts/drift/purity-vocabulary.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:memory-core-boundary",
+          "nodeId": "check:memory-core-boundary",
+          "file": "tests/contracts/drift/check-memory-core-boundary.mjs",
+          "line": 18,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:memory-core-boundary",
+          "nodeId": "check:memory-core-boundary",
+          "file": "tests/contracts/drift/check-memory-core-boundary.mjs",
+          "line": 47,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:memory-core-boundary",
+          "commandLine": "node tests/contracts/drift/check-memory-core-boundary.mjs"
+        }
+      ]
+    },
+    "check:cli-migration-drift": {
+      "script": "check:cli-migration-drift",
+      "scope": "global",
+      "inputs": [
+        "index.ts",
+        "mcp",
+        "tests/contracts/drift/check-cli-migration-drift.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:cli-migration-drift",
+          "nodeId": "check:cli-migration-drift",
+          "file": "tests/contracts/drift/check-cli-migration-drift.mjs",
+          "line": 21,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:cli-migration-drift",
+          "commandLine": "node tests/contracts/drift/check-cli-migration-drift.mjs"
+        }
+      ]
+    },
+    "check:docs-sync": {
+      "script": "check:docs-sync",
+      "scope": "paths",
+      "inputs": [
+        "scripts/lib/managed-blocks.mjs",
+        "scripts/sync-concept-ownership.mjs",
+        "scripts/sync-docs.mjs",
+        "tests/contracts/drift/check-docs-sync.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:docs-sync",
+          "commandLine": "node tests/contracts/drift/check-docs-sync.mjs"
+        }
+      ]
+    },
+    "check:jshookmcp-closure": {
+      "script": "check:jshookmcp-closure",
+      "scope": "global",
+      "inputs": [
+        "CHANGELOG.md",
+        "CURRENT.md",
+        "README.md",
+        "ROADMAP.md",
+        "docs/tool-boundaries.md",
+        "package.json",
+        "tests/contracts/tools/check-jshookmcp-closure.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:jshookmcp-closure",
+          "nodeId": "check:jshookmcp-closure",
+          "file": "tests/contracts/tools/check-jshookmcp-closure.mjs",
+          "line": 76,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:jshookmcp-closure",
+          "commandLine": "node tests/contracts/tools/check-jshookmcp-closure.mjs"
+        }
+      ]
+    },
+    "check:capture": {
+      "script": "check:capture",
+      "scope": "global",
+      "inputs": [
+        "capture-src/",
+        "capture-src/entries/",
+        "scripts/sync-capture.mjs",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "src/capture/generated/",
+        "src/capture/generated/pickBundle.ts",
+        "src/capture/generated/scanBundle.ts",
+        "tests/contracts/runtime/check-capture-core-boundary.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:capture",
+          "nodeId": "check:capture#1",
+          "file": "scripts/sync-capture.mjs",
+          "line": 20,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:capture",
+          "nodeId": "check:capture#1",
+          "file": "scripts/sync-capture.mjs",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:capture",
+          "nodeId": "check:capture#2",
+          "file": "tests/contracts/runtime/check-capture-core-boundary.mjs",
+          "line": 14,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:capture#1",
+          "commandLine": "node scripts/sync-capture.mjs --check"
+        },
+        {
+          "nodeId": "check:capture#2",
+          "commandLine": "node tests/contracts/runtime/check-capture-core-boundary.mjs"
+        }
+      ]
+    },
+    "check:scan": {
+      "script": "check:scan",
+      "scope": "paths",
+      "inputs": [
+        "src/capture/generated/scanBundle.ts",
+        "src/capture/inject.ts",
+        "src/scan/actionableRules.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "tests/contracts/runtime/check-scan-script.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:scan",
+          "commandLine": "tsx tests/contracts/runtime/check-scan-script.mjs"
+        }
+      ]
+    },
+    "check:content-pick": {
+      "script": "check:content-pick",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "package.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/capture/generated/contentBundle.ts",
+        "src/capture/generated/pickBundle.ts",
+        "src/capture/inject.ts",
+        "src/content/buildContentScript.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/pick/buildPickScript.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/contentRunner.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/pageScriptEvaluation.ts",
+        "src/tools/registerPickTool.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/toolAdapter.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/runtime/check-content-pick.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:content-pick",
+          "nodeId": "check:content-pick",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:content-pick",
+          "nodeId": "check:content-pick",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:content-pick",
+          "commandLine": "tsx tests/contracts/runtime/check-content-pick.mjs"
+        }
+      ]
+    },
+    "check:transfer": {
+      "script": "check:transfer",
+      "scope": "paths",
+      "inputs": [
+        "bridge/native_command_schema.json",
+        "bridge/pi_browser_bridge/manifest.json",
+        "bridge_src/service_worker/transfer.ts",
+        "src/distill-core/recovery.ts",
+        "src/protocol/nativeActionMetadata.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/tools/registerCommandTool.ts",
+        "src/tools/registerTransferTools.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/transferValidation.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "tests/contracts/runtime/check-transfer-runtime.mjs",
+        "tests/contracts/tools/check-transfer-tools.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:transfer#1",
+          "commandLine": "tsx tests/contracts/tools/check-transfer-tools.mjs"
+        },
+        {
+          "nodeId": "check:transfer#2",
+          "commandLine": "tsx tests/contracts/runtime/check-transfer-runtime.mjs"
+        }
+      ]
+    },
+    "check:web-security": {
+      "script": "check:web-security",
+      "scope": "global",
+      "inputs": [
+        "src/distill-core/recovery.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/tools/registerWebSecurityTools.ts",
+        "src/tools/toolRegistry.ts",
+        "src/tools/webSecurity/bridges/nucleiBridge.ts",
+        "src/tools/webSecurity/bridges/sqlmapBridge.ts",
+        "src/tools/webSecurity/browserNative/callbackOast.ts",
+        "src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
+        "src/tools/webSecurity/browserNative/cookieAnalyze.ts",
+        "src/tools/webSecurity/browserNative/crawl.ts",
+        "src/tools/webSecurity/browserNative/crawlExtractors.ts",
+        "src/tools/webSecurity/browserNative/fuzzParams.ts",
+        "src/tools/webSecurity/browserNative/fuzzPaths.ts",
+        "src/tools/webSecurity/browserNative/fuzzVhosts.ts",
+        "src/tools/webSecurity/browserNative/httpReplay.ts",
+        "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+        "src/tools/webSecurity/browserNative/recon.ts",
+        "src/tools/webSecurity/browserNative/sqliProbe.ts",
+        "src/tools/webSecurity/browserNative/templateCheck.ts",
+        "src/tools/webSecurity/register/",
+        "src/tools/webSecurity/register/index.ts",
+        "src/tools/webSecurity/register/registerSqli.ts",
+        "src/tools/webSecurity/register/shared.ts",
+        "src/tools/webSecurity/shared/artifacts.ts",
+        "src/tools/webSecurity/shared/baseline.ts",
+        "src/tools/webSecurity/shared/cookieTokens.ts",
+        "src/tools/webSecurity/shared/diagnostics.ts",
+        "src/tools/webSecurity/shared/har.ts",
+        "src/tools/webSecurity/shared/http.ts",
+        "src/tools/webSecurity/shared/matureBridge.ts",
+        "src/tools/webSecurity/shared/multipart.ts",
+        "src/tools/webSecurity/shared/normalize.ts",
+        "src/tools/webSecurity/shared/railsCookieTokens.ts",
+        "src/tools/webSecurity/shared/replay.ts",
+        "src/tools/webSecurity/shared/requestTemplate.ts",
+        "src/tools/webSecurity/shared/template.ts",
+        "src/tools/webSecurity/shared/types.ts",
+        "src/tools/webSecurityCore.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/safeRegex.ts",
+        "tests/contracts/tools/check-web-security-tools.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:web-security",
+          "nodeId": "check:web-security",
+          "file": "src/tools/webSecurity/bridges/nucleiBridge.ts",
+          "line": 295,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:web-security",
+          "nodeId": "check:web-security",
+          "file": "src/tools/webSecurity/bridges/sqlmapBridge.ts",
+          "line": 285,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:web-security",
+          "nodeId": "check:web-security",
+          "file": "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+          "line": 137,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:web-security",
+          "nodeId": "check:web-security",
+          "file": "src/tools/webSecurity/shared/matureBridge.ts",
+          "line": 56,
+          "reason": "subprocess execution"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:web-security",
+          "commandLine": "tsx tests/contracts/tools/check-web-security-tools.mjs"
+        }
+      ]
+    },
+    "check:page-scripts": {
+      "script": "check:page-scripts",
+      "scope": "paths",
+      "inputs": [
+        "bridge/pi_browser_bridge/dist/content.js",
+        "bridge/pi_browser_bridge/dist/disable_dialogs.js",
+        "bridge/pi_browser_bridge/dist/hook_dispatcher.js",
+        "exec",
+        "hook",
+        "hook_dispatcher",
+        "runtime",
+        "src/capture/generated/contentBundle.ts",
+        "src/capture/generated/pickBundle.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/capture/inject.ts",
+        "src/content/buildContentScript.ts",
+        "src/pick/buildPickScript.ts",
+        "src/scan/actionableRules.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "tests/contracts/runtime/check-page-scripts.mjs",
+        "wait",
+        "wait_navigation",
+        "wait_selector"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:page-scripts",
+          "commandLine": "tsx tests/contracts/runtime/check-page-scripts.mjs"
+        }
+      ]
+    },
+    "check:fake-ws": {
+      "script": "check:fake-ws",
+      "scope": "global",
+      "inputs": [
+        "src/abml-core/entity.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/distill-core/recovery.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserWaitSupervisor.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/utils/errors.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "tests/contracts/runtime/check-fake-ws.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:fake-ws",
+          "nodeId": "check:fake-ws",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:fake-ws",
+          "commandLine": "tsx tests/contracts/runtime/check-fake-ws.mjs"
+        }
+      ]
+    },
+    "check:lifecycle": {
+      "script": "check:lifecycle",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/lifecycle-fixture-failure.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/distill-core/recovery.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserWaitSupervisor.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/utils/errors.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "tests/contracts/runtime/check-lifecycle.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:lifecycle",
+          "nodeId": "check:lifecycle",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:lifecycle",
+          "commandLine": "tsx tests/contracts/runtime/check-lifecycle.mjs"
+        }
+      ]
+    },
+    "check:runtime-fixtures": {
+      "script": "check:runtime-fixtures",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/fixtures/",
+        "cdp",
+        "core_commands",
+        "frame",
+        "hook",
+        "intercept",
+        "intercept_model",
+        "network",
+        "network_events",
+        "network_model",
+        "patterns",
+        "screenshot",
+        "src/distill-core/recovery.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/tools/webSecurity/browserNative/callbackOast.ts",
+        "src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
+        "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+        "src/tools/webSecurity/shared/http.ts",
+        "src/tools/webSecurity/shared/normalize.ts",
+        "src/tools/webSecurity/shared/types.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "state_store",
+        "tests/contracts/runtime/check-runtime-fixtures.mjs",
+        "transfer",
+        "wait",
+        "wait_cdp",
+        "wait_coordinator",
+        "wait_navigation",
+        "wait_network_idle",
+        "wait_selector",
+        "ws",
+        "ws_model"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:runtime-fixtures",
+          "nodeId": "check:runtime-fixtures",
+          "file": "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
+          "line": 137,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:runtime-fixtures",
+          "nodeId": "check:runtime-fixtures",
+          "file": "tests/contracts/runtime/check-runtime-fixtures.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:runtime-fixtures",
+          "commandLine": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs"
+        }
+      ]
+    },
+    "check:abml-ax-smoke": {
+      "script": "check:abml-ax-smoke",
+      "scope": "paths",
+      "inputs": [
+        "evals/browser-workflows/fixtures/abml-ax-canvas-aria.html",
+        "package.json",
+        "src/abml/verbs/axRuntime.ts",
+        "tests/contracts/runtime/check-abml-ax-smoke.mjs",
+        "tests/smoke/smoke-browser-ax-merge.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-ax-smoke",
+          "commandLine": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs"
+        }
+      ]
+    },
+    "check:smoke-diagnostics": {
+      "script": "check:smoke-diagnostics",
+      "scope": "paths",
+      "inputs": [
+        "AI_INSTALL.md",
+        "README.md",
+        "package.json",
+        "tests/contracts/runtime/check-smoke-diagnostics.mjs",
+        "tests/smoke/smoke-abml-frame-compare.mjs",
+        "tests/smoke/smoke-abml-monitor-comparison.mjs",
+        "tests/smoke/smoke-abml-vision-compare.mjs",
+        "tests/smoke/smoke-browser-isolated.mjs",
+        "tests/smoke/smoke-browser-memory.mjs",
+        "tests/smoke/smoke-browser.mjs",
+        "tests/smoke/smoke-cli-full.mjs",
+        "tests/smoke/smoke-correlation-chain.mjs",
+        "tests/smoke/smoke-debugger-evidence.mjs",
+        "tests/smoke/smoke-intercept-lease-conflict.mjs",
+        "tests/smoke/smoke-intercept-replace-script.mjs",
+        "tests/smoke/smoke-intercept-request-mutate.mjs",
+        "tests/smoke/smoke-intercept-response.mjs",
+        "tests/smoke/smoke-intercept-tab-close-cleanup.mjs",
+        "tests/smoke/smoke-intercept-uninstall-fail-closed.mjs",
+        "tests/smoke/smoke-scan-summary.mjs",
+        "tests/smoke/smoke-websocket-session.mjs",
+        "tests/smoke/smokePortDiagnostics.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:smoke-diagnostics",
+          "commandLine": "node tests/contracts/runtime/check-smoke-diagnostics.mjs"
+        }
+      ]
+    },
+    "check:paths": {
+      "script": "check:paths",
+      "scope": "global",
+      "inputs": [
+        "bridge/browser_bridge_config.json",
+        "bridge/pi_browser_bridge/",
+        "config",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/distill-core/recovery.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/utils/errors.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "tests/contracts/runtime/check-paths.mjs",
+        "transport"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:paths",
+          "nodeId": "check:paths",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:paths",
+          "commandLine": "tsx tests/contracts/runtime/check-paths.mjs"
+        }
+      ]
+    },
+    "check:token": {
+      "script": "check:token",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "skills/pi-browser-tools/SKILL.md",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifactReader.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-token-contract.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:token",
+          "nodeId": "check:token",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:token",
+          "nodeId": "check:token",
+          "file": "tests/contracts/tools/check-token-contract.mjs",
+          "line": 121,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:token",
+          "nodeId": "check:token",
+          "file": "tests/contracts/tools/check-token-contract.mjs",
+          "line": 53,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:token",
+          "nodeId": "check:token",
+          "file": "tests/contracts/tools/check-token-contract.mjs",
+          "line": 88,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:token",
+          "commandLine": "tsx tests/contracts/tools/check-token-contract.mjs"
+        }
+      ]
+    },
+    "check:summaries": {
+      "script": "check:summaries",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity.ts",
+        "src/tools/summaries/webSecurity/",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-summaries.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:summaries",
+          "nodeId": "check:summaries",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:summaries",
+          "commandLine": "tsx tests/contracts/tools/check-summaries.mjs"
+        }
+      ]
+    },
+    "check:artifact": {
+      "script": "check:artifact",
+      "scope": "paths",
+      "inputs": [
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/projection.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifactReader.ts",
+        "src/tools/artifacts.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/safeRegex.ts",
+        "tests/contracts/tools/check-artifact-reader.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:artifact",
+          "commandLine": "tsx tests/contracts/tools/check-artifact-reader.mjs"
+        }
+      ]
+    },
+    "check:errors": {
+      "script": "check:errors",
+      "scope": "paths",
+      "inputs": [
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/driver/errors.ts",
+        "src/protocol/nativeActionMetadata.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifactReader.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/transferValidation.ts",
+        "src/tools/webSecurity/shared/diagnostics.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/safeRegex.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-errors.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:errors",
+          "commandLine": "tsx tests/contracts/tools/check-errors.mjs"
+        }
+      ]
+    },
+    "check:eval-workflows": {
+      "script": "check:eval-workflows",
+      "scope": "global",
+      "inputs": [
+        "WORKSTREAMS_A_E_SUMMARY.md",
+        "evals/browser-workflows/",
+        "evals/browser-workflows/distill-usage-log.mjs",
+        "package.json",
+        "tests/contracts/tools/check-eval-workflows.mjs",
+        "tests/smoke/",
+        "tests/support/patchExtensionPort.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 13,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 172,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 180,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 242,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 340,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 346,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 372,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:eval-workflows",
+          "nodeId": "check:eval-workflows",
+          "file": "tests/contracts/tools/check-eval-workflows.mjs",
+          "line": 374,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:eval-workflows",
+          "commandLine": "node tests/contracts/tools/check-eval-workflows.mjs"
+        }
+      ]
+    },
+    "check:browser-workflow-results": {
+      "script": "check:browser-workflow-results",
+      "scope": "global",
+      "inputs": [
+        "21-cross-tool-correlation-chain.result.json",
+        "22-js-ast-artifact-summary.result.json",
+        "23-dom-flow-listener-chain.result.json",
+        "24-dom-flow-sink-hints.result.json",
+        "25-wasm-artifact-metadata.result.json",
+        "26-wasm-wat-bridge.result.json",
+        "27-websocket-session-transcript.result.json",
+        "30-abml-internal-routing-evidence.result.json",
+        "evals/browser-workflows/",
+        "evals/browser-workflows/manifest.json",
+        "evals/browser-workflows/result-schema.json",
+        "tests/contracts/tools/check-browser-workflow-results.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:browser-workflow-results",
+          "nodeId": "check:browser-workflow-results",
+          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
+          "line": 11,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:browser-workflow-results",
+          "nodeId": "check:browser-workflow-results",
+          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
+          "line": 14,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:browser-workflow-results",
+          "nodeId": "check:browser-workflow-results",
+          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
+          "line": 21,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:browser-workflow-results",
+          "nodeId": "check:browser-workflow-results",
+          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
+          "line": 37,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:browser-workflow-results",
+          "commandLine": "node tests/contracts/tools/check-browser-workflow-results.mjs"
+        }
+      ]
+    },
+    "check:browser-commands": {
+      "script": "check:browser-commands",
+      "scope": "paths",
+      "inputs": [
+        "AI_INSTALL.md",
+        "README.md",
+        "skills/pi-browser-tools/SKILL.md",
+        "src/tools/commands.ts",
+        "tests/contracts/runtime/check-browser-commands.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:browser-commands",
+          "commandLine": "node tests/contracts/runtime/check-browser-commands.mjs"
+        }
+      ]
+    },
+    "check:distiller-coverage": {
+      "script": "check:distiller-coverage",
+      "scope": "paths",
+      "inputs": [
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/projection.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "tests/contracts/drift/check-distiller-coverage.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:distiller-coverage",
+          "commandLine": "tsx tests/contracts/drift/check-distiller-coverage.mjs"
+        }
+      ]
+    },
+    "check:output-schema-conformance": {
+      "script": "check:output-schema-conformance",
+      "scope": "paths",
+      "inputs": [
+        "src/tools/distillerRegistry.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "tests/contracts/drift/check-output-schema-conformance.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:output-schema-conformance",
+          "commandLine": "tsx tests/contracts/drift/check-output-schema-conformance.mjs"
+        }
+      ]
+    },
+    "check:tool-parameter-contract": {
+      "script": "check:tool-parameter-contract",
+      "scope": "global",
+      "inputs": [
+        "src/abml-core/entity.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/distill-core/recovery.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/tools/prepareArguments.ts",
+        "src/tools/toolShared.ts",
+        "src/tools/webSecurity/register/registerCrawl.ts",
+        "src/tools/webSecurity/register/registerFuzz.ts",
+        "src/tools/webSecurity/register/registerHttpReplay.ts",
+        "src/tools/webSecurity/register/registerSqli.ts",
+        "src/tools/webSecurity/register/registerTemplate.ts",
+        "src/tools/webSecurity/register/shared.ts",
+        "src/utils/errors.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "tests/contracts/drift/check-tool-parameter-contract.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:tool-parameter-contract",
+          "nodeId": "check:tool-parameter-contract",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:tool-parameter-contract",
+          "commandLine": "tsx tests/contracts/drift/check-tool-parameter-contract.mjs"
+        }
+      ]
+    },
+    "check:tool-parameter-framework-validation": {
+      "script": "check:tool-parameter-framework-validation",
+      "scope": "paths",
+      "inputs": [
+        "tests/contracts/drift/check-tool-parameter-framework-validation.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:tool-parameter-framework-validation",
+          "commandLine": "node tests/contracts/drift/check-tool-parameter-framework-validation.mjs"
+        }
+      ]
+    },
+    "check:summary-boundary": {
+      "script": "check:summary-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/tools/summaries/",
+        "tests/contracts/drift/check-summary-boundary.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:summary-boundary",
+          "nodeId": "check:summary-boundary",
+          "file": "tests/contracts/drift/check-summary-boundary.mjs",
+          "line": 52,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:summary-boundary",
+          "nodeId": "check:summary-boundary",
+          "file": "tests/contracts/drift/check-summary-boundary.mjs",
+          "line": 67,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:summary-boundary",
+          "commandLine": "node tests/contracts/drift/check-summary-boundary.mjs"
+        }
+      ]
+    },
+    "check:compaction-ledger": {
+      "script": "check:compaction-ledger",
+      "scope": "global",
+      "inputs": [
+        "docs/compaction-ledger.json",
+        "src/",
+        "src/distill-core/compactionTuning.ts",
+        "tests/contracts/drift/check-compaction-ledger.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:compaction-ledger",
+          "nodeId": "check:compaction-ledger",
+          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
+          "line": 11,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:compaction-ledger",
+          "nodeId": "check:compaction-ledger",
+          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
+          "line": 15,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:compaction-ledger",
+          "nodeId": "check:compaction-ledger",
+          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
+          "line": 49,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:compaction-ledger",
+          "commandLine": "tsx tests/contracts/drift/check-compaction-ledger.mjs"
+        }
+      ]
+    },
+    "check:spec-truth": {
+      "script": "check:spec-truth",
+      "scope": "global",
+      "inputs": [
+        "docs/abml-kernel-manifest.md",
+        "tests/contracts/drift/check-spec-truth.mjs",
+        "tests/contracts/drift/spec-claims.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:spec-truth",
+          "nodeId": "check:spec-truth",
+          "file": "tests/contracts/drift/check-spec-truth.mjs",
+          "line": 24,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:spec-truth",
+          "commandLine": "node tests/contracts/drift/check-spec-truth.mjs"
+        }
+      ]
+    },
+    "check:surface-liveness": {
+      "script": "check:surface-liveness",
+      "scope": "global",
+      "inputs": [
+        "tests/contracts/drift/check-surface-liveness.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "line": 117,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "line": 15,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "line": 152,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "line": 70,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "line": 9,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:surface-liveness",
+          "nodeId": "check:surface-liveness",
+          "file": "tests/contracts/drift/check-surface-liveness.mjs",
+          "specifier": "./b.js",
+          "reason": "unresolved relative import"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:surface-liveness",
+          "commandLine": "node tests/contracts/drift/check-surface-liveness.mjs"
+        }
+      ]
+    },
+    "check:compute-once": {
+      "script": "check:compute-once",
+      "scope": "global",
+      "inputs": [
+        "tests/contracts/drift/check-compute-once.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:compute-once",
+          "nodeId": "check:compute-once",
+          "file": "tests/contracts/drift/check-compute-once.mjs",
+          "line": 35,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:compute-once",
+          "commandLine": "node tests/contracts/drift/check-compute-once.mjs"
+        }
+      ]
+    },
+    "check:purity-vocabulary": {
+      "script": "check:purity-vocabulary",
+      "scope": "paths",
+      "inputs": [
+        "tests/contracts/drift/check-purity-vocabulary.mjs",
+        "tests/contracts/drift/purity-vocabulary.js"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:purity-vocabulary",
+          "commandLine": "node tests/contracts/drift/check-purity-vocabulary.mjs"
+        }
+      ]
+    },
+    "check:kernel-test-map": {
+      "script": "check:kernel-test-map",
+      "scope": "global",
+      "inputs": [
+        "tests/contracts/drift/check-kernel-test-map.mjs",
+        "tests/contracts/drift/kernel-test-map.json"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:kernel-test-map",
+          "nodeId": "check:kernel-test-map",
+          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
+          "line": 14,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:kernel-test-map",
+          "nodeId": "check:kernel-test-map",
+          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
+          "line": 34,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:kernel-test-map",
+          "commandLine": "node tests/contracts/drift/check-kernel-test-map.mjs"
+        }
+      ]
+    },
+    "check:env-flags": {
+      "script": "check:env-flags",
+      "scope": "global",
+      "inputs": [
+        "tests/contracts/drift/check-env-flags.mjs",
+        "tests/contracts/drift/env-flags.json"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:env-flags",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 11,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:env-flags",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 43,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:env-flags",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 62,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:env-flags",
+          "commandLine": "node tests/contracts/drift/check-env-flags.mjs"
+        }
+      ]
+    },
+    "check:input-surface": {
+      "script": "check:input-surface",
+      "scope": "global",
+      "inputs": [
+        "bridge/native_command_schema.json",
+        "docs/generated/browser-tool-contract.generated.md",
+        "scripts/generate-tool-docs.mjs",
+        "src/tools/prepareArguments.ts",
+        "tests/contracts/drift/check-input-surface.mjs",
+        "tests/contracts/drift/input-surface-budget.json"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:input-surface",
+          "nodeId": "check:input-surface",
+          "file": "tests/contracts/drift/check-input-surface.mjs",
+          "line": 12,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:input-surface",
+          "nodeId": "check:input-surface",
+          "file": "tests/contracts/drift/check-input-surface.mjs",
+          "line": 60,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:input-surface",
+          "commandLine": "node tests/contracts/drift/check-input-surface.mjs"
+        }
+      ]
+    },
+    "check:file-ceilings": {
+      "script": "check:file-ceilings",
+      "scope": "global",
+      "inputs": [
+        "tests/contracts/drift/check-file-ceilings.mjs",
+        "tests/contracts/drift/file-ceilings.json",
+        "too-big.ts"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:file-ceilings",
+          "nodeId": "check:file-ceilings",
+          "file": "tests/contracts/drift/check-file-ceilings.mjs",
+          "line": 12,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:file-ceilings",
+          "nodeId": "check:file-ceilings",
+          "file": "tests/contracts/drift/check-file-ceilings.mjs",
+          "line": 51,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:file-ceilings",
+          "commandLine": "node tests/contracts/drift/check-file-ceilings.mjs"
+        }
+      ]
+    },
+    "check:check-graph": {
+      "script": "check:check-graph",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/",
+        ".pi/check-cache/",
+        "package.json",
+        "scripts/check-dag.mjs",
+        "scripts/check-graph.mjs",
+        "scripts/lib/repo-introspection.mjs",
+        "scripts/run-check-groups.mjs",
+        "tests/contracts/drift/check-check-graph.mjs",
+        "tests/contracts/drift/check-impact-map.json"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/check-graph.mjs",
+          "line": 167,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/check-graph.mjs",
+          "line": 397,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/check-graph.mjs",
+          "line": 514,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 38,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "tests/contracts/drift/check-check-graph.mjs",
+          "line": 123,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "tests/contracts/drift/check-check-graph.mjs",
+          "line": 186,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "tests/contracts/drift/check-check-graph.mjs",
+          "line": 202,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "tests/contracts/drift/check-check-graph.mjs",
+          "line": 216,
+          "reason": "dynamic directory walk"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:check-graph",
+          "commandLine": "node tests/contracts/drift/check-check-graph.mjs"
+        }
+      ]
+    },
+    "check:impact-map": {
+      "script": "check:impact-map",
+      "scope": "global",
+      "inputs": [
+        ".pi/browser-artifacts/",
+        ".pi/check-cache/",
+        "package.json",
+        "scripts/check-graph.mjs",
+        "scripts/lib/repo-introspection.mjs",
+        "scripts/sync-impact-map.mjs",
+        "tests/contracts/drift/check-impact-map.json"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/check-graph.mjs",
+          "line": 167,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/check-graph.mjs",
+          "line": 397,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/check-graph.mjs",
+          "line": 514,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 18,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/lib/repo-introspection.mjs",
+          "line": 38,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/sync-impact-map.mjs",
+          "line": 103,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:impact-map",
+          "commandLine": "node scripts/sync-impact-map.mjs --check"
+        }
+      ]
+    },
+    "check:abml-ref-registry": {
+      "script": "check:abml-ref-registry",
+      "scope": "paths",
+      "inputs": [
+        "request.json",
+        "src/resources/resourceStore.ts",
+        "tests/contracts/tools/check-abml-ref-registry.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-ref-registry",
+          "commandLine": "tsx tests/contracts/tools/check-abml-ref-registry.mjs"
+        }
+      ]
+    },
+    "check:abml-scan-entities": {
+      "script": "check:abml-scan-entities",
+      "scope": "paths",
+      "inputs": [
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/scan.ts",
+        "src/utils/json.ts",
+        "src/utils/records.ts",
+        "tests/contracts/tools/check-abml-scan-entities.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-scan-entities",
+          "commandLine": "tsx tests/contracts/tools/check-abml-scan-entities.mjs"
+        }
+      ]
+    },
+    "check:abml-scan-envelope": {
+      "script": "check:abml-scan-envelope",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-abml-scan-envelope.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-scan-envelope",
+          "nodeId": "check:abml-scan-envelope",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-scan-envelope",
+          "commandLine": "tsx tests/contracts/tools/check-abml-scan-envelope.mjs"
+        }
+      ]
+    },
+    "check:abml-verb-runtime": {
+      "script": "check:abml-verb-runtime",
+      "scope": "paths",
+      "inputs": [
+        "src/abml-core/verbs/router.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "tests/contracts/tools/check-abml-verb-runtime.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-verb-runtime",
+          "commandLine": "tsx tests/contracts/tools/check-abml-verb-runtime.mjs"
+        }
+      ]
+    },
+    "check:abml-ax-runtime": {
+      "script": "check:abml-ax-runtime",
+      "scope": "paths",
+      "inputs": [
+        "src/abml/verbs/axRuntime.ts",
+        "src/abml/verbs/runtime.ts",
+        "tests/contracts/tools/check-abml-ax-runtime.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-ax-runtime",
+          "commandLine": "tsx tests/contracts/tools/check-abml-ax-runtime.mjs"
+        }
+      ]
+    },
+    "check:abml-relation-graph": {
+      "script": "check:abml-relation-graph",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "capture-src/entries/scanTemplate.ts",
+        "evals/browser-workflows/fixtures/abml-relations.html",
+        "package.json",
+        "src/abml-core/ax.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/types.ts",
+        "src/abml/ax.ts",
+        "src/abml/entity.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/relations.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/axRuntime.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-abml-relation-graph.mjs",
+        "tests/smoke/smoke-abml-relations.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-relation-graph",
+          "nodeId": "check:abml-relation-graph",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-relation-graph",
+          "nodeId": "check:abml-relation-graph",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-relation-graph",
+          "commandLine": "tsx tests/contracts/tools/check-abml-relation-graph.mjs"
+        }
+      ]
+    },
+    "check:abml-inference": {
+      "script": "check:abml-inference",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "capture-src/entries/scanTemplate.ts",
+        "package.json",
+        "src/abml-core/diff.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/inference.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/baseline.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-abml-inference.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-inference",
+          "nodeId": "check:abml-inference",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-inference",
+          "commandLine": "tsx tests/contracts/tools/check-abml-inference.mjs"
+        }
+      ]
+    },
+    "check:abml-diff": {
+      "script": "check:abml-diff",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "package.json",
+        "src/abml-core/actionabilityModel.ts",
+        "src/abml-core/diff.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/errors.ts",
+        "src/abml-core/index.ts",
+        "src/abml-core/inference.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/types.ts",
+        "src/abml-core/verbs/read.ts",
+        "src/abml-core/verbs/router.ts",
+        "src/abml/entity.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/integration.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/registerObserveTool.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/tools/check-abml-diff.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-diff",
+          "nodeId": "check:abml-diff",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-diff",
+          "commandLine": "tsx tests/contracts/tools/check-abml-diff.mjs"
+        }
+      ]
+    },
+    "check:abml-causal": {
+      "script": "check:abml-causal",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "bridge_src/page_scripts/hook_dispatcher.ts",
+        "bridge_src/service_worker/network_model.ts",
+        "bridge_src/service_worker/types.ts",
+        "package.json",
+        "src/abml-core/actionabilityModel.ts",
+        "src/abml-core/ax.ts",
+        "src/abml-core/causal.ts",
+        "src/abml-core/diff.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/errors.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/index.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/semanticRefAnchor.ts",
+        "src/abml-core/stream.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/types.ts",
+        "src/abml-core/verbs/click.ts",
+        "src/abml-core/verbs/frame.ts",
+        "src/abml-core/verbs/pierce.ts",
+        "src/abml-core/verbs/read.ts",
+        "src/abml-core/verbs/router.ts",
+        "src/abml-core/verbs/scroll.ts",
+        "src/abml-core/verbs/type.ts",
+        "src/abml/actionabilityModel.ts",
+        "src/abml/ax.ts",
+        "src/abml/causal.ts",
+        "src/abml/diff.ts",
+        "src/abml/entity.ts",
+        "src/abml/errors.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/relations.ts",
+        "src/abml/semanticRefAnchor.ts",
+        "src/abml/stream.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/axRuntime.ts",
+        "src/abml/verbs/click.ts",
+        "src/abml/verbs/frame.ts",
+        "src/abml/verbs/frameRuntime.ts",
+        "src/abml/verbs/integration.ts",
+        "src/abml/verbs/pierce.ts",
+        "src/abml/verbs/pierceRuntime.ts",
+        "src/abml/verbs/read.ts",
+        "src/abml/verbs/router.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/scroll.ts",
+        "src/abml/verbs/type.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "src/capture/generated/probesBundle.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/capture/generated/visionBundle.ts",
+        "src/capture/inject.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/scan/actionableRules.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/pageScriptEvaluation.ts",
+        "src/tools/pageSignals.ts",
+        "src/tools/registerObserveTool.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/scanEntityRefs.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-abml-causal.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-causal",
+          "nodeId": "check:abml-causal",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-causal",
+          "nodeId": "check:abml-causal",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-causal",
+          "commandLine": "tsx tests/contracts/tools/check-abml-causal.mjs"
+        }
+      ]
+    },
+    "check:abml-templating": {
+      "script": "check:abml-templating",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "package.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/index.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/snapshotProjection.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/abml/grouping.ts",
+        "src/abml/templating.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-abml-templating.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-templating",
+          "nodeId": "check:abml-templating",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-templating",
+          "commandLine": "tsx tests/contracts/tools/check-abml-templating.mjs"
+        }
+      ]
+    },
+    "check:abml-tree-diff": {
+      "script": "check:abml-tree-diff",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "package.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/tools/check-abml-tree-diff.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-tree-diff",
+          "nodeId": "check:abml-tree-diff",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-tree-diff",
+          "commandLine": "tsx tests/contracts/tools/check-abml-tree-diff.mjs"
+        }
+      ]
+    },
+    "check:abml-semantic-ref-anchor": {
+      "script": "check:abml-semantic-ref-anchor",
+      "scope": "global",
+      "inputs": [
+        "package.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/semanticRefAnchor.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/types.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/records.ts",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/tools/check-abml-semantic-ref-anchor.mjs"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-semantic-ref-anchor",
+          "nodeId": "check:abml-semantic-ref-anchor",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-semantic-ref-anchor",
+          "commandLine": "tsx tests/contracts/tools/check-abml-semantic-ref-anchor.mjs"
+        }
+      ]
+    },
+    "check:abml-snapshot-projection": {
+      "script": "check:abml-snapshot-projection",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "package.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/snapshotProjection.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/tools/check-abml-snapshot-projection.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:abml-snapshot-projection",
+          "nodeId": "check:abml-snapshot-projection",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-snapshot-projection",
+          "commandLine": "tsx tests/contracts/tools/check-abml-snapshot-projection.mjs"
+        }
+      ]
+    },
+    "check:abml-stream-plane": {
+      "script": "check:abml-stream-plane",
+      "scope": "paths",
+      "inputs": [
+        "src/abml-core/stream.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/network.ts",
+        "tests/contracts/tools/check-abml-stream-plane.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-stream-plane",
+          "commandLine": "tsx tests/contracts/tools/check-abml-stream-plane.mjs"
+        }
+      ]
+    },
+    "check:abml-p6p7-runtime": {
+      "script": "check:abml-p6p7-runtime",
+      "scope": "paths",
+      "inputs": [
+        "capture-src/entries/scanTemplate.ts",
+        "src/abml/verbs/frameRuntime.ts",
+        "src/abml/verbs/pierceRuntime.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/scan/buildScanScript.ts",
+        "src/tools/summaries/scan.ts",
+        "tests/contracts/tools/check-abml-p6p7-runtime.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-p6p7-runtime",
+          "commandLine": "tsx tests/contracts/tools/check-abml-p6p7-runtime.mjs"
+        }
+      ]
+    },
+    "check:abml-internal-integration": {
+      "script": "check:abml-internal-integration",
+      "scope": "paths",
+      "inputs": [
+        "src/abml/verbs/integration.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/registerExecuteTool.ts",
+        "tests/contracts/tools/check-abml-internal-integration.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:abml-internal-integration",
+          "commandLine": "tsx tests/contracts/tools/check-abml-internal-integration.mjs"
+        }
+      ]
+    },
+    "check:cli-parity": {
+      "script": "check:cli-parity",
+      "scope": "paths",
+      "inputs": [
+        "cli/flags.ts",
+        "cli/registry.ts",
+        "tests/contracts/cli/check-cli-parity.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:cli-parity",
+          "commandLine": "tsx tests/contracts/cli/check-cli-parity.mjs"
+        }
+      ]
+    },
+    "check:param-surface": {
+      "script": "check:param-surface",
+      "scope": "paths",
+      "inputs": [
+        "cli/flags.ts",
+        "cli/registry.ts",
+        "tests/contracts/cli/check-param-surface.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:param-surface",
+          "commandLine": "tsx tests/contracts/cli/check-param-surface.mjs"
+        }
+      ]
+    },
+    "check:cli-json-envelopes": {
+      "script": "check:cli-json-envelopes",
+      "scope": "global",
+      "inputs": [
+        "cli/bin.ts",
+        "fake-daemon.js",
+        "missing-daemon-entry.js",
+        "node_modules/.bin/",
+        "package.json",
+        "tests/contracts/cli/json-envelope-contract.test.ts"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:cli-json-envelopes",
+          "nodeId": "check:cli-json-envelopes",
+          "file": "tests/contracts/cli/json-envelope-contract.test.ts",
+          "line": 178,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "check:cli-json-envelopes",
+          "nodeId": "check:cli-json-envelopes",
+          "file": "tests/contracts/cli/json-envelope-contract.test.ts",
+          "line": 20,
+          "reason": "subprocess execution"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:cli-json-envelopes",
+          "commandLine": "tsx --test tests/contracts/cli/json-envelope-contract.test.ts"
+        }
+      ]
+    },
+    "check:memory-autosurface": {
+      "script": "check:memory-autosurface",
+      "scope": "paths",
+      "inputs": [
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/store.ts",
+        "tests/contracts/tools/check-memory-autosurface.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:memory-autosurface",
+          "commandLine": "tsx tests/contracts/tools/check-memory-autosurface.mjs"
+        }
+      ]
+    },
+    "check:memory-plane": {
+      "script": "check:memory-plane",
+      "scope": "paths",
+      "inputs": [
+        "src/memory-core/recall.ts",
+        "src/memory/profileStore.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/store.ts",
+        "src/tools/observeRunners.ts",
+        "src/tools/resultMiddleware.ts",
+        "tests/contracts/runtime/check-memory-plane.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:memory-plane",
+          "commandLine": "tsx tests/contracts/runtime/check-memory-plane.mjs"
+        }
+      ]
+    },
+    "check:memory-lifecycle": {
+      "script": "check:memory-lifecycle",
+      "scope": "paths",
+      "inputs": [
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/reader.ts",
+        "src/tools/memory/store.ts",
+        "tests/contracts/tools/check-memory-lifecycle.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:memory-lifecycle",
+          "commandLine": "tsx tests/contracts/tools/check-memory-lifecycle.mjs"
+        }
+      ]
+    },
+    "check:token-economy": {
+      "script": "check:token-economy",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        ".pi/browser-artifacts/token-economy-summary.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-token-economy.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:token-economy",
+          "nodeId": "check:token-economy",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:token-economy",
+          "nodeId": "check:token-economy",
+          "file": "tests/contracts/tools/check-token-economy.mjs",
+          "line": 169,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:token-economy",
+          "commandLine": "tsx tests/contracts/tools/check-token-economy.mjs"
+        }
+      ]
+    },
+    "bench:distill": {
+      "script": "bench:distill",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        ".pi/browser-artifacts/distill-bench-summary.json",
+        "src/abml-core/entity.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/types.ts",
+        "src/abml/entity.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/types.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-distill-bench.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "bench:distill",
+          "nodeId": "bench:distill",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "bench:distill",
+          "commandLine": "tsx tests/contracts/tools/check-distill-bench.mjs"
+        }
+      ]
+    },
+    "check:session-delta-long-conversation": {
+      "script": "check:session-delta-long-conversation",
+      "scope": "global",
+      "inputs": [
+        ".lock",
+        "src/abml-core/actionabilityModel.ts",
+        "src/abml-core/ax.ts",
+        "src/abml-core/causal.ts",
+        "src/abml-core/diff.ts",
+        "src/abml-core/entity.ts",
+        "src/abml-core/errors.ts",
+        "src/abml-core/grouping.ts",
+        "src/abml-core/identityGraph.ts",
+        "src/abml-core/inference.ts",
+        "src/abml-core/refId.ts",
+        "src/abml-core/refPolicy.ts",
+        "src/abml-core/relations.ts",
+        "src/abml-core/semanticRefAnchor.ts",
+        "src/abml-core/snapshotProjection.ts",
+        "src/abml-core/stream.ts",
+        "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
+        "src/abml-core/types.ts",
+        "src/abml-core/verbs/click.ts",
+        "src/abml-core/verbs/frame.ts",
+        "src/abml-core/verbs/pierce.ts",
+        "src/abml-core/verbs/read.ts",
+        "src/abml-core/verbs/router.ts",
+        "src/abml-core/verbs/scroll.ts",
+        "src/abml-core/verbs/type.ts",
+        "src/abml/actionabilityModel.ts",
+        "src/abml/ax.ts",
+        "src/abml/causal.ts",
+        "src/abml/diff.ts",
+        "src/abml/entity.ts",
+        "src/abml/errors.ts",
+        "src/abml/identityGraph.ts",
+        "src/abml/inference.ts",
+        "src/abml/perceptionLedger.ts",
+        "src/abml/refPolicy.ts",
+        "src/abml/relations.ts",
+        "src/abml/semanticRefAnchor.ts",
+        "src/abml/snapshotProjection.ts",
+        "src/abml/stream.ts",
+        "src/abml/treeDiff.ts",
+        "src/abml/types.ts",
+        "src/abml/verbs/axRuntime.ts",
+        "src/abml/verbs/click.ts",
+        "src/abml/verbs/frame.ts",
+        "src/abml/verbs/frameRuntime.ts",
+        "src/abml/verbs/integration.ts",
+        "src/abml/verbs/pierce.ts",
+        "src/abml/verbs/pierceRuntime.ts",
+        "src/abml/verbs/read.ts",
+        "src/abml/verbs/router.ts",
+        "src/abml/verbs/runtime.ts",
+        "src/abml/verbs/scroll.ts",
+        "src/abml/verbs/type.ts",
+        "src/abml/verbs/visionRuntime.ts",
+        "src/capture/generated/contentBundle.ts",
+        "src/capture/generated/probesBundle.ts",
+        "src/capture/generated/scanBundle.ts",
+        "src/capture/generated/visionBundle.ts",
+        "src/capture/inject.ts",
+        "src/content/buildContentScript.ts",
+        "src/distill-core/allocate.ts",
+        "src/distill-core/artifactPlan.ts",
+        "src/distill-core/compactionTuning.ts",
+        "src/distill-core/cost.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/fit.ts",
+        "src/distill-core/frontier.ts",
+        "src/distill-core/granularity.ts",
+        "src/distill-core/ladder.ts",
+        "src/distill-core/projection.ts",
+        "src/distill-core/recovery.ts",
+        "src/distill-core/relevance.ts",
+        "src/distill-core/relevanceTaps.ts",
+        "src/distill-core/relevanceTuning.ts",
+        "src/distill-core/render.ts",
+        "src/distill-core/salienceEnvelope.ts",
+        "src/driver/BrowserBridgeClientHeartbeat.ts",
+        "src/driver/BrowserBridgeClientMessageService.ts",
+        "src/driver/BrowserBridgeClientRegistry.ts",
+        "src/driver/BrowserBridgeCommandService.ts",
+        "src/driver/BrowserBridgeDiagnostics.ts",
+        "src/driver/BrowserBridgeHttpServer.ts",
+        "src/driver/BrowserBridgePendingRequests.ts",
+        "src/driver/BrowserBridgeServer.ts",
+        "src/driver/BrowserCommandQueueRegistry.ts",
+        "src/driver/BrowserLeaseRegistry.ts",
+        "src/driver/BrowserObservationSnapshotRegistry.ts",
+        "src/driver/BrowserOperationRegistry.ts",
+        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
+        "src/driver/BrowserSessionRegistry.ts",
+        "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserWaitSupervisor.ts",
+        "src/driver/bridgeUtils.ts",
+        "src/driver/browserBridgeConfig.ts",
+        "src/driver/errors.ts",
+        "src/driver/extensionBuild.ts",
+        "src/driver/leaseDiagnostics.ts",
+        "src/driver/types.ts",
+        "src/memory-core/profile.ts",
+        "src/memory-core/recall.ts",
+        "src/memory-core/routing.ts",
+        "src/memory-core/salience.ts",
+        "src/memory-core/staleness.ts",
+        "src/memory-core/types.ts",
+        "src/memory/hashStamp.ts",
+        "src/memory/profileService.ts",
+        "src/memory/profileStore.ts",
+        "src/memory/secret.ts",
+        "src/protocol/nativeActionMetadata.ts",
+        "src/protocol/nativeErrorCodes.ts",
+        "src/protocol/nativeProtocol.ts",
+        "src/resources/resourceFreshness.ts",
+        "src/resources/resourceStore.ts",
+        "src/scan/actionableRules.ts",
+        "src/scan/buildScanScript.ts",
+        "src/scan/noiseRules.ts",
+        "src/tools/artifactPrivacy.ts",
+        "src/tools/artifacts.ts",
+        "src/tools/bridgeResultValidation.ts",
+        "src/tools/budgets.ts",
+        "src/tools/distillerRegistry.ts",
+        "src/tools/memory/autoSurface.ts",
+        "src/tools/memory/evidence.ts",
+        "src/tools/memory/frontmatter.ts",
+        "src/tools/memory/ids.ts",
+        "src/tools/memory/indexStore.ts",
+        "src/tools/memory/origin.ts",
+        "src/tools/memory/paths.ts",
+        "src/tools/memory/routing.ts",
+        "src/tools/memory/salience.ts",
+        "src/tools/memory/store.ts",
+        "src/tools/memory/types.ts",
+        "src/tools/observe/baseline.ts",
+        "src/tools/observe/contentRunner.ts",
+        "src/tools/observe/entityViews.ts",
+        "src/tools/observe/htmlRunner.ts",
+        "src/tools/observe/memoryAugmentation.ts",
+        "src/tools/observe/relevanceFusion.ts",
+        "src/tools/observe/renderCache.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/observeRunners.ts",
+        "src/tools/pageScriptEvaluation.ts",
+        "src/tools/pageSignals.ts",
+        "src/tools/registerObserveTool.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/scanEntityRefs.ts",
+        "src/tools/summaries/common.ts",
+        "src/tools/summaries/content.ts",
+        "src/tools/summaries/evidence.ts",
+        "src/tools/summaries/generic.ts",
+        "src/tools/summaries/hook.ts",
+        "src/tools/summaries/html.ts",
+        "src/tools/summaries/index.ts",
+        "src/tools/summaries/memory.ts",
+        "src/tools/summaries/network.ts",
+        "src/tools/summaries/outputSchemas.ts",
+        "src/tools/summaries/pick.ts",
+        "src/tools/summaries/registerBuiltinDistillers.ts",
+        "src/tools/summaries/scan.ts",
+        "src/tools/summaries/transfer.ts",
+        "src/tools/summaries/webSecurity/bridges.ts",
+        "src/tools/summaries/webSecurity/cookie.ts",
+        "src/tools/summaries/webSecurity/crawl.ts",
+        "src/tools/summaries/webSecurity/domFlow.ts",
+        "src/tools/summaries/webSecurity/fuzz.ts",
+        "src/tools/summaries/webSecurity/index.ts",
+        "src/tools/summaries/webSecurity/jsAst.ts",
+        "src/tools/summaries/webSecurity/oast.ts",
+        "src/tools/summaries/webSecurity/recon.ts",
+        "src/tools/summaries/webSecurity/replay.ts",
+        "src/tools/summaries/webSecurity/shared.ts",
+        "src/tools/summaries/webSecurity/sqli.ts",
+        "src/tools/summaries/webSecurity/template.ts",
+        "src/tools/summaries/webSecurity/wasm.ts",
+        "src/tools/summaries/webSecurity/wasmBridge.ts",
+        "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/toolAdapter.ts",
+        "src/tools/toolShared.ts",
+        "src/tools/webSecurity/shared/jsAst.ts",
+        "src/tools/webSecurity/shared/jsAstArtifact.ts",
+        "src/utils/codedError.ts",
+        "src/utils/errors.ts",
+        "src/utils/fileFreshness.ts",
+        "src/utils/fsAtomic.ts",
+        "src/utils/json.ts",
+        "src/utils/jsonPath.ts",
+        "src/utils/params.ts",
+        "src/utils/records.ts",
+        "src/utils/redaction.ts",
+        "src/utils/toolResult.ts",
+        "tests/contracts/tools/check-session-delta-long-conversation.mjs",
+        "tombstones"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:session-delta-long-conversation",
+          "nodeId": "check:session-delta-long-conversation",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:session-delta-long-conversation",
+          "nodeId": "check:session-delta-long-conversation",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:session-delta-long-conversation",
+          "commandLine": "tsx tests/contracts/tools/check-session-delta-long-conversation.mjs"
+        }
+      ]
+    },
+    "check:task-conditioned-salience": {
+      "script": "check:task-conditioned-salience",
+      "scope": "paths",
+      "inputs": [
+        "src/abml/perceptionLedger.ts",
+        "src/distill-core/fact.ts",
+        "src/distill-core/relevance.ts",
+        "src/distill-core/relevanceTaps.ts",
+        "src/distill-core/relevanceTuning.ts",
+        "src/tools/observe/relevanceFusion.ts",
+        "src/tools/observe/scanRunner.ts",
+        "src/tools/registerArtifactTool.ts",
+        "src/tools/registerExecuteTool.ts",
+        "src/tools/registerTools.ts",
+        "src/tools/relevanceTaps.ts",
+        "src/tools/relevanceTraceAdapter.ts",
+        "src/tools/resultMiddleware.ts",
+        "src/tools/summaries/scan.ts",
+        "tests/contracts/tools/check-task-conditioned-salience.mjs"
+      ],
+      "unresolvedInputs": [],
+      "commandSteps": [
+        {
+          "nodeId": "check:task-conditioned-salience",
+          "commandLine": "tsx tests/contracts/tools/check-task-conditioned-salience.mjs"
+        }
+      ]
+    }
+  }
+}

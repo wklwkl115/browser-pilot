@@ -36,7 +36,7 @@ for (const item of CALL_SITE_LIMITS) {
 	const actual = countCallSites(text, item.callee);
 	assert(
 		actual <= item.maxCallSites,
-		`${item.file} calls ${item.callee} ${actual} time(s), max ${item.maxCallSites}; thread the computed value instead of recomputing`,
+		`${item.file} calls ${item.callee} ${actual} time(s), max ${item.maxCallSites}; thread the computed value instead of recomputing. If the callee was intentionally renamed, update the CALL_SITE_LIMITS entry in this file.`,
 	);
 	results.push(`${item.file}:${item.callee}=${actual}/${item.maxCallSites}`);
 }

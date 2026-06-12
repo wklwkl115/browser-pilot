@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { buildScanScript, jsonForInlineScript } from "../../../src/scan/buildScanScript.ts";
 
 function assert(condition, message) {
@@ -54,11 +55,120 @@ for (const options of [
 	assert(script.includes(":-webkit-autofill") && script.includes("data-autofilled") && script.includes("protected-autofill"), "scan script must preserve GA-style autofill protected-state hints");
 	assert(script.includes("collectListHints") && script.includes("list_hints") && script.includes("hiddenCount") && script.includes("map(cssEscape).join('.')"), "scan script must expose GA-style repeated list compression hints with CSS-escaped selector classes");
 	assert(script.includes("collectVisibleRows") && script.includes("const rows = collectVisibleRows(scanRoot)") && script.includes("sameOrigin") && script.includes("containerHint") && script.includes("selector:sel2"), "scan script must expose bounded DOM-ordered visible rows with text/href/origin/container hints and selectors");
-	assert(script.includes("children2.push([child, key2])") && script.includes("for (const pair2 of children2)") && !script.includes("for (const [, items2] of groups2.entries())"), "scan visible rows must filter by repeated groups without reordering sibling DOM order by group");
 	assert(script.includes("collectMediaCandidates") && script.includes("const media_candidates = collectMediaCandidates(scanRoot)") && script.includes("naturalWidth") && script.includes("videoWidth") && script.includes("media_candidates"), "scan script must expose bounded visible media candidates with identity/geometry facts");
 	assert(script.includes("edgeUtilityHint") && script.includes("edgeUtility: true") && script.includes("position: edgeHint.position"), "scan actionables must flag fixed/sticky edge utility controls for downstream primary-action ranking");
 	assert(!script.includes("headline") && !script.includes("uploader") && !script.includes("author") && !script.includes("ranking semantics"), "scan row projection must stay perception-only and must not grow semantic extractor fields");
 	assert(script.includes("input:not([type=hidden])"), "scan text mode must preserve visible form controls");
 }
+
+const NODE = { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_NODE: 9 };
+
+class MockText {
+	constructor(value) {
+		this.nodeType = NODE.TEXT_NODE;
+		this.nodeValue = value;
+		this.textContent = value;
+	}
+}
+
+class MockElement {
+	constructor(tagName, attrs = {}, children = []) {
+		this.nodeType = NODE.ELEMENT_NODE;
+		this.tagName = String(tagName).toUpperCase();
+		this.children = [];
+		this.childNodes = [];
+		this.parentElement = null;
+		this.style = {};
+		this.id = attrs.id || "";
+		this.className = attrs.class || "";
+		this._attrs = new Map(Object.entries(attrs));
+		this._rect = attrs.rect || { x: 10, y: 10, left: 10, top: 10, right: 210, bottom: 50, width: 200, height: 40 };
+		for (const child of children) this.append(child);
+	}
+	append(child) {
+		const node = typeof child === "string" ? new MockText(child) : child;
+		node.parentElement = this;
+		this.childNodes.push(node);
+		if (node.nodeType === NODE.ELEMENT_NODE) this.children.push(node);
+	}
+	getAttribute(name) { return this._attrs.get(name) ?? null; }
+	querySelectorAll(selector) {
+		const all = descendants(this);
+		if (selector === "*") return all;
+		return all.filter((node) => selector.split(",").some((part) => node.tagName.toLowerCase() === part.trim().toLowerCase()));
+	}
+	querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+	getBoundingClientRect() { return { ...this._rect }; }
+	get textContent() { return this.childNodes.map((child) => child.textContent || child.nodeValue || "").join(" "); }
+	get innerText() { return this.textContent; }
+}
+
+function descendants(node) {
+	const out = [];
+	for (const child of node.children || []) {
+		out.push(child, ...descendants(child));
+	}
+	return out;
+}
+
+class MockDocument {
+	constructor(children) {
+		this.nodeType = NODE.DOCUMENT_NODE;
+		this.title = "Rows";
+		this.body = new MockElement("body", {}, children);
+		this.documentElement = new MockElement("html", {}, [this.body]);
+		this.documentElement.clientWidth = 1200;
+		this.documentElement.clientHeight = 800;
+	}
+	querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
+	querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+	elementFromPoint() { return this.body; }
+}
+
+async function runScanInMockPage(document) {
+	const context = {
+		console,
+		document,
+		location: { href: "https://example.test/list", origin: "https://example.test" },
+		Node: NODE,
+		URL,
+		Map,
+		Set,
+		WeakMap,
+		Date,
+		RegExp,
+		Error,
+		Array,
+		Object,
+		String,
+		Number,
+		Math,
+		innerWidth: 1200,
+		innerHeight: 800,
+		getComputedStyle: (el) => ({ display: el?.style?.display || "block", visibility: "visible", opacity: "1", position: "static", overflowY: el?.style?.overflowY || "visible", overflow: el?.style?.overflow || "visible", cursor: el?.style?.cursor || "auto", zIndex: "0" }),
+		CSS: { escape: (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&") },
+	};
+	context.window = context;
+	return await vm.runInNewContext(buildScanScript({ maxChars: 8_000, maxNodes: 80 }), context, { filename: "scan-visible-rows-behavior.js" });
+}
+
+const rowsDoc = new MockDocument([
+	new MockElement("section", { id: "results" }, [
+		new MockElement("article", { class: "row-a" }, ["Alpha row has enough descriptive text"]),
+		new MockElement("div", { class: "row-b" }, ["Beta row has enough descriptive text"]),
+		new MockElement("article", { class: "row-a" }, ["Gamma row has enough descriptive text"]),
+		new MockElement("div", { class: "row-b" }, ["Delta row has enough descriptive text"]),
+	]),
+]);
+const rowScan = await runScanInMockPage(rowsDoc);
+assert(
+	JSON.stringify(rowScan.rows.map((row) => row.text)).includes(JSON.stringify([
+		"Alpha row has enough descriptive text",
+		"Beta row has enough descriptive text",
+		"Gamma row has enough descriptive text",
+		"Delta row has enough descriptive text",
+	])),
+	"scan visible rows must preserve sibling DOM order across interleaved repeated groups",
+);
 
 console.log("scan script contract ok");

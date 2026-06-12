@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deriveSemanticRefAnchors, semanticRefAnchorHashInput } from "../../../src/abml-core/semanticRefAnchor.ts";
 import { clearResourceStore, registerRefDescriptor } from "../../../src/resources/resourceStore.ts";
+import { PURE_CORE } from "../drift/abml-core-manifest.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -118,8 +119,7 @@ assert.ok(refIdSrc.includes("function stableRefIdForDescriptor") && refIdSrc.inc
 assert.equal(resourceStoreSrc.includes("semanticRefAnchor"), false, "resourceStore must not import candidate derivation directly");
 const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
 assert.ok(runtimeSrc.includes("remintSemanticTemplateRefs") && runtimeSrc.includes("deriveSemanticRefAnchors"), "runtime must remint only after AX/DOM merge has template evidence");
-const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
-assert.ok(boundarySrc.includes('"semanticRefAnchor.ts"'), "semanticRefAnchor is classified as pure core");
+assert.ok(PURE_CORE.includes("semanticRefAnchor.ts"), "semanticRefAnchor is classified as pure core");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-semantic-ref-anchor"]?.includes("check-abml-semantic-ref-anchor.mjs"), "check:abml-semantic-ref-anchor script present");
 

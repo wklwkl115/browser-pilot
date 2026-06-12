@@ -8,6 +8,8 @@ import { runJsAstShell } from "./webSecurity/shared/jsAstShell.js";
 import { runWasmShell } from "./webSecurity/shared/wasmShell.js";
 import { parseBrowserWsArgs, runWsShell } from "./webSecurity/shared/wsShell.js";
 
+// Slash commands are a parallel operator namespace, not browser_* tools; keep discovery and
+// callable-tool contracts in src/tools/toolRegistry.ts/registerTools.ts.
 type EnsureStarted = () => Promise<BrowserBridgeServer>;
 
 function commandArgsText(args: unknown): string {

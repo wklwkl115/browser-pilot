@@ -82,7 +82,7 @@ npm run check:all:contracts
 npm run quality:local
 ```
 
-该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；当前 `prepack` 会先执行 `npm run build` 生成 outer `dist/`，再 quiet build bridge dist。成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/run-check-groups.mjs` 读取 `scripts/check-graph.mjs` 的 bridge/unit、package/docs、contracts 分组，可按故障域单独运行 `npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这三组入口。需要结构化回归摘要时可运行 `npm run check:trace` 或 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。本地加速可用 `npm run check:dag`、`npm run check:dag -- --cache`、`npm run check:smart`，分别写 `.pi/browser-artifacts/check-dag-summary.json` / `check-impact-summary.json`；它们只加速反馈，最终收口仍以 `npm run check` 为准。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
+该门禁串联 `npm run build:bridge`、`npm run check`、`npm pack --dry-run --json`；当前 `prepack` 会先执行 `npm run build` 生成 outer `dist/`，再 quiet build bridge dist。成功后只打印可选 isolated smoke 下一步。`npm run check` 现由 `scripts/check-dag.mjs` 读取 `scripts/check-graph.mjs` 的 src、bridge/unit、package/docs、contracts 分组，并包含 `lint:eslint`；可按故障域单独运行 `npm run check:all:src`、`npm run check:all:bridge`、`npm run check:all:package`、`npm run check:all:contracts`；`.github/workflows/check.yml` 也直接复用这些 DAG 入口并上传 `.pi/browser-artifacts/check-dag-summary.json` / `.pi/browser-artifacts/check-dag/**`。需要旧串行结构化摘要时可运行 `npm run check:trace` 或 `node scripts/run-check-groups.mjs --json ...`，结果写入 `.pi/browser-artifacts/check-groups-summary.json`。本地影响选择可用 `npm run check:smart`，消费 `tests/contracts/drift/check-impact-map.json` 并写 `.pi/browser-artifacts/check-impact-summary.json`；`npm run check:dag -- --cache` 仍是显式 opt-in cache，v2 cache 会按 per-node impact-map scope 命中，global-scope 节点仍用整仓 key。失败时先看当前命令输出；runtime/smoke 类 artifact 默认在 `.pi/browser-artifacts/`；端口占用按 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` PID/原因人工处理，不自动 kill 进程。
 
 
 
@@ -102,11 +102,11 @@ npm run check:deps
 ```bash
 npm run sync:protocol
 npm run check:protocol
-npm run docs:generate
-npm run check:tool-docs
+npm run docs:sync
+npm run check:docs-sync
 ```
 
-生成产物为 `docs/generated/browser-tool-contract.generated.md`，来源是实际工具注册元数据、`bridge/native_command_schema.json` 和源码结构化错误码；其中 `Structured error taxonomy` 表列出公开 code、domain、category、retryable 与来源；不要手工编辑生成文件。文档结构规范见 `docs/document-structure.md`；修改 archive/roadmap/todo 入口或历史归档索引后先运行 `npm run docs:sync-indexes && npm run check`。
+生成产物包括 `docs/generated/browser-tool-contract.generated.md`、`docs/generated/code-map.generated.md` 和 `docs/reference/concept-ownership.md` 中的字段地图，来源是实际工具/command 注册元数据、`bridge/native_command_schema.json`、源码结构化错误码、repo import 图与 registered distiller schema；其中 `Structured error taxonomy` 表列出公开 code、domain、category、retryable 与来源；不要手工编辑生成文件或 managed field-map block。文档结构规范见 `docs/document-structure.md`；修改生成文档、archive/roadmap/todo/current 索引或 managed blocks 后先运行 `npm run docs:sync && npm run check`。
 
 Native 协议单源为 `bridge/native_command_schema.json`。修改该文件后先执行 `npm run sync:protocol`，再执行 `npm run check:protocol`；脚本会生成 `bridge/pi_browser_bridge/native_command_schema.json`、`bridge_src/service_worker/protocol.ts`、`src/protocol/nativeProtocol.ts`、`src/protocol/nativeActionMetadata.ts`、`src/protocol/nativeErrorCodes.ts` 与 `docs/generated/native-protocol.generated.md`。这些生成文件禁止手改，`check:protocol` 会捕获 drift、schema 副本不一致、wait/network/transfer metadata 漂移和错误码漏项。仓库已接入 `lefthook` pre-commit：当 schema 变更时会自动执行 `npm run sync:protocol` 并 stage 生成产物；首次安装依赖后会通过 `npm run prepare` 自动安装 hook。
 

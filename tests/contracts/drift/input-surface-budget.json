@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "toolCount": 21,
-  "totalChars": 38907,
+  "toolCount": 22,
+  "totalChars": 39322,
   "tools": {
     "browser_artifact": {
       "advertisedChars": 3676,
@@ -30,6 +30,10 @@
     "browser_evidence": {
       "advertisedChars": 614,
       "file": "src/tools/registerEvidenceTool.ts"
+    },
+    "browser_execute": {
+      "advertisedChars": 415,
+      "file": "src/tools/registerExecuteTool.ts"
     },
     "browser_frame": {
       "advertisedChars": 286,

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import pkg from "../../../package.json" with { type: "json" };
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const tsxBin = path.join(repoRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
@@ -151,7 +152,7 @@ server.listen(0, "127.0.0.1", () => {
     controlPort: address.port,
     token,
     startedAt: new Date().toISOString(),
-    version: "0.3.0+daemon.4"
+    version: "${pkg.version}+daemon.4"
   }));
 });
 process.on("SIGTERM", () => server.close(() => process.exit(0)));

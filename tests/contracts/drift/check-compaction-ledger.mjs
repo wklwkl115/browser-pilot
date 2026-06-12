@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { assertCompactionTuningBounds } from "../../../src/distill-core/compactionTuning.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const proposeMode = process.argv.includes("--propose");
 const srcRoot = path.join(root, "src");
 const ledgerPath = path.join(root, "docs", "compaction-ledger.json");
 const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
@@ -66,7 +67,12 @@ assert.deepEqual(uncovered, [], `compaction ledger has uncovered slice(0, N)-cla
 assert.deepEqual(migratedStillPresent, [], `compaction ledger migrated entries still match live slice sites:\n  - ${migratedStillPresent.join("\n  - ")}`);
 
 const migratedClassB = migrations.filter((entry) => entry.class === "B" && entry.status === "migrated").length;
+if (proposeMode) {
+	if (classBCurrent === Number(ledger.classBBaseline)) console.log("compaction-ledger propose: no changes needed");
+	else console.log(`compaction-ledger propose: set docs/compaction-ledger.json classBBaseline to ${classBCurrent}; include an in-diff justification for the ratchet change`);
+	process.exit(0);
+}
 assert.ok(migratedClassB >= Number(ledger.requiredClassBDecrements ?? 0), `compaction ledger requires at least ${ledger.requiredClassBDecrements} class-B decrement(s), saw ${migratedClassB}`);
-assert.ok(classBCurrent <= Number(ledger.classBBaseline), `class-B compaction sites grew past baseline: current=${classBCurrent}, baseline=${ledger.classBBaseline}`);
+assert.ok(classBCurrent <= Number(ledger.classBBaseline), `class-B compaction sites grew past docs/compaction-ledger.json classBBaseline: current=${classBCurrent}, baseline=${ledger.classBBaseline}; update the classBBaseline field in the same diff with a one-line justification`);
 
 console.log(`compaction ledger ok — slice sites=${seen.length}, classB=${classBCurrent}/${ledger.classBBaseline}, migratedB=${migratedClassB}`);

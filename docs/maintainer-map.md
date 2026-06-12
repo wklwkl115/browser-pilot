@@ -4,6 +4,55 @@
 
 给维护者一个固定入口：改哪里、先看哪里、最后验哪里。
 
+## Layer Inventory
+
+<!-- BEGIN GENERATED: maintainer-layer-inventory (npm run docs:sync) -->
+| Directory | Files | Lines | Detected seams | Change-landing advice |
+| --- | --- | --- | --- | --- |
+| `bridge_src` | 43 | 12082 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
+| `capture-src` | 5 | 24 | editable templates, sync:capture source | Editable page-world capture templates; generated bundles are under `src/capture/generated/`. |
+| `cli` | 15 | 2602 | flags, local commands, daemon, JSON envelopes | External `pi-browser` CLI face; keep command metadata, flags, local commands, and daemon validation in sync. |
+| `src/abml` | 32 | 1995 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
+| `src/abml-core` | 27 | 4107 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
+| `src/capture` | 6 | 58 | generated output | Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`. |
+| `src/content` | 1 | 20 | leaf module group | Content extraction runtime; pair with capture/page-script gates when touching page-world behavior. |
+| `src/distill-core` | 16 | 1626 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |
+| `src/driver` | 22 | 3101 | server facade, client registry, tab/session router, lease/queue, wait/diagnostics | Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module. |
+| `src/frontend` | 4 | 394 | leaf module group | Harness-facing validation and usage logging; preserve redaction and CLI/Pi parity contracts. |
+| `src/memory` | 4 | 395 | leaf module group | Runtime memory persistence and HMAC/profile services; keep local-only storage boundaries explicit. |
+| `src/memory-core` | 7 | 433 | index/barrel | Pure memory kernel; keep host I/O out and verify memory-core boundary. |
+| `src/pick` | 1 | 30 | leaf module group | Content-pick page helpers; verify content-pick/page-script checks. |
+| `src/protocol` | 3 | 3087 | leaf module group | Generated native protocol mirror; edit `bridge/native_command_schema.json` and run `npm run sync:protocol`. |
+| `src/resources` | 4 | 675 | leaf module group | Artifact/resource store; verify artifact and summary consumers after schema changes. |
+| `src/scan` | 3 | 146 | leaf module group | Scan page-world builder compatibility layer; source templates live in `capture-src/entries/*`. |
+| `src/tools` | 134 | 22375 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
+| `src/types` | 1 | 50 | leaf module group | Shared type declarations; check type and package surfaces. |
+| `src/utils` | 11 | 819 | leaf module group | Shared utilities; pure-kernel imports must stay within whitelisted cross-cutting modules. |
+| `src/validation` | 3 | 490 | leaf module group | Frontend/tool validation; preserve strict schema and CLI/Pi parity behavior. |
+<!-- END GENERATED: maintainer-layer-inventory -->
+
+新增目录时先运行 `npm run docs:sync`，让上表自动出现新行；`npm run check:doc-paths`
+会要求补齐空的 Change-landing advice。普通文件增删只更新 Files/Lines，不需要手改。
+
+## Kernel landing
+
+- ABML 纯逻辑改动落到 `src/abml-core/`；运行时浏览器 I/O、ledger、driver/resource 交互落到 `src/abml/`。
+- `src/abml/` 下的 re-export shim 只保留兼容路径。重命名 kernel export 时同时更新 `src/abml-core/index.ts`、对应 shim、`tests/contracts/drift/kernel-export-inventory.json`，再跑 `check:abml-core-boundary` 和 `check:surface-liveness`。
+- Distill 纯逻辑落到 `src/distill-core/`；memory 纯逻辑落到 `src/memory-core/`，本地持久化/HMAC/profile flush 落到 `src/memory/`。
+- Capture 页面世界源码只改 `capture-src/entries/*Template.ts`，再跑 `npm run sync:capture`；`src/capture/generated/` 是产物。
+
+## Observe flow
+
+`browser_observe` 的一次 scan 链路是：
+`src/tools/registerObserveTool.ts` → `src/tools/toolAdapter.ts` →
+`src/tools/observe/scanRunner.ts` → `src/abml/verbs/runtime.ts` →
+`src/abml-core/` → `src/tools/resultMiddleware.ts` →
+`src/tools/summaries/scan.ts` → `src/distill-core/` → envelope。
+
+Observe 新 seam 优先落到 `src/tools/observe/`；summary 字段改动必须同时读
+`src/tools/resultMiddleware.ts` 与 `src/tools/summaries/`，因为 envelope 包装和 compact
+summary 是一个管线。
+
 ## 运行链路
 
 1. `index.ts`

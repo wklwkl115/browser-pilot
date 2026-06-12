@@ -4,6 +4,86 @@
 > entry page compact. Current state belongs in `CURRENT.md`; future/non-active
 > routes belong in `ROADMAP.md`.
 
+## CURRENT Migration Snapshot — 2026-06-12
+
+The following completed-entry details were migrated out of `CURRENT.md` during
+the agent-dev-harness C2 ceiling work. `CURRENT.md` now keeps only current state,
+the active execution contract, and a compact archive pointer.
+
+- **Agent dev-harness optimization plan**: completed and implemented
+  `docs/agent-dev-harness-optimization-plan.md` as the development harness
+  blueprint and execution record: fail-closed impact map, DAG closing gate,
+  unit shards, docs sync managed blocks, generated code/concept maps,
+  C4/C5 authoring helpers, five ledger `--propose` flows, and audit lifecycle
+  indexing. The workstream is closed; `CURRENT.md` now has no active execution
+  item.
+- **Agent harness optimization plan**: completed ACI-1 through ACI-12 for the
+  agent-facing harness: heartbeat byte bounds, recovery coverage, lease
+  diagnostics, input-surface ratchet, fresh observe re-anchor, CLI-skill drift
+  gates, usage-log distillation, build-skew surfacing, observe runner
+  decomposition, CLI thinning, and file ceilings. Runtime artifact evidence was
+  recorded under `.pi/browser-artifacts/`.
+- **Check acceleration implementation**: completed graph-backed trace, DAG,
+  cache, smart selection, miss recording, and workflow documentation while
+  preserving `npm run check` as the final gate. The later dev-harness A4 work
+  upgrades the cache to v2 per-node scopes.
+- **Governance mechanisms implementation**: completed G1-G7 governance gates or
+  operator procedures: spec truth, surface liveness, compute-once, purity
+  vocabulary, kernel test map, env flags, and read-only audit escalation.
+- **Value-ordered compaction**: moved model-facing presentation toward
+  distill-core value-ordered projection while keeping full-fidelity artifacts
+  local; added folded projection disclosure, frontier retrieval, and execute
+  target URL correction.
+- **Distill kernel hygiene**: locked distill-core purity, total allocation tie
+  order, observe render-cache keying, scan entity build-once reuse, and
+  result-middleware nextAction reuse.
+- **Real-session friction plan**: consumed live session friction with scan SVG
+  class normalization, artifact empty-array/nearest-path behavior, execute
+  partial-effect honesty, content fingerprint fallback, and wrapper-control
+  display labels.
+- **Check acceleration plan (planning artifact)**: completed the reviewed design
+  for trace/DAG/cache/smart acceleration before its implementation workstream.
+- **G12 execute page-context nudge**: `browser_execute` summaries now surface a
+  page URL from effect/monitor data when available so memory auto-surface can
+  resolve page context without extra browser reads.
+- **Agent audit inbox workflow**: added `agent-audits/` and
+  `skills/pi-browser-audit-fix/SKILL.md` as the asynchronous audit-only/fix-agent
+  role contract.
+- **Memory kernel**: completed retain-kernel read/write split, profile
+  persistence, IDF recall, structural-anchor verification, memory-plane
+  injection, stale suppression, and memory gates.
+- **Execution feedback layer**: completed cheap default execution-effect facts,
+  physical input through coordinate-addressed `input.*`, internal `pi.*` stdlib,
+  and execution journal artifacts without adding public semantic action verbs.
+- **browser_observe mode-friction reduction**: kept explicit mode semantics but
+  added deterministic mode inference from parameters, `intent` as a top-level
+  signal, URL navigation support, and mode inference diagnostics.
+- **Debt zeroing / debt clearance**: closed trigger-gated backlog into either
+  deterministic implementation or closed decisions; landed scan rows,
+  media candidates, edge-utility ranking, external SQLi wordlists, recovery
+  ratchets, and ROADMAP honesty.
+- **capture-core + fact allocator closure**: moved page-world template logic to
+  `capture-src/` plus generated bundles, locked capture boundaries, and wired
+  production fact allocator diagnostics into result details.
+- **Task-conditioned salience v3**: added relevance pure core, tuning, taps,
+  observe lookup consumption, inference/trace/intent sources, and no-signal
+  neutrality.
+- **ABML kernel optimization / identity plane / renderer default flip**: landed
+  pure-kernel point fixes, identity graph artifact data, and staged salience plus
+  session-delta defaults with rollback env controls.
+- **Perception renderer + distill-core token economy**: established the
+  distill-core kernel, salience renderer, artifact plan seam, fact allocator,
+  recovery concentration, and distill/recovery/summary boundaries.
+- **Performance and overhead execution**: completed the performance audit action
+  line including bridge whitespace minify, scan/ABML reuse, redaction and CLI
+  optimizations, readiness waits, artifact read dedupe, and compact tab list.
+- **Agent-facing CLI connection control**: added `pi-browser connect/status`
+  readiness protocol, compact health envelopes, user-local start lock, and CLI
+  smoke coverage.
+- **Agent-native CLI / durable bridge / skill split**: completed CLI product
+  surface, offscreen durable transport, Pi-native vs CLI skill separation, and
+  kept only `pi-browser-tools` in the Pi global skill junction.
+
 ## Agent-Native And CLI Surface
 
 - Performance & overhead audit execution（2026-06-08）：完成全项目性能/开销审计与执行收口。已落地 bridge dist whitespace minify、AX box-model 并发、scan/ABML 复用、redaction first-hit、CLI render/registry/entrypoint 优化、TypeBox-compatible validation、daemon protocol-only compatibility、offscreen port probe、resource/ref store cap、scan summary budget 预计算、CJK budget guard、serialize-once safe subset、readiness event wait/negative cache、artifact read 去重、CLI-only details 省略、artifact read 建议去重、`browser_tabs list` compact+top-level bridge，以及 blind-eval 取证后的 scan `focus` entity refs-v1。关闭 2.1 single geometry pass、0.3 cheap recorder state、1.1 非默认 scan superset、1.7 stream signal ref reuse、2.2 默认等待缩短等无足够证据项。最终验证通过 `npm run check`；完成记录见 `docs/performance-overhead-audit.md`。

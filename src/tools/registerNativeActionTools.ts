@@ -11,6 +11,8 @@ import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, def
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictToolParameters } from "./toolShared.js";
 import type { ToolRegistrarContext } from "./toolShared.js";
 
+// Registers the four native bridge-backed tools (wait/network/hook/frame); command names and
+// metadata come from src/protocol/nativeActionMetadata.ts, generated from the native schema.
 type ActionToolConfig = {
 	name: string;
 	label: string;

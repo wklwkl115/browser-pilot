@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { buildSnapshotProjection } from "../../../src/abml-core/snapshotProjection.ts";
 import { buildTreeDiff } from "../../../src/abml-core/treeDiff.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
+import { PURE_CORE } from "../drift/abml-core-manifest.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -83,8 +84,7 @@ const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("buildSnapshotProjection") && observeSrc.includes("snapshotProjection"), "observeRunners builds and persists snapshotProjection");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeSnapshotProjection") && middlewareSrc.includes("snapshotProjection?"), "resultMiddleware lifts snapshotProjection");
-const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
-assert.ok(boundarySrc.includes('"snapshotProjection.ts"'), "snapshotProjection classified as pure core");
+assert.ok(PURE_CORE.includes("snapshotProjection.ts"), "snapshotProjection classified as pure core");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-snapshot-projection"]?.includes("check-abml-snapshot-projection.mjs"), "check:abml-snapshot-projection script present");
 

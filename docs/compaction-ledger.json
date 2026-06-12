@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "classBBaseline": 101,
+  "classBBaseline": 97,
   "requiredClassBDecrements": 2,
   "migrations": [
     {

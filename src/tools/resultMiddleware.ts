@@ -15,6 +15,8 @@ import { summarizeHtmlSnapshot } from "./summaries/index.js";
 import { appendMemoryAutoSurface } from "./memory/autoSurface.js";
 import type { MemoryAugmentationPlan } from "../memory-core/types.js";
 
+// Mandatory-read pair with toolAdapter.ts: keep envelope fields, redaction, distillation,
+// artifact fallback, and memory nudge behavior centralized here.
 export { distillValue } from "./distillerRegistry.js";
 export { summarizeHtmlSnapshot } from "./summaries/index.js";
 

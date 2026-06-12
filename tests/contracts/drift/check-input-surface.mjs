@@ -6,6 +6,7 @@ import { collectTools } from "../../../scripts/generate-tool-docs.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const baselinePath = path.join(root, "tests/contracts/drift/input-surface-budget.json");
+const proposeMode = process.argv.includes("--propose");
 
 function read(rel) {
 	return readFileSync(path.join(root, rel), "utf8");
@@ -57,14 +58,39 @@ for (const tool of tools) {
 }
 
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
-assert.equal(baseline.version, measured.version, "input-surface budget baseline version mismatch");
-assert.equal(baseline.toolCount, tools.length, "input-surface budget baseline must track the current public tool count");
-assert.equal(Object.keys(baseline.tools).length, tools.length, "input-surface budget baseline must cover every tool");
-assert.ok(measured.totalChars <= baseline.totalChars, `input surface grew: ${measured.totalChars} > ${baseline.totalChars}; update ${path.relative(root, baselinePath)} in the same diff with the declared growth`);
+
+function budgetIssues() {
+	const issues = [];
+	if (baseline.version !== measured.version) issues.push(`version ${baseline.version} -> ${measured.version}`);
+	if (baseline.toolCount !== tools.length) issues.push(`toolCount ${baseline.toolCount} -> ${tools.length}`);
+	if (Object.keys(baseline.tools).length !== tools.length) issues.push(`tool rows ${Object.keys(baseline.tools).length} -> ${tools.length}`);
+	if (measured.totalChars > baseline.totalChars) issues.push(`totalChars ${baseline.totalChars} -> ${measured.totalChars}`);
+	for (const [name, current] of Object.entries(measured.tools)) {
+		const prior = baseline.tools[name];
+		if (!prior) issues.push(`missing tool ${name}`);
+		else if (current.advertisedChars > prior.advertisedChars) issues.push(`${name}.advertisedChars ${prior.advertisedChars} -> ${current.advertisedChars}`);
+	}
+	return issues;
+}
+
+const issues = budgetIssues();
+if (proposeMode) {
+	if (!issues.length) console.log("input-surface propose: no changes needed");
+	else {
+		console.log(`input-surface propose: update ${path.relative(root, baselinePath)} with this measured baseline; include a one-line justification for any growth:`);
+		console.log(JSON.stringify({ ...measured, justification: "TODO: justify public input-surface growth or reduce prompt/schema text" }, null, 2));
+	}
+	process.exit(0);
+}
+
+assert.equal(baseline.version, measured.version, "input-surface budget baseline version mismatch (run npm run check:input-surface -- --propose for a draft)");
+assert.equal(baseline.toolCount, tools.length, "input-surface budget baseline must track the current public tool count (run npm run check:input-surface -- --propose for a draft)");
+assert.equal(Object.keys(baseline.tools).length, tools.length, "input-surface budget baseline must cover every tool (run npm run check:input-surface -- --propose for a draft)");
+assert.ok(measured.totalChars <= baseline.totalChars, `input surface grew: ${measured.totalChars} > ${baseline.totalChars}; update ${path.relative(root, baselinePath)} in the same diff with the declared growth (run npm run check:input-surface -- --propose for a draft)`);
 for (const [name, current] of Object.entries(measured.tools)) {
 	const prior = baseline.tools[name];
-	assert.ok(prior, `input-surface baseline missing tool ${name}`);
-	assert.ok(current.advertisedChars <= prior.advertisedChars, `${name} advertised input surface grew: ${current.advertisedChars} > ${prior.advertisedChars}; update baseline with declared growth`);
+	assert.ok(prior, `input-surface baseline missing tool ${name} (run npm run check:input-surface -- --propose for a draft)`);
+	assert.ok(current.advertisedChars <= prior.advertisedChars, `${name} advertised input surface grew: ${current.advertisedChars} > ${prior.advertisedChars}; update baseline with declared growth (run npm run check:input-surface -- --propose for a draft)`);
 }
 
 const stripped = new Set(deprecatedKeys());

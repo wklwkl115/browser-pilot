@@ -16,6 +16,8 @@ import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js"
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 import type { MemoryAugmentationPlan } from "../memory-core/types.js";
 
+// Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
+// while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
 export { fitInlineJsonToBudget } from "../distill-core/fit.js";
 
 export type ToolResultContext = { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean } | undefined;

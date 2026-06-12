@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHECK_DAG_RUN_DIR, CHECK_DAG_SUMMARY_PATH, CHECK_GROUPS, CHECK_GROUPS_SUMMARY_PATH, CHECK_IMPACT_SUMMARY_PATH, CHECK_MISS_DIR, graphCoveredPackageScripts, resolveScriptSteps } from "../../../scripts/check-graph.mjs";
+import { EXPECTED_PACKAGE_FACTS } from "./expected-package-facts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -20,13 +22,27 @@ assert.equal(pkg.bin?.["pi-browser"], "./dist/cli/bin.js", "package CLI bin must
 assert.equal(pkg.exports?.["."]?.import, "./dist/index.js", "package exports import must point to dist/index.js");
 assert.equal(pkg.exports?.["."]?.types, "./dist/index.d.ts", "package exports types must point to dist/index.d.ts");
 assert.equal(pkg.scripts?.["check:package"], "node tests/contracts/drift/check-package-files.mjs", "package file contract must be exposed as check:package");
-assert.equal(pkg.scripts?.["check:all"], "node scripts/run-check-groups.mjs", "check:all must route grouped validation through the shared runner");
+assert.equal(pkg.scripts?.["check:all"], "node scripts/check-dag.mjs", "check:all must route closing validation through the DAG runner");
+assert.equal(pkg.scripts?.["check:serial"], "node scripts/run-check-groups.mjs", "check:serial must retain the grouped serial runner");
 assert.equal(pkg.scripts?.["check:trace"], "node scripts/run-check-groups.mjs --json", "check:trace must expose grouped trace JSON mode");
 assert.equal(pkg.scripts?.["check:dag"], "node scripts/check-dag.mjs", "check:dag must expose graph-backed DAG execution");
 assert.equal(pkg.scripts?.["check:smart"], "node scripts/check-dag.mjs --smart", "check:smart must expose graph-backed impact execution");
-assert.equal(pkg.scripts?.["check:all:bridge"], "node scripts/run-check-groups.mjs bridge unit", "check:all:bridge must expose bridge+unit grouped validation");
-assert.equal(pkg.scripts?.["check:all:package"], "node scripts/run-check-groups.mjs package docs", "check:all:package must expose package+docs grouped validation");
-assert.equal(pkg.scripts?.["check:all:contracts"], "node scripts/run-check-groups.mjs contracts", "check:all:contracts must expose contract grouped validation");
+assert.equal(pkg.scripts?.["sync:impact-map"], "node scripts/sync-impact-map.mjs", "package must expose impact map synchronization");
+assert.equal(pkg.scripts?.["check:impact-map"], "node scripts/sync-impact-map.mjs --check", "package must expose impact map drift validation");
+assert.equal(pkg.scripts?.["sync:code-map"], "tsx scripts/sync-code-map.mjs", "package must expose code map synchronization");
+assert.equal(pkg.scripts?.["check:code-map"], "tsx scripts/sync-code-map.mjs --check", "package must expose code map drift validation");
+assert.equal(pkg.scripts?.["query:markers"], "node scripts/query-markers.mjs", "package must expose marker query helper");
+assert.equal(pkg.scripts?.["new:check"], "node scripts/new-check.mjs", "package must expose new-check scaffolding");
+assert.equal(pkg.scripts?.["scope:begin"], "node scripts/workstream-scope.mjs --begin", "package must expose workstream scope baseline capture");
+assert.equal(pkg.scripts?.["docs:sync"], "node scripts/sync-docs.mjs", "package must expose doc sync umbrella");
+assert.equal(pkg.scripts?.["check:docs-sync"], "node tests/contracts/drift/check-docs-sync.mjs", "package must expose doc sync drift validation");
+assert.equal(pkg.scripts?.["check:audit-inbox"], "node tests/contracts/drift/check-audit-inbox.mjs", "package must expose audit inbox lifecycle validation");
+assert.equal(pkg.scripts?.["check:doc-paths"], "node tests/contracts/drift/check-doc-paths.mjs", "package must expose doc path liveness validation");
+assert.equal(pkg.scripts?.["check:all:src"], "node scripts/check-dag.mjs src", "check:all:src must expose src grouped validation through DAG");
+assert.equal(pkg.scripts?.["check:all:bridge"], "node scripts/check-dag.mjs bridge unit", "check:all:bridge must expose bridge+unit grouped validation through DAG");
+assert.equal(pkg.scripts?.["check:all:package"], "node scripts/check-dag.mjs package docs", "check:all:package must expose package+docs grouped validation through DAG");
+assert.equal(pkg.scripts?.["check:all:contracts"], "node scripts/check-dag.mjs contracts", "check:all:contracts must expose contract grouped validation through DAG");
+assert(!pkg.scripts?.["check:lint"], "legacy check:lint aggregate must not remain");
 assert.equal(pkg.scripts?.check, "npm run check:all", "npm run check must route through grouped validation runner");
 const qualityLocal = String(pkg.scripts?.["quality:local"] || "");
 assert(qualityLocal.includes("npm run build:bridge") && qualityLocal.includes("npm run lint") && qualityLocal.includes("npm run check") && qualityLocal.includes("npm pack --dry-run --json"), "quality:local must run build, lint, check, and package dry-run gates");
@@ -44,23 +60,24 @@ for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/"
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
 }
 assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "package must expose capture bundle synchronization");
+assert.equal(pkg.scripts?.["sync:protocol"], EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose canonical protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert.equal(pkg.scripts?.["check:capture"], "node scripts/sync-capture.mjs --check && node tests/contracts/runtime/check-capture-core-boundary.mjs", "package must expose capture drift and boundary check");
 
 const buildScript = read("scripts/build-bridge.mjs");
-const checkGraphScript = read("scripts/check-graph.mjs");
-const checkDagScript = read("scripts/check-dag.mjs");
-const groupedCheckScript = read("scripts/run-check-groups.mjs");
-assert(groupedCheckScript.includes("CHECK_GROUPS") && checkGraphScript.includes("const CHECK_GROUPS") && checkGraphScript.includes("bridge") && checkGraphScript.includes("contracts"), "grouped check runner must read stable named validation groups from check-graph.mjs");
-assert(checkGraphScript.includes('"check:capture"') && checkGraphScript.includes('"check:check-graph"'), "check graph must include capture-core and graph-drift contracts");
-assert(groupedCheckScript.includes('spawnSync("npm", ["run", script]') || groupedCheckScript.includes("spawnSync(\"npm\", [\"run\", script]"), "grouped check runner must dispatch npm run <script> sequentially");
-assert(groupedCheckScript.includes("--json") && groupedCheckScript.includes("CHECK_GROUPS_SUMMARY_PATH") && groupedCheckScript.includes("summary.results.push"), "grouped check runner must support JSON summary mode and persist a structured artifact");
-assert(checkDagScript.includes("CHECK_DAG_SUMMARY_PATH") && checkDagScript.includes("CHECK_IMPACT_SUMMARY_PATH") && checkGraphScript.includes("CHECK_MISS_DIR"), "DAG runner must persist DAG, impact, and miss artifacts");
+const bridgeDistNpmIgnore = read("bridge/pi_browser_bridge/dist/.npmignore");
+const graphCovered = graphCoveredPackageScripts();
+assert(CHECK_GROUPS.bridge.includes("check:bridge") && CHECK_GROUPS.contracts.includes("check:capture") && CHECK_GROUPS.contracts.includes("check:check-graph") && CHECK_GROUPS.contracts.includes("check:impact-map"), "check graph must expose stable named groups and include capture, graph-drift, and impact-map contracts");
+assert(graphCovered.has("check:package") && graphCovered.has("check:docs-sync") && graphCovered.has("check:impact-map"), "graph coverage must include package, docs sync, and impact-map proof nodes");
+assert(resolveScriptSteps("check:bridge").some((step) => step.script === "check:protocol"), "check graph resolver must expand nested npm-run steps");
+assert(path.basename(CHECK_GROUPS_SUMMARY_PATH) === "check-groups-summary.json" && path.basename(CHECK_DAG_SUMMARY_PATH) === "check-dag-summary.json" && path.basename(CHECK_IMPACT_SUMMARY_PATH) === "check-impact-summary.json" && path.basename(CHECK_DAG_RUN_DIR) === "check-dag" && path.basename(CHECK_MISS_DIR) === "check-misses", "grouped/DAG runners must publish stable summary, per-run, impact, and miss artifact locations");
 assert(buildScript.includes('process.argv.includes("--quiet")'), "build script must support quiet mode for prepack");
-assert(buildScript.includes('path.join(defaultDistDir, ".npmignore")') && buildScript.includes("include the generated dist runtime"), "build script must generate dist/.npmignore so npm pack does not inherit dist/.gitignore");
+assert(bridgeDistNpmIgnore.includes("include the generated dist runtime"), "bridge dist .npmignore must preserve npm package inclusion despite dist/.gitignore");
 const workflow = read(".github/workflows/check.yml");
 const setupAction = read(".github/actions/setup-node-build/action.yml");
 assert(workflow.includes("uses: ./.github/actions/setup-node-build"), "CI workflow must reuse the local setup/build composite action");
-assert(workflow.includes("npm run check:all:bridge") && workflow.includes("npm run check:all:package") && workflow.includes("npm run check:all:contracts"), "CI workflow must reuse grouped local check entrypoints");
+assert(workflow.includes("npm run check:all:src") && workflow.includes("npm run check:all:bridge") && workflow.includes("npm run check:all:package") && workflow.includes("npm run check:all:contracts"), "CI workflow must reuse DAG grouped local check entrypoints including src");
+assert(!workflow.includes("npm run check:lint"), "CI workflow must not call retired check:lint aggregate");
+assert(workflow.includes(".pi/browser-artifacts/check-dag-summary.json") && workflow.includes(".pi/browser-artifacts/check-dag/**"), "CI workflow must upload DAG check artifacts for review");
 assert(setupAction.includes("actions/setup-node@v4") && setupAction.includes("npm ci") && setupAction.includes("npm run build") && setupAction.includes("npm run build:bridge"), "setup-node-build composite action must encapsulate setup/install/build steps");
 const releaseScript = read("tests/release/release-local-acceptance.mjs");
 assert(releaseScript.includes('runNpm(["pack", root, "--dry-run", "--json"], { cwd: packRunDir })') && releaseScript.includes('runNpm(["pack", root, "--pack-destination", currentDir, "--json"], { cwd: packRunDir })'), "release acceptance must run dry-run and actual npm pack from a clean temporary cwd through the portable npm runner");
@@ -70,7 +87,7 @@ assert(releaseScript.includes("PI_BROWSER_SMOKE_EXTENSION_DIR") && releaseScript
 assert(releaseScript.includes("PI_BROWSER_CI_RELEASE_SMOKE") && releaseScript.includes("PI_BROWSER_CI_ROLLBACK_SMOKE"), "release acceptance must expose CI opt-in env gates for current and rollback isolated smoke");
 assert(releaseScript.includes("failureDiagnostics") && releaseScript.includes("packFiles") && releaseScript.includes("buildManifest") && releaseScript.includes("chromeProfile") && releaseScript.includes("bridgePort") && releaseScript.includes("smokeArtifact"), "release acceptance failures must expose pack/build/profile/port/smoke diagnostics");
 const tsxScripts = [
-	"check:lint", "check:tools", "test:unit", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "smoke:cli:full", "check:cli-parity",
+	"check:tools", "test:unit", "test:unit:abml", "test:unit:cli", "test:unit:distill", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "smoke:cli:full", "check:cli-parity", "check:cli-json-envelopes",
 ];
 for (const name of tsxScripts) assert(usesTsx(pkg.scripts?.[name]), `${name} must run through tsx instead of experimental strip-types`);
 assert(usesTsx(pkg.scripts?.["test:unit"]), "test:unit must use tsx runner");
@@ -89,8 +106,26 @@ assert(jsonStart >= 0, "npm pack --dry-run --ignore-scripts --json must emit a J
 const pack = JSON.parse(output.slice(jsonStart))[0];
 assert(pack && Array.isArray(pack.files), "npm pack dry-run must return package file metadata");
 const packed = new Set(pack.files.map((file) => file.path));
+const SECRET_LIKE_SOURCE_RE = /sk_live_[A-Za-z0-9_-]{20,}|sk-(?:live|proj)-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9_]{36,}|-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----|xox[baprs]-[A-Za-z0-9-]{20,}/i;
+const SCANNED_TEXT_RE = /\.(?:cjs|css|html|js|json|md|mjs|ts|txt|yaml|yml)$/;
+const assertNoSecretLikeMaterial = (rel, text, scope) => {
+	assert(!SECRET_LIKE_SOURCE_RE.test(text), `${scope} contains secret-like material: ${rel}`);
+};
+const trackedFiles = execSync("git ls-files", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split(/\r?\n/).filter(Boolean);
+for (const rel of trackedFiles) {
+	if (!SCANNED_TEXT_RE.test(rel)) continue;
+	if (!existsSync(path.join(root, rel))) continue;
+	assertNoSecretLikeMaterial(rel, read(rel), "tracked source file");
+}
+for (const file of pack.files) {
+	const rel = String(file.path || "");
+	if (!SCANNED_TEXT_RE.test(rel)) continue;
+	assertNoSecretLikeMaterial(rel, read(rel), "npm package file");
+}
 
 const manifest = readJson("bridge/pi_browser_bridge/manifest.json");
+assert.equal(manifest.version, pkg.version, "extension manifest version must match package.json version");
+assert.equal(manifest.background.service_worker, EXPECTED_PACKAGE_FACTS.manifestServiceWorker.value, `manifest service worker expectation: ${EXPECTED_PACKAGE_FACTS.manifestServiceWorker.rationale}`);
 const distFiles = new Set(["dist/index.js", "dist/index.d.ts", "dist/cli/bin.js", "dist/cli/index.js"]);
 distFiles.add("dist/cli/connection.js");
 distFiles.add(`bridge/pi_browser_bridge/${manifest.background.service_worker}`);
@@ -108,7 +143,7 @@ for (const file of distFiles) {
 	assert(packed.has(file), `npm package must include generated runtime file: ${file}`);
 }
 assert(packed.has("bridge/pi_browser_bridge/manifest.json"), "npm package must include extension manifest");
-assert(packed.has("bridge/pi_browser_bridge/offscreen.html"), "npm package must include the B5 offscreen transport document");
+assert(packed.has(`bridge/pi_browser_bridge/${EXPECTED_PACKAGE_FACTS.offscreenDocument.value}`), `npm package must include the offscreen transport document (${EXPECTED_PACKAGE_FACTS.offscreenDocument.rationale})`);
 assert(packed.has("dist/index.js") && packed.has("dist/index.d.ts"), "npm package must include outer dist entry and declarations");
 assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm package must include compiled cli dist entrypoints");
 // tsc does not emit .mjs to dist/. The callback-OAST worker is spawned from src/ even when
@@ -118,11 +153,12 @@ assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm p
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
-assert(packed.has("scripts/check-graph.mjs") && packed.has("scripts/check-dag.mjs") && packed.has("scripts/run-check-groups.mjs"), "npm package must include graph-backed check runners");
+assert(packed.has("scripts/check-graph.mjs") && packed.has("scripts/check-dag.mjs") && packed.has("scripts/run-check-groups.mjs") && packed.has("scripts/sync-impact-map.mjs") && packed.has("scripts/sync-code-map.mjs") && packed.has("scripts/sync-concept-ownership.mjs") && packed.has("scripts/query-markers.mjs") && packed.has("scripts/new-check.mjs") && packed.has("scripts/workstream-scope.mjs") && packed.has("scripts/sync-docs.mjs") && packed.has("scripts/sync-managed-blocks.mjs") && packed.has("scripts/lib/repo-introspection.mjs") && packed.has("scripts/lib/managed-blocks.mjs"), "npm package must include graph-backed check runners and shared dev-harness helpers");
 assert(packed.has("scripts/sync-capture.mjs"), "npm package must include capture sync script");
 assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capture/generated/scanBundle.ts"), "npm package must include capture source and generated bundles");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
+assert(packed.has("tests/contracts/drift/abml-core-manifest.js") && packed.has("tests/contracts/drift/expected-package-facts.js") && packed.has("tests/contracts/drift/check-doc-paths.mjs"), "npm package must include shared contract manifests and doc-path gate");
 assert(packed.has("skills/pi-browser-audit-fix/SKILL.md"), "npm package must include the audit/fix workflow skill");
 assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
 assert(packed.has("evals/browser-workflows/21-cross-tool-correlation-chain.md") && packed.has("evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json"), "npm package must include cross-tool correlation workflow eval spec and sample result");

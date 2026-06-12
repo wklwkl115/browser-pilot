@@ -19,15 +19,11 @@ one-way dependency direction:
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`, or owns live session ledger state.
   Drives the pure core with real page data. **7 files.**
 
-`src/abml/` also keeps **25 thin re-export shims** at the old pure-core paths (e.g.
-`src/abml/entity.ts` → `export * from "../abml-core/entity.js"`), so every existing importer —
-`src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`,
-the runtime verbs, `mcp/handleResolver.ts`, and all unit tests — keeps its import path unchanged.
+`src/abml/` also keeps **25 thin re-export shims** at the old pure-core paths, so existing importers such as `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`, the runtime verbs, and unit tests keep their import paths unchanged.
 
 The boundary is **enforced by a contract test**, not by convention:
 `tests/contracts/drift/check-abml-core-boundary.mjs` (run via `npm run check:abml-core-boundary`,
-and inside `npm run check` under the `docs` group). The test holds the same lists below as the
-machine-readable manifest; **keep the two in sync** — if they diverge, or a new file is added to
+and inside `npm run check` under the `docs` group). The tables below are generated from the same machine-readable manifest used by the test. If a new file is added to
 `src/abml-core/` or `src/abml/` without classification, or a pure-core file imports a runtime
 layer, or a shim goes missing, CI goes red.
 
@@ -43,61 +39,67 @@ each doc links back here.
 | [`docs/abml-p1-spec.md`](abml-p1-spec.md) | AX-authoritative state **language spec** (P1, REVIEWED) | you need the formal contract for entity state / pure-function behavior |
 | [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
 | [`docs/archive/abml-execution-plan.md`](archive/abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
+| [`docs/abml-optimization-reference.md`](abml-optimization-reference.md) | Optimization reference for ABML cost/precision tradeoffs | you are changing perception budgets, summaries, or optimization heuristics |
 
 ## Pure core (25 — zero browser/Node deps)
 
+<!-- BEGIN GENERATED: abml-pure-core-manifest (npm run docs:sync) -->
 | File | Role |
 | --- | --- |
 | `types.ts` | Foundational types (locators, refs, actionability, errors, captures). No imports. |
 | `refId.ts` | Pure pi-ref URI minting and summary placeholder ref IDs. |
 | `refPolicy.ts` | Ref-access policy per kind (`defaultRefPolicyForKind`, `decideRefAccess`). |
-| `actionabilityModel.ts` | Verb→actionability spec mapping; action-verb classification. |
-| `entity.ts` | `Entity`/`EntityState`/`EntityStructure`/`EntityRelation` model + builders. |
-| `ax.ts` | DOM↔AX merge core: box-IoU/role/name scoring, AX-authoritative state/structure fusion; AX relation-anchor extraction (R1). |
-| `relations.ts` | ABML R1 relationship graph: anchor→ref materialization, dedupe/cap, envelope relation summary. |
-| `inference.ts` | ABML R2/R3 inference layer: generic ARIA pattern detection plus temporal `form-dependency` over entities + R1 relation summary + optional R3 diff. |
-| `diff.ts` | ABML R3 temporal entity diff: appeared/disappeared/state-changed/name-changed/focusedRef between two entity snapshots. |
-| `stream.ts` | Capture-ref / network-entry / event entity shaping. |
-| `causal.ts` | ABML R3.x causal plane (P0): network-delta summary — requests fired since a baseline observation, redacted + capped; passive (no control attribution). |
-| `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptor derivation, indexed raw grouping, scope helpers, normalized display text helpers, and non-control suppression. |
-| `templating.ts` | ABML mechanism arm (M1): structure templating — folds repeated sibling entities (same AX container / aria-setsize + role/kind) into one template + compact instances + handles. |
-| `treeDiff.ts` | ABML mechanism arm (M2a): template-level living diff over repeated structures; O(change) projection for scan baselines without changing ref minting. |
-| `semanticRefAnchor.ts` | ABML mechanism arm (M2b): pure semantic ref-anchor candidate and shadow-hash input derivation; high-confidence anchors feed gated runtime ref minting. |
-| `snapshotProjection.ts` | ABML mechanism arm (M2c): living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
-| `errors.ts` | `normalizeAbmlError` + recovery shaping (uses pure redaction/error utils). |
-| `verbs/router.ts` | Verb dispatch types + actionability/verification failure builders. |
-| `verbs/click.ts` | Click verb decision logic (pure; no browser call). |
+| `actionabilityModel.ts` | Verb-to-actionability spec mapping; action-verb classification. |
+| `entity.ts` | `Entity`/`EntityState`/`EntityStructure`/`EntityRelation` model plus builders. |
+| `ax.ts` | DOM/AX merge core, AX-authoritative state/structure fusion, relation-anchor extraction. |
+| `relations.ts` | ABML relationship graph materialization, dedupe, cap, and envelope relation summary. |
+| `inference.ts` | ARIA pattern detection plus temporal form dependency over entities and relation summaries. |
+| `diff.ts` | Temporal entity diff: appeared, disappeared, state/name changes, focused ref. |
+| `stream.ts` | Capture-ref, network-entry, and event entity shaping. |
+| `causal.ts` | Passive network-delta causal plane summary. |
+| `grouping.ts` | ARIA-grounded grouping, descriptor derivation, scope helpers, display text normalization. |
+| `templating.ts` | Repeated sibling structure templating and compact instance handles. |
+| `treeDiff.ts` | Template-level living diff over repeated structures. |
+| `semanticRefAnchor.ts` | Pure semantic ref-anchor candidate and shadow-hash derivation. |
+| `snapshotProjection.ts` | Living snapshot projection and attached template deltas. |
+| `identityGraph.ts` | Pure semantic identity graph used to stabilize entity identity across observations. |
+| `errors.ts` | `normalizeAbmlError` plus recovery shaping. |
+| `verbs/router.ts` | Verb dispatch types and actionability/verification failure builders. |
+| `verbs/click.ts` | Click verb decision logic. |
 | `verbs/type.ts` | Type verb decision logic. |
 | `verbs/scroll.ts` | Scroll verb decision logic. |
 | `verbs/read.ts` | Read verb decision logic. |
 | `verbs/frame.ts` | Frame verb decision logic. |
 | `verbs/pierce.ts` | Pierce verb decision logic. |
+<!-- END GENERATED: abml-pure-core-manifest -->
 
 ## Runtime (7 — talk to the live browser)
 
-| File | Why runtime (forbidden-for-core imports) |
+<!-- BEGIN GENERATED: abml-runtime-manifest (npm run docs:sync) -->
+| File | Why runtime |
 | --- | --- |
 | `perceptionLedger.ts` | Live per-session perception ledger, render cache, and trace state. |
-| `verbs/runtime.ts` | Orchestrator: `driver`, `scan/buildScanScript`, `tools/*`, `resources/resourceStore`. |
-| `verbs/axRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
-| `verbs/frameRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
-| `verbs/pierceRuntime.ts` | `driver`, `tools/bridgeResultValidation`, `resources/resourceStore`. |
-| `verbs/visionRuntime.ts` | `node:fs/promises`, `node:path`, `driver`, `tools/artifacts`, `resources`. |
-| `verbs/integration.ts` | `driver`; wires `createBrowserAbmlRuntime`. |
+| `verbs/axRuntime.ts` | Driver/tool validation/resource integration for AX runtime work. |
+| `verbs/frameRuntime.ts` | Driver/tool validation/resource integration for frame runtime work. |
+| `verbs/pierceRuntime.ts` | Driver/tool validation/resource integration for pierce runtime work. |
+| `verbs/visionRuntime.ts` | Node filesystem/path plus driver/resource integration for vision captures. |
+| `verbs/runtime.ts` | Orchestrator that reaches driver, scan, tools, resources, and live browser state. |
+| `verbs/integration.ts` | Driver-facing `createBrowserAbmlRuntime` wiring. |
+<!-- END GENERATED: abml-runtime-manifest -->
 
 ## Whitelisted cross-cutting modules (5 — a pure-core file MAY import these)
 
-Each has been verified **transitively pure** — its own dependency closure reaches no
-`driver/tools/scan/resources/node`. Adding to this whitelist requires re-verifying that closure;
-otherwise move the would-be consumer to RUNTIME instead.
+Each has been verified **transitively pure** — its own dependency closure reaches no `driver/tools/scan/resources/node`. Adding to this whitelist requires re-verifying that closure; otherwise move the would-be consumer to RUNTIME instead.
 
+<!-- BEGIN GENERATED: abml-crosscutting-manifest (npm run docs:sync) -->
 | Module | Closure |
 | --- | --- |
 | `utils/records` | (no imports) |
+| `utils/errors` | -> `protocol/nativeErrorCodes`, `utils/records`, `utils/redaction` |
+| `utils/redaction` | -> `utils/json` |
 | `utils/json` | (no imports) |
-| `utils/redaction` | → `utils/json` |
-| `utils/errors` | → `protocol/nativeErrorCodes`, `utils/records`, `utils/redaction` |
-| `protocol/nativeErrorCodes` | (no imports — generated) |
+| `protocol/nativeErrorCodes` | (no imports, generated) |
+<!-- END GENERATED: abml-crosscutting-manifest -->
 
 ## Kernel entry point
 

@@ -23,6 +23,7 @@ through the normal project workflow.
 - `AGENTS.md` — local rules for audit-only agents.
 - `templates/run-report.md` — full audit run template.
 - `templates/finding.md` — single finding template.
+- `runs/index.json` — lifecycle ledger for report findings.
 - `runs/` — audit reports produced by subagents.
 
 Use report names like:
@@ -42,7 +43,9 @@ agent-audits/runs/2026-06-11-bridge-dynamic.md
 4. Record each suspected issue with file/line evidence, reproduction steps,
    expected versus actual behavior, impact, confidence, and suggested
    verification.
-5. Do not fix the issue. Leave the finding for maintainer triage.
+5. Add or update the matching `runs/index.json` entries for each `AUDIT-###`
+   finding; leave new findings as `unverified`.
+6. Do not fix the issue. Leave the finding for maintainer triage.
 
 ## Fix Workflow
 
@@ -50,10 +53,15 @@ When consuming a report, the fixer/maintainer:
 
 1. Treat every finding as untrusted until independently reproduced.
 2. Check whether the evidence still applies to the current worktree.
-3. Mark each finding `accepted`, `rejected`, `duplicate`, or `needs-more-info`
-   in the report or in the follow-up workstream notes.
+3. Mark each finding `accepted`, `rejected`, `duplicate`, `fixed`, or
+   `graduated` in `runs/index.json`; terminal statuses need auditable evidence.
 4. Fix accepted issues through normal project workflow, with tests and docs in
    the same workstream.
+
+`npm run check:audit-inbox` verifies that every report is indexed, fixed entries
+name a real `evidenceCommit`, graduated recurring findings name an existing
+check gate, rejected entries include a reason, and duplicate entries point at a
+known finding.
 
 Large raw logs and screenshots should stay in `.pi/browser-artifacts/` or a temp
 directory. Reports may link local artifact paths, but should not paste secrets,

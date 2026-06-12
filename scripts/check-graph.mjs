@@ -3,23 +3,27 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inputMatchesChangedFile, normalizeRel } from "./lib/repo-introspection.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ARTIFACT_DIR = path.join(ROOT, ".pi", "browser-artifacts");
 export const CHECK_CACHE_DIR = path.join(ROOT, ".pi", "check-cache");
 export const CHECK_GROUPS_SUMMARY_PATH = path.join(ARTIFACT_DIR, "check-groups-summary.json");
 export const CHECK_DAG_SUMMARY_PATH = path.join(ARTIFACT_DIR, "check-dag-summary.json");
+export const CHECK_DAG_RUN_DIR = path.join(ARTIFACT_DIR, "check-dag");
 export const CHECK_IMPACT_SUMMARY_PATH = path.join(ARTIFACT_DIR, "check-impact-summary.json");
+export const CHECK_IMPACT_MAP_PATH = path.join(ROOT, "tests", "contracts", "drift", "check-impact-map.json");
 export const CHECK_MISS_DIR = path.join(ARTIFACT_DIR, "check-misses");
 export const CHECK_CACHE_INDEX_PATH = path.join(CHECK_CACHE_DIR, "index.json");
+export const CHECK_CACHE_SCHEMA_VERSION = 2;
 
 export const CHECK_GROUPS = Object.freeze({
 	src: ["check:src:types", "check:registry-drift"],
 	bridge: ["check:bridge"],
-	unit: ["test:unit"],
+	unit: ["test:unit:abml", "test:unit:cli", "test:unit:distill", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
 	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
-	docs: ["check:tool-docs", "check:doc-structure", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:cli-migration-drift"],
-	contracts: ["check:jshookmcp-closure", "check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:abml-ax-smoke", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:spec-truth", "check:surface-liveness", "check:compute-once", "check:purity-vocabulary", "check:kernel-test-map", "check:env-flags", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:abml-ref-registry", "check:abml-scan-entities", "check:abml-scan-envelope", "check:abml-verb-runtime", "check:abml-ax-runtime", "check:abml-relation-graph", "check:abml-inference", "check:abml-diff", "check:abml-causal", "check:abml-templating", "check:abml-tree-diff", "check:abml-semantic-ref-anchor", "check:abml-snapshot-projection", "check:abml-stream-plane", "check:abml-p6p7-runtime", "check:abml-internal-integration", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
+	docs: ["check:tool-docs", "check:doc-structure", "check:audit-inbox", "check:doc-paths", "check:code-map", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:cli-migration-drift", "check:docs-sync"],
+	contracts: ["check:jshookmcp-closure", "check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:abml-ax-smoke", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:spec-truth", "check:surface-liveness", "check:compute-once", "check:purity-vocabulary", "check:kernel-test-map", "check:env-flags", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-ref-registry", "check:abml-scan-entities", "check:abml-scan-envelope", "check:abml-verb-runtime", "check:abml-ax-runtime", "check:abml-relation-graph", "check:abml-inference", "check:abml-diff", "check:abml-causal", "check:abml-templating", "check:abml-tree-diff", "check:abml-semantic-ref-anchor", "check:abml-snapshot-projection", "check:abml-stream-plane", "check:abml-p6p7-runtime", "check:abml-internal-integration", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
 });
 
 export const DEFAULT_GROUP_SEQUENCE = Object.freeze(["src", "bridge", "unit", "package", "docs", "contracts"]);
@@ -37,14 +41,26 @@ export const CI_GROUP_LABELS = Object.freeze({
 
 export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	check: "top-level alias for check:all",
-	"check:all": "grouped runner alias; graph source is CHECK_GROUPS",
-	"check:all:bridge": "grouped runner alias for bridge+unit",
-	"check:all:package": "grouped runner alias for package+docs",
-	"check:all:contracts": "grouped runner alias for contracts",
+	"check:all": "DAG full-graph alias; graph source is CHECK_GROUPS",
+	"check:all:src": "DAG group alias for src",
+	"check:all:bridge": "DAG group alias for bridge+unit",
+	"check:all:package": "DAG group alias for package+docs",
+	"check:all:contracts": "DAG group alias for contracts",
+	"check:serial": "serial grouped-runner escape hatch",
+	"check:serial:bridge": "serial grouped-runner escape hatch for bridge+unit",
+	"check:serial:package": "serial grouped-runner escape hatch for package+docs",
+	"check:serial:contracts": "serial grouped-runner escape hatch for contracts",
 	"check:trace": "trace frontend over the graph-backed grouped runner",
 	"check:dag": "graph executor frontend, not a proof obligation node",
 	"check:smart": "impact executor frontend, not a proof obligation node",
-	"check:lint": "legacy aggregate; covered by check:boundaries, check:bridge:files, and check:page-scripts nodes",
+	"docs:sync": "doc generator umbrella; guarded by check:docs-sync",
+	"docs:sync-indexes": "child doc index generator; guarded by check:docs-sync",
+	"docs:generate": "child tool-doc generator; guarded by check:docs-sync and check:tool-docs",
+	"sync:code-map": "child code-map doc generator; guarded by check:code-map and check:docs-sync",
+	"query:markers": "developer query tool; not a proof obligation node",
+	"new:check": "developer scaffolder; graph gate verifies generated wiring",
+	"scope:begin": "developer workstream-scope baseline helper; DAG summary consumes its artifact",
+	"test:unit": "umbrella; covered by test:unit:* shards",
 	"test:coverage": "optional coverage mode, not part of local acceptance",
 	"test:observe-abml-integration": "covered by test:unit glob in the graph",
 	"smoke:browser": "runtime smoke, explicitly opt-in outside default local checks",
@@ -91,6 +107,10 @@ const NON_PARALLEL_NODE_IDS = new Set([
 	"check:runtime-fixtures",
 	"check:token-economy",
 	"bench:distill",
+	// Memory tests exercise shared local profile/resource state; keep the shard exclusive.
+	"test:unit:memory",
+	// WebSecurity unit fixtures open local HTTP/WS servers and artifact paths; keep the shard exclusive.
+	"test:unit:web-security",
 ]);
 
 export const FINGERPRINT_ROOTS = Object.freeze([
@@ -113,6 +133,18 @@ export const FINGERPRINT_ROOTS = Object.freeze([
 	".github/workflows/check.yml",
 ]);
 
+export const CACHE_GLOBAL_INPUTS = Object.freeze([
+	"package.json",
+	"package-lock.json",
+	"tsconfig.json",
+	"tsconfig.base.json",
+	"tsconfig.build.json",
+	"tsconfig.bridge-src.json",
+	"eslint.config.js",
+	"scripts/check-graph.mjs",
+	"scripts/check-dag.mjs",
+]);
+
 export function readPackageJson(root = ROOT) {
 	return JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 }
@@ -128,6 +160,27 @@ export function ensureArtifactDir() {
 export function writeJsonFile(file, value) {
 	mkdirSync(path.dirname(file), { recursive: true });
 	writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+export function readImpactMap(root = ROOT) {
+	const mapPath = path.join(root, "tests", "contracts", "drift", "check-impact-map.json");
+	return JSON.parse(readFileSync(mapPath, "utf8"));
+}
+
+function likelyImpactRepairTarget({ root = ROOT, failingScript, changedFiles = [] }) {
+	let map;
+	try {
+		map = readImpactMap(root);
+	} catch {
+		return "impact map unavailable; run npm run sync:impact-map";
+	}
+	const node = map.nodes?.[failingScript];
+	const changed = changedFiles.map(normalizeRel);
+	if (!node) return `${failingScript} is absent from tests/contracts/drift/check-impact-map.json; run npm run sync:impact-map`;
+	if (node.scope === "global") return `${failingScript} has global impact scope but was not selected; inspect selectSmartScripts and run npm run sync:impact-map`;
+	const unmatched = changed.filter((file) => !(node.inputs || []).some((input) => inputMatchesChangedFile(input, file)));
+	const sample = unmatched.slice(0, 3).join(", ") || changed.slice(0, 3).join(", ") || "no changed files recorded";
+	return `${sample} matched no impact-map scope for ${failingScript}; run npm run sync:impact-map and inspect npm run query:markers -- --file <path>`;
 }
 
 export function parseCommandLine(text) {
@@ -245,23 +298,101 @@ function gitLines(args, root = ROOT) {
 	return out.split("\0").filter(Boolean).map((item) => item.replace(/\\/g, "/"));
 }
 
-function relevantFiles(root = ROOT) {
-	const tracked = gitLines(["ls-files", "-z", "--", ...FINGERPRINT_ROOTS], root);
-	const untracked = gitLines(["ls-files", "--others", "--exclude-standard", "-z", "--", ...FINGERPRINT_ROOTS], root);
+function addSelection(selected, script, reason) {
+	if (!selected.has(script)) selected.set(script, []);
+	selected.get(script).push(reason);
+}
+
+function contractScriptFor(file, scripts = packageScripts()) {
+	const base = path.basename(file);
+	if (!base.startsWith("check-") || !base.endsWith(".mjs")) return undefined;
+	const scriptName = `check:${base.slice("check-".length, -".mjs".length)}`;
+	return scripts[scriptName] ? scriptName : undefined;
+}
+
+function selectFullGraph(selected, reason) {
+	for (const script of groupScriptSequence(DEFAULT_GROUP_SEQUENCE)) addSelection(selected, script, reason);
+}
+
+export function selectSmartScripts(files, options = {}) {
+	const selected = new Map();
+	const scripts = options.scripts || packageScripts(options.root || ROOT);
+	addSelection(selected, "check:src:types", "base type proof");
+	addSelection(selected, "check:registry-drift", "base registry drift proof");
+	addSelection(selected, "lint:eslint", "base lint proof");
+	addSelection(selected, "check:boundaries", "base repository boundary proof");
+
+	if (!files.length) {
+		addSelection(selected, "check:check-graph", "clean-tree graph integrity proof");
+		return selected;
+	}
+
+	const impactMap = options.impactMap || readImpactMap(options.root || ROOT);
+	const entries = Object.values(impactMap.nodes || {});
+	for (const file of files) {
+		const rel = normalizeRel(file);
+		if (/^(package\.json|package-lock\.json|tsconfig.*\.json|eslint\.config\.js|\.github\/)/.test(rel)) {
+			selectFullGraph(selected, `${rel}: package/config/toolchain change expands to full graph`);
+			continue;
+		}
+		if (rel.startsWith("scripts/")) {
+			addSelection(selected, "check:check-graph", `${rel}: graph/runner script change`);
+			addSelection(selected, "check:boundaries", `${rel}: script boundary check`);
+			selectFullGraph(selected, `${rel}: script change expands to full graph`);
+			continue;
+		}
+
+		let matched = false;
+		for (const entry of entries) {
+			if (!entry?.script || !scripts[entry.script]) continue;
+			if (entry.scope === "global") {
+				addSelection(selected, entry.script, `${rel}: ${entry.script} has global impact scope`);
+				matched = true;
+				continue;
+			}
+			if ((entry.inputs || []).some((input) => inputMatchesChangedFile(input, rel))) {
+				addSelection(selected, entry.script, `${rel}: matched derived impact scope`);
+				matched = true;
+			}
+		}
+
+		if (rel.startsWith("tests/contracts/")) {
+			const script = contractScriptFor(rel, scripts);
+			if (script) {
+				addSelection(selected, script, `${rel}: changed contract script`);
+				matched = true;
+			}
+			addSelection(selected, "check:check-graph", `${rel}: graph drift coverage`);
+			matched = true;
+		}
+		if (rel.startsWith("docs/") || rel.startsWith("README") || rel === "AGENTS.md" || rel === "CLAUDE.md" || rel === "TODO.md" || rel === "CURRENT.md" || rel === "CHANGELOG.md") {
+			addSelection(selected, "check:doc-structure", `${rel}: document structure`);
+			addSelection(selected, "check:tool-docs", `${rel}: generated doc drift if affected`);
+			matched = true;
+		}
+		if (!matched) selectFullGraph(selected, `${rel}: unknown impact expands to full graph`);
+	}
+	return selected;
+}
+
+export function collectFingerprintFiles(root = ROOT, pathspecs) {
+	const suffix = Array.isArray(pathspecs) && pathspecs.length ? ["--", ...pathspecs] : [];
+	const tracked = gitLines(["ls-files", "-z", ...suffix], root);
+	const untracked = gitLines(["ls-files", "--others", "--exclude-standard", "-z", ...suffix], root);
 	const files = new Map();
 	for (const file of tracked) files.set(file, "tracked");
 	for (const file of untracked) files.set(file, "untracked");
 	return [...files.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
 }
 
-export function computeCoarseFingerprint(root = ROOT) {
+function hashFingerprintFiles(files, options) {
 	const hash = createHash("sha256");
-	const files = relevantFiles(root);
 	let untrackedCount = 0;
-	hash.update("pi-browser-check-fingerprint-v1\n");
+	hash.update(`${options.seed}\n`);
 	hash.update(`${process.version}\n`);
+	for (const line of options.extraLines || []) hash.update(`${line}\n`);
 	for (const [file, kind] of files) {
-		const abs = path.join(root, file);
+		const abs = path.join(options.root, file);
 		if (!existsSync(abs)) continue;
 		const content = readFileSync(abs);
 		const itemHash = createHash("sha256").update(content).digest("hex");
@@ -270,11 +401,111 @@ export function computeCoarseFingerprint(root = ROOT) {
 	}
 	return {
 		ok: true,
-		scope: "repo-coarse-v1",
+		scope: options.scope,
 		fingerprint: `sha256:${hash.digest("hex")}`,
 		fileCount: files.length,
 		untrackedCount,
+	};
+}
+
+export function computeCoarseFingerprint(root = ROOT, options = {}) {
+	const files = options.fileEntries || collectFingerprintFiles(root, FINGERPRINT_ROOTS);
+	return {
+		...hashFingerprintFiles(files, {
+			root,
+			seed: "pi-browser-check-fingerprint-v1",
+			scope: "repo-coarse-v1",
+		}),
 		roots: [...FINGERPRINT_ROOTS],
+	};
+}
+
+function nodeImpactEntry(node, impactMap) {
+	const impactScript = node.impactScript || node.script;
+	return {
+		impactScript,
+		entry: impactMap?.nodes?.[impactScript] || impactMap?.nodes?.[node.script],
+	};
+}
+
+export function cacheScopeForNode(node, options = {}) {
+	const root = options.root || ROOT;
+	const impactMap = options.impactMap || readImpactMap(root);
+	const { impactScript, entry } = nodeImpactEntry(node, impactMap);
+	if (!entry) {
+		return {
+			scope: "global",
+			cacheScope: "repo-coarse-v1",
+			impactScript,
+			reason: "missing impact-map entry; using whole-repo cache key",
+			inputs: [...FINGERPRINT_ROOTS],
+			globalConfigInputs: [...CACHE_GLOBAL_INPUTS],
+		};
+	}
+	if (entry.scope === "global") {
+		return {
+			scope: "global",
+			cacheScope: "repo-coarse-v1",
+			impactScript,
+			reason: "impact-map entry is global",
+			inputs: [...FINGERPRINT_ROOTS],
+			unresolvedInputs: entry.unresolvedInputs || [],
+			globalConfigInputs: [...CACHE_GLOBAL_INPUTS],
+		};
+	}
+	const inputs = [...new Set([...(entry.inputs || []), ...CACHE_GLOBAL_INPUTS])].sort();
+	return {
+		scope: "paths",
+		cacheScope: "node-paths-v2",
+		impactScript,
+		reason: "impact-map path scope plus global cache config",
+		inputs,
+		unresolvedInputs: entry.unresolvedInputs || [],
+		globalConfigInputs: [...CACHE_GLOBAL_INPUTS],
+	};
+}
+
+export function computeNodeCacheFingerprint(node, options = {}) {
+	const root = options.root || ROOT;
+	const impactMap = options.impactMap || readImpactMap(root);
+	const scope = cacheScopeForNode(node, { root, impactMap });
+	if (scope.scope === "global") {
+		const coarse = options.coarseFingerprint || computeCoarseFingerprint(root, { fileEntries: options.coarseFileEntries });
+		return {
+			schemaVersion: CHECK_CACHE_SCHEMA_VERSION,
+			...coarse,
+			scope: scope.cacheScope,
+			cacheScope: scope.cacheScope,
+			impactScript: scope.impactScript,
+			reason: scope.reason,
+			inputs: scope.inputs,
+			inputCount: scope.inputs.length,
+			globalConfigInputs: scope.globalConfigInputs,
+		};
+	}
+	const allFiles = options.allFileEntries || collectFingerprintFiles(root);
+	const scopedFiles = allFiles.filter(([file]) => scope.inputs.some((input) => inputMatchesChangedFile(input, file)));
+	const nodeEntry = impactMap.nodes?.[scope.impactScript] || {};
+	const impactDigest = createHash("sha256").update(JSON.stringify({ script: scope.impactScript, scope: nodeEntry.scope, inputs: nodeEntry.inputs || [] })).digest("hex");
+	const fingerprint = hashFingerprintFiles(scopedFiles, {
+		root,
+		seed: "pi-browser-check-node-fingerprint-v2",
+		scope: scope.cacheScope,
+		extraLines: [
+			`impactScript:${scope.impactScript}`,
+			`impactDigest:${impactDigest}`,
+			...scope.inputs.map((input) => `input:${input}`),
+		],
+	});
+	return {
+		schemaVersion: CHECK_CACHE_SCHEMA_VERSION,
+		...fingerprint,
+		cacheScope: scope.cacheScope,
+		impactScript: scope.impactScript,
+		reason: scope.reason,
+		inputs: scope.inputs,
+		inputCount: scope.inputs.length,
+		globalConfigInputs: scope.globalConfigInputs,
 	};
 }
 
@@ -300,7 +531,7 @@ export function recordMissIfApplicable({ root = ROOT, fullRunId, failingScript, 
 		skippedScripts: impact.skippedScripts || [],
 		cacheHits: impact.cacheHits || [],
 		failingFullCheckNode: failingScript,
-		likelyRepairTarget: "graph edge, fingerprint scope, ABI source, or cache eligibility",
+		likelyRepairTarget: likelyImpactRepairTarget({ root, failingScript, changedFiles: impact.changedFiles || [] }),
 		fullSummaryPath,
 	};
 	const outPath = path.join(CHECK_MISS_DIR, `${runId}.json`);

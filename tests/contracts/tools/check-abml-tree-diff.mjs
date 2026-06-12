@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildTreeDiff } from "../../../src/abml-core/treeDiff.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
+import { PURE_CORE } from "../drift/abml-core-manifest.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const readRepo = (rel) => readFileSync(path.join(repoRoot, rel), "utf8");
@@ -87,8 +88,7 @@ const treeDiffSrc = readRepo("src/abml-core/treeDiff.ts");
 assert.ok(treeDiffSrc.includes('from "./grouping.js"') && treeDiffSrc.includes("partialBaseline"), "treeDiff pure core consumes the shared grouping engine and handles partial baselines");
 const groupingSrc = readRepo("src/abml-core/grouping.ts");
 assert.ok(groupingSrc.includes("templateGroupDescriptorForEntity"), "grouping engine owns template group descriptor derivation");
-const boundarySrc = readRepo("tests/contracts/drift/check-abml-core-boundary.mjs");
-assert.ok(boundarySrc.includes('"treeDiff.ts"'), "treeDiff classified as pure core");
+assert.ok(PURE_CORE.includes("treeDiff.ts"), "treeDiff classified as pure core");
 const pkg = JSON.parse(readRepo("package.json"));
 assert.ok(pkg.scripts?.["check:abml-tree-diff"]?.includes("check-abml-tree-diff.mjs"), "check:abml-tree-diff script present");
 

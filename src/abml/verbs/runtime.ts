@@ -32,6 +32,8 @@ import { inspectVisionRegion } from "./visionRuntime.js";
 import { readFrameEntities, frameIdFromRef, probeFrameReachability } from "./frameRuntime.js";
 import { pierceRefEntities } from "./pierceRuntime.js";
 
+// Live ABML execution engine reached through integration.ts. Pure verb decisions stay in
+// the pure kernel; browser I/O, refs, scans, and verification happen here.
 export type AbmlBrowserRuntimeServer = Pick<BrowserBridgeServer, "sendCommand" | "snapshot" | "createObservationSnapshot">;
 
 export type BrowserAbmlRuntimeOptions = {

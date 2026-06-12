@@ -19,8 +19,9 @@ live directly in `ARCHIVE.md`. It is historical evidence, not an active queue.
   helpers, DOM event-chain/sink hints, Wasm metadata/bridge, and stateful
   WebSocket replay/fuzz primitives.
 - **Governance and debt closure**: tool parameter contracts, lint ratchet,
-  protocol single-source, performance overhead execution, and trigger-gated
-  backlog cleanup.
+  protocol single-source, performance overhead execution, trigger-gated
+  backlog cleanup, and the June 2026 dev-harness / check-governance plan line
+  migrated out of `CURRENT.md`.
 
 ## Evidence
 

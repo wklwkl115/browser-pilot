@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// contract: tests/contracts/drift/check-package-files.mjs pins --quiet because prepack must keep stdout clean.
 const quiet = process.argv.includes("--quiet");
 const defaultDistDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
 const serviceWorkerBuildMode = "esm-import-graph";

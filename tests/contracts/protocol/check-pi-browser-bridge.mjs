@@ -3,6 +3,7 @@ import vm from "node:vm";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
+import { EXPECTED_PACKAGE_FACTS } from "../drift/expected-package-facts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const bridge = path.join(root, "bridge", "pi_browser_bridge");
@@ -106,26 +107,26 @@ function intervalStubs() {
 }
 
 const pkg = JSON.parse(read("package.json"));
-assert(pkg.version === "0.3.0", "package version must be 0.3.0");
+assert(typeof pkg.version === "string" && pkg.version.length > 0, "package version must be declared");
 assert(pkg.keywords?.includes("pi-package"), "package must declare pi-package keyword");
 assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must expose index.ts");
 assert(pkg.main === "./dist/index.js", "package main must point to compiled dist entry");
 assert(pkg.types === "./dist/index.d.ts", "package types must point to compiled declarations");
 assert(pkg.exports?.["."]?.import === "./dist/index.js" && pkg.exports?.["."]?.types === "./dist/index.d.ts", "package exports must point to compiled dist entry and declarations");
 assert(pkg.bin?.["pi-browser"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
-assert(pkg.scripts?.["sync:protocol"] === "node scripts/sync-native-protocol.mjs", "package must expose protocol sync script");
+assert(pkg.scripts?.["sync:protocol"] === EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
 
 const manifest = JSON.parse(read("bridge/pi_browser_bridge/manifest.json"));
 assert(manifest.name === "Pi Native Browser Bridge", "manifest name must be Pi Native Browser Bridge");
-assert(manifest.version === "0.3.0", "manifest version must be 0.3.0");
-assert(manifest.background?.service_worker === "dist/service-worker.js" && manifest.background?.type === "module", "manifest must use generated dist module service worker");
+assert(manifest.version === pkg.version, "manifest version must match package.json version");
+assert(manifest.background?.service_worker === EXPECTED_PACKAGE_FACTS.manifestServiceWorker.value && manifest.background?.type === "module", `manifest must use generated dist module service worker (${EXPECTED_PACKAGE_FACTS.manifestServiceWorker.rationale})`);
 assert(JSON.stringify(manifest.content_scripts?.[0]?.js) === JSON.stringify(["dist/disable_dialogs.js"]), "manifest document_start script must use dist disable-dialogs bundle");
 assert(JSON.stringify(manifest.content_scripts?.[1]?.js) === JSON.stringify(["dist/content.js"]), "manifest document_idle script must use dist content bundle");
 assert(manifest.permissions?.includes("downloads"), "manifest must include downloads permission for stable download paths");
 assert(manifest.permissions?.includes("webNavigation"), "manifest must include webNavigation permission for wait.navigation event completion");
-assert(manifest.permissions?.includes("offscreen"), "manifest must include offscreen permission for durable B5 transport");
-assert(read("bridge/pi_browser_bridge/offscreen.html").includes("dist/offscreen.js"), "offscreen.html must load the generated offscreen transport");
+assert(manifest.permissions?.includes(EXPECTED_PACKAGE_FACTS.offscreenPermission.value), `manifest must include offscreen permission (${EXPECTED_PACKAGE_FACTS.offscreenPermission.rationale})`);
+assert(read(`bridge/pi_browser_bridge/${EXPECTED_PACKAGE_FACTS.offscreenDocument.value}`).includes(EXPECTED_PACKAGE_FACTS.offscreenBundle.value), `offscreen document must load the generated offscreen transport (${EXPECTED_PACKAGE_FACTS.offscreenBundle.rationale})`);
 
 const serviceWorkerBridgeFiles = ["config.js", "protocol.js", "patterns.js", "cdp.js", "state_store.js", "runtime.js", "wait_cdp.js", "wait_coordinator.js", "wait_navigation.js", "wait_network_idle.js", "wait_selector.js", "wait.js", "network_model.js", "network.js", "hook.js", "evidence.js", "frame.js", "html.js", "screenshot.js", "transfer.js", "bridge_info.js", "core_commands.js", "exec.js", "input.js", "ws_model.js", "ws.js", "router.js", "tab_sync.js", "transport.js"];
 const background = serviceWorkerBridgeFiles.join(" ");
@@ -941,7 +942,7 @@ testDialogSuppressionPromptSemantics();
 
 function testBridgeInfoTracksAboutBlankTabs() {
 	const sandbox = {
-		chrome: { runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0", version_name: "0.3.0-test" }) } },
+		chrome: { runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: pkg.version, version_name: `${pkg.version}-test` }) } },
 		navigator: { userAgent: "contract" },
 		Math,
 		Date,
@@ -962,7 +963,7 @@ function testBridgeInfoUsesTabScopedCspBypass() {
 	let now = 1_000;
 	const sandbox = {
 		chrome: {
-			runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: "0.3.0" }) },
+			runtime: { id: "bridge-test", getManifest: () => ({ name: "Pi Native Browser Bridge", version: pkg.version }) },
 			alarms: { create(name, info) { alarms.push({ name, ...info }); }, clear() { return true; }, onAlarm: { addListener(listener) { alarmListeners.push(listener); } } },
 			declarativeNetRequest: {
 				updateSessionRules(input) { updates.push({ kind: "session", ...input }); return Promise.resolve(); },

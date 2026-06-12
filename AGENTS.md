@@ -62,6 +62,13 @@
 - Excessive fragmentation that makes tool choice the task.
 - Static design without evals, transcript review, or production feedback.
 
+## Code Search
+
+- For concept-level location questions ("where is X thrown", "which files implement Y across layers"), use semantic code search FIRST when available: the `acemcp` MCP tool `search_context` (exposed in Claude Code as `mcp__acemcp__search_context`). Call it with `project_root_path` set to this repo root using forward slashes and a natural-language query plus optional keywords, e.g. query "Where is the tab lease conflict thrown and where is its recovery text generated? Keywords: TAB_LEASE_CONFLICT, recovery nextActions".
+- It incrementally indexes the working tree before each search (uncommitted and untracked files included) and returns scored file/line snippets across src, tests, contracts, scripts, and docs — use it instead of blind directory grepping when you do not yet know the identifiers.
+- Treat hits as leads, not verification: results can miss one layer of a multi-layer chain, so open the files and apply the verify-before-naming rule before referencing or editing anything a hit suggested.
+- Exact-string questions stay with exact tools: `npm run query:markers` for contract marker pins, plain grep for known identifiers, `npm run check:smart -- --dry-run --changed-file=<path>` for gate impact. Semantic search routes you to the neighborhood; the exact tools and the source decide.
+
 ## Change Workflow
 
 - Before large architecture changes, scope changes, mature substitutions, bridges, or major refactors, update `TODO.md` with the concrete decision and execution path.
@@ -90,10 +97,13 @@ Every plan item and every eval must be executed **now**. The default is to do th
 ## Sync & Verification
 
 - Tool additions or material changes must update code, contracts, budgets, summaries, README, CHANGELOG, TODO, the `pi-browser-tools` skill, and related `pi-ctf-protocol` docs/contracts when affected.
-- Document structure rules live in `docs/document-structure.md`. When changing archive/roadmap/todo/current index blocks or archive file layout, run `npm run docs:sync-indexes` before `npm run check`.
+- Document structure rules live in `docs/document-structure.md`. When changing generated doc indexes or managed blocks, run `npm run docs:sync` before `npm run check`.
+- For mirrored governance rules, `AGENTS.md` is the single editing surface: edit this file, then run `npm run docs:sync` to regenerate the `CLAUDE.md` inlined block.
+- Development-harness authoring rules live in `docs/agent-development.md`; use it for check wiring, marker queries, ledger ratchets, and workstream closure.
 - After code or contract changes run `npm run check` in this extension.
 - For fast local iteration, use the narrowest grouped gate first when sufficient: `npm run check:all:bridge`, `npm run check:all:package`, `npm run check:all:contracts`; keep `npm run check` as the final full gate.
-- When a structured local verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`.
-- For accelerated local verification, use the graph-backed runners after the relevant narrow gate: `npm run check:trace` records grouped per-script durations, `npm run check:dag` executes the graph with direct local binaries and ESLint, `npm run check:dag -- --cache` may skip only exact coarse-fingerprint repeats, and `npm run check:smart` records impact-selected nodes plus conservative expansion reasons. These are acceleration aids; completed workstreams still close with full `npm run check`.
+- For external CLI/tool parameter surface changes, include `npm run check:param-surface` and `npm run check:input-surface` in the focused verification set.
+- When a structured serial verification summary is useful, run `node scripts/run-check-groups.mjs --json ...`; artifact is written to `.pi/browser-artifacts/check-groups-summary.json`. The closing `npm run check` artifact is `.pi/browser-artifacts/check-dag-summary.json` plus per-run copies under `.pi/browser-artifacts/check-dag/`.
+- For accelerated local verification, use the graph-backed runners after the relevant narrow gate: `npm run check:trace` records grouped per-script durations, `npm run check:dag` executes the graph with direct local binaries and ESLint, `npm run check:dag -- --cache` may skip nodes by v2 per-node impact-map scope while global-scope nodes still use the whole-repo key, and `npm run check:smart` records impact-selected nodes plus conservative expansion reasons. These are acceleration aids; completed workstreams still close with full `npm run check`.
 - The `pi-browser-tools` skill source lives in-repo at `skills/pi-browser-tools/SKILL.md`; the global load path `D:/Pi/agent/skills/pi-browser-tools` is a directory junction to it. When touching skill text, edit the repo file and run `PYTHONUTF8=1 python D:/Pi/agent/skills/skill-creator/scripts/quick_validate.py D:/Pi/agent/extensions/pi-browser-tools/skills/pi-browser-tools`.
 - After runtime reload for new/enhanced tools, run bounded local-fixture smoke tests and actual callable-tool runtime tests that write artifacts; summarize artifact paths.

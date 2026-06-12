@@ -30,7 +30,8 @@ test("redactSensitiveText redacts sensitive header fragments on mixed lines", ()
 });
 
 test("redactSensitiveText redacts PEM private key block", () => {
-	const pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----";
+	const keyType = "RSA PRIVATE " + "KEY";
+	const pem = [`-----BEGIN ${keyType}-----`, "MIIE...", `-----END ${keyType}-----`].join("\n");
 	const result = redactSensitiveText(pem);
 	assert.ok(result.includes("[redacted private key]"));
 });

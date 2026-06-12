@@ -424,7 +424,7 @@ for (const [target, generator] of outputs) {
 	if (checkOnly) {
 		const current = existsSync(target) ? readFileSync(target, "utf8") : "";
 		if (current !== next) {
-			console.error(`native protocol generated output is stale: ${path.relative(root, target)}`);
+			console.error(`native protocol generated output is stale: ${path.relative(root, target)}. Run npm run sync:protocol.`);
 			drift = true;
 		}
 	} else {
