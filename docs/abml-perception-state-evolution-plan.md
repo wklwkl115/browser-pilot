@@ -238,7 +238,7 @@ Independent, larger work (per-frame AX + coordinate alignment).
 | Disclosure tree | `src/tools/resultMiddleware.ts`, `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts` | store full tree once; project L0/L1 + fold refs; `read(ref)` resolves subtree; demote `fitSummaryBudget` to per-node fallback |
 | Relationships + skeleton | `src/tools/summaries/scan.ts`, `src/abml/entity.ts` | landmark/structure containers + members; `selectedRef`; label↔control |
 | Output schema | `src/tools/summaries/outputSchemas.ts:39-65` | spectrum state fields, `source`, group/fold hints |
-| Verification + privacy | `src/abml/verbs/click.ts`, `runtime.ts`, `src/utils/redaction.ts` | assert semantic effect; suppress sensitive values |
+| Verification + privacy | `src/abml/verbs/runtime.ts`, `src/utils/redaction.ts` | assert semantic effect; suppress sensitive values |
 
 ## Phase gates
 
@@ -317,7 +317,7 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
   disappeared, state/name changed, and `focusedRef`.
 - `browser_observe mode=scan` accepts an optional `baseline` entity list / prior scan
   summary/envelope / snapshot id and lifts `diff` to the envelope top level.
-- ABML read/click/type runtimes can attach post-action entity diff; same-page refs are
+- The ABML read runtime attaches entity diff against a baseline; same-page refs are
   now stable by semantic locator hash so two snapshots match by `pi-ref://`.
 - R2 dependency inference consumes R3 diff to emit `form-dependency`.
 - R2 **alert-region** also consumes the R3 diff: a live region that appeared, or whose accessible

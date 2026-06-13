@@ -31,7 +31,6 @@ const thinEntrypoints = [
 	"src/scan/buildScanScript.ts",
 	"src/content/buildContentScript.ts",
 	"src/pick/buildPickScript.ts",
-	"src/abml/verbs/runtime.ts",
 	"src/abml/verbs/visionRuntime.ts",
 ];
 for (const rel of thinEntrypoints) {

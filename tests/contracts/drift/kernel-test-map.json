@@ -62,9 +62,6 @@
     "src/abml-core/types.ts": [
       "tests/unit/abml/refId.test.ts"
     ],
-    "src/abml-core/verbs/click.ts": [
-      "tests/unit/abml/verbs.test.ts"
-    ],
     "src/abml-core/verbs/frame.ts": [
       "tests/unit/abml/verbs.test.ts"
     ],
@@ -75,12 +72,6 @@
       "tests/unit/abml/verbs.test.ts"
     ],
     "src/abml-core/verbs/router.ts": [
-      "tests/unit/abml/verbs.test.ts"
-    ],
-    "src/abml-core/verbs/scroll.ts": [
-      "tests/unit/abml/verbs.test.ts"
-    ],
-    "src/abml-core/verbs/type.ts": [
       "tests/unit/abml/verbs.test.ts"
     ],
     "src/distill-core/allocate.ts": [

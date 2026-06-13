@@ -12,8 +12,8 @@
 | `bridge_src` | 43 | 12213 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
 | `capture-src` | 5 | 24 | editable templates, sync:capture source | Editable page-world capture templates; generated bundles are under `src/capture/generated/`. |
 | `cli` | 15 | 2602 | flags, local commands, daemon, JSON envelopes | External `pi-browser` CLI face; keep command metadata, flags, local commands, and daemon validation in sync. |
-| `src/abml` | 32 | 2175 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
-| `src/abml-core` | 27 | 4188 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
+| `src/abml` | 29 | 1550 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
+| `src/abml-core` | 24 | 4053 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
 | `src/capture` | 6 | 58 | generated output | Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`. |
 | `src/content` | 1 | 20 | leaf module group | Content extraction runtime; pair with capture/page-script gates when touching page-world behavior. |
 | `src/distill-core` | 16 | 1662 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |

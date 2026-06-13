@@ -10,8 +10,8 @@
 | `capture-src` | 5 | 24 |
 | `cli` | 15 | 2602 |
 | `scripts` | 19 | 3781 |
-| `src/abml` | 32 | 2175 |
-| `src/abml-core` | 27 | 4188 |
+| `src/abml` | 29 | 1550 |
+| `src/abml-core` | 24 | 4053 |
 | `src/capture` | 6 | 58 |
 | `src/content` | 1 | 20 |
 | `src/distill-core` | 16 | 1662 |
@@ -50,8 +50,8 @@
 | `src/tools/toolAdapter.ts` | 18 |
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
 | `src/utils/params.ts` | 16 |
-| `src/abml-core/types.ts` | 15 |
 | `src/protocol/nativeErrorCodes.ts` | 13 |
+| `src/abml-core/types.ts` | 12 |
 
 ## Registered Tool And Command Surface
 
