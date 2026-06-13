@@ -96,8 +96,8 @@ test("withTrackedOperation heartbeat does not keep the event loop alive", async 
 		assert.equal(unrefCalled, true);
 		const heartbeat = updates.find((update) => JSON.stringify(update.details || {}).includes("heartbeatAt"));
 		assert.ok(heartbeat, "heartbeat update must be emitted");
-		assert.equal("content" in heartbeat, false, "heartbeat update must be liveness-only");
-		const milestone = updates.find((update) => "content" in update);
+		assert.ok(Array.isArray(heartbeat.content) && heartbeat.content.length === 0, "heartbeat update must be liveness-only: empty content array (host render contract requires content to exist)");
+		const milestone = updates.find((update) => Array.isArray(update.content) && update.content.length > 0);
 		assert.ok(milestone, "milestone updates must still carry content");
 	} finally {
 		globalThis.setInterval = originalSetInterval;

@@ -330,7 +330,7 @@ async function emitTrackedProgress(onUpdate: ToolOnUpdate, operation: BrowserAct
 	if (!onUpdate) return;
 	const payload = compactOperationForEnvelope(operation);
 	if (options.content === false) {
-		await onUpdate({ details: { progress: payload } } as unknown as PiTextToolResult);
+		await onUpdate({ content: [], details: { progress: payload } });
 		return;
 	}
 	await onUpdate({ content: [{ type: "text", text: stableJson({ progress: payload }) }], details: { progress: payload } });

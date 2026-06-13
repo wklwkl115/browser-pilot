@@ -90,7 +90,7 @@ export function targetHandleNotFoundError(args: {
 		tabs: args.tabs.map((tab) => compactTabForError(tab)),
 		recovery: {
 			retryable: true,
-			hint: "The stable target reference is no longer connected. Use browser_tabs list to get a live tabHandle, or omit targetRef/tabId to use the active tab.",
+			hint: "The stable target reference is no longer connected. Possible causes: (1) the tab was closed or navigated away; (2) the extension service worker reconnected after going idle and the handle could not be rebound (this happens when the extensionId changed or multiple matching sessions were ambiguous). Re-list tabs to obtain the current handle and retry.",
 			nextActions: [
 				"browser_tabs action=list",
 				"retry with targetRef set to a live tabHandle, or omit targetRef/tabId to use the selected active tab",

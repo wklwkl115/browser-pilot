@@ -178,6 +178,7 @@ export class BrowserTabSessionRouter {
 		this.lastTabSyncAtValue = now;
 		const current = new Set<string>();
 		const browserId = this.clients.browserIdForClient(ws);
+		const clientInfo = this.clients.info(ws);
 		for (const raw of rawTabs) {
 			const tab = recordValue(raw);
 			if (!tab) continue;
@@ -187,7 +188,8 @@ export class BrowserTabSessionRouter {
 			current.add(id);
 			const existing = this.sessions.get(id);
 			const replacementIdentity = this.pendingReplacementIdentities.get(id);
-			const identity = replacementIdentity ?? existing ?? this.newIdentity(browserId);
+			const reconnectIdentity = (!existing && !replacementIdentity) ? this.findReconnectIdentity(tabId, clientInfo?.extensionId, now) : undefined;
+			const identity = replacementIdentity ?? existing ?? reconnectIdentity ?? this.newIdentity(browserId);
 			this.pendingReplacementIdentities.delete(id);
 			this.sessions.set(id, {
 				id,
@@ -200,7 +202,7 @@ export class BrowserTabSessionRouter {
 				title: typeof tab.title === "string" ? tab.title : existing?.title || "",
 				active: typeof tab.active === "boolean" ? tab.active : existing?.active,
 				windowId: toTabId(tab.windowId) ?? existing?.windowId,
-				openerTabId: toTabId(tab.openerTabId) ?? replacementIdentity?.openerTabId ?? existing?.openerTabId,
+				openerTabId: toTabId(tab.openerTabId) ?? replacementIdentity?.openerTabId ?? reconnectIdentity?.openerTabId ?? existing?.openerTabId,
 				...(replacementIdentity ? { replacedFromTabId: replacementIdentity.replacedFromTabId, replacedAt: replacementIdentity.replacedAt } : existing?.replacedFromTabId ? { replacedFromTabId: existing.replacedFromTabId, replacedAt: existing.replacedAt } : {}),
 				incognito: typeof tab.incognito === "boolean" ? tab.incognito : existing?.incognito,
 				type: "ext_ws",
@@ -396,6 +398,35 @@ export class BrowserTabSessionRouter {
 			logicalTabId,
 			tabHandle: `tabh_${browserPart}_${logicalTabId}_g1`,
 			generation: 1,
+		};
+	}
+
+	/**
+	 * When an extension reconnects (new browserId, same extensionId, same numeric tabId),
+	 * attempt to rebind the logical identity from the most recently disconnected session
+	 * that matches the same extensionId and tabId.  Returns undefined when extensionId is
+	 * unknown, or when the match is ambiguous (≥2 candidates) — mint fresh in those cases.
+	 */
+	private findReconnectIdentity(
+		tabId: number,
+		extensionId: string | undefined,
+		now = Date.now(),
+	): Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> | undefined {
+		if (!extensionId) return undefined;
+		const candidates = Array.from(this.sessions.values()).filter(
+			(session) =>
+				session.tabId === tabId &&
+				session.disconnectedAt !== undefined &&
+				now - session.disconnectedAt < DISCONNECTED_SESSION_RETENTION_MS &&
+				session.bridge?.extensionId === extensionId,
+		);
+		if (candidates.length !== 1) return undefined;
+		const c = candidates[0]!;
+		return {
+			logicalTabId: c.logicalTabId,
+			tabHandle: c.tabHandle,
+			generation: c.generation,
+			openerTabId: c.openerTabId,
 		};
 	}
 

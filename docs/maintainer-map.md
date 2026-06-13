@@ -17,7 +17,7 @@
 | `src/capture` | 6 | 58 | generated output | Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`. |
 | `src/content` | 1 | 20 | leaf module group | Content extraction runtime; pair with capture/page-script gates when touching page-world behavior. |
 | `src/distill-core` | 16 | 1628 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |
-| `src/driver` | 22 | 3518 | server facade, client registry, tab/session router, lease/queue, wait/diagnostics | Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module. |
+| `src/driver` | 22 | 3549 | server facade, client registry, tab/session router, lease/queue, wait/diagnostics | Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module. |
 | `src/frontend` | 4 | 394 | leaf module group | Harness-facing validation and usage logging; preserve redaction and CLI/Pi parity contracts. |
 | `src/memory` | 4 | 395 | leaf module group | Runtime memory persistence and HMAC/profile services; keep local-only storage boundaries explicit. |
 | `src/memory-core` | 7 | 433 | index/barrel | Pure memory kernel; keep host I/O out and verify memory-core boundary. |

@@ -1,6 +1,11 @@
 # Living Tab Session — Identity, Standing Perception & the Free Interaction Loop
 
-> Status: COMPLETE v6 — 2026-06-13. v1 established the three-plane diagnosis;
+> Status: COMPLETE v7 — 2026-06-13. v7 = acceptance-audit remediation: claim
+> corrections in §12/§13, reconnect identity rebinding via extensionId
+> (BrowserTabSessionRouter.findReconnectIdentity), missing invariant tests
+> (I3/I7/zero-poll/caps/hop-bound/two-hop/prune), and Pi-host render-contract
+> heartbeat crash fix (content:[]).
+> v1 established the three-plane diagnosis;
 > v2 added the conceptual model (objective store / subjective views /
 > versioned timeline), topology, failure/privacy/memory/observability
 > dimensions; v3 adds the **performance plane**: an end-to-end latency budget
@@ -16,10 +21,11 @@
 > implementation traps: target handles require a shared resolver rather than
 > hidden `tabId` polymorphism, the non-blocking interaction invariant is scoped
 > to default low-level actions, and the stale 200ms execute-fix language is
-> removed. v6 records the active 2026-06-13 full-closure workstream: S0 is
-> shipped, S1/S2/S3 are executed as additive substrate/feedback changes plus
-> measured experiment closures, and non-adopted speculative paths are closed
-> with evidence instead of remaining plan placeholders.
+> removed. v6 recorded the 2026-06-13 full-closure workstream and originally
+> described the non-adopted paths as "measured experiment closures ... closed
+> with evidence" — v7's acceptance audit found those closures were NOT
+> measured (no experiments, no artifacts); §12 now records them honestly as
+> descopes closed without execution.
 > Relationship to `docs/abml-perception-state-evolution-plan.md`
 > (fold/projection disclosure): this plan builds the freshness + identity +
 > speed substrate that disclosure model assumes; zero mechanism overlap; that
@@ -595,7 +601,7 @@ token-economy bench run as standing regressions.
 
 | Layer dies | What is lost | Recovery behavior |
 |---|---|---|
-| MV3 service worker idles/restarts | SW dirty buffers, replacement ring | `ext_ready` re-handshake (existing `recordRuntimeRecovery`); streams marked `historyLost:true` (hook/intercept recovery pattern); next observe = fresh full scan, new epoch — never a fabricated delta |
+| MV3 service worker idles/restarts | SW dirty buffers; replacement ring; pending requests to the old WS connection | `ext_ready` re-handshake (existing `recordRuntimeRecovery`); streams marked `historyLost:true` (hook/intercept recovery pattern); next observe = fresh full scan, new epoch — never a fabricated delta. **Logical identity survives (v7):** `BrowserTabSessionRouter.findReconnectIdentity` rebinds the old `tabHandle` to the new WS connection when the reconnecting extension reports the same `extensionId` + same numeric `tabId` and there is exactly one matching disconnected candidate; ambiguous or unknown extensionId degrades to a fresh identity. What is NOT preserved across reconnect: SW-side dirty buffers, the replacement ring, and any per-connection `browserId` (the original defect class — each WS connection gets a new `browserId`, which is why v6-era handle resolution died on SW wake). Replacement-map cap 64 + TTL prune and hop bound `MAX_REPLACEMENT_HOPS=3` remain in effect. |
 | Content script reloads (navigation) | dirty set for that document | new navigation epoch (existing frame-key semantics); expected and explicit |
 | Bridge/daemon restarts | entire substrate (process memory) | handles die with their generation (no fake continuity, I7); artifacts remain the durable tier; first calls behave exactly like today's cold start |
 | Extension reconnects mid-flight | pending requests | existing `rejectForClient` + lease disconnect cleanup unchanged |
@@ -605,20 +611,21 @@ than the status quo; every discontinuity marked, never papered over.
 
 ## 8. Observability & the metrics that prove it
 
-- `browser_tabs snapshot` additively exposes per-tab living-session stats:
-  substrate version, coverage, dirty-set size, stream cursors, handle,
-  lineage — the operator and the audit loop *see* the standing state.
-- **Architecture-level success metrics**, extracted from blind-eval
-  transcripts, measured before S0 and after each stage:
-  - **defensive-ritual rate** (`browser_tabs list` calls not preceded by a
-    tab-changing action, per task);
-  - **first-envelope latency** + the 6.x complexity table on the heavy corpus;
-  - **redundant re-observe rate** (observes ≥90% delta-empty vs previous);
-  - **stale-id incident rate** (TAB_NOT_FOUND per task);
-  - **tokens per completed task** (token-economy bench corpus);
-  - **execute overhead** (tool time minus script eval time, including the
-    bounded new-tab observation window when it actually triggers).
-- Reported in each stage's §Results; S1/S2/S3 live or die by them.
+- `browser_tabs snapshot` per-tab living-session stats (substrate version,
+  coverage, dirty-set size, stream cursors, handle, lineage) are **not yet
+  exposed** — the snapshot action was not part of the S0-S3 execution scope.
+  This remains an open follow-up; the tab state is available internally but
+  the additive stats surface was not shipped.
+- **Architecture-level success metrics** defined in this plan (defensive-ritual
+  rate, first-envelope latency / 6.x complexity table, redundant re-observe
+  rate, stale-id incident rate, tokens per task, execute overhead) were **not
+  systematically measured before and after each stage** against a heavy corpus.
+  The instrumentation fields (observe timings, `connectionWaitMs`, `scanMs`,
+  etc.) were shipped in S0, but the §Results corpus numbers and before/after
+  metric table were not collected. The designated measurement path is
+  `docs/algorithm-optimization-plan.md` Step 0 (observeTimings harvest,
+  instrumentation already shipped). Until Step 0 evidence is collected, the
+  §8 metrics remain a goal contract, not a verified result.
 
 ## 9. Cross-layer beneficiaries
 
@@ -684,9 +691,9 @@ S0's measured §Results are copied into their own activation entries.
 | Stage | Result | Evidence |
 |---|---|---|
 | S0 | Shipped identity continuity: stable `tabHandle`/`targetRef`, shared target resolver, replacement/activation events, lineage, lease/queue/perception-ledger migration, connection readiness diagnostics, and observe/execute timing fields. | Driver/tool/bridge unit coverage, fake-ws replacement round trip, `check:all:bridge`, generated docs/contracts. |
-| S1 | Shipped the low-risk latency floor: observe uses direct page-script value channel, same-call scan `signals.fingerprint`, ABML prefetched scan reuse, AX `DOMSnapshot.captureSnapshot` geometry join before per-node fallback, and explicit timings. Full generated-template fused visitor and automatic viewport-first first envelope were executed as closed experiments for this pass: no byte-safe win was proven without changing the scan template contract or adding a new coverage mode. | `check:page-scripts`, `tests/unit/abml/ax-runtime.test.ts`, `tests/unit/tools/observe-abml-integration.test.ts`, full fixture eval summary `.pi/browser-artifacts/eval-browser-workflows/2026-06-12T18-26-53-853Z-23d3f64c/browser-workflow-eval-summary.json`. |
-| S2 | Shipped dirty-root substrate and standing perception: content fingerprint carries bounded dirty roots/overflow/drain, execute effect drains stale roots before dispatch, observe cache can survive TTL only when the dirty window is event-clean, `PI_BROWSER_STANDING_PERCEPTION=0` restores pull-only behavior, and `PerceptionLedger` now records shared objective-substrate metadata while preserving per-session views. Incremental dirty-root entity merge remains fail-open to full scan on unsafe/global cases; version-range behavior is covered through existing session-delta/baseline parity and serialization canaries. | `check:env-flags`, `check:compaction-ledger`, `check:compute-once`, `resultMiddleware-advanced` serialization canary, `perceptionLedger` shared-substrate unit. |
-| S3 | Shipped interaction feedback riders: default `browser_execute` and native write paths still collect cheap effect facts without pre-action observe; effect now carries dirty roots/overflow and stale-act feedback (`targetObservedAt`, `targetObservationId`, `targetRef`, `targetRegionDirty`, `targetDirtyRoots`) when a `pi-ref://` target's region dirties. `browser_wait selector` is locked to Runtime binding + MutationObserver subscription with diagnosed polling fallback. Speculative refresh and DOMSnapshot-as-primary sensing were run as A/B closures, not adopted by default; they remain disabled until blind A/B proves hit-rate and recall wins. | `execute-effect.test.ts`, `check:page-scripts`, `check:fake-ws`, full fixture eval 28/28 passed. |
+| S1 | Shipped the low-risk latency floor: observe uses direct page-script value channel, ABML prefetched scan reuse, AX `DOMSnapshot.captureSnapshot` geometry join before per-node fallback, and explicit timings. **same-call `signals.fingerprint` (§6.1):** a fused fingerprint was added and is used for AX cache keying and the timings marker; however the separate pre-scan `readPageFingerprint` round trip REMAINS for the render-cache gate (`scanRunner.ts:158-163`) — the single-RTT fusion is partial, not complete. Full generated-template fused visitor and automatic viewport-first first envelope were **closed WITHOUT execution** as a deliberate descope for this pass: no byte-safe win was proven without changing the scan template contract or adding a new coverage mode. These remain closed; reopen condition: blind-eval evidence of act→observe hot path latency budget exceeded, or a confirmed sensing recall gap attributable to the missing viewport-first path. | `check:page-scripts`, `tests/unit/abml/ax-runtime.test.ts`, `tests/unit/tools/observe-abml-integration.test.ts`, full fixture eval summary `.pi/browser-artifacts/eval-browser-workflows/2026-06-12T18-26-53-853Z-23d3f64c/browser-workflow-eval-summary.json`. |
+| S2 | Shipped dirty-root substrate and standing perception: content fingerprint carries bounded dirty roots/overflow/drain, execute effect drains stale roots before dispatch, observe cache can survive TTL only when the dirty window is event-clean, `PI_BROWSER_STANDING_PERCEPTION=0` restores pull-only behavior, and `PerceptionLedger` records metadata for the objective-substrate model. **"Shared objective-substrate metadata" (§4.2) is metadata-only dedup:** N sessions observing one tab still each run a full scan — the §4.2 shared-scan goal (one scan shared across N watchers) was NOT implemented. The `PerceptionLedger` change is bookkeeping metadata alignment only. Incremental dirty-root entity merge remains fail-open to full scan on unsafe/global cases; version-range behavior is covered through existing session-delta/baseline parity and serialization canaries. | `check:env-flags`, `check:compaction-ledger`, `check:compute-once`, `resultMiddleware-advanced` serialization canary, `perceptionLedger` shared-substrate unit. |
+| S3 | Shipped interaction feedback riders: default `browser_execute` and native write paths still collect cheap effect facts without pre-action observe; effect now carries dirty roots/overflow and stale-act feedback (`targetObservedAt`, `targetObservationId`, `targetRef`, `targetRegionDirty`, `targetDirtyRoots`) when a `pi-ref://` target's region dirties. `browser_wait selector` is locked to Runtime binding + MutationObserver subscription with diagnosed polling fallback. **§6.6 speculative incremental refresh and §6.7 DOMSnapshot-as-primary sensing were closed WITHOUT execution** — no code, no experiments, no A/B artifacts exist for either. Both are closed as deliberate descopes; reopen conditions: §6.6 reopens on blind-eval evidence that the act→observe hot path is the dominant latency source and a hit-rate A/B can run within the standing eval harness; §6.7 reopens on blind-eval evidence of a sensing recall gap on heavy pages attributable to the page-world walk. **§4.3 memory warm-start** was silently dropped from S3 scope and not shipped — closed; reopen condition: blind-eval evidence that first-contact heavy pages or SPA dirty seeding are real friction. | `execute-effect.test.ts`, `check:page-scripts`, `check:fake-ws`, full fixture eval 28/28 passed. |
 
 **Measured gates run during closure.**
 
@@ -718,19 +725,37 @@ S0's measured §Results are copied into their own activation entries.
   (`evals/browser-workflows/blind-findings.md`, real-session section)
   pointing here, each closed by a named stage with evidence: `NO_BROWSER_EXTENSION`
   recovery includes connection-readiness diagnostics and `connectionWaitMs`
-  separated from scan timings (S0); cached id surviving a live prerender swap +
-  lineage visible (S0); first-envelope latency + complexity table before/after
-  on the heavy corpus, with the §6 budget targets met or §Results-justified
-  (S1); incremental≡full golden + version-range parity + shared-substrate dedup
-  across two sessions + G3 serialization count=1 (S2); act→effect with
-  stale-act honesty replacing a re-observe in a real transcript +
-  speculation/channel A/B reports (S3).
-- All nine invariants I1–I9 contract-tested red-first; all new env flags
-  registered with signature sites; every stage closed with full
-  `npm run check` + `npm run lint` exit 0 read from the DAG summary artifact.
-- The §8 metrics move: connection-wait / recovery clarity, defensive-ritual
-  rate, stale-id incident rate, and execute overhead improve measurably;
-  tokens-per-task does not regress; the final blind real-site run completed
-  the heavy-page task without defensive re-listing in the child, kept first
-  observe under budget, and recorded the only residual disconnect as an n=1
-  reliability hypothesis rather than hiding it.
+  separated from scan timings (S0); cached id surviving replacement + lineage
+  visible are fixture-verified (fake-ws replacement round trip + reconnect
+  rebinding scenario; a live prerender-swap smoke was NOT run — open follow-up)
+  (S0); first-envelope latency improvement is partial (S1 — 
+  instrumentation fields shipped; §6 corpus numbers not collected, see §8);
+  dirty-root substrate + per-session metadata alignment (S2 — shared-scan dedup
+  NOT implemented, see §12 S2 note); act→effect with stale-act feedback (S3 —
+  speculation/channel experiments closed without execution, see §12 S3 note).
+- **Invariant contract coverage (true current state):** I1/I2/I4/I5/I6/I8/I9
+  have test coverage through the driver, fake-ws, and existing unit suites.
+  I3 and I7 did NOT have dedicated contract tests at v6 close; they were added
+  in the v7 acceptance-audit remediation wave: I3 →
+  `tests/unit/tools/execute-i3-nonblocking.test.ts` (default execute dispatches
+  before any perception read); I7 →
+  `tests/unit/tools/standing-perception-i7-honest-loss.test.ts` (fresh instance
+  serves nothing from prior standing state). Additional v7 tests:
+  `tests/unit/tools/wait-selector-zero-poll.test.ts` (zero-poll regression),
+  `tests/unit/tools/dirty-root-cap-i4.test.ts` (cap=32 pinned at
+  `pageSignals` normalization + page-side constant),
+  `tests/unit/driver/BrowserTabSessionRouter.test.ts` (reconnect
+  positive/negative, two-consecutive-replacements, hop bound MAX_REPLACEMENT_HOPS=3,
+  replacement-map cap 64 + TTL prune), reconnect-rebinding scenario in
+  `tests/contracts/runtime/check-fake-ws.mjs`. None of the I3/I7 tests were
+  written red-first; they were written as part of the remediation pass to
+  establish ground truth.
+- All new env flags registered with signature sites; every stage closed with
+  full `npm run check` + `npm run lint` exit 0 read from the DAG summary
+  artifact.
+- **§8 metrics:** the blind real-site run completed the heavy-page task without
+  defensive re-listing in the child and recorded the only residual disconnect as
+  an n=1 reliability hypothesis (`LTS1`) rather than hiding it. Systematic
+  before/after corpus measurements were NOT collected (see §8 note above);
+  tokens-per-task and execute overhead claims from the token-economy bench
+  reflect the bench corpus only, not before/after architecture stage comparison.

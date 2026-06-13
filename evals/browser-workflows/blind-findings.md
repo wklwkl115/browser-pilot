@@ -69,6 +69,45 @@ feeds mature-maintenance fixes.
   `ROADMAP.md` unless a second different component library reproduces the confusion after these
   fixes.
 
+- **RSF3 — `NO_BROWSER_EXTENSION` recovery + route-choice friction (2026-06-12, real session
+  `2026-06-12T11-53-03-330Z_019ebbad-b261-7ec9-88ba-880c2df6f275`; RESOLVED).** The session's
+  first `browser_tabs create` and a later `browser_tabs list` both spent ~5 s and failed with
+  `NO_BROWSER_EXTENSION`; the agent fell back to curl for the simple forum read. Root cause: error
+  details carried no timing or cold-start/SW-idle differentiation, so the agent had no signal to
+  distinguish "extension never loaded" from "SW idle, retry in <N> ms", and no bounded grace budget
+  to wait through. Fix (S0): error details now include `extensionWaitMs`, `connectionWaitMs`,
+  `negativeCacheActive`, `negativeCacheRemainingMs`, and a differentiated recovery hint
+  distinguishing cold-start (extension not installed/enabled) from SW-idle (was connected recently,
+  reconnect grace in progress). Route fallback for simple static reads correctly remains a skill
+  decision; the tool surface now provides the evidence needed to make that decision.
+
+- **RSF4 — physical tabId instability + defensive re-list ritual (2026-06-12, same real session;
+  RESOLVED).** The session showed repeated `browser_tabs list` calls not preceded by tab-changing
+  actions — a defensive ritual driven by uncertainty about whether the current numeric tabId was
+  still valid after navigation or SW reconnect. Root cause (two parts): (1) `tabs.onReplaced` and
+  `tabs.onActivated` were not subscribed, so prerender/instant-activation replacement silently
+  killed handles; (2) each SW wake produced a new per-connection `browserId`, which invalidated any
+  handle embedding that id. Fix (S0): replacement/activation events subscribed; `tabHandle` stable
+  logical id added; shared `resolveTargetRef` resolver with hop-follow and auto-follow of numeric
+  ids. Fix (v7 remediation): `BrowserTabSessionRouter.findReconnectIdentity` rebinds the old
+  `tabHandle` to the new WS connection when `extensionId` + numeric `tabId` unambiguously identify
+  the same disconnected candidate. Evidence: unit tests
+  `tests/unit/driver/BrowserTabSessionRouter.test.ts` (reconnect positive/negative, two-consecutive,
+  hop bound, cap + TTL prune) and the reconnect-rebinding scenario in
+  `tests/contracts/runtime/check-fake-ws.mjs`.
+
+- **RSF5 — monolithic pull-only perception latency on heavy pages (2026-06-12, same real session;
+  PARTIALLY ADDRESSED).** Observe on any page re-derives the full world synchronously regardless of
+  what changed. Partial fixes shipped: event-bounded render cache (observe skips rescan when dirty
+  window is empty and fingerprint matches), dirty roots on execute effect (effect facts bounded to
+  changed regions), prefetch reuse of scan data into ABML, AX bulk geometry via
+  `DOMSnapshot.captureSnapshot`. **What is NOT addressed:** no heavy-corpus latency measurements
+  exist yet; the §6 budget targets (warm observe <50 ms, heavy-page first observe <800 ms) are
+  goals without verified numbers; viewport-first / fused-visitor / incremental dirty-root merge
+  remain descoped. The designated measurement path is `docs/algorithm-optimization-plan.md` Step 0
+  (observeTimings harvest — instrumentation already shipped). RSF5 remains open pending Step 0
+  evidence.
+
 ## fixable (work items)
 
 | # | finding | runs | evidence | candidate fix |
@@ -163,7 +202,7 @@ feeds mature-maintenance fixes.
 
 | # | finding | runs | evidence | status |
 |---|---------|------|----------|--------|
-| LTS1 | **Fresh real-site blind run completed through observe artifact, but `browser_execute` hit `TAB_NOT_FOUND` after a just-successful `wait selector` + `observe scan` on the same explicit tab.** The agent recovered by reading the saved `data.rows` artifact and completed the linux.do top-5 topic task; a follow-up operator `tabs list` then returned `NO_BROWSER_EXTENSION` with `everConnected:true`, consistent with isolated-stage extension/SW disconnect rather than proven target-resolution drift. | 1 (2026-06-13 living-tab closure blind run, linux.do top-topics, fresh Codex exec child via `pb-blind.mjs`) | Report: `.pi/browser-artifacts/eval-blind/living-tab-linuxdo-blind-report-bypass.md`; usage log: `.pi/browser-artifacts/eval-blind/usage-1781290055745-33796.jsonl`; usage report: `.pi/browser-artifacts/eval-blind/usage-1781290055745-33796-report.json`. The child used natural `wait selector`, then `observe scan`, then `artifact --json-path data.rows`; task answer succeeded. | **Needs a second independent run before action.** Treat as a reliability hypothesis in the bridge-lifecycle class, not an immediate code work item; first reproduce whether the isolated stage disconnects after observe or whether execute target resolution drops the connected tab. |
+| LTS1 | **Fresh real-site blind run completed through observe artifact, but `browser_execute` hit `TAB_NOT_FOUND` after a just-successful `wait selector` + `observe scan` on the same explicit tab.** The agent recovered by reading the saved `data.rows` artifact and completed the linux.do top-5 topic task; a follow-up operator `tabs list` then returned `NO_BROWSER_EXTENSION` with `everConnected:true`, consistent with isolated-stage extension/SW disconnect rather than proven target-resolution drift. **2026-06-13 acceptance-audit mechanistic explanation:** the failure class is consistent with SW idle/restart between the observe and the execute — the per-connection `browserId` changes on SW wake, which killed handle/session resolution in the v6-era code path. The extensionId reconnect rebinding (v7 remediation, `BrowserTabSessionRouter.findReconnectIdentity`) addresses this class: when the same extensionId reconnects with the same numeric tabId and one unambiguous disconnected candidate, the old tabHandle rebinds and subsequent calls succeed. LTS1 stays open pending re-verification on the next blind run to confirm the rebinding path triggers in the isolated-stage scenario. | 1 (2026-06-13 living-tab closure blind run, linux.do top-topics, fresh Codex exec child via `pb-blind.mjs`) | Report: `.pi/browser-artifacts/eval-blind/living-tab-linuxdo-blind-report-bypass.md`; usage log: `.pi/browser-artifacts/eval-blind/usage-1781290055745-33796.jsonl`; usage report: `.pi/browser-artifacts/eval-blind/usage-1781290055745-33796-report.json`. The child used natural `wait selector`, then `observe scan`, then `artifact --json-path data.rows`; task answer succeeded. | **Needs a second independent run before action.** Treat as a reliability hypothesis in the bridge-lifecycle class, not an immediate code work item; first reproduce whether the isolated stage disconnects after observe or whether execute target resolution drops the connected tab. |
 | VOC2 | **CSS-class-only active navigation state is not surfaced by `observe scan/text` as an active-state candidate.** On Bilibili, the active top nav item was inferable from sibling class contrast (`首页` had `entry-title`, peers had `default-entry`) and current URL, but there was no `aria-current`/`aria-selected`; scan/text focused on overlay/search structures, so the blind agent used read-only JS to prove it. | 1 (2026-06-11 value-ordered K6 probe, Bilibili active-tab, Codex subagent `Nietzsche`) | Agent completed the task but reported `observe scan`/`text` were not enough; final proof came from DOM extraction. Operator verified the shipped K6 branch surfaces `selected`/`pressed`/`current` in the AX/entity schema, but this site used CSS class state rather than ARIA state. | **Needs a second site/component before action.** Do not add Bilibili/class-name heuristics from one run; reopen only if another skill-guided blind run shows agents need class-differentiated sibling active-state summaries after the ARIA state path is present. |
 | G12 | **`record candidate:` nudge was structurally unreachable from `browser_execute`** (`recordNudgeShown:false` in all M5 runs): the execute distiller built its summary from `summarizeGenericValue` + operation/effect fields with NO `url`, and set no `snapshot` — so `pageContext()` (`autoSurface.ts:77-89`) found no origin on execute envelopes and the nudge could never fire from the most common "did something on a page" tool. | 1 (M5 bilibili pairs) — **CODE-CONFIRMED** before fix (`registerExecuteTool.ts` distiller had no url field; `autoSurface.ts:113-114` returns early without origin) | All M5 blind runs: `recordNudgeShown:false`, `recordCalled:false`; operator recorded the T1 SOP manually. | **✅ RESOLVED 2026-06-11 (reachability only).** `withExecutionEffect()` now retains the already-read fingerprint URL; `browser_execute monitor:true` retains the already-read monitor URL; the execute distiller lifts it to `summary.url`, which result middleware also exposes as `target.url`. Regression: execute effect URL presence/absence unit coverage, execute summary URL helper coverage, `check-execute-tool`, and `check-memory-autosurface` execute-with-url / execute-without-url cases. Follow-up acceptance is intentionally operator/blind-eval gated: the next real-site blind round must show `recordNudgeShown:true` on an uncovered origin before D6 is adjudicated (shown-but-unused ⇒ delete; shown-and-used ⇒ keep). |
 

@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outFile = path.join(root, "docs", "generated", "browser-tool-contract.generated.md");
 const checkOnly = process.argv.includes("--check");
 
-const SHARED_TOOL_PARAMS = ["tabId"];
+const SHARED_TOOL_PARAMS = ["tabId", "targetRef"];
 const SHARED_WEB_SECURITY_PARAMS = ["tabId", "allowPrivateTargets"];
 const NATIVE_ACTION_PARAMS = ["action", "params", "tabId"];
 const SHARED_TRANSFER_PARAMS = ["tabId"];
@@ -103,6 +103,7 @@ function sharedTabScopedParamKeys(objectText) {
 	const keys = [...SHARED_TOOL_PARAMS];
 	if (/includeBrowserSessionId\s*:\s*true/.test(objectText)) keys.push("browserSessionId");
 	if (/includeTabId\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("tabId"), 1);
+	if (/includeTargetRef\s*:\s*false/.test(objectText)) keys.splice(keys.indexOf("targetRef"), 1);
 	if (/includeDetailLevel\s*:\s*true/.test(objectText)) keys.push("detailLevel");
 	if (/includeOutputPath\s*:\s*true/.test(objectText)) keys.push("outputPath");
 	if (/includeTimeout\s*:\s*true/.test(objectText)) keys.push("timeoutMs");
@@ -167,7 +168,7 @@ function parameterKeys(block, file) {
 		}
 	}
 	if (file.endsWith("registerNativeActionTools.ts")) {
-		const keys = [...NATIVE_ACTION_PARAMS];
+		const keys = [...NATIVE_ACTION_PARAMS, "targetRef"];
 		if (block.includes("sessionIdDescription")) keys.splice(3, 0, "sessionId");
 		return keys;
 	}

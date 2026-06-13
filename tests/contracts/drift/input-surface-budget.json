@@ -1,22 +1,22 @@
 {
   "version": 1,
   "toolCount": 22,
-  "totalChars": 39364,
+  "totalChars": 39568,
   "tools": {
     "browser_artifact": {
       "advertisedChars": 3676,
       "file": "src/tools/registerArtifactTool.ts"
     },
     "browser_callback_oast": {
-      "advertisedChars": 3803,
+      "advertisedChars": 3815,
       "file": "src/tools/webSecurity/register/registerCallbackOast.ts"
     },
     "browser_command": {
-      "advertisedChars": 517,
+      "advertisedChars": 529,
       "file": "src/tools/registerCommandTool.ts"
     },
     "browser_cookie_analyze": {
-      "advertisedChars": 2538,
+      "advertisedChars": 2550,
       "file": "src/tools/webSecurity/register/registerCookieAnalyze.ts"
     },
     "browser_crawl": {
@@ -24,19 +24,19 @@
       "file": "src/tools/webSecurity/register/registerCrawl.ts"
     },
     "browser_download": {
-      "advertisedChars": 1284,
+      "advertisedChars": 1296,
       "file": "src/tools/registerTransferTools.ts"
     },
     "browser_evidence": {
-      "advertisedChars": 614,
+      "advertisedChars": 626,
       "file": "src/tools/registerEvidenceTool.ts"
     },
     "browser_execute": {
-      "advertisedChars": 415,
+      "advertisedChars": 427,
       "file": "src/tools/registerExecuteTool.ts"
     },
     "browser_frame": {
-      "advertisedChars": 286,
+      "advertisedChars": 298,
       "file": "src/tools/registerNativeActionTools.ts"
     },
     "browser_fuzz": {
@@ -44,7 +44,7 @@
       "file": "src/tools/webSecurity/register/registerFuzz.ts"
     },
     "browser_hook": {
-      "advertisedChars": 508,
+      "advertisedChars": 520,
       "file": "src/tools/registerNativeActionTools.ts"
     },
     "browser_http_replay": {
@@ -56,40 +56,41 @@
       "file": "src/tools/registerMemoryTool.ts"
     },
     "browser_network": {
-      "advertisedChars": 322,
+      "advertisedChars": 334,
       "file": "src/tools/registerNativeActionTools.ts"
     },
     "browser_observe": {
-      "advertisedChars": 2314,
+      "advertisedChars": 2326,
       "file": "src/tools/registerObserveTool.ts"
     },
     "browser_pick": {
-      "advertisedChars": 659,
+      "advertisedChars": 671,
       "file": "src/tools/registerPickTool.ts"
     },
     "browser_screenshot": {
-      "advertisedChars": 539,
+      "advertisedChars": 551,
       "file": "src/tools/registerScreenshotTool.ts"
     },
     "browser_sqli": {
-      "advertisedChars": 4727,
+      "advertisedChars": 4739,
       "file": "src/tools/webSecurity/register/registerSqli.ts"
     },
     "browser_tabs": {
-      "advertisedChars": 1669,
+      "advertisedChars": 1681,
       "file": "src/tools/registerTabsTool.ts"
     },
     "browser_template": {
-      "advertisedChars": 3436,
+      "advertisedChars": 3448,
       "file": "src/tools/webSecurity/register/registerTemplate.ts"
     },
     "browser_upload": {
-      "advertisedChars": 744,
+      "advertisedChars": 756,
       "file": "src/tools/registerTransferTools.ts"
     },
     "browser_wait": {
-      "advertisedChars": 472,
+      "advertisedChars": 484,
       "file": "src/tools/registerNativeActionTools.ts"
     }
-  }
+  },
+  "justification": "targetRef (tab-scoped stable handle param, live in runtime schemas since living-tab S0) was missing from the doc generator SHARED_TOOL_PARAMS; v7 remediation makes the advertised surface match the real schema surface (+204 chars across tab-scoped tools, no new runtime params)"
 }

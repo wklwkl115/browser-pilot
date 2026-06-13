@@ -1,10 +1,10 @@
 # Algorithm Optimization Plan
 
-> Status: ACTIVE — v8 (v7 + the deferred kernel sweep executed [4 files deep-read, 2 findings extracted], item 9 non-finite-number parity fix, item 8 ancestor-set classifier, item 11 gains the missed `ax.ts` site, new item 13 `groupEntities` memo, Step 0 instrumentation list corrected against source)
-> Scope: `src/distill-core/` (items 5, 7, 9, 12); `src/utils/json.ts` (item 8); `src/abml-core/` (items 10, 11, 13); `src/tools/observe/` (Step 0 measurement)
+> Status: READY — v9 (v8 + activation-state correction, item 8 primitive/accessor parity guard, item 9 `jsonBudgetLength`/projection surface, item 11/13 focused gate expansion)
+> Scope: `src/distill-core/` (items 5, 7, 9, 12, including `fit.ts` / `projection.ts` budget-length consumers); `src/utils/json.ts` (item 8); `src/abml-core/` (items 10, 11, 13); `src/tools/observe/` (Step 0 measurement)
 > Boundary: No runtime/driver/public-surface changes; no new env flags; new kernel-module exports declared `internal` in `kernel-export-inventory.json`
 > Verification: per-item parity tests (red-first) + `bench:distill` + `check:all:src`; closing gate `npm run check`
-> Activation: add a `CURRENT.md` entry (decision/boundary/contract/verification) when execution starts
+> Activation: promote this to ACTIVE only by adding a `CURRENT.md` entry (decision/boundary/contract/verification) when execution starts
 
 ---
 
@@ -40,7 +40,7 @@ The accept bars are only as trustworthy as the methodology behind them. Three ru
 | 7 | `tokenEstimate` ns/char on mixed corpus | — | — | — | — |
 | 5 | `stableJson` invocations per over-budget fit | — | — | — | — |
 | 8 | `stableJson` ms on bench corpus (clean path) | — | — | — | — |
-| 9 | probe-path allocations + ms per render | — | — | — | — |
+| 9 | probe-path allocations + ms per render (`jsonCost` + `jsonBudgetLength` clean paths) | — | — | — | — |
 | 10 | `buildInferenceSummary` ms at N=500 | — | — | — | — |
 | 11 | per-site comparator micro-ratios | — | — | — | — |
 | 13 | grouping executions per default observe (2→1; 3→1 on no-attribution baseline) + ms at N=500 | — | — | — | — |
@@ -53,7 +53,7 @@ The accept bars are only as trustworthy as the methodology behind them. Three ru
 
 The instrumentation already exists and has never been harvested. `scanRunner.ts:96-510` records `tabRefreshMs`, `fingerprintMs`, `navigationMs`, `pageScriptMs`, `abmlMs`, `recorderMs`, `causalMs`, `eventCausalMs`, `renderMs`, and `bridgeRoundTrips`; `attachSerializeTiming` (`resultMiddleware.ts:537-549`) appends `serializeMs` — the final-transport serialization cost, which is exactly the number Forward Direction C's gate needs.
 
-**Action:** run `npm run eval:browser-workflows -- --fixture-server`, collect `diagnostics.observeTimings` across all fixtures, and write a ranked per-stage summary (median/p95) to `.pi/browser-artifacts/observe-timings-summary.json` (project artifact convention — referenceable by later acceptance). This sizes the wins of items 5/8/9 (`renderMs`) and items 10/11 (`abmlMs`), and is the admission gate for any future kernel-CPU proposal.
+**Action:** run `npm run eval:browser-workflows -- --fixture-server`, collect `result.details.diagnostics.observeTimings` across all fixtures (not the public envelope; observe timings are intentionally kept in tool details), and write a ranked per-stage summary (median/p95) to `.pi/browser-artifacts/observe-timings-summary.json` (project artifact convention — referenceable by later acceptance). This sizes the wins of items 5/8/9 (`renderMs`) and items 10/11 (`abmlMs`), and is the admission gate for any future kernel-CPU proposal.
 
 ---
 
@@ -146,7 +146,8 @@ stableJson(value, spaces = 2):
 
 `classifyClean` is an iterative walk over objects/arrays with an **ancestor-path `Set`** (add on descend, delete on ascend — O(1) membership vs today's O(depth) `includes`), returning false on: `bigint`, `instanceof Error`, a node revisited **on the current ancestor path** (a true cycle), or **any object with a callable `toJSON`** (conservative: routes `Date` etc. to the slow path so toJSON-interaction corners can never diverge). Ancestor-path semantics matter: a whole-walk visited `Set` would flag shared substructure (DAGs) as cycles and silently route those values to the slow path forever — output still correct, fast path lost. Native `JSON.stringify` serializes shared references identically to the replacer path, so DAGs classify clean; only genuine cycles fall back. Crucially the scan never inspects string contents — the expensive char-level work (escaping, indentation) runs entirely inside native `JSON.stringify`. Design details:
 
-- **Primitive short-circuit:** `value === null || typeof value !== "object"` skips the scan entirely and goes straight to native — `stableJson` is called constantly on small/scalar values (line renderings, `jsonCost` of leaf facts); they must not pay a scan setup.
+- **Primitive short-circuit:** `value === null || (typeof value !== "object" && typeof value !== "bigint")` skips the scan and goes straight to native — `stableJson` is called constantly on small/scalar values (line renderings, `jsonCost` of leaf facts); they must not pay a scan setup. Root `bigint` is excluded because today's replacer serializes it as a string while native `JSON.stringify(1n)` throws.
+- **Accessor guard:** the classifier must inspect own property descriptors before reading values. Any accessor (`get`/`set`), descriptor read failure, or non-plain object/array prototype routes to the slow path. This prevents the classifier from firing getters before `JSON.stringify` and changing bytes or side effects. Do not implement the walk with `Object.values()` until the descriptor guard has accepted the object.
 - **One classifier, two consumers:** `classifyClean` is the same module-private classifier item 9's length walker uses for its exotic fallback. A single implementation prevents the two from ever disagreeing about which values are "clean".
 
 Byte-identity argument: for clean values the replacer is the identity function (`return item`), so replacer and native outputs are definitionally equal; all exotic and toJSON-bearing values take today's path unchanged. `try/catch` around the fast path as belt-and-suspenders (any throw → slow path).
@@ -155,7 +156,7 @@ Byte-identity argument: for clean values the replacer is the identity function (
 
 ### Verification
 
-1. Parity test: old implementation as reference oracle; byte-equality over the `bench:distill` corpus envelopes + randomized JSON-shaped fuzz + adversarial cases (Error, bigint, cycle, Date/toJSON, lone surrogates, `undefined` in arrays/objects, deep nesting). Red-first: perturb the classify condition to prove the test bites.
+1. Parity test: old implementation as reference oracle; byte-equality over the `bench:distill` corpus envelopes + randomized JSON-shaped fuzz + adversarial cases (root/nested `bigint`, Error, cycle, Date/toJSON, accessor getter with mutation, non-plain prototypes, lone surrogates, `undefined` in arrays/objects, deep nesting). Red-first: perturb the classify condition to prove the test bites.
 2. Micro-bench in the test over corpus envelopes (log ratio; accept bar: measured speedup on the clean path, no regression on exotic path).
 3. `stableJsonInvocationCounter` semantics unchanged (counter increments once per call regardless of tier).
 4. `src/utils/json.ts` is shared (not kernel-inventory scope); confirm via `check:surface-liveness` that no ledger entry is touched. Gates: `check:all:src`, `check:all:contracts` (blast radius spans tools), then full `npm run check`.
@@ -175,21 +176,21 @@ For hundreds of facts per observe this is pure allocation/GC churn: megabyte-sca
 
 ### Design
 
-Add a kernel-internal exact-length walker `jsonCostFast(value, depth = 0): number` (in `src/distill-core/cost.ts`, export declared `internal` in `kernel-export-inventory.json`) that computes `stableJson(value).length` **without building the string**, replicating `JSON.stringify(value, replacer, 2)` length semantics exactly:
+Add a kernel-internal exact-length walker `jsonCostFast(value, spaces = 2): number` (in `src/distill-core/cost.ts`, export declared `internal` in `kernel-export-inventory.json`) that computes the current stable-JSON length **without building the string** on clean values. It must support both pretty (`spaces = 2`) and compact (`spaces = 0`) modes because `src/distill-core/fit.ts` exports `jsonBudgetLength(value, spaces)` and `src/distill-core/projection.ts` calls that path repeatedly with `spaces = 0`.
 
-- 2-space pretty-print: newline + indent costs as a function of the `depth` parameter; `": "` key separators; `{}`/`[]` compact empty forms
+- Pretty-print: newline + indent costs as a function of the recursive depth; `": "` key separators for `spaces = 2`; compact separators for `spaces = 0`; `{}`/`[]` compact empty forms
 - String escaping lengths: `"` `\` and `\b \f \n \r \t` → 2; other control chars → 6 (`\u00XX`); lone surrogates → 6 (well-formed stringify escapes them); all other code units → 1
 - Numbers: finite via `String(n).length`; **non-finite (`NaN`/`±Infinity`) cost 4 — `JSON.stringify` emits `null`** while `String(NaN)` is 3 chars (the same parity-bug class the v3 audit caught in item 7's surrogate skip); `-0` stringifies as `0` on both paths; `undefined`/function/symbol omitted in objects, `null` (4) in arrays
 - Exotics and toJSON-bearing values: detected via the **same `classifyClean` classifier item 8 introduces** (shared implementation, never a second opinion), falling back to `stableJson(value).length` (correct by definition; rare)
 
-The `depth` parameter makes **embedded** lengths exact (a part nested inside an envelope has deeper indentation than when serialized standalone), so fitter per-key probes measure the true in-envelope cost — this supersedes the previously sketched "sum of parts + structural overhead" approximation, which 2-space indentation makes wrong by construction.
+The public result must preserve today's **standalone** probe semantics: `jsonCostFast(v, spaces) === (stableJson(v, spaces) ?? "").length`. The recursive implementation may track depth internally, but this workstream must not change salience/ladder candidate decisions by reinterpreting existing per-key costs as embedded envelope costs. Embedded-cost accounting is a separate behavior-changing allocator proposal.
 
-Switch the length-only call sites to the walker: `jsonCost` body, `ladder.ts` `stableJsonLength`, `salienceEnvelope.ts` probe sites. Sites that need the text (emission, marker counting, item 5's threaded strings) keep `stableJson`.
+Switch the length-only call sites to the walker: `jsonCost` body, `ladder.ts` `stableJsonLength`, `salienceEnvelope.ts` probe sites, and `fit.ts` `jsonBudgetLength` (which carries the projection budget surface). Sites that need the text (emission, stable keys, marker counting, item 5's threaded strings) keep `stableJson`.
 
 ### Verification
 
-1. Length-parity test: `jsonCostFast(v) === stableJson(v).length` over the bench corpus + randomized fuzz including every escaping class above (control chars, astral pairs, lone surrogates, deep nesting, empty containers, `undefined` placements, non-finite numbers, `-0`). Red-first: perturb one escape-class length.
-2. `stableJsonInvocationCounter` assertion: probe-heavy paths (fact construction + salience fit) show the expected drop in string-building invocations.
+1. Length-parity test: `jsonCostFast(v, spaces) === (stableJson(v, spaces) ?? "").length` for `spaces = 0` and `spaces = 2` over the bench corpus + randomized fuzz including every escaping class above (control chars, astral pairs, lone surrogates, deep nesting, empty containers, `undefined` placements, non-finite numbers, `-0`). Red-first: perturb one escape-class length.
+2. `stableJsonInvocationCounter` assertion: probe-heavy paths (fact construction, salience fit, inline JSON budget/projection fit) show the expected drop in string-building invocations.
 3. `npm run bench:distill` before/after; accept bar: measured improvement on corpus envelopes, byte-identical fitted outputs (reuse item 5's byte-identity cases).
 4. Map the test in `kernel-test-map.json` (G5); declare the export `internal` (G2). Gates: `check:distill-core-boundary`, `check:compute-once`, `check:all:contracts`.
 
@@ -229,13 +230,13 @@ Reachability is verified, not assumed: `resultMiddleware.ts:486` calls `fitSumma
 
 Same architecture move the relevance plan already landed (R1: compute once, hooks become lookups):
 
-1. **Feature view pre-pass:** one pass over the entity list computes per-entity derived features — `roleLower`, `textLower` (the `textOf` concat), `nameLower`, `perceptible`, `isEditableControl` — into an array-aligned view passed to all detectors. Helpers (`roleOf`, `textOf`, `isPerceptible`, …) become view lookups; detector predicates and regex tests run over precomputed strings.
+1. **Feature view pre-pass:** one pass over the entity list computes per-entity derived features — `roleLower`, `textLower` (the `textOf` concat), `nameLower`, `perceptible`, `isEditableControl` — into an array-aligned view passed to all detectors. Keep iteration over the original `entities` array and lookup by stable index/ref so evidence refs, tie order, and first-match behavior stay byte-identical. Helpers (`roleOf`, `textOf`, `isPerceptible`, …) become view lookups; detector predicates and regex tests run over precomputed strings.
 2. **Decorate-sort-undecorate in `detectLogin`:** compute `loginCandidateScore` once per entity into `{entity, score}` pairs, filter `score > 0`, sort by the precomputed score. V8's stable sort plus the identical score values make the selected winner identical.
 3. Detector logic, thresholds, regexes, and dedup rules are untouched — this is pure evaluation-order refactoring; `InferenceSummary` output must be deep-equal.
 
 ### Verification
 
-1. Output-identity test: fixture entity sets covering all 12 intents (including tie cases for the login score and grouped/scattered checkbox branches) assert deep-equal `buildInferenceSummary` output pre/post.
+1. Output-identity test: fixture entity sets covering all 12 intents (including first-match cases, equal-score login candidates, and grouped/scattered checkbox branches) assert deep-equal `buildInferenceSummary` output pre/post.
 2. Existing contract gate `check:abml-inference` stays green untouched.
 3. Micro-bench in the test at N=500 mixed entities (log ratio; accept bar applies).
 4. Map the test in `kernel-test-map.json` (G5); no new exports (G2). Gates: `check:abml-core-boundary`, `check:all:src`.
@@ -256,13 +257,13 @@ Five verified sites do per-comparison or per-iteration work that should be compu
 
 ### Design
 
-Decorate-sort (precompute `seq` per record before sorting — the filter at `causal.ts:127-130` already computes `num(r.seq)` once per record, so decoration folds filter+sort into one pass), a module-level `Map<RelationType, number>` for `typeRank`, a hoisted module-level `Set` for the salient-field check, and for the builders a local `const origin = topLevelOrigin(context.url)` per call plus a module-private single-slot memo (last url → origin; deterministic, no clock/random — G4-safe) collapsing the per-scan cost from 2N parses to 1. The memo is applied in **both** `entity.ts` and `ax.ts` — each keeps its private helper + memo rather than introducing a new cross-module export, so G2 stays untouched. All five are exact-output by construction (same keys, same comparisons, same tie-breaks, same origin string).
+Decorate-sort (precompute `seq` per record before sorting — the filter at `causal.ts:127-130` already computes `num(r.seq)` once per record, so decoration folds filter+sort into one pass), a module-level `Map<RelationType, number>` for `typeRank`, a hoisted module-level `Set` for the salient-field check, and for the builders a local `const origin = topLevelOrigin(context.url)` per call plus a module-private single-slot memo (last url → origin; deterministic, no clock/random — G4-safe). The origin change collapses `entity.ts` from 2N parses to at most one parse per repeated URL in that module; `ax.ts` gets the same local result with its own private memo. Each keeps its private helper + memo rather than introducing a new cross-module export, so G2 stays untouched. All five are exact-output by construction (same keys, same comparisons, same tie-breaks, same origin string).
 
 ### Verification
 
 1. Exact-output unit tests per site (existing fixtures extended with tie cases); red-first by perturbing one rank.
 2. One shared micro-bench (log ratio; accept bar applies — if the measured win is noise-level, record the number and do not land).
-3. Map tests in `kernel-test-map.json` (G5); no new exports. Gates: `check:abml-core-boundary`, `check:abml-causal`, `check:abml-relation-graph`, `check:all:src`.
+3. Map tests in `kernel-test-map.json` (G5); no new exports. Gates: `check:abml-core-boundary`, `check:abml-causal`, `check:abml-relation-graph`, `check:abml-diff`, `check:abml-scan-entities`, `check:abml-ax-runtime`, `check:all:src`.
 
 ---
 
@@ -296,7 +297,7 @@ Deterministic (same input → same output), no clock/random reads (G4-safe), mem
 2. Memo-hit assertion without a counter export: on a same-array second call, returned group objects are reference-equal (`groups1[0] === groups2[0]`) while the top-level arrays are not (`groups1 !== groups2`); a structurally-equal but fresh array misses (deep-equal output, non-identical groups).
 3. Deep-freeze aliasing test per the design section.
 4. Micro-bench: first-call vs memo-hit cost at N=500 entities (ledger row 13); executions-per-observe accounting from the call-site table above.
-5. Map the test in `kernel-test-map.json` (G5); no new exports (G2). Gates: `check:abml-core-boundary`, `check:abml-tree-diff`, `check:abml-templating`, `check:abml-snapshot-projection`, `check:abml-semantic-ref-anchor`, `check:all:src`. **Marker caution:** `check-abml-tree-diff.mjs` and `check-abml-templating.mjs` pin grouping-related source text — run `npm run query:markers` against `grouping.ts` before landing (the F3 lesson: narrow gates ≠ closing gate).
+5. Remove `src/abml-core/grouping.ts` from the G5 grandfather list and map the new direct grouping test in `kernel-test-map.json`; no new exports (G2). Gates: `check:abml-core-boundary`, `check:abml-tree-diff`, `check:abml-templating`, `check:abml-snapshot-projection`, `check:abml-semantic-ref-anchor`, `check:abml-causal`, `check:session-delta-long-conversation`, `check:all:src`. **Marker caution:** run `npm run query:markers -- --file src/abml-core/grouping.ts` before landing; current marker impact includes the grouping contracts plus `check:abml-causal` and `check:session-delta-long-conversation` (the F3 lesson: narrow gates != closing gate).
 
 ---
 
@@ -311,7 +312,7 @@ The per-observe kernel chain was swept for complexity defects. Coverage is state
 - `entity.ts` — all builders O(1) per entity, Set-based dedupe, `dedupeLocators` stringify bounded at ≤3 locators. Only the `topLevelOrigin` double-parse (item 11).
 - `inference.ts` — extracted into item 10.
 - `granularity.ts` — extracted into item 12.
-- `salienceEnvelope.ts` / `ladder.ts` / `allocate.ts` / `cost.ts` / `relevance.ts` / `profile.ts` (memory-core) — read in the v2→v5 audit cycle; findings are items 5/7/9.
+- `salienceEnvelope.ts` / `ladder.ts` / `allocate.ts` / `cost.ts` / `fit.ts` / `projection.ts` / `relevance.ts` / `profile.ts` (memory-core) — read in the v2→v9 audit cycle; findings are items 5/7/9.
 - `semanticRefAnchor.ts` (v8 sweep) — grouping cost extracted into item 13; the three trailing count-`filter`s over anchors (`:119-121`, three array passes to read `.length`) examined and **rejected as noise-level** (no string work, no nested loops).
 - `identityGraph.ts` (v8 sweep) — clean: Map-keyed, O(entities + relations), no per-comparison work.
 - `templating.ts` (v8 sweep) — clean: `buildTemplate` is 7 fields × N `every` (bounded), consumers capped at `MAX_TEMPLATES`; `structureScopeKey`'s per-call `JSON.stringify` in suppress filters examined and rejected as noise-level (bounded by group count).
@@ -357,8 +358,8 @@ The real large-page cost is N `DOM.getBoxModel` CDP round-trips. Replacing them 
 |------|--------|
 | G2 `check:surface-liveness` | Item 9's `jsonCostFast` declared `internal` in `kernel-export-inventory.json`; items 5/7/10/11/12/13 add no exports (feature view, rank map, depth guard, origin memos, and grouping memo are module-private; item 13's memo-hit assertion uses reference identity instead of a counter export); item 8 is in shared `src/utils/` (outside kernel inventory — confirm during execution) |
 | G6 `check:env-flags` | None — no new flags |
-| G3 `check:compute-once` | Item 5/9 invocation-counter assertions; optional post-landing `CALL_SITE_LIMITS` ratchet pinning `stableJson` call sites in `salienceEnvelope.ts` |
+| G3 `check:compute-once` | Item 5/9 invocation-counter assertions; add `CALL_SITE_LIMITS` ratchets for the final stableJson/jsonBudgetLength probe counts once the replacement sites are known |
 | G4 purity vocabulary | No banned APIs across all items (deterministic `Set`/`Map`/`charCodeAt`/reference-keyed memos only; no clock/random reads) |
-| G5 `check:kernel-test-map` | New test files for items 5, 7, 9, 10, 11, 12, 13 mapped in `kernel-test-map.json`; item 8's test lives with utils tests |
+| G5 `check:kernel-test-map` | New test files for items 5, 7, 9, 10, 11, 12, 13 mapped in `kernel-test-map.json`; item 13 removes `grouping.ts` from grandfathering; item 8's test lives with utils tests |
 | G1 `check:spec-truth` | This doc registers no contract claims |
-| Behavioral contracts | Item 10 must keep `check:abml-inference` green untouched; item 11 must keep `check:abml-causal` / `check:abml-relation-graph` green untouched; item 13 must keep `check:abml-tree-diff` / `check:abml-templating` / `check:abml-snapshot-projection` / `check:abml-semantic-ref-anchor` green untouched (these pin grouping-related source text — query markers before landing); item 12 is the sole sanctioned output change (>64-deep nesting only) |
+| Behavioral contracts | Item 10 must keep `check:abml-inference` green untouched; item 11 must keep `check:abml-causal` / `check:abml-relation-graph` / `check:abml-diff` / `check:abml-scan-entities` / `check:abml-ax-runtime` green untouched; item 13 must keep `check:abml-tree-diff` / `check:abml-templating` / `check:abml-snapshot-projection` / `check:abml-semantic-ref-anchor` / `check:abml-causal` / `check:session-delta-long-conversation` green untouched; item 12 is the sole sanctioned output change (>64-deep nesting only) |

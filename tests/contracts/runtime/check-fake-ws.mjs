@@ -628,6 +628,35 @@ try {
 	assert.equal((await handleFollowPromise).data, "followed-handle");
 	server.releaseTab(replaceSource.tabHandle);
 
+	// --- Reconnect rebinding contract ---
+	// Establish a tab with a known handle, simulate MV3 service-worker idle/wake, and assert
+	// that the old tabHandle survives because the reconnecting extension carries the same extensionId.
+	sendJson(ws, readyMessage([{ id: 888, url: "https://example.test/rebind", title: "Rebind", active: true, windowId: 1 }], { id: "rebind-extension" }));
+	await waitUntil(() => server.getTabs().some((t) => t.tabId === 888 && !t.disconnectedAt), "rebind seed tab registered");
+	const rebindHandleBefore = server.getTabs().find((t) => t.tabId === 888 && !t.disconnectedAt)?.tabHandle;
+	assert.ok(rebindHandleBefore, "rebind seed tab must have a tabHandle");
+
+	// Disconnect the current client (SW went idle)
+	ws.close();
+	await waitUntil(() => !server.snapshot().extensionConnected, "rebind extension disconnect");
+
+	// Reconnect with the SAME extensionId — SW woke up, new WebSocket connection
+	ws = await openFakeClient(port);
+	sendJson(ws, readyMessage([{ id: 888, url: "https://example.test/rebind", title: "Rebind", active: true, windowId: 1 }], { id: "rebind-extension" }));
+	await waitUntil(() => server.getTabs().some((t) => t.tabId === 888 && !t.disconnectedAt), "rebind reconnected tab registered");
+	const rebindHandleAfter = server.getTabs().find((t) => t.tabId === 888 && !t.disconnectedAt)?.tabHandle;
+	assert.equal(rebindHandleAfter, rebindHandleBefore, "tabHandle must be rebound after SW reconnect with same extensionId");
+	assert.equal(server.snapshot().defaultTabId, 888, "rebound tab must be the default after reconnect");
+
+	// The handle must still resolve via executeJavaScript after rebind
+	const rebindExecPromise = server.executeJavaScript("return 'rebind-ok'", { tabId: rebindHandleAfter, timeoutMs: 1_000 });
+	const rebindExecOutbound = await nextJson(ws, "rebind exec outbound");
+	assert.equal(rebindExecOutbound.tabId, 888, "rebound handle must dispatch to the live numeric tabId");
+	sendJson(ws, { type: "ack", id: rebindExecOutbound.id });
+	sendJson(ws, { type: "result", id: rebindExecOutbound.id, result: "rebind-ok" });
+	assert.equal((await rebindExecPromise).data, "rebind-ok", "rebound handle execution must resolve normally");
+	// --- end reconnect rebinding contract ---
+
 	sendJson(ws, readyMessage([{ id: 909, url: "https://example.test/nine", title: "Nine", active: true, windowId: 1 }]));
 	await waitUntil(() => server.snapshot().defaultTabId === 909 && server.snapshot().latestTabId === 909, "single-tab registration before close fallback test");
 	const closeLastTabPromise = server.closeTab(909, 1_000);
