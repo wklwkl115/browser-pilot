@@ -341,18 +341,90 @@ function selectFullGraph(selected, reason) {
 	for (const script of groupScriptSequence(DEFAULT_GROUP_SEQUENCE)) addSelection(selected, script, reason);
 }
 
+// Contract docs registered in spec-claims.js — a docs change touching these must NOT
+// take the inert fast lane because spec-claims.js pins live code symbols against them.
+const SPEC_CLAIM_DOCS = new Set([
+	"docs/abml-p1-spec.md",
+	"docs/abml-kernel-manifest.md",
+	"docs/agent-native-architecture.md",
+]);
+
+/**
+ * Returns true for a prose-only doc change that cannot affect any compiled code,
+ * type check, linting, or contract test.  Eligible docs are:
+ *   - A Markdown file under docs/ (but NOT docs/generated/ — those are generated
+ *     outputs whose drift is verified by check:docs-sync and check:tool-docs), OR
+ *   - A top-level *.md file other than README.md / CLAUDE.md / AGENTS.md.
+ *
+ * Excluded from the fast lane (falls through to normal selection):
+ *   - README.md — listed in several impact-map inputs; changing it can affect
+ *     check:registry-drift, check:bridge, check:tool-docs, check:package, etc.
+ *   - CLAUDE.md / AGENTS.md — governance documents; any change must rerun
+ *     check:doc-structure which validates managed blocks.
+ *   - docs/generated/ — auto-generated; drift caught by check:docs-sync /
+ *     check:tool-docs, but the file content being wrong means code or tool
+ *     definitions changed, which requires broader checks.
+ *   - Spec-claim docs (docs/abml-p1-spec.md, etc.) — spec-claims.js pins live
+ *     code symbols against specific anchors; a prose change here must rerun
+ *     check:doc-structure which verifies claim integrity.
+ *
+ * Fast-lane gate set (minimal but sufficient for inert prose docs):
+ *   - check:doc-structure — validates heading/section rules, CLAUDE.md managed blocks,
+ *     and spec-claim anchor integrity across the doc tree.
+ *   - check:doc-paths — verifies that all doc cross-links resolve to real files.
+ *   - check:docs-sync — ensures no generated doc is stale (catches a drift where a
+ *     doc references a path that sync would have updated).
+ * These three gates cover every machine-checkable property of inert prose docs.
+ * check:audit-inbox is NOT included: it governs agent-audits/runs/, not docs/.
+ * check:code-map is NOT included: it scans src/ for code inventory; docs can't
+ * affect it unless the doc happens to be a generated output (excluded above).
+ * check:tool-docs is NOT included: it verifies doc↔tool-schema drift; inert prose
+ * edits (not touching tool schemas or generated output) cannot create that drift.
+ */
+function isInertDoc(rel) {
+	if (!rel.endsWith(".md")) return false;
+	// Top-level *.md: exclude the governance/root docs that have broad impact
+	if (!rel.includes("/")) {
+		return rel !== "README.md" && rel !== "CLAUDE.md" && rel !== "AGENTS.md";
+	}
+	// Under docs/ but not docs/generated/ and not a spec-claim doc
+	if (rel.startsWith("docs/")) {
+		if (rel.startsWith("docs/generated/")) return false;
+		if (SPEC_CLAIM_DOCS.has(rel)) return false;
+		return true;
+	}
+	return false;
+}
+
 export function selectSmartScripts(files, options = {}) {
 	const selected = new Map();
 	const scripts = options.scripts || packageScripts(options.root || ROOT);
+
+	if (!files.length) {
+		addSelection(selected, "check:src:types", "base type proof");
+		addSelection(selected, "check:registry-drift", "base registry drift proof");
+		addSelection(selected, "lint:eslint", "base lint proof");
+		addSelection(selected, "check:boundaries", "base repository boundary proof");
+		addSelection(selected, "check:check-graph", "clean-tree graph integrity proof");
+		return selected;
+	}
+
+	// Inert-docs fast lane: if every changed file is an inert prose doc (no code,
+	// no generated output, no governance/spec-claim doc), skip base proofs entirely
+	// and run only the three doc-integrity gates.  An inert prose doc cannot break
+	// tsc, eslint, boundaries, or any contract test — only doc-structure rules,
+	// cross-link liveness, and generated-output sync can be affected.
+	if (files.length > 0 && files.every((f) => isInertDoc(normalizeRel(f)))) {
+		addSelection(selected, "check:doc-structure", "inert-docs fast lane: doc structure");
+		addSelection(selected, "check:doc-paths", "inert-docs fast lane: doc link liveness");
+		addSelection(selected, "check:docs-sync", "inert-docs fast lane: generated doc sync");
+		return selected;
+	}
+
 	addSelection(selected, "check:src:types", "base type proof");
 	addSelection(selected, "check:registry-drift", "base registry drift proof");
 	addSelection(selected, "lint:eslint", "base lint proof");
 	addSelection(selected, "check:boundaries", "base repository boundary proof");
-
-	if (!files.length) {
-		addSelection(selected, "check:check-graph", "clean-tree graph integrity proof");
-		return selected;
-	}
 
 	const impactMap = options.impactMap || readImpactMap(options.root || ROOT);
 	const entries = Object.values(impactMap.nodes || {});

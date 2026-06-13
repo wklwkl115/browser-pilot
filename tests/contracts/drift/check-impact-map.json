@@ -344,16 +344,16 @@
     },
     "test:unit:abml": {
       "script": "test:unit:abml",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:abml",
-          "nodeId": "test:unit:abml",
-          "commandLine": "tsx --test tests/unit/abml/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/abml/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:abml",
@@ -363,52 +363,17 @@
     },
     "test:unit:cli:commands": {
       "script": "test:unit:cli:commands",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "browser-daemon.json",
-        "cli/bin.ts",
-        "command-params.json",
-        "extract.js",
-        "fake-daemon.js",
-        "native-command.json",
-        "node_modules/.bin/",
+        "cli/",
+        "package-lock.json",
         "package.json",
-        "params.json",
-        "replay-params.json",
-        "request.txt",
-        "requests.json",
-        "tests/unit/cli/local-commands.test.ts"
+        "src/",
+        "tests/unit/cli/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:cli:commands",
-          "nodeId": "test:unit:cli:commands",
-          "file": "tests/unit/cli/local-commands.test.ts",
-          "line": 250,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "test:unit:cli:commands",
-          "nodeId": "test:unit:cli:commands",
-          "file": "tests/unit/cli/local-commands.test.ts",
-          "line": 44,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "test:unit:cli:commands",
-          "nodeId": "test:unit:cli:commands",
-          "file": "tests/unit/cli/local-commands.test.ts",
-          "line": 62,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "test:unit:cli:commands",
-          "nodeId": "test:unit:cli:commands",
-          "file": "tests/unit/cli/local-commands.test.ts",
-          "line": 73,
-          "reason": "subprocess execution"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:cli:commands",
@@ -418,32 +383,17 @@
     },
     "test:unit:cli:daemon": {
       "script": "test:unit:cli:daemon",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "bin.js",
-        "bin.ts",
-        "cli/daemonControl.ts",
-        "cli/packageInfo.ts",
-        "node_modules/tsx/dist/cli.mjs",
+        "cli/",
+        "package-lock.json",
         "package.json",
-        "tests/unit/cli/daemon-control.test.ts"
+        "src/",
+        "tests/unit/cli/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:cli:daemon",
-          "nodeId": "test:unit:cli:daemon",
-          "file": "cli/daemonControl.ts",
-          "line": 65,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "test:unit:cli:daemon",
-          "nodeId": "test:unit:cli:daemon",
-          "file": "cli/daemonControl.ts",
-          "line": 90,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:cli:daemon",
@@ -453,16 +403,16 @@
     },
     "test:unit:distill": {
       "script": "test:unit:distill",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:distill",
-          "nodeId": "test:unit:distill",
-          "commandLine": "tsx --test tests/unit/distill-core/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/distill-core/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:distill",
@@ -472,16 +422,16 @@
     },
     "test:unit:temporal": {
       "script": "test:unit:temporal",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:temporal",
-          "nodeId": "test:unit:temporal",
-          "commandLine": "tsx --test tests/unit/temporal-core/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/temporal-core/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:temporal",
@@ -491,16 +441,16 @@
     },
     "test:unit:driver": {
       "script": "test:unit:driver",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:driver",
-          "nodeId": "test:unit:driver",
-          "commandLine": "tsx --test tests/unit/driver/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/driver/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:driver",
@@ -510,16 +460,17 @@
     },
     "test:unit:memory": {
       "script": "test:unit:memory",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:memory",
-          "nodeId": "test:unit:memory",
-          "commandLine": "tsx --test tests/unit/memory/**/*.test.ts tests/unit/memory-core/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/memory-core/",
+        "tests/unit/memory/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:memory",
@@ -529,16 +480,17 @@
     },
     "test:unit:tools": {
       "script": "test:unit:tools",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:tools",
-          "nodeId": "test:unit:tools",
-          "commandLine": "tsx --test tests/unit/tools/**/*.test.ts tests/unit/toolAdapter/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/toolAdapter/",
+        "tests/unit/tools/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:tools",
@@ -548,16 +500,16 @@
     },
     "test:unit:web-security": {
       "script": "test:unit:web-security",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:web-security",
-          "nodeId": "test:unit:web-security",
-          "commandLine": "tsx --test tests/unit/webSecurity/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/webSecurity/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:web-security",
@@ -567,16 +519,19 @@
     },
     "test:unit:misc": {
       "script": "test:unit:misc",
-      "scope": "global",
-      "inputs": [],
-      "unresolvedInputs": [
-        {
-          "script": "test:unit:misc",
-          "nodeId": "test:unit:misc",
-          "commandLine": "tsx --test tests/unit/frontend/**/*.test.ts tests/unit/resources/**/*.test.ts tests/unit/utils/**/*.test.ts tests/unit/validation/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
-        }
+      "scope": "paths",
+      "inputs": [
+        "package-lock.json",
+        "package.json",
+        "src/",
+        "tests/unit/frontend/",
+        "tests/unit/resources/",
+        "tests/unit/utils/",
+        "tests/unit/validation/",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "test:unit:misc",
@@ -621,14 +576,14 @@
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 424,
+          "line": 496,
           "reason": "dynamic file read"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 541,
+          "line": 613,
           "reason": "dynamic file read"
         },
         {
@@ -3096,14 +3051,14 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 424,
+          "line": 496,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 541,
+          "line": 613,
           "reason": "dynamic file read"
         },
         {
@@ -3124,28 +3079,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 122,
+          "line": 163,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 185,
+          "line": 226,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 201,
+          "line": 242,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 215,
+          "line": 256,
           "reason": "dynamic directory walk"
         }
       ],
@@ -3180,14 +3135,14 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 424,
+          "line": 496,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 541,
+          "line": 613,
           "reason": "dynamic file read"
         },
         {
@@ -3208,7 +3163,7 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/sync-impact-map.mjs",
-          "line": 103,
+          "line": 259,
           "reason": "dynamic file read"
         }
       ],

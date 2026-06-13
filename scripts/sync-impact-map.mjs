@@ -25,6 +25,143 @@ import {
 const checkMode = process.argv.includes("--check");
 const scripts = packageScripts(ROOT);
 
+/**
+ * Explicit scope overrides for nodes whose inputs cannot be resolved by static
+ * analysis (e.g. glob-pattern test commands like `tsx --test tests/unit/abml/**`).
+ *
+ * Safety rule: unit shards import broadly across src/, so their scope MUST include
+ * all of src/ — the goal is only to exclude docs/ and other unrelated trees so a
+ * docs-only change skips the shards.  Any code change in src/ must still trigger
+ * every shard.  cli/ is included for shards that test CLI code.
+ *
+ * Format: script → { scope, inputs }
+ * inputs are normalised repo-relative paths / directory prefixes (same convention
+ * as other paths-scoped impact-map entries).
+ */
+const SCOPE_OVERRIDES = {
+	// Common config inputs shared by all unit shards
+	// (tsconfig.json, tsconfig.base.json, package.json govern compilation + test runner)
+	"test:unit:abml": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/abml/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:cli:commands": {
+		// cli/ contains the tested CLI commands; src/ is imported transitively
+		scope: "paths",
+		inputs: [
+			"src/",
+			"cli/",
+			"tests/unit/cli/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:cli:daemon": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"cli/",
+			"tests/unit/cli/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:distill": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/distill-core/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:temporal": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/temporal-core/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:driver": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/driver/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:memory": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/memory/",
+			"tests/unit/memory-core/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:tools": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/tools/",
+			"tests/unit/toolAdapter/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:web-security": {
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/webSecurity/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+	"test:unit:misc": {
+		// misc covers frontend/, resources/, utils/, validation/ under tests/unit/
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/unit/frontend/",
+			"tests/unit/resources/",
+			"tests/unit/utils/",
+			"tests/unit/validation/",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+};
+
 function entryFromStep(step) {
 	if (step.command === "node" || step.command === "tsx") {
 		return step.args.find((arg) => /\.(?:mjs|js|ts|tsx)$/.test(arg) && pathKind(normalizeRel(arg), ROOT) === "file");
@@ -85,7 +222,26 @@ function analyzeScript(script) {
 function generateImpactMap() {
 	const scriptIds = [...new Set([...DAG_EXTRA_NODE_IDS, ...groupScriptSequence(DEFAULT_GROUP_SEQUENCE)])];
 	const nodes = {};
-	for (const script of scriptIds) nodes[script] = analyzeScript(script);
+	for (const script of scriptIds) {
+		const analyzed = analyzeScript(script);
+		const override = SCOPE_OVERRIDES[script];
+		if (override) {
+			// Apply explicit override: replace scope, inputs, and clear unresolvedInputs.
+			// The SCOPE_OVERRIDES table is the authoritative declaration of what this node
+			// depends on; static analysis failed (unresolvedInputs would have forced global)
+			// but the override makes the dependency set explicit and machine-verifiable.
+			// Clearing unresolvedInputs preserves the contract invariant:
+			//   paths-scoped nodes must have zero unresolved inputs.
+			nodes[script] = {
+				...analyzed,
+				scope: override.scope,
+				inputs: [...override.inputs].sort(),
+				unresolvedInputs: [],
+			};
+		} else {
+			nodes[script] = analyzed;
+		}
+	}
 	for (const [script, node] of Object.entries(nodes)) {
 		assert(node.scope === "global" || node.unresolvedInputs.length === 0, `${script} has unresolved inputs but non-global scope`);
 	}

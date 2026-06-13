@@ -113,6 +113,47 @@ const abmlSelection = selectSmartScripts(["src/abml-core/treeDiff.ts"], { root, 
 assert(abmlSelection.has("check:abml-contracts"), "smart selection for abml-core treeDiff must include check:abml-contracts");
 const distillSelection = selectSmartScripts(["src/distill-core/relevance.ts"], { root, impactMap });
 assert(distillSelection.has("check:task-conditioned-salience"), "smart selection for distill-core relevance must include check:task-conditioned-salience");
+
+// Inert-docs fast lane: a plain prose doc under docs/ (not generated/, not spec-claim,
+// not governance) must select ONLY the 3 doc-integrity gates.
+const inertDocSelection = selectSmartScripts(["docs/document-structure.md"], { root, impactMap });
+assert.deepEqual([...inertDocSelection.keys()].sort(), ["check:doc-paths", "check:doc-structure", "check:docs-sync"], "inert docs fast lane must select only the 3 doc-integrity gates");
+assert(!inertDocSelection.has("check:src:types"), "inert docs fast lane must not include tsc base proof");
+assert(!inertDocSelection.has("lint:eslint"), "inert docs fast lane must not include eslint base proof");
+assert(!inertDocSelection.has("test:unit:abml"), "inert docs fast lane must not include unit shards");
+// Mixed changeset (docs + code) must NOT take the fast lane
+const mixedSelection = selectSmartScripts(["docs/document-structure.md", "src/abml-core/ax.ts"], { root, impactMap });
+assert(mixedSelection.has("check:src:types"), "mixed docs+code changeset must not take the inert-docs fast lane");
+assert(mixedSelection.has("test:unit:abml"), "mixed docs+code changeset must include unit shards");
+// Governance docs must NOT take the fast lane
+const readmeSelection = selectSmartScripts(["README.md"], { root, impactMap });
+assert(readmeSelection.has("check:src:types"), "README.md must not take the inert-docs fast lane");
+const claudeMdSelection = selectSmartScripts(["CLAUDE.md"], { root, impactMap });
+assert(claudeMdSelection.has("check:src:types"), "CLAUDE.md must not take the inert-docs fast lane");
+const agentsMdSelection = selectSmartScripts(["AGENTS.md"], { root, impactMap });
+assert(agentsMdSelection.has("check:src:types"), "AGENTS.md must not take the inert-docs fast lane");
+// Generated docs must NOT take the fast lane
+const generatedDocSelection = selectSmartScripts(["docs/generated/browser-tool-contract.generated.md"], { root, impactMap });
+assert(generatedDocSelection.has("check:src:types"), "docs/generated/ docs must not take the inert-docs fast lane");
+// Spec-claim docs must NOT take the fast lane
+const specClaimDocSelection = selectSmartScripts(["docs/abml-p1-spec.md"], { root, impactMap });
+assert(specClaimDocSelection.has("check:src:types"), "spec-claim docs must not take the inert-docs fast lane");
+// Unit shards must be paths-scoped (not global) after SCOPE_OVERRIDES were applied
+assert.equal(impactMap.nodes?.["test:unit:abml"]?.scope, "paths", "test:unit:abml must be paths-scoped after SCOPE_OVERRIDES override");
+assert(impactMap.nodes?.["test:unit:abml"]?.inputs?.includes("src/"), "test:unit:abml scope must include all of src/");
+assert(impactMap.nodes?.["test:unit:abml"]?.inputs?.includes("tests/unit/abml/"), "test:unit:abml scope must include its own test directory");
+assert.equal((impactMap.nodes?.["test:unit:abml"]?.unresolvedInputs || []).length, 0, "test:unit:abml must have zero unresolvedInputs after override");
+// A docs-only change must NOT select any unit shard
+const docOnlyUnitCheck = selectSmartScripts(["docs/document-structure.md"], { root, impactMap });
+for (const shard of ["test:unit:abml", "test:unit:distill", "test:unit:tools", "test:unit:misc", "test:unit:memory", "test:unit:driver", "test:unit:temporal", "test:unit:web-security", "test:unit:cli:commands", "test:unit:cli:daemon"]) {
+	assert(!docOnlyUnitCheck.has(shard), `docs-only change must not trigger ${shard}`);
+}
+// A src/ change must still select all unit shards
+const srcUnitCheck = selectSmartScripts(["src/abml-core/ax.ts"], { root, impactMap });
+for (const shard of ["test:unit:abml", "test:unit:distill", "test:unit:tools", "test:unit:misc", "test:unit:memory", "test:unit:driver", "test:unit:temporal", "test:unit:web-security", "test:unit:cli:commands", "test:unit:cli:daemon"]) {
+	assert(srcUnitCheck.has(shard), `src/ change must trigger ${shard}`);
+}
+
 assert(existsSync(CHECK_IMPACT_MAP_PATH), "committed impact-map artifact must exist");
 const markerOutput = execFileSync(process.execPath, ["scripts/query-markers.mjs", "--needle", "templateGroupDescriptorForEntity"], { cwd: root, encoding: "utf8" });
 assert(markerOutput.includes("check-abml-tree-diff.mjs") && markerOutput.includes("check-abml-templating.mjs"), "query:markers control must find templateGroupDescriptorForEntity pins");
