@@ -1,7 +1,8 @@
 {
   "schemaVersion": 1,
-  "headroom": "ceil(current_lines * 1.10)",
+  "headroom": "maxLines/maxBytes: ceil(current * 1.10) when re-committing growth; append-only docs use a deliberate maxBytes policy cap",
   "files": [
+    { "file": "CHANGELOG.md", "maxBytes": 65536, "justification": "Append-only project changelog grows ~50KB/week; oldest entries roll into docs/changelog-history.md via npm run changelog:rotate so the active file stays a bounded recent window." },
     { "file": "cli/commandMetadata.ts", "maxLines": 267 },
     { "file": "cli/index.ts", "maxLines": 3 },
     { "file": "cli/localCommands.ts", "maxLines": 530 },

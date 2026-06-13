@@ -614,21 +614,21 @@
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 193,
+          "line": 194,
           "reason": "dynamic file read"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 423,
+          "line": 424,
           "reason": "dynamic file read"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 540,
+          "line": 541,
           "reason": "dynamic file read"
         },
         {
@@ -3059,7 +3059,7 @@
           "script": "check:file-ceilings",
           "nodeId": "check:file-ceilings",
           "file": "tests/contracts/drift/check-file-ceilings.mjs",
-          "line": 51,
+          "line": 71,
           "reason": "dynamic file read"
         }
       ],
@@ -3089,21 +3089,21 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 193,
+          "line": 194,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 423,
+          "line": 424,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 540,
+          "line": 541,
           "reason": "dynamic file read"
         },
         {
@@ -3173,21 +3173,21 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 193,
+          "line": 194,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 423,
+          "line": 424,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 540,
+          "line": 541,
           "reason": "dynamic file read"
         },
         {

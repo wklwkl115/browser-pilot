@@ -32,6 +32,7 @@
     "query:markers": "node scripts/query-markers.mjs",
     "new:check": "node scripts/new-check.mjs",
     "scope:begin": "node scripts/workstream-scope.mjs --begin",
+    "changelog:rotate": "node scripts/rotate-changelog.mjs",
     "prepare": "lefthook install",
     "build": "tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",

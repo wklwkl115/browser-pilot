@@ -1,6 +1,6 @@
 # Stateful WebSocket Replay & Fuzz Plan
 
-> Status: completed (phase 1 archived). This document served as the execution contract for the stateful WebSocket replay/fuzz workstream from `docs/next-phase-web-reversing-and-security-primitives-plan.md`.
+> Status: completed (phase 1 archived). This document served as the execution contract for the stateful WebSocket replay/fuzz workstream from `docs/archive/next-phase-web-reversing-and-security-primitives-plan.md`.
 
 ## Goal
 

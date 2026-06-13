@@ -53,6 +53,24 @@ Do not use for:
 - full execution diaries once dedicated archive files exist
 - current queue management
 
+### `CHANGELOG.md`
+
+Use for:
+- recent, active changelog entries (reverse-chronological, newest first)
+
+Do not use for:
+- unbounded history — the active file is byte-capped by `maxBytes` in `tests/contracts/drift/file-ceilings.json` (enforced by `npm run check:file-ceilings`)
+
+When the ceiling trips, run `npm run changelog:rotate` to roll the oldest entries into `docs/changelog-history.md`. This is a standalone maintenance command, not part of `npm run docs:sync`.
+
+### `docs/changelog-history.md`
+
+Use for:
+- older changelog entries rolled out of `CHANGELOG.md` (append-only, no size ceiling)
+
+Do not use for:
+- new entries — always add new entries to the top of `CHANGELOG.md`
+
 ### `docs/archive/*.md`
 
 Use for:
@@ -162,6 +180,7 @@ Use:
 - `ROADMAP.md` should contain future-facing items, not active execution details.
 - `TODO.md` should remain a navigation page, not a second roadmap or archive.
 - Detailed historical records should prefer dedicated files under `docs/archive/` once a phase is closed and stable.
+- `CHANGELOG.md` stays a bounded recent window: its byte ceiling lives in `tests/contracts/drift/file-ceilings.json` and overflow rolls into `docs/changelog-history.md` via `npm run changelog:rotate` (a standalone maintenance command, not part of `docs:sync`).
 
 ## Validation
 

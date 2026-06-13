@@ -140,7 +140,7 @@ observe → `envelope.templates` has a template with `count >= N`, `varies`, `in
   between observations → O(change) diff). Ref minting must remain untouched in this phase.
 - **M2b**: semantic-anchor ref stability contract after M2a evidence; gated blast-radius tests over scan/diff/read/click/ref registry before `stableRefIdForDescriptor` mutation. Complete in `2aefe55`.
 - Gate each phase on `npm run check` green + the live smoke. Update
-  `docs/abml-perception-state-evolution-plan.md` §Optimization roadmap as phases land.
+  `docs/archive/abml-perception-state-evolution-plan.full.md` §Optimization roadmap as phases land.
 
 ## 7. Out of scope (unchanged ABML non-goals)
 

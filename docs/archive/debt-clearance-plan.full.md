@@ -70,7 +70,7 @@ expansion remain parked governance/RFC areas, not debt backlog.
 ### D3 — Dictionary W1: security payload/signature externalization (zero behavior change) ✅
 
 Externalize the hardcoded security payload/signature lists (the W1 class from
-`docs/dictionary-and-wordlist-governance-plan.md`) into committed default wordlist files
+`docs/archive/dictionary-and-wordlist-governance-plan.md`) into committed default wordlist files
 consumed via the existing `readWordlist` pipeline. **Byte-identity rule:** the committed files
 are generated FROM the current constants; with no user override, tool outputs are
 byte-identical (contract-locked). User override arrives free through the existing wordlist

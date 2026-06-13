@@ -77,7 +77,8 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   the decision and the I/O on opposite sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
   `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
-  ABML models ARIA patterns, never per-site/per-framework branches (see the perception roadmap doc).
+  ABML models ARIA patterns, never per-site/per-framework branches (see the project-level
+  ABML development rules).
 - **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.
@@ -100,4 +101,5 @@ The ones you will reach for most:
 
 - [`docs/abml-kernel-manifest.md`](../../docs/abml-kernel-manifest.md) — formal layer manifest + boundary spec + the workspace-package promotion recipe (and the doc map).
 - [`docs/abml-p1-spec.md`](../../docs/abml-p1-spec.md) — the AX-authoritative state spec.
-- [`docs/abml-perception-state-evolution-plan.md`](../../docs/abml-perception-state-evolution-plan.md) — the perception north-star + R1/R2/R3 semantic-depth roadmap.
+- [`AGENTS.md`](../../AGENTS.md#abml-project-development-rules) — current project-level ABML development rules.
+- [`docs/archive/abml-perception-state-evolution-plan.md`](../../docs/archive/abml-perception-state-evolution-plan.md) — historical perception north-star + R1/R2/R3 semantic-depth roadmap.

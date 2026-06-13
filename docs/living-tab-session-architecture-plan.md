@@ -26,10 +26,11 @@
 > with evidence" — v7's acceptance audit found those closures were NOT
 > measured (no experiments, no artifacts); §12 now records them honestly as
 > descopes closed without execution.
-> Relationship to `docs/abml-perception-state-evolution-plan.md`
+> Relationship to archived
+> `docs/archive/abml-perception-state-evolution-plan.md`
 > (fold/projection disclosure): this plan builds the freshness + identity +
 > speed substrate that disclosure model assumes; zero mechanism overlap; that
-> plan stays un-activated.
+> historical plan stays un-activated.
 >
 > Full closure note — 2026-06-13: S0-S3 are closed under `CURRENT.md`
 > "Living tab session architecture full closure" activation. The shipped path

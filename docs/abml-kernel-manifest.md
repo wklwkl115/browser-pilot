@@ -37,7 +37,8 @@ each doc links back here.
 | [`src/abml-core/README.md`](../src/abml-core/README.md) | Kernel front door — onboarding + how to extend | you are working in the kernel code |
 | `docs/abml-kernel-manifest.md` (this) | Layer manifest + CI boundary spec + package-promotion recipe | you need the pure-core ⇄ runtime rule or the file classification |
 | [`docs/abml-p1-spec.md`](abml-p1-spec.md) | AX-authoritative state **language spec** (P1, REVIEWED) | you need the formal contract for entity state / pure-function behavior |
-| [`docs/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md) | Perception **north-star** + R1/R2/R3 semantic-depth roadmap | you are planning new perception capability |
+| [`AGENTS.md`](../AGENTS.md#abml-project-development-rules) | Project-level ABML development rules | you are changing ABML boundaries, verbs, or collection/continuation modeling |
+| [`docs/archive/abml-perception-state-evolution-plan.md`](archive/abml-perception-state-evolution-plan.md) | Historical perception north-star + R1/R2/R3 semantic-depth roadmap | you need the completed roadmap record or phase history |
 | [`docs/archive/abml-collection-continuation-kernel-plan.md`](archive/abml-collection-continuation-kernel-plan.md) | Completed execution summary for collection completeness + semantic continuation | you are reviewing how ABML long-list completeness shipped without public action verbs |
 | [`docs/archive/abml-execution-plan.md`](archive/abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
 | [`docs/abml-optimization-reference.md`](abml-optimization-reference.md) | Optimization reference for ABML cost/precision tradeoffs | you are changing perception budgets, summaries, or optimization heuristics |

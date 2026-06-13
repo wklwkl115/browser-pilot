@@ -33,7 +33,7 @@ Current validated ABML baseline:
 - `hints.containerRole` / `hints.containerName` already prove seed membership relations for W3C `radiogroup`.
 - Public surface remains canonical `browser_*`; ABML remains internal substrate.
 
-Source roadmap: `docs/abml-perception-state-evolution-plan.md` → R1/R2/R3.
+Source roadmap: `docs/archive/abml-perception-state-evolution-plan.full.md` → R1/R2/R3.
 
 ## 1. Objective
 

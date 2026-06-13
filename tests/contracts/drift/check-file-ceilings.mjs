@@ -8,8 +8,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const configPath = path.join(root, "tests", "contracts", "drift", "file-ceilings.json");
 const proposeMode = process.argv.includes("--propose");
 
-function lineCount(file) {
-	return readFileSync(file, "utf8").split(/\r?\n/).length;
+function readFileStats(file) {
+	const buf = readFileSync(file);
+	return { lines: buf.toString("utf8").split(/\r?\n/).length, bytes: buf.length };
 }
 
 function check(config, base = root) {
@@ -18,7 +19,9 @@ function check(config, base = root) {
 	const seen = new Set();
 	for (const entry of config.files || []) {
 		assert.equal(typeof entry.file, "string", "file ceiling entries need file");
-		assert.equal(typeof entry.maxLines, "number", `${entry.file} needs numeric maxLines`);
+		const hasLines = typeof entry.maxLines === "number";
+		const hasBytes = typeof entry.maxBytes === "number";
+		assert(hasLines || hasBytes, `${entry.file} needs a numeric maxLines and/or maxBytes`);
 		assert(!seen.has(entry.file), `duplicate file ceiling entry: ${entry.file}`);
 		seen.add(entry.file);
 		const absolute = path.join(base, entry.file);
@@ -27,10 +30,23 @@ function check(config, base = root) {
 			proposals.push({ file: entry.file, action: "remove missing entry", justification: "TODO: file was intentionally removed or moved" });
 			continue;
 		}
-		const lines = lineCount(absolute);
-		if (lines > entry.maxLines) {
+		const { lines, bytes } = readFileStats(absolute);
+		const proposal = { file: entry.file };
+		if (hasLines && lines > entry.maxLines) {
 			failures.push(`${entry.file}: ${lines}/${entry.maxLines} lines; split along documented seams or re-commit the ceiling in this diff with a one-line justification`);
-			proposals.push({ file: entry.file, maxLines: Math.ceil(lines * 1.1), currentLines: lines, previousMaxLines: entry.maxLines, justification: "TODO: justify ceiling growth or split the file" });
+			proposal.maxLines = Math.ceil(lines * 1.1);
+			proposal.currentLines = lines;
+			proposal.previousMaxLines = entry.maxLines;
+		}
+		if (hasBytes && bytes > entry.maxBytes) {
+			failures.push(`${entry.file}: ${bytes}/${entry.maxBytes} bytes; roll older content out (e.g. npm run changelog:rotate) or re-commit the ceiling in this diff with a one-line justification`);
+			proposal.maxBytes = Math.ceil(bytes * 1.1);
+			proposal.currentBytes = bytes;
+			proposal.previousMaxBytes = entry.maxBytes;
+		}
+		if (Object.keys(proposal).length > 1) {
+			proposal.justification = "TODO: justify ceiling growth or shrink the file";
+			proposals.push(proposal);
 		}
 	}
 	return { failures, proposals };
@@ -42,6 +58,10 @@ function selfTest() {
 		writeFileSync(path.join(dir, "too-big.ts"), "a\nb\nc\n", "utf8");
 		const { failures } = check({ schemaVersion: 1, files: [{ file: "too-big.ts", maxLines: 2 }] }, dir);
 		assert(failures.length === 1 && failures[0].includes("split along documented seams"), "file ceiling self-test must fail over-ceiling files with remediation");
+		const byteFail = check({ schemaVersion: 1, files: [{ file: "too-big.ts", maxBytes: 3 }] }, dir);
+		assert(byteFail.failures.length === 1 && byteFail.failures[0].includes("bytes"), "file ceiling self-test must enforce maxBytes ceilings");
+		const byteOk = check({ schemaVersion: 1, files: [{ file: "too-big.ts", maxBytes: 4096 }] }, dir);
+		assert(byteOk.failures.length === 0, "file ceiling self-test must pass files within maxBytes");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

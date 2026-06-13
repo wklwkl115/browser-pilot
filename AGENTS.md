@@ -54,6 +54,11 @@
 - Mature bridges must be portable: no private absolute paths, throwaway scripts, or host-specific production assumptions.
 - Future `browser_*` names must not be registered until implemented.
 
+## ABML Project Development Rules
+
+- ABML is the perception substrate under `browser_*`, not an agent-visible action surface. Do not add public ABML verbs, restore ABML click/type/scroll/action runtimes, or make `browser_execute {action}`-style sugar the shape of the ABML contract.
+- For scrollable, lazy, virtualized, paginated, or hidden content, model the missing browser truth first: collection membership, completeness, continuation, data source, evidence, and semantic state transitions. Physical input, page JS, `pi.click`, or `browser_command input.*` may be runtime mechanics or explicit escape hatches, but they must not become first-class ABML/public verb design.
+
 ## Anti-Patterns
 
 - Tools that decide strategy for the agent or hide uncertainty behind broad if/else logic.

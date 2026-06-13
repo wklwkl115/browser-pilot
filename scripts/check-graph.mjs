@@ -40,6 +40,7 @@ export const CI_GROUP_LABELS = Object.freeze({
 });
 
 export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
+	"changelog:rotate": "maintenance helper that rolls old CHANGELOG entries into docs/changelog-history.md; not a proof obligation node",
 	check: "top-level alias for check:all",
 	"check:abml-ax-runtime": "covered by check:abml-contracts umbrella",
 	"check:abml-ax-smoke": "covered by check:abml-contracts umbrella",

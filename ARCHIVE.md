@@ -22,15 +22,18 @@
 
 - 2026 06 02 Real Session Fixes Verification历史摘要见 `docs/archive/2026-06-02-real-session-fixes-verification.md`
 - Abml Collection Continuation Kernel Plan历史摘要见 `docs/archive/abml-collection-continuation-kernel-plan.md`
+- Abml Perception State Evolution Plan历史摘要见 `docs/archive/abml-perception-state-evolution-plan.md`
 - Algorithm Optimization Plan历史摘要见 `docs/archive/algorithm-optimization-plan.md`
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
 - Check Acceleration Plan历史摘要见 `docs/archive/check-acceleration-plan.md`
+- Dictionary And Wordlist Governance Plan历史摘要见 `docs/archive/dictionary-and-wordlist-governance-plan.md`
 - Distill Kernel Hygiene Plan历史摘要见 `docs/archive/distill-kernel-hygiene-plan.md`
 - Execution Feedback Layer Plan历史摘要见 `docs/archive/execution-feedback-layer-plan.md`
 - Execution Plane Cdp Fusion Plan历史摘要见 `docs/archive/execution-plane-cdp-fusion-plan.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
 - Governance Mechanisms Plan历史摘要见 `docs/archive/governance-mechanisms-plan.md`
 - Memory Kernel Plan历史摘要见 `docs/archive/memory-kernel-plan.md`
+- Next Phase Web Reversing And Security Primitives Plan历史摘要见 `docs/archive/next-phase-web-reversing-and-security-primitives-plan.md`
 - 已撤回 orchestration / target resolver / profile isolation历史摘要见 `docs/archive/orchestration-history.md`
 - Perception Layer Optimization Plan历史摘要见 `docs/archive/perception-layer-optimization-plan.md`
 - Performance Overhead Audit历史摘要见 `docs/archive/performance-overhead-audit.md`
@@ -48,15 +51,18 @@
 
 - `docs/archive/2026-06-02-real-session-fixes-verification.full.md`
 - `docs/archive/abml-collection-continuation-kernel-plan.full.md`
+- `docs/archive/abml-perception-state-evolution-plan.full.md`
 - `docs/archive/algorithm-optimization-plan.full.md`
 - `docs/archive/bridge-esm-history.full.md`
 - `docs/archive/check-acceleration-plan.full.md`
+- `docs/archive/dictionary-and-wordlist-governance-plan.full.md`
 - `docs/archive/distill-kernel-hygiene-plan.full.md`
 - `docs/archive/execution-feedback-layer-plan.full.md`
 - `docs/archive/execution-plane-cdp-fusion-plan.full.md`
 - `docs/archive/governance-history.full.md`
 - `docs/archive/governance-mechanisms-plan.full.md`
 - `docs/archive/memory-kernel-plan.full.md`
+- `docs/archive/next-phase-web-reversing-and-security-primitives-plan.full.md`
 - `docs/archive/orchestration-history.full.md`
 - `docs/archive/perception-layer-optimization-plan.full.md`
 - `docs/archive/performance-overhead-audit.full.md`

@@ -1,6 +1,10 @@
 # ABML — Agent-Native Page Model (Evolution Plan)
 
-*ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](abml-kernel-manifest.md#abml-documentation-map).*
+> Archived full historical plan. Current project-level ABML development rules live in
+> [`AGENTS.md`](../../AGENTS.md#abml-project-development-rules); the summary archive is
+> [`docs/archive/abml-perception-state-evolution-plan.md`](abml-perception-state-evolution-plan.md).
+
+*ABML doc set — index & map: [`docs/abml-kernel-manifest.md`](../abml-kernel-manifest.md#abml-documentation-map).*
 
 > Status: living perception roadmap — R1/R2/R3/R3.x + 机制臂 M1/M2a/M2b/M2c are **COMPLETE and shipped** (see the per-phase records below and `CURRENT.md`); the Mid/Far items remain forward-looking and unimplemented.
 > Establishes the first principle for what the browser tools return to an agent, a
@@ -278,7 +282,7 @@ incrementally updated, focused, honest about reachability. All of these are
   paginated | unknown` completeness, continuation handles, source/evidence pointers,
   and dedupe keys) so "scroll more and look again" becomes a perception-state question,
   not an agent-visible action loop. Draft execution design:
-  [`docs/abml-collection-continuation-kernel-plan.md`](abml-collection-continuation-kernel-plan.md).
+  [`docs/archive/abml-collection-continuation-kernel-plan.md`](abml-collection-continuation-kernel-plan.md).
 - **Far:** **causal plane** (hang network-entry/event refs on a control's subtree so
   "what happens if I click this" is navigable) plus state-transition summaries that
   connect an operation, the changed semantic entities, and any backing data source.
@@ -302,7 +306,7 @@ covering complex web apps, **complementary** to the optimization roadmap above: 
    real-browser validated, the way P1-P3 were.
 
 ### Phase R1 — Relationship-graph completion — COMPLETE (2026-06-03)
-**Batch 1 + batch 2 landed + live-verified** — see `docs/abml-relationship-graph-execution-plan.md`.
+**Batch 1 + batch 2 landed + live-verified** — see `docs/archive/abml-relationship-graph-execution-plan.full.md`.
 Typed `EntityRelation[]` on entities + a budget-immune envelope-top-level `relations` summary. All
 families materialize to `pi-ref://` targets from a real Chrome tree: labelledBy/describedBy/controls/
 owns/expandedTarget + table cellOf/rowOf/columnOf/headerFor (AX-sourced), plus **currentIn** (DOM
@@ -351,7 +355,7 @@ at envelope top-level (`inference: { intents: DetectedIntent[] }`, budget-immune
   relation hangs the delta on the activated control (explicit `actionRef` or the focus-normalized
   R3 `diff.focusedRef`, accepted only when it resolves to a control/element — frame/region rejected;
   `source:"timing"`, low confidence — timing window only). Lifted to `envelope.relations.summary`.
-  See `docs/abml-r3x-causal-plane-execution-plan.md`. **P2 A+B COMPLETE (2026-06-04)** — A: hook
+  See `docs/archive/abml-r3x-causal-plane-execution-plan.full.md`. **P2 A+B COMPLETE (2026-06-04)** — A: hook
   events fired since baseline ride `envelope.causal.events` (console/DOM-sink/storage, redacted,
   ref `pi-ref://event/<seq>`), browser-verified; B: an event that names its target element hangs a
   `triggered` `source:"event"`/medium edge on that control (stronger than P1 timing), deterministically

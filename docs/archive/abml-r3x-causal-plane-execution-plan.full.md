@@ -191,7 +191,7 @@ redaction at the same contract, no per-site/stack heuristics.
   (gating network drain; event-plane drain non-gating but live-verified this run). No new public tool,
   no protocol change — pure internal substrate.
 - Gate each phase on `npm run check` green + the live smoke.
-- Update `docs/abml-perception-state-evolution-plan.md` R3.x section as phases land.
+- Update `docs/archive/abml-perception-state-evolution-plan.full.md` R3.x section as phases land.
 
 ## 7. Folded-in R3 quality findings (from the 2026-06-04 live smoke)
 

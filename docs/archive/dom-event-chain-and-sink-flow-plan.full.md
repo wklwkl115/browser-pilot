@@ -1,6 +1,6 @@
 # DOM Event Chain & Sink-Flow Analysis Plan
 
-> Status: completed (phase 1 archived). This document served as the execution contract for the DOM event chain / sink-flow analysis workstream from `docs/next-phase-web-reversing-and-security-primitives-plan.md`.
+> Status: completed (phase 1 archived). This document served as the execution contract for the DOM event chain / sink-flow analysis workstream from `docs/archive/next-phase-web-reversing-and-security-primitives-plan.md`.
 
 ## Goal
 

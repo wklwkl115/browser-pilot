@@ -4,7 +4,7 @@
 > Does **not** add public `browser_abml_*` tools. ABML stays internal substrate; new
 > output fields ride existing `browser_observe` + action verb envelopes.
 
-Source roadmap: `docs/abml-perception-state-evolution-plan.md` → R3.
+Source roadmap: `docs/archive/abml-perception-state-evolution-plan.full.md` → R3.
 
 ## 0. Baseline
 
@@ -195,7 +195,7 @@ This makes "what changed" visible without a separate observe call.
 
 - Real-page validation: click a form submit button (disabled), type in required field,
   re-observe — `diff.changed` must show `disabled: true → false` on the button.
-- Update `docs/abml-perception-state-evolution-plan.md` R3 status.
+- Update `docs/archive/abml-perception-state-evolution-plan.full.md` R3 status.
 - Gate: `npm run check` green + live smoke passes.
 
 ## 6. R3.x handoff conditions

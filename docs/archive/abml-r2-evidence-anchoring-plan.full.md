@@ -16,7 +16,7 @@
 > `check:abml-inference`; `npm run check` green. **Deferred (still out of scope):**
 > primary-intent ranking (page-type overfitting risk).
 
-Source roadmap: `docs/abml-perception-state-evolution-plan.md` → R2.
+Source roadmap: `docs/archive/abml-perception-state-evolution-plan.full.md` → R2.
 
 ## 0. Baseline
 
