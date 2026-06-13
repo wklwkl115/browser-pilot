@@ -1,6 +1,6 @@
 # Algorithm Optimization Plan
 
-> Status: READY — v9 (v8 + activation-state correction, item 8 primitive/accessor parity guard, item 9 `jsonBudgetLength`/projection surface, item 11/13 focused gate expansion)
+> Status: READY
 > Scope: `src/distill-core/` (items 5, 7, 9, 12, including `fit.ts` / `projection.ts` budget-length consumers); `src/utils/json.ts` (item 8); `src/abml-core/` (items 10, 11, 13); `src/tools/observe/` (Step 0 measurement)
 > Boundary: No runtime/driver/public-surface changes; no new env flags; new kernel-module exports declared `internal` in `kernel-export-inventory.json`
 > Verification: per-item parity tests (red-first) + `bench:distill` + `check:all:src`; closing gate `npm run check`
@@ -39,7 +39,7 @@ The accept bars are only as trustworthy as the methodology behind them. Three ru
 | 12 | stack-overflow repro → bounded completion | — | — | (correctness; exempt) | — |
 | 7 | `tokenEstimate` ns/char on mixed corpus | — | — | — | — |
 | 5 | `stableJson` invocations per over-budget fit | — | — | — | — |
-| 8 | `stableJson` ms on bench corpus (clean path) | — | — | — | — |
+| 8 | `stableJson` ms on bench corpus (clean path, **net including classify overhead**) | — | — | — | — |
 | 9 | probe-path allocations + ms per render (`jsonCost` + `jsonBudgetLength` clean paths) | — | — | — | — |
 | 10 | `buildInferenceSummary` ms at N=500 | — | — | — | — |
 | 11 | per-site comparator micro-ratios | — | — | — | — |
@@ -147,17 +147,17 @@ stableJson(value, spaces = 2):
 `classifyClean` is an iterative walk over objects/arrays with an **ancestor-path `Set`** (add on descend, delete on ascend — O(1) membership vs today's O(depth) `includes`), returning false on: `bigint`, `instanceof Error`, a node revisited **on the current ancestor path** (a true cycle), or **any object with a callable `toJSON`** (conservative: routes `Date` etc. to the slow path so toJSON-interaction corners can never diverge). Ancestor-path semantics matter: a whole-walk visited `Set` would flag shared substructure (DAGs) as cycles and silently route those values to the slow path forever — output still correct, fast path lost. Native `JSON.stringify` serializes shared references identically to the replacer path, so DAGs classify clean; only genuine cycles fall back. Crucially the scan never inspects string contents — the expensive char-level work (escaping, indentation) runs entirely inside native `JSON.stringify`. Design details:
 
 - **Primitive short-circuit:** `value === null || (typeof value !== "object" && typeof value !== "bigint")` skips the scan and goes straight to native — `stableJson` is called constantly on small/scalar values (line renderings, `jsonCost` of leaf facts); they must not pay a scan setup. Root `bigint` is excluded because today's replacer serializes it as a string while native `JSON.stringify(1n)` throws.
-- **Accessor guard:** the classifier must inspect own property descriptors before reading values. Any accessor (`get`/`set`), descriptor read failure, or non-plain object/array prototype routes to the slow path. This prevents the classifier from firing getters before `JSON.stringify` and changing bytes or side effects. Do not implement the walk with `Object.values()` until the descriptor guard has accepted the object.
+- **Accessor guard:** the classifier must inspect own property descriptors before reading values. Any accessor (`get`/`set`), descriptor read failure, or non-plain object/array prototype routes to the slow path. This prevents the classifier from firing getters before `JSON.stringify` and changing bytes or side effects. Do not implement the walk with `Object.values()` until the descriptor guard has accepted the object. Note: per-property descriptor inspection adds overhead; measurement must show that the net classify+native path (including descriptor-checking cost) beats the replacer path — see the accept bar below.
 - **One classifier, two consumers:** `classifyClean` is the same module-private classifier item 9's length walker uses for its exotic fallback. A single implementation prevents the two from ever disagreeing about which values are "clean".
 
 Byte-identity argument: for clean values the replacer is the identity function (`return item`), so replacer and native outputs are definitionally equal; all exotic and toJSON-bearing values take today's path unchanged. `try/catch` around the fast path as belt-and-suspenders (any throw → slow path).
 
-**Recorded fallback design** (if parity fuzzing surfaces any divergence class that survives the toJSON-conservative rule): keep the replacer architecture unchanged and only mirror the `ancestors` stack in a parallel `Set` for O(1) cycle membership. Strictly smaller win (native fast path stays lost) but unconditionally identical by construction — the floor outcome of this item, not a parked alternative.
+**Recorded fallback design** (if parity fuzzing surfaces any divergence class that survives the toJSON-conservative rule, or if net measurement shows classify overhead outweighs the native fast path gain): keep the replacer architecture unchanged and only mirror the `ancestors` stack in a parallel `Set` for O(1) cycle membership. Strictly smaller win (native fast path stays lost) but unconditionally identical by construction — the floor outcome of this item, not a parked alternative.
 
 ### Verification
 
 1. Parity test: old implementation as reference oracle; byte-equality over the `bench:distill` corpus envelopes + randomized JSON-shaped fuzz + adversarial cases (root/nested `bigint`, Error, cycle, Date/toJSON, accessor getter with mutation, non-plain prototypes, lone surrogates, `undefined` in arrays/objects, deep nesting). Red-first: perturb the classify condition to prove the test bites.
-2. Micro-bench in the test over corpus envelopes (log ratio; accept bar: measured speedup on the clean path, no regression on exotic path).
+2. Micro-bench in the test over corpus envelopes (log ratio; accept bar: **net** measured speedup on the clean path including classify overhead — if classify+native is not faster than the replacer path, do not land the fast path and adopt the fallback design; no regression on exotic path).
 3. `stableJsonInvocationCounter` semantics unchanged (counter increments once per call regardless of tier).
 4. `src/utils/json.ts` is shared (not kernel-inventory scope); confirm via `check:surface-liveness` that no ledger entry is touched. Gates: `check:all:src`, `check:all:contracts` (blast radius spans tools), then full `npm run check`.
 
@@ -176,11 +176,11 @@ For hundreds of facts per observe this is pure allocation/GC churn: megabyte-sca
 
 ### Design
 
-Add a kernel-internal exact-length walker `jsonCostFast(value, spaces = 2): number` (in `src/distill-core/cost.ts`, export declared `internal` in `kernel-export-inventory.json`) that computes the current stable-JSON length **without building the string** on clean values. It must support both pretty (`spaces = 2`) and compact (`spaces = 0`) modes because `src/distill-core/fit.ts` exports `jsonBudgetLength(value, spaces)` and `src/distill-core/projection.ts` calls that path repeatedly with `spaces = 0`.
+Add a kernel-internal exact-length walker `jsonCostFast(value, spaces = 2): number` (in `src/distill-core/cost.ts`, export declared `internal` in `kernel-export-inventory.json`) that computes the current stable-JSON length **without building the string** on clean values. The walker uses an iterative approach (explicit stack) matching `classifyClean`'s traversal style so its stack depth is bounded by heap, not by the call stack — deeply nested clean values that would overflow a recursive walker are handled safely. It must support both pretty (`spaces = 2`) and compact (`spaces = 0`) modes because `src/distill-core/fit.ts` exports `jsonBudgetLength(value, spaces)` and `src/distill-core/projection.ts` calls that path repeatedly with `spaces = 0`.
 
 - Pretty-print: newline + indent costs as a function of the recursive depth; `": "` key separators for `spaces = 2`; compact separators for `spaces = 0`; `{}`/`[]` compact empty forms
 - String escaping lengths: `"` `\` and `\b \f \n \r \t` → 2; other control chars → 6 (`\u00XX`); lone surrogates → 6 (well-formed stringify escapes them); all other code units → 1
-- Numbers: finite via `String(n).length`; **non-finite (`NaN`/`±Infinity`) cost 4 — `JSON.stringify` emits `null`** while `String(NaN)` is 3 chars (the same parity-bug class the v3 audit caught in item 7's surrogate skip); `-0` stringifies as `0` on both paths; `undefined`/function/symbol omitted in objects, `null` (4) in arrays
+- Numbers: finite via `String(n).length`; **non-finite (`NaN`/`±Infinity`) cost 4 — `JSON.stringify` emits `null`** while `String(NaN)` is 3 chars (the same parity-bug class the audit caught in item 7's surrogate skip); `-0` stringifies as `0` on both paths; `undefined`/function/symbol omitted in objects, `null` (4) in arrays
 - Exotics and toJSON-bearing values: detected via the **same `classifyClean` classifier item 8 introduces** (shared implementation, never a second opinion), falling back to `stableJson(value).length` (correct by definition; rare)
 
 The public result must preserve today's **standalone** probe semantics: `jsonCostFast(v, spaces) === (stableJson(v, spaces) ?? "").length`. The recursive implementation may track depth internally, but this workstream must not change salience/ladder candidate decisions by reinterpreting existing per-key costs as embedded envelope costs. Embedded-cost accounting is a separate behavior-changing allocator proposal.
@@ -200,7 +200,7 @@ Switch the length-only call sites to the walker: `jsonCost` body, `ladder.ts` `s
 
 ### Problem
 
-`compactSummaryValue` (`src/distill-core/granularity.ts:36-51`) guards object depth (`depth >= 5` → placeholder, line 42) but the **array branch at line 41 sits before the guard and recurses without any depth check** — nested arrays bypass the cap entirely.
+`compactSummaryValue` (`src/distill-core/granularity.ts:36-51`) guards object depth (`depth >= 5` → placeholder, line 42) but the **array branch at line 41 recurses before the depth guard, so the cap is never enforced for array types** — the depth parameter increments (`depth + 1` is passed) but is only checked on the object branch below. Nested arrays bypass the cap entirely.
 
 Reachability is verified, not assumed: `resultMiddleware.ts:486` calls `fitSummaryBudget` on **every distilled tool result**, and the generic summary path (`src/tools/summaries/generic.ts`) carries `browser_execute`'s arbitrary page-JSON results into it; `fitSummaryBudget` drives `compactSummaryValue` on its compaction rungs (`ladder.ts:85-94`). A hostile or malformed page returning deeply nested arrays (`[[[[…]]]]`, one line of page JS) therefore drives unbounded recursion in the host process: stack overflow. This is a correctness/resilience defect with a CPU dimension, not an optimization.
 
@@ -253,11 +253,11 @@ Five verified sites do per-comparison or per-iteration work that should be compu
 - `typeRank` (`src/abml-core/relations.ts:52-55`): `TYPE_ORDER.indexOf(type)` — an O(13) array scan — runs inside two sort comparators (`sortRelations` per relation-bearing entity, `buildRelationSummary` highlight sort over all semantic edges).
 - `changeScore` (`src/abml-core/diff.ts:135`): the salient-field array literal is re-created **inside the per-field loop** on every changed item scored by `summarizeEntityDiff`.
 - `topLevelOrigin(context.url)` (`src/abml-core/entity.ts:276`, same pattern at `:330/:390/:432/:484`): every entity builder evaluates the condition-and-value spread `...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {})` — **two `new URL()` parses per entity built**, for a value that is constant across the entire scan.
-- The same double-evaluation in the AX entity builder: `buildAxEntityFromNode` (`src/abml-core/ax.ts:303`) — two `new URL()` parses **per AX node built**, against `ax.ts`'s own private duplicate of `topLevelOrigin` (`ax.ts:55-62`, a twin of `entity.ts:129`). Found in the v8 sweep of the previously not-deep-read `ax.ts` non-merge regions.
+- The same double-evaluation in the AX entity builder: `buildAxEntityFromNode` (`src/abml-core/ax.ts:303`) — two `new URL()` parses **per AX node built**, against `ax.ts`'s own private duplicate of `topLevelOrigin` (`ax.ts:55-62`, a twin of `entity.ts:129`).
 
 ### Design
 
-Decorate-sort (precompute `seq` per record before sorting — the filter at `causal.ts:127-130` already computes `num(r.seq)` once per record, so decoration folds filter+sort into one pass), a module-level `Map<RelationType, number>` for `typeRank`, a hoisted module-level `Set` for the salient-field check, and for the builders a local `const origin = topLevelOrigin(context.url)` per call plus a module-private single-slot memo (last url → origin; deterministic, no clock/random — G4-safe). The origin change collapses `entity.ts` from 2N parses to at most one parse per repeated URL in that module; `ax.ts` gets the same local result with its own private memo. Each keeps its private helper + memo rather than introducing a new cross-module export, so G2 stays untouched. All five are exact-output by construction (same keys, same comparisons, same tie-breaks, same origin string).
+Decorate-sort (precompute `seq` per record before sorting — the filter at `causal.ts:127-130` already computes `num(r.seq)` once per record, so decoration folds filter+sort into one pass), a module-level `Map<RelationType, number>` for `typeRank`, a hoisted module-level `Set` for the salient-field check, and for the builders a local `const origin = topLevelOrigin(context.url)` per call plus a module-private single-slot memo (last url → origin; deterministic, no clock/random — G4-safe). The origin change collapses `entity.ts` from 2N parses to at most one parse per repeated URL in that module; `ax.ts` gets the same local result with its own private memo. Each keeps its private helper + memo rather than introducing a new cross-module export, so G2 stays untouched; the two `topLevelOrigin` bodies are identical (`try { return new URL(url).origin; } catch { return undefined; }`) and a cross-file parity assertion in the item 11 test locks them against drift. All five are exact-output by construction (same keys, same comparisons, same tie-breaks, same origin string).
 
 ### Verification
 
@@ -275,7 +275,7 @@ Decorate-sort (precompute `seq` per record before sorting — the filter at `cau
 
 - `snapshotProjection.ts:149` and `semanticRefAnchor.ts:110` (via `buildIdentityGraph`, `identityGraph.ts:24`) both group the **same `attributedEntities` array instance** back-to-back (`scanRunner.ts:381-382`) — a guaranteed duplicate execution on every default observe.
 - On baseline observes, `treeDiff.ts:240-241` groups the before and after lists first (`scanRunner.ts:346-347`); when causal attribution leaves the list unrewritten (`scanRunner.ts:361` returns `abmlEntities`, which **is** `observation.abmlRead.entities` — `scanRunner.ts:342` — the same instance treeDiff received as its after list), the projection grouping is a third execution of the same instance.
-- The verbs read path (`src/abml/verbs/runtime.ts:132`) calls `deriveSemanticRefAnchors` on its own flow and inherits the same memo for free.
+- The verbs read path (`src/abml/verbs/runtime.ts:132`) calls `deriveSemanticRefAnchors` on its own flow; when the verbs flow receives the same array reference (e.g. a cached session entity list), the memo hits for free — otherwise it pays the grouping cost once for its own flow.
 
 Each execution is a full pass with a `JSON.stringify` descriptor key per grouped entity (`grouping.ts:43`) plus map/filter allocation. This is (d)-class counted redundant work on the default path — the same compute-once class as item 5, at the grouping seam.
 
@@ -301,7 +301,7 @@ Deterministic (same input → same output), no clock/random reads (G4-safe), mem
 
 ---
 
-## Sweep Coverage Map (2026-06-13 — do not re-litigate without new evidence)
+## Sweep Coverage Map (do not re-litigate without new evidence)
 
 The per-observe kernel chain was swept for complexity defects. Coverage is stated explicitly so "audited clean" never silently overclaims:
 
@@ -312,11 +312,11 @@ The per-observe kernel chain was swept for complexity defects. Coverage is state
 - `entity.ts` — all builders O(1) per entity, Set-based dedupe, `dedupeLocators` stringify bounded at ≤3 locators. Only the `topLevelOrigin` double-parse (item 11).
 - `inference.ts` — extracted into item 10.
 - `granularity.ts` — extracted into item 12.
-- `salienceEnvelope.ts` / `ladder.ts` / `allocate.ts` / `cost.ts` / `fit.ts` / `projection.ts` / `relevance.ts` / `profile.ts` (memory-core) — read in the v2→v9 audit cycle; findings are items 5/7/9.
-- `semanticRefAnchor.ts` (v8 sweep) — grouping cost extracted into item 13; the three trailing count-`filter`s over anchors (`:119-121`, three array passes to read `.length`) examined and **rejected as noise-level** (no string work, no nested loops).
-- `identityGraph.ts` (v8 sweep) — clean: Map-keyed, O(entities + relations), no per-comparison work.
-- `templating.ts` (v8 sweep) — clean: `buildTemplate` is 7 fields × N `every` (bounded), consumers capped at `MAX_TEMPLATES`; `structureScopeKey`'s per-call `JSON.stringify` in suppress filters examined and rejected as noise-level (bounded by group count).
-- `ax.ts` non-merge regions (v8 sweep) — `topLevelOrigin` double-parse at `:303` extracted into item 11; per-node helpers are single-pass via `axPropertyMap` (`:72-81`), locator dedupe bounded at ≤3; the merge itself (`:405-429`) stays closed-plan territory below.
+- `salienceEnvelope.ts` / `ladder.ts` / `allocate.ts` / `cost.ts` / `fit.ts` / `projection.ts` / `relevance.ts` / `profile.ts` (memory-core) — read in the audit cycle; findings are items 5/7/9.
+- `semanticRefAnchor.ts` — grouping cost extracted into item 13; the three trailing count-`filter`s over anchors (`:119-121`, three array passes to read `.length`) examined and **rejected as noise-level** (no string work, no nested loops).
+- `identityGraph.ts` — clean: Map-keyed, O(entities + relations), no per-comparison work.
+- `templating.ts` — clean: `buildTemplate` is 7 fields × N `every` (bounded), consumers capped at `MAX_TEMPLATES`; `structureScopeKey`'s per-call `JSON.stringify` in suppress filters examined and rejected as noise-level (bounded by group count).
+- `ax.ts` non-merge regions — `topLevelOrigin` double-parse at `:303` extracted into item 11; per-node helpers are single-pass via `axPropertyMap` (`:72-81`), locator dedupe bounded at ≤3; the merge itself (`:405-429`) stays closed-plan territory below.
 
 **Bounded by design** (data caps make hotspots structurally impossible):
 - `memory-core` — `MAX_TERMS=48`, `MAX_SESSIONS=8`, `MAX_URLS=8`; clone-on-distill bounded by the same caps.

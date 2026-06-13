@@ -140,13 +140,16 @@ assert(inlineIdx !== -1, "CLAUDE.md must inline AGENTS.md under a 'Design, Gover
 const agentsSections = parseSections(agentsMd, "## ");
 const inlinedSections = parseSections(claudeMd.slice(inlineIdx), "### ");
 assert(Object.keys(agentsSections).length >= 9, "AGENTS.md must define its governance sections (Scope..Sync & Verification)");
+const KEPT_SECTIONS = ["Code Search", "Change Workflow", "Sync & Verification"];
 assert(
-	Object.keys(agentsSections).length === Object.keys(inlinedSections).length,
-	`CLAUDE.md inlined AGENTS.md section count (${Object.keys(inlinedSections).length}) must equal AGENTS.md (${Object.keys(agentsSections).length}) — re-sync the inlined block`,
+	Object.keys(inlinedSections).length === KEPT_SECTIONS.length,
+	`CLAUDE.md must inline exactly ${KEPT_SECTIONS.length} AGENTS.md sections (${KEPT_SECTIONS.join(", ")}), got ${Object.keys(inlinedSections).length} — re-sync via npm run docs:sync`,
 );
-for (const [name, body] of Object.entries(agentsSections)) {
+for (const name of KEPT_SECTIONS) {
 	assert(name in inlinedSections, `CLAUDE.md must inline AGENTS.md section "### ${name}"`);
-	assert(inlinedSections[name] === body, `CLAUDE.md inlined "${name}" drifted from AGENTS.md — re-sync the two verbatim`);
+	assert(name in agentsSections, `AGENTS.md must define section "## ${name}"`);
+	assert(inlinedSections[name] === agentsSections[name], `CLAUDE.md inlined "${name}" drifted from AGENTS.md — re-sync via npm run docs:sync`);
 }
+assert(claudeMd.includes("Full design principles, tool constitution, and architecture rules: see `AGENTS.md`"), "CLAUDE.md must include a reference line pointing to AGENTS.md for full rules");
 
 console.log("doc structure contract ok");

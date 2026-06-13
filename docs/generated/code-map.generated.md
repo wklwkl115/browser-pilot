@@ -9,7 +9,7 @@
 | `bridge_src` | 43 | 12213 |
 | `capture-src` | 5 | 24 |
 | `cli` | 15 | 2602 |
-| `scripts` | 19 | 3752 |
+| `scripts` | 19 | 3781 |
 | `src/abml` | 32 | 2175 |
 | `src/abml-core` | 27 | 4107 |
 | `src/capture` | 6 | 58 |

@@ -76,7 +76,10 @@ function assertNoEmptyCells(rows, keyIndex, valueIndex, label) {
 
 function renderClaudeAgentsBlock() {
 	const sections = parseSections(read("AGENTS.md"), "## ");
-	return sections.map((section) => `### ${section.name}\n\n${section.body}`).join("\n\n");
+	const kept = ["Change Workflow", "Sync & Verification", "Code Search"];
+	const filtered = sections.filter((section) => kept.includes(section.name));
+	const ref = "> Full design principles, tool constitution, and architecture rules: see `AGENTS.md`. Only actionable workflow rules are inlined below.";
+	return `${ref}\n\n${filtered.map((section) => `### ${section.name}\n\n${section.body}`).join("\n\n")}`;
 }
 
 function syncClaude() {

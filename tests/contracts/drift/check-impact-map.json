@@ -11,7 +11,8 @@
     ],
     "unit": [
       "test:unit:abml",
-      "test:unit:cli",
+      "test:unit:cli:commands",
+      "test:unit:cli:daemon",
       "test:unit:distill",
       "test:unit:driver",
       "test:unit:memory",
@@ -35,11 +36,9 @@
       "check:recovery-boundary",
       "check:abml-core-boundary",
       "check:memory-core-boundary",
-      "check:cli-migration-drift",
       "check:docs-sync"
     ],
     "contracts": [
-      "check:jshookmcp-closure",
       "check:capture",
       "check:scan",
       "check:content-pick",
@@ -49,7 +48,6 @@
       "check:fake-ws",
       "check:lifecycle",
       "check:runtime-fixtures",
-      "check:abml-ax-smoke",
       "check:smoke-diagnostics",
       "check:paths",
       "check:token",
@@ -65,32 +63,12 @@
       "check:tool-parameter-framework-validation",
       "check:summary-boundary",
       "check:compaction-ledger",
-      "check:spec-truth",
-      "check:surface-liveness",
-      "check:compute-once",
-      "check:purity-vocabulary",
-      "check:kernel-test-map",
-      "check:env-flags",
+      "check:governance",
       "check:input-surface",
       "check:file-ceilings",
       "check:check-graph",
       "check:impact-map",
-      "check:abml-ref-registry",
-      "check:abml-scan-entities",
-      "check:abml-scan-envelope",
-      "check:abml-verb-runtime",
-      "check:abml-ax-runtime",
-      "check:abml-relation-graph",
-      "check:abml-inference",
-      "check:abml-diff",
-      "check:abml-causal",
-      "check:abml-templating",
-      "check:abml-tree-diff",
-      "check:abml-semantic-ref-anchor",
-      "check:abml-snapshot-projection",
-      "check:abml-stream-plane",
-      "check:abml-p6p7-runtime",
-      "check:abml-internal-integration",
+      "check:abml-contracts",
       "check:cli-parity",
       "check:param-surface",
       "check:cli-json-envelopes",
@@ -379,22 +357,93 @@
         }
       ]
     },
-    "test:unit:cli": {
-      "script": "test:unit:cli",
+    "test:unit:cli:commands": {
+      "script": "test:unit:cli:commands",
       "scope": "global",
-      "inputs": [],
+      "inputs": [
+        "browser-daemon.json",
+        "cli/bin.ts",
+        "command-params.json",
+        "extract.js",
+        "fake-daemon.js",
+        "native-command.json",
+        "node_modules/.bin/",
+        "package.json",
+        "params.json",
+        "replay-params.json",
+        "request.txt",
+        "requests.json",
+        "tests/unit/cli/local-commands.test.ts"
+      ],
       "unresolvedInputs": [
         {
-          "script": "test:unit:cli",
-          "nodeId": "test:unit:cli",
-          "commandLine": "tsx --test tests/unit/cli/**/*.test.ts",
-          "reason": "script command has no literal JS/TS entry file"
+          "script": "test:unit:cli:commands",
+          "nodeId": "test:unit:cli:commands",
+          "file": "tests/unit/cli/local-commands.test.ts",
+          "line": 250,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "test:unit:cli:commands",
+          "nodeId": "test:unit:cli:commands",
+          "file": "tests/unit/cli/local-commands.test.ts",
+          "line": 44,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "test:unit:cli:commands",
+          "nodeId": "test:unit:cli:commands",
+          "file": "tests/unit/cli/local-commands.test.ts",
+          "line": 62,
+          "reason": "subprocess execution"
+        },
+        {
+          "script": "test:unit:cli:commands",
+          "nodeId": "test:unit:cli:commands",
+          "file": "tests/unit/cli/local-commands.test.ts",
+          "line": 73,
+          "reason": "subprocess execution"
         }
       ],
       "commandSteps": [
         {
-          "nodeId": "test:unit:cli",
-          "commandLine": "tsx --test tests/unit/cli/**/*.test.ts"
+          "nodeId": "test:unit:cli:commands",
+          "commandLine": "tsx --test tests/unit/cli/local-commands.test.ts tests/unit/cli/flags-render.test.ts"
+        }
+      ]
+    },
+    "test:unit:cli:daemon": {
+      "script": "test:unit:cli:daemon",
+      "scope": "global",
+      "inputs": [
+        "bin.js",
+        "bin.ts",
+        "cli/daemonControl.ts",
+        "cli/packageInfo.ts",
+        "node_modules/tsx/dist/cli.mjs",
+        "package.json",
+        "tests/unit/cli/daemon-control.test.ts"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:cli:daemon",
+          "nodeId": "test:unit:cli:daemon",
+          "file": "cli/daemonControl.ts",
+          "line": 65,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "test:unit:cli:daemon",
+          "nodeId": "test:unit:cli:daemon",
+          "file": "cli/daemonControl.ts",
+          "line": 90,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:cli:daemon",
+          "commandLine": "tsx --test tests/unit/cli/daemon-control.test.ts tests/unit/cli/daemon-lifecycle.test.ts tests/unit/cli/parity-differential.test.ts"
         }
       ]
     },
@@ -542,21 +591,21 @@
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 167,
+          "line": 193,
           "reason": "dynamic file read"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 397,
+          "line": 423,
           "reason": "dynamic file read"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "scripts/check-graph.mjs",
-          "line": 514,
+          "line": 540,
           "reason": "dynamic file read"
         },
         {
@@ -1343,30 +1392,6 @@
         }
       ]
     },
-    "check:cli-migration-drift": {
-      "script": "check:cli-migration-drift",
-      "scope": "global",
-      "inputs": [
-        "index.ts",
-        "mcp",
-        "tests/contracts/drift/check-cli-migration-drift.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:cli-migration-drift",
-          "nodeId": "check:cli-migration-drift",
-          "file": "tests/contracts/drift/check-cli-migration-drift.mjs",
-          "line": 21,
-          "reason": "dynamic directory walk"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:cli-migration-drift",
-          "commandLine": "node tests/contracts/drift/check-cli-migration-drift.mjs"
-        }
-      ]
-    },
     "check:docs-sync": {
       "script": "check:docs-sync",
       "scope": "paths",
@@ -1381,34 +1406,6 @@
         {
           "nodeId": "check:docs-sync",
           "commandLine": "node tests/contracts/drift/check-docs-sync.mjs"
-        }
-      ]
-    },
-    "check:jshookmcp-closure": {
-      "script": "check:jshookmcp-closure",
-      "scope": "global",
-      "inputs": [
-        "CHANGELOG.md",
-        "CURRENT.md",
-        "README.md",
-        "ROADMAP.md",
-        "docs/tool-boundaries.md",
-        "package.json",
-        "tests/contracts/tools/check-jshookmcp-closure.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:jshookmcp-closure",
-          "nodeId": "check:jshookmcp-closure",
-          "file": "tests/contracts/tools/check-jshookmcp-closure.mjs",
-          "line": 76,
-          "reason": "dynamic directory walk"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:jshookmcp-closure",
-          "commandLine": "node tests/contracts/tools/check-jshookmcp-closure.mjs"
         }
       ]
     },
@@ -1974,24 +1971,6 @@
         {
           "nodeId": "check:runtime-fixtures",
           "commandLine": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs"
-        }
-      ]
-    },
-    "check:abml-ax-smoke": {
-      "script": "check:abml-ax-smoke",
-      "scope": "paths",
-      "inputs": [
-        "evals/browser-workflows/fixtures/abml-ax-canvas-aria.html",
-        "package.json",
-        "src/abml/verbs/axRuntime.ts",
-        "tests/contracts/runtime/check-abml-ax-smoke.mjs",
-        "tests/smoke/smoke-browser-ax-merge.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-ax-smoke",
-          "commandLine": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs"
         }
       ]
     },
@@ -2772,74 +2751,109 @@
         }
       ]
     },
-    "check:spec-truth": {
-      "script": "check:spec-truth",
+    "check:governance": {
+      "script": "check:governance",
       "scope": "global",
       "inputs": [
         "docs/abml-kernel-manifest.md",
+        "tests/contracts/drift/check-compute-once.mjs",
+        "tests/contracts/drift/check-env-flags.mjs",
+        "tests/contracts/drift/check-kernel-test-map.mjs",
+        "tests/contracts/drift/check-purity-vocabulary.mjs",
         "tests/contracts/drift/check-spec-truth.mjs",
+        "tests/contracts/drift/check-surface-liveness.mjs",
+        "tests/contracts/drift/env-flags.json",
+        "tests/contracts/drift/kernel-test-map.json",
+        "tests/contracts/drift/purity-vocabulary.js",
         "tests/contracts/drift/spec-claims.js"
       ],
       "unresolvedInputs": [
         {
-          "script": "check:spec-truth",
+          "script": "check:governance",
+          "nodeId": "check:compute-once",
+          "file": "tests/contracts/drift/check-compute-once.mjs",
+          "line": 35,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 11,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 43,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:env-flags",
+          "file": "tests/contracts/drift/check-env-flags.mjs",
+          "line": 62,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:kernel-test-map",
+          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
+          "line": 14,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:kernel-test-map",
+          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
+          "line": 34,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:governance",
           "nodeId": "check:spec-truth",
           "file": "tests/contracts/drift/check-spec-truth.mjs",
           "line": 24,
           "reason": "dynamic directory walk"
-        }
-      ],
-      "commandSteps": [
+        },
         {
-          "nodeId": "check:spec-truth",
-          "commandLine": "node tests/contracts/drift/check-spec-truth.mjs"
-        }
-      ]
-    },
-    "check:surface-liveness": {
-      "script": "check:surface-liveness",
-      "scope": "global",
-      "inputs": [
-        "tests/contracts/drift/check-surface-liveness.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "line": 117,
           "reason": "dynamic file read"
         },
         {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "line": 15,
           "reason": "dynamic directory walk"
         },
         {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "line": 152,
           "reason": "dynamic file read"
         },
         {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "line": 70,
           "reason": "dynamic file read"
         },
         {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "line": 9,
           "reason": "dynamic file read"
         },
         {
-          "script": "check:surface-liveness",
+          "script": "check:governance",
           "nodeId": "check:surface-liveness",
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "specifier": "./b.js",
@@ -2848,109 +2862,25 @@
       ],
       "commandSteps": [
         {
+          "nodeId": "check:spec-truth",
+          "commandLine": "node tests/contracts/drift/check-spec-truth.mjs"
+        },
+        {
           "nodeId": "check:surface-liveness",
           "commandLine": "node tests/contracts/drift/check-surface-liveness.mjs"
-        }
-      ]
-    },
-    "check:compute-once": {
-      "script": "check:compute-once",
-      "scope": "global",
-      "inputs": [
-        "tests/contracts/drift/check-compute-once.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:compute-once",
-          "nodeId": "check:compute-once",
-          "file": "tests/contracts/drift/check-compute-once.mjs",
-          "line": 35,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:compute-once",
           "commandLine": "node tests/contracts/drift/check-compute-once.mjs"
-        }
-      ]
-    },
-    "check:purity-vocabulary": {
-      "script": "check:purity-vocabulary",
-      "scope": "paths",
-      "inputs": [
-        "tests/contracts/drift/check-purity-vocabulary.mjs",
-        "tests/contracts/drift/purity-vocabulary.js"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:purity-vocabulary",
           "commandLine": "node tests/contracts/drift/check-purity-vocabulary.mjs"
-        }
-      ]
-    },
-    "check:kernel-test-map": {
-      "script": "check:kernel-test-map",
-      "scope": "global",
-      "inputs": [
-        "tests/contracts/drift/check-kernel-test-map.mjs",
-        "tests/contracts/drift/kernel-test-map.json"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:kernel-test-map",
-          "nodeId": "check:kernel-test-map",
-          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
-          "line": 14,
-          "reason": "dynamic directory walk"
         },
-        {
-          "script": "check:kernel-test-map",
-          "nodeId": "check:kernel-test-map",
-          "file": "tests/contracts/drift/check-kernel-test-map.mjs",
-          "line": 34,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
         {
           "nodeId": "check:kernel-test-map",
           "commandLine": "node tests/contracts/drift/check-kernel-test-map.mjs"
-        }
-      ]
-    },
-    "check:env-flags": {
-      "script": "check:env-flags",
-      "scope": "global",
-      "inputs": [
-        "tests/contracts/drift/check-env-flags.mjs",
-        "tests/contracts/drift/env-flags.json"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:env-flags",
-          "nodeId": "check:env-flags",
-          "file": "tests/contracts/drift/check-env-flags.mjs",
-          "line": 11,
-          "reason": "dynamic directory walk"
         },
-        {
-          "script": "check:env-flags",
-          "nodeId": "check:env-flags",
-          "file": "tests/contracts/drift/check-env-flags.mjs",
-          "line": 43,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:env-flags",
-          "nodeId": "check:env-flags",
-          "file": "tests/contracts/drift/check-env-flags.mjs",
-          "line": 62,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
         {
           "nodeId": "check:env-flags",
           "commandLine": "node tests/contracts/drift/check-env-flags.mjs"
@@ -3041,21 +2971,21 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 167,
+          "line": 193,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 397,
+          "line": 423,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 514,
+          "line": 540,
           "reason": "dynamic file read"
         },
         {
@@ -3076,28 +3006,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 123,
+          "line": 122,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 186,
+          "line": 185,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 202,
+          "line": 201,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 216,
+          "line": 215,
           "reason": "dynamic directory walk"
         }
       ],
@@ -3125,21 +3055,21 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 167,
+          "line": 193,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 397,
+          "line": 423,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 514,
+          "line": 540,
           "reason": "dynamic file read"
         },
         {
@@ -3171,570 +3101,19 @@
         }
       ]
     },
-    "check:abml-ref-registry": {
-      "script": "check:abml-ref-registry",
-      "scope": "paths",
-      "inputs": [
-        "request.json",
-        "src/resources/resourceStore.ts",
-        "tests/contracts/tools/check-abml-ref-registry.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-ref-registry",
-          "commandLine": "tsx tests/contracts/tools/check-abml-ref-registry.mjs"
-        }
-      ]
-    },
-    "check:abml-scan-entities": {
-      "script": "check:abml-scan-entities",
-      "scope": "paths",
-      "inputs": [
-        "src/abml-core/entity.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/scan.ts",
-        "src/utils/json.ts",
-        "src/utils/records.ts",
-        "tests/contracts/tools/check-abml-scan-entities.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-scan-entities",
-          "commandLine": "tsx tests/contracts/tools/check-abml-scan-entities.mjs"
-        }
-      ]
-    },
-    "check:abml-scan-envelope": {
-      "script": "check:abml-scan-envelope",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "src/abml-core/entity.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/tools/check-abml-scan-envelope.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-scan-envelope",
-          "nodeId": "check:abml-scan-envelope",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-scan-envelope",
-          "commandLine": "tsx tests/contracts/tools/check-abml-scan-envelope.mjs"
-        }
-      ]
-    },
-    "check:abml-verb-runtime": {
-      "script": "check:abml-verb-runtime",
-      "scope": "paths",
-      "inputs": [
-        "src/abml-core/verbs/router.ts",
-        "src/abml/verbs/runtime.ts",
-        "src/abml/verbs/visionRuntime.ts",
-        "tests/contracts/tools/check-abml-verb-runtime.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-verb-runtime",
-          "commandLine": "tsx tests/contracts/tools/check-abml-verb-runtime.mjs"
-        }
-      ]
-    },
-    "check:abml-ax-runtime": {
-      "script": "check:abml-ax-runtime",
-      "scope": "paths",
-      "inputs": [
-        "src/abml/verbs/axRuntime.ts",
-        "src/abml/verbs/runtime.ts",
-        "tests/contracts/tools/check-abml-ax-runtime.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-ax-runtime",
-          "commandLine": "tsx tests/contracts/tools/check-abml-ax-runtime.mjs"
-        }
-      ]
-    },
-    "check:abml-relation-graph": {
-      "script": "check:abml-relation-graph",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "capture-src/entries/scanTemplate.ts",
-        "evals/browser-workflows/fixtures/abml-relations.html",
-        "package.json",
-        "src/abml-core/ax.ts",
-        "src/abml-core/entity.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/relations.ts",
-        "src/abml-core/types.ts",
-        "src/abml/ax.ts",
-        "src/abml/entity.ts",
-        "src/abml/perceptionLedger.ts",
-        "src/abml/refPolicy.ts",
-        "src/abml/relations.ts",
-        "src/abml/types.ts",
-        "src/abml/verbs/axRuntime.ts",
-        "src/abml/verbs/runtime.ts",
-        "src/capture/generated/scanBundle.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/driver/BrowserBridgeClientHeartbeat.ts",
-        "src/driver/BrowserBridgeClientMessageService.ts",
-        "src/driver/BrowserBridgeClientRegistry.ts",
-        "src/driver/BrowserBridgeCommandService.ts",
-        "src/driver/BrowserBridgeDiagnostics.ts",
-        "src/driver/BrowserBridgeHttpServer.ts",
-        "src/driver/BrowserBridgePendingRequests.ts",
-        "src/driver/BrowserBridgeServer.ts",
-        "src/driver/BrowserCommandQueueRegistry.ts",
-        "src/driver/BrowserLeaseRegistry.ts",
-        "src/driver/BrowserObservationSnapshotRegistry.ts",
-        "src/driver/BrowserOperationRegistry.ts",
-        "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
-        "src/driver/BrowserSessionRegistry.ts",
-        "src/driver/BrowserTabSessionRouter.ts",
-        "src/driver/bridgeUtils.ts",
-        "src/driver/browserBridgeConfig.ts",
-        "src/driver/errors.ts",
-        "src/driver/extensionBuild.ts",
-        "src/driver/leaseDiagnostics.ts",
-        "src/driver/types.ts",
-        "src/memory-core/profile.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/staleness.ts",
-        "src/memory-core/types.ts",
-        "src/memory/hashStamp.ts",
-        "src/memory/profileService.ts",
-        "src/memory/profileStore.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/protocol/nativeProtocol.ts",
-        "src/resources/resourceFreshness.ts",
-        "src/resources/resourceStore.ts",
-        "src/scan/buildScanScript.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/bridgeResultValidation.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/tools/check-abml-relation-graph.mjs",
-        "tests/smoke/smoke-abml-relations.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-relation-graph",
-          "nodeId": "check:abml-relation-graph",
-          "file": "src/driver/extensionBuild.ts",
-          "line": 31,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:abml-relation-graph",
-          "nodeId": "check:abml-relation-graph",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-relation-graph",
-          "commandLine": "tsx tests/contracts/tools/check-abml-relation-graph.mjs"
-        }
-      ]
-    },
-    "check:abml-inference": {
-      "script": "check:abml-inference",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "capture-src/entries/scanTemplate.ts",
-        "package.json",
-        "src/abml-core/diff.ts",
-        "src/abml-core/entity.ts",
-        "src/abml-core/inference.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/relations.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/capture/generated/scanBundle.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/scan/buildScanScript.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/baseline.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/tools/check-abml-inference.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-inference",
-          "nodeId": "check:abml-inference",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-inference",
-          "commandLine": "tsx tests/contracts/tools/check-abml-inference.mjs"
-        }
-      ]
-    },
-    "check:abml-diff": {
-      "script": "check:abml-diff",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "package.json",
-        "src/abml-core/actionabilityModel.ts",
-        "src/abml-core/diff.ts",
-        "src/abml-core/entity.ts",
-        "src/abml-core/errors.ts",
-        "src/abml-core/index.ts",
-        "src/abml-core/inference.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/relations.ts",
-        "src/abml-core/types.ts",
-        "src/abml-core/verbs/read.ts",
-        "src/abml-core/verbs/router.ts",
-        "src/abml/entity.ts",
-        "src/abml/refPolicy.ts",
-        "src/abml/types.ts",
-        "src/abml/verbs/integration.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/resources/resourceFreshness.ts",
-        "src/resources/resourceStore.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/registerObserveTool.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/drift/abml-core-manifest.js",
-        "tests/contracts/tools/check-abml-diff.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-diff",
-          "nodeId": "check:abml-diff",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:abml-diff",
-          "commandLine": "tsx tests/contracts/tools/check-abml-diff.mjs"
-        }
-      ]
-    },
-    "check:abml-causal": {
-      "script": "check:abml-causal",
+    "check:abml-contracts": {
+      "script": "check:abml-contracts",
       "scope": "global",
       "inputs": [
         ".lock",
         "bridge_src/page_scripts/hook_dispatcher.ts",
         "bridge_src/service_worker/network_model.ts",
         "bridge_src/service_worker/types.ts",
+        "capture-src/entries/scanTemplate.ts",
+        "evals/browser-workflows/fixtures/abml-ax-canvas-aria.html",
+        "evals/browser-workflows/fixtures/abml-relations.html",
         "package.json",
+        "request.json",
         "src/abml-core/actionabilityModel.ts",
         "src/abml-core/ax.ts",
         "src/abml-core/causal.ts",
@@ -3743,12 +3122,15 @@
         "src/abml-core/errors.ts",
         "src/abml-core/grouping.ts",
         "src/abml-core/index.ts",
+        "src/abml-core/inference.ts",
         "src/abml-core/refId.ts",
         "src/abml-core/refPolicy.ts",
         "src/abml-core/relations.ts",
         "src/abml-core/semanticRefAnchor.ts",
+        "src/abml-core/snapshotProjection.ts",
         "src/abml-core/stream.ts",
         "src/abml-core/templating.ts",
+        "src/abml-core/treeDiff.ts",
         "src/abml-core/types.ts",
         "src/abml-core/verbs/click.ts",
         "src/abml-core/verbs/frame.ts",
@@ -3763,11 +3145,13 @@
         "src/abml/diff.ts",
         "src/abml/entity.ts",
         "src/abml/errors.ts",
+        "src/abml/grouping.ts",
         "src/abml/perceptionLedger.ts",
         "src/abml/refPolicy.ts",
         "src/abml/relations.ts",
         "src/abml/semanticRefAnchor.ts",
         "src/abml/stream.ts",
+        "src/abml/templating.ts",
         "src/abml/types.ts",
         "src/abml/verbs/axRuntime.ts",
         "src/abml/verbs/click.ts",
@@ -3847,9 +3231,11 @@
         "src/tools/memory/paths.ts",
         "src/tools/memory/routing.ts",
         "src/tools/memory/types.ts",
+        "src/tools/observe/baseline.ts",
         "src/tools/observe/scanRunner.ts",
         "src/tools/pageScriptEvaluation.ts",
         "src/tools/pageSignals.ts",
+        "src/tools/registerExecuteTool.ts",
         "src/tools/registerObserveTool.ts",
         "src/tools/resultMiddleware.ts",
         "src/tools/scanEntityRefs.ts",
@@ -3895,450 +3281,175 @@
         "src/utils/records.ts",
         "src/utils/redaction.ts",
         "src/utils/toolResult.ts",
+        "tests/contracts/drift/abml-core-manifest.js",
+        "tests/contracts/runtime/check-abml-ax-smoke.mjs",
+        "tests/contracts/tools/check-abml-ax-runtime.mjs",
         "tests/contracts/tools/check-abml-causal.mjs",
+        "tests/contracts/tools/check-abml-diff.mjs",
+        "tests/contracts/tools/check-abml-inference.mjs",
+        "tests/contracts/tools/check-abml-internal-integration.mjs",
+        "tests/contracts/tools/check-abml-p6p7-runtime.mjs",
+        "tests/contracts/tools/check-abml-ref-registry.mjs",
+        "tests/contracts/tools/check-abml-relation-graph.mjs",
+        "tests/contracts/tools/check-abml-scan-entities.mjs",
+        "tests/contracts/tools/check-abml-scan-envelope.mjs",
+        "tests/contracts/tools/check-abml-semantic-ref-anchor.mjs",
+        "tests/contracts/tools/check-abml-snapshot-projection.mjs",
+        "tests/contracts/tools/check-abml-stream-plane.mjs",
+        "tests/contracts/tools/check-abml-templating.mjs",
+        "tests/contracts/tools/check-abml-tree-diff.mjs",
+        "tests/contracts/tools/check-abml-verb-runtime.mjs",
+        "tests/smoke/smoke-abml-relations.mjs",
+        "tests/smoke/smoke-browser-ax-merge.mjs",
         "tombstones"
       ],
       "unresolvedInputs": [
         {
-          "script": "check:abml-causal",
+          "script": "check:abml-contracts",
           "nodeId": "check:abml-causal",
           "file": "src/driver/extensionBuild.ts",
           "line": 31,
           "reason": "dynamic file read"
         },
         {
-          "script": "check:abml-causal",
+          "script": "check:abml-contracts",
           "nodeId": "check:abml-causal",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-diff",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-inference",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-relation-graph",
+          "file": "src/driver/extensionBuild.ts",
+          "line": 31,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-relation-graph",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-scan-envelope",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-semantic-ref-anchor",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-snapshot-projection",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-templating",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-tree-diff",
           "file": "src/utils/fileFreshness.ts",
           "line": 19,
           "reason": "dynamic file read"
         }
       ],
       "commandSteps": [
+        {
+          "nodeId": "check:abml-ref-registry",
+          "commandLine": "tsx tests/contracts/tools/check-abml-ref-registry.mjs"
+        },
+        {
+          "nodeId": "check:abml-scan-entities",
+          "commandLine": "tsx tests/contracts/tools/check-abml-scan-entities.mjs"
+        },
+        {
+          "nodeId": "check:abml-scan-envelope",
+          "commandLine": "tsx tests/contracts/tools/check-abml-scan-envelope.mjs"
+        },
+        {
+          "nodeId": "check:abml-verb-runtime",
+          "commandLine": "tsx tests/contracts/tools/check-abml-verb-runtime.mjs"
+        },
+        {
+          "nodeId": "check:abml-ax-runtime",
+          "commandLine": "tsx tests/contracts/tools/check-abml-ax-runtime.mjs"
+        },
+        {
+          "nodeId": "check:abml-relation-graph",
+          "commandLine": "tsx tests/contracts/tools/check-abml-relation-graph.mjs"
+        },
+        {
+          "nodeId": "check:abml-inference",
+          "commandLine": "tsx tests/contracts/tools/check-abml-inference.mjs"
+        },
+        {
+          "nodeId": "check:abml-diff",
+          "commandLine": "tsx tests/contracts/tools/check-abml-diff.mjs"
+        },
         {
           "nodeId": "check:abml-causal",
           "commandLine": "tsx tests/contracts/tools/check-abml-causal.mjs"
-        }
-      ]
-    },
-    "check:abml-templating": {
-      "script": "check:abml-templating",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "package.json",
-        "src/abml-core/entity.ts",
-        "src/abml-core/grouping.ts",
-        "src/abml-core/index.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/snapshotProjection.ts",
-        "src/abml-core/templating.ts",
-        "src/abml-core/treeDiff.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/abml/grouping.ts",
-        "src/abml/templating.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/tools/check-abml-templating.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-templating",
-          "nodeId": "check:abml-templating",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-templating",
           "commandLine": "tsx tests/contracts/tools/check-abml-templating.mjs"
-        }
-      ]
-    },
-    "check:abml-tree-diff": {
-      "script": "check:abml-tree-diff",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "package.json",
-        "src/abml-core/entity.ts",
-        "src/abml-core/grouping.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/templating.ts",
-        "src/abml-core/treeDiff.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/drift/abml-core-manifest.js",
-        "tests/contracts/tools/check-abml-tree-diff.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-tree-diff",
-          "nodeId": "check:abml-tree-diff",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-tree-diff",
           "commandLine": "tsx tests/contracts/tools/check-abml-tree-diff.mjs"
-        }
-      ]
-    },
-    "check:abml-semantic-ref-anchor": {
-      "script": "check:abml-semantic-ref-anchor",
-      "scope": "global",
-      "inputs": [
-        "package.json",
-        "src/abml-core/entity.ts",
-        "src/abml-core/grouping.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/semanticRefAnchor.ts",
-        "src/abml-core/templating.ts",
-        "src/abml-core/types.ts",
-        "src/abml/refPolicy.ts",
-        "src/abml/types.ts",
-        "src/abml/verbs/runtime.ts",
-        "src/resources/resourceFreshness.ts",
-        "src/resources/resourceStore.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/records.ts",
-        "tests/contracts/drift/abml-core-manifest.js",
-        "tests/contracts/tools/check-abml-semantic-ref-anchor.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-semantic-ref-anchor",
-          "nodeId": "check:abml-semantic-ref-anchor",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-semantic-ref-anchor",
           "commandLine": "tsx tests/contracts/tools/check-abml-semantic-ref-anchor.mjs"
-        }
-      ]
-    },
-    "check:abml-snapshot-projection": {
-      "script": "check:abml-snapshot-projection",
-      "scope": "global",
-      "inputs": [
-        ".lock",
-        "package.json",
-        "src/abml-core/entity.ts",
-        "src/abml-core/grouping.ts",
-        "src/abml-core/refId.ts",
-        "src/abml-core/refPolicy.ts",
-        "src/abml-core/snapshotProjection.ts",
-        "src/abml-core/templating.ts",
-        "src/abml-core/treeDiff.ts",
-        "src/abml-core/types.ts",
-        "src/abml/entity.ts",
-        "src/distill-core/allocate.ts",
-        "src/distill-core/artifactPlan.ts",
-        "src/distill-core/compactionTuning.ts",
-        "src/distill-core/cost.ts",
-        "src/distill-core/fact.ts",
-        "src/distill-core/fit.ts",
-        "src/distill-core/frontier.ts",
-        "src/distill-core/granularity.ts",
-        "src/distill-core/ladder.ts",
-        "src/distill-core/projection.ts",
-        "src/distill-core/recovery.ts",
-        "src/distill-core/render.ts",
-        "src/distill-core/salienceEnvelope.ts",
-        "src/memory-core/routing.ts",
-        "src/memory-core/types.ts",
-        "src/memory/secret.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/scan/noiseRules.ts",
-        "src/tools/artifactPrivacy.ts",
-        "src/tools/artifacts.ts",
-        "src/tools/distillerRegistry.ts",
-        "src/tools/memory/autoSurface.ts",
-        "src/tools/memory/frontmatter.ts",
-        "src/tools/memory/ids.ts",
-        "src/tools/memory/indexStore.ts",
-        "src/tools/memory/origin.ts",
-        "src/tools/memory/paths.ts",
-        "src/tools/memory/routing.ts",
-        "src/tools/memory/types.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/resultMiddleware.ts",
-        "src/tools/summaries/common.ts",
-        "src/tools/summaries/content.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/generic.ts",
-        "src/tools/summaries/hook.ts",
-        "src/tools/summaries/html.ts",
-        "src/tools/summaries/index.ts",
-        "src/tools/summaries/memory.ts",
-        "src/tools/summaries/network.ts",
-        "src/tools/summaries/outputSchemas.ts",
-        "src/tools/summaries/pick.ts",
-        "src/tools/summaries/registerBuiltinDistillers.ts",
-        "src/tools/summaries/scan.ts",
-        "src/tools/summaries/transfer.ts",
-        "src/tools/summaries/webSecurity/bridges.ts",
-        "src/tools/summaries/webSecurity/cookie.ts",
-        "src/tools/summaries/webSecurity/crawl.ts",
-        "src/tools/summaries/webSecurity/domFlow.ts",
-        "src/tools/summaries/webSecurity/fuzz.ts",
-        "src/tools/summaries/webSecurity/index.ts",
-        "src/tools/summaries/webSecurity/jsAst.ts",
-        "src/tools/summaries/webSecurity/oast.ts",
-        "src/tools/summaries/webSecurity/recon.ts",
-        "src/tools/summaries/webSecurity/replay.ts",
-        "src/tools/summaries/webSecurity/shared.ts",
-        "src/tools/summaries/webSecurity/sqli.ts",
-        "src/tools/summaries/webSecurity/template.ts",
-        "src/tools/summaries/webSecurity/wasm.ts",
-        "src/tools/summaries/webSecurity/wasmBridge.ts",
-        "src/tools/summaries/webSecurity/ws.ts",
-        "src/tools/webSecurity/shared/jsAst.ts",
-        "src/tools/webSecurity/shared/jsAstArtifact.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/fileFreshness.ts",
-        "src/utils/fsAtomic.ts",
-        "src/utils/json.ts",
-        "src/utils/jsonPath.ts",
-        "src/utils/params.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "src/utils/toolResult.ts",
-        "tests/contracts/drift/abml-core-manifest.js",
-        "tests/contracts/tools/check-abml-snapshot-projection.mjs",
-        "tombstones"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-snapshot-projection",
-          "nodeId": "check:abml-snapshot-projection",
-          "file": "src/utils/fileFreshness.ts",
-          "line": 19,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-snapshot-projection",
           "commandLine": "tsx tests/contracts/tools/check-abml-snapshot-projection.mjs"
-        }
-      ]
-    },
-    "check:abml-stream-plane": {
-      "script": "check:abml-stream-plane",
-      "scope": "paths",
-      "inputs": [
-        "src/abml-core/stream.ts",
-        "src/tools/summaries/evidence.ts",
-        "src/tools/summaries/network.ts",
-        "tests/contracts/tools/check-abml-stream-plane.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-stream-plane",
           "commandLine": "tsx tests/contracts/tools/check-abml-stream-plane.mjs"
-        }
-      ]
-    },
-    "check:abml-p6p7-runtime": {
-      "script": "check:abml-p6p7-runtime",
-      "scope": "paths",
-      "inputs": [
-        "capture-src/entries/scanTemplate.ts",
-        "src/abml/verbs/frameRuntime.ts",
-        "src/abml/verbs/pierceRuntime.ts",
-        "src/abml/verbs/runtime.ts",
-        "src/abml/verbs/visionRuntime.ts",
-        "src/capture/generated/scanBundle.ts",
-        "src/scan/buildScanScript.ts",
-        "src/tools/summaries/scan.ts",
-        "tests/contracts/tools/check-abml-p6p7-runtime.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-p6p7-runtime",
           "commandLine": "tsx tests/contracts/tools/check-abml-p6p7-runtime.mjs"
-        }
-      ]
-    },
-    "check:abml-internal-integration": {
-      "script": "check:abml-internal-integration",
-      "scope": "paths",
-      "inputs": [
-        "src/abml/verbs/integration.ts",
-        "src/tools/observe/scanRunner.ts",
-        "src/tools/registerExecuteTool.ts",
-        "tests/contracts/tools/check-abml-internal-integration.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
+        },
         {
           "nodeId": "check:abml-internal-integration",
           "commandLine": "tsx tests/contracts/tools/check-abml-internal-integration.mjs"
+        },
+        {
+          "nodeId": "check:abml-ax-smoke",
+          "commandLine": "tsx tests/contracts/runtime/check-abml-ax-smoke.mjs"
         }
       ]
     },

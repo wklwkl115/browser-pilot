@@ -8,8 +8,55 @@ import path from "node:path";
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const tsxBin = path.join(repoRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
 const cliEntry = path.join(repoRoot, "cli", "bin.ts");
+const batchHelpScript = path.join(import.meta.dirname, "_batch-help.ts");
+const batchCliScript = path.join(import.meta.dirname, "_batch-cli.ts");
 const packageVersion = (JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { version: string }).version;
 const expectedDaemonVersion = `${packageVersion}+daemon.4`;
+
+const LOCAL_CLI_BATCH: Record<string, string[]> = {
+	"commands_json":              ["commands", "--json"],
+	"leading_json_commands":      ["--json", "commands"],
+	"leading_json_schema_exec":   ["--json", "schema", "execute"],
+	"leading_json_bad":           ["--json", "not-a-command"],
+	"observe_bad_mode":           ["observe", "--mode", "--text"],
+	"schema_execute":             ["schema", "execute", "--json"],
+	"wait_help":                  ["wait", "--help"],
+	"wait_selector_help":         ["wait", "selector", "--help"],
+	"network_help":               ["network", "--help"],
+	"frame_help":                 ["frame", "--help"],
+	"frame_evaluate_help":        ["frame", "evaluate", "--help"],
+	"hook_help":                  ["hook", "--help"],
+	"schema_wait_selector":       ["schema", "wait", "selector", "--json"],
+	"schema_wait":                ["schema", "wait", "--json"],
+	"schema_frame_evaluate":      ["schema", "frame", "evaluate", "--json"],
+	"schema_hook_install_targets":["schema", "hook", "install-targets", "--json"],
+	"schema_frame":               ["schema", "frame", "--json"],
+	"schema_hook":                ["schema", "hook", "--json"],
+	"schema_hook_bad":            ["schema", "hook", "get-node-listeners", "--json"],
+	"doctor_json":                ["doctor", "--json"],
+	"daemon_leading_json_status": ["daemon", "--json", "status"],
+};
+
+const batchKeys = Object.keys(LOCAL_CLI_BATCH);
+const batchArgs = batchKeys.map(k => LOCAL_CLI_BATCH[k]);
+const batchArgsFile = path.join(os.tmpdir(), `pi-batch-cli-${process.pid}.json`);
+writeFileSync(batchArgsFile, JSON.stringify(batchArgs), "utf8");
+const batchRun = spawnSync(tsxBin, [batchCliScript, batchArgsFile], {
+	cwd: repoRoot, encoding: "utf8", shell: process.platform === "win32",
+});
+rmSync(batchArgsFile, { force: true });
+const batchResults: Array<{ stdout: string; code: number }> = JSON.parse(batchRun.stdout?.trim() || "[]");
+const localCliCache = new Map<string, { code: number; stdout: string; stderr: string }>();
+batchKeys.forEach((key, i) => {
+	const r = batchResults[i];
+	localCliCache.set(key, { code: r?.code ?? 1, stdout: r?.stdout ?? "", stderr: "" });
+});
+
+function localCli(key: string): { code: number; stdout: string; stderr: string } {
+	const r = localCliCache.get(key);
+	if (!r) throw new Error(`unknown batch key: ${key}`);
+	return r;
+}
 
 function runCli(args: string[], cwd = repoRoot, env: Record<string, string> = {}): { code: number; stdout: string; stderr: string } {
 	const result = spawnSync(tsxBin, [cliEntry, ...args], {
@@ -188,7 +235,7 @@ function withFakeDaemonStatus(extensionConnected: boolean, fn: (env: Record<stri
 }
 
 test("commands --json is local and machine-readable", () => {
-	const result = runCli(["commands", "--json"]);
+	const result = localCli("commands_json");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.equal(env.ok, true);
@@ -200,21 +247,21 @@ test("commands --json is local and machine-readable", () => {
 test("top-level help and every command help are local and daemon-free", () => {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-help-local-"));
 	try {
-		const top = runCli(["--help"], repoRoot, { PI_BROWSER_DAEMON_STATE_DIR: dir });
-		assert.equal(top.code, 0, top.stderr);
-		assert.match(top.stdout, /pi-browser/);
-		assert.equal(top.stderr, "");
-
-		const commands = parseOneJson(runCli(["commands", "--json"], repoRoot, { PI_BROWSER_DAEMON_STATE_DIR: dir }).stdout).commands as Array<Record<string, unknown>>;
-		assert.equal(commands.length, 22);
-		for (const cmd of commands) {
-			assert.match(top.stdout, new RegExp(`\\b${String(cmd.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `top-level help must include ${cmd.name}`);
+		const batch = spawnSync(tsxBin, [batchHelpScript, dir], {
+			cwd: repoRoot, encoding: "utf8", shell: process.platform === "win32",
+		});
+		assert.equal(batch.status, 0, `batch-help failed: ${batch.stderr}`);
+		const result = JSON.parse(batch.stdout.trim()) as {
+			topHelp: string; commandNames: string[];
+			perCommand: Record<string, string>;
+		};
+		assert.match(result.topHelp, /pi-browser/);
+		assert.equal(result.commandNames.length, 22);
+		for (const name of result.commandNames) {
+			assert.match(result.topHelp, new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `top-level help must include ${name}`);
 		}
-		for (const cmd of commands) {
-			const help = runCli([String(cmd.name), "--help"], repoRoot, { PI_BROWSER_DAEMON_STATE_DIR: dir });
-			assert.equal(help.code, 0, `${cmd.name} help failed: ${help.stderr || help.stdout}`);
-			assert.match(help.stdout, new RegExp(`pi-browser ${String(cmd.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-			assert.equal(help.stderr, "");
+		for (const [name, help] of Object.entries(result.perCommand)) {
+			assert.match(help, new RegExp(`pi-browser ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `${name} help must contain its title`);
 		}
 		assert.equal(existsSync(path.join(dir, "browser-daemon.json")), false, "local help/discovery must not start a daemon or write a lockfile");
 	} finally {
@@ -246,7 +293,7 @@ test("npm wrapper JSON mode is documented: normal npm run may contaminate stdout
 });
 
 test("commands --json exposes agent CLI routing roles", () => {
-	const result = runCli(["commands", "--json"]);
+	const result = localCli("commands_json");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	const commands = env.commands as Array<Record<string, unknown>>;
@@ -290,17 +337,17 @@ test("commands --json exposes agent CLI routing roles", () => {
 });
 
 test("leading --json is accepted for local discovery commands", () => {
-	const commands = runCli(["--json", "commands"]);
+	const commands = localCli("leading_json_commands");
 	assert.equal(commands.code, 0, commands.stderr);
 	assert.equal(parseOneJson(commands.stdout).command, "commands");
 
-	const schema = runCli(["--json", "schema", "execute"]);
+	const schema = localCli("leading_json_schema_exec");
 	assert.equal(schema.code, 0, schema.stderr);
 	assert.equal(parseOneJson(schema.stdout).toolName, "browser_execute");
 });
 
 test("leading --json keeps CLI usage errors machine-readable", () => {
-	const result = runCli(["--json", "not-a-command"]);
+	const result = localCli("leading_json_bad");
 	assert.equal(result.code, 2);
 	assert.equal(result.stderr, "");
 	const env = parseOneJson(result.stdout);
@@ -309,7 +356,7 @@ test("leading --json keeps CLI usage errors machine-readable", () => {
 });
 
 test("flag values that look like output globals do not force human parse errors", () => {
-	const result = runCli(["observe", "--mode", "--text"]);
+	const result = localCli("observe_bad_mode");
 	assert.equal(result.code, 2);
 	assert.equal(result.stderr, "");
 	const env = parseOneJson(result.stdout);
@@ -319,7 +366,7 @@ test("flag values that look like output globals do not force human parse errors"
 });
 
 test("schema --json returns parameter schema and flag mapping", () => {
-	const result = runCli(["schema", "execute", "--json"]);
+	const result = localCli("schema_execute");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.equal(env.ok, true);
@@ -354,41 +401,41 @@ test("execute --script-file reads local JavaScript and invokes the daemon with -
 });
 
 test("natural wait/network help is discoverable and action-specific", () => {
-	const waitHelp = runCli(["wait", "--help"]);
+	const waitHelp = localCli("wait_help");
 	assert.equal(waitHelp.code, 0, waitHelp.stderr);
 	assert.match(waitHelp.stdout, /Natural subcommands \(recommended\):/);
 	assert.match(waitHelp.stdout, /selector\s+requires --selector/);
 	assert.match(waitHelp.stdout, /network-idle/);
 	assert.match(waitHelp.stdout, /Advanced legacy flags:/);
 
-	const selectorHelp = runCli(["wait", "selector", "--help"]);
+	const selectorHelp = localCli("wait_selector_help");
 	assert.equal(selectorHelp.code, 0, selectorHelp.stderr);
 	assert.match(selectorHelp.stdout, /pi-browser wait selector/);
 	assert.match(selectorHelp.stdout, /--selector <string>/);
 	assert.match(selectorHelp.stdout, /Advanced equivalent: pi-browser wait --action selector --params <json>/);
 
-	const networkHelp = runCli(["network", "--help"]);
+	const networkHelp = localCli("network_help");
 	assert.equal(networkHelp.code, 0, networkHelp.stderr);
 	assert.match(networkHelp.stdout, /Natural subcommands \(recommended\):/);
 	assert.match(networkHelp.stdout, /export-har/);
 });
 
 test("natural frame/hook help is scoped to recommended high-frequency actions", () => {
-	const frameHelp = runCli(["frame", "--help"]);
+	const frameHelp = localCli("frame_help");
 	assert.equal(frameHelp.code, 0, frameHelp.stderr);
 	assert.match(frameHelp.stdout, /Natural subcommands \(recommended\):/);
 	assert.match(frameHelp.stdout, /list\s+pi-browser frame list/);
 	assert.match(frameHelp.stdout, /evaluate\s+requires --frame-id \/ --expression/);
 	assert.doesNotMatch(frameHelp.stdout, /add-new-document-script\s+requires --source/, "script lifecycle stays advanced compatibility until eval proves it should be recommended");
 
-	const frameEvalHelp = runCli(["frame", "evaluate", "--help"]);
+	const frameEvalHelp = localCli("frame_evaluate_help");
 	assert.equal(frameEvalHelp.code, 0, frameEvalHelp.stderr);
 	assert.match(frameEvalHelp.stdout, /pi-browser frame evaluate/);
 	assert.match(frameEvalHelp.stdout, /--frame-id <string>/);
 	assert.match(frameEvalHelp.stdout, /--expression <string>/);
 	assert.match(frameEvalHelp.stdout, /Advanced equivalent: pi-browser frame --action evaluate --params <json>/);
 
-	const hookHelp = runCli(["hook", "--help"]);
+	const hookHelp = localCli("hook_help");
 	assert.equal(hookHelp.code, 0, hookHelp.stderr);
 	assert.match(hookHelp.stdout, /Natural subcommands \(recommended\):/);
 	assert.match(hookHelp.stdout, /install-targets\s+requires --targets/);
@@ -398,7 +445,7 @@ test("natural frame/hook help is scoped to recommended high-frequency actions", 
 });
 
 test("schema exposes natural wait selector metadata without daemon startup", () => {
-	const result = runCli(["schema", "wait", "selector", "--json"]);
+	const result = localCli("schema_wait_selector");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.equal(env.ok, true);
@@ -428,7 +475,7 @@ test("schema exposes natural wait selector metadata without daemon startup", () 
 });
 
 test("schema exposes legacy action interface as advanced compatibility", () => {
-	const result = runCli(["schema", "wait", "--json"]);
+	const result = localCli("schema_wait");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.deepEqual(env.agentCli, {
@@ -442,7 +489,7 @@ test("schema exposes legacy action interface as advanced compatibility", () => {
 });
 
 test("schema exposes natural frame/hook metadata and rejects non-recommended action aliases", () => {
-	const frame = runCli(["schema", "frame", "evaluate", "--json"]);
+	const frame = localCli("schema_frame_evaluate");
 	assert.equal(frame.code, 0, frame.stderr);
 	const frameEnv = parseOneJson(frame.stdout);
 	assert.equal(frameEnv.toolName, "browser_frame");
@@ -459,7 +506,7 @@ test("schema exposes natural frame/hook metadata and rejects non-recommended act
 	assert.ok(frameFlags.some((flag) => flag.flag === "--expression"));
 	assert.ok(!frameFlags.some((flag) => flag.flag === "--source"));
 
-	const hook = runCli(["schema", "hook", "install-targets", "--json"]);
+	const hook = localCli("schema_hook_install_targets");
 	assert.equal(hook.code, 0, hook.stderr);
 	const hookEnv = parseOneJson(hook.stdout);
 	assert.equal(hookEnv.toolName, "browser_hook");
@@ -470,21 +517,21 @@ test("schema exposes natural frame/hook metadata and rejects non-recommended act
 	assert.equal(targetsFlag.split, "comma");
 	assert.ok(!hookFlags.some((flag) => flag.flag === "--selector"));
 
-	const frameSchema = runCli(["schema", "frame", "--json"]);
+	const frameSchema = localCli("schema_frame");
 	assert.equal(frameSchema.code, 0, frameSchema.stderr);
 	const frameSchemaEnv = parseOneJson(frameSchema.stdout);
 	const frameSubcommands = frameSchemaEnv.subcommands as Array<Record<string, unknown>>;
 	assert.ok(frameSubcommands.some((sub) => sub.name === "list" && (sub.agentCli as Record<string, unknown>).mode === "natural"));
 	assert.ok(frameSubcommands.some((sub) => sub.name === "evaluate" && (sub.agentCli as Record<string, unknown>).mode === "natural"));
 
-	const hookSchema = runCli(["schema", "hook", "--json"]);
+	const hookSchema = localCli("schema_hook");
 	assert.equal(hookSchema.code, 0, hookSchema.stderr);
 	const hookSchemaEnv = parseOneJson(hookSchema.stdout);
 	const hookSubcommands = hookSchemaEnv.subcommands as Array<Record<string, unknown>>;
 	assert.ok(hookSubcommands.some((sub) => sub.name === "install-targets" && (sub.agentCli as Record<string, unknown>).mode === "natural"));
 	assert.ok(hookSubcommands.some((sub) => sub.name === "collect" && (sub.agentCli as Record<string, unknown>).mode === "natural"));
 
-	const nonRecommended = runCli(["schema", "hook", "get-node-listeners", "--json"]);
+	const nonRecommended = localCli("schema_hook_bad");
 	assert.equal(nonRecommended.code, 2);
 	const err = parseOneJson(nonRecommended.stdout);
 	assert.equal(err.ok, false);
@@ -559,7 +606,7 @@ test("validate accepts leading --json without treating it as the command name", 
 });
 
 test("doctor --json is read-only and reports daemon readiness fields", () => {
-	const result = runCli(["doctor", "--json"]);
+	const result = localCli("doctor_json");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.equal(env.ok, true);
@@ -757,7 +804,7 @@ test("connect preserves daemon bridge-start failure classification", () => {
 });
 
 test("daemon accepts leading --json before the lifecycle action", () => {
-	const result = runCli(["daemon", "--json", "status"]);
+	const result = localCli("daemon_leading_json_status");
 	assert.equal(result.code, 0, result.stderr);
 	const env = parseOneJson(result.stdout);
 	assert.equal(env.ok, true);

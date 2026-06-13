@@ -104,21 +104,20 @@ assert.deepEqual(overlappedUnitFiles, [], `unit shard coverage overlaps:\n  - ${
 
 const impactMap = readImpactMap(root);
 assert.equal(impactMap.schemaVersion, 1, "impact map schema must be versioned");
-assert(impactMap.nodes?.["check:abml-tree-diff"]?.inputs?.includes("src/abml-core/treeDiff.ts"), "impact map must connect abml tree-diff contract to abml-core treeDiff source");
+assert(impactMap.nodes?.["check:abml-contracts"]?.inputs?.includes("src/abml-core/treeDiff.ts"), "impact map must connect abml-contracts umbrella to abml-core treeDiff source");
 for (const [script, node] of Object.entries(impactMap.nodes || {})) {
 	assert(node.scope === "global" || node.scope === "paths", `${script} impact scope must be explicit`);
 	assert(node.scope === "global" || (node.unresolvedInputs || []).length === 0, `${script} unresolved inputs must force global scope`);
 }
 const abmlSelection = selectSmartScripts(["src/abml-core/treeDiff.ts"], { root, impactMap });
-assert(abmlSelection.has("check:abml-tree-diff"), "smart selection for abml-core treeDiff must include check:abml-tree-diff");
-assert(abmlSelection.has("check:abml-templating"), "smart selection for abml-core treeDiff must include check:abml-templating");
+assert(abmlSelection.has("check:abml-contracts"), "smart selection for abml-core treeDiff must include check:abml-contracts");
 const distillSelection = selectSmartScripts(["src/distill-core/relevance.ts"], { root, impactMap });
 assert(distillSelection.has("check:task-conditioned-salience"), "smart selection for distill-core relevance must include check:task-conditioned-salience");
 assert(existsSync(CHECK_IMPACT_MAP_PATH), "committed impact-map artifact must exist");
 const markerOutput = execFileSync(process.execPath, ["scripts/query-markers.mjs", "--needle", "templateGroupDescriptorForEntity"], { cwd: root, encoding: "utf8" });
 assert(markerOutput.includes("check-abml-tree-diff.mjs") && markerOutput.includes("check-abml-templating.mjs"), "query:markers control must find templateGroupDescriptorForEntity pins");
 const fileOutput = execFileSync(process.execPath, ["scripts/query-markers.mjs", "--file", "src/abml-core/treeDiff.ts"], { cwd: root, encoding: "utf8" });
-assert(fileOutput.includes("check:abml-tree-diff"), "query:markers --file must use the impact map");
+assert(fileOutput.includes("check:abml-contracts"), "query:markers --file must resolve to the abml-contracts umbrella via impact map");
 
 const badNode = spawnSync(process.execPath, ["scripts/check-dag.mjs", "--self-test-bad-node-exit", "--json"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 assert.equal(badNode.status, 7, `DAG runner must propagate the first failing node exit code; stdout=${badNode.stdout} stderr=${badNode.stderr}`);
