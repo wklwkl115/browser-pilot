@@ -6,7 +6,7 @@
 
 | Directory | Files | Lines |
 | --- | --- | --- |
-| `bridge_src` | 43 | 12213 |
+| `bridge_src` | 43 | 12199 |
 | `capture-src` | 4 | 15 |
 | `cli` | 15 | 2602 |
 | `scripts` | 19 | 3782 |
@@ -23,7 +23,7 @@
 | `src/protocol` | 3 | 3087 |
 | `src/resources` | 4 | 675 |
 | `src/scan` | 3 | 165 |
-| `src/tools` | 136 | 22797 |
+| `src/tools` | 136 | 22793 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |

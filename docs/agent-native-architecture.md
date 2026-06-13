@@ -281,10 +281,11 @@ Agent-invisible. Does not block Workstream A. Only the cheap, isolated ABML dead
   `src/abml-core/README.md`; `refId.ts` is now classified as pure core.
 
 ### Deferred (gated on real maintenance pain)
-- **ABML PageModel/ChangeModel split** — highest risk, agent-invisible. Requires first extracting
-  read/action shared helpers from the 1242-line `abml/verbs/runtime.ts`, then the execution ladder
-  (`actionabilityModel`, `verbs/{click,type,scroll}`, runtime action half) can be removed. Start only
-  with its own contract when maintenance cost justifies the risk.
+- **ABML PageModel/ChangeModel split** — ~~highest risk, agent-invisible.~~ The execution ladder
+  (`verbs/{click,type,scroll}`, runtime action half) was **removed 2026-06-13** (branch
+  `chore/remove-abml-actuator-verbs`); `runtime.ts` is now ~370 lines (perception only).
+  Remaining split opportunity: extract read/pierce/frame into focused modules if maintenance pain
+  justifies it.
 - **Envelope field consolidation** — the ~25-field `DistilledEnvelope` + budget-compression overload.
 - **Validation stack — collapsed at library level (2026-06-08).** Top-level public tool parameters
   remain TypeBox schemas consumed by the Pi framework and CLI discovery. Nested runtime validation

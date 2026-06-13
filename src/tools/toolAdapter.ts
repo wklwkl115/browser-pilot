@@ -172,10 +172,6 @@ export function defineBrowserTool(pi: ExtensionAPI, spec: Parameters<ExtensionAP
 	return spec;
 }
 
-export function maxCharsParam(description = MAX_CHARS_DESCRIPTION) {
-	return Type.Optional(Type.Number({ description }));
-}
-
 export function sharedTabScopedToolParams(options: SharedToolParamOptions = {}) {
 	const params: Record<string, unknown> = {};
 	if (options.includeBrowserSessionId === true) params.browserSessionId = Type.Optional(Type.String({ description: "Deprecated compatibility only; stripped before tool validation. Browser-session routing defaults to the selected session." }));

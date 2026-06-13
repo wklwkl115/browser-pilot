@@ -556,14 +556,6 @@ export type PiChromeApi = {
 
 export type ChromeApi = PiChromeApi;
 
-export function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null;
-}
-
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-export function errorDetails(error: unknown): JsonRecord {
-  return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) };
 }

@@ -9,7 +9,7 @@
 <!-- BEGIN GENERATED: maintainer-layer-inventory (npm run docs:sync) -->
 | Directory | Files | Lines | Detected seams | Change-landing advice |
 | --- | --- | --- | --- | --- |
-| `bridge_src` | 43 | 12213 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
+| `bridge_src` | 43 | 12199 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
 | `capture-src` | 4 | 15 | editable templates, sync:capture source | Editable page-world capture templates; generated bundles are under `src/capture/generated/`. |
 | `cli` | 15 | 2602 | flags, local commands, daemon, JSON envelopes | External `pi-browser` CLI face; keep command metadata, flags, local commands, and daemon validation in sync. |
 | `src/abml` | 30 | 1552 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
@@ -25,7 +25,7 @@
 | `src/protocol` | 3 | 3087 | leaf module group | Generated native protocol mirror; edit `bridge/native_command_schema.json` and run `npm run sync:protocol`. |
 | `src/resources` | 4 | 675 | leaf module group | Artifact/resource store; verify artifact and summary consumers after schema changes. |
 | `src/scan` | 3 | 165 | leaf module group | Scan page-world builder compatibility layer; source templates live in `capture-src/entries/*`. |
-| `src/tools` | 136 | 22797 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
+| `src/tools` | 136 | 22793 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
 | `src/types` | 1 | 50 | leaf module group | Shared type declarations; check type and package surfaces. |
 | `src/utils` | 11 | 824 | leaf module group | Shared utilities; pure-kernel imports must stay within whitelisted cross-cutting modules. |
 | `src/validation` | 3 | 490 | leaf module group | Frontend/tool validation; preserve strict schema and CLI/Pi parity behavior. |

@@ -73,12 +73,6 @@ export const serviceWorkerStartupModuleGraph = [
 	__piBridgeModule_transport,
 ] as const;
 
-export const serviceWorkerModuleGraph = [
-	...serviceWorkerFoundationModuleGraph,
-	...serviceWorkerCommandModuleGraph,
-	...serviceWorkerStartupModuleGraph,
-] as const;
-
 function installPiBrowserServiceWorker() {
 	installPiBrowserKeepalivePort();
 	installPiBridgeRouter();

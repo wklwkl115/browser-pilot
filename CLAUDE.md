@@ -265,8 +265,8 @@ mislocating or misnaming things in a codebase this size:
   or a prompt handed to another agent, confirm it exists (`Grep` / read the source) — never
   from memory. The public tool surface is `browser_*`. There is **no `browser_click` /
   `browser_type`**: page actions go through `browser_execute` (JavaScript) or `browser_command`
-  (bridge). ABML verbs (click/type/scroll/read) are **internal substrate**, reached via
-  `browser_execute`/Pi-native, not a public tool. R3 `envelope.diff` is only produced by
+  (bridge). ABML read verb is **internal substrate** (perception-only), reached via
+  `browser_observe`/Pi-native, not a public tool. R3 `envelope.diff` is only produced by
   `browser_observe(mode:"scan", baseline:X)`.
 
 ## Design, Governance & Workflow Rules (inlined from AGENTS.md)

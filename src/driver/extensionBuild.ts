@@ -20,7 +20,7 @@ function packageRoot(): string {
 	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
-export function expectedExtensionBuildManifestPath(): string {
+function expectedExtensionBuildManifestPath(): string {
 	return process.env.PI_BROWSER_EXPECTED_EXTENSION_BUILD_MANIFEST
 		|| path.join(packageRoot(), "bridge", "pi_browser_bridge", "dist", "build-manifest.json");
 }
@@ -38,7 +38,7 @@ export function readExpectedExtensionBuild(): ExpectedExtensionBuild {
 	}
 }
 
-export function buildIdFromExtensionPayload(payload: unknown): string | undefined {
+function buildIdFromExtensionPayload(payload: unknown): string | undefined {
 	if (!isRecord(payload)) return undefined;
 	const build = payload.build;
 	if (isRecord(build) && typeof build.buildId === "string") {

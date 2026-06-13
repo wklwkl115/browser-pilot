@@ -19,7 +19,7 @@ one-way dependency direction:
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`, or owns live session ledger state.
   Drives the pure core with real page data. **7 files.**
 
-`src/abml/` also keeps **26 thin re-export shims** at the old pure-core paths, so existing importers such as `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`, the runtime verbs, and unit tests keep their import paths unchanged.
+`src/abml/` also keeps **23 thin re-export shims** at the old pure-core paths, so existing importers such as `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`, the runtime verbs, and unit tests keep their import paths unchanged.
 
 The boundary is **enforced by a contract test**, not by convention:
 `tests/contracts/drift/check-abml-core-boundary.mjs` (run via `npm run check:abml-core-boundary`,

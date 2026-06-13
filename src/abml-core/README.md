@@ -56,7 +56,7 @@ kernel's entire public surface at a glance.
 | `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
-| `verbs/{click,type,scroll,read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
+| `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
 
 The matching browser I/O for each verb lives in `../abml/verbs/*Runtime.ts` (e.g. `ax.ts`'s merge
 is fed by `../abml/verbs/axRuntime.ts`, which reads the live AX tree).
