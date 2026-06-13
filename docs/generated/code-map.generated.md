@@ -7,12 +7,12 @@
 | Directory | Files | Lines |
 | --- | --- | --- |
 | `bridge_src` | 43 | 12213 |
-| `capture-src` | 5 | 24 |
+| `capture-src` | 4 | 15 |
 | `cli` | 15 | 2602 |
-| `scripts` | 19 | 3784 |
-| `src/abml` | 33 | 2177 |
-| `src/abml-core` | 28 | 4846 |
-| `src/capture` | 6 | 58 |
+| `scripts` | 19 | 3782 |
+| `src/abml` | 30 | 1552 |
+| `src/abml-core` | 25 | 4711 |
+| `src/capture` | 5 | 46 |
 | `src/content` | 1 | 20 |
 | `src/distill-core` | 16 | 1673 |
 | `src/driver` | 22 | 3657 |
@@ -50,8 +50,8 @@
 | `src/tools/toolAdapter.ts` | 18 |
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
 | `src/utils/params.ts` | 16 |
-| `src/abml-core/types.ts` | 15 |
 | `src/protocol/nativeErrorCodes.ts` | 13 |
+| `src/abml-core/types.ts` | 12 |
 
 ## Registered Tool And Command Surface
 
@@ -112,5 +112,4 @@
 | `src/capture/generated/scanBundle.ts` | `capture-src/entries/scanTemplate.ts` | `npm run sync:capture` | `check:capture` |
 | `src/capture/generated/contentBundle.ts` | `capture-src/entries/contentTemplate.ts` | `npm run sync:capture` | `check:capture` |
 | `src/capture/generated/pickBundle.ts` | `capture-src/entries/pickTemplate.ts` | `npm run sync:capture` | `check:capture` |
-| `src/capture/generated/probesBundle.ts` | `capture-src/entries/probesTemplate.ts` | `npm run sync:capture` | `check:capture` |
 | `src/capture/generated/visionBundle.ts` | `capture-src/entries/visionTemplate.ts` | `npm run sync:capture` | `check:capture` |

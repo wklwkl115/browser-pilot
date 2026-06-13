@@ -14,7 +14,7 @@ one-way dependency direction:
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
   verb decisions, error shaping, temporal entity diff, collection completeness, and mechanism-arm structure diff. Portable,
   unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
-  package. **26 modules + an `index.ts` barrel.**
+  package. **23 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`, or owns live session ledger state.
   Drives the pure core with real page data. **7 files.**
@@ -42,7 +42,7 @@ each doc links back here.
 | [`docs/archive/abml-execution-plan.md`](archive/abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
 | [`docs/abml-optimization-reference.md`](abml-optimization-reference.md) | Optimization reference for ABML cost/precision tradeoffs | you are changing perception budgets, summaries, or optimization heuristics |
 
-## Pure core (26 — zero browser/Node deps)
+## Pure core (23 — zero browser/Node deps)
 
 <!-- BEGIN GENERATED: abml-pure-core-manifest (npm run docs:sync) -->
 | File | Role |
@@ -67,9 +67,6 @@ each doc links back here.
 | `identityGraph.ts` | Pure semantic identity graph used to stabilize entity identity across observations. |
 | `errors.ts` | `normalizeAbmlError` plus recovery shaping. |
 | `verbs/router.ts` | Verb dispatch types and actionability/verification failure builders. |
-| `verbs/click.ts` | Click verb decision logic. |
-| `verbs/type.ts` | Type verb decision logic. |
-| `verbs/scroll.ts` | Scroll verb decision logic. |
 | `verbs/read.ts` | Read verb decision logic. |
 | `verbs/frame.ts` | Frame verb decision logic. |
 | `verbs/pierce.ts` | Pierce verb decision logic. |

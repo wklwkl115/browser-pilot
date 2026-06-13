@@ -36,23 +36,29 @@ viewport step today.
 | `browser_screenshot` | ➖ no | Raw pixels (ABML's vision floor is a separate internal path). |
 | `browser_tabs` / `browser_wait` / `browser_command` / `browser_network` / `browser_hook` / `browser_evidence` / `browser_artifact` / `browser_download` / `browser_upload` / `browser_memory` / all web-security (`crawl`/`fuzz`/`sqli`/`template`/`oast`/`cookie`/`http_replay`) | ➖ no — **and correctly so** | These do not operate on page affordances. Routing them "through ABML" would be a category error (forcing a page model onto tab/network/file/transport concerns) — exactly the surface-widening the project's narrow-tool philosophy rejects. |
 
-## 3. The action arm — TRIED, then REVERTED (2026-06-05): execution stays JS + CDP escape
+## 3. The action arm — TRIED then REVERTED (2026-06-05), internal actuators then REMOVED (2026-06-13)
 
-The ABML **action degradation ladder** — `executeBrowserAbmlClick` / `…Type` / `…Scroll` in
-`src/abml/verbs/runtime.ts`: actionability gating → synthetic action → effect verification →
-**automatic fallback to the same physical input substrate now exposed as `input.pointer`** → re-verify — exists and works, but it is
-**internal substrate** (reached via `createBrowserAbmlIntegration().runtime`, used by tests / the
-eval-runner / `monitor:true`'s read path). A structured `action:{click|type|scroll}` param on
-`browser_execute` was built (B2) to wire it to a public path — and then **reverted**.
+ABML once carried an internal **action degradation ladder** — `executeBrowserAbmlClick` / `…Type` /
+`…Scroll` in `src/abml/verbs/runtime.ts`: actionability gating → synthetic action → effect
+verification → physical-input (`input.pointer`/`input.keys`) fallback → re-verify. A structured
+`action:{click|type|scroll}` param on `browser_execute` (B2) wired it to a public path — and was
+**reverted** (2026-06-05).
 
-**Why reverted:** the first skeptical real-agent eval (2026-06-05) showed the public action arm did
-not earn its keep for clicks — in the wild `action.click` had silent failures, `ACTIONABILITY_TIMEOUT`,
-and selector misses, and agents simply reverted to writing raw JS. "Verified" did not mean "intent
-achieved" (a click reported verified because *something* locally mutated, but the intended
-search/sort didn't happen). type/scroll/read worked, but did not justify a standing public action
-surface that re-introduces a "which entry — JS or action?" decision. The deeper hazard: an "action
-silently failed → escalate to CDP" recovery cannot reliably distinguish *swallowed* from
-*slow-but-working*, so it risks double-execution (worst for click).
+**Why the public arm reverted:** the first skeptical real-agent eval showed it did not earn its keep
+for clicks — silent failures, `ACTIONABILITY_TIMEOUT`, selector misses; agents reverted to raw JS.
+"Verified" did not mean "intent achieved" (a click reported verified because *something* locally
+mutated, but the intended search/sort didn't happen). The deeper hazard: an "action silently failed →
+escalate to CDP" recovery cannot distinguish *swallowed* from *slow-but-working*, so it risks
+double-execution (worst for click).
+
+**Then the internal actuators were removed (2026-06-13).** After the B2 revert the click/type/scroll
+executors survived as dormant internal substrate — but `createBrowserAbmlIntegration` only ever
+exposed `read`, so **no production caller dispatched them** (tests + the reverted arm only). Two blind
+evals (linux.do infinite feed, bilibili lazy grid) confirmed agents actuate via `browser_execute`
+without ever needing an internal actuator. The orphaned click/type/scroll verbs, runtime executors,
+and CDP input injection were deleted; `check:abml-verb-runtime` now LOCKS that ABML stays
+perception-only (no `executeBrowserAbml{Click,Type,Scroll}`, no `input.pointer`/`input.keys`). read /
+pierce / frame / visual-floor stay.
 
 **Where execution lives now:** the agent writes JS via `browser_execute {script}` (the action
 language); for the rare trusted-event-gated control, canvas/WebGL target, or cross-origin iframe
@@ -69,7 +75,7 @@ The first skeptical real-agent eval was mixed, and is what drove the action-arm 
 | `causal` | strong | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
 | page reading (lists/tables) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. Completeness and continuation surface through `collections`; structure surfaces via `treeDiff`/`snapshotProjection`; per-item VALUES still come from `browser_execute`. |
 | `templates` (internal engine) | engine-only | No longer an agent-facing envelope field (a real-agent eval showed it unread); the templating engine still powers `treeDiff`/`snapshotProjection`. Redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
-| structured `action` (click/type/scroll) | reverted | Did not earn a public surface (agents reverted to JS; click "verified" ≠ intent achieved; escalation double-action hazard). Execution = JS via `browser_execute`; trusted-event/canvas escape via `browser_command input.*`. |
+| structured `action` (click/type/scroll) | reverted; internal actuators removed (2026-06-13) | Public arm never earned its keep (agents reverted to JS; click "verified" ≠ intent achieved; escalation double-action hazard). The dormant internal click/type/scroll executors were then deleted — zero production callers, blind evals confirmed JS actuation. Execution = JS via `browser_execute`; trusted-event/canvas escape via `browser_command input.*`. Locked by `check:abml-verb-runtime`. |
 | `diff`/`treeDiff` | noisy before fix | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
 
 `pi-ref://` handles and observe baselines are short-lived. On `HANDLE_NOT_FOUND`, stale resource, or

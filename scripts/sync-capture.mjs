@@ -12,7 +12,6 @@ const entries = [
 	["scanTemplate.ts", "scanBundle.ts"],
 	["contentTemplate.ts", "contentBundle.ts"],
 	["pickTemplate.ts", "pickBundle.ts"],
-	["probesTemplate.ts", "probesBundle.ts"],
 	["visionTemplate.ts", "visionBundle.ts"],
 ];
 

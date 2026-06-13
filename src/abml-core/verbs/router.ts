@@ -7,9 +7,6 @@ import { normalizeAbmlError } from "../errors.js";
 export type AbmlRuntimeContext = {
 	now?: () => number;
 	read?: (input: AbmlReadInput) => Promise<AbmlVerbResult>;
-	click?: (input: AbmlClickInput) => Promise<AbmlVerbResult>;
-	type?: (input: AbmlTypeInput) => Promise<AbmlVerbResult>;
-	scroll?: (input: AbmlScrollInput) => Promise<AbmlVerbResult>;
 	pierce?: (input: AbmlPierceInput) => Promise<AbmlVerbResult>;
 	frame?: (input: AbmlFrameInput) => Promise<AbmlVerbResult>;
 };
@@ -25,32 +22,6 @@ export type AbmlReadInput = {
 	axCacheKey?: string;
 };
 
-export type AbmlClickInput = {
-	ref: RefDescriptor | string;
-	button?: "left" | "middle" | "right";
-	count?: number;
-	diff?: boolean;
-	actionability?: ActionabilityReport;
-	verification?: VerificationResult;
-};
-
-export type AbmlTypeInput = {
-	ref: RefDescriptor | string;
-	text: string;
-	clear?: boolean;
-	diff?: boolean;
-	actionability?: ActionabilityReport;
-	verification?: VerificationResult;
-};
-
-export type AbmlScrollInput = {
-	ref?: RefDescriptor | string;
-	to?: "top" | "bottom" | "next" | "previous" | { x?: number; y?: number };
-	steps?: number;
-	collect?: boolean;
-	verification?: VerificationResult;
-};
-
 export type AbmlPierceInput = {
 	ref: RefDescriptor | string;
 	depth?: number;
@@ -63,9 +34,6 @@ export type AbmlFrameInput = {
 
 export type AbmlVerbRequest =
 	| { verb: "read"; input: AbmlReadInput }
-	| { verb: "click"; input: AbmlClickInput }
-	| { verb: "type"; input: AbmlTypeInput }
-	| { verb: "scroll"; input: AbmlScrollInput }
 	| { verb: "pierce"; input: AbmlPierceInput }
 	| { verb: "frame"; input: AbmlFrameInput };
 

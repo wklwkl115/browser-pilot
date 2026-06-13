@@ -518,10 +518,6 @@
           "status": "internal"
         },
         {
-          "name": "* from ./verbs/click.js",
-          "status": "internal"
-        },
-        {
           "name": "* from ./verbs/frame.js",
           "status": "internal"
         },
@@ -535,14 +531,6 @@
         },
         {
           "name": "* from ./verbs/router.js",
-          "status": "internal"
-        },
-        {
-          "name": "* from ./verbs/scroll.js",
-          "status": "internal"
-        },
-        {
-          "name": "* from ./verbs/type.js",
           "status": "internal"
         }
       ]
@@ -994,14 +982,6 @@
         }
       ]
     },
-    "src/abml-core/verbs/click.ts": {
-      "exports": [
-        {
-          "name": "AbmlClickExecutor",
-          "status": "internal"
-        }
-      ]
-    },
     "src/abml-core/verbs/frame.ts": {
       "exports": [
         {
@@ -1029,10 +1009,6 @@
     "src/abml-core/verbs/router.ts": {
       "exports": [
         {
-          "name": "AbmlClickInput",
-          "status": "internal"
-        },
-        {
           "name": "AbmlFrameInput",
           "status": "internal"
         },
@@ -1046,14 +1022,6 @@
         },
         {
           "name": "AbmlRuntimeContext",
-          "status": "internal"
-        },
-        {
-          "name": "AbmlScrollInput",
-          "status": "internal"
-        },
-        {
-          "name": "AbmlTypeInput",
           "status": "internal"
         },
         {
@@ -1083,22 +1051,6 @@
         {
           "name": "verificationFailure",
           "status": "test-harness"
-        }
-      ]
-    },
-    "src/abml-core/verbs/scroll.ts": {
-      "exports": [
-        {
-          "name": "AbmlScrollExecutor",
-          "status": "internal"
-        }
-      ]
-    },
-    "src/abml-core/verbs/type.ts": {
-      "exports": [
-        {
-          "name": "AbmlTypeExecutor",
-          "status": "internal"
         }
       ]
     },

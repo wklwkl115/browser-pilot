@@ -136,7 +136,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `ARTIFACT_SEARCH_REGEX_UNSAFE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ARTIFACT_TOO_LARGE` | artifact | tool.artifact | no | heuristic | `src/tools/artifactReader.ts` |
 | `ATTACH_FAILED` | cdp | runtime.cdp | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
-| `BACKEND_UNAVAILABLE` | abml | abml.backend | yes | schema | `src/abml-core/verbs/click.ts`, `src/abml-core/verbs/frame.ts`, `src/abml-core/verbs/pierce.ts`, `src/abml-core/verbs/read.ts`, `src/abml-core/verbs/scroll.ts`, `src/abml-core/verbs/type.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
+| `BACKEND_UNAVAILABLE` | abml | abml.backend | yes | schema | `src/abml-core/verbs/frame.ts`, `src/abml-core/verbs/pierce.ts`, `src/abml-core/verbs/read.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
 | `BACKGROUND_THROTTLED` | page | runtime.page | yes | schema |  |
 | `BODY_UNAVAILABLE` | network | runtime.network | no | schema |  |
 | `BRIDGE_CLIENT_DISCONNECTED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
@@ -174,7 +174,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `INVALID_BROWSER_ID` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_INPUT` | abml | abml.input | no | schema | `src/abml/verbs/pierceRuntime.ts`, `src/abml/verbs/runtime.ts`, `src/abml/verbs/visionRuntime.ts` |
 | `INVALID_RULE` | tool | tool.validation | no | schema | `src/tools/observe/baseline.ts`, `src/tools/registerCommandTool.ts`, `src/tools/registerExecuteTool.ts`, `src/tools/registerObserveTool.ts`, `src/tools/registerPickTool.ts`, `src/tools/registerTabsTool.ts`, `src/tools/transferValidation.ts`, `src/tools/webSecurity/browserNative/callbackOast.ts`, `src/tools/webSecurity/browserNative/cookieAnalyze.ts`, `src/tools/webSecurity/browserNative/fuzzParams.ts`, `src/tools/webSecurity/browserNative/fuzzPaths.ts`, `src/tools/webSecurity/browserNative/fuzzVhosts.ts`, `src/tools/webSecurity/browserNative/httpReplay.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts`, `src/tools/webSecurity/browserNative/templateCheck.ts`, `src/tools/webSecurity/register/shared.ts`, `src/tools/webSecurity/shared/har.ts`, `src/tools/webSecurity/shared/http.ts`, `src/tools/webSecurity/shared/normalize.ts`, `src/tools/webSecurity/shared/replay.ts`, `src/tools/webSecurity/shared/requestTemplate.ts`, `src/tools/webSecurity/shared/wsShell.ts` |
-| `INVALID_SELECTOR` | page | runtime.selector | no | schema | `bridge_src/service_worker/transfer.ts`, `src/abml/verbs/runtime.ts` |
+| `INVALID_SELECTOR` | page | runtime.selector | no | schema | `bridge_src/service_worker/transfer.ts` |
 | `INVALID_SESSION` | native | runtime.session | no | schema |  |
 | `INVALID_TAB_ID` | driver | driver.tab | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
 | `INVALID_TAB_URL` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
@@ -237,9 +237,9 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserLeaseRegistry.ts` |
 | `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/errors.ts` |
 | `TARGET_DISABLED` | abml | abml.actionability | yes | schema |  |
-| `TARGET_NOT_EDITABLE` | abml | abml.actionability | no | schema | `src/abml/verbs/runtime.ts` |
+| `TARGET_NOT_EDITABLE` | abml | abml.actionability | no | schema |  |
 | `TARGET_OCCLUDED` | abml | abml.actionability | yes | schema |  |
-| `TIMEOUT` | native | runtime.timeout | yes | schema | `src/abml/verbs/runtime.ts`, `src/tools/webSecurity/browserNative/sqliProbe.ts` |
+| `TIMEOUT` | native | runtime.timeout | yes | schema | `src/tools/webSecurity/browserNative/sqliProbe.ts` |
 | `UI_LOCK_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserLeaseRegistry.ts` |
 | `UNKNOWN_ACTION` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `UNKNOWN_BROWSER_CLIENT` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeClientRegistry.ts` |

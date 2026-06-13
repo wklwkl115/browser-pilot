@@ -65,7 +65,7 @@ The project has four pure-logic kernels, all zero browser/Node dependencies, eac
 
 | Kernel | Source | Purpose | Boundary check |
 |--------|--------|---------|----------------|
-| Capture (sense) | `capture-src/` → `src/capture/generated/` | Page-world JS templates injected into the browser | `check:capture` / `check-capture-core-boundary.mjs` (entry set pinned at 5; 6th entry fails gate) |
+| Capture (sense) | `capture-src/` → `src/capture/generated/` | Page-world JS templates injected into the browser | `check:capture` / `check-capture-core-boundary.mjs` (entry set pinned at 4; 5th entry fails gate) |
 | ABML (perceive) | `src/abml-core/` | Entity extraction, diffing, templating, relations, causal | `check:abml-core-boundary` |
 | Distill (express) | `src/distill-core/` | Token economy, salience renderer, fact allocator, recovery | `check:distill-core-boundary` |
 | Memory (retain) | `src/memory-core/` | Profile distillation, recall scoring/IDF routing, staleness verification | `check:memory-core-boundary` |

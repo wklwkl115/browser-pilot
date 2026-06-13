@@ -164,7 +164,6 @@ function generatedRows() {
 		["`src/capture/generated/scanBundle.ts`", "`capture-src/entries/scanTemplate.ts`", "`npm run sync:capture`", "`check:capture`"],
 		["`src/capture/generated/contentBundle.ts`", "`capture-src/entries/contentTemplate.ts`", "`npm run sync:capture`", "`check:capture`"],
 		["`src/capture/generated/pickBundle.ts`", "`capture-src/entries/pickTemplate.ts`", "`npm run sync:capture`", "`check:capture`"],
-		["`src/capture/generated/probesBundle.ts`", "`capture-src/entries/probesTemplate.ts`", "`npm run sync:capture`", "`check:capture`"],
 		["`src/capture/generated/visionBundle.ts`", "`capture-src/entries/visionTemplate.ts`", "`npm run sync:capture`", "`check:capture`"],
 	];
 }

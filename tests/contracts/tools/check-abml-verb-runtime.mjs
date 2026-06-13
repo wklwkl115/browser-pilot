@@ -1,13 +1,13 @@
 /**
- * ABML verb runtime contract (P4.2–P4.7 internal gate).
+ * ABML verb runtime contract (internal gate).
  *
- * Verifies source-level/runtime boundaries for the internal ABML verb runtime:
- * - read uses P3 scan/entity model
- * - click/type use actionability + verification + shared physical input fallback path
- * - scroll default is probe-only; collect:true does read-after-scroll collection with virtual/stable-stop support
- * - P6 pierce/frame runtime boundaries stay internal and explicit
- * - P7 visual-floor point/region support stays behind runtime helpers
- * - failures are normalized through AbmlError envelopes instead of silent fallbacks
+ * ABML is perception-only. The runtime keeps read (P3 scan/entity model), pierce/frame (P6
+ * shadow/OOPIF reachability), and the P7 visual floor. The click/type/scroll ACTUATOR verbs were
+ * removed: orphaned after the B2 public action arm revert (no production caller ever dispatched
+ * them — integration.ts only exposes read), and two blind evals confirmed agents actuate via
+ * browser_execute, never needing an internal actuator. This contract now LOCKS that removal so a
+ * Phase-4-style "continuation runtime" cannot silently re-add a page actuator behind the
+ * perception layer.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,24 +18,30 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
 const runtimeSrc = read("src/abml/verbs/runtime.ts");
+
+// Perception verbs that stay.
 assert(runtimeSrc.includes("summarizeScanData("), "ABML read runtime must reuse P3 scan/entity model");
-assert(runtimeSrc.includes("ensureActionability("), "ABML write verbs must run actionability checks");
-assert(runtimeSrc.includes('cmd: "input.pointer"') && runtimeSrc.includes("sendInputPointer("), "ABML click runtime must support shared physical mouse input fallback");
-assert(runtimeSrc.includes('cmd: "input.keys"') && runtimeSrc.includes("sendInputKeys("), "ABML type runtime must use shared physical keyboard input");
-assert(runtimeSrc.includes("verifyClick(") && runtimeSrc.includes("verifyType("), "ABML runtime must perform post-action verification");
-assert(runtimeSrc.includes("createActionDeadline") && runtimeSrc.includes("timeoutFor(deadline"), "ABML action runtime must share one deadline across subcalls");
-assert(runtimeSrc.includes("input.diff === true") && runtimeSrc.includes("click before diff read") && runtimeSrc.includes("type before diff read"), "ABML click/type full entity diff must be opt-in");
-assert(runtimeSrc.includes("targetStateChanges") && runtimeSrc.includes("observed: { before, after, changed"), "ABML click/type verification must report target semantic state deltas");
-assert(runtimeSrc.includes("const collect = input.collect === true") && runtimeSrc.includes("scroll collect read"), "ABML scroll structure collection must be opt-in");
-assert(runtimeSrc.includes("scrollStepScript(") && runtimeSrc.includes("executeBrowserAbmlRead(") && runtimeSrc.includes("stablePasses"), "ABML scroll collect:true runtime must keep virtual-scroll stable-stop");
-assert(runtimeSrc.includes("normalizeAbmlError"), "ABML runtime failures must normalize into AbmlError envelopes");
 assert(runtimeSrc.includes("executeBrowserAbmlPierce") && runtimeSrc.includes("executeBrowserAbmlFrame"), "ABML runtime must expose internal pierce/frame executors for P6");
 assert(runtimeSrc.includes("inspectVisionRegion") || read("src/abml/verbs/visionRuntime.ts").includes("screenshot.capture"), "ABML runtime must keep visual-floor helpers behind screenshot-backed internals for P7");
+assert(runtimeSrc.includes("normalizeAbmlError"), "ABML runtime failures must normalize into AbmlError envelopes");
 assert(!runtimeSrc.includes("catch {}"), "ABML runtime must not silently swallow core verb failures with empty catch blocks");
-assert(runtimeSrc.includes("transport: \"dom\" | \"cdp\"") && runtimeSrc.includes("domResult = undefined"), "ABML click runtime may explicitly downgrade DOM click failures into documented CDP fallback, not silent success");
+
+// Actuator lock: click/type/scroll were removed and must not return.
+assert(
+	!runtimeSrc.includes("executeBrowserAbmlClick") && !runtimeSrc.includes("executeBrowserAbmlType") && !runtimeSrc.includes("executeBrowserAbmlScroll"),
+	"ABML must stay perception-only: no click/type/scroll executor may live in the runtime (actuator-removal workstream; agents actuate via browser_execute / browser_command)",
+);
+assert(
+	!runtimeSrc.includes('cmd: "input.pointer"') && !runtimeSrc.includes('cmd: "input.keys"'),
+	"ABML runtime must not inject synthetic CDP pointer/keyboard input — page actuation is browser_execute / browser_command's job, not ABML's",
+);
 
 const routerSrc = read("src/abml-core/verbs/router.ts"); // pure-core kernel (re-export shim at src/abml/verbs/router.ts)
-assert(routerSrc.includes("actionabilityFailure") && routerSrc.includes("verificationFailure"), "ABML router must expose unified actionability/verification failure helpers");
+assert(routerSrc.includes("actionabilityFailure") && routerSrc.includes("verificationFailure"), "ABML router must keep unified actionability/verification failure helpers");
 assert(!routerSrc.includes("dispatchAbmlVerb"), "ABML router must not keep an unused strategy-shaped dispatcher");
+assert(
+	!routerSrc.includes("AbmlClickInput") && !routerSrc.includes("AbmlTypeInput") && !routerSrc.includes("AbmlScrollInput"),
+	"ABML router must not declare click/type/scroll verb input types (actuator verbs removed)",
+);
 
 console.log("abml verb runtime ok");
