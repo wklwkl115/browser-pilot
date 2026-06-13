@@ -1,6 +1,8 @@
 import { isRecord } from "../utils/records.js";
 
 export type CompactLimits = { stringChars: number; arrayItems: number; tableRows: number };
+const OBJECT_DEPTH_LIMIT = 5;
+const ARRAY_DEPTH_LIMIT = 64;
 
 function cleanLineText(value: unknown, maxChars: number): string | undefined {
 	const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : undefined;
@@ -38,8 +40,11 @@ export function compactSummaryValue(value: unknown, limits: CompactLimits, depth
 	if (typeof value === "string") return value.length > limits.stringChars ? `${value.slice(0, limits.stringChars)}…` : value;
 	if (typeof value === "number" || typeof value === "boolean") return value;
 	if (typeof value !== "object") return String(value);
-	if (Array.isArray(value)) return value.slice(0, limits.arrayItems).map((item) => compactSummaryValue(item, limits, depth + 1));
-	if (depth >= 5) return { type: "object", keyCount: Object.keys(value as Record<string, unknown>).length };
+	if (Array.isArray(value)) {
+		if (depth >= ARRAY_DEPTH_LIMIT) return { type: "array", length: value.length };
+		return value.slice(0, limits.arrayItems).map((item) => compactSummaryValue(item, limits, depth + 1));
+	}
+	if (depth >= OBJECT_DEPTH_LIMIT) return { type: "object", keyCount: Object.keys(value as Record<string, unknown>).length };
 	const record = value as Record<string, unknown>;
 	if (Array.isArray(record.columns) && Array.isArray(record.rows)) {
 		const rows = record.rows.slice(0, limits.tableRows).map((row) => Array.isArray(row) ? row.map((cell) => compactSummaryValue(cell, limits, depth + 1)) : row);

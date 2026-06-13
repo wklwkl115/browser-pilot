@@ -61,6 +61,19 @@ function topLevelOrigin(url: string | undefined): string | undefined {
 	}
 }
 
+let cachedTopLevelOriginUrl: string | undefined;
+let cachedTopLevelOriginValue: string | undefined;
+let hasCachedTopLevelOrigin = false;
+
+function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
+	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
+	const origin = topLevelOrigin(url);
+	cachedTopLevelOriginUrl = url;
+	cachedTopLevelOriginValue = origin;
+	hasCachedTopLevelOrigin = true;
+	return origin;
+}
+
 function axValueText(value: unknown): string | undefined {
 	if (typeof value === "string") return stringValue(value);
 	if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -251,6 +264,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 	const role = axRole(node);
 	const roleLower = role.toLowerCase();
 	const propertyMap = axPropertyMap(node);
+	const origin = memoizedTopLevelOrigin(context.url);
 	const structure = axStructure(node, role, propertyMap);
 	const name = axName(node);
 	const value = axValue(node, propertyMap);
@@ -300,7 +314,7 @@ export function buildAxEntityFromNode(node: AxTreeNode, context: AxContext, geom
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind(kind),
 			semantic: { role, ...(name ? { name } : {}), ...(value ? { value } : {}) },

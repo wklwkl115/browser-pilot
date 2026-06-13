@@ -61,32 +61,64 @@ export type InferenceSummary = {
 
 // Per-array evidence ref cap — keeps the envelope compact + deterministic (like relations.highlights).
 const MAX_EVIDENCE_REFS = 6;
+type InferenceFeature = {
+	entity: Entity;
+	roleLower: string;
+	nameLower: string;
+	textLower: string;
+	perceptible: boolean;
+	editableControl: boolean;
+};
+type InferenceView = {
+	features: InferenceFeature[];
+	byRef: Map<string, InferenceFeature>;
+};
 
 // ── Detection helpers ─────────────────────────────────────────────────────────
 
-function hasInputKind(entities: Entity[], kind: string): boolean {
-	return entities.some((e) => typeof e.hints?.inputKind === "string" && (e.hints.inputKind as string).toLowerCase() === kind);
+function buildInferenceView(entities: Entity[]): InferenceView {
+	const features: InferenceFeature[] = [];
+	const byRef = new Map<string, InferenceFeature>();
+	for (const entity of entities) {
+		const roleLower = (entity.role || "").toLowerCase();
+		const nameLower = (entity.name ?? "").toLowerCase();
+		const selector = typeof entity.hints?.selector === "string" ? entity.hints.selector : "";
+		const feature = {
+			entity,
+			roleLower,
+			nameLower,
+			textLower: `${entity.name ?? ""} ${entity.role ?? ""} ${selector}`.toLowerCase(),
+			perceptible: entity.state.visible === true && entity.state.occluded !== true,
+			editableControl: entity.kind === "control" && entity.state.editable === true,
+		};
+		features.push(feature);
+		byRef.set(entity.ref, feature);
+	}
+	return { features, byRef };
 }
 
-function hasLandmark(entities: Entity[], landmark: string): boolean {
-	return entities.some((e) => typeof e.structure?.landmark === "string" && e.structure.landmark === landmark);
+function hasInputKind(view: InferenceView, kind: string): boolean {
+	return view.features.some((feature) => typeof feature.entity.hints?.inputKind === "string" && (feature.entity.hints.inputKind as string).toLowerCase() === kind);
 }
 
-function countEditable(entities: Entity[]): number {
-	return entities.filter((e) => e.kind === "control" && e.state.editable).length;
+function hasLandmark(view: InferenceView, landmark: string): boolean {
+	return view.features.some((feature) => typeof feature.entity.structure?.landmark === "string" && feature.entity.structure.landmark === landmark);
 }
 
-function roleOf(entity: Entity): string {
-	return (entity.role || "").toLowerCase();
+function countEditable(view: InferenceView): number {
+	return view.features.filter((feature) => feature.editableControl).length;
 }
 
-function textOf(entity: Entity): string {
-	const selector = typeof entity.hints?.selector === "string" ? entity.hints.selector : "";
-	return `${entity.name ?? ""} ${entity.role ?? ""} ${selector}`.toLowerCase();
+function roleOf(feature: InferenceFeature): string {
+	return feature.roleLower;
 }
 
-function isPerceptible(entity: Entity): boolean {
-	return entity.state.visible === true && entity.state.occluded !== true;
+function textOf(feature: InferenceFeature): string {
+	return feature.textLower;
+}
+
+function isPerceptible(feature: InferenceFeature): boolean {
+	return feature.perceptible;
 }
 
 function uniqueRefs(refs: string[]): string[] {
@@ -102,34 +134,34 @@ function uniqueRefs(refs: string[]): string[] {
 
 // ── Evidence resolution helpers (best-effort ref lookup over the merged entity list) ──────
 
-function firstEntityByRole(entities: Entity[], ...roles: string[]): Entity | undefined {
+function firstFeatureByRole(view: InferenceView, ...roles: string[]): InferenceFeature | undefined {
 	const set = new Set(roles.map((r) => r.toLowerCase()));
-	return entities.find((e) => e.role && set.has(roleOf(e)));
+	return view.features.find((feature) => feature.entity.role && set.has(roleOf(feature)));
 }
 
-function firstRefByRole(entities: Entity[], ...roles: string[]): string | undefined {
-	return firstEntityByRole(entities, ...roles)?.ref;
+function firstRefByRole(view: InferenceView, ...roles: string[]): string | undefined {
+	return firstFeatureByRole(view, ...roles)?.entity.ref;
 }
 
-function allRefsByRole(entities: Entity[], role: string): string[] {
+function allRefsByRole(view: InferenceView, role: string): string[] {
 	const lower = role.toLowerCase();
-	return uniqueRefs(entities.filter((e) => roleOf(e) === lower).map((e) => e.ref));
+	return uniqueRefs(view.features.filter((feature) => roleOf(feature) === lower).map((feature) => feature.entity.ref));
 }
 
-function refsWithRelation(entities: Entity[], type: RelationType, predicate: (entity: Entity) => boolean = () => true): string[] {
-	return uniqueRefs(entities.filter((e) => predicate(e) && e.relations?.some((r) => r.type === type)).map((e) => e.ref));
+function refsWithRelation(view: InferenceView, type: RelationType, predicate: (feature: InferenceFeature) => boolean = () => true): string[] {
+	return uniqueRefs(view.features.filter((feature) => predicate(feature) && feature.entity.relations?.some((relation) => relation.type === type)).map((feature) => feature.entity.ref));
 }
 
-function firstRelationTarget(entities: Entity[], type: RelationType): string | undefined {
-	for (const e of entities) {
-		const rel = e.relations?.find((r) => r.type === type);
+function firstRelationTarget(view: InferenceView, type: RelationType): string | undefined {
+	for (const feature of view.features) {
+		const rel = feature.entity.relations?.find((relation) => relation.type === type);
 		if (rel) return rel.targetRef;
 	}
 	return undefined;
 }
 
-function landmarkRef(entities: Entity[], landmark: string): string | undefined {
-	return entities.find((e) => e.structure?.landmark === landmark)?.ref;
+function landmarkRef(view: InferenceView, landmark: string): string | undefined {
+	return view.features.find((feature) => feature.entity.structure?.landmark === landmark)?.entity.ref;
 }
 
 // Cap a ref list to MAX_EVIDENCE_REFS and emit it under `key`, with a sibling `<base>Count`
@@ -187,14 +219,15 @@ const LOGIN_NEGATIVE_RE = /passkey|oauth|omniauth|saml|sso|forgot|register|sign\
 // with …". Matches the language pattern, so it generalizes to any provider without a name list.
 const LOGIN_THIRD_PARTY_RE = /\b(?:sign[-\s]*in|log[-\s]*in|signin|login|continue|connect)\s+with\b/i;
 
-function loginCandidateScore(entity: Entity): number {
-	if (entity.kind !== "control" || !["button", "link"].includes(roleOf(entity)) || entity.state.disabled) return Number.NEGATIVE_INFINITY;
+function loginCandidateScore(feature: InferenceFeature): number {
+	const entity = feature.entity;
+	if (entity.kind !== "control" || !["button", "link"].includes(roleOf(feature)) || entity.state.disabled) return Number.NEGATIVE_INFINITY;
 	let score = 0;
-	if (isPerceptible(entity)) score += 10;
+	if (isPerceptible(feature)) score += 10;
 	if (entity.state.inViewport) score += 2;
-	const text = textOf(entity);
-	const name = (entity.name ?? "").toLowerCase();
-	if (roleOf(entity) === "button") score += 4;
+	const text = textOf(feature);
+	const name = feature.nameLower;
+	if (roleOf(feature) === "button") score += 4;
 	if (LOGIN_POSITIVE_RE.test(name)) score += 14;
 	else if (LOGIN_POSITIVE_RE.test(text)) score += 8;
 	if (/type=['"]?submit|sign-?in|login|submit/.test(text)) score += 6;
@@ -204,22 +237,23 @@ function loginCandidateScore(entity: Entity): number {
 	return score;
 }
 
-function detectLogin(entities: Entity[]): DetectedIntent | undefined {
-	if (!hasInputKind(entities, "password")) return undefined;
-	const submitButton = entities
-		.filter((e) => loginCandidateScore(e) > 0)
-		.sort((a, b) => loginCandidateScore(b) - loginCandidateScore(a))[0];
+function detectLogin(view: InferenceView): DetectedIntent | undefined {
+	if (!hasInputKind(view, "password")) return undefined;
+	const submitButton = view.features
+		.map((feature) => ({ feature, score: loginCandidateScore(feature) }))
+		.filter((candidate) => candidate.score > 0)
+		.sort((a, b) => b.score - a.score)[0]?.feature.entity;
 	if (!submitButton) return mk("login", "medium", "password field, no strong submit");
 	return mk("login", "high", "password field + strong submit", { submitRef: submitButton.ref });
 }
 
 // search: searchbox role (from <input type=search> via DOM roleOf) is a strong signal.
 // search landmark alone (ARIA search role applied to a region) is medium.
-function detectSearch(entities: Entity[]): DetectedIntent | undefined {
-	const searchRef = firstRefByRole(entities, "searchbox");
+function detectSearch(view: InferenceView): DetectedIntent | undefined {
+	const searchRef = firstRefByRole(view, "searchbox");
 	if (searchRef) return mk("search", "high", "searchbox role", { searchRef });
-	if (hasLandmark(entities, "search") && countEditable(entities) >= 1) {
-		const regionRef = landmarkRef(entities, "search");
+	if (hasLandmark(view, "search") && countEditable(view) >= 1) {
+		const regionRef = landmarkRef(view, "search");
 		return mk("search", "medium", "search landmark with input", regionRef ? { regionRef } : undefined);
 	}
 	return undefined;
@@ -231,32 +265,33 @@ function detectSearch(entities: Entity[]): DetectedIntent | undefined {
 // anchoring Amazon-style search forms as filter panels.
 const FILTER_TEXT_RE = /\b(filter|facet|refine|narrow|brand|price|rating|stars|department|category|condition|delivery|seller|sort)\b|筛选|缩小|品牌|价格|评分|类别|部门|配送|卖家/i;
 
-function filterControls(entities: Entity[]): Entity[] {
-	return entities.filter((entity) => {
-		if (entity.kind !== "control" || entity.state.disabled || !isPerceptible(entity)) return false;
-		const role = roleOf(entity);
-		return ["button", "link", "combobox", "option", "checkbox", "radio", "slider", "spinbutton"].includes(role) && FILTER_TEXT_RE.test(textOf(entity));
+function filterControls(view: InferenceView): InferenceFeature[] {
+	return view.features.filter((feature) => {
+		const entity = feature.entity;
+		if (entity.kind !== "control" || entity.state.disabled || !isPerceptible(feature)) return false;
+		const role = roleOf(feature);
+		return ["button", "link", "combobox", "option", "checkbox", "radio", "slider", "spinbutton"].includes(role) && FILTER_TEXT_RE.test(textOf(feature));
 	});
 }
 
-function detectFilterPanel(entities: Entity[]): DetectedIntent | undefined {
-	const controls = filterControls(entities);
+function detectFilterPanel(view: InferenceView): DetectedIntent | undefined {
+	const controls = filterControls(view);
 	if (controls.length >= 3) {
-		return mk("filter-panel", "high", `${controls.length} filter controls`, { ...capRefs(controls.map((entity) => entity.ref), "controlRefs"), inputCount: controls.length });
+		return mk("filter-panel", "high", `${controls.length} filter controls`, { ...capRefs(controls.map((feature) => feature.entity.ref), "controlRefs"), inputCount: controls.length });
 	}
-	if (!hasLandmark(entities, "search")) return undefined;
-	const editableInputs = entities.filter((e) => e.kind === "control" && e.state.editable && isPerceptible(e));
-	const region = entities.find((e) => e.structure?.landmark === "search" && FILTER_TEXT_RE.test(textOf(e)));
+	if (!hasLandmark(view, "search")) return undefined;
+	const editableInputs = view.features.filter((feature) => feature.editableControl && isPerceptible(feature));
+	const region = view.features.find((feature) => feature.entity.structure?.landmark === "search" && FILTER_TEXT_RE.test(textOf(feature)))?.entity;
 	if (editableInputs.length < 2 || !region) return undefined;
 	return mk("filter-panel", "medium", `search filter landmark, ${editableInputs.length} inputs`, { regionRef: region.ref, inputCount: editableInputs.length });
 }
 
 // single-choice: radiogroup container in the AX tree is the clean signal (high confidence).
 // 2+ radio entities without an explicit radiogroup is medium.
-function detectSingleChoice(entities: Entity[]): DetectedIntent | undefined {
-	const groupRef = firstRefByRole(entities, "radiogroup");
+function detectSingleChoice(view: InferenceView): DetectedIntent | undefined {
+	const groupRef = firstRefByRole(view, "radiogroup");
 	if (groupRef) return mk("single-choice", "high", "radiogroup role", { groupRef });
-	const radios = allRefsByRole(entities, "radio");
+	const radios = allRefsByRole(view, "radio");
 	if (radios.length >= 2) return mk("single-choice", "medium", `${radios.length} ungrouped radios`, capRefs(radios, "optionRefs"));
 	return undefined;
 }
@@ -264,25 +299,25 @@ function detectSingleChoice(entities: Entity[]): DetectedIntent | undefined {
 // multi-choice: 3+ checkboxes suggests a multi-select list (options, features, tags).
 // High confidence when 3+ share the same ARIA group container (intentional grouping by author).
 // Medium for scattered checkboxes — could be unrelated form controls (terms + newsletter).
-function detectMultiChoice(entities: Entity[]): DetectedIntent | undefined {
-	const checkboxes = entities.filter((e) => e.role?.toLowerCase() === "checkbox");
+function detectMultiChoice(view: InferenceView): DetectedIntent | undefined {
+	const checkboxes = view.features.filter((feature) => feature.roleLower === "checkbox");
 	if (checkboxes.length < 3) return undefined;
 	// Group checkboxes by their ARIA container. A group with 3+ = intentional multi-choice.
 	const groups = new Map<string, { name: string; refs: string[] }>();
-	for (const e of checkboxes) {
-		const role = typeof e.hints?.containerRole === "string" ? e.hints.containerRole : null;
+	for (const feature of checkboxes) {
+		const role = typeof feature.entity.hints?.containerRole === "string" ? feature.entity.hints.containerRole : null;
 		if (!role) continue;
-		const name = typeof e.hints?.containerName === "string" ? e.hints.containerName : "";
+		const name = typeof feature.entity.hints?.containerName === "string" ? feature.entity.hints.containerName : "";
 		const key = `${role}|${name}`;
 		const group = groups.get(key) ?? { name, refs: [] };
-		group.refs.push(e.ref);
+		group.refs.push(feature.entity.ref);
 		groups.set(key, group);
 	}
 	const dominant = Array.from(groups.values()).filter((g) => g.refs.length >= 3).sort((a, b) => b.refs.length - a.refs.length)[0];
 	if (dominant) {
 		return mk("multi-choice", "high", `${dominant.refs.length} grouped checkboxes`, { ...capRefs(dominant.refs, "optionRefs"), ...(dominant.name ? { groupName: dominant.name } : {}) });
 	}
-	return mk("multi-choice", "medium", `${checkboxes.length} scattered checkboxes`, capRefs(checkboxes.map((e) => e.ref), "optionRefs"));
+	return mk("multi-choice", "medium", `${checkboxes.length} scattered checkboxes`, capRefs(checkboxes.map((feature) => feature.entity.ref), "optionRefs"));
 }
 
 // expandable: expandedTarget >= 2 filters the single-nav-toggle case found in live validation
@@ -290,8 +325,8 @@ function detectMultiChoice(entities: Entity[]): DetectedIntent | undefined {
 // really "expandable" pages). Two or more expand relations suggest the pattern is structural.
 // Detection stays on the relSummary count; evidence resolves trigger refs in a parallel walk.
 const EXPANDABLE_THRESHOLD = 2;
-function detectExpandable(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
-	const triggerRefs = refsWithRelation(entities, "expandedTarget", (entity) => isPerceptible(entity) || entity.state.expanded !== undefined);
+function detectExpandable(view: InferenceView, relSummary: RelationSummary): DetectedIntent | undefined {
+	const triggerRefs = refsWithRelation(view, "expandedTarget", (feature) => isPerceptible(feature) || feature.entity.state.expanded !== undefined);
 	const count = Math.max(triggerRefs.length, relSummary.summary.expandedTarget ?? 0);
 	if (triggerRefs.length < EXPANDABLE_THRESHOLD) return undefined;
 	return mk("expandable", "high", `${count} expand triggers`, capRefs(triggerRefs, "triggerRefs"));
@@ -301,12 +336,12 @@ function detectExpandable(entities: Entity[], relSummary: RelationSummary): Dete
 // Threshold of 50 filters documentation/attribute tables on reference pages (W3C APG, MDN
 // have 12–42-cell attribute tables on almost every page — live validation confirmed this).
 const DATA_GRID_CELL_THRESHOLD = 50;
-function detectDataGrid(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
-	const grid = entities.find((entity) => ["grid", "treegrid"].includes(roleOf(entity)) && isPerceptible(entity) && !/autocomplete|suggest/i.test(textOf(entity)));
+function detectDataGrid(view: InferenceView, relSummary: RelationSummary): DetectedIntent | undefined {
+	const grid = view.features.find((feature) => ["grid", "treegrid"].includes(roleOf(feature)) && isPerceptible(feature) && !/autocomplete|suggest/i.test(textOf(feature)))?.entity;
 	if (grid) return mk("data-grid", "high", "visible grid role", { gridRef: grid.ref });
 	const cellCount = relSummary.summary.tableCells ?? 0;
 	if (cellCount >= DATA_GRID_CELL_THRESHOLD) {
-		const tableRef = firstRelationTarget(entities, "cellOf");
+		const tableRef = firstRelationTarget(view, "cellOf");
 		return mk("data-grid", "high", `table with ${cellCount} cells`, { ...(tableRef ? { tableRef } : {}), cellCount });
 	}
 	return undefined;
@@ -314,16 +349,16 @@ function detectDataGrid(entities: Entity[], relSummary: RelationSummary): Detect
 
 // navigation: currentIn fires when an aria-current entity has a resolved nav/list container.
 // Detection stays on the relSummary count; evidence resolves the current item + nav container.
-function detectNavigation(entities: Entity[], relSummary: RelationSummary): DetectedIntent | undefined {
+function detectNavigation(view: InferenceView, relSummary: RelationSummary): DetectedIntent | undefined {
 	if ((relSummary.summary.currentIn ?? 0) <= 0) return undefined;
-	const currentEntity = entities.find((e) => e.state.current !== undefined && e.state.current !== false);
+	const currentEntity = view.features.find((feature) => feature.entity.state.current !== undefined && feature.entity.state.current !== false)?.entity;
 	const navRef = currentEntity?.relations?.find((r) => r.type === "currentIn")?.targetRef;
 	return mk("navigation", "high", "aria-current item in nav", { ...(currentEntity ? { currentRef: currentEntity.ref } : {}), ...(navRef ? { navRef } : {}) });
 }
 
 // dialog: a dialog or alertdialog entity present in the merged entity list.
-function detectDialog(entities: Entity[]): DetectedIntent | undefined {
-	const dialog = entities.find((e) => (roleOf(e) === "dialog" || roleOf(e) === "alertdialog") && isPerceptible(e));
+function detectDialog(view: InferenceView): DetectedIntent | undefined {
+	const dialog = view.features.find((feature) => (roleOf(feature) === "dialog" || roleOf(feature) === "alertdialog") && isPerceptible(feature))?.entity;
 	if (!dialog) return undefined;
 	return mk("dialog", "high", `visible ${dialog.role} role`, { dialogRef: dialog.ref });
 }
@@ -331,9 +366,9 @@ function detectDialog(entities: Entity[]): DetectedIntent | undefined {
 // tabbed-interface: tablist role is the authoritative ARIA container for a tab panel set.
 // 2+ tab entities without an explicit tablist is medium — ungrouped tabs exist in the wild.
 // Tells the agent: switch tabs to access content not visible in the current panel.
-function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
-	const tablist = entities.find((entity) => roleOf(entity) === "tablist" && isPerceptible(entity));
-	const tabRefs = uniqueRefs(entities.filter((entity) => roleOf(entity) === "tab" && isPerceptible(entity)).map((entity) => entity.ref));
+function detectTabbedInterface(view: InferenceView): DetectedIntent | undefined {
+	const tablist = view.features.find((feature) => roleOf(feature) === "tablist" && isPerceptible(feature))?.entity;
+	const tabRefs = uniqueRefs(view.features.filter((feature) => roleOf(feature) === "tab" && isPerceptible(feature)).map((feature) => feature.entity.ref));
 	if (tablist) return mk("tabbed-interface", "high", `visible tablist with ${tabRefs.length} tabs`, { tablistRef: tablist.ref, ...capRefs(tabRefs, "tabRefs") });
 	if (tabRefs.length >= 2) return mk("tabbed-interface", "medium", `${tabRefs.length} visible ungrouped tabs`, capRefs(tabRefs, "tabRefs"));
 	return undefined;
@@ -347,13 +382,13 @@ function detectTabbedInterface(entities: Entity[]): DetectedIntent | undefined {
 // feedback — the strongest signal. It is flagged via an evidence token (appeared|updated) + reason;
 // the region's text is never embedded (generic + privacy-safe, same contract as form-dependency).
 // Among multiple live regions the fresh one is preferred (it answers the last action).
-function detectAlertRegion(entities: Entity[], diff?: EntityDiff): DetectedIntent | undefined {
-	const regions = entities.filter((e) => (roleOf(e) === "alert" || roleOf(e) === "status") && isPerceptible(e));
+function detectAlertRegion(view: InferenceView, diff?: EntityDiff): DetectedIntent | undefined {
+	const regions = view.features.filter((feature) => (roleOf(feature) === "alert" || roleOf(feature) === "status") && isPerceptible(feature)).map((feature) => feature.entity);
 	if (!regions.length) return undefined;
 	const nameChanged = (ref: string): boolean => !!diff && diff.changed.some((c) => c.kind === "name-changed" && c.ref === ref);
 	const isFresh = (ref: string): boolean => !!diff && (diff.appeared.includes(ref) || nameChanged(ref));
 	const region = (diff ? regions.find((r) => isFresh(r.ref)) : undefined) ?? regions[0];
-	const live = roleOf(region) === "alert" ? "assertive" : "polite";
+	const live = (region.role || "").toLowerCase() === "alert" ? "assertive" : "polite";
 	const fresh = !diff ? undefined : diff.appeared.includes(region.ref) ? "appeared" : nameChanged(region.ref) ? "updated" : undefined;
 	const reason = fresh === "appeared" ? `${region.role} live region appeared after action`
 		: fresh === "updated" ? `${region.role} live region updated after action`
@@ -366,15 +401,16 @@ function changedField(change: EntityDiff["changed"][number], side: "before" | "a
 	return value && typeof value === "object" ? (value as Record<string, unknown>)[field] : undefined;
 }
 
-function editableControlByRef(entities: Entity[], ref: string | undefined, enabledRef: string): Entity | undefined {
+function editableControlByRef(view: InferenceView, ref: string | undefined, enabledRef: string): Entity | undefined {
 	if (!ref || ref === enabledRef) return undefined;
-	return entities.find((entity) => entity.ref === ref && entity.kind === "control" && entity.state.editable === true);
+	const feature = view.byRef.get(ref);
+	return feature?.editableControl ? feature.entity : undefined;
 }
 
-function editableFocusTransition(entities: Entity[], diff: EntityDiff, enabledRef: string): { ref: string; confidence: DetectedIntent["confidence"]; reason: string; signal: string } | undefined {
+function editableFocusTransition(view: InferenceView, diff: EntityDiff, enabledRef: string): { ref: string; confidence: DetectedIntent["confidence"]; reason: string; signal: string } | undefined {
 	const candidates = diff.changed
 		.filter((change) => change.kind === "state-changed" && changedField(change, "before", "focused") !== changedField(change, "after", "focused"))
-		.map((change) => ({ change, entity: editableControlByRef(entities, change.ref, enabledRef) }))
+		.map((change) => ({ change, entity: editableControlByRef(view, change.ref, enabledRef) }))
 		.filter((item): item is { change: EntityDiff["changed"][number]; entity: Entity } => !!item.entity);
 	const gained = candidates.filter((item) => changedField(item.change, "after", "focused") === true);
 	if (gained.length === 1) return { ref: gained[0].entity.ref, confidence: "high", reason: "a field gained focus while enabling a disabled control", signal: "focus-gained" };
@@ -390,13 +426,13 @@ function editableFocusTransition(entities: Entity[], diff: EntityDiff, enabledRe
 // editable control was the live focus or had a unique focus transition in the same diff. Because
 // editable values are intentionally redacted/suppressed, focus is the privacy-safe proxy for
 // "the field just filled". The transition fallback covers real pages where focus moves before rescan.
-function detectFormDependency(entities: Entity[], diff?: EntityDiff): DetectedIntent | undefined {
+function detectFormDependency(view: InferenceView, diff?: EntityDiff): DetectedIntent | undefined {
 	if (!diff) return undefined;
 	const enabled = diff.changed.find((change) => change.kind === "state-changed" && changedField(change, "before", "disabled") === true && changedField(change, "after", "disabled") === false);
 	if (!enabled) return undefined;
-	const focused = editableControlByRef(entities, diff.focusedRef, enabled.ref);
+	const focused = editableControlByRef(view, diff.focusedRef, enabled.ref);
 	if (focused) return mk("form-dependency", "high", "a focused editable field enabled a disabled control", { enabledRef: enabled.ref, requiredRef: focused.ref, focusSignal: "focusedRef" });
-	const transition = editableFocusTransition(entities, diff, enabled.ref);
+	const transition = editableFocusTransition(view, diff, enabled.ref);
 	if (!transition) return undefined;
 	return mk("form-dependency", transition.confidence, transition.reason, { enabledRef: enabled.ref, requiredRef: transition.ref, focusSignal: transition.signal });
 }
@@ -409,21 +445,22 @@ function detectFormDependency(entities: Entity[], diff?: EntityDiff): DetectedIn
 //   - "filter-panel" supersedes "search" (the former implies the latter).
 // Order is deterministic (definition order below).
 export function buildInferenceSummary(entities: Entity[], relSummary: RelationSummary, diff?: EntityDiff): InferenceSummary {
+	const view = buildInferenceView(entities);
 	const intents: DetectedIntent[] = [];
 	const add = (d: DetectedIntent | undefined): void => { if (d) intents.push(d); };
-	add(detectLogin(entities));
+	add(detectLogin(view));
 	// filter-panel implies search; skip "search" if filter-panel fires to avoid redundancy.
-	const filterPanel = detectFilterPanel(entities);
+	const filterPanel = detectFilterPanel(view);
 	if (filterPanel) add(filterPanel);
-	else add(detectSearch(entities));
-	add(detectSingleChoice(entities));
-	add(detectMultiChoice(entities));
-	add(detectExpandable(entities, relSummary));
-	add(detectDataGrid(entities, relSummary));
-	add(detectNavigation(entities, relSummary));
-	add(detectDialog(entities));
-	add(detectTabbedInterface(entities));
-	add(detectAlertRegion(entities, diff));
-	add(detectFormDependency(entities, diff));
+	else add(detectSearch(view));
+	add(detectSingleChoice(view));
+	add(detectMultiChoice(view));
+	add(detectExpandable(view, relSummary));
+	add(detectDataGrid(view, relSummary));
+	add(detectNavigation(view, relSummary));
+	add(detectDialog(view));
+	add(detectTabbedInterface(view));
+	add(detectAlertRegion(view, diff));
+	add(detectFormDependency(view, diff));
 	return { intents };
 }

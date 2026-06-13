@@ -3,6 +3,28 @@ import assert from "node:assert/strict";
 import { stableJson } from "../../../src/utils/json.ts";
 import { fitEnvelopeBudget, fitSummaryBudget, type BudgetedEnvelope } from "../../../src/distill-core/ladder.ts";
 
+function makeDeepArray(depth: number): unknown {
+	let value: unknown = 1;
+	for (let i = 0; i < depth; i += 1) value = [value];
+	return value;
+}
+
+function makeDeepObject(depth: number): Record<string, unknown> {
+	let value: Record<string, unknown> = { leaf: 1 };
+	for (let i = 0; i < depth; i += 1) value = { child: value };
+	return value;
+}
+
+function unwrapNestedObject(value: unknown): { depth: number; tail: unknown } {
+	let depth = 0;
+	let current = value;
+	while (current && typeof current === "object" && !Array.isArray(current) && Object.hasOwn(current, "child")) {
+		depth += 1;
+		current = (current as { child: unknown }).child;
+	}
+	return { depth, tail: current };
+}
+
 test("fitSummaryBudget compacts through rung limits before scalar fallback", () => {
 	const summary = {
 		title: "large summary",
@@ -35,6 +57,20 @@ test("fitSummaryBudget handles empty and impossible budgets", () => {
 	assert.deepEqual(fitSummaryBudget({}, 10), {});
 	assert.deepEqual(fitSummaryBudget({ blob: "x".repeat(2_000) }, 0), { summaryTruncatedToBudget: true });
 	assert.deepEqual(fitSummaryBudget({ blob: "x".repeat(2_000) }, -10), { summaryTruncatedToBudget: true });
+});
+
+test("fitSummaryBudget survives pathological deep arrays and objects", () => {
+	const deepArrayFitted = fitSummaryBudget({ payload: makeDeepArray(10_000) }, 1_200);
+	const deepObjectFitted = fitSummaryBudget({ payload: makeDeepObject(10_000) }, 1_200);
+	const objectShape = unwrapNestedObject(deepObjectFitted.payload);
+	assert.ok(stableJson(deepArrayFitted).length <= 1_200);
+	assert.ok(stableJson(deepObjectFitted).length <= 1_200);
+	assert.equal(deepArrayFitted.summaryTruncatedToBudget, true);
+	assert.ok(Array.isArray(deepArrayFitted.summaryOmitted));
+	assert.ok((deepArrayFitted.summaryOmitted as unknown[]).includes("payload"));
+	assert.equal(typeof deepArrayFitted.preview, "string");
+	assert.equal(objectShape.depth, 4);
+	assert.deepEqual(objectShape.tail, { type: "object", keyCount: 1 });
 });
 
 test("fitEnvelopeBudget compacts lifted keys and reports envelope omissions", () => {

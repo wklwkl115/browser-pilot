@@ -85,7 +85,10 @@ export function displayEntityText(value: unknown): string | undefined {
 	return text ? text.slice(0, 120) : undefined;
 }
 
-export function groupEntities(entities: Entity[]): TemplateGroup[] {
+let lastGroupedEntities: Entity[] | undefined;
+let lastGroupedResult: TemplateGroup[] | undefined;
+
+function buildGroups(entities: Entity[]): TemplateGroup[] {
 	const groups = new Map<string, TemplateGroup>();
 	entities.forEach((entity, index) => {
 		const descriptor = templateGroupDescriptorForEntity(entity);
@@ -95,6 +98,14 @@ export function groupEntities(entities: Entity[]): TemplateGroup[] {
 		else groups.set(descriptor.key, { descriptor, members: [{ entity, index }] });
 	});
 	return Array.from(groups.values()).filter((group) => group.members.length >= MIN_TEMPLATE_INSTANCES);
+}
+
+export function groupEntities(entities: Entity[]): TemplateGroup[] {
+	if (entities === lastGroupedEntities && lastGroupedResult) return lastGroupedResult.slice();
+	const groups = buildGroups(entities);
+	lastGroupedEntities = entities;
+	lastGroupedResult = groups;
+	return groups.slice();
 }
 
 export function suppressNestedNonControlGroups<T extends TemplateGroup>(groups: T[]): T[] {

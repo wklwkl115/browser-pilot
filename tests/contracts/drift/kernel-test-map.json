@@ -6,16 +6,23 @@
       "tests/unit/abml/actionabilityModel.test.ts"
     ],
     "src/abml-core/ax.ts": [
+      "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/ax.test.ts"
     ],
     "src/abml-core/causal.ts": [
+      "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/causal.test.ts"
     ],
     "src/abml-core/diff.ts": [
+      "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/diff.test.ts"
     ],
     "src/abml-core/entity.ts": [
+      "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/templating.test.ts"
+    ],
+    "src/abml-core/grouping.ts": [
+      "tests/unit/abml/grouping.test.ts"
     ],
     "src/abml-core/errors.ts": [
       "tests/unit/abml/errors.test.ts"
@@ -24,6 +31,7 @@
       "tests/unit/abml/identityGraph.test.ts"
     ],
     "src/abml-core/inference.ts": [
+      "tests/unit/abml/inference.optimization.test.ts",
       "tests/unit/abml/inference.test.ts"
     ],
     "src/abml-core/refId.ts": [
@@ -33,6 +41,7 @@
       "tests/unit/abml/refPolicy.test.ts"
     ],
     "src/abml-core/relations.ts": [
+      "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/relations.test.ts"
     ],
     "src/abml-core/semanticRefAnchor.ts": [
@@ -84,6 +93,7 @@
       "tests/contracts/drift/check-compaction-ledger.mjs"
     ],
     "src/distill-core/cost.ts": [
+      "tests/unit/distill-core/cost.test.ts",
       "tests/unit/distill-core/allocate-render.test.ts"
     ],
     "src/distill-core/fact.ts": [
@@ -117,6 +127,7 @@
       "tests/unit/distill-core/allocate-render.test.ts"
     ],
     "src/distill-core/salienceEnvelope.ts": [
+      "tests/unit/distill-core/salienceEnvelope.test.ts",
       "tests/unit/distill-core/allocate-render.test.ts"
     ],
     "src/memory-core/profile.ts": [
@@ -133,7 +144,6 @@
     ]
   },
   "grandfathered": {
-    "src/abml-core/grouping.ts": "covered indirectly through templating/treeDiff; add direct grouping tests before removing from grandfather",
     "src/abml-core/index.ts": "pure barrel only; direct import adds no behavior until package identity is promoted",
     "src/distill-core/frontier.ts": "frontier descriptors are not directly emitted yet; add direct tests when projection frontier is public in artifacts",
     "src/memory-core/index.ts": "pure barrel only; direct import adds no behavior until memory-core package identity is promoted",

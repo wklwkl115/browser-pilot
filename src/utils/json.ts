@@ -17,8 +17,7 @@ export function parseJsonOrThrow<T = unknown>(text: string, context: string): T 
 	}
 }
 
-export function stableJson(value: unknown, spaces = 2): string {
-	stableJsonInvocationCount += 1;
+function stableJsonWithReplacer(value: unknown, spaces = 2): string {
 	const ancestors: unknown[] = [];
 	return JSON.stringify(value, function (this: unknown, _key, item) {
 		if (typeof item === "bigint") return item.toString();
@@ -29,6 +28,12 @@ export function stableJson(value: unknown, spaces = 2): string {
 		ancestors.push(item);
 		return item;
 	}, spaces);
+}
+
+export function stableJson(value: unknown, spaces = 2): string {
+	stableJsonInvocationCount += 1;
+	if (value === null || (typeof value !== "object" && typeof value !== "bigint")) return JSON.stringify(value, undefined, spaces) as string;
+	return stableJsonWithReplacer(value, spaces);
 }
 
 export function stableJsonInvocationCounter(): number {

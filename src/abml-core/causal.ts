@@ -91,6 +91,17 @@ function redactUrl(url: string): string {
 	return redactClamp(url, MAX_URL_CHARS);
 }
 
+function deltaRecordsSinceSeq(records: Array<Record<string, unknown>>, sinceSeq: number): Array<{ record: Record<string, unknown>; seq: number }> {
+	return records
+		.map((record) => {
+			const seq = num(record.seq);
+			return { record, seq: seq ?? 0, include: seq === undefined || seq > sinceSeq };
+		})
+		.filter((item) => item.include)
+		.sort((a, b) => a.seq - b.seq)
+		.map(({ record, seq }) => ({ record, seq }));
+}
+
 // One network record → a compact, redacted causal request. Tolerant of both the full NetworkRecord
 // shape and the network.list summary shape (fields read defensively, like stream.ts).
 const PASSIVE_INITIATOR_TYPES = new Set(["parser", "preload", "preflight"]);
@@ -123,13 +134,8 @@ export function buildCausalRequest(record: Record<string, unknown>): CausalReque
 // expected to already be the seq>sinceSeq window (the query layer filters via network.list
 // sinceSeq); a defensive seq filter is applied here so the pure function is self-contained.
 export function buildCausalSummary(records: Array<Record<string, unknown>>, sinceSeq: number): CausalSummary {
-	const delta = records
-		.filter((r) => {
-			const seq = num(r.seq);
-			return seq === undefined || seq > sinceSeq;
-		})
-		.sort((a, b) => (num(a.seq) ?? 0) - (num(b.seq) ?? 0));
-	const requests = delta.slice(0, MAX_CAUSAL_REQUESTS).map((r) => buildCausalRequest(r));
+	const delta = deltaRecordsSinceSeq(records, sinceSeq);
+	const requests = delta.slice(0, MAX_CAUSAL_REQUESTS).map(({ record }) => buildCausalRequest(record));
 	return {
 		sinceSeq,
 		requests,
@@ -184,13 +190,8 @@ export function buildCausalEvent(record: Record<string, unknown>, fallbackIndex?
 // Build the event-delta (hook events captured since the baseline seq). Mirrors buildCausalSummary:
 // defensive seq>sinceSeq window, sorted ascending, capped at MAX_CAUSAL_EVENTS with the true count.
 export function buildCausalEvents(records: Array<Record<string, unknown>>, sinceSeq: number): { events: CausalEvent[]; eventCount?: number } {
-	const delta = records
-		.filter((r) => {
-			const seq = num(r.seq);
-			return seq === undefined || seq > sinceSeq;
-		})
-		.sort((a, b) => (num(a.seq) ?? 0) - (num(b.seq) ?? 0));
-	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map((r, index) => buildCausalEvent(r, index));
+	const delta = deltaRecordsSinceSeq(records, sinceSeq);
+	const events = delta.slice(0, MAX_CAUSAL_EVENTS).map(({ record }, index) => buildCausalEvent(record, index));
 	return {
 		events,
 		...(delta.length > events.length ? { eventCount: delta.length } : {}),

@@ -135,6 +135,19 @@ function topLevelOrigin(url: string | undefined): string | undefined {
 	}
 }
 
+let cachedTopLevelOriginUrl: string | undefined;
+let cachedTopLevelOriginValue: string | undefined;
+let hasCachedTopLevelOrigin = false;
+
+function memoizedTopLevelOrigin(url: string | undefined): string | undefined {
+	if (hasCachedTopLevelOrigin && url === cachedTopLevelOriginUrl) return cachedTopLevelOriginValue;
+	const origin = topLevelOrigin(url);
+	cachedTopLevelOriginUrl = url;
+	cachedTopLevelOriginValue = origin;
+	hasCachedTopLevelOrigin = true;
+	return origin;
+}
+
 function dedupeLocators(locators: Locator[]): Locator[] {
 	const seen = new Set<string>();
 	const out: Locator[] = [];
@@ -265,6 +278,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 		},
 	};
 	const capturedAt = context.capturedAt;
+	const origin = memoizedTopLevelOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -273,7 +287,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind(kind),
 			semantic: {
@@ -319,6 +333,7 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 		},
 	};
 	const capturedAt = context.capturedAt;
+	const origin = memoizedTopLevelOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -327,7 +342,7 @@ export function buildRegionEntityFromListHint(node: Record<string, unknown>, con
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind("region"),
 			semantic: { role: "list", name },
@@ -379,6 +394,7 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 		},
 	};
 	const capturedAt = context.capturedAt;
+	const origin = memoizedTopLevelOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -387,7 +403,7 @@ export function buildControlsSourceEntity(node: Record<string, unknown>, context
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind(kind),
 			semantic: { role, ...(name ? { name } : {}) },
@@ -421,6 +437,7 @@ export function buildReferencedTargetEntity(node: Record<string, unknown>, conte
 		hints: { ...(selector ? { selector } : {}), referencedTarget: true, ...(hidden ? { hidden: true } : {}) },
 	};
 	const capturedAt = context.capturedAt;
+	const origin = memoizedTopLevelOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -429,7 +446,7 @@ export function buildReferencedTargetEntity(node: Record<string, unknown>, conte
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind(kind),
 			semantic: { role, ...(name ? { name } : {}) },
@@ -473,6 +490,7 @@ export function buildVisionRegionFromCanvasActionable(node: Record<string, unkno
 		},
 	};
 	const capturedAt = context.capturedAt;
+	const origin = memoizedTopLevelOrigin(context.url);
 	return {
 		entity,
 		descriptor: {
@@ -481,7 +499,7 @@ export function buildVisionRegionFromCanvasActionable(node: Record<string, unkno
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
-				...(topLevelOrigin(context.url) ? { topLevelOrigin: topLevelOrigin(context.url) } : {}),
+				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind("region"),
 			semantic: { role: "region", name },

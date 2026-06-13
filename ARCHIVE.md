@@ -21,6 +21,7 @@
 ## 历史阶段摘要
 
 - 2026 06 02 Real Session Fixes Verification历史摘要见 `docs/archive/2026-06-02-real-session-fixes-verification.md`
+- Algorithm Optimization Plan历史摘要见 `docs/archive/algorithm-optimization-plan.md`
 - Bridge ESM / dist runtime历史摘要见 `docs/archive/bridge-esm-history.md`
 - Check Acceleration Plan历史摘要见 `docs/archive/check-acceleration-plan.md`
 - Distill Kernel Hygiene Plan历史摘要见 `docs/archive/distill-kernel-hygiene-plan.md`
@@ -43,6 +44,7 @@
 逐条历史明细已迁到以下文件：
 
 - `docs/archive/2026-06-02-real-session-fixes-verification.full.md`
+- `docs/archive/algorithm-optimization-plan.full.md`
 - `docs/archive/bridge-esm-history.full.md`
 - `docs/archive/check-acceleration-plan.full.md`
 - `docs/archive/distill-kernel-hygiene-plan.full.md`

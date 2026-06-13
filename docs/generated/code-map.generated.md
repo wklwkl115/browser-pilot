@@ -11,10 +11,10 @@
 | `cli` | 15 | 2602 |
 | `scripts` | 19 | 3781 |
 | `src/abml` | 32 | 2175 |
-| `src/abml-core` | 27 | 4107 |
+| `src/abml-core` | 27 | 4188 |
 | `src/capture` | 6 | 58 |
 | `src/content` | 1 | 20 |
-| `src/distill-core` | 16 | 1628 |
+| `src/distill-core` | 16 | 1662 |
 | `src/driver` | 22 | 3657 |
 | `src/frontend` | 4 | 394 |
 | `src/memory` | 4 | 395 |
@@ -25,7 +25,7 @@
 | `src/scan` | 3 | 165 |
 | `src/tools` | 136 | 22707 |
 | `src/types` | 1 | 50 |
-| `src/utils` | 11 | 819 |
+| `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |
 
 ## Top Fan-In Modules

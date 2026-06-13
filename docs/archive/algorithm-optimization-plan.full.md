@@ -1,26 +1,29 @@
 # Algorithm Optimization Plan
 
-> Status: READY
-> Scope: `src/distill-core/` (items 5, 7, 9, 12, including `fit.ts` / `projection.ts` budget-length consumers); `src/utils/json.ts` (item 8); `src/abml-core/` (items 10, 11, 13); `src/tools/observe/` (Step 0 measurement)
+> Status: **completed implementation** (2026-06-13). Step 0 timing harvest,
+> distill-core stages 12 / 7 / 5 / 8, the item-9 no-landing decision, and ABML
+> stages 10 / 11 / 13 are recorded below. Final repo closure is verified by
+> `npm run check`.
+> Scope: `src/distill-core/` (items 5, 7, 9, 12, including `fit.ts` / `projection.ts` budget-length consumers); `src/utils/json.ts` (item 8); `src/abml-core/` (items 10, 11, 13); `src/tools/observe/` and `evals/browser-workflows/runner.mjs` (Step 0 measurement and evidence persistence)
 > Boundary: No runtime/driver/public-surface changes; no new env flags; new kernel-module exports declared `internal` in `kernel-export-inventory.json`
 > Verification: per-item parity tests (red-first) + `bench:distill` + `check:all:src`; closing gate `npm run check`
-> Activation: promote this to ACTIVE only by adding a `CURRENT.md` entry (decision/boundary/contract/verification) when execution starts
+> Activation: Closed 2026-06-13 after the final full `npm run check`; archived per `docs/agent-development.md`
 
 ---
 
 ## Execution Order
 
-| Order | Item | Class | Focused verification |
-|-------|------|-------|---------------------|
-| 0 | Harvest `observeTimings` stage profile | measurement | `npm run eval:browser-workflows -- --fixture-server` + ranked per-stage summary |
-| 1 | 12 — `compactSummaryValue` unbounded array recursion | **defect fix** | stress regression test (deep arrays/objects, page-controlled values) |
-| 2 | 7 — `tokenEstimate` in-place charCodeAt loop | CPU, leaf | parity unit test + `bench:distill` |
-| 3 | 5 — salience fitter serialize-once | serialize count | byte-identity test + `bench:distill` before/after |
-| 4 | 8 — `stableJson` tiered native fast path | CPU, chokepoint | byte-identity fuzz+corpus parity + micro-bench |
-| 5 | 9 — exact-length cost probe (measure without materializing) | allocation/GC | length-parity fuzz+corpus + invocation-counter assertion |
-| 6 | 10 — inference engine single-pass feature view | CPU + allocation, per-observe | output-identity test + `check:abml-inference` + micro-bench |
-| 7 | 11 — hot-comparator decoration sweep | CPU, micro | exact-output tests + shared micro-bench |
-| 8 | 13 — `groupEntities` single-slot memo (compute-once) | CPU + allocation, per-observe | output-identity fixtures + reference-identity memo-hit assertion + grouping-pinned gates untouched |
+| Order | Item | Class | Status | Focused verification |
+|-------|------|-------|--------|---------------------|
+| 0 | Harvest `observeTimings` stage profile | measurement | done - 2026-06-13 | `npm run eval:browser-workflows -- --fixture-server` + ranked per-stage summary |
+| 1 | 12 — `compactSummaryValue` unbounded array recursion | **defect fix** | done - 2026-06-13 | stress regression test (deep arrays/objects, page-controlled values) |
+| 2 | 7 — `tokenEstimate` in-place charCodeAt loop | CPU, leaf | done - 2026-06-13 | parity unit test + `bench:distill` |
+| 3 | 5 — salience fitter serialize-once | serialize count | done - 2026-06-13 | byte-identity test + `bench:distill` before/after |
+| 4 | 8 — `stableJson` tiered native fast path | CPU, chokepoint | done - 2026-06-13 | byte-identity fuzz+corpus parity + micro-bench |
+| 5 | 9 — exact-length cost probe (measure without materializing) | allocation/GC | closed - 2026-06-13 (no landing) | length-parity fuzz+corpus + invocation-counter assertion |
+| 6 | 10 — inference engine single-pass feature view | CPU + allocation, per-observe | done - 2026-06-13 | output-identity test + `check:abml-inference` + micro-bench |
+| 7 | 11 — hot-comparator decoration sweep | CPU, micro | done - 2026-06-13 | exact-output tests + shared micro-bench |
+| 8 | 13 — `groupEntities` single-slot memo (compute-once) | CPU + allocation, per-observe | done - 2026-06-13 | output-identity fixtures + reference-identity memo-hit assertion + grouping-pinned gates untouched |
 
 Items 5/8/9 share the distill serialization seam and land as one sequence; items 10/11/13 are abml-core and independent. Item 12 lands before 5/9 so their byte-identity baselines are captured post-defect-fix. Close the workstream with full `npm run check`, then archive per the workstream-plan procedure in `docs/agent-development.md`.
 
@@ -37,13 +40,13 @@ The accept bars are only as trustworthy as the methodology behind them. Three ru
 | Item | Metric | Baseline | After | Marginal delta | Verdict |
 |------|--------|----------|-------|----------------|---------|
 | 12 | stack-overflow repro → bounded completion | — | — | (correctness; exempt) | — |
-| 7 | `tokenEstimate` ns/char on mixed corpus | — | — | — | — |
-| 5 | `stableJson` invocations per over-budget fit | — | — | — | — |
-| 8 | `stableJson` ms on bench corpus (clean path, **net including classify overhead**) | — | — | — | — |
-| 9 | probe-path allocations + ms per render (`jsonCost` + `jsonBudgetLength` clean paths) | — | — | — | — |
-| 10 | `buildInferenceSummary` ms at N=500 | — | — | — | — |
-| 11 | per-site comparator micro-ratios | — | — | — | — |
-| 13 | grouping executions per default observe (2→1; 3→1 on no-attribution baseline) + ms at N=500 | — | — | — | — |
+| 7 | `tokenEstimate` ns/char on mixed corpus | 8.157 | 2.637 | -67.7% (~3.09x faster) | landed 2026-06-13 |
+| 5 | `stableJson` invocations per over-budget fit | 17 | 15 | -11.8% | landed 2026-06-13 |
+| 8 | `stableJson` scalar-root ns/value (container fast path rejected; object fixtures stay on legacy replacer) | 315.6 | 125.5 | -60.2% (~2.52x faster) | landed 2026-06-13 |
+| 9 | combined `jsonCost` + `jsonBudgetLength` ns/op on 5 distill-style clean fixtures | 765295.5 | 1102091.0 | +44.0% slower | not landed 2026-06-13 |
+| 10 | `buildInferenceSummary` ms at N=500 mixed entities | 152.270 | 74.562 | -51.0% (~2.04x faster) | landed 2026-06-13 |
+| 11 | per-site comparator micro-ratios | reference paths | causal `1.20x`; origin `65.72x`; relations `1.12x` unstable; diff `1.00x` noise | landed causal/origin only; reverted relation/diff experiments | selective landing 2026-06-13 |
+| 13 | same-array second-call grouping at N=500 entities | 53.952 | 0.180 | -99.7% (~300.40x faster) | landed 2026-06-13 |
 
 **Rollback unit:** every item lands as one commit with its parity/identity test; rollback is a single `git revert` — byte-identical outputs mean no data migration, no flag, no daemon-protocol impact.
 
@@ -54,6 +57,26 @@ The accept bars are only as trustworthy as the methodology behind them. Three ru
 The instrumentation already exists and has never been harvested. `scanRunner.ts:96-510` records `tabRefreshMs`, `fingerprintMs`, `navigationMs`, `pageScriptMs`, `abmlMs`, `recorderMs`, `causalMs`, `eventCausalMs`, `renderMs`, and `bridgeRoundTrips`; `attachSerializeTiming` (`resultMiddleware.ts:537-549`) appends `serializeMs` — the final-transport serialization cost, which is exactly the number Forward Direction C's gate needs.
 
 **Action:** run `npm run eval:browser-workflows -- --fixture-server`, collect `result.details.diagnostics.observeTimings` across all fixtures (not the public envelope; observe timings are intentionally kept in tool details), and write a ranked per-stage summary (median/p95) to `.pi/browser-artifacts/observe-timings-summary.json` (project artifact convention — referenceable by later acceptance). This sizes the wins of items 5/8/9 (`renderMs`) and items 10/11 (`abmlMs`), and is the admission gate for any future kernel-CPU proposal.
+
+**2026-06-13 harvest result:** runner now persists observe timing samples from `browser_observe` details into `.pi/browser-artifacts/eval-browser-workflows/observe-timings-summary.json` plus the run-local copy at `.pi/browser-artifacts/eval-browser-workflows/2026-06-13T04-40-13-008Z-ff5d03f9/observe-timings-summary.json`. Verification for the harvest run:
+
+- `npm run eval:browser-workflows -- --fixture-server`
+- `npm run check:eval-workflows`
+
+Recorded samples: 5 observe-backed fixtures from `02-scan-execute-wait`, `16-scan-high-entropy-summary`, `17-debugger-evidence-workflow`, and `30-abml-internal-routing-evidence` (vision + ax scans). Ranked timing summary from the artifact:
+
+| Metric | Samples | Median | p95 | Max |
+|--------|---------|--------|-----|-----|
+| `transportMs` | 5 | 35 | 67 | 67 |
+| `pageScriptMs` | 5 | 17 | 22 | 22 |
+| `abmlMs` | 5 | 13 | 39 | 39 |
+| `axMs` | 5 | 13 | 38 | 38 |
+| `renderMs` | 5 | 5 | 9 | 9 |
+| `bridgeRoundTrips` | 5 | 6 | 7 | 7 |
+
+Additional context from the same artifact: `abmlPrefetchedScan=true` and `fusedFingerprint=true` on all 5 samples; `axCacheHit=false` on all 5 samples; the high-entropy fixture is the present upper bound (`transportMs=67`, `abmlMs=39`, `renderMs=9`, `axNodeCount=150`).
+
+**Inference from the harvest:** `pageScriptMs` and `abmlMs` still dominate the measured observe path, while `renderMs` is smaller but non-trivial, so items 5/8/9 and 10/11 remain justified by current evidence rather than draft expectation.
 
 ---
 
@@ -93,6 +116,15 @@ Skip the next code unit only when it is actually a low surrogate, so output is e
 3. Micro-bench inside the test (log ratio); macro check `npm run bench:distill`.
 4. Map the test in `kernel-test-map.json` (G5). Gates: `check:distill-core-boundary`, `check:all:src`.
 
+**2026-06-13 implementation record:** landed the in-place `charCodeAt` loop in `src/distill-core/cost.ts`, plus the shared micro-bench helper `tests/unit/helpers/microBench.ts` and parity bench coverage in `tests/unit/distill-core/cost.test.ts`. The parity test keeps a verbatim `tokenEstimateReference`, uses a deliberately wrong-weight mutant as the red-first bite proof, and covers fixed malformed-surrogate cases plus a deterministic randomized corpus. Latest micro-bench log from `npm run test:unit:distill`: `speedup=3.09x`, `candidate_ns_per_char=2.637`, `reference_ns_per_char=8.157`. Verification run:
+
+- `npx tsx --test tests/unit/distill-core/cost.test.ts`
+- `npm run test:unit:distill`
+- `npm run bench:distill`
+- `npm run check:kernel-test-map`
+- `npm run check:distill-core-boundary`
+- `npm run check:all:src`
+
 ---
 
 ## 5. Salience Envelope Budget Fitting — serialize-once
@@ -120,6 +152,23 @@ Decision semantics untouched: same candidates, same greedy order, same continuit
 1. Byte-identity unit test across under-budget, over-budget-salience-wins, over-budget-ladder-wins, continuity-key-missing cases; red-first by perturbing one threaded text.
 2. `stableJsonInvocationCounter()` (`src/utils/json.ts:34`) before/after assertion: the per-fit invocation count drops and is pinned.
 3. `npm run bench:distill` before/after. Gates: `check:distill-core-boundary`, `check:task-conditioned-salience`, `check:all:contracts`.
+
+**2026-06-13 implementation record:** landed the serialize-once pass in `src/distill-core/salienceEnvelope.ts` by threading candidate texts, caching `ladderText` beside the lazy fallback ladder, and moving truncation-marker counting onto precomputed text. Added dedicated coverage in `tests/unit/distill-core/salienceEnvelope.test.ts`, including:
+
+- legacy-reference byte checks for under-budget passthrough, salience-candidate-accepted, ladder-win, and continuity-required-key cases
+- red-first bite proof via a deliberately perturbed threaded text that flips the accepted candidate on the salience-accepted fixture
+- pinned invocation-count drop on a representative over-budget fit: `17 -> 15`
+
+Verification run:
+
+- `npx tsx --test tests/unit/distill-core/salienceEnvelope.test.ts`
+- `npm run test:unit:distill`
+- `npm run bench:distill`
+- `npm run check:kernel-test-map`
+- `npm run check:distill-core-boundary`
+- `npm run check:task-conditioned-salience`
+- `npm run check:all:contracts`
+- `npm run check:all:src`
 
 ---
 
@@ -161,6 +210,28 @@ Byte-identity argument: for clean values the replacer is the identity function (
 3. `stableJsonInvocationCounter` semantics unchanged (counter increments once per call regardless of tier).
 4. `src/utils/json.ts` is shared (not kernel-inventory scope); confirm via `check:surface-liveness` that no ledger entry is touched. Gates: `check:all:src`, `check:all:contracts` (blast radius spans tools), then full `npm run check`.
 
+**2026-06-13 implementation record:** measured two container-path candidates before landing: (a) the descriptor-guarded `classifyClean` + native stringify design, and (b) the documented ancestor-`Set` fallback. Both regressed the object-heavy fixture corpus, so neither container tier was kept. The landed change is the zero-risk primitive tier only: `stableJson` now bypasses the replacer when `value === null || (typeof value !== "object" && typeof value !== "bigint")`, while object roots keep the legacy replacer path byte-for-byte.
+
+Added `tests/unit/utils/json.test.ts` coverage with:
+
+- a verbatim legacy-reference oracle
+- a whole-walk visited-set mutant proving the shared-DAG bite
+- randomized JSON-shaped parity cases plus adversarial root/nested `bigint`, `Error`, cycle, `Date`, lone-surrogate, and `undefined` cases
+- accessor getter side-effect parity (current and reference each read exactly once)
+- `stableJsonInvocationCounter` parity across primitive and object roots
+
+Latest micro-bench log from `npx tsx --test tests/unit/utils/json.test.ts`: `scalar_speedup=2.52x`, `scalar_candidate_ns_per_value=125.5`, `scalar_reference_ns_per_value=315.6`; the object-heavy fixture corpus stayed effectively flat (`fixture_speedup=1.00x`, `fixture_candidate_ns_per_value=118765.4`, `fixture_reference_ns_per_value=118179.7`), which is expected because the object path intentionally stayed on the legacy replacer after the failed container-tier experiments.
+
+Verification run:
+
+- `npx tsx --test tests/unit/utils/json.test.ts`
+- `npm run check:errors`
+- `npm run check:surface-liveness`
+- `npm run check:all:src`
+- `npm run check:all:contracts`
+- `npm run docs:sync`
+- `npm run check`
+
 ---
 
 ## 9. Exact-Length Cost Probe — measure without materializing
@@ -194,6 +265,21 @@ Switch the length-only call sites to the walker: `jsonCost` body, `ladder.ts` `s
 3. `npm run bench:distill` before/after; accept bar: measured improvement on corpus envelopes, byte-identical fitted outputs (reuse item 5's byte-identity cases).
 4. Map the test in `kernel-test-map.json` (G5); declare the export `internal` (G2). Gates: `check:distill-core-boundary`, `check:compute-once`, `check:all:contracts`.
 
+**2026-06-13 execution record:** implemented an exact-length walker experimentally in `src/distill-core/cost.ts`, wired it through `jsonBudgetLength` / ladder measurement helpers, and added direct parity + invocation-count tests. The experiment was correct and did eliminate `stableJson` calls on clean inputs, but it failed the accept bar on representative current-size inputs, so it was reverted before landing.
+
+Measured reject evidence:
+
+- `tests/unit/distill-core/cost.test.ts` clean mixed corpus: `jsonLengthProbe speedup=0.72x`, `candidate_ns_per_value=1431.2`, `reference_ns_per_value=1028.5`
+- ad-hoc benchmark on 5 distill-style clean fixtures (`jsonCost` + `jsonBudgetLength`): baseline `765295.5 ns/op`, candidate `1102091.0 ns/op` (`+44.0%` slower)
+- the same walker only turned positive on much larger synthetic payloads (for example `500x80` rows at `1.38x` faster), which is beyond the current default-path corpus this item is supposed to optimize
+
+Because the representative current corpus regressed, item 9 is **closed with no landing** and the legacy `stableJson(...).length` probe path remains in place. Cleanup / verification after the revert:
+
+- `npx tsx --test tests/unit/distill-core/cost.test.ts`
+- `npx tsx --test tests/unit/tools/inline-json-budget.test.ts`
+- `npm run check:kernel-test-map`
+- `npm run check:distill-core-boundary`
+
 ---
 
 ## 12. `compactSummaryValue` Unbounded Array Recursion — defect fix
@@ -204,16 +290,27 @@ Switch the length-only call sites to the walker: `jsonCost` body, `ladder.ts` `s
 
 Reachability is verified, not assumed: `resultMiddleware.ts:486` calls `fitSummaryBudget` on **every distilled tool result**, and the generic summary path (`src/tools/summaries/generic.ts`) carries `browser_execute`'s arbitrary page-JSON results into it; `fitSummaryBudget` drives `compactSummaryValue` on its compaction rungs (`ladder.ts:85-94`). A hostile or malformed page returning deeply nested arrays (`[[[[…]]]]`, one line of page JS) therefore drives unbounded recursion in the host process: stack overflow. This is a correctness/resilience defect with a CPU dimension, not an optimization.
 
+Execution note from the 2026-06-13 landing: the reachable crash surface was wider than the draft text implied. On the current code, `fitSummaryBudget({ payload: deepArray }, budget)` and `fitSummaryBudget({ payload: deepObject }, budget)` also overflowed before any compaction rung because the initial `stableJson(summary)` measurement in `ladder.ts` recursed into the pathological value. Fixing only the array branch in `compactSummaryValue` left that first measurement path crashable.
+
 ### Design
 
 1. Move the depth guard above the array branch with a **high cap** (depth ≥ 64 → `{ type: "array", length }` / existing object placeholder). 64 preserves every realistic page value byte-identically (the object cap is already 5; legitimate scan/execute structures are far shallower) while bounding the pathological case. Behavior changes **only** for >64-deep nesting — document as the defect-fix exception to the byte-identity rule.
-2. Sweep the same entry points for siblings: verify `stableJson` (native throws `RangeError` on extreme depth — caught behavior must be defined at the tool boundary, not a kernel crash) and `tokenEstimate` (linear, safe) under the same adversarial inputs.
+2. Guard `fitSummaryBudget`'s first summary measurement against `RangeError`: when the initial `stableJson(summary)` blows the stack, compact once through the existing first rung (`{ stringChars: 800, arrayItems: 20, tableRows: 20 }`) and continue budget fitting from that safe working summary. This keeps normal inputs byte-identical while making the pathological path bounded at the actual tool entry point.
+3. Sweep the same entry points for siblings: verify `stableJson` (native throws `RangeError` on extreme depth — caught behavior must be defined at the tool boundary, not a kernel crash) and `tokenEstimate` (linear, safe) under the same adversarial inputs.
 
 ### Verification
 
 1. Red-first stress regression test: 10k-deep nested array, 10k-deep nested object, 1MB string, 5k-entity array — current code must demonstrably stack-overflow on the array case before the fix; post-fix all complete with bounded output.
 2. Byte-identity spot check: realistic envelope fixtures (bench corpus) produce identical output pre/post.
 3. Map the test in `kernel-test-map.json` (G5). Gates: `check:distill-core-boundary`, `check:all:src`.
+
+**2026-06-13 implementation record:** landed `ARRAY_DEPTH_LIMIT=64` in `src/distill-core/granularity.ts` and a `RangeError` fallback in `src/distill-core/ladder.ts` so the first summary measurement no longer crashes before compaction starts. Verification run:
+
+- `npx tsx --test tests/unit/distill-core/granularity.test.ts`
+- `npx tsx --test tests/unit/distill-core/ladder.test.ts`
+- `npm run test:unit:distill`
+- `npm run check:distill-core-boundary`
+- `npm run check:all:src`
 
 ---
 
@@ -241,6 +338,24 @@ Same architecture move the relevance plan already landed (R1: compute once, hook
 3. Micro-bench in the test at N=500 mixed entities (log ratio; accept bar applies).
 4. Map the test in `kernel-test-map.json` (G5); no new exports (G2). Gates: `check:abml-core-boundary`, `check:all:src`.
 
+**2026-06-13 implementation record:** landed the single-pass feature view in `src/abml-core/inference.ts`. The builder now precomputes `roleLower`, `nameLower`, `textLower`, `perceptible`, and `editableControl` in one pass, keeps a `byRef` lookup for the diff-driven editable-field path, and decorates login candidates with a precomputed score before sorting so equal-score order still follows the original entity order.
+
+Added `tests/unit/abml/inference.optimization.test.ts` with:
+
+- a copied pre-pass reference oracle from `HEAD` for exact-output parity across 13 fixtures, covering all 12 intents plus a mixed co-occurrence case
+- a red-first tie-order bite proof that perturbs the equal-score login winner and confirms the parity assertion catches the drift
+- the shared-helper micro-bench on a deterministic 500-entity mixed corpus
+
+Latest micro-bench log from `npx tsx --test tests/unit/abml/inference.test.ts tests/unit/abml/inference.optimization.test.ts`: `speedup=2.04x`, `candidate_ms=74.562`, `reference_ms=152.270`.
+
+Verification run:
+
+- `npx tsx --test tests/unit/abml/inference.test.ts tests/unit/abml/inference.optimization.test.ts`
+- `npm run check:abml-inference`
+- `npm run check:kernel-test-map`
+- `npm run check:abml-core-boundary`
+- `npm run check:all:src`
+
 ---
 
 ## 11. Hot-Comparator Decoration Sweep — exact-output micro class
@@ -264,6 +379,39 @@ Decorate-sort (precompute `seq` per record before sorting — the filter at `cau
 1. Exact-output unit tests per site (existing fixtures extended with tie cases); red-first by perturbing one rank.
 2. One shared micro-bench (log ratio; accept bar applies — if the measured win is noise-level, record the number and do not land).
 3. Map tests in `kernel-test-map.json` (G5); no new exports. Gates: `check:abml-core-boundary`, `check:abml-causal`, `check:abml-relation-graph`, `check:abml-diff`, `check:abml-scan-entities`, `check:abml-ax-runtime`, `check:all:src`.
+
+**2026-06-13 implementation record:** landed only the subparts that showed durable value on the current repo surface:
+
+- `src/abml-core/causal.ts`: one decorated seq pass shared by `buildCausalSummary` and `buildCausalEvents`, so the sort comparator stops re-reading `seq` on every comparison.
+- `src/abml-core/entity.ts` and `src/abml-core/ax.ts`: module-private single-slot `topLevelOrigin` memo plus one local origin read per builder call, collapsing repeated `new URL(...)` parses across repeated same-URL entity builds.
+
+Added `tests/unit/abml/item11.optimization.test.ts` with:
+
+- exact-output coverage for the causal windows, relation ordering, diff salience ordering, and repeated-origin descriptor owners
+- a red-first bite proof that perturbs the relation highlight order and confirms the exact-order assertion catches the drift
+- the shared-helper micro-bench that records the per-site ratios used for the landing decision
+
+Two consecutive bench runs from `npx tsx --test tests/unit/abml/item11.optimization.test.ts ...`:
+
+- run 1: `seq=1.09x`, `relations=0.82x`, `diff=0.93x`, `origin=51.56x`
+- run 2: `seq=1.20x`, `relations=1.12x`, `diff=1.00x`, `origin=65.72x`
+
+Decision from those runs:
+
+- keep the causal seq decoration and origin memo (clear positive signal, especially the repeated-URL path)
+- **do not land** the `relations.ts` rank-map or `diff.ts` salient-field-set rewrites; their ratios were noise-level / unstable across repeated runs on this workload, so the code was reverted before closing the stage
+
+Verification run:
+
+- `npx tsx --test tests/unit/abml/item11.optimization.test.ts tests/unit/abml/causal.test.ts tests/unit/abml/relations.test.ts tests/unit/abml/diff.test.ts tests/unit/abml/ax.test.ts tests/unit/abml/ax-state.test.ts tests/unit/abml/ax-structure.test.ts`
+- `npm run check:kernel-test-map`
+- `npm run check:abml-causal`
+- `npm run check:abml-relation-graph`
+- `npm run check:abml-diff`
+- `npm run check:abml-scan-entities`
+- `npm run check:abml-ax-runtime`
+- `npm run check:abml-core-boundary`
+- `npm run check:all:src`
 
 ---
 
@@ -298,6 +446,34 @@ Deterministic (same input → same output), no clock/random reads (G4-safe), mem
 3. Deep-freeze aliasing test per the design section.
 4. Micro-bench: first-call vs memo-hit cost at N=500 entities (ledger row 13); executions-per-observe accounting from the call-site table above.
 5. Remove `src/abml-core/grouping.ts` from the G5 grandfather list and map the new direct grouping test in `kernel-test-map.json`; no new exports (G2). Gates: `check:abml-core-boundary`, `check:abml-tree-diff`, `check:abml-templating`, `check:abml-snapshot-projection`, `check:abml-semantic-ref-anchor`, `check:abml-causal`, `check:session-delta-long-conversation`, `check:all:src`. **Marker caution:** run `npm run query:markers -- --file src/abml-core/grouping.ts` before landing; current marker impact includes the grouping contracts plus `check:abml-causal` and `check:session-delta-long-conversation` (the F3 lesson: narrow gates != closing gate).
+
+**2026-06-13 implementation record:** landed the module-private single-slot memo in `src/abml-core/grouping.ts`, keyed by the input array reference and returning `lastGroupedResult.slice()` on hits so downstream in-place array sorts cannot corrupt the cached canonical order. Group objects and member arrays are intentionally shared across hits; only the outer array is copied.
+
+Added `tests/unit/abml/grouping.test.ts` with:
+
+- same-array memo-hit identity assertions (`groups1 !== groups2`, but `groups1[0] === groups2[0]`)
+- fresh-array miss coverage (`[...entities]` recomputes groups, deep-equal output, non-identical group objects)
+- a red-first top-level-copy guard that mutates the returned array order and confirms the cached order is unchanged on the next same-array read
+- a deep-freeze aliasing test that drives `buildTemplateSummary`, `buildTreeDiff`, `buildSnapshotProjection`, `deriveSemanticRefAnchors`, and `buildIdentityGraph` through frozen cached groups without mutation
+- the shared-helper micro-bench for memo miss vs memo hit on 500 entities
+
+Latest micro-bench log from `npx tsx --test tests/unit/abml/grouping.test.ts ...`: `speedup=300.40x`, `candidate_ms=0.180`, `reference_ms=53.952`.
+
+The stage also removes `src/abml-core/grouping.ts` from the kernel-test grandfather set: `npm run check:kernel-test-map` now reports `mapped=44, grandfathered=5/6`.
+
+Verification run:
+
+- `npm run query:markers -- --file src/abml-core/grouping.ts`
+- `npx tsx --test tests/unit/abml/grouping.test.ts tests/unit/abml/templating.test.ts tests/unit/abml/treeDiff.test.ts tests/unit/abml/snapshotProjection.test.ts tests/unit/abml/semanticRefAnchor.test.ts tests/unit/abml/identityGraph.test.ts`
+- `npm run check:kernel-test-map`
+- `npm run check:abml-core-boundary`
+- `npm run check:abml-tree-diff`
+- `npm run check:abml-templating`
+- `npm run check:abml-snapshot-projection`
+- `npm run check:abml-semantic-ref-anchor`
+- `npm run check:abml-causal`
+- `npm run check:session-delta-long-conversation`
+- `npm run check:all:src`
 
 ---
 

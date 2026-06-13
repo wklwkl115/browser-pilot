@@ -84,6 +84,13 @@ function toolCallId(evalId, name, index) { return `${evalId}:${name}:${index}`; 
 function isRecord(value) { return !!value && typeof value === "object" && !Array.isArray(value); }
 function resultText(toolResult) { return String(toolResult?.content?.[0]?.text ?? ""); }
 function parseToolJson(toolResult) { return JSON.parse(resultText(toolResult)); }
+function tryParseJson(text) {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+}
 function unwrapToolData(toolResult) {
 	const parsed = parseToolJson(toolResult);
 	return parsed?.data ?? parsed;
@@ -162,6 +169,8 @@ async function callTool(env, metrics, name, params = {}) {
 	const text = resultText(result);
 	const saved = savedPathFromEnvelope(text);
 	if (saved) addArtifact(metrics, saved);
+	const observeSample = maybeObserveTimingSample(result, params, metrics);
+	if (observeSample) env.observeTimingSamples.push(observeSample);
 	return result;
 }
 
@@ -206,6 +215,26 @@ function sanitizeParams(params) {
 	const copy = { ...params };
 	if (typeof copy.script === "string") copy.script = `${copy.script.slice(0, 120)}${copy.script.length > 120 ? "…" : ""}`;
 	return copy;
+}
+
+function maybeObserveTimingSample(toolResult, params, metrics) {
+	const diagnostics = isRecord(toolResult?.details?.diagnostics) ? toolResult.details.diagnostics : undefined;
+	const timings = isRecord(diagnostics?.observeTimings) ? diagnostics.observeTimings : undefined;
+	if (!timings) return undefined;
+	const parsed = tryParseJson(resultText(toolResult));
+	const envelope = isRecord(parsed?.envelope) ? parsed.envelope : undefined;
+	const data = isRecord(parsed?.data) ? parsed.data : undefined;
+	const summary = isRecord(envelope?.summary) ? envelope.summary : isRecord(parsed?.summary) ? parsed.summary : undefined;
+	const outputPath = typeof params.outputPath === "string" ? path.resolve(root, params.outputPath) : undefined;
+	return {
+		evalId: metrics.evalId,
+		mode: typeof params.mode === "string" ? params.mode : undefined,
+		detailLevel: typeof params.detailLevel === "string" ? params.detailLevel : undefined,
+		selector: typeof params.selector === "string" ? params.selector : undefined,
+		outputPath: outputPath ? pathRef(outputPath) : undefined,
+		url: typeof summary?.url === "string" ? summary.url : typeof data?.url === "string" ? data.url : undefined,
+		timings,
+	};
 }
 
 async function fixtureFileResponse(res, relPath) {
@@ -357,7 +386,7 @@ async function startBrowserEnv(args, runDir, fixture) {
 	bridge.selectBrowser(launchTab.browserId);
 	const tools = new ToolCollectingAdapter();
 	registerBrowserTools(tools, bridge, async () => bridge);
-	return { bridge, chrome, bridgePort, profileDir, extensionDir, extensionSource, launchBrowserId: launchTab.browserId, launchTabId: launchTab.tabId, sharedTabId: launchTab.tabId, tools, runDir, fixtureBaseUrl: fixture.baseUrl, fixtureWsUrl: fixture.wsUrl, keepTemp: args.keepTemp };
+	return { bridge, chrome, bridgePort, profileDir, extensionDir, extensionSource, launchBrowserId: launchTab.browserId, launchTabId: launchTab.tabId, sharedTabId: launchTab.tabId, tools, runDir, fixtureBaseUrl: fixture.baseUrl, fixtureWsUrl: fixture.wsUrl, keepTemp: args.keepTemp, observeTimingSamples: [] };
 }
 
 async function waitUntil(predicate, timeoutMs) {
@@ -1076,6 +1105,79 @@ async function writeRunnerSummary(runDir, records, envMeta) {
 	return summaryPath;
 }
 
+function numericMetricSummary(values) {
+	const sorted = [...values].filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+	if (!sorted.length) return undefined;
+	const percentile = (p) => {
+		if (sorted.length === 1) return sorted[0];
+		const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1));
+		return sorted[index];
+	};
+	const middle = Math.floor(sorted.length / 2);
+	const median = sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+	return {
+		samples: sorted.length,
+		min: sorted[0],
+		median,
+		p95: percentile(0.95),
+		max: sorted[sorted.length - 1],
+	};
+}
+
+function summarizeObserveTimingSamples(samples) {
+	const numericBuckets = new Map();
+	const booleanBuckets = new Map();
+	for (const sample of samples) {
+		if (!isRecord(sample?.timings)) continue;
+		for (const [metric, value] of Object.entries(sample.timings)) {
+			if (typeof value === "number" && Number.isFinite(value)) {
+				const bucket = numericBuckets.get(metric) || [];
+				bucket.push(value);
+				numericBuckets.set(metric, bucket);
+			} else if (typeof value === "boolean") {
+				const bucket = booleanBuckets.get(metric) || { trueCount: 0, falseCount: 0 };
+				if (value) bucket.trueCount += 1;
+				else bucket.falseCount += 1;
+				booleanBuckets.set(metric, bucket);
+			}
+		}
+	}
+	const numericMetrics = [...numericBuckets.entries()]
+		.map(([metric, values]) => {
+			const summary = numericMetricSummary(values);
+			return summary ? { metric, ...summary } : undefined;
+		})
+		.filter(Boolean);
+	const rankedStages = numericMetrics
+		.filter((entry) => /Ms$/.test(entry.metric))
+		.sort((a, b) => b.median - a.median || b.p95 - a.p95 || a.metric.localeCompare(b.metric));
+	const transportAndCounts = numericMetrics
+		.filter((entry) => !/Ms$/.test(entry.metric))
+		.sort((a, b) => b.median - a.median || b.p95 - a.p95 || a.metric.localeCompare(b.metric));
+	const booleanFlags = Object.fromEntries([...booleanBuckets.entries()]
+		.sort((a, b) => a[0].localeCompare(b[0]))
+		.map(([metric, counts]) => [metric, { ...counts, samples: counts.trueCount + counts.falseCount }]));
+	return { rankedStages, transportAndCounts, booleanFlags };
+}
+
+async function writeObserveTimingSummary(outDir, runDir, runnerSummaryPath, observeTimingSamples) {
+	const summary = {
+		schemaVersion: 1,
+		generatedAt: nowIso(),
+		runnerSummaryPath: pathRef(runnerSummaryPath),
+		resultDir: pathRef(runDir),
+		sampleCount: observeTimingSamples.length,
+		evalIds: [...new Set(observeTimingSamples.map((sample) => sample.evalId))],
+		...summarizeObserveTimingSamples(observeTimingSamples),
+		samples: observeTimingSamples,
+	};
+	const canonicalPath = path.join(outDir, "observe-timings-summary.json");
+	const runPath = path.join(runDir, "observe-timings-summary.json");
+	await writeFile(canonicalPath, JSON.stringify(summary, null, 2), "utf8");
+	await writeFile(runPath, JSON.stringify(summary, null, 2), "utf8");
+	return { canonicalPath, runPath };
+}
+
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
 	const manifest = await readJson("evals/browser-workflows/manifest.json");
@@ -1123,8 +1225,9 @@ async function main() {
 			records.push(record);
 		}
 		const summaryPath = await writeRunnerSummary(runDir, records, { startedAt: nowIso(), fixtureBaseUrl: fixture.baseUrl, fixturePort: fixture.port, bridgePort: env.bridgePort });
+		const observeSummary = await writeObserveTimingSummary(args.outDir, runDir, summaryPath, env.observeTimingSamples);
 		const failed = records.filter((record) => record.status !== "passed");
-		console.log(JSON.stringify({ ok: failed.length === 0, summaryPath: pathRef(summaryPath), resultDir: pathRef(runDir), fixturePort: fixture.port, bridgePort: env.bridgePort, results: records.map((record) => ({ evalId: record.evalId, status: record.status })) }, null, 2));
+		console.log(JSON.stringify({ ok: failed.length === 0, summaryPath: pathRef(summaryPath), observeSummaryPath: pathRef(observeSummary.canonicalPath), resultDir: pathRef(runDir), fixturePort: fixture.port, bridgePort: env.bridgePort, results: records.map((record) => ({ evalId: record.evalId, status: record.status })) }, null, 2));
 		if (failed.length) process.exitCode = 1;
 	} finally {
 		await stopBrowserEnv(env || {}).catch(() => {});

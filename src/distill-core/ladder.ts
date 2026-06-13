@@ -28,6 +28,7 @@ export type BudgetedEnvelope = {
 export const SUMMARY_MAX_CHARS = 12_000;
 
 const PREVIEW_FALLBACK_CHARS = 800;
+const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
 const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
 const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
@@ -48,7 +49,13 @@ function stableJsonLength(value: unknown): number {
 }
 
 function measureSummary(summary: DistilledSummary): MeasuredSummary {
-	return { summary, length: stableJsonLength(summary) };
+	try {
+		return { summary, length: stableJsonLength(summary) };
+	} catch (error) {
+		if (!(error instanceof RangeError)) throw error;
+		const compacted = compactSummaryValue(summary, OVERFLOW_GUARD_LIMITS) as DistilledSummary;
+		return { summary: compacted, length: stableJsonLength(compacted) };
+	}
 }
 
 function dropLowPrioritySummaryFields(summary: DistilledSummary, budget: number, initialLength = stableJsonLength(summary)): MeasuredSummary {
@@ -81,31 +88,32 @@ function scalarIdentityFields(summary: DistilledSummary): DistilledSummary {
 
 export function fitSummaryBudget(summary: DistilledSummary, budget: number): DistilledSummary {
 	const original = measureSummary(summary);
-	if (original.length <= budget) return summary;
+	const workingSummary = original.summary;
+	if (original.length <= budget) return workingSummary;
 	for (const limits of [
 		{ stringChars: 800, arrayItems: 20, tableRows: 20 },
 		{ stringChars: 480, arrayItems: 12, tableRows: 12 },
 		{ stringChars: 240, arrayItems: 8, tableRows: 8 },
 		{ stringChars: 120, arrayItems: 5, tableRows: 5 },
 	]) {
-		const compacted = measureSummary(compactSummaryValue(summary, limits) as DistilledSummary);
+		const compacted = measureSummary(compactSummaryValue(workingSummary, limits) as DistilledSummary);
 		if (compacted.length <= budget) return compacted.summary;
 	}
-	const compact120 = compactSummaryValue(summary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
+	const compact120 = compactSummaryValue(workingSummary, { stringChars: 120, arrayItems: 5, tableRows: 5 }) as DistilledSummary;
 	const dropped = dropLowPrioritySummaryFields(compact120, budget);
 	if (dropped.length <= budget) return dropped.summary;
-	const keptScalars = scalarIdentityFields(summary);
-	const droppedKeys = Object.keys(summary).filter((key) => !(key in keptScalars));
+	const keptScalars = scalarIdentityFields(workingSummary);
+	const droppedKeys = Object.keys(workingSummary).filter((key) => !(key in keptScalars));
 	const scalarBase: DistilledSummary = { ...keptScalars, summaryTruncatedToBudget: true, ...(droppedKeys.length ? { summaryOmitted: droppedKeys } : {}) };
 	const scalarBaseLength = stableJsonLength(scalarBase);
 	const minimalBase: DistilledSummary = scalarBaseLength <= budget
 		? scalarBase
 		: {
 			summaryTruncatedToBudget: true,
-			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summary.summaryOmitted) ? dropped.summary.summaryOmitted : []), ...Object.keys(summary)])),
-			keys: Object.keys(summary).slice(0, 40),
+			summaryOmitted: Array.from(new Set([...(Array.isArray(dropped.summary.summaryOmitted) ? dropped.summary.summaryOmitted : []), ...Object.keys(workingSummary)])),
+			keys: Object.keys(workingSummary).slice(0, 40),
 		};
-	const previewSource = stableJson(compactSummaryValue(summary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
+	const previewSource = stableJson(compactSummaryValue(workingSummary, { stringChars: 60, arrayItems: 3, tableRows: 3 }));
 	let previewChars = Math.max(0, Math.min(previewSource.length, budget, PREVIEW_FALLBACK_CHARS));
 	while (previewChars >= 0) {
 		const candidate = previewChars > 0 ? { ...minimalBase, preview: previewSource.slice(0, previewChars) } : minimalBase;
