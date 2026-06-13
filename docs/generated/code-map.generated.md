@@ -15,7 +15,7 @@
 | `src/capture` | 6 | 58 |
 | `src/content` | 1 | 20 |
 | `src/distill-core` | 16 | 1628 |
-| `src/driver` | 22 | 3549 |
+| `src/driver` | 22 | 3657 |
 | `src/frontend` | 4 | 394 |
 | `src/memory` | 4 | 395 |
 | `src/memory-core` | 7 | 433 |
@@ -51,7 +51,7 @@
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
 | `src/utils/params.ts` | 16 |
 | `src/abml-core/types.ts` | 15 |
-| `src/abml/entity.ts` | 12 |
+| `src/protocol/nativeErrorCodes.ts` | 13 |
 
 ## Registered Tool And Command Surface
 

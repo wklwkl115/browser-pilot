@@ -145,7 +145,7 @@ Click (`act.js` for `--script-file`):
 | No bridge/browser/tab | `connect --wait --json`, then `status --json` / `doctor --json`. `--wait` covers the fresh-bridge dial-in window; the non-waiting form can falsely report `ready:false`. If the extension is genuinely not loaded, that is a human action — surface it, don't retry-loop |
 | `CLI_EXTENSION_NOT_CONNECTED` (exit 3) | daemon/bridge up, extension not connected before timeout — load/enable it, open a tab, re-`connect --wait` |
 | `CLI_BRIDGE_START_FAILED` | bridge failed to start (category `bridge`) — `doctor --json` before waiting on the extension |
-| Stale tab | `tabs --action list`; use live `tabHandle` / `--target-ref` |
+| Stale tab | If `recovery.suggestedTargetRef` is present, retry with `--target-ref <value>`; otherwise `tabs --action list` and use a live `tabHandle` |
 | `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `pi-ref://`; the action was not blocked, but the observed region changed |
 | Selector missing | re-observe `scan`/`html`; `frame`; verified retry |
 | Timeout | `wait diagnose --params '{"waitId":"<id>"}'` (selector-specific `selectorDiagnostics`); narrow/raise bound |

@@ -206,6 +206,65 @@ test("BrowserTabSessionRouter reconnect rebinding: same extensionId + same tabId
 	assert.equal(router.defaultTabHandle(), originalHandle);
 });
 
+test("BrowserTabSessionRouter reconnect rebinding tolerates new ready before old socket close", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+
+	const ws1 = fakeSocket();
+	clients.register(ws1);
+	clients.updateClientInfo(ws1, { id: "ext-overlap" });
+	browserSessions.selectClient(browserSessions.defaultSession(), ws1);
+	router.updateTabs([{ id: 51, active: true, url: "https://example.test/overlap" }], ws1);
+	const original = router.getTabs().find((t) => t.tabId === 51)!;
+	assert.ok(original.tabHandle);
+
+	// New connection reports the same extension/tab before the old WebSocket close
+	// event reaches the bridge. This is the real MV3/offscreen overlap race.
+	const ws2 = fakeSocket();
+	clients.register(ws2);
+	clients.updateClientInfo(ws2, { id: "ext-overlap" });
+	router.updateTabs([{ id: 51, active: true, url: "https://example.test/overlap" }], ws2);
+
+	const live = router.getTabs().find((t) => t.tabId === 51 && !t.disconnectedAt)!;
+	assert.equal(live.tabHandle, original.tabHandle, "same-extension overlap reconnect must preserve the old tabHandle");
+	assert.equal(router.resolveTargetRef(original.tabHandle, undefined, "explicit")?.browserId, clients.browserIdForClient(ws2));
+	assert.equal(browserSessions.selectedOpenClient(browserSessions.defaultSession()), ws2, "implicit default session should follow the superseding connection");
+	assert.equal(router.getTabs({ includeDisconnected: true }).filter((t) => t.tabId === 51 && t.disconnectedAt).length, 1, "superseded old session must be marked disconnected");
+});
+
+test("BrowserTabSessionRouter reconnect rebinding survives repeated reconnects for the same handle", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+
+	const ws1 = fakeSocket();
+	clients.register(ws1);
+	clients.updateClientInfo(ws1, { id: "ext-repeat" });
+	router.updateTabs([{ id: 76, active: true, url: "https://example.test/repeat" }], ws1);
+	const originalHandle = router.getTabs().find((t) => t.tabId === 76)!.tabHandle;
+
+	router.markClientDisconnected(ws1);
+	clients.unregister(ws1);
+	const ws2 = fakeSocket();
+	clients.register(ws2);
+	clients.updateClientInfo(ws2, { id: "ext-repeat" });
+	router.updateTabs([{ id: 76, active: true, url: "https://example.test/repeat" }], ws2);
+	assert.equal(router.getTabs().find((t) => t.tabId === 76 && !t.disconnectedAt)?.tabHandle, originalHandle);
+
+	router.markClientDisconnected(ws2);
+	clients.unregister(ws2);
+	const ws3 = fakeSocket();
+	clients.register(ws3);
+	clients.updateClientInfo(ws3, { id: "ext-repeat" });
+	router.updateTabs([{ id: 76, active: true, url: "https://example.test/repeat" }], ws3);
+
+	const live = router.getTabs().find((t) => t.tabId === 76 && !t.disconnectedAt);
+	assert.equal(live?.tabHandle, originalHandle, "same-extension repeated reconnects must not lose the original tabHandle");
+	assert.equal(router.resolveTargetRef(originalHandle, undefined, "explicit")?.browserId, clients.browserIdForClient(ws3));
+	assert.equal(new Set(router.getTabs({ includeDisconnected: true }).filter((t) => t.tabId === 76).map((t) => t.tabHandle)).size, 1, "all repeated reconnect candidates should retain one logical handle");
+});
+
 test("BrowserTabSessionRouter reconnect rebinding: different extensionId does NOT rebind — old handle yields error", () => {
 	const clients = new BrowserBridgeClientRegistry(18765);
 	const browserSessions = new BrowserSessionRegistry();
@@ -233,8 +292,12 @@ test("BrowserTabSessionRouter reconnect rebinding: different extensionId does NO
 	// The old handle must no longer resolve
 	assert.throws(
 		() => router.resolveTargetRef(oldHandle, undefined, "explicit"),
-		(error) => error instanceof BrowserBridgeError && error.code === "TAB_NOT_FOUND",
-		"old handle must throw TAB_NOT_FOUND after different-extension reconnect",
+		(error) => {
+			if (!(error instanceof BrowserBridgeError) || error.code !== "TAB_NOT_FOUND") return false;
+			const recovery = error.details.recovery as Record<string, unknown> | undefined;
+			return recovery?.suggestedTargetRef === newTab.tabHandle;
+		},
+		"old handle must throw TAB_NOT_FOUND with the sole live targetRef after different-extension reconnect",
 	);
 });
 

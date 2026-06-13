@@ -145,7 +145,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BRIDGE_START_FAILED` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeHttpServer.ts` |
 | `BRIDGE_STOPPED` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts` |
 | `BRIDGE_TIMEOUT` | driver | driver.pending | yes | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/webSecurity/shared/http.ts` |
-| `BROWSER_COMMAND_FAILED` | driver | driver.command | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/tools/bridgeResultValidation.ts` |
+| `BROWSER_COMMAND_FAILED` | driver | driver.command | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserWaitSupervisor.ts`, `src/tools/bridgeResultValidation.ts` |
 | `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/driver/BrowserBridgePendingRequests.ts`, `src/tools/pageScriptEvaluation.ts`, `src/tools/registerPickTool.ts` |
 | `BROWSER_EXTENSION_RECONNECT_TIMEOUT` | driver | driver.lifecycle | yes | schema | `src/driver/BrowserBridgeServer.ts`, `src/driver/BrowserWaitSupervisor.ts` |
 | `BROWSER_NOT_FOUND` | driver | driver.selection | no | schema | `src/driver/BrowserBridgeServer.ts` |
@@ -256,7 +256,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `VERIFY_FAILED` | abml | abml.verification | yes | schema |  |
 | `VERIFY_INCONCLUSIVE` | abml | abml.verification | yes | schema |  |
 | `WAIT_STATE_LOST` | driver | driver.wait | yes | schema |  |
-| `WAIT_TIMEOUT` | driver | driver.wait | yes | schema |  |
+| `WAIT_TIMEOUT` | driver | driver.wait | yes | schema | `src/driver/BrowserWaitSupervisor.ts` |
 | `WEBSOCKET_INVALID_INPUT` | websocket | bridge.ws | no | schema |  |
 | `WEBSOCKET_INVALID_MATCHER` | websocket | bridge.ws | no | schema |  |
 | `WEBSOCKET_OPEN_FAILED` | websocket | bridge.ws | yes | schema |  |

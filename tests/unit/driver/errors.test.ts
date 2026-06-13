@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BrowserBridgeError, errorToPlain, noBrowserExtensionError, tabNotFoundError } from "../../../src/driver/errors.ts";
+import { BrowserBridgeError, errorToPlain, noBrowserExtensionError, tabNotFoundError, targetHandleNotFoundError } from "../../../src/driver/errors.ts";
 import { compactError } from "../../../src/utils/errors.ts";
 
 test("tabNotFoundError suggests the live/current tab and omitting tabId", () => {
@@ -83,6 +83,19 @@ test("tabNotFoundError handles the no-live-tabs case", () => {
 	assert.deepEqual(recovery.liveTabIds, []);
 	assert.equal("suggestedTabId" in recovery, false);
 	assert.match(String(recovery.hint), /No browser tabs/i);
+});
+
+test("targetHandleNotFoundError suggests the sole live targetRef without requiring a list first", () => {
+	const err = targetHandleNotFoundError({
+		tabHandle: "tabh_old_deadbeef_g1",
+		tabs: [{ tabId: 12, tabHandle: "tabh_new_cafebabe_g1", url: "https://example.test/page?token=SECRET", title: "Page", active: true }],
+	});
+	const recovery = err.details.recovery as Record<string, unknown>;
+	assert.equal(recovery.suggestedTargetRef, "tabh_new_cafebabe_g1");
+	assert.deepEqual(recovery.liveTabHandles, ["tabh_new_cafebabe_g1"]);
+	assert.match(String(recovery.hint), /Retry with targetRef tabh_new_cafebabe_g1/);
+	assert.match(String((recovery.nextActions as string[])[0]), /tabh_new_cafebabe_g1/);
+	assert.equal(JSON.stringify(err).includes("SECRET"), false, "live tab diagnostics remain URL-redacted");
 });
 
 test("noBrowserExtensionError carries actionable recovery for a cold start", () => {

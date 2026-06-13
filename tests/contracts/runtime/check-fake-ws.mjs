@@ -655,6 +655,43 @@ try {
 	sendJson(ws, { type: "ack", id: rebindExecOutbound.id });
 	sendJson(ws, { type: "result", id: rebindExecOutbound.id, result: "rebind-ok" });
 	assert.equal((await rebindExecPromise).data, "rebind-ok", "rebound handle execution must resolve normally");
+
+	sendJson(ws, readyMessage([{ id: 889, url: "https://example.test/rebind-overlap", title: "Rebind Overlap", active: true, windowId: 1 }], { id: "overlap-extension" }));
+	await waitUntil(() => server.getTabs().some((t) => t.tabId === 889 && !t.disconnectedAt), "overlap rebind seed tab registered");
+	const overlapHandleBefore = server.getTabs().find((t) => t.tabId === 889 && !t.disconnectedAt)?.tabHandle;
+	assert.ok(overlapHandleBefore, "overlap rebind seed tab must have a tabHandle");
+	const overlapOldWs = ws;
+	const overlapOldBrowserId = server.snapshot().extension?.id;
+	const overlapNewWs = await openFakeClient(port);
+	sendJson(overlapNewWs, readyMessage([{ id: 889, url: "https://example.test/rebind-overlap", title: "Rebind Overlap", active: true, windowId: 1 }], { id: "overlap-extension" }));
+	await waitUntil(() => server.snapshot().extension?.id && server.snapshot().extension?.id !== overlapOldBrowserId, "overlap rebind new client selected");
+	const overlapNewBrowserId = server.snapshot().extension?.id;
+	await waitUntil(() => server.getTabs().some((t) => t.tabId === 889 && !t.disconnectedAt && t.tabHandle === overlapHandleBefore && t.browserId === overlapNewBrowserId), "overlap rebind preserves handle before old close");
+	assert.equal(server.getTabs({ includeDisconnected: true }).filter((t) => t.tabId === 889 && t.disconnectedAt).length, 1, "overlap rebind must mark the superseded old session disconnected");
+	const overlapExecPromise = server.executeJavaScript("return 'overlap-rebind-ok'", { tabId: overlapHandleBefore, timeoutMs: 1_000 });
+	const overlapExecOutbound = await nextJson(overlapNewWs, "overlap rebind exec outbound");
+	assert.equal(overlapExecOutbound.tabId, 889, "overlap-rebound handle must dispatch to the new live socket");
+	sendJson(overlapNewWs, { type: "ack", id: overlapExecOutbound.id });
+	sendJson(overlapNewWs, { type: "result", id: overlapExecOutbound.id, result: "overlap-rebind-ok" });
+	assert.equal((await overlapExecPromise).data, "overlap-rebind-ok", "overlap-rebound handle execution must resolve normally");
+	await assertNoJson(overlapOldWs, 80, "overlap old socket must not receive commands for the rebound handle");
+	overlapOldWs.close();
+	ws = overlapNewWs;
+
+	const repeatPreviousBrowserId = server.snapshot().extension?.id;
+	ws.close();
+	await waitUntil(() => !server.snapshot().extensionConnected, "repeat overlap rebind disconnect");
+	ws = await openFakeClient(port);
+	sendJson(ws, readyMessage([{ id: 889, url: "https://example.test/rebind-overlap", title: "Rebind Overlap", active: true, windowId: 1 }], { id: "overlap-extension" }));
+	await waitUntil(() => server.snapshot().extension?.id && server.snapshot().extension?.id !== repeatPreviousBrowserId, "repeat overlap rebind new client selected");
+	const repeatBrowserId = server.snapshot().extension?.id;
+	await waitUntil(() => server.getTabs().some((t) => t.tabId === 889 && !t.disconnectedAt && t.tabHandle === overlapHandleBefore && t.browserId === repeatBrowserId), "repeat overlap rebind preserves handle");
+	const repeatExecPromise = server.executeJavaScript("return 'repeat-rebind-ok'", { tabId: overlapHandleBefore, timeoutMs: 1_000 });
+	const repeatExecOutbound = await nextJson(ws, "repeat overlap rebind exec outbound");
+	assert.equal(repeatExecOutbound.tabId, 889, "repeatedly rebound handle must dispatch to the newest live socket");
+	sendJson(ws, { type: "ack", id: repeatExecOutbound.id });
+	sendJson(ws, { type: "result", id: repeatExecOutbound.id, result: "repeat-rebind-ok" });
+	assert.equal((await repeatExecPromise).data, "repeat-rebind-ok", "repeatedly rebound handle execution must resolve normally");
 	// --- end reconnect rebinding contract ---
 
 	sendJson(ws, readyMessage([{ id: 909, url: "https://example.test/nine", title: "Nine", active: true, windowId: 1 }]));

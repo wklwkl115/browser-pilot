@@ -4,6 +4,7 @@ import { BrowserBridgeError } from "./errors.js";
 import type { BrowserBridgeServer } from "./BrowserBridgeServer.js";
 import type { BrowserBridgeExecutionResult } from "./types.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
+import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
@@ -63,15 +64,6 @@ function commandTimeoutMs(command: BridgeCommand, fallback: number): number {
 
 function waitUntilForNavigateAndWait(command: BridgeCommand): string {
 	return String(command.waitUntil ?? command.wait_until ?? command.state ?? "load").toLowerCase().replace(/_/g, "");
-}
-
-function waitCommandForNavigateAndWait(command: BridgeCommand): BridgeCommand {
-	const waitUntil = waitUntilForNavigateAndWait(command);
-	const { url: _url, cmd: _cmd, ...rest } = command;
-	if (waitUntil === "networkidle") return { ...rest, cmd: "wait.networkIdle" };
-	if (waitUntil === "selector") return { ...rest, cmd: "wait.selector" };
-	const state = waitUntil === "load" ? "complete" : waitUntil;
-	return { ...rest, cmd: "wait.loadState", state };
 }
 
 /**
@@ -222,6 +214,60 @@ type WaitRunClock = {
 	command?: string;
 };
 
+type NavigateAndWaitPlan = {
+	urlWaitCommand: BridgeCommand;
+	finalWaitCommand?: BridgeCommand;
+};
+
+function throwBridgeFailureIfPresent(result: BrowserBridgeExecutionResult, command: BridgeCommand): void {
+	const data = isRecord(result.data) ? result.data : undefined;
+	if (data?.ok !== false) return;
+	const nestedError = isRecord(data.error) ? data.error : undefined;
+	const rawCode = typeof data.error_code === "string" && data.error_code ? data.error_code
+		: typeof nestedError?.code === "string" && nestedError.code ? nestedError.code
+			: "BROWSER_COMMAND_FAILED";
+	const message = typeof nestedError?.message === "string" && nestedError.message ? nestedError.message
+		: typeof data.error === "string" && data.error ? data.error
+			: typeof data.message === "string" && data.message ? data.message
+				: `${command.cmd} failed`;
+	const details = isRecord(data.details) ? data.details : {};
+	throw new BrowserBridgeError(normalizeNativeErrorCode(rawCode), message, {
+		command: command.cmd,
+		result: data,
+		...details,
+	});
+}
+
+function waitPlanForNavigateAndWait(command: BridgeCommand): NavigateAndWaitPlan {
+	const waitUntil = waitUntilForNavigateAndWait(command);
+	const {
+		cmd: _cmd,
+		url,
+		state: _state,
+		waitUntil: _waitUntil,
+		wait_until: _waitUntilSnake,
+		targetUrl: _targetUrl,
+		target_url: _targetUrlSnake,
+		...rest
+	} = command;
+	const urlWaitUntil = waitUntil === "networkidle" || waitUntil === "selector" ? "commit" : waitUntil;
+	const urlWaitCommand: BridgeCommand = {
+		...rest,
+		cmd: "wait.navigation",
+		url,
+		targetUrl: url,
+		waitUntil: urlWaitUntil,
+	};
+	if (waitUntil === "networkidle") {
+		const { selector: _selector, css: _css, target: _target, ...networkRest } = rest;
+		return { urlWaitCommand, finalWaitCommand: { ...networkRest, cmd: "wait.networkIdle" } };
+	}
+	if (waitUntil === "selector") {
+		return { urlWaitCommand, finalWaitCommand: { ...rest, cmd: "wait.selector" } };
+	}
+	return { urlWaitCommand };
+}
+
 async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
 	const waitId = String(command.waitId ?? command.wait_id ?? `pi_ts_wait_${randomUUID()}`);
 	const startedAt = clock.startedAt ?? Date.now();
@@ -248,6 +294,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 		try {
 			const immediateGraceMs = computeBridgeGraceMs(Math.max(1, totalTimeoutMs || WAIT_LEASE_BRIDGE_GRACE_MS));
 			const result = await server.sendCommand(immediateCommand, { ...options, timeoutMs: immediateGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
+			throwBridgeFailureIfPresent(result, immediateCommand);
 			const afterBootId = workerBootIdFromResult(result) ?? currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "success" });
@@ -278,6 +325,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 		try {
 			const bridgeGraceMs = computeBridgeGraceMs(remainingMs);
 			const result = await server.sendCommand(leaseCommand, { ...options, timeoutMs: leaseMs + bridgeGraceMs + WAIT_LEASE_BRIDGE_EPSILON_MS });
+			throwBridgeFailureIfPresent(result, leaseCommand);
 			const afterBootId = workerBootIdFromResult(result) ?? currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			const completedAt = Date.now();
@@ -384,11 +432,27 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServ
 			};
 			throw finalWaitError(state, "wait.navigateAndWait timed out after navigation before wait phase");
 		}
-		const waitResult = await runLeasedWait(server, waitCommandForNavigateAndWait(command), options, remainingMs, { startedAt, deadline, totalTimeoutMs, command: command.cmd });
+		const waitPlan = waitPlanForNavigateAndWait(command);
+		const urlWaitResult = await runLeasedWait(server, waitPlan.urlWaitCommand, options, remainingMs, { startedAt, deadline, totalTimeoutMs, command: command.cmd });
+		const finalRemainingMs = deadline - Date.now();
+		if (waitPlan.finalWaitCommand && finalRemainingMs <= 0) {
+			throw new BrowserBridgeError("WAIT_TIMEOUT", "wait.navigateAndWait timed out after URL navigation before final wait phase", {
+				supervisor: isRecord(urlWaitResult.data) && isRecord(urlWaitResult.data.supervisor) ? urlWaitResult.data.supervisor : undefined,
+			});
+		}
+		const waitResult = waitPlan.finalWaitCommand
+			? await runLeasedWait(server, waitPlan.finalWaitCommand, options, finalRemainingMs, { startedAt, deadline, totalTimeoutMs, command: command.cmd })
+			: urlWaitResult;
 		const waitData = isRecord(waitResult.data) ? waitResult.data : { value: waitResult.data };
 		const supervisor = isRecord(waitData.supervisor) ? waitData.supervisor : {};
 		const { supervisor: _nestedSupervisor, ...wait } = waitData;
-		return { ...waitResult, data: { navigation: navigation.data, wait, url: command.url, waitUntil, supervisor } };
+		const urlWaitData = waitPlan.finalWaitCommand && isRecord(urlWaitResult.data)
+			? (() => {
+				const { supervisor: _urlSupervisor, ...urlWait } = urlWaitResult.data;
+				return urlWait;
+			})()
+			: undefined;
+		return { ...waitResult, data: { navigation: navigation.data, wait, url: command.url, waitUntil, supervisor, ...(urlWaitData ? { urlWait: urlWaitData } : {}) } };
 	}
 	if (!SUPERVISED_WAIT_COMMANDS.has(command.cmd)) return server.sendCommand(command, options);
 	return runLeasedWait(server, command, options, totalTimeoutMs);

@@ -30,6 +30,11 @@ type ReplacementResolution = {
 	tabHandle?: string;
 };
 
+type ReconnectIdentity = Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> & {
+	previousSessionId: string;
+	previousClient: WebSocket;
+};
+
 type TargetInfoExtras = Partial<Pick<BrowserBridgeTargetInfo, "tabHandle" | "targetRef" | "requestedTabId" | "replacedFrom" | "replacedByTabId" | "replacementHops" | "browserId" | "openerTabId">>;
 
 export class BrowserTabSessionRouter {
@@ -188,7 +193,7 @@ export class BrowserTabSessionRouter {
 			current.add(id);
 			const existing = this.sessions.get(id);
 			const replacementIdentity = this.pendingReplacementIdentities.get(id);
-			const reconnectIdentity = (!existing && !replacementIdentity) ? this.findReconnectIdentity(tabId, clientInfo?.extensionId, now) : undefined;
+			const reconnectIdentity = (!existing && !replacementIdentity) ? this.findReconnectIdentity(tabId, clientInfo?.extensionId, tab, now) : undefined;
 			const identity = replacementIdentity ?? existing ?? reconnectIdentity ?? this.newIdentity(browserId);
 			this.pendingReplacementIdentities.delete(id);
 			this.sessions.set(id, {
@@ -210,6 +215,15 @@ export class BrowserTabSessionRouter {
 				bridge: this.clients.info(ws),
 				client: ws,
 			});
+			if (reconnectIdentity && reconnectIdentity.previousSessionId !== id) {
+				const previous = this.sessions.get(reconnectIdentity.previousSessionId);
+				if (previous && !previous.disconnectedAt) previous.disconnectedAt = now;
+				for (const browserSession of this.browserSessions.list()) {
+					if (browserSession.selectedClient === reconnectIdentity.previousClient) this.browserSessions.selectClient(browserSession, ws);
+					if (browserSession.defaultSessionId === reconnectIdentity.previousSessionId) this.setDefaultSessionId(browserSession, id);
+					if (browserSession.latestSessionId === reconnectIdentity.previousSessionId) this.setLatestSessionId(browserSession, id);
+				}
+			}
 			for (const browserSession of this.browserSessions.list()) {
 				const selected = this.browserSessions.selectedOpenClient(browserSession);
 				if (selected && selected !== ws) continue;
@@ -403,31 +417,50 @@ export class BrowserTabSessionRouter {
 
 	/**
 	 * When an extension reconnects (new browserId, same extensionId, same numeric tabId),
-	 * attempt to rebind the logical identity from the most recently disconnected session
-	 * that matches the same extensionId and tabId.  Returns undefined when extensionId is
-	 * unknown, or when the match is ambiguous (≥2 candidates) — mint fresh in those cases.
+	 * attempt to rebind the logical identity from previous sessions that match
+	 * the same extensionId and tabId. The previous socket may still be open when the new
+	 * ready message wins the race; in that overlap case require matching tab facts before
+	 * updateTabs marks it disconnected after adopting its handle. Returns undefined when
+	 * extensionId is unknown, or when candidates disagree on the logical handle — mint
+	 * fresh in those cases.
 	 */
 	private findReconnectIdentity(
 		tabId: number,
 		extensionId: string | undefined,
+		tab: Record<string, unknown>,
 		now = Date.now(),
-	): Pick<BrowserTabSession, "logicalTabId" | "tabHandle" | "generation" | "openerTabId"> | undefined {
+	): ReconnectIdentity | undefined {
 		if (!extensionId) return undefined;
 		const candidates = Array.from(this.sessions.values()).filter(
 			(session) =>
 				session.tabId === tabId &&
-				session.disconnectedAt !== undefined &&
-				now - session.disconnectedAt < DISCONNECTED_SESSION_RETENTION_MS &&
 				session.bridge?.extensionId === extensionId,
-		);
-		if (candidates.length !== 1) return undefined;
-		const c = candidates[0]!;
+		).filter((session) => this.reconnectCandidateMatches(session, tab, now));
+		if (!candidates.length) return undefined;
+		if (new Set(candidates.map((session) => session.tabHandle)).size !== 1) return undefined;
+		const liveCandidates = candidates.filter((session) => session.disconnectedAt === undefined);
+		if (liveCandidates.length > 1) return undefined;
+		const c = liveCandidates[0] ?? candidates
+			.slice()
+			.sort((a, b) => (b.disconnectedAt ?? 0) - (a.disconnectedAt ?? 0) || b.connectedAt - a.connectedAt)[0]!;
 		return {
 			logicalTabId: c.logicalTabId,
 			tabHandle: c.tabHandle,
 			generation: c.generation,
 			openerTabId: c.openerTabId,
+			previousSessionId: c.id,
+			previousClient: c.client,
 		};
+	}
+
+	private reconnectCandidateMatches(session: BrowserTabSession, tab: Record<string, unknown>, now: number): boolean {
+		if (session.disconnectedAt !== undefined) return now - session.disconnectedAt < DISCONNECTED_SESSION_RETENTION_MS;
+		if (!isOpen(session.client)) return false;
+		const incomingUrl = typeof tab.url === "string" ? tab.url : "";
+		if (!incomingUrl || !session.url || session.url !== incomingUrl) return false;
+		const incomingWindowId = toTabId(tab.windowId);
+		if (incomingWindowId !== undefined && session.windowId !== undefined && incomingWindowId !== session.windowId) return false;
+		return true;
 	}
 
 	private normalizeTabHandle(value: unknown): string | undefined {

@@ -83,19 +83,30 @@ export function targetHandleNotFoundError(args: {
 	browserSessionId?: string;
 	tabs: Array<{ tabHandle?: string; tabId?: number } & Record<string, unknown>>;
 }): BrowserBridgeError {
+	const compactTabs = args.tabs.map((tab) => compactTabForError(tab));
 	const liveTabHandles = args.tabs.map((tab) => tab.tabHandle).filter((handle): handle is string => typeof handle === "string");
+	const suggestedTargetRef = liveTabHandles.length === 1 ? liveTabHandles[0] : undefined;
 	return new BrowserBridgeError("TAB_NOT_FOUND", "Target tab handle is not connected", {
 		tabHandle: args.tabHandle,
 		browserSessionId: args.browserSessionId,
-		tabs: args.tabs.map((tab) => compactTabForError(tab)),
+		tabs: compactTabs,
 		recovery: {
 			retryable: true,
-			hint: "The stable target reference is no longer connected. Possible causes: (1) the tab was closed or navigated away; (2) the extension service worker reconnected after going idle and the handle could not be rebound (this happens when the extensionId changed or multiple matching sessions were ambiguous). Re-list tabs to obtain the current handle and retry.",
-			nextActions: [
-				"browser_tabs action=list",
-				"retry with targetRef set to a live tabHandle, or omit targetRef/tabId to use the selected active tab",
-			],
+			hint: suggestedTargetRef
+				? `The stable target reference is no longer connected. Retry with targetRef ${suggestedTargetRef} if it matches the intended live tab; otherwise list tabs to choose explicitly.`
+				: "The stable target reference is no longer connected. Possible causes: (1) the tab was closed or navigated away; (2) the extension service worker reconnected after going idle and the handle could not be rebound (this happens when the extensionId changed or multiple matching sessions were ambiguous). Re-list tabs to obtain the current handle and retry.",
+			nextActions: suggestedTargetRef
+				? [
+					`retry with targetRef ${suggestedTargetRef}`,
+					"browser_tabs action=list if multiple tabs are possible or the suggested target is not intended",
+					"omit targetRef/tabId to use the selected active tab",
+				]
+				: [
+					"browser_tabs action=list",
+					"retry with targetRef set to a live tabHandle, or omit targetRef/tabId to use the selected active tab",
+				],
 			liveTabHandles,
+			...(suggestedTargetRef ? { suggestedTargetRef } : {}),
 		},
 	});
 }

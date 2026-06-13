@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runHtmlObservation, runScanObservation } from "../../../src/tools/observeRunners.ts";
+import { runContentObservation, runHtmlObservation, runScanObservation } from "../../../src/tools/observeRunners.ts";
 
 let opId = 0;
 const fakeServer = {
@@ -440,6 +440,7 @@ function navigationObserveServer() {
 				currentUrl = String(command.url);
 				return { id: "nav", acknowledged: true, tabId: 7, data: { url: currentUrl, state: "complete" } };
 			}
+			if (command.cmd === "wait.navigation") return { id: "wait-nav", acknowledged: true, tabId: 7, data: { url: currentUrl, stage: command.waitUntil ?? "complete" } };
 			if (command.cmd === "wait.loadState") return { id: "wait", acknowledged: true, tabId: 7, data: { state: command.state ?? "complete" } };
 			if (command.cmd === "content.fingerprint") {
 				fingerprintReads += 1;
@@ -447,6 +448,22 @@ function navigationObserveServer() {
 			}
 			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
 				scanEvals += 1;
+				const expression = String(command.params?.expression || "");
+				if (expression.includes("originalMarkdown") && expression.includes("markdown")) {
+					return { id: "content-nav", acknowledged: true, tabId: 7, data: { result: { value: {
+						url: currentUrl,
+						title: "Navigation",
+						selector: null,
+						rootTag: "main",
+						rootId: "fixture",
+						rootClass: "",
+						empty: false,
+						markdown: "# Navigation\n\nStatus: payment required",
+						textPreview: "Navigation Status: payment required",
+						headings: ["Navigation"],
+						stats: { markdownChars: 37, originalMarkdownChars: 37, textChars: 35, links: 0, images: 0, paragraphs: 1, headings: 1, truncated: false },
+					} } } };
+				}
 				return { id: "eval-nav", acknowledged: true, tabId: 7, data: { result: { value: scanPayload() } } };
 			}
 			if (command.cmd === "html.get") return { id: "html", acknowledged: true, tabId: 7, data: { url: currentUrl, html: "<main>Navigation</main>" } };
@@ -479,6 +496,20 @@ test("browser_observe scan url navigates first and skips old cache/baseline", as
 		if (previous === undefined) delete process.env.PI_BROWSER_SESSION_DELTA;
 		else process.env.PI_BROWSER_SESSION_DELTA = previous;
 	}
+});
+
+test("browser_observe content url navigates before markdown extraction", async () => {
+	const cwd = mkdtempSync(path.join(os.tmpdir(), "pi-observe-nav-content-"));
+	const harness = navigationObserveServer();
+	const result = await runContentObservation(harness.server as any, { mode: "content", tabId: 7, url: "https://example.test/content", maxChars: 12_000 }, { cwd });
+	const envelope = JSON.parse(result.content[0].text);
+	assert.equal(envelope.command, "navigate+content");
+	assert.equal(envelope.summary?.url, "https://example.test/content");
+	assert.equal(envelope.snapshot?.url, "https://example.test/content");
+	assert.equal(result.details?.mode, "content");
+	assert.equal(result.details?.navigation?.url, "https://example.test/content");
+	assert.equal(result.content[0].text.includes("Status: payment required"), true);
+	assert.equal(harness.navigations, 1);
 });
 
 test("browser_observe html url navigates before html.get", async () => {

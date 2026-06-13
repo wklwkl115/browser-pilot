@@ -47,3 +47,62 @@ test("BrowserWaitSupervisor maps navigateAndWait navigation bridge timeouts to w
 		},
 	);
 });
+
+test("BrowserWaitSupervisor uses URL-aware navigation wait after navigateAndWait", async () => {
+	const commands: Record<string, unknown>[] = [];
+	let navigationWaitAttempts = 0;
+	const server = {
+		snapshot() { return { extension: { workerBootId: "boot-url" } }; },
+		async sendCommand(command: Record<string, unknown>) {
+			commands.push(command);
+			if (command.cmd === "wait.navigate") {
+				return { acknowledged: true, data: { frameId: "frame-1", bridge: { workerBootId: "boot-url" } } };
+			}
+			if (command.cmd === "wait.navigation") {
+				navigationWaitAttempts += 1;
+				assert.equal(command.targetUrl, "https://example.test/new");
+				assert.equal(command.waitUntil, "complete");
+				if (navigationWaitAttempts === 1) {
+					return { acknowledged: true, data: { ok: false, error_code: "TIMEOUT", error: "old page still complete" } };
+				}
+				return { acknowledged: true, data: { url: "https://example.test/new", stage: "complete", bridge: { workerBootId: "boot-url" } } };
+			}
+			throw new Error(`unexpected command ${String(command.cmd)}`);
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const result = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: "https://example.test/new", state: "complete", timeoutMs: 500 }, { tabId: 101, timeoutMs: 500 });
+
+	assert.equal(result.data && typeof result.data === "object" && (result.data as Record<string, any>).wait.url, "https://example.test/new");
+	assert.equal(commands.some((command) => command.cmd === "wait.loadState"), false, "navigateAndWait must not use URL-blind loadState after navigation");
+	assert.equal(commands.filter((command) => command.cmd === "wait.navigation").length, 2, "URL wait should retry timeout leases until the target URL loads");
+	assert.equal((result.data as Record<string, any>).supervisor.leases[0].status, "lease_timeout");
+	assert.equal((result.data as Record<string, any>).supervisor.leases.at(-1).status, "success");
+});
+
+test("BrowserWaitSupervisor runs selector waits only after target URL commit", async () => {
+	const commands: Record<string, unknown>[] = [];
+	const server = {
+		snapshot() { return { extension: { workerBootId: "boot-selector" } }; },
+		async sendCommand(command: Record<string, unknown>) {
+			commands.push(command);
+			if (command.cmd === "wait.navigate") return { acknowledged: true, data: { bridge: { workerBootId: "boot-selector" } } };
+			if (command.cmd === "wait.navigation") {
+				assert.equal(command.targetUrl, "https://example.test/form");
+				assert.equal(command.waitUntil, "commit");
+				return { acknowledged: true, data: { url: "https://example.test/form", stage: "commit", bridge: { workerBootId: "boot-selector" } } };
+			}
+			if (command.cmd === "wait.selector") {
+				assert.equal(command.selector, "#ready");
+				return { acknowledged: true, data: { selector: "#ready", visible: true, bridge: { workerBootId: "boot-selector" } } };
+			}
+			throw new Error(`unexpected command ${String(command.cmd)}`);
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const result = await executeBrowserWaitWithSupervisor(server, { cmd: "wait.navigateAndWait", url: "https://example.test/form", state: "selector", selector: "#ready", timeoutMs: 500 }, { tabId: 101, timeoutMs: 500 });
+
+	assert.deepEqual(commands.map((command) => command.cmd), ["wait.navigate", "wait.navigation", "wait.selector"]);
+	assert.equal((result.data as Record<string, any>).urlWait.url, "https://example.test/form");
+	assert.equal((result.data as Record<string, any>).wait.selector, "#ready");
+});

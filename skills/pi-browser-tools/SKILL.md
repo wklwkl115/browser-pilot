@@ -150,7 +150,7 @@ Click:
 | Symptom | Do |
 |---|---|
 | No bridge/browser/tab | A command briefly waits, then fails `NO_BROWSER_EXTENSION` with `recovery.nextActions` — follow them. Confirm the extension is loaded/enabled and a tab is open. If genuinely not loaded, that is a human action — surface it, don't retry-loop |
-| Stale tab | `browser_tabs {action:"list"}`; use live `tabHandle` as `targetRef` |
+| Stale tab | If `recovery.suggestedTargetRef` is present, retry with that `targetRef`; otherwise `browser_tabs {action:"list"}` and use a live `tabHandle` as `targetRef` |
 | `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `pi-ref://`; the action was not blocked, but the observed region changed |
 | Selector missing | re-observe `scan`/`html`; `browser_frame`; verified retry |
 | Timeout | `browser_wait {action:"diagnose", waitId}` (selector-specific `selectorDiagnostics`: match/visible count, iframe clues, recovery); narrow/raise bound |
