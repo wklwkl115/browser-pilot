@@ -95,11 +95,12 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | Visible images/video/audio candidates | `summary.media_candidates` or `browser_artifact jsonPath=data.media_candidates` | associated headline/ranking/source semantics → `browser_execute` |
 | What changed after operating a control | scan with a `baseline` → **`treeDiff`** (template-level appeared/disappeared) | raw `diff` churns on dynamic pages — prefer `treeDiff`; per-item content → `browser_execute` |
 | Row/column/header relations of a table | `relations` (`summary.tableCells` + cell `relations[]` `cellOf`/`headerFor`) | exact cell values → `browser_execute` |
+| Whether ABML identity is rooted in browser node truth | `identity` (`backendNodeIdCoverage`, source counts) | full graph → `browser_artifact mode=json jsonPath=envelope.identityGraph` |
 | Which requests an action fired | **`browser_network {action:"start"}` FIRST**, then scan with `baseline` → `causal.requests` | — |
 
 Component-library selects/dropdowns (Element Plus / Ant Design / MUI style): popup DOM is often lazy and the first visible popper can be stale from the previous control. Identify the popup from the trigger, not visual heuristics: read `aria-controls` plus `aria-expanded`; body-click/close, reopen the target trigger, then query the popup by that id. `browser_observe mode=scan` records page-wide `data.controls_pairs` (including off-screen sources); read it with `browser_artifact mode=json jsonPath=data.controls_pairs`, and re-scan after opening if the first scan had no resolvable pair.
 
-Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `collections`/`treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
+Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `collections`/`treeDiff`/`causal`/`relations`/`identity` are top-level live summaries and mirrored into the saved artifact's `envelope.*`; full `identityGraph.byRef` is artifact-only. Absent ≠ error. The scan points you at them via `nextActions` / `artifact_hints`.
 
 ## Read results
 

@@ -1,7 +1,7 @@
-# ABML 恒等格架构草案
+# ABML 恒等格架构与执行合同
 
-> Doc-class: design-draft（架构思考草案，**非 queued 执行计划**）
-> Status: 讨论中。可执行项落 `TODO.md` / `ROADMAP.md`，本文不进执行队列。
+> Doc-class: execution-contract
+> Status: COMPLETE（2026-06-14）。本次执行线已完成；完成标准与关闭证据见 §0.1 / §10，关闭记录写入 `CHANGELOG.md`。
 
 本文记录一次关于 "AX+DOM 融合还能怎么补强" 的架构推理，结论是：**补强方向不是"再加 CDP 通道"，而是把感知核收敛到一棵以 `backendNodeId` 为根的恒等格（identity lattice），并承认感知核是「格 ⊕ 关系层 ⊕ ledger」三件套，不是单一融合算法。**
 
@@ -10,8 +10,26 @@
 ## 0. 文档定位与读者
 
 - 读这篇文章前，应已读 `docs/abml-kernel-manifest.md`（分层契约）、`docs/abml-optimization-reference.md`（可落地优化参考）、`AGENTS.md` 的 ABML 项目开发规则与 Root-Truth Sourcing 原则。
-- 本文不重复这些文档的内容，只在其之上提出一个**贯穿性的架构判断**。
-- 本文**不是**执行计划：没有逐文件改动表、没有 gate 映射、没有 eval 验证步骤。这些留给后续从本文派生的执行 plan（按 AGENTS.md 的 Executability Rule 落地）。本文只负责把"为什么这样做是对的"说透。
+- 本文不重复这些文档的内容，只在其之上提出一个**贯穿性的架构判断**，并把本轮可执行收敛项落到代码、contract、skill 和验证门。
+- 本文的执行边界是：先完成 projection-first/diagnostics/recovery 可见面，避免默认输出继续让 agent 猜；重型 bootstrap / OOPIF / LayerTree 只在有当前机制证据和可验证门时执行，不能留下开放 plan 占位。
+
+### 0.1 本轮执行项
+
+| 项 | 文件 | 动作 | 验证 |
+| --- | --- | --- | --- |
+| L0 文档收口 | `docs/abml-identity-lattice-architecture.md`, `CURRENT.md` | 将草案改为 execution contract，列明本轮交付边界、验证门与关闭条件 | `npm run docs:sync`, `npm run check:docs-sync` |
+| L1 恒等格诊断 | `src/abml-core/identityGraph.ts`, `src/tools/observe/scanRunner.ts`, `src/tools/resultMiddleware.ts`, `src/distill-core/ladder.ts` | 输出 `identity` 覆盖摘要；完整 `identityGraph.byRef` 仅 artifact 化；默认 envelope 不暴露完整图 | `tsx --test tests/unit/abml/identityGraph.test.ts tests/unit/tools/envelope-disclosure.test.ts` |
+| L2 artifact 精读路径 | `src/tools/observe/scanRunner.ts`, `tests/contracts/tools/check-abml-scan-envelope.mjs` | `artifact_hints.jsonPaths` 明确 `envelope.identityGraph` / `envelope.snapshotProjection` / `envelope.relations` / `envelope.collections` | `npm run check:abml-scan-envelope`, `npm run check:summaries` |
+| L3 agent-facing 口径 | `README.md`, `skills/pi-browser-tools/SKILL.md`, `skills/pi-browser-cli/SKILL.md`, `CHANGELOG.md` | 说明 `identity` 是恒等格诊断摘要，完整图通过 artifact 精读；不新增公开 ABML verb | skill quick validate, `npm run docs:sync` |
+
+### 0.2 本轮关闭而不实现的重型项
+
+以下项不作为未完成 TODO 挂起；它们是 closed decisions，重开需要新的当前证据和独立执行合同：
+
+- DOM scan 实体批量盖 `backendNodeId`：需要 drift-free 采样窗口、坐标系 parity 与 fail-open 状态机先有可测 gate；本轮只暴露当前 backendNodeId 覆盖率，不默认盖章。
+- LayerTree 遮挡关系：需要 paint-order capped relation 与 artifact-only full detail 的真实 fixture；本轮不做 O(n²) 关系矩阵。
+- DOMDebugger listeners 进感知格：执行平面已有 oracle；感知面是否默认 probe 需基于候选集合成本数据，不在本轮默认启用。
+- OOPIF 复合主键 `(targetId, backendNodeId)`：必须双写兼容并有 `Target.attachToTarget` 路由验证；本轮只保留架构迁移路径。
 
 ---
 
@@ -494,7 +512,9 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 ---
 
-## 8. 开放决策（不替你定，留作架构计划阶段讨论）
+## 8. 后续演进决策（本轮关闭，按证据重开）
+
+本节保留恒等格后续演进方向，但这些项**不是**当前未完成计划。它们已在 §0.2 作为 closed decisions 收口；重开必须先拿到当前代码机制证据、明确执行合同和可运行 gate，再进入新的激活执行线。
 
 ### 决策一：关系层是一等公民还是 entity 的派生字段？
 
@@ -515,7 +535,7 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 3. **public / ref / runtime 继续接受裸 backendNodeId**，由 tab/target 上下文补 scope（bridge 已知当前 tab 的 target）。agent-facing 的 ref 不暴露 targetId——它对 agent 是实现细节。
 4. **OOPIF 能力单独 gate**，不和首轮 projection-first（§7）或 bootstrap（§5.8）绑定。OOPIF 落地的标志是 `Target.attachToTarget` 真正路由跨 frame target，而不是主键改完。
 
-用户已表态"可以打通，但不着急"——属架构升级计划的一部分，非阻塞。双写策略的意义正是让它可以**晚做而不阻塞其它层**。
+用户已表态"可以打通，但不着急"——本轮按非阻塞 closed decision 处理。双写策略的意义正是让它可以**晚做而不阻塞其它层**。
 
 ### 决策三：ledger 容量边界现在合理吗？
 
@@ -531,7 +551,7 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 ### 决策五：projection-first envelope 的预算分配 + frontier 信号
 
-第 7 层的止血要做，但"projection / collections / frontier refs / ref pool 各占多少预算"是开放问题：
+第 7 层的止血要做，但"projection / collections / frontier refs / ref pool 各占多少预算"是后续重开问题：
 
 - 预算太倾向 projection → agent 看到结构但缺可操作入口（frontier refs 太少）。
 - 预算太倾向 frontier refs → 退化回 entity-first 的老问题。
@@ -545,7 +565,7 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 反馈暗示"先做第 1 层地基，再做第 7 层 envelope"（串行）。本文判断相反：**第 7 层先做（止血），第 1 层后加固（地基），两层正交可并行**。理由：第 7 层不依赖第 1 层（§7.4），且见效快；第 1 层是慢工程，不应阻塞止血。
 
-落地顺序（架构判断，非排期承诺——本文是 design-draft，见 §10）：
+后续重开时的建议顺序（架构判断，非当前排期承诺；本轮关闭条件见 §10）：
 
 1. **Projection-first envelope**（§7）——改 renderer/envelope 默认展示，立刻止血，不依赖 identity lattice。
 2. **文档补齐**——relations 在 projection-first 中的位置（§7.3b）、frontier 信号来源（§7.3c）、entity pool/artifact 精读路径（§5.10 约束 6）。
@@ -581,16 +601,16 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 ---
 
-## 10. 不做什么（防 Executability Rule 误读）
+## 10. 执行收口与关闭条件
 
-本文是**架构思考草案**，明确不做以下事，以免被读成 queued 执行计划：
+本轮不把所有 §5/§8 的地基工程一次性做完；完成标准是把当前可验证、低隐藏依赖的恒等格可见面落地：
 
-- **不**列逐文件改动表（留给派生 plan）。
-- **不**映射到具体 `check:*` gate（留给派生 plan）。
-- **不**承诺时间线（用户已表态"做架构升级计划，先继续思考"）。
-- **不**登记进 `docs/abml-kernel-manifest.md` 的文档表（避免触发 managed block 同步；待架构定稿后另起执行 plan 时再登记）。
+- `identityGraph` 给出 backendNodeId 覆盖率、source 分布、语义 anchor 与 triggered 边计数；完整 `byRef` 图只进 artifact。
+- `browser_observe mode=scan` 的 model-facing envelope 顶层暴露 `identity` 摘要，紧预算下仍保留 compact 诊断。
+- `artifact_hints.jsonPaths` 明确指向 `envelope.identityGraph`、`envelope.snapshotProjection`、`envelope.relations`、`envelope.collections`，agent 不需要猜 raw artifact 路径。
+- `CURRENT.md`、README、skill、CHANGELOG 与 tests/contracts 同步；`docs:sync` 与最终 `npm run check` 通过。
 
-当某个决策从"开放"变成"确定"时，按 `AGENTS.md` 的 Change Workflow：更新 `TODO.md`（具体决策 + 执行路径）→ 派生一份 `docs/archive/*-execution-plan.full.md`（逐文件 + gate + eval）→ 在本文标记该决策已闭合并链接到执行 plan。
+关闭后本文件保留为当前架构参考，不迁入 archive，除非后续另起更深的 bootstrap/OOPIF/LayerTree 执行合同。
 
 ---
 

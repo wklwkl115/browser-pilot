@@ -100,6 +100,28 @@ test("fitEnvelopeBudget compacts lifted keys and reports envelope omissions", ()
 	assert.ok((fitted.diagnostics?.warnings as string[] | undefined)?.some((warning) => warning.startsWith("envelope_omitted:")));
 });
 
+test("fitEnvelopeBudget preserves compact identity source counts", () => {
+	const envelope: BudgetedEnvelope = {
+		tool: "browser_observe",
+		command: "scan",
+		detailLevel: "summary",
+		summary: { title: "Example", blob: "x".repeat(20_000) },
+		identity: {
+			entityCount: 20,
+			backendNodeIdCount: 8,
+			backendNodeIdCoverage: 0.4,
+			anchorCount: 5,
+			triggeredCount: 1,
+			sourceCounts: { ax: 8, dom: 10, network: 2 },
+			debugPayload: "x".repeat(2_000),
+		},
+	};
+	const fitted = fitEnvelopeBudget(envelope, 1_500);
+	assert.deepEqual(fitted.identity?.sourceCounts, { ax: 8, dom: 10, network: 2 });
+	assert.equal(fitted.identity?.debugPayload, undefined);
+	assert.ok(stableJson(fitted).length <= 1_500);
+});
+
 test("fitEnvelopeBudget preserves essential fields on the final fallback", () => {
 	const envelope: BudgetedEnvelope = {
 		tool: "browser_observe",

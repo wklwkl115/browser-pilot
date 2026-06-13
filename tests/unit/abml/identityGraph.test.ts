@@ -48,18 +48,38 @@ test("identityGraph: entities with triggered relations get triggeredRequests", (
 	assert.deepEqual(btn.triggeredRequests, ["pi-ref://network/r1", "pi-ref://network/r2"]);
 });
 
+test("identityGraph: backendNodeId locators produce lattice node keys and coverage", () => {
+	const entities = [
+		{ ...entity("pi-ref://control/a", "Alpha"), locators: [{ by: "backendNodeId" as const, value: 81 }] },
+		{ ...entity("pi-ref://control/b", "Bravo"), source: "dom" as const },
+	];
+	const graph = buildIdentityGraph(entities, undefined);
+	assert.equal(graph.entityCount, 2);
+	assert.equal(graph.backendNodeIdCount, 1);
+	assert.equal(graph.byRef["pi-ref://control/a"]?.backendNodeId, 81);
+	assert.equal(graph.byRef["pi-ref://control/a"]?.nodeKey, "b:81");
+	assert.deepEqual(graph.sourceCounts, { ax: 1, dom: 1 });
+	const summary = identityGraphSummary(graph);
+	assert.equal(summary.backendNodeIdCoverage, 0.5);
+	assert.equal(summary.entityCount, 2);
+});
+
 test("identityGraph: entities with neither anchor nor triggered are excluded", () => {
 	const singleton = { ref: "pi-ref://control/solo", kind: "control" as const, role: "button", name: "Lonely", state: state(), source: "ax" as const };
 	const graph = buildIdentityGraph([singleton], undefined);
 	assert.equal(Object.keys(graph.byRef).length, 0);
 	assert.equal(graph.anchorCount, 0);
+	assert.equal(graph.entityCount, 1);
 });
 
 test("identityGraph: empty input produces empty graph", () => {
 	const graph = buildIdentityGraph([], undefined);
 	assert.deepEqual(graph.byRef, {});
+	assert.equal(graph.entityCount, 0);
+	assert.equal(graph.backendNodeIdCount, 0);
 	assert.equal(graph.anchorCount, 0);
 	assert.equal(graph.triggeredCount, 0);
+	assert.deepEqual(graph.sourceCounts, {});
 });
 
 test("identityGraph: summary produces compact counts", () => {
@@ -70,6 +90,10 @@ test("identityGraph: summary produces compact counts", () => {
 		entity("pi-ref://control/d", "Delta"),
 	];
 	const summary = identityGraphSummary(buildIdentityGraph(entities, undefined));
+	assert.equal(summary.entityCount, 4);
+	assert.equal(summary.backendNodeIdCount, 0);
+	assert.equal(summary.backendNodeIdCoverage, 0);
 	assert.equal(summary.anchorCount, 4);
 	assert.equal(summary.triggeredCount, 0);
+	assert.deepEqual(summary.sourceCounts, { ax: 4 });
 });

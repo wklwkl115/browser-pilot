@@ -108,18 +108,34 @@ function scanCollectionEvidence(data: unknown) {
 	};
 }
 
-function attachCollectionArtifactHint(summary: Record<string, unknown>): void {
-	if (!Array.isArray(summary.collections) || !summary.collections.length) return;
+function addArtifactHint(summary: Record<string, unknown>, key: string, read: { label: string; jsonPath: string; kind?: string }, position: "front" | "back" = "back"): void {
 	const hints = isRecord(summary.artifact_hints) ? summary.artifact_hints as Record<string, unknown> : undefined;
 	if (!hints) return;
 	const jsonPaths = isRecord(hints.jsonPaths) ? { ...hints.jsonPaths } : {};
-	jsonPaths.collections = "envelope.collections";
+	jsonPaths[key] = read.jsonPath;
 	const preferredReads = Array.isArray(hints.preferredReads) ? [...hints.preferredReads] : [];
-	if (!preferredReads.some((item) => isRecord(item) && item.jsonPath === "envelope.collections")) {
-		preferredReads.unshift({ label: "collection completeness + continuation", jsonPath: "envelope.collections" });
+	if (!preferredReads.some((item) => isRecord(item) && item.jsonPath === read.jsonPath)) {
+		if (position === "front") preferredReads.unshift(read);
+		else preferredReads.push(read);
 	}
 	hints.jsonPaths = jsonPaths;
 	hints.preferredReads = preferredReads;
+}
+
+function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
+	if (Array.isArray(summary.collections) && summary.collections.length) {
+		addArtifactHint(summary, "collections", { label: "collection completeness + continuation", jsonPath: "envelope.collections", kind: "abml-collections" }, "front");
+	}
+	if (isRecord(summary.snapshotProjection)) {
+		addArtifactHint(summary, "snapshotProjection", { label: "living snapshot projection", jsonPath: "envelope.snapshotProjection", kind: "abml-structure" });
+	}
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	if (isRecord(focus?.relations)) {
+		addArtifactHint(summary, "relations", { label: "relationship graph summary", jsonPath: "envelope.relations", kind: "abml-relations" });
+	}
+	if (isRecord(summary.identity)) {
+		addArtifactHint(summary, "identityGraph", { label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
+	}
 }
 
 export async function runScanObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: ToolResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: ToolOnUpdate) {
@@ -433,7 +449,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				snapshotProjection,
 				...(collections.length ? { collections } : {}),
 				...causalBlock,
-				...(idSummary.anchorCount || idSummary.triggeredCount ? { identity: idSummary } : {}),
+				...(idSummary.backendNodeIdCount || idSummary.anchorCount || idSummary.triggeredCount ? { identity: idSummary } : {}),
 				_identityGraph: idGraph,
 				focus: {
 					...baseFocus,
@@ -465,7 +481,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		})();
 	const summaryRecord = summary as Record<string, unknown>;
 	Object.assign(summaryRecord, modeInferredSummary(params));
-	attachCollectionArtifactHint(summaryRecord);
+	attachAbmlArtifactHints(summaryRecord);
 	const envelopeEntities = attributedEntities ?? scanEnvelopeEntities;
 	// Narrow active capability hints — causal + treeDiff ONLY. A three-round real-agent eval (2026-06-05)
 	// showed these two are valuable when used but agents never reach for them unprompted, and passive skill
@@ -503,6 +519,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : undefined;
 	const artifactCollections = Array.isArray(summaryRecord.collections) ? summaryRecord.collections.filter(isRecord) as Array<Record<string, unknown>> : undefined;
 	const artifactIdentityGraph = isRecord(summaryRecord._identityGraph) ? summaryRecord._identityGraph : undefined;
+	delete summaryRecord._identityGraph;
 	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
 	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +
 	// inference were previously only inside summary.focus — a real-agent eval (2026-06-05, task3) showed

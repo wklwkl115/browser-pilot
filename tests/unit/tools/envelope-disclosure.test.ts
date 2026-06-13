@@ -75,6 +75,38 @@ test("abmlIntegrated + disclosure layers form a stable envelope contract under a
 	assert.deepEqual((envelope.relations as Record<string, unknown>).summary, { controls: 1 }, "relations.summary present under tight budget");
 });
 
+test("identity lattice summary is lifted while the full graph remains artifact-directed", async () => {
+	const envelope = await envelopeFor({
+		abmlIntegrated: true,
+		identity: {
+			entityCount: 10,
+			backendNodeIdCount: 4,
+			backendNodeIdCoverage: 0.4,
+			anchorCount: 2,
+			triggeredCount: 1,
+			sourceCounts: { ax: 4, dom: 6 },
+		},
+		artifact_hints: {
+			jsonPaths: { identityGraph: "envelope.identityGraph" },
+			preferredReads: [{ label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" }],
+		},
+		focus: {
+			gist: { landmarks: ["main"], controlCount: 1, containerCount: 1 },
+			outline: [],
+			primary_entities: [{ ref: "pi-ref://control/1", kind: "control", role: "button", name: "A" }],
+		},
+	}, 2_000);
+	assert.deepEqual(envelope.identity, {
+		entityCount: 10,
+		backendNodeIdCount: 4,
+		backendNodeIdCoverage: 0.4,
+		anchorCount: 2,
+		triggeredCount: 1,
+		sourceCounts: { ax: 4, dom: 6 },
+	});
+	assert.equal((envelope.summary.artifact_hints as Record<string, any>).jsonPaths.identityGraph, "envelope.identityGraph", "identity graph artifact read path is discoverable");
+});
+
 test("abmlIntegrated:false is surfaced too (agent can tell AX merge did NOT apply)", async () => {
 	const envelope = await envelopeFor({ abmlIntegrated: false, focus: { primary_entities: [] } });
 	assert.equal(envelope.abmlIntegrated, false, "abmlIntegrated:false is visible, never omitted");

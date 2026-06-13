@@ -56,6 +56,16 @@ summary.collections = buildCollectionModels({
 	entities: [],
 	scanEvidence: { listHints: rawScan.list_hints },
 });
+summary.identity = {
+	entityCount: 3,
+	backendNodeIdCount: 1,
+	backendNodeIdCoverage: 0.333,
+	anchorCount: 0,
+	triggeredCount: 0,
+	sourceCounts: { dom: 2, ax: 1 },
+};
+summary.artifact_hints.jsonPaths.identityGraph = "envelope.identityGraph";
+summary.artifact_hints.preferredReads.push({ label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
 
 assert(Value.Check(ScanSummarySchema, summary), `scan summary must conform to ScanSummarySchema: ${JSON.stringify([...Value.Errors(ScanSummarySchema, summary)].slice(0, 5).map((e) => `${e.instancePath}: ${e.message}`))}`);
 assert.equal(summary.focus.entityShape, "refs-v1", "focus must version the entity-ref projection");
@@ -91,6 +101,8 @@ try {
 	assert(envelope.entities.every((entity) => typeof entity === "object" && typeof entity.ref === "string" && typeof entity.kind === "string"), "envelope.entities must still carry compact full entity objects");
 	assert.equal(envelope.collections?.[0]?.completeness, "lazy", "scan envelope must lift collection completeness");
 	assert.equal(envelope.collections?.[0]?.continuation?.kind, "virtual-window", "scan envelope must carry semantic continuation evidence");
+	assert.equal(envelope.identity?.backendNodeIdCount, 1, "scan envelope must lift identity lattice coverage diagnostics");
+	assert.equal(envelope.summary?.artifact_hints?.jsonPaths?.identityGraph, "envelope.identityGraph", "scan artifact hints must expose identityGraph read path");
 	assert(!JSON.stringify(envelope.nextActions || []).toLowerCase().includes("scroll"), "scan envelope nextActions must not prescribe scroll");
 	// F2: the scan summarizer duplicated `headings`/`top_layer` into both summary top-level AND focus by
 	// SHARED reference, so redactSensitiveValue collapsed the second occurrence to a "[Circular]" string

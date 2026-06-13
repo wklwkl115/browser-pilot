@@ -71,8 +71,12 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(envelope.summary?.focus?.primary_entities?.length >= 1, true);
 	assert.equal(envelope.summary?.focus?.entityShape, "refs-v1");
 	assert.equal(typeof envelope.summary?.focus?.primary_entities?.[0], "string");
+	assert.equal(envelope.summary?._identityGraph, undefined, "full identity graph must not leak into model-facing summary");
 	assert.equal(Array.isArray(envelope.entities), true);
 	assert.equal(envelope.entities?.some((entity: any) => entity.kind === "control"), true);
+	const saved = JSON.parse(readFileSync(envelope.saved.path, "utf8"));
+	assert.equal(saved.envelope?.summary?._identityGraph, undefined, "saved envelope summary keeps full identity graph out of summary");
+	assert.equal(typeof saved.envelope?.identityGraph, "object", "saved artifact exposes the full identity graph at the explicit artifact path");
 });
 
 test("browser_observe default scan reuses scan_extract data for ABML read", async () => {
@@ -80,6 +84,33 @@ test("browser_observe default scan reuses scan_extract data for ABML read", asyn
 	const result = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan");
 	assert.equal(result.details?.abml?.integrated, true);
 	assert.deepEqual(server.calls, ["scan_extract"], "default scan should not run a second abml_read_scan Runtime.evaluate");
+});
+
+test("browser_observe collection artifact hint is prioritized for recovery", async () => {
+	const server = {
+		...fakeServer,
+		async sendCommand(command: any, options: any) {
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Runtime.evaluate") {
+				const expression = String(command.params?.expression || "");
+				if (expression.includes("collectActionables") && expression.includes("list_hints")) {
+					return { id: "eval-list", acknowledged: true, tabId: 7, data: { result: { value: {
+						url: "https://example.test/checkout",
+						title: "Checkout",
+						readyState: "complete",
+						content: "<h1>Checkout</h1>\nStatus: payment required",
+						node_count: 12,
+						truncated: false,
+						actionables: [{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500 }],
+						list_hints: [{ selector: "main > ul > li", itemCount: 30, hiddenCount: 24, firstItemPreview: "Item 1" }],
+					} } } };
+				}
+			}
+			return fakeServer.sendCommand(command, options);
+		},
+	};
+	const envelope = JSON.parse((await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan")).content[0].text);
+	assert.equal(envelope.summary?.artifact_hints?.jsonPaths?.collections, "envelope.collections");
+	assert.ok((envelope.nextActions as string[]).some((item) => item.includes("jsonPath=envelope.collections")), "collection artifact read should survive the preferredReads cap");
 });
 
 test("browser_observe iframe-disabled scan keeps the separate ABML scan", async () => {

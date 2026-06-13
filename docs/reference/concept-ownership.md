@@ -51,6 +51,7 @@ path in `src/tools/resultMiddleware.ts`, not by a single tool summary schema.
 | `DistilledEnvelope.gist` | src/tools/resultMiddleware.ts:envelopeGist() | L0 page overview lifted so budget squeeze does not hide it. |
 | `DistilledEnvelope.outline` | src/tools/resultMiddleware.ts:envelopeOutline() | L1 container fold lifted from scan focus when present. |
 | `DistilledEnvelope.relations` | src/tools/resultMiddleware.ts:envelopeRelations() | Relationship graph summary lifted from scan focus. |
+| `DistilledEnvelope.identity` | src/tools/resultMiddleware.ts:envelopeIdentity() | ABML identity-lattice coverage summary; full graph is artifact-only. |
 | `DistilledEnvelope.inference` | src/tools/resultMiddleware.ts type only / compatibility | Declared compatibility field; current response path does not lift it by default. |
 | `DistilledEnvelope.diff` | src/tools/resultMiddleware.ts:envelopeDiff() | Temporal entity diff lifted from summary/focus when baseline exists. |
 | `DistilledEnvelope.causal` | src/tools/resultMiddleware.ts:envelopeCausal() | Passive network/event delta lifted from summary when baseline exists. |
@@ -162,12 +163,13 @@ observe scan summary contract.
 | `ScanSummarySchema.top_layer` | no | unknown | - | `src/tools/summaries/scan.ts` | Top-layer/dialog hint from scan extraction. |
 | `ScanSummarySchema.tabs_count` | yes | number | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Bridge tab count mirrored into scan summary for context. |
 | `ScanSummarySchema.page` | yes | object+ | - | `src/tools/summaries/scan.ts` | Nested page metrics; keep consistent with top-level count fields. |
-| `ScanSummarySchema.focus` | yes | object+ | - | `src/tools/observe/baseline.ts`<br>`src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Primary action/entity and ABML-derived focus block. |
+| `ScanSummarySchema.focus` | yes | object+ | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/observe/baseline.ts`<br>`src/tools/summaries/scan.ts` | Primary action/entity and ABML-derived focus block. |
 | `ScanSummarySchema.artifact_hints` | yes | object+ | - | `src/tools/summaries/common.ts`<br>`src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Preferred local artifact reads; never require opening raw artifact blindly. |
 | `ScanSummarySchema.list_hints` | yes | object+ | - | `src/tools/summaries/scan.ts`<br>`src/tools/observe/scanRunner.ts` | Table of repeated/list-like structures for agent scanning. |
 | `ScanSummarySchema.media_candidates` | no | object+ | - | `src/tools/summaries/scan.ts` | Visible media candidates; bounded table, optional on sparse pages. |
 | `ScanSummarySchema.rows` | no | object+ | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | DOM-ordered visible rows; preserve sibling order semantics. |
 | `ScanSummarySchema.collections` | no | array<object+> | - | `src/tools/observe/scanRunner.ts` | Collection completeness and continuation model; rows are not authoritative membership. |
+| `ScanSummarySchema.identity` | no | object+ | - | `src/tools/observe/scanRunner.ts` | Compact ABML identity-lattice diagnostics; full byRef graph stays in observe artifacts. |
 | `ScanSummarySchema.actionables` | yes | object+ | - | `src/tools/summaries/scan.ts`<br>`src/tools/observe/scanRunner.ts` | Primary actionable table; refs and jsonPaths must stay stable enough for follow-up. |
 | `ScanSummarySchema.interactive` | yes | array<string> | - | `src/tools/summaries/scan.ts` | Compact interactive text/ref list for quick triage. |
 | `ScanSummarySchema.headings` | yes | array<string> | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/content.ts` | Visible heading list for orientation. |

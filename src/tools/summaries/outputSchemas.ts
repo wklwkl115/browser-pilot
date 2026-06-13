@@ -88,6 +88,15 @@ export const RelationSummarySchema = Type.Object({
 	}, { additionalProperties: true })),
 }, { additionalProperties: true });
 
+export const IdentitySummarySchema = Type.Object({
+	entityCount: Type.Number(),
+	backendNodeIdCount: Type.Number(),
+	backendNodeIdCoverage: Type.Number(),
+	anchorCount: Type.Number(),
+	triggeredCount: Type.Number(),
+	sourceCounts: Type.Record(Type.String(), Type.Number()),
+}, { additionalProperties: true });
+
 // ABML R2 — envelope-top-level inference disclosure (also lives in summary.focus.inference).
 // intents[]: detected generic ARIA patterns (login/search/filter-panel/single-choice/
 // multi-choice/expandable/data-grid/navigation/dialog/tabbed-interface/alert-region/
@@ -321,6 +330,7 @@ export const ScanSummarySchema = Type.Object({
 	media_candidates: OptionalSummaryTable,
 	rows: OptionalSummaryTable,
 	collections: Type.Optional(Type.Array(CollectionSummarySchema)),
+	identity: Type.Optional(IdentitySummarySchema),
 	actionables: SummaryTableSchema,
 	interactive: Type.Array(Type.String()),
 	headings: Type.Array(Type.String()),

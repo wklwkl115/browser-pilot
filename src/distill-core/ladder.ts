@@ -16,6 +16,7 @@ export type BudgetedEnvelope = {
 	gist?: Record<string, unknown>;
 	outline?: Array<Record<string, unknown>>;
 	relations?: Record<string, unknown>;
+	identity?: Record<string, unknown>;
 	diff?: Record<string, unknown>;
 	causal?: Record<string, unknown>;
 	treeDiff?: Record<string, unknown>;
@@ -31,7 +32,7 @@ export const SUMMARY_MAX_CHARS = 12_000;
 const PREVIEW_FALLBACK_CHARS = 800;
 const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
-const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
+const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "identity", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
 const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
 
 function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
@@ -132,6 +133,7 @@ function compactEntityForEnvelope(entity: Record<string, unknown>): Record<strin
 function compactLiftedEnvelopeValue(key: string, value: unknown): unknown {
 	if (key === "entities" && Array.isArray(value)) return value.slice(0, 4).filter(isRecord).map((entity) => compactEntityForEnvelope(entity));
 	if (key === "relations" && isRecord(value)) return pickDefined(value, ["summary"]);
+	if (key === "identity" && isRecord(value)) return pickDefined(value, ["entityCount", "backendNodeIdCount", "backendNodeIdCoverage", "anchorCount", "triggeredCount", "sourceCounts"]);
 	if (key === "treeDiff" && isRecord(value)) {
 		const compactInstances = (bucket: unknown): unknown => {
 			if (!isRecord(bucket)) return bucket;
@@ -277,6 +279,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		limits: out.limits,
 		privacy: out.privacy,
 		...(out.diff ? { diff: out.diff } : {}),
+		...(out.identity ? { identity: out.identity } : {}),
 		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
 		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
 		...(out.collections ? { collections: out.collections } : {}),
@@ -293,6 +296,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		diagnostics: out.diagnostics,
 		limits: out.limits,
 		privacy: out.privacy,
+		...(out.identity ? { identity: out.identity } : {}),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata", ...(out.diff ? ["diff"] : []), ...(out.treeDiff ? ["treeDiff"] : []), ...(out.snapshotProjection ? ["snapshotProjection"] : [])]);

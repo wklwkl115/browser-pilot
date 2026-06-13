@@ -14,9 +14,8 @@
 
 ## 当前激活项
 
-- 当前无激活执行项。最近关闭的 execution-plane CDP fusion 见
-  `docs/archive/execution-plane-cdp-fusion-plan.md` 和
-  `docs/archive/execution-plane-cdp-fusion-plan.full.md`。
+- 当前无激活执行项。最近关闭的 ABML identity lattice diagnostics 见
+  `docs/abml-identity-lattice-architecture.md` 与 `CHANGELOG.md`。
 
 ## 最近完成索引
 

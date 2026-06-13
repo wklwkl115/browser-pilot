@@ -40,6 +40,9 @@ export type DistilledEnvelope = {
 	// R1 relationship graph (relations.summary = type→count, always present when abmlIntegrated;
 	// relations.highlights = deterministic capped sample). Lifted here so the budget never hides it.
 	relations?: Record<string, unknown>;
+	// ABML identity-lattice diagnostics: backendNodeId coverage, semantic-anchor count, triggered-edge
+	// count, and source distribution. Full byRef graph stays artifact-only.
+	identity?: Record<string, unknown>;
 	// R2 inference layer (detected ARIA semantic patterns — intents[]: login/search/data-grid/…).
 	// Lifted here so the budget never hides it.
 	inference?: Record<string, unknown>;
@@ -236,6 +239,10 @@ function envelopeOutline(summary: DistilledSummary): Array<Record<string, unknow
 function envelopeRelations(summary: DistilledSummary): Record<string, unknown> | undefined {
 	const focus = isRecord(summary.focus) ? summary.focus : undefined;
 	return isRecord(focus?.relations) ? structuredClone(focus.relations) as Record<string, unknown> : undefined;
+}
+
+function envelopeIdentity(summary: DistilledSummary): Record<string, unknown> | undefined {
+	return isRecord(summary.identity) ? structuredClone(summary.identity) as Record<string, unknown> : undefined;
 }
 
 function envelopeDiff(summary: DistilledSummary): Record<string, unknown> | undefined {
@@ -444,6 +451,7 @@ export function livePlaneSignature(envelope: DistilledEnvelope): string {
 		gist: envelope.gist,
 		outline: envelope.outline,
 		relations: envelope.relations,
+		identity: envelope.identity,
 		diff: envelope.diff,
 		causal: envelope.causal,
 		treeDiff: envelope.treeDiff,
@@ -507,6 +515,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const gist = envelopeGist(redactedSummary);
 	const outline = envelopeOutline(redactedSummary);
 	const relations = envelopeRelations(redactedSummary);
+	const identity = envelopeIdentity(redactedSummary);
 	const diff = envelopeDiff(redactedSummary);
 	const causal = envelopeCausal(redactedSummary);
 	const treeDiff = envelopeTreeDiff(redactedSummary);
@@ -533,6 +542,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(gist ? { gist } : {}),
 		...(outline ? { outline } : {}),
 		...(relations ? { relations } : {}),
+		...(identity ? { identity } : {}),
 		...(diff ? { diff } : {}),
 		...(causal ? { causal } : {}),
 		...(treeDiff ? { treeDiff } : {}),
