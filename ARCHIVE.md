@@ -36,6 +36,7 @@
 - Protocol Single Source Plan历史摘要见 `docs/archive/protocol-single-source-plan.md`
 - Real Session Friction Plan历史摘要见 `docs/archive/real-session-friction-plan.md`
 - Recent Completed Workstreams历史摘要见 `docs/archive/recent-completed-workstreams.md`
+- Temporal Control Kernel Plan历史摘要见 `docs/archive/temporal-control-kernel-plan.md`
 - Tmwd Cdp Bridge Legacy历史摘要见 `docs/archive/tmwd-cdp-bridge-legacy.md`
 - Value Ordered Compaction Plan历史摘要见 `docs/archive/value-ordered-compaction-plan.md`
 - 更细历史拆分建议与仍保持 future-facing 的非激活项见 `docs/archive-history-compression-plan.md`。
@@ -60,6 +61,7 @@
 - `docs/archive/protocol-single-source-plan.full.md`
 - `docs/archive/real-session-friction-plan.full.md`
 - `docs/archive/recent-completed-workstreams.full.md`
+- `docs/archive/temporal-control-kernel-plan.full.md`
 - `docs/archive/tmwd-cdp-bridge-legacy.full.md`
 - `docs/archive/value-ordered-compaction-plan.full.md`
 

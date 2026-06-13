@@ -20,9 +20,9 @@ export const CHECK_CACHE_SCHEMA_VERSION = 2;
 export const CHECK_GROUPS = Object.freeze({
 	src: ["check:src:types", "check:registry-drift"],
 	bridge: ["check:bridge"],
-	unit: ["test:unit:abml", "test:unit:cli:commands", "test:unit:cli:daemon", "test:unit:distill", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
+	unit: ["test:unit:abml", "test:unit:cli:commands", "test:unit:cli:daemon", "test:unit:distill", "test:unit:temporal", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
 	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
-	docs: ["check:tool-docs", "check:doc-structure", "check:audit-inbox", "check:doc-paths", "check:code-map", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:docs-sync"],
+	docs: ["check:tool-docs", "check:doc-structure", "check:audit-inbox", "check:doc-paths", "check:code-map", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:docs-sync"],
 	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
 });
 

@@ -14,6 +14,7 @@
       "test:unit:cli:commands",
       "test:unit:cli:daemon",
       "test:unit:distill",
+      "test:unit:temporal",
       "test:unit:driver",
       "test:unit:memory",
       "test:unit:tools",
@@ -36,6 +37,7 @@
       "check:recovery-boundary",
       "check:abml-core-boundary",
       "check:memory-core-boundary",
+      "check:temporal-core-boundary",
       "check:docs-sync"
     ],
     "contracts": [
@@ -463,6 +465,25 @@
         {
           "nodeId": "test:unit:distill",
           "commandLine": "tsx --test tests/unit/distill-core/**/*.test.ts"
+        }
+      ]
+    },
+    "test:unit:temporal": {
+      "script": "test:unit:temporal",
+      "scope": "global",
+      "inputs": [],
+      "unresolvedInputs": [
+        {
+          "script": "test:unit:temporal",
+          "nodeId": "test:unit:temporal",
+          "commandLine": "tsx --test tests/unit/temporal-core/**/*.test.ts",
+          "reason": "script command has no literal JS/TS entry file"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "test:unit:temporal",
+          "commandLine": "tsx --test tests/unit/temporal-core/**/*.test.ts"
         }
       ]
     },
@@ -940,12 +961,14 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/BrowserWaitSupervisor.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/recall.ts",
@@ -966,6 +989,10 @@
         "src/scan/actionableRules.ts",
         "src/scan/buildScanScript.ts",
         "src/scan/noiseRules.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/tools/actionCommands.ts",
         "src/tools/artifactPrivacy.ts",
         "src/tools/artifactReader.ts",
@@ -1386,6 +1413,38 @@
         }
       ]
     },
+    "check:temporal-core-boundary": {
+      "script": "check:temporal-core-boundary",
+      "scope": "global",
+      "inputs": [
+        "src/",
+        "src/temporal-core/",
+        "tests/contracts/drift/check-temporal-core-boundary.mjs",
+        "tests/contracts/drift/purity-vocabulary.js"
+      ],
+      "unresolvedInputs": [
+        {
+          "script": "check:temporal-core-boundary",
+          "nodeId": "check:temporal-core-boundary",
+          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
+          "line": 19,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:temporal-core-boundary",
+          "nodeId": "check:temporal-core-boundary",
+          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
+          "line": 48,
+          "reason": "dynamic file read"
+        }
+      ],
+      "commandSteps": [
+        {
+          "nodeId": "check:temporal-core-boundary",
+          "commandLine": "node tests/contracts/drift/check-temporal-core-boundary.mjs"
+        }
+      ]
+    },
     "check:docs-sync": {
       "script": "check:docs-sync",
       "scope": "paths",
@@ -1514,11 +1573,13 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/routing.ts",
@@ -1532,6 +1593,10 @@
         "src/protocol/nativeErrorCodes.ts",
         "src/protocol/nativeProtocol.ts",
         "src/scan/noiseRules.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/tools/artifactPrivacy.ts",
         "src/tools/artifacts.ts",
         "src/tools/bridgeResultValidation.ts",
@@ -1800,12 +1865,14 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/BrowserWaitSupervisor.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/staleness.ts",
@@ -1816,6 +1883,10 @@
         "src/memory/secret.ts",
         "src/protocol/nativeErrorCodes.ts",
         "src/protocol/nativeProtocol.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/utils/errors.ts",
         "src/utils/fsAtomic.ts",
         "src/utils/json.ts",
@@ -1865,12 +1936,14 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/BrowserWaitSupervisor.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/staleness.ts",
@@ -1881,6 +1954,10 @@
         "src/memory/secret.ts",
         "src/protocol/nativeErrorCodes.ts",
         "src/protocol/nativeProtocol.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/utils/errors.ts",
         "src/utils/fsAtomic.ts",
         "src/utils/json.ts",
@@ -2031,11 +2108,13 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/staleness.ts",
@@ -2046,6 +2125,10 @@
         "src/memory/secret.ts",
         "src/protocol/nativeErrorCodes.ts",
         "src/protocol/nativeProtocol.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/utils/errors.ts",
         "src/utils/fsAtomic.ts",
         "src/utils/json.ts",
@@ -2615,11 +2698,13 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/staleness.ts",
@@ -2630,6 +2715,10 @@
         "src/memory/secret.ts",
         "src/protocol/nativeErrorCodes.ts",
         "src/protocol/nativeProtocol.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/tools/prepareArguments.ts",
         "src/tools/toolShared.ts",
         "src/tools/webSecurity/register/registerCrawl.ts",
@@ -2750,12 +2839,15 @@
       "scope": "global",
       "inputs": [
         "docs/abml-kernel-manifest.md",
+        "src/",
+        "src/temporal-core/",
         "tests/contracts/drift/check-compute-once.mjs",
         "tests/contracts/drift/check-env-flags.mjs",
         "tests/contracts/drift/check-kernel-test-map.mjs",
         "tests/contracts/drift/check-purity-vocabulary.mjs",
         "tests/contracts/drift/check-spec-truth.mjs",
         "tests/contracts/drift/check-surface-liveness.mjs",
+        "tests/contracts/drift/check-temporal-core-boundary.mjs",
         "tests/contracts/drift/env-flags.json",
         "tests/contracts/drift/kernel-test-map.json",
         "tests/contracts/drift/purity-vocabulary.js",
@@ -2852,6 +2944,20 @@
           "file": "tests/contracts/drift/check-surface-liveness.mjs",
           "specifier": "./b.js",
           "reason": "unresolved relative import"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:temporal-core-boundary",
+          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
+          "line": 19,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:governance",
+          "nodeId": "check:temporal-core-boundary",
+          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
+          "line": 48,
+          "reason": "dynamic file read"
         }
       ],
       "commandSteps": [
@@ -2870,6 +2976,10 @@
         {
           "nodeId": "check:purity-vocabulary",
           "commandLine": "node tests/contracts/drift/check-purity-vocabulary.mjs"
+        },
+        {
+          "nodeId": "check:temporal-core-boundary",
+          "commandLine": "node tests/contracts/drift/check-temporal-core-boundary.mjs"
         },
         {
           "nodeId": "check:kernel-test-map",
@@ -3184,11 +3294,13 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/routing.ts",
@@ -3205,6 +3317,10 @@
         "src/scan/actionableRules.ts",
         "src/scan/buildScanScript.ts",
         "src/scan/noiseRules.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/tools/artifactPrivacy.ts",
         "src/tools/artifacts.ts",
         "src/tools/bridgeResultValidation.ts",
@@ -3872,12 +3988,14 @@
         "src/driver/BrowserRuntimeRecoveryArtifacts.ts",
         "src/driver/BrowserSessionRegistry.ts",
         "src/driver/BrowserTabSessionRouter.ts",
+        "src/driver/BrowserTemporalCoordinator.ts",
         "src/driver/BrowserWaitSupervisor.ts",
         "src/driver/bridgeUtils.ts",
         "src/driver/browserBridgeConfig.ts",
         "src/driver/errors.ts",
         "src/driver/extensionBuild.ts",
         "src/driver/leaseDiagnostics.ts",
+        "src/driver/temporalProfileArtifacts.ts",
         "src/driver/types.ts",
         "src/memory-core/profile.ts",
         "src/memory-core/recall.ts",
@@ -3897,6 +4015,10 @@
         "src/scan/actionableRules.ts",
         "src/scan/buildScanScript.ts",
         "src/scan/noiseRules.ts",
+        "src/temporal-core/budget.ts",
+        "src/temporal-core/classify.ts",
+        "src/temporal-core/estimate.ts",
+        "src/temporal-core/types.ts",
         "src/tools/artifactPrivacy.ts",
         "src/tools/artifacts.ts",
         "src/tools/bridgeResultValidation.ts",

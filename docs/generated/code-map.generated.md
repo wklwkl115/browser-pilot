@@ -9,13 +9,13 @@
 | `bridge_src` | 43 | 12199 |
 | `capture-src` | 4 | 15 |
 | `cli` | 15 | 2602 |
-| `scripts` | 19 | 3782 |
+| `scripts` | 19 | 3783 |
 | `src/abml` | 30 | 1552 |
 | `src/abml-core` | 25 | 4711 |
 | `src/capture` | 5 | 46 |
 | `src/content` | 1 | 20 |
-| `src/distill-core` | 16 | 1673 |
-| `src/driver` | 22 | 3657 |
+| `src/distill-core` | 16 | 1679 |
+| `src/driver` | 24 | 4110 |
 | `src/frontend` | 4 | 394 |
 | `src/memory` | 4 | 395 |
 | `src/memory-core` | 7 | 433 |
@@ -23,7 +23,8 @@
 | `src/protocol` | 3 | 3087 |
 | `src/resources` | 4 | 675 |
 | `src/scan` | 3 | 165 |
-| `src/tools` | 136 | 22793 |
+| `src/temporal-core` | 6 | 579 |
+| `src/tools` | 136 | 22858 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |
@@ -32,7 +33,7 @@
 
 | Module | Importer count |
 | --- | --- |
-| `src/utils/records.ts` | 41 |
+| `src/utils/records.ts` | 42 |
 | `src/utils/json.ts` | 34 |
 | `bridge_src/service_worker/types.ts` | 32 |
 | `src/utils/codedError.ts` | 29 |
@@ -42,7 +43,7 @@
 | `bridge_src/service_worker/runtime.ts` | 24 |
 | `src/tools/webSecurity/shared/normalize.ts` | 24 |
 | `src/driver/errors.ts` | 23 |
-| `src/driver/types.ts` | 21 |
+| `src/driver/types.ts` | 22 |
 | `src/tools/summaries/common.ts` | 20 |
 | `src/abml-core/entity.ts` | 19 |
 | `src/tools/webSecurity/shared/http.ts` | 19 |

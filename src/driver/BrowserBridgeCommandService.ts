@@ -20,6 +20,7 @@ import type { BrowserLeaseRegistry } from "./BrowserLeaseRegistry.js";
 import type { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import type { BrowserSessionRegistry } from "./BrowserSessionRegistry.js";
 import type { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
+import { queueTemporalDiagnostics } from "./BrowserTemporalCoordinator.js";
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
@@ -38,6 +39,22 @@ function extensionWaitMs(): number {
 	if (raw === undefined) return DEFAULT_EXTENSION_WAIT_MS;
 	const parsed = Number(raw);
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_EXTENSION_WAIT_MS;
+}
+
+function commandName(code: unknown): string | undefined {
+	if (typeof code === "string") return "javascript";
+	const record = recordValue(code);
+	return typeof record?.cmd === "string" ? record.cmd : undefined;
+}
+
+function mergeDiagnostics(result: BrowserBridgeExecutionResult, diagnostics: Record<string, unknown>): BrowserBridgeExecutionResult {
+	return {
+		...result,
+		diagnostics: {
+			...(result.diagnostics || {}),
+			...diagnostics,
+		},
+	};
 }
 
 type BrowserBridgeCommandServiceDeps = {
@@ -179,7 +196,11 @@ export class BrowserBridgeCommandService {
 			const tab = this.requireLiveTabSession(tabId, browserSession.id);
 			if (options.accessMode === "write") {
 				this.assertWriteInvariants(browserSession.id, tab, target);
+				const queuedAt = Date.now();
+				const queueDepthAtEnqueue = this.deps.queues.depth(browserSession.id, tabId);
 				return recordResult(this.deps.queues.enqueue(browserSession.id, tabId, async () => {
+					const startedAt = Date.now();
+					const queueDepthAtStart = this.deps.queues.depth(browserSession.id, tabId);
 					const resolvedQueuedTarget = this.deps.tabs.resolveTargetRef(target.targetRef ?? target.tabHandle ?? target.tabId, browserSession.id, target.source);
 					const queuedTarget = resolvedQueuedTarget ? {
 						...resolvedQueuedTarget,
@@ -193,9 +214,26 @@ export class BrowserBridgeCommandService {
 					this.assertWriteInvariants(browserSession.id, queuedTab, queuedTarget);
 					const queuedCodeRecord = recordValue(code);
 					const queuedCode = queuedTabId !== tabId && queuedCodeRecord ? { ...queuedCodeRecord, tabId: queuedTabId } : code;
-					return await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
+					const result = await this.deps.leases.withAutoTabLease(browserSession.id, queuedTab, async () => {
 						this.deps.leases.touchTabLease(browserSession.id, queuedTab);
 						return await this.deps.pendingRequests.send(queuedTab.client, queuedCode, { tabId: queuedTabId, timeoutMs: options.timeoutMs, target: queuedTarget });
+					});
+					const completedAt = Date.now();
+					const queueDelayMs = Math.max(0, startedAt - queuedAt);
+					const temporalDiagnostics = queueTemporalDiagnostics({
+						queueDepthAtEnqueue,
+						queueDepthAtStart,
+						queueDelayMs,
+						deadlineMs: options.timeoutMs,
+					});
+					return mergeDiagnostics(result, {
+						...(temporalDiagnostics.temporal ? { temporal: temporalDiagnostics.temporal } : {}),
+						temporalProfile: {
+							...temporalDiagnostics.temporalProfile,
+							command: commandName(queuedCode),
+							deadlineMs: options.timeoutMs,
+							elapsedMs: Math.max(0, completedAt - queuedAt),
+						},
 					});
 				}));
 			}

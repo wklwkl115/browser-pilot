@@ -135,6 +135,24 @@
     ],
     "src/memory-core/types.ts": [
       "tests/unit/memory-core/profile.test.ts"
+    ],
+    "src/temporal-core/budget.ts": [
+      "tests/unit/temporal-core/budget.test.ts"
+    ],
+    "src/temporal-core/classify.ts": [
+      "tests/unit/temporal-core/classify.test.ts"
+    ],
+    "src/temporal-core/estimate.ts": [
+      "tests/unit/temporal-core/estimate.test.ts"
+    ],
+    "src/temporal-core/index.ts": [
+      "tests/unit/temporal-core/types.test.ts"
+    ],
+    "src/temporal-core/plan.ts": [
+      "tests/unit/temporal-core/plan.test.ts"
+    ],
+    "src/temporal-core/types.ts": [
+      "tests/unit/temporal-core/types.test.ts"
     ]
   },
   "grandfathered": {

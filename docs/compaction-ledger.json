@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "classBBaseline": 105,
-  "classBBaselineJustification": "ABML collection completeness adds bounded collection presentation caps for perception output; runtime continuation/action verbs remain absent.",
+  "classBBaseline": 107,
+  "classBBaselineJustification": "ABML collection completeness adds bounded collection presentation caps for perception output; temporal-core adds two V1 model-facing reason caps required by its compact verdict contract.",
   "requiredClassBDecrements": 2,
   "migrations": [
     {
@@ -51,6 +51,13 @@
       "class": "A",
       "filePrefix": "src/memory-core/",
       "reason": "Memory recall/profile caps owned by retain-kernel policy."
+    },
+    {
+      "id": "temporal-core-reason-caps",
+      "class": "B",
+      "filePrefix": "src/temporal-core/",
+      "status": "accepted",
+      "reason": "Temporal verdict reasons are capped for the compact model-facing V1 frontier; full timing/profile evidence remains in diagnostics and temporal artifacts."
     },
     {
       "id": "capture-generated-page-bounds",

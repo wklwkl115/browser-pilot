@@ -11,7 +11,8 @@ live directly in `ARCHIVE.md`. It is historical evidence, not an active queue.
   connection/status control, CLI productization, skill split, and removal of
   capability profiles.
 - **Bridge/runtime reliability**: offscreen durable transport, runtime recovery,
-  lifecycle/queue/lease hardening, and bridge build/test gates.
+  lifecycle/queue/lease hardening, temporal control diagnostics, and bridge
+  build/test gates.
 - **Observation and perception**: scan summary v2, renderer/salience/session
   work, correlation metadata, ABML substrate closure, and recent observe
   ergonomics.
@@ -20,8 +21,8 @@ live directly in `ARCHIVE.md`. It is historical evidence, not an active queue.
   WebSocket replay/fuzz primitives.
 - **Governance and debt closure**: tool parameter contracts, lint ratchet,
   protocol single-source, performance overhead execution, trigger-gated
-  backlog cleanup, and the June 2026 dev-harness / check-governance plan line
-  migrated out of `CURRENT.md`.
+  backlog cleanup, temporal-core boundary governance, and the June 2026
+  dev-harness / check-governance plan line migrated out of `CURRENT.md`.
 
 ## Evidence
 

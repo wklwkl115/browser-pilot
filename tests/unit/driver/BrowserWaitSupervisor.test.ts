@@ -43,6 +43,10 @@ test("BrowserWaitSupervisor maps navigateAndWait navigation bridge timeouts to w
 			assert.deepEqual(error.details.supervisor.leases, []);
 			assert.equal(error.details.supervisor.navigation.status, "bridge_timeout");
 			assert.equal(error.details.supervisor.navigation.errorCode, "BRIDGE_TIMEOUT");
+			assert.deepEqual(error.details.supervisor.temporal, {
+				verdict: { status: "unknown", confidence: "partial", reasons: ["no_ack"] },
+				frontier: { next: "retry_same_wait" },
+			});
 			return true;
 		},
 	);
@@ -78,6 +82,8 @@ test("BrowserWaitSupervisor uses URL-aware navigation wait after navigateAndWait
 	assert.equal(commands.filter((command) => command.cmd === "wait.navigation").length, 2, "URL wait should retry timeout leases until the target URL loads");
 	assert.equal((result.data as Record<string, any>).supervisor.leases[0].status, "lease_timeout");
 	assert.equal((result.data as Record<string, any>).supervisor.leases.at(-1).status, "success");
+	assert.equal((result.data as Record<string, any>).supervisor.temporal.verdict.reasons[0], "same_wait_history");
+	assert.equal(result.diagnostics?.temporalProfile && (result.diagnostics.temporalProfile as Record<string, any>).waitAttempts, 2);
 });
 
 test("BrowserWaitSupervisor runs selector waits only after target URL commit", async () => {

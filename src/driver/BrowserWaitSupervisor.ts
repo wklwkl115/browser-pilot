@@ -5,6 +5,8 @@ import type { BrowserBridgeServer } from "./BrowserBridgeServer.js";
 import type { BrowserBridgeExecutionResult } from "./types.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import { classifyStateLoss, classifyTimeout } from "../temporal-core/classify.js";
+import { compactTemporalDecision } from "./BrowserTemporalCoordinator.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
@@ -24,6 +26,7 @@ type WaitLeaseSummary = {
 	errorCode?: string;
 	message?: string;
 	retryDelayMs?: number;
+	acked?: boolean;
 };
 
 type NavigationPhaseSummary = {
@@ -33,6 +36,7 @@ type NavigationPhaseSummary = {
 	status: "success" | "bridge_timeout" | "failed";
 	errorCode?: string;
 	message?: string;
+	acked?: boolean;
 };
 
 type WaitSupervisorState = {
@@ -112,6 +116,11 @@ function bridgeErrorDetails(error: unknown): Record<string, unknown> | undefined
 	return nestedDetails || details;
 }
 
+function bridgeErrorAcked(error: unknown): boolean | undefined {
+	if (!(error instanceof BrowserBridgeError)) return undefined;
+	return typeof error.details.acked === "boolean" ? error.details.acked : undefined;
+}
+
 function selectorTimeoutRecovery(command: BridgeCommand, error: unknown): Record<string, unknown> | undefined {
 	if (command.cmd !== "wait.selector") return undefined;
 	const selector = String(command.selector ?? command.css ?? command.target ?? "").trim();
@@ -155,6 +164,22 @@ function compactResultData(data: unknown, supervisor: Record<string, unknown>): 
 	return { value: data, supervisor };
 }
 
+function waitDiagnostics(result: BrowserBridgeExecutionResult, supervisor: Record<string, unknown>): Record<string, unknown> {
+	const temporal = isRecord(supervisor.temporal) ? supervisor.temporal : undefined;
+	return {
+		...(result.diagnostics || {}),
+		...(temporal ? { temporal } : {}),
+		temporalProfile: {
+			command: typeof supervisor.command === "string" ? supervisor.command : undefined,
+			deadlineMs: typeof supervisor.totalTimeoutMs === "number" ? supervisor.totalTimeoutMs : undefined,
+			elapsedMs: typeof supervisor.elapsedMs === "number" ? supervisor.elapsedMs : undefined,
+			waitAttempts: typeof supervisor.attempts === "number" ? supervisor.attempts : undefined,
+			workerRestarts: typeof supervisor.workerRestarts === "number" ? supervisor.workerRestarts : undefined,
+			historyLost: typeof supervisor.historyLost === "boolean" ? supervisor.historyLost : undefined,
+		},
+	};
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -174,7 +199,28 @@ function supervisorPayload(state: WaitSupervisorState): Record<string, unknown> 
 		...(state.navigation ? { navigation: state.navigation } : {}),
 		leases: state.leases,
 		...(state.selectorTimeout ? { selectorTimeout: state.selectorTimeout } : {}),
+		temporal: compactTemporalDecision(temporalDecisionForSupervisor(state)),
 	};
+}
+
+function temporalDecisionForSupervisor(state: WaitSupervisorState) {
+	if (state.historyLost || state.workerRestarts > 0) {
+		return classifyStateLoss({ historyLost: state.historyLost, workerRestarts: state.workerRestarts });
+	}
+	const lateSuccess = state.leases.some((lease) => lease.status === "late_success");
+	if (lateSuccess) return classifyTimeout({ lateSuccessAfterDeadline: true });
+	const lastLease = state.leases[state.leases.length - 1];
+	if (state.navigation?.status === "bridge_timeout") return classifyTimeout(state.navigation.acked === false ? { acknowledged: false } : { ackedBridgeTimeout: true });
+	if (state.navigation?.status === "failed") return classifyTimeout({ underconstrained: true });
+	if (lastLease?.status === "bridge_timeout") {
+		return classifyTimeout(lastLease.acked === false ? { acknowledged: false } : { ackedBridgeTimeout: true });
+	}
+	if (lastLease?.status === "disconnect") return classifyTimeout({ clientDisconnected: true });
+	if (lastLease?.status === "lease_timeout") {
+		return classifyTimeout(state.selectorTimeout ? { selectorMissing: true } : { leaseTimedOut: true });
+	}
+	if (lastLease?.status === "failed") return classifyTimeout({ underconstrained: true });
+	return classifyStateLoss({});
 }
 
 export function computeBridgeGraceMs(remainingMs: number): number {
@@ -298,7 +344,8 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 			const afterBootId = workerBootIdFromResult(result) ?? currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
 			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "success" });
-			return { ...result, data: compactResultData(result.data, supervisorPayload(state)) };
+			const supervisor = supervisorPayload(state);
+			return { ...result, data: compactResultData(result.data, supervisor), diagnostics: waitDiagnostics(result, supervisor) };
 		} catch (error) {
 			const afterBootId = currentWorkerBootId(server);
 			rememberWorkerTransition(state, beforeBootId, afterBootId);
@@ -307,7 +354,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 				: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout"
 					: isLeaseTimeout(error) ? "lease_timeout" : "failed";
 			state.selectorTimeout = selectorTimeoutRecovery(immediateCommand, error) || state.selectorTimeout;
-			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status, errorCode, message: bridgeErrorMessage(error) });
+			state.leases.push({ attempt, timeoutMs: 0, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status, errorCode, message: bridgeErrorMessage(error), acked: bridgeErrorAcked(error) });
 			if (error instanceof BrowserBridgeError) throw new BrowserBridgeError(error.code, error.message, { ...error.details, supervisor: supervisorPayload(state) });
 			throw error;
 		}
@@ -334,7 +381,8 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 				throw finalWaitError(state, "browser wait completed after total timeout deadline");
 			}
 			state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "success" });
-			return { ...result, data: compactResultData(result.data, supervisorPayload(state)) };
+			const supervisor = supervisorPayload(state);
+			return { ...result, data: compactResultData(result.data, supervisor), diagnostics: waitDiagnostics(result, supervisor) };
 		} catch (error) {
 			if (error instanceof BrowserBridgeError && (error.code === "WAIT_TIMEOUT" || error.code === "WAIT_STATE_LOST")) throw error;
 			const afterBootId = currentWorkerBootId(server);
@@ -343,14 +391,14 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 			if (isLeaseTimeout(error)) {
 				state.selectorTimeout = selectorTimeoutRecovery(leaseCommand, error) || state.selectorTimeout;
 				const retryDelayMs = Math.min(WAIT_LEASE_TIMEOUT_RETRY_BACKOFF_MS, Math.max(0, state.deadline - Date.now()));
-				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "lease_timeout", errorCode, message: bridgeErrorMessage(error), retryDelayMs: retryDelayMs || undefined });
+				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "lease_timeout", errorCode, message: bridgeErrorMessage(error), retryDelayMs: retryDelayMs || undefined, acked: bridgeErrorAcked(error) });
 				if (retryDelayMs > 0) await sleep(retryDelayMs);
 				if (Date.now() < state.deadline) continue;
 				throw finalWaitError(state, bridgeErrorMessage(error) || "browser wait timed out");
 			}
 			if (error instanceof BrowserBridgeError && error.code === "BRIDGE_CLIENT_DISCONNECTED") {
 				state.historyLost = true;
-				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "disconnect", errorCode: error.code, message: error.message });
+				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "disconnect", errorCode: error.code, message: error.message, acked: bridgeErrorAcked(error) });
 				await waitForReconnect(server, beforeSnapshot.extension?.id, Math.max(1, state.deadline - Date.now()));
 				const reconnectedBootId = currentWorkerBootId(server);
 				rememberWorkerTransition(state, beforeBootId, reconnectedBootId);
@@ -358,10 +406,10 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 			}
 			if (error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT") {
 				state.historyLost = true;
-				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "bridge_timeout", errorCode: error.code, message: error.message });
+				state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "bridge_timeout", errorCode: error.code, message: error.message, acked: bridgeErrorAcked(error) });
 				throw finalWaitError(state, "browser wait state was not recoverable after bridge timeout");
 			}
-			state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "failed", errorCode, message: bridgeErrorMessage(error) });
+			state.leases.push({ attempt, timeoutMs: leaseMs, workerBootId: beforeBootId, workerBootIdAfter: afterBootId, status: "failed", errorCode, message: bridgeErrorMessage(error), acked: bridgeErrorAcked(error) });
 			if (error instanceof BrowserBridgeError) {
 				throw new BrowserBridgeError(error.code, error.message, { ...error.details, supervisor: supervisorPayload(state) });
 			}
@@ -405,6 +453,7 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServ
 					status: error instanceof BrowserBridgeError && error.code === "BRIDGE_TIMEOUT" ? "bridge_timeout" : "failed",
 					errorCode: bridgeErrorCode(error),
 					message: bridgeErrorMessage(error),
+					acked: bridgeErrorAcked(error),
 				},
 			};
 			throw finalWaitError(state, `wait.navigateAndWait navigation phase failed: ${bridgeErrorMessage(error)}`);
@@ -452,7 +501,7 @@ export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServ
 				return urlWait;
 			})()
 			: undefined;
-		return { ...waitResult, data: { navigation: navigation.data, wait, url: command.url, waitUntil, supervisor, ...(urlWaitData ? { urlWait: urlWaitData } : {}) } };
+		return { ...waitResult, data: { navigation: navigation.data, wait, url: command.url, waitUntil, supervisor, ...(urlWaitData ? { urlWait: urlWaitData } : {}) }, diagnostics: waitDiagnostics(waitResult, supervisor) };
 	}
 	if (!SUPERVISED_WAIT_COMMANDS.has(command.cmd)) return server.sendCommand(command, options);
 	return runLeasedWait(server, command, options, totalTimeoutMs);

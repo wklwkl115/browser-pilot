@@ -219,6 +219,7 @@ const DIRECTORY_ADVICE = Object.freeze({
 	"src/capture": "Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`.",
 	"src/content": "Content extraction runtime; pair with capture/page-script gates when touching page-world behavior.",
 	"src/distill-core": "Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates.",
+	"src/temporal-core": "Pure temporal control kernel for freshness, state-loss, budget, and sync planning; keep driver/browser/Node deps out and verify `check:temporal-core-boundary` plus temporal unit tests.",
 	"src/driver": "Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module.",
 	"src/frontend": "Harness-facing validation and usage logging; preserve redaction and CLI/Pi parity contracts.",
 	"src/memory": "Runtime memory persistence and HMAC/profile services; keep local-only storage boundaries explicit.",

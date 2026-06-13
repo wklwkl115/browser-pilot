@@ -1,4 +1,5 @@
 import type { BrowserBridgeTargetInfo } from "../driver/types.js";
+import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../temporal-core/types.js";
 import { isRecord } from "../utils/params.js";
 
 export type ExecuteEffect = {
@@ -33,6 +34,17 @@ export type ExecuteEffect = {
 	targetRef?: string;
 	targetRegionDirty?: boolean;
 	targetDirtyRoots?: string[];
+	temporal?: {
+		verdict: {
+			status: TemporalVerdictStatus;
+			confidence: TemporalConfidence;
+			reasons: TemporalReason[];
+		};
+		frontier: {
+			next: TemporalFrontierNext;
+			handle?: string;
+		};
+	};
 };
 
 export type ExecutionJournal = {
@@ -80,6 +92,7 @@ export function compactExecutionEffect(effect: ExecuteEffect | undefined): Recor
 		...(effect.targetRef ? { targetRef: effect.targetRef } : {}),
 		...(effect.targetRegionDirty === true ? { targetRegionDirty: true } : {}),
 		...(effect.targetDirtyRoots?.length ? { targetDirtyRoots: effect.targetDirtyRoots } : {}),
+		...(effect.temporal ? { temporal: effect.temporal } : {}),
 	};
 }
 

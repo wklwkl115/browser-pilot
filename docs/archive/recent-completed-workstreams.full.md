@@ -17,6 +17,15 @@ the active execution contract, and a compact archive pointer.
   C4/C5 authoring helpers, five ledger `--propose` flows, and audit lifecycle
   indexing. The workstream is closed; `CURRENT.md` now has no active execution
   item.
+- **Temporal control kernel**: completed
+  `docs/archive/temporal-control-kernel-plan.full.md` as the internal
+  temporal/control execution record. Landed pure `src/temporal-core/**`
+  taxonomy, classifiers, estimators, budget allocator, and planners; added
+  `BrowserTemporalCoordinator` and temporal profile artifacts; wired queue
+  pressure, wait timeout/state-loss, and stale-before-dispatch verdicts into
+  existing diagnostics; and kept the public `browser_*` surface unchanged.
+  Deterministic fixture workflow eval passed 28/28 with temporal profile
+  summary output.
 - **Agent harness optimization plan**: completed ACI-1 through ACI-12 for the
   agent-facing harness: heartbeat byte bounds, recovery coverage, lease
   diagnostics, input-surface ratchet, fresh observe re-anchor, CLI-skill drift

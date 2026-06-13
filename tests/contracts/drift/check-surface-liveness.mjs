@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const proposeMode = process.argv.includes("--propose");
 const ledgerRel = "tests/contracts/drift/kernel-export-inventory.json";
 const inventory = JSON.parse(readFileSync(path.join(root, ledgerRel), "utf8"));
-const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core"];
+const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core", "src/temporal-core"];
 const STATUSES = new Set(["consumed", "internal", "test-harness", "reserved"]);
 
 function walk(relDir, predicate = () => true, prefix = "") {

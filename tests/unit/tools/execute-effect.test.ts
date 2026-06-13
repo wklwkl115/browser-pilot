@@ -123,6 +123,81 @@ test("withExecutionEffect reports stale-act feedback for pi-ref targets covered 
 	]);
 });
 
+test("withExecutionEffect classifies target dirty before dispatch as pre-dispatch temporal stale risk", async () => {
+	const fingerprints = [
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: ["#checkout .total"], overflow: false, sinceSeq: 9 } },
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: [], overflow: false, sinceSeq: 10 } },
+	];
+	const server = {
+		snapshot: () => ({ selectionVersion: 1, defaultTabId: 7 }),
+		async sendCommand(command: Record<string, unknown>) {
+			if (command.cmd === "content.fingerprint") return { ok: true, data: fingerprints.shift() };
+			if (command.cmd === "network.status") return { ok: true, data: {} };
+			if (command.cmd === "hook.status") return { ok: true, data: {} };
+			return { ok: true, data: {} };
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const run = await withExecutionEffect(server, {
+		browserSessionId: "session-1",
+		tabId: 7,
+		timeoutMs: 1000,
+		quietMs: 0,
+		targetRefs: [{
+			refId: "pi-ref://control/pay",
+			observedAt: 1234,
+			observationId: "snap-1",
+			cssRoots: ["#checkout"],
+			locators: [{ by: "css", value: "#checkout" }],
+		}],
+	}, async () => fakeResult());
+	const compact = compactExecutionEffect(run.effect);
+
+	assert.equal(run.effect?.targetRegionDirty, undefined, "post-dispatch dirty feedback must not be fabricated from the drained pre-dispatch window");
+	assert.deepEqual(compact?.temporal, {
+		verdict: {
+			status: "possibly_stale",
+			confidence: "bounded",
+			reasons: ["target_stale_before_dispatch", "target_region_dirty"],
+		},
+		frontier: { next: "reobserve" },
+	});
+	assert.deepEqual(nextActionsForExecutionEffect(run.effect), [
+		"target ref was stale before dispatch; refresh with browser_observe mode=scan before retrying the same pi-ref",
+	]);
+});
+
+test("withExecutionEffect gives mechanical pre-dispatch stale verdict only with stable locators", async () => {
+	const fingerprints = [
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: ["#checkout"], overflow: false, sinceSeq: 9 } },
+		{ changeSeq: 10, url: "https://example.test/app", visibleCount: 2, interactiveCount: 1, dirty: { roots: [], overflow: false, sinceSeq: 10 } },
+	];
+	const server = {
+		snapshot: () => ({ selectionVersion: 1, defaultTabId: 7 }),
+		async sendCommand(command: Record<string, unknown>) {
+			if (command.cmd === "content.fingerprint") return { ok: true, data: fingerprints.shift() };
+			if (command.cmd === "network.status") return { ok: true, data: {} };
+			if (command.cmd === "hook.status") return { ok: true, data: {} };
+			return { ok: true, data: {} };
+		},
+	} as unknown as BrowserBridgeServer;
+
+	const run = await withExecutionEffect(server, {
+		browserSessionId: "session-1",
+		tabId: 7,
+		timeoutMs: 1000,
+		quietMs: 0,
+		targetRefs: [{
+			refId: "pi-ref://control/pay",
+			cssRoots: ["#checkout"],
+			locators: [{ by: "backendNodeId", value: 99 }, { by: "css", value: "#checkout" }],
+		}],
+	}, async () => fakeResult());
+
+	assert.equal(run.effect?.temporal?.verdict.status, "stale");
+	assert.equal(run.effect?.temporal?.verdict.confidence, "mechanical");
+});
+
 test("withExecutionEffect omits url when collected fingerprints have no url", async () => {
 	const fingerprints = [
 		{ changeSeq: 1, visibleCount: 2, interactiveCount: 3 },

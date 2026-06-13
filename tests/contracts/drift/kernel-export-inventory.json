@@ -3,7 +3,8 @@
   "generatedFrom": [
     "src/abml-core",
     "src/distill-core",
-    "src/memory-core"
+    "src/memory-core",
+    "src/temporal-core"
   ],
   "reservedCount": 2,
   "modules": {
@@ -1574,6 +1575,246 @@
         {
           "name": "toPersistableMemoryTerm",
           "status": "consumed"
+        }
+      ]
+    },
+    "src/temporal-core/budget.ts": {
+      "exports": [
+        {
+          "name": "AllocateTemporalBudgetInput",
+          "status": "internal"
+        },
+        {
+          "name": "DeadlinePressureInput",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalBudgetCandidate",
+          "status": "internal"
+        },
+        {
+          "name": "allocateTemporalBudget",
+          "status": "internal"
+        },
+        {
+          "name": "classifyDeadlinePressure",
+          "status": "internal"
+        },
+        {
+          "name": "compareTemporalCost",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/temporal-core/classify.ts": {
+      "exports": [
+        {
+          "name": "ClassifyStalenessInput",
+          "status": "internal"
+        },
+        {
+          "name": "ClassifyStateLossInput",
+          "status": "internal"
+        },
+        {
+          "name": "ClassifyTimeoutInput",
+          "status": "internal"
+        },
+        {
+          "name": "classifyStaleness",
+          "status": "internal"
+        },
+        {
+          "name": "classifyStateLoss",
+          "status": "internal"
+        },
+        {
+          "name": "classifyTimeout",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/temporal-core/estimate.ts": {
+      "exports": [
+        {
+          "name": "EstimatePageFreshnessInput",
+          "status": "internal"
+        },
+        {
+          "name": "EstimateTargetContinuityInput",
+          "status": "internal"
+        },
+        {
+          "name": "EstimateWaitContinuityInput",
+          "status": "internal"
+        },
+        {
+          "name": "estimatePageFreshness",
+          "status": "internal"
+        },
+        {
+          "name": "estimateTargetContinuity",
+          "status": "internal"
+        },
+        {
+          "name": "estimateWaitContinuity",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/temporal-core/index.ts": {
+      "exports": [
+        {
+          "name": "* from ./budget.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./classify.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./estimate.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./plan.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./types.js",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/temporal-core/plan.ts": {
+      "exports": [
+        {
+          "name": "PlanPostActionSyncInput",
+          "status": "internal"
+        },
+        {
+          "name": "PlanPreDispatchSyncInput",
+          "status": "internal"
+        },
+        {
+          "name": "PlanWaitAttemptInput",
+          "status": "internal"
+        },
+        {
+          "name": "planPostActionSync",
+          "status": "internal"
+        },
+        {
+          "name": "planPreDispatchSync",
+          "status": "internal"
+        },
+        {
+          "name": "planWaitAttempt",
+          "status": "internal"
+        }
+      ]
+    },
+    "src/temporal-core/types.ts": {
+      "exports": [
+        {
+          "name": "TEMPORAL_CONFIDENCES",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_FRONTIER_NEXT",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_PLAN_ACTIONS",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_REASONS",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_REASON_MODEL_CAP",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_SOURCES",
+          "status": "internal"
+        },
+        {
+          "name": "TEMPORAL_VERDICT_STATUSES",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalAnchor",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalAnchorSource",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalClockDomain",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalConfidence",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalCost",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalDecision",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalFrontier",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalFrontierNext",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalLocator",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalObservation",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalPlan",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalPlanAction",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalProfileSample",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalReason",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalSource",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalStamp",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalVerdict",
+          "status": "internal"
+        },
+        {
+          "name": "TemporalVerdictStatus",
+          "status": "internal"
         }
       ]
     }

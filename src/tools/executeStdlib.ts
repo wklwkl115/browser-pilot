@@ -24,6 +24,7 @@ export type ExecuteStdlibTargetRef = {
 	url?: string;
 	mutationEpoch?: number;
 	cssRoots: string[];
+	locators?: RefDescriptor["locators"];
 };
 
 function shouldInjectStdlib(script: string): boolean {
@@ -72,6 +73,7 @@ function targetRefFromDescriptor(descriptor: RefDescriptor): ExecuteStdlibTarget
 		url: descriptor.documentEpoch?.url,
 		mutationEpoch: descriptor.documentEpoch?.mutationEpoch,
 		cssRoots: boundedCssRoots(descriptor),
+		locators: descriptor.locators,
 	};
 }
 

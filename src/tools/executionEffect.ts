@@ -1,6 +1,7 @@
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { BrowserBridgeExecutionResult } from "../driver/types.js";
 import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../protocol/nativeProtocol.js";
+import { classifyStaleness } from "../temporal-core/classify.js";
 import { isRecord } from "../utils/params.js";
 import { readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type PageFingerprint, type RecorderSeq } from "./pageSignals.js";
 import type { ExecuteEffect } from "./executionJournal.js";
@@ -85,6 +86,29 @@ function targetFeedbackForDirtyWindow(targetRefs: ExecuteStdlibTargetRef[] | und
 	};
 }
 
+function targetDirtyBeforeDispatch(targetRefs: ExecuteStdlibTargetRef[] | undefined, dirty: PageFingerprint["dirty"] | undefined): ExecuteEffect["temporal"] | undefined {
+	const target = targetRefs?.[0];
+	if (!target) return undefined;
+	const feedback = targetFeedbackForDirtyWindow(targetRefs, dirty);
+	if (feedback.targetRegionDirty !== true) return undefined;
+	const stableLocator = target.locators?.some((locator) => locator.by === "backendNodeId" || locator.by === "axNodeId") === true;
+	const cssOnlyLocator = !stableLocator && target.locators?.some((locator) => locator.by === "css") === true;
+	const decision = classifyStaleness({
+		anchorPresent: true,
+		targetRegionDirty: true,
+		stableLocator,
+		cssOnlyLocator,
+	});
+	return {
+		verdict: {
+			status: decision.verdict.status,
+			confidence: decision.verdict.confidence,
+			reasons: decision.verdict.reasons,
+		},
+		frontier: { next: decision.frontier.next, ...(decision.frontier.next === "reuse_target" ? { handle: target.refId } : {}) },
+	};
+}
+
 function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnapshot, quiet: ExecutionSignalSnapshot | undefined, options: Pick<EffectOptions, "targetRefs"> = {}): ExecuteEffect {
 	const beforeFp = before.fingerprint;
 	const afterFp = after.fingerprint;
@@ -107,6 +131,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 		...(after.network.lastSeq !== undefined ? { networkSeq: after.network.lastSeq } : {}),
 		...(after.hook.lastSeq !== undefined ? { hookSeq: after.hook.lastSeq } : {}),
 	};
+	const preDispatchTemporal = targetDirtyBeforeDispatch(options.targetRefs, beforeFp?.dirty);
 	return {
 		...(url ? { url } : {}),
 		...(!hasFingerprintPair || dirtyOverflow ? { signals: "partial" as const } : {}),
@@ -122,6 +147,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 		...(Object.keys(targetDelta).length ? { targetDelta } : {}),
 		...(Object.keys(anchor).length ? { anchor } : {}),
 		...targetFeedbackForDirtyWindow(options.targetRefs, dirty),
+		...(preDispatchTemporal ? { temporal: preDispatchTemporal } : {}),
 	};
 }
 

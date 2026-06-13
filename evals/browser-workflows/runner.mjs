@@ -8,6 +8,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 import { fileURLToPath } from "node:url";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
+import { writeTemporalProfileArtifacts } from "../../src/driver/temporalProfileArtifacts.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
 import { registerBrowserTools } from "../../src/tools/registerTools.ts";
 import { runJsAstShell } from "../../src/tools/webSecurity/shared/jsAstShell.ts";
@@ -165,12 +166,16 @@ async function callTool(env, metrics, name, params = {}) {
 	if (!tool) throw new Error(`Tool not registered: ${name}`);
 	metrics.toolCallCount += 1;
 	metrics.calls.push({ tool: name, params: sanitizeParams(params) });
+	const startedAt = Date.now();
 	const result = await tool.execute(toolCallId(metrics.evalId, name, metrics.toolCallCount), params, undefined, undefined, { cwd: env.runDir, hasUI: false });
+	const elapsedMs = Math.max(0, Date.now() - startedAt);
 	const text = resultText(result);
 	const saved = savedPathFromEnvelope(text);
 	if (saved) addArtifact(metrics, saved);
 	const observeSample = maybeObserveTimingSample(result, params, metrics);
 	if (observeSample) env.observeTimingSamples.push(observeSample);
+	const temporalSample = maybeTemporalProfileSample(result, params, metrics, { tool: name, elapsedMs });
+	if (temporalSample) env.temporalProfileSamples.push(temporalSample);
 	return result;
 }
 
@@ -235,6 +240,60 @@ function maybeObserveTimingSample(toolResult, params, metrics) {
 		url: typeof summary?.url === "string" ? summary.url : typeof data?.url === "string" ? data.url : undefined,
 		timings,
 	};
+}
+
+function firstRecord(...values) {
+	for (const value of values) if (isRecord(value)) return value;
+	return undefined;
+}
+
+function supervisorFromParsed(parsed) {
+	const data = isRecord(parsed?.data) ? parsed.data : undefined;
+	if (isRecord(data?.supervisor)) return data.supervisor;
+	const wait = isRecord(data?.wait) ? data.wait : undefined;
+	if (isRecord(wait?.supervisor)) return wait.supervisor;
+	return undefined;
+}
+
+function maybeTemporalProfileSample(toolResult, params, metrics, call) {
+	const parsed = tryParseJson(resultText(toolResult));
+	const diagnostics = firstRecord(
+		toolResult?.details?.diagnostics,
+		parsed?.diagnostics,
+		parsed?.envelope?.diagnostics,
+		parsed?.details?.diagnostics,
+	);
+	const temporalProfile = firstRecord(diagnostics?.temporalProfile);
+	const supervisor = supervisorFromParsed(parsed);
+	const temporal = firstRecord(diagnostics?.temporal, supervisor?.temporal);
+	const verdict = firstRecord(temporal?.verdict);
+	const frontier = firstRecord(temporal?.frontier);
+	const operation = firstRecord(parsed?.operation, parsed?.data?.operation);
+	const target = {
+		...(typeof params.browserSessionId === "string" ? { browserSessionId: params.browserSessionId } : {}),
+		...(Number.isInteger(Number(params.tabId)) ? { tabId: Number(params.tabId) } : {}),
+		...(typeof params.targetRef === "string" ? { targetRef: params.targetRef } : {}),
+	};
+	const sample = {
+		...(typeof operation?.operationId === "string" ? { operationId: operation.operationId } : {}),
+		tool: call.tool,
+		command: typeof temporalProfile?.command === "string" ? temporalProfile.command : typeof operation?.command === "string" ? operation.command : undefined,
+		...(Object.keys(target).length ? { target } : {}),
+		deadlineMs: Number.isFinite(Number(params.timeoutMs)) ? Number(params.timeoutMs) : typeof temporalProfile?.deadlineMs === "number" ? temporalProfile.deadlineMs : undefined,
+		elapsedMs: call.elapsedMs,
+		bridgeRoundTrips: typeof temporalProfile?.bridgeRoundTrips === "number" ? temporalProfile.bridgeRoundTrips : undefined,
+		queueDepthAtEnqueue: typeof temporalProfile?.queueDepthAtEnqueue === "number" ? temporalProfile.queueDepthAtEnqueue : undefined,
+		queueDepthAtStart: typeof temporalProfile?.queueDepthAtStart === "number" ? temporalProfile.queueDepthAtStart : undefined,
+		queueDelayMs: typeof temporalProfile?.queueDelayMs === "number" ? temporalProfile.queueDelayMs : undefined,
+		waitAttempts: typeof supervisor?.attempts === "number" ? supervisor.attempts : typeof temporalProfile?.waitAttempts === "number" ? temporalProfile.waitAttempts : undefined,
+		workerRestarts: typeof supervisor?.workerRestarts === "number" ? supervisor.workerRestarts : typeof temporalProfile?.workerRestarts === "number" ? temporalProfile.workerRestarts : undefined,
+		historyLost: typeof supervisor?.historyLost === "boolean" ? supervisor.historyLost : typeof temporalProfile?.historyLost === "boolean" ? temporalProfile.historyLost : undefined,
+		rawSignals: Array.isArray(temporalProfile?.rawSignals) ? temporalProfile.rawSignals.filter((item) => typeof item === "string").slice(0, 8) : undefined,
+		verdict: typeof verdict?.status === "string" ? verdict.status : undefined,
+		reasons: Array.isArray(verdict?.reasons) ? verdict.reasons.filter((item) => typeof item === "string").slice(0, 3) : undefined,
+		recovery: typeof frontier?.next === "string" ? frontier.next : undefined,
+	};
+	return sample;
 }
 
 async function fixtureFileResponse(res, relPath) {
@@ -386,7 +445,7 @@ async function startBrowserEnv(args, runDir, fixture) {
 	bridge.selectBrowser(launchTab.browserId);
 	const tools = new ToolCollectingAdapter();
 	registerBrowserTools(tools, bridge, async () => bridge);
-	return { bridge, chrome, bridgePort, profileDir, extensionDir, extensionSource, launchBrowserId: launchTab.browserId, launchTabId: launchTab.tabId, sharedTabId: launchTab.tabId, tools, runDir, fixtureBaseUrl: fixture.baseUrl, fixtureWsUrl: fixture.wsUrl, keepTemp: args.keepTemp, observeTimingSamples: [] };
+	return { bridge, chrome, bridgePort, profileDir, extensionDir, extensionSource, launchBrowserId: launchTab.browserId, launchTabId: launchTab.tabId, sharedTabId: launchTab.tabId, tools, runDir, fixtureBaseUrl: fixture.baseUrl, fixtureWsUrl: fixture.wsUrl, keepTemp: args.keepTemp, observeTimingSamples: [], temporalProfileSamples: [] };
 }
 
 async function waitUntil(predicate, timeoutMs) {
@@ -1226,8 +1285,9 @@ async function main() {
 		}
 		const summaryPath = await writeRunnerSummary(runDir, records, { startedAt: nowIso(), fixtureBaseUrl: fixture.baseUrl, fixturePort: fixture.port, bridgePort: env.bridgePort });
 		const observeSummary = await writeObserveTimingSummary(args.outDir, runDir, summaryPath, env.observeTimingSamples);
+		const temporalSummary = await writeTemporalProfileArtifacts({ cwd: root, runId, samples: env.temporalProfileSamples, evalRunDir: runDir, runnerSummaryPath: summaryPath });
 		const failed = records.filter((record) => record.status !== "passed");
-		console.log(JSON.stringify({ ok: failed.length === 0, summaryPath: pathRef(summaryPath), observeSummaryPath: pathRef(observeSummary.canonicalPath), resultDir: pathRef(runDir), fixturePort: fixture.port, bridgePort: env.bridgePort, results: records.map((record) => ({ evalId: record.evalId, status: record.status })) }, null, 2));
+		console.log(JSON.stringify({ ok: failed.length === 0, summaryPath: pathRef(summaryPath), observeSummaryPath: pathRef(observeSummary.canonicalPath), temporalSummaryPath: pathRef(temporalSummary.canonicalSummaryPath), resultDir: pathRef(runDir), fixturePort: fixture.port, bridgePort: env.bridgePort, results: records.map((record) => ({ evalId: record.evalId, status: record.status })) }, null, 2));
 		if (failed.length) process.exitCode = 1;
 	} finally {
 		await stopBrowserEnv(env || {}).catch(() => {});

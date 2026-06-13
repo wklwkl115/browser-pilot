@@ -112,6 +112,17 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 					await handle.update({ progress: 85, details: { acknowledged: result.acknowledged, target: result.target } });
 					return result;
 				});
+				if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
+					void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
+						operationId: operation.operationId,
+						tool: config.name,
+						command: commandName,
+						target: { browserSessionId, tabId: trackedTabId, targetRef: typeof params.targetRef === "string" ? params.targetRef : undefined },
+						deadlineMs: timeoutMs,
+						elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
+						result,
+					}), { cwd: ctx?.cwd });
+				}
 				return await jsonToolResult(result, params, ctx, {
 					toolName: config.name,
 					budgetName: config.budgetName,
@@ -121,6 +132,7 @@ function registerNativeActionTool({ pi, ensureStarted }: ToolRegistrarContext, c
 					fallbackName: artifactFallbackName(config.artifactPrefix),
 					details: { command: commandName, action: params.action },
 					operation,
+					diagnostics: result.diagnostics,
 					artifactValue: { ...result, operation },
 				});
 			}, nativeActionErrorResult);

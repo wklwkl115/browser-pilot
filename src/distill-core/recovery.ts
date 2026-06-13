@@ -65,6 +65,11 @@ type ExecutionEffectRecoveryLike = {
 	requestsFired?: number;
 	hookEventsFired?: number;
 	targetRegionDirty?: boolean;
+	temporal?: {
+		verdict?: {
+			reasons?: unknown;
+		};
+	};
 };
 
 export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLike | undefined): string[] | undefined {
@@ -72,6 +77,7 @@ export function nextActionsForExecutionEffect(effect: ExecutionEffectRecoveryLik
 	const actions = uniqueRecoveryActions([
 		effect.navigated || effect.targetDelta ? "tab identity may have changed; list tabs and use targetRef/tabHandle before the next tab-scoped call if targeting is ambiguous" : undefined,
 		(effect.requestsFired ?? 0) > 0 || (effect.hookEventsFired ?? 0) > 0 ? "effect anchor is available for browser_observe baseline/causal follow-up" : undefined,
+		Array.isArray(effect.temporal?.verdict?.reasons) && effect.temporal.verdict.reasons.includes("target_stale_before_dispatch") ? "target ref was stale before dispatch; refresh with browser_observe mode=scan before retrying the same pi-ref" : undefined,
 		effect.targetRegionDirty === true ? "target ref region changed after the action; refresh with browser_observe mode=scan before reusing the same pi-ref" : undefined,
 	]);
 	return actions.length ? actions : undefined;

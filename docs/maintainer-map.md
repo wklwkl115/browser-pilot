@@ -16,8 +16,8 @@
 | `src/abml-core` | 25 | 4711 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
 | `src/capture` | 5 | 46 | generated output | Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`. |
 | `src/content` | 1 | 20 | leaf module group | Content extraction runtime; pair with capture/page-script gates when touching page-world behavior. |
-| `src/distill-core` | 16 | 1673 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |
-| `src/driver` | 22 | 3657 | server facade, client registry, tab/session router, lease/queue, wait/diagnostics | Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module. |
+| `src/distill-core` | 16 | 1679 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |
+| `src/driver` | 24 | 4110 | server facade, client registry, tab/session router, lease/queue, wait/diagnostics | Bridge server runtime; start at `BrowserBridgeServer.ts` facade, then the specific session/lease/wait/diagnostic module. |
 | `src/frontend` | 4 | 394 | leaf module group | Harness-facing validation and usage logging; preserve redaction and CLI/Pi parity contracts. |
 | `src/memory` | 4 | 395 | leaf module group | Runtime memory persistence and HMAC/profile services; keep local-only storage boundaries explicit. |
 | `src/memory-core` | 7 | 433 | index/barrel | Pure memory kernel; keep host I/O out and verify memory-core boundary. |
@@ -25,7 +25,8 @@
 | `src/protocol` | 3 | 3087 | leaf module group | Generated native protocol mirror; edit `bridge/native_command_schema.json` and run `npm run sync:protocol`. |
 | `src/resources` | 4 | 675 | leaf module group | Artifact/resource store; verify artifact and summary consumers after schema changes. |
 | `src/scan` | 3 | 165 | leaf module group | Scan page-world builder compatibility layer; source templates live in `capture-src/entries/*`. |
-| `src/tools` | 136 | 22793 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
+| `src/temporal-core` | 6 | 579 | index/barrel | Pure temporal control kernel for freshness, state-loss, budget, and sync planning; keep driver/browser/Node deps out and verify `check:temporal-core-boundary` plus temporal unit tests. |
+| `src/tools` | 136 | 22858 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
 | `src/types` | 1 | 50 | leaf module group | Shared type declarations; check type and package surfaces. |
 | `src/utils` | 11 | 824 | leaf module group | Shared utilities; pure-kernel imports must stay within whitelisted cross-cutting modules. |
 | `src/validation` | 3 | 490 | leaf module group | Frontend/tool validation; preserve strict schema and CLI/Pi parity behavior. |

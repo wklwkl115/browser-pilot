@@ -15,9 +15,11 @@ import { BrowserOperationRegistry } from "./BrowserOperationRegistry.js";
 import { BrowserRuntimeRecoveryArtifacts } from "./BrowserRuntimeRecoveryArtifacts.js";
 import { BrowserSessionRegistry } from "./BrowserSessionRegistry.js";
 import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
+import { BrowserTemporalCoordinator, type TemporalProfileSampleInput } from "./BrowserTemporalCoordinator.js";
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
+import type { TemporalProfileSample } from "../temporal-core/types.js";
 import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
 import { drainMemoryProfileFlushes } from "../memory/profileService.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
@@ -38,6 +40,7 @@ export class BrowserBridgeServer {
 	private readonly observationSnapshots: BrowserObservationSnapshotRegistry;
 	private readonly perceptionLedger: PerceptionLedger;
 	private readonly runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
+	private readonly temporal: BrowserTemporalCoordinator;
 	private readonly httpEndpoint: BrowserBridgeHttpServer;
 	private readonly heartbeat: BrowserBridgeClientHeartbeat;
 	private readonly commandService: BrowserBridgeCommandService;
@@ -62,6 +65,7 @@ export class BrowserBridgeServer {
 		this.observationSnapshots = new BrowserObservationSnapshotRegistry();
 		this.perceptionLedger = new PerceptionLedger();
 		this.runtimeRecoveryArtifacts = new BrowserRuntimeRecoveryArtifacts();
+		this.temporal = new BrowserTemporalCoordinator();
 		this.commandService = new BrowserBridgeCommandService({
 			clients: this.clients,
 			browserSessions: this.browserSessions,
@@ -339,6 +343,18 @@ export class BrowserBridgeServer {
 
 	perceptionTraceSnapshot(browserSessionId?: string): PerceptionTraceSnapshot {
 		return this.perceptionLedger.traceSnapshot(browserSessionId);
+	}
+
+	buildTemporalProfileSample(input: TemporalProfileSampleInput): TemporalProfileSample {
+		return this.temporal.buildProfileSample(input);
+	}
+
+	recordTemporalProfileSample(sample: TemporalProfileSample, options: { cwd?: string; runId?: string; evalRunDir?: string; runnerSummaryPath?: string } = {}): Promise<unknown> {
+		return this.temporal.recordProfileSample(sample, options);
+	}
+
+	temporalProfileSummary(): unknown {
+		return this.temporal.profileSummary();
 	}
 
 	formatError(error: unknown): string {

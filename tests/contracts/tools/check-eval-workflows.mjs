@@ -69,7 +69,7 @@ const pbBlindText = read(path.join("evals", "browser-workflows", "pb-blind.mjs")
 const teardownBlindText = read(path.join("evals", "browser-workflows", "teardown-blind.mjs"));
 const blindAgentPromptText = read(path.join("evals", "browser-workflows", "blind-agent-prompt.md"));
 const blindEvalSkillText = read(path.join("skills", "pi-browser-blind-eval", "SKILL.md"));
-for (const requiredText of ["--fixture-server", "127.0.0.1", "startFixtureServer", "manual-result-template.json", "result-schema.json", "evals/browser-workflows/runner.mjs", "No sqlmap bridge, scanner, external database, or outbound target was used"]) {
+for (const requiredText of ["--fixture-server", "127.0.0.1", "startFixtureServer", "manual-result-template.json", "result-schema.json", "evals/browser-workflows/runner.mjs", "No sqlmap bridge, scanner, external database, or outbound target was used", "writeTemporalProfileArtifacts", "temporalProfileSamples", "temporalSummaryPath"]) {
 	assert(runnerText.includes(requiredText), `runner.mjs must preserve opt-in/local-safe boundary: ${requiredText}`);
 }
 assert(runnerText.includes("throw new Error(`Refusing to run: --fixture-server is required."), "runner must fail closed without --fixture-server");

@@ -212,6 +212,18 @@ export function registerExecuteTool({ pi, ensureStarted }: ToolRegistrarContext)
 					stdlib: preparedScript.stdlib ? { used: true, refsEmbedded: preparedScript.stdlib.refsEmbedded, resolveMisses: preparedScript.stdlib.resolveMisses.length } : undefined,
 				});
 				const resultValue = { ...jsResult, execution, ...(preparedScript.stdlib ? { piRuntime: "1" } : {}) };
+				if (typeof server.buildTemporalProfileSample === "function" && typeof server.recordTemporalProfileSample === "function") {
+					void server.recordTemporalProfileSample(server.buildTemporalProfileSample({
+						operationId: operation.operationId,
+						tool: "browser_execute",
+						command: "javascript",
+						target: { browserSessionId, tabId, targetRef: typeof rawTargetRef === "string" ? rawTargetRef : undefined },
+						deadlineMs: timeoutMs,
+						elapsedMs: Math.max(0, operation.updatedAt - operation.startedAt),
+						result: jsResult,
+						diagnostics: executeDiagnostics,
+					}), { cwd: ctx?.cwd });
+				}
 				const needsResultArtifact = executeResultNeedsArtifact(resultValue);
 				return await jsonToolResult(resultValue, params, ctx, {
 					toolName: "browser_execute",

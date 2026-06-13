@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const map = JSON.parse(readFileSync(path.join(root, "tests/contracts/drift/kernel-test-map.json"), "utf8"));
 const mapRel = "tests/contracts/drift/kernel-test-map.json";
 const proposeMode = process.argv.includes("--propose");
-const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core"];
+const KERNEL_ROOTS = ["src/abml-core", "src/distill-core", "src/memory-core", "src/temporal-core"];
 
 function walk(relDir, prefix = "") {
 	const out = [];
