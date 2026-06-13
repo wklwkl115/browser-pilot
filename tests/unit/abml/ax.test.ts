@@ -92,3 +92,52 @@ test("abml ax merge dedupes repeated locators", () => {
 	const { merged } = mergeDomAndAxEntities(dom as any, ax);
 	assert.equal(merged[0]?.locators?.filter((locator) => locator.by === "backendNodeId" && locator.value === 100).length, 1);
 });
+
+// Invariant: a geometry-less AX node that matches on role (and maybe name) alone must never be
+// non-deterministically attributed to a same-role DOM sibling. With no geometry to disambiguate,
+// the old greedy matcher glued it onto whichever candidate came first in array order and mis-
+// attributed its authoritative state. These guard the absence of that mis-association — they hold
+// regardless of how the merge is later re-implemented (e.g. a backendNodeId join).
+const geometrylessAxButton = (nodeId: string, backendId: number, props: Array<{ name: string; value: { value: string } }> = []) =>
+	buildAxEntityFromNode({ nodeId, backendDOMNodeId: backendId, role: { value: "button" }, properties: props }, ctx);
+const domButton = (selector: string, name: string, point: { x: number; y: number }) => ({
+	ref: `pi-ref://control${selector}`, kind: "control", role: "button", name,
+	state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+	source: "dom", locators: [{ by: "css", value: selector }], geometry: { point },
+});
+const mergedSourcesOf = (entity: { hints?: unknown }) => (entity.hints as Record<string, unknown> | undefined)?.mergedSources as string[] | undefined;
+
+test("abml ax merge refuses an ambiguous geometry-less role-only AX node (no order-dependent mis-glue)", () => {
+	const domA = domButton("#a", "Save", { x: 10, y: 10 });
+	const domB = domButton("#b", "Delete", { x: 200, y: 200 });
+	// Same AX node (no name, no geometry) role-matches both DOM buttons at a flat score.
+	const forward = mergeDomAndAxEntities([domA, domB] as any, [geometrylessAxButton("ax-amb", 7)]);
+	const reverse = mergeDomAndAxEntities([domB, domA] as any, [geometrylessAxButton("ax-amb", 7)]);
+	assert.equal(forward.unmatchedAx.length, 1, "ambiguous AX node refused (forward order)");
+	assert.equal(reverse.unmatchedAx.length, 1, "ambiguous AX node refused (reverse order)");
+	for (const result of [forward, reverse]) {
+		for (const entity of result.merged) {
+			assert.ok(!mergedSourcesOf(entity)?.includes("ax"), "no DOM sibling absorbed the ambiguous AX node");
+		}
+	}
+});
+
+test("abml ax merge still fuses a geometry-less role-only AX node when its same-role candidate is unique", () => {
+	// The legitimate single-candidate correction — the uniqueness gate must not over-refuse it.
+	const dom = domButton("#only", "Save", { x: 10, y: 10 });
+	const { merged, unmatchedAx } = mergeDomAndAxEntities([dom] as any, [geometrylessAxButton("ax-only", 9)]);
+	assert.equal(unmatchedAx.length, 0, "unique same-role candidate still fuses");
+	assert.equal(merged.length, 1);
+	assert.deepEqual(mergedSourcesOf(merged[0]!), ["dom", "ax"]);
+});
+
+test("abml ax merge does not let multiple geometry-less AX nodes pile onto one DOM entity", () => {
+	const dom = domButton("#solo", "Go", { x: 10, y: 10 });
+	const ax1 = geometrylessAxButton("ax-1", 201, [{ name: "pressed", value: { value: "true" } }]);
+	const ax2 = geometrylessAxButton("ax-2", 202, [{ name: "expanded", value: { value: "true" } }]);
+	const { merged, unmatchedAx } = mergeDomAndAxEntities([dom] as any, [ax1, ax2]);
+	assert.equal(merged.length, 1);
+	assert.equal(unmatchedAx.length, 1, "the second AX node does not also fuse into the same DOM entity");
+	const backendLocators = (merged[0]?.locators || []).filter((locator) => locator.by === "backendNodeId");
+	assert.ok(backendLocators.length <= 1, "DOM entity is not stamped with two distinct AX backend ids");
+});

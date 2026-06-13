@@ -400,19 +400,21 @@ function boxIoU(a?: { x: number; y: number; w: number; h: number }, b?: { x: num
 	return union > 0 ? intersection / union : undefined;
 }
 
-function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): number | undefined {
+function axMatchScore(dom: EntityMatchInfo, ax: EntityMatchInfo): { score: number; geometryBacked: boolean } | undefined {
 	const iou = boxIoU(dom.box, ax.box);
-	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return 120 + iou * 10;
+	if (iou !== undefined && iou >= COINCIDENT_BOX_IOU) return { score: 120 + iou * 10, geometryBacked: true };
 	if (dom.name !== undefined && ax.name !== undefined && dom.name !== ax.name) return undefined;
 	const nameMatch = dom.name !== undefined && dom.name === ax.name;
 	const roleMatch = dom.role === ax.role;
 	const dist = pointDistance(dom.point, ax.point);
 	const geomKnown = dist !== undefined;
 	const geomClose = dist !== undefined && dist <= GEOMETRY_MATCH_RADIUS_PX;
-	if (nameMatch && geomClose) return 100 - dist;
-	if (roleMatch && geomClose) return 80 - dist;
-	if (roleMatch && nameMatch && !geomKnown) return 60;
-	if (roleMatch && !geomKnown) return 40;
+	if (nameMatch && geomClose) return { score: 100 - dist, geometryBacked: true };
+	if (roleMatch && geomClose) return { score: 80 - dist, geometryBacked: true };
+	// No shared geometry below this line: these matches rest on role (and maybe name) alone, so they
+	// must not be trusted when more than one candidate ties (see mergeDomAndAxEntities pass 2).
+	if (roleMatch && nameMatch && !geomKnown) return { score: 60, geometryBacked: false };
+	if (roleMatch && !geomKnown) return { score: 40, geometryBacked: false };
 	return undefined;
 }
 
@@ -420,24 +422,57 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 	const merged: Entity[] = domEntities.map((entity) => ({ ...entity, ...(entity.hints ? { hints: { ...entity.hints } } : {}) }));
 	const domPrepared = merged.map((entity) => buildEntityMatchInfo(entity));
 	const axPrepared = axEntities.map((ax) => buildEntityMatchInfo(ax.entity));
-	const used = new Set<number>();
+	const usedAx = new Set<number>();
+	const usedDom = new Set<number>();
+	// AX and DOM are two projections of the same node tree, so a DOM entity fuses with at most one
+	// AX node. Consuming the DOM on commit enforces that 1:1 invariant — it stops several AX nodes
+	// from piling their (distinct) authoritative state onto a single DOM entity.
+	const commit = (axIndex: number, domIndex: number): void => {
+		merged[domIndex] = mergedEntity(merged[domIndex]!, axEntities[axIndex]!.entity);
+		domPrepared[domIndex] = buildEntityMatchInfo(merged[domIndex]!);
+		usedAx.add(axIndex);
+		usedDom.add(domIndex);
+	};
+	// Pass 1 — geometry-backed matches (box IoU or coincident point). These are high-confidence, so
+	// they claim their DOM first: a reliable spatial match must always win a DOM over a weaker
+	// geometry-less one that merely shares a role.
 	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
-		const ax = axEntities[axIndex]!;
-		const axInfo = axPrepared[axIndex]!;
 		let bestIndex = -1;
 		let bestScore = 0;
 		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
-			const score = axMatchScore(domPrepared[domIndex]!, axInfo);
-			if (score !== undefined && score > bestScore) {
-				bestScore = score;
+			if (usedDom.has(domIndex)) continue;
+			const match = axMatchScore(domPrepared[domIndex]!, axPrepared[axIndex]!);
+			if (match?.geometryBacked && match.score > bestScore) {
+				bestScore = match.score;
 				bestIndex = domIndex;
 			}
 		}
-		if (bestIndex >= 0) {
-			merged[bestIndex] = mergedEntity(merged[bestIndex]!, ax.entity);
-			domPrepared[bestIndex] = buildEntityMatchInfo(merged[bestIndex]!);
-			used.add(axIndex);
-		}
+		if (bestIndex >= 0) commit(axIndex, bestIndex);
 	}
-	return { merged, unmatchedAx: axEntities.filter((_, index) => !used.has(index)) };
+	// Pass 2 — geometry-less matches (role, or role+name, with no shared point). With no geometry to
+	// disambiguate, a tie among same-role candidates is a coin-flip that used to glue the AX node
+	// onto whichever DOM entity came first in array order, mis-attributing its widget state to the
+	// wrong sibling. Commit such a match ONLY when its best candidate is unambiguous; otherwise leave
+	// the AX node unmatched so it is appended as its own entity (lossless) rather than corrupting a
+	// sibling. This dissolves the whole geometry-less mis-association class, not one instance.
+	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
+		if (usedAx.has(axIndex)) continue;
+		let bestIndex = -1;
+		let bestScore = 0;
+		let ambiguous = false;
+		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
+			if (usedDom.has(domIndex)) continue;
+			const match = axMatchScore(domPrepared[domIndex]!, axPrepared[axIndex]!);
+			if (match === undefined) continue;
+			if (match.score > bestScore) {
+				bestScore = match.score;
+				bestIndex = domIndex;
+				ambiguous = false;
+			} else if (match.score === bestScore && bestIndex >= 0) {
+				ambiguous = true;
+			}
+		}
+		if (bestIndex >= 0 && !ambiguous) commit(axIndex, bestIndex);
+	}
+	return { merged, unmatchedAx: axEntities.filter((_, index) => !usedAx.has(index)) };
 }
