@@ -6,7 +6,7 @@ import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserBridgeServer } from "../../src/driver/BrowserBridgeServer.ts";
 import { writeTemporalProfileArtifacts } from "../../src/driver/temporalProfileArtifacts.ts";
 import { ToolCollectingAdapter } from "../../src/frontend/toolCollector.ts";
@@ -247,6 +247,18 @@ function firstRecord(...values) {
 	return undefined;
 }
 
+function temporalFromEffect(effect) {
+	const record = isRecord(effect) ? effect : undefined;
+	return isRecord(record?.temporal) ? record.temporal : undefined;
+}
+
+function effectFromParsedResult(parsed) {
+	const summary = firstRecord(parsed?.summary, parsed?.envelope?.summary);
+	const data = firstRecord(parsed?.data, parsed?.envelope?.data);
+	const execution = firstRecord(parsed?.execution, data?.execution, parsed?.envelope?.execution);
+	return firstRecord(summary?.effect, parsed?.effect, data?.effect, execution?.effect);
+}
+
 function supervisorFromParsed(parsed) {
 	const data = isRecord(parsed?.data) ? parsed.data : undefined;
 	if (isRecord(data?.supervisor)) return data.supervisor;
@@ -255,7 +267,7 @@ function supervisorFromParsed(parsed) {
 	return undefined;
 }
 
-function maybeTemporalProfileSample(toolResult, params, metrics, call) {
+export function maybeTemporalProfileSample(toolResult, params, metrics, call) {
 	const parsed = tryParseJson(resultText(toolResult));
 	const diagnostics = firstRecord(
 		toolResult?.details?.diagnostics,
@@ -265,14 +277,19 @@ function maybeTemporalProfileSample(toolResult, params, metrics, call) {
 	);
 	const temporalProfile = firstRecord(diagnostics?.temporalProfile);
 	const supervisor = supervisorFromParsed(parsed);
-	const temporal = firstRecord(diagnostics?.temporal, supervisor?.temporal);
+	const effect = effectFromParsedResult(parsed);
+	const effectTemporal = temporalFromEffect(effect);
+	const temporal = call.tool === "browser_execute"
+		? firstRecord(effectTemporal, diagnostics?.temporal, supervisor?.temporal)
+		: firstRecord(diagnostics?.temporal, supervisor?.temporal, effectTemporal);
 	const verdict = firstRecord(temporal?.verdict);
 	const frontier = firstRecord(temporal?.frontier);
 	const operation = firstRecord(parsed?.operation, parsed?.data?.operation);
+	const effectTargetRef = typeof effect?.targetRef === "string" ? effect.targetRef : undefined;
 	const target = {
 		...(typeof params.browserSessionId === "string" ? { browserSessionId: params.browserSessionId } : {}),
 		...(Number.isInteger(Number(params.tabId)) ? { tabId: Number(params.tabId) } : {}),
-		...(typeof params.targetRef === "string" ? { targetRef: params.targetRef } : {}),
+		...(typeof params.targetRef === "string" ? { targetRef: params.targetRef } : effectTargetRef ? { targetRef: effectTargetRef } : {}),
 	};
 	const sample = {
 		...(typeof operation?.operationId === "string" ? { operationId: operation.operationId } : {}),
@@ -293,7 +310,7 @@ function maybeTemporalProfileSample(toolResult, params, metrics, call) {
 		reasons: Array.isArray(verdict?.reasons) ? verdict.reasons.filter((item) => typeof item === "string").slice(0, 3) : undefined,
 		recovery: typeof frontier?.next === "string" ? frontier.next : undefined,
 	};
-	return sample;
+	return Object.fromEntries(Object.entries(sample).filter(([, value]) => value !== undefined));
 }
 
 async function fixtureFileResponse(res, relPath) {
@@ -1307,7 +1324,9 @@ async function withTimeout(promise, timeoutMs, label) {
 	}
 }
 
-main().catch((error) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch((error) => {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}

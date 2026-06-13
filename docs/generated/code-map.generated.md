@@ -15,7 +15,7 @@
 | `src/capture` | 5 | 46 |
 | `src/content` | 1 | 20 |
 | `src/distill-core` | 16 | 1679 |
-| `src/driver` | 24 | 4110 |
+| `src/driver` | 24 | 4188 |
 | `src/frontend` | 4 | 394 |
 | `src/memory` | 4 | 395 |
 | `src/memory-core` | 7 | 433 |
@@ -23,7 +23,7 @@
 | `src/protocol` | 3 | 3087 |
 | `src/resources` | 4 | 675 |
 | `src/scan` | 3 | 165 |
-| `src/temporal-core` | 6 | 579 |
+| `src/temporal-core` | 6 | 574 |
 | `src/tools` | 136 | 22858 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |

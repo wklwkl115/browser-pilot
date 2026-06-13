@@ -53,10 +53,10 @@ export function temporalProfileSummaryPath(cwd?: string): string {
 }
 
 export function temporalProfileRunDir(cwd: string | undefined, runId: string): string {
-	return path.join(artifactRoot(cwd), "temporal-profile", safeRunId(runId));
+	return path.join(artifactRoot(cwd), "temporal-profile", normalizeTemporalProfileRunId(runId));
 }
 
-function safeRunId(runId: string): string {
+export function normalizeTemporalProfileRunId(runId: string): string {
 	return runId.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120) || "runtime";
 }
 
@@ -93,7 +93,7 @@ export function summarizeTemporalProfileSamples(samples: TemporalProfileSample[]
 	const summary: TemporalProfileSummary = {
 		schemaVersion: 1,
 		generatedAt: new Date().toISOString(),
-		runId: safeRunId(input.runId),
+		runId: normalizeTemporalProfileRunId(input.runId),
 		...(input.runnerSummaryPath ? { runnerSummaryPath: pathRef(input.cwd, input.runnerSummaryPath) } : {}),
 		...(input.evalRunDir ? { resultDir: pathRef(input.cwd, input.evalRunDir) } : {}),
 		sampleCount: samples.length,

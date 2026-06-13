@@ -7,6 +7,11 @@ import { BrowserTemporalCoordinator, queueTemporalDiagnostics } from "../../../s
 import { summarizeTemporalProfileSamples, writeTemporalProfileArtifacts } from "../../../src/driver/temporalProfileArtifacts.ts";
 import type { BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo } from "../../../src/driver/types.ts";
 
+function parseJsonLines(text: string): Array<Record<string, unknown>> {
+	const trimmed = text.trim();
+	return trimmed ? trimmed.split("\n").map((line) => JSON.parse(line) as Record<string, unknown>) : [];
+}
+
 test("temporal profile artifacts write canonical summary, per-run samples, and eval copy", async () => {
 	const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-temporal-profile-"));
 	const evalRunDir = path.join(cwd, "eval-run");
@@ -28,6 +33,68 @@ test("temporal profile artifacts write canonical summary, per-run samples, and e
 	assert.equal(canonical.queueDelayMs.samples, 1);
 	assert.deepEqual(runSummary, canonical);
 	assert.equal(samplesText.trim().split("\n").length, 2);
+});
+
+test("BrowserTemporalCoordinator buckets runtime profile samples by cwd and runId", async () => {
+	const cwdOne = await mkdtemp(path.join(os.tmpdir(), "pi-temporal-cwd-one-"));
+	const cwdTwo = await mkdtemp(path.join(os.tmpdir(), "pi-temporal-cwd-two-"));
+	const coordinator = new BrowserTemporalCoordinator({ runtimeSampleCap: 10 });
+	const one = await coordinator.recordProfileSample({ tool: "browser_wait", command: "cwd-one", elapsedMs: 1 }, { cwd: cwdOne, runId: "runtime" });
+	const two = await coordinator.recordProfileSample({ tool: "browser_execute", command: "cwd-two", elapsedMs: 2 }, { cwd: cwdTwo, runId: "runtime" });
+	const otherRun = await coordinator.recordProfileSample({ tool: "browser_wait", command: "cwd-one-other-run", elapsedMs: 3 }, { cwd: cwdOne, runId: "run:two" });
+	assert(one);
+	assert(two);
+	assert(otherRun);
+
+	const oneSamples = parseJsonLines(await readFile(one.runSamplesPath, "utf8"));
+	const twoSamples = parseJsonLines(await readFile(two.runSamplesPath, "utf8"));
+	const otherRunSamples = parseJsonLines(await readFile(otherRun.runSamplesPath, "utf8"));
+	assert.deepEqual(oneSamples.map((sample) => sample.command), ["cwd-one"]);
+	assert.deepEqual(twoSamples.map((sample) => sample.command), ["cwd-two"]);
+	assert.deepEqual(otherRunSamples.map((sample) => sample.command), ["cwd-one-other-run"]);
+
+	const oneSummary = JSON.parse(await readFile(one.runSummaryPath, "utf8"));
+	const twoSummary = JSON.parse(await readFile(two.runSummaryPath, "utf8"));
+	assert.equal(oneSummary.sampleCount, 1);
+	assert.equal(oneSummary.commands["cwd-one"], 1);
+	assert.equal(oneSummary.commands["cwd-two"], undefined);
+	assert.equal(twoSummary.sampleCount, 1);
+	assert.equal(twoSummary.commands["cwd-two"], 1);
+	assert.equal(twoSummary.commands["cwd-one"], undefined);
+
+	const runtimeSummary = coordinator.profileSummary({ cwd: cwdOne, runId: "runtime" });
+	assert.equal(runtimeSummary.sampleCount, 1);
+	assert.equal(runtimeSummary.commands["cwd-one"], 1);
+	assert.equal(runtimeSummary.commands["cwd-one-other-run"], undefined);
+});
+
+test("BrowserTemporalCoordinator caps runtime bucket samples before writing artifacts", async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-temporal-cap-"));
+	const coordinator = new BrowserTemporalCoordinator({ runtimeSampleCap: 2 });
+	await coordinator.recordProfileSample({ tool: "browser_wait", command: "oldest", elapsedMs: 10 }, { cwd });
+	await coordinator.recordProfileSample({ tool: "browser_wait", command: "middle", elapsedMs: 20 }, { cwd });
+	const paths = await coordinator.recordProfileSample({ tool: "browser_execute", command: "newest", elapsedMs: 30 }, { cwd });
+	assert(paths);
+
+	const samples = parseJsonLines(await readFile(paths.runSamplesPath, "utf8"));
+	assert.deepEqual(samples.map((sample) => sample.command), ["middle", "newest"]);
+
+	const runSummary = JSON.parse(await readFile(paths.runSummaryPath, "utf8"));
+	const canonicalSummary = JSON.parse(await readFile(paths.canonicalSummaryPath, "utf8"));
+	for (const summary of [runSummary, canonicalSummary]) {
+		assert.equal(summary.sampleCount, 2);
+		assert.equal(summary.commands.oldest, undefined);
+		assert.equal(summary.commands.middle, 1);
+		assert.equal(summary.commands.newest, 1);
+		assert.equal(summary.elapsedMs.min, 20);
+		assert.equal(summary.elapsedMs.max, 30);
+	}
+
+	const runtimeSummary = coordinator.profileSummary({ cwd });
+	assert.equal(runtimeSummary.sampleCount, 2);
+	assert.equal(runtimeSummary.commands.oldest, undefined);
+	assert.equal(runtimeSummary.commands.middle, 1);
+	assert.equal(runtimeSummary.commands.newest, 1);
 });
 
 test("BrowserTemporalCoordinator synthesizes stamps from existing snapshot carriers", () => {
@@ -118,6 +185,45 @@ test("BrowserTemporalCoordinator builds samples from result diagnostics and supe
 	const summary = summarizeTemporalProfileSamples([sample], { runId: "runtime" });
 	assert.equal(summary.historyLostCount, 1);
 	assert.equal(summary.waitAttempts?.median, 2);
+});
+
+test("BrowserTemporalCoordinator samples browser_execute temporal verdict from execution effect", () => {
+	const coordinator = new BrowserTemporalCoordinator();
+	const sample = coordinator.buildProfileSample({
+		operationId: "op-execute",
+		tool: "browser_execute",
+		command: "javascript",
+		deadlineMs: 1000,
+		elapsedMs: 18,
+		result: {
+			acknowledged: true,
+			data: {},
+			execution: {
+				effect: {
+					targetRef: "pi-ref://control/pay",
+					temporal: {
+						verdict: { status: "possibly_stale", confidence: "bounded", reasons: ["target_stale_before_dispatch", "target_region_dirty"] },
+						frontier: { next: "reobserve" },
+					},
+				},
+			},
+		} as unknown as BrowserBridgeExecutionResult,
+	});
+
+	assert.deepEqual(sample, {
+		operationId: "op-execute",
+		tool: "browser_execute",
+		command: "javascript",
+		target: { targetRef: "pi-ref://control/pay" },
+		deadlineMs: 1000,
+		elapsedMs: 18,
+		verdict: "possibly_stale",
+		reasons: ["target_stale_before_dispatch", "target_region_dirty"],
+		recovery: "reobserve",
+	});
+	const summary = summarizeTemporalProfileSamples([sample], { runId: "runtime" });
+	assert.equal(summary.reasons.target_stale_before_dispatch, 1);
+	assert.equal(summary.recovery.reobserve, 1);
 });
 
 test("queueTemporalDiagnostics emits profile always and verdict only for pressure", () => {
