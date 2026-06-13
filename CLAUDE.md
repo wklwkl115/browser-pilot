@@ -8,6 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **pi-browser-tools** is a native Pi browser automation extension that provides real browser tab control, simplified DOM scanning (GA-style), JavaScript/CDP execution, evidence capture, network recording, file transfer, and a Web security testing tool layer — all backed by a Chrome extension service worker and a Node.js bridge server.
 
+## Design Philosophy
+
+**Root-Truth Sourcing (釜底抽薪) — solve every problem at the lowest *real* layer, never on a convenient but lossy upper layer.** This is a standing stance, not a one-off technique: refuse to work on the lossy upper layer.
+
+- **Building:** observe truth from *beneath* the abstraction boundary that hides it — CDP below the JS sandbox, the browser engine below any framework. Ask the engine directly (`DOMDebugger.getEventListeners`) instead of inferring from downstream artifacts (`__reactProps` / `cursor:pointer` heuristics).
+- **Deciding:** source from running code (verified `file:line`), first principles, and measured / real-agent evidence — never from framework products or archived/superseded docs.
+- **Root fix vs patch:** a fix must dissolve a whole *class* of inputs (agnostic by construction), not handle one instance — a tech-stack name appearing in the code is an overfit smell. Thread it by an identity that survives boundaries (`backendNodeId`, not CSS selector). Going lower is a hypothesis until proven at the mechanism and net-positive.
+
 ## Current Execution State
 
 - Current execution entry: `CURRENT.md`; current top-level navigation: `TODO.md`; future routes:

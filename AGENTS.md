@@ -18,6 +18,7 @@
 - Atomic Composability: prefer Unix-like primitives and programmable surfaces over black-box workflows or excessive micro-tools.
 - Recoverable Diagnostics: optimize for feedback loops. Return structured high-signal summaries, actionable errors, observable state, idempotent/replayable operations, and artifact evidence.
 - Eval-Driven Evolution: evolve tool interfaces from realistic task evals, failed transcripts, token/call cost, success rate, and recovery quality.
+- Root-Truth Sourcing (釜底抽薪): solve at the lowest *real* layer, never on a convenient but lossy upper layer — this is a standing stance, not a one-off technique. When building, observe truth from *beneath* the abstraction boundary that hides it (CDP below the JS sandbox; the browser engine below any framework) and ask the engine directly rather than inferring from downstream artifacts (`DOMDebugger.getEventListeners` over sniffing `__reactProps`/`cursor:pointer`). A fix must dissolve a *class* of inputs, not one instance — agnostic by construction, not by per-framework coverage, so a tech-stack name appearing in the code is an overfit smell; thread it by an identity that survives boundaries (`backendNodeId`, not CSS selector). When deciding, source from running code (verified `file:line`), first principles, and measured/real-agent evidence — never from framework products or archived/superseded docs. Going lower is a hypothesis until proven at the mechanism and net-positive.
 
 ## Tool Design Rules
 
