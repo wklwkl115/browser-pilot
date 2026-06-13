@@ -327,8 +327,9 @@ export class BrowserTabSessionRouter {
 
 	resolveTargetRef(value: unknown, browserSessionId?: string, source: BrowserBridgeTargetSource = "explicit"): BrowserBridgeTargetInfo | undefined {
 		if (value === undefined) return undefined;
+		const normalizedValue = this.targetRefValue(value);
 		const browserSession = this.browserSession(browserSessionId);
-		const handle = this.normalizeTabHandle(value);
+		const handle = this.normalizeTabHandle(normalizedValue);
 		if (handle) {
 			const session = this.liveSessionForHandle(handle, browserSessionId);
 			if (!session) {
@@ -340,7 +341,19 @@ export class BrowserTabSessionRouter {
 			}
 			return this.targetInfo(source, session.tabId, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
 		}
-		const requestedTabId = toTabId(value);
+		const sessionId = this.normalizeTabSessionId(normalizedValue);
+		if (sessionId) {
+			const session = this.liveSessionForTabSessionId(sessionId, browserSessionId);
+			if (!session) {
+				throw targetHandleNotFoundError({
+					tabHandle: sessionId,
+					browserSessionId: browserSession.id,
+					tabs: this.getTabs(),
+				});
+			}
+			return this.targetInfo(source, session.tabId, browserSession, { tabHandle: session.tabHandle, targetRef: session.tabHandle });
+		}
+		const requestedTabId = toTabId(normalizedValue);
 		if (!requestedTabId) return undefined;
 		const resolved = this.resolveNumericTabId(requestedTabId, browserSessionId);
 		return this.targetInfo(source, resolved.tabId, browserSession, {
@@ -469,6 +482,31 @@ export class BrowserTabSessionRouter {
 		return /^tabh_[A-Za-z0-9]+_[A-Za-z0-9]+_g\d+$/.test(trimmed) ? trimmed : undefined;
 	}
 
+	private targetRefValue(value: unknown): unknown {
+		const record = recordValue(value);
+		if (!record) return value;
+		const createdTarget = recordValue(record.createdTarget);
+		const createdTab = recordValue(record.createdTab);
+		const target = recordValue(record.target);
+		const tab = recordValue(record.tab);
+		const data = recordValue(record.data);
+		return record.targetRef ?? record.tabHandle
+			?? createdTarget?.targetRef ?? createdTarget?.tabHandle ?? createdTarget?.tabId
+			?? createdTab?.targetRef ?? createdTab?.tabHandle ?? createdTab?.tabId
+			?? target?.targetRef ?? target?.tabHandle ?? target?.tabId
+			?? tab?.targetRef ?? tab?.tabHandle ?? tab?.tabId
+			?? data?.targetRef ?? data?.tabHandle ?? data?.tabId
+			?? record.tabId
+			?? record.id
+			?? value;
+	}
+
+	private normalizeTabSessionId(value: unknown): string | undefined {
+		if (typeof value !== "string") return undefined;
+		const trimmed = value.trim();
+		return /^[^:\s]+:\d+$/.test(trimmed) ? trimmed : undefined;
+	}
+
 	private liveSessionForHandle(tabHandle: string, browserSessionId?: string): BrowserTabSession | undefined {
 		const live = Array.from(this.sessions.values()).filter((session) => session.tabHandle === tabHandle && !session.disconnectedAt && isOpen(session.client));
 		const scopeClient = this.browserSessions.selectedOpenClient(this.browserSession(browserSessionId));
@@ -479,6 +517,13 @@ export class BrowserTabSessionRouter {
 			tabHandle,
 			tabs: live.map(tabSessionSummary),
 		});
+	}
+
+	private liveSessionForTabSessionId(tabSessionId: string, browserSessionId?: string): BrowserTabSession | undefined {
+		const live = Array.from(this.sessions.values()).filter((session) => session.id === tabSessionId && !session.disconnectedAt && isOpen(session.client));
+		const scopeClient = this.browserSessions.selectedOpenClient(this.browserSession(browserSessionId));
+		const scoped = scopeClient ? live.find((session) => session.client === scopeClient) : undefined;
+		return scoped ?? live[0];
 	}
 
 	private targetSession(tabId: number | undefined, browserSession: BrowserAutomationSession): BrowserTabSession | undefined {

@@ -70,6 +70,32 @@ test("BrowserTabSessionRouter preserves tabHandle across replacement and follows
 	assert.equal(router.resolveTargetRef(before.tabHandle, undefined, "explicit")?.tabId, 4);
 });
 
+test("BrowserTabSessionRouter resolves public tab result aliases to the same live tab", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+	const ws = fakeSocket();
+	clients.register(ws);
+	clients.updateClientInfo(ws, { id: "browser-a" });
+	router.updateTabs([{ id: 23, active: true, url: "https://example.test/new" }], ws);
+	const tab = router.getTabs()[0]!;
+
+	assert.equal(router.resolveTargetRef(tab.id, undefined, "explicit")?.tabId, 23, "legacy tab session id remains consumable");
+	assert.equal(router.resolveTargetRef({ id: tab.targetRef }, undefined, "explicit")?.tabId, 23, "public id alias resolves when it is the stable targetRef");
+	assert.equal(router.resolveTargetRef({ createdTarget: { targetRef: tab.targetRef }, id: "request-uuid" }, undefined, "explicit")?.tabId, 23, "createdTarget wins over request id");
+	assert.equal(router.resolveTargetRef({ data: { targetRef: tab.targetRef }, id: "request-uuid" }, undefined, "explicit")?.tabId, 23, "nested data targetRef wins over request id");
+	assert.equal(router.resolveTargetRef({ data: { tabId: 23 }, id: "request-uuid" }, undefined, "explicit")?.tabId, 23, "nested numeric tabId is still accepted");
+	assert.equal(router.resolveTargetRef("request-uuid", undefined, "explicit"), undefined, "bare request ids are not treated as tab ids");
+});
+
+test("BrowserTabSessionRouter does not classify URL-like strings as tab session ids", () => {
+	const clients = new BrowserBridgeClientRegistry(18765);
+	const browserSessions = new BrowserSessionRegistry();
+	const router = new BrowserTabSessionRouter(clients, browserSessions);
+
+	assert.equal(router.resolveTargetRef("https://example.test/page", undefined, "explicit"), undefined);
+});
+
 test("BrowserTabSessionRouter two consecutive tab replacements preserve handle across both hops", () => {
 	const clients = new BrowserBridgeClientRegistry(18765);
 	const browserSessions = new BrowserSessionRegistry();

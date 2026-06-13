@@ -9,7 +9,17 @@ function registerFakeTabsTool(snapshotOverride?: Record<string, unknown>) {
 	let observationSnapshotCalls = 0;
 	const server = {
 		async refreshTabs() {
-			return [{ id: 7, tabId: 7, browserId: "browser-1", active: true, url: "https://example.test/", title: "Example", bridge: { id: "bridge-1", userAgent: "ua" } }];
+			return [{ id: "browser-1:7", tabId: 7, browserId: "browser-1", targetRef: "tabh_browser1_existing_g1", tabHandle: "tabh_browser1_existing_g1", active: true, url: "https://example.test/", title: "Example", bridge: { id: "bridge-1", userAgent: "ua" } }];
+		},
+		async createTab() {
+			return {
+				id: "create-1",
+				acknowledged: true,
+				data: { id: 8, tabId: 8, url: "https://created.example/", targetRef: "tabh_browser1_created_g1", tabHandle: "tabh_browser1_created_g1" },
+				target: { source: "none", implicit: false, selectionVersionAtDispatch: 1 },
+				createdTarget: { browserSessionId: "default", tabId: 8, targetRef: "tabh_browser1_created_g1", tabHandle: "tabh_browser1_created_g1", source: "explicit", implicit: false, selectionVersionAtDispatch: 1 },
+				createdTab: { id: "browser-1:8", browserId: "browser-1", tabId: 8, targetRef: "tabh_browser1_created_g1", tabHandle: "tabh_browser1_created_g1", url: "https://created.example/" },
+			};
 		},
 		snapshot() {
 			snapshotCalls += 1;
@@ -47,6 +57,9 @@ test("browser_tabs list hoists bridge by default and keeps per-tab bridge behind
 	const compactJson = JSON.parse(compactResult.content[0].text) as Record<string, any>;
 	assert.equal(compactJson.tabCount, 1);
 	assert.ok(Array.isArray(compactJson.tabs));
+	assert.equal(compactJson.tabs[0].id, "tabh_browser1_existing_g1");
+	assert.equal(compactJson.tabs[0].tabSessionId, "browser-1:7");
+	assert.equal(compactJson.tabs[0].targetRef, "tabh_browser1_existing_g1");
 	assert.equal(compactJson.tabs[0].tabId, 7);
 	assert.equal("bridge" in compactJson.tabs[0], false, "default list omits repeated per-tab bridge block");
 	assert.ok(compactJson.bridge?.running === true, "shared bridge diagnostics are hoisted to top-level");
@@ -92,4 +105,22 @@ test("browser_tabs snapshot redacts lease and uiLock owners while preserving exp
 	assert.equal(typeof json.bridge.leases[0].remainingMs, "number");
 	assert.equal(typeof json.bridge.uiLock.browserSessionHash, "string");
 	assert.equal(typeof json.bridge.uiLock.expiresAt, "number");
+});
+
+test("browser_tabs create returns the created targetRef for follow-up tab-scoped calls", async () => {
+	const { tool } = registerFakeTabsTool();
+	const result = await tool.execute("tabs-create", { action: "create", url: "https://created.example/", maxChars: 10_000 }, undefined, undefined, { cwd: process.cwd(), hasUI: false });
+	const json = JSON.parse(result.content[0].text) as Record<string, any>;
+	assert.equal(json.id, "tabh_browser1_created_g1");
+	assert.equal(json.requestId, "create-1");
+	assert.equal(json.targetRef, "tabh_browser1_created_g1");
+	assert.equal(json.tabHandle, "tabh_browser1_created_g1");
+	assert.equal(json.tabId, 8);
+	assert.equal(json.createdTarget.targetRef, "tabh_browser1_created_g1");
+	assert.equal(json.createdTab.id, "tabh_browser1_created_g1");
+	assert.equal(json.createdTab.tabSessionId, "browser-1:8");
+	assert.equal(json.createdTab.targetRef, "tabh_browser1_created_g1");
+	assert.equal(json.data.tabId, 8);
+	assert.equal(json.data.targetRef, "tabh_browser1_created_g1");
+	assert.equal(json.target.source, "none");
 });

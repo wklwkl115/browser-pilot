@@ -222,5 +222,7 @@ export type BrowserBridgeExecutionResult<TData = unknown, TNewTabs = unknown[]> 
 	data?: TData;
 	newTabs?: TNewTabs;
 	target?: BrowserBridgeTargetInfo;
+	createdTarget?: BrowserBridgeTargetInfo;
+	createdTab?: BrowserTabInfo;
 	diagnostics?: Record<string, unknown>;
 };

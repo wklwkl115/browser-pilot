@@ -1035,6 +1035,7 @@
         "src/tools/summaries/webSecurity/wasm.ts",
         "src/tools/summaries/webSecurity/wasmBridge.ts",
         "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/tabsProjection.ts",
         "src/tools/toolAdapter.ts",
         "src/tools/toolRegistry.ts",
         "src/tools/toolShared.ts",

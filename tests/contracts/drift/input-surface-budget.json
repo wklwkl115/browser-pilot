@@ -1,7 +1,7 @@
 {
   "version": 1,
   "toolCount": 22,
-  "totalChars": 39568,
+  "totalChars": 39622,
   "tools": {
     "browser_artifact": {
       "advertisedChars": 3676,
@@ -76,7 +76,7 @@
       "file": "src/tools/webSecurity/register/registerSqli.ts"
     },
     "browser_tabs": {
-      "advertisedChars": 1681,
+      "advertisedChars": 1735,
       "file": "src/tools/registerTabsTool.ts"
     },
     "browser_template": {
@@ -92,5 +92,5 @@
       "file": "src/tools/registerNativeActionTools.ts"
     }
   },
-  "justification": "targetRef (tab-scoped stable handle param, live in runtime schemas since living-tab S0) was missing from the doc generator SHARED_TOOL_PARAMS; v7 remediation makes the advertised surface match the real schema surface (+204 chars across tab-scoped tools, no new runtime params)"
+  "justification": "browser_tabs now advertises the normalized tab identity contract: list/create return stable targetRef-compatible ids while bridge request ids remain requestId"
 }

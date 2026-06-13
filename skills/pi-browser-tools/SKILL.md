@@ -25,13 +25,13 @@ On long lists/tables first read top-level `collections` for completeness / conti
 
 ## Loop
 
-1. `browser_tabs {action:"list"}` → note the target `tabHandle` and pass it as `targetRef` when you must disambiguate. Numeric `tabId` is still accepted for compatibility and auto-follows unambiguous in-place replacement; omit `targetRef`/`tabId` to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
+1. `browser_tabs {action:"list"}` → note the target `id`/`targetRef`/`tabHandle` and pass it as `targetRef` when you must disambiguate. Numeric `tabId` is still accepted for compatibility and auto-follows unambiguous in-place replacement; omit `targetRef`/`tabId` to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
 4. Verify: `browser_wait` / re-observe / network|hook evidence / read artifact.
 5. Report: `targetRef`/`tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
-`browser_tabs {action:"create"}` opens a tab; `switch` only to intentionally change the active one. `browserSessionId` is managed via `browser_tabs` session actions — omit it unless juggling concurrent sessions.
+`browser_tabs {action:"create"}` opens a tab; its top-level `id` is the new tab's reusable `targetRef`, while the lower-level bridge request id is named `requestId`. `switch` only to intentionally change the active one. `browserSessionId` is managed via `browser_tabs` session actions — omit it unless juggling concurrent sessions.
 
 Memory is a Loop bookend: `browser_observe` may surface matched local memory in `envelope.memory`; on success `browser_memory record` at step 5. See Memory.
 

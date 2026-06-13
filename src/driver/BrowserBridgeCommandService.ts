@@ -24,6 +24,7 @@ import { queueTemporalDiagnostics } from "./BrowserTemporalCoordinator.js";
 
 type SendPayloadOptions = ExecuteOptions & { target?: BrowserBridgeTargetInfo };
 type CommandExecutionPlan = { target?: BrowserBridgeTargetInfo; tabId?: number; accessMode: "read" | "write" };
+type CreatedTabFields = Pick<BrowserBridgeExecutionResult, "createdTarget" | "createdTab">;
 
 /**
  * Grace window to let a not-yet-connected extension dial into the bridge before a
@@ -111,15 +112,7 @@ export class BrowserBridgeCommandService {
 	}
 
 	async createTab(url: string, active = true, timeoutMs = 5_000, options: { browserSessionId?: string; incognito?: boolean } = {}): Promise<BrowserBridgeExecutionResult> {
-		const result = await this.sendCommand({ cmd: "tabs", method: "create", url, active, ...(options.incognito ? { incognito: true } : {}) }, { timeoutMs, browserSessionId: options.browserSessionId });
-		// A newly created tab only becomes a live router session when the extension's ASYNC `tabs_update`
-		// event arrives (chrome.tabs.onCreated → sendTabsUpdate). An immediate tab-scoped call on the
-		// returned tabId (e.g. browser_wait) would otherwise race that event and hit TAB_NOT_FOUND — a
-		// friction real agents repeatedly worked around by re-running browser_tabs list. Eagerly refresh
-		// (tabs.list → updateTabs) so the new tab is registered before we return its id. Best-effort: if
-		// the refresh fails the create result still returns, and the agent's tabs.list recovery still applies.
-		try { await this.refreshTabs(timeoutMs, options); } catch { /* best-effort tab registration; never fail create on it */ }
-		return result;
+		return await this.sendCommand({ cmd: "tabs", method: "create", url, active, ...(options.incognito ? { incognito: true } : {}) }, { timeoutMs, browserSessionId: options.browserSessionId });
 	}
 
 	async closeTab(tabId: number | string, timeoutMs = 5_000, options: { browserSessionId?: string } = {}): Promise<BrowserBridgeExecutionResult> {
@@ -180,7 +173,67 @@ export class BrowserBridgeCommandService {
 		}
 		if (validation.spec.tabScoped && tabId === undefined) throw new BrowserBridgeError("NO_TAB", "No target browser tab is available", { cmd: validation.command.cmd, tabs: this.deps.getTabs() });
 		const plan = this.commandExecutionPlan(validation.command, target, options.accessMode);
-		return this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode });
+		const result = await this.sendPayload(validation.command, { browserSessionId: options.browserSessionId, tabId: plan.tabId, timeoutMs: options.timeoutMs, target: plan.target, accessMode: plan.accessMode });
+		if (this.isCreateTabCommand(validation.canonicalCmd, validation.command)) {
+			return await this.withCreatedTabTarget(result, options);
+		}
+		return result;
+	}
+
+	private isCreateTabCommand(canonicalCmd: string, command: BridgeCommand): boolean {
+		return canonicalCmd === "tabs" && String(command.method || "list").toLowerCase() === "create";
+	}
+
+	private async withCreatedTabTarget(result: BrowserBridgeExecutionResult, options: ExecuteOptions = {}): Promise<BrowserBridgeExecutionResult> {
+		const createdTabId = this.createdTabId(result);
+		if (createdTabId === undefined) return result;
+		// A newly created tab only becomes a live router session when the extension's ASYNC `tabs_update`
+		// event arrives (chrome.tabs.onCreated -> sendTabsUpdate). Eagerly refresh (tabs.list ->
+		// updateTabs) so follow-up tab-scoped calls can use the created targetRef without an extra list.
+		// Best-effort: a refresh/resolution failure must not turn a successful create into a failure.
+		try { await this.refreshTabs(options.timeoutMs ?? 5_000, { browserSessionId: options.browserSessionId }); } catch { /* keep the bridge create result usable by numeric tabId */ }
+		return this.attachCreatedTabFields(result, createdTabId, options.browserSessionId);
+	}
+
+	private createdTabId(result: BrowserBridgeExecutionResult): number | undefined {
+		const data = recordValue(result.data);
+		return toTabId(data?.tabId ?? data?.id ?? result.tabId);
+	}
+
+	private attachCreatedTabFields(result: BrowserBridgeExecutionResult, tabId: number, browserSessionId: string | undefined): BrowserBridgeExecutionResult {
+		const created = this.createdTabFields(tabId, browserSessionId);
+		const dataRecord = recordValue(result.data);
+		const data = dataRecord ? {
+			...dataRecord,
+			...(created.createdTarget?.targetRef ? { targetRef: created.createdTarget.targetRef } : {}),
+			...(created.createdTarget?.tabHandle ? { tabHandle: created.createdTarget.tabHandle } : {}),
+			...(created.createdTarget?.browserSessionId ? { browserSessionId: created.createdTarget.browserSessionId } : {}),
+			...(created.createdTarget?.browserId ? { browserId: created.createdTarget.browserId } : {}),
+		} : result.data;
+		return {
+			...result,
+			data,
+			...created,
+		};
+	}
+
+	private createdTabFields(tabId: number, browserSessionId: string | undefined): CreatedTabFields {
+		const browserSession = this.browserSession(browserSessionId);
+		const fallbackTarget = this.deps.tabs.targetInfo("explicit", tabId, browserSession);
+		try {
+			const createdTarget = this.deps.tabs.resolveTargetRef(tabId, browserSessionId, "explicit") ?? fallbackTarget;
+			const createdTab = createdTarget.targetRef
+				? this.deps.getTabs().find((tab) => tab.targetRef === createdTarget.targetRef)
+				: undefined;
+			return {
+				createdTarget,
+				...(createdTab ? { createdTab } : {}),
+			};
+		} catch {
+			return {
+				createdTarget: fallbackTarget,
+			};
+		}
 	}
 
 	private sendPayload(code: unknown, options: SendPayloadOptions = {}): Promise<BrowserBridgeExecutionResult> {
