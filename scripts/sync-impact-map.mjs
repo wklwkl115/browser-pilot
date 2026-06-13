@@ -160,6 +160,130 @@ const SCOPE_OVERRIDES = {
 			"package-lock.json",
 		],
 	},
+
+	// ── Pure boundary checks ──────────────────────────────────────────────────────
+	// These checks are static-analysis-only: they walk exactly one source subtree
+	// and verify import purity.  They do NOT execute any src logic.
+	// Safety: narrowing is safe because the only inputs are (a) the subtree under
+	// scrutiny, (b) the check script itself, and (c) purity-vocabulary helpers.
+	// A change anywhere in src/ outside the kernel subtree cannot affect the outcome.
+
+	"check:distill-core-boundary": {
+		// Walks src/distill-core/ only; checks each file for forbidden imports.
+		// purity-vocabulary.js provides the pattern set.
+		scope: "paths",
+		inputs: [
+			"src/distill-core/",
+			"tests/contracts/drift/check-distill-core-boundary.mjs",
+			"tests/contracts/drift/purity-vocabulary.js",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	"check:memory-core-boundary": {
+		// Walks src/memory-core/ only; checks each file for forbidden imports.
+		scope: "paths",
+		inputs: [
+			"src/memory-core/",
+			"tests/contracts/drift/check-memory-core-boundary.mjs",
+			"tests/contracts/drift/purity-vocabulary.js",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	"check:temporal-core-boundary": {
+		// Walks src/temporal-core/ only; checks each file for forbidden imports.
+		scope: "paths",
+		inputs: [
+			"src/temporal-core/",
+			"tests/contracts/drift/check-temporal-core-boundary.mjs",
+			"tests/contracts/drift/purity-vocabulary.js",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	"check:abml-core-boundary": {
+		// Walks src/abml-core/ AND src/abml/ (runtime shims live there).
+		// abml-core-manifest.js is the authoritative file-set list read by the check.
+		scope: "paths",
+		inputs: [
+			"src/abml-core/",
+			"src/abml/",
+			"tests/contracts/drift/abml-core-manifest.js",
+			"tests/contracts/drift/check-abml-core-boundary.mjs",
+			"tests/contracts/drift/purity-vocabulary.js",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	"check:recovery-boundary": {
+		// Walks ALL of src/ to hunt for scattered recovery-template patterns (the scatter
+		// check at check-recovery-boundary.mjs:115 readdirSync-walks the whole src/ tree).
+		// Also reads three specific src files.  Because the whole src/ tree is scanned,
+		// any src change can potentially remove a file from the grandfathered list or add
+		// a new recovery template — so we include all of src/.
+		scope: "paths",
+		inputs: [
+			"src/",
+			"tests/contracts/drift/check-recovery-boundary.mjs",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	// ── Summary-tree boundary (structure only) ────────────────────────────────────
+
+	"check:summary-boundary": {
+		// Walks src/tools/summaries/ only; counts local truncation sites.
+		// Does NOT import/execute any src code.
+		scope: "paths",
+		inputs: [
+			"src/tools/summaries/",
+			"tests/contracts/drift/check-summary-boundary.mjs",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
+	// ── Compaction ledger (static source scan) ────────────────────────────────────
+
+	"check:compaction-ledger": {
+		// Walks ALL of src/ for truncation-pattern matches against the committed ledger.
+		// Also imports assertCompactionTuningBounds from src/distill-core/compactionTuning.ts
+		// at runtime, but that only reads the ledger JSON — no full src execution path.
+		// Because the scatter walk covers all of src/, any src change may affect results.
+		scope: "paths",
+		inputs: [
+			"src/",
+			"docs/compaction-ledger.json",
+			"tests/contracts/drift/check-compaction-ledger.mjs",
+			"package.json",
+			"package-lock.json",
+			"tsconfig.json",
+			"tsconfig.base.json",
+		],
+	},
+
+	// ── Eval artifact checks (no src imports) ─────────────────────────────────────
+
+	// check:eval-workflows is intentionally left global: its spawnSync subprocess plus a
+	// top-level WORKSTREAMS_A_E_SUMMARY.md existence assert make its footprint unsafe to bound.
+
+	"check:browser-workflow-results": {
+		// Reads evals/browser-workflows/results/*.result.json + manifest.json + result-schema.json.
+		// No src imports; validates only eval result artifact structure.
+		scope: "paths",
+		inputs: [
+			"evals/browser-workflows/",
+			"tests/contracts/tools/check-browser-workflow-results.mjs",
+			"package.json",
+			"package-lock.json",
+		],
+	},
 };
 
 function entryFromStep(step) {

@@ -154,6 +154,64 @@ for (const shard of ["test:unit:abml", "test:unit:distill", "test:unit:tools", "
 	assert(srcUnitCheck.has(shard), `src/ change must trigger ${shard}`);
 }
 
+// ── Boundary-check narrowing (kernel subtree isolation) ───────────────────────────────────
+// Each *-core-boundary check must be paths-scoped to its own kernel subtree.
+// An abml-core change selects check:abml-core-boundary but NOT check:memory-core-boundary.
+// A docs-only inert change selects neither.
+
+// Structural assertions on the boundary nodes themselves
+for (const [nodeId, subtree] of [
+	["check:distill-core-boundary", "src/distill-core/"],
+	["check:memory-core-boundary", "src/memory-core/"],
+	["check:temporal-core-boundary", "src/temporal-core/"],
+	["check:abml-core-boundary", "src/abml-core/"],
+]) {
+	assert.equal(impactMap.nodes?.[nodeId]?.scope, "paths", `${nodeId} must be paths-scoped after SCOPE_OVERRIDES override`);
+	assert(impactMap.nodes?.[nodeId]?.inputs?.includes(subtree), `${nodeId} scope must include its kernel subtree ${subtree}`);
+	assert.equal((impactMap.nodes?.[nodeId]?.unresolvedInputs || []).length, 0, `${nodeId} must have zero unresolvedInputs after override`);
+}
+assert(impactMap.nodes?.["check:abml-core-boundary"]?.inputs?.includes("src/abml/"), "check:abml-core-boundary scope must also include src/abml/ (runtime shims)");
+
+// check:recovery-boundary walks all of src/ — scope must include src/
+assert.equal(impactMap.nodes?.["check:recovery-boundary"]?.scope, "paths", "check:recovery-boundary must be paths-scoped after SCOPE_OVERRIDES override");
+assert(impactMap.nodes?.["check:recovery-boundary"]?.inputs?.includes("src/"), "check:recovery-boundary scope must include all of src/ (scatter-walk covers entire tree)");
+
+// check:summary-boundary walks src/tools/summaries/ only
+assert.equal(impactMap.nodes?.["check:summary-boundary"]?.scope, "paths", "check:summary-boundary must be paths-scoped after SCOPE_OVERRIDES override");
+assert(impactMap.nodes?.["check:summary-boundary"]?.inputs?.includes("src/tools/summaries/"), "check:summary-boundary scope must include src/tools/summaries/");
+
+// check:compaction-ledger walks all of src/ — scope must include src/
+assert.equal(impactMap.nodes?.["check:compaction-ledger"]?.scope, "paths", "check:compaction-ledger must be paths-scoped after SCOPE_OVERRIDES override");
+assert(impactMap.nodes?.["check:compaction-ledger"]?.inputs?.includes("src/"), "check:compaction-ledger scope must include all of src/ (scatter-walk covers entire tree)");
+assert(impactMap.nodes?.["check:compaction-ledger"]?.inputs?.includes("docs/compaction-ledger.json"), "check:compaction-ledger scope must include the committed compaction ledger");
+
+// check:browser-workflow-results reads only evals/browser-workflows/ result JSON; no src/ imports.
+// check:eval-workflows is intentionally LEFT GLOBAL — its spawnSync subprocess plus a top-level
+// WORKSTREAMS_A_E_SUMMARY.md existence assert make its true footprint unsafe to bound.
+assert.equal(impactMap.nodes?.["check:browser-workflow-results"]?.scope, "paths", "check:browser-workflow-results must be paths-scoped after SCOPE_OVERRIDES override");
+assert(impactMap.nodes?.["check:browser-workflow-results"]?.inputs?.includes("evals/browser-workflows/"), "check:browser-workflow-results scope must include evals/browser-workflows/");
+assert(!impactMap.nodes?.["check:browser-workflow-results"]?.inputs?.includes("src/"), "check:browser-workflow-results scope must NOT include src/ (no src imports in the check)");
+
+// Selection probes
+// 1. abml-core change → selects check:abml-core-boundary, NOT check:memory-core-boundary
+assert(srcUnitCheck.has("check:abml-core-boundary"), "src/abml-core/ change must trigger check:abml-core-boundary");
+assert(!srcUnitCheck.has("check:memory-core-boundary"), "src/abml-core/ change must NOT trigger check:memory-core-boundary (different kernel)");
+// 2. memory-core change → selects check:memory-core-boundary, NOT check:abml-core-boundary
+const memoryKernelCheck = selectSmartScripts(["src/memory-core/recall.ts"], { root, impactMap });
+assert(memoryKernelCheck.has("check:memory-core-boundary"), "src/memory-core/ change must trigger check:memory-core-boundary");
+assert(!memoryKernelCheck.has("check:abml-core-boundary"), "src/memory-core/ change must NOT trigger check:abml-core-boundary (different kernel)");
+// 3. A docs-only inert change must not select any boundary check
+for (const boundaryNode of ["check:distill-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:abml-core-boundary", "check:recovery-boundary", "check:summary-boundary", "check:compaction-ledger", "check:browser-workflow-results"]) {
+	assert(!docOnlyUnitCheck.has(boundaryNode), `docs-only inert change must not trigger ${boundaryNode}`);
+}
+// 4. A src/ change still selects recovery-boundary and compaction-ledger (both walk all of src/)
+assert(srcUnitCheck.has("check:recovery-boundary"), "src/ change must still trigger check:recovery-boundary");
+assert(srcUnitCheck.has("check:compaction-ledger"), "src/ change must still trigger check:compaction-ledger");
+// 5. An evals change selects browser-workflow-results but NOT unit shards
+const evalsCheck = selectSmartScripts(["evals/browser-workflows/manifest.json"], { root, impactMap });
+assert(evalsCheck.has("check:browser-workflow-results"), "evals/ change must trigger check:browser-workflow-results");
+assert(!evalsCheck.has("test:unit:abml"), "evals/ change must NOT trigger test:unit:abml (no src/ in eval check scope)");
+
 assert(existsSync(CHECK_IMPACT_MAP_PATH), "committed impact-map artifact must exist");
 const markerOutput = execFileSync(process.execPath, ["scripts/query-markers.mjs", "--needle", "templateGroupDescriptorForEntity"], { cwd: root, encoding: "utf8" });
 assert(markerOutput.includes("check-abml-tree-diff.mjs") && markerOutput.includes("check-abml-templating.mjs"), "query:markers control must find templateGroupDescriptorForEntity pins");

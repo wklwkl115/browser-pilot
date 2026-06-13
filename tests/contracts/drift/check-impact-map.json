@@ -1228,29 +1228,15 @@
     },
     "check:distill-core-boundary": {
       "script": "check:distill-core-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "src/",
+        "package-lock.json",
+        "package.json",
         "src/distill-core/",
         "tests/contracts/drift/check-distill-core-boundary.mjs",
         "tests/contracts/drift/purity-vocabulary.js"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:distill-core-boundary",
-          "nodeId": "check:distill-core-boundary",
-          "file": "tests/contracts/drift/check-distill-core-boundary.mjs",
-          "line": 23,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:distill-core-boundary",
-          "nodeId": "check:distill-core-boundary",
-          "file": "tests/contracts/drift/check-distill-core-boundary.mjs",
-          "line": 52,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:distill-core-boundary",
@@ -1260,51 +1246,14 @@
     },
     "check:recovery-boundary": {
       "script": "check:recovery-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
+        "package-lock.json",
+        "package.json",
         "src/",
-        "src/abml-core/errors.ts",
-        "src/distill-core/recovery.ts",
-        "src/utils/errors.ts",
         "tests/contracts/drift/check-recovery-boundary.mjs"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:recovery-boundary",
-          "nodeId": "check:recovery-boundary",
-          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
-          "line": 115,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:recovery-boundary",
-          "nodeId": "check:recovery-boundary",
-          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
-          "line": 129,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:recovery-boundary",
-          "nodeId": "check:recovery-boundary",
-          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
-          "line": 13,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:recovery-boundary",
-          "nodeId": "check:recovery-boundary",
-          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
-          "line": 18,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:recovery-boundary",
-          "nodeId": "check:recovery-boundary",
-          "file": "tests/contracts/drift/check-recovery-boundary.mjs",
-          "line": 23,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:recovery-boundary",
@@ -1314,24 +1263,17 @@
     },
     "check:abml-core-boundary": {
       "script": "check:abml-core-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "src/",
+        "package-lock.json",
+        "package.json",
         "src/abml-core/",
         "src/abml/",
         "tests/contracts/drift/abml-core-manifest.js",
         "tests/contracts/drift/check-abml-core-boundary.mjs",
         "tests/contracts/drift/purity-vocabulary.js"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:abml-core-boundary",
-          "nodeId": "check:abml-core-boundary",
-          "file": "tests/contracts/drift/check-abml-core-boundary.mjs",
-          "line": 43,
-          "reason": "dynamic directory walk"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:abml-core-boundary",
@@ -1341,29 +1283,15 @@
     },
     "check:memory-core-boundary": {
       "script": "check:memory-core-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "src/",
+        "package-lock.json",
+        "package.json",
         "src/memory-core/",
         "tests/contracts/drift/check-memory-core-boundary.mjs",
         "tests/contracts/drift/purity-vocabulary.js"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:memory-core-boundary",
-          "nodeId": "check:memory-core-boundary",
-          "file": "tests/contracts/drift/check-memory-core-boundary.mjs",
-          "line": 18,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:memory-core-boundary",
-          "nodeId": "check:memory-core-boundary",
-          "file": "tests/contracts/drift/check-memory-core-boundary.mjs",
-          "line": 47,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:memory-core-boundary",
@@ -1373,29 +1301,15 @@
     },
     "check:temporal-core-boundary": {
       "script": "check:temporal-core-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "src/",
+        "package-lock.json",
+        "package.json",
         "src/temporal-core/",
         "tests/contracts/drift/check-temporal-core-boundary.mjs",
         "tests/contracts/drift/purity-vocabulary.js"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:temporal-core-boundary",
-          "nodeId": "check:temporal-core-boundary",
-          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
-          "line": 19,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:temporal-core-boundary",
-          "nodeId": "check:temporal-core-boundary",
-          "file": "tests/contracts/drift/check-temporal-core-boundary.mjs",
-          "line": 48,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:temporal-core-boundary",
@@ -2491,52 +2405,14 @@
     },
     "check:browser-workflow-results": {
       "script": "check:browser-workflow-results",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        "21-cross-tool-correlation-chain.result.json",
-        "22-js-ast-artifact-summary.result.json",
-        "23-dom-flow-listener-chain.result.json",
-        "24-dom-flow-sink-hints.result.json",
-        "25-wasm-artifact-metadata.result.json",
-        "26-wasm-wat-bridge.result.json",
-        "27-websocket-session-transcript.result.json",
-        "30-abml-internal-routing-evidence.result.json",
-        "31-execution-plane-cdp-fusion.result.json",
         "evals/browser-workflows/",
-        "evals/browser-workflows/manifest.json",
-        "evals/browser-workflows/result-schema.json",
+        "package-lock.json",
+        "package.json",
         "tests/contracts/tools/check-browser-workflow-results.mjs"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:browser-workflow-results",
-          "nodeId": "check:browser-workflow-results",
-          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
-          "line": 11,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:browser-workflow-results",
-          "nodeId": "check:browser-workflow-results",
-          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
-          "line": 14,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:browser-workflow-results",
-          "nodeId": "check:browser-workflow-results",
-          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
-          "line": 21,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:browser-workflow-results",
-          "nodeId": "check:browser-workflow-results",
-          "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
-          "line": 38,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:browser-workflow-results",
@@ -2736,27 +2612,14 @@
     },
     "check:summary-boundary": {
       "script": "check:summary-boundary",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
+        "package-lock.json",
+        "package.json",
         "src/tools/summaries/",
         "tests/contracts/drift/check-summary-boundary.mjs"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:summary-boundary",
-          "nodeId": "check:summary-boundary",
-          "file": "tests/contracts/drift/check-summary-boundary.mjs",
-          "line": 52,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:summary-boundary",
-          "nodeId": "check:summary-boundary",
-          "file": "tests/contracts/drift/check-summary-boundary.mjs",
-          "line": 67,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:summary-boundary",
@@ -2766,36 +2629,17 @@
     },
     "check:compaction-ledger": {
       "script": "check:compaction-ledger",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
         "docs/compaction-ledger.json",
+        "package-lock.json",
+        "package.json",
         "src/",
-        "src/distill-core/compactionTuning.ts",
-        "tests/contracts/drift/check-compaction-ledger.mjs"
+        "tests/contracts/drift/check-compaction-ledger.mjs",
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:compaction-ledger",
-          "nodeId": "check:compaction-ledger",
-          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
-          "line": 11,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:compaction-ledger",
-          "nodeId": "check:compaction-ledger",
-          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
-          "line": 15,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:compaction-ledger",
-          "nodeId": "check:compaction-ledger",
-          "file": "tests/contracts/drift/check-compaction-ledger.mjs",
-          "line": 49,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:compaction-ledger",
@@ -3079,28 +2923,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 163,
+          "line": 221,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 226,
+          "line": 284,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 242,
+          "line": 300,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 256,
+          "line": 314,
           "reason": "dynamic directory walk"
         }
       ],
@@ -3163,7 +3007,7 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/sync-impact-map.mjs",
-          "line": 259,
+          "line": 383,
           "reason": "dynamic file read"
         }
       ],
