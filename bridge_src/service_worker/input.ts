@@ -4,6 +4,7 @@ import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
 const INPUT_CDP_SESSION_NAME = "pi-input";
 const TIMEOUT_MS = 15000;
 type Sent = { method: string; type?: string };
+type RefPoint = { x: number; y: number };
 
 function rec(v: unknown): JsonRecord { return v && typeof v === "object" && !Array.isArray(v) ? v as JsonRecord : {}; }
 function err(error_code: string, error: string, details: JsonRecord = {}): PiBridgeResponse { return { ok: false, error_code, error, details }; }
@@ -50,6 +51,54 @@ async function emit(tabId: number, msg: PiBridgeCommand, method: string, params:
 }
 function done(command: string, startedAt: number, sent: Sent[], focusEmulation: JsonRecord, extra: JsonRecord): PiBridgeResponse<JsonRecord> {
 	return ok({ input: { command, ...extra, events: sent.map(e => e.type).filter(Boolean), dispatched: sent.length, focusEmulation, cdpSessionName: INPUT_CDP_SESSION_NAME, elapsedMs: Date.now() - startedAt } });
+}
+function cdpErrorText(resp: PiBridgeResponse | undefined): string { const e = rec(resp?.error); return String(e.message || resp?.message || resp?.error || resp?.error_code || "CDP command failed"); }
+function backendFailure(resp: PiBridgeResponse | undefined): "BACKEND_NODE_STALE" | "OOPIF_SESSION_UNSUPPORTED" { return /target|session|frame|oopif|isolated|cross/i.test(cdpErrorText(resp)) ? "OOPIF_SESSION_UNSUPPORTED" : "BACKEND_NODE_STALE"; }
+function refTargetSummary(target: JsonRecord, backendNodeId?: number): JsonRecord {
+	const refId = typeof target.refId === "string" ? target.refId : undefined;
+	return { ...(refId ? { refId } : {}), ...(backendNodeId !== undefined ? { backendNodeId } : {}) };
+}
+function failRef(code: "BACKEND_NODE_STALE" | "OOPIF_SESSION_UNSUPPORTED" | "INVALID_REF_TARGET", message: string, startedAt: number, target: JsonRecord, backendNodeId?: number, extra: JsonRecord = {}): PiBridgeResponse {
+	return err(code, message, { input: { command: "input.ref", action: "click", dispatchOnly: true, dispatched: 0, events: [], cdpSessionName: INPUT_CDP_SESSION_NAME, target: refTargetSummary(target, backendNodeId), elapsedMs: Date.now() - startedAt, ...extra } });
+}
+function backendNodeId(target: JsonRecord): number | undefined {
+	const direct = opt(target.backendNodeId); if (direct !== undefined) return direct;
+	for (const locator of Array.isArray(target.locators) ? target.locators : []) { const r = rec(locator), value = opt(r.value); if (r.by === "backendNodeId" && value !== undefined) return value; }
+	return undefined;
+}
+function refPoint(target: JsonRecord): RefPoint | undefined {
+	for (const source of [rec(target.point), rec(rec(target.geometry).point)]) { const x = opt(source.x), y = opt(source.y); if (x !== undefined && y !== undefined) return { x, y }; }
+	for (const locator of Array.isArray(target.locators) ? target.locators : []) { const r = rec(locator), x = opt(r.x), y = opt(r.y); if (r.by === "point" && x !== undefined && y !== undefined) return { x, y }; }
+	return undefined;
+}
+function centerFromBoxModel(data: JsonRecord): RefPoint | undefined {
+	const rawBorder = rec(data.result).border;
+	const border = Array.isArray(rawBorder) ? rawBorder.map(opt) : [];
+	if (border.length < 8 || border.some((n) => n === undefined)) return undefined;
+	const xs = [border[0], border[2], border[4], border[6]] as number[], ys = [border[1], border[3], border[5], border[7]] as number[];
+	return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+}
+async function backendPoint(tabId: number, msg: PiBridgeCommand, target: JsonRecord, id: number, startedAt: number): Promise<RefPoint | PiBridgeResponse> {
+	const scroll = await cdp(tabId, msg, "DOM.scrollIntoViewIfNeeded", { backendNodeId: id });
+	if (!scroll.ok) return failRef(backendFailure(scroll), cdpErrorText(scroll), startedAt, target, id, { resolution: "backendNodeId", phase: "scrollIntoViewIfNeeded" });
+	const box = await cdp(tabId, msg, "DOM.getBoxModel", { backendNodeId: id });
+	if (!box.ok) return failRef(backendFailure(box), cdpErrorText(box), startedAt, target, id, { resolution: "backendNodeId", phase: "getBoxModel" });
+	return centerFromBoxModel(rec(box.data)) || failRef("BACKEND_NODE_STALE", "DOM.getBoxModel returned no usable border box", startedAt, target, id, { resolution: "backendNodeId", phase: "getBoxModel" });
+}
+async function handlePiBrowserRefInputCommand(cmd: string, tabId: number, msg: PiBridgeCommand, startedAt = Date.now()): Promise<PiBridgeResponse> {
+	if (cmd !== "input.ref") return err("INVALID_RULE", "Unknown ref input command: " + cmd, { cmd });
+	const action = String(msg.action || "").toLowerCase();
+	if (action !== "click") return err("INVALID_RULE", "input.ref action must be click", { action });
+	const target = rec(msg.target), id = backendNodeId(target);
+	const point = id !== undefined ? await backendPoint(tabId, msg, target, id, startedAt) : refPoint(target);
+	if (!point) return failRef("INVALID_REF_TARGET", "input.ref target requires backendNodeId or point", startedAt, target, id);
+	if ("ok" in point) return point;
+	const sent: Sent[] = [], focusEmulation = await focus(tabId, msg), base = { x: point.x, y: point.y, modifiers: 0 };
+	for (const p of [{ ...base, type: "mouseMoved", button: "none" }, { ...base, type: "mousePressed", button: "left", clickCount: 1 }, { ...base, type: "mouseReleased", button: "left", clickCount: 1 }]) {
+		const failed = await emit(tabId, msg, "Input.dispatchMouseEvent", p, sent);
+		if (failed) return failRef("BACKEND_NODE_STALE", cdpErrorText(failed), startedAt, target, id, { resolution: id !== undefined ? "backendNodeId" : "point", phase: "dispatchMouseEvent", attemptedEvents: sent.map((item) => item.type).filter(Boolean) });
+	}
+	return done("input.ref", startedAt, sent, focusEmulation, { action: "click", resolution: id !== undefined ? "backendNodeId" : "point", dispatchOnly: true, target: refTargetSummary(target, id), coordinates: { x: Math.round(point.x), y: Math.round(point.y) } });
 }
 
 async function pointer(tabId: number, msg: PiBridgeCommand, startedAt: number): Promise<PiBridgeResponse> {
@@ -115,11 +164,12 @@ async function handlePiBrowserInputCommand(cmd: string, tabId: number, msg: PiBr
 		if (cmd === "input.pointer") return await pointer(tabId, msg, startedAt);
 		if (cmd === "input.keys") return await keys(tabId, msg, startedAt);
 		if (cmd === "input.touch") return await touch(tabId, msg, startedAt);
+		if (cmd === "input.ref") return await handlePiBrowserRefInputCommand(cmd, tabId, msg, startedAt);
 		return err("INVALID_RULE", "Unknown input command: " + cmd, { cmd });
 	} catch (e) {
 		return err("INVALID_RULE", e instanceof Error ? e.message : String(e), { cmd, tabId });
 	}
 }
 
-export { INPUT_CDP_SESSION_NAME, handlePiBrowserInputCommand };
-export const __piBridgeModule_input = { name: "input", symbols: { INPUT_CDP_SESSION_NAME, handlePiBrowserInputCommand } };
+export { INPUT_CDP_SESSION_NAME, handlePiBrowserInputCommand, handlePiBrowserRefInputCommand };
+export const __piBridgeModule_input = { name: "input", symbols: { INPUT_CDP_SESSION_NAME, handlePiBrowserInputCommand, handlePiBrowserRefInputCommand } };

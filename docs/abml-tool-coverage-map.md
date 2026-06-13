@@ -1,6 +1,6 @@
 # ABML tool-coverage map — where the philosophy is (and isn't) realized
 
-> Status: REFERENCE (fact map, updated 2026-06-13). Records which public tools actually traverse the ABML
+> Status: REFERENCE (fact map, updated 2026-06-14). Records which public tools actually traverse the ABML
 > layer, so the design docs stop overstating coverage. Verified by reading the source — see the
 > file:line citations. Pairs with `docs/unified-browser-modeling-language-plan.md` (the *aspirational*
 > verb-face vision) and `docs/abml-kernel-manifest.md` (the pure-core inventory).
@@ -10,8 +10,10 @@
 ABML is the **page-perception substrate** — it is observation-only. The vision is "agent reads the
 page through one merged AX↔DOM model; the read-mode choice disappears inside." That vision is
 **fully realized for *reading* the page** (`browser_observe`). **Execution is NOT in ABML:** page
-actions are the JavaScript the agent writes via `browser_execute {script}` (run verbatim), with
-`browser_command` `input.*` as the physical escape for trusted-event/canvas/WebGL cases JS can't drive.
+actions are the JavaScript the agent writes via `browser_execute {script}` (run verbatim). A narrow
+execute stdlib primitive, `pi.click(ref)`, can dispatch physical CDP input from an observed ref, but
+it lives in the execute/runtime layer and remains dispatch-only; it is not an ABML actuator restore.
+`browser_command` `input.*` remains the explicit physical escape for trusted-event/canvas/WebGL cases.
 Everything else (tabs, network, files, waiting, raw CDP, web-security) is **orthogonal** to ABML and
 correctly does not go through it.
 
@@ -30,7 +32,7 @@ viewport step today.
 | Tool | Touches ABML? | Reality |
 |---|---|---|
 | `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, and emits `relations`/`diff`/`treeDiff`/`snapshotProjection`/`collections`/`causal` envelope fields. `observeRunners.ts` → `abml.readStructure`. The `collections` block reports completeness and read-only continuation evidence for long/virtualized/lazy/paginated lists; it does not execute scrolling. The `inference`/`templates` engines still run internally (they drive `treeDiff`/`snapshotProjection`/`referenced_entities`) but were removed as agent-facing fields after a 2026-06-05 real-agent eval. The "which read mode" complexity is genuinely hidden from the agent. |
-| `browser_execute` | ⚠️ read-only | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`) — execution is the agent's JS, NOT ABML. ABML is borrowed only via `monitor:true` for a before/after **read** diff, and observed `pi-ref://` handles can be dereferenced in-page via the minimal `pi.resolve` / `pi.box` / `pi.setValue` / `pi.settled` stdlib. There is no structured action arm: a click/type/scroll that needs a trusted event escalates to `browser_command input.*`. |
+| `browser_execute` | ⚠️ read-only + runtime dispatch escape | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`) — execution is the agent's JS, NOT ABML. ABML is borrowed only via `monitor:true` for a before/after **read** diff, and observed `pi-ref://` handles can be dereferenced in-page via the minimal `pi.resolve` / `pi.box` / `pi.setValue` / `pi.settled` stdlib. `pi.click(ref)` is the one reopened stdlib action name: it sends safe ref target facts to the in-flight service-worker execute binding, which calls internal `input.ref` CDP dispatch. It reports dispatch facts only, does not verify intent, and does not add `browser_execute {action}` or ABML verbs. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
 | `browser_screenshot` | ➖ no | Raw pixels (ABML's vision floor is a separate internal path). |
@@ -63,8 +65,10 @@ pierce / frame / visual-floor stay.
 **Where execution lives now:** the agent writes JS via `browser_execute {script}` (the action
 language); for the rare trusted-event-gated control, canvas/WebGL target, or cross-origin iframe
 a synthetic `el.click()`/input can't drive, the agent escalates to `browser_command input.pointer` /
-`input.keys` — the physical escape JS can't do is **already publicly reachable** there, so no
-new tool is needed. ABML does not touch execution. Plan / history: `docs/abml-action-path-gap-plan.md`.
+`input.keys`; for a fresh observed ref, `pi.click(ref)` can now collapse the measured-point +
+`browser_command input.pointer` split into one execute script while still using CDP physical input
+below the JS sandbox. ABML does not touch execution. Plan / history:
+`docs/abml-action-path-gap-plan.md`, `docs/execution-plane-cdp-fusion-plan.md`.
 
 ## 4. First Real-Agent Eval Verdict (2026-06-05)
 
@@ -75,7 +79,7 @@ The first skeptical real-agent eval was mixed, and is what drove the action-arm 
 | `causal` | strong | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
 | page reading (lists/tables) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. Completeness and continuation surface through `collections`; structure surfaces via `treeDiff`/`snapshotProjection`; per-item VALUES still come from `browser_execute`. |
 | `templates` (internal engine) | engine-only | No longer an agent-facing envelope field (a real-agent eval showed it unread); the templating engine still powers `treeDiff`/`snapshotProjection`. Redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
-| structured `action` (click/type/scroll) | reverted; internal actuators removed (2026-06-13) | Public arm never earned its keep (agents reverted to JS; click "verified" ≠ intent achieved; escalation double-action hazard). The dormant internal click/type/scroll executors were then deleted — zero production callers, blind evals confirmed JS actuation. Execution = JS via `browser_execute`; trusted-event/canvas escape via `browser_command input.*`. Locked by `check:abml-verb-runtime`. |
+| structured `action` (click/type/scroll) | reverted; internal actuators removed (2026-06-13) | Public arm never earned its keep (agents reverted to JS; click "verified" ≠ intent achieved; escalation double-action hazard). The dormant internal click/type/scroll executors were then deleted — zero production callers, blind evals confirmed JS actuation. Execution = JS via `browser_execute`; trusted-event/canvas escape via `browser_command input.*` or dispatch-only `pi.click(ref)` for fresh observed refs. Locked by `check:abml-verb-runtime`. |
 | `diff`/`treeDiff` | noisy before fix | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
 
 `pi-ref://` handles and observe baselines are short-lived. On `HANDLE_NOT_FOUND`, stale resource, or
@@ -91,7 +95,8 @@ re-introduced the same "which entry — JS or action?" decision without earning 
 to JS; "verified" ≠ intent; CDP-escalation double-action hazard). So the action arm was reverted: the
 single action language is the JavaScript the agent writes via `browser_execute {script}`, and the one
 thing JS can't do — emit physical trusted input — is **already** reachable via `browser_command`
-`input.pointer` / `input.keys`. No parallel verb tool, no structured action param.
+`input.pointer` / `input.keys`, plus the narrow execute stdlib `pi.click(ref)` for a fresh observed
+ref. No parallel verb tool, no structured action param, no ABML action runtime.
 ABML stays the read substrate.
 
 For long or virtualized content, the preferred fix is now the shipped richer observation semantic:
@@ -105,6 +110,8 @@ agent transcript.
   and the old tools collapsing into verbs. That **public verb-face was not adopted** — it is an
   aspirational RFC, not shipped reality (a banner there now says so).
 - The skill's ABML guidance is observe-only on the action question: `browser_execute {script}` runs
-  the agent's JS verbatim; `pi.*` only removes selector transcription for observed refs; a
-  trusted-event-gated control that silently ignores a synthetic click/input escalates to
-  `browser_command input.*`. There is no `browser_execute {action:{...}}` arm.
+  the agent's JS verbatim; most `pi.*` helpers remove selector transcription for observed refs, and
+  `pi.click(ref)` is a runtime-layer physical dispatch escape. A trusted-event-gated control that
+  silently ignores a synthetic click/input escalates to `pi.click(ref)` when the ref is fresh, or
+  `browser_command input.*` for explicit coordinate/key dispatch. There is no
+  `browser_execute {action:{...}}` arm.

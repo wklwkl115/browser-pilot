@@ -1,7 +1,7 @@
 {
   "generated": true,
   "generatedBy": "scripts/build-bridge.mjs",
-  "buildId": "ff61e9a0d595094e0948225f47383bddef1d1244a7ba73cfac938c69226b14f9",
+  "buildId": "f62a345ec7fea331c8624f102552029e0dbef71d9038251336f069ebe49e4fb1",
   "buildIdAlgorithm": "sha256:fingerprint-inputs-with-placeholder",
   "buildIdPlaceholder": "__PI_BROWSER_BRIDGE_BUILD_ID_PLACEHOLDER__",
   "inputs": [

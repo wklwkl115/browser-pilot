@@ -1,8 +1,65 @@
 # Execution-Plane CDP Fusion Plan
 
-> Status: READY FOR ACTIVATION (formal plan; not active until `CURRENT.md` names this workstream).
-> Activation rule: before implementation, update `CURRENT.md` with this plan path, boundary, file scope,
-> and verification set. Do not start code work from this document alone.
+> Status: **completed implementation** (2026-06-14). The workstream landed
+> dispatch-only `pi.click(ref)` through an execute-time privileged binding to
+> internal `input.ref`, with ABML remaining perception-only and no public
+> `browser_*` tool or `browser_execute action:{...}` surface added.
+> Scope: `src/tools/executeStdlib.ts`, `bridge/native_command_schema.json`,
+> generated native protocol mirrors, `bridge_src/service_worker/input.ts`,
+> `bridge_src/service_worker/exec.ts`, runtime/contracts/eval fixtures, README,
+> skills, and generated bridge dist.
+> Boundary: no ABML actuator/runtime restore, no `pi.type`/upload/download, no
+> OOPIF routing, no semantic success verification inside the command.
+> Closure: archived per `docs/document-structure.md` after focused gates,
+> runtime fixture eval 31, docs sync, and final full `npm run check`.
+
+## Completed Outcome
+
+- Added internal native command `input.ref` for dispatch-only physical click.
+  Backend-node targets use `DOM.scrollIntoViewIfNeeded` + `DOM.getBoxModel`
+  first and fail closed on stale/cross-target resolution instead of falling
+  back to points. Descriptors without backend identity may use the explicit
+  point tier.
+- Added `pi.click(ref, options?)` to the execute stdlib only when referenced.
+  The page prelude sends safe target facts through a per-execute
+  `Runtime.addBinding`; the service worker invokes the local `input.ref`
+  handler and resolves/rejects the page promise through explicit response
+  injection.
+- Kept ABML perception-only. No actuator paths were added under
+  `src/abml-core/` or `src/abml/verbs/runtime.ts`.
+- Added runtime and contract coverage for stale backend failure, point tier,
+  no nested Node write, disabled stdlib mode, and exactly one new stdlib action
+  name: `pi.click`.
+- Added eval 31 fixture proving a trusted-event-gated control ignores raw
+  `el.click()` but accepts the CDP physical input path. The eval records the
+  old two-action fallback (`browser_execute` measurement +
+  `browser_command input.pointer`) and the fused one-action execute path.
+- Enabled service-worker/offscreen syntax minification while preserving
+  non-minified identifiers; the generated service-worker bundle closes at
+  408,051 bytes, below the `<416,000` budget.
+
+## Closure Evidence
+
+- Focused gates passed:
+  `npm run check:bridge:types`,
+  `npm run check:bridge:build`,
+  `npm run check:bridge:files`,
+  `npm run check:abml-verb-runtime`,
+  `npm run check:tools`,
+  `npm run check:protocol`,
+  `npm run check:runtime-fixtures`,
+  `npm run check:eval-workflows`,
+  `npm run check:browser-workflow-results`.
+- Runtime eval passed:
+  `npm run eval:browser-workflows -- --fixture-server --eval 31-execution-plane-cdp-fusion --timeout-ms 120000`.
+- Eval artifact directory:
+  `.pi/browser-artifacts/eval-browser-workflows/2026-06-13T16-36-16-306Z-d97b6642`.
+- Eval summary:
+  `.pi/browser-artifacts/eval-browser-workflows/2026-06-13T16-36-16-306Z-d97b6642/browser-workflow-eval-summary.json`.
+- Eval dispatch artifact:
+  `.pi/browser-artifacts/eval-browser-workflows/2026-06-13T16-36-16-306Z-d97b6642/31-execution-plane-cdp-fusion-pi-click.json`.
+- Sample committed result:
+  `evals/browser-workflows/results/31-execution-plane-cdp-fusion.result.json`.
 
 ## Objective
 

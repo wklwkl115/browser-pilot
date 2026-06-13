@@ -500,6 +500,25 @@
         "frame-entities",
         "vision-regions"
       ]
+    },
+    {
+      "id": "31-execution-plane-cdp-fusion",
+      "spec": "31-execution-plane-cdp-fusion.md",
+      "fixtures": [
+        "fixtures/execution-plane-cdp-fusion.html"
+      ],
+      "primaryTools": [
+        "browser_observe",
+        "browser_execute",
+        "browser_command",
+        "browser_wait"
+      ],
+      "evidence": [
+        "raw-click-ignored",
+        "dispatchOnly",
+        "trusted-result",
+        "action-call-comparison"
+      ]
     }
   ]
 }

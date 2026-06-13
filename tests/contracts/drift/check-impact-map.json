@@ -170,6 +170,7 @@
         "bridge_src/service-worker.ts",
         "bridge_src/service_worker/",
         "bridge_src/service_worker/core_commands.ts",
+        "bridge_src/service_worker/exec.ts",
         "bridge_src/service_worker/protocol.ts",
         "bridge_src/service_worker/router.ts",
         "bridge_src/service_worker/runtime.ts",
@@ -202,6 +203,7 @@
         "src/tools/actionCommands.ts",
         "src/tools/budgets.ts",
         "src/tools/executeStdlib.ts",
+        "src/tools/executeStdlibPrelude.ts",
         "src/tools/observe/htmlRunner.ts",
         "src/tools/prepareArguments.ts",
         "src/tools/registerArtifactTool.ts",
@@ -301,7 +303,7 @@
           "script": "check:bridge",
           "nodeId": "verify:bridge:dist",
           "file": "tests/contracts/protocol/check-bridge-build.mjs",
-          "line": 192,
+          "line": 193,
           "reason": "dynamic file read"
         }
       ],
@@ -1002,6 +1004,7 @@
         "src/tools/commands.ts",
         "src/tools/distillerRegistry.ts",
         "src/tools/executeStdlib.ts",
+        "src/tools/executeStdlibPrelude.ts",
         "src/tools/executionEffect.ts",
         "src/tools/executionJournal.ts",
         "src/tools/memory/autoSurface.ts",
@@ -1986,6 +1989,11 @@
       "scope": "global",
       "inputs": [
         ".pi/browser-artifacts/fixtures/",
+        "bridge_src/service_worker/cdp.ts",
+        "bridge_src/service_worker/input.ts",
+        "bridge_src/service_worker/runtimeEnv.ts",
+        "bridge_src/service_worker/state_store.ts",
+        "bridge_src/service_worker/types.ts",
         "cdp",
         "core_commands",
         "frame",
@@ -2011,6 +2019,7 @@
         "src/utils/records.ts",
         "src/utils/redaction.ts",
         "state_store",
+        "tests/contracts/runtime/check-input-ref-runtime.mjs",
         "tests/contracts/runtime/check-runtime-fixtures.mjs",
         "transfer",
         "wait",
@@ -2025,14 +2034,14 @@
       "unresolvedInputs": [
         {
           "script": "check:runtime-fixtures",
-          "nodeId": "check:runtime-fixtures",
+          "nodeId": "check:runtime-fixtures#1",
           "file": "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
           "line": 137,
           "reason": "subprocess execution"
         },
         {
           "script": "check:runtime-fixtures",
-          "nodeId": "check:runtime-fixtures",
+          "nodeId": "check:runtime-fixtures#1",
           "file": "tests/contracts/runtime/check-runtime-fixtures.mjs",
           "line": 18,
           "reason": "dynamic file read"
@@ -2040,8 +2049,12 @@
       ],
       "commandSteps": [
         {
-          "nodeId": "check:runtime-fixtures",
+          "nodeId": "check:runtime-fixtures#1",
           "commandLine": "tsx tests/contracts/runtime/check-runtime-fixtures.mjs"
+        },
+        {
+          "nodeId": "check:runtime-fixtures#2",
+          "commandLine": "tsx tests/contracts/runtime/check-input-ref-runtime.mjs"
         }
       ]
     },
@@ -2468,49 +2481,49 @@
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 172,
+          "line": 173,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 180,
+          "line": 181,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 242,
+          "line": 243,
           "reason": "subprocess execution"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 340,
+          "line": 342,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 346,
+          "line": 348,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 372,
+          "line": 374,
           "reason": "subprocess execution"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 374,
+          "line": 376,
           "reason": "dynamic file read"
         }
       ],
@@ -2533,6 +2546,7 @@
         "26-wasm-wat-bridge.result.json",
         "27-websocket-session-transcript.result.json",
         "30-abml-internal-routing-evidence.result.json",
+        "31-execution-plane-cdp-fusion.result.json",
         "evals/browser-workflows/",
         "evals/browser-workflows/manifest.json",
         "evals/browser-workflows/result-schema.json",
@@ -2564,7 +2578,7 @@
           "script": "check:browser-workflow-results",
           "nodeId": "check:browser-workflow-results",
           "file": "tests/contracts/tools/check-browser-workflow-results.mjs",
-          "line": 37,
+          "line": 38,
           "reason": "dynamic file read"
         }
       ],

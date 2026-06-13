@@ -14,7 +14,9 @@
 
 ## 当前激活项
 
-- 当前无激活执行线；新主线启动前先在此处写明决策、边界、契约与验证计划。
+- 当前无激活执行项。最近关闭的 execution-plane CDP fusion 见
+  `docs/archive/execution-plane-cdp-fusion-plan.md` 和
+  `docs/archive/execution-plane-cdp-fusion-plan.full.md`。
 
 ## 最近完成索引
 

@@ -50,6 +50,7 @@ const specFiles = [
 	"26-wasm-wat-bridge.md",
 	"27-websocket-session-transcript.md",
 	"30-abml-internal-routing-evidence.md",
+	"31-execution-plane-cdp-fusion.md",
 ];
 
 for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "runner.mjs", "result-schema.json", "results/README.md", "blind-agent-prompt.md", ...specFiles]) {
@@ -327,6 +328,7 @@ const requiredFixtures = [
 	"js-ast-object-dispatch.js",
 	"dom-flow-listeners.html",
 	"ws-session-fixture.md",
+	"execution-plane-cdp-fusion.html",
 ];
 
 for (const file of requiredFixtures) {

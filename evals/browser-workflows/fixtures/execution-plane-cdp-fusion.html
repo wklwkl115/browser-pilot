@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Execution Plane CDP Fusion Fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 32px; }
+    button { font-size: 18px; padding: 10px 18px; }
+    #status { margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Execution Plane CDP Fusion</h1>
+    <button id="trusted-activate" type="button">Trusted activate</button>
+    <p id="status" role="status" data-state="idle">Status: idle</p>
+    <div id="result-region"></div>
+  </main>
+  <script>
+    window.__fixtureState = { syntheticIgnored: 0, trustedActivations: 0 };
+    document.querySelector("#trusted-activate").addEventListener("click", (event) => {
+      const status = document.querySelector("#status");
+      if (!event.isTrusted) {
+        window.__fixtureState.syntheticIgnored += 1;
+        status.dataset.state = "synthetic-ignored";
+        status.textContent = "Status: synthetic ignored";
+        return;
+      }
+      window.__fixtureState.trustedActivations += 1;
+      status.dataset.state = "trusted-activated";
+      status.textContent = "Status: trusted activated";
+      document.querySelector("#result-region").innerHTML = "<strong id='trusted-result'>Trusted event accepted</strong>";
+    });
+  </script>
+</body>
+</html>

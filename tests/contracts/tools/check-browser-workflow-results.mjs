@@ -30,6 +30,7 @@ assert(resultFiles.includes("25-wasm-artifact-metadata.result.json"), "browser w
 assert(resultFiles.includes("26-wasm-wat-bridge.result.json"), "browser workflow results must include the Wasm WAT bridge sample");
 assert(resultFiles.includes("27-websocket-session-transcript.result.json"), "browser workflow results must include the websocket session transcript sample");
 assert(resultFiles.includes("30-abml-internal-routing-evidence.result.json"), "browser workflow results must include the ABML internal routing evidence sample");
+assert(resultFiles.includes("31-execution-plane-cdp-fusion.result.json"), "browser workflow results must include the execution-plane CDP fusion sample");
 
 const knownEvalIds = new Set(JSON.parse(read("evals/browser-workflows/manifest.json")).evals.map((entry) => entry.id));
 for (const file of resultFiles) {
@@ -60,6 +61,7 @@ const wasm = readJsonAbs(path.join(resultsRoot, "25-wasm-artifact-metadata.resul
 const wasmWat = readJsonAbs(path.join(resultsRoot, "26-wasm-wat-bridge.result.json"));
 const ws = readJsonAbs(path.join(resultsRoot, "27-websocket-session-transcript.result.json"));
 const abmlRouting = readJsonAbs(path.join(resultsRoot, "30-abml-internal-routing-evidence.result.json"));
+const cdpFusion = readJsonAbs(path.join(resultsRoot, "31-execution-plane-cdp-fusion.result.json"));
 assert.equal(correlation.status, "passed", "21-cross-tool-correlation-chain.result.json must record a passing sample result");
 assert.equal(correlation.scopedFollowUpDiscipline, "passed", "21-cross-tool-correlation-chain.result.json must preserve scoped follow-up discipline");
 assert.equal(correlation.artifactSufficiency, "sufficient", "21-cross-tool-correlation-chain.result.json must preserve artifact sufficiency");
@@ -103,5 +105,12 @@ assert.equal(abmlRouting.artifactSufficiency, "sufficient", "30-abml-internal-ro
 assert(abmlRouting.evidence.summary.some((item) => /ABML-backed primary entity|ABML-integrated monitor|frame entities|visual region/i.test(item)), "30-abml-internal-routing-evidence.result.json must mention internal ABML routing evidence in summary");
 assert(abmlRouting.evidence.diagnostics.some((item) => /sufficient for the exercised tasks|not show a task that is blocked solely/i.test(item)), "30-abml-internal-routing-evidence.result.json must preserve the current sufficiency conclusion");
 assert(abmlRouting.notes.some((item) => /internal substrate|migration\/replacement RFC|No evidence here justifies exposing new public/i.test(item)), "30-abml-internal-routing-evidence.result.json must preserve the no-public-verb conclusion in notes");
+assert.equal(cdpFusion.status, "passed", "31-execution-plane-cdp-fusion.result.json must record a passing sample result");
+assert.equal(cdpFusion.scopedFollowUpDiscipline, "passed", "31-execution-plane-cdp-fusion.result.json must preserve scoped follow-up discipline");
+assert.equal(cdpFusion.artifactSufficiency, "sufficient", "31-execution-plane-cdp-fusion.result.json must preserve artifact sufficiency");
+assert(cdpFusion.evidence.summary.some((item) => /Raw el\.click was ignored|execute\+input\.pointer|pi\.click/i.test(item)), "31-execution-plane-cdp-fusion.result.json must mention old and fused paths in summary");
+assert(cdpFusion.evidence.summary.some((item) => /dispatchOnly|wait\/observe/i.test(item)), "31-execution-plane-cdp-fusion.result.json must separate dispatch facts from semantic verification");
+assert(cdpFusion.evidence.diagnostics.some((item) => /old path.*2 action calls|fused path.*1 action call/i.test(item)), "31-execution-plane-cdp-fusion.result.json must preserve action-call comparison evidence");
+assert(cdpFusion.notes.some((item) => /No browser_execute action parameter|input\.ref/i.test(item)), "31-execution-plane-cdp-fusion.result.json must preserve no-new-public-tool boundary");
 
 console.log("browser workflow results contract ok");

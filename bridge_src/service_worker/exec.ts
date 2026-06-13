@@ -2,9 +2,12 @@
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentPiBrowserResponse, piBrowserPersistentCdp } from "./runtime";
+import { handlePiBrowserRefInputCommand } from "./input";
+import { subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiChromeTab, PiWebSocketLike } from "./types";
 
 const NEW_TAB_OBSERVE_WAIT_MS = 50;
+const PI_CLICK_BINDING_PLACEHOLDER = "__PI_BROWSER_STDLIB_CLICK_BINDING__";
 
 function mayOpenNewTab(code: unknown): boolean {
   if (typeof code !== "string") return false;
@@ -143,6 +146,66 @@ function buildCdpScript(code: unknown): string {
   `);
 }
 
+type ExecuteBindingContext = {
+	code: string;
+	bindingName?: string;
+	cleanup: (reason?: string) => Promise<void>;
+};
+
+function execRecord(value: unknown): JsonRecord {
+	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function bindingNameForExecute(id: unknown): string {
+	return "__piBrowserExecuteClick_" + String(id || Date.now()).replace(/[^A-Za-z0-9_$]/g, "_") + "_" + Date.now().toString(36);
+}
+
+async function maybeInstallPiClickBinding(tabId: number, id: unknown, code: string, timeoutMs: number): Promise<ExecuteBindingContext> {
+	if (!code.includes(PI_CLICK_BINDING_PLACEHOLDER)) return { code, cleanup: async () => {} };
+	const bindingName = bindingNameForExecute(id);
+	const cdp = piBrowserPersistentCdp();
+	if (!cdp?.send) throw new Error("persistent CDP helper is not loaded");
+	const bindingTimeoutMs = Math.min(5000, Math.max(500, timeoutMs));
+	const addResp = normalizePersistentPiBrowserResponse(await cdp.send(tabId, "Runtime.addBinding", { name: bindingName }, { persistent: true, name: "execute_binding", timeoutMs: bindingTimeoutMs }));
+	if (!addResp || addResp.ok === false) throw new Error(String(execRecord(addResp?.error).message || addResp?.message || addResp?.error || "Runtime.addBinding failed"));
+	let closed = false;
+	const respond = async (requestId: string, payload: JsonRecord) => {
+		const expression = `(() => { const fn = globalThis.__piBrowserStdlibResolve; return typeof fn === "function" ? fn(${JSON.stringify(requestId)}, ${JSON.stringify(payload)}) : false; })()`;
+		await cdp.send!(tabId, "Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, { persistent: true, name: "execute_binding_response", timeoutMs: bindingTimeoutMs });
+	};
+	const subId = subscribePiBrowserCdp(tabId, "Runtime.bindingCalled", (_source, _method, params) => {
+		if (closed || params?.name !== bindingName) return;
+		void (async () => {
+			let payload: JsonRecord;
+			try {
+				payload = typeof params.payload === "string" ? execRecord(JSON.parse(params.payload)) : execRecord(params.payload);
+			} catch (error) {
+				payload = { requestId: "", parseError: error instanceof Error ? error.message : String(error) };
+			}
+			const requestId = String(payload.requestId || "");
+			if (!requestId) return;
+			const result = await handlePiBrowserRefInputCommand("input.ref", tabId, { action: payload.action, target: payload.target, timeoutMs }, Date.now()) as JsonRecord;
+			await respond(requestId, result).catch(() => {});
+		})();
+	}, { waitId: String(id || bindingName), kind: "execute.pi.click" });
+	if (!subId) {
+		await cdp.send(tabId, "Runtime.removeBinding", { name: bindingName }, { persistent: true, name: "execute_binding_remove", timeoutMs: 1000 }).catch(() => {});
+		throw new Error("Runtime.bindingCalled subscription unavailable");
+	}
+	return {
+		code: code.split(PI_CLICK_BINDING_PLACEHOLDER).join(bindingName),
+		bindingName,
+		cleanup: async (reason = "execute_cleanup") => {
+			if (closed) return;
+			closed = true;
+			unsubscribePiBrowserCdp(subId);
+			const rejectExpr = `(() => { const fn = globalThis.__piBrowserStdlibRejectAll; try { return typeof fn === "function" ? fn(${JSON.stringify(reason)}) : false; } finally { try { delete globalThis.__piBrowserStdlibResolve; delete globalThis.__piBrowserStdlibRejectAll; } catch (_) {} } })()`;
+			await cdp.send!(tabId, "Runtime.evaluate", { expression: rejectExpr, awaitPromise: true, returnByValue: true }, { persistent: true, name: "execute_binding_cleanup", timeoutMs: 1000 }).catch(() => {});
+			await cdp.send!(tabId, "Runtime.removeBinding", { name: bindingName }, { persistent: true, name: "execute_binding_remove", timeoutMs: 1000 }).catch(() => {});
+		},
+	};
+}
+
 function normalizeExecNavigationUrl(rawUrl: unknown): string {
   const raw = String(rawUrl || '').trim();
   if (!raw) throw new Error('Navigation URL is required');
@@ -186,6 +249,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   const newTabIds = new Set<number>();
   const onCreated = (tab: PiChromeTab) => { if (tab.id !== undefined) newTabIds.add(tab.id); };
   chrome.tabs.onCreated.addListener(onCreated);
+  let bindingContext: ExecuteBindingContext | undefined;
   try {
     const execStartedAt = Date.now();
     const execDiagnostics: JsonRecord = {
@@ -203,6 +267,8 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
     // Reusing the full timeoutMs here (the prior bug) let a hung executeScript consume the entire budget
     // so the fallback never ran and the client only ever saw BRIDGE_TIMEOUT with no result. [F2]
     const TOTAL_EXEC_TIMEOUT_MS = Math.max(100, Math.min(120000, Number(data.timeoutMs ?? data.timeout_ms ?? 30000) || 30000));
+    bindingContext = await maybeInstallPiClickBinding(tabId, data.id, String(data.code || ""), TOTAL_EXEC_TIMEOUT_MS);
+    const executionCode = bindingContext.code;
     // Background (non-foreground) tabs throttle page timers (setTimeout/intervals and any timeout-guarded
     // fetch/poll), so a MAIN-world chrome.scripting.executeScript async script STALLS. Route straight to
     // the CDP path (which enables Emulation.setFocusEmulationEnabled to lift the throttle) — this also
@@ -218,7 +284,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
         target: { tabId },
         world: 'MAIN',
         func: async (s: string) => await (0, eval)(s),
-        args: [buildPageScript(data.code)]
+        args: [buildPageScript(executionCode)]
       });
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => {
         const err = new Error('chrome.scripting.executeScript timed out after ' + EXECUTE_SCRIPT_TIMEOUT_MS + 'ms');
@@ -236,7 +302,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
     }
     const firstRes = res && typeof res === 'object' ? res as JsonRecord : {};
     if (res && firstRes.ok === false && firstRes.csp) {
-      const wrappedCode = buildCdpScript(data.code);
+      const wrappedCode = buildCdpScript(executionCode);
       try {
         const cdp = piBrowserPersistentCdp();
         if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
@@ -288,6 +354,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
   } catch (e) {
     socket.send(JSON.stringify({ type: 'error', id: data.id, error: { name: e instanceof Error ? e.name : 'Error', message: e instanceof Error ? e.message : String(e) } }));
   } finally {
+    if (bindingContext) await bindingContext.cleanup('execute_finished');
     chrome.tabs.onCreated.removeListener(onCreated);
   }
 }

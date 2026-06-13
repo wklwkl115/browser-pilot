@@ -81,7 +81,8 @@ const schema = {
     "input": [
       "input.pointer",
       "input.keys",
-      "input.touch"
+      "input.touch",
+      "input.ref"
     ],
     "wait": [
       "wait.navigate",
@@ -295,6 +296,15 @@ const schema = {
         "gesture",
         "x",
         "y"
+      ]
+    },
+    "input.ref": {
+      "domain": "input",
+      "tabScoped": true,
+      "accessMode": "write",
+      "required": [
+        "action",
+        "target"
       ]
     },
     "batch": {
@@ -754,6 +764,11 @@ const schema = {
       "retryable": false,
       "summary": "Captured network body is unavailable or expired."
     },
+    "BACKEND_NODE_STALE": {
+      "category": "runtime.input",
+      "retryable": true,
+      "summary": "Referenced backend node could not be resolved in the current tab target."
+    },
     "BRIDGE_CLIENT_DISCONNECTED": {
       "category": "driver.pending",
       "retryable": true,
@@ -858,6 +873,11 @@ const schema = {
       "category": "runtime.internal",
       "retryable": false,
       "summary": "Unexpected internal runtime or tool failure."
+    },
+    "INVALID_REF_TARGET": {
+      "category": "runtime.input",
+      "retryable": false,
+      "summary": "Referenced input target lacks a backendNodeId and explicit point fallback."
     },
     "MATURE_BRIDGE_LAUNCHER_NOT_FOUND": {
       "category": "tool.security",
@@ -979,10 +999,35 @@ const schema = {
       "retryable": true,
       "summary": "No matching runtime session or tab-scoped dispatcher is available."
     },
+    "OOPIF_SESSION_UNSUPPORTED": {
+      "category": "runtime.input",
+      "retryable": false,
+      "summary": "Referenced backend node belongs to a target/session this workstream does not route."
+    },
     "NO_TAB": {
       "category": "driver.tab",
       "retryable": true,
       "summary": "No usable target tab is available for a tab-scoped command."
+    },
+    "PI_CLICK_BINDING_UNAVAILABLE": {
+      "category": "runtime.input",
+      "retryable": true,
+      "summary": "pi.click was called outside an execute-time privileged binding."
+    },
+    "PI_CLICK_CANCELLED": {
+      "category": "runtime.input",
+      "retryable": true,
+      "summary": "Pending pi.click requests were cancelled during execute cleanup."
+    },
+    "PI_CLICK_REF_NOT_RESOLVED": {
+      "category": "runtime.input",
+      "retryable": true,
+      "summary": "pi.click could not resolve the supplied ref in the embedded execute registry."
+    },
+    "PI_CLICK_TIMEOUT": {
+      "category": "runtime.input",
+      "retryable": true,
+      "summary": "pi.click did not receive a privileged dispatch response before its bounded timeout."
     },
     "REQUEST_NOT_FOUND": {
       "category": "runtime.network",

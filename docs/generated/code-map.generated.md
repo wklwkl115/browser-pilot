@@ -6,10 +6,10 @@
 
 | Directory | Files | Lines |
 | --- | --- | --- |
-| `bridge_src` | 43 | 12199 |
+| `bridge_src` | 43 | 12361 |
 | `capture-src` | 4 | 15 |
 | `cli` | 15 | 2602 |
-| `scripts` | 19 | 3783 |
+| `scripts` | 19 | 3784 |
 | `src/abml` | 30 | 1552 |
 | `src/abml-core` | 25 | 4711 |
 | `src/capture` | 5 | 46 |
@@ -20,11 +20,11 @@
 | `src/memory` | 4 | 395 |
 | `src/memory-core` | 7 | 433 |
 | `src/pick` | 1 | 30 |
-| `src/protocol` | 3 | 3087 |
+| `src/protocol` | 3 | 3167 |
 | `src/resources` | 4 | 675 |
 | `src/scan` | 3 | 165 |
 | `src/temporal-core` | 6 | 574 |
-| `src/tools` | 136 | 22858 |
+| `src/tools` | 137 | 22949 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |
@@ -52,7 +52,7 @@
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
 | `src/utils/params.ts` | 16 |
 | `src/protocol/nativeErrorCodes.ts` | 13 |
-| `src/abml-core/types.ts` | 12 |
+| `bridge_src/service_worker/wait_cdp.ts` | 12 |
 
 ## Registered Tool And Command Surface
 

@@ -27,6 +27,7 @@
 - Check Acceleration Plan历史摘要见 `docs/archive/check-acceleration-plan.md`
 - Distill Kernel Hygiene Plan历史摘要见 `docs/archive/distill-kernel-hygiene-plan.md`
 - Execution Feedback Layer Plan历史摘要见 `docs/archive/execution-feedback-layer-plan.md`
+- Execution Plane Cdp Fusion Plan历史摘要见 `docs/archive/execution-plane-cdp-fusion-plan.md`
 - 本地工程治理期历史摘要见 `docs/archive/governance-history.md`
 - Governance Mechanisms Plan历史摘要见 `docs/archive/governance-mechanisms-plan.md`
 - Memory Kernel Plan历史摘要见 `docs/archive/memory-kernel-plan.md`
@@ -52,6 +53,7 @@
 - `docs/archive/check-acceleration-plan.full.md`
 - `docs/archive/distill-kernel-hygiene-plan.full.md`
 - `docs/archive/execution-feedback-layer-plan.full.md`
+- `docs/archive/execution-plane-cdp-fusion-plan.full.md`
 - `docs/archive/governance-history.full.md`
 - `docs/archive/governance-mechanisms-plan.full.md`
 - `docs/archive/memory-kernel-plan.full.md`

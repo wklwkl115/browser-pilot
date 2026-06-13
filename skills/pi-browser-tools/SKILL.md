@@ -13,8 +13,8 @@ Operate live browser pages by calling `browser_*` tools directly, in-process.
 
 Three facts shape everything below:
 - **Perception is `browser_observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not callable tools.
-- **Action is the JavaScript you write in `browser_execute`** (run verbatim). There are no separate click/type tools and none are planned — a structured action arm was tried and removed because agents reverted to JS.
-- **The escape for synthetic-event-blind targets is physical input.** When `el.click()` is silently ignored (trusted-event-gated control, canvas, WebGL, cross-origin iframe) **or JS-typed text never registers** (React/Vue controlled input reverts on re-render, a `contenteditable` editor still reads empty, a submit button never enables), stop escalating JS hacks and use `browser_command` `input.pointer` / `input.keys` at measured coordinates — CDP trusted events trip framework reactivity that synthetic events cannot.
+- **Action is the JavaScript you write in `browser_execute`** (run verbatim). There are no separate click/type tools and none are planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `pi.click(ref)` for physical trusted clicks against a fresh observed `pi-ref://`.
+- **The escape for synthetic-event-blind targets is physical input.** When `el.click()` is silently ignored (trusted-event-gated control, canvas, WebGL, cross-origin iframe) **or JS-typed text never registers** (React/Vue controlled input reverts on re-render, a `contenteditable` editor still reads empty, a submit button never enables), stop escalating JS hacks. For a fresh observed ref use `browser_execute` with `await pi.click(ref)`; otherwise use `browser_command` `input.pointer` / `input.keys` at measured coordinates. CDP trusted events trip framework reactivity that synthetic events cannot.
 
 On long lists/tables first read top-level `collections` for completeness / continuation evidence, then `outline`/`gist` for orientation and `causal` for which APIs an action hit; raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
@@ -63,7 +63,7 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame {action:"list"}` (read child `frameId`) → `browser_frame {action:"evaluate", frameId, expression}`. A top-level scan does NOT cover child frames structurally |
 | Click/type/scroll/mutate | `browser_execute` (JS) → read cheap `effect` → `browser_wait` / re-observe |
-| Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | physical input via `browser_command` `input.pointer` / `input.keys` (CDP trusted events trip framework reactivity synthetic JS doesn't) — see Action › Type |
+| Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | fresh observed click ref → `browser_execute` `await pi.click(ref)`; otherwise physical input via `browser_command` `input.pointer` / `input.keys` — see Action › Type |
 | CDP / native command | `browser_command` with explicit command object |
 | Wait nav/selector/load/idle | `browser_wait` (never sleep-loop; on a continuously polling/streaming SPA an `idle` wait never settles and just burns the timeout — wait on a `selector` or navigation instead) |
 | User points to element | `browser_pick` |
@@ -125,7 +125,7 @@ Bound expansive routes by **explicit scope first** — `url` / captured request 
 ## Action
 
 - Prefer explicit `browser_observe.mode` when you know it (`scan`/`content`/`html`/`text`/`tabs`), but omitting mode is valid for mechanical cases: `selector`/`includeLinks` infer `content`, `htmlMode`/`params` infer `html`, and `url` alone defaults to navigate+scan. No `auto`, no page-shape guessing, no cross-mode selector fallback. For read-only before/after, give the second scan a baseline to get `diff`/`treeDiff`/`snapshotProjection`/`form-dependency`. Pass the baseline **by reference** (`snapshotId` or `saved.path`). `pi-ref://` and baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle. Selector miss → re-observe `scan`/`html` → `browser_frame` → verified retry.
-- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true` appears after a script used `pi-ref://`, refresh with `browser_observe mode=scan` before reusing that ref. Use normal page JS selectors/DOM APIs; `pi-ref://` handles are short-lived observation evidence, not a public action API.
+- `browser_execute {script}` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true`, `BACKEND_NODE_STALE`, `OOPIF_SESSION_UNSUPPORTED`, or `HANDLE_NOT_FOUND` appears after a script used `pi-ref://`, refresh with `browser_observe mode=scan` before reusing that ref. Use normal page JS selectors/DOM APIs first; `pi.click(ref)` is only for physical trusted input against a fresh observed ref and returns dispatch facts (`dispatchOnly:true`), not semantic success.
 - `monitor:true` only when a semantic before/after DOM diff helps; it is heavier than the default `effect`. Don't ask for `redact:false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId browserSessionId selectionVersion sourceMode`.
 
 Click:
@@ -141,6 +141,12 @@ Click:
   return { ok: true, text: el.innerText || el.value || '' };
 })()
 ```
+
+Trusted click from an observed ref:
+```js
+return await pi.click("pi-ref://control/...");
+```
+Use this only after a fresh `browser_observe mode=scan` produced the ref and normal `el.click()` was swallowed. Verify with `effect`, `browser_wait`, `browser_observe`, or network/hook evidence; do not double-click just because `pi.click` does not verify intent internally. On stale/ref/session failure, re-observe and retry once with the fresh ref.
 
 Type — *JS-typed-but-the-framework-ignores-it* is the most common silent failure (the submit button never enables):
 - React/Vue **controlled `<input>`/`<textarea>`**: a plain `el.value = x` is reverted on re-render. Write through the native setter so the framework sees it, then fire `input`:
@@ -159,7 +165,7 @@ Type — *JS-typed-but-the-framework-ignores-it* is the most common silent failu
 
 ## Native command
 
-`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for trusted physical input; summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn tool names; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
+`browser_command` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for explicit trusted physical input; `input.ref` is the internal diagnostic equivalent behind `pi.click(ref)`, not a new preferred public workflow. Summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn tool names; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
 
 ## Recovery
 

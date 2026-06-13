@@ -105,6 +105,25 @@ function persistentCdpPayload(value) {
 function persistentCdpException(value) {
 	return bridgeData(value)?.exceptionDetails ?? bridgeData(value)?.result?.exceptionDetails ?? bridgeData(value)?.result?.result?.exceptionDetails;
 }
+function findPiRefNearText(value, pattern) {
+	const seen = new Set();
+	const candidates = [];
+	function visit(node) {
+		if (node == null) return;
+		if (typeof node === "string") {
+			for (const match of node.matchAll(/pi-ref:\/\/[A-Za-z0-9_-]+\/[^\s"'`<>{}\])]+/g)) candidates.push({ ref: match[0], context: node });
+			return;
+		}
+		if (typeof node !== "object" || seen.has(node)) return;
+		seen.add(node);
+		const context = JSON.stringify(node).slice(0, 4000);
+		for (const match of context.matchAll(/pi-ref:\/\/[A-Za-z0-9_-]+\/[^\s"'`<>{}\])]+/g)) candidates.push({ ref: match[0], context });
+		for (const child of Array.isArray(node) ? node : Object.values(node)) visit(child);
+	}
+	visit(value);
+	const matched = candidates.find((item) => pattern.test(item.context)) || candidates[0];
+	return matched?.ref;
+}
 function toolReturnedError(toolResult) {
 	const text = resultText(toolResult);
 	try {
@@ -1131,6 +1150,82 @@ async function eval30(env, entry) {
 	}
 }
 
+async function eval31(env, entry) {
+	const metrics = beginMetrics(env, entry.id);
+	const oldTabId = await createTab(env, metrics, "execution-plane-cdp-fusion.html");
+	let fusedTabId;
+	try {
+		const oldMeasurePath = path.join(env.runDir, `${entry.id}-old-measure.json`);
+		const oldMeasure = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", {
+			tabId: oldTabId,
+			script: `(() => {
+  const el = document.querySelector('#trusted-activate');
+  const r = el.getBoundingClientRect();
+  el.click();
+  return { point:{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}, state:{...window.__fixtureState}, status:document.querySelector('#status').textContent, trustedResult:!!document.querySelector('#trusted-result') };
+})()`,
+			outputPath: oldMeasurePath,
+			timeoutMs: 15_000,
+			maxChars: 8_000,
+		}), "browser_execute old measure synthetic click"));
+		const oldMeasureData = oldMeasure.data || oldMeasure.summary?.data || oldMeasure;
+		const oldPoint = oldMeasureData.point || oldMeasureData.data?.point;
+		assertToolOk(await callTool(env, metrics, "browser_command", {
+			tabId: oldTabId,
+			command: { cmd: "input.pointer", tabId: oldTabId, gesture: "press", x: Number(oldPoint.x), y: Number(oldPoint.y), timeoutMs: 10_000 },
+			outputPath: path.join(env.runDir, `${entry.id}-old-input-pointer.json`),
+			timeoutMs: 15_000,
+			maxChars: 8_000,
+		}), "browser_command old input.pointer");
+		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId: oldTabId, params: { selector: "#trusted-result", state: "attached" }, timeoutMs: 10_000 }), "browser_wait old trusted result");
+
+		fusedTabId = await createTab(env, metrics, "execution-plane-cdp-fusion.html");
+		const beforePath = path.join(env.runDir, `${entry.id}-before-scan.json`);
+		const before = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId: fusedTabId, outputPath: beforePath, maxChars: 14_000, timeoutMs: 20_000 }), "browser_observe fused scan"));
+		const beforeArtifact = JSON.parse(await readFile(beforePath, "utf8"));
+		const ref = findPiRefNearText({ before, beforeArtifact }, /Trusted activate|trusted-activate/i);
+		if (!ref) throw new Error("eval31 could not locate a pi-ref for Trusted activate");
+		const raw = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", {
+			tabId: fusedTabId,
+			script: "(() => { document.querySelector('#trusted-activate').click(); return { state:{...window.__fixtureState}, status:document.querySelector('#status').textContent, trustedResult:!!document.querySelector('#trusted-result') }; })()",
+			outputPath: path.join(env.runDir, `${entry.id}-raw-click.json`),
+			timeoutMs: 15_000,
+			maxChars: 8_000,
+		}), "browser_execute raw synthetic click"));
+		const piClickPath = path.join(env.runDir, `${entry.id}-pi-click.json`);
+		const piClick = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_execute", {
+			tabId: fusedTabId,
+			script: `return await pi.click(${JSON.stringify(ref)})`,
+			outputPath: piClickPath,
+			timeoutMs: 20_000,
+			maxChars: 10_000,
+		}), "browser_execute pi.click"));
+		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId: fusedTabId, params: { selector: "#trusted-result", state: "attached" }, timeoutMs: 10_000 }), "browser_wait fused trusted result");
+		const afterPath = path.join(env.runDir, `${entry.id}-after.txt`);
+		const after = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "html", tabId: fusedTabId, selector: "main", htmlMode: "text", outputPath: afterPath, maxChars: 6_000, timeoutMs: 10_000 }), "browser_observe fused after"));
+		const afterText = `${JSON.stringify(after)}\n${await artifactTextFromSaved(after, afterPath)}`;
+		const piClickArtifact = JSON.parse(await readFile(piClickPath, "utf8"));
+		const combined = JSON.stringify({ oldMeasure, raw, piClick, piClickArtifact, after });
+		const rawIgnored = /synthetic ignored/.test(JSON.stringify(raw)) && !/trustedResult":true/.test(JSON.stringify(raw));
+		const dispatchFacts = /dispatchOnly/.test(combined) && /mousePressed/.test(combined) && /input\.ref/.test(combined);
+		const trusted = /Status: trusted activated/.test(afterText) && /Trusted event accepted/.test(afterText);
+		const ok = rawIgnored && dispatchFacts && trusted;
+		metrics.recoveredAfterFailure = true;
+		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
+		metrics.scopedFollowUpDiscipline = "passed";
+		metrics.summary.push(`Raw el.click was ignored, old fallback used execute+input.pointer at (${oldPoint.x},${oldPoint.y}), and pi.click dispatched against ${ref}.`);
+		metrics.summary.push("pi.click returned dispatch facts; trusted semantic success was verified afterward through wait/observe.");
+		metrics.diagnostics.push("Action-call comparison: old path = browser_execute measurement + browser_command input.pointer (2 action calls); fused path after observe = browser_execute with pi.click(ref) (1 action call).");
+		metrics.diagnostics.push(`dispatchOnly facts present=${dispatchFacts}; final trusted status present=${trusted}.`);
+		metrics.notes.push("No browser_execute action parameter or public browser_* tool was added; the privileged path is an execute-time binding to internal input.ref.");
+		await saveJsonEvidence(env, metrics, "comparison", { ref, oldPathActionCalls: 2, fusedPathActionCallsAfterObserve: 1, rawIgnored, dispatchFacts, trusted, oldPoint });
+		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
+	} finally {
+		await closeTabQuiet(env, oldTabId);
+		if (fusedTabId) await closeTabQuiet(env, fusedTabId);
+	}
+}
+
 const implemented = new Map([
 	["01-readable-content-artifact", eval01],
 	["02-scan-execute-wait", eval02],
@@ -1160,6 +1255,7 @@ const implemented = new Map([
 	["26-wasm-wat-bridge", eval26],
 	["27-websocket-session-transcript", eval27],
 	["30-abml-internal-routing-evidence", eval30],
+	["31-execution-plane-cdp-fusion", eval31],
 ]);
 
 async function writeRunnerSummary(runDir, records, envMeta) {
