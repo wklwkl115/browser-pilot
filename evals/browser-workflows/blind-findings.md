@@ -108,6 +108,57 @@ feeds mature-maintenance fixes.
   (observeTimings harvest — instrumentation already shipped). RSF5 remains open pending Step 0
   evidence.
 
+- **RSF6 — external non-Pi agent on a WRITE task re-surfaced the *typing* trusted-event wall;
+  scan under-use + isError-blindness as caveated n=1 (2026-06-13, external session
+  `019ec11a-0324-7b28-9ec2-f2d0ee9ce5aa`, `deepseek-v4-flash`).** Operator handed in a real log —
+  NOT the blind harness, NOT a Pi skill-guided session (mimo-init→deepseek; the `pi-browser-tools`
+  skill was almost certainly not loaded). The agent was told to open xiaohongshu.com, search
+  "claude", and **post a comment** under the first note — a WRITE task outside the READ-ONLY
+  protocol, single site. It read the note but **never posted** (outcome 0%) though transport was
+  clean (98 calls, `isError:false` on every one). Does NOT increment blind `runs`. Four-dimension
+  Sonnet triage of the log:
+  - **(a) Typing trusted-event wall (execution-feedback / physical-input-adoption class) — the
+    load-bearing finding.** The Vue `contenteditable` comment box: the agent wrote text via
+    `textContent=` → synthetic `InputEvent` → `execCommand('insertText')` → Vue-instance injection in
+    a **7-iteration loop**; each round the submit briefly enabled then reverted to `disabled`
+    (synthetic input never tripped Vue reactivity) and nothing sent. It never escalated to
+    `browser_command input.keys` (CDP `Input.insertText`, the trusted path that *does* trip Vue).
+    This is the **typing analogue of the canvas `input.pointer` adoption gate** (execution-feedback
+    split result above): physical *click* (`input.pointer`) was adopted there; physical *typing*
+    (`input.keys`) for `contenteditable`/controlled inputs has **never been eval-tested for
+    adoption**. **Skill action taken (doc-only, G4/G9 precedent — extends an *already-documented*
+    escape hatch, framework-agnostic, names no site, so n=1-justified):** the SKILL.md physical-input
+    escape was click-only ("`el.click()` silently ignored") → it now also names the typing case
+    (controlled input reverts / `contenteditable` reads empty / submit never enables → `input.keys`);
+    added a Type recipe (native-setter write for controlled `<input>`/`<textarea>`;
+    focus-then-`input.keys` for `contenteditable`; verify by re-observe, NOT the button's class which
+    re-renders) + a "focus the element first or `input.keys` types nowhere" note (verified
+    `bridge_src/service_worker/input.ts:80` — its `focus()` only runs `setFocusEmulationEnabled`, not
+    element focus); plus a Wait-row note that `networkIdle` never settles on a continuously-polling
+    SPA (12/17 `wait` calls here timed out) → prefer a `selector`/nav wait. **Open follow-up (the
+    work item is the EVAL, not more code):** a WRITE-task blind fixture (a `contenteditable` +
+    disabled-submit case, sibling to `ef-form-pi-resolve` / `ef-canvas-input-pointer`) must show
+    skill-guided agents actually escalate to `input.keys`. Until then: SKILL-MITIGATED, not
+    confirmed-adopted.
+  - **(b) Perception under-use (real-site perception fallback class, B1) — CONFOUNDED n=1.** 54/98
+    calls were `browser_execute` (45 hand-written `querySelector`); `observe` ran 9× but the agent
+    used `mode:content` 6× (markdown text, **no entities by design**) on the search-result / note
+    pages, got `entities:0`, and hand-wrote selectors; `mode:scan` was used only once (homepage). The
+    agent almost certainly never read the skill's structure→`scan` / article-text→`content` routing,
+    so its mode misuse — not a proven scan gap — is the likely cause. Whether `scan`'s `data.rows` /
+    entity projection actually covers Xiaohongshu note cards / the comment box is **untested**.
+    Re-test under a skill-guided blind run on a login-walled CN SPA before treating this as a B1
+    recurrence; do not act on this run alone. (`pi-ref` adoption was 0/9, but that is **WAI** —
+    `pi-ref` is short-lived observation evidence, not an action API, SKILL.md:128.)
+  - **(c) isError under-counts friction (eval-grading note, not a tool work item).** All 98 results
+    were `isError:false`, including 3 in-band `BROWSER_EXECUTION_ERROR` (a `:contains()` selector; a
+    circular-JSON `JSON.stringify` of a Vue proxy; a bare-object-literal syntax slip) and many
+    empty / `ok:false` / 404 returns — i.e. script and site failures surface **in-band**
+    (`ok:false` / empty / 404), not as transport `isError`. Lesson for the harness: grade on outcome
+    + in-band signals (`ok`, empty data, page state), never on `isError` alone — by `isError` this
+    0%-outcome run looks 100% clean. SITE-ENV blockers (not ours): login wall, note
+    `error_code=300031` access risk control, and note-opens-as-overlay-not-URL.
+
 ## fixable (work items)
 
 | # | finding | runs | evidence | candidate fix |

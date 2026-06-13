@@ -14,7 +14,7 @@ Operate live browser pages by calling `browser_*` tools directly, in-process.
 Three facts shape everything below:
 - **Perception is `browser_observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not callable tools.
 - **Action is the JavaScript you write in `browser_execute`** (run verbatim). There are no separate click/type tools and none are planned — a structured action arm was tried and removed because agents reverted to JS.
-- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser_command` `input.pointer` / `input.keys` at measured coordinates.
+- **The escape for synthetic-event-blind targets is physical input.** When `el.click()` is silently ignored (trusted-event-gated control, canvas, WebGL, cross-origin iframe) **or JS-typed text never registers** (React/Vue controlled input reverts on re-render, a `contenteditable` editor still reads empty, a submit button never enables), stop escalating JS hacks and use `browser_command` `input.pointer` / `input.keys` at measured coordinates — CDP trusted events trip framework reactivity that synthetic events cannot.
 
 On long lists/tables first read top-level `collections` for completeness / continuation evidence, then `outline`/`gist` for orientation and `causal` for which APIs an action hit; raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
@@ -63,9 +63,9 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 | Visual layout | `browser_screenshot` |
 | Inside iframe | `browser_frame {action:"list"}` (read child `frameId`) → `browser_frame {action:"evaluate", frameId, expression}`. A top-level scan does NOT cover child frames structurally |
 | Click/type/scroll/mutate | `browser_execute` (JS) → read cheap `effect` → `browser_wait` / re-observe |
-| Action returned ok but page didn't change | trusted-event-gated/canvas → `browser_command` `input.pointer` / `input.keys` |
+| Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | physical input via `browser_command` `input.pointer` / `input.keys` (CDP trusted events trip framework reactivity synthetic JS doesn't) — see Action › Type |
 | CDP / native command | `browser_command` with explicit command object |
-| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop) |
+| Wait nav/selector/load/idle | `browser_wait` (never sleep-loop; on a continuously polling/streaming SPA an `idle` wait never settles and just burns the timeout — wait on a `selector` or navigation instead) |
 | User points to element | `browser_pick` |
 | Download / upload | `browser_download` / `browser_upload` {absolute path, `confirm:true`} (no hand-scripted clicks) |
 | Record requests/HAR/body | `browser_network {action:"start"}` → act → `list\|get\|body\|exportHar` |
@@ -141,6 +141,21 @@ Click:
   return { ok: true, text: el.innerText || el.value || '' };
 })()
 ```
+
+Type — *JS-typed-but-the-framework-ignores-it* is the most common silent failure (the submit button never enables):
+- React/Vue **controlled `<input>`/`<textarea>`**: a plain `el.value = x` is reverted on re-render. Write through the native setter so the framework sees it, then fire `input`:
+```js
+(() => {
+  const el = document.querySelector('SELECTOR');
+  if (!el) return { ok: false, reason: 'not_found' };
+  el.focus();
+  const P = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
+  Object.getOwnPropertyDescriptor(P.prototype, 'value').set.call(el, 'TEXT');
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  return { ok: true, value: el.value };
+})()
+```
+- **`contenteditable` editors** (comment/rich-text boxes), or any field whose **submit stays disabled / editor still reads empty** after the above: that is the *typing* form of the trusted-event wall. Do NOT keep escalating JS (`textContent=`, repeated `execCommand`, synthetic `InputEvent`) — switch to physical input. Focus the field first (`el.focus()` via `browser_execute`, or `browser_command` `input.pointer {gesture:"press", x, y}` at its box center), then `browser_command` `input.keys {text:"…"}` (CDP `Input.insertText` — a trusted event React/Vue accept); submit with `input.keys {keys:[{key:"Enter"}]}` or click the now-enabled button. `input.keys` types into the **focused** element — focus first or it goes nowhere. Verify by re-observe / `effect` / `browser_network`, **not** by the button's class (it re-renders).
 
 ## Native command
 
