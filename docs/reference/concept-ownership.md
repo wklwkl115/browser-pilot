@@ -57,6 +57,7 @@ path in `src/tools/resultMiddleware.ts`, not by a single tool summary schema.
 | `DistilledEnvelope.templates` | src/tools/resultMiddleware.ts type only / compatibility | Declared compatibility field; current response path keeps template data in summary/artifact. |
 | `DistilledEnvelope.treeDiff` | src/tools/resultMiddleware.ts:envelopeTreeDiff() | Template-level living diff lifted from summary/focus. |
 | `DistilledEnvelope.snapshotProjection` | src/tools/resultMiddleware.ts:envelopeSnapshotProjection() | Persisted living snapshot projection lifted from summary/focus. |
+| `DistilledEnvelope.collections` | src/tools/resultMiddleware.ts:envelopeCollections() | Collection completeness and read-only continuation evidence lifted from scan summary. |
 | `DistilledEnvelope.error` | src/tools/resultMiddleware.ts:envelopeError() | Compact structured error block when summary or explicit error indicates failure. |
 | `DistilledEnvelope.nextActions` | src/tools/resultMiddleware.ts:normalizedNextActions() | Factual follow-up hints, capped and deduped; no hidden strategy chaining. |
 | `DistilledEnvelope.correlation` | src/tools/resultMiddleware.ts:responseEnvelope() correlation assembly | Cross-tool ids copied from summary/operation/snapshot for artifact reads. |
@@ -95,7 +96,7 @@ observe scan summary contract.
 | `HookDomFlowSummarySchema.nodeCount` | no | number | Number of nodes with listeners | `src/tools/observe/timings.ts`<br>`src/tools/summaries/webSecurity/replay.ts` | Number of nodes with listener/sink data in the summarized hook result. |
 | `HookDomFlowSummarySchema.listenerCount` | no | number | Total listener count across all nodes | `src/tools/summaries/outputSchemas.ts` (schema only) | Total listener count across returned nodes. |
 | `HookDomFlowSummarySchema.nodes` | no | array<object+> | - | `src/tools/summaries/outputSchemas.ts` (schema only) | Loose node samples; preserve bounded sample semantics. |
-| `HookDomFlowSummarySchema.rows` | no | array<object+> | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | Open-tail row samples for table-style hook commands. |
+| `HookDomFlowSummarySchema.rows` | no | array<object+> | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | Open-tail row samples for table-style hook commands. |
 | `HookDomFlowSummarySchema.sinkHints` | no | array<object+> | - | `src/tools/summaries/outputSchemas.ts` (schema only) | Sink hint samples; keep as triage hints, not vulnerability claims. |
 | `HookDomFlowSummarySchema.items` | no | array<object+> | - | `src/tools/summaries/network.ts`<br>`src/tools/summaries/transfer.ts`<br>`src/tools/summaries/common.ts`<br>`src/tools/summaries/evidence.ts` | DOM-flow item list for listener-chain style commands. |
 | `HookDomFlowSummarySchema.total` | no | unknown | - | `src/tools/summaries/hook.ts`<br>`src/tools/summaries/evidence.ts`<br>`src/tools/summaries/network.ts`<br>`src/tools/summaries/webSecurity/jsAst.ts` | Compatibility total for commands that return paged or table results. |
@@ -162,11 +163,12 @@ observe scan summary contract.
 | `ScanSummarySchema.tabs_count` | yes | number | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Bridge tab count mirrored into scan summary for context. |
 | `ScanSummarySchema.page` | yes | object+ | - | `src/tools/summaries/scan.ts` | Nested page metrics; keep consistent with top-level count fields. |
 | `ScanSummarySchema.focus` | yes | object+ | - | `src/tools/observe/baseline.ts`<br>`src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Primary action/entity and ABML-derived focus block. |
-| `ScanSummarySchema.artifact_hints` | yes | object+ | - | `src/tools/summaries/common.ts`<br>`src/tools/summaries/scan.ts` | Preferred local artifact reads; never require opening raw artifact blindly. |
-| `ScanSummarySchema.list_hints` | yes | object+ | - | `src/tools/summaries/scan.ts` | Table of repeated/list-like structures for agent scanning. |
+| `ScanSummarySchema.artifact_hints` | yes | object+ | - | `src/tools/summaries/common.ts`<br>`src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts` | Preferred local artifact reads; never require opening raw artifact blindly. |
+| `ScanSummarySchema.list_hints` | yes | object+ | - | `src/tools/summaries/scan.ts`<br>`src/tools/observe/scanRunner.ts` | Table of repeated/list-like structures for agent scanning. |
 | `ScanSummarySchema.media_candidates` | no | object+ | - | `src/tools/summaries/scan.ts` | Visible media candidates; bounded table, optional on sparse pages. |
-| `ScanSummarySchema.rows` | no | object+ | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | DOM-ordered visible rows; preserve sibling order semantics. |
-| `ScanSummarySchema.actionables` | yes | object+ | - | `src/tools/summaries/scan.ts` | Primary actionable table; refs and jsonPaths must stay stable enough for follow-up. |
+| `ScanSummarySchema.rows` | no | object+ | - | `src/tools/observe/scanRunner.ts`<br>`src/tools/summaries/scan.ts`<br>`src/tools/summaries/common.ts` | DOM-ordered visible rows; preserve sibling order semantics. |
+| `ScanSummarySchema.collections` | no | array<object+> | - | `src/tools/observe/scanRunner.ts` | Collection completeness and continuation model; rows are not authoritative membership. |
+| `ScanSummarySchema.actionables` | yes | object+ | - | `src/tools/summaries/scan.ts`<br>`src/tools/observe/scanRunner.ts` | Primary actionable table; refs and jsonPaths must stay stable enough for follow-up. |
 | `ScanSummarySchema.interactive` | yes | array<string> | - | `src/tools/summaries/scan.ts` | Compact interactive text/ref list for quick triage. |
 | `ScanSummarySchema.headings` | yes | array<string> | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/content.ts` | Visible heading list for orientation. |
 | `ScanSummarySchema.textPreview` | yes | string | - | `src/tools/summaries/scan.ts`<br>`src/tools/summaries/content.ts`<br>`src/tools/summaries/html.ts` | Budgeted text preview; not the full page body. |

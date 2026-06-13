@@ -17,6 +17,7 @@ export const PURE_CORE = [
 	"treeDiff.ts",
 	"semanticRefAnchor.ts",
 	"snapshotProjection.ts",
+	"collections.ts",
 	"identityGraph.ts",
 	"errors.ts",
 	"verbs/router.ts",

@@ -102,6 +102,41 @@ export const InferenceSummarySchema = Type.Object({
 	}, { additionalProperties: true })),
 }, { additionalProperties: true });
 
+export const CollectionSummarySchema = Type.Object({
+	collectionId: Type.String(),
+	kind: Type.String(),
+	containerRef: Type.Optional(Type.String()),
+	containerRole: Type.Optional(Type.String()),
+	containerName: Type.Optional(Type.String()),
+	itemRole: Type.Optional(Type.String()),
+	observedCount: Type.Number(),
+	itemRefCount: Type.Number(),
+	itemRefs: Type.Array(Type.String()),
+	declaredTotal: Type.Optional(Type.Number()),
+	estimatedTotal: Type.Optional(Type.Number()),
+	hiddenCount: Type.Optional(Type.Number()),
+	completeness: Type.String(),
+	confidence: Type.String(),
+	continuation: Type.Optional(Type.Object({
+		kind: Type.String(),
+		handle: Type.String(),
+		confidence: Type.String(),
+		evidenceRefs: Type.Array(Type.String()),
+	}, { additionalProperties: true })),
+	dataSources: Type.Optional(Type.Array(Type.Object({
+		source: Type.String(),
+		ref: Type.Optional(Type.String()),
+		summary: Type.String(),
+		confidence: Type.String(),
+	}, { additionalProperties: true }))),
+	evidence: Type.Array(Type.Object({
+		source: Type.String(),
+		summary: Type.String(),
+		jsonPath: Type.Optional(Type.String()),
+		ref: Type.Optional(Type.String()),
+	}, { additionalProperties: true })),
+}, { additionalProperties: true });
+
 // ABML R3 — optional temporal diff between a caller-provided baseline entity list and
 // the current observe/read result.
 const EntityDiffSalienceItemSchema = Type.Union([
@@ -285,6 +320,7 @@ export const ScanSummarySchema = Type.Object({
 	list_hints: SummaryTableSchema,
 	media_candidates: OptionalSummaryTable,
 	rows: OptionalSummaryTable,
+	collections: Type.Optional(Type.Array(CollectionSummarySchema)),
 	actionables: SummaryTableSchema,
 	interactive: Type.Array(Type.String()),
 	headings: Type.Array(Type.String()),

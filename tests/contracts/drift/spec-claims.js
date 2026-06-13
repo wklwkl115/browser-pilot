@@ -32,7 +32,7 @@ export const SPEC_CLAIMS = [
 		doc: "docs/abml-kernel-manifest.md",
 		claims: [
 			{
-				anchor: "## Pure core (25 — zero browser/Node deps)",
+				anchor: "## Pure core (26 — zero browser/Node deps)",
 				symbol: "export const PURE_CORE = [",
 				status: "implemented",
 				sourceGlob: ["tests/contracts/drift/abml-core-manifest.js"],

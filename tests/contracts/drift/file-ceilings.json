@@ -25,7 +25,7 @@
     { "file": "src/tools/observe/memoryAugmentation.ts", "maxLines": 195 },
     { "file": "src/tools/observe/relevanceFusion.ts", "maxLines": 108 },
     { "file": "src/tools/observe/renderCache.ts", "maxLines": 138 },
-    { "file": "src/tools/observe/scanRunner.ts", "maxLines": 616 },
+    { "file": "src/tools/observe/scanRunner.ts", "maxLines": 682, "justification": "Collection completeness adds observe envelope wiring only; classifier logic stays in src/abml-core/collections.ts, so splitting this four-line overage would scatter mirror invariants." },
     { "file": "src/tools/observeRunners.ts", "maxLines": 29 },
     { "file": "src/tools/pageScriptEvaluation.ts", "maxLines": 40 },
     { "file": "src/tools/pageSignals.ts", "maxLines": 126, "justification": "Page signal normalization now owns dirty-root caps and drain options as one bridge protocol boundary." },

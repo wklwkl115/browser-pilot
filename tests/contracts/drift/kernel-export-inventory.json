@@ -179,6 +179,58 @@
         }
       ]
     },
+    "src/abml-core/collections.ts": {
+      "exports": [
+        {
+          "name": "BuildCollectionModelsInput",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionCompleteness",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionConfidence",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionContinuation",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionContinuationKind",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionDataSource",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionEvidenceSource",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionKind",
+          "status": "internal"
+        },
+        {
+          "name": "CollectionModel",
+          "status": "test-harness"
+        },
+        {
+          "name": "CollectionScanEvidence",
+          "status": "internal"
+        },
+        {
+          "name": "buildCollectionModels",
+          "status": "consumed"
+        },
+        {
+          "name": "summarizeCollectionCompleteness",
+          "status": "test-harness"
+        }
+      ]
+    },
     "src/abml-core/diff.ts": {
       "exports": [
         {
@@ -399,6 +451,10 @@
         },
         {
           "name": "* from ./causal.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./collections.js",
           "status": "internal"
         },
         {

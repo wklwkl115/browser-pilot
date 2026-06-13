@@ -13,6 +13,9 @@
       "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/causal.test.ts"
     ],
+    "src/abml-core/collections.ts": [
+      "tests/unit/abml/collections.test.ts"
+    ],
     "src/abml-core/diff.ts": [
       "tests/unit/abml/item11.optimization.test.ts",
       "tests/unit/abml/diff.test.ts"

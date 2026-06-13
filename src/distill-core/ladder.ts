@@ -20,6 +20,7 @@ export type BudgetedEnvelope = {
 	causal?: Record<string, unknown>;
 	treeDiff?: Record<string, unknown>;
 	snapshotProjection?: Record<string, unknown>;
+	collections?: Array<Record<string, unknown>>;
 	nextActions?: string[];
 	saved?: Record<string, unknown>;
 	[key: string]: unknown;
@@ -30,7 +31,7 @@ export const SUMMARY_MAX_CHARS = 12_000;
 const PREVIEW_FALLBACK_CHARS = 800;
 const OVERFLOW_GUARD_LIMITS = { stringChars: 800, arrayItems: 20, tableRows: 20 } as const;
 const SUMMARY_LOW_PRIORITY_KEYS = new Set(["textPreview", "interactive", "headings", "samples", "failed", "nodes", "matches", "selections", "frames", "iframe_notes"]);
-const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
+const ENVELOPE_LIFTED_KEYS = ["snapshotProjection", "collections", "entities", "outline", "relations", "treeDiff", "diff", "causal", "gist"] as const;
 const ENVELOPE_REMOVABLE_KEYS = ["entities", "outline", "relations", "causal", "gist"] as const;
 
 function pickDefined(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
@@ -203,6 +204,14 @@ function compactLiftedEnvelopeValue(key: string, value: unknown): unknown {
 			...(templates ? { templates } : {}),
 		};
 	}
+	if (key === "collections" && Array.isArray(value)) {
+		return value.slice(0, 4).filter(isRecord).map((collection) => ({
+			...pickDefined(collection, ["collectionId", "kind", "containerRef", "containerRole", "containerName", "itemRole", "observedCount", "itemRefCount", "declaredTotal", "estimatedTotal", "hiddenCount", "completeness", "confidence"]),
+			...(Array.isArray(collection.itemRefs) ? { itemRefs: collection.itemRefs.slice(0, 6) } : {}),
+			...(isRecord(collection.continuation) ? { continuation: pickDefined(collection.continuation, ["kind", "handle", "confidence", "evidenceRefs"]) } : {}),
+			...(Array.isArray(collection.evidence) ? { evidence: collection.evidence.slice(0, 3).filter(isRecord).map((item) => pickDefined(item, ["source", "summary", "jsonPath", "ref"])) } : {}),
+		}));
+	}
 	return compactSummaryValue(value, { stringChars: 120, arrayItems: 4, tableRows: 4 });
 }
 
@@ -270,6 +279,7 @@ export function fitEnvelopeBudget<T extends BudgetedEnvelope>(envelope: T, maxCh
 		...(out.diff ? { diff: out.diff } : {}),
 		...(out.treeDiff ? { treeDiff: out.treeDiff } : {}),
 		...(out.snapshotProjection ? { snapshotProjection: out.snapshotProjection } : {}),
+		...(out.collections ? { collections: out.collections } : {}),
 		nextActions: out.nextActions?.slice(0, 2),
 		saved: out.saved,
 	} as T, [...omitted, "nonessential_metadata"]);

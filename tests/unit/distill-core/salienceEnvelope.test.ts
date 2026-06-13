@@ -7,12 +7,13 @@ import { fitEnvelopeBudget, type BudgetedEnvelope } from "../../../src/distill-c
 import { fitSalienceEnvelopeBudget } from "../../../src/distill-core/salienceEnvelope.ts";
 import { isRecord } from "../../../src/utils/records.ts";
 
-const LIFTED_KEYS = ["snapshotProjection", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
-const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "diff", "treeDiff"] as const;
+const LIFTED_KEYS = ["snapshotProjection", "collections", "causal", "diff", "treeDiff", "relations", "gist", "outline", "entities"] as const;
+const REQUIRED_CONTINUITY_KEYS = ["snapshotProjection", "collections", "diff", "treeDiff"] as const;
 const MIN_MARGINAL_DENSITY = 0.12;
 const MAX_SALIENCE_TO_LADDER_RATIO = 1.05;
 const STRUCTURE_SCORE: Record<(typeof LIFTED_KEYS)[number], number> = {
 	snapshotProjection: 950,
+	collections: 930,
 	causal: 900,
 	diff: 850,
 	treeDiff: 820,

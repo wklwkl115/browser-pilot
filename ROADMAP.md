@@ -58,6 +58,14 @@
    设计评审收口；实施顺序为 P0' in-place trace、P1' single-source DAG、P2'
    coarse git-tree cache、P4 impact graph/ABI-as-edge、P5 miss recorder、P7 docs。
    启动前必须先在 `CURRENT.md` 当前激活项登记决策、边界、契约和验证计划。
+6. **ABML collection completeness / continuation kernel**：草案见
+   `docs/abml-collection-continuation-kernel-plan.md`。目标是在 ABML 感知层输出
+   collection completeness、continuation handle、data-source/evidence/state-transition，
+   消除 agent 对 scroll/click/pagination 这类人类 UI 动词的依赖；不新增公开
+   `browser_scroll`，不恢复 `browser_execute {action}`。2026-06-13 blind finding L1
+   已用 linux.do + bilibili 两站确认 Phase 1-3 感知缺口；W2 同时裁定手写 scroll
+   执行为 WAI，runtime continuation arm 封存到新证据重开线。启动前必须先在
+   `CURRENT.md` 登记执行合同。
 
 ## 近期质量建议
 

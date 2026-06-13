@@ -12,6 +12,7 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { Value } from "typebox/value";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
+import { buildCollectionModels } from "../../../src/abml-core/collections.ts";
 import { scanEntitiesForEnvelope, summarizeScanData } from "../../../src/tools/summaries/scan.ts";
 import { EntitySchema, ScanSummarySchema } from "../../../src/tools/summaries/outputSchemas.ts";
 
@@ -51,6 +52,10 @@ const entities = scanEntitiesForEnvelope(rawScan, {
 		capturedAt: 1710000000000,
 	},
 });
+summary.collections = buildCollectionModels({
+	entities: [],
+	scanEvidence: { listHints: rawScan.list_hints },
+});
 
 assert(Value.Check(ScanSummarySchema, summary), `scan summary must conform to ScanSummarySchema: ${JSON.stringify([...Value.Errors(ScanSummarySchema, summary)].slice(0, 5).map((e) => `${e.instancePath}: ${e.message}`))}`);
 assert.equal(summary.focus.entityShape, "refs-v1", "focus must version the entity-ref projection");
@@ -84,6 +89,9 @@ try {
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.content") || String(item).includes("read_saved_artifact")), "scan envelope nextActions must retain content targeted follow-up");
 	assert(Array.isArray(envelope.entities), "scan envelope must surface entity projections at envelope level in P8");
 	assert(envelope.entities.every((entity) => typeof entity === "object" && typeof entity.ref === "string" && typeof entity.kind === "string"), "envelope.entities must still carry compact full entity objects");
+	assert.equal(envelope.collections?.[0]?.completeness, "lazy", "scan envelope must lift collection completeness");
+	assert.equal(envelope.collections?.[0]?.continuation?.kind, "virtual-window", "scan envelope must carry semantic continuation evidence");
+	assert(!JSON.stringify(envelope.nextActions || []).toLowerCase().includes("scroll"), "scan envelope nextActions must not prescribe scroll");
 	// F2: the scan summarizer duplicated `headings`/`top_layer` into both summary top-level AND focus by
 	// SHARED reference, so redactSensitiveValue collapsed the second occurrence to a "[Circular]" string
 	// — unreadable noise. They are now distinct copies; assert none renders as the placeholder.

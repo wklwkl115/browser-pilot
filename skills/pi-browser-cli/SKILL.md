@@ -86,6 +86,7 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 
 | You need | Read this envelope field | Then |
 |---|---|---|
+| A long/virtualized/lazy/paginated list | `collections` (`completeness`, `continuation`, evidence refs) | decide semantic need/budget; per-item values → `execute` |
 | A big repeated list/table as a group | `outline` / `gist` (fold by AX container) | per-item values → `execute` |
 | Visible text/link rows already on screen | `summary.rows` or `artifact --mode json --json-path data.rows` | site-specific values beyond text/href/geometry → `execute` |
 | Visible images/video/audio candidates | `summary.media_candidates` or `artifact --mode json --json-path data.media_candidates` | associated headline/ranking/source semantics → `execute` |

@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "classBBaseline": 97,
+  "classBBaseline": 105,
+  "classBBaselineJustification": "ABML collection completeness adds bounded collection presentation caps for perception output; runtime continuation/action verbs remain absent.",
   "requiredClassBDecrements": 2,
   "migrations": [
     {

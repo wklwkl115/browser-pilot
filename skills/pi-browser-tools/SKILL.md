@@ -16,7 +16,7 @@ Three facts shape everything below:
 - **Action is the JavaScript you write in `browser_execute`** (run verbatim). There are no separate click/type tools and none are planned — a structured action arm was tried and removed because agents reverted to JS.
 - **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser_command` `input.pointer` / `input.keys` at measured coordinates.
 
-On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
+On long lists/tables first read top-level `collections` for completeness / continuation evidence, then `outline`/`gist` for orientation and `causal` for which APIs an action hit; raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Invocation
 
@@ -89,6 +89,7 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 
 | You need | Read this envelope field | Then |
 |---|---|---|
+| A long/virtualized/lazy/paginated list | `collections` (`completeness`, `continuation`, evidence refs) | decide semantic need/budget; per-item values → `browser_execute` |
 | A big repeated list/table as a group | `outline` / `gist` (fold by AX container) | per-item values → `browser_execute` |
 | Visible text/link rows already on screen | `summary.rows` or `browser_artifact jsonPath=data.rows` | site-specific values beyond text/href/geometry → `browser_execute` |
 | Visible images/video/audio candidates | `summary.media_candidates` or `browser_artifact jsonPath=data.media_candidates` | associated headline/ranking/source semantics → `browser_execute` |
@@ -98,7 +99,7 @@ Pick the tool by intent; its params/enums are in the tool's own schema.
 
 Component-library selects/dropdowns (Element Plus / Ant Design / MUI style): popup DOM is often lazy and the first visible popper can be stale from the previous control. Identify the popup from the trigger, not visual heuristics: read `aria-controls` plus `aria-expanded`; body-click/close, reopen the target trigger, then query the popup by that id. `browser_observe mode=scan` records page-wide `data.controls_pairs` (including off-screen sources); read it with `browser_artifact mode=json jsonPath=data.controls_pairs`, and re-scan after opening if the first scan had no resolvable pair.
 
-Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
+Pass a baseline **by reference**: a prior scan's `snapshotId` (daemon-resolved) or its auto-saved artifact path (`saved.path`) — never inline the prior envelope. `collections`/`treeDiff`/`causal`/`relations` are top-level live AND mirrored into the saved artifact's `envelope.*`; absent ≠ error. The scan points you at them via `nextActions`.
 
 ## Read results
 

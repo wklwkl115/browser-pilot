@@ -9,12 +9,12 @@
 | `bridge_src` | 43 | 12213 |
 | `capture-src` | 5 | 24 |
 | `cli` | 15 | 2602 |
-| `scripts` | 19 | 3781 |
-| `src/abml` | 32 | 2175 |
-| `src/abml-core` | 27 | 4188 |
+| `scripts` | 19 | 3784 |
+| `src/abml` | 33 | 2177 |
+| `src/abml-core` | 28 | 4846 |
 | `src/capture` | 6 | 58 |
 | `src/content` | 1 | 20 |
-| `src/distill-core` | 16 | 1662 |
+| `src/distill-core` | 16 | 1673 |
 | `src/driver` | 22 | 3657 |
 | `src/frontend` | 4 | 394 |
 | `src/memory` | 4 | 395 |
@@ -23,7 +23,7 @@
 | `src/protocol` | 3 | 3087 |
 | `src/resources` | 4 | 675 |
 | `src/scan` | 3 | 165 |
-| `src/tools` | 136 | 22707 |
+| `src/tools` | 136 | 22797 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |
@@ -44,8 +44,8 @@
 | `src/driver/errors.ts` | 23 |
 | `src/driver/types.ts` | 21 |
 | `src/tools/summaries/common.ts` | 20 |
+| `src/abml-core/entity.ts` | 19 |
 | `src/tools/webSecurity/shared/http.ts` | 19 |
-| `src/abml-core/entity.ts` | 18 |
 | `src/tools/summaries/index.ts` | 18 |
 | `src/tools/toolAdapter.ts` | 18 |
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
@@ -71,7 +71,7 @@
 | tool | `browser_http_replay` | `src/tools/webSecurity/register/registerHttpReplay.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts`<br>`src/abml-core/types.ts` |
 | tool | `browser_memory` | `src/tools/registerMemoryTool.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts`<br>`src/abml-core/types.ts` |
 | tool | `browser_network` | `src/tools/registerNativeActionTools.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/errors.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts` |
-| tool | `browser_observe` | `src/tools/registerObserveTool.ts`<br>`src/abml-core/actionabilityModel.ts`<br>`src/abml-core/ax.ts`<br>`src/abml-core/causal.ts`<br>`src/abml-core/diff.ts` |
+| tool | `browser_observe` | `src/tools/registerObserveTool.ts`<br>`src/abml-core/actionabilityModel.ts`<br>`src/abml-core/ax.ts`<br>`src/abml-core/causal.ts`<br>`src/abml-core/collections.ts` |
 | tool | `browser_pick` | `src/tools/registerPickTool.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts`<br>`src/abml-core/types.ts` |
 | tool | `browser_screenshot` | `src/tools/registerScreenshotTool.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts`<br>`src/abml-core/types.ts` |
 | tool | `browser_sqli` | `src/tools/webSecurity/register/registerSqli.ts`<br>`src/abml-core/entity.ts`<br>`src/abml-core/refId.ts`<br>`src/abml-core/refPolicy.ts`<br>`src/abml-core/types.ts` |

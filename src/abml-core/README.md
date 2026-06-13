@@ -2,7 +2,8 @@
 
 This folder is the **pure-core kernel** of ABML, the perception substrate under the `browser_*`
 tools. It models a web page as a trustworthy, actionable, focusable semantic graph — entities,
-refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping, and mechanism-arm structure projection.
+refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping, collection completeness,
+and mechanism-arm structure projection.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
 Pure functions and types only. The browser-facing **runtime** lives next door in
@@ -14,6 +15,24 @@ Pure functions and types only. The browser-facing **runtime** lives next door in
 
 This is the whole reason the kernel was split out: it can be read, reasoned about, and unit-tested
 without a browser, and is the candidate for an isolated `@pi/abml-core` package.
+
+## Agent-native perception contract
+
+ABML is not a better wrapper around human browser gestures. Human browser surfaces expose viewports,
+scrolling, pointer hits, and stepwise clicks because a person has a fast visual feedback loop.
+Agents pay for each interaction but can consume a larger structured model at once, so the kernel
+must remove that viewport/action burden from the public cognition path.
+
+Treat scroll, click, pagination, virtual-list probing, and lazy loading as evidence/state/data-source
+problems before treating them as public verbs. The kernel should model entities, relations,
+collections, completeness, continuation handles, data-source provenance, and state transitions; any
+physical input or page JS needed to discover or verify them belongs in runtime mechanics with visible
+diagnostics, not in a wider agent-facing ABML surface.
+
+Viewport facts are coverage/evidence metadata, not the boundary of page understanding. If a page
+requires a manual "go there, then look again" loop, first ask whether ABML can expose the missing
+collection, completeness, continuation, or source structure so the agent does not have to perform
+that loop.
 
 ## Layout
 
@@ -33,6 +52,7 @@ kernel's entire public surface at a glance.
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; high-confidence anchors feed gated ref minting in runtime. |
 | `snapshotProjection.ts` | M2c living snapshot projection — compact current templates plus attached template deltas for saved observe artifacts. |
+| `collections.ts` | Collection completeness and read-only continuation evidence for long/virtualized/lazy/paginated structures. |
 | `actionabilityModel.ts` | Verb → actionability-spec mapping; action-verb classification. |
 | `errors.ts` | `normalizeAbmlError` + recovery shaping. |
 | `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
@@ -56,7 +76,7 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   wire it in `verbs/router.ts`, and put the browser I/O in `../abml/verbs/<verb>Runtime.ts`. Keep
   the decision and the I/O on opposite sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
-  `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, or `snapshotProjection.ts`. Stay generic —
+  `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
   ABML models ARIA patterns, never per-site/per-framework branches (see the perception roadmap doc).
 - **Need a new shared helper** → if it is genuinely pure, add it to the `PURE_CROSSCUTTING`
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).

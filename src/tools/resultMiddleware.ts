@@ -59,6 +59,9 @@ export type DistilledEnvelope = {
 	// ABML mechanism arm M2c — persisted living structure snapshot: current templates plus attached
 	// template deltas where available. Lifted here so saved-artifact follow-up can stay structure-first.
 	snapshotProjection?: Record<string, unknown>;
+	// ABML collection completeness + continuation kernel — first-class collection windows and
+	// read-only continuation evidence. Lifted here so long-list completeness is never hidden by budget.
+	collections?: Array<Record<string, unknown>>;
 	error?: Record<string, unknown>;
 	nextActions?: string[];
 	correlation?: Record<string, unknown>;
@@ -259,6 +262,13 @@ function envelopeSnapshotProjection(summary: DistilledSummary): Record<string, u
 	return isRecord(focus?.snapshotProjection) ? structuredClone(focus.snapshotProjection) as Record<string, unknown> : undefined;
 }
 
+function envelopeCollections(summary: DistilledSummary): Array<Record<string, unknown>> | undefined {
+	if (Array.isArray(summary.collections)) return structuredClone(summary.collections).filter(isRecord) as Array<Record<string, unknown>>;
+	const focus = isRecord(summary.focus) ? summary.focus : undefined;
+	const collections = Array.isArray(focus?.collections) ? focus.collections.filter(isRecord) : [];
+	return collections.length ? structuredClone(collections) as Array<Record<string, unknown>> : undefined;
+}
+
 function envelopeError(summary: DistilledSummary, explicit?: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (explicit && Object.keys(explicit).length) return explicit;
 	if (summary.failed === true || typeof summary.error_code === "string") {
@@ -438,6 +448,7 @@ export function livePlaneSignature(envelope: DistilledEnvelope): string {
 		causal: envelope.causal,
 		treeDiff: envelope.treeDiff,
 		snapshotProjection: envelope.snapshotProjection,
+		collections: envelope.collections,
 		rendererOmitted: envelope.summary.rendererOmitted,
 		envelopeOmitted: envelope.summary.envelopeOmitted,
 		warnings: Array.isArray(envelope.diagnostics?.warnings) ? envelope.diagnostics.warnings : undefined,
@@ -500,6 +511,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 	const causal = envelopeCausal(redactedSummary);
 	const treeDiff = envelopeTreeDiff(redactedSummary);
 	const snapshotProjection = envelopeSnapshotProjection(redactedSummary);
+	const collections = envelopeCollections(redactedSummary);
 	const error = envelopeError(redactedSummary, redactedExplicitError);
 	const delta = redactedSummary.delta === "session" ? "session" : undefined;
 	const baselineSnapshotId = typeof redactedSummary.baselineSnapshotId === "string" ? redactedSummary.baselineSnapshotId : undefined;
@@ -525,6 +537,7 @@ function responseEnvelope(options: DistillBaseOptions, summary: DistilledSummary
 		...(causal ? { causal } : {}),
 		...(treeDiff ? { treeDiff } : {}),
 		...(snapshotProjection ? { snapshotProjection } : {}),
+		...(collections ? { collections } : {}),
 		...(error ? { error } : {}),
 		nextActions: normalizedNextActions(options, redactedSummary, saved, redactedOperation, redactedSnapshot, summaryHintActions, entities),
 		operation: redactedOperation,

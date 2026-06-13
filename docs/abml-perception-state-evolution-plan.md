@@ -19,6 +19,15 @@ linear read-out), ABML — only ABML is designed for the **agent's cognition +
 action**. KPI: *fewest tokens, least ambiguity, for "what state is the page in, what
 can I do, what will an action do".*
 
+The browser's native interaction model is optimized for people: viewport, scroll bar,
+pointer, keyboard, rapid visual correction. ABML's job is to approach the browser truth
+below that human UI layer and return the page as structured perception the agent can
+consume in fewer turns. Do not turn human gestures into first-class agent verbs merely
+because a page is scrollable, lazy, paginated, or hidden behind a click. First model the
+thing the agent needed: collection membership and completeness, continuation, data
+source, evidence, or state transition. Physical input is an internal runtime mechanism
+or explicit escape hatch; it is not the public shape of the ABML kernel.
+
 - **Trustworthy** — state can be believed directly. Semantic state comes from the
   **AX plane (authoritative)**; DOM only supplies geometry/labels. DOM/AX conflict →
   AX wins, mismatch flagged (no silent fallback). Honest about completeness ("N more
@@ -264,9 +273,15 @@ incrementally updated, focused, honest about reachability. All of these are
 - **Mid:** **salience-driven default disclosure** (generic salience: in-viewport /
   focused / recently-changed / interaction density); **opaque nodes** (closed shadow
   DOM / cross-origin iframe / canvas as honest fold points, expand via
-  `pierce`/`vision`).
+  `pierce`/`vision`); **collection and continuation modeling** for virtualized,
+  lazy, or paginated content (`complete | folded | viewport-window | virtualized |
+  paginated | unknown` completeness, continuation handles, source/evidence pointers,
+  and dedupe keys) so "scroll more and look again" becomes a perception-state question,
+  not an agent-visible action loop. Draft execution design:
+  [`docs/abml-collection-continuation-kernel-plan.md`](abml-collection-continuation-kernel-plan.md).
 - **Far:** **causal plane** (hang network-entry/event refs on a control's subtree so
-  "what happens if I click this" is navigable).
+  "what happens if I click this" is navigable) plus state-transition summaries that
+  connect an operation, the changed semantic entities, and any backing data source.
 
 ## Long-term roadmap — perception depth (the kernel-layer direction, 2026-06-03)
 

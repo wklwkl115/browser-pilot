@@ -857,6 +857,7 @@
         "src/abml-core/actionabilityModel.ts",
         "src/abml-core/ax.ts",
         "src/abml-core/causal.ts",
+        "src/abml-core/collections.ts",
         "src/abml-core/diff.ts",
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
@@ -882,6 +883,7 @@
         "src/abml/actionabilityModel.ts",
         "src/abml/ax.ts",
         "src/abml/causal.ts",
+        "src/abml/collections.ts",
         "src/abml/diff.ts",
         "src/abml/entity.ts",
         "src/abml/errors.ts",
@@ -3117,6 +3119,7 @@
         "src/abml-core/actionabilityModel.ts",
         "src/abml-core/ax.ts",
         "src/abml-core/causal.ts",
+        "src/abml-core/collections.ts",
         "src/abml-core/diff.ts",
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
@@ -3269,6 +3272,7 @@
         "src/tools/summaries/webSecurity/wasm.ts",
         "src/tools/summaries/webSecurity/wasmBridge.ts",
         "src/tools/summaries/webSecurity/ws.ts",
+        "src/tools/toolRegistry.ts",
         "src/tools/webSecurity/shared/jsAst.ts",
         "src/tools/webSecurity/shared/jsAstArtifact.ts",
         "src/utils/codedError.ts",
@@ -3285,6 +3289,7 @@
         "tests/contracts/runtime/check-abml-ax-smoke.mjs",
         "tests/contracts/tools/check-abml-ax-runtime.mjs",
         "tests/contracts/tools/check-abml-causal.mjs",
+        "tests/contracts/tools/check-abml-collections.mjs",
         "tests/contracts/tools/check-abml-diff.mjs",
         "tests/contracts/tools/check-abml-inference.mjs",
         "tests/contracts/tools/check-abml-internal-integration.mjs",
@@ -3314,6 +3319,13 @@
         {
           "script": "check:abml-contracts",
           "nodeId": "check:abml-causal",
+          "file": "src/utils/fileFreshness.ts",
+          "line": 19,
+          "reason": "dynamic file read"
+        },
+        {
+          "script": "check:abml-contracts",
+          "nodeId": "check:abml-collections",
           "file": "src/utils/fileFreshness.ts",
           "line": 19,
           "reason": "dynamic file read"
@@ -3434,6 +3446,10 @@
         {
           "nodeId": "check:abml-snapshot-projection",
           "commandLine": "tsx tests/contracts/tools/check-abml-snapshot-projection.mjs"
+        },
+        {
+          "nodeId": "check:abml-collections",
+          "commandLine": "tsx tests/contracts/tools/check-abml-collections.mjs"
         },
         {
           "nodeId": "check:abml-stream-plane",
@@ -3791,6 +3807,7 @@
         "src/abml-core/actionabilityModel.ts",
         "src/abml-core/ax.ts",
         "src/abml-core/causal.ts",
+        "src/abml-core/collections.ts",
         "src/abml-core/diff.ts",
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
@@ -3816,6 +3833,7 @@
         "src/abml/actionabilityModel.ts",
         "src/abml/ax.ts",
         "src/abml/causal.ts",
+        "src/abml/collections.ts",
         "src/abml/diff.ts",
         "src/abml/entity.ts",
         "src/abml/errors.ts",

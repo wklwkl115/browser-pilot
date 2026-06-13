@@ -1,6 +1,6 @@
 # ABML tool-coverage map — where the philosophy is (and isn't) realized
 
-> Status: REFERENCE (fact map, updated 2026-06-11). Records which public tools actually traverse the ABML
+> Status: REFERENCE (fact map, updated 2026-06-13). Records which public tools actually traverse the ABML
 > layer, so the design docs stop overstating coverage. Verified by reading the source — see the
 > file:line citations. Pairs with `docs/unified-browser-modeling-language-plan.md` (the *aspirational*
 > verb-face vision) and `docs/abml-kernel-manifest.md` (the pure-core inventory).
@@ -15,11 +15,21 @@ actions are the JavaScript the agent writes via `browser_execute {script}` (run 
 Everything else (tabs, network, files, waiting, raw CDP, web-security) is **orthogonal** to ABML and
 correctly does not go through it.
 
+Agent-native perception means ABML should remove human viewport/gesture loops from the agent's
+thinking path, not publish better names for them. Humans can repeatedly scroll, inspect, and react;
+agents have higher one-shot input bandwidth but expensive interaction turns. So a scroll bar, lazy
+list, pagination edge, or hidden row is first a **collection completeness / continuation /
+data-source / state-transition** modeling problem. Physical scroll/click/key input remains runtime
+mechanics or a `browser_command` escape; it is not a reason to add `browser_scroll`, revive
+`browser_execute {action}`, or expose ABML verbs as public tools. Reopening that boundary requires
+evidence that the perception-first model itself is wrong, not merely that one site needs another
+viewport step today.
+
 ## 2. The map (verified)
 
 | Tool | Touches ABML? | Reality |
 |---|---|---|
-| `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, and emits `relations`/`diff`/`treeDiff`/`snapshotProjection`/`causal` envelope fields. `observeRunners.ts` → `abml.readStructure`. The `inference`/`templates` engines still run internally (they drive `treeDiff`/`snapshotProjection`/`referenced_entities`) but were removed as agent-facing fields after a 2026-06-05 real-agent eval. The "which read mode" complexity is genuinely hidden from the agent. |
+| `browser_observe` | ✅ read | Runs through ABML: AX↔DOM merge, entities, and emits `relations`/`diff`/`treeDiff`/`snapshotProjection`/`collections`/`causal` envelope fields. `observeRunners.ts` → `abml.readStructure`. The `collections` block reports completeness and read-only continuation evidence for long/virtualized/lazy/paginated lists; it does not execute scrolling. The `inference`/`templates` engines still run internally (they drive `treeDiff`/`snapshotProjection`/`referenced_entities`) but were removed as agent-facing fields after a 2026-06-05 real-agent eval. The "which read mode" complexity is genuinely hidden from the agent. |
 | `browser_execute` | ⚠️ read-only | `{script}` runs the agent's JavaScript **verbatim** (`registerExecuteTool.ts`) — execution is the agent's JS, NOT ABML. ABML is borrowed only via `monitor:true` for a before/after **read** diff, and observed `pi-ref://` handles can be dereferenced in-page via the minimal `pi.resolve` / `pi.box` / `pi.setValue` / `pi.settled` stdlib. There is no structured action arm: a click/type/scroll that needs a trusted event escalates to `browser_command input.*`. |
 | `browser_frame` | ⚠️ partial | Frame entities exist in ABML (observe surfaces frames through it); the standalone tool is mostly a frame-tree passthrough. |
 | `browser_pick` | ➖ no | Returns a CSS selector from a user click; no ABML refs. |
@@ -57,7 +67,7 @@ The first skeptical real-agent eval was mixed, and is what drove the action-arm 
 | Capability | Verdict | Current guidance |
 |---|---|---|
 | `causal` | strong | Prefer it when action/API provenance matters; URL query values are now generically redacted for PII-looking and human-query parameters. |
-| page reading (lists/tables) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. Structure surfaces via `treeDiff`/`snapshotProjection`; per-item VALUES still come from `browser_execute`. |
+| page reading (lists/tables) | strong | The read side is where ABML pays off; prefer `browser_observe` for big ARIA-grounded lists/tables. Completeness and continuation surface through `collections`; structure surfaces via `treeDiff`/`snapshotProjection`; per-item VALUES still come from `browser_execute`. |
 | `templates` (internal engine) | engine-only | No longer an agent-facing envelope field (a real-agent eval showed it unread); the templating engine still powers `treeDiff`/`snapshotProjection`. Redundant pure text-leaf templates are suppressed only when structural/actionable templates exist in the same scope. |
 | structured `action` (click/type/scroll) | reverted | Did not earn a public surface (agents reverted to JS; click "verified" ≠ intent achieved; escalation double-action hazard). Execution = JS via `browser_execute`; trusted-event/canvas escape via `browser_command input.*`. |
 | `diff`/`treeDiff` | noisy before fix | Raw arrays remain available; the envelope now adds salience summary so value/name/state changes lead ahead of churn counts. |
@@ -77,6 +87,11 @@ single action language is the JavaScript the agent writes via `browser_execute {
 thing JS can't do — emit physical trusted input — is **already** reachable via `browser_command`
 `input.pointer` / `input.keys`. No parallel verb tool, no structured action param.
 ABML stays the read substrate.
+
+For long or virtualized content, the preferred fix is now the shipped richer observation semantic:
+top-level `collections` with honest completeness, continuation handles, source/evidence pointers,
+and before/after state transitions. Adding a public scroll verb only moves the human UI loop into the
+agent transcript.
 
 ## 6. Consequence for the docs
 
