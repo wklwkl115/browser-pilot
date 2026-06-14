@@ -28,13 +28,13 @@ function publicDaemonDiagnostics(json: Record<string, unknown> | undefined): Rec
 function daemonInvokeErrorResult(status: number, json: Record<string, unknown> | undefined, tool: string, cli?: Record<string, unknown>): ToolResultLike {
 	const message = typeof json?.error === "string" ? json.error : `daemon /invoke failed (HTTP ${status})`;
 	const command = typeof cli?.command === "string" ? cli.command : tool.replace(/^browser_/, "").replace(/_/g, "-");
-	const schemaCommand = `pi-browser schema ${command} --json`;
-	const validateCommand = `pi-browser validate ${command} --params @params.json --json`;
+	const schemaCommand = `browser-pilot schema ${command} --json`;
+	const validateCommand = `browser-pilot validate ${command} --params @params.json --json`;
 	const nextActions = [
 		schemaCommand,
 		validateCommand,
-		"pi-browser doctor --json",
-		"pi-browser daemon status --json",
+		"browser-pilot doctor --json",
+		"browser-pilot daemon status --json",
 	];
 	return {
 		content: [{
@@ -49,10 +49,10 @@ function daemonInvokeErrorResult(status: number, json: Record<string, unknown> |
 				recovery: {
 					hint: "Check the command parameters against the current daemon tool contract and daemon readiness.",
 					commands: [
-						{ command: schemaCommand, argv: ["pi-browser", "schema", command, "--json"], purpose: "inspect the current CLI parameter schema" },
-						{ command: validateCommand, argv: ["pi-browser", "validate", command, "--params", "@params.json", "--json"], purpose: "validate a file-backed params object without invoking the daemon" },
-						{ command: "pi-browser doctor --json", argv: ["pi-browser", "doctor", "--json"], purpose: "inspect CLI, daemon, bridge, and extension readiness" },
-						{ command: "pi-browser daemon status --json", argv: ["pi-browser", "daemon", "status", "--json"], purpose: "inspect daemon version and bridge state" },
+						{ command: schemaCommand, argv: ["browser-pilot", "schema", command, "--json"], purpose: "inspect the current CLI parameter schema" },
+						{ command: validateCommand, argv: ["browser-pilot", "validate", command, "--params", "@params.json", "--json"], purpose: "validate a file-backed params object without invoking the daemon" },
+						{ command: "browser-pilot doctor --json", argv: ["browser-pilot", "doctor", "--json"], purpose: "inspect CLI, daemon, bridge, and extension readiness" },
+						{ command: "browser-pilot daemon status --json", argv: ["browser-pilot", "daemon", "status", "--json"], purpose: "inspect daemon version and bridge state" },
 					],
 					nextActions,
 				},

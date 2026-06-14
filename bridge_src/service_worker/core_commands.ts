@@ -153,7 +153,7 @@ async function handleManagementCommand(msg: PiBridgeCommand): Promise<PiBridgeRe
       return { ok: true, data: all.map(e => ({ id: e.id, name: e.name, enabled: e.enabled, type: e.type, version: e.version })) };
     }
     if (msg.method === 'reload') {
-      chrome.alarms.create('pi-browser-self-reload', { when: Date.now() + 200 });
+      chrome.alarms.create('browser-pilot-self-reload', { when: Date.now() + 200 });
       return { ok: true };
     }
     if (msg.method === 'disable') {

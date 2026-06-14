@@ -1,41 +1,41 @@
 ---
-name: pi-browser-cli
-description: "Shell/CLI frontend for operating live browser pages — use when a shell-capable agent drives the `pi-browser` command-line tool (subcommands, `--json`) to: gate readiness via connect/status/doctor, list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A Pi-native agent that instead calls the browser_* tools directly: use the pi-browser-tools skill. Runtime browser-use only; not for extension source development or repo tests."
+name: browser-pilot-cli
+description: "Shell/CLI frontend for operating live browser pages — use when a shell-capable agent drives the `browser-pilot` command-line tool (subcommands, `--json`) to: gate readiness via connect/status/doctor, list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A Pi-native agent that instead calls the browser_* tools directly: use the browser-pilot skill. Runtime browser-use only; not for extension source development or repo tests."
 license: Apache-2.0
-compatibility: pi-browser CLI 0.3.0+ on any shell-capable platform, Native Browser Bridge connected. Drives the same tool core as the Pi-native frontend over a user-local daemon. For in-process Pi-native `browser_*` calls, see the sibling **pi-browser-tools** skill.
+compatibility: browser-pilot CLI 0.3.0+ on any shell-capable platform, Native Browser Bridge connected. Drives the same tool core as the Pi-native frontend over a user-local daemon. For in-process Pi-native `browser_*` calls, see the sibling **browser-pilot** skill.
 ---
 
 # Pi Browser CLI
 
-Drive live browser pages with the `pi-browser` shell CLI — the same tool core as Pi-native, exposed as subcommands over a user-local singleton daemon.
+Drive live browser pages with the `browser-pilot` shell CLI — the same tool core as Pi-native, exposed as subcommands over a user-local singleton daemon.
 
-**This skill complements the CLI; it does not restate it.** The CLI is self-describing: `pi-browser commands --json` lists every command + its `agentCli` routing, and `pi-browser schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
+**This skill complements the CLI; it does not restate it.** The CLI is self-describing: `browser-pilot commands --json` lists every command + its `agentCli` routing, and `browser-pilot schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
 
 Three facts shape everything below:
-- **Perception is `pi-browser observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
-- **Action is the JavaScript you pass to `pi-browser execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `pi.click(ref)` for physical trusted clicks against a fresh observed `pi-ref://`.
-- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `pi-browser execute --script-file` with `await pi.click(ref)` if you have a fresh observed ref; otherwise send `pi-browser command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
+- **Perception is `browser-pilot observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
+- **Action is the JavaScript you pass to `browser-pilot execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `pi.click(ref)` for physical trusted clicks against a fresh observed `pi-ref://`.
+- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser-pilot execute --script-file` with `await pi.click(ref)` if you have a fresh observed ref; otherwise send `browser-pilot command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
 
 On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
 
 ## Driving the CLI
 
-- **Output**: human on a TTY, JSON otherwise; force with `--json` / `--text`. Use the installed `pi-browser` binary for machine JSON; for `npm`-wrapped debugging use `npm --silent run cli -- ...` (plain `npm run cli` prepends a banner to stdout).
-- **Connect first for multi-step work**: `pi-browser connect --wait --json` idempotently starts/reuses the daemon, starts the bridge, and **waits** for the extension — covering the ~1-2s window where the extension dials into a fresh bridge. Prefer `--wait`; the non-waiting form can return `ready:false` before the extension has migrated. `pi-browser status --json` is read-only (never starts anything); `doctor --json` is broader diagnostics. Don't use `daemon stop` as routine cleanup.
-- **Discover, don't memorize**: `pi-browser commands --json` → pick the command; `pi-browser schema <cmd> --json` → exact flags. When `agentCli.mode:"natural"` exists, the **natural subcommand** is the preferred path (e.g. `wait selector`, `network start`, `frame evaluate`, `hook install-targets`) — inspect it via `schema <cmd> <natural-subcommand> --json`. The root `<cmd> --action <a> --params <json>` interface remains for advanced/low-frequency native actions; natural subcommands reject mixing `--params`. `pi-browser command --command @file` is the full native-bridge escape hatch.
-- **Files beat shell quoting** for any non-trivial JS / JSON / raw request / template / params: `--script-file`, `--command @file`, `http-replay --raw-request @req.txt` / `--request @req.json` / `--har-path cap.har`, `template --template-path t.yaml`, and `pi-browser validate <cmd> --params @params.json --json` to check params without daemon/browser.
+- **Output**: human on a TTY, JSON otherwise; force with `--json` / `--text`. Use the installed `browser-pilot` binary for machine JSON; for `npm`-wrapped debugging use `npm --silent run cli -- ...` (plain `npm run cli` prepends a banner to stdout).
+- **Connect first for multi-step work**: `browser-pilot connect --wait --json` idempotently starts/reuses the daemon, starts the bridge, and **waits** for the extension — covering the ~1-2s window where the extension dials into a fresh bridge. Prefer `--wait`; the non-waiting form can return `ready:false` before the extension has migrated. `browser-pilot status --json` is read-only (never starts anything); `doctor --json` is broader diagnostics. Don't use `daemon stop` as routine cleanup.
+- **Discover, don't memorize**: `browser-pilot commands --json` → pick the command; `browser-pilot schema <cmd> --json` → exact flags. When `agentCli.mode:"natural"` exists, the **natural subcommand** is the preferred path (e.g. `wait selector`, `network start`, `frame evaluate`, `hook install-targets`) — inspect it via `schema <cmd> <natural-subcommand> --json`. The root `<cmd> --action <a> --params <json>` interface remains for advanced/low-frequency native actions; natural subcommands reject mixing `--params`. `browser-pilot command --command @file` is the full native-bridge escape hatch.
+- **Files beat shell quoting** for any non-trivial JS / JSON / raw request / template / params: `--script-file`, `--command @file`, `http-replay --raw-request @req.txt` / `--request @req.json` / `--har-path cap.har`, `template --template-path t.yaml`, and `browser-pilot validate <cmd> --params @params.json --json` to check params without daemon/browser.
 
 ## Loop
 
-1. `pi-browser connect --wait --json` once for multi-step work → `pi-browser tabs --action list --json` → note the target `tabHandle` and pass it as `targetRef` / `--target-ref` when disambiguation is needed. Numeric `tabId` remains accepted for compatibility and auto-follows unambiguous in-place replacement; omit target flags to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
+1. `browser-pilot connect --wait --json` once for multi-step work → `browser-pilot tabs --action list --json` → note the target `tabHandle` and pass it as `targetRef` / `--target-ref` when disambiguation is needed. Numeric `tabId` remains accepted for compatibility and auto-follows unambiguous in-place replacement; omit target flags to act on the selected active tab. `TAB_NOT_FOUND` returns replacement/live-id recovery when available.
 2. Pick the route by intent (Routes).
 3. Run **one bounded step**.
-4. Verify: `pi-browser wait ...` / re-observe / network|hook evidence / read artifact.
+4. Verify: `browser-pilot wait ...` / re-observe / network|hook evidence / read artifact.
 5. Report: `targetRef`/`tabId`, URL, selector/request/session IDs, artifact URI/path, next step.
 
 Sessions are managed via `tabs` session subcommands, not a per-command flag. Outputs default to a compact, redacted summary; size reads with `--limit`/`--offset`/`--json-path` (`detailLevel`/`maxChars` are internal, not flags).
 
-Memory is a Loop bookend: `observe --mode scan|text` may surface current URL/intent-matched SOPs in `envelope.memory`; on success `pi-browser memory --action record` at step 5. See Memory.
+Memory is a Loop bookend: `observe --mode scan|text` may surface current URL/intent-matched SOPs in `envelope.memory`; on success `browser-pilot memory --action record` at step 5. See Memory.
 
 ## Memory
 
@@ -43,7 +43,7 @@ Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you sto
 
 - **Recall (observe):** `observe --mode scan|text` automatically surfaces current URL/intent-matched memory in `envelope.memory` with verification status; same-origin alone is not enough. Inline cards are bounded; collapsed cards carry `browser-memory://...` handles. Use `memory --action read --uri <browser-memory://...>` for a surfaced handle, or `memory --action recall --url <url> --query "<keywords>"` for manual cross-scope follow-up.
 - **Record (on success — fill and send, ~30s):**
-  `pi-browser memory --action record --kind sop --scope-kind origin --url <url> --title "<verb-y outcome>" --triggers "<keywords you'd search by>" --body "1. <step with exact selector/input/wait>\n2. <…>"`.
+  `browser-pilot memory --action record --kind sop --scope-kind origin --url <url> --title "<verb-y outcome>" --triggers "<keywords you'd search by>" --body "1. <step with exact selector/input/wait>\n2. <…>"`.
   **Evidence refs are optional** — cite a `saved.path` when you have one; any ref you do cite must resolve. No secrets in `--body`. A `record candidate:` hint = this origin has no SOP yet. Recording auto-dedups and returns `duplicateCandidates` — supersede, don't pile up.
 - **Self-heal:** a recalled SOP that no longer works → `record` the corrected version; it supersedes the old one.
 
@@ -159,9 +159,9 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 | Timeout | `wait diagnose --params '{"waitId":"<id>"}'` (selector-specific `selectorDiagnostics`); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |
 | Resource `stale`/`HANDLE_NOT_FOUND`/baseline expired | re-capture with `observe --mode scan` or the original command to mint fresh evidence; never retry the old handle |
-| Context lost / delta baseline forgotten | (1) `pi-browser observe --mode scan --fresh --json` to re-see the page; (2) `pi-browser artifact --mode search --glob '**/*.json' --json` to rediscover own artifacts (each carries `snapshot.url`/`capturedAt`/`snapshotId`); (3) `pi-browser memory --action recall --json` for durable SOP/facts; do not turn off relevance or memory globally |
-| Unexplained `INVALID_RULE` / unsupported action | inspect `pi-browser status --json` / `tabs --action snapshot --json` for `extension.extensionStale`; if true or `reportedBuild` is missing, reload the browser extension and retry |
-| Command not found | `pi-browser --help`; all 22 commands listed unless package/daemon is stale |
+| Context lost / delta baseline forgotten | (1) `browser-pilot observe --mode scan --fresh --json` to re-see the page; (2) `browser-pilot artifact --mode search --glob '**/*.json' --json` to rediscover own artifacts (each carries `snapshot.url`/`capturedAt`/`snapshotId`); (3) `browser-pilot memory --action recall --json` for durable SOP/facts; do not turn off relevance or memory globally |
+| Unexplained `INVALID_RULE` / unsupported action | inspect `browser-pilot status --json` / `tabs --action snapshot --json` for `extension.extensionStale`; if true or `reportedBuild` is missing, reload the browser extension and retry |
+| Command not found | `browser-pilot --help`; all 22 commands listed unless package/daemon is stale |
 | `crawl`/`fuzz`/`http-replay` TLS `unable to verify the first certificate` | TLS-intercepting proxy/AV/corporate CA. Daemon trusts the OS/browser CA store on Node ≥22; if it persists set `NODE_EXTRA_CA_CERTS=<root.pem>` and restart. The error's `remediation` names the fix |
 
 ## Index
@@ -169,7 +169,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 - Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md` · CLI usage: `docs/cli.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- In-process Pi-native frontend: **pi-browser-tools** skill
+- In-process Pi-native frontend: **browser-pilot** skill
 
 ## Output
 

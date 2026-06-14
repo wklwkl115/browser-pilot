@@ -56,7 +56,7 @@ assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must exp
 assert(pkg.main === "./dist/index.js", "package main must point to compiled dist entry");
 assert(pkg.types === "./dist/index.d.ts", "package types must point to compiled declarations");
 assert(pkg.exports?.["."]?.import === "./dist/index.js" && pkg.exports?.["."]?.types === "./dist/index.d.ts", "package exports must point to compiled dist entry and declarations");
-assert(pkg.bin?.["pi-browser"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
+assert(pkg.bin?.["browser-pilot"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
 assert(pkg.devDependencies?.tsx, "package must include tsx for runtime TypeScript execution");
 assert(pkg.scripts?.["sync:protocol"] === EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
@@ -183,8 +183,8 @@ for (const file of ["hook_dispatcher.js", "disable_dialogs.js"]) {
 }
 assert(transport.split(/\r?\n/).length <= 230, "transport.js must stay focused on WebSocket lifecycle");
 assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own durable WebSocket sockets or keepalive intervals");
-assert(transport.includes("ensureOffscreenDocument") && transport.includes("pi-browser-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must bridge offscreen frames through socket adapters");
-assert(offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own port-range WebSocket lifecycle and forward inbound frames");
+assert(transport.includes("ensureOffscreenDocument") && transport.includes("browser-pilot-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must bridge offscreen frames through socket adapters");
+assert(offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && offscreenTransport.includes("browser-pilot-offscreen-ws-message"), "offscreen transport must own port-range WebSocket lifecycle and forward inbound frames");
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 
 assert(existsSync(path.join(root, "AI_INSTALL.md")), "AI_INSTALL.md install SOP must exist");

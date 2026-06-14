@@ -85,8 +85,8 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 							reason: "snapshot_not_found",
 							recovery: {
 								nextActions: [
-									"pi-browser observe --mode scan --json",
-									"pi-browser tabs --action snapshot --json",
+									"browser-pilot observe --mode scan --json",
+									"browser-pilot tabs --action snapshot --json",
 								],
 							},
 						});
@@ -97,9 +97,9 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 							reason: "snapshot_expired",
 							recovery: {
 								nextActions: [
-									"pi-browser tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
-									"pi-browser artifact --path <saved.path> --mode json --json-path data --json",
-									"pi-browser observe --mode scan --json",
+									"browser-pilot tabs --action snapshot --allow-expired --snapshot-id <snapshotId> --json",
+									"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+									"browser-pilot observe --mode scan --json",
 								],
 							},
 						});

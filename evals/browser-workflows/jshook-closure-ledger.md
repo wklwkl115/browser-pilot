@@ -6,7 +6,7 @@ This ledger is the TODO 241.2 handoff artifact. It maps each jshookmcp-inspired 
 
 - `existing-tool-eval`: eval should prove current canonical tools are sufficient.
 - `hook-enhancement-candidate`: eval may justify bounded `browser_hook` static targets/presets.
-- `rejected`: capability is outside pi-browser-tools or requires separate RFC.
+- `rejected`: capability is outside browser-pilot or requires separate RFC.
 - `rfc-only`: not implemented in TODO 241; future work needs independent RFC and eval evidence.
 
 ## Ledger
@@ -19,7 +19,7 @@ This ledger is the TODO 241.2 handoff artifact. It maps each jshookmcp-inspired 
 | Request mutation and response deltas | `14-jshook-replay-not-intercept.md` | `browser_network`, `browser_http_replay`, `browser_artifact` | `existing-tool-eval` | Prove passive capture plus replay closes mutation/delta work. Live intercept remains RFC-only. |
 | Canvas/WebGL observation | `15-jshook-canvas-observation.md` | `browser_screenshot`, `browser_execute`, `browser_hook`, `browser_evidence`, `browser_artifact` | `existing-tool-eval` | Prove bounded observation works without solver/gameplay/captcha semantics. Repeated primitive gaps become RFC-only. |
 | Debugger pause/breakpoint/scope workflow | No TODO 241 implementation eval | `browser_execute` command mode for one-shot CDP only | `rfc-only` | Must not enter TODO 241 code. Requires separate RFC with non-overlap proof against `browser_execute` and cleanup/state diagnostics. |
-| Stealth, CAPTCHA, human behavior, macro workflow, LLM deobfuscation, binary/process/memory/frida/adb | No eval | None in this package | `rejected` | Confirm no code/docs/tool contracts import these capabilities into pi-browser-tools. |
+| Stealth, CAPTCHA, human behavior, macro workflow, LLM deobfuscation, binary/process/memory/frida/adb | No eval | None in this package | `rejected` | Confirm no code/docs/tool contracts import these capabilities into browser-pilot. |
 
 ## TODO 241.2 completion checklist
 

@@ -180,7 +180,7 @@ function suggestFlag(token: string, flags: string[]): string | undefined {
 // Common flags some commands legitimately do NOT accept — point at the right knob instead of just
 // dumping the accepted list (e.g. browser_artifact has no --detail-level; it sizes with --limit/etc).
 const ABSENT_FLAG_HINTS: Record<string, string> = {
-	"--browser-session-id": "browserSessionId is managed internally; use pi-browser tabs for session management.",
+	"--browser-session-id": "browserSessionId is managed internally; use browser-pilot tabs for session management.",
 	"--detail-level": "detailLevel is internal now; request narrower artifact reads with --limit / --offset / --max-chars / --json-path.",
 	"--max-chars": "maxChars is internal now; request narrower artifact reads with --limit / --offset / --json-path.",
 	"--timeout-ms": "timeoutMs is internal now; use operator config/env for global timeout changes.",

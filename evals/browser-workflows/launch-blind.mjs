@@ -2,8 +2,8 @@
 /**
  * Blind-eval STAGE launcher (Claude-driven standing harness; opt-in).
  *
- * Brings up a fully ISOLATED pi-browser daemon + extension browser pointed at the local eval
- * fixtures, so a BLIND subagent can drive it through the real `pi-browser` CLI without ever seeing
+ * Brings up a fully ISOLATED browser-pilot daemon + extension browser pointed at the local eval
+ * fixtures, so a BLIND subagent can drive it through the real `browser-pilot` CLI without ever seeing
  * the operator's real browser:
  *   - dedicated daemon state dir (PI_BROWSER_DAEMON_STATE_DIR) + forced bridge port → its own
  *     user-local singleton, never the default ~/.pi daemon the human uses.
@@ -12,7 +12,7 @@
  * It stays alive (the in-process fixture server keeps the event loop running) and writes
  * `.pi/browser-artifacts/eval-blind/stage.json`. Tear down with teardown-blind.mjs (kills by pid +
  * `daemon stop` on the isolated state dir). This script does NOT spawn agents — the operator
- * (the pi-browser-blind-eval skill) does that against the stage.
+ * (the browser-pilot-blind-eval skill) does that against the stage.
  *
  * Usage:
  *   node evals/browser-workflows/launch-blind.mjs --confirm   [--keep-temp]

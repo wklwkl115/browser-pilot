@@ -2,7 +2,7 @@
 /**
  * Tear down a blind-eval stage created by launch-blind.mjs.
  * Reads .pi/browser-artifacts/eval-blind/stage.json and:
- *   - `pi-browser daemon stop` on the ISOLATED state dir,
+ *   - `browser-pilot daemon stop` on the ISOLATED state dir,
  *   - hard-kills the isolated browser + the launch/fixture host by pid (no signal trapping needed),
  *   - removes the temp profile/extension/state dirs (unless --keep-temp).
  * Idempotent and best-effort: missing pids/files are ignored.

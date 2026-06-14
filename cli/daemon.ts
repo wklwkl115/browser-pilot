@@ -1,5 +1,5 @@
 /**
- * pi-browser bridge daemon — the long-lived process that owns the live browser.
+ * browser-pilot bridge daemon — the long-lived process that owns the live browser.
  *
  * Holds one BrowserBridgeServer (started lazily on the first tool invocation, as
  * in the MCP/Pi hosts) and exposes a token-guarded loopback control server:
@@ -62,7 +62,7 @@ function registerDaemonHooks(): void {
 	const usage = resolveUsageLogOptions();
 	if (usage.enabled) {
 		registerHook("on_log", createUsageLogHook(usage));
-		console.error(`[pi-browser] usage logging → ${usage.filePath}${usage.raw ? " (raw args)" : ""}`);
+		console.error(`[browser-pilot] usage logging → ${usage.filePath}${usage.raw ? " (raw args)" : ""}`);
 	}
 }
 

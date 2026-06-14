@@ -283,7 +283,7 @@ async function main() {
 	const commands = await checkCliStep("local.commands-json", ["commands", "--json"], { expect: (r) => Array.isArray(r.json?.commands) && r.json.commands.length === 22 });
 	const commandNames = commands.json.commands.map((cmd) => cmd.name);
 	for (const name of commandNames) {
-		await checkCliStep(`local.help.${name}`, [name, "--help"], { json: false, expect: (r) => r.stdout.includes(`pi-browser ${name}`) });
+		await checkCliStep(`local.help.${name}`, [name, "--help"], { json: false, expect: (r) => r.stdout.includes(`browser-pilot ${name}`) });
 		await checkCliStep(`local.schema.${name}`, ["schema", name, "--json"], { expect: (r) => r.json?.toolName?.startsWith("browser_") });
 	}
 	for (const [cmd, sub] of [["wait", "selector"], ["network", "start"], ["frame", "evaluate"], ["hook", "install-targets"]]) {

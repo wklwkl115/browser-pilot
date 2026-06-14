@@ -63,7 +63,7 @@ export class BrowserBridgeHttpServer {
 		const server = http.createServer((req, res) => {
 			if (req.url === "/health" || req.url === "/") {
 				res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-				res.end(JSON.stringify({ ok: true, name: "pi-browser-tools", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections }));
+				res.end(JSON.stringify({ ok: true, name: "browser-pilot", port: this.port, activeConnections: this.activeConnectionCount(), maxConnections: this.maxConnections }));
 				return;
 			}
 			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

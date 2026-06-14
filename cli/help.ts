@@ -37,23 +37,23 @@ export function pad(head: string, width: number): string {
 
 export function helpText(): string {
 	const lines = [
-		"pi-browser — drive a live browser via the bridge daemon",
+		"browser-pilot — drive a live browser via the bridge daemon",
 		"",
 		"Usage:",
-		"  pi-browser <command> [--flags]",
-		"  pi-browser daemon <start|stop|status>",
-		"  pi-browser connect --wait --json",
-		"  pi-browser status --json",
-		"  pi-browser commands --json",
-		"  pi-browser schema <command> --json",
-		"  pi-browser validate <command> --params @params.json --json",
-		"  pi-browser doctor --json",
-		"  pi-browser selftest --confirm --json",
+		"  browser-pilot <command> [--flags]",
+		"  browser-pilot daemon <start|stop|status>",
+		"  browser-pilot connect --wait --json",
+		"  browser-pilot status --json",
+		"  browser-pilot commands --json",
+		"  browser-pilot schema <command> --json",
+		"  browser-pilot validate <command> --params @params.json --json",
+		"  browser-pilot doctor --json",
+		"  browser-pilot selftest --confirm --json",
 		"",
 		"Commands:",
 	];
 	for (const c of COMMAND_SUMMARIES) lines.push(`  ${pad(c.subcommand, 22)}${c.description ?? ""}`.trimEnd());
-	lines.push("", "Run 'pi-browser <command> --help' for flags. Global: --json | --text | --help");
+	lines.push("", "Run 'browser-pilot <command> --help' for flags. Global: --json | --text | --help");
 	return `${lines.join("\n")}\n`;
 }
 

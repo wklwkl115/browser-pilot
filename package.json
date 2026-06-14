@@ -1,5 +1,5 @@
 {
-  "name": "pi-browser-tools",
+  "name": "browser-pilot",
   "version": "0.3.0",
   "license": "Apache-2.0",
   "description": "Native Pi browser automation tools backed by the Pi Browser Bridge.",
@@ -18,7 +18,7 @@
     }
   },
   "bin": {
-    "pi-browser": "./dist/cli/bin.js"
+    "browser-pilot": "./dist/cli/bin.js"
   },
   "scripts": {
     "sync:protocol": "node scripts/sync-native-protocol.mjs",
@@ -61,7 +61,7 @@
     "check:bridge:types": "tsc -p tsconfig.bridge-src.json",
     "check:protocol": "node scripts/sync-native-protocol.mjs --check && node tests/contracts/protocol/check-protocol-contract.mjs",
     "check:tools": "node tests/contracts/tools/check-tools-contract.mjs && tsx tests/contracts/tools/check-execute-tool.mjs && node tests/contracts/tools/check-execute-stdlib.mjs",
-    "check:pi-browser-bridge": "node tests/contracts/protocol/check-pi-browser-bridge.mjs",
+    "check:browser-pilot-bridge": "node tests/contracts/protocol/check-browser-pilot-bridge.mjs",
     "check:tool-docs": "node tests/contracts/drift/check-tool-doc-drift.mjs && node scripts/generate-tool-docs.mjs --check",
     "check:doc-structure": "node tests/contracts/drift/check-doc-structure.mjs",
     "check:audit-inbox": "node tests/contracts/drift/check-audit-inbox.mjs",

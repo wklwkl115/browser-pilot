@@ -29,8 +29,8 @@ const stripBridgeSource = (text) => text
 	.replace(/\r?\nexport \{\};\s*$/, "");
 const readServiceWorkerSource = (name) => stripBridgeSource(read(`bridge_src/service_worker/${name}.ts`));
 assert.equal(existsSync(path.join(bridge, "manifest.json")), true, "native bridge manifest must exist");
-assert.equal(path.win32.isAbsolute("D:\\Pi\\agent\\extensions\\pi-browser-tools\\bridge\\pi_browser_bridge"), true, "Windows bridge path must be absolute");
-assert.equal(path.posix.normalize("/opt/pi-browser-tools/bridge/pi_browser_bridge"), "/opt/pi-browser-tools/bridge/pi_browser_bridge", "Linux bridge path must normalize");
+assert.equal(path.win32.isAbsolute("D:\\Pi\\agent\\extensions\\browser-pilot\\bridge\\pi_browser_bridge"), true, "Windows bridge path must be absolute");
+assert.equal(path.posix.normalize("/opt/browser-pilot/bridge/pi_browser_bridge"), "/opt/browser-pilot/bridge/pi_browser_bridge", "Linux bridge path must normalize");
 
 const sourceConfig = JSON.parse(read("bridge/browser_bridge_config.json"));
 const bridgeConfig = readServiceWorkerSource("config");

@@ -797,8 +797,8 @@ async function statArtifact(absPath: string, requested: unknown): Promise<Stats>
 				...publicRequestedArtifactPath(requested),
 				recovery: {
 					nextActions: [
-						"pi-browser artifact --path <saved.path> --mode json --json-path data --json",
-						"pi-browser observe --mode scan --json",
+						"browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+						"browser-pilot observe --mode scan --json",
 					],
 				},
 			});

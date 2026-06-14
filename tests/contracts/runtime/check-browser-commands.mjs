@@ -15,7 +15,7 @@ const read = (relOrAbs) => readFileSync(resolveReadPath(relOrAbs), "utf8");
 const commands = read("src/tools/commands.ts");
 const readme = read("README.md");
 const sop = read("AI_INSTALL.md");
-const skill = read("skills/pi-browser-tools/SKILL.md");
+const skill = read("skills/browser-pilot/SKILL.md");
 
 assert(commands.includes('pi.registerCommand("browser-js-ast"'), "browser commands must register /browser-js-ast");
 assert(commands.includes("runJsAstShell"), "/browser-js-ast must route through internal jsAstShell");

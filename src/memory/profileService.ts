@@ -137,7 +137,7 @@ async function flushState(state: ProfileState): Promise<void> {
 		if (merged) await writeMemoryProfile(state.cwd, merged);
 	}).catch((error) => {
 		rememberDiagnostic(state.cwd, "memory_profile_persist_failed");
-		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[pi-browser-memory] profile flush failed", error);
+		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] profile flush failed", error);
 	});
 	await state.chain;
 }
@@ -155,7 +155,7 @@ export async function recordMemoryProfileFrame(options: { cwd?: string; browserS
 	if (!memoryKernelEnabled() || options.fromCache) return;
 	const frameView = await frameViewFromLedger(options.cwd, options.frame).catch((error) => {
 		rememberDiagnostic(options.cwd, "memory_profile_persist_failed");
-		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[pi-browser-memory] frame view failed", error);
+		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] frame view failed", error);
 		return undefined;
 	});
 	if (!frameView) return;

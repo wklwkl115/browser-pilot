@@ -98,7 +98,7 @@ export function buildMultipartParts(value: unknown, defaultName?: string): Multi
 export function buildMultipartBody(value: unknown): { body: Buffer; contentType: string; parts: MultipartPart[]; summary: Record<string, unknown> } | undefined {
 	const source = isRecord(value) && isRecord(value.multipart) ? value.multipart : value;
 	if (!isRecord(source)) return undefined;
-	const boundary = asString(source.boundary)?.trim() || `----pi-browser-tools-${randomUUID()}`;
+	const boundary = asString(source.boundary)?.trim() || `----browser-pilot-${randomUUID()}`;
 	const parts = buildMultipartParts(source);
 	if (!parts.length) return undefined;
 	const built = buildMultipartBodyFromParts(parts, boundary);

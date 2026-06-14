@@ -38,12 +38,12 @@ async function withServer(handler) {
 }
 
 assert.equal(classifyBridgePortOwner({
-	health: { ok: true, json: { name: "pi-browser-tools" } },
+	health: { ok: true, json: { name: "browser-pilot" } },
 	owners: [{ pid: 10, name: "node.exe", commandLine: "D:\\Pi\\agent\\cli.js" }],
 }), "agent_occupies", "smoke diagnostics must classify a healthy Pi bridge as agent_occupies");
 
 assert.equal(classifyBridgePortOwner({
-	health: { ok: true, json: { name: "pi-browser-tools" } },
+	health: { ok: true, json: { name: "browser-pilot" } },
 	owners: [{ pid: 11, name: "node.exe", commandLine: "node tests/smoke/smoke-browser.mjs" }],
 }), "orphan_socket", "smoke diagnostics must classify leftover smoke/node listeners as orphan_socket");
 
@@ -54,7 +54,7 @@ assert.equal(classifyBridgePortOwner({
 
 const occupiedDiagnosis = await withServer((req, res) => {
 	if (req.url === "/health") {
-		const body = JSON.stringify({ ok: true, name: "pi-browser-tools" });
+		const body = JSON.stringify({ ok: true, name: "browser-pilot" });
 		res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
 		res.end(body);
 		return;

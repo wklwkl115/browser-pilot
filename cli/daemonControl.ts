@@ -10,7 +10,7 @@
  * This module is pure control plane (loopback HTTP + lockfile); it does not start
  * a BrowserBridgeServer. Auto-start spawns the resolved local daemon entry via
  * process.execPath — built dist uses bin.js, source runs use the local tsx CLI;
- * never shell out to `pi-browser` by bin name.
+ * never shell out to `browser-pilot` by bin name.
  */
 import http from "node:http";
 import os from "node:os";
@@ -325,7 +325,7 @@ export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Prom
 		if (ready && isDaemonVersionCurrent(ready.info)) return ready.info;
 		lock = tryAcquireStartLock();
 	}
-	if (!lock) throw new Error("pi-browser daemon start lock timeout");
+	if (!lock) throw new Error("browser-pilot daemon start lock timeout");
 	let child: ChildProcess | undefined;
 	try {
 		const again = await findDaemon();
@@ -351,7 +351,7 @@ export async function ensureDaemon(opts: { startTimeoutMs?: number } = {}): Prom
 			if (ready && isDaemonVersionCurrent(ready.info)) return ready.info;
 			if (child.exitCode !== null && child.exitCode !== 0) break;
 		}
-		throw new Error("pi-browser daemon did not become ready in time");
+		throw new Error("browser-pilot daemon did not become ready in time");
 	} finally {
 		lock.release();
 	}

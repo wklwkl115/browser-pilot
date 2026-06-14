@@ -2,7 +2,7 @@
 
 // Pi Browser Bridge popup — shows the live connection state between this extension
 // and the local bridge daemon. The authoritative state lives in the offscreen
-// document, which answers `pi-browser-offscreen-status` with the open WS ports;
+// document, which answers `browser-pilot-offscreen-status` with the open WS ports;
 // the service worker's router ignores that message, so only the offscreen replies.
 // No cookies, no clipboard, no tab access — read-only status.
 
@@ -36,7 +36,7 @@ function queryStatus() {
     const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
     const timer = setTimeout(() => finish(null), QUERY_TIMEOUT_MS);
     try {
-      chrome.runtime.sendMessage({ type: 'pi-browser-offscreen-status' }, (resp) => {
+      chrome.runtime.sendMessage({ type: 'browser-pilot-offscreen-status' }, (resp) => {
         clearTimeout(timer);
         if (chrome.runtime.lastError) return finish(null);
         finish(resp || null);

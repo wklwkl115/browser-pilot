@@ -211,7 +211,7 @@ export function mutateParamRequest(base: ReplayRequest, location: string, paramN
 			const nextParts = multipartPartsFromValue(paramName, parseFuzzParamValue(value), template);
 			parts = [...parts, ...nextParts];
 		}
-		const boundary = parsed.boundary || `----pi-browser-tools-${randomUUID()}`;
+		const boundary = parsed.boundary || `----browser-pilot-${randomUUID()}`;
 		const rebuilt = buildMultipartBodyFromParts(parts, boundary);
 		request.body = rebuilt.body;
 		setMultipartContentTypeVariant(request.headers, boundary, contentTypeVariant);

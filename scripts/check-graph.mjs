@@ -21,7 +21,7 @@ export const CHECK_GROUPS = Object.freeze({
 	src: ["check:src:types", "check:registry-drift"],
 	bridge: ["check:bridge"],
 	unit: ["test:unit:abml", "test:unit:cli:commands", "test:unit:cli:daemon", "test:unit:distill", "test:unit:temporal", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
-	package: ["check:package", "check:deps", "check:pi-browser-bridge"],
+	package: ["check:package", "check:deps", "check:browser-pilot-bridge"],
 	docs: ["check:tool-docs", "check:doc-structure", "check:audit-inbox", "check:doc-paths", "check:code-map", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:docs-sync"],
 	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
 });
@@ -512,7 +512,7 @@ export function computeCoarseFingerprint(root = ROOT, options = {}) {
 	return {
 		...hashFingerprintFiles(files, {
 			root,
-			seed: "pi-browser-check-fingerprint-v1",
+			seed: "browser-pilot-check-fingerprint-v1",
 			scope: "repo-coarse-v1",
 		}),
 		roots: [...FINGERPRINT_ROOTS],
@@ -588,7 +588,7 @@ export function computeNodeCacheFingerprint(node, options = {}) {
 	const impactDigest = createHash("sha256").update(JSON.stringify({ script: scope.impactScript, scope: nodeEntry.scope, inputs: nodeEntry.inputs || [] })).digest("hex");
 	const fingerprint = hashFingerprintFiles(scopedFiles, {
 		root,
-		seed: "pi-browser-check-node-fingerprint-v2",
+		seed: "browser-pilot-check-node-fingerprint-v2",
 		scope: scope.cacheScope,
 		extraLines: [
 			`impactScript:${scope.impactScript}`,

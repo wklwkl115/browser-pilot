@@ -46,7 +46,7 @@ export class BrowserBridgeClientMessageService {
 	registerClient(ws: WebSocket): void {
 		this.deps.clients.register(ws);
 		ws.on("message", (data) => void this.handleClientMessage(ws, data.toString()).catch((error) => {
-			console.error("[pi-browser-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
+			console.error("[browser-pilot-bridge] WebSocket message handler failed", this.redactMessageError(error, data.toString()));
 		}));
 		ws.on("pong", () => this.deps.clients.markPong(ws));
 		ws.on("close", () => this.unregisterClient(ws));
@@ -71,7 +71,7 @@ export class BrowserBridgeClientMessageService {
 		try {
 			message = parseJsonOrThrow<IncomingMessage>(raw, "Invalid WebSocket message JSON");
 		} catch (error) {
-			console.warn("[pi-browser-bridge] Invalid WebSocket message JSON", this.redactMessageError(error, raw));
+			console.warn("[browser-pilot-bridge] Invalid WebSocket message JSON", this.redactMessageError(error, raw));
 			return;
 		}
 

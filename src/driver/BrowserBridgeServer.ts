@@ -380,7 +380,7 @@ export class BrowserBridgeServer {
 	private sweepLeases(now: number): void {
 		const sweep = this.leases.sweepExpired(now);
 		if (!sweep.releasedLeases.length && !sweep.releasedUiLocks.length) return;
-		console.warn("[pi-browser-bridge] Released expired lease/UI lock state", {
+		console.warn("[browser-pilot-bridge] Released expired lease/UI lock state", {
 			reason: "ttl",
 			releasedLeases: sweep.releasedLeases,
 			releasedUiLocks: sweep.releasedUiLocks,
@@ -389,7 +389,7 @@ export class BrowserBridgeServer {
 
 	private logLeaseCleanup(details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }): void {
 		if (process.env.PI_BROWSER_LEASE_CLEANUP_LOG !== "1") return;
-		console.warn("[pi-browser-bridge] Released lease/UI lock state after client disconnect", details);
+		console.warn("[browser-pilot-bridge] Released lease/UI lock state after client disconnect", details);
 	}
 
 	private browserSessionInfo(session: BrowserAutomationSession): BrowserAutomationSessionInfo {

@@ -1,5 +1,5 @@
 {
-  "$id": "pi-browser-tools-browser-workflow-result",
+  "$id": "browser-pilot-browser-workflow-result",
   "type": "object",
   "additionalProperties": false,
   "required": [

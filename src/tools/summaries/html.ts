@@ -31,7 +31,7 @@ function removeKnownNoiseHtml(html: string): string {
 		.replace(/<read-frog\b[^>]*>[\s\S]*?<\/read-frog>/gi, " ")
 		.replace(/<[^>]+id=["']aix-drop-panel["'][^>]*>[\s\S]*?(?=<[^>]+id=["']aix-supported-by["']|<\/body>|$)/gi, " ")
 		.replace(/<[^>]+id=["']aix-supported-by["'][^>]*>[\s\S]*?<\/[^>]+>/gi, " ")
-		.replace(/<[^>]+id=["']pi-browser-bridge-ind["'][^>]*>[\s\S]*?<\/[^>]+>/gi, " ")
+		.replace(/<[^>]+id=["']browser-pilot-bridge-ind["'][^>]*>[\s\S]*?<\/[^>]+>/gi, " ")
 		.replace(/<[^>]+id=["']goog-gt-tt["'][^>]*>[\s\S]*?<\/[^>]+>/gi, " ")
 		.replace(/<[^>]+id=["']immersive-translate-popup["'][^>]*>[\s\S]*?<\/[^>]+>/gi, " "));
 }

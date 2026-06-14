@@ -36,12 +36,12 @@ type ArtifactBehavior = {
 const ARTIFACT_BEHAVIOR: ArtifactBehavior = {
 	resultField: "saved.path",
 	descriptorFields: ["path", "kind", "bytes", "chars", "privacy", "readCommands"],
-	readCommand: "pi-browser artifact --path <saved.path> --mode json --json-path data --json",
+	readCommand: "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
 	readModes: ["json", "text", "search", "sample"],
 	commonJsonPaths: ["data", "data.content", "data.actionables", "data.list_hints"],
 	notes: [
 		"JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
-		"Large or sensitive raw payloads stay in local artifacts; read bounded paths with pi-browser artifact.",
+		"Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact.",
 	],
 };
 
@@ -162,14 +162,14 @@ function naturalActionRows(cmd: CliCommand): string[] {
 		const required = [...actionParamNames(action)];
 		if (required.length) parts.push(`requires --${required.map(kebabParam).join(" / --")}`);
 		if (action.notes) parts.push(action.notes);
-		const example = required.length === 1 ? `pi-browser ${cmd.subcommand} ${kebabAction(action.action)} --${kebabParam(required[0])} ...` : `pi-browser ${cmd.subcommand} ${kebabAction(action.action)}`;
+		const example = required.length === 1 ? `browser-pilot ${cmd.subcommand} ${kebabAction(action.action)} --${kebabParam(required[0])} ...` : `browser-pilot ${cmd.subcommand} ${kebabAction(action.action)}`;
 		return `  ${pad(kebabAction(action.action), 18)}${parts.length ? `${parts.join("; ")} · ` : ""}${example}`;
 	});
 }
 
 export function printCommandHelp(cmd: CliCommand, natural?: { action: string }): void {
 	const specs = natural ? actionSpecificFlagSpecs(cmd, natural.action) : buildCommandFlagSpecs(cmd);
-	const title = natural ? `pi-browser ${cmd.subcommand} ${kebabAction(natural.action)}` : `pi-browser ${cmd.subcommand}`;
+	const title = natural ? `browser-pilot ${cmd.subcommand} ${kebabAction(natural.action)}` : `browser-pilot ${cmd.subcommand}`;
 	const lines = [`${title}${cmd.description ? ` — ${cmd.description}` : ""}`, ""];
 	const naturalRows = natural ? [] : naturalActionRows(cmd);
 	if (naturalRows.length) {
@@ -184,7 +184,7 @@ export function printCommandHelp(cmd: CliCommand, natural?: { action: string }):
 	if (actionParams.length) {
 		lines.push("", "Per-action --params keys (a JSON object; optional keys may also apply — see the action list above):", ...actionParams);
 	}
-	if (natural) lines.push("", `Advanced equivalent: pi-browser ${cmd.subcommand} --action ${natural.action} --params <json>`);
+	if (natural) lines.push("", `Advanced equivalent: browser-pilot ${cmd.subcommand} --action ${natural.action} --params <json>`);
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
@@ -233,7 +233,7 @@ export function naturalSubcommandMetadata(cmd: CliCommand): Record<string, unkno
 		required: [...(action.required ?? [])],
 		requiredAny: (action.requiredAny ?? []).map((group) => [...group]),
 		flags: flagMetadata(cmd, action.action),
-		example: `pi-browser ${cmd.subcommand} ${kebabAction(action.action)}`,
+		example: `browser-pilot ${cmd.subcommand} ${kebabAction(action.action)}`,
 	}));
 }
 

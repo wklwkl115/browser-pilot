@@ -16,7 +16,7 @@ export const PI_BROWSER_WORKER_STARTED_AT = serviceWorkerGlobal.__PI_BROWSER_WOR
 
 export const PI_BROWSER_WORKER_BOOT_ID = serviceWorkerGlobal.__PI_BROWSER_WORKER_BOOT_ID__
   ?? [
-    chromeApi?.runtime?.id || "pi-browser-bridge",
+    chromeApi?.runtime?.id || "browser-pilot-bridge",
     PI_BROWSER_WORKER_STARTED_AT,
     Math.random().toString(36).slice(2, 10),
   ].join(":");

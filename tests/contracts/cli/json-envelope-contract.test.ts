@@ -170,10 +170,10 @@ setInterval(() => {}, 1000);
 		assert.equal((env.taxonomy as Record<string, unknown>).category, "daemon-invoke");
 		const diagnostics = env.diagnostics as Record<string, unknown>;
 		assert.ok(Array.isArray(diagnostics.nextActions), "daemon invoke errors expose nextActions");
-		assert.ok((diagnostics.nextActions as string[]).includes("pi-browser schema execute --json"));
+		assert.ok((diagnostics.nextActions as string[]).includes("browser-pilot schema execute --json"));
 		const recovery = env.recovery as Record<string, unknown>;
 		assert.ok(Array.isArray(recovery.commands), "daemon invoke errors expose executable recovery commands");
-		assert.ok((recovery.commands as Array<Record<string, unknown>>).some((cmd) => cmd.command === "pi-browser validate execute --params @params.json --json" && Array.isArray(cmd.argv)));
+		assert.ok((recovery.commands as Array<Record<string, unknown>>).some((cmd) => cmd.command === "browser-pilot validate execute --params @params.json --json" && Array.isArray(cmd.argv)));
 	} finally {
 		const stop = spawnSync(tsxBin, [cliEntry, "daemon", "stop", "--json"], {
 			cwd: repoRoot,

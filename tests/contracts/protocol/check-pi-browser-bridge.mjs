@@ -113,7 +113,7 @@ assert(pkg.pi?.extensions?.includes("./index.ts"), "package pi manifest must exp
 assert(pkg.main === "./dist/index.js", "package main must point to compiled dist entry");
 assert(pkg.types === "./dist/index.d.ts", "package types must point to compiled declarations");
 assert(pkg.exports?.["."]?.import === "./dist/index.js" && pkg.exports?.["."]?.types === "./dist/index.d.ts", "package exports must point to compiled dist entry and declarations");
-assert(pkg.bin?.["pi-browser"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
+assert(pkg.bin?.["browser-pilot"] === "./dist/cli/bin.js", "package CLI bin must point to compiled dist entry");
 assert(pkg.scripts?.["sync:protocol"] === EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert(pkg.scripts?.["sync:config"] === "node scripts/sync-bridge-config.mjs", "package must expose bridge config sync script");
 
@@ -237,15 +237,15 @@ assert(transport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).le
 assert(offscreenTransport.split(/\r?\n/).filter((line) => !line.startsWith("// raw:")).length <= 230, "offscreen transport must stay focused on WebSocket lifecycle");
 assert(!/console\.log\s*\(/.test(transport) && !/console\.log\s*\(/.test(offscreenTransport), "transport lifecycle success paths must not print noisy console.log entries into Chrome stderr");
 assert(transport.includes("cleanupTransportSocket") && transport.includes("if (current !== socket) continue"), "transport.js must use identity-guarded socket cleanup");
-assert(transport.includes("ensureOffscreenDocument") && transport.includes("pi-browser-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must forward WebSocket frames through offscreen socket adapters");
+assert(transport.includes("ensureOffscreenDocument") && transport.includes("browser-pilot-offscreen-send") && transport.includes("handlePiBridgeWsMessage(message.data"), "service-worker transport must forward WebSocket frames through offscreen socket adapters");
 assert(transport.includes("isExpectedOffscreenTransientError") && transport.includes("receiving end does not exist") && transport.includes("offscreenTransportErrorMessage") && !transport.includes('console.warn("[PI-BROWSER-WS] offscreen send failed", error)'), "service-worker transport must not warn on expected offscreen transient failures or stringify offscreen send errors as raw objects");
 assert(transport.includes("runTransportTask") && !transport.includes("void probeAndConnectWS(true)") && !transport.includes(".then(syncOpenPorts)"), "service-worker transport fire-and-forget probes must be wrapped so offscreen startup races do not create unhandled promises");
 assert(!transport.includes("new WebSocket(") && !transport.includes("setInterval("), "service-worker transport must not own real WebSocket sockets or keep itself warm with intervals");
-assert(offscreenTransport.includes("sockets.set(port, socket)") && offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("pi-browser-offscreen-ws-message"), "offscreen transport must own real WebSocket sockets and forward inbound frames");
+assert(offscreenTransport.includes("sockets.set(port, socket)") && offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("browser-pilot-offscreen-ws-message"), "offscreen transport must own real WebSocket sockets and forward inbound frames");
 assert(offscreenTransport.includes("PORT_PROBE_TIMEOUT_MS = 500"), "offscreen transport port probe must use a bounded loopback timeout");
 assert(offscreenTransport.includes("Promise.all(candidates.map"), "offscreen transport must probe bridge port candidates concurrently");
 const scheduleProbeBlock = transport.slice(transport.indexOf("function scheduleProbe"), transport.indexOf("function bumpProbeBackoff"));
-assert(scheduleProbeBlock.includes("chrome.alarms.create(\"pi-browser-ws-probe\""), "service-worker transport scheduleProbe must use the single named Chrome alarm for offscreen recovery probes");
+assert(scheduleProbeBlock.includes("chrome.alarms.create(\"browser-pilot-ws-probe\""), "service-worker transport scheduleProbe must use the single named Chrome alarm for offscreen recovery probes");
 assert(!scheduleProbeBlock.includes("setTimeout("), "transport scheduleProbe must not create untracked setTimeout probe timers");
 const socketOpenBlock = offscreenTransport.slice(offscreenTransport.indexOf("socket.onopen"), offscreenTransport.indexOf("socket.onmessage"));
 assert(socketOpenBlock.includes("wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS"), "offscreen transport must reset reconnect backoff after a successful WebSocket open");
@@ -636,18 +636,18 @@ async function testOffscreenTransportLifecycle() {
 		socket.readyState = FakeWebSocket.OPEN;
 		socket.onopen();
 	}
-	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-connected" && message.port === 18765), "offscreen open must notify the service worker");
-	runtimeListener({ type: "pi-browser-offscreen-send", port: 18765, data: "{\"type\":\"ext_ready\"}" }, {}, () => {});
+	assert(runtimeMessages.some((message) => message.type === "browser-pilot-offscreen-connected" && message.port === 18765), "offscreen open must notify the service worker");
+	runtimeListener({ type: "browser-pilot-offscreen-send", port: 18765, data: "{\"type\":\"ext_ready\"}" }, {}, () => {});
 	assert(sockets[0].sent.some((message) => String(message).includes("ext_ready")), "offscreen must write service-worker bytes to the real WebSocket");
 	fetchedPorts.length = 0;
 	sockets[1].readyState = FakeWebSocket.CLOSED;
-	await new Promise((resolve) => runtimeListener({ type: "pi-browser-offscreen-probe", port: 18766, resetDelay: true }, {}, () => resolve()));
+	await new Promise((resolve) => runtimeListener({ type: "browser-pilot-offscreen-probe", port: 18766, resetDelay: true }, {}, () => resolve()));
 	assert(JSON.stringify(fetchedPorts) === JSON.stringify([18766]), "offscreen single-port probes must not scan the full bridge port range");
 	sockets[0].onmessage({ data: "{\"id\":\"cmd-1\",\"code\":{\"cmd\":\"tabs.list\"}}" });
-	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-ws-message" && message.port === 18765 && message.data?.id === "cmd-1"), "offscreen must forward inbound WebSocket frames to the service worker");
+	assert(runtimeMessages.some((message) => message.type === "browser-pilot-offscreen-ws-message" && message.port === 18765 && message.data?.id === "cmd-1"), "offscreen must forward inbound WebSocket frames to the service worker");
 	sockets[0].readyState = FakeWebSocket.CLOSED;
 	sockets[0].onclose();
-	assert(runtimeMessages.some((message) => message.type === "pi-browser-offscreen-disconnected" && message.port === 18765), "offscreen close must notify the service worker");
+	assert(runtimeMessages.some((message) => message.type === "browser-pilot-offscreen-disconnected" && message.port === 18765), "offscreen close must notify the service worker");
 }
 
 await testOffscreenTransportLifecycle();
@@ -680,8 +680,8 @@ async function testTransportSocketCleanupIdentity() {
 				getURL: (item) => `chrome-extension://fixture/${item}`,
 				sendMessage: async (message) => {
 					offscreenMessages.push(message);
-					if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
-					return message.type === "pi-browser-offscreen-probe" || message.type === "pi-browser-offscreen-status" ? { ok: true, openPorts: [18765] } : { ok: true };
+					if (message.type === "browser-pilot-offscreen-send") offscreenSends.push(message);
+					return message.type === "browser-pilot-offscreen-probe" || message.type === "browser-pilot-offscreen-status" ? { ok: true, openPorts: [18765] } : { ok: true };
 				},
 				onMessage: { addListener(fn) { runtimeListeners.push(fn); } },
 				onInstalled: { addListener() {} },
@@ -702,11 +702,11 @@ async function testTransportSocketCleanupIdentity() {
 	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "service-worker transport must expose an open socket adapter after offscreen reports an open port");
 	const extReadyCount = () => offscreenSends.filter((message) => String(message.data).includes('"ext_ready"')).length;
 	assert(extReadyCount() === 1, "service-worker transport must send ext_ready through the offscreen socket adapter");
-	assert(alarms.some((alarm) => alarm.name === "pi-browser-ws-probe"), "transport install must schedule the recovery probe alarm");
+	assert(alarms.some((alarm) => alarm.name === "browser-pilot-ws-probe"), "transport install must schedule the recovery probe alarm");
 	const listener = runtimeListeners[0];
-	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-connected", port: 18765 }, {}, () => resolve()));
+	await new Promise((resolve) => listener({ type: "browser-pilot-offscreen-connected", port: 18765 }, {}, () => resolve()));
 	assert(extReadyCount() === 1, "service-worker transport must not resend ext_ready for an already-open offscreen socket adapter");
-	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-ws-message", port: 18765, data: { id: "cmd-1", code: { cmd: "tabs.list" } } }, {}, (response) => { sandbox.wsResponse = response; resolve(); }));
+	await new Promise((resolve) => listener({ type: "browser-pilot-offscreen-ws-message", port: 18765, data: { id: "cmd-1", code: { cmd: "tabs.list" } } }, {}, (response) => { sandbox.wsResponse = response; resolve(); }));
 	assert(handledWsMessage?.id === "cmd-1", "offscreen inbound WebSocket frames must dispatch through the service-worker router");
 	assert(offscreenSends.some((message) => String(message.data).includes('"ack"') && String(message.data).includes('"cmd-1"')), "router socket replies must be forwarded back to offscreen");
 	sandbox.getPiBrowserTransportSocket().send("{\"type\":\"ack\",\"id\":\"dropped\"}");
@@ -715,18 +715,18 @@ async function testTransportSocketCleanupIdentity() {
 	const originalSendMessage = sandbox.chrome.runtime.sendMessage;
 	sandbox.chrome.runtime.sendMessage = async (message) => {
 		offscreenMessages.push(message);
-		if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
-		return message.type === "pi-browser-offscreen-send" ? { ok: true, sent: false } : { ok: true, openPorts: [18765] };
+		if (message.type === "browser-pilot-offscreen-send") offscreenSends.push(message);
+		return message.type === "browser-pilot-offscreen-send" ? { ok: true, sent: false } : { ok: true, openPorts: [18765] };
 	};
 	sandbox.getPiBrowserTransportSocket().send("{\"type\":\"ack\",\"id\":\"stale\"}");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert(sandbox.getPiBrowserTransportSocket() === null, "service-worker transport must clear stale socket adapters when offscreen reports sent:false");
 	sandbox.chrome.runtime.sendMessage = originalSendMessage;
-	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-connected", port: 18765 }, {}, () => resolve()));
+	await new Promise((resolve) => listener({ type: "browser-pilot-offscreen-connected", port: 18765 }, {}, () => resolve()));
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert(sandbox.getPiBrowserTransportSocket()?.readyState === 1, "offscreen reconnect can recreate the socket adapter after sent:false cleanup");
 	assert(extReadyCount() === 2, "service-worker transport must resend ext_ready after a stale adapter is cleared and reconnected");
-	await new Promise((resolve) => listener({ type: "pi-browser-offscreen-disconnected", port: 18765, data: { reason: "close" } }, {}, () => resolve()));
+	await new Promise((resolve) => listener({ type: "browser-pilot-offscreen-disconnected", port: 18765, data: { reason: "close" } }, {}, () => resolve()));
 	assert(sandbox.getPiBrowserTransportSocket() === null, "offscreen disconnect must clear the matching socket adapter");
 }
 
@@ -750,8 +750,8 @@ async function testTransportMultiPortFanout() {
 			runtime: {
 				getURL: (item) => `chrome-extension://fixture/${item}`,
 				sendMessage: async (message) => {
-					if (message.type === "pi-browser-offscreen-send") offscreenSends.push(message);
-					return message.type === "pi-browser-offscreen-probe" || message.type === "pi-browser-offscreen-status" ? { ok: true, openPorts: [18765, 18766] } : { ok: true };
+					if (message.type === "browser-pilot-offscreen-send") offscreenSends.push(message);
+					return message.type === "browser-pilot-offscreen-probe" || message.type === "browser-pilot-offscreen-status" ? { ok: true, openPorts: [18765, 18766] } : { ok: true };
 				},
 				onMessage: { addListener() {} },
 				onInstalled: { addListener() {} },
@@ -985,9 +985,9 @@ globalThis.__bridgeInfoCspTest = { installCspBypassRule, enableCspBypassForTab }
 	assert(scopedRule.condition.tabIds.length === 1 && scopedRule.condition.tabIds[0] === 42, "CSP bypass rule must be scoped to explicit tab ids");
 	assert(scopedRule.condition.resourceTypes.includes("main_frame") && scopedRule.condition.resourceTypes.includes("sub_frame"), "CSP bypass must stay limited to frame responses");
 	assert(sandbox.__bridgeInfoCspTest.enableCspBypassForTab("bad") === false, "invalid tab ids must not alter CSP bypass scope");
-	assert(alarms.at(-1).name === "pi-browser-csp-bypass-prune", "CSP bypass cleanup must schedule an MV3 alarm");
+	assert(alarms.at(-1).name === "browser-pilot-csp-bypass-prune", "CSP bypass cleanup must schedule an MV3 alarm");
 	now = 3_000;
-	alarmListeners.at(-1)({ name: "pi-browser-csp-bypass-prune" });
+	alarmListeners.at(-1)({ name: "browser-pilot-csp-bypass-prune" });
 	assert(updates.at(-1).addRules.length === 0, "CSP bypass tab scope must expire and remove the rule");
 }
 
@@ -1709,13 +1709,13 @@ assert(toolSource.includes("Omit targetRef/tabId to use the selected active tab"
 assert(toolSource.includes("Numeric tabId remains accepted for compatibility and auto-follows unambiguous Chrome replacement chains"), "tab-scoped tools must explain numeric tabId compatibility and auto-follow");
 assert((toolSource.match(/TAB_SCOPED_TOOL_GUIDELINE/g) || []).length >= 6, "tab-scoped tools must reuse explicit targetRef guidance");
 assert(((toolSource.match(/optionalTargetTabId\(/g) || []).length + (toolSource.match(/sharedTabScopedToolParams\(/g) || []).length) >= 6, "tab-scoped tabId parameters must reuse explicit fallback warning helper");
-const skill = read("skills/pi-browser-tools/SKILL.md");
-assert(skill.includes("tabHandle") && skill.includes("targetRef") && (skill.includes("browser_tabs list") || skill.includes("browser_tabs {action:\"list\"}")), "pi-browser-tools skill must document explicit tabHandle/targetRef automation flow");
-assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "pi-browser-tools skill must document pick/observe flows");
+const skill = read("skills/browser-pilot/SKILL.md");
+assert(skill.includes("tabHandle") && skill.includes("targetRef") && (skill.includes("browser_tabs list") || skill.includes("browser_tabs {action:\"list\"}")), "browser-pilot skill must document explicit tabHandle/targetRef automation flow");
+assert(skill.includes("browser_pick") && skill.includes("browser_observe"), "browser-pilot skill must document pick/observe flows");
 for (const removed of ["browser_query", "browser_click", "browser_type", "browser_dom_snapshot", "browser_dom_click", "browser_dom_type"]) {
-	assert(!skill.includes(removed), `pi-browser-tools skill must not document removed split action tool: ${removed}`);
+	assert(!skill.includes(removed), `browser-pilot skill must not document removed split action tool: ${removed}`);
 }
-assert(!skill.includes("npm run check") && !skill.includes("smoke:browser"), "pi-browser-tools skill must not contain project development validation flow");
+assert(!skill.includes("npm run check") && !skill.includes("smoke:browser"), "browser-pilot skill must not contain project development validation flow");
 assert(toolSource.includes("NativeCommandParamsSchema"), "native tools must use one generic params schema and protocol validation");
 assert((toolSource.match(/params: Type.Optional\(NativeCommandParamsSchema\)/g) || []).length >= 3, "native tool params must use generic protocol-backed schema");
 for (const forbidden of [

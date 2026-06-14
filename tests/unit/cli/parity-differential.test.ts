@@ -1,4 +1,4 @@
-// Differential frontend parity: the pi-browser CLI and the Pi-native host share ONE
+// Differential frontend parity: the browser-pilot CLI and the Pi-native host share ONE
 // tool core (registerBrowserTools → def.execute). This proves the CLI frontend does not
 // alter tool semantics: for the same (tool, params, cwd), the result envelope from
 //   A) direct def.execute(..., {cwd, hasUI:false})   — the Pi-native path

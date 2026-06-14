@@ -323,7 +323,7 @@ assert.equal(sha256(scanBudgetGoldenJson), "122493065afa3bfe94b2fe4914c9414ac5f9
 assert.deepEqual(scanBudgetGolden.summaryOmitted, ["interactive", "textPreview", "media_candidates", "rows"], "check-summaries scan.budgetGolden.omitted: budget retry must land on the same omitted fields");
 assert.equal(scanBudgetGolden.focus.primary_actions.length, 3, "check-summaries scan.budgetGolden.primaryActions: final budget rung action count must stay stable");
 assert.equal(scanBudgetGolden.actionables.rows.length, 0, "check-summaries scan.budgetGolden.actionRows: final budget rung action rows stay omitted under tight budget");
-const scanTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-scan-summary-"));
+const scanTmp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-scan-summary-"));
 try {
 	const scanEnvelope = parseToolText(await distilledTextResult("scan text", {
 		toolName: "browser_observe",
@@ -359,7 +359,7 @@ assert.equal(truncatedHtml.counts.images, 4, "check-summaries html.meta.counts: 
 assert.equal(truncatedHtml.textChars, 500, "check-summaries html.meta.text_length: summary must prefer pre-truncation text length");
 assert.equal(truncatedHtml.original_bytes, 1800, "check-summaries html.meta.original_bytes: summary must retain original byte count");
 assert.deepEqual(truncatedHtml.titles, ["Meta Title"], "check-summaries html.meta.titles: summary must prefer bridge titles metadata");
-const noisyHtml = summarizeHtmlSnapshot("<body><h1 data-read-frog-walked='x'>Keep<span class='notranslate read-frog-translated-content-wrapper'><span class='read-frog-translated-block-content'>保留</span></span></h1><p>Real text<span class='immersive-translate-target-translation'>真实文本</span><span class='skiptranslate'>Skip me</span></p><div id='aix-drop-panel'>拖拽到此处完成下载</div><read-frog>Read Frog</read-frog><div id='pi-browser-bridge-ind'>pi_browser_bridge: 已连接</div></body>");
+const noisyHtml = summarizeHtmlSnapshot("<body><h1 data-read-frog-walked='x'>Keep<span class='notranslate read-frog-translated-content-wrapper'><span class='read-frog-translated-block-content'>保留</span></span></h1><p>Real text<span class='immersive-translate-target-translation'>真实文本</span><span class='skiptranslate'>Skip me</span></p><div id='aix-drop-panel'>拖拽到此处完成下载</div><read-frog>Read Frog</read-frog><div id='browser-pilot-bridge-ind'>pi_browser_bridge: 已连接</div></body>");
 assert.ok(noisyHtml.textPreview.includes("Keep"), "check-summaries html.noise: real content must remain");
 assert.equal(noisyHtml.textPreview.includes("拖拽到此处完成下载"), false, "check-summaries html.noise: AIX overlay text must be filtered");
 assert.equal(noisyHtml.textPreview.includes("Read Frog"), false, "check-summaries html.noise: Read Frog overlay text must be filtered");

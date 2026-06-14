@@ -26,7 +26,7 @@ function assertErrorCode(error, code) {
 }
 
 async function testPiToolLayer() {
-	const temp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-transfer-"));
+	const temp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-transfer-"));
 	try {
 		const uploadFile = path.join(temp, "upload.txt");
 		await writeFile(uploadFile, "upload payload", "utf8");

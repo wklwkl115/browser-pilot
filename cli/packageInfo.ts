@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PACKAGE_NAME = "pi-browser-tools";
+export const PACKAGE_NAME = "browser-pilot";
 export const DAEMON_PROTOCOL_VERSION = "4";
 
 function packageMetadata(): { root: string; pkg: { name?: unknown; version?: unknown } } | undefined {

@@ -38,7 +38,7 @@ export type BridgeCommandValidation =
 	| { ok: false; error: string; details: Record<string, unknown> };
 
 const schema = {
-  "name": "pi-browser-native-commands",
+  "name": "browser-pilot-native-commands",
   "version": "0.2.0",
   "transport": "Pi Browser Bridge WebSocket command envelope",
   "envelope": {

@@ -35,7 +35,7 @@ for (const options of [
 	new Function(script);
 	assert(script.includes("\\s+"), "scan script must preserve regex escapes");
 	assert(script.includes("'\\n\\n--- iframe ---\\n\\n'"), "scan script must preserve escaped iframe separator");
-	assert(script.includes("pi-browser-bridge-ind"), "scan script must filter Pi bridge indicator noise");
+	assert(script.includes("browser-pilot-bridge-ind"), "scan script must filter Pi bridge indicator noise");
 	assert(script.includes("aix-drop-panel"), "scan script must filter AIX extension overlay noise");
 	assert(script.includes("READ-FROG"), "scan script must filter Read Frog extension overlay noise");
 	assert(script.includes("read-frog-translated"), "scan script must filter Read Frog translated wrappers");

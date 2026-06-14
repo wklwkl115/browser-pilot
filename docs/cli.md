@@ -1,6 +1,6 @@
-# `pi-browser` CLI
+# `browser-pilot` CLI
 
-The `pi-browser` CLI is the external frontend for the browser tools — a strict superset
+The `browser-pilot` CLI is the external frontend for the browser tools — a strict superset
 of what the old MCP server exposed, usable by any shell-capable agent, human, CI, or cron.
 Inside Pi the same tools are still invoked natively as `browser_*` tool calls; the CLI is for
 everything outside Pi. Both share one tool core (`registerBrowserTools`).
@@ -8,7 +8,7 @@ everything outside Pi. Both share one tool core (`registerBrowserTools`).
 ## Model
 
 ```
-pi-browser <subcommand> [--flags]      (short-lived client)
+browser-pilot <subcommand> [--flags]      (short-lived client)
   ├─ parse + --help: local, no browser startup
   └─ execute: POST /invoke ─► bridge daemon (long-lived, owns the browser)
 ```
@@ -23,8 +23,8 @@ the caller `cwd`, so artifacts/memory/evidence land under the caller's `.pi/`, n
 For multi-step agent work, make readiness explicit before the first browser operation:
 
 ```bash
-pi-browser connect --wait --timeout-ms 15000 --json
-pi-browser status --json
+browser-pilot connect --wait --timeout-ms 15000 --json
+browser-pilot status --json
 ```
 
 `connect` is an idempotent readiness gate: it starts or reuses the singleton daemon, starts the
@@ -39,22 +39,22 @@ Every registered `browser_*` tool maps to a subcommand: drop the `browser_` pref
 into `-` (`browser_cookie_analyze` → `cookie-analyze`). Flags are the kebab-cased tool parameters.
 
 ```bash
-pi-browser --help                       # list every command
-pi-browser <cmd> --help                 # flags for one command
-pi-browser connect --wait --timeout-ms 15000 --json
-pi-browser status --json
-pi-browser tabs --action list
-pi-browser observe --mode scan
-pi-browser wait selector --selector "#result"
-pi-browser network start
-pi-browser network list --session-id net-1
-pi-browser frame list
-pi-browser frame evaluate --frame-id frame-1 --expression "document.title"
-pi-browser hook install-targets --targets console,error
-pi-browser hook collect --session-id hook-1
-pi-browser execute --script "document.title"
-pi-browser execute --script-file ./extract.js   # avoids shell quoting for longer JS
-pi-browser cookie-analyze --url https://target.example --bind-browser-session
+browser-pilot --help                       # list every command
+browser-pilot <cmd> --help                 # flags for one command
+browser-pilot connect --wait --timeout-ms 15000 --json
+browser-pilot status --json
+browser-pilot tabs --action list
+browser-pilot observe --mode scan
+browser-pilot wait selector --selector "#result"
+browser-pilot network start
+browser-pilot network list --session-id net-1
+browser-pilot frame list
+browser-pilot frame evaluate --frame-id frame-1 --expression "document.title"
+browser-pilot hook install-targets --targets console,error
+browser-pilot hook collect --session-id hook-1
+browser-pilot execute --script "document.title"
+browser-pilot execute --script-file ./extract.js   # avoids shell quoting for longer JS
+browser-pilot cookie-analyze --url https://target.example --bind-browser-session
 ```
 
 Flag mapping from the tool's TypeBox schema: `string`/`number` → `--x <v>`; `boolean` → `--x` /
@@ -68,35 +68,35 @@ Prefer files for anything containing quotes, braces, newlines, request bodies, o
 
 ```bash
 # bash / sh / zsh
-pi-browser execute --script-file ./extract.js --json
-pi-browser command --command @native-command.json --json
-pi-browser http-replay --raw-request @request.txt --json
-pi-browser http-replay --request @captured-request.json --json
-pi-browser http-replay --har-path ./capture.har --har-url-pattern "/api/" --json
-pi-browser template --template-path ./template.yaml --url https://target.example --json
+browser-pilot execute --script-file ./extract.js --json
+browser-pilot command --command @native-command.json --json
+browser-pilot http-replay --raw-request @request.txt --json
+browser-pilot http-replay --request @captured-request.json --json
+browser-pilot http-replay --har-path ./capture.har --har-url-pattern "/api/" --json
+browser-pilot template --template-path ./template.yaml --url https://target.example --json
 
 # PowerShell
-pi-browser execute --script-file .\extract.js --json
-pi-browser command --command '@native-command.json' --json
-pi-browser http-replay --raw-request '@request.txt' --json
-pi-browser http-replay --request '@captured-request.json' --json
-pi-browser http-replay --har-path .\capture.har --har-url-pattern '/api/' --json
-pi-browser template --template-path .\template.yaml --url https://target.example --json
+browser-pilot execute --script-file .\extract.js --json
+browser-pilot command --command '@native-command.json' --json
+browser-pilot http-replay --raw-request '@request.txt' --json
+browser-pilot http-replay --request '@captured-request.json' --json
+browser-pilot http-replay --har-path .\capture.har --har-url-pattern '/api/' --json
+browser-pilot template --template-path .\template.yaml --url https://target.example --json
 
 # cmd.exe
-pi-browser execute --script-file extract.js --json
-pi-browser command --command @native-command.json --json
-pi-browser http-replay --raw-request @request.txt --json
-pi-browser http-replay --request @captured-request.json --json
-pi-browser http-replay --har-path capture.har --har-url-pattern /api/ --json
-pi-browser template --template-path template.yaml --url https://target.example --json
+browser-pilot execute --script-file extract.js --json
+browser-pilot command --command @native-command.json --json
+browser-pilot http-replay --raw-request @request.txt --json
+browser-pilot http-replay --request @captured-request.json --json
+browser-pilot http-replay --har-path capture.har --har-url-pattern /api/ --json
+browser-pilot template --template-path template.yaml --url https://target.example --json
 ```
 
 For local validation without starting the daemon or browser, put parameters in one object file:
 
 ```bash
-pi-browser validate execute --params @params.json --json
-pi-browser validate http-replay --params @replay-params.json --json
+browser-pilot validate execute --params @params.json --json
+browser-pilot validate http-replay --params @replay-params.json --json
 ```
 
 ### Natural action subcommands
@@ -105,16 +105,16 @@ pi-browser validate http-replay --params @replay-params.json --json
 common agent path:
 
 ```bash
-pi-browser wait selector --selector "#ready" --json
-pi-browser wait navigate --url https://example.test --json
-pi-browser wait network-idle --json
-pi-browser network start --json
-pi-browser network list --session-id net-1 --json
-pi-browser network export-har --session-id net-1 --json
-pi-browser frame list --json
-pi-browser frame evaluate --frame-id frame-1 --expression "document.body.innerText" --json
-pi-browser hook install-targets --targets console,error --json
-pi-browser hook collect --session-id hook-1 --json
+browser-pilot wait selector --selector "#ready" --json
+browser-pilot wait navigate --url https://example.test --json
+browser-pilot wait network-idle --json
+browser-pilot network start --json
+browser-pilot network list --session-id net-1 --json
+browser-pilot network export-har --session-id net-1 --json
+browser-pilot frame list --json
+browser-pilot frame evaluate --frame-id frame-1 --expression "document.body.innerText" --json
+browser-pilot hook install-targets --targets console,error --json
+browser-pilot hook collect --session-id hook-1 --json
 ```
 
 These are CLI routing sugar over the same underlying tools and are equivalent to the legacy
@@ -122,13 +122,13 @@ These are CLI routing sugar over the same underlying tools and are equivalent to
 JSON protocol access:
 
 ```bash
-pi-browser wait --action selector --params '{"selector":"#ready"}' --json
+browser-pilot wait --action selector --params '{"selector":"#ready"}' --json
 ```
 
 For full bridge-native objects that do not fit a modeled command, use the command escape hatch:
 
 ```bash
-pi-browser command --command @native-command.json --json
+browser-pilot command --command @native-command.json --json
 ```
 
 Natural routing is intentionally scoped. Complex or low-frequency actions such as frame script
@@ -139,13 +139,13 @@ For `hook install-targets`, target ids are the `hook list-targets` ids such as `
 The natural CLI route accepts either comma-separated values (`--targets console,error`) or repeated
 flags (`--targets console --targets error`); file-backed arrays still use `--targets @targets.json`.
 
-Use `pi-browser <cmd> --help`, `pi-browser <cmd> <natural-subcommand> --help`, or
-`pi-browser schema <cmd> <natural-subcommand> --json` to discover narrowed action-specific flags
+Use `browser-pilot <cmd> --help`, `browser-pilot <cmd> <natural-subcommand> --help`, or
+`browser-pilot schema <cmd> <natural-subcommand> --json` to discover narrowed action-specific flags
 without starting the daemon or browser.
 
 ### Agent routing metadata
 
-`pi-browser commands --json` and `pi-browser schema <cmd> [natural-subcommand] --json` expose an
+`browser-pilot commands --json` and `browser-pilot schema <cmd> [natural-subcommand] --json` expose an
 `agentCli` object so agents do not have to infer route quality from help prose:
 
 - `mode:"standard"` — ordinary recommended command flags.
@@ -167,14 +167,14 @@ but it also includes `subcommands[]` with the recommended natural routes. Use
 The same discovery objects include `artifactBehavior`, which describes the shared result-artifact
 contract: results with `saved.path` are enriched with `artifacts[]` and executable `readCommands`;
 `cliNextActions[]` only carries non-duplicate follow-up actions. Bounded follow-up reads use
-`pi-browser artifact --path <saved.path>`.
+`browser-pilot artifact --path <saved.path>`.
 
 ## Output
 
 - **TTY** → a compact human summary (+ `nextActions`, artifact path, diagnostics).
 - **non-TTY** (pipes, agents, CI) → the distilled envelope as raw JSON.
 - Force with `--json` / `--text`; global output flags may appear before the subcommand
-  (`pi-browser --json commands`) or after it (`pi-browser commands --json`). If both are
+  (`browser-pilot --json commands`) or after it (`browser-pilot commands --json`). If both are
   present, the last one in argv wins.
 
 Exit codes: `0` ok · `1` tool error (envelope `terminate`) · `2` usage/param error · `3`
@@ -182,11 +182,11 @@ daemon/bridge unavailable · `4` local file/stdin input error.
 
 In JSON mode, usage, local input, daemon unavailable, daemon invoke, and tool/runtime failures all
 return one parseable JSON object on stdout. Daemon invoke errors include `taxonomy`, `diagnostics`,
-`recovery.commands[]`, and `nextActions` such as `pi-browser schema <cmd> --json`,
-`pi-browser validate <cmd> --params @params.json --json`, `pi-browser doctor --json`, and
-`pi-browser daemon status --json`.
+`recovery.commands[]`, and `nextActions` such as `browser-pilot schema <cmd> --json`,
+`browser-pilot validate <cmd> --params @params.json --json`, `browser-pilot doctor --json`, and
+`browser-pilot daemon status --json`.
 
-For machine JSON, invoke the installed `pi-browser` binary, `node dist/cli/bin.js`, or the source
+For machine JSON, invoke the installed `browser-pilot` binary, `node dist/cli/bin.js`, or the source
 entry directly. During repo-local debugging, use `npm --silent run cli -- ...`; ordinary
 `npm run cli -- ...` prints npm lifecycle banner text to stdout before the CLI output, so it is not
 a valid single-JSON transport.
@@ -194,16 +194,16 @@ a valid single-JSON transport.
 ## Daemon lifecycle
 
 ```bash
-pi-browser connect --wait --timeout-ms 15000 --json  # agent readiness gate
-pi-browser status --json                             # compact read-only readiness state
-pi-browser status --tabs --json                      # include full tabs[] when needed
-pi-browser daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, extension, tabCount, activeTab, health, tools}
-pi-browser daemon start      # foreground (auto-start spawns this detached)
-pi-browser daemon stop       # stop the singleton daemon
+browser-pilot connect --wait --timeout-ms 15000 --json  # agent readiness gate
+browser-pilot status --json                             # compact read-only readiness state
+browser-pilot status --tabs --json                      # include full tabs[] when needed
+browser-pilot daemon status     # {pid, controlPort, version, expectedVersion, versionStale, bridgePort, extensionConnected, extension, tabCount, activeTab, health, tools}
+browser-pilot daemon start      # foreground (auto-start spawns this detached)
+browser-pilot daemon stop       # stop the singleton daemon
 ```
 
 The recommended agent path is `connect --wait` at the start of a multi-step task, then ordinary
-`pi-browser` commands. Do not use `daemon stop` as normal task cleanup; it is an advanced lifecycle
+`browser-pilot` commands. Do not use `daemon stop` as normal task cleanup; it is an advanced lifecycle
 command for tests, profile/port conflicts, upgrades, or explicit resource release.
 
 The daemon starts the browser bridge lazily on the first tool call, or explicitly through
@@ -228,7 +228,7 @@ In JSON mode, `daemon status`, `daemon stop`, and `doctor` expose this case as
 
 ## Readiness
 
-`pi-browser connect --wait --timeout-ms 15000 --json` is the first command an external agent should
+`browser-pilot connect --wait --timeout-ms 15000 --json` is the first command an external agent should
 run for a multi-step browser workflow. It returns one JSON object with `ready`, `startedDaemon`,
 `startedBridge`, `waitedMs`, `daemon`, `bridge`, `extension`, `tabCount`, `activeTab`, `health`, and
 `recovery.commands[]`. Pass `--tabs` to include full `tabs[]`; the default is intentionally compact
@@ -237,18 +237,18 @@ for multi-tab profiles. If the extension does not connect before the timeout, it
 bridge server, it exits `3` with `code:"CLI_BRIDGE_START_FAILED"` so agents can inspect daemon/bridge
 startup diagnostics before waiting on the browser extension.
 
-`pi-browser status --json` is the fast read-only state check. It never auto-starts daemon or bridge;
+`browser-pilot status --json` is the fast read-only state check. It never auto-starts daemon or bridge;
 with no daemon it returns `ready:false` and exit `0`. When a daemon is reachable it reports
 `tabCount`, `activeTab`, and `health` fields such as `lastPingAt`, `lastPongAt`, `connectedForMs`,
 and `tabSyncAgeMs`; use `status --tabs --json` only when the agent needs the full tab list.
 
-`pi-browser doctor --json` is read-only and broader diagnostics. It reports the CLI package `version`, caller `cwd`,
+`browser-pilot doctor --json` is read-only and broader diagnostics. It reports the CLI package `version`, caller `cwd`,
 `commandCount`, `commandGroups`, `webSecurityCommandCount`, daemon `lockfile`, daemon
 `reachable`/`running`, expected daemon version, bridge port/running state, extension connectivity,
 the selected/active tab summary when available, the caller-local `artifactRoot`, and structured
 `recovery.commands[]` entries with both display `command` and executable `argv`.
 
-`pi-browser selftest --confirm --json` is the bounded live smoke. It may create, use, and close a
+`browser-pilot selftest --confirm --json` is the bounded live smoke. It may create, use, and close a
 temporary safe tab, and reports each cleanup step in JSON.
 
 ## Artifact Reads
@@ -257,22 +257,22 @@ When a CLI result writes `saved.path`, JSON mode adds normalized `artifacts[]` a
 deduplicated `cliNextActions[]` entries. The generic read is:
 
 ```bash
-pi-browser artifact --path <saved.path> --mode json --json-path data --json
+browser-pilot artifact --path <saved.path> --mode json --json-path data --json
 ```
 
 Common direct reads are also emitted under `artifacts[].readCommands` so agents do not have to guess
 artifact shape:
 
 ```bash
-pi-browser artifact --path <saved.path> --mode json --json-path data.content --json
-pi-browser artifact --path <saved.path> --mode json --json-path data.actionables --json
-pi-browser artifact --path <saved.path> --mode json --json-path data.list_hints --json
+browser-pilot artifact --path <saved.path> --mode json --json-path data.content --json
+browser-pilot artifact --path <saved.path> --mode json --json-path data.actionables --json
+browser-pilot artifact --path <saved.path> --mode json --json-path data.list_hints --json
 ```
 
 ## Tool Surface
 
 All 22 `browser_*` commands — including web-security — are exposed by default. There is no
-capability profile, compact/minimal visibility mode, or discovery step; `pi-browser --help`
+capability profile, compact/minimal visibility mode, or discovery step; `browser-pilot --help`
 always lists the full set. WebSecurity commands still carry group metadata for docs and UI
 organization, but registration is always-on.
 
@@ -291,8 +291,8 @@ local debugging.
   service worker is often merely idle on a cold start, so this lets the first `tabs list` succeed
   transparently. When no extension connects in time, the command fails with an actionable
   `NO_BROWSER_EXTENSION` error whose `recovery.nextActions` name the fix (load/enable the extension,
-  open or reload a tab, check `pi-browser daemon status`). Inspect connection state any time with
-  `pi-browser daemon status` / `pi-browser doctor` (`extensionConnected`).
+  open or reload a tab, check `browser-pilot daemon status`). Inspect connection state any time with
+  `browser-pilot daemon status` / `browser-pilot doctor` (`extensionConnected`).
 - **`PI_BROWSER_NO_SYSTEM_CA`** — set to `1` to stop the daemon from trusting the OS/browser CA
   store. By default (Node ≥22.15) the daemon launches with `--use-system-ca` so outbound
   web-security fetches (`crawl`/`fuzz`/`http_replay`) work behind a TLS-intercepting proxy/AV or a
@@ -306,7 +306,7 @@ page eval → back) against a live browser.
 
 `npm run smoke:cli:full` is the heavier full CLI runtime audit. It launches an isolated Edge/Chrome
 profile with a temporary patched extension and a temporary `PI_BROWSER_DAEMON_STATE_DIR`, then runs
-real `pi-browser` CLI subprocesses across all 22 commands, local discovery/help/schema/validate,
+real `browser-pilot` CLI subprocesses across all 22 commands, local discovery/help/schema/validate,
 natural `wait`/`network`/`frame`/`hook` routes, file inputs, `command --command @file`, WebSecurity
 HTTP helpers, memory, transfer, artifacts, and selftest. Results are written to
 `.pi/browser-artifacts/smoke-cli-full-results.json`.

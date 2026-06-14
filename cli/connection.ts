@@ -11,10 +11,10 @@ function recoveryCommand(command: string, argv: string[], purpose: string): Reco
 
 export function connectionRecoveryCommands(timeoutMs = 15_000): RecoveryCommand[] {
 	return [
-		recoveryCommand("pi-browser status --json", ["pi-browser", "status", "--json"], "inspect current connection state without starting anything"),
-		recoveryCommand("pi-browser connect --wait --timeout-ms " + timeoutMs + " --json", ["pi-browser", "connect", "--wait", "--timeout-ms", String(timeoutMs), "--json"], "start/reuse the daemon and wait for the browser extension"),
-		recoveryCommand("pi-browser doctor --json", ["pi-browser", "doctor", "--json"], "inspect daemon, bridge, extension, and active tab diagnostics"),
-		recoveryCommand("pi-browser daemon status --json", ["pi-browser", "daemon", "status", "--json"], "inspect low-level daemon state"),
+		recoveryCommand("browser-pilot status --json", ["browser-pilot", "status", "--json"], "inspect current connection state without starting anything"),
+		recoveryCommand("browser-pilot connect --wait --timeout-ms " + timeoutMs + " --json", ["browser-pilot", "connect", "--wait", "--timeout-ms", String(timeoutMs), "--json"], "start/reuse the daemon and wait for the browser extension"),
+		recoveryCommand("browser-pilot doctor --json", ["browser-pilot", "doctor", "--json"], "inspect daemon, bridge, extension, and active tab diagnostics"),
+		recoveryCommand("browser-pilot daemon status --json", ["browser-pilot", "daemon", "status", "--json"], "inspect low-level daemon state"),
 	];
 }
 

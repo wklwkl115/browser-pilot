@@ -20,7 +20,7 @@ assert.equal(pkg.license, "Apache-2.0", "package license must match the public r
 assert.equal(pkg.scripts?.build, "tsc -p tsconfig.build.json", "package must expose outer dist build");
 assert.equal(pkg.main, "./dist/index.js", "package main must point to dist/index.js");
 assert.equal(pkg.types, "./dist/index.d.ts", "package types must point to dist/index.d.ts");
-assert.equal(pkg.bin?.["pi-browser"], "./dist/cli/bin.js", "package CLI bin must point to dist/cli/bin.js");
+assert.equal(pkg.bin?.["browser-pilot"], "./dist/cli/bin.js", "package CLI bin must point to dist/cli/bin.js");
 assert.equal(pkg.exports?.["."]?.import, "./dist/index.js", "package exports import must point to dist/index.js");
 assert.equal(pkg.exports?.["."]?.types, "./dist/index.d.ts", "package exports types must point to dist/index.d.ts");
 assert.equal(pkg.scripts?.["check:package"], "node tests/contracts/drift/check-package-files.mjs", "package file contract must be exposed as check:package");
@@ -167,7 +167,7 @@ assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capt
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("tests/contracts/drift/abml-core-manifest.js") && packed.has("tests/contracts/drift/expected-package-facts.js") && packed.has("tests/contracts/drift/check-doc-paths.mjs"), "npm package must include shared contract manifests and doc-path gate");
-assert(packed.has("skills/pi-browser-audit-fix/SKILL.md"), "npm package must include the audit/fix workflow skill");
+assert(packed.has("skills/browser-pilot-audit-fix/SKILL.md"), "npm package must include the audit/fix workflow skill");
 assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
 assert(packed.has("evals/browser-workflows/21-cross-tool-correlation-chain.md") && packed.has("evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json"), "npm package must include cross-tool correlation workflow eval spec and sample result");
 assert(![...packed].some((file) => file.startsWith(".pi/") || file.includes("/node_modules/")), "npm package must not include runtime artifacts or node_modules");

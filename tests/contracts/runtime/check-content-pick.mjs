@@ -26,7 +26,7 @@ assert(!contentScript.includes("Readability"), "browser_content must not depend 
 
 const pickScript = buildPickScript({ message: "Pick submit", multiple: true, timeoutMs: 30_000 });
 new Function(pickScript);
-assert(pickScript.includes("data-pi-browser-pick"), "browser_pick must mark its overlay for cleanup/debugging");
+assert(pickScript.includes("data-browser-pilot-pick"), "browser_pick must mark its overlay for cleanup/debugging");
 assert(pickScript.includes("buildSelector"), "browser_pick must build CSS selectors");
 assert(pickScript.includes("Cmd/Ctrl+click"), "browser_pick must expose multi-select guidance");
 assert(pickScript.includes("read-frog-translated") && pickScript.includes("immersive-translate"), "browser_pick must drop translation plugin wrappers from selected summaries");
@@ -37,7 +37,7 @@ assert(pickScript.includes("__piBrowserActivePickers") && pickScript.includes("_
 assert(pickScript.includes("Runtime.evaluate") === false, "browser_pick page script must stay transport-agnostic");
 const pickCleanupScript = buildPickCleanupScript("contract-pick");
 new Function(pickCleanupScript);
-assert(pickCleanupScript.includes("active_cleanup") && pickCleanupScript.includes("[data-pi-browser-pick]"), "browser_pick cleanup script must call active cleanup and remove stale overlays as fallback");
+assert(pickCleanupScript.includes("active_cleanup") && pickCleanupScript.includes("[data-browser-pilot-pick]"), "browser_pick cleanup script must call active cleanup and remove stale overlays as fallback");
 
 const contentSummary = summarizeContentData({ url: "https://example.test", title: "T", rootTag: "main", empty: false, markdown: "# T\nBody", headings: ["T"], stats: { markdownChars: 8, textChars: 4, links: 1, images: 0, paragraphs: 1, headings: 1, truncated: false } });
 assert.equal(contentSummary.url, "https://example.test", "content summary must surface URL");
@@ -120,7 +120,7 @@ const fakeServer = {
 	},
 };
 
-const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-large-channel-"));
+const tmp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-large-channel-"));
 try {
 	await mkdir(path.join(tmp, ".pi", "browser-artifacts"), { recursive: true });
 	const contentPath = path.join(tmp, ".pi", "browser-artifacts", "content-large.json");

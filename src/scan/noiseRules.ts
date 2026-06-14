@@ -1,6 +1,6 @@
 export const BROWSER_NOISE_IDS = [
 	"ljq-ind",
-	"pi-browser-bridge-ind",
+	"browser-pilot-bridge-ind",
 	"__pi_browser_bridge_request__",
 	"aix-drop-panel",
 	"aix-supported-by",
@@ -38,7 +38,7 @@ export const TRANSLATION_NOISE_SELECTORS = [
 ] as const;
 
 export const BROWSER_NOISE_SELECTORS = [
-	"#pi-browser-bridge-ind",
+	"#browser-pilot-bridge-ind",
 	"#ljq-ind",
 	"#__pi_browser_bridge_request__",
 	"#aix-drop-panel",

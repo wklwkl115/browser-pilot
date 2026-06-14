@@ -23,7 +23,7 @@ type PiProtocolSchema = JsonRecord & {
 (function installPiNativeProtocol(global: typeof globalThis & { PiNativeProtocol?: unknown }) {
   'use strict';
   const schema = {
-  "name": "pi-browser-native-commands",
+  "name": "browser-pilot-native-commands",
   "version": "0.2.0",
   "transport": "Pi Browser Bridge WebSocket command envelope",
   "envelope": {

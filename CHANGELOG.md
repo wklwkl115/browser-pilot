@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **`pi-browser` CLI** — full shell frontend for all 22 browser tools. Auto-starting
+- **`browser-pilot` CLI** — full shell frontend for all 22 browser tools. Auto-starting
   user-local daemon, `connect --wait` readiness gate, natural subcommands
   (`wait selector`, `network start`, `frame evaluate`, `hook install-targets`),
   `--script-file` / `@file` for large inputs, `--json` machine output.

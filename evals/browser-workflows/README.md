@@ -1,6 +1,6 @@
 # Browser Workflow ACI Evals
 
-These evals measure agent-computer-interface quality for `pi-browser-tools` workflows. They are not callable tools and do not change runtime behavior.
+These evals measure agent-computer-interface quality for `browser-pilot` workflows. They are not callable tools and do not change runtime behavior.
 
 ## Two layers
 
@@ -8,9 +8,9 @@ These evals measure agent-computer-interface quality for `pi-browser-tools` work
    Replays human-authored tool sequences against the **local fixtures** below and asserts. Guards
    against regressions; cheap and reproducible. Boundary frozen in `future-runner.md`.
 2. **Blind-agent discovery loop** — the standing real-agent friction finder (mature-maintenance
-   optimization driver). A blind subagent reads the `pi-browser-tools` skill and works a task on a
+   optimization driver). A blind subagent reads the `browser-pilot` skill and works a task on a
    **real, mainland-China-reachable website** (READ-ONLY), then reports friction. Run via the
-   `pi-browser-blind-eval` skill. Files: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`
+   `browser-pilot-blind-eval` skill. Files: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`
    (`npm run eval:blind:launch -- --confirm --url <site>` / `npm run eval:blind:teardown`),
    `blind-agent-prompt.md` (prompt), `blind-tasks-realsite.md` (targets), `blind-findings.md` (rolling
    triaged backlog). Execution-feedback adoption uses the same harness against local isolated

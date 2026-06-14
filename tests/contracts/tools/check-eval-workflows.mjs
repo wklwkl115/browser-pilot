@@ -73,7 +73,7 @@ const usageDistillerText = read(path.join("evals", "browser-workflows", "distill
 const pbBlindText = read(path.join("evals", "browser-workflows", "pb-blind.mjs"));
 const teardownBlindText = read(path.join("evals", "browser-workflows", "teardown-blind.mjs"));
 const blindAgentPromptText = read(path.join("evals", "browser-workflows", "blind-agent-prompt.md"));
-const blindEvalSkillText = read(path.join("skills", "pi-browser-blind-eval", "SKILL.md"));
+const blindEvalSkillText = read(path.join("skills", "browser-pilot-blind-eval", "SKILL.md"));
 for (const requiredText of ["--fixture-server", "127.0.0.1", "startFixtureServer", "manual-result-template.json", "result-schema.json", "evals/browser-workflows/runner.mjs", "No sqlmap bridge, scanner, external database, or outbound target was used", "writeTemporalProfileArtifacts", "temporalProfileSamples", "temporalSummaryPath", "observeEstimatedTokens", "artifactBroadReadCalls"]) {
 	assert(runnerText.includes(requiredText), `runner.mjs must preserve opt-in/local-safe boundary: ${requiredText}`);
 }
@@ -85,7 +85,7 @@ for (const requiredText of ["CLI ROUTING ADOPTION", "`wait`", "`network`", "`fra
 }
 for (const requiredText of ["MEMORY ADOPTION", "memoryPlaneSeen", "inlineBodyUsed", "readThroughUsed", "recordNudgeShown", "recordCalled", "usedInFinalAnswer"]) {
 	assert(blindAgentPromptText.includes(requiredText), `blind-agent-prompt.md must capture memory-adoption signal: ${requiredText}`);
-	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require memory-adoption triage: ${requiredText}`);
+	assert(blindEvalSkillText.includes(requiredText), `browser-pilot-blind-eval skill must require memory-adoption triage: ${requiredText}`);
 }
 for (const requiredText of ["PI_BROWSER_USAGE_LOG", "PI_BROWSER_USAGE_RUN_ID", "usageLogPath", "usageReportPath", "runId"]) {
 	assert(launchBlindText.includes(requiredText), `launch-blind.mjs must stage usage-log metadata: ${requiredText}`);
@@ -95,7 +95,7 @@ for (const requiredText of ["unattributed", "repeatedCalls", "p50", "p95", "adva
 	assert(usageDistillerText.includes(requiredText), `distill-usage-log.mjs must report usage metric: ${requiredText}`);
 }
 for (const requiredText of ["CLI natural-routing", "`wait` /", "`network` /", "`frame` /", "`hook`", "frame evaluate", "hook collect", "`--action` / `--params`"]) {
-	assert(blindEvalSkillText.includes(requiredText), `pi-browser-blind-eval skill must require route-adoption triage: ${requiredText}`);
+	assert(blindEvalSkillText.includes(requiredText), `browser-pilot-blind-eval skill must require route-adoption triage: ${requiredText}`);
 }
 
 const specTexts = new Map();
@@ -146,7 +146,7 @@ assert(!String(pkg.scripts?.check || "").includes("eval:browser-workflows"), "np
 assert(EXTENSION_PORT_PATCH_BUNDLES.includes("service-worker.js"), "extension port patch helper must patch the service worker bundle");
 assert(EXTENSION_PORT_PATCH_BUNDLES.includes("offscreen.js"), "extension port patch helper must patch the B5 offscreen transport bundle");
 {
-	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-port-patch-"));
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-port-patch-"));
 	try {
 		const distDir = path.join(tempDir, "dist");
 		mkdirSync(distDir, { recursive: true });
@@ -233,7 +233,7 @@ assert(isolatedSmokeText.includes("stopProcessTree(smokeChild)") && !isolatedSmo
 assert(teardownBlindText.includes("stopProcessTree(pid)") && !teardownBlindText.includes("taskkill.exe") && !/process\.kill\(pid/.test(teardownBlindText), "blind eval teardown must reuse the shared process-tree cleanup helper for tracked pids");
 assert(pbBlindText.includes("PI_BROWSER_BLIND_CLI_TIMEOUT_MS") && pbBlindText.includes("timeout: timeoutMs") && pbBlindText.includes("TIMEOUT_EXIT_CODE = 124"), "pb-blind wrapper must bound forwarded CLI commands with an overridable timeout and conventional timeout exit code");
 {
-	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-pb-blind-timeout-"));
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-pb-blind-timeout-"));
 	try {
 		const tempEvalDir = path.join(tempDir, "evals", "browser-workflows");
 		const tempCliDir = path.join(tempDir, "dist", "cli");
@@ -258,7 +258,7 @@ assert(pbBlindText.includes("PI_BROWSER_BLIND_CLI_TIMEOUT_MS") && pbBlindText.in
 }
 assert(launchBlindText.includes("stageState: \"daemon-started\"") && launchBlindText.includes("stageState: \"browser-started\"") && launchBlindText.includes("stageState: \"ready\"") && launchBlindText.includes("stageState: \"launch-failed\""), "blind eval launch must write partial/final stage states so teardown can clean failed launches");
 assert(launchBlindText.includes("latestStage") && launchBlindText.includes("writeStage("), "blind eval launch must keep a latest partial stage manifest for failure cleanup");
-assert(launchBlindText.includes("parsed.value"), "blind eval launch must accept the pi-browser CLI JSON result envelope shape from tabs list");
+assert(launchBlindText.includes("parsed.value"), "blind eval launch must accept the browser-pilot CLI JSON result envelope shape from tabs list");
 assert(teardownBlindText.includes("stageState: stage.stageState"), "blind eval teardown output must report the stage state it cleaned");
 for (const file of isolatedPatchScripts) {
 	const text = read(file);
@@ -362,7 +362,7 @@ const routeMap = readJson(path.join("evals", "browser-workflows", "fixtures", "p
 assert(routeMap.routes && routeMap.wordlist, "path fuzz route fixture must include routes and wordlist");
 
 {
-	const tempDir = mkdtempSync(path.join(os.tmpdir(), "pi-browser-usage-distill-"));
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-usage-distill-"));
 	try {
 		const logA = path.join(tempDir, "usage-a.jsonl");
 		const logB = path.join(tempDir, "usage-b.jsonl");

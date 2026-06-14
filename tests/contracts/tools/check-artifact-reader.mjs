@@ -7,7 +7,7 @@ import { stableJson } from "../../../src/utils/json.ts";
 import { ArtifactReaderError, isSafeArtifactSearchRegexPattern, MAX_ARTIFACT_READ_BYTES, MAX_ARTIFACT_SEARCH_REGEX_CHARS, MAX_ARTIFACT_SEARCH_REGEX_LINE_CHARS, readBrowserArtifact } from "../../../src/tools/artifactReader.ts";
 import { saveDataUrl, saveTextArtifact } from "../../../src/tools/artifacts.ts";
 
-const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-artifact-"));
+const tmp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-artifact-"));
 try {
 	await mkdir(path.join(tmp, ".pi", "browser-artifacts"), { recursive: true });
 	const artifactPath = path.join(tmp, ".pi", "browser-artifacts", "network.json");
@@ -231,7 +231,7 @@ try {
 		assert.equal(JSON.stringify(error.details).includes(tmp), false, "check-artifact missing.details: missing artifact details must not leak resolved local paths");
 		assert.equal(error.details.requested, ".pi/browser-artifacts/missing.json", "check-artifact missing.details.requested: keep the agent-supplied artifact path");
 		assert.equal(JSON.stringify(error.details.recovery).includes(tmp), false, "check-artifact missing.recovery: recovery guidance must not leak resolved local paths");
-		assert.ok(error.details.recovery?.nextActions?.some((item) => item.includes("pi-browser artifact")), "check-artifact missing.recovery: missing artifact error must include CLI recovery guidance");
+		assert.ok(error.details.recovery?.nextActions?.some((item) => item.includes("browser-pilot artifact")), "check-artifact missing.recovery: missing artifact error must include CLI recovery guidance");
 		return true;
 	});
 

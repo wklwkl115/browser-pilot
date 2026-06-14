@@ -285,7 +285,7 @@ function generatedNativeActionMetadata() {
 	for (const [toolName, tool] of Object.entries(source.nativeActionTools || {})) {
 		const actionAliases = {};
 		// Join each action with its command's param requirements (single source of truth =
-		// schema.commands[*].required/requiredAny/notes) so `pi-browser <tool> --help` can surface
+		// schema.commands[*].required/requiredAny/notes) so `browser-pilot <tool> --help` can surface
 		// per-action --params keys instead of an opaque `<json>`. Derived for EVERY action of every
 		// action tool — never hand-listed — so it stays correct and drift-guarded by check:protocol.
 		const actions = (tool.actions || []).map((action) => {

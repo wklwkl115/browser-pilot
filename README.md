@@ -1,6 +1,6 @@
 # Pi Browser Tools
 
-[![CI](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml)
+[![CI](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
@@ -10,18 +10,18 @@ Real browser automation for AI agents — tab control, DOM scanning, JavaScript/
 network capture, screenshot & evidence collection, file transfer, and a web security testing layer.
 
 Built as a Chrome extension + Node.js bridge. Works with any agent that can call tools (Pi native)
-or run shell commands (`pi-browser` CLI).
+or run shell commands (`browser-pilot` CLI).
 
 ```
-$ pi-browser observe --mode scan --json | jq '.summary.gist'
+$ browser-pilot observe --mode scan --json | jq '.summary.gist'
 "Forum topic list with 14 visible rows, navigation sidebar, user menu.
  3 forms (search, login, compose), 47 actionable elements."
 
-$ pi-browser execute --script "document.querySelector('.topic-list .main-link a').href" --json
+$ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
 { "data": "https://linux.do/t/welcome/1" }
 
-$ pi-browser network start --json && pi-browser execute --script "fetch('/api/status')" --json
-$ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
+$ browser-pilot network start --json && browser-pilot execute --script "fetch('/api/status')" --json
+$ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].url'
 "https://linux.do/api/status"
 ```
 
@@ -57,8 +57,8 @@ $ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
 ### Install
 
 ```bash
-git clone https://github.com/anthropics/pi-browser-tools.git
-cd pi-browser-tools
+git clone https://github.com/anthropics/browser-pilot.git
+cd browser-pilot
 npm install
 npm run build
 npm run build:bridge
@@ -73,51 +73,51 @@ npm run build:bridge
 
 ### Use via CLI
 
-The `pi-browser` CLI exposes all 22 tools as shell subcommands. A user-local daemon manages the
+The `browser-pilot` CLI exposes all 22 tools as shell subcommands. A user-local daemon manages the
 bridge server — it auto-starts on first use.
 
 ```bash
 # Readiness gate (recommended for multi-step work)
-npx pi-browser connect --wait --json
+npx browser-pilot connect --wait --json
 
 # Observe the page
-npx pi-browser observe --mode scan --json
+npx browser-pilot observe --mode scan --json
 
 # Execute JavaScript
-npx pi-browser execute --script "document.title" --json
+npx browser-pilot execute --script "document.title" --json
 
 # Wait for a selector
-npx pi-browser wait selector --selector "#result" --json
+npx browser-pilot wait selector --selector "#result" --json
 
 # Capture network traffic
-npx pi-browser network start --json
+npx browser-pilot network start --json
 # ... interact with the page ...
-npx pi-browser network list --session-id net-1 --json
+npx browser-pilot network list --session-id net-1 --json
 
 # Take a screenshot
-npx pi-browser screenshot --json
+npx browser-pilot screenshot --json
 
 # Discover commands and flags
-npx pi-browser --help
-npx pi-browser schema observe --json
+npx browser-pilot --help
+npx browser-pilot schema observe --json
 ```
 
 Every `browser_*` tool maps to a subcommand: drop `browser_`, replace `_` with `-`.
-Flags are the kebab-cased tool parameters. `pi-browser commands --json` is the single
+Flags are the kebab-cased tool parameters. `browser-pilot commands --json` is the single
 source of truth for available commands and their routing.
 
 For longer scripts and request bodies, prefer files over shell quoting:
 
 ```bash
-npx pi-browser execute --script-file ./my-script.js --json
-npx pi-browser command --command @native-command.json --json
-npx pi-browser http-replay --raw-request @request.txt --json
+npx browser-pilot execute --script-file ./my-script.js --json
+npx browser-pilot command --command @native-command.json --json
+npx browser-pilot http-replay --raw-request @request.txt --json
 ```
 
 ### Use via Pi Native
 
 When loaded as a Pi extension, the tools register as `browser_*` tool calls with no
-connection setup. See [skills/pi-browser-tools/SKILL.md](skills/pi-browser-tools/SKILL.md).
+connection setup. See [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md).
 
 > The Pi runtime packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`) are
 > optional peer dependencies. The CLI works independently without them.
@@ -170,19 +170,19 @@ The security tools follow a scoped workflow: observe first, then probe.
 
 ```bash
 # Fingerprint a target
-npx pi-browser crawl --action fingerprint --url https://example.com --json
+npx browser-pilot crawl --action fingerprint --url https://example.com --json
 
 # Crawl for endpoints
-npx pi-browser crawl --url https://example.com --json
+npx browser-pilot crawl --url https://example.com --json
 
 # Fuzz paths
-npx pi-browser fuzz --mode path --url https://example.com/FUZZ --json
+npx browser-pilot fuzz --mode path --url https://example.com/FUZZ --json
 
 # Replay a captured request with mutations
-npx pi-browser http-replay --raw-request @request.txt --json
+npx browser-pilot http-replay --raw-request @request.txt --json
 
 # Check for SQL injection
-npx pi-browser sqli --url "https://example.com/search?q=test" --json
+npx browser-pilot sqli --url "https://example.com/search?q=test" --json
 ```
 
 See [docs/playbooks/](docs/playbooks/) for step-by-step security testing guides.

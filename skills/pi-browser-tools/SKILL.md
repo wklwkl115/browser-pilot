@@ -1,15 +1,15 @@
 ---
-name: pi-browser-tools
-description: "Pi-native in-process frontend for operating live browser pages — use when the agent HAS the browser_* tools and calls them directly to: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A shell-capable agent that instead drives the `pi-browser` command-line tool: use the pi-browser-cli skill. Runtime browser-use only; not for extension source development or repo tests."
+name: browser-pilot
+description: "Pi-native in-process frontend for operating live browser pages — use when the agent HAS the browser_* tools and calls them directly to: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A shell-capable agent that instead drives the `browser-pilot` command-line tool: use the browser-pilot-cli skill. Runtime browser-use only; not for extension source development or repo tests."
 license: Apache-2.0
-compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Pi-native in-process frontend — call `browser_*` tools directly. For the shell `pi-browser` CLI, see the sibling **pi-browser-cli** skill.
+compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Pi-native in-process frontend — call `browser_*` tools directly. For the shell `browser-pilot` CLI, see the sibling **browser-pilot-cli** skill.
 ---
 
 # Pi Browser Tools (Pi-native)
 
 Operate live browser pages by calling `browser_*` tools directly, in-process.
 
-**This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **pi-browser-cli** skill instead.
+**This skill complements the tools; it does not restate them.** Each `browser_*` tool definition is already in your context — its params, enums, defaults, error codes, and per-result `recovery.nextActions` come from the tool itself. **Read the tool's schema (or `docs/generated/browser-tool-contract.generated.md`) for exact params** instead of expecting them here. What follows is the part the per-tool schema can't give: how to sequence the tools, where each capability's boundary is, and the non-obvious gotchas. Shell/CLI agents: use the **browser-pilot-cli** skill instead.
 
 Three facts shape everything below:
 - **Perception is `browser_observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not callable tools.
@@ -189,7 +189,7 @@ Type — *JS-typed-but-the-framework-ignores-it* is the most common silent failu
 - Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- Install/runtime SOP: `AI_INSTALL.md` · Shell `pi-browser` CLI frontend: **pi-browser-cli** skill · `docs/cli.md`
+- Install/runtime SOP: `AI_INSTALL.md` · Shell `browser-pilot` CLI frontend: **browser-pilot-cli** skill · `docs/cli.md`
 
 ## Output
 

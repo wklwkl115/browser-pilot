@@ -48,7 +48,7 @@ export function tlsRemediation(causeCode: string | undefined, causeMessage: stri
 	const code = causeCode || "";
 	const msg = (causeMessage || "").toLowerCase();
 	if (TLS_UNTRUSTED_CHAIN_CODES.has(code) || msg.includes("unable to verify the first certificate") || msg.includes("self-signed certificate") || msg.includes("self signed certificate")) {
-		return "TLS chain not trusted — likely a TLS-intercepting proxy/AV, a corporate or custom root CA, or a server missing intermediate certificates. The pi-browser daemon trusts your OS/browser CA store on Node ≥22; if this persists, add the root via NODE_EXTRA_CA_CERTS=<path-to-pem> (the same root your browser trusts) or fix the server's certificate chain.";
+		return "TLS chain not trusted — likely a TLS-intercepting proxy/AV, a corporate or custom root CA, or a server missing intermediate certificates. The browser-pilot daemon trusts your OS/browser CA store on Node ≥22; if this persists, add the root via NODE_EXTRA_CA_CERTS=<path-to-pem> (the same root your browser trusts) or fix the server's certificate chain.";
 	}
 	if (code === "CERT_HAS_EXPIRED" || msg.includes("certificate has expired")) return "The server's TLS certificate has expired — verify the target host or its certificate validity window.";
 	if (code === "CERT_NOT_YET_VALID" || msg.includes("certificate is not yet valid")) return "The server's TLS certificate is not yet valid — check the local system clock and the certificate validity window.";

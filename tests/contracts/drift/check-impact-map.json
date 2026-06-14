@@ -24,7 +24,7 @@
     "package": [
       "check:package",
       "check:deps",
-      "check:pi-browser-bridge"
+      "check:browser-pilot-bridge"
     ],
     "docs": [
       "check:tool-docs",
@@ -195,7 +195,7 @@
         "runtime.js",
         "scripts/build-bridge.mjs",
         "scripts/sync-native-protocol.mjs",
-        "skills/pi-browser-tools/SKILL.md",
+        "skills/browser-pilot/SKILL.md",
         "src/driver/BrowserBridgeServer.ts",
         "src/protocol/nativeActionMetadata.ts",
         "src/protocol/nativeErrorCodes.ts",
@@ -649,8 +649,8 @@
         }
       ]
     },
-    "check:pi-browser-bridge": {
-      "script": "check:pi-browser-bridge",
+    "check:browser-pilot-bridge": {
+      "script": "check:browser-pilot-bridge",
       "scope": "global",
       "inputs": [
         "bridge/native_command_schema.json",
@@ -661,7 +661,7 @@
         "bridge_src/service_worker/intercept.ts",
         "bridge_src/service_worker/network.ts",
         "package.json",
-        "skills/pi-browser-tools/SKILL.md",
+        "skills/browser-pilot/SKILL.md",
         "src/driver/BrowserBridgeCommandService.ts",
         "src/driver/BrowserBridgeServer.ts",
         "src/tools/",
@@ -674,21 +674,21 @@
         "src/tools/resultMiddleware.ts",
         "src/tools/toolAdapter.ts",
         "tests/contracts/drift/expected-package-facts.js",
-        "tests/contracts/protocol/check-pi-browser-bridge.mjs"
+        "tests/contracts/protocol/check-browser-pilot-bridge.mjs"
       ],
       "unresolvedInputs": [
         {
-          "script": "check:pi-browser-bridge",
-          "nodeId": "check:pi-browser-bridge",
-          "file": "tests/contracts/protocol/check-pi-browser-bridge.mjs",
+          "script": "check:browser-pilot-bridge",
+          "nodeId": "check:browser-pilot-bridge",
+          "file": "tests/contracts/protocol/check-browser-pilot-bridge.mjs",
           "line": 19,
           "reason": "dynamic file read"
         }
       ],
       "commandSteps": [
         {
-          "nodeId": "check:pi-browser-bridge",
-          "commandLine": "node tests/contracts/protocol/check-pi-browser-bridge.mjs"
+          "nodeId": "check:browser-pilot-bridge",
+          "commandLine": "node tests/contracts/protocol/check-browser-pilot-bridge.mjs"
         }
       ]
     },
@@ -749,7 +749,7 @@
         "docs/playbooks/README.md",
         "docs/reference/",
         "scripts/build-bridge.mjs",
-        "skills/pi-browser-audit-fix/SKILL.md",
+        "skills/browser-pilot-audit-fix/SKILL.md",
         "tests/contracts/drift/check-doc-structure.mjs",
         "tests/contracts/drift/spec-claims.js"
       ],
@@ -2045,7 +2045,7 @@
       "scope": "global",
       "inputs": [
         ".lock",
-        "skills/pi-browser-tools/SKILL.md",
+        "skills/browser-pilot/SKILL.md",
         "src/abml-core/entity.ts",
         "src/abml-core/refId.ts",
         "src/abml-core/refPolicy.ts",
@@ -2431,7 +2431,7 @@
       "inputs": [
         "AI_INSTALL.md",
         "README.md",
-        "skills/pi-browser-tools/SKILL.md",
+        "skills/browser-pilot/SKILL.md",
         "src/tools/commands.ts",
         "tests/contracts/runtime/check-browser-commands.mjs"
       ],

@@ -113,7 +113,7 @@ function cleanupTransportSocket(socket: WebSocket | null, reason = ""): boolean 
     if (current !== socket) continue;
     sockets.delete(port);
     removed = true;
-    post({ type: "pi-browser-offscreen-disconnected", port, data: { reason } });
+    post({ type: "browser-pilot-offscreen-disconnected", port, data: { reason } });
   }
   if (!removed) return false;
   bumpProbeBackoff();
@@ -139,13 +139,13 @@ function connectWS(port: number): void {
   socket.onopen = () => {
     if (sockets.get(port) !== socket) return;
     wsReconnectDelayMs = WS_RECONNECT_INITIAL_MS;
-    post({ type: "pi-browser-offscreen-connected", port, data: { openPorts: openPorts() } });
+    post({ type: "browser-pilot-offscreen-connected", port, data: { openPorts: openPorts() } });
     scheduleKeepalive();
   };
   socket.onmessage = (event: MessageEvent) => {
     if (sockets.get(port) !== socket) return;
     try {
-      post({ type: "pi-browser-offscreen-ws-message", port, data: JSON.parse(String(event.data)) });
+      post({ type: "browser-pilot-offscreen-ws-message", port, data: JSON.parse(String(event.data)) });
     } catch (error) {
       console.error("[PI-BROWSER-OFFSCREEN] message parse error", error);
     }
@@ -178,17 +178,17 @@ async function probeAndConnectWS(resetDelay = false, onlyPort?: number): Promise
 
 function handleRuntimeMessage(message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void): boolean {
   const msg = (message && typeof message === "object" ? message : {}) as RuntimeMessage;
-  if (msg.type === "pi-browser-offscreen-probe") {
+  if (msg.type === "browser-pilot-offscreen-probe") {
     void probeAndConnectWS(msg.resetDelay === true, typeof msg.port === "number" ? msg.port : undefined).then(() => sendResponse({ ok: true, openPorts: openPorts() }));
     return true;
   }
-  if (msg.type === "pi-browser-offscreen-send" && typeof msg.port === "number" && typeof msg.data === "string") {
+  if (msg.type === "browser-pilot-offscreen-send" && typeof msg.port === "number" && typeof msg.data === "string") {
     const socket = sockets.get(msg.port);
     if (socket?.readyState === WebSocket.OPEN) socket.send(msg.data);
     sendResponse({ ok: true, sent: socket?.readyState === WebSocket.OPEN });
     return false;
   }
-  if (msg.type === "pi-browser-offscreen-status") {
+  if (msg.type === "browser-pilot-offscreen-status") {
     sendResponse({ ok: true, openPorts: openPorts(), socketCount: sockets.size });
     return false;
   }
@@ -198,7 +198,7 @@ function handleRuntimeMessage(message: unknown, _sender: unknown, sendResponse: 
 function installPiBrowserOffscreenTransport(): void {
   connectKeepalivePort();
   chromeRuntime.onMessage.addListener(handleRuntimeMessage);
-  post({ type: "pi-browser-offscreen-ready", data: { openPorts: openPorts() } });
+  post({ type: "browser-pilot-offscreen-ready", data: { openPorts: openPorts() } });
   void probeAndConnectWS(true);
 }
 

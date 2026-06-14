@@ -1,9 +1,9 @@
 // CLI migration drift guard (the P0 deliverable of docs/cli-skill-frontend-migration-plan.md).
 //
-// The MCP shell is gone and pi-browser is the sole external frontend. This locks that in:
+// The MCP shell is gone and browser-pilot is the sole external frontend. This locks that in:
 // active code (index.ts + src/** + cli/**) must not reintroduce MCP-only identifiers. It is a
 // permanent regression guard, not a one-off cleanup — if anyone re-adds an mcp/ import, the
-// pi-browser-mcp bin, the SDK, the removed discovery tool, or the MCP-only env vars, CI goes red.
+// browser-pilot-mcp bin, the SDK, the removed discovery tool, or the MCP-only env vars, CI goes red.
 //
 // Scope is ACTIVE CODE only. Historical/explanatory prose in docs/ may still mention "MCP".
 import assert from "node:assert/strict";
@@ -31,7 +31,7 @@ function walk(rel) {
 const FORBIDDEN = [
 	{ label: "import from mcp/ (the shell was removed)", re: /from\s*["'][^"']*\bmcp\//, },
 	{ label: "dist/mcp reference", re: /dist\/mcp\b/ },
-	{ label: "pi-browser-mcp bin name", re: /pi-browser-mcp/ },
+	{ label: "browser-pilot-mcp bin name", re: /browser-pilot-mcp/ },
 	{ label: "@modelcontextprotocol SDK", re: /@modelcontextprotocol/ },
 	{ label: "browser_tool_discovery (MCP-only discovery tool, removed)", re: /browser_tool_discovery/ },
 	{ label: "PI_BROWSER_MCP_* env (MCP-only knobs, removed)", re: /PI_BROWSER_MCP_/ },

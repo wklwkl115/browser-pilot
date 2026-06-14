@@ -2,14 +2,14 @@
 
 This guide covers installation, browser extension loading, configuration, verification,
 and troubleshooting. For tool usage and workflows, see the
-[CLI skill](skills/pi-browser-cli/SKILL.md) or
-[Pi native skill](skills/pi-browser-tools/SKILL.md).
+[CLI skill](skills/browser-pilot-cli/SKILL.md) or
+[Pi native skill](skills/browser-pilot/SKILL.md).
 
 ## Install
 
 ```bash
-git clone https://github.com/anthropics/pi-browser-tools.git
-cd pi-browser-tools
+git clone https://github.com/anthropics/browser-pilot.git
+cd browser-pilot
 npm install
 npm run build
 npm run build:bridge
@@ -84,7 +84,7 @@ npm run smoke:browser:isolated    # isolated Chrome/Edge profile
 
 1. **Extension not connected** — check that the extension is enabled, the port
    matches, and the extension was reloaded after updates.
-2. **Tab not found** — run `browser_tabs list` (or `pi-browser tabs --action list`)
+2. **Tab not found** — run `browser_tabs list` (or `browser-pilot tabs --action list`)
    to confirm available tabs. Stale `tabHandle` errors include
    `recovery.suggestedTargetRef` when a replacement exists.
 3. **Command timeout** — check pending requests and whether the target page is

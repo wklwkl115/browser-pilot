@@ -56,7 +56,7 @@ test("workstream scope matcher supports exact paths and /** globs", () => {
 });
 
 test("workstream scope ignores files that were already dirty at baseline", () => {
-	const root = mkdtempSync(path.join(os.tmpdir(), "pi-browser-workstream-scope-"));
+	const root = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-workstream-scope-"));
 	const git = (args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
 	try {
 		mkdirSync(path.join(root, "src"), { recursive: true });

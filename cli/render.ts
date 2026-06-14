@@ -108,22 +108,22 @@ function cliActionFromText(action: string, savedPath?: string): Record<string, u
 	const artifactJson = action.match(/read_saved_artifact\s+mode=json\s+jsonPath=([^\s]+)/);
 	if (artifactJson && savedPath) return {
 		kind: "artifact-read",
-		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --mode json --json-path ${quoteCliArg(artifactJson[1])} --json`,
-		argv: ["pi-browser", "artifact", "--path", savedPath, "--mode", "json", "--json-path", artifactJson[1], "--json"],
+		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode json --json-path ${quoteCliArg(artifactJson[1])} --json`,
+		argv: ["browser-pilot", "artifact", "--path", savedPath, "--mode", "json", "--json-path", artifactJson[1], "--json"],
 		source: action,
 	};
 	const artifactText = action.match(/read_saved_artifact\s+mode=text/);
 	if (artifactText && savedPath) return {
 		kind: "artifact-read",
-		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --mode text --json`,
-		argv: ["pi-browser", "artifact", "--path", savedPath, "--mode", "text", "--json"],
+		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode text --json`,
+		argv: ["browser-pilot", "artifact", "--path", savedPath, "--mode", "text", "--json"],
 		source: action,
 	};
 	const artifactOffset = action.match(/read_saved_artifact\s+offset=(\d+)/);
 	if (artifactOffset && savedPath) return {
 		kind: "artifact-read",
-		command: `pi-browser artifact --path ${quoteCliArg(savedPath)} --offset ${artifactOffset[1]} --json`,
-		argv: ["pi-browser", "artifact", "--path", savedPath, "--offset", artifactOffset[1], "--json"],
+		command: `browser-pilot artifact --path ${quoteCliArg(savedPath)} --offset ${artifactOffset[1]} --json`,
+		argv: ["browser-pilot", "artifact", "--path", savedPath, "--offset", artifactOffset[1], "--json"],
 		source: action,
 	};
 	const baseline = action.match(/baseline:"([^"]+)"|baseline=([0-9a-f-]{16,})/i);
@@ -131,8 +131,8 @@ function cliActionFromText(action: string, savedPath?: string): Record<string, u
 		const snapshotId = baseline[1] ?? baseline[2];
 		return {
 			kind: "observe-baseline",
-			command: `pi-browser observe --mode scan --baseline-snapshot-id ${snapshotId} --json`,
-			argv: ["pi-browser", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshotId, "--json"],
+			command: `browser-pilot observe --mode scan --baseline-snapshot-id ${snapshotId} --json`,
+			argv: ["browser-pilot", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshotId, "--json"],
 			source: action,
 		};
 	}
@@ -144,8 +144,8 @@ const COMMON_ARTIFACT_JSON_PATHS = ["data.content", "data.actionables", "data.li
 function artifactReadCommand(path: string, jsonPath: string): Record<string, unknown> {
 	return {
 		kind: "artifact-read",
-		command: `pi-browser artifact --path ${quoteCliArg(path)} --mode json --json-path ${quoteCliArg(jsonPath)} --json`,
-		argv: ["pi-browser", "artifact", "--path", path, "--mode", "json", "--json-path", jsonPath, "--json"],
+		command: `browser-pilot artifact --path ${quoteCliArg(path)} --mode json --json-path ${quoteCliArg(jsonPath)} --json`,
+		argv: ["browser-pilot", "artifact", "--path", path, "--mode", "json", "--json-path", jsonPath, "--json"],
 		source: `saved.path:${jsonPath}`,
 	};
 }
@@ -157,9 +157,9 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	if (saved && typeof saved.path === "string") {
 		const savedPath = saved.path;
 		const readCommands = [
-			`pi-browser artifact --path ${quoteCliArg(savedPath)} --mode json --json-path data --json`,
+			`browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode json --json-path data --json`,
 			...COMMON_ARTIFACT_JSON_PATHS.map((jsonPath) => String(artifactReadCommand(savedPath, jsonPath).command)),
-			`pi-browser artifact --path ${quoteCliArg(savedPath)} --mode search --query "<text>" --json`,
+			`browser-pilot artifact --path ${quoteCliArg(savedPath)} --mode search --query "<text>" --json`,
 		];
 		for (const command of readCommands) artifactReadCommandStrings.add(command);
 		additions.artifacts = [{
@@ -184,8 +184,8 @@ function enrichForCli(env: Record<string, unknown>): Record<string, unknown> {
 	if (typeof snapshot?.snapshotId === "string") {
 		cliNextActions.push({
 			kind: "observe-baseline",
-			command: `pi-browser observe --mode scan --baseline-snapshot-id ${snapshot.snapshotId} --json`,
-			argv: ["pi-browser", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
+			command: `browser-pilot observe --mode scan --baseline-snapshot-id ${snapshot.snapshotId} --json`,
+			argv: ["browser-pilot", "observe", "--mode", "scan", "--baseline-snapshot-id", snapshot.snapshotId, "--json"],
 			source: "snapshot.snapshotId",
 		});
 	}
@@ -244,7 +244,7 @@ export function renderUsageError(message: string, mode: RenderMode = "human", ex
 			message,
 			taxonomy: { domain: "cli", category: exitCode === EXIT.input ? "input" : "usage", retryable: false, source: "cli" },
 			diagnostics: {},
-			recovery: { hint: "Run pi-browser --help or pi-browser <command> --help." },
+			recovery: { hint: "Run browser-pilot --help or browser-pilot <command> --help." },
 		});
 		return exitCode;
 	}
@@ -263,11 +263,11 @@ export function renderUnavailableError(message: string, mode: RenderMode = "huma
 			diagnostics: {},
 			recovery: {
 				hint: "Check daemon and browser bridge readiness.",
-				commands: ["pi-browser connect --wait --timeout-ms 15000 --json", "pi-browser status --json", "pi-browser doctor --json", "pi-browser daemon status --json"],
+				commands: ["browser-pilot connect --wait --timeout-ms 15000 --json", "browser-pilot status --json", "browser-pilot doctor --json", "browser-pilot daemon status --json"],
 			},
 		});
 		return EXIT.unavailable;
 	}
-	process.stderr.write(`${red("error:")} pi-browser daemon unavailable — ${message}\n`);
+	process.stderr.write(`${red("error:")} browser-pilot daemon unavailable — ${message}\n`);
 	return EXIT.unavailable;
 }

@@ -108,5 +108,5 @@ export function clearHooks(): void {
 /** Built-in timing+logging hook. Registered by default. */
 export const timingLogHook: LoggingHook = (ctx, durationMs, result, details) => {
 	const detail = details ? ` ${JSON.stringify(details)}` : "";
-	console.error(`[pi-browser] ${ctx.method}${ctx.toolName ? ` ${ctx.toolName}` : ""} ${result} +${durationMs}ms${detail}`);
+	console.error(`[browser-pilot] ${ctx.method}${ctx.toolName ? ` ${ctx.toolName}` : ""} ${result} +${durationMs}ms${detail}`);
 };

@@ -105,8 +105,8 @@ export function classifyBridgePortOwner({ health, owners } = {}) {
 	const healthName = String(health?.json?.name || "").toLowerCase();
 	const healthBody = String(health?.body || "").toLowerCase();
 	if (/smoke-browser|smoke:browser|tests[\\/]+smoke|browser-tools-bridge-refactor/.test(ownerText)) return "orphan_socket";
-	if (health?.ok && (healthName.includes("pi-browser-tools") || healthBody.includes("pi-browser-tools"))) return "agent_occupies";
-	if (/pi[\\/]+agent|pi-coding-agent|browserbridgeserver|pi-browser-tools/.test(ownerText)) return "agent_occupies";
+	if (health?.ok && (healthName.includes("browser-pilot") || healthBody.includes("browser-pilot"))) return "agent_occupies";
+	if (/pi[\\/]+agent|pi-coding-agent|browserbridgeserver|browser-pilot/.test(ownerText)) return "agent_occupies";
 	if (/node|npm|pnpm|yarn|cmd\.exe|powershell/.test(ownerText)) return "orphan_socket";
 	return "unknown_owner";
 }

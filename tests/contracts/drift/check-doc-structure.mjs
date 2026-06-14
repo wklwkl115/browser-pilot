@@ -29,7 +29,7 @@ for (const entry of SPEC_CLAIMS) {
 	assert(read(entry.doc).includes("> Doc-class: contract"), `${entry.doc} must carry the contract-doc header`);
 }
 assert(current.includes("docs/document-structure.md"), "CURRENT.md must link document structure rules");
-assert(current.includes("agent-audits/") && current.includes("审计 agent 只写报告") && current.includes("skills/pi-browser-audit-fix/SKILL.md"), "CURRENT.md must describe the asynchronous audit/fix inbox workflow");
+assert(current.includes("agent-audits/") && current.includes("审计 agent 只写报告") && current.includes("skills/browser-pilot-audit-fix/SKILL.md"), "CURRENT.md must describe the asynchronous audit/fix inbox workflow");
 assert(todo.includes("docs/document-structure.md"), "TODO.md must link document structure rules");
 assert(todo.includes("Agent 审计收件箱：`agent-audits/`"), "TODO.md must link the agent audit inbox");
 assert(existsSync(path.join(root, "docs", "agent-development.md")), "missing dev-harness handbook: docs/agent-development.md");
@@ -48,10 +48,10 @@ assert(existsSync(path.join(auditsDir, "templates", "run-report.md")), "missing 
 assert(existsSync(path.join(auditsDir, "templates", "finding.md")), "missing audit finding template");
 assert(existsSync(path.join(auditsDir, "runs")), "missing audit runs directory");
 assert(existsSync(path.join(auditsDir, "runs", "index.json")), "missing audit findings lifecycle index: agent-audits/runs/index.json");
-assert(existsSync(path.join(root, "skills", "pi-browser-audit-fix", "SKILL.md")), "missing audit/fix skill");
+assert(existsSync(path.join(root, "skills", "browser-pilot-audit-fix", "SKILL.md")), "missing audit/fix skill");
 const auditReadme = read("agent-audits/README.md");
 const auditAgents = read("agent-audits/AGENTS.md");
-const auditFixSkill = read("skills/pi-browser-audit-fix/SKILL.md");
+const auditFixSkill = read("skills/browser-pilot-audit-fix/SKILL.md");
 assert(auditReadme.includes("audit-only") && auditReadme.includes("must not edit project source"), "audit README must state audit-only/no-code-change rules");
 assert(auditAgents.includes("Audit-Only Rule") && auditAgents.includes("You may write only audit reports under `agent-audits/runs/`"), "audit AGENTS.md must constrain audit agents to reports only");
 assert(auditFixSkill.includes("Audit Agent Mode") && auditFixSkill.includes("Fix Agent Mode") && auditFixSkill.includes("Do not spawn or manage subagents"), "audit/fix skill must define async audit/fix roles and forbid subagent orchestration");

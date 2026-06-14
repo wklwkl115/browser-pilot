@@ -113,7 +113,7 @@ export function translateNaturalActionArgv(cmd: CliCommand, argv: string[]): { o
 	if (!action) return { ok: true, argv };
 	const rest = [...argv.slice(0, index), ...argv.slice(index + 1)];
 	if (hasFlag(rest, "--action")) {
-		return { ok: false, error: `pi-browser ${cmd.subcommand} ${token} cannot be combined with --action; use either the natural subcommand or the legacy --action form`, globals };
+		return { ok: false, error: `browser-pilot ${cmd.subcommand} ${token} cannot be combined with --action; use either the natural subcommand or the legacy --action form`, globals };
 	}
 	return { ok: true, argv: [...argv.slice(0, index), "--action", action, ...argv.slice(index + 1)], natural: { action, token } };
 }

@@ -3,7 +3,7 @@
 import { PI_BROWSER_WORKER_BOOT_ID, PI_BROWSER_WORKER_STARTED_AT, chromeApi as chrome } from "./runtimeEnv";
 import { BRIDGE_BUILD_ID, BRIDGE_BUILD_PIPELINE_VERSION } from "../shared/buildInfo";
 
-const CSP_BYPASS_ALARM = "pi-browser-csp-bypass-prune";
+const CSP_BYPASS_ALARM = "browser-pilot-csp-bypass-prune";
 
 function piBridgeInfo() {
   const manifest = chrome.runtime.getManifest();

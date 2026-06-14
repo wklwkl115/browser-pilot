@@ -249,7 +249,7 @@ const nestedCacheFingerprint = computeNodeCacheFingerprint({
 }, { root, impactMap, coarseFingerprint: fingerprint });
 assert.equal(nestedCacheFingerprint.impactScript, "check:bridge", "nested DAG nodes must inherit their selected graph script for cache scope lookup");
 
-const cacheFixtureRoot = mkdtempSync(path.join(os.tmpdir(), "pi-browser-cache-scope-"));
+const cacheFixtureRoot = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-cache-scope-"));
 try {
 	for (const dir of ["src", "docs", "scripts"]) mkdirSync(path.join(cacheFixtureRoot, dir), { recursive: true });
 	writeFileSync(path.join(cacheFixtureRoot, "src", "foo.ts"), "export const value = 1;\n", "utf8");

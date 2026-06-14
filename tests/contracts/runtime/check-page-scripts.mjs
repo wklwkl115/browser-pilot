@@ -330,7 +330,7 @@ const scan = buildScanScript({ maxChars: 4_000, includeIframes: true });
 new Function(scan);
 assert(scan.includes("outputChars"), "page-scripts scan: must track output budget incrementally");
 assert(!scan.includes("lines.reduce"), "page-scripts scan: must not recompute line size per push");
-assert(scan.includes("pi-browser-bridge-ind") && scan.includes("aix-drop-panel"), "page-scripts scan: must filter known extension noise");
+assert(scan.includes("browser-pilot-bridge-ind") && scan.includes("aix-drop-panel"), "page-scripts scan: must filter known extension noise");
 
 const scanDoc = new MockDocument([
 	mockEl("main", {}, [mockEl("h1", {}, ["Keep Heading"]), mockEl("p", {}, ["Keep body text"])]),
@@ -425,7 +425,7 @@ assert.equal(emptyContent.markdown, "", "content behavior: empty selected node m
 
 const pick = buildPickScript({ message: "Pick", timeoutMs: 5_000 });
 new Function(pick);
-assert(pick.includes("data-pi-browser-pick"), "page-scripts pick: overlay must be identifiable");
+assert(pick.includes("data-browser-pilot-pick"), "page-scripts pick: overlay must be identifiable");
 assert(pick.includes("buildSelector"), "page-scripts pick: must return CSS selectors");
 assert(pick.includes("textWithoutNoise") && pick.includes("read-frog-translated"), "page-scripts pick: selected summaries must filter translation plugin noise");
 assert(pick.includes("normalizePickedElement"), "page-scripts pick: translation wrapper hits must normalize to a real parent element");

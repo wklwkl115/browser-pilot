@@ -51,7 +51,7 @@ const webSecurityFacade = read("src/tools/registerWebSecurityTools.ts");
 const webSecurityRegisterIndex = read("src/tools/webSecurity/register/index.ts");
 const webSecurityShared = read("src/tools/webSecurity/register/shared.ts");
 const readme = read("README.md");
-const skill = read("skills/pi-browser-tools/SKILL.md");
+const skill = read("skills/browser-pilot/SKILL.md");
 
 assert(registerToolsSource.split(/\r?\n/).length <= 30, "registerTools.ts must stay a thin composition entrypoint");
 assert(registerToolsSource.includes("resolveBrowserToolRegistrars") && registerToolsSource.includes("for (const registerTool of resolveBrowserToolRegistrars())"), "registerTools.ts must consume declarative tool registrars");

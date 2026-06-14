@@ -30,11 +30,11 @@ const readme = read("README.md");
 const sop = read("AI_INSTALL.md");
 const boundaries = read("docs/tool-boundaries.md");
 const generatedContract = read("docs/generated/browser-tool-contract.generated.md");
-const skillPath = "skills/pi-browser-tools/SKILL.md";
-assert(existsSync(resolveReadPath(skillPath)), "tool drift: pi-browser-tools skill must exist in repo");
+const skillPath = "skills/browser-pilot/SKILL.md";
+assert(existsSync(resolveReadPath(skillPath)), "tool drift: browser-pilot skill must exist in repo");
 const skill = read(skillPath);
-const cliSkillPath = "skills/pi-browser-cli/SKILL.md";
-assert(existsSync(resolveReadPath(cliSkillPath)), "tool drift: pi-browser-cli skill must exist in repo");
+const cliSkillPath = "skills/browser-pilot-cli/SKILL.md";
+assert(existsSync(resolveReadPath(cliSkillPath)), "tool drift: browser-pilot-cli skill must exist in repo");
 const cliSkill = read(cliSkillPath);
 
 function cliSubcommand(toolName) {
@@ -56,7 +56,7 @@ function markdownTableFirstColumn(markdown, heading) {
 }
 
 assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");
-assert(readme.includes("skills/pi-browser-tools/SKILL.md"), "README must link in-repo Pi skill");
+assert(readme.includes("skills/browser-pilot/SKILL.md"), "README must link in-repo Pi skill");
 assert(readme.includes("docs/tool-boundaries.md"), "README must link tool boundary matrix");
 assert(skill.includes("docs/tool-boundaries.md"), "skill must link tool boundary matrix");
 assert(boundaries.includes("## Primary workflow") && boundaries.includes("## Runtime browser tools") && boundaries.includes("## Scoped Web follow-up tools"), "tool boundaries doc must define workflow and tool groups");

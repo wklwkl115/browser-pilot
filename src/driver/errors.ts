@@ -153,7 +153,7 @@ export function noBrowserExtensionError(args: {
 			nextActions: [
 				"verify the Pi Native Browser Bridge extension is installed and enabled in the browser",
 				"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
-				"check connection state with `pi-browser daemon status` (or the /browser-status command)",
+				"check connection state with `browser-pilot daemon status` (or the /browser-status command)",
 			],
 		},
 	});

@@ -1,6 +1,6 @@
 # Pi Browser Tools
 
-[![CI](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml)
+[![CI](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
@@ -10,18 +10,18 @@
 网络捕获、截图与证据采集、文件传输，以及 Web 安全测试层。
 
 由 Chrome 扩展 + Node.js bridge 构成。支持任何能调用工具的 agent（Pi 原生）
-或能执行 shell 命令的 agent（`pi-browser` CLI）。
+或能执行 shell 命令的 agent（`browser-pilot` CLI）。
 
 ```
-$ pi-browser observe --mode scan --json | jq '.summary.gist'
+$ browser-pilot observe --mode scan --json | jq '.summary.gist'
 "论坛帖子列表，14 行可见数据，导航侧栏，用户菜单。
  3 个表单（搜索、登录、发帖），47 个可操作元素。"
 
-$ pi-browser execute --script "document.querySelector('.topic-list .main-link a').href" --json
+$ browser-pilot execute --script "document.querySelector('.topic-list .main-link a').href" --json
 { "data": "https://linux.do/t/welcome/1" }
 
-$ pi-browser network start --json && pi-browser execute --script "fetch('/api/status')" --json
-$ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
+$ browser-pilot network start --json && browser-pilot execute --script "fetch('/api/status')" --json
+$ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].url'
 "https://linux.do/api/status"
 ```
 
@@ -57,8 +57,8 @@ $ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
 ### 安装
 
 ```bash
-git clone https://github.com/anthropics/pi-browser-tools.git
-cd pi-browser-tools
+git clone https://github.com/anthropics/browser-pilot.git
+cd browser-pilot
 npm install
 npm run build
 npm run build:bridge
@@ -73,50 +73,50 @@ npm run build:bridge
 
 ### 通过 CLI 使用
 
-`pi-browser` CLI 将全部 22 个工具暴露为 shell 子命令。用户级单例 daemon 管理 bridge server，
+`browser-pilot` CLI 将全部 22 个工具暴露为 shell 子命令。用户级单例 daemon 管理 bridge server，
 首次调用时自动启动。
 
 ```bash
 # 就绪门控（多步操作推荐）
-npx pi-browser connect --wait --json
+npx browser-pilot connect --wait --json
 
 # 观察页面
-npx pi-browser observe --mode scan --json
+npx browser-pilot observe --mode scan --json
 
 # 执行 JavaScript
-npx pi-browser execute --script "document.title" --json
+npx browser-pilot execute --script "document.title" --json
 
 # 等待选择器
-npx pi-browser wait selector --selector "#result" --json
+npx browser-pilot wait selector --selector "#result" --json
 
 # 捕获网络流量
-npx pi-browser network start --json
+npx browser-pilot network start --json
 # ... 在页面上操作 ...
-npx pi-browser network list --session-id net-1 --json
+npx browser-pilot network list --session-id net-1 --json
 
 # 截图
-npx pi-browser screenshot --json
+npx browser-pilot screenshot --json
 
 # 查看所有命令和参数
-npx pi-browser --help
-npx pi-browser schema observe --json
+npx browser-pilot --help
+npx browser-pilot schema observe --json
 ```
 
 每个 `browser_*` 工具对应一个子命令：去掉 `browser_` 前缀，`_` 换成 `-`。
-参数名用 kebab-case。`pi-browser commands --json` 是可用命令和路由的唯一事实来源。
+参数名用 kebab-case。`browser-pilot commands --json` 是可用命令和路由的唯一事实来源。
 
 较长的脚本和请求体建议用文件代替 shell 引号：
 
 ```bash
-npx pi-browser execute --script-file ./my-script.js --json
-npx pi-browser command --command @native-command.json --json
-npx pi-browser http-replay --raw-request @request.txt --json
+npx browser-pilot execute --script-file ./my-script.js --json
+npx browser-pilot command --command @native-command.json --json
+npx browser-pilot http-replay --raw-request @request.txt --json
 ```
 
 ### 通过 Pi 原生使用
 
 作为 Pi 扩展加载时，工具注册为 `browser_*` 工具调用，无需连接步骤。
-参见 [skills/pi-browser-tools/SKILL.md](skills/pi-browser-tools/SKILL.md)。
+参见 [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md)。
 
 > Pi runtime 包（`@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent`）
 > 是可选的 peer 依赖。CLI 可独立使用，不需要这些包。
@@ -169,19 +169,19 @@ npx pi-browser http-replay --raw-request @request.txt --json
 
 ```bash
 # 指纹识别目标
-npx pi-browser crawl --action fingerprint --url https://example.com --json
+npx browser-pilot crawl --action fingerprint --url https://example.com --json
 
 # 爬取端点
-npx pi-browser crawl --url https://example.com --json
+npx browser-pilot crawl --url https://example.com --json
 
 # 路径模糊测试
-npx pi-browser fuzz --mode path --url https://example.com/FUZZ --json
+npx browser-pilot fuzz --mode path --url https://example.com/FUZZ --json
 
 # 重放捕获的请求并变异
-npx pi-browser http-replay --raw-request @request.txt --json
+npx browser-pilot http-replay --raw-request @request.txt --json
 
 # 检测 SQL 注入
-npx pi-browser sqli --url "https://example.com/search?q=test" --json
+npx browser-pilot sqli --url "https://example.com/search?q=test" --json
 ```
 
 详见 [docs/playbooks/](docs/playbooks/) 中的安全测试操作手册。

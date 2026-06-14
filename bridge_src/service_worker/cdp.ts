@@ -362,7 +362,7 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
         try {
           const compileParams: JsonRecord = {
             expression,
-            sourceURL: 'pi-browser://' + encodeURIComponent(String(name || 'script')) + '/' + cacheKey + '.js',
+            sourceURL: 'browser-pilot://' + encodeURIComponent(String(name || 'script')) + '/' + cacheKey + '.js',
             persistScript: true,
           };
           if (params.contextId !== undefined) compileParams.executionContextId = params.contextId;

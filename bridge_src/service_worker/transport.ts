@@ -22,7 +22,7 @@ const WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 const WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
 
 function isOffscreenBridgeMessage(message: unknown): message is OffscreenMessage {
-  return !!message && typeof message === "object" && typeof (message as OffscreenMessage).type === "string" && String((message as OffscreenMessage).type).startsWith("pi-browser-offscreen-");
+  return !!message && typeof message === "object" && typeof (message as OffscreenMessage).type === "string" && String((message as OffscreenMessage).type).startsWith("browser-pilot-offscreen-");
 }
 
 function offscreenUrl(): string {
@@ -88,7 +88,7 @@ function ensureSocketAdapter(port: number): SocketAdapter {
     port,
     readyState: SOCKET_OPEN,
     send(data: string) {
-      void sendOffscreenMessage({ type: "pi-browser-offscreen-send", port, data }).then((response: unknown) => {
+      void sendOffscreenMessage({ type: "browser-pilot-offscreen-send", port, data }).then((response: unknown) => {
         const sent = response && typeof response === "object" ? (response as JsonRecord).sent : undefined;
         if (sent === false) cleanupTransportSocket(socket, "offscreen-send-failed");
       }).catch((error: unknown) => {
@@ -130,7 +130,7 @@ function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, _reason = 
 
 function scheduleProbe(resetDelay = false): void {
   void resetDelay;
-  chrome.alarms.create("pi-browser-ws-probe", { delayInMinutes: 1 });
+  chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1 });
 }
 
 function bumpProbeBackoff(): void {
@@ -138,11 +138,11 @@ function bumpProbeBackoff(): void {
 }
 
 function scheduleKeepalive(): void {
-  runTransportTask("offscreen status", async () => { await sendOffscreenMessage({ type: "pi-browser-offscreen-status" }); });
+  runTransportTask("offscreen status", async () => { await sendOffscreenMessage({ type: "browser-pilot-offscreen-status" }); });
 }
 
 async function isServerAlive(): Promise<boolean> {
-  const response = await sendOffscreenMessage({ type: "pi-browser-offscreen-status" });
+  const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-status" });
   return responseOpenPorts(response).length > 0;
 }
 
@@ -151,13 +151,13 @@ async function syncOpenPorts(response: unknown): Promise<void> {
 }
 
 async function probeAndConnectWS(resetDelay: boolean): Promise<void> {
-  const response = await sendOffscreenMessage({ type: "pi-browser-offscreen-probe", resetDelay });
+  const response = await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", resetDelay });
   await syncOpenPorts(response);
   scheduleProbe(resetDelay);
 }
 
 function connectWS(port: number = PI_BROWSER_BRIDGE_PORT): void {
-  runTransportTask("offscreen probe", async () => { await syncOpenPorts(await sendOffscreenMessage({ type: "pi-browser-offscreen-probe", port, resetDelay: false })); });
+  runTransportTask("offscreen probe", async () => { await syncOpenPorts(await sendOffscreenMessage({ type: "browser-pilot-offscreen-probe", port, resetDelay: false })); });
 }
 
 async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> {
@@ -182,16 +182,16 @@ async function handleOffscreenConnected(port: number): Promise<void> {
 }
 
 async function handlePiBrowserOffscreenMessage(message: OffscreenMessage): Promise<unknown> {
-  if (message.type === "pi-browser-offscreen-ready") return { ok: true };
-  if (message.type === "pi-browser-offscreen-connected" && typeof message.port === "number") {
+  if (message.type === "browser-pilot-offscreen-ready") return { ok: true };
+  if (message.type === "browser-pilot-offscreen-connected" && typeof message.port === "number") {
     await handleOffscreenConnected(message.port);
     return { ok: true };
   }
-  if (message.type === "pi-browser-offscreen-disconnected" && typeof message.port === "number") {
+  if (message.type === "browser-pilot-offscreen-disconnected" && typeof message.port === "number") {
     cleanupTransportSocket(sockets.get(message.port) ?? null, String((message.data as JsonRecord | undefined)?.reason ?? ""));
     return { ok: true };
   }
-  if (message.type === "pi-browser-offscreen-ws-message" && typeof message.port === "number") {
+  if (message.type === "browser-pilot-offscreen-ws-message" && typeof message.port === "number") {
     await handlePiBridgeWsMessage(message.data as PiBridgeWsEnvelope, ensureSocketAdapter(message.port));
     return { ok: true };
   }
@@ -199,11 +199,11 @@ async function handlePiBrowserOffscreenMessage(message: OffscreenMessage): Promi
 }
 
 async function handlePiBrowserTransportAlarm(alarm: PiChromeAlarm): Promise<void> {
-  if (alarm.name === "pi-browser-self-reload") {
+  if (alarm.name === "browser-pilot-self-reload") {
     chrome.runtime.reload();
     return;
   }
-  if (alarm.name === "pi-browser-ws-keepalive" || alarm.name === "pi-browser-ws-probe") await probeAndConnectWS(false);
+  if (alarm.name === "browser-pilot-ws-keepalive" || alarm.name === "browser-pilot-ws-probe") await probeAndConnectWS(false);
 }
 
 function installPiBrowserTransport(): boolean {

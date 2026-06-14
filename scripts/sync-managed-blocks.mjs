@@ -235,7 +235,7 @@ const DIRECTORY_ADVICE = Object.freeze({
 	"src/types": "Shared type declarations; check type and package surfaces.",
 	"src/utils": "Shared utilities; pure-kernel imports must stay within whitelisted cross-cutting modules.",
 	"src/validation": "Frontend/tool validation; preserve strict schema and CLI/Pi parity behavior.",
-	"cli": "External `pi-browser` CLI face; keep command metadata, flags, local commands, and daemon validation in sync.",
+	"cli": "External `browser-pilot` CLI face; keep command metadata, flags, local commands, and daemon validation in sync.",
 	"bridge_src": "MV3 extension source; run `build:bridge` before bridge/runtime checks.",
 	"capture-src": "Editable page-world capture templates; generated bundles are under `src/capture/generated/`.",
 });
@@ -294,7 +294,7 @@ const PLAYBOOKS = Object.freeze([
 	},
 	{
 		id: "Native bridge command",
-		files: ["bridge/native_command_schema.json", "scripts/sync-native-protocol.mjs", "tests/contracts/protocol/check-pi-browser-bridge.mjs", "tests/contracts/protocol/check-bridge-build.mjs"],
+		files: ["bridge/native_command_schema.json", "scripts/sync-native-protocol.mjs", "tests/contracts/protocol/check-browser-pilot-bridge.mjs", "tests/contracts/protocol/check-bridge-build.mjs"],
 	},
 	{
 		id: "Environment flag",

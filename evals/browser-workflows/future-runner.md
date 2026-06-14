@@ -69,7 +69,7 @@ If a later phase adds browser automation, it must be opt-in and separate from st
 ## Blind-agent discovery layer (opt-in, real-site)
 
 This realizes the browser-execution phase above as the project's standing real-agent **discovery**
-loop (complementing the deterministic runner's regression role). Driven by the `pi-browser-blind-eval`
+loop (complementing the deterministic runner's regression role). Driven by the `browser-pilot-blind-eval`
 skill; scripts: `launch-blind.mjs` / `pb-blind.mjs` / `teardown-blind.mjs`; prompt `blind-agent-prompt.md`;
 targets `blind-tasks-realsite.md`; backlog `blind-findings.md`. Its boundary:
 
@@ -86,7 +86,7 @@ targets `blind-tasks-realsite.md`; backlog `blind-findings.md`. Its boundary:
 - **Transient, torn down.** The stage holds a daemon + browser only for the run; `teardown-blind.mjs`
   (`daemon stop` on the isolated state dir + hard-kill pids + remove temp) must always run. Temp lives
   under `.pi/temp-profiles/` and is never packaged.
-- **Skill-guided, implementation-blind.** The agent reads `skills/pi-browser-tools/SKILL.md` as its
+- **Skill-guided, implementation-blind.** The agent reads `skills/browser-pilot/SKILL.md` as its
   guide; it must NOT read tool implementation source. Findings are triaged `fixable | WAI | reliability`
   (+ skill↔tool fidelity); execution-authoring friction is WAI by project decision.
 - **Not in `npm run check`.** It is operator-/cron-driven, never part of the default check.

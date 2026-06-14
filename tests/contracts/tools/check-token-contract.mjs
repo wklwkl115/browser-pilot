@@ -34,7 +34,7 @@ for (const secret of ["error-secret", "error-cookie", "error-postdata", "error-w
 	assert.equal(sensitiveErrorText.includes(secret), false, `check-token errorResult.privacy: ${secret} must be redacted from error content and details`);
 }
 
-const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-token-"));
+const tmp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-token-"));
 try {
 	const outputPath = path.join(tmp, "network.json");
 	const networkPayload = { items: Array.from({ length: 80 }, (_, i) => ({ requestId: String(i), url: `https://h${i % 3}.test/r${i}`, method: "GET", status: i % 10 === 0 ? 500 : 200 })) };
@@ -162,7 +162,7 @@ assert.equal(cjkBudgetEnvelope.summary.title, "中文预算页", "check-token su
 assert.equal(cjkBudgetEnvelope.summary.textPreview.length, 481, "check-token summaryBudget.cjk.preview: CJK preview must not be over-trimmed by byte accounting");
 assert.equal(cjkBudgetEnvelope.summary.rows.rows.length, 12, "check-token summaryBudget.cjk.rows: CJK rows must survive under char budget");
 
-const envelopeBudgetTmp = await mkdtemp(path.join(os.tmpdir(), "pi-browser-envelope-budget-"));
+const envelopeBudgetTmp = await mkdtemp(path.join(os.tmpdir(), "browser-pilot-envelope-budget-"));
 try {
 	const noisyEntities = Array.from({ length: 40 }, (_, i) => ({
 		ref: `pi-ref://entity/${i}`,
@@ -211,6 +211,6 @@ assert.equal(toolResultSource.includes("result: value"), false, "toolResult must
 assert.ok(read("src/tools/resultMiddleware.ts").includes("fitSummaryBudget"), "result middleware must apply deterministic summary budget allocation");
 assert.ok(read("src/tools/resultMiddleware.ts").includes("containsSensitiveEvidence") && read("src/tools/artifactReader.ts").includes("redactArtifactResult"), "artifact privacy governance must redact summaries and browser_artifact output by default");
 assert.ok(read("src/tools/summaries/common.ts").includes("summaryTable"), "summary modules must support columns+rows compact tables");
-assert.ok(read("skills/pi-browser-tools/SKILL.md").includes("detailLevel"), "pi-browser-tools skill must document detailLevel behavior");
+assert.ok(read("skills/browser-pilot/SKILL.md").includes("detailLevel"), "browser-pilot skill must document detailLevel behavior");
 
 console.log("token contract ok");

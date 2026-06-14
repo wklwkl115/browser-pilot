@@ -255,13 +255,13 @@ test("top-level help and every command help are local and daemon-free", () => {
 			topHelp: string; commandNames: string[];
 			perCommand: Record<string, string>;
 		};
-		assert.match(result.topHelp, /pi-browser/);
+		assert.match(result.topHelp, /browser-pilot/);
 		assert.equal(result.commandNames.length, 22);
 		for (const name of result.commandNames) {
 			assert.match(result.topHelp, new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `top-level help must include ${name}`);
 		}
 		for (const [name, help] of Object.entries(result.perCommand)) {
-			assert.match(help, new RegExp(`pi-browser ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `${name} help must contain its title`);
+			assert.match(help, new RegExp(`browser-pilot ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `${name} help must contain its title`);
 		}
 		assert.equal(existsSync(path.join(dir, "browser-daemon.json")), false, "local help/discovery must not start a daemon or write a lockfile");
 	} finally {
@@ -279,7 +279,7 @@ test("top-level bin help stays on the lightweight dynamic import path", () => {
 test("npm wrapper JSON mode is documented: normal npm run may contaminate stdout, --silent does not", () => {
 	const noisy = runNpm(["run", "cli", "--", "--json", "schema", "execute"]);
 	assert.equal(noisy.code, 0, noisy.stderr);
-	if (/> pi-browser-tools@/.test(noisy.stdout)) {
+	if (/> browser-pilot@/.test(noisy.stdout)) {
 		assert.throws(() => parseOneJson(noisy.stdout), /JSON mode must write exactly one JSON document/);
 	} else {
 		assert.equal(parseOneJson(noisy.stdout).command, "schema");
@@ -306,7 +306,7 @@ test("commands --json exposes agent CLI routing roles", () => {
 	assert.ok(wait.artifactBehavior && typeof wait.artifactBehavior === "object", "commands metadata exposes artifact behavior");
 	const artifactBehavior = wait.artifactBehavior as Record<string, unknown>;
 	assert.equal(artifactBehavior.resultField, "saved.path");
-	assert.equal(artifactBehavior.readCommand, "pi-browser artifact --path <saved.path> --mode json --json-path data --json");
+	assert.equal(artifactBehavior.readCommand, "browser-pilot artifact --path <saved.path> --mode json --json-path data --json");
 	assert.deepEqual(artifactBehavior.readModes, ["json", "text", "search", "sample"]);
 	assert.ok((artifactBehavior.commonJsonPaths as string[]).includes("data.content"));
 	assert.ok((artifactBehavior.commonJsonPaths as string[]).includes("data.actionables"));
@@ -410,9 +410,9 @@ test("natural wait/network help is discoverable and action-specific", () => {
 
 	const selectorHelp = localCli("wait_selector_help");
 	assert.equal(selectorHelp.code, 0, selectorHelp.stderr);
-	assert.match(selectorHelp.stdout, /pi-browser wait selector/);
+	assert.match(selectorHelp.stdout, /browser-pilot wait selector/);
 	assert.match(selectorHelp.stdout, /--selector <string>/);
-	assert.match(selectorHelp.stdout, /Advanced equivalent: pi-browser wait --action selector --params <json>/);
+	assert.match(selectorHelp.stdout, /Advanced equivalent: browser-pilot wait --action selector --params <json>/);
 
 	const networkHelp = localCli("network_help");
 	assert.equal(networkHelp.code, 0, networkHelp.stderr);
@@ -424,16 +424,16 @@ test("natural frame/hook help is scoped to recommended high-frequency actions", 
 	const frameHelp = localCli("frame_help");
 	assert.equal(frameHelp.code, 0, frameHelp.stderr);
 	assert.match(frameHelp.stdout, /Natural subcommands \(recommended\):/);
-	assert.match(frameHelp.stdout, /list\s+pi-browser frame list/);
+	assert.match(frameHelp.stdout, /list\s+browser-pilot frame list/);
 	assert.match(frameHelp.stdout, /evaluate\s+requires --frame-id \/ --expression/);
 	assert.doesNotMatch(frameHelp.stdout, /add-new-document-script\s+requires --source/, "script lifecycle stays advanced compatibility until eval proves it should be recommended");
 
 	const frameEvalHelp = localCli("frame_evaluate_help");
 	assert.equal(frameEvalHelp.code, 0, frameEvalHelp.stderr);
-	assert.match(frameEvalHelp.stdout, /pi-browser frame evaluate/);
+	assert.match(frameEvalHelp.stdout, /browser-pilot frame evaluate/);
 	assert.match(frameEvalHelp.stdout, /--frame-id <string>/);
 	assert.match(frameEvalHelp.stdout, /--expression <string>/);
-	assert.match(frameEvalHelp.stdout, /Advanced equivalent: pi-browser frame --action evaluate --params <json>/);
+	assert.match(frameEvalHelp.stdout, /Advanced equivalent: browser-pilot frame --action evaluate --params <json>/);
 
 	const hookHelp = localCli("hook_help");
 	assert.equal(hookHelp.code, 0, hookHelp.stderr);
@@ -629,11 +629,11 @@ test("doctor --json is read-only and reports daemon readiness fields", () => {
 	const recovery = env.recovery as Record<string, unknown>;
 	const commands = recovery.commands as Array<Record<string, unknown>>;
 	assert.ok(Array.isArray(commands));
-	assert.ok(commands.some((cmd) => cmd.command === "pi-browser daemon status --json" && Array.isArray(cmd.argv)));
-	assert.ok(commands.some((cmd) => cmd.command === "pi-browser tabs --action list --json" && Array.isArray(cmd.argv)));
+	assert.ok(commands.some((cmd) => cmd.command === "browser-pilot daemon status --json" && Array.isArray(cmd.argv)));
+	assert.ok(commands.some((cmd) => cmd.command === "browser-pilot tabs --action list --json" && Array.isArray(cmd.argv)));
 });
 
-test("doctor reports the pi-browser-tools package version, not the caller cwd package", () => {
+test("doctor reports the browser-pilot package version, not the caller cwd package", () => {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "pi-doctor-cwd-"));
 	try {
 		writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "caller-project", version: "9.9.9" }), "utf8");
@@ -696,7 +696,7 @@ test("status --json is read-only and does not start daemon", () => {
 		assert.equal(daemon.reachable, false);
 		assert.ok(env.recovery && typeof env.recovery === "object");
 		const commands = (env.recovery as Record<string, unknown>).commands as Array<Record<string, unknown>>;
-		assert.ok(commands.some((cmd) => cmd.command === "pi-browser connect --wait --timeout-ms 15000 --json"));
+		assert.ok(commands.some((cmd) => cmd.command === "browser-pilot connect --wait --timeout-ms 15000 --json"));
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -784,7 +784,7 @@ test("connect --wait returns parseable unavailable envelope when extension is no
 		assert.deepEqual(env.extension, { connected: false });
 		assert.equal("tabs" in env, false);
 		const recovery = env.recovery as Record<string, unknown>;
-		assert.ok((recovery.commands as Array<Record<string, unknown>>).some((cmd) => cmd.command === "pi-browser status --json"));
+		assert.ok((recovery.commands as Array<Record<string, unknown>>).some((cmd) => cmd.command === "browser-pilot status --json"));
 	});
 });
 

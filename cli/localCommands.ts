@@ -1,10 +1,10 @@
 /**
- * pi-browser CLI dispatch.
+ * browser-pilot CLI dispatch.
  *
- * `pi-browser --help`            → list subcommands (one per registered tool)
- * `pi-browser <cmd> --help`      → flags for that command
- * `pi-browser <cmd> [--flags]`   → parse + coerce, then execute via the daemon
- * `pi-browser daemon <start|stop|status>`  → daemon lifecycle
+ * `browser-pilot --help`            → list subcommands (one per registered tool)
+ * `browser-pilot <cmd> --help`      → flags for that command
+ * `browser-pilot <cmd> [--flags]`   → parse + coerce, then execute via the daemon
+ * `browser-pilot daemon <start|stop|status>`  → daemon lifecycle
  *
  * Parsing/help is fully local (no browser startup); only execution is delegated
  * to the daemon. Default output is human on a TTY, JSON otherwise; --json/--text
@@ -136,9 +136,9 @@ async function runSchemaCommand(argv: string[]): Promise<number> {
 	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
 	const first = firstPositional(argv);
 	const cmdName = first.value;
-	if (!cmdName) return renderUsageError("usage: pi-browser schema <command> --json", mode);
+	if (!cmdName) return renderUsageError("usage: browser-pilot schema <command> --json", mode);
 	const cmd = (await loadCliCommands()).find((c) => c.subcommand === cmdName);
-	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
+	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
 	const second = firstPositional(first.rest);
 	const naturalAction = second.value ? naturalActionForToken(cmd, second.value) : undefined;
 	if (second.value && !naturalAction) return renderUsageError(`unknown ${cmd.subcommand} subcommand "${second.value}"`, mode);
@@ -177,9 +177,9 @@ async function runValidateCommand(argv: string[]): Promise<number> {
 	const positional = firstPositional(argv);
 	const cmdName = positional.value;
 	const rest = positional.rest;
-	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: pi-browser validate <command> --params @params.json --json", mode);
+	if (!cmdName || cmdName.startsWith("--")) return renderUsageError("usage: browser-pilot validate <command> --params @params.json --json", mode);
 	const cmd = (await loadCliCommands()).find((c) => c.subcommand === cmdName);
-	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run pi-browser commands --json`, mode);
+	if (!cmd) return renderUsageError(`unknown command "${cmdName}"; run browser-pilot commands --json`, mode);
 	const extracted = extractParamsArg(rest, mode);
 	if (!extracted.ok) return extracted.code;
 	const resolved = resolveParamValueReferences(buildCommandFlagSpecs(cmd), extracted.params);
@@ -235,15 +235,15 @@ async function runDoctorCommand(argv: string[]): Promise<number> {
 		artifactRoot: path.join(process.cwd(), ".pi", "browser-artifacts"),
 		recovery: {
 			commands: [
-				recoveryCommand("pi-browser daemon status --json", ["pi-browser", "daemon", "status", "--json"], "inspect daemon and bridge state"),
-				recoveryCommand("pi-browser connect --wait --timeout-ms 15000 --json", ["pi-browser", "connect", "--wait", "--timeout-ms", "15000", "--json"], "start/reuse daemon and wait for browser extension readiness"),
-				recoveryCommand("pi-browser tabs --action list --json", ["pi-browser", "tabs", "--action", "list", "--json"], "verify extension connectivity and list tabs"),
-				recoveryCommand("pi-browser selftest --confirm --json", ["pi-browser", "selftest", "--confirm", "--json"], "run bounded live CLI smoke"),
+				recoveryCommand("browser-pilot daemon status --json", ["browser-pilot", "daemon", "status", "--json"], "inspect daemon and bridge state"),
+				recoveryCommand("browser-pilot connect --wait --timeout-ms 15000 --json", ["browser-pilot", "connect", "--wait", "--timeout-ms", "15000", "--json"], "start/reuse daemon and wait for browser extension readiness"),
+				recoveryCommand("browser-pilot tabs --action list --json", ["browser-pilot", "tabs", "--action", "list", "--json"], "verify extension connectivity and list tabs"),
+				recoveryCommand("browser-pilot selftest --confirm --json", ["browser-pilot", "selftest", "--confirm", "--json"], "run bounded live CLI smoke"),
 			],
 		},
 	};
 	if (mode === "json") return renderLocalJson(report);
-	process.stdout.write(`pi-browser ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
+	process.stdout.write(`browser-pilot ${report.version}\ndaemon: ${report.daemon.running ? "running" : "not running"}\nextension: ${found?.status.extensionConnected === true ? "connected" : "not connected"}\n`);
 	return EXIT.ok;
 }
 
@@ -256,7 +256,7 @@ function parseConnectArgs(argv: string[], mode: RenderMode): { ok: true; wait: b
 	const parsed = parseArgs(specs, argv);
 	if (!parsed.ok) return { ok: false, code: renderUsageError(parsed.error, renderMode(parsed.globals)) };
 	if (parsed.value.globals.help) {
-		process.stdout.write("pi-browser connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until extensionConnected is true.\n  --timeout-ms <number>          Bound readiness wait. Default 15000.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n");
+		process.stdout.write("browser-pilot connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until extensionConnected is true.\n  --timeout-ms <number>          Bound readiness wait. Default 15000.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n");
 		return { ok: false, code: EXIT.ok };
 	}
 	const rawTimeout = parsed.value.params.timeoutMs;
@@ -287,7 +287,7 @@ async function runStatusCommand(argv: string[]): Promise<number> {
 	const parsed = parseArgs([{ name: "tabs", flag: "--tabs", kind: "boolean", required: false, description: "Include full tabs[] instead of the default compact tabCount/activeTab fields." }], argv);
 	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
 	if (parsed.value.globals.help) {
-		process.stdout.write("pi-browser status --json\n\nRead-only browser connection status. Does not start daemon or bridge.\n\nFlags:\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n");
+		process.stdout.write("browser-pilot status --json\n\nRead-only browser connection status. Does not start daemon or bridge.\n\nFlags:\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n");
 		return EXIT.ok;
 	}
 	const env = await connectionStatus(process.cwd(), 15_000, { tabs: parsed.value.params.tabs === true });
@@ -309,14 +309,14 @@ async function runSelftestCommand(argv: string[]): Promise<number> {
 		tabId = createEnv.data?.tabId;
 		steps.push({ step: "create-temp-tab", ok: typeof tabId === "number", tabId });
 		if (typeof tabId !== "number") throw new Error("selftest could not create a temporary tab");
-		const exec = await invokeTool("browser_execute", { tabId, script: "document.title='Pi Selftest';document.body.textContent='pi-browser selftest ok';({title:document.title,text:document.body.textContent})" }, process.cwd());
+		const exec = await invokeTool("browser_execute", { tabId, script: "document.title='Pi Selftest';document.body.textContent='browser-pilot selftest ok';({title:document.title,text:document.body.textContent})" }, process.cwd());
 		const execText = requireSelftestToolOk("execute", exec);
-		const execOk = execText.includes("pi-browser selftest ok");
+		const execOk = execText.includes("browser-pilot selftest ok");
 		steps.push({ step: "execute", ok: execOk });
 		if (!execOk) throw new Error(`execute did not return expected marker: ${compactText(execText)}`);
 		const observe = await invokeTool("browser_observe", { tabId, mode: "text", maxNodes: 50 }, process.cwd());
 		const observeText = requireSelftestToolOk("observe-text", observe);
-		const observeOk = observeText.includes("pi-browser selftest ok");
+		const observeOk = observeText.includes("browser-pilot selftest ok");
 		steps.push({ step: "observe-text", ok: observeOk });
 		if (!observeOk) throw new Error(`observe-text did not return expected marker: ${compactText(observeText)}`);
 		const close = await invokeTool("browser_tabs", { action: "close", tabId }, process.cwd());
@@ -400,7 +400,7 @@ async function runDaemonControl(action: string | undefined, argv: string[] = [])
 		// Foreground: own the process until a signal or /shutdown. Auto-start spawns this detached.
 		const { startDaemon } = await import("./daemon.js");
 		const handle = await startDaemon({ onShutdown: () => process.exit(EXIT.ok) });
-		process.stderr.write(`[pi-browser] daemon listening on 127.0.0.1:${handle.controlPort}\n`);
+		process.stderr.write(`[browser-pilot] daemon listening on 127.0.0.1:${handle.controlPort}\n`);
 		for (const sig of ["SIGINT", "SIGTERM"] as const) {
 			process.on(sig, () => {
 				// Force-exit even if close() hangs, so a signalled daemon always terminates.
@@ -412,7 +412,7 @@ async function runDaemonControl(action: string | undefined, argv: string[] = [])
 		await new Promise<never>(() => {}); // keep alive
 		return EXIT.ok; // unreachable
 	}
-	return renderUsageError("usage: pi-browser daemon <start|stop|status>", mode);
+	return renderUsageError("usage: browser-pilot daemon <start|stop|status>", mode);
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -433,7 +433,7 @@ export async function main(argv: string[]): Promise<number> {
 	if (sub === "selftest") return await runSelftestCommand(commandArgv);
 
 	const cmd = (await loadCliCommands()).find((c) => c.subcommand === sub);
-	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'pi-browser --help'`, wantsJson(commandArgv) ? "json" : "human");
+	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'browser-pilot --help'`, wantsJson(commandArgv) ? "json" : "human");
 
 	const translated = translateNaturalActionArgv(cmd, commandArgv);
 	if (!translated.ok) return renderUsageError(translated.error, renderMode(translated.globals));

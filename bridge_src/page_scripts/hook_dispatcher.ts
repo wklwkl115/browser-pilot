@@ -810,7 +810,7 @@ declare global {
     }
     const badTarget = validateTargets(opts.targets);
     if (badTarget) return structuredError(ERROR_CODES.UNSUPPORTED_TARGET, 'Unsupported Pi Browser target: ' + badTarget, { target: badTarget });
-    const requestedSessionId = String(opts.session_id || ('pi-browser-hook-' + Date.now() + '-' + Math.random().toString(16).slice(2)));
+    const requestedSessionId = String(opts.session_id || ('browser-pilot-hook-' + Date.now() + '-' + Math.random().toString(16).slice(2)));
     const requestedTargets = Object.assign({}, DEFAULT_TARGETS, asRecord(opts.targets)) as HookTargets;
     const requestedOptions = Object.assign({}, asRecord(opts.options)) as HookOptions;
     const requestedBufferSize = Math.max(1, Number(opts.buffer_size || requestedOptions.buffer_size || DEFAULT_BUFFER_SIZE));
