@@ -70,6 +70,7 @@ D:/Pi/agent/extensions/pi-browser-tools/bridge/pi_browser_bridge
 
 ```bash
 npm run build
+npm run build:bridge
 npm run check
 npm run check:all:bridge
 npm run check:all:package
@@ -93,7 +94,7 @@ npm run quality:local
 npm run check:deps
 ```
 
-该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（MCP 壳移除后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 被源码运行路径直接消费，不应机械移动到 devDependencies。
+该命令校验 lockfile 一致性、生产依赖 allowlist、`npm ls --json --all` 和 `npm audit --omit=dev --audit-level=high`；摘要写入 `.pi/browser-artifacts/dependency-audit-summary.json`。registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞；高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`（MCP 壳移除后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript` 被源码运行路径直接消费，不应机械移动到 devDependencies。
 
 依赖升级记录必须包含：升级范围、兼容性风险、回滚方式、`npm run check`、`npm pack --dry-run --json`，必要时附 `npm run smoke:browser:isolated` artifact。错误统计只落本地 artifact，不发送 cookie/token/网络正文到外部服务。
 
@@ -166,7 +167,7 @@ npm run build:bridge
 npm pack --dry-run --json
 ```
 
-`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 `npm pack --dry-run --ignore-scripts --json` 验证 `dist/service-worker.js`、`dist/offscreen.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内，不触发 `prepack` 重建；干净安装不应依赖手工提前 build。发布/安装包边界验证仍使用普通 `npm pack --dry-run --json`，会触发 `prepack` quiet build。
+`prepare` 通过 `scripts/install-git-hooks.mjs` 安装本地 lefthook；在 `--ignore-scripts`、CI、无 `.git` 或未安装 devDependencies 的环境会跳过。`npm run check` 已包含 `verify:bridge:dist` 和 `check:package`：前者只读验证当前 dist，后者用 `npm pack --dry-run --ignore-scripts --json` 验证 `dist/service-worker.js`、`dist/offscreen.js`、`dist/content.js`、`dist/disable_dialogs.js`、`dist/hook_dispatcher.js`、source maps 与 `build-manifest.json` 均进入包内，不触发 `prepack` 重建；干净安装不应依赖手工提前 build。发布/安装包边界验证仍使用普通 `npm pack --dry-run --json`，会触发 `prepack` quiet build。
 
 本地发布包验收与回滚演练：
 

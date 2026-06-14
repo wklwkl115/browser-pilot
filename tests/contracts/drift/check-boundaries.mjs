@@ -8,7 +8,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const list = (rel) => readdirSync(path.join(root, rel));
 
 const scripts = list("scripts").sort();
-assert.deepEqual(scripts, ["build-bridge.mjs", "check-dag.mjs", "check-graph.mjs", "generate-tool-docs.mjs", "lib", "new-check.mjs", "query-markers.mjs", "rotate-changelog.mjs", "run-check-groups.mjs", "sync-bridge-config.mjs", "sync-capture.mjs", "sync-code-map.mjs", "sync-concept-ownership.mjs", "sync-doc-indexes.mjs", "sync-docs.mjs", "sync-impact-map.mjs", "sync-managed-blocks.mjs", "sync-native-protocol.mjs", "workstream-scope.mjs"], "scripts/ must contain only generators/build/check/query/dev-harness runners; move tests to tests/");
+assert.deepEqual(scripts, ["build-bridge.mjs", "check-dag.mjs", "check-graph.mjs", "generate-tool-docs.mjs", "install-git-hooks.mjs", "lib", "new-check.mjs", "query-markers.mjs", "rotate-changelog.mjs", "run-check-groups.mjs", "sync-bridge-config.mjs", "sync-capture.mjs", "sync-code-map.mjs", "sync-concept-ownership.mjs", "sync-doc-indexes.mjs", "sync-docs.mjs", "sync-impact-map.mjs", "sync-managed-blocks.mjs", "sync-native-protocol.mjs", "workstream-scope.mjs"], "scripts/ must contain only generators/build/check/query/dev-harness runners; move tests to tests/");
 const usesTsx = (script) => /(^|\s)tsx(\s|$)/.test(String(script || ""));
 assert(existsSync(path.join(root, ".github", "actions", "setup-node-build", "action.yml")), "CI reusable setup action must exist under .github/actions/setup-node-build/action.yml");
 assert(!existsSync(path.join(root, "scripts", "smoke-browser.mjs")), "smoke tests must live under tests/smoke/");

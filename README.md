@@ -189,6 +189,7 @@ Pi 原生浏览器工具扩展，提供真实浏览器 tab 控制、GA-style 简
 
 ```bash
 npm run build            # 生成 outer dist/（index.ts + src/** + cli/**）
+npm run build:bridge     # 生成 manifest 当前使用的 browser extension dist runtime
 npm run check
 npm run check:all:src      # src typecheck + registry drift 分组门禁
 npm run check:all:bridge   # bridge + unit 分组门禁
@@ -214,7 +215,6 @@ npm run check:deps         # 本地依赖/lockfile/npm ls/生产 audit 检查
 npm run check:token        # 结果预算与隐私脱敏契约
 npm run check:artifact     # artifact 读取/脱敏/安全正则契约
 npm run check:errors       # 错误 taxonomy、diagnostics、脱敏与去 stack 契约
-npm run build:bridge   # 生成 manifest 当前使用的 dist runtime
 npm pack --dry-run --json   # 验证发布包包含 manifest 指向的 dist runtime
 npm run smoke:browser
 npm run smoke:browser:isolated
@@ -229,7 +229,7 @@ npm run eval:blind:teardown                                      # 收掉舞台
 
 `build:bridge` 现在从 `bridge_src/service-worker.ts` 真实 ESM entry 生成完整 service worker bundle，从 `bridge_src/offscreen/transport.ts` 生成 durable offscreen transport bundle，并从 `bridge_src/page_scripts/` 生成独立 content/hook-dispatcher/disable-dialogs 页面 bundle；产物位于 `bridge/pi_browser_bridge/dist/` 且由脚本生成。`dist/build-manifest.json` 记录 `serviceWorkerBuildMode:"esm-import-graph"`、`orderedConcatenation:false`、`foundationImported:true`、`commandImported:true`、`startupImported:true`、`offscreenEntry`、metadata-only 模块清单，以及覆盖 manifest + browser-loaded bundle 的 sha256 `buildId`。运行时扩展通过 `ext_ready.bridge.build.buildId` 上报该值；Node bridge 会和 package/staged manifest 比较，`browser_tabs snapshot|list`、`pi-browser status|connect|doctor --json` 会暴露 `extensionStale`、`expectedBuild`、`reportedBuild`。看到 unexplained `INVALID_RULE` 或 unsupported action 时先检查该字段并 reload 扩展。当前 manifest 指向 dist runtime；修改 `bridge_src/**` 后先运行 `npm run build:bridge` 再 reload 扩展。
 
-`prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、`dist/offscreen.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 现在通过 `verify:bridge:dist` 只读验证当前 dist，不再隐式重建；防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行的包级检查由 `check:package` 执行 `npm pack --dry-run --ignore-scripts --json` 完成，验证当前已生成产物是否会进入包但不触发 `prepack` 重建。`npm run quality:local` 串联 `build:bridge`、`check`、`npm pack --dry-run --json`，作为本地发布/合并前默认门禁；最后一步使用普通 pack dry-run，仍会触发 `prepack` 做发布前重建。它只打印可选 isolated smoke 下一步，不自动启动 Chrome/Edge。失败时先看命令输出与 `.pi/browser-artifacts/`；端口占用看 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` 后人工处理。
+`prepare` 通过 `scripts/install-git-hooks.mjs` 安装本地 lefthook；在 `--ignore-scripts`、CI、无 `.git` 或未安装 devDependencies 的环境会跳过。`prepack` 会以 quiet 模式重新生成 dist；`package.json.files` 与 generated `dist/.npmignore` 明确让 npm package 包含 `dist/service-worker.js`、`dist/offscreen.js`、page bundles、source maps 与 `build-manifest.json`。`npm run check` 现在通过 `verify:bridge:dist` 只读验证当前 dist，不再隐式重建；防止只发布 `dist/.gitignore` 导致干净安装扩展不可运行的包级检查由 `check:package` 执行 `npm pack --dry-run --ignore-scripts --json` 完成，验证当前已生成产物是否会进入包但不触发 `prepack` 重建。`npm run quality:local` 串联 `build:bridge`、`check`、`npm pack --dry-run --json`，作为本地发布/合并前默认门禁；最后一步使用普通 pack dry-run，仍会触发 `prepack` 做发布前重建。它只打印可选 isolated smoke 下一步，不自动启动 Chrome/Edge。失败时先看命令输出与 `.pi/browser-artifacts/`；端口占用看 `.pi/browser-artifacts/smoke-browser-results.json` 的 `bridge.port` 后人工处理。
 
 `npm run release:local` 在 `.pi/browser-artifacts/release-acceptance/work/pack-run` clean cwd 中执行 `npm pack --dry-run --json` 与实际 `npm pack --pack-destination`，解包校验 manifest 指向 `dist/service-worker.js`、dist/page bundles、native schema 与 `build-manifest.json` 的 `serviceWorkerBuildMode:"esm-import-graph"` / `orderedConcatenation:false`；摘要写 `.pi/browser-artifacts/release-acceptance/release-acceptance-summary.json`，当前包写 `current/pi-browser-tools-0.3.0.tgz`，上一轮成功包轮转到 `previous/`，本轮成功包保存到 `last-successful/` 作为后续回滚候选。
 
@@ -245,7 +245,7 @@ npm run eval:blind:teardown                                      # 收掉舞台
 
 `src/tools/distillerRegistry.ts` 是 fallback 摘要分发的唯一注册表：`registerBuiltinDistillers()` 在 runtime 与 direct-import contract 两条路径都会初始化，避免新增 fallback 摘要器时静默退回 `summarizeGenericValue()`。对应 drift contract 为 `npm run check:distiller-coverage`。
 
-`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`、`zod`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript`/`zod` 由源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 是最终全量门禁，通过 `scripts/check-dag.mjs` 读取 `scripts/check-graph.mjs` 的分组并包含 `lint:eslint`；局部复跑可用 `check:all:src`、bridge/unit、package/docs、contracts 四组。`check:serial` 保留旧串行引擎用于诊断；`check:smart` 消费 `tests/contracts/drift/check-impact-map.json` 记录 impact selection。所有命中、未命中和选择原因都写入 `.pi/browser-artifacts/`，未知影响保守扩展。
+`npm run check:deps` 校验 `package.json` 与 `package-lock.json` 根依赖一致、生产依赖 allowlist、`npm ls --json --all`、`npm audit --omit=dev --audit-level=high`。结果写 `.pi/browser-artifacts/dependency-audit-summary.json`；registry/DNS/timeout 不可用时记录 `npmAudit.status:"unavailable"` 并通过，普通离线开发不被阻塞。高危/严重生产漏洞、lockfile 漂移或依赖树问题会失败。当前生产依赖 allowlist 为 `js-yaml`、`typebox`、`typescript`、`ws`（移除 MCP 壳后 `@modelcontextprotocol/sdk` 已下线）：其中 `typebox`/`typescript` 被源码运行路径直接消费，不能机械降到 devDependencies。依赖升级需记录范围、兼容性风险、回滚方式，并通过 `npm run check`、`npm pack --dry-run --json`，必要时跑 isolated smoke。`npm run check` 是最终全量门禁，通过 `scripts/check-dag.mjs` 读取 `scripts/check-graph.mjs` 的分组并包含 `lint:eslint`；局部复跑可用 `check:all:src`、bridge/unit、package/docs、contracts 四组。`check:serial` 保留旧串行引擎用于诊断；`check:smart` 消费 `tests/contracts/drift/check-impact-map.json` 记录 impact selection。所有命中、未命中和选择原因都写入 `.pi/browser-artifacts/`，未知影响保守扩展。
 
 `BrowserBridgeServer.ts` 现在保持 facade：HTTP/upgrade/origin 在 `BrowserBridgeHttpServer.ts`，client registry/selected browser 在 `BrowserBridgeClientRegistry.ts`，tab/session/default/latest/selectionVersion 在 `BrowserTabSessionRouter.ts`，pending/ACK/timeout/disconnect 在 `BrowserBridgePendingRequests.ts`，timeout snapshot 诊断在 `BrowserBridgeDiagnostics.ts`；fake WS/lifecycle fixtures 锁定行为不漂移。
 
@@ -302,5 +302,8 @@ npm run check
 ## 参考
 
 - 安装 SOP：`AI_INSTALL.md`
+- 贡献流程：`CONTRIBUTING.md`
+- 安全披露：`SECURITY.md`
+- 开源许可：`LICENSE`（Apache-2.0）
 - 迁移说明：`docs/browser-usage.md`
 - 资产同步：`docs/asset-sync.md`

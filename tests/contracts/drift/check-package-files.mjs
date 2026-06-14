@@ -15,6 +15,8 @@ const eslintConfig = read("eslint.config.js");
 const gitAttributes = read(".gitattributes");
 const usesTsx = (script) => /(^|\s)tsx(\s|$)/.test(String(script || ""));
 assert.equal(pkg.scripts?.prepack, "npm run build && node scripts/build-bridge.mjs --quiet", "package prepack must build outer dist and regenerate bridge dist without noisy stdout");
+assert.equal(pkg.scripts?.prepare, "node scripts/install-git-hooks.mjs", "package prepare must route through a CI/pack-aware hook installer");
+assert.equal(pkg.license, "Apache-2.0", "package license must match the public repository license");
 assert.equal(pkg.scripts?.build, "tsc -p tsconfig.build.json", "package must expose outer dist build");
 assert.equal(pkg.main, "./dist/index.js", "package main must point to dist/index.js");
 assert.equal(pkg.types, "./dist/index.d.ts", "package types must point to dist/index.d.ts");
@@ -56,9 +58,10 @@ assert(!eslintConfig.includes('project: "./tsconfig.build.json"'), "eslint confi
 for (const rule of ["*.ts text eol=lf", "*.mjs text eol=lf", "*.json text eol=lf", "*.map text eol=lf", ".gitattributes text eol=lf", ".gitignore text eol=lf", ".npmignore text eol=lf"]) {
 	assert(gitAttributes.includes(rule), `.gitattributes must pin LF for generated and source text rule: ${rule}`);
 }
-for (const requiredFilesEntry of ["bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/", "capture-src/"]) {
+for (const requiredFilesEntry of ["LICENSE", "SECURITY.md", "CONTRIBUTING.md", "bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/", "capture-src/"]) {
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
 }
+assert(read("LICENSE").includes("Apache License") && read("LICENSE").includes("Version 2.0"), "repository must include Apache-2.0 license text");
 assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "package must expose capture bundle synchronization");
 assert.equal(pkg.scripts?.["sync:protocol"], EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose canonical protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
 assert.equal(pkg.scripts?.["check:capture"], "node scripts/sync-capture.mjs --check && node tests/contracts/runtime/check-capture-core-boundary.mjs", "package must expose capture drift and boundary check");
@@ -78,6 +81,8 @@ assert(workflow.includes("uses: ./.github/actions/setup-node-build"), "CI workfl
 assert(workflow.includes("npm run check:all:src") && workflow.includes("npm run check:all:bridge") && workflow.includes("npm run check:all:package") && workflow.includes("npm run check:all:contracts"), "CI workflow must reuse DAG grouped local check entrypoints including src");
 assert(!workflow.includes("npm run check:lint"), "CI workflow must not call retired check:lint aggregate");
 assert(workflow.includes(".pi/browser-artifacts/check-dag-summary.json") && workflow.includes(".pi/browser-artifacts/check-dag/**"), "CI workflow must upload DAG check artifacts for review");
+assert(workflow.includes("permissions:\n  contents: read"), "CI workflow must use minimum read-only repository permissions by default");
+assert(!workflow.includes("PI_BROWSER_SMOKE_CHROME: C:\\Program Files"), "manual smoke workflows must let browserSmokeEnv discover the hosted-runner browser path");
 assert(setupAction.includes("actions/setup-node@v4") && setupAction.includes("npm ci") && setupAction.includes("npm run build") && setupAction.includes("npm run build:bridge"), "setup-node-build composite action must encapsulate setup/install/build steps");
 const releaseScript = read("tests/release/release-local-acceptance.mjs");
 assert(releaseScript.includes('runNpm(["pack", root, "--dry-run", "--json"], { cwd: packRunDir })') && releaseScript.includes('runNpm(["pack", root, "--pack-destination", currentDir, "--json"], { cwd: packRunDir })'), "release acceptance must run dry-run and actual npm pack from a clean temporary cwd through the portable npm runner");
@@ -150,9 +155,12 @@ assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm pa
 // the daemon runs from dist (oastWorkerManager rewrites dist/src→src), so the .mjs must ship.
 assert(packed.has("src/tools/webSecurity/browserNative/callbackOastWorker.mjs"), "npm package must ship the callback-OAST worker .mjs (resolved from src/ by the dist build)");
 assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm package must include native command schema");
+assert(packed.has("LICENSE"), "npm package must include repository license");
+assert(packed.has("SECURITY.md") && packed.has("CONTRIBUTING.md"), "npm package must include public security and contribution guidance");
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
+assert(packed.has("scripts/install-git-hooks.mjs"), "npm package must include the portable prepare hook installer");
 assert(packed.has("scripts/check-graph.mjs") && packed.has("scripts/check-dag.mjs") && packed.has("scripts/run-check-groups.mjs") && packed.has("scripts/sync-impact-map.mjs") && packed.has("scripts/sync-code-map.mjs") && packed.has("scripts/sync-concept-ownership.mjs") && packed.has("scripts/query-markers.mjs") && packed.has("scripts/new-check.mjs") && packed.has("scripts/workstream-scope.mjs") && packed.has("scripts/sync-docs.mjs") && packed.has("scripts/sync-managed-blocks.mjs") && packed.has("scripts/lib/repo-introspection.mjs") && packed.has("scripts/lib/managed-blocks.mjs"), "npm package must include graph-backed check runners and shared dev-harness helpers");
 assert(packed.has("scripts/sync-capture.mjs"), "npm package must include capture sync script");
 assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capture/generated/scanBundle.ts"), "npm package must include capture source and generated bundles");

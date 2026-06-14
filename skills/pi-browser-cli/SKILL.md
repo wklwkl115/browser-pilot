@@ -1,7 +1,7 @@
 ---
 name: pi-browser-cli
 description: "Shell/CLI frontend for operating live browser pages — use when a shell-capable agent drives the `pi-browser` command-line tool (subcommands, `--json`) to: gate readiness via connect/status/doctor, list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A Pi-native agent that instead calls the browser_* tools directly: use the pi-browser-tools skill. Runtime browser-use only; not for extension source development or repo tests."
-license: MIT
+license: Apache-2.0
 compatibility: pi-browser CLI 0.3.0+ on any shell-capable platform, Native Browser Bridge connected. Drives the same tool core as the Pi-native frontend over a user-local daemon. For in-process Pi-native `browser_*` calls, see the sibling **pi-browser-tools** skill.
 ---
 

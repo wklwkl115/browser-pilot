@@ -1,5 +1,8 @@
 name: check
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -119,7 +122,6 @@ jobs:
       - name: Run isolated browser smoke
         env:
           PI_BROWSER_CI_BROWSER_SMOKE: '1'
-          PI_BROWSER_SMOKE_CHROME: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
         run: npm run smoke:browser:isolated
 
       - name: Upload browser smoke artifact
@@ -146,7 +148,6 @@ jobs:
           PI_BROWSER_CI_BROWSER_SMOKE: '1'
           PI_BROWSER_CI_RELEASE_SMOKE: '1'
           PI_BROWSER_CI_ROLLBACK_SMOKE: ${{ inputs.run_rollback_smoke && '1' || '0' }}
-          PI_BROWSER_SMOKE_CHROME: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
         run: npm run release:local:smoke
 
       - name: Upload release smoke artifact

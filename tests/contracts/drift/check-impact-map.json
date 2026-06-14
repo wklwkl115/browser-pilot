@@ -546,6 +546,7 @@
         ".pi/browser-artifacts/",
         ".pi/check-cache/",
         "AI_INSTALL.md",
+        "LICENSE",
         "README.md",
         "bridge/pi_browser_bridge/dist/.npmignore",
         "bridge/pi_browser_bridge/manifest.json",
@@ -604,14 +605,14 @@
           "script": "check:package",
           "nodeId": "check:package",
           "file": "tests/contracts/drift/check-package-files.mjs",
-          "line": 103,
+          "line": 108,
           "reason": "subprocess execution"
         },
         {
           "script": "check:package",
           "nodeId": "check:package",
           "file": "tests/contracts/drift/check-package-files.mjs",
-          "line": 114,
+          "line": 119,
           "reason": "subprocess execution"
         }
       ],
@@ -2604,6 +2605,7 @@
       "script": "check:tool-parameter-framework-validation",
       "scope": "paths",
       "inputs": [
+        "package.json",
         "tests/contracts/drift/check-tool-parameter-framework-validation.mjs"
       ],
       "unresolvedInputs": [],

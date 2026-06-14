@@ -27,3 +27,46 @@ subagent-blind-round2/
 
 # nested export repo must never be used as a second source tree
 /.pi/public-export/
+
+# Development-only docs (local only, not for public repo)
+.plan/
+agent-audits/
+docs/archive/
+skills/pi-browser-audit-fix/
+skills/pi-browser-blind-eval/
+skills/pi-kernel-audit/
+AGENTS.md
+CLAUDE.md
+CURRENT.md
+TODO.md
+NEXT_PHASE.md
+ROADMAP.md
+ARCHIVE.md
+WORKSTREAMS_A_E_SUMMARY.md
+docs/abml-identity-lattice-architecture.md
+docs/abml-kernel-manifest.md
+docs/abml-optimization-reference.md
+docs/abml-p1-spec.md
+docs/abml-tool-coverage-map.md
+docs/agent-dev-harness-optimization-plan.md
+docs/agent-development.md
+docs/agent-harness-optimization-plan.md
+docs/agent-native-architecture.md
+docs/agent-native-cli-spec.md
+docs/archive-history-compression-plan.md
+docs/asset-sync.md
+docs/changelog-history.md
+docs/cli-parity-testing.md
+docs/document-structure.md
+docs/driver-architecture.md
+docs/genericagent-browser-parity.md
+docs/jshookmcp-native-absorption.md
+docs/living-tab-session-architecture-plan.md
+docs/maintainer-map.md
+docs/reference/concept-ownership.md
+docs/templates/workstream-plan-template.md
+docs/generated/code-map.generated.md
+evals/browser-workflows/blind-findings.md
+evals/browser-workflows/blind-tasks-realsite.md
+evals/browser-workflows/blind-agent-prompt.md
+evals/browser-workflows/blind-tasks-execution-feedback.md

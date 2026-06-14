@@ -1,9 +1,64 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Type } from "typebox";
 
-const validationModuleUrl = pathToFileURL(path.resolve("D:/Node/node_global/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/validation.js")).href;
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const rootRequire = createRequire(path.join(root, "package.json"));
+const validationRel = path.join("dist", "utils", "validation.js");
+
+function resolvePackageFile(packageName, rel) {
+	try {
+		return path.join(path.dirname(rootRequire.resolve(`${packageName}/package.json`)), rel);
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveEnvCandidate(value) {
+	if (!value) return undefined;
+	if (path.isAbsolute(value) || value.startsWith(".") || value.includes("\\") || value.endsWith(".js")) {
+		return path.resolve(root, value);
+	}
+	try {
+		return rootRequire.resolve(value);
+	} catch {
+		return undefined;
+	}
+}
+
+function npmGlobalRoot() {
+	try {
+		if (process.platform === "win32") {
+			return execFileSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "npm root -g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		}
+		return execFileSync("npm", ["root", "-g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+	} catch {
+		return undefined;
+	}
+}
+
+const globalRoot = npmGlobalRoot();
+const validationCandidates = [
+	resolveEnvCandidate(process.env.PI_BROWSER_FRAMEWORK_VALIDATION_MODULE),
+	resolvePackageFile("@earendil-works/pi-ai", validationRel),
+	resolvePackageFile("@earendil-works/pi-coding-agent", path.join("node_modules", "@earendil-works", "pi-ai", validationRel)),
+	globalRoot && path.join(globalRoot, "@earendil-works", "pi-ai", validationRel),
+	globalRoot && path.join(globalRoot, "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", validationRel),
+].filter(Boolean);
+
+const validationModulePath = validationCandidates.find((candidate) => existsSync(candidate));
+if (!validationModulePath) {
+	const message = "Pi framework validation module not found; optional host-validator compatibility fixture skipped";
+	if (process.env.PI_BROWSER_REQUIRE_FRAMEWORK_VALIDATION === "1") assert.fail(message);
+	console.log(`tool parameter framework validation skipped: ${message}`);
+	process.exit(0);
+}
+
+const validationModuleUrl = pathToFileURL(validationModulePath).href;
 const { validateToolArguments } = await import(validationModuleUrl);
 
 const strictTool = {
