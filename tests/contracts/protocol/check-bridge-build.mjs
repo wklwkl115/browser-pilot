@@ -329,14 +329,19 @@ try {
 	globalThis.clearInterval = oldClearInterval;
 }
 
-for (const file of ["README.md", "AI_INSTALL.md", "docs/archive/bridge-esm-bundler-plan.full.md"]) {
+for (const file of ["README.md", "AI_INSTALL.md"]) {
 	const text = read(file);
 	assert(text.includes("build:bridge"), `${file} must document the bridge build pipeline`);
 	assert(text.includes("dist") && (text.includes("manifest") || text.includes("Manifest")), `${file} must document the dist manifest/runtime boundary`);
 }
-const esmPlan = read("docs/archive/bridge-esm-bundler-plan.full.md");
-assert(esmPlan.includes("esm-import-graph") && esmPlan.includes("TODO 199"), "bridge ESM plan must document the active import-graph service worker mode");
-assert(esmPlan.includes("TODO 188-193") && esmPlan.includes("TODO 197") && esmPlan.includes("TODO 198") && esmPlan.includes("TODO 199"), "bridge ESM plan must separate first-phase runtime migration, foundation, command, and startup ESM gates");
+const esmPlanRel = "docs/archive/bridge-esm-bundler-plan.full.md";
+if (existsSync(path.join(root, esmPlanRel))) {
+	const esmPlan = read(esmPlanRel);
+	assert(esmPlan.includes("esm-import-graph") && esmPlan.includes("TODO 199"), "bridge ESM plan must document the active import-graph service worker mode");
+	assert(esmPlan.includes("TODO 188-193") && esmPlan.includes("TODO 197") && esmPlan.includes("TODO 198") && esmPlan.includes("TODO 199"), "bridge ESM plan must separate first-phase runtime migration, foundation, command, and startup ESM gates");
+} else {
+	console.log("bridge ESM archive plan check skipped; internal archive doc absent");
+}
 assert(read("README.md").includes("esm-import-graph"), "README must expose the current service worker build mode");
 
 console.log("bridge build contract ok");

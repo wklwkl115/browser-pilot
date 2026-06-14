@@ -33,6 +33,7 @@ assert.equal(pkg.scripts?.["sync:impact-map"], "node scripts/sync-impact-map.mjs
 assert.equal(pkg.scripts?.["check:impact-map"], "node scripts/sync-impact-map.mjs --check", "package must expose impact map drift validation");
 assert.equal(pkg.scripts?.["sync:code-map"], "tsx scripts/sync-code-map.mjs", "package must expose code map synchronization");
 assert.equal(pkg.scripts?.["check:code-map"], "tsx scripts/sync-code-map.mjs --check", "package must expose code map drift validation");
+assert(read("scripts/sync-code-map.mjs").includes("generated code map absent"), "code map check must be inert in sanitized public trees that omit the internal generated code map");
 assert.equal(pkg.scripts?.["query:markers"], "node scripts/query-markers.mjs", "package must expose marker query helper");
 assert.equal(pkg.scripts?.["new:check"], "node scripts/new-check.mjs", "package must expose new-check scaffolding");
 assert.equal(pkg.scripts?.["scope:begin"], "node scripts/workstream-scope.mjs --begin", "package must expose workstream scope baseline capture");
@@ -109,6 +110,7 @@ assert(portableReleaseScript.includes("forbiddenPublicPathRe") && portableReleas
 assert(workflow.includes("npm run release:portable"), "CI package acceptance must run the portable clean-tree/consumer install gate");
 const docIndexScript = read("scripts/sync-doc-indexes.mjs");
 assert(docIndexScript.includes("governance docs absent") && docIndexScript.includes("presentIndexInputs.length === 0"), "doc index sync must be inert in sanitized public trees that omit internal governance docs");
+assert(read("tests/contracts/protocol/check-bridge-build.mjs").includes("internal archive doc absent") && read("tests/contracts/protocol/check-bridge-files.mjs").includes("internal archive doc absent"), "bridge contracts must keep internal archive-doc checks optional in sanitized public trees");
 const tsxScripts = [
 	"check:tools", "test:unit", "test:unit:abml", "test:unit:cli", "test:unit:distill", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "smoke:cli:full", "check:cli-parity", "check:cli-json-envelopes",
 ];

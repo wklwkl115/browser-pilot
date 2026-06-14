@@ -198,6 +198,10 @@ ${renderTable(["Generated file", "Source of truth", "Sync command", "Guarding ga
 
 const next = renderCodeMap();
 if (checkOnly) {
+	if (!existsSync(outPath)) {
+		console.log(`${outRel} skipped; generated code map absent`);
+		process.exit(0);
+	}
 	const current = existsSync(outPath) ? readFileSync(outPath, "utf8") : "";
 	if (current !== next) {
 		console.error(`${outRel} is stale; run npm run sync:code-map or npm run docs:sync`);

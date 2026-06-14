@@ -153,8 +153,6 @@
         "bridge_src/service_worker/transport.ts",
         "bridge_src/service_worker/types.ts",
         "bridge_src/shared/buildInfo.ts",
-        "docs/archive/bridge-esm-bundler-plan.full.md",
-        "docs/archive/hook-dispatcher-boundary.full.md",
         "docs/browser-usage.md",
         "docs/generated/native-protocol.generated.md",
         "hook.js",
@@ -925,7 +923,7 @@
           "script": "check:code-map",
           "nodeId": "check:code-map",
           "file": "scripts/sync-code-map.mjs",
-          "line": 201,
+          "line": 205,
           "reason": "dynamic file read"
         },
         {
