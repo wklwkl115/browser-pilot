@@ -1613,67 +1613,18 @@
     },
     "check:runtime-fixtures": {
       "script": "check:runtime-fixtures",
-      "scope": "global",
+      "scope": "paths",
       "inputs": [
-        ".pi/browser-artifacts/fixtures/",
-        "bridge_src/service_worker/cdp.ts",
-        "bridge_src/service_worker/input.ts",
-        "bridge_src/service_worker/runtimeEnv.ts",
-        "bridge_src/service_worker/state_store.ts",
-        "bridge_src/service_worker/types.ts",
-        "cdp",
-        "core_commands",
-        "frame",
-        "hook",
-        "intercept",
-        "intercept_model",
-        "network",
-        "network_events",
-        "network_model",
-        "patterns",
-        "screenshot",
-        "src/distill-core/recovery.ts",
-        "src/protocol/nativeErrorCodes.ts",
-        "src/tools/webSecurity/browserNative/callbackOast.ts",
-        "src/tools/webSecurity/browserNative/callbackOastWorker.mjs",
-        "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
-        "src/tools/webSecurity/shared/http.ts",
-        "src/tools/webSecurity/shared/normalize.ts",
-        "src/tools/webSecurity/shared/types.ts",
-        "src/utils/codedError.ts",
-        "src/utils/errors.ts",
-        "src/utils/json.ts",
-        "src/utils/records.ts",
-        "src/utils/redaction.ts",
-        "state_store",
+        "bridge_src/service_worker/",
+        "package-lock.json",
+        "package.json",
+        "src/",
         "tests/contracts/runtime/check-input-ref-runtime.mjs",
         "tests/contracts/runtime/check-runtime-fixtures.mjs",
-        "transfer",
-        "wait",
-        "wait_cdp",
-        "wait_coordinator",
-        "wait_navigation",
-        "wait_network_idle",
-        "wait_selector",
-        "ws",
-        "ws_model"
+        "tsconfig.base.json",
+        "tsconfig.json"
       ],
-      "unresolvedInputs": [
-        {
-          "script": "check:runtime-fixtures",
-          "nodeId": "check:runtime-fixtures#1",
-          "file": "src/tools/webSecurity/browserNative/oastWorkerManager.ts",
-          "line": 137,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "check:runtime-fixtures",
-          "nodeId": "check:runtime-fixtures#1",
-          "file": "tests/contracts/runtime/check-runtime-fixtures.mjs",
-          "line": 18,
-          "reason": "dynamic file read"
-        }
-      ],
+      "unresolvedInputs": [],
       "commandSteps": [
         {
           "nodeId": "check:runtime-fixtures#1",
@@ -2395,7 +2346,7 @@
           "script": "check:governance",
           "nodeId": "check:spec-truth",
           "file": "tests/contracts/drift/check-spec-truth.mjs",
-          "line": 24,
+          "line": 25,
           "reason": "dynamic directory walk"
         },
         {
@@ -2577,14 +2528,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 507,
+          "line": 512,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/check-graph.mjs",
+          "line": 523,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:check-graph",
+          "nodeId": "check:check-graph",
+          "file": "scripts/check-graph.mjs",
+          "line": 538,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 624,
+          "line": 655,
           "reason": "dynamic file read"
         },
         {
@@ -2661,14 +2626,28 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 507,
+          "line": 512,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/check-graph.mjs",
+          "line": 523,
+          "reason": "dynamic directory walk"
+        },
+        {
+          "script": "check:impact-map",
+          "nodeId": "check:impact-map",
+          "file": "scripts/check-graph.mjs",
+          "line": 538,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 624,
+          "line": 655,
           "reason": "dynamic file read"
         },
         {
@@ -2689,7 +2668,7 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/sync-impact-map.mjs",
-          "line": 383,
+          "line": 399,
           "reason": "dynamic file read"
         }
       ],

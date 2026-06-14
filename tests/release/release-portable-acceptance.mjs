@@ -148,6 +148,7 @@ async function main() {
 		runNpm(["run", "build:bridge"], { cwd: publicTreeDir });
 		runNpm(["run", "docs:sync"], { cwd: publicTreeDir });
 		runNpm(["run", "check:all:package"], { cwd: publicTreeDir });
+		runNpm(["run", "check:all:contracts"], { cwd: publicTreeDir });
 
 		await rm(tarballDir, { recursive: true, force: true });
 		await mkdir(tarballDir, { recursive: true });

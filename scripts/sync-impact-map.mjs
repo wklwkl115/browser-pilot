@@ -268,6 +268,22 @@ const SCOPE_OVERRIDES = {
 		],
 	},
 
+	"check:runtime-fixtures": {
+		// Executes local runtime fixtures from bridge service-worker sources plus src helpers.
+		// .pi/browser-artifacts/fixtures is output-only and must not affect the public impact map.
+		scope: "paths",
+		inputs: [
+			"bridge_src/service_worker/",
+			"src/",
+			"tests/contracts/runtime/check-runtime-fixtures.mjs",
+			"tests/contracts/runtime/check-input-ref-runtime.mjs",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"package.json",
+			"package-lock.json",
+		],
+	},
+
 	// ── Eval artifact checks (no src imports) ─────────────────────────────────────
 
 	// check:eval-workflows is intentionally left global: its spawnSync subprocess plus a

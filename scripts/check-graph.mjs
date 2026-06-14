@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inputMatchesChangedFile, normalizeRel } from "./lib/repo-introspection.mjs";
@@ -486,6 +486,7 @@ export function selectSmartScripts(files, options = {}) {
 }
 
 export function collectFingerprintFiles(root = ROOT, pathspecs) {
+	if (!isGitRoot(root)) return collectFilesystemFingerprintFiles(root, pathspecs);
 	const suffix = Array.isArray(pathspecs) && pathspecs.length ? ["--", ...pathspecs] : [];
 	const tracked = gitLines(["ls-files", "-z", ...suffix], root);
 	const untracked = gitLines(["ls-files", "--others", "--exclude-standard", "-z", ...suffix], root);
@@ -493,6 +494,36 @@ export function collectFingerprintFiles(root = ROOT, pathspecs) {
 	for (const file of tracked) files.set(file, "tracked");
 	for (const file of untracked) files.set(file, "untracked");
 	return [...files.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+}
+
+function isGitRoot(root) {
+	try {
+		return path.resolve(gitLines(["rev-parse", "--show-toplevel"], root)[0] || "") === path.resolve(root);
+	} catch {
+		return false;
+	}
+}
+
+function collectFilesystemFingerprintFiles(root, pathspecs = []) {
+	const files = [];
+	const visit = (rel) => {
+		const abs = path.join(root, rel);
+		if (!existsSync(abs)) return;
+		const entries = readdirSync(abs, { withFileTypes: true });
+		for (const entry of entries) {
+			const child = rel ? `${rel}/${entry.name}` : entry.name;
+			if (entry.isDirectory()) visit(child);
+			else if (entry.isFile()) files.push([child.replace(/\\/g, "/"), "filesystem"]);
+		}
+	};
+	for (const spec of pathspecs || []) {
+		const normalized = normalizeRel(spec);
+		const abs = path.join(root, normalized);
+		if (!existsSync(abs)) continue;
+		if (readdirSync(path.dirname(abs), { withFileTypes: true }).some((entry) => entry.name === path.basename(abs) && entry.isFile())) files.push([normalized, "filesystem"]);
+		else visit(normalized);
+	}
+	return files.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 function hashFingerprintFiles(files, options) {

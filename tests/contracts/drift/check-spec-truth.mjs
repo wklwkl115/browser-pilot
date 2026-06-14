@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SPEC_CLAIMS } from "./spec-claims.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const exists = (rel) => existsSync(path.join(root, rel));
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
 function filesForGlob(glob) {
@@ -66,7 +67,14 @@ function assertManifestCounts() {
 	assert(manifest.includes(`## Runtime (${runtime.length} `), "abml manifest runtime section count must match source");
 }
 
+const missingInternalDocs = [];
+let checkedClaims = 0;
+
 for (const docEntry of SPEC_CLAIMS) {
+	if (!exists(docEntry.doc)) {
+		missingInternalDocs.push(docEntry.doc);
+		continue;
+	}
 	const docText = read(docEntry.doc);
 	assert(docText.includes("> Doc-class: contract"), `${docEntry.doc} must declare Doc-class: contract`);
 	for (const claim of docEntry.claims) {
@@ -74,9 +82,11 @@ for (const docEntry of SPEC_CLAIMS) {
 		if (claim.status === "implemented") assertSourceContains(claim);
 		else if (claim.status === "reserved") assert(hasReservedMarker(section), `${docEntry.doc} reserved claim lacks explicit reserved/unimplemented marker: ${claim.anchor}`);
 		else assert.fail(`${docEntry.doc} has unsupported claim status: ${claim.status}`);
+		checkedClaims += 1;
 	}
 }
 
-assertManifestCounts();
+if (exists("docs/abml-kernel-manifest.md")) assertManifestCounts();
 
-console.log(`spec truth contract ok — ${SPEC_CLAIMS.reduce((sum, entry) => sum + entry.claims.length, 0)} claim(s)`);
+const suffix = missingInternalDocs.length > 0 ? `, skipped ${missingInternalDocs.length} internal doc(s): ${missingInternalDocs.join(", ")}` : "";
+console.log(`spec truth contract ok — ${checkedClaims} checked claim(s)${suffix}`);
