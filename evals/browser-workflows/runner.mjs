@@ -83,6 +83,7 @@ function fixturePath(relPath) { return path.join(fixturesRoot, relPath); }
 function textIncludes(value, pattern) { return pattern.test(JSON.stringify(value)); }
 function toolCallId(evalId, name, index) { return `${evalId}:${name}:${index}`; }
 function isRecord(value) { return !!value && typeof value === "object" && !Array.isArray(value); }
+function valueRecord(value) { return isRecord(value) ? value : {}; }
 function resultText(toolResult) { return String(toolResult?.content?.[0]?.text ?? ""); }
 function parseToolJson(toolResult) { return JSON.parse(resultText(toolResult)); }
 function tryParseJson(text) {
@@ -184,13 +185,24 @@ async function callTool(env, metrics, name, params = {}) {
 	const tool = env.tools.getTool(name);
 	if (!tool) throw new Error(`Tool not registered: ${name}`);
 	metrics.toolCallCount += 1;
-	metrics.calls.push({ tool: name, params: sanitizeParams(params) });
+	const callRecord = { tool: name, params: sanitizeParams(params) };
+	metrics.calls.push(callRecord);
 	const startedAt = Date.now();
 	const result = await tool.execute(toolCallId(metrics.evalId, name, metrics.toolCallCount), params, undefined, undefined, { cwd: env.runDir, hasUI: false });
 	const elapsedMs = Math.max(0, Date.now() - startedAt);
 	const text = resultText(result);
+	callRecord.elapsedMs = elapsedMs;
+	callRecord.resultTextChars = text.length;
+	callRecord.estimatedTokens = Math.ceil(text.length / 4);
+	if (name === "browser_artifact") {
+		callRecord.artifactRead = true;
+		callRecord.artifactMode = typeof params.mode === "string" ? params.mode : undefined;
+		callRecord.artifactJsonPath = typeof params.jsonPath === "string" ? params.jsonPath : undefined;
+		callRecord.artifactBroadRead = !callRecord.artifactJsonPath;
+	}
 	const saved = savedPathFromEnvelope(text);
 	if (saved) addArtifact(metrics, saved);
+	if (saved) callRecord.savedPath = path.isAbsolute(saved) ? pathRef(saved) : saved.replace(/\\/g, "/");
 	const observeSample = maybeObserveTimingSample(result, params, metrics);
 	if (observeSample) env.observeTimingSamples.push(observeSample);
 	const temporalSample = maybeTemporalProfileSample(result, params, metrics, { tool: name, elapsedMs });
@@ -217,6 +229,135 @@ async function saveTextEvidence(env, metrics, name, value) {
 	await writeFile(target, String(value), "utf8");
 	addArtifact(metrics, target);
 	return target;
+}
+
+function rectArea(rect) {
+	return Math.max(0, Number(rect?.width || rect?.w || 0)) * Math.max(0, Number(rect?.height || rect?.h || 0));
+}
+
+function normalizeRect(rect) {
+	if (!isRecord(rect)) return undefined;
+	const x = Number(rect.x);
+	const y = Number(rect.y);
+	const width = Number(rect.width ?? rect.w);
+	const height = Number(rect.height ?? rect.h);
+	if (![x, y, width, height].every(Number.isFinite)) return undefined;
+	return { x, y, width, height };
+}
+
+function rectIou(a, b) {
+	const ar = normalizeRect(a);
+	const br = normalizeRect(b);
+	if (!ar || !br) return 0;
+	const left = Math.max(ar.x, br.x);
+	const top = Math.max(ar.y, br.y);
+	const right = Math.min(ar.x + ar.width, br.x + br.width);
+	const bottom = Math.min(ar.y + ar.height, br.y + br.height);
+	const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+	const union = rectArea(ar) + rectArea(br) - intersection;
+	return union > 0 ? Number((intersection / union).toFixed(4)) : 0;
+}
+
+function rectDelta(a, b) {
+	const ar = normalizeRect(a);
+	const br = normalizeRect(b);
+	if (!ar || !br) return undefined;
+	return {
+		x: Number((br.x - ar.x).toFixed(2)),
+		y: Number((br.y - ar.y).toFixed(2)),
+		width: Number((br.width - ar.width).toFixed(2)),
+		height: Number((br.height - ar.height).toFixed(2)),
+	};
+}
+
+function snapshotDocumentsFromCdp(value) {
+	const data = bridgeData(value);
+	const result = isRecord(data?.result) ? data.result : isRecord(data?.result?.result) ? data.result.result : data;
+	return {
+		strings: Array.isArray(result?.strings) ? result.strings : Array.isArray(data?.strings) ? data.strings : [],
+		documents: Array.isArray(result?.documents) ? result.documents : Array.isArray(data?.documents) ? data.documents : [],
+	};
+}
+
+function snapshotAttrMap(nodes, strings, nodeIndex) {
+	const raw = Array.isArray(nodes.attributes) ? nodes.attributes[nodeIndex] : undefined;
+	const attrs = Array.isArray(raw) ? raw : [];
+	const out = {};
+	for (let i = 0; i + 1 < attrs.length; i += 2) {
+		const name = strings[Number(attrs[i])] ?? String(attrs[i]);
+		const value = strings[Number(attrs[i + 1])] ?? String(attrs[i + 1]);
+		out[name] = value;
+	}
+	return out;
+}
+
+function snapshotElementRects(value, options = {}) {
+	const { strings, documents } = snapshotDocumentsFromCdp(value);
+	const scale = Number(options.scale || 1);
+	const scaleDivisor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+	const out = [];
+	for (const documentSnapshot of documents) {
+		const doc = valueRecord(documentSnapshot);
+		const nodes = valueRecord(doc.nodes);
+		const layout = valueRecord(doc.layout);
+		const backendIds = Array.isArray(nodes.backendNodeId) ? nodes.backendNodeId : [];
+		const nodeNames = Array.isArray(nodes.nodeName) ? nodes.nodeName : [];
+		const layoutNodeIndexes = Array.isArray(layout.nodeIndex) ? layout.nodeIndex : [];
+		const bounds = Array.isArray(layout.bounds) ? layout.bounds : [];
+		for (let i = 0; i < layoutNodeIndexes.length; i += 1) {
+			const nodeIndex = Number(layoutNodeIndexes[i]);
+			const rawBounds = Array.isArray(bounds[i]) ? bounds[i].map(Number) : [];
+			const [x, y, width, height] = rawBounds;
+			if (![x, y, width, height].every(Number.isFinite)) continue;
+			const attrs = snapshotAttrMap(nodes, strings, nodeIndex);
+			const rawRect = { x, y, width, height };
+			out.push({
+				nodeIndex,
+				nodeName: strings[Number(nodeNames[nodeIndex])] ?? String(nodeNames[nodeIndex] ?? ""),
+				backendNodeId: Number(backendIds[nodeIndex]),
+				attrs,
+				rawRect,
+				rect: { x: x / scaleDivisor, y: y / scaleDivisor, width: width / scaleDivisor, height: height / scaleDivisor },
+			});
+		}
+	}
+	return out.filter((item) => Number.isFinite(item.backendNodeId) && item.backendNodeId > 0);
+}
+
+function toolCountsFromCalls(calls) {
+	const out = {};
+	for (const call of calls) out[call.tool] = (out[call.tool] || 0) + 1;
+	return out;
+}
+
+function summarizeEvalMetrics(metrics) {
+	const calls = metrics.calls || [];
+	const artifactCalls = calls.filter((call) => call.tool === "browser_artifact");
+	const resultTextChars = calls.map((call) => Number(call.resultTextChars || 0)).filter(Number.isFinite);
+	const estimatedTokens = calls.map((call) => Number(call.estimatedTokens || 0)).filter(Number.isFinite);
+	return {
+		evalId: metrics.evalId,
+		toolCounts: toolCountsFromCalls(calls),
+		artifactReadCalls: artifactCalls.length,
+		artifactJsonPathReadCalls: artifactCalls.filter((call) => call.artifactJsonPath).length,
+		artifactBroadReadCalls: artifactCalls.filter((call) => call.artifactBroadRead).length,
+		resultTextChars: numericMetricSummary(resultTextChars),
+		estimatedTokens: numericMetricSummary(estimatedTokens),
+	};
+}
+
+function summarizeSuiteMetrics(evalMetrics) {
+	const toolCounts = {};
+	let artifactReadCalls = 0;
+	let artifactJsonPathReadCalls = 0;
+	let artifactBroadReadCalls = 0;
+	for (const item of evalMetrics) {
+		for (const [tool, count] of Object.entries(item.toolCounts || {})) toolCounts[tool] = (toolCounts[tool] || 0) + count;
+		artifactReadCalls += Number(item.artifactReadCalls || 0);
+		artifactJsonPathReadCalls += Number(item.artifactJsonPathReadCalls || 0);
+		artifactBroadReadCalls += Number(item.artifactBroadReadCalls || 0);
+	}
+	return { toolCounts, artifactReadCalls, artifactJsonPathReadCalls, artifactBroadReadCalls };
 }
 
 function savedPathFromEnvelope(text) {
@@ -1226,6 +1367,195 @@ async function eval31(env, entry) {
 	}
 }
 
+async function eval32(env, entry) {
+	const metrics = beginMetrics(env, entry.id);
+	const tabId = await createTab(env, metrics, "abml-identity-bootstrap.html");
+	try {
+		const scanStartedAt = nowIso();
+		const scan = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: path.join(env.runDir, `${entry.id}-scan.json`), timeoutMs: 20_000, maxChars: 14_000 }), "browser_observe bootstrap scan"));
+		const scanEndedAt = nowIso();
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { window.scrollTo(0, 420); return window.__abmlBootstrapFixture.collect(); })()", outputPath: path.join(env.runDir, `${entry.id}-page-rects.json`), timeoutMs: 10_000, maxChars: 10_000 }), "browser_execute bootstrap collect rects");
+		const rectArtifact = JSON.parse(await readFile(path.join(env.runDir, `${entry.id}-page-rects.json`), "utf8"));
+		const pageSample = rectArtifact?.data?.value ?? rectArtifact?.data ?? rectArtifact;
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__abmlBootstrapFixture.drift())()", outputPath: path.join(env.runDir, `${entry.id}-drift.json`), timeoutMs: 10_000, maxChars: 8_000 }), "browser_execute bootstrap drift");
+		const snapshotStartedAt = nowIso();
+		const snapshotPath = path.join(env.runDir, `${entry.id}-snapshot.json`);
+		assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "DOMSnapshot.captureSnapshot", params: { computedStyles: [], includeDOMRects: true }, persistent: true, timeoutMs: 15_000 }, outputPath: snapshotPath, timeoutMs: 20_000, maxChars: 10_000 }), "browser_command DOMSnapshot.captureSnapshot");
+		const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+		const snapshotEndedAt = nowIso();
+		const dpr = Number(pageSample?.viewport?.devicePixelRatio || 1);
+		const snapshotRects = snapshotElementRects(snapshot, { scale: dpr });
+		const targetIds = new Set((pageSample.targets || []).map((target) => target.id));
+		const snapshotTargets = snapshotRects.filter((item) => targetIds.has(item.attrs.id));
+		const byId = new Map(snapshotTargets.map((item) => [item.attrs.id, item]));
+		const candidates = snapshotTargets.map((item) => ({ id: item.attrs.id, case: item.attrs["data-bootstrap-case"], backendNodeId: item.backendNodeId, rect: item.rect, rawRect: item.rawRect }));
+		const targetResults = [];
+		const byCase = {};
+		for (const target of pageSample.targets || []) {
+			const scanRect = normalizeRect(target.docRect);
+			const oracle = byId.get(target.id);
+			const candidateScores = candidates
+				.map((candidate) => ({ id: candidate.id, case: candidate.case, backendNodeId: candidate.backendNodeId, iou: rectIou(scanRect, candidate.rect), delta: rectDelta(scanRect, candidate.rect), rect: candidate.rect, rawRect: candidate.rawRect }))
+				.filter((candidate) => candidate.iou >= 0.9)
+				.sort((a, b) => b.iou - a.iou || a.id.localeCompare(b.id));
+			let status = "missing";
+			let reason = "snapshot-node-not-found";
+			if (oracle) {
+				if (candidateScores.length > 1 && target.case === "duplicate") {
+					status = "ambiguous";
+					reason = "multiple-high-iou-candidates";
+				} else {
+					const oracleIou = rectIou(scanRect, oracle.rect);
+					if (oracleIou >= 0.9) {
+						status = "matched";
+						reason = "unique-high-iou";
+					} else {
+						status = target.case === "drift" ? "stale" : "unsupported";
+						reason = target.case === "drift" ? "post-scan-layout-drift" : "coordinate-parity-miss";
+					}
+				}
+			}
+			byCase[target.case] = byCase[target.case] || {};
+			byCase[target.case][status] = (byCase[target.case][status] || 0) + 1;
+			targetResults.push({
+				id: target.id,
+				case: target.case,
+				selector: target.selector,
+				scanRect,
+				snapshotBounds: oracle?.rect,
+				snapshotRawBounds: oracle?.rawRect,
+				backendNodeId: oracle?.backendNodeId,
+				status,
+				reason,
+				iou: oracle ? rectIou(scanRect, oracle.rect) : 0,
+				delta: oracle ? rectDelta(scanRect, oracle.rect) : undefined,
+				candidates: candidateScores.slice(0, 4),
+			});
+		}
+		const counts = {};
+		for (const item of targetResults) counts[item.status] = (counts[item.status] || 0) + 1;
+		const comparison = {
+			sampleWindow: { scanStartedAt, scanEndedAt, snapshotStartedAt, snapshotEndedAt, sampleWindowMs: Math.max(0, Date.parse(snapshotEndedAt) - Date.parse(scanStartedAt)) },
+			viewport: pageSample.viewport,
+			coordinateDiagnostics: { normalizedTo: "document-relative-css-pixels", snapshotScaleDivisor: dpr, matchThreshold: 0.9, candidatePool: "fixture targets with DOMSnapshot layout.bounds" },
+			targets: targetResults,
+			bootstrapStats: {
+				total: targetResults.length,
+				matched: counts.matched || 0,
+				ambiguous: counts.ambiguous || 0,
+				stale: counts.stale || 0,
+				unsupported: counts.unsupported || 0,
+				missing: counts.missing || 0,
+				coverage: targetResults.length ? Number(((counts.matched || 0) / targetResults.length).toFixed(3)) : 0,
+				byCase,
+			},
+			nonClaims: [
+				"Eval evidence only: product scan entities are not stamped with backendNodeId by this runner.",
+				"Scan and DOMSnapshot are not atomic; stale/ambiguous targets remain fail-open.",
+			],
+			scanArtifact: scan.saved?.path ? pathRef(scan.saved.path) : undefined,
+		};
+		await saveJsonEvidence(env, metrics, "comparison", comparison);
+		const ok = comparison.bootstrapStats.matched >= 2 && comparison.bootstrapStats.ambiguous >= 1 && comparison.bootstrapStats.stale >= 1 && snapshotTargets.some((item) => item.backendNodeId > 0);
+		metrics.recoveredAfterFailure = true;
+		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
+		metrics.scopedFollowUpDiscipline = "passed";
+		metrics.summary.push(`Bootstrap evidence classified ${comparison.bootstrapStats.matched}/${comparison.bootstrapStats.total} matched targets plus ambiguous=${comparison.bootstrapStats.ambiguous}, stale=${comparison.bootstrapStats.stale}.`);
+		metrics.diagnostics.push(`DOMSnapshot target backend ids present=${snapshotTargets.some((item) => item.backendNodeId > 0)}; sample window ${comparison.sampleWindow.sampleWindowMs}ms; product stamping not claimed.`);
+		metrics.notes.push("Passing means the eval collected coordinate/bootstrap evidence and fail-open cases; it does not ship DOM scan backendNodeId stamping.");
+		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
+	} finally {
+		await closeTabQuiet(env, tabId);
+	}
+}
+
+async function eval33(env, entry) {
+	const metrics = beginMetrics(env, entry.id);
+	const tabId = await createTab(env, metrics, "abml-layer-occlusion.html");
+	try {
+		const observePath = path.join(env.runDir, `${entry.id}-observe.json`);
+		const topHitPath = path.join(env.runDir, `${entry.id}-top-hit.json`);
+		assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: observePath, timeoutMs: 20_000, maxChars: 14_000 }), "browser_observe layer boundary");
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__abmlLayerFixture.sample())()", outputPath: topHitPath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute occlusion sample");
+		const observe = JSON.parse(await readFile(observePath, "utf8"));
+		const topHit = JSON.parse(await readFile(topHitPath, "utf8"));
+		const layerEnable = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "LayerTree.enable", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-layer-enable.json`), timeoutMs: 15_000, maxChars: 6_000 }));
+		const layerProbe = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "LayerTree.compositingLayers", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-layer-probe.json`), timeoutMs: 15_000, maxChars: 6_000 }));
+		const scanText = JSON.stringify(observe);
+		const topHitData = topHit?.data?.value ?? topHit?.data ?? topHit;
+		const boundary = {
+			topHit: topHitData,
+			scanRelationsSummary: observe?.relations?.summary ?? observe?.envelope?.relations?.summary ?? observe?.summary?.focus?.relations?.summary,
+			hasModelFacingOccludes: /occludes|occluded/i.test(scanText),
+			hasLayerTreeSource: /layerTree|LayerTree|paintOrder/i.test(scanText),
+			layerTreeProbe: {
+				enableOk: !toolReturnedError({ content: [{ type: "text", text: JSON.stringify(layerEnable) }] }),
+				compositingLayersError: toolReturnedError({ content: [{ type: "text", text: JSON.stringify(layerProbe) }] })?.error ?? null,
+			},
+			nonClaims: [
+				"Eval boundary evidence only: no LayerTree owner-to-backendNodeId relation model is proven.",
+				"Current page-engine top-hit evidence does not equal paint-order capped ABML relations.",
+			],
+		};
+		await saveJsonEvidence(env, metrics, "boundary", boundary);
+		const topHitShowsCover = /covering/.test(JSON.stringify(topHitData));
+		const ok = topHitShowsCover && boundary.hasLayerTreeSource === false;
+		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
+		metrics.scopedFollowUpDiscipline = "passed";
+		metrics.summary.push(`Occlusion boundary evidence: elementFromPoint saw covering=${topHitShowsCover}; layerTree source in scan=${boundary.hasLayerTreeSource}.`);
+		metrics.diagnostics.push("Passing records the current LayerTree boundary; it does not prove shipped LayerTree relations.");
+		metrics.notes.push("LayerTree / paint-order remains behind a dedicated execution contract with owner mapping and artifact-only full detail.");
+		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
+	} finally {
+		await closeTabQuiet(env, tabId);
+	}
+}
+
+async function eval34(env, entry) {
+	const metrics = beginMetrics(env, entry.id);
+	const tabId = await createTab(env, metrics, "oopif-parent.html");
+	try {
+		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#xframe", state: "attached" }, timeoutMs: 15_000, maxChars: 4_000 }), "browser_wait iframe attached");
+		await delay(1_000);
+		const inspectPath = path.join(env.runDir, `${entry.id}-inspect.json`);
+		const framePath = path.join(env.runDir, `${entry.id}-frame.json`);
+		const targetsPath = path.join(env.runDir, `${entry.id}-targets.json`);
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__oopifFixture.inspect())()", outputPath: inspectPath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute oopif inspect");
+		assertToolOk(await callTool(env, metrics, "browser_frame", { action: "list", tabId, outputPath: framePath, timeoutMs: 15_000, maxChars: 12_000 }), "browser_frame oopif boundary");
+		const targetResponse = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "Target.getTargets", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: targetsPath, timeoutMs: 15_000, maxChars: 12_000 }));
+		const inspected = JSON.parse(await readFile(inspectPath, "utf8"));
+		const frame = JSON.parse(await readFile(framePath, "utf8"));
+		const targets = existsSync(targetsPath) ? JSON.parse(await readFile(targetsPath, "utf8")) : targetResponse;
+		const inspectValue = inspected?.data?.value ?? inspected?.data ?? inspected;
+		const targetInfos = bridgeData(targets)?.result?.targetInfos ?? bridgeData(targets)?.targetInfos ?? [];
+		const targetText = JSON.stringify(targetInfos);
+		const boundary = {
+			inspect: inspectValue,
+			frameSummary: frame?.data ?? frame?.summary ?? frame,
+			targetCount: Array.isArray(targetInfos) ? targetInfos.length : 0,
+			oopifTargetPresent: /iframe|oopif/i.test(targetText),
+			targetProbeError: toolReturnedError({ content: [{ type: "text", text: JSON.stringify(targetResponse) }] })?.error ?? null,
+			crossOriginBlocked: inspectValue?.childReadableFromParent === false && Boolean(inspectValue?.crossOriginError),
+			attachRouteUsed: false,
+			compositeKeyProof: "not-proven",
+			nonClaims: [
+				"Eval boundary evidence only: no targetId+backendNodeId dual key is written or consumed.",
+				"Current public refs remain tab-scoped; this runner does not attach child targets for input.ref.",
+			],
+		};
+		await saveJsonEvidence(env, metrics, "boundary", boundary);
+		const ok = boundary.crossOriginBlocked && boundary.compositeKeyProof === "not-proven";
+		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
+		metrics.scopedFollowUpDiscipline = "passed";
+		metrics.summary.push(`OOPIF boundary evidence: crossOriginBlocked=${boundary.crossOriginBlocked}, targetCount=${boundary.targetCount}, oopifTargetPresent=${boundary.oopifTargetPresent}.`);
+		metrics.diagnostics.push("Passing records the composite-key boundary; it does not prove targetId/backendNodeId dual-key joins.");
+		metrics.notes.push("Composite keys remain behind a separate execution contract with Target.attachToTarget routing and old-ref compatibility gates.");
+		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
+	} finally {
+		await closeTabQuiet(env, tabId);
+	}
+}
+
 const implemented = new Map([
 	["01-readable-content-artifact", eval01],
 	["02-scan-execute-wait", eval02],
@@ -1256,9 +1586,13 @@ const implemented = new Map([
 	["27-websocket-session-transcript", eval27],
 	["30-abml-internal-routing-evidence", eval30],
 	["31-execution-plane-cdp-fusion", eval31],
+	["32-abml-identity-bootstrap-evidence", eval32],
+	["33-layer-paint-occlusion-boundary", eval33],
+	["34-oopif-composite-key-boundary", eval34],
 ]);
 
 async function writeRunnerSummary(runDir, records, envMeta) {
+	const evalMetrics = Array.isArray(envMeta.evalMetrics) ? envMeta.evalMetrics : [];
 	const summary = {
 		schemaVersion: 1,
 		suite: "browser-workflows",
@@ -1271,6 +1605,11 @@ async function writeRunnerSummary(runDir, records, envMeta) {
 		resultDir: pathRef(runDir),
 		implementedEvalIds: [...implemented.keys()],
 		results: records.map((record) => ({ evalId: record.evalId, status: record.status, toolCallCount: record.toolCallCount, artifacts: record.evidence.artifacts.length })),
+		metrics: {
+			successRate: records.length ? records.filter((record) => record.status === "passed").length / records.length : 0,
+			...summarizeSuiteMetrics(evalMetrics),
+			evals: evalMetrics,
+		},
 	};
 	const summaryPath = path.join(runDir, "browser-workflow-eval-summary.json");
 	await writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
@@ -1376,6 +1715,7 @@ async function main() {
 	const fixture = await startFixtureServer();
 	let env;
 	const records = [];
+	const evalMetrics = [];
 	try {
 		env = await startBrowserEnv(args, runDir, fixture);
 		for (const entry of entries) {
@@ -1395,8 +1735,9 @@ async function main() {
 			const resultPath = path.join(runDir, `${entry.id}.result.json`);
 			await writeFile(resultPath, JSON.stringify(record, null, 2), "utf8");
 			records.push(record);
+			if (env?.currentMetrics?.evalId === entry.id) evalMetrics.push(summarizeEvalMetrics(env.currentMetrics));
 		}
-		const summaryPath = await writeRunnerSummary(runDir, records, { startedAt: nowIso(), fixtureBaseUrl: fixture.baseUrl, fixturePort: fixture.port, bridgePort: env.bridgePort });
+		const summaryPath = await writeRunnerSummary(runDir, records, { startedAt: nowIso(), fixtureBaseUrl: fixture.baseUrl, fixturePort: fixture.port, bridgePort: env.bridgePort, evalMetrics });
 		const observeSummary = await writeObserveTimingSummary(args.outDir, runDir, summaryPath, env.observeTimingSamples);
 		const temporalSummary = await writeTemporalProfileArtifacts({ cwd: root, runId, samples: env.temporalProfileSamples, evalRunDir: runDir, runnerSummaryPath: summaryPath });
 		const failed = records.filter((record) => record.status !== "passed");

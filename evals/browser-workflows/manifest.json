@@ -519,6 +519,70 @@
         "trusted-result",
         "action-call-comparison"
       ]
+    },
+    {
+      "id": "32-abml-identity-bootstrap-evidence",
+      "spec": "32-abml-identity-bootstrap-evidence.md",
+      "fixtures": [
+        "fixtures/abml-identity-bootstrap.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_command",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "scan-rects",
+        "snapshot-bounds",
+        "coordinate-parity",
+        "bootstrapStats",
+        "fail-open-cases"
+      ]
+    },
+    {
+      "id": "33-layer-paint-occlusion-boundary",
+      "spec": "33-layer-paint-occlusion-boundary.md",
+      "fixtures": [
+        "fixtures/abml-layer-occlusion.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_command",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "geometry-top-hit",
+        "scan-relations",
+        "layerTree-probe",
+        "boundary-diagnostics"
+      ]
+    },
+    {
+      "id": "34-oopif-composite-key-boundary",
+      "spec": "34-oopif-composite-key-boundary.md",
+      "fixtures": [
+        "fixtures/oopif-parent.html",
+        "fixtures/oopif-child.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_wait",
+        "browser_observe",
+        "browser_frame",
+        "browser_execute",
+        "browser_command",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "cross-origin-iframe",
+        "frame-list",
+        "target-domain-signal",
+        "composite-key-non-claim"
+      ]
     }
   ]
 }

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ABML identity bootstrap fixture</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    main { padding: 24px; min-height: 1600px; }
+    .target {
+      display: block;
+      width: 180px;
+      height: 42px;
+      margin: 18px 0;
+      border: 1px solid #222;
+      background: #f5f7fb;
+    }
+    #scroll-target { margin-top: 620px; }
+    #transform-target { transform: translateX(28px) scale(1.05); transform-origin: top left; }
+    #duplicate-wrap { position: relative; width: 220px; height: 70px; margin-top: 24px; }
+    #duplicate-a, #duplicate-b {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 180px;
+      height: 42px;
+      border: 1px solid #444;
+      background: rgba(245, 247, 251, 0.95);
+    }
+    #duplicate-b { background: rgba(220, 232, 255, 0.82); }
+    #drift-target.drifted {
+      margin-left: 160px;
+      width: 220px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ABML identity bootstrap fixture</h1>
+    <button id="stable-target" class="target" data-bootstrap-case="stable">Stable target</button>
+    <button id="transform-target" class="target" data-bootstrap-case="transform">Transform target</button>
+    <button id="drift-target" class="target" data-bootstrap-case="drift">Drift target</button>
+    <section id="duplicate-wrap" aria-label="Duplicate geometry case">
+      <button id="duplicate-a" data-bootstrap-case="duplicate">Duplicate A</button>
+      <button id="duplicate-b" data-bootstrap-case="duplicate">Duplicate B</button>
+    </section>
+    <button id="scroll-target" class="target" data-bootstrap-case="scroll">Scrolled target</button>
+  </main>
+  <script>
+    window.__abmlBootstrapFixture = {
+      collect() {
+        const viewport = {
+          devicePixelRatio: window.devicePixelRatio,
+          scale: window.visualViewport ? window.visualViewport.scale : 1,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight
+        };
+        const ids = ["stable-target", "scroll-target", "transform-target", "drift-target", "duplicate-a", "duplicate-b"];
+        return {
+          viewport,
+          targets: ids.map((id) => {
+            const el = document.getElementById(id);
+            const r = el.getBoundingClientRect();
+            return {
+              id,
+              case: el.dataset.bootstrapCase,
+              selector: "#" + id,
+              text: el.textContent.trim(),
+              scanRect: { x: r.x, y: r.y, width: r.width, height: r.height },
+              docRect: { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height }
+            };
+          })
+        };
+      },
+      drift() {
+        document.getElementById("drift-target").classList.add("drifted");
+        return this.collect();
+      }
+    };
+  </script>
+</body>
+</html>

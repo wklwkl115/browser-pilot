@@ -72,6 +72,11 @@ Each eval should define:
 - `25-wasm-artifact-metadata.md`
 - `26-wasm-wat-bridge.md`
 - `27-websocket-session-transcript.md`
+- `30-abml-internal-routing-evidence.md`
+- `31-execution-plane-cdp-fusion.md`
+- `32-abml-identity-bootstrap-evidence.md`
+- `33-layer-paint-occlusion-boundary.md`
+- `34-oopif-composite-key-boundary.md`
 
 Use `spec-template.md` for new workflow evals. Fixture requirements live under `fixtures/README.md`.
 
@@ -84,7 +89,7 @@ npm run eval:browser-workflows -- --fixture-server
 npm run eval:browser-workflows -- --fixture-server --eval 01-readable-content-artifact
 ```
 
-The runner writes schema-compatible `*.result.json` files plus `browser-workflow-eval-summary.json` under `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`. The default implemented suite now covers every manifest eval (`01`-`27` and `30`); result files remain runtime artifacts and are not required CI output.
+The runner writes schema-compatible `*.result.json` files plus `browser-workflow-eval-summary.json` under `.pi/browser-artifacts/eval-browser-workflows/<run-id>/`. The default implemented suite now covers every manifest eval (`01`-`27` and `30`-`34`); result files remain runtime artifacts and are not required CI output.
 
 `future-runner.md` records the original activation boundary and now serves as the runner boundary reference: explicit opt-in, local-only fixture server, ephemeral ports, isolated temp profile, no default scanner/OAST/external network.
 

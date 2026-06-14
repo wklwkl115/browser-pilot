@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OOPIF parent fixture</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    iframe { width: 420px; height: 180px; border: 2px solid #456; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OOPIF parent fixture</h1>
+    <p id="parent-status">Parent loaded</p>
+    <iframe id="xframe" title="cross origin fixture"></iframe>
+  </main>
+  <script>
+    const childUrl = new URL("/fixtures/oopif-child.html", location.href);
+    childUrl.hostname = location.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+    document.getElementById("xframe").src = childUrl.href;
+    window.__oopifFixture = {
+      inspect() {
+        const frame = document.getElementById("xframe");
+        let readable = false;
+        let error = null;
+        try {
+          readable = !!frame.contentWindow.document.querySelector("#child-action");
+        } catch (err) {
+          error = String(err && err.name || err);
+        }
+        return { parentOrigin: location.origin, childUrl: frame.src, childReadableFromParent: readable, crossOriginError: error };
+      }
+    };
+  </script>
+</body>
+</html>

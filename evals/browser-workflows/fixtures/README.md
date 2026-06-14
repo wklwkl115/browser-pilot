@@ -36,6 +36,9 @@ Fixtures in this directory must be local, deterministic, synthetic, and safe to 
 - `js-ast-object-dispatch.js`: synthetic object-dispatch fixture for deterministic readability reduction.
 - `dom-flow-listeners.html`: synthetic DOM listener/source/sink fixture for explicit node listener extraction and compact handler-chain evidence.
 - `wasm-minimal.wat`, `wasm-minimal.wasm`: synthetic Wasm fixture pair for bounded module metadata extraction and later bridge/WAT validation.
+- `abml-identity-bootstrap.html`: synthetic stable/scroll/transform/drift/duplicate geometry fixture for DOMSnapshot identity-bootstrap evidence.
+- `abml-layer-occlusion.html`: synthetic overlapping fixed/sticky/opacity/transform fixture for LayerTree/paint-order boundary evidence.
+- `oopif-parent.html`, `oopif-child.html`: synthetic loopback cross-origin iframe fixture for OOPIF/composite-key boundary evidence.
 
 ## Rules
 

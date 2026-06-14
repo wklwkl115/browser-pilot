@@ -51,6 +51,9 @@ const specFiles = [
 	"27-websocket-session-transcript.md",
 	"30-abml-internal-routing-evidence.md",
 	"31-execution-plane-cdp-fusion.md",
+	"32-abml-identity-bootstrap-evidence.md",
+	"33-layer-paint-occlusion-boundary.md",
+	"34-oopif-composite-key-boundary.md",
 ];
 
 for (const file of ["README.md", "eval-plan.md", "spec-template.md", "manifest.json", "manual-result-template.json", "future-runner.md", "runner.mjs", "result-schema.json", "results/README.md", "blind-agent-prompt.md", ...specFiles]) {

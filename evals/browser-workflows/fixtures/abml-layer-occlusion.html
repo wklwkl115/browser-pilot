@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ABML layer occlusion fixture</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; min-height: 1200px; }
+    main { padding: 32px; }
+    #covered {
+      position: absolute;
+      left: 80px;
+      top: 140px;
+      width: 220px;
+      height: 90px;
+      background: #dde8ff;
+      border: 2px solid #245;
+      z-index: 1;
+    }
+    #covering {
+      position: fixed;
+      left: 130px;
+      top: 160px;
+      width: 220px;
+      height: 90px;
+      background: rgba(220, 50, 80, 0.82);
+      border: 2px solid #822;
+      transform: translateZ(0) rotate(0.01deg);
+      z-index: 10;
+    }
+    #sticky {
+      position: sticky;
+      top: 0;
+      width: 260px;
+      padding: 12px;
+      background: rgba(40, 120, 80, 0.88);
+      color: white;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div id="sticky">Sticky occlusion header</div>
+    <button id="covered" data-occlusion-role="covered">Covered action</button>
+    <button id="covering" data-occlusion-role="covering">Covering action</button>
+  </main>
+  <script>
+    window.__abmlLayerFixture = {
+      sample() {
+        const covered = document.getElementById("covered").getBoundingClientRect();
+        const points = [
+          { name: "covered-center", x: covered.left + covered.width / 2, y: covered.top + covered.height / 2 },
+          { name: "covered-top-left", x: covered.left + 10, y: covered.top + 10 }
+        ];
+        return {
+          viewport: { scrollX, scrollY, innerWidth, innerHeight, devicePixelRatio },
+          points: points.map((point) => {
+            const el = document.elementFromPoint(point.x, point.y);
+            return { ...point, topId: el && el.id, topRole: el && el.getAttribute("data-occlusion-role") };
+          })
+        };
+      }
+    };
+  </script>
+</body>
+</html>

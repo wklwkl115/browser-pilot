@@ -31,6 +31,62 @@
 - DOMDebugger listeners 进感知格：执行平面已有 oracle；感知面是否默认 probe 需基于候选集合成本数据，不在本轮默认启用。
 - OOPIF 复合主键 `(targetId, backendNodeId)`：必须双写兼容并有 `Target.attachToTarget` 路由验证；本轮只保留架构迁移路径。
 
+### 0.3 后续重开证据项
+
+以下证据项是 §8 后续演进的重开门槛。它们不是当前 TODO；只有当一项能同时满足"当前代码证据 + 可运行 gate + artifact 证据"时，才允许派生成新的激活执行合同。
+
+| 重开项 | 当前代码证据 | 缺失证明 | 可接受证据 | 最小 gate |
+| --- | --- | --- | --- | --- |
+| DOM scan 实体批量盖 `backendNodeId` | `src/abml/verbs/axRuntime.ts` 已用 `DOMSnapshot.captureSnapshot` 读取 `nodes.backendNodeId`/`layout.bounds` 并按 backend id 回填 AX 几何；`scanBundle` 仍是页面语义真值面 | scan rect 与 snapshot bounds 的 drift-free 采样窗口、viewport/document 坐标转换、歧义/漂移时 fail-open 行为 | fixture 同时覆盖无滚动、滚动、CSS transform、transition/mutation 漂移和重复同尺寸节点；artifact 写 `bootstrapStats`（matched/ambiguous/stale/unsupported）与每类样本 | 新增 `tests/contracts/tools/check-abml-identity-bootstrap.mjs` 或等价 contract；目标单测锁定五态状态机 |
+| LayerTree / paint-order 遮挡关系 | 当前感知路径未使用 LayerTree；文档只承认 `elementFromPoint` 五点 hit-test 是近似 | compositor layer owner 到 `backendNodeId` 的可追溯映射、遮挡关系 cap、artifact-only full detail | overlapping fixed/sticky/opacity/transform fixture 证明 `relations.summary.occludes` 稳定；完整遮挡明细只在 artifact，model-facing 只给 capped summary | 新增遮挡 fixture contract；`npm run check:abml-scan-envelope` 锁定不泄漏全量矩阵 |
+| DOMDebugger listeners 进感知格 | `bridge_src/service_worker/dom_flow.ts` 已用 `DOMDebugger.getEventListeners`，listener 记录含 `backendNodeId`；执行平面 oracle 已跑通 | 感知层候选集合规则、每节点 CDP 成本上限、listener hint schema 与红action面边界 | 只对可解释候选（role/actionability/frontier refs）probe；artifact 写 candidate count / probed count / elapsedMs；`Entity.hints.listeners` 或等价只读字段不引入 click/type 策略 | 新增 listener 感知单测 + token budget 断言；skill/README 明确它是 evidence，不是策略 |
+| OOPIF 复合主键 `(targetId, backendNodeId)` | `bridge_src/service_worker/input.ts` 对 target/session/frame/oopif 类 CDP 失败 fail-closed 为 `OOPIF_SESSION_UNSUPPORTED`；现有 `relations.ts`/`input.ref`/`pi.click` 仍吃裸 backendNodeId | `Target.attachToTarget` 路由、复合 key 双写、旧 `b:<backendNodeId>` 兼容读、跨 target artifact 归属 | cross-origin iframe fixture 中同 backendNodeId 不串 key；旧 ref 仍可在同源 frame 工作；OOPIF miss 给可恢复诊断而非错点 | 新增 runtime fixture 覆盖 attach/resolve/fail-closed；`check-protocol-contract` 保持旧输入兼容 |
+| 关系层升一等公民 | 当前 `Entity.relations[]` 与 `src/abml-core/relations.ts` 已能产出关系边，但反查/遮挡/传递关系仍依赖扫 entity | 中央关系图 schema、entity 派生字段兼容、summary/artifact 分层 | `relations.summary` 与当前输出 parity；full graph artifact-only；entity 派生字段可由关系图重建 | `tests/unit/abml/relations.test.ts` parity 扩展 + `check-abml-scan-envelope` contract |
+| ledger 容量调整 | `src/abml/perceptionLedger.ts` 当前 `MAX_FRAMES_PER_SESSION_TAB = 8`、`MAX_TRACE_TERMS_PER_SESSION = 32`；`scanRunner.ts` 已消费 stable refs | 长任务是否真的因历史帧不足失败、放大后 token/内存成本 | `eval:browser-workflows` 给出多步表单/分页任务的 history miss 证据，且 memory/token 增量可接受 | eval summary artifact 必须包含 before/after history hit rate、token delta、task success |
+| projection/frontier 预算 | 当前 envelope 已提升 `gist/outline/relations/identity/collections/treeDiff`，完整图走 artifact | projection / collections / frontier refs / ref pool 的预算比例与任务成功率关系 | workflow eval 比较首屏 token、agent 二次 artifact 读取次数、任务完成率；不能只证明 token 降低 | `npm run eval:browser-workflows -- --fixture-server` 持久化 summary；必要时补 blind real-site friction 证据 |
+
+### 0.4 Eval 证据采集记录（2026-06-14）
+
+基线执行（扩展前默认集）：
+
+```bash
+npm run eval:browser-workflows -- --fixture-server --timeout-ms 120000
+```
+
+第一轮基线结果：29/29 fixture workflows passed。主产物：
+
+- `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T04-38-00-224Z-9f39faa4/browser-workflow-eval-summary.json`
+- `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T04-38-00-224Z-9f39faa4/observe-timings-summary.json`
+- `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T04-38-00-224Z-9f39faa4/temporal-profile-summary.json`
+
+随后按本草案当前缺口补了 3 个定向 eval，并单项跑通：
+
+- `32-abml-identity-bootstrap-evidence` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-07-57-045Z-728d37b4/browser-workflow-eval-summary.json`
+- `33-layer-paint-occlusion-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-13-32-558Z-28f63bd8/browser-workflow-eval-summary.json`
+- `34-oopif-composite-key-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-11-38-133Z-5f060821/browser-workflow-eval-summary.json`
+
+扩展后全量回归已跑通：
+
+- `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-24-15-768Z-9bfb712a/browser-workflow-eval-summary.json`
+- 结果：32/32 passed；新增 `32/33/34` 全部 passed。
+- run-local timing：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-24-15-768Z-9bfb712a/observe-timings-summary.json`、`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-24-15-768Z-9bfb712a/temporal-profile-summary.json`。
+
+中间一次全量回归 `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-15-56-492Z-ab8799da/browser-workflow-eval-summary.json` 曾出现旧 `15-jshook-canvas-observation` 的 `browser_screenshot` 15s ACK 后超时（`BRIDGE_TIMEOUT`），随后单项复跑 passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-18-24-136Z-9fe0ad74/browser-workflow-eval-summary.json`。这条记录只作为截图路径时序波动的历史诊断，不作为最终回归状态。
+
+这轮 eval 是**证据采集**，不是自动重开 §0.3 的所有 closed decisions。覆盖关系如下：
+
+| 证据项 | 本轮 artifact | 已证明 | 未证明 / 仍需新增证据 |
+| --- | --- | --- | --- |
+| 当前 `identity` / `identityGraph` artifact 可见性 | `30-abml-internal-routing-evidence-observe.json` | `summary.identity` 存在，样本 `backendNodeIdCoverage=0.636`；`artifact_hints.jsonPaths.identityGraph = "envelope.identityGraph"`；完整 `identityGraph` 在 artifact 侧可读 | 这只证明当前 AX/DOM 融合后的 identity diagnostics 可见，不证明 DOM scan 批量 bootstrap 盖章正确 |
+| DOMDebugger listener oracle | `23-dom-flow-listener-chain-listeners.json`, `23-dom-flow-listener-chain-chain.json` | `hook.getNodeListeners` 在 selector-scoped 场景返回 listener，listener 记录含 `backendNodeId`，证明执行平面 oracle 可用 | 未证明感知层候选集合、并发上限、`Entity.hints.listeners` schema，也未证明默认 scan 应 probe listeners |
+| projection / artifact 精读纪律 | `16-scan-high-entropy-summary-scan.json`, `21-cross-tool-correlation-chain-*.json` | scan summary 能先暴露 high-entropy action/form/list/text signals 和 artifact hints；跨工具链保留 operation/snapshot/wait/request ids，并使用窄 jsonPath 读取 | 未做 projection/frontier/ref-pool A/B；没有比较任务完成率、二次 artifact 读取次数和 token 预算比例 |
+| ABML 内部路由边界 | `30-abml-internal-routing-evidence-*.json` | ABML-backed primary entities、frame entities、vision regions 和 monitor facts 能继续通过现有 `browser_*` 工具面暴露；没有证据要求新增公开 ABML verb | 未证明更深的 bootstrap/OOPIF/LayerTree 应进入当前公开契约 |
+| 执行平面 backendNodeId 落点 | `31-execution-plane-cdp-fusion-*.json` | `pi.click(ref)` 通过内部 `input.ref` 派发，trusted semantic success 由 wait/observe 复核；旧路径与 fused path 有可比 artifact | 未证明 OOPIF 复合 key；现有输入仍是同 target 内裸 backendNodeId / point fallback |
+| observe timing / ledger 历史 | `2026-06-14T05-24-15-768Z-9bfb712a/observe-timings-summary.json`, `2026-06-14T05-24-15-768Z-9bfb712a/temporal-profile-summary.json` | 8 个 observe timing 样本：`abmlMs` median 19.5ms / p95 48ms，`axGeometryCdpCalls` median 0 / p95 1；167 个 temporal profile 样本 `historyLostCount=0` | 不足以调整 ledger 容量：没有 before/after 容量 A/B，也没有长任务 history miss 样本 |
+| DOM scan 批量 `backendNodeId` bootstrap | `32-abml-identity-bootstrap-evidence-comparison.json` | fixture 中 `DOMSnapshot.captureSnapshot` 与页面 rect 可在 DPR=2 后归一到 document-relative CSS px；6 个目标里 3 个 stable/scroll/transform 以 IoU=1 匹配到 `backendNodeId`，2 个重复同框节点 fail-open 为 `ambiguous`，1 个 post-scan mutation fail-open 为 `stale`；sample window 383ms | 只证明 bootstrap eval 机制可采证，不证明产品 scan entity 已写入 `backendNodeId`；未覆盖真实站点 animation/virtualized list/多 frame 批量成本 |
+| LayerTree / paint-order 遮挡关系 | `33-layer-paint-occlusion-boundary-boundary.json` | overlapping fixture 中 `elementFromPoint` 证明 covered-center 顶层命中 `covering`；当前 scan 有 occlusion-ish model-facing summary，但没有 LayerTree/paintOrder 来源；`LayerTree.compositingLayers` 返回 `-32601`，记录为当前机制边界 | 只证明当前 LayerTree owner mapping 未落地；未证明 compositor layer owner→`backendNodeId`、遮挡关系 cap、artifact-only full detail |
+| OOPIF 复合主键 | `34-oopif-composite-key-boundary-boundary.json` | cross-origin iframe fixture 中父页读子 frame 被 `SecurityError` 阻断，`childReadableFromParent=false`；当前 `browser_frame` 只暴露父 frame，`Target.getTargets` 返回 `-32000 Not allowed`，复合键证明状态为 `not-proven` | 只证明当前 public refs 仍是 tab-scoped/未 attach child target；未证明 `Target.attachToTarget` 路由、`(targetId, backendNodeId)` 双写、旧 ref 兼容和 OOPIF fail-closed 迁移 |
+
 ---
 
 ## 1. 起点：当前"AX+DOM 原生融合"的真实形状
@@ -514,13 +570,13 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 ## 8. 后续演进决策（本轮关闭，按证据重开）
 
-本节保留恒等格后续演进方向，但这些项**不是**当前未完成计划。它们已在 §0.2 作为 closed decisions 收口；重开必须先拿到当前代码机制证据、明确执行合同和可运行 gate，再进入新的激活执行线。
+本节保留恒等格后续演进方向，但这些项**不是**当前未完成计划。它们已在 §0.2 作为 closed decisions 收口；重开必须先满足 §0.3 的证据项，拿到当前代码机制证据、明确执行合同和可运行 gate，再进入新的激活执行线。
 
 ### 决策一：关系层是一等公民还是 entity 的派生字段？
 
 - **派生字段（现状）**：`entity.relations[]` 挂节点上。简单，但遮挡这类对称/传递关系重复存储，反查要全扫。
 - **一等公民**：独立 `Map<(from,to), Relation>` 表。语义准、查询快，但要新数据结构。
-- 倾向：一等公民，但属 schema 升级，需排期。
+- 倾向：一等公民，但属 schema 升级，需另起执行合同。
 
 ### 决策二：复合主键升级 `(targetId, backendNodeId)` 何时做、怎么做？
 
