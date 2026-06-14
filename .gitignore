@@ -32,8 +32,8 @@ subagent-blind-round2/
 .plan/
 agent-audits/
 docs/archive/
-skills/pi-browser-audit-fix/
-skills/pi-browser-blind-eval/
+skills/browser-pilot-audit-fix/
+skills/browser-pilot-blind-eval/
 skills/pi-kernel-audit/
 AGENTS.md
 CLAUDE.md

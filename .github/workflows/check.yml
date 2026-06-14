@@ -42,8 +42,6 @@ jobs:
         run: |
           npm run lint
           npm run check:all:src
-          npm run check:boundaries
-          npm run check:bridge:files
           npm run check:page-scripts
 
       - name: Upload check DAG artifacts

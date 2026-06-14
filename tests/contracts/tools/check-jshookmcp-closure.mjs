@@ -13,17 +13,18 @@ const docs = {
 	current: read("CURRENT.md"),
 	roadmap: read("ROADMAP.md"),
 	toolBoundaries: read("docs/tool-boundaries.md"),
-	readme: read("README.md"),
-	changelog: read("CHANGELOG.md"),
 	closure: read(closureDoc),
 };
 
+// jshookmcp is an internal absorption decision; it is tracked in internal governance
+// docs only. The public README and CHANGELOG must NOT carry internal jshookmcp boundary
+// prose (open-source audience has no context for it).
 for (const [name, text] of Object.entries(docs)) {
 	assert(text.includes("jshookmcp"), `${name} must mention jshookmcp boundary`);
 }
 
-for (const text of [docs.current, docs.roadmap, docs.readme, docs.toolBoundaries, docs.changelog]) {
-	assert(text.includes(closureDoc), `public planning docs must reference ${closureDoc}`);
+for (const text of [docs.current, docs.roadmap]) {
+	assert(text.includes(closureDoc), `internal planning docs must reference ${closureDoc}`);
 }
 
 for (const required of [
@@ -60,6 +61,7 @@ const allowedMentions = new Set([
 	"README.md",
 	"CHANGELOG.md",
 	"docs/tool-boundaries.md",
+	"docs/changelog-history.md",
 	closureDoc,
 	"docs/archive/jshookmcp-native-absorption.full.md",
 	"evals/browser-workflows/eval-plan.md",

@@ -18,12 +18,12 @@ export const CHECK_CACHE_INDEX_PATH = path.join(CHECK_CACHE_DIR, "index.json");
 export const CHECK_CACHE_SCHEMA_VERSION = 2;
 
 export const CHECK_GROUPS = Object.freeze({
-	src: ["check:src:types", "check:registry-drift"],
+	src: ["check:src:types"],
 	bridge: ["check:bridge"],
 	unit: ["test:unit:abml", "test:unit:cli:commands", "test:unit:cli:daemon", "test:unit:distill", "test:unit:temporal", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
-	package: ["check:package", "check:deps", "check:browser-pilot-bridge"],
-	docs: ["check:tool-docs", "check:doc-structure", "check:audit-inbox", "check:doc-paths", "check:code-map", "check:boundaries", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:docs-sync"],
-	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:eval-workflows", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
+	package: ["check:deps", "check:browser-pilot-bridge"],
+	docs: ["check:tool-docs", "check:code-map", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:docs-sync"],
+	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
 });
 
 export const DEFAULT_GROUP_SEQUENCE = Object.freeze(["src", "bridge", "unit", "package", "docs", "contracts"]);
@@ -64,18 +64,27 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"check:all:contracts": "DAG group alias for contracts",
 	"check:all:package": "DAG group alias for package+docs",
 	"check:all:src": "DAG group alias for src",
+	"check:internal": "internal-only aggregate; runs governance contracts excluded from the public default check graph (run explicitly by maintainers)",
+	"check:audit-inbox": "internal governance contract; depends on gitignored agent-audits/ dev docs; run via check:internal",
+	"check:boundaries": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
+	"check:bridge:files": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
 	"check:cli-migration-drift": "completed migration guard; retained as standalone script but removed from default check graph",
 	"check:compute-once": "covered by check:governance umbrella",
 	"check:dag": "graph executor frontend, not a proof obligation node",
+	"check:doc-paths": "internal governance contract; targets gitignored dev docs and degenerates to a vacuous pass in the public tree; run via check:internal",
+	"check:doc-structure": "internal governance contract; depends on gitignored CURRENT/ROADMAP/TODO/ARCHIVE/agent-audits/ dev docs; run via check:internal",
 	"check:env-flags": "covered by check:governance umbrella",
+	"check:eval-workflows": "internal governance contract; depends on gitignored WORKSTREAMS/blind-agent-prompt dev docs; run via check:internal",
 	"check:jshookmcp-closure": "completed migration guard; retained as standalone script but removed from default check graph",
 	"check:kernel-test-map": "covered by check:governance umbrella",
+	"check:package": "internal governance contract; depends on gitignored ARCHIVE/planning dev docs and internal skills; run via check:internal",
 	"check:purity-vocabulary": "covered by check:governance umbrella",
 	"check:serial": "serial grouped-runner escape hatch",
 	"check:serial:bridge": "serial grouped-runner escape hatch for bridge+unit",
 	"check:serial:contracts": "serial grouped-runner escape hatch for contracts",
 	"check:serial:package": "serial grouped-runner escape hatch for package+docs",
 	"check:smart": "impact executor frontend, not a proof obligation node",
+	"check:registry-drift": "internal governance contract; depends on gitignored CURRENT.md dev doc; run via check:internal",
 	"check:spec-truth": "covered by check:governance umbrella",
 	"check:surface-liveness": "covered by check:governance umbrella",
 	"check:trace": "trace frontend over the graph-backed grouped runner",
@@ -121,6 +130,7 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"test:observe-abml-integration": "covered by test:unit glob in the graph",
 	"test:unit": "umbrella; covered by test:unit:* shards",
 	"test:unit:cli": "umbrella; covered by test:unit:cli:commands and test:unit:cli:daemon shards",
+	"verify:bridge:dist": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
 });
 
 const COMMAND_OVERRIDES = Object.freeze({

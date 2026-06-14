@@ -1,16 +1,16 @@
-# Pi Browser Tools
+# Browser Pilot
 
-[![CI](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+[![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#tools)
+[![Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
 
 [中文文档](README.zh-CN.md)
 
-Real browser automation for AI agents — tab control, DOM scanning, JavaScript/CDP execution,
-network capture, screenshot & evidence collection, file transfer, and a web security testing layer.
-
-Built as a Chrome extension + Node.js bridge. Works with any agent that can call tools (Pi native)
-or run shell commands (`browser-pilot` CLI).
+**Real browser automation for AI agents** — not a simulator, not a proxy, not a screenshot parser.
+Browser Pilot gives your agent direct access to a real Chrome/Edge tab: DOM structure, JavaScript
+execution, CDP commands, network traffic, cookie jars, and file transfers. Everything a human
+can do in DevTools, your agent can do through 22 composable `browser_*` tools.
 
 ```
 $ browser-pilot observe --mode scan --json | jq '.summary.gist'
@@ -25,11 +25,35 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 "https://linux.do/api/status"
 ```
 
+## Why Browser Pilot
+
+Most browser automation tools give agents a **screenshot and a click coordinate**.
+Browser Pilot gives agents what they actually need:
+
+- **Structured perception** — DOM scanning with entity extraction, accessibility tree
+  fusion, structural diff, and template compression. Your agent sees the page as a semantic
+  model, not pixels.
+- **Direct execution** — run arbitrary JavaScript in the page, not just click/type macros.
+  Agents write the same DOM code a developer would write in DevTools.
+- **Physical input escape** — when trusted-event-gated controls ignore synthetic clicks,
+  CDP physical input (`input.pointer` / `input.keys`) gets through. No more "button doesn't
+  respond" dead ends.
+- **Full network visibility** — record/replay/mutate HTTP traffic, export HAR, capture
+  request bodies. See exactly what the page sends and receives.
+- **Built-in security testing** — 7 web security tools (crawl, fuzz, SQLi, template
+  checks, cookie/session analysis, HTTP replay, OAST) share the browser session. No
+  separate proxy setup.
+- **Token-efficient output** — salience-based rendering, session delta compression, and
+  task-conditioned relevance keep tool outputs compact. Repeated scans of the same page
+  send only what changed.
+- **860+ contract tests** — protocol, tools, boundaries, runtime fixtures, lifecycle, and
+  governance gates. The tool surface is locked by CI.
+
 ## How It Works
 
 ```
 ┌─ Chrome Extension (Manifest V3) ─────────────────────────────────┐
-│  Service worker + offscreen transport + content/hook scripts      │
+│  Service worker (esm-import-graph) + offscreen + content/hook     │
 └────────────────────────┬──────────────────────────────────────────┘
                          │ WebSocket (127.0.0.1:18765-18784)
 ┌────────────────────────▼──────────────────────────────────────────┐
@@ -47,6 +71,16 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+The Chrome extension runs in the browser and bridges to a Node.js server over a local
+WebSocket. The tool layer on top exposes 22 composable tools through a unified adapter
+(`runBrowserTool()` for core tools, `runWebSecurityTool()` for the security domain).
+Two frontends connect to the same tool core:
+
+| Frontend | Best for | Guide |
+|---|---|---|
+| **CLI** (`browser-pilot` command) | Shell-capable agents, CI, cron, humans | [CLI Usage Guide](docs/guide-cli.md) |
+| **Pi Native** (in-process `browser_*` calls) | Pi runtime agents (zero-overhead) | [Pi Native Guide](docs/guide-pi-native.md) |
+
 ## Quick Start
 
 ### Prerequisites
@@ -57,7 +91,7 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 ### Install
 
 ```bash
-git clone https://github.com/anthropics/browser-pilot.git
+git clone <repository-url> browser-pilot
 cd browser-pilot
 npm install
 npm run build
@@ -73,8 +107,8 @@ npm run build:bridge
 
 ### Use via CLI
 
-The `browser-pilot` CLI exposes all 22 tools as shell subcommands. A user-local daemon manages the
-bridge server — it auto-starts on first use.
+The `browser-pilot` CLI exposes all 22 tools as shell subcommands. A user-local daemon
+manages the bridge server — it auto-starts on first use.
 
 ```bash
 # Readiness gate (recommended for multi-step work)
@@ -91,7 +125,6 @@ npx browser-pilot wait selector --selector "#result" --json
 
 # Capture network traffic
 npx browser-pilot network start --json
-# ... interact with the page ...
 npx browser-pilot network list --session-id net-1 --json
 
 # Take a screenshot
@@ -102,52 +135,65 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
-Every `browser_*` tool maps to a subcommand: drop `browser_`, replace `_` with `-`.
-Flags are the kebab-cased tool parameters. `browser-pilot commands --json` is the single
-source of truth for available commands and their routing.
-
-For longer scripts and request bodies, prefer files over shell quoting:
-
-```bash
-npx browser-pilot execute --script-file ./my-script.js --json
-npx browser-pilot command --command @native-command.json --json
-npx browser-pilot http-replay --raw-request @request.txt --json
-```
+See the **[CLI Usage Guide](docs/guide-cli.md)** for workflows, file inputs, security
+testing, and daemon management.
 
 ### Use via Pi Native
 
 When loaded as a Pi extension, the tools register as `browser_*` tool calls with no
-connection setup. See [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md).
+connection setup. Just call them:
+
+```
+browser_tabs    { action: "list" }
+browser_observe { mode: "scan" }
+browser_execute { script: "document.title" }
+browser_wait    { action: "selector", params: { selector: "#result" } }
+```
+
+See the **[Pi Native Usage Guide](docs/guide-pi-native.md)** for the observe-execute-wait
+loop, memory, and recovery patterns.
+
+Pi-native slash commands: `/browser-install`, `/browser-status`, `/browser-reload`, plus the
+internal-only inspection paths `/browser-js-ast`, `/browser-wasm`, `/browser-ws` (these are not
+public browser tools — they route to internal AST/Wasm/WebSocket shells).
 
 > The Pi runtime packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`) are
 > optional peer dependencies. The CLI works independently without them.
 
 ## Tools
 
-| Tool | Description |
-|---|---|
-| `browser_tabs` | List, switch, create, close tabs; manage sessions and leases |
-| `browser_observe` | Scan DOM structure, extract content/HTML/text, diff baselines |
-| `browser_execute` | Run JavaScript in the page (with optional effect monitoring) |
-| `browser_command` | Send native bridge commands (CDP, input, etc.) |
-| `browser_wait` | Wait for navigation, selectors, load state, network idle |
-| `browser_pick` | Interactive element picker |
-| `browser_screenshot` | Capture visible tab screenshot |
-| `browser_network` | Record/list/export HTTP traffic and HAR |
-| `browser_hook` | Install page event hooks (console, errors, storage, etc.) |
-| `browser_evidence` | Aggregate hook + network + performance evidence |
-| `browser_frame` | List frames, evaluate in child frames, inject scripts |
-| `browser_artifact` | Read saved evidence by line, JSON path, search, or sample |
-| `browser_memory` | Local browser memory — record and recall per-site SOPs |
-| `browser_download` | Download files via click, media selector, or URL |
-| `browser_upload` | Upload local files via file input |
-| `browser_crawl` | Crawl links/forms/APIs/source maps; fingerprint URLs |
-| `browser_fuzz` | Path, vhost, and parameter fuzzing |
-| `browser_sqli` | SQL injection detection (builtin oracle + sqlmap bridge) |
-| `browser_template` | HTTP template checks (builtin + nuclei bridge) |
-| `browser_cookie_analyze` | Cookie/JWT/JWE/PASETO/session analysis |
-| `browser_http_replay` | Replay and mutate HTTP requests with diff clustering |
-| `browser_callback_oast` | Local HTTP/HTTPS/DNS callback listener for OAST |
+<!-- BEGIN GENERATED: readme-tool-index (npm run docs:sync) -->
+| Tool | Group | Source |
+| --- | --- | --- |
+| `browser_artifact` | core | `src/tools/registerArtifactTool.ts` |
+| `browser_callback_oast` | security | `src/tools/webSecurity/register/registerCallbackOast.ts` |
+| `browser_command` | core | `src/tools/registerCommandTool.ts` |
+| `browser_cookie_analyze` | security | `src/tools/webSecurity/register/registerCookieAnalyze.ts` |
+| `browser_crawl` | security | `src/tools/webSecurity/register/registerCrawl.ts` |
+| `browser_download` | core | `src/tools/registerTransferTools.ts` |
+| `browser_evidence` | core | `src/tools/registerEvidenceTool.ts` |
+| `browser_execute` | core | `src/tools/registerExecuteTool.ts` |
+| `browser_frame` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_fuzz` | security | `src/tools/webSecurity/register/registerFuzz.ts` |
+| `browser_hook` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_http_replay` | security | `src/tools/webSecurity/register/registerHttpReplay.ts` |
+| `browser_memory` | core | `src/tools/registerMemoryTool.ts` |
+| `browser_network` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_observe` | core | `src/tools/registerObserveTool.ts` |
+| `browser_pick` | core | `src/tools/registerPickTool.ts` |
+| `browser_screenshot` | core | `src/tools/registerScreenshotTool.ts` |
+| `browser_sqli` | security | `src/tools/webSecurity/register/registerSqli.ts` |
+| `browser_tabs` | core | `src/tools/registerTabsTool.ts` |
+| `browser_template` | security | `src/tools/webSecurity/register/registerTemplate.ts` |
+| `browser_upload` | core | `src/tools/registerTransferTools.ts` |
+| `browser_wait` | core | `src/tools/registerNativeActionTools.ts` |
+<!-- END GENERATED: readme-tool-index -->
+
+15 core tools (tabs, observe, execute, command, wait, pick, screenshot, network, hook,
+evidence, frame, artifact, memory, download, upload) and 7 security tools (crawl, fuzz,
+sqli, template, cookie-analyze, http-replay, callback-oast). See the
+[tool contract reference](docs/generated/browser-tool-contract.generated.md) for full
+schemas and parameters.
 
 ## Typical Workflow
 
@@ -163,6 +209,43 @@ connection setup. See [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL
 There are no `click` or `type` commands — page actions go through `browser_execute`
 (JavaScript). For trusted-event-gated controls, use `browser_command` with `input.pointer`
 or `input.keys` (CDP physical input).
+
+## Key Features
+
+### Structured DOM Perception
+
+`browser_observe` returns a semantic model of the page — not raw HTML, not a screenshot.
+It fuses the accessibility tree with DOM structure, extracts entities and relations,
+compresses repeated patterns (lists, tables), and tracks changes across scans.
+
+### Session Delta
+
+Repeated `browser_observe mode=scan` on the same tab produces compact delta frames
+(`delta:"session"`) containing only what changed. Multi-step workflows stay
+token-efficient without sacrificing completeness.
+
+### Browser Memory
+
+A local store (`.pi/browser-memory/`) lets agents record and recall per-site procedures
+(SOPs) and facts. Once recorded, `browser_observe` automatically surfaces relevant memory
+for the current URL — so the agent doesn't re-derive the same action sequence twice.
+
+### Living Tab Sessions
+
+Stable `tabHandle`/`targetRef` identifiers survive tab replacements, MV3 service worker
+restarts, and extension reconnects. Your agent doesn't lose track of tabs.
+
+### Four Pure-Logic Kernels
+
+The core perception pipeline runs in four CI-boundary-locked kernels with zero
+browser/Node dependencies:
+
+| Kernel | Purpose |
+|---|---|
+| **Capture** (sense) | Page-world JS templates injected into the browser |
+| **ABML** (perceive) | Entity extraction, diffing, templating, relations, causal |
+| **Distill** (express) | Token economy, salience renderer, fact allocator |
+| **Memory** (retain) | Profile distillation, recall scoring, staleness verification |
 
 ## Security Testing
 
@@ -194,7 +277,7 @@ npm run build:bridge      # Build the Chrome extension
 npm run build             # Compile Node.js source to dist/
 npm run lint              # ESLint
 npm run check             # Run all contract/unit/boundary tests
-npm run quality:local     # Full local gate: build + lint + check + pack
+npm run quality:local     # Full local gate: build + lint + check + npm pack --dry-run --ignore-scripts --json
 ```
 
 Narrow gates for faster iteration:
@@ -209,8 +292,21 @@ npm run check:all:contracts   # Contract tests
 Browser smoke tests (require extension connected):
 
 ```bash
-npm run smoke:browser:isolated    # Isolated Chrome profile
+npm run smoke:browser:isolated                 # Isolated Chrome profile (start here)
+npm run smoke:browser:scan-summary             # Observation/scan summary shape
+npm run smoke:browser:debugger-evidence        # CDP debugger evidence capture
+npm run smoke:browser:correlation-chain        # Cross-tool correlation chaining
+npm run smoke:browser:intercept-response       # Response interception
+npm run smoke:browser:intercept-replace-script # Script replacement interception
+npm run smoke:browser:intercept-uninstall-fail-closed  # Intercept uninstall fail-closed
+npm run smoke:browser:intercept-request-mutate # Request mutation before send
+npm run smoke:browser:intercept-tab-close-cleanup      # Tab-close cleanup diagnostics
+npm run smoke:browser:intercept-lease-conflict # Cross-session write conflict
+npm run smoke:browser:websocket-session        # WebSocket open/replay/failure
+npm run smoke:browser:memory                   # Task-scope memory record/recall
 ```
+
+Smoke results and port diagnostics are written to `.pi/browser-artifacts/smoke-browser-results.json`. When a smoke run reports a port conflict, the reason is one of `agent_occupies` (another process owns the port), `orphan_socket` (leftover socket with no owner), or `unknown_owner` — stop the occupying process and retry.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
@@ -218,12 +314,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
 | Doc | Description |
 |---|---|
-| [docs/cli.md](docs/cli.md) | CLI reference and usage patterns |
+| [docs/guide-cli.md](docs/guide-cli.md) | CLI usage guide — workflows, patterns, examples |
+| [docs/guide-pi-native.md](docs/guide-pi-native.md) | Pi native usage guide — tool calls, loop, memory |
+| [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md) | In-repo Pi-native operating skill (SOP for `browser_*` tools) |
+| [docs/cli.md](docs/cli.md) | CLI reference — full command/flag/output specification |
 | [docs/playbooks/](docs/playbooks/) | Security testing playbooks |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |
 | [docs/browser-memory.md](docs/browser-memory.md) | Local browser memory system |
+| [AI_INSTALL.md](AI_INSTALL.md) | Installation, extension loading, troubleshooting |
 | [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | Generated tool contract reference |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | Generated native protocol reference |
+
+## Notes
+
+`.pi/public-export/` is a local export/archive directory — not a second source tree.
+It is `.gitignore`d and should never be committed.
 
 ## Configuration
 

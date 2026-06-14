@@ -9,10 +9,9 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 const gitignore = read(".gitignore");
 assert(gitignore.includes("/.pi/public-export/"), "nested public-export repos must be ignored so the outer repo stays the only source of truth");
 
-const readme = read("README.md");
-assert(readme.includes("`.pi/public-export/` 仅允许作为本地导出/归档产物"), "README must declare .pi/public-export as export-only, not a second source tree");
-
 const current = read("CURRENT.md");
+assert(current.includes("`.pi/public-export/` 仅允许作为本地导出/归档产物") || current.includes("`.pi/public-export/` 仅作本地导出/归档产物"), "CURRENT.md must declare .pi/public-export as export-only, not a second source tree (public README keeps an English summary)");
+
 assert(current.includes("唯一正式源码仓库"), "CURRENT.md must lock the outer repo as the only formal source repository");
 
 const pkg = JSON.parse(read("package.json"));

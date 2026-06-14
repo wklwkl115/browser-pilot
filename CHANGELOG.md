@@ -43,7 +43,7 @@ All notable changes to this project will be documented in this file.
 - **Cross-tool correlation** — `operationId`, `snapshotId`, `waitId` thread through
   observe → execute → wait → evidence → artifact for audit trails.
 - **CI pipeline** — GitHub Actions with lint, source checks, bridge/unit tests,
-  contract tests, package acceptance, and optional browser/release smoke.
+  contract tests, package acceptance (`npm pack --dry-run`), and optional browser/release smoke.
 - **860+ contract and unit tests** covering protocol, tools, boundaries, runtime
   fixtures, lifecycle, and governance gates.
 

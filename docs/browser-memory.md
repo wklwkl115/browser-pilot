@@ -1,7 +1,6 @@
 # Browser Memory v1
 
-本文件描述 `browser_memory` 的运行时边界；已完成的 memory-kernel 设计与验收记录见
-`docs/archive/memory-kernel-plan.full.md`。
+本文件描述 `browser_memory` 的运行时边界、写入门槛、召回规则和自动浮现行为。
 
 ## 范围
 

@@ -110,8 +110,9 @@ async function syncReadme() {
 	if (managedBlockContent(text, "readme-tool-index")) {
 		text = replaceManagedBlock(text, "readme-tool-index", content);
 	} else {
-		const heading = "## 工具清单";
-		const idx = text.indexOf(heading);
+		let heading = "## Tools";
+		let idx = text.indexOf(heading);
+		if (idx < 0) { heading = "## 工具清单"; idx = text.indexOf(heading); }
 		if (idx < 0) throw new Error("README.md missing tool list heading");
 		const insertAt = text.indexOf("\n", idx + heading.length);
 		text = `${text.slice(0, insertAt + 1)}\n${renderManagedBlock("readme-tool-index", content)}\n\n${text.slice(insertAt + 1)}`;

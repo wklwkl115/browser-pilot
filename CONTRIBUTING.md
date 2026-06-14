@@ -1,7 +1,8 @@
 # Contributing
 
-This repository is governed by `AGENTS.md`. Read it before changing code,
-contracts, generated files, docs, skills, or release workflows.
+Thanks for helping improve Browser Pilot. Before changing code, contracts,
+generated files, docs, skills, or release workflows, read the relevant README
+and docs for the area you are touching, then run the matching local checks.
 
 ## Local Setup
 
@@ -29,8 +30,9 @@ npm run check:all:contracts
   in the same workstream as code changes.
 - Do not commit local artifacts, browser profiles, `.pi/`, credentials, tokens,
   cookies, HAR files, or real-site private evidence.
-- Use `agent-audits/` only for audit reports. Audit agents do not modify project
-  code; maintainers independently verify findings before fixing them.
+- For security-sensitive behavior, include the smallest redacted reproduction
+  and avoid uploading browser artifacts, HAR files, cookies, tokens, or private
+  target details.
 
 ## Generated Files
 
@@ -44,3 +46,8 @@ npm run sync:impact-map
 ```
 
 Finish non-trivial work with `npm run check`.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+By participating you agree to uphold its standards.

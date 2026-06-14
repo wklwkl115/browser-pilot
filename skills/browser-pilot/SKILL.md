@@ -2,10 +2,10 @@
 name: browser-pilot
 description: "Pi-native in-process frontend for operating live browser pages — use when the agent HAS the browser_* tools and calls them directly to: open/list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A shell-capable agent that instead drives the `browser-pilot` command-line tool: use the browser-pilot-cli skill. Runtime browser-use only; not for extension source development or repo tests."
 license: Apache-2.0
-compatibility: Pi browser-tools extension 0.3.0+, Native Browser Bridge connected. Pi-native in-process frontend — call `browser_*` tools directly. For the shell `browser-pilot` CLI, see the sibling **browser-pilot-cli** skill.
+compatibility: browser-pilot 0.3.0+, Native Browser Bridge connected. Pi-native in-process frontend — call `browser_*` tools directly. For the shell `browser-pilot` CLI, see the sibling **browser-pilot-cli** skill.
 ---
 
-# Pi Browser Tools (Pi-native)
+# browser-pilot (Pi-native)
 
 Operate live browser pages by calling `browser_*` tools directly, in-process.
 

@@ -57,9 +57,14 @@ assert.equal(GRAPH_SCRIPT_EXCLUSIONS["scope:begin"], "developer workstream-scope
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["docs:sync"], "doc generator umbrella; guarded by check:docs-sync", "docs:sync must be explicitly excluded from graph obligations");
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["sync:code-map"], "child code-map doc generator; guarded by check:code-map and check:docs-sync", "sync:code-map must be explicitly excluded from graph obligations");
 assert(CHECK_GROUPS.docs.includes("check:docs-sync"), "docs group must include check:docs-sync");
-assert(CHECK_GROUPS.docs.includes("check:audit-inbox"), "docs group must include check:audit-inbox");
-assert(CHECK_GROUPS.docs.includes("check:doc-paths"), "docs group must include check:doc-paths");
 assert(CHECK_GROUPS.docs.includes("check:code-map"), "docs group must include check:code-map");
+// Internal governance contracts depend on gitignored dev docs (agent-audits/, docs/archive/,
+// CURRENT.md, ...); they are retained as standalone scripts under GRAPH_SCRIPT_EXCLUSIONS and
+// run via check:internal, not in the public default check graph.
+for (const internal of ["check:audit-inbox", "check:doc-paths", "check:doc-structure", "check:boundaries", "check:registry-drift", "check:package", "check:eval-workflows"]) {
+	assert(!Object.values(CHECK_GROUPS).flat().includes(internal), `${internal} must not be in the public check graph (internal governance contract)`);
+	assert(GRAPH_SCRIPT_EXCLUSIONS[internal], `${internal} must be registered in GRAPH_SCRIPT_EXCLUSIONS when removed from the public graph`);
+}
 
 const runner = read("scripts/run-check-groups.mjs");
 const dag = read("scripts/check-dag.mjs");

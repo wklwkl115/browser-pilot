@@ -8,7 +8,7 @@ and troubleshooting. For tool usage and workflows, see the
 ## Install
 
 ```bash
-git clone https://github.com/anthropics/browser-pilot.git
+git clone <repository-url> browser-pilot
 cd browser-pilot
 npm install
 npm run build
@@ -46,8 +46,9 @@ To change the bridge port:
 ## Reload After Changes
 
 - **Node.js source (`src/`)**: restart the host process or Pi session.
-- **Browser extension (`bridge_src/`)**: run `npm run build:bridge`, then reload the
-  extension in `chrome://extensions`.
+- **Browser extension (`bridge_src/`)**: run `npm run build:bridge` to rebuild the
+  dist bundle and Manifest V3 runtime, then reload the extension in
+  `chrome://extensions`.
 - **Skill files**: edit directly — changes take effect on next session.
 
 ## Verify
@@ -58,7 +59,7 @@ Quick check:
 npm run check          # all contract/unit/boundary tests (no browser needed)
 ```
 
-Full local gate (build + lint + check + pack):
+Full local gate (build + lint + check + `npm pack --dry-run --ignore-scripts --json`):
 
 ```bash
 npm run quality:local
@@ -76,9 +77,31 @@ npm run check:all:contracts   # contract tests
 Browser smoke tests (require extension connected):
 
 ```bash
-npm run smoke:browser             # against running browser
-npm run smoke:browser:isolated    # isolated Chrome/Edge profile
+npm run smoke:browser                          # against running browser
+npm run smoke:browser:isolated                 # isolated Chrome/Edge profile
+npm run smoke:browser:scan-summary             # observation/scan summary shape
+npm run smoke:browser:debugger-evidence        # CDP debugger evidence capture
+npm run smoke:browser:correlation-chain        # cross-tool correlation chaining
+npm run smoke:browser:intercept-response       # response interception
+npm run smoke:browser:intercept-replace-script # script replacement interception
+npm run smoke:browser:intercept-uninstall-fail-closed  # intercept uninstall fail-closed
+npm run smoke:browser:intercept-request-mutate # request mutation before send
+npm run smoke:browser:intercept-tab-close-cleanup      # tab-close cleanup diagnostics
+npm run smoke:browser:intercept-lease-conflict # cross-session write conflict
+npm run smoke:browser:websocket-session        # websocket open/replay/failure
+npm run smoke:browser:memory                   # task-scope memory record/recall
 ```
+
+## Pi-Native Commands
+
+When running as a Pi extension, these slash commands are available:
+
+- `/browser-install` — setup and environment check
+- `/browser-status` — bridge diagnostics (also `http://127.0.0.1:<port>/browser-status`)
+- `/browser-reload` — reload bridge connection
+- `/browser-js-ast` — parse page JS AST (internal-only path, not a public browser tool)
+- `/browser-wasm` — inspect/parse page Wasm, with optional local Wasm path and `--wat` mode (internal-only path)
+- `/browser-ws` — inspect page WebSocket traffic and save transcripts (internal-only path)
 
 ## Troubleshooting
 

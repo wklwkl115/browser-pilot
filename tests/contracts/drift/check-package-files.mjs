@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHECK_DAG_RUN_DIR, CHECK_DAG_SUMMARY_PATH, CHECK_GROUPS, CHECK_GROUPS_SUMMARY_PATH, CHECK_IMPACT_SUMMARY_PATH, CHECK_MISS_DIR, graphCoveredPackageScripts, resolveScriptSteps } from "../../../scripts/check-graph.mjs";
+import { CHECK_DAG_RUN_DIR, CHECK_DAG_SUMMARY_PATH, CHECK_GROUPS, CHECK_GROUPS_SUMMARY_PATH, CHECK_IMPACT_SUMMARY_PATH, CHECK_MISS_DIR, GRAPH_SCRIPT_EXCLUSIONS, graphCoveredPackageScripts, resolveScriptSteps } from "../../../scripts/check-graph.mjs";
 import { EXPECTED_PACKAGE_FACTS } from "./expected-package-facts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -58,8 +58,17 @@ assert(!eslintConfig.includes('project: "./tsconfig.build.json"'), "eslint confi
 for (const rule of ["*.ts text eol=lf", "*.mjs text eol=lf", "*.json text eol=lf", "*.map text eol=lf", ".gitattributes text eol=lf", ".gitignore text eol=lf", ".npmignore text eol=lf"]) {
 	assert(gitAttributes.includes(rule), `.gitattributes must pin LF for generated and source text rule: ${rule}`);
 }
-for (const requiredFilesEntry of ["LICENSE", "SECURITY.md", "CONTRIBUTING.md", "bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "docs/", "evals/", "capture-src/"]) {
+for (const requiredFilesEntry of ["LICENSE", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "bridge/", "bridge_src/", "scripts/", "tests/", "src/", "dist/", "capture-src/", "skills/browser-pilot/", "skills/browser-pilot-cli/"]) {
 	assert(pkg.files?.includes(requiredFilesEntry), `package files must include ${requiredFilesEntry}`);
+}
+for (const publicDocEntry of ["docs/browser-memory.md", "docs/browser-usage.md", "docs/cli.md", "docs/guide-cli.md", "docs/guide-pi-native.md", "docs/generated/browser-tool-contract.generated.md", "docs/generated/native-protocol.generated.md", "docs/playbooks/", "docs/reference/", "docs/tool-boundaries.md"]) {
+	assert(pkg.files?.includes(publicDocEntry), `package files must include public doc entry ${publicDocEntry}`);
+}
+for (const publicEvalEntry of ["evals/browser-workflows/README.md", "evals/browser-workflows/[0-9][0-9]-*.md", "evals/browser-workflows/fixtures/", "evals/browser-workflows/results/"]) {
+	assert(pkg.files?.includes(publicEvalEntry), `package files must include public eval entry ${publicEvalEntry}`);
+}
+for (const internalEntry of ["AGENTS.md", "TODO.md", "CURRENT.md", "ARCHIVE.md", "ROADMAP.md", "WORKSTREAMS_A_E_SUMMARY.md", "docs/", "skills/", "evals/"]) {
+	assert(!pkg.files?.includes(internalEntry), `package files must not include broad/internal entry ${internalEntry}`);
 }
 assert(read("LICENSE").includes("Apache License") && read("LICENSE").includes("Version 2.0"), "repository must include Apache-2.0 license text");
 assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "package must expose capture bundle synchronization");
@@ -70,7 +79,8 @@ const buildScript = read("scripts/build-bridge.mjs");
 const bridgeDistNpmIgnore = read("bridge/pi_browser_bridge/dist/.npmignore");
 const graphCovered = graphCoveredPackageScripts();
 assert(CHECK_GROUPS.bridge.includes("check:bridge") && CHECK_GROUPS.contracts.includes("check:capture") && CHECK_GROUPS.contracts.includes("check:check-graph") && CHECK_GROUPS.contracts.includes("check:impact-map"), "check graph must expose stable named groups and include capture, graph-drift, and impact-map contracts");
-assert(graphCovered.has("check:package") && graphCovered.has("check:docs-sync") && graphCovered.has("check:impact-map"), "graph coverage must include package, docs sync, and impact-map proof nodes");
+assert(graphCovered.has("check:docs-sync") && graphCovered.has("check:impact-map"), "graph coverage must include docs sync and impact-map proof nodes");
+assert(GRAPH_SCRIPT_EXCLUSIONS["check:package"], "check:package is an internal governance contract excluded from the public default check graph; it must be registered in GRAPH_SCRIPT_EXCLUSIONS and run via check:internal");
 assert(resolveScriptSteps("check:bridge").some((step) => step.script === "check:protocol"), "check graph resolver must expand nested npm-run steps");
 assert(path.basename(CHECK_GROUPS_SUMMARY_PATH) === "check-groups-summary.json" && path.basename(CHECK_DAG_SUMMARY_PATH) === "check-dag-summary.json" && path.basename(CHECK_IMPACT_SUMMARY_PATH) === "check-impact-summary.json" && path.basename(CHECK_DAG_RUN_DIR) === "check-dag" && path.basename(CHECK_MISS_DIR) === "check-misses", "grouped/DAG runners must publish stable summary, per-run, impact, and miss artifact locations");
 assert(buildScript.includes('process.argv.includes("--quiet")'), "build script must support quiet mode for prepack");
@@ -156,7 +166,7 @@ assert(packed.has("dist/cli/bin.js") && packed.has("dist/cli/index.js"), "npm pa
 assert(packed.has("src/tools/webSecurity/browserNative/callbackOastWorker.mjs"), "npm package must ship the callback-OAST worker .mjs (resolved from src/ by the dist build)");
 assert(packed.has("bridge/pi_browser_bridge/native_command_schema.json"), "npm package must include native command schema");
 assert(packed.has("LICENSE"), "npm package must include repository license");
-assert(packed.has("SECURITY.md") && packed.has("CONTRIBUTING.md"), "npm package must include public security and contribution guidance");
+assert(packed.has("SECURITY.md") && packed.has("CONTRIBUTING.md") && packed.has("CODE_OF_CONDUCT.md"), "npm package must include public security, contribution, and conduct guidance");
 assert(packed.has("bridge_src/service-worker.ts"), "npm package must include bridge source for portable rebuilds");
 assert(packed.has("bridge_src/offscreen/transport.ts"), "npm package must include offscreen transport source for portable rebuilds");
 assert(packed.has("scripts/build-bridge.mjs"), "npm package must include bridge build script");
@@ -167,21 +177,22 @@ assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capt
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("tests/contracts/drift/abml-core-manifest.js") && packed.has("tests/contracts/drift/expected-package-facts.js") && packed.has("tests/contracts/drift/check-doc-paths.mjs"), "npm package must include shared contract manifests and doc-path gate");
-assert(packed.has("skills/browser-pilot-audit-fix/SKILL.md"), "npm package must include the audit/fix workflow skill");
+assert(packed.has("skills/browser-pilot/SKILL.md") && packed.has("skills/browser-pilot-cli/SKILL.md"), "npm package must include public browser-pilot skills");
 assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
 assert(packed.has("evals/browser-workflows/21-cross-tool-correlation-chain.md") && packed.has("evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json"), "npm package must include cross-tool correlation workflow eval spec and sample result");
 assert(![...packed].some((file) => file.startsWith(".pi/") || file.includes("/node_modules/")), "npm package must not include runtime artifacts or node_modules");
+assert(![...packed].some((file) => /^(AGENTS|TODO|CURRENT|ARCHIVE|ROADMAP|WORKSTREAMS_A_E_SUMMARY)\.md$/.test(file)), "npm package must not include local governance planning documents");
+assert(![...packed].some((file) => file.startsWith("docs/archive/") || file.startsWith("agent-audits/") || file.startsWith(".plan/") || file.startsWith(".claude/")), "npm package must not include local archive, audit, plan, or assistant-state directories");
+assert(![...packed].some((file) => file.startsWith("skills/browser-pilot-audit-fix/") || file.startsWith("skills/browser-pilot-blind-eval/") || file.startsWith("skills/pi-kernel-audit/")), "npm package must not include internal maintainer/audit skills");
+assert(![...packed].some((file) => /^evals\/browser-workflows\/blind-/.test(file)), "npm package must not include internal blind-eval operator prompts or findings");
 assert(![...packed].some((file) => file.startsWith("bridge/tmwd_cdp_bridge/")), "npm package must not include legacy tmwd bridge sources");
 const packedDist = [...packed].filter((file) => file.startsWith("bridge/pi_browser_bridge/dist/"));
 assert(packedDist.length > 5, "npm package must include generated dist runtime, not only dist/.gitignore");
 
-for (const file of ["README.md", "AI_INSTALL.md", "CHANGELOG.md", "ARCHIVE.md"]) {
+for (const file of ["README.md", "AI_INSTALL.md", "CHANGELOG.md"]) {
 	const text = read(file);
 	assert(text.includes("npm pack --dry-run"), `${file} must document or record package dry-run verification`);
 }
 assert(read("README.md").includes("npm pack --dry-run --ignore-scripts --json") && read("AI_INSTALL.md").includes("npm pack --dry-run --ignore-scripts --json"), "README and AI_INSTALL must document that check:package uses ignore-scripts to avoid rebuilding dist during npm run check");
-for (const file of ["TODO.md", "CURRENT.md", "ARCHIVE.md", "ROADMAP.md", "WORKSTREAMS_A_E_SUMMARY.md"]) {
-	assert(packed.has(file), `npm package must include planning document: ${file}`);
-}
 
 console.log("package files contract ok");

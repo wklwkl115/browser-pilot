@@ -1,16 +1,16 @@
-# Pi Browser Tools
+# Browser Pilot
 
-[![CI](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+[![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#工具列表)
+[![Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#开发)
 
 [English](README.md)
 
-面向 AI agent 的真实浏览器自动化工具 —— tab 控制、DOM 扫描、JavaScript/CDP 执行、
-网络捕获、截图与证据采集、文件传输，以及 Web 安全测试层。
-
-由 Chrome 扩展 + Node.js bridge 构成。支持任何能调用工具的 agent（Pi 原生）
-或能执行 shell 命令的 agent（`browser-pilot` CLI）。
+**面向 AI agent 的真实浏览器自动化** —— 不是模拟器，不是代理，不是截图解析。
+Browser Pilot 让你的 agent 直接控制真实的 Chrome/Edge 标签页：DOM 结构、JavaScript
+执行、CDP 命令、网络流量、Cookie、文件传输。人类在 DevTools 里能做的一切，你的 agent 都能通过
+22 个可组合的 `browser_*` 工具完成。
 
 ```
 $ browser-pilot observe --mode scan --json | jq '.summary.gist'
@@ -24,6 +24,19 @@ $ browser-pilot network start --json && browser-pilot execute --script "fetch('/
 $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].url'
 "https://linux.do/api/status"
 ```
+
+## 为什么选择 Browser Pilot
+
+大多数浏览器自动化工具给 agent 的是**一张截图和一个点击坐标**。
+Browser Pilot 给 agent 它们真正需要的东西：
+
+- **结构化感知** —— DOM 扫描融合了实体提取、可访问性树、结构 diff 和模板压缩。你的 agent 看到的是语义模型，不是像素。
+- **直接执行** —— 在页面中运行任意 JavaScript，不只是 click/type 宏。agent 像开发者在 DevTools 里一样编写 DOM 代码。
+- **物理输入逃逸** —— 当受信任事件门控的控件忽略合成 click 时，CDP 物理输入（`input.pointer` / `input.keys`）能打通。不再有"按钮没反应"的死胡同。
+- **完整网络可见性** —— 录制/重放/变异 HTTP 流量、导出 HAR、捕获请求体。精确看到页面收发了什么。
+- **内置安全测试** —— 7 个 Web 安全工具（爬取、模糊测试、SQLi、模板检查、Cookie/session 分析、HTTP 重放、OAST）共享浏览器会话，无需额外代理。
+- **Token 高效输出** —— 基于显著性的渲染、session delta 压缩和任务条件相关性保持输出紧凑。同一页面的重复扫描只发送变化部分。
+- **860+ 契约测试** —— 协议、工具、边界、运行时 fixture、生命周期和治理门禁。工具接口被 CI 锁定。
 
 ## 工作原理
 
@@ -47,6 +60,14 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+Chrome 扩展运行在浏览器中，通过本地 WebSocket 桥接到 Node.js 服务器。
+顶层的工具层暴露 22 个可组合的工具。两个前端接入同一个工具核心：
+
+| 前端 | 适用场景 | 指南 |
+|---|---|---|
+| **CLI**（`browser-pilot` 命令） | Shell agent、CI、cron、人类 | [CLI 使用指南](docs/guide-cli.md) |
+| **Pi 原生**（进程内 `browser_*` 调用） | Pi runtime agent（零开销） | [Pi 原生使用指南](docs/guide-pi-native.md) |
+
 ## 快速开始
 
 ### 前置条件
@@ -57,7 +78,7 @@ $ browser-pilot network list --session-id net-1 --json | jq '.data.requests[0].u
 ### 安装
 
 ```bash
-git clone https://github.com/anthropics/browser-pilot.git
+git clone <repository-url> browser-pilot
 cd browser-pilot
 npm install
 npm run build
@@ -91,7 +112,6 @@ npx browser-pilot wait selector --selector "#result" --json
 
 # 捕获网络流量
 npx browser-pilot network start --json
-# ... 在页面上操作 ...
 npx browser-pilot network list --session-id net-1 --json
 
 # 截图
@@ -102,51 +122,30 @@ npx browser-pilot --help
 npx browser-pilot schema observe --json
 ```
 
-每个 `browser_*` 工具对应一个子命令：去掉 `browser_` 前缀，`_` 换成 `-`。
-参数名用 kebab-case。`browser-pilot commands --json` 是可用命令和路由的唯一事实来源。
-
-较长的脚本和请求体建议用文件代替 shell 引号：
-
-```bash
-npx browser-pilot execute --script-file ./my-script.js --json
-npx browser-pilot command --command @native-command.json --json
-npx browser-pilot http-replay --raw-request @request.txt --json
-```
+详见 **[CLI 使用指南](docs/guide-cli.md)** 了解完整工作流、文件输入、安全测试和 daemon 管理。
 
 ### 通过 Pi 原生使用
 
-作为 Pi 扩展加载时，工具注册为 `browser_*` 工具调用，无需连接步骤。
-参见 [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md)。
+作为 Pi 扩展加载时，工具注册为 `browser_*` 工具调用，无需连接步骤。直接调用即可：
+
+```
+browser_tabs    { action: "list" }
+browser_observe { mode: "scan" }
+browser_execute { script: "document.title" }
+browser_wait    { action: "selector", params: { selector: "#result" } }
+```
+
+详见 **[Pi 原生使用指南](docs/guide-pi-native.md)** 了解 observe-execute-wait 循环、记忆系统和恢复模式。
 
 > Pi runtime 包（`@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent`）
 > 是可选的 peer 依赖。CLI 可独立使用，不需要这些包。
 
 ## 工具列表
 
-| 工具 | 说明 |
-|---|---|
-| `browser_tabs` | 列出、切换、创建、关闭 tab；管理 session 和 lease |
-| `browser_observe` | 扫描 DOM 结构，提取 content/HTML/text，diff 基线 |
-| `browser_execute` | 在页面中执行 JavaScript（可选 effect 监控） |
-| `browser_command` | 发送 native bridge 命令（CDP、input 等） |
-| `browser_wait` | 等待导航、选择器、加载状态、网络空闲 |
-| `browser_pick` | 交互式元素选择器 |
-| `browser_screenshot` | 捕获可见 tab 截图 |
-| `browser_network` | 录制/列出/导出 HTTP 流量和 HAR |
-| `browser_hook` | 安装页面事件 hook（console、error、storage 等） |
-| `browser_evidence` | 聚合 hook + network + performance 证据 |
-| `browser_frame` | 列出 frame，在子 frame 中执行，注入脚本 |
-| `browser_artifact` | 按行、JSON path、搜索或抽样读取保存的证据 |
-| `browser_memory` | 本地浏览器记忆 —— 记录和召回每站点 SOP |
-| `browser_download` | 通过 click、media selector 或 URL 下载文件 |
-| `browser_upload` | 通过 file input 上传本地文件 |
-| `browser_crawl` | 爬取 links/forms/API/source maps；指纹识别 URL |
-| `browser_fuzz` | 路径、虚拟主机、参数模糊测试 |
-| `browser_sqli` | SQL 注入检测（内置 oracle + sqlmap 桥接） |
-| `browser_template` | HTTP 模板检查（内置 + nuclei 桥接） |
-| `browser_cookie_analyze` | Cookie/JWT/JWE/PASETO/session 分析 |
-| `browser_http_replay` | 重放和变异 HTTP 请求，带 diff 聚类 |
-| `browser_callback_oast` | 本地 HTTP/HTTPS/DNS 回调监听器（OAST） |
+15 个核心工具（tabs, observe, execute, command, wait, pick, screenshot, network, hook,
+evidence, frame, artifact, memory, download, upload）和 7 个安全工具（crawl, fuzz,
+sqli, template, cookie-analyze, http-replay, callback-oast）。详见
+[工具契约参考](docs/generated/browser-tool-contract.generated.md)。
 
 ## 典型工作流
 
@@ -162,6 +161,40 @@ npx browser-pilot http-replay --raw-request @request.txt --json
 没有 `click` 或 `type` 命令 —— 页面操作通过 `browser_execute`（JavaScript）完成。
 对于受信任事件门控的控件，使用 `browser_command` 发送 `input.pointer` 或 `input.keys`
 （CDP 物理输入）。
+
+## 核心特性
+
+### 结构化 DOM 感知
+
+`browser_observe` 返回页面的语义模型 —— 不是原始 HTML，不是截图。它融合了可访问性树与 DOM
+结构，提取实体和关系，压缩重复模式（列表、表格），并跟踪跨扫描的变化。
+
+### Session Delta
+
+对同一标签页重复 `browser_observe mode=scan` 会产生紧凑的 delta 帧（`delta:"session"`），
+只包含变化部分。多步工作流保持 token 高效，不牺牲完整性。
+
+### 浏览器记忆
+
+本地存储（`.pi/browser-memory/`）让 agent 记录和召回每站点的操作程序（SOP）和知识。
+一旦记录，`browser_observe` 会自动展现与当前 URL 匹配的记忆 —— agent 不再需要为同一个操作
+序列重新推理。
+
+### Living Tab Sessions
+
+稳定的 `tabHandle`/`targetRef` 标识符在 tab 替换、MV3 service worker 重启和扩展重连后
+依然有效。你的 agent 不会丢失对标签页的追踪。
+
+### 四个纯逻辑内核
+
+核心感知管道运行在四个 CI 边界锁定的内核中，零浏览器/Node 依赖：
+
+| 内核 | 用途 |
+|---|---|
+| **Capture**（感知） | 注入浏览器的页面级 JS 模板 |
+| **ABML**（理解） | 实体提取、差异比较、模板化、关系、因果 |
+| **Distill**（表达） | Token 经济、显著性渲染、事实分配 |
+| **Memory**（保留） | 档案蒸馏、召回评分、过期验证 |
 
 ## 安全测试
 
@@ -193,7 +226,7 @@ npm run build:bridge      # 构建 Chrome 扩展
 npm run build             # 编译 Node.js 源码到 dist/
 npm run lint              # ESLint
 npm run check             # 运行全部契约/单元/边界测试
-npm run quality:local     # 完整本地门禁：build + lint + check + pack
+npm run quality:local     # 完整本地门禁：build + lint + check + npm pack --dry-run --ignore-scripts --json
 ```
 
 按域缩小范围快速迭代：
@@ -217,10 +250,13 @@ npm run smoke:browser:isolated    # 隔离 Chrome profile
 
 | 文档 | 说明 |
 |---|---|
-| [docs/cli.md](docs/cli.md) | CLI 参考和使用模式 |
+| [docs/guide-cli.md](docs/guide-cli.md) | CLI 使用指南 —— 工作流、模式、示例 |
+| [docs/guide-pi-native.md](docs/guide-pi-native.md) | Pi 原生使用指南 —— 工具调用、循环、记忆 |
+| [docs/cli.md](docs/cli.md) | CLI 参考 —— 完整的命令/参数/输出规范 |
 | [docs/playbooks/](docs/playbooks/) | 安全测试操作手册 |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | 工具选择边界 |
 | [docs/browser-memory.md](docs/browser-memory.md) | 本地浏览器记忆系统 |
+| [AI_INSTALL.md](AI_INSTALL.md) | 安装、扩展加载、故障排除 |
 | [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | 生成的工具契约参考 |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | 生成的 native 协议参考 |
 

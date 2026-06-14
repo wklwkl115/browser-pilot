@@ -3,8 +3,7 @@
   "source": "scripts/sync-impact-map.mjs",
   "groups": {
     "src": [
-      "check:src:types",
-      "check:registry-drift"
+      "check:src:types"
     ],
     "bridge": [
       "check:bridge"
@@ -22,17 +21,12 @@
       "test:unit:misc"
     ],
     "package": [
-      "check:package",
       "check:deps",
       "check:browser-pilot-bridge"
     ],
     "docs": [
       "check:tool-docs",
-      "check:doc-structure",
-      "check:audit-inbox",
-      "check:doc-paths",
       "check:code-map",
-      "check:boundaries",
       "check:distill-core-boundary",
       "check:recovery-boundary",
       "check:abml-core-boundary",
@@ -56,7 +50,6 @@
       "check:summaries",
       "check:artifact",
       "check:errors",
-      "check:eval-workflows",
       "check:browser-workflow-results",
       "check:browser-commands",
       "check:distiller-coverage",
@@ -119,24 +112,6 @@
         {
           "nodeId": "check:src:types",
           "commandLine": "tsc -p tsconfig.json --incremental --tsBuildInfoFile .pi/tsbuildinfo/tsconfig.tsbuildinfo"
-        }
-      ]
-    },
-    "check:registry-drift": {
-      "script": "check:registry-drift",
-      "scope": "paths",
-      "inputs": [
-        "CURRENT.md",
-        "README.md",
-        "package.json",
-        "tests/contracts/drift/.gitignore",
-        "tests/contracts/drift/check-registry-drift.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:registry-drift",
-          "commandLine": "node tests/contracts/drift/check-registry-drift.mjs"
         }
       ]
     },
@@ -539,90 +514,6 @@
         }
       ]
     },
-    "check:package": {
-      "script": "check:package",
-      "scope": "global",
-      "inputs": [
-        ".pi/browser-artifacts/",
-        ".pi/check-cache/",
-        "AI_INSTALL.md",
-        "LICENSE",
-        "README.md",
-        "bridge/pi_browser_bridge/dist/.npmignore",
-        "bridge/pi_browser_bridge/manifest.json",
-        "eslint.config.js",
-        "package.json",
-        "scripts/build-bridge.mjs",
-        "scripts/check-graph.mjs",
-        "scripts/lib/repo-introspection.mjs",
-        "tests/contracts/drift/.gitattributes",
-        "tests/contracts/drift/.github/actions/setup-node-build/action.yml",
-        "tests/contracts/drift/.github/workflows/check.yml",
-        "tests/contracts/drift/check-impact-map.json",
-        "tests/contracts/drift/check-package-files.mjs",
-        "tests/contracts/drift/expected-package-facts.js",
-        "tests/release/release-local-acceptance.mjs",
-        "tests/smoke/smoke-browser-isolated.mjs",
-        "tests/smoke/smoke-browser.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "scripts/check-graph.mjs",
-          "line": 194,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "scripts/check-graph.mjs",
-          "line": 496,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "scripts/check-graph.mjs",
-          "line": 613,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "scripts/lib/repo-introspection.mjs",
-          "line": 18,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "scripts/lib/repo-introspection.mjs",
-          "line": 38,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "tests/contracts/drift/check-package-files.mjs",
-          "line": 108,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "check:package",
-          "nodeId": "check:package",
-          "file": "tests/contracts/drift/check-package-files.mjs",
-          "line": 119,
-          "reason": "subprocess execution"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:package",
-          "commandLine": "node tests/contracts/drift/check-package-files.mjs"
-        }
-      ]
-    },
     "check:deps": {
       "script": "check:deps",
       "scope": "global",
@@ -723,105 +614,6 @@
         {
           "nodeId": "check:tool-docs#2",
           "commandLine": "node scripts/generate-tool-docs.mjs --check"
-        }
-      ]
-    },
-    "check:doc-structure": {
-      "script": "check:doc-structure",
-      "scope": "global",
-      "inputs": [
-        "AGENTS.md",
-        "ARCHIVE.md",
-        "CLAUDE.md",
-        "CURRENT.md",
-        "ROADMAP.md",
-        "TODO.md",
-        "agent-audits/",
-        "agent-audits/AGENTS.md",
-        "agent-audits/README.md",
-        "docs/agent-development.md",
-        "docs/agent-native-architecture.md",
-        "docs/agent-native-cli-spec.md",
-        "docs/archive-history-compression-plan.md",
-        "docs/archive/",
-        "docs/document-structure.md",
-        "docs/playbooks/",
-        "docs/playbooks/README.md",
-        "docs/reference/",
-        "scripts/build-bridge.mjs",
-        "skills/browser-pilot-audit-fix/SKILL.md",
-        "tests/contracts/drift/check-doc-structure.mjs",
-        "tests/contracts/drift/spec-claims.js"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:doc-structure",
-          "nodeId": "check:doc-structure",
-          "file": "tests/contracts/drift/check-doc-structure.mjs",
-          "line": 59,
-          "reason": "dynamic directory walk"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:doc-structure",
-          "commandLine": "node tests/contracts/drift/check-doc-structure.mjs"
-        }
-      ]
-    },
-    "check:audit-inbox": {
-      "script": "check:audit-inbox",
-      "scope": "global",
-      "inputs": [
-        "agent-audits/runs/",
-        "agent-audits/templates/finding.md",
-        "agent-audits/templates/run-report.md",
-        "package.json",
-        "tests/contracts/drift/.github/workflows/check.yml",
-        "tests/contracts/drift/check-audit-inbox.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:audit-inbox",
-          "nodeId": "check:audit-inbox",
-          "file": "tests/contracts/drift/check-audit-inbox.mjs",
-          "line": 15,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:audit-inbox",
-          "nodeId": "check:audit-inbox",
-          "file": "tests/contracts/drift/check-audit-inbox.mjs",
-          "line": 19,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:audit-inbox",
-          "nodeId": "check:audit-inbox",
-          "file": "tests/contracts/drift/check-audit-inbox.mjs",
-          "line": 27,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:audit-inbox",
-          "commandLine": "node tests/contracts/drift/check-audit-inbox.mjs"
-        }
-      ]
-    },
-    "check:doc-paths": {
-      "script": "check:doc-paths",
-      "scope": "paths",
-      "inputs": [
-        "package.json",
-        "tests/contracts/drift/check-doc-paths.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:doc-paths",
-          "commandLine": "node tests/contracts/drift/check-doc-paths.mjs"
         }
       ]
     },
@@ -1190,44 +982,6 @@
         {
           "nodeId": "check:code-map",
           "commandLine": "tsx scripts/sync-code-map.mjs --check"
-        }
-      ]
-    },
-    "check:boundaries": {
-      "script": "check:boundaries",
-      "scope": "global",
-      "inputs": [
-        ".github/actions/setup-node-build/action.yml",
-        "bridge/tmwd_cdp_bridge",
-        "docs/archive/tmwd-cdp-bridge-legacy.full.md",
-        "docs/archive/tmwd-cdp-bridge-legacy.md",
-        "package.json",
-        "scripts/smoke-browser.mjs",
-        "src/utils/params.ts",
-        "tests/contracts/drift/check-boundaries.mjs",
-        "tests/release/release-local-acceptance.mjs",
-        "tests/smoke/smoke-browser.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:boundaries",
-          "nodeId": "check:boundaries",
-          "file": "tests/contracts/drift/check-boundaries.mjs",
-          "line": 8,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:boundaries",
-          "nodeId": "check:boundaries",
-          "file": "tests/contracts/drift/check-boundaries.mjs",
-          "line": 86,
-          "reason": "dynamic directory walk"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:boundaries",
-          "commandLine": "node tests/contracts/drift/check-boundaries.mjs"
         }
       ]
     },
@@ -2331,83 +2085,6 @@
         }
       ]
     },
-    "check:eval-workflows": {
-      "script": "check:eval-workflows",
-      "scope": "global",
-      "inputs": [
-        "WORKSTREAMS_A_E_SUMMARY.md",
-        "evals/browser-workflows/",
-        "evals/browser-workflows/distill-usage-log.mjs",
-        "package.json",
-        "tests/contracts/tools/check-eval-workflows.mjs",
-        "tests/smoke/",
-        "tests/support/patchExtensionPort.mjs"
-      ],
-      "unresolvedInputs": [
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 13,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 177,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 185,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 247,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 346,
-          "reason": "dynamic directory walk"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 352,
-          "reason": "dynamic file read"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 378,
-          "reason": "subprocess execution"
-        },
-        {
-          "script": "check:eval-workflows",
-          "nodeId": "check:eval-workflows",
-          "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 380,
-          "reason": "dynamic file read"
-        }
-      ],
-      "commandSteps": [
-        {
-          "nodeId": "check:eval-workflows",
-          "commandLine": "node tests/contracts/tools/check-eval-workflows.mjs"
-        }
-      ]
-    },
     "check:browser-workflow-results": {
       "script": "check:browser-workflow-results",
       "scope": "paths",
@@ -2894,21 +2571,21 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 194,
+          "line": 204,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 496,
+          "line": 506,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 613,
+          "line": 623,
           "reason": "dynamic file read"
         },
         {
@@ -2929,28 +2606,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 221,
+          "line": 226,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 284,
+          "line": 289,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 300,
+          "line": 305,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 314,
+          "line": 319,
           "reason": "dynamic directory walk"
         }
       ],
@@ -2978,21 +2655,21 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 194,
+          "line": 204,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 496,
+          "line": 506,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 613,
+          "line": 623,
           "reason": "dynamic file read"
         },
         {
