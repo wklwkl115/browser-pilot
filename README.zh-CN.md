@@ -1,5 +1,9 @@
 # Pi Browser Tools
 
+[![CI](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+
 [English](README.md)
 
 面向 AI agent 的真实浏览器自动化工具 —— tab 控制、DOM 扫描、JavaScript/CDP 执行、
@@ -7,6 +11,19 @@
 
 由 Chrome 扩展 + Node.js bridge 构成。支持任何能调用工具的 agent（Pi 原生）
 或能执行 shell 命令的 agent（`pi-browser` CLI）。
+
+```
+$ pi-browser observe --mode scan --json | jq '.summary.gist'
+"论坛帖子列表，14 行可见数据，导航侧栏，用户菜单。
+ 3 个表单（搜索、登录、发帖），47 个可操作元素。"
+
+$ pi-browser execute --script "document.querySelector('.topic-list .main-link a').href" --json
+{ "data": "https://linux.do/t/welcome/1" }
+
+$ pi-browser network start --json && pi-browser execute --script "fetch('/api/status')" --json
+$ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
+"https://linux.do/api/status"
+```
 
 ## 工作原理
 

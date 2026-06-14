@@ -1,5 +1,9 @@
 # Pi Browser Tools
 
+[![CI](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml/badge.svg)](https://github.com/anthropics/pi-browser-tools/actions/workflows/check.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+
 [中文文档](README.zh-CN.md)
 
 Real browser automation for AI agents — tab control, DOM scanning, JavaScript/CDP execution,
@@ -7,6 +11,19 @@ network capture, screenshot & evidence collection, file transfer, and a web secu
 
 Built as a Chrome extension + Node.js bridge. Works with any agent that can call tools (Pi native)
 or run shell commands (`pi-browser` CLI).
+
+```
+$ pi-browser observe --mode scan --json | jq '.summary.gist'
+"Forum topic list with 14 visible rows, navigation sidebar, user menu.
+ 3 forms (search, login, compose), 47 actionable elements."
+
+$ pi-browser execute --script "document.querySelector('.topic-list .main-link a').href" --json
+{ "data": "https://linux.do/t/welcome/1" }
+
+$ pi-browser network start --json && pi-browser execute --script "fetch('/api/status')" --json
+$ pi-browser network list --session-id net-1 --json | jq '.data.requests[0].url'
+"https://linux.do/api/status"
+```
 
 ## How It Works
 
