@@ -79,6 +79,37 @@ test("browser_observe scan exposes ABML integration diagnostics internally", asy
 	assert.equal(typeof saved.envelope?.identityGraph, "object", "saved artifact exposes the full identity graph at the explicit artifact path");
 });
 
+test("browser_observe scan exposes full relationGraph only through artifact hints", async () => {
+	const server = {
+		...fakeServer,
+		async sendCommand(command: any, options: any) {
+			if (command.cmd === "persistent_cdp" && command.cdpMethod === "Accessibility.getFullAXTree") {
+				return { id: "ax-rel", acknowledged: true, tabId: 7, data: { result: { nodes: [
+					{ nodeId: "ax-combo", backendDOMNodeId: 81, role: { value: "combobox" }, name: { value: "Country" }, properties: [
+						{ name: "controls", value: { relatedNodes: [{ backendDOMNodeId: 82 }] } },
+						{ name: "expanded", value: { value: "true" } },
+					] },
+					{ nodeId: "ax-list", backendDOMNodeId: 82, role: { value: "listbox" }, name: { value: "Country options" } },
+				] } } };
+			}
+			return fakeServer.sendCommand(command, options);
+		},
+	};
+	const result = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan");
+	const envelope = JSON.parse(result.content[0].text);
+	assert.equal(envelope.relations?.summary?.controls, 1, "relation summary must be lifted to the model-facing envelope");
+	assert.equal(envelope.summary?._relationGraph, undefined, "full relation graph must not leak into model-facing summary");
+	assert.equal(envelope.summary?.artifact_hints?.jsonPaths?.relationGraph, "envelope.relationGraph", "relationGraph artifact read path must be discoverable");
+	assert.ok(envelope.summary?.artifact_hints?.preferredReads?.some((read: any) => read.jsonPath === "envelope.relationGraph"), "relationGraph preferred read must be registered");
+	const saved = JSON.parse(readFileSync(envelope.saved.path, "utf8"));
+	assert.equal(saved.envelope?.summary?._relationGraph, undefined, "saved envelope summary keeps full relation graph out of summary");
+	assert.equal(saved.envelope?.relationGraph?.schemaVersion, 1, "saved artifact exposes the full central relation graph");
+	assert.equal(saved.envelope?.relationGraph?.edgeCount, 2, "full graph keeps controls plus expandedTarget edges");
+	const targetRef = saved.envelope?.relationGraph?.edges?.find((edge: any) => edge.type === "controls")?.targetRef;
+	assert.equal(typeof targetRef, "string", "controls edge must carry a materialized target ref");
+	assert.equal(saved.envelope?.relationGraph?.byTarget?.[targetRef]?.length >= 1, true, "target index supports inbound relation lookup without scanning entities");
+});
+
 test("browser_observe default scan reuses scan_extract data for ABML read", async () => {
 	const server = countingServer();
 	const result = await runScanObservation(server as any, { mode: "scan", tabId: 7, maxChars: 12_000 }, { cwd: process.cwd() }, "scan");

@@ -2,9 +2,10 @@
 
 ## Goal
 
-Collect bounded evidence for the current LayerTree / paint-order boundary: existing scan evidence can
-see geometry-level top-hit occlusion, but it does not yet prove a LayerTree owner-to-`backendNodeId`
-relation model.
+Collect bounded evidence for the current LayerTree / paint-order boundary: scan evidence can see
+geometry-level top-hit occlusion, LayerTree may be unavailable in the current CDP surface, and
+DOMSnapshot paint-order owner evidence must map back to `backendNodeId` and feed capped ABML
+`coveredBy` / `occludes` relations.
 
 ## Fixture
 
@@ -26,32 +27,39 @@ relation model.
 1. Open the occlusion fixture.
 2. Run `browser_observe mode=scan` and save the scan artifact.
 3. Use `browser_execute` to capture deterministic `elementFromPoint` samples.
-4. Probe `LayerTree.enable` and a bounded LayerTree owner-mapping method if available.
-5. Write a boundary artifact summarizing current scan relation coverage and missing layer-owner
-   evidence.
+4. Probe internal `layer.probe` evidence (`LayerTree.enable` + `layerTreeDidChange`) and fall back
+   to `DOMSnapshot.captureSnapshot(includePaintOrder:true)` when LayerTree is unavailable.
+5. Write a boundary artifact summarizing current scan relation coverage, LayerTree availability,
+   compact paint-order runtime stats, and artifact-only full paint-order evidence.
 
 ## Success criteria
 
 - The fixture proves a top-hit occluder exists through page-engine evidence.
-- The artifact states whether the scan envelope has `relations.summary.occludes`.
-- The artifact records that no artifact-backed LayerTree owner-to-`backendNodeId` relation is
-  currently proven by this runner.
-- Passing this eval means the boundary evidence is complete, not that LayerTree relations shipped.
+- The artifact states whether the scan envelope has `relations.summary.occludes` and
+  `relations.summary.coveredBy`.
+- The artifact records whether LayerTree owner `backendNodeId` values or DOMSnapshot paint-order
+  owner `backendNodeId` values are available.
+- Passing this eval requires a page-engine top-hit occluder plus at least one owner-mapped
+  paint-order path, capped ABML occlusion relations, and full paint-order rows kept out of the
+  model-facing envelope.
 
 ## Required evidence
 
-- Summary evidence: geometry top-hit sample, scan relation summary, LayerTree probe status.
+- Summary evidence: geometry top-hit sample, scan relation summary, LayerTree event probe status,
+  DOMSnapshot paint-order owner status, and compact runtime paint-order stats.
 - Artifact evidence: saved scan artifact and `33-layer-paint-occlusion-boundary-boundary.json`.
-- Diagnostics evidence: `elementFromPoint` result, LayerTree method result/error, and no-new-public-tool
-  boundary.
+- Diagnostics evidence: `elementFromPoint` result, LayerTree event/owner result or error,
+  DOMSnapshot paint-order owner result or error, `abml.data.paintOrderEvidence.entries` in the
+  saved artifact, and no-new-public-tool boundary.
 - Manifest evidence labels: `geometry-top-hit`, `scan-relations`, `layerTree-probe`,
   `boundary-diagnostics`.
 
 ## Recovery checks
 
-- Expected failure mode: LayerTree method is unavailable or does not return owner mappings.
-- Required recovery path: record the unsupported/missing owner-map state and keep LayerTree as a
-  closed decision pending a dedicated execution contract.
+- Expected failure mode: LayerTree domain/events are unavailable or do not return owner mappings.
+- Required recovery path: fall back to DOMSnapshot paint order; if that also lacks owner mappings,
+  record the unsupported/missing owner-map state. If `includePaintOrder` is unsupported but plain
+  DOMSnapshot works, preserve geometry and expose compact fallback diagnostics.
 
 ## Metrics
 
@@ -60,3 +68,4 @@ relation model.
 - artifact sufficiency
 - top-hit sample count
 - layer-owner mapping availability
+- paint-order owner mapping availability

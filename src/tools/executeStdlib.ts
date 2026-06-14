@@ -24,6 +24,7 @@ export type ExecuteStdlibTargetRef = {
 	url?: string;
 	mutationEpoch?: number;
 	backendNodeId?: number;
+	targetId?: string;
 	point?: { x: number; y: number };
 	cssRoots: string[];
 	locators?: RefDescriptor["locators"];
@@ -67,22 +68,29 @@ function boundedCssRoots(descriptor: RefDescriptor): string[] {
 	return roots;
 }
 
-function backendNodeIdFromDescriptor(descriptor: RefDescriptor): number | undefined {
+function backendTargetFromDescriptor(descriptor: RefDescriptor): { backendNodeId?: number; targetId?: string } {
+	let backendNodeId: number | undefined;
+	let targetId = typeof descriptor.owner?.targetId === "string" && descriptor.owner.targetId.trim() ? descriptor.owner.targetId.trim() : undefined;
 	for (const locator of descriptor.locators) {
-		if (locator.by === "backendNodeId" && Number.isFinite(Number(locator.value))) return Number(locator.value);
+		if (locator.by !== "backendNodeId") continue;
+		if (Number.isFinite(Number(locator.value))) backendNodeId = Number(locator.value);
+		if (!targetId && typeof locator.targetId === "string" && locator.targetId.trim()) targetId = locator.targetId.trim();
+		if (backendNodeId !== undefined) break;
 	}
-	return undefined;
+	return { backendNodeId, targetId };
 }
 
 function targetRefFromDescriptor(descriptor: RefDescriptor): ExecuteStdlibTargetRef {
 	const point = descriptor.geometry?.point;
+	const backendTarget = backendTargetFromDescriptor(descriptor);
 	return {
 		refId: descriptor.refId,
 		observedAt: descriptor.documentEpoch?.capturedAt ?? descriptor.createdAt,
 		observationId: descriptor.observationId,
 		url: descriptor.documentEpoch?.url,
 		mutationEpoch: descriptor.documentEpoch?.mutationEpoch,
-		backendNodeId: backendNodeIdFromDescriptor(descriptor),
+		...(backendTarget.backendNodeId !== undefined ? { backendNodeId: backendTarget.backendNodeId } : {}),
+		...(backendTarget.targetId ? { targetId: backendTarget.targetId } : {}),
 		...(point ? { point: { x: point.x, y: point.y } } : {}),
 		cssRoots: boundedCssRoots(descriptor),
 		locators: descriptor.locators,

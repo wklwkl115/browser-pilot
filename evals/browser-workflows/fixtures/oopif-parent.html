@@ -12,9 +12,20 @@
   <main>
     <h1>OOPIF parent fixture</h1>
     <p id="parent-status">Parent loaded</p>
+    <button id="parent-action">Parent action</button>
     <iframe id="xframe" title="cross origin fixture"></iframe>
   </main>
   <script>
+    let parentClickCount = 0;
+    let childClickCount = 0;
+    document.getElementById("parent-action").addEventListener("click", () => {
+      parentClickCount += 1;
+      document.getElementById("parent-status").textContent = "Parent clicked " + parentClickCount;
+    });
+    window.addEventListener("message", (event) => {
+      const data = event && event.data || {};
+      if (data && data.type === "oopif-child-clicked") childClickCount += 1;
+    });
     const childUrl = new URL("/fixtures/oopif-child.html", location.href);
     childUrl.hostname = location.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
     document.getElementById("xframe").src = childUrl.href;
@@ -28,7 +39,7 @@
         } catch (err) {
           error = String(err && err.name || err);
         }
-        return { parentOrigin: location.origin, childUrl: frame.src, childReadableFromParent: readable, crossOriginError: error };
+        return { parentOrigin: location.origin, childUrl: frame.src, childReadableFromParent: readable, crossOriginError: error, parentClickCount, childClickCount };
       }
     };
   </script>

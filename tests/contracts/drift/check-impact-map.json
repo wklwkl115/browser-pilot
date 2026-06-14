@@ -303,7 +303,7 @@
           "script": "check:bridge",
           "nodeId": "verify:bridge:dist",
           "file": "tests/contracts/protocol/check-bridge-build.mjs",
-          "line": 193,
+          "line": 194,
           "reason": "dynamic file read"
         }
       ],
@@ -840,8 +840,10 @@
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
         "src/abml-core/grouping.ts",
+        "src/abml-core/identityBootstrap.ts",
         "src/abml-core/identityGraph.ts",
         "src/abml-core/inference.ts",
+        "src/abml-core/nodeKey.ts",
         "src/abml-core/refId.ts",
         "src/abml-core/refPolicy.ts",
         "src/abml-core/relations.ts",
@@ -861,6 +863,7 @@
         "src/abml/diff.ts",
         "src/abml/entity.ts",
         "src/abml/errors.ts",
+        "src/abml/identityBootstrap.ts",
         "src/abml/identityGraph.ts",
         "src/abml/inference.ts",
         "src/abml/perceptionLedger.ts",
@@ -2351,49 +2354,49 @@
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 176,
+          "line": 177,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 184,
+          "line": 185,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 246,
+          "line": 247,
           "reason": "subprocess execution"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 345,
+          "line": 346,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 351,
+          "line": 352,
           "reason": "dynamic file read"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 377,
+          "line": 378,
           "reason": "subprocess execution"
         },
         {
           "script": "check:eval-workflows",
           "nodeId": "check:eval-workflows",
           "file": "tests/contracts/tools/check-eval-workflows.mjs",
-          "line": 379,
+          "line": 380,
           "reason": "dynamic file read"
         }
       ],
@@ -3040,8 +3043,10 @@
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
         "src/abml-core/grouping.ts",
+        "src/abml-core/identityBootstrap.ts",
         "src/abml-core/index.ts",
         "src/abml-core/inference.ts",
+        "src/abml-core/nodeKey.ts",
         "src/abml-core/refId.ts",
         "src/abml-core/refPolicy.ts",
         "src/abml-core/relations.ts",
@@ -3060,6 +3065,7 @@
         "src/abml/entity.ts",
         "src/abml/errors.ts",
         "src/abml/grouping.ts",
+        "src/abml/identityBootstrap.ts",
         "src/abml/perceptionLedger.ts",
         "src/abml/refPolicy.ts",
         "src/abml/relations.ts",
@@ -3725,8 +3731,10 @@
         "src/abml-core/entity.ts",
         "src/abml-core/errors.ts",
         "src/abml-core/grouping.ts",
+        "src/abml-core/identityBootstrap.ts",
         "src/abml-core/identityGraph.ts",
         "src/abml-core/inference.ts",
+        "src/abml-core/nodeKey.ts",
         "src/abml-core/refId.ts",
         "src/abml-core/refPolicy.ts",
         "src/abml-core/relations.ts",
@@ -3746,6 +3754,7 @@
         "src/abml/diff.ts",
         "src/abml/entity.ts",
         "src/abml/errors.ts",
+        "src/abml/identityBootstrap.ts",
         "src/abml/identityGraph.ts",
         "src/abml/inference.ts",
         "src/abml/perceptionLedger.ts",

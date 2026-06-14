@@ -68,6 +68,9 @@ export type PiNativeProtocolRuntime = {
 
 export type PiPersistentCdpBridge = {
   send?: (tabId: number, method: string, params?: JsonRecord, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
+  attachTarget?: (tabId: number, targetId: string, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
+  detachTarget?: (tabId: number, targetIdOrSessionId: string, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
+  targets?: (tabId?: number) => Promise<PiBridgeResponse<JsonRecord>>;
   frameTree?: (tabId: number, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
   evaluateInFrame?: (tabId: number, expression: string, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
   addNewDocumentScript?: (tabId: number, source: string, options?: JsonRecord) => Promise<PiBridgeResponse<JsonRecord>>;
@@ -521,12 +524,12 @@ export type PiChromeTabs = {
 };
 
 export type PiChromeDebugger = {
-  attach(target: { tabId: number }, protocolVersion?: string): Promise<void>;
-  detach(target: { tabId: number }): Promise<void>;
-  sendCommand(target: { tabId: number }, method: string, params?: JsonRecord): Promise<unknown>;
+  attach(target: { tabId?: number; targetId?: string }, protocolVersion?: string): Promise<void>;
+  detach(target: { tabId?: number; targetId?: string; sessionId?: string }): Promise<void>;
+  sendCommand(target: { tabId?: number; targetId?: string; sessionId?: string }, method: string, params?: JsonRecord): Promise<unknown>;
   getTargets(): Promise<JsonRecord[]>;
-  onDetach: PiChromeEvent<(source: { tabId?: number }, reason: string) => void>;
-  onEvent: PiChromeEvent<(source: { tabId?: number }, method: string, params?: JsonRecord) => void>;
+  onDetach: PiChromeEvent<(source: { tabId?: number; targetId?: string; sessionId?: string }, reason: string) => void>;
+  onEvent: PiChromeEvent<(source: { tabId?: number; targetId?: string; sessionId?: string }, method: string, params?: JsonRecord) => void>;
 };
 
 export type PiChromeDownloads = {

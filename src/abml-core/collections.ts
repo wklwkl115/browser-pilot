@@ -466,14 +466,18 @@ function growthProbeEvidence(probe: Record<string, unknown> | undefined): { conf
 	const afterCount = numberValue(probe.afterCount ?? probe.newCount);
 	const beforeHeight = numberValue(probe.beforeScrollHeight ?? probe.oldScrollHeight);
 	const afterHeight = numberValue(probe.afterScrollHeight ?? probe.newScrollHeight);
+	const beforeFirstText = stringValue(probe.beforeFirstText);
+	const afterFirstText = stringValue(probe.afterFirstText);
 	const countGrew = beforeCount !== undefined && afterCount !== undefined && afterCount > beforeCount;
 	const heightGrew = beforeHeight !== undefined && afterHeight !== undefined && afterHeight > beforeHeight;
-	if (!countGrew && !heightGrew && probe.countGrew !== true && probe.heightGrew !== true) return undefined;
+	const windowShifted = (beforeFirstText !== undefined && afterFirstText !== undefined && beforeFirstText !== afterFirstText) || probe.windowShifted === true;
+	if (!countGrew && !heightGrew && !windowShifted && probe.countGrew !== true && probe.heightGrew !== true) return undefined;
 	const parts = [
 		countGrew ? `count ${beforeCount}->${afterCount}` : undefined,
 		heightGrew ? `scrollHeight ${beforeHeight}->${afterHeight}` : undefined,
+		windowShifted ? "visible item window shifted" : undefined,
 	].filter((item): item is string => !!item);
-	return { confidence: countGrew ? "high" : "medium", summary: parts.join(", ") || "growth probe increased collection window" };
+	return { confidence: countGrew || windowShifted ? "high" : "medium", summary: parts.join(", ") || "growth probe increased collection window" };
 }
 
 function completenessForDraft(draft: DraftCollection, edge?: ReturnType<typeof paginationEdge>, growth?: ReturnType<typeof growthProbeEvidence>): { completeness: CollectionCompleteness; confidence: CollectionConfidence; continuationKind?: CollectionContinuationKind; reason: string } {

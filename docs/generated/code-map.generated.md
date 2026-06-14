@@ -6,12 +6,12 @@
 
 | Directory | Files | Lines |
 | --- | --- | --- |
-| `bridge_src` | 43 | 12361 |
+| `bridge_src` | 44 | 12732 |
 | `capture-src` | 4 | 15 |
 | `cli` | 15 | 2602 |
-| `scripts` | 20 | 4253 |
-| `src/abml` | 30 | 1552 |
-| `src/abml-core` | 25 | 4778 |
+| `scripts` | 20 | 4256 |
+| `src/abml` | 32 | 1858 |
+| `src/abml-core` | 27 | 5276 |
 | `src/capture` | 5 | 46 |
 | `src/content` | 1 | 20 |
 | `src/distill-core` | 16 | 1683 |
@@ -20,11 +20,11 @@
 | `src/memory` | 4 | 395 |
 | `src/memory-core` | 7 | 433 |
 | `src/pick` | 1 | 30 |
-| `src/protocol` | 3 | 3167 |
+| `src/protocol` | 3 | 3187 |
 | `src/resources` | 4 | 675 |
-| `src/scan` | 3 | 165 |
+| `src/scan` | 3 | 313 |
 | `src/temporal-core` | 6 | 574 |
-| `src/tools` | 138 | 23051 |
+| `src/tools` | 138 | 23072 |
 | `src/types` | 1 | 50 |
 | `src/utils` | 11 | 824 |
 | `src/validation` | 3 | 490 |
@@ -33,14 +33,14 @@
 
 | Module | Importer count |
 | --- | --- |
-| `src/utils/records.ts` | 43 |
+| `src/utils/records.ts` | 44 |
 | `src/utils/json.ts` | 34 |
-| `bridge_src/service_worker/types.ts` | 32 |
+| `bridge_src/service_worker/types.ts` | 33 |
 | `src/utils/codedError.ts` | 29 |
 | `src/tools/toolShared.ts` | 26 |
+| `bridge_src/service_worker/runtime.ts` | 25 |
 | `src/driver/BrowserBridgeServer.ts` | 25 |
 | `src/tools/webSecurity/shared/types.ts` | 25 |
-| `bridge_src/service_worker/runtime.ts` | 24 |
 | `src/tools/webSecurity/shared/normalize.ts` | 24 |
 | `src/driver/errors.ts` | 23 |
 | `src/driver/types.ts` | 23 |
@@ -51,8 +51,8 @@
 | `src/tools/toolAdapter.ts` | 18 |
 | `bridge_src/service_worker/runtimeEnv.ts` | 17 |
 | `src/utils/params.ts` | 16 |
+| `bridge_src/service_worker/wait_cdp.ts` | 13 |
 | `src/protocol/nativeErrorCodes.ts` | 13 |
-| `bridge_src/service_worker/wait_cdp.ts` | 12 |
 
 ## Registered Tool And Command Surface
 

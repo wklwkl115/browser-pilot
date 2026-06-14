@@ -9,11 +9,11 @@
 <!-- BEGIN GENERATED: maintainer-layer-inventory (npm run docs:sync) -->
 | Directory | Files | Lines | Detected seams | Change-landing advice |
 | --- | --- | --- | --- | --- |
-| `bridge_src` | 43 | 12361 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
+| `bridge_src` | 44 | 12732 | service worker, offscreen transport, page scripts, protocol copy | MV3 extension source; run `build:bridge` before bridge/runtime checks. |
 | `capture-src` | 4 | 15 | editable templates, sync:capture source | Editable page-world capture templates; generated bundles are under `src/capture/generated/`. |
 | `cli` | 15 | 2602 | flags, local commands, daemon, JSON envelopes | External `pi-browser` CLI face; keep command metadata, flags, local commands, and daemon validation in sync. |
-| `src/abml` | 30 | 1552 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
-| `src/abml-core` | 25 | 4778 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
+| `src/abml` | 32 | 1858 | runtime verbs, pure-core shims, perception ledger | Runtime ABML integration and compatibility shims; kernel renames must co-change `src/abml-core/index.ts` and `tests/contracts/drift/kernel-export-inventory.json`. |
+| `src/abml-core` | 27 | 5276 | pure kernel, barrel, verb decisions | Pure ABML kernel; keep browser/Node deps out and verify `check:abml-core-boundary` plus targeted ABML contracts. |
 | `src/capture` | 5 | 46 | generated output | Committed capture bundles and injection helpers; edit `capture-src/entries/*` first, then run `npm run sync:capture` and `check:capture`. |
 | `src/content` | 1 | 20 | leaf module group | Content extraction runtime; pair with capture/page-script gates when touching page-world behavior. |
 | `src/distill-core` | 16 | 1683 | leaf module group | Pure distill kernel for salience, budgets, recovery, and token economy; verify distill and token gates. |
@@ -22,11 +22,11 @@
 | `src/memory` | 4 | 395 | leaf module group | Runtime memory persistence and HMAC/profile services; keep local-only storage boundaries explicit. |
 | `src/memory-core` | 7 | 433 | index/barrel | Pure memory kernel; keep host I/O out and verify memory-core boundary. |
 | `src/pick` | 1 | 30 | leaf module group | Content-pick page helpers; verify content-pick/page-script checks. |
-| `src/protocol` | 3 | 3167 | leaf module group | Generated native protocol mirror; edit `bridge/native_command_schema.json` and run `npm run sync:protocol`. |
+| `src/protocol` | 3 | 3187 | leaf module group | Generated native protocol mirror; edit `bridge/native_command_schema.json` and run `npm run sync:protocol`. |
 | `src/resources` | 4 | 675 | leaf module group | Artifact/resource store; verify artifact and summary consumers after schema changes. |
-| `src/scan` | 3 | 165 | leaf module group | Scan page-world builder compatibility layer; source templates live in `capture-src/entries/*`. |
+| `src/scan` | 3 | 313 | leaf module group | Scan page-world builder compatibility layer; source templates live in `capture-src/entries/*`. |
 | `src/temporal-core` | 6 | 574 | index/barrel | Pure temporal control kernel for freshness, state-loss, budget, and sync planning; keep driver/browser/Node deps out and verify `check:temporal-core-boundary` plus temporal unit tests. |
-| `src/tools` | 138 | 23051 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
+| `src/tools` | 138 | 23072 | toolRegistry/registerTools, toolAdapter/resultMiddleware, observe, webSecurity, summaries | Callable tool surface; read `toolRegistry.ts`, registrar, `toolAdapter.ts`, `resultMiddleware.ts`, and summaries together. |
 | `src/types` | 1 | 50 | leaf module group | Shared type declarations; check type and package surfaces. |
 | `src/utils` | 11 | 824 | leaf module group | Shared utilities; pure-kernel imports must stay within whitelisted cross-cutting modules. |
 | `src/validation` | 3 | 490 | leaf module group | Frontend/tool validation; preserve strict schema and CLI/Pi parity behavior. |

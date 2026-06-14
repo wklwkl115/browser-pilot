@@ -416,6 +416,34 @@
         }
       ]
     },
+    "src/abml-core/identityBootstrap.ts": {
+      "exports": [
+        {
+          "name": "BackendNodeIdBootstrapRecord",
+          "status": "internal"
+        },
+        {
+          "name": "BackendNodeIdBootstrapResult",
+          "status": "internal"
+        },
+        {
+          "name": "BackendNodeIdBootstrapStats",
+          "status": "internal"
+        },
+        {
+          "name": "BackendNodeIdBootstrapStatus",
+          "status": "internal"
+        },
+        {
+          "name": "SnapshotGeometryEntry",
+          "status": "internal"
+        },
+        {
+          "name": "bootstrapScanBackendNodeIds",
+          "status": "internal"
+        }
+      ]
+    },
     "src/abml-core/identityGraph.ts": {
       "exports": [
         {
@@ -437,6 +465,26 @@
         {
           "name": "identityGraphSummary",
           "status": "consumed"
+        }
+      ]
+    },
+    "src/abml-core/nodeKey.ts": {
+      "exports": [
+        {
+          "name": "BackendNodeIdentity",
+          "status": "internal"
+        },
+        {
+          "name": "backendNodeKey",
+          "status": "internal"
+        },
+        {
+          "name": "cleanTargetId",
+          "status": "internal"
+        },
+        {
+          "name": "legacyBackendNodeKey",
+          "status": "internal"
         }
       ]
     },
@@ -475,7 +523,15 @@
           "status": "internal"
         },
         {
+          "name": "* from ./identityBootstrap.js",
+          "status": "internal"
+        },
+        {
           "name": "* from ./identityGraph.js",
+          "status": "internal"
+        },
+        {
+          "name": "* from ./nodeKey.js",
           "status": "internal"
         },
         {
@@ -619,8 +675,20 @@
     "src/abml-core/relations.ts": {
       "exports": [
         {
+          "name": "PaintOrderEntry",
+          "status": "internal"
+        },
+        {
           "name": "RelationAnchor",
           "status": "test-harness"
+        },
+        {
+          "name": "RelationGraph",
+          "status": "internal"
+        },
+        {
+          "name": "RelationGraphEdge",
+          "status": "internal"
         },
         {
           "name": "RelationHighlight",
@@ -635,7 +703,15 @@
           "status": "consumed"
         },
         {
+          "name": "buildRelationGraph",
+          "status": "consumed"
+        },
+        {
           "name": "buildRelationSummary",
+          "status": "consumed"
+        },
+        {
+          "name": "derivePaintOrderRelationAnchors",
           "status": "consumed"
         },
         {
@@ -645,6 +721,10 @@
         {
           "name": "entityRelationKeys",
           "status": "test-harness"
+        },
+        {
+          "name": "materializeRelationGraph",
+          "status": "consumed"
         },
         {
           "name": "materializeRelations",

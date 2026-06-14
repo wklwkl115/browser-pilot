@@ -75,9 +75,12 @@ test("abml ax runtime joins DOMSnapshot bounds before falling back to per-node b
 			throw new Error(`unexpected command ${JSON.stringify(command)}`);
 		},
 	};
-	const { entities, diagnostics } = await readAxEntities(server as any, { tabId: 7, observationId: "snap-1", url: "https://example.test/canvas", timeoutMs: 5_000 });
+	const { entities, diagnostics, snapshotGeometryEntries } = await readAxEntities(server as any, { tabId: 7, observationId: "snap-1", url: "https://example.test/canvas", timeoutMs: 5_000 });
 	assert.deepEqual(entities[0]?.entity.geometry?.point, { x: 140, y: 196 });
 	assert.equal(diagnostics?.snapshotGeometryCount, 1);
+	assert.equal(snapshotGeometryEntries?.[0]?.backendNodeId, 81, "snapshot geometry entries remain available for DOM bootstrap");
+	assert.equal(typeof diagnostics?.snapshotStartedAt, "string", "snapshot timing diagnostics include startedAt");
+	assert.equal(typeof diagnostics?.snapshotEndedAt, "string", "snapshot timing diagnostics include endedAt");
 	assert.equal(calls.filter((call) => call.cdpMethod === "DOM.getBoxModel").length, 0);
 });
 
@@ -173,6 +176,37 @@ test("abml ax runtime appends unmatched AX entities and merges matching controls
 	assert.deepEqual(merged[0]?.hints?.mergedSources, ["dom", "ax"]);
 	assert.equal(merged[1]?.source, "ax");
 	assert.match(String(merged[1]?.ref || ""), /^pi-ref:\/\//);
+});
+
+test("abml ax runtime merges DOM and AX entities by exact bootstrapped backendNodeId before geometry heuristics", () => {
+	const dom = [{
+		ref: "pi-ref://control/dom-pay",
+		kind: "control",
+		role: "button",
+		name: "Different label",
+		state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+		source: "dom",
+		locators: [{ by: "backendNodeId", value: 81 }, { by: "css", value: "#pay" }],
+		geometry: { point: { x: 999, y: 999 } },
+		hints: { selector: "#pay", backendNodeId: 81 },
+	}];
+	const axBuilt = [{
+		entity: {
+			kind: "control",
+			role: "button",
+			name: "Pay now",
+			state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true },
+			source: "ax",
+			locators: [{ by: "backendNodeId", value: 81 }, { by: "axNodeId", value: "ax-1" }],
+			geometry: { point: { x: 120, y: 196 } },
+			hints: { axNodeId: "ax-1", backendNodeId: 81 },
+		},
+		descriptor: { kind: "control", locators: [{ by: "backendNodeId", value: 81 }], owner: {}, policy: { redaction: "default", shareableAcrossSessions: false, liveActionsAllowed: true }, observationId: "obs", createdAt: Date.now(), ttlMs: 60_000 },
+	}] as any;
+	const merged = mergeAxIntoDomEntities(dom as any, axBuilt);
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0]?.name, "Pay now");
+	assert.deepEqual(merged[0]?.hints?.mergedSources, ["dom", "ax"]);
 });
 
 test("readAxEntities caches raw AX tree and box model by explicit cache key", async () => {

@@ -120,6 +120,19 @@ test("collections: generic growth probe upgrades a window to virtualized", () =>
 	assert(collection.evidence.some((entry) => entry.source === "growthProbe"));
 });
 
+test("collections: growth probe treats a shifted fixed-size virtual window as virtualized", () => {
+	const collection = model({
+		entities: [1, 2, 3, 4, 5].map((index) => item(index)),
+		scanEvidence: {
+			growthProbe: { beforeCount: 5, afterCount: 5, beforeFirstText: "Result 1", afterFirstText: "Result 12", windowShifted: true },
+		},
+	});
+	assert.equal(collection.completeness, "virtualized");
+	assert.equal(collection.confidence, "high");
+	assert.equal(collection.continuation?.kind, "virtual-window");
+	assert(collection.evidence.some((entry) => /visible item window shifted/.test(entry.summary)));
+});
+
 test("collections: generic next/page controls produce a pagination continuation signal", () => {
 	const collection = model({
 		entities: [1, 2, 3, 4, 5].map((index) => item(index)),

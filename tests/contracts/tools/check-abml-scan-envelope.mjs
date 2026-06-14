@@ -28,8 +28,18 @@ const rawScan = {
 		{ index: 1, tag: "input", role: "textbox", action: "card", label: "Card number", selector: "#card", point: { x: 100, y: 200 }, rect: { x: 80, y: 180, width: 220, height: 30 }, hitOk: true, editable: true, disabled: false, priority: 1200 },
 	],
 	list_hints: [
-		{ selector: "main > div.cart > div.item", itemCount: 20, hiddenCount: 17, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] },
+		{ selector: "main > div.cart > div.item", itemCount: 20, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] },
 	],
+	growthProbe: {
+		supported: true,
+		selector: "main > div.cart > div.item",
+		beforeCount: 20,
+		afterCount: 20,
+		beforeFirstText: "Item 1 $10",
+		afterFirstText: "Item 8 $80",
+		windowShifted: true,
+		restoredScrollTop: true,
+	},
 };
 
 const summary = summarizeScanData(rawScan, [{ id: 1 }], {
@@ -54,7 +64,7 @@ const entities = scanEntitiesForEnvelope(rawScan, {
 });
 summary.collections = buildCollectionModels({
 	entities: [],
-	scanEvidence: { listHints: rawScan.list_hints },
+	scanEvidence: { listHints: rawScan.list_hints, growthProbe: rawScan.growthProbe },
 });
 summary.identity = {
 	entityCount: 3,
@@ -64,8 +74,14 @@ summary.identity = {
 	triggeredCount: 0,
 	sourceCounts: { dom: 2, ax: 1 },
 };
+summary.focus.relations = {
+	summary: { controls: 1 },
+	highlights: [{ type: "controls", sourceRef: "pi-ref://control/1", targetRef: "pi-ref://region/2", source: "aria" }],
+};
 summary.artifact_hints.jsonPaths.identityGraph = "envelope.identityGraph";
 summary.artifact_hints.preferredReads.push({ label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
+summary.artifact_hints.jsonPaths.relationGraph = "envelope.relationGraph";
+summary.artifact_hints.preferredReads.push({ label: "full ABML relation graph", jsonPath: "envelope.relationGraph", kind: "abml-relations" });
 
 assert(Value.Check(ScanSummarySchema, summary), `scan summary must conform to ScanSummarySchema: ${JSON.stringify([...Value.Errors(ScanSummarySchema, summary)].slice(0, 5).map((e) => `${e.instancePath}: ${e.message}`))}`);
 assert.equal(summary.focus.entityShape, "refs-v1", "focus must version the entity-ref projection");
@@ -99,10 +115,14 @@ try {
 	assert(envelope.nextActions.some((item) => String(item).includes("jsonPath=data.content") || String(item).includes("read_saved_artifact")), "scan envelope nextActions must retain content targeted follow-up");
 	assert(Array.isArray(envelope.entities), "scan envelope must surface entity projections at envelope level in P8");
 	assert(envelope.entities.every((entity) => typeof entity === "object" && typeof entity.ref === "string" && typeof entity.kind === "string"), "envelope.entities must still carry compact full entity objects");
-	assert.equal(envelope.collections?.[0]?.completeness, "lazy", "scan envelope must lift collection completeness");
+	assert.equal(envelope.collections?.[0]?.completeness, "virtualized", "scan envelope must lift growth-probe collection completeness");
 	assert.equal(envelope.collections?.[0]?.continuation?.kind, "virtual-window", "scan envelope must carry semantic continuation evidence");
+	assert(envelope.collections?.[0]?.evidence?.some((entry) => entry.source === "growthProbe"), "scan envelope collection evidence must include growthProbe");
 	assert.equal(envelope.identity?.backendNodeIdCount, 1, "scan envelope must lift identity lattice coverage diagnostics");
 	assert.equal(envelope.summary?.artifact_hints?.jsonPaths?.identityGraph, "envelope.identityGraph", "scan artifact hints must expose identityGraph read path");
+	assert.equal(envelope.relations?.summary?.controls, 1, "scan envelope must lift relation summary");
+	assert.equal(envelope.summary?.artifact_hints?.jsonPaths?.relationGraph, "envelope.relationGraph", "scan artifact hints must expose relationGraph read path");
+	assert.ok(envelope.summary?.artifact_hints?.preferredReads?.some((read) => read.jsonPath === "envelope.relationGraph"), "scan artifact hints must register relationGraph preferred read");
 	assert(!JSON.stringify(envelope.nextActions || []).toLowerCase().includes("scroll"), "scan envelope nextActions must not prescribe scroll");
 	// F2: the scan summarizer duplicated `headings`/`top_layer` into both summary top-level AND focus by
 	// SHARED reference, so redactSensitiveValue collapsed the second occurrence to a "[Circular]" string

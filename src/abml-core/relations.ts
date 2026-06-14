@@ -7,6 +7,7 @@
 // anchors and mints refs (DOM↔AX merge), then this pure module materializes anchors→refs and
 // summarizes. No browser, Node, or tools imports — stays inside the abml-core boundary.
 import type { Entity, EntityRelation, RelationType } from "./entity.js";
+import { backendNodeKey, cleanTargetId, legacyBackendNodeKey } from "./nodeKey.js";
 
 // A relation edge before ref materialization. sourceKey/targetKey are node-id keys in the
 // shared key space "b:<backendDOMNodeId>" | "a:<axNodeId>" — never leaked to callers.
@@ -20,6 +21,12 @@ export type RelationAnchor = {
 	source: "ax" | "dom" | "geometry" | "timing" | "event";
 	confidence: "high" | "medium" | "low";
 	evidence?: Record<string, unknown>;
+};
+
+export type PaintOrderEntry = {
+	backendNodeId: number;
+	paintOrder: number;
+	bounds: { x: number; y: number; w: number; h: number };
 };
 
 // Deterministic ordering for per-entity caps and envelope highlights — interaction edges
@@ -48,6 +55,10 @@ const TYPE_ORDER: RelationType[] = [
 const MAX_RELATIONS_PER_ENTITY = 8;
 // Highlights are a capped, deterministic sample of the strongest edges for the envelope.
 const MAX_HIGHLIGHTS = 8;
+const MAX_PAINT_ORDER_OCCLUSION_ANCHORS = 40;
+const PAINT_ORDER_BUCKET_SIZE = 256;
+const MIN_OCCLUSION_OVERLAP_AREA = 9;
+const MIN_OCCLUSION_OVERLAP_RATIO = 0.02;
 
 function typeRank(type: RelationType): number {
 	const idx = TYPE_ORDER.indexOf(type);
@@ -55,13 +66,24 @@ function typeRank(type: RelationType): number {
 }
 
 // The keys an entity answers to, across the shared anchor key space:
-//   b:<backendDOMNodeId> · a:<axNodeId> — AX-derived endpoints (property/table/currentIn relations)
+//   t:<targetId>:b:<backendDOMNodeId> · b:<backendDOMNodeId> · a:<axNodeId> — AX-derived endpoints (property/table/currentIn relations)
 //   s:<selector>          — DOM endpoints (occlusion relations match by CSS selector)
-// All of an entity's keys register so an anchor keyed by any of them resolves to its ref.
+// All of an entity's keys register so an anchor keyed by any of them resolves to its ref. When an
+// OOPIF target id is known, the composite key is registered first and the legacy bare backend key is
+// still registered for same-target callers and older anchors.
 export function entityRelationKeys(entity: Entity): string[] {
 	const keys: string[] = [];
-	const backend = entity.hints?.backendNodeId;
-	if (typeof backend === "number" && Number.isFinite(backend)) keys.push(`b:${backend}`);
+	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
+	const locatorBackend = locator?.by === "backendNodeId" ? Number(locator.value) : NaN;
+	const hintBackend = Number(entity.hints?.backendNodeId);
+	const backend = Number.isFinite(hintBackend) ? hintBackend : locator?.by === "backendNodeId" && Number.isFinite(locatorBackend) ? locatorBackend : undefined;
+	if (backend !== undefined) {
+		const targetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId) ?? (locator?.by === "backendNodeId" ? cleanTargetId(locator.targetId) : undefined);
+		const legacyKey = legacyBackendNodeKey(backend);
+		const compositeKey = backendNodeKey({ backendNodeId: backend, targetId });
+		keys.push(compositeKey);
+		if (compositeKey !== legacyKey) keys.push(legacyKey);
+	}
 	const axNodeId = entity.hints?.axNodeId;
 	if (typeof axNodeId === "string" && axNodeId.trim()) keys.push(`a:${axNodeId.trim()}`);
 	const selector = entity.hints?.selector;
@@ -99,38 +121,7 @@ function sortRelations(relations: EntityRelation[]): EntityRelation[] {
 // unresolved or self edges, dedupes, and caps per entity. Returns a new entity list; entities
 // with no relations are returned unchanged.
 export function materializeRelations(entities: Entity[], anchors: RelationAnchor[]): Entity[] {
-	if (!anchors.length) return entities;
-	const keyToRef = new Map<string, string>();
-	for (const entity of entities) {
-		for (const key of entityRelationKeys(entity)) {
-			if (!keyToRef.has(key)) keyToRef.set(key, entity.ref);
-		}
-	}
-	const bySource = new Map<string, EntityRelation[]>();
-	for (const anchor of anchors) {
-		const sourceRef = keyToRef.get(anchor.sourceKey);
-		let targetRef = keyToRef.get(anchor.targetKey);
-		if (!targetRef && anchor.targetKeyFallbacks) {
-			for (const fallback of anchor.targetKeyFallbacks) { targetRef = keyToRef.get(fallback); if (targetRef) break; }
-		}
-		if (!sourceRef || !targetRef || sourceRef === targetRef) continue;
-		const relation: EntityRelation = {
-			type: anchor.type,
-			targetRef,
-			source: anchor.source,
-			confidence: anchor.confidence,
-			...(anchor.evidence ? { evidence: anchor.evidence } : {}),
-		};
-		const list = bySource.get(sourceRef);
-		if (list) list.push(relation);
-		else bySource.set(sourceRef, [relation]);
-	}
-	if (!bySource.size) return entities;
-	return entities.map((entity) => {
-		const relations = bySource.get(entity.ref);
-		if (!relations || !relations.length) return entity;
-		return { ...entity, relations: capRelations(dedupeRelations(relations)) };
-	});
+	return materializeRelationGraph(entities, anchors).entities;
 }
 
 // Relations derived from a merged entity's own scalar state + stashed keys — the DOM-sourced arm of
@@ -166,7 +157,132 @@ export function deriveStateRelationAnchors(entities: Entity[]): RelationAnchor[]
 	return out;
 }
 
+type IndexedPaintEntity = PaintOrderEntry & { key: string; entityIndex: number; area: number };
+
+function isPaintOrderRelationCandidate(entity: Entity): boolean {
+	return entity.kind !== "text" && entity.kind !== "frame";
+}
+
+function rectArea(rect: PaintOrderEntry["bounds"]): number {
+	return Math.max(0, rect.w) * Math.max(0, rect.h);
+}
+
+function rectIntersectionArea(a: PaintOrderEntry["bounds"], b: PaintOrderEntry["bounds"]): number {
+	const left = Math.max(a.x, b.x);
+	const top = Math.max(a.y, b.y);
+	const right = Math.min(a.x + a.w, b.x + b.w);
+	const bottom = Math.min(a.y + a.h, b.y + b.h);
+	return Math.max(0, right - left) * Math.max(0, bottom - top);
+}
+
+function bucketRange(rect: PaintOrderEntry["bounds"]): { minX: number; maxX: number; minY: number; maxY: number } {
+	return {
+		minX: Math.floor(rect.x / PAINT_ORDER_BUCKET_SIZE),
+		maxX: Math.floor((rect.x + rect.w) / PAINT_ORDER_BUCKET_SIZE),
+		minY: Math.floor(rect.y / PAINT_ORDER_BUCKET_SIZE),
+		maxY: Math.floor((rect.y + rect.h) / PAINT_ORDER_BUCKET_SIZE),
+	};
+}
+
+function bucketKeys(rect: PaintOrderEntry["bounds"]): string[] {
+	const range = bucketRange(rect);
+	const out: string[] = [];
+	for (let x = range.minX; x <= range.maxX; x += 1) {
+		for (let y = range.minY; y <= range.maxY; y += 1) out.push(`${x}:${y}`);
+	}
+	return out;
+}
+
+// DOMSnapshot paint order is the lower-level occlusion spine: layout entries carry
+// backendNodeId + bounds + paintOrder in one sample. Convert that into capped relation anchors
+// without building an O(n²) matrix. Each lower painted entity keeps only the nearest higher painted
+// overlapping candidate; full paint-order entries remain artifact-side diagnostics.
+export function derivePaintOrderRelationAnchors(entities: Entity[], entries: PaintOrderEntry[]): RelationAnchor[] {
+	if (!entries.length || !entities.length) return [];
+	const entityBackendKeys = new Map<number, { key: string; entityIndex: number }>();
+	for (let i = 0; i < entities.length; i += 1) {
+		if (!isPaintOrderRelationCandidate(entities[i]!)) continue;
+		for (const key of entityRelationKeys(entities[i]!)) {
+			const match = /^b:(\d+)$/.exec(key);
+			if (!match) continue;
+			const backendNodeId = Number(match[1]);
+			if (!entityBackendKeys.has(backendNodeId)) entityBackendKeys.set(backendNodeId, { key, entityIndex: i });
+		}
+	}
+	if (!entityBackendKeys.size) return [];
+	const indexed: IndexedPaintEntity[] = [];
+	const seen = new Set<number>();
+	for (const entry of entries) {
+		if (seen.has(entry.backendNodeId)) continue;
+		const keyed = entityBackendKeys.get(entry.backendNodeId);
+		if (!keyed) continue;
+		const area = rectArea(entry.bounds);
+		if (area <= 0) continue;
+		indexed.push({ ...entry, key: keyed.key, entityIndex: keyed.entityIndex, area });
+		seen.add(entry.backendNodeId);
+	}
+	if (indexed.length < 2) return [];
+	indexed.sort((a, b) => a.paintOrder - b.paintOrder || a.backendNodeId - b.backendNodeId);
+	const buckets = new Map<string, IndexedPaintEntity[]>();
+	for (const item of indexed) {
+		for (const key of bucketKeys(item.bounds)) {
+			const current = buckets.get(key);
+			if (current) current.push(item);
+			else buckets.set(key, [item]);
+		}
+	}
+	const anchors: RelationAnchor[] = [];
+	for (const lower of indexed) {
+		const candidates = new Map<string, IndexedPaintEntity>();
+		for (const key of bucketKeys(lower.bounds)) {
+			for (const candidate of buckets.get(key) || []) {
+				if (candidate.key !== lower.key && candidate.paintOrder > lower.paintOrder) candidates.set(candidate.key, candidate);
+			}
+		}
+		let best: { item: IndexedPaintEntity; intersection: number; ratio: number } | undefined;
+		for (const candidate of candidates.values()) {
+			const intersection = rectIntersectionArea(lower.bounds, candidate.bounds);
+			if (intersection < MIN_OCCLUSION_OVERLAP_AREA) continue;
+			const ratio = intersection / Math.max(1, Math.min(lower.area, candidate.area));
+			if (ratio < MIN_OCCLUSION_OVERLAP_RATIO) continue;
+			if (!best
+				|| candidate.paintOrder < best.item.paintOrder
+				|| (candidate.paintOrder === best.item.paintOrder && ratio > best.ratio)
+				|| (candidate.paintOrder === best.item.paintOrder && ratio === best.ratio && candidate.backendNodeId < best.item.backendNodeId)) {
+				best = { item: candidate, intersection, ratio };
+			}
+		}
+		if (!best) continue;
+		const evidence = {
+			paintOrder: true,
+			sourcePaintOrder: lower.paintOrder,
+			targetPaintOrder: best.item.paintOrder,
+			overlapArea: Math.round(best.intersection),
+			overlapRatio: Number(best.ratio.toFixed(3)),
+		};
+		anchors.push({ sourceKey: lower.key, type: "coveredBy", targetKey: best.item.key, source: "geometry", confidence: "medium", evidence });
+		anchors.push({ sourceKey: best.item.key, type: "occludes", targetKey: lower.key, source: "geometry", confidence: "medium", evidence });
+		if (anchors.length >= MAX_PAINT_ORDER_OCCLUSION_ANCHORS) break;
+	}
+	return anchors;
+}
+
 export type RelationHighlight = { type: RelationType; sourceRef: string; targetRef: string; source: "ax" | "dom" | "geometry" | "timing" | "event" };
+export type RelationGraphEdge = EntityRelation & {
+	id: string;
+	sourceRef: string;
+	targetRef: string;
+};
+export type RelationGraph = {
+	schemaVersion: 1;
+	edgeCount: number;
+	edges: RelationGraphEdge[];
+	bySource: Record<string, string[]>;
+	byTarget: Record<string, string[]>;
+	byType: Record<string, string[]>;
+	entityRelationCap: number;
+	entityRelationTruncated?: Record<string, number>;
+};
 
 // Attach additional relations (e.g. R3.x `triggered` edges, whose targets are network refs rather
 // than entities, so they bypass the anchor→ref materialize pass) to a single entity, reusing the
@@ -176,6 +292,149 @@ export function addEntityRelations(entity: Entity, added: EntityRelation[]): Ent
 	return { ...entity, relations: capRelations(dedupeRelations([...(entity.relations ?? []), ...added])) };
 }
 export type RelationSummary = { summary: Record<string, number>; highlights: RelationHighlight[]; highlightCount?: number };
+
+function confidenceRank(confidence: EntityRelation["confidence"]): number {
+	switch (confidence) {
+		case "high": return 0;
+		case "medium": return 1;
+		case "low": return 2;
+	}
+}
+
+function relationEdgeSort(a: Omit<RelationGraphEdge, "id">, b: Omit<RelationGraphEdge, "id">): number {
+	if (a.sourceRef !== b.sourceRef) return a.sourceRef < b.sourceRef ? -1 : 1;
+	const rank = typeRank(a.type) - typeRank(b.type);
+	if (rank !== 0) return rank;
+	if (a.targetRef !== b.targetRef) return a.targetRef < b.targetRef ? -1 : 1;
+	if (a.source !== b.source) return a.source < b.source ? -1 : 1;
+	return confidenceRank(a.confidence) - confidenceRank(b.confidence);
+}
+
+function edgeKey(edge: Pick<RelationGraphEdge, "sourceRef" | "type" | "targetRef">): string {
+	return `${edge.sourceRef}|${edge.type}|${edge.targetRef}`;
+}
+
+function mergeEdgeEvidence(current: Omit<RelationGraphEdge, "id">, next: Omit<RelationGraphEdge, "id">, preferred: Omit<RelationGraphEdge, "id">): Omit<RelationGraphEdge, "id"> {
+	if (!current.evidence && !next.evidence) return preferred;
+	return { ...preferred, evidence: { ...(current.evidence ?? {}), ...(next.evidence ?? {}) } };
+}
+
+function preferredEdge(current: Omit<RelationGraphEdge, "id">, next: Omit<RelationGraphEdge, "id">): Omit<RelationGraphEdge, "id"> {
+	const confidence = confidenceRank(next.confidence) - confidenceRank(current.confidence);
+	if (confidence < 0) return mergeEdgeEvidence(current, next, next);
+	if (confidence > 0) return mergeEdgeEvidence(current, next, current);
+	const source = next.source < current.source ? -1 : next.source > current.source ? 1 : 0;
+	return mergeEdgeEvidence(current, next, source < 0 ? next : current);
+}
+
+function relationGraphFromEdges(input: Array<Omit<RelationGraphEdge, "id">>): RelationGraph {
+	const deduped = new Map<string, Omit<RelationGraphEdge, "id">>();
+	for (const edge of input) {
+		const key = edgeKey(edge);
+		const current = deduped.get(key);
+		deduped.set(key, current ? preferredEdge(current, edge) : edge);
+	}
+	const sorted = Array.from(deduped.values()).sort(relationEdgeSort);
+	const edges: RelationGraphEdge[] = [];
+	for (let i = 0; i < sorted.length; i += 1) edges.push({ id: `rel:${i + 1}`, ...sorted[i]! });
+	const bySource: Record<string, string[]> = {};
+	const byTarget: Record<string, string[]> = {};
+	const byType: Record<string, string[]> = {};
+	for (const edge of edges) {
+		(bySource[edge.sourceRef] ||= []).push(edge.id);
+		(byTarget[edge.targetRef] ||= []).push(edge.id);
+		(byType[edge.type] ||= []).push(edge.id);
+	}
+	const entityRelationTruncated: Record<string, number> = {};
+	for (const [sourceRef, ids] of Object.entries(bySource)) {
+		if (ids.length > MAX_RELATIONS_PER_ENTITY) entityRelationTruncated[sourceRef] = ids.length - MAX_RELATIONS_PER_ENTITY;
+	}
+	return {
+		schemaVersion: 1,
+		edgeCount: edges.length,
+		edges,
+		bySource,
+		byTarget,
+		byType,
+		entityRelationCap: MAX_RELATIONS_PER_ENTITY,
+		...(Object.keys(entityRelationTruncated).length ? { entityRelationTruncated } : {}),
+	};
+}
+
+function graphEdgesFromAnchors(entities: Entity[], anchors: RelationAnchor[]): Array<Omit<RelationGraphEdge, "id">> {
+	if (!anchors.length) return [];
+	const keyToRef = new Map<string, string>();
+	for (const entity of entities) {
+		for (const key of entityRelationKeys(entity)) {
+			if (!keyToRef.has(key)) keyToRef.set(key, entity.ref);
+		}
+	}
+	const edges: Array<Omit<RelationGraphEdge, "id">> = [];
+	for (const anchor of anchors) {
+		const sourceRef = keyToRef.get(anchor.sourceKey);
+		let targetRef = keyToRef.get(anchor.targetKey);
+		if (!targetRef && anchor.targetKeyFallbacks) {
+			for (const fallback of anchor.targetKeyFallbacks) { targetRef = keyToRef.get(fallback); if (targetRef) break; }
+		}
+		if (!sourceRef || !targetRef || sourceRef === targetRef) continue;
+		edges.push({
+			sourceRef,
+			type: anchor.type,
+			targetRef,
+			source: anchor.source,
+			confidence: anchor.confidence,
+			...(anchor.evidence ? { evidence: anchor.evidence } : {}),
+		});
+	}
+	return edges;
+}
+
+function entitiesWithGraphRelations(entities: Entity[], graph: RelationGraph): Entity[] {
+	if (!graph.edgeCount) return entities;
+	const relationsBySource = new Map<string, EntityRelation[]>();
+	const edgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
+	for (const [sourceRef, edgeIds] of Object.entries(graph.bySource)) {
+		const relations: EntityRelation[] = [];
+		for (const edgeId of edgeIds) {
+			const edge = edgeById.get(edgeId);
+			if (!edge) continue;
+			relations.push({
+				type: edge.type,
+				targetRef: edge.targetRef,
+				source: edge.source,
+				confidence: edge.confidence,
+				...(edge.evidence ? { evidence: edge.evidence } : {}),
+			});
+		}
+		if (relations.length) relationsBySource.set(sourceRef, capRelations(relations));
+	}
+	return entities.map((entity) => {
+		const relations = relationsBySource.get(entity.ref);
+		return relations ? { ...entity, relations } : entity;
+	});
+}
+
+export function buildRelationGraph(entities: Entity[]): RelationGraph {
+	const edges: Array<Omit<RelationGraphEdge, "id">> = [];
+	for (const entity of entities) {
+		for (const relation of entity.relations ?? []) {
+			edges.push({
+				sourceRef: entity.ref,
+				type: relation.type,
+				targetRef: relation.targetRef,
+				source: relation.source,
+				confidence: relation.confidence,
+				...(relation.evidence ? { evidence: relation.evidence } : {}),
+			});
+		}
+	}
+	return relationGraphFromEdges(edges);
+}
+
+export function materializeRelationGraph(entities: Entity[], anchors: RelationAnchor[]): { entities: Entity[]; graph: RelationGraph } {
+	const graph = relationGraphFromEdges(graphEdgesFromAnchors(entities, anchors));
+	return { entities: entitiesWithGraphRelations(entities, graph), graph };
+}
 
 // Table-structural relation types are already encoded in `tableCells` (distinct cell count).
 // Their per-type counts add noise to the summary (a documentation page with 100 table cells

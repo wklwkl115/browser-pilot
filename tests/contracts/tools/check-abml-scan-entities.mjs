@@ -20,7 +20,7 @@ const baseData = {
 	actionables: [
 		{ index: 0, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1500, controlsSelectors: Array.from({ length: 10 }, (_, i) => `#panel-${i}`) },
 		{ index: 1, tag: "button", role: "button", action: "pay", label: "Pay now", selector: "#pay", point: { x: 180, y: 260 }, rect: { x: 140, y: 240, width: 80, height: 32 }, hitOk: true, clickable: true, disabled: false, priority: 1400 },
-		{ index: 2, tag: "input", role: "textbox", action: "card", label: "Card number", selector: "#card", point: { x: 100, y: 200 }, rect: { x: 80, y: 180, width: 220, height: 30 }, hitOk: true, editable: true, disabled: false, priority: 1200 },
+		{ index: 2, tag: "input", role: "textbox", action: "card", label: "Card number", selector: "#card", point: { x: 100, y: 200 }, rect: { x: 80, y: 180, width: 220, height: 30 }, hitOk: true, editable: true, disabled: false, priority: 1200, backendNodeId: 77, backendNodeIdBootstrap: { status: "matched", reason: "unique-high-iou", iou: 1 } },
 	],
 	list_hints: [
 		{ selector: "main > div.cart > div.item", itemCount: 20, hiddenCount: 17, firstItemPreview: "Item 1 $10", sampleHidden: ["Item 4 $40", "Item 5 $50"] },
@@ -127,6 +127,11 @@ const wrapperEntitiesWithoutDisplay = scanEntitiesForEnvelope(wrapperDataWithout
 	assert.equal(payEntity.geometry.box.w, 80, "entity geometry must preserve actionable box");
 	assert.equal(payEntity.geometry.point.x, 180, "entity geometry must preserve actionable point");
 	assert.equal(payEntity.hints.jsonPath, "data.actionables[0]", "entity hints must keep actionables jsonPath");
+
+	const cardEntity = envelopeEntities.find((entity) => entity.hints?.jsonPath === "data.actionables[2]");
+	assert(cardEntity?.locators?.some((locator) => locator.by === "backendNodeId" && locator.value === 77), "bootstrapped entity must carry backendNodeId locator");
+	assert.equal(cardEntity?.hints?.backendNodeId, 77, "bootstrapped entity must expose backendNodeId hint for identity diagnostics");
+	assert.equal(cardEntity?.hints?.backendNodeIdBootstrap?.status, "matched", "bootstrapped entity must preserve bootstrap status");
 
 	const payAction = summary.focus.primary_actions.find((action) => action.jsonPath === "data.actionables[0]");
 	assert.equal(payAction?.entityRef, payEntity.ref, "primary action summary row must carry the minted entity handle as a ref");

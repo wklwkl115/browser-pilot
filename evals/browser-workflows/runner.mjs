@@ -100,6 +100,10 @@ function unwrapToolData(toolResult) {
 function bridgeData(value) {
 	return value?.data ?? value?.result?.data ?? value;
 }
+function bridgeInnerData(value) {
+	const data = bridgeData(value);
+	return isRecord(data?.data) ? data.data : data;
+}
 function persistentCdpPayload(value) {
 	return bridgeData(value)?.result?.value ?? bridgeData(value)?.result?.result?.value;
 }
@@ -207,6 +211,25 @@ async function callTool(env, metrics, name, params = {}) {
 	if (observeSample) env.observeTimingSamples.push(observeSample);
 	const temporalSample = maybeTemporalProfileSample(result, params, metrics, { tool: name, elapsedMs });
 	if (temporalSample) env.temporalProfileSamples.push(temporalSample);
+	return result;
+}
+
+async function callInternalBridgeCommand(env, metrics, command, options = {}) {
+	metrics.toolCallCount += 1;
+	const callRecord = { tool: "internal_bridge_command", params: sanitizeParams({ command, ...options }) };
+	metrics.calls.push(callRecord);
+	const startedAt = Date.now();
+	const result = await env.bridge.sendCommand(command, {
+		browserSessionId: options.browserSessionId,
+		tabId: options.tabId ?? command.tabId,
+		timeoutMs: options.timeoutMs,
+		internal: true,
+	});
+	const elapsedMs = Math.max(0, Date.now() - startedAt);
+	const text = JSON.stringify(result);
+	callRecord.elapsedMs = elapsedMs;
+	callRecord.resultTextChars = text.length;
+	callRecord.estimatedTokens = Math.ceil(text.length / 4);
 	return result;
 }
 
@@ -333,16 +356,22 @@ function toolCountsFromCalls(calls) {
 function summarizeEvalMetrics(metrics) {
 	const calls = metrics.calls || [];
 	const artifactCalls = calls.filter((call) => call.tool === "browser_artifact");
+	const observeCalls = calls.filter((call) => call.tool === "browser_observe");
 	const resultTextChars = calls.map((call) => Number(call.resultTextChars || 0)).filter(Number.isFinite);
 	const estimatedTokens = calls.map((call) => Number(call.estimatedTokens || 0)).filter(Number.isFinite);
+	const observeResultTextChars = observeCalls.map((call) => Number(call.resultTextChars || 0)).filter(Number.isFinite);
+	const observeEstimatedTokens = observeCalls.map((call) => Number(call.estimatedTokens || 0)).filter(Number.isFinite);
 	return {
 		evalId: metrics.evalId,
 		toolCounts: toolCountsFromCalls(calls),
+		observeCallCount: observeCalls.length,
 		artifactReadCalls: artifactCalls.length,
 		artifactJsonPathReadCalls: artifactCalls.filter((call) => call.artifactJsonPath).length,
 		artifactBroadReadCalls: artifactCalls.filter((call) => call.artifactBroadRead).length,
 		resultTextChars: numericMetricSummary(resultTextChars),
 		estimatedTokens: numericMetricSummary(estimatedTokens),
+		observeResultTextChars: numericMetricSummary(observeResultTextChars),
+		observeEstimatedTokens: numericMetricSummary(observeEstimatedTokens),
 	};
 }
 
@@ -1372,7 +1401,9 @@ async function eval32(env, entry) {
 	const tabId = await createTab(env, metrics, "abml-identity-bootstrap.html");
 	try {
 		const scanStartedAt = nowIso();
-		const scan = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: path.join(env.runDir, `${entry.id}-scan.json`), timeoutMs: 20_000, maxChars: 14_000 }), "browser_observe bootstrap scan"));
+		const scanPath = path.join(env.runDir, `${entry.id}-scan.json`);
+		const scan = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: scanPath, timeoutMs: 20_000, maxChars: 14_000 }), "browser_observe bootstrap scan"));
+		const scanArtifact = JSON.parse(await readFile(scanPath, "utf8"));
 		const scanEndedAt = nowIso();
 		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => { window.scrollTo(0, 420); return window.__abmlBootstrapFixture.collect(); })()", outputPath: path.join(env.runDir, `${entry.id}-page-rects.json`), timeoutMs: 10_000, maxChars: 10_000 }), "browser_execute bootstrap collect rects");
 		const rectArtifact = JSON.parse(await readFile(path.join(env.runDir, `${entry.id}-page-rects.json`), "utf8"));
@@ -1389,6 +1420,11 @@ async function eval32(env, entry) {
 		const snapshotTargets = snapshotRects.filter((item) => targetIds.has(item.attrs.id));
 		const byId = new Map(snapshotTargets.map((item) => [item.attrs.id, item]));
 		const candidates = snapshotTargets.map((item) => ({ id: item.attrs.id, case: item.attrs["data-bootstrap-case"], backendNodeId: item.backendNodeId, rect: item.rect, rawRect: item.rawRect }));
+		const productBootstrap = scanArtifact?.abml?.data?.backendNodeIdBootstrap;
+		const productListenerOracle = scanArtifact?.abml?.data?.listenerOracle;
+		const productEntities = Array.isArray(scanArtifact?.abml?.entities) ? scanArtifact.abml.entities : [];
+		const productStampedEntityCount = productEntities.filter((entity) => Array.isArray(entity.locators) && entity.locators.some((locator) => locator?.by === "backendNodeId" && Number(locator.value) > 0)).length;
+		const productListenerEntityCount = productEntities.filter((entity) => Array.isArray(entity.hints?.listeners) && entity.hints.listeners.length > 0).length;
 		const targetResults = [];
 		const byCase = {};
 		for (const target of pageSample.targets || []) {
@@ -1450,19 +1486,42 @@ async function eval32(env, entry) {
 				byCase,
 			},
 			nonClaims: [
-				"Eval evidence only: product scan entities are not stamped with backendNodeId by this runner.",
-				"Scan and DOMSnapshot are not atomic; stale/ambiguous targets remain fail-open.",
+				"Product bootstrap is best-effort: scan and DOMSnapshot are not atomic; stale/ambiguous targets remain fail-open.",
+				"The manual post-scan drift sample proves stale classification evidence; product observe sees only its own scan/snapshot window.",
 			],
+			productBootstrap: productBootstrap ? {
+				total: Number(productBootstrap.total || 0),
+				matched: Number(productBootstrap.matched || 0),
+				ambiguous: Number(productBootstrap.ambiguous || 0),
+				stale: Number(productBootstrap.stale || 0),
+				missing: Number(productBootstrap.missing || 0),
+				unsupported: Number(productBootstrap.unsupported || 0),
+				coverage: Number(productBootstrap.coverage || 0),
+				snapshotScaleDivisor: Number(productBootstrap.snapshotScaleDivisor || 0),
+				sampleWindowMs: Number(productBootstrap.sampleWindowMs || 0),
+				stampedEntityCount: productStampedEntityCount,
+			} : undefined,
+			productListenerOracle: productListenerOracle ? {
+				candidateCount: Number(productListenerOracle.candidateCount || 0),
+				probedCount: Number(productListenerOracle.probedCount || 0),
+				nodeWithListenersCount: Number(productListenerOracle.nodeWithListenersCount || 0),
+				listenerCount: Number(productListenerOracle.listenerCount || 0),
+				failureCount: Number(productListenerOracle.failureCount || 0),
+				truncated: productListenerOracle.truncated === true,
+				listenerEntityCount: productListenerEntityCount,
+			} : undefined,
 			scanArtifact: scan.saved?.path ? pathRef(scan.saved.path) : undefined,
 		};
 		await saveJsonEvidence(env, metrics, "comparison", comparison);
-		const ok = comparison.bootstrapStats.matched >= 2 && comparison.bootstrapStats.ambiguous >= 1 && comparison.bootstrapStats.stale >= 1 && snapshotTargets.some((item) => item.backendNodeId > 0);
+		const productStampingPresent = Number(productBootstrap?.matched || 0) > 0 && productStampedEntityCount > 0;
+		const productListenerPresent = Number(productListenerOracle?.listenerCount || 0) > 0 && productListenerEntityCount > 0;
+		const ok = comparison.bootstrapStats.matched >= 2 && comparison.bootstrapStats.ambiguous >= 1 && comparison.bootstrapStats.stale >= 1 && snapshotTargets.some((item) => item.backendNodeId > 0) && productStampingPresent && productListenerPresent;
 		metrics.recoveredAfterFailure = true;
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
-		metrics.summary.push(`Bootstrap evidence classified ${comparison.bootstrapStats.matched}/${comparison.bootstrapStats.total} matched targets plus ambiguous=${comparison.bootstrapStats.ambiguous}, stale=${comparison.bootstrapStats.stale}.`);
-		metrics.diagnostics.push(`DOMSnapshot target backend ids present=${snapshotTargets.some((item) => item.backendNodeId > 0)}; sample window ${comparison.sampleWindow.sampleWindowMs}ms; product stamping not claimed.`);
-		metrics.notes.push("Passing means the eval collected coordinate/bootstrap evidence and fail-open cases; it does not ship DOM scan backendNodeId stamping.");
+		metrics.summary.push(`Bootstrap evidence classified ${comparison.bootstrapStats.matched}/${comparison.bootstrapStats.total} matched targets plus ambiguous=${comparison.bootstrapStats.ambiguous}, stale=${comparison.bootstrapStats.stale}; product stamped entities=${productStampedEntityCount}.`);
+		metrics.diagnostics.push(`DOMSnapshot target backend ids present=${snapshotTargets.some((item) => item.backendNodeId > 0)}; sample window ${comparison.sampleWindow.sampleWindowMs}ms; product bootstrap matched=${Number(productBootstrap?.matched || 0)} ambiguous=${Number(productBootstrap?.ambiguous || 0)}; product listener hints=${productListenerEntityCount}/${Number(productListenerOracle?.listenerCount || 0)}.`);
+		metrics.notes.push("Passing means product ABML entities are now best-effort stamped with backendNodeId and carry bounded read-only listener hints while stale/ambiguous samples remain fail-open evidence.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {
 		await closeTabQuiet(env, tabId);
@@ -1479,32 +1538,73 @@ async function eval33(env, entry) {
 		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__abmlLayerFixture.sample())()", outputPath: topHitPath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute occlusion sample");
 		const observe = JSON.parse(await readFile(observePath, "utf8"));
 		const topHit = JSON.parse(await readFile(topHitPath, "utf8"));
-		const layerEnable = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "LayerTree.enable", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-layer-enable.json`), timeoutMs: 15_000, maxChars: 6_000 }));
-		const layerProbe = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "LayerTree.compositingLayers", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: path.join(env.runDir, `${entry.id}-layer-probe.json`), timeoutMs: 15_000, maxChars: 6_000 }));
+		const layerProbePath = path.join(env.runDir, `${entry.id}-layer-probe.json`);
+		const layerProbeResult = await callInternalBridgeCommand(env, metrics, { cmd: "layer.probe", tabId, waitMs: 500, maxEvents: 4, maxLayers: 120, timeoutMs: 10_000 }, { tabId, timeoutMs: 15_000 });
+		await writeFile(layerProbePath, JSON.stringify(layerProbeResult, null, 2), "utf8");
+		addArtifact(metrics, layerProbePath);
+		const layerProbe = JSON.parse(await readFile(layerProbePath, "utf8"));
 		const scanText = JSON.stringify(observe);
 		const topHitData = topHit?.data?.value ?? topHit?.data ?? topHit;
+		const layerProbeData = bridgeInnerData(layerProbe);
+		const layerOwnerIds = Array.isArray(layerProbeData?.ownerBackendNodeIds) ? layerProbeData.ownerBackendNodeIds : [];
+		const paintOrderData = isRecord(layerProbeData?.paintOrder) ? layerProbeData.paintOrder : {};
+		const paintOrderOwnerIds = Array.isArray(paintOrderData.ownerBackendNodeIds) ? paintOrderData.ownerBackendNodeIds : [];
+		const scanRelationsSummary = observe?.relations?.summary ?? observe?.envelope?.relations?.summary ?? observe?.summary?.focus?.relations?.summary ?? observe?.envelope?.summary?.focus?.relations?.summary;
+		const paintOrderRuntime = observe?.abml?.data?.axDiagnostics?.paintOrder;
+		const paintOrderArtifactEvidence = observe?.abml?.data?.paintOrderEvidence;
+		const paintOrderArtifactEntries = Array.isArray(paintOrderArtifactEvidence?.entries) ? paintOrderArtifactEvidence.entries : [];
+		const envelopeText = JSON.stringify(observe?.envelope ?? {});
+		const paintOrderRelationEvidencePresent = /"paintOrder"\s*:\s*true/.test(scanText);
+		const paintOrderFullEntriesArtifactOnly = paintOrderArtifactEntries.length > 0
+			&& !Array.isArray(paintOrderRuntime?.entries)
+			&& !/paintOrderEvidence|axDiagnostics/.test(envelopeText);
 		const boundary = {
 			topHit: topHitData,
-			scanRelationsSummary: observe?.relations?.summary ?? observe?.envelope?.relations?.summary ?? observe?.summary?.focus?.relations?.summary,
+			scanRelationsSummary,
 			hasModelFacingOccludes: /occludes|occluded/i.test(scanText),
-			hasLayerTreeSource: /layerTree|LayerTree|paintOrder/i.test(scanText),
+			hasLayerTreeSource: /layerTree|LayerTree/i.test(scanText),
 			layerTreeProbe: {
-				enableOk: !toolReturnedError({ content: [{ type: "text", text: JSON.stringify(layerEnable) }] }),
-				compositingLayersError: toolReturnedError({ content: [{ type: "text", text: JSON.stringify(layerProbe) }] })?.error ?? null,
+				supported: layerProbeData?.supported === true,
+				eventCount: Number(layerProbeData?.eventCount || 0),
+				ownerBackendNodeIds: layerOwnerIds,
+				ownerMappingPresent: layerOwnerIds.length > 0,
+				proof: layerProbeData?.proof,
+				enableError: layerProbeData?.enableError,
+			},
+			paintOrderProbe: {
+				supported: paintOrderData.supported === true,
+				paintOrderCount: Number(paintOrderData.paintOrderCount || 0),
+				ownerBackendNodeIds: paintOrderOwnerIds,
+				ownerMappingPresent: paintOrderOwnerIds.length > 0,
+				proof: paintOrderData.proof,
+			},
+			paintOrderRuntime: {
+				supported: paintOrderRuntime?.supported === true,
+				entryCount: Number(paintOrderRuntime?.entryCount || 0),
+				ownerBackendNodeIdCount: Number(paintOrderRuntime?.ownerBackendNodeIdCount || 0),
+				relationEvidencePresent: paintOrderRelationEvidencePresent,
+				fullEntriesArtifactOnly: paintOrderFullEntriesArtifactOnly,
+			},
+			paintOrderArtifactEvidence: {
+				entryCount: Number(paintOrderArtifactEvidence?.entryCount || 0),
+				ownerBackendNodeIdCount: Number(paintOrderArtifactEvidence?.ownerBackendNodeIdCount || 0),
+				entryRows: paintOrderArtifactEntries.length,
 			},
 			nonClaims: [
-				"Eval boundary evidence only: no LayerTree owner-to-backendNodeId relation model is proven.",
-				"Current page-engine top-hit evidence does not equal paint-order capped ABML relations.",
+				"LayerTree owner-to-backendNodeId relation model is not used; LayerTree.enable is recorded as unavailable when applicable.",
+				"DOMSnapshot paint-order relation evidence is capped in the model-facing relation summary; full paint-order entries stay in the saved artifact.",
 			],
 		};
 		await saveJsonEvidence(env, metrics, "boundary", boundary);
 		const topHitShowsCover = /covering/.test(JSON.stringify(topHitData));
-		const ok = topHitShowsCover && boundary.hasLayerTreeSource === false;
+		const ownerMappingPresent = boundary.layerTreeProbe.ownerMappingPresent === true || boundary.paintOrderProbe.ownerMappingPresent === true;
+		const relationSummaryHasOcclusion = Number(scanRelationsSummary?.occludes || 0) > 0 && Number(scanRelationsSummary?.coveredBy || 0) > 0;
+		const ok = topHitShowsCover && ownerMappingPresent && relationSummaryHasOcclusion && paintOrderRelationEvidencePresent && paintOrderFullEntriesArtifactOnly;
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
-		metrics.summary.push(`Occlusion boundary evidence: elementFromPoint saw covering=${topHitShowsCover}; layerTree source in scan=${boundary.hasLayerTreeSource}.`);
-		metrics.diagnostics.push("Passing records the current LayerTree boundary; it does not prove shipped LayerTree relations.");
-		metrics.notes.push("LayerTree / paint-order remains behind a dedicated execution contract with owner mapping and artifact-only full detail.");
+		metrics.summary.push(`Occlusion evidence: elementFromPoint saw covering=${topHitShowsCover}; relation summary occludes=${Number(scanRelationsSummary?.occludes || 0)} coveredBy=${Number(scanRelationsSummary?.coveredBy || 0)}; layer owner ids=${layerOwnerIds.length}; paint-order owner ids=${paintOrderOwnerIds.length}.`);
+		metrics.diagnostics.push("Passing proves DOMSnapshot paint-order owner evidence feeds capped ABML relations while LayerTree remains an unavailable boundary.");
+		metrics.notes.push("LayerTree is not the implementation spine; product relation evidence follows DOMSnapshot paint-order with artifact-only full entries.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {
 		await closeTabQuiet(env, tabId);
@@ -1518,38 +1618,146 @@ async function eval34(env, entry) {
 		assertToolOk(await callTool(env, metrics, "browser_wait", { action: "selector", tabId, params: { selector: "#xframe", state: "attached" }, timeoutMs: 15_000, maxChars: 4_000 }), "browser_wait iframe attached");
 		await delay(1_000);
 		const inspectPath = path.join(env.runDir, `${entry.id}-inspect.json`);
+		const afterPath = path.join(env.runDir, `${entry.id}-after.json`);
 		const framePath = path.join(env.runDir, `${entry.id}-frame.json`);
 		const targetsPath = path.join(env.runDir, `${entry.id}-targets.json`);
+		const parentSnapshotPath = path.join(env.runDir, `${entry.id}-parent-snapshot.json`);
+		const childSnapshotPath = path.join(env.runDir, `${entry.id}-child-snapshot.json`);
+		const parentInputPath = path.join(env.runDir, `${entry.id}-parent-input.json`);
+		const childInputPath = path.join(env.runDir, `${entry.id}-child-input.json`);
+		const failClosedPath = path.join(env.runDir, `${entry.id}-fail-closed.json`);
 		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__oopifFixture.inspect())()", outputPath: inspectPath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute oopif inspect");
 		assertToolOk(await callTool(env, metrics, "browser_frame", { action: "list", tabId, outputPath: framePath, timeoutMs: 15_000, maxChars: 12_000 }), "browser_frame oopif boundary");
-		const targetResponse = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "Target.getTargets", params: {}, persistent: true, timeoutMs: 10_000 }, outputPath: targetsPath, timeoutMs: 15_000, maxChars: 12_000 }));
+		const targetResponse = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "targets", tabId, timeoutMs: 10_000 }, outputPath: targetsPath, timeoutMs: 15_000, maxChars: 12_000 }), "browser_command persistent_cdp targets"));
 		const inspected = JSON.parse(await readFile(inspectPath, "utf8"));
 		const frame = JSON.parse(await readFile(framePath, "utf8"));
 		const targets = existsSync(targetsPath) ? JSON.parse(await readFile(targetsPath, "utf8")) : targetResponse;
 		const inspectValue = inspected?.data?.value ?? inspected?.data ?? inspected;
-		const targetInfos = bridgeData(targets)?.result?.targetInfos ?? bridgeData(targets)?.targetInfos ?? [];
+		const targetData = bridgeData(targets);
+		const targetInfos = targetData?.targets ?? targetData?.result?.targets ?? targetData?.targetInfos ?? [];
+		const childTarget = Array.isArray(targetInfos) ? targetInfos.find((target) => /oopif-child\.html/i.test(String(target.url || ""))) : undefined;
+		const childTargetId = typeof childTarget?.id === "string" ? childTarget.id : typeof childTarget?.targetId === "string" ? childTarget.targetId : undefined;
+		let parentBackendNodeId;
+		let childBackendNodeId;
+		let parentInput;
+		let childInput;
+		let failClosed;
+		if (childTargetId) {
+			const parentSnapshotResponse = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, cdpMethod: "DOMSnapshot.captureSnapshot", params: { computedStyles: [], includeDOMRects: true }, persistent: true, timeoutMs: 10_000 }, outputPath: parentSnapshotPath, timeoutMs: 15_000, maxChars: 12_000 }), "browser_command parent DOMSnapshot"));
+			const childSnapshotResponse = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "persistent_cdp", action: "send", tabId, targetId: childTargetId, cdpMethod: "DOMSnapshot.captureSnapshot", params: { computedStyles: [], includeDOMRects: true }, persistent: true, timeoutMs: 10_000 }, outputPath: childSnapshotPath, timeoutMs: 15_000, maxChars: 12_000 }), "browser_command child DOMSnapshot"));
+			const parentSnapshot = existsSync(parentSnapshotPath) ? JSON.parse(await readFile(parentSnapshotPath, "utf8")) : parentSnapshotResponse;
+			const childSnapshot = existsSync(childSnapshotPath) ? JSON.parse(await readFile(childSnapshotPath, "utf8")) : childSnapshotResponse;
+			parentBackendNodeId = snapshotElementRects(parentSnapshot).find((item) => item.attrs?.id === "parent-action")?.backendNodeId;
+			childBackendNodeId = snapshotElementRects(childSnapshot).find((item) => item.attrs?.id === "child-action")?.backendNodeId;
+			if (parentBackendNodeId) {
+				parentInput = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "input.ref", tabId, action: "click", target: { refId: "pi-ref://control/oopif-parent-action", backendNodeId: parentBackendNodeId }, timeoutMs: 10_000 }, outputPath: parentInputPath, timeoutMs: 15_000, maxChars: 8_000 }), "browser_command parent input.ref"));
+			}
+			if (childBackendNodeId) {
+				childInput = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "input.ref", tabId, action: "click", target: { refId: "pi-ref://control/oopif-child-action", backendNodeId: childBackendNodeId, targetId: childTargetId }, timeoutMs: 10_000 }, outputPath: childInputPath, timeoutMs: 15_000, maxChars: 8_000 }), "browser_command child input.ref"));
+				failClosed = parseToolJson(await callTool(env, metrics, "browser_command", { tabId, command: { cmd: "input.ref", tabId, action: "click", target: { refId: "pi-ref://control/oopif-missing-target", backendNodeId: childBackendNodeId, targetId: "missing-oopif-target-for-eval" }, timeoutMs: 2_000 }, outputPath: failClosedPath, timeoutMs: 6_000, maxChars: 8_000 }));
+			}
+		}
+		if (existsSync(parentInputPath)) parentInput = JSON.parse(await readFile(parentInputPath, "utf8"));
+		if (existsSync(childInputPath)) childInput = JSON.parse(await readFile(childInputPath, "utf8"));
+		if (existsSync(failClosedPath)) failClosed = JSON.parse(await readFile(failClosedPath, "utf8"));
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__oopifFixture.inspect())()", outputPath: afterPath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute oopif after");
+		const after = JSON.parse(await readFile(afterPath, "utf8"));
+		const afterValue = after?.data?.value ?? after?.data ?? after;
+		const inputData = (value) => {
+			const data = bridgeData(value);
+			const nativeResult = data?.details?.result ?? value?.details?.result;
+			return data?.input ?? data?.data?.input ?? data?.result?.input ?? nativeResult?.details?.input ?? nativeResult?.input ?? value?.input;
+		};
+		const nativeErrorCode = (value) => value?.details?.result?.error_code ?? value?.details?.result?.code ?? value?.error_code ?? value?.code;
+		const parentInputData = inputData(parentInput);
+		const childInputData = inputData(childInput);
+		const failClosedData = bridgeData(failClosed);
+		const failClosedInput = inputData(failClosed);
+		const failClosedCode = nativeErrorCode(failClosedData) ?? nativeErrorCode(failClosed);
 		const targetText = JSON.stringify(targetInfos);
+		const childClickDelivered = Number(afterValue?.childClickCount || 0) > Number(inspectValue?.childClickCount || 0);
+		const parentClickDelivered = Number(afterValue?.parentClickCount || 0) > Number(inspectValue?.parentClickCount || 0);
 		const boundary = {
 			inspect: inspectValue,
+			after: afterValue,
 			frameSummary: frame?.data ?? frame?.summary ?? frame,
 			targetCount: Array.isArray(targetInfos) ? targetInfos.length : 0,
-			oopifTargetPresent: /iframe|oopif/i.test(targetText),
+			oopifTargetPresent: Boolean(childTarget) || /iframe|oopif/i.test(targetText),
+			childTarget: childTarget ? { id: childTargetId, type: childTarget.type, url: childTarget.url, attached: childTarget.attached } : null,
 			targetProbeError: toolReturnedError({ content: [{ type: "text", text: JSON.stringify(targetResponse) }] })?.error ?? null,
 			crossOriginBlocked: inspectValue?.childReadableFromParent === false && Boolean(inspectValue?.crossOriginError),
-			attachRouteUsed: false,
-			compositeKeyProof: "not-proven",
-			nonClaims: [
-				"Eval boundary evidence only: no targetId+backendNodeId dual key is written or consumed.",
-				"Current public refs remain tab-scoped; this runner does not attach child targets for input.ref.",
-			],
+			parentBackendNodeId,
+			childBackendNodeId,
+			nodeKeys: childTargetId && childBackendNodeId ? { composite: `t:${childTargetId}:b:${childBackendNodeId}`, legacy: `b:${childBackendNodeId}` } : null,
+			parentInput: parentInputData,
+			childInput: childInputData,
+			failClosed: { error_code: failClosedCode, wrapped_code: failClosedData?.error_code ?? failClosedData?.code, input: failClosedInput },
+			attachRouteUsed: childInputData?.attachRouteUsed === true,
+			compositeKeyProof: childInputData?.attachRouteUsed === true && childClickDelivered ? "proven" : "not-proven",
+			legacyRefCompatibility: parentInputData?.resolution === "backendNodeId" && parentClickDelivered && parentInputData?.targetScoped !== true,
+			childClickDelivered,
+			failClosedDiagnostics: failClosedCode === "OOPIF_SESSION_UNSUPPORTED" && Number(failClosedInput?.dispatched || 0) === 0,
 		};
 		await saveJsonEvidence(env, metrics, "boundary", boundary);
-		const ok = boundary.crossOriginBlocked && boundary.compositeKeyProof === "not-proven";
+		const ok = boundary.crossOriginBlocked
+			&& Boolean(childTargetId)
+			&& Boolean(childBackendNodeId)
+			&& boundary.attachRouteUsed
+			&& boundary.compositeKeyProof === "proven"
+			&& boundary.legacyRefCompatibility
+			&& boundary.failClosedDiagnostics;
 		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
 		metrics.scopedFollowUpDiscipline = "passed";
-		metrics.summary.push(`OOPIF boundary evidence: crossOriginBlocked=${boundary.crossOriginBlocked}, targetCount=${boundary.targetCount}, oopifTargetPresent=${boundary.oopifTargetPresent}.`);
-		metrics.diagnostics.push("Passing records the composite-key boundary; it does not prove targetId/backendNodeId dual-key joins.");
-		metrics.notes.push("Composite keys remain behind a separate execution contract with Target.attachToTarget routing and old-ref compatibility gates.");
+		metrics.summary.push(`OOPIF composite-key evidence: crossOriginBlocked=${boundary.crossOriginBlocked}, childTarget=${Boolean(childTargetId)}, attachRouteUsed=${boundary.attachRouteUsed}, childClickDelivered=${boundary.childClickDelivered}, legacyRefCompatibility=${boundary.legacyRefCompatibility}.`);
+		metrics.diagnostics.push("Passing proves targetId/backendNodeId composite identity is consumed by input.ref through Target.setAutoAttach flat-session routing, with same-target bare backend ids still accepted.");
+		metrics.notes.push("Composite-key proof stays inside existing browser_command/input.ref and pi.click plumbing; no public ABML verb is added.");
+		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
+	} finally {
+		await closeTabQuiet(env, tabId);
+	}
+}
+
+async function eval35(env, entry) {
+	const metrics = beginMetrics(env, entry.id);
+	const tabId = await createTab(env, metrics, "abml-growth-probe.html");
+	try {
+		const observePath = path.join(env.runDir, `${entry.id}-scan.json`);
+		const statePath = path.join(env.runDir, `${entry.id}-state.json`);
+		const observe = parseToolJson(assertToolOk(await callTool(env, metrics, "browser_observe", { mode: "scan", tabId, outputPath: observePath, timeoutMs: 20_000, maxChars: 14_000 }), "browser_observe growth probe scan"));
+		assertToolOk(await callTool(env, metrics, "browser_execute", { tabId, script: "(() => window.__abmlGrowthFixture.state())()", outputPath: statePath, timeoutMs: 10_000, maxChars: 6_000 }), "browser_execute growth probe state");
+		const artifact = JSON.parse(await readFile(observePath, "utf8"));
+		const pageState = JSON.parse(await readFile(statePath, "utf8"));
+		const growthProbe = artifact?.data?.growthProbe ?? artifact?.growthProbe ?? observe?.data?.growthProbe;
+		const collections = Array.isArray(artifact?.collections) ? artifact.collections : Array.isArray(observe?.collections) ? observe.collections : [];
+		const firstCollection = collections[0] || {};
+		const collectionEvidence = Array.isArray(firstCollection.evidence) ? firstCollection.evidence : [];
+		const publicText = JSON.stringify({ observe, artifact }).toLowerCase();
+		const comparison = {
+			growthProbe,
+			collection: {
+				completeness: firstCollection.completeness,
+				confidence: firstCollection.confidence,
+				continuationKind: firstCollection.continuation?.kind,
+				evidence: collectionEvidence,
+			},
+			pageState: pageState?.data?.value ?? pageState?.data ?? pageState,
+			boundary: {
+				noPublicContinuationAction: !publicText.includes("continuecollection"),
+				nextActionsAvoidScroll: !JSON.stringify(observe?.nextActions || artifact?.nextActions || []).toLowerCase().includes("scroll"),
+			},
+		};
+		await saveJsonEvidence(env, metrics, "comparison", comparison);
+		const growthSupported = growthProbe?.supported === true;
+		const windowShifted = growthProbe?.windowShifted === true;
+		const restored = growthProbe?.restoredScrollTop === true;
+		const collectionVirtualized = firstCollection.completeness === "virtualized" && firstCollection.continuation?.kind === "virtual-window";
+		const evidenceLinked = collectionEvidence.some((entry) => entry?.source === "growthProbe");
+		const ok = growthSupported && windowShifted && restored && collectionVirtualized && evidenceLinked && comparison.boundary.noPublicContinuationAction && comparison.boundary.nextActionsAvoidScroll;
+		metrics.artifactSufficiency = ok ? "sufficient" : "insufficient";
+		metrics.scopedFollowUpDiscipline = "passed";
+		metrics.summary.push(`Growth probe evidence: supported=${growthSupported}, windowShifted=${windowShifted}, restored=${restored}, collection=${firstCollection.completeness}/${firstCollection.continuation?.kind}.`);
+		metrics.diagnostics.push(`Probe before="${growthProbe?.beforeFirstText}" after="${growthProbe?.afterFirstText}" count ${growthProbe?.beforeCount}->${growthProbe?.afterCount}; no public continuation action=${comparison.boundary.noPublicContinuationAction}.`);
+		metrics.notes.push("Passing proves product scan emits growthProbe evidence and collection completeness consumes it without adding a public continuation runtime.");
 		return resultRecord(entry.id, ok ? "passed" : "failed", metrics);
 	} finally {
 		await closeTabQuiet(env, tabId);
@@ -1589,6 +1797,7 @@ const implemented = new Map([
 	["32-abml-identity-bootstrap-evidence", eval32],
 	["33-layer-paint-occlusion-boundary", eval33],
 	["34-oopif-composite-key-boundary", eval34],
+	["35-abml-growth-probe-evidence", eval35],
 ]);
 
 async function writeRunnerSummary(runDir, records, envMeta) {

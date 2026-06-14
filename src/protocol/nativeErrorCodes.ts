@@ -273,7 +273,12 @@ export const nativeErrorCodes = {
   "OOPIF_SESSION_UNSUPPORTED": {
     "category": "runtime.input",
     "retryable": false,
-    "summary": "Referenced backend node belongs to a target/session this workstream does not route."
+    "summary": "Referenced backend node belongs to a target/session that could not be attached or resolved safely."
+  },
+  "TARGET_ATTACH_FAILED": {
+    "category": "runtime.cdp",
+    "retryable": true,
+    "summary": "Persistent CDP could not attach or recover a child target session."
   },
   "NO_TAB": {
     "category": "driver.tab",

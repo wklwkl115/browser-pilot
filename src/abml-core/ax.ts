@@ -353,6 +353,13 @@ function buildEntityMatchInfo(entity: Entity | BuiltEntity["entity"]): EntityMat
 	};
 }
 
+function entityBackendNodeId(entity: Entity | BuiltEntity["entity"]): number | undefined {
+	const hinted = numberValue(entity.hints?.backendNodeId);
+	if (hinted !== undefined && hinted > 0) return hinted;
+	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
+	return locator?.by === "backendNodeId" && locator.value > 0 ? locator.value : undefined;
+}
+
 function pointDistance(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
 	if (!a || !b) return undefined;
 	const dx = a.x - b.x;
@@ -433,6 +440,21 @@ export function mergeDomAndAxEntities(domEntities: Entity[], axEntities: BuiltEn
 		usedAx.add(axIndex);
 		usedDom.add(domIndex);
 	};
+	// Pass 0 — exact backendNodeId bootstrap. Once DOM scan entities are stamped from DOMSnapshot,
+	// this is the identity join and should beat all geometry/name heuristics.
+	for (let axIndex = 0; axIndex < axEntities.length; axIndex += 1) {
+		const axBackendNodeId = entityBackendNodeId(axEntities[axIndex]!.entity);
+		if (axBackendNodeId === undefined) continue;
+		let matchIndex = -1;
+		let ambiguous = false;
+		for (let domIndex = 0; domIndex < merged.length; domIndex += 1) {
+			if (usedDom.has(domIndex)) continue;
+			if (entityBackendNodeId(merged[domIndex]!) !== axBackendNodeId) continue;
+			if (matchIndex >= 0) ambiguous = true;
+			else matchIndex = domIndex;
+		}
+		if (matchIndex >= 0 && !ambiguous) commit(axIndex, matchIndex);
+	}
 	// Pass 1 — geometry-backed matches (box IoU or coincident point). These are high-confidence, so
 	// they claim their DOM first: a reliable spatial match must always win a DOM over a weaker
 	// geometry-less one that merely shares a role.

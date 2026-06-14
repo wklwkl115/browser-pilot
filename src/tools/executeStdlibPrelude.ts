@@ -51,11 +51,15 @@ const pi = (() => {
     return null;
   }
 ${options.click ? `
-  function __backendNodeId(descriptor) {
+  function __backendTarget(descriptor) {
+    const ownerTargetId = descriptor && descriptor.owner && typeof descriptor.owner.targetId === "string" && descriptor.owner.targetId.trim() ? descriptor.owner.targetId.trim() : undefined;
     for (const locator of Array.isArray(descriptor && descriptor.locators) ? descriptor.locators : []) {
-      if (locator && locator.by === "backendNodeId" && Number.isFinite(Number(locator.value))) return Number(locator.value);
+      if (locator && locator.by === "backendNodeId" && Number.isFinite(Number(locator.value))) {
+        const targetId = typeof locator.targetId === "string" && locator.targetId.trim() ? locator.targetId.trim() : ownerTargetId;
+        return { backendNodeId: Number(locator.value), ...(targetId ? { targetId } : {}) };
+      }
     }
-    return undefined;
+    return ownerTargetId ? { targetId: ownerTargetId } : {};
   }
   function __point(descriptor) {
     const point = descriptor && descriptor.geometry && descriptor.geometry.point;
@@ -66,9 +70,9 @@ ${options.click ? `
     return undefined;
   }
   function __safeTarget(descriptor) {
-    const backendNodeId = __backendNodeId(descriptor);
+    const backendTarget = __backendTarget(descriptor);
     const point = __point(descriptor);
-    return { refId: descriptor.refId, ...(backendNodeId !== undefined ? { backendNodeId } : {}), ...(point ? { point } : {}) };
+    return { refId: descriptor.refId, ...backendTarget, ...(point ? { point } : {}) };
   }
 ` : ""}
   function resolve(ref) {

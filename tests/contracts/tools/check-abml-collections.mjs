@@ -45,6 +45,15 @@ const rowsOnly = buildCollectionModels({
 });
 assert.deepEqual(rowsOnly, [], "data.rows alone must not create a semantic collection model");
 
+const growthProbeCollections = buildCollectionModels({
+	entities: [1, 2, 3, 4, 5].map((index) => item(index, 5)),
+	scanEvidence: {
+		growthProbe: { beforeCount: 5, afterCount: 5, beforeFirstText: "Result 1", afterFirstText: "Result 18", windowShifted: true, restoredScrollTop: true },
+	},
+});
+assert.equal(growthProbeCollections[0]?.completeness, "virtualized", "growthProbe window shift must prove a virtualized collection");
+assert(growthProbeCollections[0]?.evidence.some((entry) => entry.source === "growthProbe"), "growthProbe must be preserved as collection evidence");
+
 const lifted = await distilledTextResult("body", {
 	toolName: "browser_observe",
 	command: "scan",
@@ -76,7 +85,10 @@ const executeSrc = readRepo("src/tools/registerExecuteTool.ts");
 assert.ok(!executeSrc.includes("continueCollection"), "browser_execute must not grow a continuation action arm");
 const observeSrc = readRepo("src/tools/observe/scanRunner.ts");
 assert.ok(observeSrc.includes("buildCollectionModels") && observeSrc.includes("collections"), "scan observe builds and mirrors collections");
+assert.ok(observeSrc.includes("growthProbe: record.growthProbe"), "scan observe must pass product growthProbe evidence into collections");
 assert.ok(!observeSrc.includes("continueCollection("), "observe must not execute semantic continuation");
+const scanSrc = readRepo("src/scan/buildScanScript.ts");
+assert.ok(scanSrc.includes("collectGrowthProbe") && scanSrc.includes("restoredScrollTop"), "scan script must produce bounded growthProbe evidence");
 const middlewareSrc = readRepo("src/tools/resultMiddleware.ts");
 assert.ok(middlewareSrc.includes("envelopeCollections") && middlewareSrc.includes("collections?"), "resultMiddleware lifts collections");
 

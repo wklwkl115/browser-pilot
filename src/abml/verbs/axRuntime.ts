@@ -5,7 +5,8 @@ import { registerRefDescriptor } from "../../resources/resourceStore.js";
 import type { Entity } from "../entity.js";
 import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../ax.js";
 import type { BuiltEntity } from "../entity.js";
-import type { RelationAnchor } from "../relations.js";
+import type { SnapshotGeometryEntry } from "../identityBootstrap.js";
+import type { PaintOrderEntry, RelationAnchor } from "../relations.js";
 
 export type AbmlAxRuntimeServer = Pick<BrowserBridgeServer, "sendCommand">;
 
@@ -195,16 +196,21 @@ export type AxReadDiagnostics = {
 	geometryCdpCalls: number;
 	snapshotGeometryCount?: number;
 	snapshotGeometryUnavailable?: boolean;
+	snapshotStartedAt?: string;
+	snapshotEndedAt?: string;
+	paintOrder?: { supported: boolean; entryCount: number; ownerBackendNodeIdCount: number; snapshotUnsupported?: boolean; geometryFallbackUsed?: boolean };
 	nodeCount: number;
 	interestingNodeCount: number;
 	cacheHit: boolean;
 };
 
-export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[]; diagnostics?: AxReadDiagnostics };
+export type AxReadResult = { entities: BuiltEntity[]; anchors: RelationAnchor[]; snapshotGeometryEntries?: SnapshotGeometryEntry[]; paintOrderEntries?: PaintOrderEntry[]; diagnostics?: AxReadDiagnostics };
 
 type AxRawCacheEntry = {
 	nodes: Array<Record<string, unknown>>;
 	geometryByBackend: Map<number, ReturnType<typeof boxModelToGeometry> | undefined>;
+	snapshotGeometryEntries?: SnapshotGeometryEntry[];
+	paintOrderEntries?: PaintOrderEntry[];
 	createdAt: number;
 };
 
@@ -261,6 +267,71 @@ function snapshotGeometryByBackend(value: unknown): Map<number, AxGeometry> {
 	return out;
 }
 
+function snapshotString(strings: unknown[], index: unknown): string {
+	const text = strings[Number(index)];
+	return typeof text === "string" ? text : String(index ?? "");
+}
+
+function snapshotAttrs(nodes: Record<string, unknown>, strings: unknown[], nodeIndex: number): Record<string, string> | undefined {
+	const raw = Array.isArray(nodes.attributes) && Array.isArray(nodes.attributes[nodeIndex]) ? nodes.attributes[nodeIndex] as unknown[] : [];
+	const out: Record<string, string> = {};
+	for (let i = 0; i + 1 < raw.length; i += 2) out[snapshotString(strings, raw[i])] = snapshotString(strings, raw[i + 1]);
+	return Object.keys(out).length ? out : undefined;
+}
+
+function snapshotGeometryEntries(value: unknown): SnapshotGeometryEntry[] {
+	const root = isRecord(valueRecord(value).result) ? valueRecord(value).result as Record<string, unknown> : valueRecord(value);
+	const documents = Array.isArray(root.documents) ? root.documents : [];
+	const strings = Array.isArray(root.strings) ? root.strings : [];
+	const out: SnapshotGeometryEntry[] = [];
+	const seen = new Set<number>();
+	for (const documentSnapshot of documents) {
+		const doc = valueRecord(documentSnapshot);
+		const nodes = valueRecord(doc.nodes);
+		const layout = valueRecord(doc.layout);
+		const backendIds = Array.isArray(nodes.backendNodeId) ? nodes.backendNodeId : [];
+		const nodeIndexes = Array.isArray(layout.nodeIndex) ? layout.nodeIndex : [];
+		const bounds = Array.isArray(layout.bounds) ? layout.bounds : [];
+		for (let i = 0; i < nodeIndexes.length; i += 1) {
+			const nodeIndex = Number(nodeIndexes[i]);
+			const backendNodeId = Number(backendIds[nodeIndex]);
+			if (!Number.isFinite(backendNodeId) || backendNodeId <= 0 || seen.has(backendNodeId)) continue;
+			const geometry = geometryFromSnapshotBounds(bounds[i]);
+			if (!geometry?.box) continue;
+			out.push({ backendNodeId, bounds: geometry.box, ...(snapshotAttrs(nodes, strings, nodeIndex) ? { attrs: snapshotAttrs(nodes, strings, nodeIndex) } : {}) });
+			seen.add(backendNodeId);
+		}
+	}
+	return out;
+}
+
+function snapshotPaintOrderEntries(value: unknown): PaintOrderEntry[] {
+	const root = isRecord(valueRecord(value).result) ? valueRecord(value).result as Record<string, unknown> : valueRecord(value);
+	const documents = Array.isArray(root.documents) ? root.documents : [];
+	const out: PaintOrderEntry[] = [];
+	const seen = new Set<number>();
+	for (const documentSnapshot of documents) {
+		const doc = valueRecord(documentSnapshot);
+		const nodes = valueRecord(doc.nodes);
+		const layout = valueRecord(doc.layout);
+		const backendIds = Array.isArray(nodes.backendNodeId) ? nodes.backendNodeId : [];
+		const nodeIndexes = Array.isArray(layout.nodeIndex) ? layout.nodeIndex : [];
+		const bounds = Array.isArray(layout.bounds) ? layout.bounds : [];
+		const paintOrders = Array.isArray(layout.paintOrders) ? layout.paintOrders : Array.isArray(layout.paintOrder) ? layout.paintOrder : [];
+		for (let i = 0; i < nodeIndexes.length; i += 1) {
+			const nodeIndex = Number(nodeIndexes[i]);
+			const backendNodeId = Number(backendIds[nodeIndex]);
+			const paintOrder = Number(paintOrders[i]);
+			if (!Number.isFinite(backendNodeId) || backendNodeId <= 0 || !Number.isFinite(paintOrder) || seen.has(backendNodeId)) continue;
+			const geometry = geometryFromSnapshotBounds(bounds[i]);
+			if (!geometry?.box) continue;
+			out.push({ backendNodeId, paintOrder, bounds: geometry.box });
+			seen.add(backendNodeId);
+		}
+	}
+	return out;
+}
+
 export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxReadRuntimeOptions): Promise<AxReadResult> {
 	const startedAt = Date.now();
 	const timeoutMs = options.timeoutMs ?? 10_000;
@@ -275,6 +346,8 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	};
 	let nodes: Array<Record<string, unknown>>;
 	const rawGeometryByBackend = cachedRaw ? new Map(cachedRaw.geometryByBackend) : new Map<number, ReturnType<typeof boxModelToGeometry> | undefined>();
+	let snapshotEntries = cachedRaw?.snapshotGeometryEntries ? [...cachedRaw.snapshotGeometryEntries] : [];
+	let paintOrderEntries = cachedRaw?.paintOrderEntries ? [...cachedRaw.paintOrderEntries] : [];
 	if (cachedRaw) {
 		nodes = cachedRaw.nodes;
 	} else {
@@ -317,23 +390,51 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	const geometryByNode = new Map<Record<string, unknown>, ReturnType<typeof boxModelToGeometry> | undefined>();
 	let snapshotGeometryCount = 0;
 	let snapshotGeometryUnavailable = false;
+	let snapshotStartedAt: string | undefined;
+	let snapshotEndedAt: string | undefined;
+	let paintOrderSnapshotUnsupported = false;
+	let paintOrderGeometryFallbackUsed = false;
 	if (!cachedRaw) {
+		let snapshotData: unknown;
 		try {
+			snapshotStartedAt = new Date().toISOString();
 			const snapshot = await sendCdp({
 				browserSessionId: options.browserSessionId,
 				tabId: options.tabId,
 				timeoutMs,
 				cdpMethod: "DOMSnapshot.captureSnapshot",
-				params: { computedStyles: [], includeDOMRects: true },
+				params: { computedStyles: [], includeDOMRects: true, includePaintOrder: true },
 			});
-			for (const [backendNodeId, geometry] of snapshotGeometryByBackend(snapshot.data)) {
+			snapshotData = snapshot.data;
+			snapshotEndedAt = new Date().toISOString();
+			paintOrderEntries = snapshotPaintOrderEntries(snapshotData);
+		} catch {
+			paintOrderSnapshotUnsupported = true;
+			try {
+				if (!snapshotStartedAt) snapshotStartedAt = new Date().toISOString();
+				const snapshot = await sendCdp({
+					browserSessionId: options.browserSessionId,
+					tabId: options.tabId,
+					timeoutMs,
+					cdpMethod: "DOMSnapshot.captureSnapshot",
+					params: { computedStyles: [], includeDOMRects: true },
+				});
+				snapshotData = snapshot.data;
+				snapshotEndedAt = new Date().toISOString();
+				paintOrderGeometryFallbackUsed = true;
+			} catch {
+				snapshotEndedAt = new Date().toISOString();
+				snapshotGeometryUnavailable = true;
+			}
+		}
+		if (snapshotData !== undefined) {
+			snapshotEntries = snapshotGeometryEntries(snapshotData);
+			for (const [backendNodeId, geometry] of snapshotGeometryByBackend(snapshotData)) {
 				if (!rawGeometryByBackend.has(backendNodeId)) {
 					rawGeometryByBackend.set(backendNodeId, geometry);
 					snapshotGeometryCount += 1;
 				}
 			}
-		} catch {
-			snapshotGeometryUnavailable = true;
 		}
 	}
 	await Promise.all(interestingNodes.map(async (node) => {
@@ -360,7 +461,7 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 			}
 		}
 	}));
-	if (rawCacheKey && !cachedRaw) rememberAxRawCache(rawCacheKey, { nodes, geometryByBackend: rawGeometryByBackend, createdAt: Date.now() });
+	if (rawCacheKey && !cachedRaw) rememberAxRawCache(rawCacheKey, { nodes, geometryByBackend: rawGeometryByBackend, snapshotGeometryEntries: snapshotEntries, paintOrderEntries, createdAt: Date.now() });
 	for (const node of interestingNodes) {
 		const built = buildAxEntityFromNode(node, context, geometryByNode.get(node));
 		const ancestors = ancestorContainerContext(node, parentByChildId);
@@ -385,12 +486,23 @@ export async function readAxEntities(server: AbmlAxRuntimeServer, options: AxRea
 	return {
 		entities: out,
 		anchors,
+		...(snapshotEntries.length ? { snapshotGeometryEntries: snapshotEntries } : {}),
+		...(paintOrderEntries.length ? { paintOrderEntries } : {}),
 		diagnostics: {
 			axMs: Date.now() - startedAt,
 			cdpCalls,
 			geometryCdpCalls,
 			...(snapshotGeometryCount ? { snapshotGeometryCount } : {}),
 			...(snapshotGeometryUnavailable ? { snapshotGeometryUnavailable: true } : {}),
+			...(snapshotStartedAt ? { snapshotStartedAt } : {}),
+			...(snapshotEndedAt ? { snapshotEndedAt } : {}),
+			paintOrder: {
+				supported: paintOrderEntries.length > 0,
+				entryCount: paintOrderEntries.length,
+				ownerBackendNodeIdCount: new Set(paintOrderEntries.map((entry) => entry.backendNodeId)).size,
+				...(paintOrderSnapshotUnsupported ? { snapshotUnsupported: true } : {}),
+				...(paintOrderGeometryFallbackUsed ? { geometryFallbackUsed: true } : {}),
+			},
 			nodeCount: nodes.length,
 			interestingNodeCount: interestingNodes.length,
 			cacheHit: !!cachedRaw,

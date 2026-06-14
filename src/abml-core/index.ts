@@ -24,6 +24,8 @@ export * from "./semanticRefAnchor.js";
 export * from "./snapshotProjection.js";
 export * from "./collections.js";
 export * from "./identityGraph.js";
+export * from "./identityBootstrap.js";
+export * from "./nodeKey.js";
 export * from "./errors.js";
 export * from "./verbs/router.js";
 export * from "./verbs/read.js";

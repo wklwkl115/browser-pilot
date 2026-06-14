@@ -17,6 +17,7 @@ import { __piBridgeModule_intercept } from "./service_worker/intercept";
 import { __piBridgeModule_hook } from "./service_worker/hook";
 import { __piBridgeModule_evidence } from "./service_worker/evidence";
 import { __piBridgeModule_frame } from "./service_worker/frame";
+import { __piBridgeModule_layer } from "./service_worker/layer";
 import { __piBridgeModule_html } from "./service_worker/html";
 import { __piBridgeModule_screenshot } from "./service_worker/screenshot";
 import { __piBridgeModule_transfer } from "./service_worker/transfer";
@@ -55,6 +56,7 @@ export const serviceWorkerCommandModuleGraph = [
 	__piBridgeModule_hook,
 	__piBridgeModule_evidence,
 	__piBridgeModule_frame,
+	__piBridgeModule_layer,
 	__piBridgeModule_html,
 	__piBridgeModule_screenshot,
 	__piBridgeModule_transfer,

@@ -10,6 +10,7 @@ import { cleanupInterceptSessionTab, handlePiBrowserInterceptCommand } from "./i
 import { ensurePiBrowserDispatcher, handlePiBrowserHookCommand } from "./hook";
 import { handlePiBrowserEvidenceCommand } from "./evidence";
 import { handlePiBrowserFrameCommand } from "./frame";
+import { handlePiBrowserLayerCommand } from "./layer";
 import { handlePiBrowserTransferCommand } from "./transfer";
 import { handlePiBrowserHtml } from "./html";
 import { handlePiBrowserInputCommand } from "./input";
@@ -346,6 +347,7 @@ async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender,
     if (cmd.startsWith('evidence.')) return await handlePiBrowserEvidenceCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('ws.')) return await handlePiBrowserWsCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('frame.')) return await handlePiBrowserFrameCommand(cmd, tabId, msg) as PiBridgeResponse;
+    if (cmd.startsWith('layer.')) return await handlePiBrowserLayerCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('transfer.')) return await handlePiBrowserTransferCommand(cmd, tabId, msg) as PiBridgeResponse;
     if (cmd.startsWith('input.')) return await handlePiBrowserInputCommand(cmd, tabId, msg) as PiBridgeResponse;
     switch (cmd) {

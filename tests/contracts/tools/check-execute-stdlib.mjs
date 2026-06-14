@@ -12,6 +12,7 @@ const execBridge = read("bridge_src/service_worker/exec.ts");
 assert(stdlib.includes('process.env.PI_BROWSER_STDLIB !== "0"'), "execute stdlib must keep PI_BROWSER_STDLIB=0 kill switch");
 assert(combinedStdlib.includes("const PI_STDLIB_NAMES = [\"resolve\", \"box\", \"setValue\", \"settled\", \"click\"]"), "execute stdlib namespace must stay pinned with only dispatch-only pi.click added");
 assert(stdlib.includes("resolveRefUriDetailed"), "execute stdlib must embed registered pi-ref descriptors instead of selector transcription");
+assert(stdlib.includes("owner?.targetId") && prelude.includes("locator.targetId"), "execute stdlib target payload must preserve optional targetId for OOPIF-scoped refs");
 assert(combinedStdlib.includes("PI_CLICK_BINDING_PLACEHOLDER"), "execute stdlib pi.click must route through the execute-time privileged binding placeholder");
 assert(combinedStdlib.includes("function click(ref, options = {})"), "execute stdlib must expose only dispatch-only pi.click as the reopened action namespace");
 assert(!/\btype\s*[:(]/.test(combinedStdlib), "execute stdlib must not introduce semantic pi.type-style verbs");

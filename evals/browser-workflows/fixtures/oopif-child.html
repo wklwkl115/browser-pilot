@@ -9,5 +9,10 @@
     <h2>Cross-origin child fixture</h2>
     <button id="child-action" data-oopif-child="action">Child action</button>
   </main>
+  <script>
+    document.getElementById("child-action").addEventListener("click", () => {
+      parent.postMessage({ type: "oopif-child-clicked" }, "*");
+    });
+  </script>
 </body>
 </html>

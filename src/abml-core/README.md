@@ -2,8 +2,8 @@
 
 This folder is the **pure-core kernel** of ABML, the perception substrate under the `browser_*`
 tools. It models a web page as a trustworthy, actionable, focusable semantic graph — entities,
-refs, the DOM↔AX merge, actionability rules, verb decisions, error shaping, collection completeness,
-and mechanism-arm structure projection.
+refs, the DOM↔AX merge, DOM identity bootstrap, actionability rules, verb decisions, error shaping,
+collection completeness, and mechanism-arm structure projection.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
 Pure functions and types only. The browser-facing **runtime** lives next door in
@@ -48,6 +48,7 @@ kernel's entire public surface at a glance.
 | `ax.ts` | **DOM↔AX merge** — box-IoU/role/name scoring, AX-authoritative state/structure fusion. |
 | `stream.ts` | Capture-ref / network-entry / event entity shaping. |
 | `grouping.ts` | Shared ARIA-grounded grouping kernel: descriptors, indexed groups, scope helpers, normalized/display text helpers. |
+| `identityBootstrap.ts` | Best-effort scan rect ↔ DOMSnapshot backendNodeId bootstrap with fail-open diagnostics. |
 | `templating.ts` | Structure templating for repeated AX/ARIA sibling groups. |
 | `treeDiff.ts` | Template-level living diff over repeated structures; O(change) projection without ref-mint changes. |
 | `semanticRefAnchor.ts` | M2b semantic ref-anchor candidate + shadow-hash input derivation; high-confidence anchors feed gated ref minting in runtime. |

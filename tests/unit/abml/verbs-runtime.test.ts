@@ -98,6 +98,31 @@ function fakeServer(): FakeServer {
 				if (command.cdpMethod === "Accessibility.getFullAXTree") {
 					return { id: "ax-tree", acknowledged: true, tabId: 7, data: { result: { nodes: [{ nodeId: "ax-shadow", backendDOMNodeId: 91, role: { value: "button" }, name: { value: "Shadow pay" } }, { nodeId: "ax-far", backendDOMNodeId: 92, role: { value: "button" }, name: { value: "Far away" } }] } } };
 				}
+				if (command.cdpMethod === "DOMSnapshot.captureSnapshot") {
+					return {
+						id: "snapshot",
+						acknowledged: true,
+						tabId: 7,
+						data: {
+							result: {
+								documents: [{
+									nodes: { backendNodeId: [101, 102], nodeName: [0, 1] },
+									layout: { nodeIndex: [0, 1], bounds: [[140, 240, 80, 32], [260, 120, 120, 120]] },
+								}],
+								strings: ["BUTTON", "CANVAS"],
+							},
+						},
+					};
+				}
+				if (command.cdpMethod === "DOM.resolveNode") {
+					const backendNodeId = Number(command.params?.backendNodeId);
+					return { id: `resolve-${backendNodeId}`, acknowledged: true, tabId: 7, data: { result: { object: { objectId: `object-${backendNodeId}` } } } };
+				}
+				if (command.cdpMethod === "DOMDebugger.getEventListeners") {
+					const objectId = String(command.params?.objectId || "");
+					const listeners = objectId === "object-101" ? [{ type: "click", useCapture: false, passive: true, once: false, backendNodeId: 101, scriptId: "7", lineNumber: 12, columnNumber: 4 }] : [];
+					return { id: `listeners-${objectId}`, acknowledged: true, tabId: 7, data: { result: { listeners } } };
+				}
 				if (command.cdpMethod === "DOM.getBoxModel") {
 					const backendNodeId = Number(command.params?.backendNodeId);
 					if (backendNodeId === 91) return { id: "box-91", acknowledged: true, tabId: 7, data: { result: { border: [100, 180, 180, 180, 180, 220, 100, 220] } } };
@@ -118,6 +143,11 @@ test("abml runtime read uses P3 scan entity model", async () => {
 	assert.equal(result?.entities?.length, 6);
 	assert.equal(result?.entities?.[0]?.ref.startsWith("pi-ref://"), true);
 	assert.equal((result?.data as Record<string, unknown>)?.snapshotId, "snap-1");
+	assert.equal(((result?.data as Record<string, any>)?.backendNodeIdBootstrap)?.matched, 2);
+	assert.equal(((result?.data as Record<string, any>)?.listenerOracle)?.listenerCount, 1);
+	const pay = result?.entities?.find((entity) => entity.hints?.selector === "#pay");
+	assert.equal((pay?.hints?.listeners as Array<Record<string, unknown>> | undefined)?.[0]?.type, "click");
+	assert.equal((pay?.hints?.listeners as Array<Record<string, unknown>> | undefined)?.[0]?.backendNodeId, 101);
 	assert.equal(server.evaluateScripts.some((script) => script.includes("collectActionables") && script.includes("list_hints")), true);
 });
 

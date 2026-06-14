@@ -64,6 +64,18 @@ test("identityGraph: backendNodeId locators produce lattice node keys and covera
 	assert.equal(summary.entityCount, 2);
 });
 
+test("identityGraph: target-scoped backend locators produce composite node keys with legacy fallback", () => {
+	const entities = [
+		{ ...entity("pi-ref://control/oopif", "Child"), locators: [{ by: "backendNodeId" as const, value: 81, targetId: "target-child" }] },
+	];
+	const graph = buildIdentityGraph(entities, undefined);
+	const child = graph.byRef["pi-ref://control/oopif"];
+	assert.equal(child?.backendNodeId, 81);
+	assert.equal(child?.targetId, "target-child");
+	assert.equal(child?.nodeKey, "t:target-child:b:81");
+	assert.equal(child?.legacyNodeKey, "b:81");
+});
+
 test("identityGraph: entities with neither anchor nor triggered are excluded", () => {
 	const singleton = { ref: "pi-ref://control/solo", kind: "control" as const, role: "button", name: "Lonely", state: state(), source: "ax" as const };
 	const graph = buildIdentityGraph([singleton], undefined);

@@ -3,7 +3,7 @@
 // and buildRelationSummary produces the budget-immune envelope disclosure. No browser.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors, entityRelationKeys, type RelationAnchor } from "../../../src/abml-core/relations.ts";
+import { materializeRelations, materializeRelationGraph, buildRelationGraph, buildRelationSummary, derivePaintOrderRelationAnchors, deriveStateRelationAnchors, entityRelationKeys, type RelationAnchor } from "../../../src/abml-core/relations.ts";
 import type { Entity } from "../../../src/abml-core/entity.ts";
 
 function entity(ref: string, opts: { backendNodeId?: number; axNodeId?: string; selector?: string; relations?: Entity["relations"]; state?: Partial<Entity["state"]>; hints?: Record<string, unknown> } = {}): Entity {
@@ -32,12 +32,26 @@ test("entityRelationKeys registers both backend and ax-node keys", () => {
 	assert.deepEqual(entityRelationKeys(entity("pi-ref://control/b")), []);
 });
 
+test("entityRelationKeys registers target-scoped backend key before legacy backend key", () => {
+	const scoped = entity("pi-ref://control/a", { backendNodeId: 10, hints: { targetId: "target-child" } });
+	assert.deepEqual(entityRelationKeys(scoped), ["t:target-child:b:10", "b:10"]);
+});
+
 test("materialize resolves anchors to pi-ref targets", () => {
 	const a = entity("pi-ref://control/combo", { backendNodeId: 10 });
 	const b = entity("pi-ref://region/list", { backendNodeId: 20 });
 	const [outA, outB] = materializeRelations([a, b], [anchor("b:10", "controls", "b:20")]);
 	assert.deepEqual(outA.relations, [{ type: "controls", targetRef: "pi-ref://region/list", source: "ax", confidence: "high" }]);
 	assert.equal(outB.relations, undefined, "target entity gets no inbound relation");
+});
+
+test("materialize resolves composite backend keys and keeps legacy fallback", () => {
+	const a = entity("pi-ref://control/combo", { backendNodeId: 10, hints: { targetId: "target-child" } });
+	const b = entity("pi-ref://region/list", { backendNodeId: 20, hints: { targetId: "target-child" } });
+	const [scopedOut] = materializeRelations([a, b], [anchor("t:target-child:b:10", "controls", "t:target-child:b:20")]);
+	assert.equal(scopedOut.relations?.[0]?.targetRef, "pi-ref://region/list", "composite key resolves first");
+	const [legacyOut] = materializeRelations([a, b], [anchor("b:10", "owns", "b:20")]);
+	assert.equal(legacyOut.relations?.[0]?.targetRef, "pi-ref://region/list", "legacy bare backend key remains readable");
 });
 
 test("materialize resolves via ax-node-id key too", () => {
@@ -63,6 +77,17 @@ test("materialize dedupes identical edges", () => {
 	assert.equal(outA.relations?.length, 1, "duplicate (type,target) collapses to one");
 });
 
+test("materialize merges evidence for duplicate relation edges", () => {
+	const covered = entity("pi-ref://control/covered", { backendNodeId: 10 });
+	const covering = entity("pi-ref://region/covering", { backendNodeId: 20 });
+	const [outCovered] = materializeRelations([covered, covering], [
+		anchor("b:10", "coveredBy", "b:20", { source: "geometry", confidence: "medium", evidence: { hitTest: true } }),
+		anchor("b:10", "coveredBy", "b:20", { source: "geometry", confidence: "medium", evidence: { paintOrder: true, sourcePaintOrder: 2, targetPaintOrder: 3 } }),
+	]);
+	assert.equal(outCovered.relations?.length, 1, "duplicate edge remains collapsed");
+	assert.deepEqual(outCovered.relations?.[0]?.evidence, { hitTest: true, paintOrder: true, sourcePaintOrder: 2, targetPaintOrder: 3 });
+});
+
 test("materialize caps per-entity relations deterministically (interaction edges win)", () => {
 	const source = entity("pi-ref://control/owner", { backendNodeId: 1 });
 	const targets: Entity[] = [];
@@ -82,6 +107,49 @@ test("materialize caps per-entity relations deterministically (interaction edges
 	assert.equal(outSource.relations?.length, 8, "capped at MAX_RELATIONS_PER_ENTITY");
 	assert.equal(outSource.relations?.filter((r) => r.type === "owns").length, 6, "all 6 owns kept (higher rank)");
 	assert.equal(outSource.relations?.filter((r) => r.type === "describedBy").length, 2, "describedBy truncated to fill the cap");
+});
+
+test("materializeRelationGraph keeps full edges artifact-side while entity relations stay capped", () => {
+	const source = entity("pi-ref://control/owner", { backendNodeId: 1 });
+	const targets: Entity[] = [];
+	const anchors: RelationAnchor[] = [];
+	for (let i = 0; i < 10; i += 1) {
+		targets.push(entity(`pi-ref://option/${i}`, { backendNodeId: 300 + i }));
+		anchors.push(anchor("b:1", "owns", `b:${300 + i}`));
+	}
+	const { entities, graph } = materializeRelationGraph([source, ...targets], anchors);
+	const owner = entities.find((item) => item.ref === "pi-ref://control/owner");
+	assert.equal(graph.schemaVersion, 1);
+	assert.equal(graph.edgeCount, 10, "central graph retains all resolvable edges");
+	assert.equal(graph.edges.length, 10, "full graph edges are artifact-ready");
+	assert.equal(graph.bySource["pi-ref://control/owner"]?.length, 10, "outbound index is full, not capped");
+	assert.equal(graph.byType.owns?.length, 10, "type index is full, not capped");
+	assert.equal(graph.entityRelationTruncated?.["pi-ref://control/owner"], 2, "graph records entity-field truncation");
+	assert.equal(owner?.relations?.length, 8, "entity-derived field remains capped for envelope compatibility");
+	const reconstructed = [];
+	for (let i = 0; i < 8; i += 1) {
+		const edge = graph.edges[i]!;
+		reconstructed.push({
+			type: edge.type,
+			targetRef: edge.targetRef,
+			source: edge.source,
+			confidence: edge.confidence,
+			...(edge.evidence ? { evidence: edge.evidence } : {}),
+		});
+	}
+	assert.deepEqual(owner?.relations, reconstructed, "entity relations are reconstructable from the central graph prefix");
+});
+
+test("buildRelationGraph reconstructs a central graph from existing entity relations", () => {
+	const entities: Entity[] = [
+		entity("pi-ref://control/a", { relations: [{ type: "controls", targetRef: "pi-ref://region/b", source: "ax", confidence: "high" }] }),
+		entity("pi-ref://region/b", { relations: [{ type: "labelledBy", targetRef: "pi-ref://text/c", source: "dom", confidence: "medium", evidence: { selector: "#c" } }] }),
+	];
+	const graph = buildRelationGraph(entities);
+	assert.equal(graph.edgeCount, 2);
+	assert.deepEqual(graph.bySource["pi-ref://control/a"], ["rel:1"]);
+	assert.deepEqual(graph.byTarget["pi-ref://text/c"], ["rel:2"]);
+	assert.equal(graph.edges[1]?.evidence?.selector, "#c");
 });
 
 test("materialize preserves evidence and confidence", () => {
@@ -160,4 +228,31 @@ test("occlusion relation drops when the occluder is not a scanned entity", () =>
 	const anchors = deriveStateRelationAnchors([covered]);
 	const [out] = materializeRelations([covered], anchors);
 	assert.equal(out.relations, undefined, "no relation when the occluder selector matches no entity");
+});
+
+test("derivePaintOrderRelationAnchors builds capped backendNodeId occlusion pairs from overlapping paint order", () => {
+	const covered = entity("pi-ref://control/covered", { backendNodeId: 12 });
+	const covering = entity("pi-ref://control/covering", { backendNodeId: 13 });
+	const unrelated = entity("pi-ref://control/far", { backendNodeId: 14 });
+	const anchors = derivePaintOrderRelationAnchors([covered, covering, unrelated], [
+		{ backendNodeId: 12, paintOrder: 2, bounds: { x: 80, y: 100, w: 220, h: 90 } },
+		{ backendNodeId: 13, paintOrder: 3, bounds: { x: 130, y: 120, w: 220, h: 90 } },
+		{ backendNodeId: 14, paintOrder: 4, bounds: { x: 900, y: 900, w: 50, h: 50 } },
+	]);
+	const out = materializeRelations([covered, covering, unrelated], anchors);
+	assert.deepEqual(out.find((item) => item.ref === "pi-ref://control/covered")?.relations, [{
+		type: "coveredBy",
+		targetRef: "pi-ref://control/covering",
+		source: "geometry",
+		confidence: "medium",
+		evidence: { paintOrder: true, sourcePaintOrder: 2, targetPaintOrder: 3, overlapArea: 11900, overlapRatio: 0.601 },
+	}]);
+	assert.deepEqual(out.find((item) => item.ref === "pi-ref://control/covering")?.relations, [{
+		type: "occludes",
+		targetRef: "pi-ref://control/covered",
+		source: "geometry",
+		confidence: "medium",
+		evidence: { paintOrder: true, sourcePaintOrder: 2, targetPaintOrder: 3, overlapArea: 11900, overlapRatio: 0.601 },
+	}]);
+	assert.equal(out.find((item) => item.ref === "pi-ref://control/far")?.relations, undefined, "non-overlap does not create a relation");
 });

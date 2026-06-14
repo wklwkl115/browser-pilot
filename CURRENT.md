@@ -14,8 +14,10 @@
 
 ## 当前激活项
 
-- 当前无激活执行项。最近关闭的 ABML identity lattice diagnostics 见
-  `docs/abml-identity-lattice-architecture.md` 与 `CHANGELOG.md`。
+- 当前无激活执行项。最近关闭的 ABML identity lattice remaining closure 已将
+  关系层中央图、ledger 容量证据、projection/frontier 预算指标与文档/contract
+  同步收口；关闭记录见 `docs/abml-identity-lattice-architecture.md` 和
+  `CHANGELOG.md`。
 
 ## 最近完成索引
 

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { executeBrowserWaitWithSupervisor } from "../../driver/BrowserWaitSupervisor.js";
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { summarizeEntityDiff, type EntityDiff } from "../../abml/diff.js";
-import { buildRelationSummary, addEntityRelations } from "../../abml/relations.js";
+import { buildRelationSummary, addEntityRelations, buildRelationGraph } from "../../abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../../abml/inference.js";
 import { buildCausalSummary, causalUnavailable, buildTriggeredRelations, resolveActionEntityRef, buildCausalEvents, eventTriggeredByEntity, causalFiredHint, type CausalSummary } from "../../abml/causal.js";
 import { buildTreeDiff, type TreeDiff } from "../../abml/treeDiff.js";
@@ -105,6 +105,7 @@ function scanCollectionEvidence(data: unknown) {
 		listHints: recordArray(record.list_hints),
 		rows: recordArray(record.rows),
 		actionables: recordArray(record.actionables),
+		...(isRecord(record.growthProbe) ? { growthProbe: record.growthProbe } : {}),
 	};
 }
 
@@ -132,6 +133,7 @@ function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
 	const focus = isRecord(summary.focus) ? summary.focus : undefined;
 	if (isRecord(focus?.relations)) {
 		addArtifactHint(summary, "relations", { label: "relationship graph summary", jsonPath: "envelope.relations", kind: "abml-relations" });
+		addArtifactHint(summary, "relationGraph", { label: "full ABML relation graph", jsonPath: "envelope.relationGraph", kind: "abml-relations" });
 	}
 	if (isRecord(summary.identity)) {
 		addArtifactHint(summary, "identityGraph", { label: "identity lattice graph", jsonPath: "envelope.identityGraph", kind: "abml-identity" });
@@ -432,6 +434,8 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				scanEvidence: scanCollectionEvidence(summaryData),
 			});
 			const idGraph = buildIdentityGraph(attributedEntities, causal);
+			const runtimeRelationGraph = observation.abmlRead?.ok === true && isRecord(observation.abmlRead.data?.relationGraph) ? observation.abmlRead.data.relationGraph : undefined;
+			const relationGraph = runtimeRelationGraph || buildRelationGraph(attributedEntities);
 			const baseFocus = typeof baseSummary.focus === "object" && baseSummary.focus ? baseSummary.focus as Record<string, unknown> : {};
 			const referencedEntities = mergeEntitiesByRef(
 				entitiesForInferenceEvidence(attributedEntities, inference),
@@ -451,6 +455,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 				...causalBlock,
 				...(idSummary.backendNodeIdCount || idSummary.anchorCount || idSummary.triggeredCount ? { identity: idSummary } : {}),
 				_identityGraph: idGraph,
+				...(isRecord(relationGraph) && Number(relationGraph.edgeCount || 0) > 0 ? { _relationGraph: relationGraph } : {}),
 				focus: {
 					...baseFocus,
 					entityShape: "refs-v1",
@@ -519,7 +524,9 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 	const artifactSnapshotProjection = isRecord(summaryRecord.snapshotProjection) ? summaryRecord.snapshotProjection : undefined;
 	const artifactCollections = Array.isArray(summaryRecord.collections) ? summaryRecord.collections.filter(isRecord) as Array<Record<string, unknown>> : undefined;
 	const artifactIdentityGraph = isRecord(summaryRecord._identityGraph) ? summaryRecord._identityGraph : undefined;
+	const artifactRelationGraph = isRecord(summaryRecord._relationGraph) ? summaryRecord._relationGraph : undefined;
 	delete summaryRecord._identityGraph;
+	delete summaryRecord._relationGraph;
 	// Mirror the ABML envelope products into the saved artifact's top-level `envelope` block so an agent
 	// reading via browser_artifact finds them at a flat path (not buried in summary.focus). relations +
 	// inference were previously only inside summary.focus — a real-agent eval (2026-06-05, task3) showed
@@ -537,6 +544,7 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),
+		...(artifactRelationGraph ? { relationGraph: artifactRelationGraph } : {}),
 		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
 		...(artifactCollections?.length ? { collections: artifactCollections } : {}),
 		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
@@ -594,12 +602,13 @@ export async function runScanObservation(server: BrowserBridgeServer, params: Ob
 		...(envelopeDiff ? { diff: envelopeDiff } : {}),
 		...(abmlTreeDiff ? { treeDiff: abmlTreeDiff } : {}),
 		...(artifactRelations ? { relations: artifactRelations } : {}),
+		...(artifactRelationGraph ? { relationGraph: artifactRelationGraph } : {}),
 		...(artifactSnapshotProjection ? { snapshotProjection: artifactSnapshotProjection } : {}),
 		...(artifactCollections?.length ? { collections: artifactCollections } : {}),
 		...(artifactIdentityGraph ? { identityGraph: artifactIdentityGraph } : {}),
 		...(artifactRelevance ? { relevance: artifactRelevance } : {}),
 		...causalBlock,
-		abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection, collections: artifactCollections } : observation.abmlRead,
+		abml: observation.abmlRead?.ok === true ? { ...observation.abmlRead, diff: envelopeDiff, snapshotProjection: artifactSnapshotProjection, collections: artifactCollections, relationGraph: artifactRelationGraph } : observation.abmlRead,
 	};
 	const toolResult = await textToolResult(content, resultParams, ctx, {
 		toolName: "browser_observe",

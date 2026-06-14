@@ -1,5 +1,6 @@
 import type { Entity } from "./entity.js";
 import type { CausalSummary } from "./causal.js";
+import { backendNodeKey, cleanTargetId, legacyBackendNodeKey } from "./nodeKey.js";
 import { deriveSemanticRefAnchors } from "./semanticRefAnchor.js";
 import { isRecord } from "../utils/records.js";
 
@@ -7,7 +8,9 @@ export type IdentityGraphEntry = {
 	anchorKey?: string;
 	anchorConfidence?: "high" | "low";
 	backendNodeId?: number;
+	targetId?: string;
 	nodeKey?: string;
+	legacyNodeKey?: string;
 	triggeredRequests: string[];
 };
 
@@ -29,9 +32,14 @@ export type IdentityGraphSummary = {
 	sourceCounts: Record<string, number>;
 };
 
-function backendNodeIdFor(entity: Entity): number | undefined {
+function backendNodeIdentityFor(entity: Entity): { backendNodeId: number; targetId?: string } | undefined {
 	const locator = entity.locators?.find((item) => item.by === "backendNodeId");
-	return locator?.by === "backendNodeId" ? locator.value : undefined;
+	const hintedTargetId = cleanTargetId(entity.hints?.targetId ?? entity.hints?.cdpTargetId);
+	if (locator?.by === "backendNodeId") {
+		return { backendNodeId: locator.value, targetId: cleanTargetId(locator.targetId) ?? hintedTargetId };
+	}
+	const hintedBackendNodeId = Number(entity.hints?.backendNodeId);
+	return Number.isFinite(hintedBackendNodeId) ? { backendNodeId: hintedBackendNodeId, targetId: hintedTargetId } : undefined;
 }
 
 export function buildIdentityGraph(entities: Entity[], _causal: CausalSummary | undefined): IdentityGraph {
@@ -58,14 +66,16 @@ export function buildIdentityGraph(entities: Entity[], _causal: CausalSummary | 
 	for (const entity of entities) {
 		sourceCounts[entity.source] = (sourceCounts[entity.source] || 0) + 1;
 		const anchor = anchorByRef.get(entity.ref);
-		const backendNodeId = backendNodeIdFor(entity);
+		const backendIdentity = backendNodeIdentityFor(entity);
 		const triggered = triggeredByEntity.get(entity.ref) || [];
-		if (backendNodeId !== undefined) backendNodeIdCount++;
-		if (!anchor && backendNodeId === undefined && !triggered.length) continue;
+		if (backendIdentity) backendNodeIdCount++;
+		if (!anchor && !backendIdentity && !triggered.length) continue;
 		const entry: IdentityGraphEntry = { triggeredRequests: triggered };
-		if (backendNodeId !== undefined) {
-			entry.backendNodeId = backendNodeId;
-			entry.nodeKey = `b:${backendNodeId}`;
+		if (backendIdentity) {
+			entry.backendNodeId = backendIdentity.backendNodeId;
+			if (backendIdentity.targetId) entry.targetId = backendIdentity.targetId;
+			entry.nodeKey = backendNodeKey(backendIdentity);
+			if (backendIdentity.targetId) entry.legacyNodeKey = legacyBackendNodeKey(backendIdentity.backendNodeId);
 		}
 		if (anchor) {
 			const a = anchor.anchor;

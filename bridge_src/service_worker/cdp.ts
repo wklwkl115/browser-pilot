@@ -4,24 +4,27 @@ import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender } fr
 
 type PiCdpResponse = PiBridgeResponse<JsonRecord>;
 type PiCdpSession = { tabId: number; name: string; key: string; attachedAt: number; lastUsed: number; commands: number; pending: number; lockedUntil: number; compiledScripts: Map<string, string> };
+type PiCdpChildSession = { tabId: number; parentKey: string; key: string; targetId: string; sessionId: string; name: string; attachedAt: number; lastUsed: number; commands: number; pending: number };
+type PiCdpCommandTarget = { debuggee: { tabId: number; sessionId?: string }; route: JsonRecord; child?: PiCdpChildSession };
 type PiCdpNewDocumentScript = { key: string; tabId: number; identifier: string; sessionKey?: unknown; cdpSessionName: string; method: string; createdAt: number; runImmediately: boolean; includeCommandLineAPI: boolean; worldName?: string };
 type PiCdpFrame = { id: string; frameId: string; parentId: string | null; url: string; name: string; mimeType: string; securityOrigin: string; childFrames?: PiCdpFrame[]; children?: PiCdpFrame[] };
 type PiCdpFrameTreeNode = JsonRecord & { frame?: JsonRecord; childFrames?: PiCdpFrameTreeNode[] };
-type PiCdpOptions = PiBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; precompile?: boolean; scriptHash?: string; __piRetryAfterNotAttached?: boolean };
+type PiCdpOptions = PiBridgeCommand & { name?: string; protocolVersion?: string; bringToFront?: boolean; persistent?: boolean; detachOnError?: boolean; frame?: unknown; frameId?: unknown; targetId?: unknown; sessionId?: unknown; worldName?: string; grantUniversalAccess?: boolean; awaitPromise?: boolean; returnByValue?: boolean; userGesture?: boolean; includeCommandLineAPI?: boolean; runImmediately?: boolean; precompile?: boolean; scriptHash?: string; __piRetryAfterNotAttached?: boolean };
 
 function cdpRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function cdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function cdpRawError(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 
 // cdp.js — Pi browser persistent CDP / iframe helpers.
-// Design notes: chrome.debugger cannot attach to iframe targets with Target.attachToTarget in this bridge;
-// cross-origin iframe execution is performed on the owning tab by Page.getFrameTree -> Page.createIsolatedWorld -> Runtime.evaluate.
+// Flat Target sessions are optional and explicit: the default route remains tab-scoped, while
+// callers with a targetId can attach that child target and send through chrome.debugger sessionId.
 
 const PI_PERSISTENT_CDP_VERSION = 'p4.0.0';
 const PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS = 15000;
 const PI_PERSISTENT_CDP_MAX_SESSIONS = 16;
 
 const piPersistentCdpSessions = new Map<string, PiCdpSession>();
+const piPersistentCdpChildSessions = new Map<string, PiCdpChildSession>();
 const piPersistentCdpNewDocumentScripts = new Map<string, PiCdpNewDocumentScript>();
 
 function piPersistentCdpHasSessionForTab(tabId: unknown): boolean {
@@ -30,6 +33,17 @@ function piPersistentCdpHasSessionForTab(tabId: unknown): boolean {
 
 function piCdpNow(): number { return Date.now(); }
 function piCdpSessionKey(tabId: unknown, name?: unknown): string { return String(tabId) + ':' + (name || 'default'); }
+function piCdpTargetSessionKey(tabId: unknown, name: unknown, targetId: unknown): string { return piCdpSessionKey(tabId, name || 'default') + ':target:' + String(targetId || ''); }
+function piCdpCleanTargetId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  return text ? text : undefined;
+}
+function piCdpCleanSessionId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  return text ? text : undefined;
+}
 function piCdpScriptCacheKey(expression: string, params: JsonRecord, options: PiCdpOptions): string {
   const explicit = typeof options.scriptHash === 'string' ? options.scriptHash : '';
   if (explicit) return [explicit, params.contextId ?? 'main'].join(':');
@@ -77,6 +91,8 @@ function piCdpError(code: string, message: unknown, details: unknown = {}): PiCd
   return { ok: false, error: { code, message: String(message || code || 'ERROR'), details: safeDetails } };
 }
 function piCdpRawError(e: unknown): JsonRecord { return cdpRawError(e); }
+function piCdpCommandTargetOk(data: PiCdpCommandTarget): PiBridgeResponse<PiCdpCommandTarget> { return { ok: true, data }; }
+function piCdpCommandTargetError(resp: PiCdpResponse): PiBridgeResponse<PiCdpCommandTarget> { return resp as PiBridgeResponse<PiCdpCommandTarget>; }
 function piCdpAugmentDebuggerEvidence(method: string, data: JsonRecord): JsonRecord {
   const out = { ...data };
   const result = cdpRecord(out.result);
@@ -206,6 +222,9 @@ async function piPersistentCdpAttach(tabId: number, options: PiCdpOptions = {}):
 async function piPersistentCdpDetachEntry(key: string): Promise<PiCdpResponse> {
   const rec = piPersistentCdpSessions.get(key);
   if (!rec) return piCdpOk({ sessionKey: key, detached: false });
+  for (const [childKey, child] of Array.from(piPersistentCdpChildSessions.entries())) {
+    if (child.parentKey === key) piPersistentCdpChildSessions.delete(childKey);
+  }
   piPersistentCdpSessions.delete(key);
   // chrome.debugger attachment is physical per tab, while this bridge exposes
   // logical sessions by name (default/new_document/etc.).  Detaching one
@@ -227,6 +246,90 @@ async function piPersistentCdpDetach(tabId: number, options: PiCdpOptions = {}):
   return await piPersistentCdpDetachEntry(piCdpSessionKey(tabId, name));
 }
 
+async function piPersistentCdpAttachTarget(tabId: number, targetId: unknown, options: PiCdpOptions = {}): Promise<PiCdpResponse> {
+  const cleanTargetId = piCdpCleanTargetId(targetId);
+  if (!tabId) return piCdpError('NO_TAB_ID', 'tabId is required');
+  if (!cleanTargetId) return piCdpError('NO_TARGET_ID', 'targetId is required');
+  const name = options?.name || 'default';
+  const parent = await piPersistentCdpAttach(tabId, { name, protocolVersion: options?.protocolVersion, bringToFront: options?.bringToFront, persistent: true });
+  if (!parent.ok) return parent;
+  const parentKey = piCdpSessionKey(tabId, name);
+  const key = piCdpTargetSessionKey(tabId, name, cleanTargetId);
+  const existing = piPersistentCdpChildSessions.get(key);
+  if (existing) {
+    existing.lastUsed = piCdpNow();
+    return piCdpOk({ sessionKey: parentKey, childSessionKey: key, tabId, targetId: cleanTargetId, sessionId: existing.sessionId, reused: true, attachedAt: existing.attachedAt });
+  }
+  const existingForTarget = Array.from(piPersistentCdpChildSessions.values()).find((item) => item.tabId === tabId && item.targetId === cleanTargetId);
+  if (existingForTarget) {
+    const alias: PiCdpChildSession = { ...existingForTarget, key, parentKey, name: String(name), lastUsed: piCdpNow() };
+    piPersistentCdpChildSessions.set(key, alias);
+    return piCdpOk({ sessionKey: parentKey, childSessionKey: key, tabId, targetId: cleanTargetId, sessionId: alias.sessionId, reused: true, aliasOf: existingForTarget.key, attachedAt: alias.attachedAt });
+  }
+  let resolveAttached: (value: { sessionId: string; targetInfo: JsonRecord }) => void = () => {};
+  const attached = new Promise<{ sessionId: string; targetInfo: JsonRecord }>((resolve) => { resolveAttached = resolve; });
+  const listener = (source: { tabId?: number; targetId?: string; sessionId?: string }, method: string, params?: JsonRecord) => {
+    if (Number(source?.tabId) !== Number(tabId) || method !== 'Target.attachedToTarget') return;
+    const targetInfo = cdpRecord(params?.targetInfo);
+    const eventTargetId = piCdpCleanTargetId(targetInfo.targetId);
+    const sessionId = piCdpCleanSessionId(params?.sessionId);
+    if (eventTargetId === cleanTargetId && sessionId) resolveAttached({ sessionId, targetInfo });
+  };
+  try {
+    chrome.debugger.onEvent.addListener(listener);
+    const params = {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: 'iframe', exclude: false }, { type: 'other', exclude: false }],
+    };
+    try {
+      await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId }, 'Target.setAutoAttach', params), options?.timeoutMs, 'Target.setAutoAttach');
+    } catch (_setAutoAttachError) {
+      await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId }, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }), options?.timeoutMs, 'Target.setAutoAttach');
+    }
+    const waitMs = Math.max(500, Math.min(5000, Number(options?.timeoutMs || 5000)));
+    const result = await piCdpWithTimeout(attached, waitMs, 'Target.attachedToTarget');
+    const rec: PiCdpChildSession = { tabId, parentKey, key, targetId: cleanTargetId, sessionId: result.sessionId, name: String(name), attachedAt: piCdpNow(), lastUsed: piCdpNow(), commands: 0, pending: 0 };
+    piPersistentCdpChildSessions.set(key, rec);
+    return piCdpOk({ sessionKey: parentKey, childSessionKey: key, tabId, targetId: cleanTargetId, sessionId: rec.sessionId, attachMethod: 'Target.setAutoAttach', targetInfo: result.targetInfo, reused: false, attachedAt: rec.attachedAt });
+  } catch (e) {
+    return piCdpError('TARGET_ATTACH_FAILED', cdpErrorMessage(e), { tabId, targetId: cleanTargetId, attachMethod: 'Target.setAutoAttach', raw: piCdpRawError(e) });
+  } finally {
+    chrome.debugger.onEvent.removeListener(listener);
+  }
+}
+
+async function piPersistentCdpDetachTarget(tabId: number, targetIdOrSessionId: unknown, options: PiCdpOptions = {}): Promise<PiCdpResponse> {
+  const name = options?.name || 'default';
+  const rawSessionId = piCdpCleanSessionId(options?.sessionId);
+  const rawTargetId = piCdpCleanTargetId(targetIdOrSessionId ?? options?.targetId);
+  let child: PiCdpChildSession | undefined;
+  if (rawSessionId) child = Array.from(piPersistentCdpChildSessions.values()).find((item) => item.tabId === tabId && item.sessionId === rawSessionId);
+  if (!child && rawTargetId) child = piPersistentCdpChildSessions.get(piCdpTargetSessionKey(tabId, name, rawTargetId));
+  if (!child) return piCdpOk({ tabId, targetId: rawTargetId, sessionId: rawSessionId, detached: false });
+  piPersistentCdpChildSessions.delete(child.key);
+  try {
+    await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId }, 'Target.detachFromTarget', { sessionId: child.sessionId }), options?.timeoutMs, 'Target.detachFromTarget');
+    return piCdpOk({ tabId, targetId: child.targetId, sessionId: child.sessionId, childSessionKey: child.key, detached: true, lifetimeMs: piCdpNow() - child.attachedAt, commands: child.commands });
+  } catch (e) {
+    return piCdpError('TARGET_DETACH_FAILED', cdpErrorMessage(e), { tabId, targetId: child.targetId, sessionId: child.sessionId, raw: piCdpRawError(e) });
+  }
+}
+
+async function piPersistentCdpCommandTarget(tabId: number, name: string, rec: PiCdpSession, options: PiCdpOptions): Promise<PiBridgeResponse<PiCdpCommandTarget>> {
+  const sessionId = piCdpCleanSessionId(options?.sessionId);
+  if (sessionId) return piCdpCommandTargetOk({ debuggee: { tabId: rec.tabId, sessionId }, route: { targetScoped: true, attachRouteUsed: false, sessionId } });
+  const targetId = piCdpCleanTargetId(options?.targetId);
+  if (!targetId) return piCdpCommandTargetOk({ debuggee: { tabId: rec.tabId }, route: { targetScoped: false, attachRouteUsed: false } });
+  const attached = await piPersistentCdpAttachTarget(tabId, targetId, options);
+  if (!attached.ok) return piCdpCommandTargetError(attached);
+  const child = piPersistentCdpChildSessions.get(piCdpTargetSessionKey(tabId, name, targetId));
+  const childSessionId = piCdpCleanSessionId(cdpRecord(attached.data).sessionId) ?? child?.sessionId;
+  if (!childSessionId) return piCdpCommandTargetError(piCdpError('TARGET_ATTACH_FAILED', 'target session missing after attach', { tabId, targetId, attached: attached.data }));
+  return piCdpCommandTargetOk({ debuggee: { tabId: rec.tabId, sessionId: childSessionId }, route: { targetScoped: true, attachRouteUsed: true, attachMethod: cdpRecord(attached.data).attachMethod || 'Target.setAutoAttach', targetId, sessionId: childSessionId, childSessionKey: child?.key }, child });
+}
+
 async function piPersistentCdpSend(tabId: number, method: string, params: JsonRecord = {}, options: PiCdpOptions = {}): Promise<PiCdpResponse> {
   if (!method) return piCdpError('NO_METHOD', 'CDP method is required');
   const name = options?.name || 'default';
@@ -244,11 +347,16 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
   rec.pending = (rec.pending || 0) + 1;
   rec.lockedUntil = Math.max(rec.lockedUntil || 0, piCdpNow() + Number(options?.timeoutMs || 30000));
   try {
+    const routeResp = await piPersistentCdpCommandTarget(tabId, String(name), rec, options);
+    if (!routeResp.ok) return routeResp as PiCdpResponse;
+    const routeData = routeResp.data!;
+    const debuggee = routeData.debuggee;
+    if (routeData.child) routeData.child.pending = (routeData.child.pending || 0) + 1;
     const expression = typeof params.expression === 'string' ? params.expression : '';
     let data: unknown;
     let precompiled = false;
     if (options?.precompile === true && method === 'Runtime.evaluate' && expression) {
-      const cacheKey = piCdpScriptCacheKey(expression, params, options);
+      const cacheKey = piCdpScriptCacheKey(expression, params, options) + ':' + (debuggee.sessionId || 'root');
       let scriptId = rec.compiledScripts.get(cacheKey);
       if (!scriptId) {
         try {
@@ -258,7 +366,7 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
             persistScript: true,
           };
           if (params.contextId !== undefined) compileParams.executionContextId = params.contextId;
-          const compiled = cdpRecord(await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.compileScript', compileParams), options?.timeoutMs, 'Runtime.compileScript'));
+          const compiled = cdpRecord(await piCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.compileScript', compileParams), options?.timeoutMs, 'Runtime.compileScript'));
           if (typeof compiled.scriptId === 'string') {
             scriptId = compiled.scriptId;
             rec.compiledScripts.set(cacheKey, scriptId);
@@ -278,7 +386,7 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
         if (params.includeCommandLineAPI !== undefined) runParams.includeCommandLineAPI = params.includeCommandLineAPI;
         if (params.userGesture !== undefined) runParams.userGesture = params.userGesture;
         try {
-          data = await piCdpWithTimeout(chrome.debugger.sendCommand({ tabId: rec.tabId }, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
+          data = await piCdpWithTimeout(chrome.debugger.sendCommand(debuggee, 'Runtime.runScript', runParams), options?.timeoutMs, 'Runtime.runScript');
           precompiled = true;
         } catch (runError) {
           const runMessage = cdpErrorMessage(runError);
@@ -293,13 +401,14 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
     }
     if (data === undefined) {
       data = await piCdpWithTimeout(
-        chrome.debugger.sendCommand({ tabId: rec.tabId }, method, params || {}),
+        chrome.debugger.sendCommand(debuggee, method, params || {}),
         options?.timeoutMs,
         method
       );
     }
     rec.commands += 1; rec.lastUsed = piCdpNow();
-    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method, ...(precompiled ? { precompiled: true } : {}) }));
+    if (routeData.child) { routeData.child.commands += 1; routeData.child.lastUsed = piCdpNow(); }
+    return piCdpOk(piCdpAugmentDebuggerEvidence(method, { result: data, sessionKey: key, method, cdpRoute: routeData.route, ...(precompiled ? { precompiled: true } : {}) }));
   } catch (e) {
     const msg = cdpErrorMessage(e);
     if (!retrying && /Debugger is not attached|Cannot access a chrome:\/\/ URL|No tab with id/i.test(String(msg || ''))) {
@@ -312,6 +421,11 @@ async function piPersistentCdpSend(tabId: number, method: string, params: JsonRe
     return piCdpError('SEND_FAILED', msg || String(e), { sessionKey: key, method, raw: piCdpRawError(e) });
   } finally {
     rec.pending = Math.max(0, (rec.pending || 1) - 1);
+    const targetId = piCdpCleanTargetId(options?.targetId);
+    if (targetId) {
+      const child = piPersistentCdpChildSessions.get(piCdpTargetSessionKey(tabId, name, targetId));
+      if (child) child.pending = Math.max(0, (child.pending || 1) - 1);
+    }
     rec.lockedUntil = 0;
     rec.lastUsed = piCdpNow();
     if (temporary) await piPersistentCdpDetach(tabId, { name });
@@ -435,6 +549,18 @@ async function piPersistentCdpReleaseIdle(maxIdleMs?: unknown): Promise<PiCdpRes
   return piCdpOk({ released, skipped, remaining: piPersistentCdpSessions.size });
 }
 
+async function piPersistentCdpTargets(tabId?: unknown): Promise<PiCdpResponse> {
+  try {
+    const allTargets = typeof chrome.debugger.getTargets === 'function' ? await chrome.debugger.getTargets() : [];
+    const scopedTargets = tabId === undefined || tabId === null || tabId === ''
+      ? allTargets
+      : allTargets.filter((target: JsonRecord) => Number(target.tabId) === Number(tabId));
+    return piCdpOk({ targets: allTargets, scopedTargets, count: allTargets.length, scopedCount: scopedTargets.length, tabId: tabId === undefined ? undefined : Number(tabId) });
+  } catch (e) {
+    return piCdpError('SEND_FAILED', cdpErrorMessage(e), { action: 'targets', raw: piCdpRawError(e) });
+  }
+}
+
 // Release every persistent CDP session bound to a tab. Invoked from the shared
 // tab-teardown path (chrome.tabs.onRemoved / navigation churn) so attachments do
 // not leak and fill PI_PERSISTENT_CDP_MAX_SESSIONS over a long session.
@@ -449,6 +575,9 @@ function cleanupPersistentCdpForTab(tabId: number, _reason?: string): JsonRecord
     removed.push(key);
     void piPersistentCdpDetachEntry(key).catch(() => piPersistentCdpSessions.delete(key));
   }
+  for (const [key, rec] of Array.from(piPersistentCdpChildSessions.entries())) {
+    if (rec && Number(rec.tabId) === target) piPersistentCdpChildSessions.delete(key);
+  }
   for (const [key, rec] of Array.from(piPersistentCdpNewDocumentScripts.entries())) {
     if (rec && Number(rec.tabId) === target) piPersistentCdpNewDocumentScripts.delete(key);
   }
@@ -460,8 +589,11 @@ async function handlePersistentCdpCommand(msg: PiBridgeCommand, sender: PiBridge
   const action = msg.action || msg.method;
   if (!tabId && action !== 'releaseIdle') return piCdpError('NO_TAB_ID', 'tabId is required');
   if (action === 'attach') return await piPersistentCdpAttach(tabId, msg as PiCdpOptions);
+  if (action === 'attachTarget') return await piPersistentCdpAttachTarget(tabId, msg.targetId, msg as PiCdpOptions);
   if (action === 'send') return await piPersistentCdpSend(tabId, String(msg.cdpMethod || ''), cdpRecord(msg.params), msg as PiCdpOptions);
+  if (action === 'detachTarget') return await piPersistentCdpDetachTarget(tabId, msg.targetId ?? msg.sessionId, msg as PiCdpOptions);
   if (action === 'detach') return await piPersistentCdpDetach(tabId, msg as PiCdpOptions);
+  if (action === 'targets') return await piPersistentCdpTargets(msg.tabId || sender?.tab?.id);
   if (action === 'frameTree') return await piPersistentCdpFrameTree(tabId, msg as PiCdpOptions);
   if (action === 'evaluateInFrame') return await piPersistentCdpEvaluateInFrame(tabId, msg.expression, msg as PiCdpOptions);
   if (action === 'addNewDocumentScript') return await piPersistentCdpAddNewDocumentScript(tabId, msg.source, msg as PiCdpOptions);
@@ -474,6 +606,9 @@ chrome.debugger.onDetach.addListener((source, _reason) => {
   if (!source || !source.tabId) return;
   for (const [key, rec] of Array.from(piPersistentCdpSessions.entries())) {
     if (rec.tabId === source.tabId) piPersistentCdpSessions.delete(key);
+  }
+  for (const [key, rec] of Array.from(piPersistentCdpChildSessions.entries())) {
+    if (rec.tabId === source.tabId) piPersistentCdpChildSessions.delete(key);
   }
 });
 
@@ -492,21 +627,25 @@ registerRecovery(async (results) => {
 const piPersistentCdpBridge = {
   version: PI_PERSISTENT_CDP_VERSION,
   sessions: piPersistentCdpSessions,
+  childSessions: piPersistentCdpChildSessions,
   newDocumentScripts: piPersistentCdpNewDocumentScripts,
   attach: piPersistentCdpAttach,
+  attachTarget: piPersistentCdpAttachTarget,
   send: piPersistentCdpSend,
+  detachTarget: piPersistentCdpDetachTarget,
   detach: piPersistentCdpDetach,
   frameTree: piPersistentCdpFrameTree,
   evaluateInFrame: piPersistentCdpEvaluateInFrame,
   addNewDocumentScript: piPersistentCdpAddNewDocumentScript,
   removeNewDocumentScript: piPersistentCdpRemoveNewDocumentScript,
   releaseIdle: piPersistentCdpReleaseIdle,
+  targets: piPersistentCdpTargets,
   hasSessionForTab: piPersistentCdpHasSessionForTab,
   handleCommand: handlePersistentCdpCommand
 };
 const cdpGlobal = self as typeof self & { PiPersistentCdp?: unknown; piPersistentCdpBridge?: unknown };
 cdpGlobal.PiPersistentCdp = piPersistentCdpBridge;
 cdpGlobal.piPersistentCdpBridge = piPersistentCdpBridge;
-export { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge };
+export { piPersistentCdpSend, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge };
 // ESM module metadata
-export const __piBridgeModule_cdp = { name: "cdp", symbols: { PI_PERSISTENT_CDP_VERSION, PI_PERSISTENT_CDP_DEFAULT_TIMEOUT_MS, PI_PERSISTENT_CDP_MAX_SESSIONS, piPersistentCdpSessions, piPersistentCdpNewDocumentScripts, piPersistentCdpHasSessionForTab, piCdpNow, piCdpSessionKey, piCdpNewDocumentScriptKey, piCdpKnownNewDocumentIdentifiers, piCdpError, piCdpRawError, piCdpOk, piCdpWithTimeout, piCdpFlattenFrameTree, piCdpNormalizeFrameTreeNode, piCdpResolveFrame, piPersistentCdpAttach, piPersistentCdpDetachEntry, piPersistentCdpDetach, piPersistentCdpSend, piPersistentCdpFrameTree, piPersistentCdpEvaluateInFrame, piPersistentCdpAddNewDocumentScript, piPersistentCdpRemoveNewDocumentScript, piPersistentCdpReleaseIdle, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge } };
+export const __piBridgeModule_cdp = { name: "cdp", symbols: { piPersistentCdpSend, cleanupPersistentCdpForTab, handlePersistentCdpCommand, piPersistentCdpBridge } };

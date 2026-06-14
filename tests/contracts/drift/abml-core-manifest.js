@@ -13,6 +13,8 @@ export const PURE_CORE = [
 	"stream.ts",
 	"causal.ts",
 	"grouping.ts",
+	"identityBootstrap.ts",
+	"nodeKey.ts",
 	"templating.ts",
 	"treeDiff.ts",
 	"semanticRefAnchor.ts",

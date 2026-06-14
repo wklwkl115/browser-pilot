@@ -11,7 +11,7 @@
 
 - 读这篇文章前，应已读 `docs/abml-kernel-manifest.md`（分层契约）、`docs/abml-optimization-reference.md`（可落地优化参考）、`AGENTS.md` 的 ABML 项目开发规则与 Root-Truth Sourcing 原则。
 - 本文不重复这些文档的内容，只在其之上提出一个**贯穿性的架构判断**，并把本轮可执行收敛项落到代码、contract、skill 和验证门。
-- 本文的执行边界是：先完成 projection-first/diagnostics/recovery 可见面，避免默认输出继续让 agent 猜；重型 bootstrap / OOPIF / LayerTree 只在有当前机制证据和可验证门时执行，不能留下开放 plan 占位。
+- 本文的执行边界是：先完成 projection-first/diagnostics/recovery 可见面，避免默认输出继续让 agent 猜；重型 bootstrap / OOPIF / DOMSnapshot paint-order 只在有当前机制证据和可验证门时执行，不能留下开放 plan 占位。2026-06-14 追加执行线已把 DOM scan `backendNodeId` best-effort bootstrap、OOPIF `(targetId, backendNodeId)` 复合 key 路由与 DOMSnapshot paint-order 遮挡关系接入产品/运行时路径，证据见 §0.4。
 
 ### 0.1 本轮执行项
 
@@ -19,31 +19,35 @@
 | --- | --- | --- | --- |
 | L0 文档收口 | `docs/abml-identity-lattice-architecture.md`, `CURRENT.md` | 将草案改为 execution contract，列明本轮交付边界、验证门与关闭条件 | `npm run docs:sync`, `npm run check:docs-sync` |
 | L1 恒等格诊断 | `src/abml-core/identityGraph.ts`, `src/tools/observe/scanRunner.ts`, `src/tools/resultMiddleware.ts`, `src/distill-core/ladder.ts` | 输出 `identity` 覆盖摘要；完整 `identityGraph.byRef` 仅 artifact 化；默认 envelope 不暴露完整图 | `tsx --test tests/unit/abml/identityGraph.test.ts tests/unit/tools/envelope-disclosure.test.ts` |
-| L2 artifact 精读路径 | `src/tools/observe/scanRunner.ts`, `tests/contracts/tools/check-abml-scan-envelope.mjs` | `artifact_hints.jsonPaths` 明确 `envelope.identityGraph` / `envelope.snapshotProjection` / `envelope.relations` / `envelope.collections` | `npm run check:abml-scan-envelope`, `npm run check:summaries` |
+| L2 artifact 精读路径 | `src/tools/observe/scanRunner.ts`, `tests/contracts/tools/check-abml-scan-envelope.mjs` | `artifact_hints.jsonPaths` 明确 `envelope.identityGraph` / `envelope.snapshotProjection` / `envelope.relations` / `envelope.relationGraph` / `envelope.collections` | `npm run check:abml-scan-envelope`, `npm run check:summaries` |
 | L3 agent-facing 口径 | `README.md`, `skills/pi-browser-tools/SKILL.md`, `skills/pi-browser-cli/SKILL.md`, `CHANGELOG.md` | 说明 `identity` 是恒等格诊断摘要，完整图通过 artifact 精读；不新增公开 ABML verb | skill quick validate, `npm run docs:sync` |
 
-### 0.2 本轮关闭而不实现的重型项
+### 0.2 本轮重开结果与仍关闭项
 
-以下项不作为未完成 TODO 挂起；它们是 closed decisions，重开需要新的当前证据和独立执行合同：
+以下项不作为未完成 TODO 挂起。已满足证据门的项已经重开并执行；关系层、ledger 容量、projection/frontier 预算也在 2026-06-14 追加 closure run 中完成证据核验：关系层以 artifact-only 中央 `RelationGraph` 关闭，ledger 与 projection/frontier 则以现有上限/预算保留关闭。仍缺真实站点扩展证据的部分只保留为后续 reopen bar，不登记为当前 TODO。
 
-- DOM scan 实体批量盖 `backendNodeId`：需要 drift-free 采样窗口、坐标系 parity 与 fail-open 状态机先有可测 gate；本轮只暴露当前 backendNodeId 覆盖率，不默认盖章。
-- LayerTree 遮挡关系：需要 paint-order capped relation 与 artifact-only full detail 的真实 fixture；本轮不做 O(n²) 关系矩阵。
-- DOMDebugger listeners 进感知格：执行平面已有 oracle；感知面是否默认 probe 需基于候选集合成本数据，不在本轮默认启用。
-- OOPIF 复合主键 `(targetId, backendNodeId)`：必须双写兼容并有 `Target.attachToTarget` 路由验证；本轮只保留架构迁移路径。
+- DOM scan 实体批量盖 `backendNodeId`：已重开并实现为 best-effort bootstrap。产品路径复用 `DOMSnapshot.captureSnapshot` 的 `backendNodeId + bounds` 行，对 scan actionables 做 viewport/document/DPR 归一后的唯一高 IoU 匹配；只有 `matched` 写 `backendNodeId`，`ambiguous/stale/missing/unsupported` 全部 fail-open 并保留诊断。
+- LayerTree / paint-order 遮挡关系：LayerTree 直连在当前浏览器 CDP 中不可用；实现脊柱改走 `DOMSnapshot.captureSnapshot(includePaintOrder:true)`。当前工作区已把 `backendNodeId + bounds + paintOrder` 接入 capped `coveredBy`/`occludes` 关系派生；full paint-order entries 只进 saved artifact，model-facing 只给 relation summary / compact diagnostics。
+- DOMDebugger listeners 进感知格：已重开并实现为 bounded read-only hints。产品路径只对带 `backendNodeId` 的少量 `data.actionables[]` 候选 probe `DOM.resolveNode` + `DOMDebugger.getEventListeners`，将 capped listener facts 写入 `Entity.hints.listeners`，并在 `data.listenerOracle` 记录 candidate/probed/listener/failure 统计；不引入 click/type 策略。
+- OOPIF 复合主键 `(targetId, backendNodeId)`：已重开并落地双写兼容。`nodeKey` 优先写 `t:<targetId>:b:<backendNodeId>`，保留旧 `b:<backendNodeId>` 兼容；`persistent_cdp` 通过 `Target.setAutoAttach` / `Target.attachedToTarget` 获取 flat child session，`input.ref` 可用 target-scoped backend ref 派发，缺失 target fail-closed 为 `OOPIF_SESSION_UNSUPPORTED`。
+- 关系层升一等公民：已重开并关闭为现有 schema 内的中央关系图。`RelationGraph` 持有完整 `edges/bySource/byTarget/byType`；`entity.relations[]` 保持 capped 派生兼容字段；model-facing 只暴露 `relations.summary/highlights`，完整图通过 `artifact_hints.jsonPaths.relationGraph = "envelope.relationGraph"` 精读。
+- ledger 容量调整：已重开核验，结论是不调大。最终 fixture eval 33/33 passed，temporal profile 175 个样本 `historyLostCount=0`，没有证据表明 `MAX_FRAMES_PER_SESSION_TAB=8` 或 `MAX_TRACE_TERMS_PER_SESSION=32` 导致当前任务失败。
+- projection/frontier 预算：已重开核验，结论是不调参。eval runner 已持久化 `observeCallCount`、`observeResultTextChars`、`observeEstimatedTokens` 与 artifact read mix；最终全量 run 的 observe 估算 token max 为 3335，artifact read 为 7 次，其中 4 次 jsonPath、3 次 broad read，未显示首屏预算需要扩大或重分配。
 
 ### 0.3 后续重开证据项
 
-以下证据项是 §8 后续演进的重开门槛。它们不是当前 TODO；只有当一项能同时满足"当前代码证据 + 可运行 gate + artifact 证据"时，才允许派生成新的激活执行合同。
+以下证据项是 §8 后续演进的重开门槛。已满足的项记录为当前实现证据；未满足的项不是当前 TODO，只有当一项能同时满足"当前代码证据 + 可运行 gate + artifact 证据"时，才允许派生成新的激活执行合同。
 
 | 重开项 | 当前代码证据 | 缺失证明 | 可接受证据 | 最小 gate |
 | --- | --- | --- | --- | --- |
-| DOM scan 实体批量盖 `backendNodeId` | `src/abml/verbs/axRuntime.ts` 已用 `DOMSnapshot.captureSnapshot` 读取 `nodes.backendNodeId`/`layout.bounds` 并按 backend id 回填 AX 几何；`scanBundle` 仍是页面语义真值面 | scan rect 与 snapshot bounds 的 drift-free 采样窗口、viewport/document 坐标转换、歧义/漂移时 fail-open 行为 | fixture 同时覆盖无滚动、滚动、CSS transform、transition/mutation 漂移和重复同尺寸节点；artifact 写 `bootstrapStats`（matched/ambiguous/stale/unsupported）与每类样本 | 新增 `tests/contracts/tools/check-abml-identity-bootstrap.mjs` 或等价 contract；目标单测锁定五态状态机 |
-| LayerTree / paint-order 遮挡关系 | 当前感知路径未使用 LayerTree；文档只承认 `elementFromPoint` 五点 hit-test 是近似 | compositor layer owner 到 `backendNodeId` 的可追溯映射、遮挡关系 cap、artifact-only full detail | overlapping fixed/sticky/opacity/transform fixture 证明 `relations.summary.occludes` 稳定；完整遮挡明细只在 artifact，model-facing 只给 capped summary | 新增遮挡 fixture contract；`npm run check:abml-scan-envelope` 锁定不泄漏全量矩阵 |
-| DOMDebugger listeners 进感知格 | `bridge_src/service_worker/dom_flow.ts` 已用 `DOMDebugger.getEventListeners`，listener 记录含 `backendNodeId`；执行平面 oracle 已跑通 | 感知层候选集合规则、每节点 CDP 成本上限、listener hint schema 与红action面边界 | 只对可解释候选（role/actionability/frontier refs）probe；artifact 写 candidate count / probed count / elapsedMs；`Entity.hints.listeners` 或等价只读字段不引入 click/type 策略 | 新增 listener 感知单测 + token budget 断言；skill/README 明确它是 evidence，不是策略 |
-| OOPIF 复合主键 `(targetId, backendNodeId)` | `bridge_src/service_worker/input.ts` 对 target/session/frame/oopif 类 CDP 失败 fail-closed 为 `OOPIF_SESSION_UNSUPPORTED`；现有 `relations.ts`/`input.ref`/`pi.click` 仍吃裸 backendNodeId | `Target.attachToTarget` 路由、复合 key 双写、旧 `b:<backendNodeId>` 兼容读、跨 target artifact 归属 | cross-origin iframe fixture 中同 backendNodeId 不串 key；旧 ref 仍可在同源 frame 工作；OOPIF miss 给可恢复诊断而非错点 | 新增 runtime fixture 覆盖 attach/resolve/fail-closed；`check-protocol-contract` 保持旧输入兼容 |
-| 关系层升一等公民 | 当前 `Entity.relations[]` 与 `src/abml-core/relations.ts` 已能产出关系边，但反查/遮挡/传递关系仍依赖扫 entity | 中央关系图 schema、entity 派生字段兼容、summary/artifact 分层 | `relations.summary` 与当前输出 parity；full graph artifact-only；entity 派生字段可由关系图重建 | `tests/unit/abml/relations.test.ts` parity 扩展 + `check-abml-scan-envelope` contract |
-| ledger 容量调整 | `src/abml/perceptionLedger.ts` 当前 `MAX_FRAMES_PER_SESSION_TAB = 8`、`MAX_TRACE_TERMS_PER_SESSION = 32`；`scanRunner.ts` 已消费 stable refs | 长任务是否真的因历史帧不足失败、放大后 token/内存成本 | `eval:browser-workflows` 给出多步表单/分页任务的 history miss 证据，且 memory/token 增量可接受 | eval summary artifact 必须包含 before/after history hit rate、token delta、task success |
-| projection/frontier 预算 | 当前 envelope 已提升 `gist/outline/relations/identity/collections/treeDiff`，完整图走 artifact | projection / collections / frontier refs / ref pool 的预算比例与任务成功率关系 | workflow eval 比较首屏 token、agent 二次 artifact 读取次数、任务完成率；不能只证明 token 降低 | `npm run eval:browser-workflows -- --fixture-server` 持久化 summary；必要时补 blind real-site friction 证据 |
+| DOM scan 实体批量盖 `backendNodeId` | 已实现。`src/abml/verbs/axRuntime.ts` 暴露 DOMSnapshot geometry rows；`src/abml-core/identityBootstrap.ts` 做 scan rect ↔ snapshot bounds 的 best-effort bootstrap；`src/abml-core/entity.ts` 产出 `backendNodeId` locator / hint；`src/abml-core/ax.ts` 在几何启发式前先按 backend id 精确 join | 真实站点 animation/virtualized list/多 frame 的批量成本与边界；不是 fixture 正确性的阻塞项 | `32-abml-identity-bootstrap-evidence` 证明产品 artifact 中 `backendNodeIdBootstrap.matched=3`、`ambiguous=2`、`sampleWindowMs=15`，scan entities 带 `backendNodeId` locator；手工 drift 样本证明 `stale=1` fail-open | `tests/unit/abml/identity-bootstrap.test.ts` 五态状态机 + `tests/contracts/tools/check-abml-scan-entities.mjs` backend locator/hint + `32-abml-identity-bootstrap-evidence` |
+| LayerTree / paint-order 遮挡关系 | `bridge_src/service_worker/layer.ts` 内部 `layer.probe` 证明 `LayerTree.enable` 返回 `-32601`，但 `DOMSnapshot.captureSnapshot(includePaintOrder:true)` 可返回 `paintOrder + backendNodeId + bounds`；`src/abml-core/relations.ts` 已按 paint-order 相邻候选 + spatial bucket 派生 capped `coveredBy`/`occludes`；`src/abml/verbs/axRuntime.ts` 已在 paint-order unsupported 时回退普通 DOMSnapshot 保住几何 | 真实站点复杂合成、alpha/clip/filter/transform 的精度边界；是否需要像素反查 probe 只作可疑样本复核 | overlapping fixed/sticky/opacity/transform fixture 中 `covered`/`covering` 同时有 `backendNodeId`、bounds、paintOrder；artifact 写 `paintOrderEvidence.entries`，model-facing 只暴露 capped relation summary 与 compact diagnostics | `33-layer-paint-occlusion-boundary` + `tests/contracts/tools/check-abml-relation-graph.mjs` + `npm run check:abml-scan-envelope` |
+| DOMDebugger listeners 进感知格 | 已实现。`runtime.ts` 对带 `backendNodeId` 的 capped `data.actionables[]` 候选执行 `DOM.resolveNode` + `DOMDebugger.getEventListeners`；`Entity.hints.listeners` 只写 bounded read-only facts，`data.listenerOracle` 写 candidate/probed/listener/failure 统计 | 真实站点上更大候选集的成本、事件委托深链是否需要更深 `depth`、是否要把 listener facts 升格为关系边 | `32-abml-identity-bootstrap-evidence` 证明产品 artifact 中 listener oracle `listenerCount=1` 且 `listenerEntityCount=1`；runtime 单测证明 listener hints 和 backend bootstrap 同路径落地 | `tests/unit/abml/verbs-runtime.test.ts` + `32-abml-identity-bootstrap-evidence` |
+| OOPIF 复合主键 `(targetId, backendNodeId)` | 已实现。`src/abml-core/nodeKey.ts` 提供复合/legacy key；`identityGraph.ts` 和 `relations.ts` 双写兼容；`bridge_src/service_worker/cdp.ts` 通过 `Target.setAutoAttach` / `Target.attachedToTarget` 路由 child target；`input.ref` 消费 `targetId` 并在 miss 时 fail-closed | 真实站点多 OOPIF/导航后 child session 生命周期与跨 target artifact 归属边界；不是 fixture 正确性的阻塞项 | `34-oopif-composite-key-boundary` 证明 cross-origin child target snapshot、target-scoped `input.ref` click、裸 parent backend ref 兼容、missing target 零派发 fail-closed | `tests/contracts/runtime/check-input-ref-runtime.mjs` + `tests/unit/abml/identityGraph.test.ts`/`relations.test.ts` + `34-oopif-composite-key-boundary` + `npm run check:protocol` |
+| 关系层升一等公民 | 已完成。`src/abml-core/relations.ts` 产出中央 `RelationGraph`，包含 `edges/bySource/byTarget/byType`；`entity.relations[]` 是 capped 派生兼容字段；`scanRunner.ts` 把完整图只写入 saved artifact，并注册 `artifact_hints.jsonPaths.relationGraph = "envelope.relationGraph"` | 真实站点复杂遮挡/控制关系的精度边界；不是 schema 阻塞项 | 单测证明 model-facing summary 不泄露 full graph，saved artifact 暴露 `envelope.relationGraph`，且 `byTarget` 可反查 inbound relation；关系 summary 继续走既有 projection slot | `tests/unit/tools/observe-abml-integration.test.ts` relationGraph artifact test + `tests/unit/abml/relations.test.ts` + `npm run check:abml-relation-graph` |
+| `growthProbe` 数据通道 | 已实现。`src/scan/buildScanScript.ts` 注入 bounded `collectGrowthProbe`，用 scroll metrics + `IntersectionObserver` 采样虚拟窗口变化并恢复 scroll；`src/tools/observe/scanRunner.ts` 将 `data.growthProbe` 传给 `buildCollectionModels`；`collections.ts` 消费 count/height/windowShift 三类证据 | 真实站点 lazy/virtualized 组件的副作用成本、采样 wait 上限、嵌套 scrollport 选择策略 | `35-abml-growth-probe-evidence` 证明产品 artifact 中 `growthProbe.supported=true`、`windowShifted=true`、`restoredScrollTop=true`，collection 为 `virtualized` 且 evidence source 为 `growthProbe` | `npm run check:scan` + `npm run check:abml-collections` + `npm run check:abml-scan-envelope` + `35-abml-growth-probe-evidence` |
+| ledger 容量调整 | 已核验并保持现值。`src/abml/perceptionLedger.ts` 仍为 `MAX_FRAMES_PER_SESSION_TAB = 8`、`MAX_TRACE_TERMS_PER_SESSION = 32`；最终 temporal profile 175 样本 `historyLostCount=0`、`waitAttempts` p95/max=1、`workerRestarts` max=0 | 真实长任务如果出现 history miss，需要带失败样本重开；当前没有容量不足证据 | 现有 run 不支持调大：33/33 passed 且 history loss 为 0；未来只有出现具体 history miss + token/内存成本可接受时才扩容 | `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-50-35-673Z-56540c24/temporal-profile-summary.json` |
+| projection/frontier 预算 | 已核验并保持现值。当前 envelope 已提升 `gist/outline/relations/identity/collections/treeDiff`，完整 identity/relation/collection 图走 artifact；runner 已记录 `observeEstimatedTokens` 和 artifact read mix | 真实 agent friction 或任务成功率下降时才需要 A/B；当前 fixture suite 没有预算失败信号 | 33/33 passed；`browser_observe` 调用 18 次，observe 估算 token max=3335；artifact read 7 次，其中 4 次 jsonPath、3 次 broad read | `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-50-35-673Z-56540c24/browser-workflow-eval-summary.json` + `tests/contracts/tools/check-eval-workflows.mjs` |
 
 ### 0.4 Eval 证据采集记录（2026-06-14）
 
@@ -63,7 +67,28 @@ npm run eval:browser-workflows -- --fixture-server --timeout-ms 120000
 
 - `32-abml-identity-bootstrap-evidence` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-07-57-045Z-728d37b4/browser-workflow-eval-summary.json`
 - `33-layer-paint-occlusion-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-13-32-558Z-28f63bd8/browser-workflow-eval-summary.json`
-- `34-oopif-composite-key-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-11-38-133Z-5f060821/browser-workflow-eval-summary.json`
+- `34-oopif-composite-key-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-26-11-136Z-8d9458ae/browser-workflow-eval-summary.json`
+
+LayerTree / paint-order 最小机制验证随后补跑：
+
+- `33-layer-paint-occlusion-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T06-24-54-827Z-8c99c70f/browser-workflow-eval-summary.json`
+- 结论：`LayerTree.enable` 在当前 Edge/Chrome 149 扩展 CDP 路径返回 `-32601`，不能作为实现脊柱；同一内部探针中的 `DOMSnapshot.captureSnapshot(includePaintOrder:true)` 返回 10 个 paint-order owner `backendNodeId`，其中 `covered` / `covering` 均有 `backendNodeId`、bounds、paintOrder。实现路径应走 DOMSnapshot paint-order，而不是 LayerTree owner mapping。
+
+DOMSnapshot paint-order 关系层接入后补跑：
+
+- `33-layer-paint-occlusion-boundary` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T06-48-32-175Z-d3f525ad/browser-workflow-eval-summary.json`
+- 结论：fixture 中 `relations.summary` 为 `occludes=2` / `coveredBy=2`；`axDiagnostics.paintOrder` 给 compact stats（10 entries / 10 owners）；完整 paint-order rows 留在 saved artifact，关系 evidence 中有 `paintOrder:true`；LayerTree 仍记录为 unavailable boundary。
+- 分层/fallback 收口后复跑 passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T06-57-36-001Z-e49d6ab1/browser-workflow-eval-summary.json`。boundary artifact 证明 `paintOrderRuntime.fullEntriesArtifactOnly=true`，`paintOrderArtifactEvidence.entryRows=10`，`relations.summary` 仍为 `occludes=2` / `coveredBy=2`。
+
+DOM scan `backendNodeId` best-effort bootstrap 与 bounded listener hints 产品路径接入后补跑：
+
+- `32-abml-identity-bootstrap-evidence` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T07-42-18-225Z-0690c7fb/browser-workflow-eval-summary.json`
+- 结论：产品 scan artifact 中 `abml.data.backendNodeIdBootstrap` 为 `matched=3` / `ambiguous=2` / `stale=0` / `sampleWindowMs=15`，`32-abml-identity-bootstrap-evidence.result.json` 记录 `product stamped entities=17`。comparison artifact 的手工 drift 样本给 `bootstrapStats.matched=3` / `ambiguous=2` / `stale=1`，证明漂移和重复同框目标 fail-open，不会盖低置信 `backendNodeId`。同一产品 artifact 还证明 `listenerOracle.listenerCount=1` 且 `listenerEntityCount=1`，listener facts 只作为 bounded read-only hints。
+
+`growthProbe` 产品数据通道接入后补跑：
+
+- `35-abml-growth-probe-evidence` passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T08-06-58-676Z-27c2fbf5/browser-workflow-eval-summary.json`
+- 结论：产品 scan artifact 中 `data.growthProbe.supported=true`、`windowShifted=true`、`restoredScrollTop=true`，固定 DOM 数量的虚拟列表从 `Result 1` 切到 `Result 7`；collection 输出为 `virtualized` / `virtual-window`，evidence source 含 `growthProbe`，且 comparison artifact 证明没有新增 public continuation/action surface。
 
 扩展后全量回归已跑通：
 
@@ -71,21 +96,31 @@ npm run eval:browser-workflows -- --fixture-server --timeout-ms 120000
 - 结果：32/32 passed；新增 `32/33/34` 全部 passed。
 - run-local timing：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-24-15-768Z-9bfb712a/observe-timings-summary.json`、`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-24-15-768Z-9bfb712a/temporal-profile-summary.json`。
 
+剩余关系层/ledger/frontier closure 追加全量回归：
+
+- `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-50-35-673Z-56540c24/browser-workflow-eval-summary.json`
+- 结果：33/33 passed；`browser_observe` 调用 18 次，`browser_artifact` 调用 7 次，其中 jsonPath 精读 4 次、broad read 3 次；observe 估算 token max=3335。
+- temporal profile：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-50-35-673Z-56540c24/temporal-profile-summary.json`，175 个样本 `historyLostCount=0`，`waitAttempts` median/p95/max=1，`workerRestarts` max=0。
+- observe timing：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T10-50-35-673Z-56540c24/observe-timings-summary.json`，9 个样本，`abmlMs` median=36ms / p95=99ms，`renderMs` median=5ms / p95=19ms，`transportMs` median=73ms / p95=218ms，`abmlPrefetchedScan=true` 9/9，`fusedFingerprint=true` 9/9。
+
 中间一次全量回归 `.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-15-56-492Z-ab8799da/browser-workflow-eval-summary.json` 曾出现旧 `15-jshook-canvas-observation` 的 `browser_screenshot` 15s ACK 后超时（`BRIDGE_TIMEOUT`），随后单项复跑 passed：`.pi/browser-artifacts/eval-browser-workflows/2026-06-14T05-18-24-136Z-9fe0ad74/browser-workflow-eval-summary.json`。这条记录只作为截图路径时序波动的历史诊断，不作为最终回归状态。
 
-这轮 eval 是**证据采集**，不是自动重开 §0.3 的所有 closed decisions。覆盖关系如下：
+这轮 eval 是**证据采集**，不是自动重开 §0.3 的所有后续方向；其中 OOPIF 复合主键、关系层 artifact-only 中央图、ledger 容量保留、projection/frontier 预算保留已被重开并按证据关闭。真实站点复杂边界仍按证据门另起合同。覆盖关系如下：
 
 | 证据项 | 本轮 artifact | 已证明 | 未证明 / 仍需新增证据 |
 | --- | --- | --- | --- |
 | 当前 `identity` / `identityGraph` artifact 可见性 | `30-abml-internal-routing-evidence-observe.json` | `summary.identity` 存在，样本 `backendNodeIdCoverage=0.636`；`artifact_hints.jsonPaths.identityGraph = "envelope.identityGraph"`；完整 `identityGraph` 在 artifact 侧可读 | 这只证明当前 AX/DOM 融合后的 identity diagnostics 可见，不证明 DOM scan 批量 bootstrap 盖章正确 |
-| DOMDebugger listener oracle | `23-dom-flow-listener-chain-listeners.json`, `23-dom-flow-listener-chain-chain.json` | `hook.getNodeListeners` 在 selector-scoped 场景返回 listener，listener 记录含 `backendNodeId`，证明执行平面 oracle 可用 | 未证明感知层候选集合、并发上限、`Entity.hints.listeners` schema，也未证明默认 scan 应 probe listeners |
+| DOMDebugger listener oracle | `23-dom-flow-listener-chain-listeners.json`, `23-dom-flow-listener-chain-chain.json`, `2026-06-14T07-42-18-225Z-0690c7fb/32-abml-identity-bootstrap-evidence-comparison.json` | `hook.getNodeListeners` 在 selector-scoped 场景返回 listener，listener 记录含 `backendNodeId`；产品 scan artifact 已对 capped backend candidates 写入 `Entity.hints.listeners`，本轮 `listenerOracle.listenerCount=1` / `listenerEntityCount=1` | 已证明 fixture 级感知 hints 落地；未证明真实站点大候选集成本、事件委托深链 depth 策略、是否需要关系边 |
 | projection / artifact 精读纪律 | `16-scan-high-entropy-summary-scan.json`, `21-cross-tool-correlation-chain-*.json` | scan summary 能先暴露 high-entropy action/form/list/text signals 和 artifact hints；跨工具链保留 operation/snapshot/wait/request ids，并使用窄 jsonPath 读取 | 未做 projection/frontier/ref-pool A/B；没有比较任务完成率、二次 artifact 读取次数和 token 预算比例 |
-| ABML 内部路由边界 | `30-abml-internal-routing-evidence-*.json` | ABML-backed primary entities、frame entities、vision regions 和 monitor facts 能继续通过现有 `browser_*` 工具面暴露；没有证据要求新增公开 ABML verb | 未证明更深的 bootstrap/OOPIF/LayerTree 应进入当前公开契约 |
-| 执行平面 backendNodeId 落点 | `31-execution-plane-cdp-fusion-*.json` | `pi.click(ref)` 通过内部 `input.ref` 派发，trusted semantic success 由 wait/observe 复核；旧路径与 fused path 有可比 artifact | 未证明 OOPIF 复合 key；现有输入仍是同 target 内裸 backendNodeId / point fallback |
-| observe timing / ledger 历史 | `2026-06-14T05-24-15-768Z-9bfb712a/observe-timings-summary.json`, `2026-06-14T05-24-15-768Z-9bfb712a/temporal-profile-summary.json` | 8 个 observe timing 样本：`abmlMs` median 19.5ms / p95 48ms，`axGeometryCdpCalls` median 0 / p95 1；167 个 temporal profile 样本 `historyLostCount=0` | 不足以调整 ledger 容量：没有 before/after 容量 A/B，也没有长任务 history miss 样本 |
-| DOM scan 批量 `backendNodeId` bootstrap | `32-abml-identity-bootstrap-evidence-comparison.json` | fixture 中 `DOMSnapshot.captureSnapshot` 与页面 rect 可在 DPR=2 后归一到 document-relative CSS px；6 个目标里 3 个 stable/scroll/transform 以 IoU=1 匹配到 `backendNodeId`，2 个重复同框节点 fail-open 为 `ambiguous`，1 个 post-scan mutation fail-open 为 `stale`；sample window 383ms | 只证明 bootstrap eval 机制可采证，不证明产品 scan entity 已写入 `backendNodeId`；未覆盖真实站点 animation/virtualized list/多 frame 批量成本 |
-| LayerTree / paint-order 遮挡关系 | `33-layer-paint-occlusion-boundary-boundary.json` | overlapping fixture 中 `elementFromPoint` 证明 covered-center 顶层命中 `covering`；当前 scan 有 occlusion-ish model-facing summary，但没有 LayerTree/paintOrder 来源；`LayerTree.compositingLayers` 返回 `-32601`，记录为当前机制边界 | 只证明当前 LayerTree owner mapping 未落地；未证明 compositor layer owner→`backendNodeId`、遮挡关系 cap、artifact-only full detail |
-| OOPIF 复合主键 | `34-oopif-composite-key-boundary-boundary.json` | cross-origin iframe fixture 中父页读子 frame 被 `SecurityError` 阻断，`childReadableFromParent=false`；当前 `browser_frame` 只暴露父 frame，`Target.getTargets` 返回 `-32000 Not allowed`，复合键证明状态为 `not-proven` | 只证明当前 public refs 仍是 tab-scoped/未 attach child target；未证明 `Target.attachToTarget` 路由、`(targetId, backendNodeId)` 双写、旧 ref 兼容和 OOPIF fail-closed 迁移 |
+| projection/frontier 预算 closure | `2026-06-14T10-50-35-673Z-56540c24/browser-workflow-eval-summary.json` | runner 已记录 `observeCallCount`、`observeResultTextChars`、`observeEstimatedTokens` 与 artifact read mix；33/33 passed，observe token max=3335，artifact read 7 次 / jsonPath 4 次 / broad 3 次 | 未做真实 agent friction A/B；当前没有扩大预算或重分配的失败信号 |
+| 关系层中央图 artifact path | `tests/unit/tools/observe-abml-integration.test.ts` relationGraph artifact test | `relations.summary` 留在 model-facing envelope；完整 `RelationGraph` 不泄露到 summary，只在 saved artifact 的 `envelope.relationGraph`；`artifact_hints.jsonPaths.relationGraph` 可发现，`byTarget` 支持 inbound lookup | 真实站点复杂关系精度仍需新样本；当前 schema/artifact 分层已关闭 |
+| ABML 内部路由边界 | `30-abml-internal-routing-evidence-*.json` | ABML-backed primary entities、frame entities、vision regions 和 monitor facts 能继续通过现有 `browser_*` 工具面暴露；没有证据要求新增公开 ABML verb | 公开 ABML verb 仍关闭；后续只按真实任务证据扩内部 substrate |
+| 执行平面 backendNodeId 落点 | `31-execution-plane-cdp-fusion-*.json` | `pi.click(ref)` 通过内部 `input.ref` 派发，trusted semantic success 由 wait/observe 复核；旧路径与 fused path 有可比 artifact | 同 target 裸 backend ref 已保留；跨 target 行为由 `34-oopif-composite-key-boundary` 补证 |
+| observe timing / ledger 历史 | `2026-06-14T05-24-15-768Z-9bfb712a/observe-timings-summary.json`, `2026-06-14T05-24-15-768Z-9bfb712a/temporal-profile-summary.json`, `2026-06-14T10-50-35-673Z-56540c24/temporal-profile-summary.json` | 最新 175 个 temporal profile 样本 `historyLostCount=0`；`waitAttempts` median/p95/max=1；`workerRestarts` max=0 | 不调大 ledger 容量；未来只有具体 history miss 任务样本才能重开 |
+| DOM scan 批量 `backendNodeId` bootstrap | `2026-06-14T07-42-18-225Z-0690c7fb/32-abml-identity-bootstrap-evidence-comparison.json`, `32-abml-identity-bootstrap-evidence-scan.json` | 产品 observe 路径已写 `abml.data.backendNodeIdBootstrap`，本轮为 `matched=3` / `ambiguous=2` / `sampleWindowMs=15`，scan entities 已带 `backendNodeId` locator（result 记录 stamped entities=17）；手工漂移样本证明 `stale=1` fail-open，重复同框样本 `ambiguous=2` fail-open | 已证明 fixture 级产品盖章与 fail-open 状态机；未覆盖真实站点 animation/virtualized list/多 frame 批量成本 |
+| LayerTree / paint-order 遮挡关系 | `33-layer-paint-occlusion-boundary-layer-probe.json`, `33-layer-paint-occlusion-boundary-boundary.json` | overlapping fixture 中 `elementFromPoint` 证明 covered-center 顶层命中 `covering`；`LayerTree.enable` 返回 `-32601`；`DOMSnapshot.captureSnapshot(includePaintOrder:true)` 返回 10 个 `paintOrder + backendNodeId` owner；当前产品感知路径已把 DOMSnapshot paint-order 接入 capped `coveredBy`/`occludes` 关系，full entries 留 artifact-only | 已证明 fixture 级 paint-order 关系落地和输出分层；未证明真实站点复杂合成、alpha/clip/filter/transform 边界，也未证明需要/不需要额外像素反查 |
+| `growthProbe` 数据通道 | `2026-06-14T08-06-58-676Z-27c2fbf5/35-abml-growth-probe-evidence-comparison.json`, `35-abml-growth-probe-evidence-scan.json` | 产品 scan 已产出 `data.growthProbe`；固定 DOM 数量虚拟列表中 `windowShifted=true`、`restoredScrollTop=true`、`intersectionSupported=true`，collections 消费后输出 `virtualized` / `virtual-window` 且 evidence 含 `growthProbe` | 已证明 fixture 级数据通道、消费链和非 public action 边界；未证明真实站点 lazy/virtualized 组件副作用成本、采样 wait 上限和嵌套 scrollport 策略 |
+| OOPIF 复合主键 | `2026-06-14T10-26-11-136Z-8d9458ae/34-oopif-composite-key-boundary-boundary.json` | cross-origin iframe fixture 中父页读子 frame 被 `SecurityError` 阻断；`Target.getTargets` 返回 child `type=other` target；child DOMSnapshot 解析 `backendNodeId`；`input.ref` 用 `(targetId, backendNodeId)` 走 `Target.setAutoAttach` flat session 且 `attachRouteUsed=true`，child click 送达；裸 parent backend ref 仍可用；missing target 返回 `OOPIF_SESSION_UNSUPPORTED` 且 `dispatched=0` | 已证明 fixture 级复合 key、旧 ref 兼容与 fail-closed；未覆盖真实站点多 OOPIF/导航后的 child session 生命周期和跨 target artifact 归属 |
 
 ---
 
@@ -147,13 +182,13 @@ axMatchScore（ax.ts:403-417）优先级：
 根脊柱（每个 target 内）:  backendNodeId
 ├─ 可直接解析回根:
 │   ├─ objectId (Runtime.RemoteObject)   ←DOM.resolveNode⇄backendNodeId   真 JS 运行时: listeners/属性/原型链
-│   ├─ layerId (LayerTree)               ←给出 owner backendNodeId        真合成层: paint order/遮挡/alpha
+│   ├─ paintOrder (DOMSnapshot.layout)   ←同列给出 backendNodeId+bounds   真绘制序: 遮挡候选/alpha 前置证据
 │   └─ animationId (Animation)           ←关联节点(松)                    真动画态: 正在动/当前帧
 │
 ├─ 容器脊柱（根的父级作用域）:
 │   ├─ executionContextId + uniqueId     ←auxData.frameId                  JS realm 边界: 主世界/isolated 世界
 │   ├─ frameId                           ←Page.getFrameTree               帧边界: 每帧一组 backendNodeId
-│   └─ targetId                          ←Target.attachToTarget           进程/OOPIF 边界: backendNodeId 只在 target 内唯一
+│   └─ targetId                          ←Target.setAutoAttach/attachedToTarget 进程/OOPIF 边界: backendNodeId 只在 target 内唯一
 │
 ├─ 版本脊柱（给整张图盖时间戳）:
 │   └─ loaderId / navigationId           ←每次导航一个                     documentVersion 的底盘; ref 漂移靠它
@@ -248,12 +283,12 @@ axMatchScore（ax.ts:403-417）优先级：
 | 脊柱 / 动作 | 补的盲区 | 解析回根的代价 | 对位现有代码 |
 | --- | --- | --- | --- |
 | **DOM 侧补 `backendNodeId`** | 消除整类错配；`ax.ts:414` 兜底整条消失 | captureSnapshot 当 identity+几何+遮挡真值面，与 scanBundle 的页面语义面 **join**（非替换）；join 前仍需一次几何 bootstrap，见 §5.6 | DOM scan 实体补 backendNodeId 字段，scanBundle **保留** |
-| **`DOMSnapshot.captureSnapshot` 当 identity+几何+遮挡真值面** | identity + quad 几何 + paintOrder（可算遮挡） | 一次 CDP | `axRuntime.ts:242-262, 321` 已按 backendNodeId 列式取 nodes+bounds，identity 已在手边，只喂了 AX 几何；**与 scanBundle 是 join 非替换，见 §5.5** |
+| **`DOMSnapshot.captureSnapshot` 当 identity+几何+遮挡真值面** | identity + quad 几何 + paintOrder（可算遮挡） | 一次 CDP | `axRuntime.ts` 已按 backendNodeId 列式取 nodes+bounds；现在同时喂 AX 几何、DOM scan bootstrap 与 paint-order 关系层；**与 scanBundle 是 join 非替换，见 §5.5**；`33-layer-paint-occlusion-boundary` 已证明 paint-order rows 可用 |
 | **`DOM.getContentQuads` 替代 `getBoundingClientRect`** | 变换元素（rotate/skew）的 IoU 不再算错 | 按需 CDP | scanBundle hit-test 几何源 |
-| **`LayerTree.compositingLayers` → 关系层遮挡** | 真遮挡（z-index/opacity/transform 提层） | LayerTree 一次给 owner | 现状 `elementFromPoint` 五点 hit-test 只能猜 |
+| **DOMSnapshot paint-order → 关系层遮挡** | z-order / paint-order 相邻遮挡候选 | captureSnapshot 已给 owner `backendNodeId` | LayerTree 直连已验证不可用（`LayerTree.enable` 返回 `-32601`）；实现脊柱走 DOMSnapshot paint-order，不走 LayerTree owner mapping |
 | **`DOMDebugger.getEventListeners` → 格 listeners** | 真交互性（含祖先委托） | 每节点 `DOM.resolveNode` 后查 | **已落地** `bridge_src/service_worker/dom_flow.ts:146-170`（listener 已带 `backendNodeId`，§5.4 详述） |
 | **`MutationObserver` → loaderId/documentVersion** | ref 静默漂移主动失效 | 零 CDP，纯页面 JS | 落 ledger，不动 entity |
-| **`IntersectionObserver` → growthProbe 真值** | virtualized/lazy completeness 不再瞎猜 | 零 CDP | 修 `collections.ts:463-477,630` 的断链 |
+| **`IntersectionObserver` + bounded scroll sample → growthProbe 真值** | virtualized/lazy completeness 不再瞎猜 | 零 CDP | 已修 `collections.ts:463-477,630` 的断链：scan 产出，observe 映射，collections 消费 |
 | **复合主键 `(targetId, backendNodeId)`** | OOPIF 穿透 | 一次性 schema 升级 | 现 `OOPIF_SESSION_UNSUPPORTED` fail-closed |
 
 ### 5.2 留 runtime 按需 probe（结果作 hints 注入）
@@ -268,7 +303,7 @@ axMatchScore（ax.ts:403-417）优先级：
 
 **关键观察：格的边界恰好就是 `Entity.source` 枚举里已经单列的 network / vision。** 这不是巧合——现有设计已经本能地画出了格的边界，只是没把它说成"格"。
 
-### 5.4 DOMDebugger listener oracle：已落地（执行平面），待喂感知实体
+### 5.4 DOMDebugger listener oracle：已落地（执行平面 + bounded 感知 hints）
 
 初稿写"代码未落地"是错的。核实源码：`bridge_src/service_worker/dom_flow.ts:146-170` 的 `collectNodeListeners` **已经在用** `DOMDebugger.getEventListeners`（`:152`，`{ objectId, depth: 1, pierce: true }`），且 listener 记录里**已带 `backendNodeId`**（`:166`）。这是最近 execution-plane CDP fusion 那条 commit 的产出。
 
@@ -276,8 +311,8 @@ axMatchScore（ax.ts:403-417）优先级：
 
 - 它证明"listener 真值挂在格上"不是设计推测，是仓库里跑通的形态——`listener.backendNodeId` 直接就是格的根脊柱，无需新解析路径。
 - 它证明 CDP 直连通道（`cdpSend` + `DOMDebugger`）在 bridge service worker 里可用，感知层补强 #1/#2 的通道前提已具备。
-- 当前 gap 只有一处：listener oracle 的结果**没喂感知实体**（`Entity` 无 listeners 字段），而是走执行平面供 `dom_flow` 链路自用。格上点亮这条脊柱 = 把已跑通的 listener 记录从执行平面拉一条只读分支进感知 `Entity.hints` 或一格内字段。
-- 代价侧的"每节点 `DOM.resolveNode`"判断需修正：`dom_flow.ts:151` 是按 selector 解析 objectId（`resolveNodeObjectId`），而感知层若走格内路径，入口是 `backendNodeId` → `DOM.resolveNode`，解析更直接（selector 已不必要）。但每节点一次 CDP 调用的成本结构不变，限定集合的决策（§8 决策四）仍是 open 的。
+- 当前 gap 已从"没喂感知实体"收窄为真实站点成本/深度边界：产品 scan 路径已只对 capped `data.actionables[]` backend candidates 执行 `backendNodeId` → `DOM.resolveNode` → `DOMDebugger.getEventListeners`，并把 bounded listener facts 写入 `Entity.hints.listeners`；`data.listenerOracle` 记录 candidate/probed/listener/failure 统计。
+- 代价侧的"每节点 `DOM.resolveNode`"判断需修正：`dom_flow.ts:151` 是按 selector 解析 objectId（`resolveNodeObjectId`），而感知层入口是 `backendNodeId` → `DOM.resolveNode`，selector 已不必要。但每节点一次 CDP 调用的成本结构不变，所以实现只 probe 少量候选，不全量扫描。
 
 ### 5.5 承重修正：captureSnapshot 是「identity+几何+遮挡」真值面，**不替换** scanBundle 的「页面语义」真值面
 
@@ -570,44 +605,44 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 ## 8. 后续演进决策（本轮关闭，按证据重开）
 
-本节保留恒等格后续演进方向，但这些项**不是**当前未完成计划。它们已在 §0.2 作为 closed decisions 收口；重开必须先满足 §0.3 的证据项，拿到当前代码机制证据、明确执行合同和可运行 gate，再进入新的激活执行线。
+本节保留恒等格后续演进方向，但这些项**不是**当前未完成计划。OOPIF 复合主键、关系层中央图、ledger 容量、frontier 预算都已在本轮由 closed decision 重开核验；当前状态分别见决策一/二/三/五。真实站点复杂边界只按 §0.3 的证据门另起执行合同。
 
 ### 决策一：关系层是一等公民还是 entity 的派生字段？
 
-- **派生字段（现状）**：`entity.relations[]` 挂节点上。简单，但遮挡这类对称/传递关系重复存储，反查要全扫。
-- **一等公民**：独立 `Map<(from,to), Relation>` 表。语义准、查询快，但要新数据结构。
-- 倾向：一等公民，但属 schema 升级，需另起执行合同。
+- **当前关闭状态：一等公民的中央图已落地，entity 字段保持派生兼容。**
+- `RelationGraph` 是完整关系层：`edges` 存边本体，`bySource` / `byTarget` / `byType` 提供反查索引；`entity.relations[]` 继续作为 capped 派生字段，维持旧消费面和 compact summary。
+- 输出分层已关闭：model-facing envelope 只给 `relations.summary/highlights`；完整图只进 saved artifact 的 `envelope.relationGraph`，并由 `artifact_hints.jsonPaths.relationGraph` 指路。当前不需要再做 schema big-bang。
 
-### 决策二：复合主键升级 `(targetId, backendNodeId)` 何时做、怎么做？
+### 决策二：复合主键升级 `(targetId, backendNodeId)` 的当前状态
 
-不做 → OOPIF 永远进不来（现 fail-closed）。
+不做 → OOPIF 永远进不来；当前已完成最小可验证路径，缺失 target 仍 fail-closed。
 
-做 → 正确的终态是 `nodeKey = { targetId?, backendNodeId }`（或字符串复合 key），但**不能 big-bang**。现有消费者很多仍吃裸 backendNodeId：`relations.ts` 的 `b:<backendNodeId>` anchor key（`:58`）、AX hints、`input.ref`（`dom_flow.ts`）、execute stdlib 的 `pi.click`、listener facts。一次性改主键会同时打破所有这些路径。
+做 → 正确的终态是 `nodeKey = { targetId?, backendNodeId }`（或字符串复合 key），但**不能 big-bang**。本轮按双写兼容落地：target-scoped 节点优先写 `t:<targetId>:b:<backendNodeId>`，同时保留 `b:<backendNodeId>`；裸 backend ref 继续在同 target 路径工作，target-scoped ref 则显式带 `targetId`。
 
-迁移策略（双写兼容）：
+已执行的迁移策略（双写兼容）：
 
 1. **内部新增** `nodeKey = { targetId?, backendNodeId }`。同源 frame 下 `targetId` 为空，退化为裸 backendNodeId——这一步对现有同源行为零影响。
-2. **关系层先双注册**：新 `nodeKey` + 旧 `b:<backendNodeId>` anchor 同时写入，消费侧先读新 key、miss 再读旧 key。`relations.ts:58` 的 key 空间扩展但不删除。
-3. **public / ref / runtime 继续接受裸 backendNodeId**，由 tab/target 上下文补 scope（bridge 已知当前 tab 的 target）。agent-facing 的 ref 不暴露 targetId——它对 agent 是实现细节。
-4. **OOPIF 能力单独 gate**，不和首轮 projection-first（§7）或 bootstrap（§5.8）绑定。OOPIF 落地的标志是 `Target.attachToTarget` 真正路由跨 frame target，而不是主键改完。
+2. **关系层双注册**：新 `nodeKey` + 旧 `b:<backendNodeId>` anchor 同时写入，消费侧先读新 key，旧 key 保持兼容。
+3. **public / ref / runtime 继续接受裸 backendNodeId**。裸 ref 走当前 tab/target 上下文；只有跨 target/OOPIF 的 backend ref 显式携带 `targetId`。
+4. **OOPIF runtime gate 已补证**：`34-oopif-composite-key-boundary` 证明 `Target.setAutoAttach` / `Target.attachedToTarget` flat session 路由、child click delivery、旧 ref 兼容和 invalid target fail-closed。
 
-用户已表态"可以打通，但不着急"——本轮按非阻塞 closed decision 处理。双写策略的意义正是让它可以**晚做而不阻塞其它层**。
+剩余边界不是当前未完成项：真实站点多 OOPIF、导航后 child session 生命周期、跨 target artifact 归属与成本，需新证据门再扩展。
 
 ### 决策三：ledger 容量边界现在合理吗？
 
 - 现 `MAX_FRAMES_PER_SESSION_TAB = 8` / `MAX_TRACE_TERMS_PER_SESSION = 32`。
-- ledger 若升格为时间感知一等载体，长任务（多步表单）可能需要更多历史检测漂移。
-- 放大直接涨内存。需 `eval:browser-workflows` 数据支撑，是 token vs 可靠性的权衡。
+- 本轮结论：**保持不变**。最终 fixture eval 33/33 passed，temporal profile 175 个样本 `historyLostCount=0`，没有当前任务因为历史帧不足失败。
+- 扩容的 reopen 条件：真实长任务或 blind eval 给出可复现 history miss，且扩大 ring 后 task success 提升、token/内存增量可接受。没有这类证据时，调大只是在增加状态面。
 
 ### 决策四：DOMDebugger listeners 进格还是留 probe？
 
 - 进格：每个交互候选节点带 listeners 真值，agent 单次决策即可判断可点性。
 - 留 probe：agent 按需查，省 CDP 调用。
-- 倾向：**交互候选节点进格（限定集合，不全量）**，因为"挂得上 backendNodeId 且是节点固有交互属性"，符合判据。但限定集合的规则要明确（按 role/actionability 候选）。
+- 当前执行结果：**交互候选节点进格（限定集合，不全量）**。产品路径只 probe capped `data.actionables[]` backend candidates，listener facts 只作为 `Entity.hints.listeners` 证据，不变成 action 策略。后续若重开，只讨论真实站点成本、事件委托深链 depth、是否需要关系边。
 
 ### 决策五：projection-first envelope 的预算分配 + frontier 信号
 
-第 7 层的止血要做，但"projection / collections / frontier refs / ref pool 各占多少预算"是后续重开问题：
+第 7 层的止血已做，"projection / collections / frontier refs / ref pool 各占多少预算"本轮按现有预算关闭：
 
 - 预算太倾向 projection → agent 看到结构但缺可操作入口（frontier refs 太少）。
 - 预算太倾向 frontier refs → 退化回 entity-first 的老问题。
@@ -615,7 +650,7 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 **frontier refs 的信号来源见 §7.3c**：是多信号合成（relevance + actionability + treeDiff/diff + relations weight + ledger 的 recency/stability），**ledger 不是 saliency oracle**，只是五信号之一。初稿"依赖 ledger 版本序列"的表述已被 §7.3c 推翻——这条决策不与决策三（ledger 容量）强耦合，frontier 选择有独立实现路径。
 
-预算分配与 frontier 选择的验证：必须 `eval:browser-workflows` 量化三个指标——首屏 token、agent 二次 artifact 查询次数、任务完成率——不能只看 token 降没降。只降 token 而任务完成率掉，说明 frontier 信号合成有问题（agent 找不到该点的入口）。
+预算分配与 frontier 选择的验证已补持久化指标：`evals/browser-workflows/runner.mjs` 记录 `observeCallCount`、`observeResultTextChars`、`observeEstimatedTokens`、`artifactJsonPathReadCalls`、`artifactBroadReadCalls`。最终 run 33/33 passed，`browser_observe` 18 次，observe 估算 token max=3335，`browser_artifact` 7 次且 4 次为 jsonPath 精读；没有证据要求调大首屏预算或重分配。未来若真实 agent friction 显示找不到入口，再以任务成功率 + 二次 artifact 读取成本 A/B 重开。
 
 ### 决策六：第 1 层与第 7 层的交付顺序
 
@@ -625,8 +660,8 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 1. **Projection-first envelope**（§7）——改 renderer/envelope 默认展示，立刻止血，不依赖 identity lattice。
 2. **文档补齐**——relations 在 projection-first 中的位置（§7.3b）、frontier 信号来源（§7.3c）、entity pool/artifact 精读路径（§5.10 约束 6）。
-3. **Bootstrap diagnostics + fail-open contract**（§5.8/§5.9/§5.6b）——不急着大规模盖 backendNodeId，先把"可失败的盖章过程"的状态机、诊断字段、降级路径做扎实。
-4. **Identity lattice 精确 join + 复合 key + listener/遮挡/growthProbe 真值面扩展**（§5.1/§5.4/§5.5/§4）——地基工程，在 1–3 的 eval 信号之上逐步推进。
+3. **Bootstrap diagnostics + fail-open contract**（§5.8/§5.9/§5.6b）——已按 best-effort 产品路径落地：`matched` 才盖 `backendNodeId`，`ambiguous/stale/missing/unsupported` fail-open，证据见 §0.4。
+4. **Identity lattice 精确 join + 复合 key + listener/遮挡/growthProbe 真值面扩展**（§5.1/§5.4/§5.5/§4）——遮挡已走 DOMSnapshot paint-order 落地，listener 已作为 bounded read-only hints 落地，growthProbe 数据通道已接入 scan → collections，OOPIF 复合 key 已完成 fixture 级 runtime gate；剩余方向转为真实站点边界和关系层/ledger/frontier 扩展。
 
 第 7 层先落地会**暴露**第 1 层的缺口（agent 精读 ref pool 时遇到错配实例），这是好事——给第 1 层提供 eval 信号，让"读准"的优先级由真实 agent 痛点驱动，而不是架构师的预判。
 
@@ -638,22 +673,25 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 | 架构概念 | 现有代码 | 缺口 |
 | --- | --- | --- |
-| 格的根 backendNodeId | `axRuntime.ts:300-311` 已建 `nodeByBackend` | DOM 侧 scanBundle 无 backendNodeId，主键未对齐 |
+| 格的根 backendNodeId | `axRuntime.ts` 已建 `nodeByBackend`，`identityBootstrap.ts` 已把 DOMSnapshot geometry rows best-effort 盖到 scan actionables | fixture 产品路径已对齐；剩余是真实站点 animation/virtualized/multiframe 边界 |
 | 双向权威字段合并 | `ax.ts:363-390` `mergedEntity` | 已对，保留 |
-| 关系层 | `entity.ts` `EntityRelation[]` + `relations.ts` 关系图 | 是派生字段，未升一等公民 |
-| ledger | `perceptionLedger.ts` 完整存在 | versionStamp 已在 frame 里，定位正确 |
+| 关系层 | `entity.ts` `EntityRelation[]` + `relations.ts` 中央 `RelationGraph` | 完整图已是一等公民；entity 字段为 capped 派生兼容 |
+| ledger | `perceptionLedger.ts` 完整存在 | versionStamp 已在 frame 里，定位正确；容量经 eval 保持现值 |
 | 格的边界（network/vision 留外） | `types.ts` `Entity.source` 枚举 | 已本能画出，未显式表述为格 |
-| DOMDebugger listener oracle | **已在执行平面落地** `dom_flow.ts:146-170`，listener 带 backendNodeId | **未喂感知实体**（§5.4）—— 代码已跑通，只差拉一条只读分支进 `Entity.hints` |
-| captureSnapshot 的 identity+几何 | `axRuntime.ts:242-262, 321` 已按 backendNodeId 列式取 | 只喂了 AX 几何；DOM scan 侧未用它盖 backendNodeId 章 |
-| LayerTree / OOPIF | 未在感知路径用 | 脊柱未点亮（OOPIF 需复合主键，见 §8 决策二） |
-| growthProbe | `collections.ts:463-477,630` 消费但 scanBundle 不产 | 数据通道断链 |
+| DOMDebugger listener oracle | **已在执行平面落地** `dom_flow.ts:146-170`，listener 带 backendNodeId；`runtime.ts` 已将 capped backend candidates 的 listener facts 写入 `Entity.hints.listeners` | fixture 产品路径已点亮；剩余是真实站点候选集成本和事件委托深链策略 |
+| captureSnapshot 的 identity+几何 | `axRuntime.ts` 按 backendNodeId 列式取 geometry rows；`runtime.ts` 复用同一次 snapshot 对 scan data 做 bootstrap | 已完成 best-effort 盖章；剩余是真实站点边界与成本证据 |
+| DOMSnapshot paint-order | `bridge_src/service_worker/layer.ts` 内部探针已证明 `paintOrder + backendNodeId + bounds` 可取；`relations.ts` 已按 paint-order 相邻候选 + spatial bucket 派生 capped `coveredBy`/`occludes`；`runtime.ts` 在 merge/remint 后写入关系层 | 已完成 fixture 级关系落地；剩余缺口是真实站点复杂合成边界与像素反查是否需要 |
+| OOPIF | `nodeKey.ts` / `identityGraph.ts` / `relations.ts` 已双写 target-scoped 与 legacy backend keys；`cdp.ts` 通过 `Target.setAutoAttach` flat session 路由 child target；`input.ref` 消费 `targetId` 并 fail-closed | fixture runtime gate 已点亮；剩余是真实站点多 OOPIF/导航后 session 生命周期与 artifact 归属边界 |
+| growthProbe | `buildScanScript.ts` 已注入 bounded `collectGrowthProbe`，`scanRunner.ts` 已将 `data.growthProbe` 传入 `collections.ts`；`collections.ts` 按 count/height/windowShift 证据分类 | fixture 产品路径已点亮；剩余是真实站点 lazy/virtualized 组件副作用成本和嵌套 scrollport 策略 |
 
 **结论：本架构是对现有代码的"重新表述 + 定向点亮"，不是重写。** 大部分代码不动，动的是（与 §5.5/§5.6/§5.7 的承重修正一致）：
 
 - **scanBundle 不替换**：保留为页面语义真值面，captureSnapshot 新增为 identity+几何+遮挡真值面，两者 backendNodeId join 一次（§5.5）。
-- DOM scan 实体补 backendNodeId 字段（盖这个章需一次几何 bootstrap，§5.6；坐标系 parity 是一等验证门，§5.7）。
-- listener oracle 从执行平面拉只读分支进感知 `Entity.hints`（§5.4，代码已跑通）。
-- entity 的主键、relations 的存储形态、ledger 的版本字段消费。
+- DOM scan 实体已 best-effort 补 backendNodeId 字段（一次几何 bootstrap，§5.6；坐标系 parity / fail-open 状态机由 `32-abml-identity-bootstrap-evidence` 与单测锁定）。
+- DOMSnapshot paint-order 已作为遮挡关系脊柱接入；后续只在复杂合成/像素反查边界上继续加证据，不再回到 LayerTree owner mapping。
+- listener oracle 已从执行平面拉只读分支进感知 `Entity.hints.listeners`（§5.4，capped / fail-open / 非策略）。
+- growthProbe 已从 collection kernel 的悬空消费点变为产品数据通道：scan artifact 产出 `data.growthProbe`，observe collections 消费并输出 `virtualized` continuation evidence。
+- 关系图 artifact 精读路径、eval 指标持久化和 ledger/projection 预算证据闭环。
 
 ---
 
@@ -663,23 +701,28 @@ ledger 在这张表里只是五行之一，不是 oracle。派生执行计划必
 
 - `identityGraph` 给出 backendNodeId 覆盖率、source 分布、语义 anchor 与 triggered 边计数；完整 `byRef` 图只进 artifact。
 - `browser_observe mode=scan` 的 model-facing envelope 顶层暴露 `identity` 摘要，紧预算下仍保留 compact 诊断。
-- `artifact_hints.jsonPaths` 明确指向 `envelope.identityGraph`、`envelope.snapshotProjection`、`envelope.relations`、`envelope.collections`，agent 不需要猜 raw artifact 路径。
+- `artifact_hints.jsonPaths` 明确指向 `envelope.identityGraph`、`envelope.snapshotProjection`、`envelope.relations`、`envelope.relationGraph`、`envelope.collections`，agent 不需要猜 raw artifact 路径。
+- `RelationGraph` 完整图 artifact-only，`bySource/byTarget/byType` 可用于关系反查；`entity.relations[]` 继续作为 capped 兼容派生字段。
+- workflow eval summary 持久化 observe token 与 artifact read mix；temporal profile 证明当前 ledger 容量没有 history loss，projection/frontier 预算无当前失败信号。
 - `CURRENT.md`、README、skill、CHANGELOG 与 tests/contracts 同步；`docs:sync` 与最终 `npm run check` 通过。
 
-关闭后本文件保留为当前架构参考，不迁入 archive，除非后续另起更深的 bootstrap/OOPIF/LayerTree 执行合同。
+关闭后本文件保留为当前架构参考，不迁入 archive，除非后续另起更深的真实站点 bootstrap/listener/OOPIF/DOMSnapshot paint-order 或关系层/ledger/frontier 执行合同。
 
 ---
 
 ## 附：关键文件索引
 
-- `src/abml-core/ax.ts:403-443` — 当前几何评分融合算法（待被 backendNodeId JOIN 替代为主路径）
+- `src/abml-core/identityBootstrap.ts` — DOM scan `backendNodeId` best-effort bootstrap 状态机与诊断统计
+- `src/abml-core/nodeKey.ts` — `(targetId, backendNodeId)` 复合 nodeKey 与 legacy backend key 兼容格式
+- `bridge_src/service_worker/cdp.ts` + `bridge_src/service_worker/input.ts` — `Target.setAutoAttach` flat child session 路由与 target-scoped `input.ref`
+- `src/abml-core/ax.ts` — `mergeDomAndAxEntities` 先按 backendNodeId 精确 join，缺失时降级到几何评分融合
 - `src/abml-core/ax.ts:30-32` — `AX_AUTHORITATIVE_STATE` / `GEOMETRY_MATCH_RADIUS_PX` / `COINCIDENT_BOX_IOU`
 - `src/abml/verbs/axRuntime.ts:281-289` — `Accessibility.getFullAXTree`（无 frameId，OOPIF gap 根因）
 - `src/abml/verbs/axRuntime.ts:300-311` — `nodeByBackend` 映射（格根的雏形）
-- `src/abml/verbs/axRuntime.ts:321` — `DOMSnapshot.captureSnapshot`（已用一半，DOM 真值面候选）
+- `src/abml/verbs/axRuntime.ts` — `DOMSnapshot.captureSnapshot` geometry / paintOrder 行来源
 - `src/abml-core/entity.ts` — Entity / EntityRelation schema（关系层雏形）
-- `src/abml/verbs/runtime.ts:327-332` — scanBundle 注入点（DOM 侧无 backendNodeId 的根因）
+- `src/abml/verbs/runtime.ts` — scanBundle 注入点与 DOMSnapshot bootstrap 汇合点
 - `src/abml/perceptionLedger.ts:20-71` — ledger 完整形态 + 容量边界
-- `src/abml-core/collections.ts:463-477,630` — growthProbe 断链消费点
+- `src/scan/buildScanScript.ts` + `src/tools/observe/scanRunner.ts` + `src/abml-core/collections.ts:463-477,630` — growthProbe 产出/映射/消费链
 - `AGENTS.md:21` — Root-Truth Sourcing 原则（本架构的法理依据）
 - `AGENTS.md:57-60` — ABML perception-only 红线（本架构兼容性边界）

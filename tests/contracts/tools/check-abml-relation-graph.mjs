@@ -3,7 +3,7 @@
 // Locks the two-pass relation pipeline end-to-end without a browser: a fake AX tree (covering
 // every batch-1 relation family — labelledBy, controls/expandedTarget, table cellOf/rowOf/
 // columnOf/headerFor, currentIn) flows through readAxEntities → mergeAxIntoDomEntities (mints
-// refs) → materializeRelations → buildRelationSummary, and the relation summary surfaces at the
+// refs) → materializeRelationGraph → buildRelationSummary, and the relation summary surfaces at the
 // envelope top-level via the real distiller. Asserts: every relation family materializes, every
 // target is a pi-ref:// (no backend/AX node id leaks), relations.summary survives to the envelope.
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readAxEntities, mergeAxIntoDomEntities } from "../../../src/abml/verbs/axRuntime.ts";
-import { materializeRelations, buildRelationSummary, deriveStateRelationAnchors } from "../../../src/abml/relations.ts";
+import { materializeRelationGraph, buildRelationSummary, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../../src/abml/relations.ts";
 import { distilledTextResult } from "../../../src/tools/resultMiddleware.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -41,20 +41,76 @@ const nodes = [
 const fakeServer = {
 	async sendCommand(command) {
 		if (command.cdpMethod === "Accessibility.getFullAXTree") return { id: "ax", acknowledged: true, tabId: 1, data: { result: { nodes } } };
+		if (command.cdpMethod === "DOMSnapshot.captureSnapshot") return { id: "snapshot", acknowledged: true, tabId: 1, data: { result: {
+			documents: [{
+				nodes: {
+					backendNodeId: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+					nodeName: Array.from({ length: 11 }, (_, i) => i),
+					attributes: Array.from({ length: 11 }, () => []),
+				},
+				layout: {
+					nodeIndex: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+					bounds: [
+						[0, 0, 20, 20], [0, 30, 20, 20], [100, 100, 160, 80], [10, 90, 20, 20], [300, 0, 20, 20],
+						[320, 0, 20, 20], [340, 0, 20, 20], [360, 0, 20, 20], [380, 0, 20, 20], [400, 0, 20, 20],
+						[130, 120, 160, 80],
+					],
+					paintOrders: [1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 3],
+				},
+			}],
+			strings: [],
+		} } };
 		if (command.cdpMethod === "DOM.getBoxModel") return { id: "box", acknowledged: true, tabId: 1, data: { result: {} } };
 		throw new Error(`unexpected ${command.cdpMethod}`);
 	},
 };
 
-const { entities: axEntities, anchors } = await readAxEntities(fakeServer, { tabId: 1, observationId: "snap", url: "https://example.test/relations", timeoutMs: 5_000 });
+const axRead = await readAxEntities(fakeServer, { tabId: 1, observationId: "snap", url: "https://example.test/relations", timeoutMs: 5_000 });
+const { entities: axEntities, anchors } = axRead;
 assert.ok(anchors.length > 0, "AX runtime must extract relation anchors");
+assert.equal(axRead.diagnostics?.paintOrder?.entryCount, axRead.paintOrderEntries?.length, "AX diagnostics must expose compact paint-order counts");
+assert.equal(axRead.diagnostics?.paintOrder?.entries, undefined, "AX diagnostics must not inline full paint-order entries");
+assert.ok((axRead.paintOrderEntries?.length ?? 0) >= 2, "AX runtime must retain full paint-order entries for relation derivation/artifacts");
+
+let fallbackSnapshotCalls = 0;
+let fallbackBoxModelCalls = 0;
+const fallbackServer = {
+	async sendCommand(command) {
+		if (command.cdpMethod === "Accessibility.getFullAXTree") return { id: "ax", acknowledged: true, tabId: 1, data: { result: { nodes: [
+			{ nodeId: "f1", backendDOMNodeId: 21, role: { value: "button" }, name: { value: "Fallback geometry" } },
+		] } } };
+		if (command.cdpMethod === "DOMSnapshot.captureSnapshot") {
+			fallbackSnapshotCalls += 1;
+			if (command.params?.includePaintOrder === true) throw new Error("includePaintOrder unsupported");
+			return { id: "snapshot", acknowledged: true, tabId: 1, data: { result: {
+				documents: [{
+					nodes: { backendNodeId: [21] },
+					layout: { nodeIndex: [0], bounds: [[12, 24, 100, 32]] },
+				}],
+				strings: [],
+			} } };
+		}
+		if (command.cdpMethod === "DOM.getBoxModel") {
+			fallbackBoxModelCalls += 1;
+			return { id: "box", acknowledged: true, tabId: 1, data: { result: {} } };
+		}
+		throw new Error(`unexpected fallback ${command.cdpMethod}`);
+	},
+};
+const fallbackRead = await readAxEntities(fallbackServer, { tabId: 1, observationId: "snap-fallback", url: "https://example.test/fallback", timeoutMs: 5_000 });
+assert.equal(fallbackSnapshotCalls, 2, "AX runtime must retry DOMSnapshot without includePaintOrder when paint-order is unsupported");
+assert.equal(fallbackBoxModelCalls, 0, "AX runtime fallback must preserve snapshot geometry instead of forcing per-node DOM.getBoxModel");
+assert.equal(fallbackRead.diagnostics?.snapshotGeometryCount, 1, "fallback snapshot geometry must still populate backend geometry");
+assert.equal(fallbackRead.diagnostics?.paintOrder?.snapshotUnsupported, true, "fallback diagnostics must mark paint-order snapshot unsupported");
+assert.equal(fallbackRead.diagnostics?.paintOrder?.geometryFallbackUsed, true, "fallback diagnostics must mark geometry fallback");
 
 // DOM-less: every AX node becomes an appended entity with a minted pi-ref. AX anchors (property/
 // table) + DOM-sourced derived anchors (currentIn from the synthetic aria-current + stashed
 // container; occlusion would come from scan state). Then materialize.
 const merged = mergeAxIntoDomEntities([], axEntities);
 const stateAnchors = deriveStateRelationAnchors(merged);
-const related = materializeRelations(merged, [...anchors, ...stateAnchors]);
+const paintOrderAnchors = derivePaintOrderRelationAnchors(merged, axRead.paintOrderEntries || []);
+const related = materializeRelationGraph(merged, [...anchors, ...stateAnchors, ...paintOrderAnchors]).entities;
 
 function relationsOf(role, name) {
 	const entity = related.find((e) => e.role?.toLowerCase() === role && e.name === name);
@@ -70,12 +126,14 @@ assert.ok(typesOf("textbox", "Email").includes("labelledBy"), "textbox → label
 assert.deepEqual(typesOf("cell", "Alice"), ["cellOf", "columnOf", "rowOf"], "data cell exposes table + row + column header context");
 assert.ok(typesOf("columnheader", "Name").includes("headerFor"), "column header → headerFor table");
 assert.ok(typesOf("link", "Products").includes("currentIn"), "aria-current link → currentIn nav (DOM-sourced derive)");
+assert.ok(typesOf("textbox", "Email").includes("coveredBy"), "lower paint-order textbox → coveredBy higher paint-order link");
+assert.ok(typesOf("link", "Products").includes("occludes"), "higher paint-order link → occludes lower paint-order textbox");
 
 // Occlusion (R1.6): occluded entity ↔ the element stacked on top, matched by selector via the
 // page hit-test. Hand-built (AX tree carries no occlusion); proves the geometry-relation derive.
 const occluded = { ref: "pi-ref://control/under", kind: "control", role: "button", name: "Under", state: { visible: true, occluded: true, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom", hints: { selector: "#under", occluderSelector: "#overlay" } };
 const overlay = { ref: "pi-ref://control/overlay", kind: "control", role: "button", name: "Overlay", state: { visible: true, occluded: false, disabled: false, focused: false, editable: false, inViewport: true }, source: "dom", hints: { selector: "#overlay" } };
-const occRelated = materializeRelations([occluded, overlay], deriveStateRelationAnchors([occluded, overlay]));
+const occRelated = materializeRelationGraph([occluded, overlay], deriveStateRelationAnchors([occluded, overlay])).entities;
 assert.deepEqual(occRelated.find((e) => e.ref === "pi-ref://control/under")?.relations?.map((r) => r.type), ["coveredBy"], "occluded entity → coveredBy occluder");
 assert.deepEqual(occRelated.find((e) => e.ref === "pi-ref://control/overlay")?.relations?.map((r) => r.type), ["occludes"], "occluder → occludes (inverse)");
 
@@ -115,10 +173,14 @@ assert.equal(envelope.relations.highlightCount, undefined, "relations.highlightC
 
 // --- Static wiring: the runtime pipeline + live smoke + fixture + scripts stay in place --------
 const runtimeSrc = readRepo("src/abml/verbs/runtime.ts");
-assert.ok(runtimeSrc.includes("materializeRelations") && runtimeSrc.includes("relationCount"), "ABML read runtime must materialize relations after the merge and surface a relationCount");
+assert.ok(runtimeSrc.includes("materializeRelationGraph") && runtimeSrc.includes("relationCount"), "ABML read runtime must materialize relations after the merge and surface a relationCount");
 assert.ok(runtimeSrc.includes("deriveStateRelationAnchors"), "ABML read runtime must derive DOM-sourced (currentIn/occlusion) anchors post-merge");
+assert.ok(runtimeSrc.includes("derivePaintOrderRelationAnchors"), "ABML read runtime must derive DOMSnapshot paint-order anchors post-merge");
 const axRuntimeSrc = readRepo("src/abml/verbs/axRuntime.ts");
 assert.ok(axRuntimeSrc.includes("currentContainerKey"), "axRuntime must stash currentContainerKey for DOM-sourced currentIn");
+assert.ok(axRuntimeSrc.includes("includePaintOrder") && axRuntimeSrc.includes("paintOrderEntries"), "axRuntime must collect DOMSnapshot paint-order owner evidence");
+assert.ok(axRuntimeSrc.includes("geometryFallbackUsed") && axRuntimeSrc.includes("snapshotUnsupported"), "axRuntime must preserve geometry by retrying DOMSnapshot without includePaintOrder when paint-order is unsupported");
+assert.ok(runtimeSrc.includes("paintOrderEvidence") && runtimeSrc.includes("entries: axRead.paintOrderEntries"), "ABML read runtime must keep full paint-order entries artifact-side, not in compact diagnostics");
 const scanSrc = readRepo("src/scan/buildScanScript.ts");
 const scanCaptureSrc = readRepo("capture-src/entries/scanTemplate.ts");
 const scanBundleSrc = readRepo("src/capture/generated/scanBundle.ts");
@@ -143,4 +205,4 @@ for (const marker of ["aria-labelledby", "aria-controls", "aria-expanded", "<th"
 	assert.ok(fixture.includes(marker), `relations fixture must exercise ${marker}`);
 }
 
-console.log(`abml relation graph ok — ${anchors.length} anchors, families: controls/expandedTarget/labelledBy/cellOf/rowOf/columnOf/headerFor/currentIn; summary + highlights at envelope top-level; all targets pi-ref://; runtime/observe/middleware wired; smoke + fixture present`);
+console.log(`abml relation graph ok — ${anchors.length} anchors + ${paintOrderAnchors.length} paint-order anchors, families: controls/expandedTarget/labelledBy/cellOf/rowOf/columnOf/headerFor/currentIn/paintOrder-occlusion; summary + highlights at envelope top-level; all targets pi-ref://; runtime/observe/middleware wired; smoke + fixture present`);

@@ -131,6 +131,9 @@ type PiProtocolSchema = JsonRecord & {
       "frame.addNewDocumentScript",
       "frame.removeNewDocumentScript"
     ],
+    "layer": [
+      "layer.probe"
+    ],
     "transfer": [
       "transfer.download",
       "transfer.upload"
@@ -613,6 +616,13 @@ type PiProtocolSchema = JsonRecord & {
         "identifier"
       ]
     },
+    "layer.probe": {
+      "domain": "layer",
+      "tabScoped": true,
+      "accessMode": "read",
+      "internal": true,
+      "notes": "Internal LayerTree mechanism probe for owner backendNodeId evidence; not an agent-facing workflow command."
+    },
     "html.get": {
       "domain": "html",
       "tabScoped": true,
@@ -987,7 +997,12 @@ type PiProtocolSchema = JsonRecord & {
     "OOPIF_SESSION_UNSUPPORTED": {
       "category": "runtime.input",
       "retryable": false,
-      "summary": "Referenced backend node belongs to a target/session this workstream does not route."
+      "summary": "Referenced backend node belongs to a target/session that could not be attached or resolved safely."
+    },
+    "TARGET_ATTACH_FAILED": {
+      "category": "runtime.cdp",
+      "retryable": true,
+      "summary": "Persistent CDP could not attach or recover a child target session."
     },
     "NO_TAB": {
       "category": "driver.tab",

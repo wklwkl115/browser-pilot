@@ -581,7 +581,27 @@
         "cross-origin-iframe",
         "frame-list",
         "target-domain-signal",
-        "composite-key-non-claim"
+        "composite-key-proof",
+        "old-ref-compatibility"
+      ]
+    },
+    {
+      "id": "35-abml-growth-probe-evidence",
+      "spec": "35-abml-growth-probe-evidence.md",
+      "fixtures": [
+        "fixtures/abml-growth-probe.html"
+      ],
+      "primaryTools": [
+        "browser_tabs",
+        "browser_observe",
+        "browser_execute",
+        "browser_artifact"
+      ],
+      "evidence": [
+        "growthProbe",
+        "windowShifted",
+        "collectionCompleteness",
+        "no-public-continuation"
       ]
     }
   ]

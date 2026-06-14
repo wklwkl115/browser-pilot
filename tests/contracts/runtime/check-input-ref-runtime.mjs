@@ -15,10 +15,16 @@ globalThis.chrome = {
 		async attach() {},
 		async detach() {},
 		async sendCommand(target, method, params = {}) {
-			cdpCalls.push({ tabId: target.tabId, method, params });
+			cdpCalls.push({ tabId: target.tabId, sessionId: target.sessionId, method, params });
+			if (method === "Target.setAutoAttach") {
+				queueMicrotask(() => {
+					for (const listener of listeners) listener({ tabId: target.tabId }, "Target.attachedToTarget", { sessionId: "session:child-target-1", targetInfo: { targetId: "child-target-1", type: "iframe", url: "https://child.test/" } });
+				});
+				return {};
+			}
 			if (method === "DOM.getBoxModel") {
 				if (mode === "stale") throw new Error("No node with given id");
-				return { border: [10, 20, 50, 20, 50, 60, 10, 60] };
+				return { model: { border: [10, 20, 50, 20, 50, 60, 10, 60] } };
 			}
 			return {};
 		},
@@ -42,6 +48,16 @@ assert.deepEqual(backend.data.input.events, ["mouseMoved", "mousePressed", "mous
 assert.deepEqual(backend.data.input.coordinates, { x: 30, y: 40 });
 assert(cdpCalls.some((call) => call.method === "DOM.scrollIntoViewIfNeeded" && call.params.backendNodeId === 91));
 assert(cdpCalls.some((call) => call.method === "DOM.getBoxModel" && call.params.backendNodeId === 91));
+
+reset("ok");
+const scoped = await handlePiBrowserRefInputCommand("input.ref", 7, { action: "click", target: { refId: "pi-ref://control/oopif", backendNodeId: 91, targetId: "child-target-1" }, timeoutMs: 1000 });
+assert.equal(scoped.ok, true);
+assert.equal(scoped.data.input.targetScoped, true);
+assert.equal(scoped.data.input.attachRouteUsed, true);
+assert.equal(scoped.data.input.target.targetId, "child-target-1");
+assert(cdpCalls.some((call) => call.method === "Target.setAutoAttach" && call.params.flatten === true), "target-scoped backend refs must enable flat auto-attach for child target routing");
+assert(cdpCalls.some((call) => call.method === "DOM.getBoxModel" && call.sessionId === "session:child-target-1"), "backend lookup must be routed through the child session");
+assert(cdpCalls.some((call) => call.method === "Input.dispatchMouseEvent" && call.sessionId === "session:child-target-1"), "input dispatch must be routed through the child session");
 
 reset("ok");
 const point = await handlePiBrowserRefInputCommand("input.ref", 7, { action: "click", target: { refId: "pi-ref://control/point", point: { x: 12, y: 34 } }, timeoutMs: 1000 });

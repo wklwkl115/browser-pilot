@@ -1,6 +1,7 @@
 import type { BrowserBridgeServer } from "../../driver/BrowserBridgeServer.js";
 import { BrowserBridgeError } from "../../driver/errors.js";
 import { isRecord } from "../../utils/records.js";
+import { assertBridgeCommandSucceeded } from "../../tools/bridgeResultValidation.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../tools/pageScriptEvaluation.js";
 import { scanEntitiesForEnvelope, summarizeScanData } from "../../tools/summaries/scan.js";
@@ -11,7 +12,8 @@ import type { Entity } from "../entity.js";
 import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../stream.js";
 import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../causal.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
-import { materializeRelations, deriveStateRelationAnchors } from "../relations.js";
+import { bootstrapScanBackendNodeIds } from "../identityBootstrap.js";
+import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../relations.js";
 import { normalizeAbmlError } from "../errors.js";
 import { decideRefAccess, defaultRefPolicyForKind } from "../refPolicy.js";
 import { deriveSemanticRefAnchors } from "../semanticRefAnchor.js";
@@ -38,10 +40,156 @@ export type BrowserAbmlRuntimeOptions = {
 const DEFAULT_ACTION_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const DEFAULT_SCAN_CAPTURE_MAX_CHARS = 100_000;
+const LISTENER_PROBE_MAX_CANDIDATES = 8;
+const LISTENER_PROBE_MAX_PER_NODE = 4;
+
+type ListenerHint = {
+	type?: string;
+	useCapture?: boolean;
+	passive?: boolean;
+	once?: boolean;
+	backendNodeId?: number;
+	scriptId?: string;
+	lineNumber?: number;
+	columnNumber?: number;
+};
+
+type ListenerProbeStats = {
+	candidateCount: number;
+	probedCount: number;
+	nodeWithListenersCount: number;
+	listenerCount: number;
+	truncated: boolean;
+	failureCount: number;
+	elapsedMs: number;
+	maxCandidates: number;
+	maxListenersPerNode: number;
+};
 
 function originOf(url: string | undefined): string | undefined {
 	if (!url) return undefined;
 	try { return new URL(url).origin; } catch { return undefined; }
+}
+
+function numberValue(value: unknown): number | undefined {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function entityBackendNodeId(entity: Entity): number | undefined {
+	const hinted = numberValue(entity.hints?.backendNodeId);
+	if (hinted !== undefined && hinted > 0) return hinted;
+	for (const locator of entity.locators || []) {
+		if (locator.by !== "backendNodeId") continue;
+		const value = numberValue(locator.value);
+		if (value !== undefined && value > 0) return value;
+	}
+	return undefined;
+}
+
+function listenerProbeCandidates(entities: Entity[]): Array<{ entity: Entity; backendNodeId: number }> {
+	const out: Array<{ entity: Entity; backendNodeId: number }> = [];
+	const seen = new Set<number>();
+	for (const entity of entities) {
+		const jsonPath = typeof entity.hints?.jsonPath === "string" ? entity.hints.jsonPath : "";
+		if (!jsonPath.startsWith("data.actionables[")) continue;
+		const backendNodeId = entityBackendNodeId(entity);
+		if (backendNodeId === undefined || seen.has(backendNodeId)) continue;
+		seen.add(backendNodeId);
+		out.push({ entity, backendNodeId });
+		if (out.length >= LISTENER_PROBE_MAX_CANDIDATES) break;
+	}
+	return out;
+}
+
+async function sendRuntimeCdp(server: AbmlBrowserRuntimeServer, options: { browserSessionId?: string; tabId: number; timeoutMs: number; cdpMethod: string; params?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+	const result = await server.sendCommand({
+		cmd: "persistent_cdp",
+		action: "send",
+		tabId: options.tabId,
+		cdpMethod: options.cdpMethod,
+		params: options.params || {},
+		persistent: true,
+		timeoutMs: options.timeoutMs,
+	}, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
+	assertBridgeCommandSucceeded(result, `persistent_cdp:${options.cdpMethod}`);
+	const data = isRecord(result.data) ? result.data : {};
+	return isRecord(data.result) ? data.result : data;
+}
+
+function listenerHintsFromCdp(value: unknown): { listeners: ListenerHint[]; truncated: boolean } {
+	const root = isRecord(value) ? value : {};
+	const raw = Array.isArray(root.listeners) ? root.listeners : [];
+	const listeners = raw.slice(0, LISTENER_PROBE_MAX_PER_NODE).filter(isRecord).map((listener): ListenerHint => ({
+		...(stringValue(listener.type) ? { type: stringValue(listener.type) } : {}),
+		...(booleanValue(listener.useCapture) !== undefined ? { useCapture: booleanValue(listener.useCapture) } : {}),
+		...(booleanValue(listener.passive) !== undefined ? { passive: booleanValue(listener.passive) } : {}),
+		...(booleanValue(listener.once) !== undefined ? { once: booleanValue(listener.once) } : {}),
+		...(numberValue(listener.backendNodeId) ? { backendNodeId: numberValue(listener.backendNodeId) } : {}),
+		...(stringValue(listener.scriptId) ? { scriptId: stringValue(listener.scriptId) } : {}),
+		...(numberValue(listener.lineNumber) !== undefined ? { lineNumber: numberValue(listener.lineNumber) } : {}),
+		...(numberValue(listener.columnNumber) !== undefined ? { columnNumber: numberValue(listener.columnNumber) } : {}),
+	}));
+	return { listeners, truncated: raw.length > listeners.length };
+}
+
+async function annotateListenerHints(server: AbmlBrowserRuntimeServer, entities: Entity[], options: { browserSessionId?: string; tabId: number; timeoutMs: number }): Promise<{ entities: Entity[]; stats: ListenerProbeStats }> {
+	const startedAt = Date.now();
+	const candidates = listenerProbeCandidates(entities);
+	const byRef = new Map<string, ListenerHint[]>();
+	let listenerCount = 0;
+	let truncated = false;
+	let failureCount = 0;
+	let probedCount = 0;
+	const timeoutMs = Math.max(500, Math.min(options.timeoutMs, 3_000));
+	for (const candidate of candidates) {
+		try {
+			const resolved = await sendRuntimeCdp(server, { ...options, timeoutMs, cdpMethod: "DOM.resolveNode", params: { backendNodeId: candidate.backendNodeId } });
+			const objectId = stringValue(isRecord(resolved.object) ? resolved.object.objectId : undefined);
+			if (!objectId) {
+				failureCount += 1;
+				continue;
+			}
+			const listenerResult = await sendRuntimeCdp(server, { ...options, timeoutMs, cdpMethod: "DOMDebugger.getEventListeners", params: { objectId, depth: 1, pierce: true } });
+			probedCount += 1;
+			const hints = listenerHintsFromCdp(listenerResult);
+			truncated = truncated || hints.truncated;
+			if (hints.listeners.length) {
+				byRef.set(candidate.entity.ref, hints.listeners);
+				listenerCount += hints.listeners.length;
+			}
+		} catch {
+			failureCount += 1;
+		}
+	}
+	const next = byRef.size
+		? entities.map((entity) => {
+			const listeners = byRef.get(entity.ref);
+			return listeners ? { ...entity, hints: { ...(entity.hints || {}), listeners } } : entity;
+		})
+		: entities;
+	return {
+		entities: next,
+		stats: {
+			candidateCount: candidates.length,
+			probedCount,
+			nodeWithListenersCount: byRef.size,
+			listenerCount,
+			truncated,
+			failureCount,
+			elapsedMs: Date.now() - startedAt,
+			maxCandidates: LISTENER_PROBE_MAX_CANDIDATES,
+			maxListenersPerNode: LISTENER_PROBE_MAX_PER_NODE,
+		},
+	};
 }
 
 function remintSemanticTemplateRefs(entities: Entity[], context: { browserSessionId?: string; tabId?: number; url?: string; observationId: string; capturedAt: number }): Entity[] {
@@ -356,14 +504,20 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
 			cacheKey: input.axCacheKey,
 		}).catch((): AxReadResult => ({ entities: [], anchors: [], diagnostics: { axMs: 0, cdpCalls: 0, geometryCdpCalls: 0, nodeCount: 0, interestingNodeCount: 0, cacheHit: false } }));
-		const summaryData = registerScanEntityRefs(data, entityContext);
+		const axRead = await axReadPromise;
+		const bootstrapped = bootstrapScanBackendNodeIds(data, axRead.snapshotGeometryEntries || [], {
+			scanCapturedAt: snapshot.capturedAt,
+			scanCapturedAtIso: new Date(snapshot.capturedAt).toISOString(),
+			snapshotStartedAt: axRead.diagnostics?.snapshotStartedAt,
+			snapshotEndedAt: axRead.diagnostics?.snapshotEndedAt,
+		});
+		const summaryData = registerScanEntityRefs(bootstrapped.data, entityContext);
 		const summary = summarizeScanData(summaryData, bridge.tabs || [], {
 			detailLevel: "summary",
 			maxChars: options.maxChars ?? DEFAULT_MAX_CHARS,
 			entityContext,
 		});
 		const entities = scanEntitiesForEnvelope(summaryData, { entityContext });
-		const axRead = await axReadPromise;
 		const mergedEntitiesRaw = axRead.entities.length ? mergeAxIntoDomEntities(entities, axRead.entities) : entities;
 		const mergedEntities = remintSemanticTemplateRefs(mergedEntitiesRaw, {
 			browserSessionId: bridge.browserSessionId,
@@ -372,16 +526,50 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 			observationId: snapshot.snapshotId,
 			capturedAt: snapshot.capturedAt,
 		});
+		const listenerProbe = await annotateListenerHints(server, mergedEntities, {
+			browserSessionId: target.browserSessionId,
+			tabId: target.tabId,
+			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
+		});
+		const entitiesWithListenerHints = listenerProbe.entities;
 		// AX anchors (property/table) + DOM-sourced anchors derived from the merged entities'
-		// own state (currentIn from aria-current, occludes/coveredBy from the hit-test). Materialize
-		// to typed pi-ref edges only after the merge mints final refs.
-		const allAnchors = [...axRead.anchors, ...deriveStateRelationAnchors(mergedEntities)];
-		const relatedEntities = allAnchors.length ? materializeRelations(mergedEntities, allAnchors) : mergedEntities;
+		// own state (currentIn from aria-current, occludes/coveredBy from the hit-test) +
+		// DOMSnapshot paint-order anchors. Materialize to typed pi-ref edges only after the merge
+		// mints final refs, so backendNodeId never leaks into public relation targets.
+		const allAnchors = [
+			...axRead.anchors,
+			...deriveStateRelationAnchors(entitiesWithListenerHints),
+			...derivePaintOrderRelationAnchors(entitiesWithListenerHints, axRead.paintOrderEntries || []),
+		];
+		const relationMaterialization = allAnchors.length ? materializeRelationGraph(entitiesWithListenerHints, allAnchors) : undefined;
+		const relatedEntities = relationMaterialization?.entities ?? entitiesWithListenerHints;
+		const relationGraph = relationMaterialization?.graph;
 		const relationCount = relatedEntities.reduce((sum, entity) => sum + (entity.relations?.length ?? 0), 0);
 		const filtered = descriptor ? filterEntitiesForRef(relatedEntities, descriptor) : relatedEntities;
+		const paintOrderEvidence = axRead.paintOrderEntries?.length
+			? {
+				entryCount: axRead.paintOrderEntries.length,
+				ownerBackendNodeIdCount: new Set(axRead.paintOrderEntries.map((entry) => entry.backendNodeId)).size,
+				entries: axRead.paintOrderEntries,
+			}
+			: undefined;
 		return {
 			entities: filtered,
-			data: { summary, snapshotId: snapshot.snapshotId, observationId: snapshot.snapshotId, tabId: target.tabId, url: data?.url, axEntityCount: axRead.entities.length, mergedEntityCount: mergedEntities.length, relationCount, axDiagnostics: axRead.diagnostics },
+			data: {
+				summary,
+				snapshotId: snapshot.snapshotId,
+				observationId: snapshot.snapshotId,
+				tabId: target.tabId,
+				url: data?.url,
+				axEntityCount: axRead.entities.length,
+				mergedEntityCount: mergedEntities.length,
+				relationCount,
+				...(relationGraph && relationGraph.edgeCount ? { relationGraph } : {}),
+				backendNodeIdBootstrap: bootstrapped.stats,
+				listenerOracle: listenerProbe.stats,
+				axDiagnostics: axRead.diagnostics,
+				...(paintOrderEvidence ? { paintOrderEvidence } : {}),
+			},
 		};
 	});
 }

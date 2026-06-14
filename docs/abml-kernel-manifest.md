@@ -12,14 +12,14 @@ one-way dependency direction:
 
 - **PURE CORE** — lives in `src/abml-core/`. Zero browser / zero Node dependencies. Pure
   functions and types that *model* a page: entities, refs, the DOM↔AX merge, actionability rules,
-  verb decisions, error shaping, temporal entity diff, collection completeness, and mechanism-arm structure diff. Portable,
+  verb decisions, error shaping, temporal entity diff, DOM identity bootstrap, collection completeness, and mechanism-arm structure diff. Portable,
   unit-testable without a browser, and the long-term candidate for an isolated `@pi/abml-core`
-  package. **23 modules + an `index.ts` barrel.**
+  package. **25 modules + an `index.ts` barrel.**
 - **RUNTIME** — lives in `src/abml/`. Everything that talks to the live browser: imports
   `driver/`, `tools/`, `scan/`, `resources/`, or `node:*`, or owns live session ledger state.
   Drives the pure core with real page data. **7 files.**
 
-`src/abml/` also keeps **23 thin re-export shims** at the old pure-core paths, so existing importers such as `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`, the runtime verbs, and unit tests keep their import paths unchanged.
+`src/abml/` also keeps **24 thin re-export shims** at the old pure-core paths, so existing importers such as `src/resources/resourceStore.ts`, `src/tools/summaries/scan.ts`, `src/tools/observeRunners.ts`, the runtime verbs, and unit tests keep their import paths unchanged.
 
 The boundary is **enforced by a contract test**, not by convention:
 `tests/contracts/drift/check-abml-core-boundary.mjs` (run via `npm run check:abml-core-boundary`,
@@ -43,7 +43,7 @@ each doc links back here.
 | [`docs/archive/abml-execution-plan.md`](archive/abml-execution-plan.md) | Historical execution contract (no longer the active queue — see `CURRENT.md` / `TODO.md`) | you want the historical phase log / file mapping |
 | [`docs/abml-optimization-reference.md`](abml-optimization-reference.md) | Optimization reference for ABML cost/precision tradeoffs | you are changing perception budgets, summaries, or optimization heuristics |
 
-## Pure core (23 — zero browser/Node deps)
+## Pure core (25 — zero browser/Node deps)
 
 <!-- BEGIN GENERATED: abml-pure-core-manifest (npm run docs:sync) -->
 | File | Role |
@@ -60,11 +60,13 @@ each doc links back here.
 | `stream.ts` | Capture-ref, network-entry, and event entity shaping. |
 | `causal.ts` | Passive network-delta causal plane summary. |
 | `grouping.ts` | ARIA-grounded grouping, descriptor derivation, scope helpers, display text normalization. |
+| `identityBootstrap.ts` | Best-effort scan rect to DOMSnapshot backendNodeId bootstrap with fail-open diagnostics. |
+| `nodeKey.ts` | Target-scoped backendNodeId key formatting plus legacy backend key compatibility. |
 | `templating.ts` | Repeated sibling structure templating and compact instance handles. |
 | `treeDiff.ts` | Template-level living diff over repeated structures. |
 | `semanticRefAnchor.ts` | Pure semantic ref-anchor candidate and shadow-hash derivation. |
 | `snapshotProjection.ts` | Living snapshot projection and attached template deltas. |
-| `collections.ts` |  |
+| `collections.ts` | Collection completeness and read-only continuation evidence for long, virtualized, lazy, and paginated structures. |
 | `identityGraph.ts` | Pure semantic identity graph used to stabilize entity identity across observations. |
 | `errors.ts` | `normalizeAbmlError` plus recovery shaping. |
 | `verbs/router.ts` | Verb dispatch types and actionability/verification failure builders. |

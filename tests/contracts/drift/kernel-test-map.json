@@ -30,8 +30,14 @@
     "src/abml-core/errors.ts": [
       "tests/unit/abml/errors.test.ts"
     ],
+    "src/abml-core/identityBootstrap.ts": [
+      "tests/unit/abml/identity-bootstrap.test.ts"
+    ],
     "src/abml-core/identityGraph.ts": [
       "tests/unit/abml/identityGraph.test.ts"
+    ],
+    "src/abml-core/nodeKey.ts": [
+      "tests/unit/abml/nodeKey.test.ts"
     ],
     "src/abml-core/inference.ts": [
       "tests/unit/abml/inference.optimization.test.ts",

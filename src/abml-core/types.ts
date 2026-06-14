@@ -1,5 +1,5 @@
 export type Locator =
-	| { by: "backendNodeId"; value: number }
+	| { by: "backendNodeId"; value: number; targetId?: string }
 	| { by: "axNodeId"; value: string }
 	| { by: "attrSignature"; value: Record<string, string> }
 	| { by: "css"; value: string }
@@ -24,6 +24,7 @@ export type RefOwner = {
 	browserSessionId?: string;
 	tabId?: number;
 	frameRef?: string;
+	targetId?: string;
 	topLevelOrigin?: string;
 };
 

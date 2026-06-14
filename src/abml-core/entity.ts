@@ -86,6 +86,7 @@ export type Entity = {
 export type ScanEntityContext = {
 	browserSessionId?: string;
 	tabId?: number;
+	targetId?: string;
 	url?: string;
 	observationId: string;
 	capturedAt: number;
@@ -219,10 +220,13 @@ function actionEntityState(node: Record<string, unknown>): EntityState {
 
 export function buildActionableLocators(node: Record<string, unknown>): Locator[] {
 	const locators: Locator[] = [];
+	const backendNodeId = numberValue(node.backendNodeId);
+	const targetId = stringValue(node.targetId ?? node.cdpTargetId);
 	const selector = stringValue(node.selector);
 	const role = stringValue(node.role) || roleForTag(stringValue(node.tag));
 	const name = stringValue(node.action) || stringValue(node.label) || stringValue(node.text);
 	const point = geometryPoint(node.point)?.point;
+	if (backendNodeId !== undefined && backendNodeId > 0) locators.push({ by: "backendNodeId", value: backendNodeId, ...(targetId ? { targetId } : {}) });
 	if (selector) locators.push({ by: "css", value: selector });
 	if (name) locators.push({ by: "textAnchor", value: name, ...(role ? { role } : {}), exact: false });
 	if (point) locators.push({ by: "point", x: point.x, y: point.y });
@@ -251,6 +255,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 	const controlsSelectors = stringArray(node.controlsSelectors);
 	const ownsSelectors = stringArray(node.ownsSelectors);
 	const expandedTargetSelectors = stringArray(node.expandedTargetSelectors);
+	const backendNodeId = numberValue(node.backendNodeId);
+	const targetId = stringValue(node.targetId ?? node.cdpTargetId) || context.targetId;
+	const backendNodeIdBootstrap = isRecord(node.backendNodeIdBootstrap) ? node.backendNodeIdBootstrap : undefined;
 	const entity: Omit<Entity, "ref"> = {
 		kind,
 		role,
@@ -263,6 +270,9 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 		hints: {
 			jsonPath: `data.actionables[${Number(node.index ?? 0)}]`,
 			selector: stringValue(node.selector),
+			...(backendNodeId !== undefined && backendNodeId > 0 ? { backendNodeId } : {}),
+			...(targetId ? { targetId } : {}),
+			...(backendNodeIdBootstrap ? { backendNodeIdBootstrap } : {}),
 			...(Array.isArray(node.handlers) && node.handlers.length ? { handlers: node.handlers } : {}),
 			// The element stacked on top at our center point when the hit-test failed — the occluder.
 			// Resolved to an entity ref (coveredBy/occludes) in relation derivation; harmless if unresolved.
@@ -287,6 +297,7 @@ export function buildDomEntityFromScanActionable(node: Record<string, unknown>, 
 			owner: {
 				...(context.browserSessionId ? { browserSessionId: context.browserSessionId } : {}),
 				...(context.tabId !== undefined ? { tabId: context.tabId } : {}),
+				...(targetId ? { targetId } : {}),
 				...(origin ? { topLevelOrigin: origin } : {}),
 			},
 			policy: defaultRefPolicyForKind(kind),

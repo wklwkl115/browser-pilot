@@ -45,6 +45,9 @@
     <button id="scroll-target" class="target" data-bootstrap-case="scroll">Scrolled target</button>
   </main>
   <script>
+    document.getElementById("stable-target").addEventListener("click", () => {
+      document.body.dataset.stableClicked = "true";
+    }, { passive: true });
     window.__abmlBootstrapFixture = {
       collect() {
         const viewport = {

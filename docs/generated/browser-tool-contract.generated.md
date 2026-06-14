@@ -213,6 +213,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `NO_SOURCE` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `NO_TAB` | driver | driver.tab | yes | schema | `src/abml/verbs/runtime.ts`, `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserBridgeServer.ts` |
 | `NO_TAB_ID` | cdp | runtime.cdp | no | heuristic | `bridge_src/service_worker/cdp.ts` |
+| `NO_TARGET_ID` | unknown | unknown | no | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `OOPIF_SESSION_UNSUPPORTED` | native | runtime.input | no | schema |  |
 | `PI_CLICK_BINDING_UNAVAILABLE` | native | runtime.input | yes | schema | `src/tools/executeStdlibPrelude.ts` |
 | `PI_CLICK_CANCELLED` | native | runtime.input | yes | schema | `src/tools/executeStdlibPrelude.ts` |
@@ -244,6 +245,8 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `TAB_ID_REQUIRED` | tool | tool.tabs | no | schema | `src/tools/registerTabsTool.ts` |
 | `TAB_LEASE_CONFLICT` | driver | driver.lease | no | schema | `src/driver/BrowserBridgeCommandService.ts`, `src/driver/BrowserLeaseRegistry.ts` |
 | `TAB_NOT_FOUND` | driver | driver.tab | yes | schema | `src/driver/errors.ts` |
+| `TARGET_ATTACH_FAILED` | cdp | runtime.cdp | yes | schema | `bridge_src/service_worker/cdp.ts` |
+| `TARGET_DETACH_FAILED` | unknown | unknown | yes | heuristic | `bridge_src/service_worker/cdp.ts` |
 | `TARGET_DISABLED` | abml | abml.actionability | yes | schema |  |
 | `TARGET_NOT_EDITABLE` | abml | abml.actionability | no | schema |  |
 | `TARGET_OCCLUDED` | abml | abml.actionability | yes | schema |  |
