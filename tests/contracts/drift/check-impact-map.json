@@ -1083,6 +1083,7 @@
         "scripts/lib/managed-blocks.mjs",
         "scripts/sync-concept-ownership.mjs",
         "scripts/sync-docs.mjs",
+        "scripts/sync-managed-blocks.mjs",
         "tests/contracts/drift/check-docs-sync.mjs"
       ],
       "unresolvedInputs": [],
@@ -2571,21 +2572,21 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 204,
+          "line": 205,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 506,
+          "line": 507,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 623,
+          "line": 624,
           "reason": "dynamic file read"
         },
         {
@@ -2655,21 +2656,21 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 204,
+          "line": 205,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 506,
+          "line": 507,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 623,
+          "line": 624,
           "reason": "dynamic file read"
         },
         {

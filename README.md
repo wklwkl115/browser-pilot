@@ -278,6 +278,7 @@ npm run build             # Compile Node.js source to dist/
 npm run lint              # ESLint
 npm run check             # Run all contract/unit/boundary tests
 npm run quality:local     # Full local gate: build + lint + check + npm pack --dry-run --ignore-scripts --json
+npm run release:portable  # Clean public-file tree + npm tarball consumer-install smoke
 ```
 
 Narrow gates for faster iteration:

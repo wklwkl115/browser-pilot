@@ -74,7 +74,9 @@ function readBaseline(pathname = WORKSTREAM_SCOPE_BASELINE_PATH) {
 }
 
 export function summarizeWorkstreamScope(root = ROOT, options = {}) {
-	const activation = parseCurrentActivation(readFileSync(path.join(root, "CURRENT.md"), "utf8"));
+	const currentPath = path.join(root, "CURRENT.md");
+	if (!existsSync(currentPath)) return { declared: [], active: false, declaredRoot: "missing CURRENT.md" };
+	const activation = parseCurrentActivation(readFileSync(currentPath, "utf8"));
 	const declared = activation.declared || [];
 	if (!declared.length) return { declared: [], active: false };
 	const baseline = readBaseline(options.baselinePath);

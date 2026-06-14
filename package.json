@@ -156,6 +156,7 @@
     "check": "npm run check:all",
     "quality:local": "npm run build:bridge && npm run lint && npm run check && npm pack --dry-run --json && node -e \"console.log('quality:local ok. Optional runtime smoke: npm run smoke:browser:isolated. Artifacts: .pi/browser-artifacts/. If bridge port range 18765-18784 is exhausted, inspect .pi/browser-artifacts/smoke-browser-results.json bridge.port and stop owners manually.')\"",
     "release:local": "node tests/release/release-local-acceptance.mjs",
+    "release:portable": "node tests/release/release-portable-acceptance.mjs",
     "release:local:smoke": "node tests/release/release-local-acceptance.mjs --smoke --rollback-smoke",
     "check:boundaries": "node tests/contracts/drift/check-boundaries.mjs",
     "check:distill-core-boundary": "node tests/contracts/drift/check-distill-core-boundary.mjs",

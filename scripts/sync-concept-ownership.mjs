@@ -291,7 +291,10 @@ function blockId(schemaName) {
 }
 
 function syncDoc() {
-	if (!existsSync(path.join(root, DOC))) throw new Error(`${DOC} missing`);
+	if (!existsSync(path.join(root, DOC))) {
+		console.log(checkOnly ? "concept ownership doc skipped; reference doc absent" : "concept ownership sync skipped; reference doc absent");
+		return;
+	}
 	let text = read(DOC);
 	text = replaceManagedBlock(text, "concept-envelope-fields", renderEnvelopeTable(managedBlockContent(text, "concept-envelope-fields")));
 	for (const entry of [...distillerEntries(), { toolName: "browser_observe mode=scan", schemaName: "ScanSummarySchema", schema: ScanSummarySchema }]) {

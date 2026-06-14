@@ -99,6 +99,7 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"query:markers": "developer query tool; not a proof obligation node",
 	"release:local": "release acceptance gate, not part of default local check graph",
 	"release:local:smoke": "release acceptance smoke, opt-in runtime gate",
+	"release:portable": "portable clean-tree and consumer-install acceptance gate, not part of default local check graph",
 	"scope:begin": "developer workstream-scope baseline helper; DAG summary consumes its artifact",
 	"smoke:abml:internal-routing": "runtime smoke, explicitly opt-in outside default local checks",
 	"smoke:browser": "runtime smoke, explicitly opt-in outside default local checks",

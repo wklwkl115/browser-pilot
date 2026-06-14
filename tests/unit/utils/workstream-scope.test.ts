@@ -55,6 +55,18 @@ test("workstream scope matcher supports exact paths and /** globs", () => {
 	assert.equal(matchesScope("README.md", "docs/**"), false);
 });
 
+test("workstream scope summary is inert when public trees omit CURRENT.md", () => {
+	const root = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-workstream-no-current-"));
+	try {
+		const summary = summarizeWorkstreamScope(root);
+		assert.equal(summary.active, false);
+		assert.deepEqual(summary.declared, []);
+		assert.equal(summary.declaredRoot, "missing CURRENT.md");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("workstream scope ignores files that were already dirty at baseline", () => {
 	const root = mkdtempSync(path.join(os.tmpdir(), "browser-pilot-workstream-scope-"));
 	const git = (args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });

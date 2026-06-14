@@ -51,6 +51,7 @@ assert(qualityLocal.includes("npm run build:bridge") && qualityLocal.includes("n
 assert(qualityLocal.includes("smoke:browser:isolated") && qualityLocal.includes("Optional runtime smoke"), "quality:local must print the optional isolated smoke next step");
 assert(!qualityLocal.split("node -e")[0].includes("smoke:browser"), "quality:local must not launch browser smoke by default");
 assert.equal(pkg.scripts?.["release:local"], "node tests/release/release-local-acceptance.mjs", "release:local must expose local pack acceptance without browser smoke by default");
+assert.equal(pkg.scripts?.["release:portable"], "node tests/release/release-portable-acceptance.mjs", "release:portable must expose clean public-tree and consumer-install acceptance");
 assert.equal(pkg.scripts?.["release:local:smoke"], "node tests/release/release-local-acceptance.mjs --smoke --rollback-smoke", "release:local:smoke must exercise current and rollback isolated smoke");
 assert.equal((eslintConfig.match(/files:\s*\["cli\/\*\*\/\*\.ts"\]/g) || []).length, 1, "eslint config must have one authoritative CLI TypeScript block");
 assert(eslintConfig.includes('files: ["cli/**/*.ts"]') && eslintConfig.includes('project: "./tsconfig.json"'), "CLI TypeScript linting must use the Node tsconfig as its authoritative project");
@@ -101,6 +102,13 @@ assert(releaseScript.includes("verifyUnpackedPackage") && releaseScript.includes
 assert(releaseScript.includes("PI_BROWSER_SMOKE_EXTENSION_DIR") && releaseScript.includes("PI_BROWSER_SMOKE_MINIMAL") && releaseScript.includes("--rollback-smoke"), "release acceptance must support current and rollback isolated smoke");
 assert(releaseScript.includes("PI_BROWSER_CI_RELEASE_SMOKE") && releaseScript.includes("PI_BROWSER_CI_ROLLBACK_SMOKE"), "release acceptance must expose CI opt-in env gates for current and rollback isolated smoke");
 assert(releaseScript.includes("failureDiagnostics") && releaseScript.includes("packFiles") && releaseScript.includes("buildManifest") && releaseScript.includes("chromeProfile") && releaseScript.includes("bridgePort") && releaseScript.includes("smokeArtifact"), "release acceptance failures must expose pack/build/profile/port/smoke diagnostics");
+const portableReleaseScript = read("tests/release/release-portable-acceptance.mjs");
+assert(portableReleaseScript.includes("git") && portableReleaseScript.includes("ls-files") && portableReleaseScript.includes("--exclude-standard"), "portable release acceptance must build from the public Git file set, not ignored local files");
+assert(portableReleaseScript.includes('runNpm(["run", "docs:sync"]') && portableReleaseScript.includes("check:all:package") && portableReleaseScript.includes('runConsumerBin(["--help"])') && portableReleaseScript.includes('runConsumerBin(["commands", "--json"])') && portableReleaseScript.includes('runConsumerBin(["schema", "observe", "--json"])') && portableReleaseScript.includes('runConsumerBin(["status", "--json"])'), "portable release acceptance must sync generated public-tree docs, run package gates, and no-browser consumer CLI smoke");
+assert(portableReleaseScript.includes("forbiddenPublicPathRe") && portableReleaseScript.includes("docs\\/archive") && portableReleaseScript.includes("agent-audits"), "portable release acceptance must reject internal-only public tree paths");
+assert(workflow.includes("npm run release:portable"), "CI package acceptance must run the portable clean-tree/consumer install gate");
+const docIndexScript = read("scripts/sync-doc-indexes.mjs");
+assert(docIndexScript.includes("governance docs absent") && docIndexScript.includes("presentIndexInputs.length === 0"), "doc index sync must be inert in sanitized public trees that omit internal governance docs");
 const tsxScripts = [
 	"check:tools", "test:unit", "test:unit:abml", "test:unit:cli", "test:unit:distill", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "smoke:browser", "smoke:browser:transfer", "smoke:browser:isolated", "smoke:browser:scan-summary", "smoke:browser:debugger-evidence", "smoke:browser:correlation-chain", "smoke:browser:intercept-response", "smoke:browser:intercept-replace-script", "smoke:browser:intercept-uninstall-fail-closed", "smoke:browser:intercept-request-mutate", "smoke:browser:intercept-tab-close-cleanup", "smoke:browser:intercept-lease-conflict", "smoke:browser:websocket-session", "check:runtime-fixtures", "smoke:cli", "smoke:cli:full", "check:cli-parity", "check:cli-json-envelopes",
 ];
@@ -175,6 +183,7 @@ assert(packed.has("scripts/check-graph.mjs") && packed.has("scripts/check-dag.mj
 assert(packed.has("scripts/sync-capture.mjs"), "npm package must include capture sync script");
 assert(packed.has("capture-src/entries/scanTemplate.ts") && packed.has("src/capture/generated/scanBundle.ts"), "npm package must include capture source and generated bundles");
 assert(packed.has("tests/release/release-local-acceptance.mjs"), "npm package must include local release acceptance script");
+assert(packed.has("tests/release/release-portable-acceptance.mjs"), "npm package must include portable release acceptance script");
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("tests/contracts/drift/abml-core-manifest.js") && packed.has("tests/contracts/drift/expected-package-facts.js") && packed.has("tests/contracts/drift/check-doc-paths.mjs"), "npm package must include shared contract manifests and doc-path gate");
 assert(packed.has("skills/browser-pilot/SKILL.md") && packed.has("skills/browser-pilot-cli/SKILL.md"), "npm package must include public browser-pilot skills");

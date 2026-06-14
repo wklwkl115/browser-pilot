@@ -227,6 +227,7 @@ npm run build             # 编译 Node.js 源码到 dist/
 npm run lint              # ESLint
 npm run check             # 运行全部契约/单元/边界测试
 npm run quality:local     # 完整本地门禁：build + lint + check + npm pack --dry-run --ignore-scripts --json
+npm run release:portable  # 干净公开文件树 + npm tarball 空项目安装 smoke
 ```
 
 按域缩小范围快速迭代：

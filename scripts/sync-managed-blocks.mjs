@@ -84,6 +84,10 @@ function renderClaudeAgentsBlock() {
 
 function syncClaude() {
 	const rel = "CLAUDE.md";
+	if (!existsSync(path.join(root, rel)) && !existsSync(path.join(root, "AGENTS.md"))) {
+		console.log("CLAUDE managed block skipped; governance docs absent");
+		return;
+	}
 	const text = read(rel);
 	const marker = "## Design, Governance & Workflow Rules (inlined from AGENTS.md)";
 	const idx = text.indexOf(marker);
@@ -191,6 +195,10 @@ function renderAbmlCrosscutting(existing) {
 
 function syncAbmlKernelManifest() {
 	const rel = "docs/abml-kernel-manifest.md";
+	if (!existsSync(path.join(root, rel))) {
+		console.log("ABML kernel manifest managed block skipped; internal doc absent");
+		return;
+	}
 	let text = read(rel);
 	text = text.replace(/\*\*\d+ modules \+ an `index\.ts` barrel\.\*\*/, `**${PURE_CORE.length} modules + an \`${BARREL}\` barrel.**`);
 	text = text.replace(/\*\*\d+ files\.\*\*/, `**${RUNTIME.length} files.**`);
@@ -278,6 +286,10 @@ function renderMaintainerInventory(existing) {
 
 function syncMaintainerMap() {
 	const rel = "docs/maintainer-map.md";
+	if (!existsSync(path.join(root, rel))) {
+		console.log("maintainer map managed block skipped; internal doc absent");
+		return;
+	}
 	let text = read(rel);
 	const content = renderMaintainerInventory(managedBlockContent(text, "maintainer-layer-inventory"));
 	text = ensureManagedBlock(text, "maintainer-layer-inventory", content, (current, block) => {
@@ -341,6 +353,10 @@ function renderPlaybookGateTable() {
 
 function syncAgentDevelopment() {
 	const rel = "docs/agent-development.md";
+	if (!existsSync(path.join(root, rel))) {
+		console.log("agent development managed block skipped; internal doc absent");
+		return;
+	}
 	let text = read(rel);
 	const content = renderPlaybookGateTable();
 	text = ensureManagedBlock(text, "change-path-playbook-gates", content, (current, block) => {

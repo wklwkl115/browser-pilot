@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,17 @@ const todoPath = path.join(root, "TODO.md");
 const currentPath = path.join(root, "CURRENT.md");
 const archiveDir = path.join(root, "docs", "archive");
 const checkOnly = process.argv.includes("--check");
+
+const indexInputs = [archivePath, roadmapPath, todoPath, currentPath, archiveDir];
+const presentIndexInputs = indexInputs.filter((file) => existsSync(file));
+if (presentIndexInputs.length === 0) {
+	console.log(checkOnly ? "doc indexes skipped; governance docs absent" : "doc index sync skipped; governance docs absent");
+	process.exit(0);
+}
+if (presentIndexInputs.length !== indexInputs.length) {
+	const missing = indexInputs.filter((file) => !existsSync(file)).map((file) => path.relative(root, file).replace(/\\/g, "/"));
+	throw new Error(`Unable to sync doc indexes; missing governance input(s): ${missing.join(", ")}`);
+}
 
 const files = {
 	compressionPlan: "docs/archive-history-compression-plan.md",

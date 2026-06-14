@@ -65,6 +65,13 @@ Full local gate (build + lint + check + `npm pack --dry-run --ignore-scripts --j
 npm run quality:local
 ```
 
+Portable release check (copies only the public Git file set, installs from the
+packed tarball in an empty consumer project, and runs no-browser CLI smoke):
+
+```bash
+npm run release:portable
+```
+
 Narrow gates for faster iteration:
 
 ```bash
