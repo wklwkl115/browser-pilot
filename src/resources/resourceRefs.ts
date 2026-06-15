@@ -13,7 +13,7 @@ export {
 	resolveRefUriDetailed,
 	resolveResourceUri,
 	resourceRefStore,
-} from "../adapters/resources-fs/resourceStore.js";
+} from "./resourceStore.js";
 
 export type {
 	BrowserResultResource,

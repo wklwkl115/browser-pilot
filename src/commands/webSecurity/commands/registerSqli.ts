@@ -5,7 +5,7 @@ import { TAB_SCOPED_TOOL_GUIDELINE, boundedExecutionParams, browserCookieBinding
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawSqlmapBridgeOptions, RawSqliProbeOptions } from "../shared/types.js";
-import { validateOptionalParams } from "../../../validation/middleware.js";
+import { validateOptionalParams } from "../../validationMiddleware.js";
 import { HttpRequestSchema, FuzzMutationsSchema } from "../../../validation/schemas.js";
 
 type SqliToolParams = WebSecuritySharedToolParams & RawSqliProbeOptions & RawSqlmapBridgeOptions & { engine?: unknown };

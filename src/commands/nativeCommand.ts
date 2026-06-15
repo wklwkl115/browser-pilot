@@ -9,7 +9,7 @@ import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveL
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { isRecord } from "../utils/params.js";
-import { validateParams } from "../validation/middleware.js";
+import { validateParams } from "./validationMiddleware.js";
 import { BridgeCommandSchema } from "../validation/schemas.js";
 
 export function defineNativeCommand({ commands, ensureStarted }: CommandRegistrarContext) {

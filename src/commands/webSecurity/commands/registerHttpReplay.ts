@@ -4,7 +4,7 @@ import { runHttpReplay } from "../../webSecurityCore.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, harReplayParams, redirectControlParams, requestSequenceParams, resolveBooleanParam, sharedWebSecurityParams, normalizeWebSecurityToolParams, validateHttpReplayParams, headerRecordParam, type HttpReplayToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
-import { validateOptionalParams } from "../../../validation/middleware.js";
+import { validateOptionalParams } from "../../validationMiddleware.js";
 import { HttpRequestSchema, MultipartSchema, FuzzMutationsSchema, VariablesSchema } from "../../../validation/schemas.js";
 
 export function defineHttpReplayCommand({ commands, ensureStarted }: CommandRegistrarContext) {

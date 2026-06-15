@@ -4,7 +4,7 @@ import { runCookieAnalyze } from "../../webSecurityCore.js";
 import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecurityToolShell, sharedWebSecurityBrowserSessionParams, normalizeWebSecurityToolParams, type CookieAnalyzeToolParams } from "./shared.js";
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
-import { validateOptionalParams } from "../../../validation/middleware.js";
+import { validateOptionalParams } from "../../validationMiddleware.js";
 import { CookiesInputSchema, ClaimMutationsSchema } from "../../../validation/schemas.js";
 
 export function defineCookieAnalyzeCommand({ commands, ensureStarted }: CommandRegistrarContext) {

@@ -67,6 +67,18 @@ const focusRules = [
 		fromLayer: "scan",
 		toLayer: "adapters",
 	},
+	{
+		key: "resources-to-adapters",
+		description: "resource facades importing adapters instead of owning resource contracts or being wired by composition roots",
+		fromLayer: "resources",
+		toLayer: "adapters",
+	},
+	{
+		key: "validation-to-bridge-protocol",
+		description: "neutral validation helpers importing bridge protocol errors instead of returning validation-owned errors/results",
+		fromLayer: "validation",
+		toLayer: "bridge/protocol",
+	},
 ];
 
 function focusedFindings(edges) {

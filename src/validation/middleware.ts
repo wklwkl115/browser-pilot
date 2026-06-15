@@ -1,5 +1,15 @@
-import { BrowserBridgeError } from '../bridge/protocol/errors.js';
 import type { ValidationSchema } from './typeboxCompat.js';
+
+export class ValidationError extends Error {
+	readonly code = "INVALID_BROWSER_COMMAND";
+	readonly details: Record<string, unknown>;
+
+	constructor(message: string, details: Record<string, unknown> = {}) {
+		super(message);
+		this.name = "ValidationError";
+		this.details = details;
+	}
+}
 
 /**
  * Validation middleware for runtime type checking.
@@ -8,12 +18,12 @@ import type { ValidationSchema } from './typeboxCompat.js';
 
 /**
  * Validates parameters against a schema exposing the local safeParse contract.
- * Throws BrowserBridgeError with INVALID_PARAMS code on validation failure.
+ * Throws ValidationError with INVALID_BROWSER_COMMAND code on validation failure.
  *
  * @param schema - Schema to validate against
  * @param params - Parameters to validate
  * @returns Validated and typed parameters
- * @throws {BrowserBridgeError} When validation fails
+ * @throws {ValidationError} When validation fails
  *
  * @example
  * ```typescript
@@ -34,14 +44,10 @@ export function validateParams<T>(
 			return `${path}${e.message}`;
 		}).join('; ');
 
-		throw new BrowserBridgeError(
-			'INVALID_BROWSER_COMMAND',
-			`Parameter validation failed: ${errors}`,
-			{
-				validationErrors: result.error.issues,
-				received: params,
-			}
-		);
+		throw new ValidationError(`Parameter validation failed: ${errors}`, {
+			validationErrors: result.error.issues,
+			received: params,
+		});
 	}
 
 	return result.data;
@@ -54,7 +60,7 @@ export function validateParams<T>(
  * @param value - Value to validate and cast
  * @param schema - Schema defining the expected type
  * @returns Validated and typed value
- * @throws {BrowserBridgeError} When validation fails
+ * @throws {ValidationError} When validation fails
  *
  * @example
  * ```typescript
@@ -77,7 +83,7 @@ export function safeRecordValue<T>(
  * @param schema - Schema to validate against
  * @param params - Optional parameters to validate
  * @returns Validated parameters or undefined
- * @throws {BrowserBridgeError} When validation fails
+ * @throws {ValidationError} When validation fails
  */
 export function validateOptionalParams<T>(
 	schema: ValidationSchema<T>,
@@ -96,7 +102,7 @@ export function validateOptionalParams<T>(
  * @param schema - Schema for individual items
  * @param items - Array of items to validate
  * @returns Array of validated items
- * @throws {BrowserBridgeError} When any validation fails
+ * @throws {ValidationError} When any validation fails
  */
 export function validateArray<T>(
 	schema: ValidationSchema<T>,
@@ -117,14 +123,10 @@ export function validateArray<T>(
 
 	if (errors.length > 0) {
 		const errorMsg = errors.map(e => `[${e.index}]: ${e.error}`).join('; ');
-		throw new BrowserBridgeError(
-			'INVALID_BROWSER_COMMAND',
-			`Array validation failed: ${errorMsg}`,
-			{
-				validationErrors: errors,
-				received: items,
-			}
-		);
+		throw new ValidationError(`Array validation failed: ${errorMsg}`, {
+			validationErrors: errors,
+			received: items,
+		});
 	}
 
 	return validated;
@@ -156,7 +158,7 @@ export function createValidator<T>(
  * @param params - Parameters to validate
  * @param errorMessage - Custom error message prefix
  * @returns Validated parameters
- * @throws {BrowserBridgeError} When validation fails
+ * @throws {ValidationError} When validation fails
  */
 export function validateParamsWithMessage<T>(
 	schema: ValidationSchema<T>,
@@ -171,14 +173,10 @@ export function validateParamsWithMessage<T>(
 			return `${path}${e.message}`;
 		}).join('; ');
 
-		throw new BrowserBridgeError(
-			'INVALID_BROWSER_COMMAND',
-			`${errorMessage}: ${errors}`,
-			{
-				validationErrors: result.error.issues,
-				received: params,
-			}
-		);
+		throw new ValidationError(`${errorMessage}: ${errors}`, {
+			validationErrors: result.error.issues,
+			received: params,
+		});
 	}
 
 	return result.data;

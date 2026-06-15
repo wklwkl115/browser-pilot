@@ -5,7 +5,7 @@ import { TAB_SCOPED_TOOL_GUIDELINE, browserCookieBindingParams, executeWebSecuri
 import type { CommandRegistrarContext } from "../../commandShared.js";
 import { strictCommandParameters } from "../../commandShared.js";
 import type { RawFuzzParamsOptions, RawFuzzPathsOptions, RawFuzzVhostsOptions } from "../shared/types.js";
-import { validateOptionalParams } from "../../../validation/middleware.js";
+import { validateOptionalParams } from "../../validationMiddleware.js";
 import { HttpRequestSchema, FuzzMutationsSchema, JsonValuesSchema } from "../../../validation/schemas.js";
 
 type FuzzToolParams = WebSecuritySharedToolParams & RawFuzzPathsOptions & RawFuzzVhostsOptions & RawFuzzParamsOptions & { mode?: unknown };
