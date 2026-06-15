@@ -43,10 +43,9 @@ export type ArtifactHints = {
 
 /**
  * Build the `artifact_hints` summary field — the single source of truth for which
- * sub-collections of the RAW saved artifact are worth reading on demand. Pi's
- * artifactReadActions() already consumes preferredReads to generate targeted
- * `browser_artifact ... jsonPath=` nextActions; the MCP adapter consumes the same
- * to register Layer-1 section sub-resources. jsonPaths are addressed against the
+ * sub-collections of the RAW saved artifact are worth reading on demand. Result
+ * middleware consumes preferredReads to generate targeted
+ * `browser_artifact ... jsonPath=` nextActions and resource handles. jsonPaths are addressed against the
  * raw saved artifact (which is flat — the distiller input keys sit at top level).
  * Returns `undefined` when there are no resolvable sections (caller spreads nothing).
  */

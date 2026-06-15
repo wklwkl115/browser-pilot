@@ -1,13 +1,12 @@
 'use strict';
 
-// Pi Browser Bridge popup — shows the live connection state between this extension
+// Browser Pilot Bridge popup — shows the live connection state between this extension
 // and the local bridge daemon. The authoritative state lives in the offscreen
-// document, which answers `browser-pilot-offscreen-status` with the open WS ports;
-// the service worker's router ignores that message, so only the offscreen replies.
+// document, which answers `browser-pilot-offscreen-status` with the open WS ports.
 // No cookies, no clipboard, no tab access — read-only status.
 
-const POLL_MS = 1500;
-const QUERY_TIMEOUT_MS = 800;
+const POLL_MS = 2000;
+const QUERY_TIMEOUT_MS = 2000;
 
 const el = {
   body: document.body,
@@ -30,14 +29,17 @@ const el = {
 
 let pollTimer = null;
 let busy = false;
+let pollInFlight = false;
 // Track current consent pairing id to debounce repeated approve/deny taps
 let pendingConsentId = null;
-// Sticky connection indicator: count consecutive non-connected status polls so a
-// single transient miss (SW waking, runtime.sendMessage channel race) does not
-// flicker the UI between 已连接 and 未连接. Only downgrade after this many in a row.
+// Sticky connection indicator: MV3 service workers and offscreen documents can
+// be briefly unavailable while waking. A popup status miss means "not confirmed"
+// first; only sustained misses become a visible disconnect.
 let connMisses = 0;
-let firstPoll = true;
-const MAX_CONN_MISSES = 2;
+let lastConnectedResp = null;
+let lastConnectedAt = 0;
+let wakeInFlight = null;
+const MAX_CONN_MISSES = 5;
 
 function setVersion() {
   try {
@@ -119,16 +121,50 @@ function sendConsentRevoke(pairingId) {
 // Nudge the service worker to wake and re-probe the bridge (reuses the existing
 // bridge_wake command — no new capability). Best-effort; we re-read status after.
 function nudgeWake() {
-  return new Promise((resolve) => {
+  if (wakeInFlight) return wakeInFlight;
+  wakeInFlight = new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ cmd: 'bridge_wake' }, () => { void chrome.runtime.lastError; resolve(); });
     } catch (_e) { resolve(); }
+  }).finally(() => { wakeInFlight = null; });
+  return wakeInFlight;
+}
+
+function queryProbeStatus() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    const timer = setTimeout(() => finish(null), QUERY_TIMEOUT_MS);
+    try {
+      chrome.runtime.sendMessage({ type: 'browser-pilot-offscreen-probe', resetDelay: true }, (resp) => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) return finish(null);
+        finish(resp || null);
+      });
+    } catch (_e) {
+      clearTimeout(timer);
+      finish(null);
+    }
   });
 }
 
 function openPortsOf(resp) {
-  const ports = resp && Array.isArray(resp.openPorts) ? resp.openPorts : [];
+  const ports = resp && resp.ok === true && Array.isArray(resp.openPorts) ? resp.openPorts : [];
   return ports.filter((p) => typeof p === 'number');
+}
+
+function rememberConnected(resp) {
+  lastConnectedResp = resp;
+  lastConnectedAt = Date.now();
+}
+
+async function confirmStatusAfterMiss(statusResp) {
+  await nudgeWake();
+  const probeResp = await queryProbeStatus();
+  if (openPortsOf(probeResp).length > 0) return probeResp;
+  const retryResp = await queryStatus();
+  if (openPortsOf(retryResp).length > 0) return retryResp;
+  return probeResp || retryResp || statusResp;
 }
 
 // Show or hide the consent-pending overlay. When a pending consent is present
@@ -217,21 +253,50 @@ async function doPoll() {
     // No pending consent — restore normal connection state
     el.consentSection.hidden = true;
     pendingConsentId = null;
-    const connected = openPortsOf(statusResp).length > 0;
+    let effectiveStatusResp = statusResp;
+    let connected = openPortsOf(effectiveStatusResp).length > 0;
+    if (!connected && connMisses === 0) {
+      effectiveStatusResp = await confirmStatusAfterMiss(statusResp);
+      connected = openPortsOf(effectiveStatusResp).length > 0;
+    }
     if (connected) {
       connMisses = 0;
-      render(statusResp);
+      rememberConnected(effectiveStatusResp);
+      render(effectiveStatusResp);
     } else {
       connMisses += 1;
-      // Tolerate a single transient miss: keep the last (connected) display unless
-      // this is the very first poll or we've missed MAX_CONN_MISSES times in a row.
-      if (firstPoll || connMisses >= MAX_CONN_MISSES) render(statusResp);
+      if (connMisses < MAX_CONN_MISSES) renderChecking();
+      else render(effectiveStatusResp);
     }
   }
 
-  firstPoll = false;
   // Always update the agents list regardless of pending state
   renderAgents(consentResp);
+}
+
+function renderChecking() {
+  if (lastConnectedResp && lastConnectedAt > 0) {
+    const ports = openPortsOf(lastConnectedResp);
+    const endpoint = ports.length ? '127.0.0.1:' + ports[0] : '';
+    el.body.dataset.state = 'connected';
+    el.status.textContent = '已连接';
+    if (endpoint) {
+      el.endpoint.textContent = endpoint;
+      el.endpoint.classList.remove('hidden');
+    } else {
+      el.endpoint.classList.add('hidden');
+    }
+    el.meta.textContent = '桥接已就绪 · 正在确认状态';
+    el.action.textContent = '刷新';
+    el.action.dataset.mode = 'refresh';
+    return;
+  }
+  el.body.dataset.state = 'connecting';
+  el.status.textContent = '检查中…';
+  el.endpoint.classList.add('hidden');
+  el.meta.textContent = '正在唤醒并读取连接状态';
+  el.action.textContent = '刷新';
+  el.action.dataset.mode = 'refresh';
 }
 
 function render(resp) {
@@ -270,8 +335,13 @@ function render(resp) {
 }
 
 async function refresh() {
-  if (busy) return;
-  await doPoll();
+  if (busy || pollInFlight) return;
+  pollInFlight = true;
+  try {
+    await doPoll();
+  } finally {
+    pollInFlight = false;
+  }
 }
 
 async function onAction() {
@@ -288,8 +358,13 @@ async function onAction() {
       // Give the SW a moment to re-create the offscreen doc and probe the port.
       for (let i = 0; i < 6; i += 1) {
         await new Promise((r) => setTimeout(r, 500));
-        const resp = await queryStatus();
-        if (openPortsOf(resp).length > 0) { render(resp); return; }
+        const resp = i === 0 ? await queryProbeStatus() : await queryStatus();
+        if (openPortsOf(resp).length > 0) {
+          connMisses = 0;
+          rememberConnected(resp);
+          render(resp);
+          return;
+        }
       }
       render(await queryStatus());
     } else {

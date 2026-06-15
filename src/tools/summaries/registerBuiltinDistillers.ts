@@ -52,7 +52,7 @@ export function registerBuiltinDistillers(): void {
 	if (builtinDistillersRegistered) return;
 	builtinDistillersRegistered = true;
 
-	// Phase-2 spike: register with summarySchema for MCP outputSchema + conformance.
+	// Register with summarySchema for structured-result conformance.
 	// Legacy registerDistiller path is kept in sync inside registerDistillerDefinition.
 	registerDistillerDefinition({
 		toolName: "browser_evidence",

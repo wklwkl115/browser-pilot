@@ -7,7 +7,7 @@ export type CliCommandSummary = {
 export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "artifact", name: "browser_artifact", description: "Read, sample, search, or pick local artifact files produced by browser tools without loading the whole file, including bounded multi-artifact search." },
 	{ subcommand: "callback-oast", name: "browser_callback_oast", description: "Run local HTTP/HTTPS/DNS callback listeners with correlation IDs, trigger helpers, persisted events, and external callback metadata." },
-	{ subcommand: "command", name: "browser_command", description: "Send a native bridge command object through the Pi browser bridge with stable validation and result envelopes." },
+	{ subcommand: "command", name: "browser_command", description: "Send a native bridge command object through the Browser Pilot bridge with stable validation and result envelopes." },
 	{ subcommand: "cookie-analyze", name: "browser_cookie_analyze", description: "Analyze Cookie, Set-Cookie, JWT, JWE, PASETO, and signed or encrypted session values with decoding, signature/decryption checks, claim mutation generation, claim replay validation, browser-session cookie binding, and Rails AES-GCM/AES-CBC/direct-key evidence." },
 	{ subcommand: "crawl", name: "browser_crawl", description: "Collect scoped Web metadata through bounded fingerprint probing or recursive crawl for links, forms, known files, JS endpoints, OpenAPI/GraphQL, source maps, service workers, and response evidence." },
 	{ subcommand: "download", name: "browser_download", description: "Trigger or wait for a browser download and return the completed local file path from Chrome downloads." },
@@ -23,7 +23,7 @@ export const COMMAND_SUMMARIES: CliCommandSummary[] = [
 	{ subcommand: "pick", name: "browser_pick", description: "Interactively pick DOM elements in the real browser and return stable CSS selectors plus element summaries." },
 	{ subcommand: "screenshot", name: "browser_screenshot", description: "Native screenshot capture. Saves the image to disk by default and returns the file path." },
 	{ subcommand: "sqli", name: "browser_sqli", description: "Probe SQL injection or run bounded sqlmap automation from explicit scoped request templates with boolean/error/time/union evidence, mature-engine findings, and artifacts." },
-	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Pi browser bridge." },
+	{ subcommand: "tabs", name: "browser_tabs", description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Browser Pilot bridge." },
 	{ subcommand: "template", name: "browser_template", description: "Run bounded built-in/custom HTTP template checks or mature nuclei template automation against scoped targets or request templates with structured matches and artifacts." },
 	{ subcommand: "upload", name: "browser_upload", description: "Upload local file(s) through a page file chooser using CDP DOM.setFileInputFiles." },
 	{ subcommand: "wait", name: "browser_wait", description: "Native wait/navigation commands: navigate, navigateAndWait, loadState, networkIdle, selector, any, all, cancel, diagnose. Composite any/all require non-empty waits or conditions." },

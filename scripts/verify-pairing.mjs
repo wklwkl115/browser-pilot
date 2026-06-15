@@ -11,6 +11,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,45 @@ const DAEMON_BIN = path.resolve(__dirname, "..", "dist", "cli", "bin.js");
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function reservePort(port) {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve(server);
+    });
+  });
+}
+
+async function closeServer(server) {
+  await new Promise((resolve) => server.close(() => resolve()));
+}
+
+async function findFreePortRange(width = 8) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const probe = await reservePort(0);
+    const address = probe.address();
+    await closeServer(probe);
+    const start = typeof address === "object" && address ? address.port : 0;
+    if (!start || start + width - 1 > 65535) continue;
+
+    const reserved = [];
+    try {
+      for (let port = start; port < start + width; port += 1) {
+        reserved.push(await reservePort(port));
+      }
+      return { start, end: start + width - 1 };
+    } catch {
+      // Some port in this candidate range is busy. Release probes and try again.
+    } finally {
+      await Promise.all(reserved.map(closeServer));
+    }
+  }
+  throw new Error("could not find a free bridge port range for pairing smoke test");
 }
 
 function controlHttp(controlPort, daemonToken, method, pathname, body, pairingToken) {
@@ -326,10 +366,13 @@ async function main() {
   const tempAuthDir = path.join(tempBase, "auth");
   mkdirSync(tempStateDir, { recursive: true });
   mkdirSync(tempAuthDir, { recursive: true });
+  const bridgePortRange = await findFreePortRange();
 
   const daemonEnv = {
     PI_BROWSER_DAEMON_STATE_DIR: tempStateDir,
     PI_BROWSER_AUTH_STATE_DIR: tempAuthDir,
+    PI_BROWSER_BRIDGE_PORT: String(bridgePortRange.start),
+    PI_BROWSER_BRIDGE_PORT_RANGE_END: String(bridgePortRange.end),
     PI_BROWSER_PAIRING_TOKEN: "", // don't inherit caller's token
     PI_BROWSER_NO_SYSTEM_CA: "1",
   };

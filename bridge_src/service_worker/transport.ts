@@ -21,8 +21,13 @@ let offscreenCreateInFlight: Promise<boolean> | null = null;
 const WS_URL = PI_BROWSER_BRIDGE_WS_URL;
 const WS_HEALTH_URL = PI_BROWSER_BRIDGE_HTTP_URL;
 
-function isOffscreenBridgeMessage(message: unknown): message is OffscreenMessage {
-  return !!message && typeof message === "object" && typeof (message as OffscreenMessage).type === "string" && String((message as OffscreenMessage).type).startsWith("browser-pilot-offscreen-");
+function isOffscreenEventMessage(message: unknown): message is OffscreenMessage {
+  if (!message || typeof message !== "object") return false;
+  const type = String((message as OffscreenMessage).type || "");
+  return type === "browser-pilot-offscreen-ready"
+    || type === "browser-pilot-offscreen-connected"
+    || type === "browser-pilot-offscreen-disconnected"
+    || type === "browser-pilot-offscreen-ws-message";
 }
 
 function offscreenUrl(): string {
@@ -48,7 +53,7 @@ async function ensureOffscreenDocument(): Promise<boolean> {
     offscreenCreateInFlight = chrome.offscreen.createDocument({
       url: OFFSCREEN_DOCUMENT_PATH,
       reasons: ["WORKERS"],
-      justification: "Maintain the local Pi browser bridge WebSocket transport outside the MV3 service worker lifetime.",
+      justification: "Maintain the local Browser Pilot Bridge WebSocket transport outside the MV3 service worker lifetime.",
     }).then(() => true, (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       if (/only a single offscreen document/i.test(message)) return true;
@@ -214,7 +219,7 @@ async function handlePiBrowserTransportAlarm(alarm: PiChromeAlarm): Promise<void
 function installPiBrowserTransport(): boolean {
   if (piBrowserTransportInstalled) return false;
   chrome.runtime.onMessage.addListener((message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
-    if (!isOffscreenBridgeMessage(message)) return false;
+    if (!isOffscreenEventMessage(message)) return false;
     void handlePiBrowserOffscreenMessage(message).then(sendResponse);
     return true;
   });

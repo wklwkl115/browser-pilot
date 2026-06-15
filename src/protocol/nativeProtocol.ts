@@ -40,7 +40,7 @@ export type BridgeCommandValidation =
 const schema = {
   "name": "browser-pilot-native-commands",
   "version": "0.2.0",
-  "transport": "Pi Browser Bridge WebSocket command envelope",
+  "transport": "Browser Pilot Bridge WebSocket command envelope",
   "envelope": {
     "type": "object",
     "required": [

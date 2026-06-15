@@ -97,14 +97,12 @@ Browser Pilot gives agents what they actually need:
 ```
 
 The Chrome extension runs in the browser and bridges to a Node.js server over a local
-WebSocket. The tool layer on top exposes 22 composable tools through a unified adapter
-(`runBrowserTool()` for core tools, `runWebSecurityTool()` for the security domain).
-Two frontends connect to the same tool core:
+WebSocket. The tool layer on top exposes 22 composable tools through the `browser-pilot`
+CLI, backed by a user-local daemon that owns the live browser session.
 
 | Frontend | Best for | Guide |
 |---|---|---|
 | **CLI** (`browser-pilot` command) | Shell-capable agents, CI, cron, humans | [CLI Usage Guide](docs/guide-cli.md) |
-| **Pi Native** (in-process `browser_*` calls) | Pi runtime agents (zero-overhead) | [Pi Native Guide](docs/guide-pi-native.md) |
 
 ## Quick Start
 
@@ -130,7 +128,7 @@ manually after editing source, run those two commands.
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked** → select `bridge/pi_browser_bridge`.
-4. Confirm the extension name is **Pi Native Browser Bridge**.
+4. Confirm the extension name is **Browser Pilot Bridge**.
 
 ### Use via CLI
 
@@ -164,28 +162,6 @@ npx browser-pilot schema observe --json
 
 See the **[CLI Usage Guide](docs/guide-cli.md)** for workflows, file inputs, security
 testing, and daemon management.
-
-### Use via Pi Native
-
-When loaded as a Pi extension, the tools register as `browser_*` tool calls with no
-connection setup. Just call them:
-
-```
-browser_tabs    { action: "list" }
-browser_observe { mode: "scan" }
-browser_execute { script: "document.title" }
-browser_wait    { action: "selector", params: { selector: "#result" } }
-```
-
-See the **[Pi Native Usage Guide](docs/guide-pi-native.md)** for the observe-execute-wait
-loop, memory, and recovery patterns.
-
-Pi-native slash commands: `/browser-install`, `/browser-status`, `/browser-reload`, plus the
-internal-only inspection paths `/browser-js-ast`, `/browser-wasm`, `/browser-ws` (these are not
-public browser tools — they route to internal AST/Wasm/WebSocket shells).
-
-> The Pi runtime packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`) are
-> optional peer dependencies. The CLI works independently without them.
 
 ## Tools
 
@@ -320,8 +296,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 | Doc | Description |
 |---|---|
 | [docs/guide-cli.md](docs/guide-cli.md) | CLI usage guide — workflows, patterns, examples |
-| [docs/guide-pi-native.md](docs/guide-pi-native.md) | Pi native usage guide — tool calls, loop, memory |
-| [skills/browser-pilot/SKILL.md](skills/browser-pilot/SKILL.md) | In-repo Pi-native operating skill (SOP for `browser_*` tools) |
+| [skills/browser-pilot-cli/SKILL.md](skills/browser-pilot-cli/SKILL.md) | In-repo CLI operating skill for shell-capable agents |
 | [docs/cli.md](docs/cli.md) | CLI reference — full command/flag/output specification |
 | [docs/playbooks/](docs/playbooks/) | Security testing playbooks |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |

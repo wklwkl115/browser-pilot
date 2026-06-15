@@ -20,7 +20,7 @@ import { captureScreenshotWithRetry } from "./screenshot";
 import { piBridgeInfo } from "./bridge_info";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBridgeSender, PiNativeProtocolRuntime, PiPersistentCdpBridge } from "./types";
 
-// runtime.js - Pi browser native command runtime (wait/network/hook/frame/html/screenshot).
+// runtime.js - Browser Pilot command runtime (wait/network/hook/frame/html/screenshot).
 
 function runtimeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -41,7 +41,7 @@ const PI_BROWSER_ERROR_CODES = {
   SAFETY_BLOCKED: 'SAFETY_BLOCKED', TIMEOUT: 'TIMEOUT', NAVIGATION_TIMEOUT: 'NAVIGATION_TIMEOUT', SELECTOR_TIMEOUT: 'SELECTOR_TIMEOUT', SELECTOR_NOT_FOUND: 'SELECTOR_NOT_FOUND', INVALID_SELECTOR: 'INVALID_SELECTOR', NETWORK_IDLE_TIMEOUT: 'NETWORK_IDLE_TIMEOUT', NETWORK_RECORDER_NOT_STARTED: 'NETWORK_RECORDER_NOT_STARTED', NETWORK_RECORDER_TIMEOUT: 'NETWORK_RECORDER_TIMEOUT', REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND', BODY_UNAVAILABLE: 'BODY_UNAVAILABLE', FRAME_DETACHED: 'FRAME_DETACHED', CROSS_ORIGIN_IFRAME: 'CROSS_ORIGIN_IFRAME', TAB_NOT_FOUND: 'TAB_NOT_FOUND', TAB_CRASHED: 'TAB_CRASHED', BACKGROUND_THROTTLED: 'BACKGROUND_THROTTLED', EVENT_SUBSCRIPTION_FAILED: 'EVENT_SUBSCRIPTION_FAILED', CANCELLED: 'CANCELLED', BUFFER_OVERFLOW: 'BUFFER_OVERFLOW', AMBIGUOUS_DOWNLOAD: 'AMBIGUOUS_DOWNLOAD', INTERNAL_ERROR: 'INTERNAL_ERROR'
 };
 const PI_BROWSER_PROTOCOL = (typeof PiNativeProtocol !== 'undefined' ? PiNativeProtocol : (self as typeof self & { PiNativeProtocol?: unknown }).PiNativeProtocol) as PiNativeProtocolRuntime;
-if (!PI_BROWSER_PROTOCOL || !PI_BROWSER_PROTOCOL.schema || !PI_BROWSER_PROTOCOL.nativeCommandMap) throw new Error('Pi Browser protocol schema is not loaded');
+if (!PI_BROWSER_PROTOCOL || !PI_BROWSER_PROTOCOL.schema || !PI_BROWSER_PROTOCOL.nativeCommandMap) throw new Error('Browser Pilot protocol schema is not loaded');
 const PI_BROWSER_ALIASES = PI_BROWSER_PROTOCOL.aliases || {};
 type PiBrowserSessionRecord = JsonRecord & {
   session_id?: string;
@@ -112,7 +112,7 @@ function getPiBrowserQueueStats(tabId: unknown) {
 function enqueuePiBrowserCommand(tabId: unknown, cmd: string, task: () => Promise<PiBridgeResponse> | PiBridgeResponse): Promise<PiBridgeResponse> {
   const key = Number(tabId);
   const current = piBrowserTabQueues.get(key) || { tail: Promise.resolve(), depth: 0, pending: false, last_cmd: null } satisfies PiBrowserQueueRecord;
-  if (current.depth >= PI_BROWSER_QUEUE_MAX_DEPTH) return Promise.resolve(piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, 'Pi Browser command queue is full', { tabId: key, cmd, depth: current.depth, max_depth: PI_BROWSER_QUEUE_MAX_DEPTH }));
+  if (current.depth >= PI_BROWSER_QUEUE_MAX_DEPTH) return Promise.resolve(piBrowserError(PI_BROWSER_ERROR_CODES.TIMEOUT, 'Browser Pilot command queue is full', { tabId: key, cmd, depth: current.depth, max_depth: PI_BROWSER_QUEUE_MAX_DEPTH }));
   current.depth += 1;
   current.pending = true;
   current.last_cmd = cmd;
@@ -284,7 +284,7 @@ async function piBrowserEval(tabId: number, expression: string, awaitPromise = t
 }
 /** @returns {Promise<PiBridgeResponse>} */
 async function callPagePiBrowser(tabId: number, command: string, args: unknown, options: PiBridgeCommand = {}): Promise<PiBridgeResponse> {
-  const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Pi browser dispatcher is not installed'}`;
+  const expr = `(window.__PI_BROWSER_HOOKS__ && window.__PI_BROWSER_HOOKS__.dispatch) ? window.__PI_BROWSER_HOOKS__.dispatch(${JSON.stringify(command)}, ${JSON.stringify(args || {})}) : {ok:false,error_code:'NO_SESSION',error:'Browser Pilot dispatcher is not installed'}`;
   const res = await piBrowserEval(tabId, expr, true, options);
   return (res.ok ? runtimeRecord(res.data) : res) as PiBridgeResponse;
 }
@@ -373,7 +373,7 @@ async function handlePiBrowserImpl(msg: PiBridgeCommand, sender: PiBridgeSender,
     }
     if (cmd === 'html.get') return await handlePiBrowserHtml(tabId, msg) as PiBridgeResponse;
     if (cmd === 'screenshot.capture') return await captureScreenshotWithRetry(tabId, msg) as PiBridgeResponse;
-    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
+    return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot command: ' + cmd, { cmd });
   } catch (e) { return piBrowserError(PI_BROWSER_ERROR_CODES.INTERNAL_ERROR, runtimeErrorMessage(e), { cmd, tabId }); }
 }
 export { PI_BROWSER_HOOK_DISPATCHER_FILE, PI_BROWSER_ERROR_CODES, PI_BROWSER_PROTOCOL, PI_BROWSER_ALIASES, piBrowserSessions, piBrowserTabQueues, PI_BROWSER_QUEUE_MAX_DEPTH, getPiBrowserQueueStats, enqueuePiBrowserCommand, cleanupPiBrowserTab, canonicalPiBrowserCommand, PI_NATIVE_BROWSER_COMMANDS, isPiNativeBrowserCommand, nativeToPiBrowserMessage, handlePiNativeBrowserCommand, redactSensitive, piBrowserError, bridgeError, normalizeBridgeResponse, isPiBrowserSessionMissing, piSleep, piBrowserPersistentCdp, normalizePersistentPiBrowserResponse, normalizePiBrowserEvalTimeoutMs, piBrowserEval, callPagePiBrowser, reinstallPiBrowserSession, callPagePiBrowserWithAutoReinstall, piWithTimeout, rememberRuntimeSession, forgetRuntimeSession, findLostRuntimeSession, summarizeLostRuntimeSession, handlePiBrowser, handlePiBrowserImpl };

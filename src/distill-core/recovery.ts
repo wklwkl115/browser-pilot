@@ -107,10 +107,10 @@ function abmlRecoveryActions(code: string, details: Record<string, unknown>): st
 function websocketRecoveryActions(code: string): string[] {
 	if (!isWebSocketRecoveryCode(code)) return [];
 	return uniqueRecoveryActions([
-		code === "WEBSOCKET_INVALID_INPUT" ? "use /browser-ws open|send|wait|replay|collect|close with explicit url/session/steps" : undefined,
-		["WEBSOCKET_SESSION_ALREADY_OPEN", "WEBSOCKET_SESSION_NOT_FOUND", "WEBSOCKET_SESSION_NOT_OPEN"].includes(code) ? "use /browser-ws collect/status/open with the intended session id, or close the stale session before retrying" : undefined,
+		code === "WEBSOCKET_INVALID_INPUT" ? "use explicit WebSocket open|send|wait|replay|collect|close parameters with url/session/steps" : undefined,
+		["WEBSOCKET_SESSION_ALREADY_OPEN", "WEBSOCKET_SESSION_NOT_FOUND", "WEBSOCKET_SESSION_NOT_OPEN"].includes(code) ? "collect/status/open with the intended session id, or close the stale session before retrying" : undefined,
 		["WEBSOCKET_OPEN_FAILED", "WEBSOCKET_OPEN_TIMEOUT", "WEBSOCKET_SEND_FAILED", "WEBSOCKET_WAIT_TIMEOUT", "WEBSOCKET_WAIT_ABORTED"].includes(code) ? "collect the WebSocket transcript, verify session state/url, then retry with explicit timeoutMs" : undefined,
-		code === "WEBSOCKET_INVALID_MATCHER" ? "replace unsafe regex matching with contains or a bounded safe regex before retrying /browser-ws wait" : undefined,
+		code === "WEBSOCKET_INVALID_MATCHER" ? "replace unsafe regex matching with contains or a bounded safe regex before retrying WebSocket wait" : undefined,
 	]);
 }
 

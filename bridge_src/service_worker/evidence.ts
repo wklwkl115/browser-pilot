@@ -1,4 +1,4 @@
-// evidence.js - Pi browser native event/evidence aggregation.
+// evidence.js - Browser Pilot event/evidence aggregation.
 
 import { PI_BROWSER_ERROR_CODES, callPagePiBrowser, piBrowserError } from "./runtime";
 import { getPerformanceEntries } from "./wait";
@@ -22,7 +22,7 @@ async function safePiBrowserEvidence(label: string, task: () => Promise<PiBridge
 }
 
 async function handlePiBrowserEvidenceCommand(cmd: string, tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
-  if (cmd !== 'evidence.collect') return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser evidence command: ' + cmd, { cmd });
+  if (cmd !== 'evidence.collect') return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot evidence command: ' + cmd, { cmd });
   const eventTypes = Array.isArray(msg.event_types) ? msg.event_types : (Array.isArray(msg.eventTypes) ? msg.eventTypes : PI_BROWSER_EVIDENCE_EVENT_TYPES);
   const limit = Math.max(1, Math.min(5000, Number(msg.limit || 500)));
   const hasTimeout = msg.timeoutMs !== undefined || msg.timeout_ms !== undefined;

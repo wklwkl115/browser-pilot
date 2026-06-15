@@ -12,7 +12,7 @@ type SettledWait = PromiseSettledResult<PiBridgeResponse>;
 function waitRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function waitErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
-// wait.js - Pi browser native wait, event listener and CDP wait coordination commands.
+// wait.js - Browser Pilot wait, event listener and CDP wait coordination commands.
 
 async function waitForAny(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
   const losers: number[] = [];

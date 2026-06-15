@@ -1,4 +1,4 @@
-// hook.js - Pi browser native hook/session commands.
+// hook.js - Browser Pilot hook/session commands.
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, PI_BROWSER_HOOK_DISPATCHER_FILE, callPagePiBrowser, cleanupPiBrowserTab, getPiBrowserQueueStats, piBrowserError, piBrowserEval, piBrowserSessions, piBrowserTabQueues, piWithTimeout } from "./runtime";
@@ -18,7 +18,7 @@ async function injectPiBrowserDispatcherViaCdp(tabId: number): Promise<PiBridgeR
 async function confirmPiBrowserDispatcher(tabId: number, method: string): Promise<PiBridgeResponse> {
   const ping = await callPagePiBrowser(tabId, 'hook.status', {}).catch((e: unknown) => piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, e instanceof Error ? e.message : String(e), { method }));
   if (ping && (ping.ok || ping.error_code === PI_BROWSER_ERROR_CODES.NOT_INSTALLED || ping.error_code === PI_BROWSER_ERROR_CODES.NO_SESSION)) return { ok: true, data: { method, ping: ping.ok ? 'installed' : 'loaded' } };
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, 'Pi browser dispatcher readiness check failed', { method, ping });
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INJECTION_FAILED, 'Browser Pilot dispatcher readiness check failed', { method, ping });
 }
 
 function piBrowserHookSessionId(msg: PiBridgeCommand | null | undefined): string | null {
@@ -226,7 +226,7 @@ async function handlePiBrowserHookCommand(cmd: string, tabId: number, msg: PiBri
   if (cmd === 'hook.addEventListener') return await addEventListener(tabId, msg) as PiBridgeResponse;
   if (cmd === 'hook.removeEventListener') return await removeEventListener(tabId, msg) as PiBridgeResponse;
   if (cmd === 'hook.getPerformanceEntries') return await getPerformanceEntries(tabId, msg) as PiBridgeResponse;
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser hook command: ' + cmd, { cmd });
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot hook command: ' + cmd, { cmd });
 }
 
 // --- Startup recovery registration ---

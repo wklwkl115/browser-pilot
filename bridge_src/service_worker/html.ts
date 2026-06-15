@@ -1,4 +1,4 @@
-// html.js - Pi browser native HTML/text snapshot command.
+// html.js - Browser Pilot HTML/text snapshot command.
 
 import { PI_BROWSER_ERROR_CODES, piBrowserError, piBrowserEval } from "./runtime";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";

@@ -10,7 +10,7 @@ type NetworkIdleDecision = { track: boolean; reason: string; ignoreLongPollingMs
 function networkRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function stringList(value: unknown): string[] { return Array.isArray(value) ? value.map((x: unknown) => String(x)) : []; }
 
-// wait_network_idle.js - Pi browser network-idle wait helpers.
+// wait_network_idle.js - Browser Pilot network-idle wait helpers.
 // Loaded before wait.js by background.js.
 
 function compileNetworkIdleFilter(msg: PiBridgeCommand): (req: NetworkIdleRequest) => NetworkIdleDecision {

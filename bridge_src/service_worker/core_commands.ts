@@ -121,7 +121,7 @@ async function handleTabsCommand(msg: PiBridgeCommand): Promise<PiBridgeResponse
             else resolve(true); // can't pre-check on this build — let windows.create surface the real error
           } catch { resolve(true); }
         });
-        if (!allowed) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito access is not granted to the Pi bridge extension', { cmd: msg.cmd, method: msg.method, recovery: 'Open chrome://extensions, find "Pi Native Browser Bridge" → Details → enable "Allow in incognito", then retry browser_tabs create with incognito:true' });
+        if (!allowed) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito access is not granted to the Browser Pilot Bridge extension', { cmd: msg.cmd, method: msg.method, recovery: 'Open chrome://extensions, find "Browser Pilot Bridge" -> Details -> enable "Allow in incognito", then retry browser_tabs create with incognito:true' });
         const win = await chrome.windows.create({ url: normalized.url, incognito: true, focused: msg.active !== false });
         const incognitoTab = win && Array.isArray(win.tabs) ? win.tabs[0] : undefined;
         if (!incognitoTab || incognitoTab.id === undefined) return bridgeError(PI_BROWSER_ERROR_CODES.UNSUPPORTED_TARGET, 'Incognito window was created but no tab was returned', { cmd: msg.cmd, method: msg.method });
@@ -279,7 +279,7 @@ async function handlePersistentCDP(msg: PiBridgeCommand, sender: PiBridgeSender)
 function validatePiBridgeProtocolMessage(msg: PiBridgeCommand): ValidatedBridgeCommand {
   const protocol = PiNativeProtocol as PiNativeProtocolRuntime & { validateCommand?: (command: unknown, options?: JsonRecord) => ValidatedBridgeCommand };
   if (!protocol || typeof protocol.validateCommand !== 'function') {
-    return { ok: false, error: 'Pi Browser protocol schema is not loaded', details: { cmd: msg && msg.cmd } };
+    return { ok: false, error: 'Browser Pilot protocol schema is not loaded', details: { cmd: msg && msg.cmd } };
   }
   return protocol.validateCommand(msg, { allowMissingTabId: true });
 }

@@ -136,7 +136,7 @@ export function noBrowserExtensionError(args: {
 	// volatile value in the message would break envelope parity across servers.
 	const hint = args.everConnected
 		? `The browser extension was connected but is not reachable now — its MV3 service worker likely went idle. Open or reload any browser tab to wake it; it reconnects automatically, then retry.`
-		: `No Pi browser extension is connected to the bridge. The bridge is a server the extension connects into — it cannot dial the browser for you. Ensure the "Pi Native Browser Bridge" extension is loaded and enabled, then open or reload any tab so its service worker connects.`;
+		: `No Browser Pilot extension is connected to the bridge. The bridge is a server the extension connects into — it cannot dial the browser for you. Ensure the "Browser Pilot Bridge" extension is loaded and enabled, then open or reload any tab so its service worker connects.`;
 	return new BrowserBridgeError("NO_BROWSER_EXTENSION", "No connected browser bridge extension", {
 		...(typeof args.port === "number" ? { port: args.port } : {}),
 		...(args.browserSessionId ? { browserSessionId: args.browserSessionId } : {}),
@@ -151,9 +151,9 @@ export function noBrowserExtensionError(args: {
 			retryable: true,
 			hint,
 			nextActions: [
-				"verify the Pi Native Browser Bridge extension is installed and enabled in the browser",
+				"verify the Browser Pilot Bridge extension is installed and enabled in the browser",
 				"open or reload any browser tab so the extension service worker wakes and connects to the bridge",
-				"check connection state with `browser-pilot daemon status` (or the /browser-status command)",
+				"check connection state with `browser-pilot daemon status`",
 			],
 		},
 	});

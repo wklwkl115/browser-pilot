@@ -57,7 +57,7 @@ export function registerMemoryTool({ pi, ensureStarted, memoryEvidenceResolver }
 				Type.Object({ kind: Type.Literal("browser-result"), uri: Type.String() }, { additionalProperties: true }),
 				Type.Object({ kind: Type.Literal("snapshot"), snapshotId: Type.String() }, { additionalProperties: true }),
 				Type.Object({ kind: Type.Literal("operation"), operationId: Type.String() }, { additionalProperties: true }),
-			]), { description: "record/validate only: optional provenance evidence refs; provided refs must resolve successfully, and browser-result:// requires MCP resolver injection." })),
+			]), { description: "record/validate only: optional provenance evidence refs; provided refs must resolve successfully, and browser-result:// requires a resource resolver." })),
 			id: Type.Optional(Type.String({ description: "read only: entry id." })),
 			uri: Type.Optional(Type.String({ description: "read only: browser-memory:// URI." })),
 			mode: Type.Optional(Type.Union(MEMORY_READ_MODES.map((value) => Type.Literal(value)), { description: "read only: text | json" })),

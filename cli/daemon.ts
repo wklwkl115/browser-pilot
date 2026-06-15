@@ -1,8 +1,8 @@
 /**
  * browser-pilot bridge daemon — the long-lived process that owns the live browser.
  *
- * Holds one BrowserBridgeServer (started lazily on the first tool invocation, as
- * in the MCP/Pi hosts) and exposes a token-guarded loopback control server:
+ * Holds one BrowserBridgeServer (started lazily on the first tool invocation)
+ * and exposes a token-guarded loopback control server:
  *   POST /invoke   {tool, params, cwd}  → run a tool, return {content, details, terminate}
  *   GET  /status                        → {ok, bridgePort, running, extensionConnected, tabs, tools}
  *   POST /shutdown                       → stop the bridge + control server
@@ -18,7 +18,7 @@ import { randomBytes } from "node:crypto";
 import { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { EnsureStarted } from "../src/tools/toolShared.js";
-import { ToolCollectingAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
+import { ToolRegistryAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
 import { resolveBrowserResultEvidence } from "../src/resources/memoryResourceStore.js";
 import { validateToolArgs } from "../src/frontend/validation.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../src/frontend/middleware.js";
@@ -192,7 +192,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 		return bridgeServer;
 	};
 
-	const adapter = new ToolCollectingAdapter();
+	const adapter = new ToolRegistryAdapter();
 	registerBrowserTools(adapter, bridgeServer, ensureStarted, {
 		memoryEvidenceResolver: resolveBrowserResultEvidence,
 	});

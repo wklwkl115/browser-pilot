@@ -1,4 +1,4 @@
-// network_model.js - Pi browser Network recorder state, config, filtering and body storage helpers.
+// network_model.js - Browser Pilot Network recorder state, config, filtering and body storage helpers.
 
 import { matchNetworkPattern } from "./patterns";
 import { redactSensitive } from "./runtime";

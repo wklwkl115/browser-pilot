@@ -1,9 +1,9 @@
 /**
- * MCP resource reader.
+ * Browser result resource reader.
  *
  * Bridges browser-result:// URIs to the underlying artifactReader.
  * The local artifact path is resolved via the resource store — never
- * returned to the MCP caller; only text/JSON content is returned.
+ * returned to callers; only text/JSON content is returned.
  *
  * Supported read parameters via URI query string:
  *   mode    — text|json|search|sample (default: text)
@@ -17,14 +17,14 @@
 import { resolveRefUriDetailed, resolveResourceUri, isResourceFresh } from "./resourceStore.js";
 import { readBrowserArtifact, ArtifactReaderError } from "../tools/artifactReader.js";
 
-export type McpResourceContent = {
+export type BrowserResourceContent = {
 	uri: string;
 	mimeType?: string;
 	text: string;
 };
 
-export type McpResourceReadResult =
-	| { ok: true; content: McpResourceContent }
+export type BrowserResourceReadResult =
+	| { ok: true; content: BrowserResourceContent }
 	| { ok: false; error: string; code: string };
 
 type ReadableResource = {
@@ -61,7 +61,7 @@ function sanitizedReadError(err: unknown): string {
  * Read a browser-result:// resource by URI.
  * Accepts optional query parameters to control mode, offset, limit, jsonPath, query/search.
  */
-export async function readBrowserResultResource(uri: string): Promise<McpResourceReadResult> {
+export async function readBrowserResultResource(uri: string): Promise<BrowserResourceReadResult> {
 	const storedResource = resolveResourceUri(uri);
 	let resource: ReadableResource | undefined = storedResource
 		? {

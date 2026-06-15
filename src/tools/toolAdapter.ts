@@ -1,4 +1,3 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { BrowserActiveOperationInfo } from "../driver/types.js";
@@ -15,6 +14,7 @@ import { defaultResultBudget, type ToolResultBudgetName } from "./budgets.js";
 import { distilledJsonResult, distilledTextResult } from "./resultMiddleware.js";
 import { asPositiveInt, DETAIL_LEVEL_DESCRIPTION, MAX_CHARS_DESCRIPTION, optionalTargetRef, optionalTargetTabId, OUTPUT_PATH_DESCRIPTION } from "./toolShared.js";
 import type { MemoryAugmentationPlan } from "../memory-core/types.js";
+import type { BrowserToolDefinition, BrowserToolHost } from "../frontend/toolHost.js";
 
 // Mandatory-read pair with resultMiddleware.ts: this file normalizes params/operation/errors,
 // while resultMiddleware.ts shapes the returned envelope, budgets, redaction, and artifacts.
@@ -167,7 +167,7 @@ type RunWebSecurityToolSpec<TParams extends StandardToolParams, TRunParams exten
 	error?: BrowserToolErrorConfig<TParams>;
 };
 
-export function defineBrowserTool(pi: ExtensionAPI, spec: Parameters<ExtensionAPI["registerTool"]>[0]) {
+export function defineBrowserTool(pi: BrowserToolHost, spec: BrowserToolDefinition) {
 	pi.registerTool(spec);
 	return spec;
 }

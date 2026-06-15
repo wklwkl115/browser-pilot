@@ -39,7 +39,7 @@ export function registerTabsTool({ pi, ensureStarted }: ToolRegistrarContext) {
 	defineBrowserTool(pi, {
 		name: "browser_tabs",
 		label: "Browser Tabs",
-		description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Pi browser bridge.",
+		description: "List, switch, create, close, select a real browser, or manage browser sessions connected through the Browser Pilot bridge.",
 		promptSnippet: "Control connected browser tabs and scoped browser sessions: list, snapshot, switch, create, close, selectBrowser, listSessions, createSession, selectSession, closeSession, attachTab, detachTab, leaseTab, releaseTab.",
 		promptGuidelines: [
 			"Start automation with browser_tabs list unless browser_tabs create just returned id/targetRef; use switch only when you intentionally change the browser active tab.",

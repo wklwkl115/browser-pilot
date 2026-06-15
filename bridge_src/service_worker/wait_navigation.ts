@@ -18,7 +18,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// wait_navigation.js - Pi browser navigation and load-state wait helpers.
+// wait_navigation.js - Browser Pilot navigation and load-state wait helpers.
 // Loaded after wait_coordinator.js and before wait.js by background.js.
 
 async function navigatePiBrowser(tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {

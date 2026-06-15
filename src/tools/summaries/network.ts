@@ -131,7 +131,7 @@ export function summarizeNetworkData(data: unknown): Summary {
 		bodyUnavailableReason: data.bodyUnavailableReason ?? data._bodyUnavailableReason,
 		...(data.bodyRef ? { url: data.url, status: data.status, mimeType: data.mimeType } : {}),
 		// Layer-1 hints: full entries array plus bounded per-entry request handles.
-		// Per-entry http-request handles let MCP callers pass captured requests directly
+		// Per-entry http-request handles let callers pass captured requests directly
 		// into browser_sqli/browser_http_replay/browser_fuzz without hand-copying JSON.
 		...(entriesPath ? artifactHints([
 			{ label: "all network entries", jsonPath: entriesPath, kind: "network-entry", count: entries.length },

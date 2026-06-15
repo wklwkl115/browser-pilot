@@ -143,7 +143,7 @@ browser-pilot download --selector "a.download-link" --json
 browser-pilot download --url "https://example.com/report.pdf" --json
 
 # Upload a file
-browser-pilot upload --file-path "/absolute/path/to/file.txt" --confirm --json
+browser-pilot upload --selector "input[type=file]" --files "/absolute/path/to/file.txt" --confirm --json
 ```
 
 ## Security Testing

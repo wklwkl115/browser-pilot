@@ -1,9 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
 import type { BridgeCommand } from "../protocol/nativeProtocol.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
+import type { BrowserToolHost } from "../frontend/toolHost.js";
 export { asPositiveInt } from "../utils/params.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
@@ -13,7 +13,7 @@ export type EnsureStarted = () => Promise<BrowserBridgeServer>;
 export type MemoryResultResourceResolution = { ok: true; path: string; etag?: string; bytes?: number } | { ok: false; code: string; error: string };
 export type MemoryResultResourceResolver = (uri: string) => Promise<MemoryResultResourceResolution>;
 export type ToolRegistrarContext = {
-	pi: ExtensionAPI;
+	pi: BrowserToolHost;
 	ensureStarted: EnsureStarted;
 	memoryEvidenceResolver?: MemoryResultResourceResolver;
 };

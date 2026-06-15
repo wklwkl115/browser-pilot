@@ -1,6 +1,6 @@
 # Web Security Methodology Map
 
-This reference maps common web-security signals to Pi Browser tool routes. Use playbooks for execution steps; use this file to choose the route when several bug families look plausible.
+This reference maps common web-security signals to Browser Pilot tool routes. Use playbooks for execution steps; use this file to choose the route when several bug families look plausible.
 
 | Signal / task | Primary route | Follow-up |
 |---|---|---|

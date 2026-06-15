@@ -18,7 +18,7 @@ npm run build:bridge
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable Developer mode.
 3. Click Load unpacked and select `bridge/pi_browser_bridge`.
-4. Confirm the extension name is Pi Native Browser Bridge.
+4. Confirm the extension name is Browser Pilot Bridge.
 5. Reload the extension after running `npm run build:bridge`.
    The loaded extension uses the generated `dist` runtime declared by
    `bridge/pi_browser_bridge/manifest.json`.
@@ -51,21 +51,6 @@ it into a clean throwaway consumer project, and runs the shipped
 `browser-pilot` CLI help/schema/status commands. Artifacts are written under
 `.pi/browser-artifacts/public-package/`.
 
-## Pi Commands
-
-When running as a Pi extension, these slash commands are available:
-
-- `/browser-install` checks setup and environment state.
-- `/browser-status` reports bridge diagnostics. The same status is available at
-  `http://127.0.0.1:<port>/browser-status`.
-- `/browser-reload` reloads the bridge connection.
-- `/browser-js-ast` parses page JavaScript AST through an internal-only path, not
-  a public browser tool.
-- `/browser-wasm` inspects page Wasm or a local Wasm path, including `--wat`
-  mode, through an internal-only path.
-- `/browser-ws` inspects page WebSocket traffic and saves transcripts through an
-  internal-only path.
-
 ## Troubleshooting
 
 1. Extension not connected: confirm the extension is enabled, the configured port
@@ -74,7 +59,7 @@ When running as a Pi extension, these slash commands are available:
    target.
 3. Command timeout: check whether the page is blocked by modal dialogs or heavy
    scripts.
-4. Empty scan result: make the target tab visible and retry `browser_observe`.
+4. Empty scan result: make the target tab visible and retry `browser-pilot observe --mode scan`.
 5. Artifact not found: artifact paths are relative to `.pi/browser-artifacts/`.
 6. Download returns no path: reload the extension and confirm `downloads`
    permission is granted.

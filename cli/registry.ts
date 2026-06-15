@@ -1,10 +1,9 @@
 /**
  * CLI command registry — builds the subcommand list locally from the tool
- * registry, with NO browser/bridge startup. Mirrors how the MCP tools/list path
- * collects tool definitions, but for the CLI: each registered browser_* tool maps
+ * registry, with NO browser/bridge startup. Each registered browser_* tool maps
  * to a subcommand. Used by --help, argv parsing, and the parity contract.
  */
-import { ToolCollectingAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
+import { ToolRegistryAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
 import { registerBrowserTools } from "../src/tools/registerTools.js";
 import type { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
 
@@ -37,7 +36,7 @@ export function fromSubcommand(subcommand: string): string {
 /** Collect all registered tool definitions. */
 export function collectToolDefs(): ToolDefinition[] {
 	if (cachedToolDefs) return cachedToolDefs;
-	const adapter = new ToolCollectingAdapter();
+	const adapter = new ToolRegistryAdapter();
 	registerBrowserTools(adapter, placeholderServer, noopEnsureStarted);
 	cachedToolDefs = adapter.getTools();
 	return cachedToolDefs;

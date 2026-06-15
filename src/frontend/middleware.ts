@@ -1,5 +1,5 @@
 /**
- * Protocol middleware (hook-style, FastMCP-inspired naming).
+ * Protocol middleware for tool-call logging and timing hooks.
  *
  * Cross-cutting protocol concerns in a fixed order:
  *   auth/profile → raw argument validation → handle resolution → tool execute → result presentation → logging

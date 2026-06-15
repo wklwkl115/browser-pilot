@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonOrThrow } from "../utils/json.js";
@@ -17,7 +17,10 @@ export type ExtensionBuildComparison = {
 };
 
 function packageRoot(): string {
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+	const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+	if (existsSync(path.join(root, "package.json"))) return root;
+	const parent = path.dirname(root);
+	return existsSync(path.join(parent, "package.json")) ? parent : root;
 }
 
 function expectedExtensionBuildManifestPath(): string {

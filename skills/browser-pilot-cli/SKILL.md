@@ -1,13 +1,13 @@
 ---
 name: browser-pilot-cli
-description: "Shell/CLI frontend for operating live browser pages — use when a shell-capable agent drives the `browser-pilot` command-line tool (subcommands, `--json`) to: gate readiness via connect/status/doctor, list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. A Pi-native agent that instead calls the browser_* tools directly: use the browser-pilot skill. Runtime browser-use only; not for extension source development or repo tests."
+description: "Shell/CLI frontend for operating live browser pages — use when a shell-capable agent drives the `browser-pilot` command-line tool (subcommands, `--json`) to: gate readiness via connect/status/doctor, list/switch tabs, scan/read DOM/text/HTML/content, click/type via JavaScript or CDP, wait for page state, capture network/hook/screenshot evidence, read result artifacts or browser-result:// resources, download/upload files, replay or fuzz HTTP requests, crawl endpoints/source maps, analyze cookies/JWT/JWE/PASETO/session, check SQLi/template/nuclei/OAST findings. Runtime browser-use only; not for extension source development or repo tests."
 license: Apache-2.0
-compatibility: browser-pilot CLI 0.3.0+ on any shell-capable platform, Native Browser Bridge connected. Drives the same tool core as the Pi-native frontend over a user-local daemon. For in-process Pi-native `browser_*` calls, see the sibling **browser-pilot** skill.
+compatibility: browser-pilot CLI 0.3.0+ on any shell-capable platform, Browser Pilot Bridge connected. Drives the browser tool core over a user-local daemon.
 ---
 
-# Pi Browser CLI
+# Browser Pilot CLI
 
-Drive live browser pages with the `browser-pilot` shell CLI — the same tool core as Pi-native, exposed as subcommands over a user-local singleton daemon.
+Drive live browser pages with the `browser-pilot` shell CLI, exposed as subcommands over a user-local singleton daemon.
 
 **This skill complements the CLI; it does not restate it.** The CLI is self-describing: `browser-pilot commands --json` lists every command + its `agentCli` routing, and `browser-pilot schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
 
@@ -16,7 +16,7 @@ Three facts shape everything below:
 - **Action is the JavaScript you pass to `browser-pilot execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `pi.click(ref)` for physical trusted clicks against a fresh observed `pi-ref://`.
 - **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser-pilot execute --script-file` with `await pi.click(ref)` if you have a fresh observed ref; otherwise send `browser-pilot command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
 
-On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`. Full map: `docs/abml-tool-coverage-map.md`.
+On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`.
 
 ## Driving the CLI
 
@@ -144,7 +144,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 
 ## Native command
 
-`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for explicit trusted physical input; `input.ref` is the internal diagnostic equivalent behind `pi.click(ref)`, not a new preferred CLI workflow. Summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step. Do not invent withdrawn subcommands; `/browser-js-ast`, `/browser-wasm`, `/browser-ws` are local-file slash commands, not a public browser tool surface.
+`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for explicit trusted physical input; `input.ref` is the internal diagnostic equivalent behind `pi.click(ref)`, not a new preferred CLI workflow. Summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step.
 
 ## Recovery
 
@@ -168,8 +168,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 
 - Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md` · CLI usage: `docs/cli.md`
-- Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- In-process Pi-native frontend: **browser-pilot** skill
+- Tool reference: `docs/generated/browser-tool-reference.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
 
 ## Output
 

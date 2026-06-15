@@ -168,7 +168,7 @@ export async function probeLayerTree(tabId: number, msg: PiBridgeCommand): Promi
 
 export async function handlePiBrowserLayerCommand(cmd: string, tabId: number, msg: PiBridgeCommand): Promise<PiBridgeResponse> {
 	if (cmd === "layer.probe") return await probeLayerTree(tabId, msg);
-	return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Pi Browser layer command: " + cmd, { cmd });
+	return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, "Unknown Browser Pilot layer command: " + cmd, { cmd });
 }
 
 export const __piBridgeModule_layer = { name: "layer", symbols: { probeLayerTree, handlePiBrowserLayerCommand } };

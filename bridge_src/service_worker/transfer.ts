@@ -1,11 +1,11 @@
-// transfer.js - upload/download commands for Pi browser native bridge.
+// transfer.js - upload/download commands for the Browser Pilot bridge.
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp } from "./runtime";
 import { subscribePiBrowserCdp, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiChromeDownloadItem } from "./types";
 
-const PI_BROWSER_FILE_ACCESS_MESSAGE = 'To enable file upload, open chrome://extensions, click Details under Pi Native Browser Bridge, and enable "Allow access to file URLs".';
+const PI_BROWSER_FILE_ACCESS_MESSAGE = 'To enable file upload, open chrome://extensions, click Details under Browser Pilot Bridge, and enable "Allow access to file URLs".';
 
 type TransferDownloadMode = 'click' | 'media' | 'url';
 type TransferDownloadTarget = 'selector' | 'url';

@@ -5,7 +5,7 @@ import { dispatchPiBridgeCommand, validatePiBridgeProtocolMessage } from "./core
 import { handleWsExec } from "./exec";
 import type { JsonRecord, PiBridgeCommand, PiBridgeDict, PiBridgeResponse, PiBridgeWebSocketLike, PiBridgeWsEnvelope, PiChromeMessageSender } from "./types";
 
-// router.js - protocol validation and command dispatch for Pi Browser Bridge messages.
+// router.js - protocol validation and command dispatch for Browser Pilot Bridge messages.
 
 type StorageLocalArea = { get(keys: string[]): Promise<JsonRecord>; set(items: JsonRecord): Promise<void>; remove(keys: string | string[]): Promise<void> };
 

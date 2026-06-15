@@ -56,7 +56,7 @@ async function resolveSnapshotRef(server: BrowserBridgeServer | undefined, ref: 
 }
 
 async function resolveResultRef(resolver: MemoryResultResourceResolver | undefined, ref: Extract<MemoryEvidenceRef, { kind: "browser-result" }>): Promise<MemoryResolvedEvidenceRef> {
-	if (!resolver) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "browser-result evidence requires MCP resolver injection", details: { uri: ref.uri } });
+	if (!resolver) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "browser-result evidence requires a resource resolver", details: { uri: ref.uri } });
 	const resolved = await resolver(ref.uri);
 	if (!resolved.ok) throw createCodedError({ name: "MemoryEvidenceError", code: resolved.code, message: resolved.error, details: { uri: ref.uri } });
 	return { kind: "browser-result", uri: ref.uri, path: resolved.path, etag: resolved.etag, bytes: resolved.bytes };

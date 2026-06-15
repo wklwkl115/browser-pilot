@@ -1,61 +1,25 @@
 /**
- * Tool-collecting ExtensionAPI adapter (frontend-agnostic).
+ * Tool definition collector for CLI/daemon frontends.
  *
- * Implements the @earendil-works/pi-coding-agent ExtensionAPI interface
- * so that all existing register*Tool functions run unmodified. Tool
- * definitions are captured into an internal map and later consumed by a
- * frontend (the CLI client for flag generation, the daemon for execution)
- * via {@link ToolCollectingAdapter.getTools}.
+ * register*Tool functions write into a tiny internal host interface. The
+ * collected definitions are then consumed by the CLI for
+ * local schema/help generation and by the daemon for execution.
  */
-import type { ExtensionAPI, ExtensionToolResult, ExtensionToolUpdate } from "@earendil-works/pi-coding-agent";
+import type { BrowserToolDefinition } from "./toolHost.js";
 
-// ------------------------------------------------------------------ types
-
-export type ToolDefinition = {
-	name: string;
-	label?: string;
-	description?: string;
-	promptSnippet?: string;
-	promptGuidelines?: string[];
-	parameters?: unknown;
-	prepareArguments?: (args: any) => any;
-	execute: (
-		toolCallId: string,
-		params: any,
-		signal?: AbortSignal,
-		onUpdate?: (update: ExtensionToolUpdate) => void | Promise<void>,
-		ctx?: { cwd?: string; hasUI?: boolean; omitTransportDetails?: boolean },
-	) => Promise<ExtensionToolResult> | ExtensionToolResult;
-};
+export type ToolDefinition = BrowserToolDefinition;
 
 // ---------------------------------------------------------------- adapter
 
 /**
- * Minimal ExtensionAPI implementation that collects tool registrations.
- *
- * - `registerTool` → stores definition in `tools` map
- * - `on` → no-op (lifecycle is managed by the host process, not plugin events)
- * - `registerCommand` → no-op (slash commands need editor UI a CLI has no equivalent for)
+ * Minimal host implementation that collects tool registrations.
  */
-export class ToolCollectingAdapter implements ExtensionAPI {
+export class ToolRegistryAdapter {
 	private readonly tools = new Map<string, ToolDefinition>();
 
-	// ---- ExtensionAPI interface ------------------------------------------------
-
-	registerTool(definition: Parameters<ExtensionAPI["registerTool"]>[0]): void {
-		const def = definition as ToolDefinition;
-		this.tools.set(def.name, def);
+	registerTool(definition: ToolDefinition): void {
+		this.tools.set(definition.name, definition);
 	}
-
-	on(_event: string, _handler: (...args: any[]) => void | Promise<void>): void {
-		// Lifecycle is managed by the host process (daemon / Pi host), not plugin events.
-	}
-
-	registerCommand(_name: string, _definition: Parameters<ExtensionAPI["registerCommand"]>[1]): void {
-		// Slash commands depend on editor UI (ctx.ui.notify / setEditorText); skip silently.
-	}
-
-	// ---- frontend helpers ------------------------------------------------------
 
 	/** Return all registered tool definitions. */
 	getTools(): ToolDefinition[] {

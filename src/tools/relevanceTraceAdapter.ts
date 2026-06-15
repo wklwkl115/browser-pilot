@@ -1,13 +1,12 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { BrowserBridgeServer } from "../driver/BrowserBridgeServer.js";
+import type { BrowserToolDefinition, BrowserToolHost } from "../frontend/toolHost.js";
 import { isRecord } from "../utils/records.js";
 import { withDeprecatedParamStrip } from "./prepareArguments.js";
 import { extractToolRelevanceTerms } from "./relevanceTaps.js";
 
-export function withRelevanceTraceTap(pi: ExtensionAPI, server: BrowserBridgeServer): ExtensionAPI {
+export function withRelevanceTraceTap(pi: BrowserToolHost, server: BrowserBridgeServer): BrowserToolHost {
 	return {
-		...pi,
-		registerTool(definition) {
+		registerTool(definition: BrowserToolDefinition) {
 			const preparedDefinition = withDeprecatedParamStrip(definition);
 			pi.registerTool({
 				...preparedDefinition,

@@ -465,7 +465,7 @@ async function runPairCommand(argv: string[]): Promise<number> {
 	try {
 		const { status, json } = await controlRequest(info, "POST", "/pair/start", { label });
 		if (status === 409 && json?.code === "PAIR_NO_EXTENSION") {
-			const msg = "browser extension is not connected — open the browser with Pi extension enabled first";
+			const msg = "browser extension is not connected — open the browser with Browser Pilot Bridge enabled first";
 			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "PAIR_NO_EXTENSION", command: "pair", message: msg }); return EXIT.unavailable; }
 			process.stderr.write(`pair failed: ${msg}\nHint: run 'browser-pilot connect --wait --json' first.\n`);
 			return EXIT.unavailable;

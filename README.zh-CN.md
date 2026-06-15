@@ -85,12 +85,11 @@ Browser Pilot 给 agent 它们真正需要的东西：
 ```
 
 Chrome 扩展运行在浏览器中，通过本地 WebSocket 桥接到 Node.js 服务器。
-顶层的工具层暴露 22 个可组合的工具。两个前端接入同一个工具核心：
+顶层工具层通过 `browser-pilot` CLI 暴露 22 个可组合的工具，由用户级 daemon 持有真实浏览器会话。
 
 | 前端 | 适用场景 | 指南 |
 |---|---|---|
 | **CLI**（`browser-pilot` 命令） | Shell agent、CI、cron、人类 | [CLI 使用指南](docs/guide-cli.md) |
-| **Pi 原生**（进程内 `browser_*` 调用） | Pi runtime agent（零开销） | [Pi 原生使用指南](docs/guide-pi-native.md) |
 
 ## 快速开始
 
@@ -115,7 +114,7 @@ Chrome 扩展产物（`npm run build:bridge`）。修改源码后如需手动重
 1. 打开 `chrome://extensions` 或 `edge://extensions`。
 2. 开启**开发者模式**。
 3. 点击**加载已解压的扩展程序** → 选择 `bridge/pi_browser_bridge`。
-4. 确认扩展名称为 **Pi Native Browser Bridge**。
+4. 确认扩展名称为 **Browser Pilot Bridge**。
 
 ### 通过 CLI 使用
 
@@ -148,22 +147,6 @@ npx browser-pilot schema observe --json
 ```
 
 详见 **[CLI 使用指南](docs/guide-cli.md)** 了解完整工作流、文件输入、安全测试和 daemon 管理。
-
-### 通过 Pi 原生使用
-
-作为 Pi 扩展加载时，工具注册为 `browser_*` 工具调用，无需连接步骤。直接调用即可：
-
-```
-browser_tabs    { action: "list" }
-browser_observe { mode: "scan" }
-browser_execute { script: "document.title" }
-browser_wait    { action: "selector", params: { selector: "#result" } }
-```
-
-详见 **[Pi 原生使用指南](docs/guide-pi-native.md)** 了解 observe-execute-wait 循环、记忆系统和恢复模式。
-
-> Pi runtime 包（`@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent`）
-> 是可选的 peer 依赖。CLI 可独立使用，不需要这些包。
 
 ## 工具列表
 
@@ -267,7 +250,7 @@ npm run quality:local     # 完整公开检查的别名
 | 文档 | 说明 |
 |---|---|
 | [docs/guide-cli.md](docs/guide-cli.md) | CLI 使用指南 —— 工作流、模式、示例 |
-| [docs/guide-pi-native.md](docs/guide-pi-native.md) | Pi 原生使用指南 —— 工具调用、循环、记忆 |
+| [skills/browser-pilot-cli/SKILL.md](skills/browser-pilot-cli/SKILL.md) | 面向 shell-capable agent 的 CLI 操作 skill |
 | [docs/cli.md](docs/cli.md) | CLI 参考 —— 完整的命令/参数/输出规范 |
 | [docs/playbooks/](docs/playbooks/) | 安全测试操作手册 |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | 工具选择边界 |

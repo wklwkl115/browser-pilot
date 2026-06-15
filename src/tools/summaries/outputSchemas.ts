@@ -1,9 +1,8 @@
 /**
- * Explicit summarySchema definitions for the Phase-2 distiller spike.
+ * Explicit summarySchema definitions for distillers.
  *
  * These are the single source of truth for the structured output shape of each
- * spiked tool's distiller. They serve as the MCP outputSchema (structuredContent)
- * and are used by the output-schema-conformance contract test.
+ * tool distiller and are used by the output-schema-conformance contract test.
  *
  * Schema design rules (per execution contract):
  * - Core counts, status, diagnostics: strict type constraints.

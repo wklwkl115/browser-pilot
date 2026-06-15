@@ -7,7 +7,7 @@ type SelectorProbeOptions = { maxStableWaitMs?: number; max_stable_wait_ms?: num
 function selectorRecord(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function selectorErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
-// wait_selector.js - Pi browser selector wait probe and polling helpers.
+// wait_selector.js - Browser Pilot selector wait probe and polling helpers.
 // Loaded before wait.js by background.js.
 
 const PI_BROWSER_SELECTOR_STABLE_SAMPLES = 2;

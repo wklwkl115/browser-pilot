@@ -1,7 +1,7 @@
 /**
  * Temporary development usage logger.
  *
- * Persists one JSON line per MCP tool call so we can study how real agents
+ * Persists one JSON line per tool call so we can study how real agents
  * actually drive the tools (which tools, what params, success/error, latency)
  * and improve the project. It hangs off the existing `on_log` middleware hook —
  * NOT the tool-call hot path — so it cannot change tool behavior, and every

@@ -292,7 +292,7 @@ function accessForLiveVerb(descriptor: RefDescriptor, target: { browserSessionId
 // A long-lived "signal" capture-ref carries the drain cursor (streamState.lastSeq): the model arms once
 // (no ref → cursor pinned at the recorder's current high-water, no history replay), then re-reads with the
 // returned ref to drain only what fired since its cursor — without a full DOM scan. No new public tool, no
-// protocol change: pure internal substrate reached via Pi-native / the ABML runtime. URLs/payloads are
+// protocol change: pure internal substrate reached via the ABML runtime. URLs/payloads are
 // redacted by reusing the P0/P2-A buildCausal* selectors (a raw stream-entity url never leaves redaction).
 
 type StreamPlane = "network" | "event";

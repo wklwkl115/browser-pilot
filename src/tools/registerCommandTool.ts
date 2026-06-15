@@ -16,8 +16,8 @@ export function registerCommandTool({ pi, ensureStarted }: ToolRegistrarContext)
 	defineBrowserTool(pi, {
 		name: "browser_command",
 		label: "Browser Command",
-		description: "Send a native bridge command object through the Pi browser bridge with stable validation and result envelopes.",
-		promptSnippet: "Send a bridge command object through the Pi browser bridge.",
+		description: "Send a native bridge command object through the Browser Pilot bridge with stable validation and result envelopes.",
+		promptSnippet: "Send a bridge command object through the Browser Pilot bridge.",
 		promptGuidelines: [TAB_SCOPED_TOOL_GUIDELINE, "Use browser_command for explicit native bridge commands such as tabs/CDP/management; use browser_execute only for JavaScript."],
 		parameters: strictToolParameters({
 			command: Type.Object({}, { additionalProperties: true, description: "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}" }),

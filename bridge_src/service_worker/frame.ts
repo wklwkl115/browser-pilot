@@ -1,4 +1,4 @@
-// frame.js - Pi browser native frame commands.
+// frame.js - Browser Pilot frame commands.
 
 import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp } from "./runtime";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse } from "./types";
@@ -49,7 +49,7 @@ async function handlePiBrowserFrameCommand(cmd: string, tabId: number, msg: PiBr
     if (removed && removed.ok && removed.data) return { ok: true, data: { tabId:Number(tabId), ...removed.data } };
     return removed;
   }
-  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser frame command: ' + cmd, { cmd });
+  return piBrowserError(PI_BROWSER_ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot frame command: ' + cmd, { cmd });
 }
 export { handlePiBrowserFrameCommand };
 // ESM module metadata

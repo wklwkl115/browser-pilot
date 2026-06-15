@@ -15,7 +15,7 @@ function cdpRecord(value: unknown): JsonRecord { return value && typeof value ==
 function cdpErrorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function cdpRawError(error: unknown): JsonRecord { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) }; }
 
-// cdp.js — Pi browser persistent CDP / iframe helpers.
+// cdp.js — Browser Pilot persistent CDP / iframe helpers.
 // Flat Target sessions are optional and explicit: the default route remains tab-scoped, while
 // callers with a targetId can attach that child target and send through chrome.debugger sessionId.
 

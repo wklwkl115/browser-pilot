@@ -5,7 +5,7 @@ declare global {
 }
 
 /* ============================================================
- * hook_dispatcher.js — Pi browser page-side hook dispatcher.
+ * hook_dispatcher.js — Browser Pilot page-side hook dispatcher.
  * ============================================================ */
 ;(function PiBrowserHookDispatcher() {
   'use strict';
@@ -806,10 +806,10 @@ declare global {
   function install(optsInput?: unknown): HookResponse {
     const opts = asRecord(optsInput);
     if (opts.expected_version && String(opts.expected_version) !== VERSION) {
-      return structuredError(ERROR_CODES.INJECTION_FAILED, 'Pi Browser dispatcher version mismatch', { expected_version: String(opts.expected_version), dispatcher_version: VERSION });
+      return structuredError(ERROR_CODES.INJECTION_FAILED, 'Browser Pilot dispatcher version mismatch', { expected_version: String(opts.expected_version), dispatcher_version: VERSION });
     }
     const badTarget = validateTargets(opts.targets);
-    if (badTarget) return structuredError(ERROR_CODES.UNSUPPORTED_TARGET, 'Unsupported Pi Browser target: ' + badTarget, { target: badTarget });
+    if (badTarget) return structuredError(ERROR_CODES.UNSUPPORTED_TARGET, 'Unsupported Browser Pilot target: ' + badTarget, { target: badTarget });
     const requestedSessionId = String(opts.session_id || ('browser-pilot-hook-' + Date.now() + '-' + Math.random().toString(16).slice(2)));
     const requestedTargets = Object.assign({}, DEFAULT_TARGETS, asRecord(opts.targets)) as HookTargets;
     const requestedOptions = Object.assign({}, asRecord(opts.options)) as HookOptions;
@@ -827,7 +827,7 @@ declare global {
         } };
       }
       if (opts.force !== true) {
-        return structuredError(ERROR_CODES.ALREADY_INSTALLED, 'Pi Browser dispatcher is already installed with a different session or fingerprint', {
+        return structuredError(ERROR_CODES.ALREADY_INSTALLED, 'Browser Pilot dispatcher is already installed with a different session or fingerprint', {
           state, session_id, owner_session_id, install_fingerprint, dispatcher_version: VERSION,
           requested_session_id: requestedSessionId, requested_fingerprint: requestedFingerprint,
           same_session: sameSession, same_fingerprint: sameFingerprint
@@ -869,10 +869,10 @@ declare global {
     expectedSessionId = expectedSessionId == null || expectedSessionId === '' ? null : String(expectedSessionId);
     if (!session_id) {
       if (expectedSessionId) return structuredError(ERROR_CODES.SESSION_NOT_FOUND, op + ' sessionId was not found', { state, requested_session_id: expectedSessionId });
-      return allowMissing ? null : structuredError(ERROR_CODES.NO_SESSION, op + ' requires an installed Pi Browser session', { state });
+      return allowMissing ? null : structuredError(ERROR_CODES.NO_SESSION, op + ' requires an installed Browser Pilot session', { state });
     }
     if (expectedSessionId && expectedSessionId !== String(session_id)) {
-      return structuredError(ERROR_CODES.INVALID_SESSION, op + ' sessionId does not match the installed Pi Browser session', { state, requested_session_id: expectedSessionId, current_session_id: session_id });
+      return structuredError(ERROR_CODES.INVALID_SESSION, op + ' sessionId does not match the installed Browser Pilot session', { state, requested_session_id: expectedSessionId, current_session_id: session_id });
     }
     return null;
   }
@@ -981,7 +981,7 @@ declare global {
     xpathCache = {}; xpathLargeResultTicks = {}; xpathIdleTicks = 0;
     flushEventNotifications(); clearEventNotifyTimer(); eventNotifyQueue = [];
     detectResidue();
-    if (residue_signatures.length) addCleanupWarning('Pi browser hook residue detected after uninstall: ' + residue_signatures.join(','));
+    if (residue_signatures.length) addCleanupWarning('Browser Pilot hook residue detected after uninstall: ' + residue_signatures.join(','));
     const old = session_id;
     const oldOwner = owner_session_id;
     const oldFingerprint = install_fingerprint;
@@ -1005,7 +1005,7 @@ declare global {
       case 'hook.pause': return pause(args);
       case 'hook.resume': return resume(args);
       case 'hook.evaluate': return evaluate(args);
-      default: return structuredError(ERROR_CODES.INVALID_RULE, 'Unknown Pi Browser command: ' + cmd, { cmd });
+      default: return structuredError(ERROR_CODES.INVALID_RULE, 'Unknown Browser Pilot command: ' + cmd, { cmd });
     }
   }
 

@@ -1,6 +1,6 @@
 # Browser Tool Boundaries
 
-This file defines the Semantic singleton boundary for each callable `browser_*` tool. Keep it aligned with `src/tools/register*.ts`, README, and the global `browser-pilot` skill.
+This file defines the Semantic singleton boundary for each callable `browser_*` tool. Keep it aligned with `src/tools/register*.ts`, README, and the `browser-pilot-cli` skill.
 
 Primary inputs are the tool parameters shown in `docs/generated/browser-tool-reference.generated.md`; this boundary file focuses on tool choice, evidence type, and follow-up flow.
 
@@ -14,15 +14,15 @@ Primary inputs are the tool parameters shown in `docs/generated/browser-tool-ref
 6. If a task succeeded, use `browser_memory` to persist or recall local reusable SOP/facts; durable evidence is recommended provenance, and any cited evidence must resolve.
 7. Use Web Security tools only after baseline observation and explicit scoped inputs.
 
-## jshookmcp capability migration boundary
+## External capability migration boundary
 
-jshookmcp research is treated as capability discovery only. Do not copy its AGPL code/text/schema/payloads/tests, do not import its MCP registry/runtime, and do not expose its tool names as Pi API. The public `browser_*` surface remains Semantic-singleton driven.
+External browser-security research is treated as capability discovery only. Do not copy AGPL code/text/schema/payloads/tests, do not import another tool registry/runtime, and do not expose borrowed tool names as Browser Pilot API. The public `browser_*` surface remains Semantic-singleton driven.
 
 Rejected public tool names for this migration: `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, `browser_canvas`.
 
 Capability mapping:
 
-| Capability class | Canonical Pi surface | Boundary |
+| Capability class | Canonical Browser Pilot surface | Boundary |
 |---|---|---|
 | Page-side JS API observation, DOM sinks, console/error, storage/websocket/crypto/canvas events | `browser_hook` + `browser_evidence` + `browser_artifact` | Implement only as explicit hook targets or static preset expansion. `browser_hook` exposes `listTargets` / `installTargets` for bounded target expansion and diagnostics; no `all/auto/aggressive/ctf/exploit/stealth` strategy bundles. |
 | One-shot runtime/debugger/storage/source reads or precise CDP calls | `browser_command` / `browser_frame` / `browser_execute` | Use `browser_command` for native bridge/CDP command objects and `browser_execute` for page JavaScript. Do not create a broad debugger/source/storage tool. Long-running observation belongs to hook/network. |
@@ -61,7 +61,7 @@ Hard rules:
 ABML surface note: current public callable surface remains the documented `browser_*` tools.
 Internal ABML refs and verb-like hints (`pi-ref://...`, `read(...)`, `click(...)`, `frame(...)`,
 `read_saved_artifact ...`) are envelope/runtime semantics and recovery affordances, not additional
-public Pi tool registrations. Public ABML action verbs are closed as a perception-first project
+public tool registrations. Public ABML action verbs are closed as a perception-first project
 decision; reopening requires overturning that north star, not merely a new trigger-gated backlog
 entry. Scroll/lazy-loading friction must first be treated as a collection-completeness,
 continuation, data-source, or state-transition modeling gap; adding public gesture verbs only

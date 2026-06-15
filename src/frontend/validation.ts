@@ -1,11 +1,11 @@
 /**
  * Tool parameter validation (TypeBox-based).
  *
- * Replicates the Pi framework's Value.Convert + Check behavior so that
+ * Replicates the host framework's Value.Convert + Check behavior so that
  * callers get the same coercion and rejection semantics without going through
- * the Pi plugin host.
+ * the CLI/daemon host.
  *
- * Behavior contract (must match check-mcp-parameter-contract):
+ * Behavior contract:
  * - String-encoded scalars ("true" → boolean, "30" → number) are coerced.
  * - Unknown top-level keys are rejected when additionalProperties:false.
  * - Invalid literal-union (enum) values are rejected.

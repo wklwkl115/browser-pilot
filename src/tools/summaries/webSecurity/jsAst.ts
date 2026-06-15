@@ -50,7 +50,7 @@ export function summarizeJsAstAnalysisData(value: unknown): Summary {
 			riskyCalls: tableFor("riskyCalls"),
 			sourceMaps: tableFor("sourceMaps"),
 			nextActions: [
-				"large JavaScript used lexical inventory; rerun /browser-js-ast on a smaller slice or source-map archived source for AST reduction",
+				"large JavaScript used lexical inventory; rerun JavaScript AST reduction on a smaller slice or source-map archived source",
 				"use browser_artifact search with contextChars or text columnOffset/columnLimit for exact long-line snippets",
 			],
 		};

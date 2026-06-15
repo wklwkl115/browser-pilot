@@ -2,7 +2,7 @@ import { PI_BROWSER_ERROR_CODES, piBrowserError } from "./runtime";
 import { cleanupPiBrowserCdpTab, releasePiBrowserCdpDomains, rememberPiBrowserCdpCleanup, unsubscribePiBrowserCdp } from "./wait_cdp";
 import type { JsonRecord, PiBridgeCommand, PiBridgeResponse, PiBrowserWaitRecord } from "./types";
 
-// wait_coordinator.js - Pi browser wait registry, cleanup, timeout and event subscription helpers.
+// wait_coordinator.js - Browser Pilot wait registry, cleanup, timeout and event subscription helpers.
 // Loaded after wait_cdp.js and before wait.js by background.js.
 
 type PiBrowserEventSubscription = JsonRecord & { key?: string; listenerId: string; tabId: number };

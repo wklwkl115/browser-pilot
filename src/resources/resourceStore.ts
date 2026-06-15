@@ -1,8 +1,8 @@
 /**
- * MCP browser result resource store / ABML ref registry.
+ * Browser result resource store / ABML ref registry.
  *
  * Maintains the existing browser-result:// resource registry and a generic
- * pi-ref:// registry. browser-result:// remains the externally visible MCP
+ * pi-ref:// registry. browser-result:// remains the externally visible
  * resource surface; pi-ref:// is the ABML ref surface. A browser-result://
  * resource is also resolvable as a kind:"data-slice" pi-ref wrapper.
  *

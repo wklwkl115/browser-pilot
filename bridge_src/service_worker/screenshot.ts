@@ -1,4 +1,4 @@
-// screenshot.js - Pi browser native screenshot command.
+// screenshot.js - Browser Pilot screenshot command.
 
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piSleep, piWithTimeout } from "./runtime";

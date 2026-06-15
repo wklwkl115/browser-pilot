@@ -148,7 +148,7 @@ function connectFailureEnvelope(message: string, details: Record<string, unknown
 		taxonomy: { domain: "cli", category: isBridgeStartFailure ? "bridge" : "connection", retryable: true, source: "cli" },
 		...details,
 		recovery: {
-			hint: isBridgeStartFailure ? "Inspect daemon and bridge startup diagnostics before waiting for the browser extension." : "Ensure the Pi browser extension is installed, enabled, and connected to the reported bridge port.",
+			hint: isBridgeStartFailure ? "Inspect daemon and bridge startup diagnostics before waiting for the browser extension." : "Ensure the Browser Pilot extension is installed, enabled, and connected to the reported bridge port.",
 			commands: connectionRecoveryCommands(timeoutMs),
 		},
 	};

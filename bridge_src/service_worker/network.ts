@@ -1,4 +1,4 @@
-// network.js - Pi browser native Network recorder CDP event, lifecycle and command runtime.
+// network.js - Browser Pilot Network recorder CDP event, lifecycle and command runtime.
 // Loaded after network_model.js by background.js.
 import { chromeApi as chrome } from "./runtimeEnv";
 import { PI_BROWSER_ERROR_CODES, findLostRuntimeSession, forgetRuntimeSession, normalizePersistentPiBrowserResponse, piBrowserError, piBrowserPersistentCdp, piWithTimeout, redactSensitive, rememberRuntimeSession, summarizeLostRuntimeSession } from "./runtime";
@@ -226,7 +226,7 @@ async function exportNetworkRecorderHar(tabId: number, msg: PiBridgeCommand): Pr
     return { ok:true, data:{ recorder:networkRecorderSummary(recorder), entries:records.map(r => networkRecordClone(r, { includeBody:includeBodies })), bodies } };
   }
   const entries = records.map(rec => makeHarEntry(rec, includeBodies && rec.bodyRef ? (recorder.bodyStore.get(rec.bodyRef) || null) : null));
-  return { ok:true, data:{ log:{ version:'1.2', creator:{ name:'Pi Browser NetworkRecorder', version:'1.0' }, pages:[], entries }, diagnostics:networkRecorderSummary(recorder) } };
+  return { ok:true, data:{ log:{ version:'1.2', creator:{ name:'Browser Pilot NetworkRecorder', version:'1.0' }, pages:[], entries }, diagnostics:networkRecorderSummary(recorder) } };
 }
 function networkWaitMatches(recorder: NetworkRecorder, wait: Pick<NetworkRecorderWait, "condition" | "criteria" | "idleMs" | "count">, eventType: string, rec: NetworkRecord | null): boolean {
   const condition = wait.condition;

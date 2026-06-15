@@ -1,9 +1,9 @@
 # `browser-pilot` CLI
 
-The `browser-pilot` CLI is the external frontend for the browser tools — a strict superset
-of what the old MCP server exposed, usable by any shell-capable agent, human, CI, or cron.
-Inside Pi the same tools are still invoked natively as `browser_*` tool calls; the CLI is for
-everything outside Pi. Both share one tool core (`registerBrowserTools`).
+The `browser-pilot` CLI is the public frontend for the browser tools, usable by any
+shell-capable agent, human, CI, or cron. It is the single supported agent integration
+surface; tool schemas and command metadata are collected from the shared tool core
+(`registerBrowserTools`).
 
 ## Model
 

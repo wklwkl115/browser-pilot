@@ -2,7 +2,7 @@ import { chromeApi as chrome } from "./runtimeEnv";
 import { normalizePersistentPiBrowserResponse, piBrowserPersistentCdp } from "./runtime";
 import type { JsonRecord, PiBrowserCdpDomainRef, PiBrowserCdpSubscription, PiBrowserWaitRecord } from "./types";
 
-// wait_cdp.js - Pi browser wait CDP domain refcount, subscription and diagnostics helpers.
+// wait_cdp.js - Browser Pilot wait CDP domain refcount, subscription and diagnostics helpers.
 // Loaded after runtime.js and before wait.js by background.js.
 
 const piBrowserCdpSubscriptions = new Map<string, PiBrowserCdpSubscription>();
