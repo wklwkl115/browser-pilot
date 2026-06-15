@@ -257,7 +257,7 @@ npm run smoke:browser:isolated    # 隔离 Chrome profile
 | [docs/playbooks/](docs/playbooks/) | 安全测试操作手册 |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | 工具选择边界 |
 | [docs/browser-memory.md](docs/browser-memory.md) | 本地浏览器记忆系统 |
-| [AI_INSTALL.md](AI_INSTALL.md) | 安装、扩展加载、故障排除 |
+| [docs/browser-usage.md](docs/browser-usage.md) | 安装、扩展加载、故障排除 |
 | [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | 生成的工具契约参考 |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | 生成的 native 协议参考 |
 

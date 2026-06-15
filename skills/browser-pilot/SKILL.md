@@ -189,7 +189,7 @@ Type — *JS-typed-but-the-framework-ignores-it* is the most common silent failu
 - Playbooks: `docs/playbooks/` — triage · recon · capture-and-replay · sqli · ssrf-oast · auth-session-jwt · evidence-and-reporting
 - Methodology map: `docs/reference/web-security-methodology-map.md`
 - Tool contracts: `docs/generated/browser-tool-contract.generated.md` · Native protocol: `docs/generated/native-protocol.generated.md` · Boundaries: `docs/tool-boundaries.md`
-- Install/runtime SOP: `AI_INSTALL.md` · Shell `browser-pilot` CLI frontend: **browser-pilot-cli** skill · `docs/cli.md`
+- Install/runtime guide: `docs/browser-usage.md` · Shell `browser-pilot` CLI frontend: **browser-pilot-cli** skill · `docs/cli.md`
 
 ## Output
 

@@ -64,26 +64,20 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"check:all:contracts": "DAG group alias for contracts",
 	"check:all:package": "DAG group alias for package+docs",
 	"check:all:src": "DAG group alias for src",
-	"check:internal": "internal-only aggregate; runs governance contracts excluded from the public default check graph (run explicitly by maintainers)",
-	"check:audit-inbox": "internal governance contract; depends on gitignored agent-audits/ dev docs; run via check:internal",
-	"check:boundaries": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
-	"check:bridge:files": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
+	"check:bridge:files": "standalone bridge file guard; depends on optional gitignored docs/archive/ context",
 	"check:cli-migration-drift": "completed migration guard; retained as standalone script but removed from default check graph",
 	"check:compute-once": "covered by check:governance umbrella",
 	"check:dag": "graph executor frontend, not a proof obligation node",
-	"check:doc-paths": "internal governance contract; targets gitignored dev docs and degenerates to a vacuous pass in the public tree; run via check:internal",
-	"check:doc-structure": "internal governance contract; depends on gitignored CURRENT/ROADMAP/TODO/ARCHIVE/agent-audits/ dev docs; run via check:internal",
+	"check:doc-paths": "standalone doc path guard; degenerates to a vacuous pass when optional local docs are absent",
 	"check:env-flags": "covered by check:governance umbrella",
-	"check:jshookmcp-closure": "completed migration guard; retained as standalone script but removed from default check graph",
 	"check:kernel-test-map": "covered by check:governance umbrella",
-	"check:package": "internal governance contract; depends on gitignored ARCHIVE/planning dev docs and internal skills; run via check:internal",
+	"check:package": "standalone package-surface guard; run explicitly when changing public release files",
 	"check:purity-vocabulary": "covered by check:governance umbrella",
 	"check:serial": "serial grouped-runner escape hatch",
 	"check:serial:bridge": "serial grouped-runner escape hatch for bridge+unit",
 	"check:serial:contracts": "serial grouped-runner escape hatch for contracts",
 	"check:serial:package": "serial grouped-runner escape hatch for package+docs",
 	"check:smart": "impact executor frontend, not a proof obligation node",
-	"check:registry-drift": "internal governance contract; depends on gitignored CURRENT.md dev doc; run via check:internal",
 	"check:spec-truth": "covered by check:governance umbrella",
 	"check:surface-liveness": "covered by check:governance umbrella",
 	"check:trace": "trace frontend over the graph-backed grouped runner",
@@ -95,8 +89,6 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"release:local": "release acceptance gate, not part of default local check graph",
 	"release:local:smoke": "release acceptance smoke, opt-in runtime gate",
 	"release:portable": "portable clean-tree and consumer-install acceptance gate, not part of default local check graph",
-	"scope:begin": "developer workstream-scope baseline helper; DAG summary consumes its artifact",
-	"smoke:abml:internal-routing": "runtime smoke, explicitly opt-in outside default local checks",
 	"smoke:browser": "runtime smoke, explicitly opt-in outside default local checks",
 	"smoke:browser:abml-causal": "runtime smoke, explicitly opt-in outside default local checks",
 	"smoke:browser:abml-frame-compare": "runtime smoke, explicitly opt-in outside default local checks",
@@ -126,7 +118,7 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"test:observe-abml-integration": "covered by test:unit glob in the graph",
 	"test:unit": "umbrella; covered by test:unit:* shards",
 	"test:unit:cli": "umbrella; covered by test:unit:cli:commands and test:unit:cli:daemon shards",
-	"verify:bridge:dist": "internal governance contract; depends on gitignored docs/archive/ dev docs; run via check:internal",
+	"verify:bridge:dist": "standalone bridge dist guard; depends on optional gitignored docs/archive/ context",
 });
 
 const COMMAND_OVERRIDES = Object.freeze({
@@ -359,28 +351,23 @@ const SPEC_CLAIM_DOCS = new Set([
  * type check, linting, or contract test.  Eligible docs are:
  *   - A Markdown file under docs/ (but NOT docs/generated/ — those are generated
  *     outputs whose drift is verified by check:docs-sync and check:tool-docs), OR
- *   - A top-level *.md file other than README.md / CLAUDE.md / AGENTS.md.
+ *   - A top-level *.md file other than README.md.
  *
  * Excluded from the fast lane (falls through to normal selection):
  *   - README.md — listed in several impact-map inputs; changing it can affect
- *     check:registry-drift, check:bridge, check:tool-docs, check:package, etc.
- *   - CLAUDE.md / AGENTS.md — governance documents; any change must rerun
- *     check:doc-structure which validates managed blocks.
+ *     check:bridge, check:tool-docs, check:package, etc.
  *   - docs/generated/ — auto-generated; drift caught by check:docs-sync /
  *     check:tool-docs, but the file content being wrong means code or tool
  *     definitions changed, which requires broader checks.
  *   - Spec-claim docs (docs/abml-p1-spec.md, etc.) — spec-claims.js pins live
  *     code symbols against specific anchors; a prose change here must rerun
- *     check:doc-structure which verifies claim integrity.
+ *     the normal impact selection.
  *
  * Fast-lane gate set (minimal but sufficient for inert prose docs):
- *   - check:doc-structure — validates heading/section rules, CLAUDE.md managed blocks,
- *     and spec-claim anchor integrity across the doc tree.
  *   - check:doc-paths — verifies that all doc cross-links resolve to real files.
  *   - check:docs-sync — ensures no generated doc is stale (catches a drift where a
  *     doc references a path that sync would have updated).
- * These three gates cover every machine-checkable property of inert prose docs.
- * check:audit-inbox is NOT included: it governs agent-audits/runs/, not docs/.
+ * These two gates cover every machine-checkable property of inert prose docs.
  * check:code-map is NOT included: it scans src/ for code inventory; docs can't
  * affect it unless the doc happens to be a generated output (excluded above).
  * check:tool-docs is NOT included: it verifies doc↔tool-schema drift; inert prose
@@ -390,7 +377,7 @@ function isInertDoc(rel) {
 	if (!rel.endsWith(".md")) return false;
 	// Top-level *.md: exclude the governance/root docs that have broad impact
 	if (!rel.includes("/")) {
-		return rel !== "README.md" && rel !== "CLAUDE.md" && rel !== "AGENTS.md";
+		return rel !== "README.md";
 	}
 	// Under docs/ but not docs/generated/ and not a spec-claim doc
 	if (rel.startsWith("docs/")) {
@@ -407,29 +394,24 @@ export function selectSmartScripts(files, options = {}) {
 
 	if (!files.length) {
 		addSelection(selected, "check:src:types", "base type proof");
-		addSelection(selected, "check:registry-drift", "base registry drift proof");
 		addSelection(selected, "lint:eslint", "base lint proof");
-		addSelection(selected, "check:boundaries", "base repository boundary proof");
 		addSelection(selected, "check:check-graph", "clean-tree graph integrity proof");
 		return selected;
 	}
 
 	// Inert-docs fast lane: if every changed file is an inert prose doc (no code,
 	// no generated output, no governance/spec-claim doc), skip base proofs entirely
-	// and run only the three doc-integrity gates.  An inert prose doc cannot break
-	// tsc, eslint, boundaries, or any contract test — only doc-structure rules,
-	// cross-link liveness, and generated-output sync can be affected.
+	// and run only the doc-integrity gates.  An inert prose doc cannot break tsc,
+	// eslint, or any contract test — only cross-link liveness and generated-output
+	// sync can be affected.
 	if (files.length > 0 && files.every((f) => isInertDoc(normalizeRel(f)))) {
-		addSelection(selected, "check:doc-structure", "inert-docs fast lane: doc structure");
 		addSelection(selected, "check:doc-paths", "inert-docs fast lane: doc link liveness");
 		addSelection(selected, "check:docs-sync", "inert-docs fast lane: generated doc sync");
 		return selected;
 	}
 
 	addSelection(selected, "check:src:types", "base type proof");
-	addSelection(selected, "check:registry-drift", "base registry drift proof");
 	addSelection(selected, "lint:eslint", "base lint proof");
-	addSelection(selected, "check:boundaries", "base repository boundary proof");
 
 	const impactMap = options.impactMap || readImpactMap(options.root || ROOT);
 	const entries = Object.values(impactMap.nodes || {});
@@ -441,7 +423,6 @@ export function selectSmartScripts(files, options = {}) {
 		}
 		if (rel.startsWith("scripts/")) {
 			addSelection(selected, "check:check-graph", `${rel}: graph/runner script change`);
-			addSelection(selected, "check:boundaries", `${rel}: script boundary check`);
 			selectFullGraph(selected, `${rel}: script change expands to full graph`);
 			continue;
 		}
@@ -469,8 +450,7 @@ export function selectSmartScripts(files, options = {}) {
 			addSelection(selected, "check:check-graph", `${rel}: graph drift coverage`);
 			matched = true;
 		}
-		if (rel.startsWith("docs/") || rel.startsWith("README") || rel === "AGENTS.md" || rel === "CLAUDE.md" || rel === "TODO.md" || rel === "CURRENT.md" || rel === "CHANGELOG.md") {
-			addSelection(selected, "check:doc-structure", `${rel}: document structure`);
+		if (rel.startsWith("docs/") || rel.startsWith("README") || rel === "CHANGELOG.md") {
 			addSelection(selected, "check:tool-docs", `${rel}: generated doc drift if affected`);
 			matched = true;
 		}

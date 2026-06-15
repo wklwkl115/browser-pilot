@@ -14,7 +14,7 @@ const read = (relOrAbs) => readFileSync(resolveReadPath(relOrAbs), "utf8");
 
 const commands = read("src/tools/commands.ts");
 const readme = read("README.md");
-const sop = read("AI_INSTALL.md");
+const sop = read("docs/browser-usage.md");
 const skill = read("skills/browser-pilot/SKILL.md");
 
 assert(commands.includes('pi.registerCommand("browser-js-ast"'), "browser commands must register /browser-js-ast");
@@ -30,7 +30,7 @@ assert(commands.includes("runWsShell"), "/browser-ws must route through internal
 assert(commands.includes("parseBrowserWsArgs"), "/browser-ws must support explicit action/flag parsing");
 assert(commands.includes("WS transcript artifact saved"), "/browser-ws must surface transcript artifact saves explicitly");
 assert(readme.includes("/browser-js-ast") && readme.includes("/browser-wasm") && readme.includes("/browser-ws"), "README must document /browser-js-ast, /browser-wasm, and /browser-ws");
-assert(sop.includes("/browser-js-ast") && sop.includes("/browser-wasm") && sop.includes("/browser-ws"), "AI_INSTALL.md must document /browser-js-ast, /browser-wasm, and /browser-ws");
+assert(sop.includes("/browser-js-ast") && sop.includes("/browser-wasm") && sop.includes("/browser-ws"), "docs/browser-usage.md must document /browser-js-ast, /browser-wasm, and /browser-ws");
 assert(skill.includes("/browser-js-ast") && skill.includes("/browser-wasm") && skill.includes("/browser-ws") && /not (?:a )?public browser tool/.test(skill), "skill must document internal-only /browser-js-ast, /browser-wasm, and /browser-ws paths");
 
 console.log("browser commands contract ok");

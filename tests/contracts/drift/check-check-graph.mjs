@@ -43,25 +43,21 @@ assert.equal(pkg.scripts["sync:impact-map"], "node scripts/sync-impact-map.mjs",
 assert.equal(pkg.scripts["check:impact-map"], "node scripts/sync-impact-map.mjs --check", "package must expose impact map drift check");
 assert.equal(pkg.scripts["query:markers"], "node scripts/query-markers.mjs", "package must expose the marker query helper");
 assert.equal(pkg.scripts["new:check"], "node scripts/new-check.mjs", "package must expose the check scaffolder");
-assert.equal(pkg.scripts["scope:begin"], "node scripts/workstream-scope.mjs --begin", "package must expose the workstream scope baseline helper");
 assert.equal(pkg.scripts["docs:sync"], "node scripts/sync-docs.mjs", "package must expose the doc sync umbrella");
 assert.equal(pkg.scripts["check:docs-sync"], "node tests/contracts/drift/check-docs-sync.mjs", "package must expose the doc sync drift gate");
-assert.equal(pkg.scripts["check:audit-inbox"], "node tests/contracts/drift/check-audit-inbox.mjs", "package must expose the audit inbox lifecycle gate");
 assert.equal(pkg.scripts["check:doc-paths"], "node tests/contracts/drift/check-doc-paths.mjs", "package must expose the doc path liveness gate");
 assert.equal(pkg.scripts["sync:code-map"], "tsx scripts/sync-code-map.mjs", "package must expose the generated code-map sync");
 assert.equal(pkg.scripts["check:code-map"], "tsx scripts/sync-code-map.mjs --check", "package must expose the generated code-map drift gate");
 assert.equal(pkg.scripts["check:check-graph"], "node tests/contracts/drift/check-check-graph.mjs", "package must expose the check graph drift gate");
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["query:markers"], "developer query tool; not a proof obligation node", "query:markers must be explicitly excluded from graph obligations");
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["new:check"], "developer scaffolder; graph gate verifies generated wiring", "new:check must be explicitly excluded from graph obligations");
-assert.equal(GRAPH_SCRIPT_EXCLUSIONS["scope:begin"], "developer workstream-scope baseline helper; DAG summary consumes its artifact", "scope:begin must be explicitly excluded from graph obligations");
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["docs:sync"], "doc generator umbrella; guarded by check:docs-sync", "docs:sync must be explicitly excluded from graph obligations");
 assert.equal(GRAPH_SCRIPT_EXCLUSIONS["sync:code-map"], "child code-map doc generator; guarded by check:code-map and check:docs-sync", "sync:code-map must be explicitly excluded from graph obligations");
 assert(CHECK_GROUPS.docs.includes("check:docs-sync"), "docs group must include check:docs-sync");
 assert(CHECK_GROUPS.docs.includes("check:code-map"), "docs group must include check:code-map");
-// Internal governance contracts depend on gitignored dev docs (agent-audits/, docs/archive/,
-// CURRENT.md, ...); they are retained as standalone scripts under GRAPH_SCRIPT_EXCLUSIONS and
-// run via check:internal, not in the public default check graph.
-for (const internal of ["check:audit-inbox", "check:doc-paths", "check:doc-structure", "check:boundaries", "check:registry-drift", "check:package"]) {
+// Public-tree governance contracts must stay out of the default check graph when they are
+// only useful as explicit release/package guards.
+for (const internal of ["check:doc-paths", "check:package"]) {
 	assert(!Object.values(CHECK_GROUPS).flat().includes(internal), `${internal} must not be in the public check graph (internal governance contract)`);
 	assert(GRAPH_SCRIPT_EXCLUSIONS[internal], `${internal} must be registered in GRAPH_SCRIPT_EXCLUSIONS when removed from the public graph`);
 }
@@ -119,10 +115,10 @@ assert(abmlSelection.has("check:abml-contracts"), "smart selection for abml-core
 const distillSelection = selectSmartScripts(["src/distill-core/relevance.ts"], { root, impactMap });
 assert(distillSelection.has("check:task-conditioned-salience"), "smart selection for distill-core relevance must include check:task-conditioned-salience");
 
-// Inert-docs fast lane: a plain prose doc under docs/ (not generated/, not spec-claim,
-// not governance) must select ONLY the 3 doc-integrity gates.
+// Inert-docs fast lane: a plain prose doc under docs/ (not generated/, not spec-claim)
+// must select ONLY the doc-integrity gates.
 const inertDocSelection = selectSmartScripts(["docs/document-structure.md"], { root, impactMap });
-assert.deepEqual([...inertDocSelection.keys()].sort(), ["check:doc-paths", "check:doc-structure", "check:docs-sync"], "inert docs fast lane must select only the 3 doc-integrity gates");
+assert.deepEqual([...inertDocSelection.keys()].sort(), ["check:doc-paths", "check:docs-sync"], "inert docs fast lane must select only the doc-integrity gates");
 assert(!inertDocSelection.has("check:src:types"), "inert docs fast lane must not include tsc base proof");
 assert(!inertDocSelection.has("lint:eslint"), "inert docs fast lane must not include eslint base proof");
 assert(!inertDocSelection.has("test:unit:abml"), "inert docs fast lane must not include unit shards");
@@ -130,13 +126,9 @@ assert(!inertDocSelection.has("test:unit:abml"), "inert docs fast lane must not 
 const mixedSelection = selectSmartScripts(["docs/document-structure.md", "src/abml-core/ax.ts"], { root, impactMap });
 assert(mixedSelection.has("check:src:types"), "mixed docs+code changeset must not take the inert-docs fast lane");
 assert(mixedSelection.has("test:unit:abml"), "mixed docs+code changeset must include unit shards");
-// Governance docs must NOT take the fast lane
+// Root user docs must NOT take the fast lane
 const readmeSelection = selectSmartScripts(["README.md"], { root, impactMap });
 assert(readmeSelection.has("check:src:types"), "README.md must not take the inert-docs fast lane");
-const claudeMdSelection = selectSmartScripts(["CLAUDE.md"], { root, impactMap });
-assert(claudeMdSelection.has("check:src:types"), "CLAUDE.md must not take the inert-docs fast lane");
-const agentsMdSelection = selectSmartScripts(["AGENTS.md"], { root, impactMap });
-assert(agentsMdSelection.has("check:src:types"), "AGENTS.md must not take the inert-docs fast lane");
 // Generated docs must NOT take the fast lane
 const generatedDocSelection = selectSmartScripts(["docs/generated/browser-tool-contract.generated.md"], { root, impactMap });
 assert(generatedDocSelection.has("check:src:types"), "docs/generated/ docs must not take the inert-docs fast lane");
@@ -149,7 +141,7 @@ assert(impactMap.nodes?.["test:unit:abml"]?.inputs?.includes("src/"), "test:unit
 assert(impactMap.nodes?.["test:unit:abml"]?.inputs?.includes("tests/unit/abml/"), "test:unit:abml scope must include its own test directory");
 assert.equal((impactMap.nodes?.["test:unit:abml"]?.unresolvedInputs || []).length, 0, "test:unit:abml must have zero unresolvedInputs after override");
 // A docs-only change must NOT select any unit shard
-const docOnlyUnitCheck = selectSmartScripts(["docs/document-structure.md"], { root, impactMap });
+const docOnlyUnitCheck = selectSmartScripts(["docs/tool-boundaries.md"], { root, impactMap });
 for (const shard of ["test:unit:abml", "test:unit:distill", "test:unit:tools", "test:unit:misc", "test:unit:memory", "test:unit:driver", "test:unit:temporal", "test:unit:web-security", "test:unit:cli:commands", "test:unit:cli:daemon"]) {
 	assert(!docOnlyUnitCheck.has(shard), `docs-only change must not trigger ${shard}`);
 }

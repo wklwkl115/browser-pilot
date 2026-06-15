@@ -10,7 +10,7 @@ bridge server with no serialization or subprocess overhead.
 
 - Pi runtime (`@earendil-works/pi-ai` or `@earendil-works/pi-coding-agent`)
 - Node.js 22+
-- Chrome or Edge with the [Browser Pilot extension loaded](../AI_INSTALL.md)
+- Chrome or Edge with the [Browser Pilot extension loaded](browser-usage.md)
 
 ## Setup
 

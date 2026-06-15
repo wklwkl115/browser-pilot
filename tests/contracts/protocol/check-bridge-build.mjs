@@ -329,7 +329,7 @@ try {
 	globalThis.clearInterval = oldClearInterval;
 }
 
-for (const file of ["README.md", "AI_INSTALL.md"]) {
+for (const file of ["README.md", "docs/browser-usage.md"]) {
 	const text = read(file);
 	assert(text.includes("build:bridge"), `${file} must document the bridge build pipeline`);
 	assert(text.includes("dist") && (text.includes("manifest") || text.includes("Manifest")), `${file} must document the dist manifest/runtime boundary`);

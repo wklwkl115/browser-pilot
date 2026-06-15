@@ -27,7 +27,7 @@ const registered = Array.from(new Set(Array.from(toolSource.matchAll(/name:\s*"(
 assert(registered.length >= 15, "tool drift: expected registered browser tools");
 
 const readme = read("README.md");
-const sop = read("AI_INSTALL.md");
+const sop = read("docs/browser-usage.md");
 const boundaries = read("docs/tool-boundaries.md");
 const generatedContract = read("docs/generated/browser-tool-contract.generated.md");
 const skillPath = "skills/browser-pilot/SKILL.md";
@@ -55,7 +55,7 @@ function markdownTableFirstColumn(markdown, heading) {
 		.filter(Boolean);
 }
 
-assert(readme.includes("AI_INSTALL.md"), "README must link install SOP");
+assert(readme.includes("docs/browser-usage.md"), "README must link install and usage guide");
 assert(readme.includes("skills/browser-pilot/SKILL.md"), "README must link in-repo Pi skill");
 assert(readme.includes("docs/tool-boundaries.md"), "README must link tool boundary matrix");
 assert(skill.includes("docs/tool-boundaries.md"), "skill must link tool boundary matrix");
@@ -95,5 +95,5 @@ assert(generatedContract.includes("| `REF_STALE` | abml | abml.ref | yes | schem
 assert(generatedContract.includes("| `WEBSOCKET_WAIT_TIMEOUT` | websocket | bridge.ws | yes | schema |"), "generated contract must classify WebSocket errors as websocket, not unknown");
 assert(!generatedContract.includes("`content.fingerprint`"), "generated contract must not publish internal native commands");
 const migration = read("docs/browser-usage.md");
-assert(migration.includes("迁移指引") && migration.includes("AI_INSTALL.md") && migration.includes("SKILL.md"), "docs/browser-usage.md must only be a migration pointer");
+assert(migration.includes("## Install") && migration.includes("## Load The Extension") && migration.includes("## Troubleshooting"), "docs/browser-usage.md must own public install and troubleshooting guidance");
 console.log("tool doc drift contract ok");

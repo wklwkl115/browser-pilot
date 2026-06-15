@@ -25,7 +25,6 @@ import {
 	selectSmartScripts,
 	writeJsonFile,
 } from "./check-graph.mjs";
-import { summarizeWorkstreamScope } from "./workstream-scope.mjs";
 
 const args = process.argv.slice(2);
 const cacheEnabled = args.includes("--cache");
@@ -335,7 +334,7 @@ const summary = {
 	results: hits.map((hit) => ({ ...hit, ok: true, status: 0, cacheHit: true })),
 	summaryPath: smartMode ? CHECK_IMPACT_SUMMARY_PATH : CHECK_DAG_SUMMARY_PATH,
 	perRunSummaryPath: smartMode ? undefined : path.join(CHECK_DAG_RUN_DIR, `${runId}.json`),
-	scope: summarizeWorkstreamScope(ROOT),
+	scope: { active: false, declared: [], declaredRoot: "public release tree" },
 };
 
 function writeSummary() {

@@ -322,7 +322,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 | [docs/playbooks/](docs/playbooks/) | Security testing playbooks |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |
 | [docs/browser-memory.md](docs/browser-memory.md) | Local browser memory system |
-| [AI_INSTALL.md](AI_INSTALL.md) | Installation, extension loading, troubleshooting |
+| [docs/browser-usage.md](docs/browser-usage.md) | Installation, extension loading, troubleshooting |
 | [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | Generated tool contract reference |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | Generated native protocol reference |
 

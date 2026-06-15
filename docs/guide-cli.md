@@ -10,7 +10,7 @@ You do not need to start anything manually.
 ## Prerequisites
 
 - Node.js 22+
-- Chrome or Edge with the [Browser Pilot extension loaded](../AI_INSTALL.md)
+- Chrome or Edge with the [Browser Pilot extension loaded](browser-usage.md)
 
 ## First Steps
 

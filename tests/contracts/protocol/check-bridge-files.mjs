@@ -187,8 +187,7 @@ assert(transport.includes("ensureOffscreenDocument") && transport.includes("brow
 assert(offscreenTransport.includes("new WebSocket(url)") && offscreenTransport.includes("PI_BROWSER_BRIDGE_PORT_RANGE_END") && offscreenTransport.includes("browser-pilot-offscreen-ws-message"), "offscreen transport must own port-range WebSocket lifecycle and forward inbound frames");
 for (const forbidden of ["handleCookies", "handleBatch", "handleCDP", "handleTabsCommand", "chrome.scripting.executeScript", "validatePiBridgeProtocolMessage"]) assert(!transport.includes(forbidden), `transport.js must not own command business logic: ${forbidden}`);
 
-assert(existsSync(path.join(root, "AI_INSTALL.md")), "AI_INSTALL.md install SOP must exist");
-assert(existsSync(path.join(root, "docs", "browser-usage.md")), "docs/browser-usage.md migration note must exist");
+assert(existsSync(path.join(root, "docs", "browser-usage.md")), "docs/browser-usage.md install and usage guide must exist");
 const hookBoundaryRel = "docs/archive/hook-dispatcher-boundary.full.md";
 if (existsSync(path.join(root, hookBoundaryRel))) {
 	const hookBoundaryDoc = read(hookBoundaryRel);
@@ -205,6 +204,6 @@ if (existsSync(path.join(root, bridgeBundlerPlanRel))) {
 } else {
 	console.log("bridge ESM/bundler archive plan check skipped; internal archive doc absent");
 }
-assert(read("AI_INSTALL.md").includes("PI_BROWSER_BRIDGE_PORT") && read("AI_INSTALL.md").includes("/browser-status"), "AI_INSTALL.md must own environment and diagnostics instructions");
+assert(read("docs/browser-usage.md").includes("PI_BROWSER_BRIDGE_PORT") && read("docs/browser-usage.md").includes("/browser-status"), "docs/browser-usage.md must own environment and diagnostics instructions");
 assert(readdirSync(path.join(root, "src", "tools", "summaries")).length >= 5, "summary modules must stay split");
 console.log("bridge files contract ok");

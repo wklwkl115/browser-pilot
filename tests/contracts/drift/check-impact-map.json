@@ -118,7 +118,6 @@
       "script": "check:bridge",
       "scope": "global",
       "inputs": [
-        "AI_INSTALL.md",
         "README.md",
         "bridge/native_command_schema.json",
         "bridge/pi_browser_bridge/",
@@ -584,7 +583,6 @@
       "script": "check:tool-docs",
       "scope": "global",
       "inputs": [
-        "AI_INSTALL.md",
         "README.md",
         "bridge/native_command_schema.json",
         "docs/browser-usage.md",
@@ -1639,8 +1637,8 @@
       "script": "check:smoke-diagnostics",
       "scope": "paths",
       "inputs": [
-        "AI_INSTALL.md",
         "README.md",
+        "docs/browser-usage.md",
         "package.json",
         "tests/contracts/runtime/check-smoke-diagnostics.mjs",
         "tests/smoke/smoke-abml-frame-compare.mjs",
@@ -2038,8 +2036,8 @@
       "script": "check:browser-commands",
       "scope": "paths",
       "inputs": [
-        "AI_INSTALL.md",
         "README.md",
+        "docs/browser-usage.md",
         "skills/browser-pilot/SKILL.md",
         "src/tools/commands.ts",
         "tests/contracts/runtime/check-browser-commands.mjs"
@@ -2503,35 +2501,35 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 199,
+          "line": 191,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 506,
+          "line": 486,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 517,
+          "line": 497,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 532,
+          "line": 512,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 649,
+          "line": 629,
           "reason": "dynamic file read"
         },
         {
@@ -2552,28 +2550,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 215,
+          "line": 207,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 278,
+          "line": 270,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 294,
+          "line": 286,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 308,
+          "line": 300,
           "reason": "dynamic directory walk"
         }
       ],
@@ -2601,35 +2599,35 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 199,
+          "line": 191,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 506,
+          "line": 486,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 517,
+          "line": 497,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 532,
+          "line": 512,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 649,
+          "line": 629,
           "reason": "dynamic file read"
         },
         {

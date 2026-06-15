@@ -123,30 +123,30 @@ for (const token of ["PI_BROWSER_DAEMON_STATE_DIR", "patchExtensionDistPort", "s
 	assert(cliFullSmoke.includes(token), `full CLI smoke must cover ${token}`);
 }
 for (const reason of ["agent_occupies", "orphan_socket", "unknown_owner"]) {
-	assert(read("AI_INSTALL.md").includes(reason), `AI_INSTALL.md must document smoke port reason ${reason}`);
+	assert(read("docs/browser-usage.md").includes(reason), `docs/browser-usage.md must document smoke port reason ${reason}`);
 	assert(read("README.md").includes(reason), `README.md must document smoke port reason ${reason}`);
 }
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:scan-summary"), "AI_INSTALL.md must document scan summary runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:scan-summary"), "docs/browser-usage.md must document scan summary runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:scan-summary"), "README.md must document scan summary runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:debugger-evidence"), "AI_INSTALL.md must document debugger evidence runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:debugger-evidence"), "docs/browser-usage.md must document debugger evidence runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:debugger-evidence"), "README.md must document debugger evidence runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:correlation-chain"), "AI_INSTALL.md must document correlation chain runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:correlation-chain"), "docs/browser-usage.md must document correlation chain runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:correlation-chain"), "README.md must document correlation chain runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-response"), "AI_INSTALL.md must document intercept response runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-response"), "docs/browser-usage.md must document intercept response runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-response"), "README.md must document intercept response runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-replace-script"), "AI_INSTALL.md must document intercept replace-script runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-replace-script"), "docs/browser-usage.md must document intercept replace-script runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-replace-script"), "README.md must document intercept replace-script runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-uninstall-fail-closed"), "AI_INSTALL.md must document intercept fail-closed runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-uninstall-fail-closed"), "docs/browser-usage.md must document intercept fail-closed runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-uninstall-fail-closed"), "README.md must document intercept fail-closed runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-request-mutate"), "AI_INSTALL.md must document intercept request-mutate runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-request-mutate"), "docs/browser-usage.md must document intercept request-mutate runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-request-mutate"), "README.md must document intercept request-mutate runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-tab-close-cleanup"), "AI_INSTALL.md must document intercept tab-close cleanup runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-tab-close-cleanup"), "docs/browser-usage.md must document intercept tab-close cleanup runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-tab-close-cleanup"), "README.md must document intercept tab-close cleanup runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:intercept-lease-conflict"), "AI_INSTALL.md must document intercept lease-conflict runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:intercept-lease-conflict"), "docs/browser-usage.md must document intercept lease-conflict runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:intercept-lease-conflict"), "README.md must document intercept lease-conflict runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:websocket-session"), "AI_INSTALL.md must document websocket session runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:websocket-session"), "docs/browser-usage.md must document websocket session runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:websocket-session"), "README.md must document websocket session runtime smoke");
-assert(read("AI_INSTALL.md").includes("npm run smoke:browser:memory"), "AI_INSTALL.md must document browser memory runtime smoke");
+assert(read("docs/browser-usage.md").includes("npm run smoke:browser:memory"), "docs/browser-usage.md must document browser memory runtime smoke");
 assert(read("README.md").includes("npm run smoke:browser:memory"), "README.md must document browser memory runtime smoke");
 
 console.log("smoke diagnostics contract ok");
