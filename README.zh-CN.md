@@ -1,16 +1,26 @@
+<div align="center">
+
 # Browser Pilot
 
+**给你的 AI agent 一个真正的浏览器 —— 而不是一张截图。**
+
+[![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#工具列表)
-[![Package](https://img.shields.io/badge/package-consumer%20verified-green.svg)](#开发)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
+[![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#开发)
 
 [English](README.md)
 
-**面向 AI agent 的真实浏览器自动化** —— 不是模拟器，不是代理，不是截图解析。
-Browser Pilot 让你的 agent 直接控制真实的 Chrome/Edge 标签页：DOM 结构、JavaScript
+</div>
+
+Browser Pilot 让 AI agent 直接控制真实的 Chrome/Edge 标签页：DOM 结构、JavaScript
 执行、CDP 命令、网络流量、Cookie、文件传输。人类在 DevTools 里能做的一切，你的 agent 都能通过
 22 个可组合的 `browser_*` 工具完成。
+
+> **不是模拟器。不是代理。不是截图解析。**
+> 你的 agent 把 DOM 读成语义模型，像开发者在 DevTools 里一样编写 JavaScript。
 
 ```
 $ browser-pilot observe --mode scan --json | jq '.summary.gist'
@@ -37,6 +47,20 @@ Browser Pilot 给 agent 它们真正需要的东西：
 - **内置安全测试** —— 7 个 Web 安全工具（爬取、模糊测试、SQLi、模板检查、Cookie/session 分析、HTTP 重放、OAST）共享浏览器会话，无需额外代理。
 - **Token 高效输出** —— 基于显著性的渲染、session delta 压缩和任务条件相关性保持输出紧凑。同一页面的重复扫描只发送变化部分。
 - **面向使用者的包验证** —— 公开 npm tarball 会安装到干净的临时项目，并通过已发布 CLI 做基础 smoke。
+
+## 横向对比
+
+| 能力 | Browser Pilot | Playwright / Puppeteer | browser-use | Selenium |
+|---|:---:|:---:|:---:|:---:|
+| 语义 DOM 模型（非原始 HTML/像素） | **支持** | 不支持 | 不支持 | 不支持 |
+| 页面内任意 JS 执行 | **支持** | 仅 eval | 不支持 | 有限 |
+| CDP 物理输入（受信任事件） | **支持** | 部分 | 不支持 | 不支持 |
+| 完整网络录制/重放/变异 | **支持** | 仅 HAR | 不支持 | 需代理 |
+| 内置 Web 安全工具（7 个） | **支持** | 不支持 | 不支持 | 不支持 |
+| Token 高效输出（显著性 + delta） | **支持** | N/A | 不支持 | N/A |
+| 会话记忆（按站点 SOP 召回） | **支持** | 不支持 | 不支持 | 不支持 |
+| 抗 MV3 SW 重启 / tab 替换 | **支持** | N/A | 不支持 | 部分 |
+| 专为 AI agent 设计 | **原生** | 后适配 | 是 | 后适配 |
 
 ## 工作原理
 
@@ -78,7 +102,7 @@ Chrome 扩展运行在浏览器中，通过本地 WebSocket 桥接到 Node.js �
 ### 安装
 
 ```bash
-git clone <repository-url> browser-pilot
+git clone https://github.com/wklwkl115/browser-pilot.git
 cd browser-pilot
 npm install
 npm run build
@@ -262,6 +286,10 @@ npm run quality:local     # 完整公开检查的别名
 | `PI_BROWSER_SESSION_DELTA` | `1` | 重复 scan 的 session-delta（`0` 禁用） |
 | `PI_BROWSER_RELEVANCE` | `1` | 任务条件相关性（`0` 禁用） |
 | `PI_BROWSER_MEMORY` | `1` | 自动召回浏览器记忆（`0` 禁用） |
+
+## Star 历史
+
+如果 Browser Pilot 对你有帮助，欢迎点个 Star —— 帮助更多人发现这个项目。
 
 ## 许可证
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/wklwkl115/browser-pilot/security/advisories/new
+    about: Report security vulnerabilities through GitHub's private advisory system
+  - name: Questions & Discussion
+    url: https://github.com/wklwkl115/browser-pilot/discussions
+    about: Ask questions, share workflows, and discuss ideas

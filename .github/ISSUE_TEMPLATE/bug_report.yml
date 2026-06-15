@@ -1,0 +1,90 @@
+name: Bug Report
+description: Report a bug in Browser Pilot
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the sections below so we can reproduce and fix the issue.
+
+        **Do NOT include cookies, tokens, credentials, private URLs, or HAR files.**
+
+  - type: input
+    id: version
+    attributes:
+      label: Browser Pilot version
+      description: "Run `npx browser-pilot --version` or check package.json"
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: Frontend
+      description: How are you using Browser Pilot?
+      options:
+        - CLI (`browser-pilot` command)
+        - Pi Native (in-process `browser_*` calls)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "When I run `browser-pilot observe --mode scan`, the output is..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the bug.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide:
+        - OS and version
+        - Node.js version (`node -v`)
+        - Browser and version
+        - Extension version (from `chrome://extensions`)
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error messages, stack traces, or CLI output. **Redact secrets.**
+      render: text
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I have redacted all cookies, tokens, and credentials from this report
+          required: true

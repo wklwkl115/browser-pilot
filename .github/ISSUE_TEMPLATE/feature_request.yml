@@ -1,0 +1,57 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We appreciate your ideas for improving Browser Pilot. Please describe the problem
+        you're trying to solve and your proposed solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this feature solve? What workflow is blocked or painful?
+      placeholder: "When my agent needs to ..., it currently has to ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work? Include tool names, CLI flags, or API shapes if you have ideas.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative approaches have you tried?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Browser Pilot does this affect?
+      options:
+        - Core tools (observe, execute, command, wait, tabs, etc.)
+        - Security tools (crawl, fuzz, sqli, template, cookie, etc.)
+        - CLI
+        - Bridge / Extension
+        - Perception (ABML, distill, capture)
+        - Memory
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and discussions for duplicates
+          required: true

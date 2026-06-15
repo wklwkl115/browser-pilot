@@ -13,9 +13,23 @@
     "dom",
     "web-security",
     "agent-tools",
-    "pi-package",
-    "pi-extension"
+    "ai-agent",
+    "ai-tools",
+    "browser-testing",
+    "pentesting"
   ],
+  "author": "Wang-ke-li",
+  "homepage": "https://github.com/wklwkl115/browser-pilot#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wklwkl115/browser-pilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wklwkl115/browser-pilot/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

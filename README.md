@@ -1,16 +1,27 @@
+<div align="center">
+
 # Browser Pilot
 
+**Give your AI agent a real browser — not a screenshot.**
+
+[![CI](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml/badge.svg)](https://github.com/wklwkl115/browser-pilot/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#tools)
-[![Package](https://img.shields.io/badge/package-consumer%20verified-green.svg)](#development)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json)
+[![860+ Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
 
 [中文文档](README.zh-CN.md)
 
-**Real browser automation for AI agents** — not a simulator, not a proxy, not a screenshot parser.
-Browser Pilot gives your agent direct access to a real Chrome/Edge tab: DOM structure, JavaScript
-execution, CDP commands, network traffic, cookie jars, and file transfers. Everything a human
-can do in DevTools, your agent can do through 22 composable `browser_*` tools.
+</div>
+
+Browser Pilot gives AI agents direct control over real Chrome/Edge tabs — DOM structure,
+JavaScript execution, CDP commands, network traffic, cookie jars, and file transfers.
+Everything a human can do in DevTools, your agent can do through 22 composable
+`browser_*` tools.
+
+> **Not a simulator. Not a proxy. Not a screenshot parser.**
+> Your agent reads the DOM as a semantic model and writes JavaScript like a developer in DevTools.
 
 ```
 $ browser-pilot observe --mode scan --json | jq '.summary.gist'
@@ -48,6 +59,20 @@ Browser Pilot gives agents what they actually need:
   send only what changed.
 - **Consumer-first package check** — the public tarball is installed in a clean fixture
   and smoke-tested through the shipped CLI.
+
+## How It Compares
+
+| Capability | Browser Pilot | Playwright / Puppeteer | browser-use | Selenium |
+|---|:---:|:---:|:---:|:---:|
+| Semantic DOM model (not raw HTML/pixels) | **Yes** | No | No | No |
+| Arbitrary JS execution in page | **Yes** | Eval only | No | Limited |
+| CDP physical input (trusted events) | **Yes** | Partial | No | No |
+| Full network record/replay/mutate | **Yes** | HAR only | No | Proxy needed |
+| Built-in web security tools (7) | **Yes** | No | No | No |
+| Token-efficient output (salience + delta) | **Yes** | N/A | No | N/A |
+| Session memory (per-site SOP recall) | **Yes** | No | No | No |
+| Survives MV3 SW restart / tab replace | **Yes** | N/A | No | Partial |
+| Designed for AI agents | **First** | Adapted | Yes | Adapted |
 
 ## How It Works
 
@@ -91,7 +116,7 @@ Two frontends connect to the same tool core:
 ### Install
 
 ```bash
-git clone <repository-url> browser-pilot
+git clone https://github.com/wklwkl115/browser-pilot.git
 cd browser-pilot
 npm install
 npm run build
@@ -319,6 +344,10 @@ It is `.gitignore`d and should never be committed.
 | `PI_BROWSER_SESSION_DELTA` | `1` | Session-delta for repeated scans (`0` to disable) |
 | `PI_BROWSER_RELEVANCE` | `1` | Task-conditioned relevance (`0` to disable) |
 | `PI_BROWSER_MEMORY` | `1` | Auto-recall browser memory (`0` to disable) |
+
+## Star History
+
+If Browser Pilot is useful, consider giving it a star — it helps others discover the project.
 
 ## License
 
