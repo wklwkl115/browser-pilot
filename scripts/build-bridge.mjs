@@ -7,17 +7,17 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // prepack uses --quiet so npm pack stdout stays parseable.
 const quiet = process.argv.includes("--quiet");
-const defaultDistDir = path.join(root, "bridge", "pi_browser_bridge", "dist");
+const defaultDistDir = path.join(root, "bridge", "browser_pilot_bridge", "dist");
 const serviceWorkerBuildMode = "esm-import-graph";
 const targetServiceWorkerBuildMode = "esm-import-graph";
-const buildIdPlaceholder = "__PI_BROWSER_BRIDGE_BUILD_ID_PLACEHOLDER__";
+const buildIdPlaceholder = "__BROWSER_PILOT_BRIDGE_BUILD_ID_PLACEHOLDER__";
 const fingerprintInputs = [
-	"bridge/pi_browser_bridge/dist/content.js",
-	"bridge/pi_browser_bridge/dist/disable_dialogs.js",
-	"bridge/pi_browser_bridge/dist/hook_dispatcher.js",
-	"bridge/pi_browser_bridge/dist/offscreen.js",
-	"bridge/pi_browser_bridge/dist/service-worker.js",
-	"bridge/pi_browser_bridge/manifest.json",
+	"bridge/browser_pilot_bridge/dist/content.js",
+	"bridge/browser_pilot_bridge/dist/disable_dialogs.js",
+	"bridge/browser_pilot_bridge/dist/hook_dispatcher.js",
+	"bridge/browser_pilot_bridge/dist/offscreen.js",
+	"bridge/browser_pilot_bridge/dist/service-worker.js",
+	"bridge/browser_pilot_bridge/manifest.json",
 ].sort();
 const allowedDistJs = new Set(fingerprintInputs.filter((rel) => rel.includes("/dist/")).map((rel) => path.basename(rel)));
 const metadataOnlyServiceWorkerFoundationModules = [
@@ -33,28 +33,28 @@ const metadataOnlyLegacyServiceWorkerModules = [];
 const entries = [
 	{
 		name: "service-worker",
-		source: "bridge_src/service-worker.ts",
-		outfile: "bridge/pi_browser_bridge/dist/service-worker.js",
+		source: "src/bridge/extension/service-worker.ts",
+		outfile: "bridge/browser_pilot_bridge/dist/service-worker.js",
 	},
 	{
 		name: "content",
-		source: "bridge_src/page_scripts/content.ts",
-		outfile: "bridge/pi_browser_bridge/dist/content.js",
+		source: "src/bridge/extension/page_scripts/content.ts",
+		outfile: "bridge/browser_pilot_bridge/dist/content.js",
 	},
 	{
 		name: "offscreen",
-		source: "bridge_src/offscreen/transport.ts",
-		outfile: "bridge/pi_browser_bridge/dist/offscreen.js",
+		source: "src/bridge/extension/offscreen/transport.ts",
+		outfile: "bridge/browser_pilot_bridge/dist/offscreen.js",
 	},
 	{
 		name: "hook-dispatcher",
-		source: "bridge_src/page_scripts/hook_dispatcher.ts",
-		outfile: "bridge/pi_browser_bridge/dist/hook_dispatcher.js",
+		source: "src/bridge/extension/page_scripts/hook_dispatcher.ts",
+		outfile: "bridge/browser_pilot_bridge/dist/hook_dispatcher.js",
 	},
 	{
 		name: "disable-dialogs",
-		source: "bridge_src/page_scripts/disable_dialogs.ts",
-		outfile: "bridge/pi_browser_bridge/dist/disable_dialogs.js",
+		source: "src/bridge/extension/page_scripts/disable_dialogs.ts",
+		outfile: "bridge/browser_pilot_bridge/dist/disable_dialogs.js",
 	},
 ];
 
@@ -76,7 +76,7 @@ export async function computeBuildId(distDir) {
 	return hash.digest("hex");
 }
 
-if (path.resolve(process.argv[1] ?? "") === path.resolve(fileURLToPath(import.meta.url))) {
+async function main() {
 	await rm(defaultDistDir, { recursive: true, force: true });
 	await mkdir(defaultDistDir, { recursive: true });
 	await writeFile(path.join(defaultDistDir, ".gitignore"), "*\n!.gitignore\n", "utf8");
@@ -140,3 +140,5 @@ if (path.resolve(process.argv[1] ?? "") === path.resolve(fileURLToPath(import.me
 
 	if (!quiet) console.log(JSON.stringify({ ok: true, distDir: path.relative(root, defaultDistDir), buildId, entries: entries.map((entry) => entry.outfile) }, null, 2));
 }
+
+await main();

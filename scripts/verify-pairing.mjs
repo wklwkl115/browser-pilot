@@ -76,8 +76,8 @@ function controlHttp(controlPort, daemonToken, method, pathname, body, pairingTo
   return new Promise((resolve, reject) => {
     const data = body !== undefined ? JSON.stringify(body) : undefined;
     const headers = {
-      "x-pi-daemon-token": daemonToken,
-      ...(pairingToken ? { "x-pi-pairing-token": pairingToken } : {}),
+      "x-browser-pilot-daemon-token": daemonToken,
+      ...(pairingToken ? { "x-browser-pilot-pairing-token": pairingToken } : {}),
       ...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
     };
     const req = http.request(
@@ -369,12 +369,12 @@ async function main() {
   const bridgePortRange = await findFreePortRange();
 
   const daemonEnv = {
-    PI_BROWSER_DAEMON_STATE_DIR: tempStateDir,
-    PI_BROWSER_AUTH_STATE_DIR: tempAuthDir,
-    PI_BROWSER_BRIDGE_PORT: String(bridgePortRange.start),
-    PI_BROWSER_BRIDGE_PORT_RANGE_END: String(bridgePortRange.end),
-    PI_BROWSER_PAIRING_TOKEN: "", // don't inherit caller's token
-    PI_BROWSER_NO_SYSTEM_CA: "1",
+    BROWSER_PILOT_DAEMON_STATE_DIR: tempStateDir,
+    BROWSER_PILOT_AUTH_STATE_DIR: tempAuthDir,
+    BROWSER_PILOT_BRIDGE_PORT: String(bridgePortRange.start),
+    BROWSER_PILOT_BRIDGE_PORT_RANGE_END: String(bridgePortRange.end),
+    BROWSER_PILOT_PAIRING_TOKEN: "", // don't inherit caller's token
+    BROWSER_PILOT_NO_SYSTEM_CA: "1",
   };
 
   let daemonChild = null;

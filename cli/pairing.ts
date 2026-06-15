@@ -63,7 +63,7 @@ export async function writeAgentToken(token: string, pairingId: string, label: s
  *
  * Precedence (highest to lowest):
  *   1. Explicit `--token` CLI flag value
- *   2. `PI_BROWSER_PAIRING_TOKEN` environment variable
+ *   2. `BROWSER_PILOT_PAIRING_TOKEN` environment variable
  *   3. Persisted agent-token file on disk
  *
  * Returns `undefined` if no token is available from any source.

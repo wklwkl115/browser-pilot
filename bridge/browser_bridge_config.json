@@ -2,5 +2,5 @@
   "host": "127.0.0.1",
   "port": 18765,
   "portRangeEnd": 18784,
-  "requestElementId": "__pi_browser_bridge_request__"
+  "requestElementId": "__browser_pilot_bridge_request__"
 }

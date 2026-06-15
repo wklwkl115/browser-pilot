@@ -25,7 +25,7 @@ body:
       description: How are you using Browser Pilot?
       options:
         - CLI (`browser-pilot` command)
-        - Pi Native (in-process `browser_*` calls)
+        - Browser Pilot (in-process `browser_*` calls)
     validations:
       required: true
 

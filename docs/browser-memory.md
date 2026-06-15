@@ -4,7 +4,7 @@
 
 ## 范围
 
-- 本地 only：写入 `.pi/browser-memory/`
+- 本地 only：写入 `.browser-pilot/memory/`
 - actions：`record | recall | read | validate`
 - local-only scopes：`scopeKind:"origin" | "task" | "project"`
 - 不支持：repo promote/export、embeddings/语义检索、prompt injection
@@ -25,7 +25,7 @@
 
 ## L1 路由索引（insight index）
 
-`index.json` 里物化一个**倒排 token 索引** `routing: { token: [id...] }`——由活跃条目的 title+triggers 分词(≥3 字符、去重、每条上限 24)派生(纯函数 `src/tools/memory/routing.ts`)。它把"情境→相关记忆"做成**按 token 重叠路由**,取代原来的子串扫描:
+`index.json` 里物化一个**倒排 token 索引** `routing: { token: [id...] }`——由活跃条目的 title+triggers 分词(≥3 字符、去重、每条上限 24)派生(纯函数 `src/commands/memory/routing.ts`)。它把"情境→相关记忆"做成**按 token 重叠路由**,取代原来的子串扫描:
 
 - **recall(query)**:query 分词后经索引路由,按重叠 token 数排序(`route×N` 计入 `matchReason`),跨 scope 召回;原 exact-scope(+100)与子串信号保留。
 - **auto-surface 的 task/project**:用页面(url+title)的 token 与条目路由 token 重叠(≥1)判定,**token 边界正确**(不再有 "cat" 命中 "category" 之类子串误判)。
@@ -46,11 +46,11 @@
 
 `browser_observe mode=scan|text` 会在 runner 内预构建 `MemoryAugmentationPlan`：按当前 URL/intent token 对本地 `index.json` 做 IDF recall，再用当前 origin profile 的 structural anchors 验证，最后通过 `envelope.memory` 注入。自动注入必须有当前 URL/intent token overlap；仅同源不会弹出旧任务记忆。这个路径不再使用 `nextActions` recall 提示。
 
-- no-hit / disabled：默认 observe envelope 字节不变，且不物化 `.pi/browser-memory/`。
+- no-hit / disabled：默认 observe envelope 字节不变，且不物化 `.browser-pilot/memory/`。
 - 命中：最多 2 张 card，带 `verification:"fresh"|"unverified"|"stale"`；首次同 conversation+origin 可 inline 有界 body，后续折叠为 `browser-memory://...` handle。
 - 预算保护：`livePlaneSignature()` 验证 inline→handle→omit，每个 accepted variant 都不得改变 live page planes。
 - stale 反馈：structural anchors drift 会走 profile strikes；3 次后 stale card 不再带 body。
-- `PI_BROWSER_MEMORY=0` 关闭 kernel 自动读写；显式 `browser_memory record|recall|read|validate` 不受影响。
+- `BROWSER_PILOT_MEMORY=0` 关闭 kernel 自动读写；显式 `browser_memory record|recall|read|validate` 不受影响。
 
 ### 写入侧催记（record candidate）
 
@@ -58,7 +58,7 @@
 
 - 每个 origin 每会话至多催一次；该 origin 一旦录过即不再催。
 - evidence refs 是推荐 provenance，不是硬前置；没有 durable evidence 时 hint 省略 `evidenceRefs`。
-- `PI_BROWSER_MEMORY=0` 或 `PI_BROWSER_MEMORY_AUTOSURFACE=0` 会关闭写入侧催记。
+- `BROWSER_PILOT_MEMORY=0` 或 `BROWSER_PILOT_MEMORY_AUTOSURFACE=0` 会关闭写入侧催记。
 
 ## 使用示例
 

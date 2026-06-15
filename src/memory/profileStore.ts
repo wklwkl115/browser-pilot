@@ -3,11 +3,11 @@ import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { recordValue } from "../utils/records.js";
 import { parseJsonOrThrow, stableJson } from "../utils/json.js";
 import { atomicWriteText } from "../utils/fsAtomic.js";
-import { emptyMemoryOriginProfile, mergeProfiles } from "../memory-core/profile.js";
-import type { MemoryOriginProfile } from "../memory-core/types.js";
+import { emptyMemoryOriginProfile, mergeProfiles } from "../kernels/memory/profile.js";
+import type { MemoryOriginProfile } from "../kernels/memory/types.js";
 import { memoryKernelEnabled } from "./secret.js";
 
-const MEMORY_ROOT = ".pi/browser-memory";
+const MEMORY_ROOT = ".browser-pilot/memory";
 const PROFILE_DIR = "profiles";
 const MAX_PROFILE_BYTES = 64 * 1024;
 const MAX_PROFILE_ORIGINS = 64;

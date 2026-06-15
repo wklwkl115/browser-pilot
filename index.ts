@@ -1,4 +1,4 @@
-export { BrowserBridgeServer } from "./src/driver/BrowserBridgeServer.js";
-export { registerBrowserTools } from "./src/tools/registerTools.js";
-export { ToolRegistryAdapter, type ToolDefinition } from "./src/frontend/toolCollector.js";
-export type { BrowserToolDefinition, BrowserToolHost, BrowserToolResult, BrowserToolUpdate } from "./src/frontend/toolHost.js";
+export { BrowserBridgeServer } from "./src/bridge/server/BrowserBridgeServer.js";
+export { defineBrowserCommands } from "./src/commands/defineBrowserCommands.js";
+export { CommandManifestIndex, type CommandDefinition } from "./src/commands/commandManifestIndex.js";
+export type { BrowserCommandDefinition, BrowserCommandSink, BrowserCommandResult, BrowserCommandUpdate } from "./src/commands/commandDefinition.js";

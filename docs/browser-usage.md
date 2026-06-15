@@ -17,24 +17,24 @@ npm run build:bridge
 
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable Developer mode.
-3. Click Load unpacked and select `bridge/pi_browser_bridge`.
+3. Click Load unpacked and select `bridge/browser_pilot_bridge`.
 4. Confirm the extension name is Browser Pilot Bridge.
 5. Reload the extension after running `npm run build:bridge`.
    The loaded extension uses the generated `dist` runtime declared by
-   `bridge/pi_browser_bridge/manifest.json`.
+   `bridge/browser_pilot_bridge/manifest.json`.
 6. Enable Allow access to file URLs if you need `browser_upload` with local files.
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `PI_BROWSER_BRIDGE_HOST` | `127.0.0.1` | Bridge listen address |
-| `PI_BROWSER_BRIDGE_PORT` | `18765` | Bridge port range start |
-| `PI_BROWSER_BRIDGE_PORT_RANGE_END` | `18784` | Bridge port range end |
-| `PI_BROWSER_RENDERER` | `salience` | Observation renderer |
-| `PI_BROWSER_MEMORY` | `1` | Browser memory auto-surface |
+| `BROWSER_PILOT_BRIDGE_HOST` | `127.0.0.1` | Bridge listen address |
+| `BROWSER_PILOT_BRIDGE_PORT` | `18765` | Bridge port range start |
+| `BROWSER_PILOT_BRIDGE_PORT_RANGE_END` | `18784` | Bridge port range end |
+| `BROWSER_PILOT_RENDERER` | `salience` | Observation renderer |
+| `BROWSER_PILOT_MEMORY` | `1` | Browser memory auto-surface |
 
-When changing bridge ports, set `PI_BROWSER_BRIDGE_PORT`, run
+When changing bridge ports, set `BROWSER_PILOT_BRIDGE_PORT`, run
 `npm run build:bridge`, and reload the extension.
 
 ## Verify
@@ -49,7 +49,7 @@ npm run verify:package
 then runs `verify:package`. Package verification creates an npm tarball, installs
 it into a clean throwaway consumer project, and runs the shipped
 `browser-pilot` CLI help/schema/status commands. Artifacts are written under
-`.pi/browser-artifacts/public-package/`.
+`.browser-pilot/artifacts/public-package/`.
 
 ## Troubleshooting
 
@@ -60,7 +60,7 @@ it into a clean throwaway consumer project, and runs the shipped
 3. Command timeout: check whether the page is blocked by modal dialogs or heavy
    scripts.
 4. Empty scan result: make the target tab visible and retry `browser-pilot observe --mode scan`.
-5. Artifact not found: artifact paths are relative to `.pi/browser-artifacts/`.
+5. Artifact not found: artifact paths are relative to `.browser-pilot/artifacts/`.
 6. Download returns no path: reload the extension and confirm `downloads`
    permission is granted.
 7. Upload file access error: enable Allow access to file URLs in extension

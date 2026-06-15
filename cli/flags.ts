@@ -2,11 +2,11 @@
  * Schema-driven CLI flag generation + argv parsing.
  *
  * A tool's TypeBox parameter schema is introspected into flag specs; argv is
- * collected into a raw object; then validateToolArgs (the shared frontend
+ * collected into a raw object; then validateCommandArgs (the shared frontend
  * validator) coerces/validates ("5" -> number, "true" -> boolean, enum/union
  * rejection) — we never re-implement coercion.
  */
-import { validateToolArgs } from "../src/frontend/validation.js";
+import { validateCommandArgs } from "../src/commands/validation.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -51,7 +51,7 @@ function flagKind(prop: JsonSchemaProp): { kind: FlagKind; choices?: string[] } 
 	if (Array.isArray(prop.anyOf) && prop.anyOf.length) {
 		const consts = prop.anyOf.map((m) => m.const).filter((c) => c !== undefined);
 		if (consts.length === prop.anyOf.length) return { kind: "enum", choices: consts.map((c) => String(c)) };
-		return { kind: "string" }; // e.g. number|string union — let validateToolArgs coerce
+		return { kind: "string" }; // e.g. number|string union — let validateCommandArgs coerce
 	}
 	return { kind: "string" };
 }
@@ -252,13 +252,13 @@ export function parseArgs(specs: FlagSpec[], argv: string[], cwd = process.cwd()
 		} else {
 			const parsedValue = parseFlagValue(spec, value, cwd);
 			if (!parsedValue.ok) return fail(parsedValue.error);
-			raw[spec.name] = parsedValue.value; // string/number/enum — validateToolArgs coerces below
+			raw[spec.name] = parsedValue.value; // string/number/enum — validateCommandArgs coerces below
 		}
 	}
 	return { ok: true, value: { params: raw, globals } };
 }
 
-/** Coerce + validate raw params against the tool schema (reuses the frontend validator). */
+/** Coerce + validate raw params against the command schema (reuses the command validator). */
 export function coerceParams(schema: unknown, raw: Record<string, unknown>): { ok: true; args: Record<string, unknown> } | { ok: false; error: string } {
-	return validateToolArgs(schema, raw);
+	return validateCommandArgs(schema, raw);
 }

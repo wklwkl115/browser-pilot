@@ -1,6 +1,6 @@
 # Browser Tool Boundaries
 
-This file defines the Semantic singleton boundary for each callable `browser_*` tool. Keep it aligned with `src/tools/register*.ts`, README, and the `browser-pilot-cli` skill.
+This file defines the Semantic singleton boundary for each callable `browser_*` tool. Keep it aligned with `src/commands/*Command.ts`, README, and the `browser-pilot-cli` skill.
 
 Primary inputs are the tool parameters shown in `docs/generated/browser-tool-reference.generated.md`; this boundary file focuses on tool choice, evidence type, and follow-up flow.
 
@@ -16,9 +16,9 @@ Primary inputs are the tool parameters shown in `docs/generated/browser-tool-ref
 
 ## External capability migration boundary
 
-External browser-security research is treated as capability discovery only. Do not copy AGPL code/text/schema/payloads/tests, do not import another tool registry/runtime, and do not expose borrowed tool names as Browser Pilot API. The public `browser_*` surface remains Semantic-singleton driven.
+External browser-security research is treated as capability discovery only. Do not copy AGPL code/text/schema/payloads/tests, do not import another command registry/runtime, and do not expose borrowed command names as Browser Pilot API. The public `browser_*` surface remains Semantic-singleton driven.
 
-Rejected public tool names for this migration: `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, `browser_canvas`.
+Rejected public command names for this migration: `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, `browser_canvas`.
 
 Capability mapping:
 
@@ -33,7 +33,7 @@ Capability mapping:
 
 Any future public tool in these areas requires a separate RFC with eval evidence, non-overlap proof against this table, contracts, budgets, summaries, README/skill updates, and runtime smoke artifacts.
 
-Future frontend-reversing work is tracked only as RFC/eval problem areas, not as public tool commitments: `Debugger evidence workflow`, `deterministic runtime provenance/symbolization`, `scoped request intervention/replay gap`, `storage/service-worker evidence navigation`, `canvas/WebGL/Wasm observability`, and `multi-signal evidence correlation`. These areas must first map to existing canonical tools (`browser_execute`, `browser_command`, `browser_frame`, `browser_hook`, `browser_network`, `browser_http_replay`, `browser_crawl`, `browser_evidence`, `browser_artifact`). The rejected names `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, and `browser_canvas` remain rejected by default, including synonymous replacement names. Historical planning notes do not override this public-surface boundary.
+Future browser-reversing work is tracked only as RFC/eval problem areas, not as public command commitments: `Debugger evidence workflow`, `deterministic runtime provenance/symbolization`, `scoped request intervention/replay gap`, `storage/service-worker evidence navigation`, `canvas/WebGL/Wasm observability`, and `multi-signal evidence correlation`. These areas must first map to existing canonical commands (`browser_execute`, `browser_command`, `browser_frame`, `browser_hook`, `browser_network`, `browser_http_replay`, `browser_crawl`, `browser_evidence`, `browser_artifact`). The rejected names `browser_sources`, `browser_debugger`, `browser_intercept`, `browser_storage`, and `browser_canvas` remain rejected by default, including synonymous replacement names. Historical planning notes do not override this public-surface boundary.
 
 ## Observation mode boundary
 
@@ -59,9 +59,9 @@ Hard rules:
 ## Runtime browser tools
 
 ABML surface note: current public callable surface remains the documented `browser_*` tools.
-Internal ABML refs and verb-like hints (`pi-ref://...`, `read(...)`, `click(...)`, `frame(...)`,
+Internal ABML refs and verb-like hints (`bp-ref://...`, `read(...)`, `click(...)`, `frame(...)`,
 `read_saved_artifact ...`) are envelope/runtime semantics and recovery affordances, not additional
-public tool registrations. Public ABML action verbs are closed as a perception-first project
+public command registrations. Public ABML action verbs are closed as a perception-first project
 decision; reopening requires overturning that north star, not merely a new trigger-gated backlog
 entry. Scroll/lazy-loading friction must first be treated as a collection-completeness,
 continuation, data-source, or state-transition modeling gap; adding public gesture verbs only

@@ -44,7 +44,7 @@ Use when turning browser/tool output into a finding, final answer, triage note, 
 - Impact: <data/authorization/action/control impact>
 - Reproduce:
   1. <capture/open/action>
-  2. <tool call route with bounded params>
+  2. <command call route with bounded params>
   3. <artifact read or response check>
 - Fix: <specific control: validation, authz, signing, parser alignment, secret rotation, etc.>
 ```
@@ -63,7 +63,7 @@ No confirmed finding.
 
 - Do not paste cookies, tokens, authorization headers, full request bodies, WebSocket payloads, or secrets.
 - Prefer claim names, parameter names, status/length/hash, and small redacted snippets.
-- Keep raw evidence local in `.pi/browser-artifacts/` and reference paths.
+- Keep raw evidence local in `.browser-pilot/artifacts/` and reference paths.
 
 ## Stop
 

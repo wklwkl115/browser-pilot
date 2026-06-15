@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(root, "bridge", "browser_bridge_config.json");
-const legacyBridgeConfigPath = path.join(root, "bridge", "pi_browser_bridge", "config.js");
-const serviceWorkerConfigPath = path.join(root, "bridge_src", "service_worker", "config.ts");
-const tsConfigPath = path.join(root, "src", "driver", "browserBridgeConfig.ts");
+const legacyBridgeConfigPath = path.join(root, "bridge", "browser_pilot_bridge", "config.js");
+const serviceWorkerConfigPath = path.join(root, "src/bridge/extension", "service_worker", "config.ts");
+const tsConfigPath = path.join(root, "src", "bridge", "server", "browserBridgeConfig.ts");
 
 function assertConfig(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("browser bridge config must be an object");
@@ -27,17 +27,17 @@ const httpUrl = `http://${config.host}:${config.port}`;
 
 const bridgeConfig = `// Generated from bridge/browser_bridge_config.json. Do not edit by hand.
 const TID = ${JSON.stringify(config.requestElementId)};
-const PI_BROWSER_BRIDGE_HOST = ${JSON.stringify(config.host)};
-const PI_BROWSER_BRIDGE_PORT = ${JSON.stringify(config.port)};
-const PI_BROWSER_BRIDGE_PORT_RANGE_END = ${JSON.stringify(config.portRangeEnd)};
-const PI_BROWSER_BRIDGE_WS_URL = ${JSON.stringify(wsUrl)};
-const PI_BROWSER_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
+const BROWSER_PILOT_BRIDGE_HOST = ${JSON.stringify(config.host)};
+const BROWSER_PILOT_BRIDGE_PORT = ${JSON.stringify(config.port)};
+const BROWSER_PILOT_BRIDGE_PORT_RANGE_END = ${JSON.stringify(config.portRangeEnd)};
+const BROWSER_PILOT_BRIDGE_WS_URL = ${JSON.stringify(wsUrl)};
+const BROWSER_PILOT_BRIDGE_HTTP_URL = ${JSON.stringify(httpUrl)};
 `;
 writeFileSync(legacyBridgeConfigPath, bridgeConfig, "utf8");
 
 const serviceWorkerConfig = `${bridgeConfig}// ESM module metadata
-export { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_PORT_RANGE_END, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL };
-export const __piBridgeModule_config = { name: "config", symbols: { TID, PI_BROWSER_BRIDGE_HOST, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_PORT_RANGE_END, PI_BROWSER_BRIDGE_WS_URL, PI_BROWSER_BRIDGE_HTTP_URL } };
+export { TID, BROWSER_PILOT_BRIDGE_HOST, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_PORT_RANGE_END, BROWSER_PILOT_BRIDGE_WS_URL, BROWSER_PILOT_BRIDGE_HTTP_URL };
+export const __browserPilotBridgeModule_config = { name: "config", symbols: { TID, BROWSER_PILOT_BRIDGE_HOST, BROWSER_PILOT_BRIDGE_PORT, BROWSER_PILOT_BRIDGE_PORT_RANGE_END, BROWSER_PILOT_BRIDGE_WS_URL, BROWSER_PILOT_BRIDGE_HTTP_URL } };
 `;
 writeFileSync(serviceWorkerConfigPath, serviceWorkerConfig, "utf8");
 

@@ -19,5 +19,5 @@
 ## Checklist
 
 - [ ] No cookies, tokens, credentials, or private URLs in the diff
-- [ ] No manual edits to generated files (`docs/generated/`, `src/protocol/`, `bridge/pi_browser_bridge/`)
+- [ ] No manual edits to generated files (`docs/generated/`, `src/bridge/protocol/`, `bridge/browser_pilot_bridge/`)
 - [ ] Breaking changes documented in CHANGELOG.md (if any)

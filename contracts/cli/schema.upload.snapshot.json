@@ -1,0 +1,155 @@
+{
+  "ok": true,
+  "exitCode": 0,
+  "command": "schema",
+  "name": "upload",
+  "commandName": "browser_upload",
+  "agentCli": {
+    "mode": "standard",
+    "recommended": true
+  },
+  "artifactBehavior": {
+    "resultField": "saved.path",
+    "descriptorFields": [
+      "path",
+      "kind",
+      "bytes",
+      "chars",
+      "privacy",
+      "readCommands"
+    ],
+    "readCommand": "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+    "readModes": [
+      "json",
+      "text",
+      "search",
+      "sample"
+    ],
+    "commonJsonPaths": [
+      "data",
+      "data.content",
+      "data.actionables",
+      "data.list_hints"
+    ],
+    "notes": [
+      "JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
+      "Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact."
+    ]
+  },
+  "schema": {
+    "type": "object",
+    "required": [
+      "selector",
+      "files",
+      "confirm"
+    ],
+    "properties": {
+      "tabId": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+      },
+      "targetRef": {
+        "type": "string",
+        "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement."
+      },
+      "selector": {
+        "type": "string",
+        "description": "CSS selector for the file input, label, or button that opens the file chooser."
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "Absolute local file path to upload."
+        },
+        "description": "One or more absolute local file paths."
+      },
+      "index": {
+        "type": "number",
+        "description": "Zero-based match index when selector matches multiple elements; default 0."
+      },
+      "confirm": {
+        "type": "boolean",
+        "description": "Must be true to confirm the user approved uploading these exact local file path(s)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "flags": [
+    {
+      "name": "tabId",
+      "flag": "--tab-id",
+      "kind": "string",
+      "required": false,
+      "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "targetRef",
+      "flag": "--target-ref",
+      "kind": "string",
+      "required": false,
+      "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "selector",
+      "flag": "--selector",
+      "kind": "string",
+      "required": true,
+      "description": "CSS selector for the file input, label, or button that opens the file chooser.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "files",
+      "flag": "--files",
+      "kind": "array",
+      "required": true,
+      "description": "One or more absolute local file paths.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "index",
+      "flag": "--index",
+      "kind": "number",
+      "required": false,
+      "description": "Zero-based match index when selector matches multiple elements; default 0.",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "confirm",
+      "flag": "--confirm",
+      "kind": "boolean",
+      "required": true,
+      "description": "Must be true to confirm the user approved uploading these exact local file path(s).",
+      "inputs": [
+        "inline"
+      ]
+    }
+  ]
+}

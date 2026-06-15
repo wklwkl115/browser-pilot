@@ -13,6 +13,6 @@
     ]
   },
   "include": [
-    "bridge_src/**/*.ts"
+    "src/bridge/extension/**/*.ts"
   ]
 }

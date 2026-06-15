@@ -1,0 +1,368 @@
+{
+  "ok": true,
+  "exitCode": 0,
+  "command": "schema",
+  "name": "observe",
+  "commandName": "browser_observe",
+  "agentCli": {
+    "mode": "standard",
+    "recommended": true
+  },
+  "artifactBehavior": {
+    "resultField": "saved.path",
+    "descriptorFields": [
+      "path",
+      "kind",
+      "bytes",
+      "chars",
+      "privacy",
+      "readCommands"
+    ],
+    "readCommand": "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+    "readModes": [
+      "json",
+      "text",
+      "search",
+      "sample"
+    ],
+    "commonJsonPaths": [
+      "data",
+      "data.content",
+      "data.actionables",
+      "data.list_hints"
+    ],
+    "notes": [
+      "JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
+      "Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact."
+    ]
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "scan"
+          },
+          {
+            "type": "string",
+            "const": "content"
+          },
+          {
+            "type": "string",
+            "const": "html"
+          },
+          {
+            "type": "string",
+            "const": "text"
+          },
+          {
+            "type": "string",
+            "const": "tabs"
+          }
+        ],
+        "description": "scan | content | html | text | tabs. Default scan."
+      },
+      "selector": {
+        "type": "string",
+        "description": "content/html modes: CSS selector for a target readable root or exact HTML/text slice"
+      },
+      "url": {
+        "type": "string",
+        "description": "scan/content/html/text modes: optional URL to navigate to before observation"
+      },
+      "includeLinks": {
+        "type": "boolean",
+        "description": "content mode only: include Markdown links; default true"
+      },
+      "maxNodes": {
+        "type": "number",
+        "description": "scan/text modes: maximum DOM nodes visited"
+      },
+      "includeIframes": {
+        "type": "boolean",
+        "description": "scan/text modes: include same-origin iframe content"
+      },
+      "baseline": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true
+            }
+          },
+          {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        ],
+        "description": "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff. CLI-friendlier: use --baseline-snapshot-id or --baseline-path instead of inlining a large prior envelope."
+      },
+      "baselineSnapshotId": {
+        "type": "string",
+        "description": "scan mode only: snapshotId from a prior browser_observe scan; the daemon resolves it to that scan's saved entities as the baseline. CLI-friendly by-reference alternative to passing the full prior envelope inline as `baseline`."
+      },
+      "baselinePath": {
+        "type": "string",
+        "description": "scan mode only: filesystem path to a prior scan's saved artifact; used as the baseline. No-state by-reference alternative to inlining `baseline`."
+      },
+      "actionRef": {
+        "type": "string",
+        "description": "scan mode only (R3.x P1): bp-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted."
+      },
+      "htmlMode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "fragment"
+          },
+          {
+            "type": "string",
+            "const": "raw"
+          },
+          {
+            "type": "string",
+            "const": "text"
+          },
+          {
+            "type": "string",
+            "const": "inner"
+          },
+          {
+            "type": "string",
+            "const": "outer"
+          }
+        ],
+        "description": "html mode only: fragment | raw | text | inner | outer"
+      },
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "intent": {
+        "type": "string",
+        "description": "scan/text modes only: explicit task intent used as a relevance signal for ranking observation results"
+      },
+      "fresh": {
+        "type": "boolean",
+        "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory"
+      },
+      "tabId": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+      },
+      "targetRef": {
+        "type": "string",
+        "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement."
+      }
+    },
+    "additionalProperties": false
+  },
+  "flags": [
+    {
+      "name": "mode",
+      "flag": "--mode",
+      "kind": "enum",
+      "required": false,
+      "choices": [
+        "scan",
+        "content",
+        "html",
+        "text",
+        "tabs"
+      ],
+      "description": "scan | content | html | text | tabs. Default scan.",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "selector",
+      "flag": "--selector",
+      "kind": "string",
+      "required": false,
+      "description": "content/html modes: CSS selector for a target readable root or exact HTML/text slice",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "url",
+      "flag": "--url",
+      "kind": "string",
+      "required": false,
+      "description": "scan/content/html/text modes: optional URL to navigate to before observation",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "includeLinks",
+      "flag": "--include-links",
+      "kind": "boolean",
+      "required": false,
+      "description": "content mode only: include Markdown links; default true",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "maxNodes",
+      "flag": "--max-nodes",
+      "kind": "number",
+      "required": false,
+      "description": "scan/text modes: maximum DOM nodes visited",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "includeIframes",
+      "flag": "--include-iframes",
+      "kind": "boolean",
+      "required": false,
+      "description": "scan/text modes: include same-origin iframe content",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "baseline",
+      "flag": "--baseline",
+      "kind": "string",
+      "required": false,
+      "description": "scan mode only: prior ABML entity list or prior scan summary/envelope used to compute envelope.diff. CLI-friendlier: use --baseline-snapshot-id or --baseline-path instead of inlining a large prior envelope.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "baselineSnapshotId",
+      "flag": "--baseline-snapshot-id",
+      "kind": "string",
+      "required": false,
+      "description": "scan mode only: snapshotId from a prior browser_observe scan; the daemon resolves it to that scan's saved entities as the baseline. CLI-friendly by-reference alternative to passing the full prior envelope inline as `baseline`.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "baselinePath",
+      "flag": "--baseline-path",
+      "kind": "string",
+      "required": false,
+      "description": "scan mode only: filesystem path to a prior scan's saved artifact; used as the baseline. No-state by-reference alternative to inlining `baseline`.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "actionRef",
+      "flag": "--action-ref",
+      "kind": "string",
+      "required": false,
+      "description": "scan mode only (R3.x P1): bp-ref:// of the control you just activated; attributes the baseline network-delta to it as `triggered` relations. Falls back to the focused control when omitted.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "htmlMode",
+      "flag": "--html-mode",
+      "kind": "enum",
+      "required": false,
+      "choices": [
+        "fragment",
+        "raw",
+        "text",
+        "inner",
+        "outer"
+      ],
+      "description": "html mode only: fragment | raw | text | inner | outer",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "params",
+      "flag": "--params",
+      "kind": "json",
+      "required": false,
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "intent",
+      "flag": "--intent",
+      "kind": "string",
+      "required": false,
+      "description": "scan/text modes only: explicit task intent used as a relevance signal for ranking observation results",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "fresh",
+      "flag": "--fresh",
+      "kind": "boolean",
+      "required": false,
+      "description": "scan/text modes only: force a fresh full-frame observation for this call; ignores the session-delta baseline and render cache without disabling relevance or memory",
+      "inputs": [
+        "inline"
+      ]
+    },
+    {
+      "name": "tabId",
+      "flag": "--tab-id",
+      "kind": "string",
+      "required": false,
+      "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "targetRef",
+      "flag": "--target-ref",
+      "kind": "string",
+      "required": false,
+      "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    }
+  ]
+}

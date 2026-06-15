@@ -1,6 +1,6 @@
 import type { CliCommand } from "./registry.js";
 import type { GlobalFlags } from "./flags.js";
-import { nativeToolMetadata } from "../src/protocol/nativeActionMetadata.js";
+import { nativeToolMetadata } from "../src/bridge/protocol/nativeActionMetadata.js";
 
 export type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
 export type NativeActionToolMeta = { actionDescription?: string; actions?: readonly ActionParamMeta[] };
@@ -30,9 +30,9 @@ function normalizeActionName(value: string): string {
 	return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
-export function nativeActionToolMeta(toolName: string): NativeActionToolMeta | undefined {
+export function nativeActionToolMeta(commandName: string): NativeActionToolMeta | undefined {
 	const tools = nativeToolMetadata.nativeActionTools as unknown as Record<string, NativeActionToolMeta>;
-	return tools[toolName];
+	return tools[commandName];
 }
 
 export function supportsNaturalActionRouting(cmd: CliCommand): boolean {

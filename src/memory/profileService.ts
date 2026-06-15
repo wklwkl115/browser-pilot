@@ -1,8 +1,8 @@
 import path from "node:path";
-import type { PerceptionLedgerFrame, PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
-import { distillFrameIntoProfile, emptyMemoryOriginProfile, mergeProfiles } from "../memory-core/profile.js";
-import { applyVerificationStrike } from "../memory-core/staleness.js";
-import { toPersistableMemoryTerm, type MemoryFrameView, type MemoryOriginProfile, type MemoryTraceView, type MemoryVerificationStatus } from "../memory-core/types.js";
+import type { PerceptionLedgerFrame, PerceptionTraceSnapshot } from "../kernels/abml/perceptionLedger.js";
+import { distillFrameIntoProfile, emptyMemoryOriginProfile, mergeProfiles } from "../kernels/memory/profile.js";
+import { applyVerificationStrike } from "../kernels/memory/staleness.js";
+import { toPersistableMemoryTerm, type MemoryFrameView, type MemoryOriginProfile, type MemoryTraceView, type MemoryVerificationStatus } from "../kernels/memory/types.js";
 import { containsSensitiveEvidence } from "../utils/redaction.js";
 import { readMemoryProfile, writeMemoryProfile } from "./profileStore.js";
 import { hmacMemoryStamp } from "./hashStamp.js";
@@ -137,7 +137,7 @@ async function flushState(state: ProfileState): Promise<void> {
 		if (merged) await writeMemoryProfile(state.cwd, merged);
 	}).catch((error) => {
 		rememberDiagnostic(state.cwd, "memory_profile_persist_failed");
-		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] profile flush failed", error);
+		if (process.env.BROWSER_PILOT_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] profile flush failed", error);
 	});
 	await state.chain;
 }
@@ -155,7 +155,7 @@ export async function recordMemoryProfileFrame(options: { cwd?: string; browserS
 	if (!memoryKernelEnabled() || options.fromCache) return;
 	const frameView = await frameViewFromLedger(options.cwd, options.frame).catch((error) => {
 		rememberDiagnostic(options.cwd, "memory_profile_persist_failed");
-		if (process.env.PI_BROWSER_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] frame view failed", error);
+		if (process.env.BROWSER_PILOT_MEMORY_DEBUG === "1") console.warn("[browser-pilot-memory] frame view failed", error);
 		return undefined;
 	});
 	if (!frameView) return;

@@ -1,10 +1,10 @@
-import { mergeRecoveries, recoveryForNormalized, isAbmlRecoveryCode, isWebSocketRecoveryCode } from "../distill-core/recovery.js";
-import type { ErrorRecovery } from "../distill-core/recovery.js";
-import { nativeErrorCodes } from "../protocol/nativeErrorCodes.js";
+import { mergeRecoveries, recoveryForNormalized, isAbmlRecoveryCode, isWebSocketRecoveryCode } from "../kernels/evidence/distill/recovery.js";
+import type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
+import { nativeErrorCodes } from "../bridge/protocol/nativeErrorCodes.js";
 import { isRecord } from "./records.js";
 import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
 
-export type { ErrorRecovery } from "../distill-core/recovery.js";
+export type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
 
 export type ErrorTaxonomyDomain =
 	| "driver"

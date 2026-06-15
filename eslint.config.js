@@ -1,7 +1,7 @@
 // Flat ESLint config (ESM). Type-aware linting across the two TypeScript
 // environments in this repo:
 //   - src/ + cli/ + index.ts  → Node.js   (tsconfig.json)
-//   - bridge_src/       → WebWorker (tsconfig.bridge-src.json)
+//   - src/bridge/extension/       → WebWorker (tsconfig.bridge-src.json)
 //
 // Ratcheted posture: the historical warning backlog is burned down, and the
 // enabled debt rules now block regressions. Broader type-checked families and
@@ -16,11 +16,11 @@ export default tseslint.config(
 		ignores: [
 			"dist/**",
 			// Packaged extension output dir (compiled dist + generated config.js +
-			// static popup/assets). Editable source lives in bridge_src/.
-			"bridge/pi_browser_bridge/**",
+			// static popup/assets). Editable source lives in src/bridge/extension/.
+			"bridge/browser_pilot_bridge/**",
 			"node_modules/**",
 			// Runtime artifact/output dir — captured third-party web assets, not source.
-			".pi/**",
+			".browser-pilot/**",
 			"coverage/**",
 			"**/*.min.js",
 			"docs/**",
@@ -29,11 +29,11 @@ export default tseslint.config(
 			"**/*.generated.*",
 			"*.config.js",
 			"*.config.mjs",
-			// Auto-generated from bridge/native_command_schema.json — do not lint.
-			"src/protocol/nativeProtocol.ts",
-			"src/protocol/nativeActionMetadata.ts",
-			"src/protocol/nativeErrorCodes.ts",
-			"bridge_src/service_worker/protocol.ts",
+			// Auto-generated from src/bridge/protocol/native-command.schema.json — do not lint.
+			"src/bridge/protocol/nativeProtocol.ts",
+			"src/bridge/protocol/nativeActionMetadata.ts",
+			"src/bridge/protocol/nativeErrorCodes.ts",
+			"src/bridge/extension/service_worker/protocol.ts",
 		],
 	},
 	js.configs.recommended,
@@ -53,7 +53,7 @@ export default tseslint.config(
 	},
 	// Bridge source — type-aware parser bound to the WebWorker tsconfig.
 	{
-		files: ["bridge_src/**/*.ts"],
+		files: ["src/bridge/extension/**/*.ts"],
 		languageOptions: {
 			parser: tseslint.parser,
 			parserOptions: {
@@ -77,7 +77,7 @@ export default tseslint.config(
 	},
 	// Page scripts run injected in the page DOM context, not the worker.
 	{
-		files: ["bridge_src/page_scripts/**/*.ts"],
+		files: ["src/bridge/extension/page_scripts/**/*.ts"],
 		languageOptions: { globals: { ...globals.browser, chrome: "readonly" } },
 	},
 	// Plain JS/MJS sources (OAST worker, hand-authored extension files) — no

@@ -1,51 +1,51 @@
 /**
- * CLI command registry — builds the subcommand list locally from the tool
- * registry, with NO browser/bridge startup. Each registered browser_* tool maps
+ * CLI command registry — builds the subcommand list locally from the command
+ * registry, with NO browser/bridge startup. Each registered browser_* command maps
  * to a subcommand. Used by --help, argv parsing, and the parity contract.
  */
-import { ToolRegistryAdapter, type ToolDefinition } from "../src/frontend/toolCollector.js";
-import { registerBrowserTools } from "../src/tools/registerTools.js";
-import type { BrowserBridgeServer } from "../src/driver/BrowserBridgeServer.js";
+import { CommandManifestIndex, type CommandDefinition } from "../src/commands/commandManifestIndex.js";
+import { defineBrowserCommands } from "../src/commands/defineBrowserCommands.js";
+import type { BrowserBridgeServer } from "../src/bridge/server/BrowserBridgeServer.js";
 
 export type CliCommand = {
-	/** Tool name, e.g. "browser_execute". */
+	/** Command name, e.g. "browser_execute". */
 	name: string;
-	/** CLI subcommand, e.g. "execute" (tool name minus browser_, _ -> -). */
+	/** CLI subcommand, e.g. "execute" (command name minus browser_, _ -> -). */
 	subcommand: string;
 	description?: string;
 	/** TypeBox parameter schema (introspected into flags). */
 	parameters?: unknown;
-	def: ToolDefinition;
+	def: CommandDefinition;
 };
 
-// Registration never touches the server (registrars only call pi.registerTool;
+// Registration never touches the server (registrars only add command metadata;
 // the server is used lazily inside execute), so a placeholder is safe here.
 const placeholderServer = {} as unknown as BrowserBridgeServer;
 const noopEnsureStarted = async () => placeholderServer;
-let cachedToolDefs: ToolDefinition[] | undefined;
+let cachedCommandDefs: CommandDefinition[] | undefined;
 let cachedCliCommands: CliCommand[] | undefined;
 
-export function toSubcommand(toolName: string): string {
-	return toolName.replace(/^browser_/, "").replace(/_/g, "-");
+export function toSubcommand(commandName: string): string {
+	return commandName.replace(/^browser_/, "").replace(/_/g, "-");
 }
 
 export function fromSubcommand(subcommand: string): string {
 	return `browser_${subcommand.replace(/-/g, "_")}`;
 }
 
-/** Collect all registered tool definitions. */
-export function collectToolDefs(): ToolDefinition[] {
-	if (cachedToolDefs) return cachedToolDefs;
-	const adapter = new ToolRegistryAdapter();
-	registerBrowserTools(adapter, placeholderServer, noopEnsureStarted);
-	cachedToolDefs = adapter.getTools();
-	return cachedToolDefs;
+/** Collect all registered command definitions. */
+export function collectCommandDefs(): CommandDefinition[] {
+	if (cachedCommandDefs) return cachedCommandDefs;
+	const adapter = new CommandManifestIndex();
+	defineBrowserCommands(adapter, placeholderServer, noopEnsureStarted);
+	cachedCommandDefs = adapter.getCommands();
+	return cachedCommandDefs;
 }
 
-/** Build the CLI command list (one per registered tool). */
+/** Build the CLI command list (one per registered command). */
 export function buildCliCommands(): CliCommand[] {
 	if (cachedCliCommands) return cachedCliCommands;
-	cachedCliCommands = collectToolDefs()
+	cachedCliCommands = collectCommandDefs()
 		.map((def) => ({
 			name: def.name,
 			subcommand: toSubcommand(def.name),

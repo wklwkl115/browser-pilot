@@ -127,7 +127,7 @@ manually after editing source, run those two commands.
 
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable **Developer mode**.
-3. Click **Load unpacked** → select `bridge/pi_browser_bridge`.
+3. Click **Load unpacked** → select `bridge/browser_pilot_bridge`.
 4. Confirm the extension name is **Browser Pilot Bridge**.
 
 ### Use via CLI
@@ -168,28 +168,28 @@ testing, and daemon management.
 <!-- BEGIN TOOL INDEX -->
 | Tool | Group | Source |
 | --- | --- | --- |
-| `browser_artifact` | core | `src/tools/registerArtifactTool.ts` |
-| `browser_callback_oast` | security | `src/tools/webSecurity/register/registerCallbackOast.ts` |
-| `browser_command` | core | `src/tools/registerCommandTool.ts` |
-| `browser_cookie_analyze` | security | `src/tools/webSecurity/register/registerCookieAnalyze.ts` |
-| `browser_crawl` | security | `src/tools/webSecurity/register/registerCrawl.ts` |
-| `browser_download` | core | `src/tools/registerTransferTools.ts` |
-| `browser_evidence` | core | `src/tools/registerEvidenceTool.ts` |
-| `browser_execute` | core | `src/tools/registerExecuteTool.ts` |
-| `browser_frame` | core | `src/tools/registerNativeActionTools.ts` |
-| `browser_fuzz` | security | `src/tools/webSecurity/register/registerFuzz.ts` |
-| `browser_hook` | core | `src/tools/registerNativeActionTools.ts` |
-| `browser_http_replay` | security | `src/tools/webSecurity/register/registerHttpReplay.ts` |
-| `browser_memory` | core | `src/tools/registerMemoryTool.ts` |
-| `browser_network` | core | `src/tools/registerNativeActionTools.ts` |
-| `browser_observe` | core | `src/tools/registerObserveTool.ts` |
-| `browser_pick` | core | `src/tools/registerPickTool.ts` |
-| `browser_screenshot` | core | `src/tools/registerScreenshotTool.ts` |
-| `browser_sqli` | security | `src/tools/webSecurity/register/registerSqli.ts` |
-| `browser_tabs` | core | `src/tools/registerTabsTool.ts` |
-| `browser_template` | security | `src/tools/webSecurity/register/registerTemplate.ts` |
-| `browser_upload` | core | `src/tools/registerTransferTools.ts` |
-| `browser_wait` | core | `src/tools/registerNativeActionTools.ts` |
+| `browser_artifact` | core | `src/commands/defineArtifactCommand.ts` |
+| `browser_callback_oast` | security | `src/commands/webSecurity/commands/registerCallbackOast.ts` |
+| `browser_command` | core | `src/commands/defineNativeCommand.ts` |
+| `browser_cookie_analyze` | security | `src/commands/webSecurity/commands/registerCookieAnalyze.ts` |
+| `browser_crawl` | security | `src/commands/webSecurity/commands/registerCrawl.ts` |
+| `browser_download` | core | `src/commands/transferCommands.ts` |
+| `browser_evidence` | core | `src/commands/defineEvidenceCommand.ts` |
+| `browser_execute` | core | `src/commands/defineExecuteCommand.ts` |
+| `browser_frame` | core | `src/commands/defineNativeActionCommands.ts` |
+| `browser_fuzz` | security | `src/commands/webSecurity/commands/registerFuzz.ts` |
+| `browser_hook` | core | `src/commands/defineNativeActionCommands.ts` |
+| `browser_http_replay` | security | `src/commands/webSecurity/commands/registerHttpReplay.ts` |
+| `browser_memory` | core | `src/commands/defineMemoryCommand.ts` |
+| `browser_network` | core | `src/commands/defineNativeActionCommands.ts` |
+| `browser_observe` | core | `src/commands/defineObserveCommand.ts` |
+| `browser_pick` | core | `src/commands/definePickCommand.ts` |
+| `browser_screenshot` | core | `src/commands/defineScreenshotCommand.ts` |
+| `browser_sqli` | security | `src/commands/webSecurity/commands/registerSqli.ts` |
+| `browser_tabs` | core | `src/commands/tabsCommand.ts` |
+| `browser_template` | security | `src/commands/webSecurity/commands/registerTemplate.ts` |
+| `browser_upload` | core | `src/commands/transferCommands.ts` |
+| `browser_wait` | core | `src/commands/defineNativeActionCommands.ts` |
 <!-- END TOOL INDEX -->
 
 15 core tools (tabs, observe, execute, command, wait, pick, screenshot, network, hook,
@@ -229,7 +229,7 @@ token-efficient without sacrificing completeness.
 
 ### Browser Memory
 
-A local store (`.pi/browser-memory/`) lets agents record and recall per-site procedures
+A local store (`.browser-pilot/memory/`) lets agents record and recall per-site procedures
 (SOPs) and facts. Once recorded, `browser_observe` automatically surfaces relevant memory
 for the current URL — so the agent doesn't re-derive the same action sequence twice.
 
@@ -287,7 +287,7 @@ npm run quality:local     # Alias for the full public check
 
 `verify:package` creates an npm tarball, installs it into a clean throwaway
 consumer project, and runs the shipped `browser-pilot` CLI help/schema/status
-commands. Its artifacts are written under `.pi/browser-artifacts/public-package/`.
+commands. Its artifacts are written under `.browser-pilot/artifacts/public-package/`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
@@ -297,6 +297,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 |---|---|
 | [docs/guide-cli.md](docs/guide-cli.md) | CLI usage guide — workflows, patterns, examples |
 | [skills/browser-pilot-cli/SKILL.md](skills/browser-pilot-cli/SKILL.md) | In-repo CLI operating skill for shell-capable agents |
+| [docs/architecture-charter.md](docs/architecture-charter.md) | Breaking architecture rewrite charter, execution rules, and TODO plan |
 | [docs/cli.md](docs/cli.md) | CLI reference — full command/flag/output specification |
 | [docs/playbooks/](docs/playbooks/) | Security testing playbooks |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |
@@ -307,20 +308,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
 ## Notes
 
-`.pi/public-export/` is a local export/archive directory — not a second source tree.
+`.browser-pilot/public-export/` is a local export/archive directory — not a second source tree.
 It is `.gitignore`d and should never be committed.
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `PI_BROWSER_BRIDGE_HOST` | `127.0.0.1` | Bridge listen address |
-| `PI_BROWSER_BRIDGE_PORT` | `18765` | Bridge port range start |
-| `PI_BROWSER_BRIDGE_PORT_RANGE_END` | `18784` | Bridge port range end |
-| `PI_BROWSER_RENDERER` | `salience` | Observation renderer (`salience` or `ladder`) |
-| `PI_BROWSER_SESSION_DELTA` | `1` | Session-delta for repeated scans (`0` to disable) |
-| `PI_BROWSER_RELEVANCE` | `1` | Task-conditioned relevance (`0` to disable) |
-| `PI_BROWSER_MEMORY` | `1` | Auto-recall browser memory (`0` to disable) |
+| `BROWSER_PILOT_BRIDGE_HOST` | `127.0.0.1` | Bridge listen address |
+| `BROWSER_PILOT_BRIDGE_PORT` | `18765` | Bridge port range start |
+| `BROWSER_PILOT_BRIDGE_PORT_RANGE_END` | `18784` | Bridge port range end |
+| `BROWSER_PILOT_RENDERER` | `salience` | Observation renderer (`salience` or `ladder`) |
+| `BROWSER_PILOT_SESSION_DELTA` | `1` | Session-delta for repeated scans (`0` to disable) |
+| `BROWSER_PILOT_RELEVANCE` | `1` | Task-conditioned relevance (`0` to disable) |
+| `BROWSER_PILOT_MEMORY` | `1` | Auto-recall browser memory (`0` to disable) |
 
 ## Star History
 

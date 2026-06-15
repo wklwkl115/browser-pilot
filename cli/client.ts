@@ -68,8 +68,8 @@ function leaseBusyErrorResult(json: Record<string, unknown> | undefined, _tool: 
 	const heldBy = isRecord(json?.heldBy) ? (json!.heldBy as { label?: string; pairingId?: string; since?: string }) : undefined;
 	const holderLabel = typeof heldBy?.label === "string" ? heldBy.label : undefined;
 	const message = holderLabel
-		? `tool call blocked: lease held by "${holderLabel}"`
-		: "tool call blocked: another agent holds the browser lease";
+		? `command call blocked: lease held by "${holderLabel}"`
+		: "command call blocked: another agent holds the browser lease";
 	return {
 		content: [{
 			type: "text",

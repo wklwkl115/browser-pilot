@@ -1,5 +1,6 @@
 .ace-tool/
 .pi/
+.browser-pilot/
 node_modules/
 
 # Local environment and secrets

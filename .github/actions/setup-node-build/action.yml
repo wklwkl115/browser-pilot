@@ -1,5 +1,5 @@
 name: setup-node-build
-description: Checkout-independent local setup for Pi browser tools CI jobs
+description: Checkout-independent local setup for Browser Pilot CI jobs
 runs:
   using: composite
   steps:

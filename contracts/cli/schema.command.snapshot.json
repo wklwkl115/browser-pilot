@@ -1,0 +1,112 @@
+{
+  "ok": true,
+  "exitCode": 0,
+  "command": "schema",
+  "name": "command",
+  "commandName": "browser_command",
+  "agentCli": {
+    "mode": "nativeEscapeHatch",
+    "recommended": false,
+    "interface": "command --command",
+    "reason": [
+      "full-native-bridge-command-access",
+      "advanced-json-escape-hatch"
+    ]
+  },
+  "artifactBehavior": {
+    "resultField": "saved.path",
+    "descriptorFields": [
+      "path",
+      "kind",
+      "bytes",
+      "chars",
+      "privacy",
+      "readCommands"
+    ],
+    "readCommand": "browser-pilot artifact --path <saved.path> --mode json --json-path data --json",
+    "readModes": [
+      "json",
+      "text",
+      "search",
+      "sample"
+    ],
+    "commonJsonPaths": [
+      "data",
+      "data.content",
+      "data.actionables",
+      "data.list_hints"
+    ],
+    "notes": [
+      "JSON results that include saved.path are enriched with artifacts[] descriptors; cliNextActions[] only carries non-duplicate executable follow-ups.",
+      "Large or sensitive raw payloads stay in local artifacts; read bounded paths with browser-pilot artifact."
+    ]
+  },
+  "schema": {
+    "type": "object",
+    "required": [
+      "command"
+    ],
+    "properties": {
+      "command": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true,
+        "description": "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}"
+      },
+      "tabId": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab."
+      },
+      "targetRef": {
+        "type": "string",
+        "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement."
+      }
+    },
+    "additionalProperties": false
+  },
+  "flags": [
+    {
+      "name": "command",
+      "flag": "--command",
+      "kind": "json",
+      "required": true,
+      "description": "Bridge command object, e.g. {cmd:'tabs',method:'list'} or {cmd:'cdp',...}",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "tabId",
+      "flag": "--tab-id",
+      "kind": "string",
+      "required": false,
+      "description": "Compatibility target: numeric tabId or stable tabHandle string. Prefer targetRef/tabHandle from browser_tabs list; omit to use the selected active tab.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    },
+    {
+      "name": "targetRef",
+      "flag": "--target-ref",
+      "kind": "string",
+      "required": false,
+      "description": "Stable target reference from browser_tabs list/create (tabHandle). Preferred over numeric tabId because it survives unambiguous in-place tab replacement.",
+      "inputs": [
+        "inline",
+        "@file",
+        "stdin"
+      ]
+    }
+  ]
+}

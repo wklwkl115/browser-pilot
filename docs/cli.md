@@ -2,8 +2,8 @@
 
 The `browser-pilot` CLI is the public frontend for the browser tools, usable by any
 shell-capable agent, human, CI, or cron. It is the single supported agent integration
-surface; tool schemas and command metadata are collected from the shared tool core
-(`registerBrowserTools`).
+surface; command schemas and command metadata are collected from the shared tool core
+(`defineBrowserCommands`).
 
 ## Model
 
@@ -16,9 +16,9 @@ browser-pilot <subcommand> [--flags]      (short-lived client)
 Parsing and `--help` are local and cheap (no browser). Only tool **execution** is delegated to a
 **user-local singleton daemon** that holds the live `BrowserBridgeServer`. The daemon auto-starts
 on the first invocation (built CLI: `node dist/cli/bin.js daemon start`; source CLI:
-`node node_modules/tsx/dist/cli.mjs cli/bin.ts daemon start`); its lockfile lives in a user-local state root (`~/.pi/browser-daemon.json`,
-override with `PI_BROWSER_DAEMON_STATE_DIR`), never under the caller project `.pi/`. Each call sends
-the caller `cwd`, so artifacts/memory/evidence land under the caller's `.pi/`, not the daemon's.
+`node node_modules/tsx/dist/cli.mjs cli/bin.ts daemon start`); its lockfile lives in a user-local state root (`~/.browser-pilot/browser-daemon.json`,
+override with `BROWSER_PILOT_DAEMON_STATE_DIR`), never under the caller project `.browser-pilot/`. Each call sends
+the caller `cwd`, so artifacts/memory/evidence land under the caller's `.browser-pilot/`, not the daemon's.
 
 For multi-step agent work, make readiness explicit before the first browser operation:
 
@@ -61,7 +61,7 @@ Flag mapping from the tool's TypeBox schema: `string`/`number` → `--x <v>`; `b
 `--no-x`; enum (union of literals) → `--x <choice>`; array → repeatable `--x`; object → `--x <json>`.
 Big values accept `--flag @file` or `--flag -` (stdin). `execute --script-file <path>` is a CLI-only
 shortcut that reads a cwd-relative/absolute JavaScript file into the normal `script` parameter and
-cannot be combined with `--script`. Coercion/validation reuses the shared frontend validator — there
+cannot be combined with `--script`. Coercion/validation reuses the shared command validator — there
 is no separate CLI coercion.
 
 Prefer files for anything containing quotes, braces, newlines, request bodies, or long JavaScript:
@@ -206,7 +206,7 @@ The recommended agent path is `connect --wait` at the start of a multi-step task
 `browser-pilot` commands. Do not use `daemon stop` as normal task cleanup; it is an advanced lifecycle
 command for tests, profile/port conflicts, upgrades, or explicit resource release.
 
-The daemon starts the browser bridge lazily on the first tool call, or explicitly through
+The daemon starts the browser bridge lazily on the first command call, or explicitly through
 `connect`. If a browser extension is
 already attached to another bridge on the first port in `18765-18784`, a second daemon binds the
 next free port and will not see that extension — run a single daemon per user/profile.
@@ -278,22 +278,22 @@ organization, but registration is always-on.
 
 ## Usage logging
 
-Set `PI_BROWSER_USAGE_LOG=<path>` to append one JSON line per invocation (tool, timing, result
+Set `BROWSER_PILOT_USAGE_LOG=<path>` to append one JSON line per invocation (tool, timing, result
 size, and CLI routing metadata such as `routing:"natural"` versus
 `routing:"advancedCompatibility"`) for studying real usage. Off by default; best-effort writes.
-Arguments are redacted by default; `PI_BROWSER_USAGE_LOG_RAW=1` is available only for controlled
+Arguments are redacted by default; `BROWSER_PILOT_USAGE_LOG_RAW=1` is available only for controlled
 local debugging.
 
 ## Connection & TLS environment
 
-- **`PI_BROWSER_EXTENSION_WAIT_MS`** — grace (ms) a command waits for a not-yet-connected browser
+- **`BROWSER_PILOT_EXTENSION_WAIT_MS`** — grace (ms) a command waits for a not-yet-connected browser
   extension to dial into the bridge before failing. Default `5000`; `0` disables the wait. The MV3
   service worker is often merely idle on a cold start, so this lets the first `tabs list` succeed
   transparently. When no extension connects in time, the command fails with an actionable
   `NO_BROWSER_EXTENSION` error whose `recovery.nextActions` name the fix (load/enable the extension,
   open or reload a tab, check `browser-pilot daemon status`). Inspect connection state any time with
   `browser-pilot daemon status` / `browser-pilot doctor` (`extensionConnected`).
-- **`PI_BROWSER_NO_SYSTEM_CA`** — set to `1` to stop the daemon from trusting the OS/browser CA
+- **`BROWSER_PILOT_NO_SYSTEM_CA`** — set to `1` to stop the daemon from trusting the OS/browser CA
   store. By default (Node ≥22.15) the daemon launches with `--use-system-ca` so outbound
   web-security fetches (`crawl`/`fuzz`/`http_replay`) work behind a TLS-intercepting proxy/AV or a
   corporate root CA without disabling certificate verification. TLS chain failures still surface a

@@ -113,7 +113,7 @@ Chrome 扩展产物（`npm run build:bridge`）。修改源码后如需手动重
 
 1. 打开 `chrome://extensions` 或 `edge://extensions`。
 2. 开启**开发者模式**。
-3. 点击**加载已解压的扩展程序** → 选择 `bridge/pi_browser_bridge`。
+3. 点击**加载已解压的扩展程序** → 选择 `bridge/browser_pilot_bridge`。
 4. 确认扩展名称为 **Browser Pilot Bridge**。
 
 ### 通过 CLI 使用
@@ -184,7 +184,7 @@ sqli, template, cookie-analyze, http-replay, callback-oast）。详见
 
 ### 浏览器记忆
 
-本地存储（`.pi/browser-memory/`）让 agent 记录和召回每站点的操作程序（SOP）和知识。
+本地存储（`.browser-pilot/memory/`）让 agent 记录和召回每站点的操作程序（SOP）和知识。
 一旦记录，`browser_observe` 会自动展现与当前 URL 匹配的记忆 —— agent 不再需要为同一个操作
 序列重新推理。
 
@@ -241,7 +241,7 @@ npm run quality:local     # 完整公开检查的别名
 
 `verify:package` 会创建 npm tarball，安装到干净的临时 consumer 项目，并运行
 随包发布的 `browser-pilot` CLI help/schema/status 命令。产物写入
-`.pi/browser-artifacts/public-package/`。
+`.browser-pilot/artifacts/public-package/`。
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md) 了解完整的贡献流程。
 
@@ -251,6 +251,7 @@ npm run quality:local     # 完整公开检查的别名
 |---|---|
 | [docs/guide-cli.md](docs/guide-cli.md) | CLI 使用指南 —— 工作流、模式、示例 |
 | [skills/browser-pilot-cli/SKILL.md](skills/browser-pilot-cli/SKILL.md) | 面向 shell-capable agent 的 CLI 操作 skill |
+| [docs/architecture-charter.md](docs/architecture-charter.md) | breaking 架构重构宪章、执行铁律和 TODO 计划 |
 | [docs/cli.md](docs/cli.md) | CLI 参考 —— 完整的命令/参数/输出规范 |
 | [docs/playbooks/](docs/playbooks/) | 安全测试操作手册 |
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | 工具选择边界 |
@@ -263,13 +264,13 @@ npm run quality:local     # 完整公开检查的别名
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PI_BROWSER_BRIDGE_HOST` | `127.0.0.1` | Bridge 监听地址 |
-| `PI_BROWSER_BRIDGE_PORT` | `18765` | Bridge 端口范围起始 |
-| `PI_BROWSER_BRIDGE_PORT_RANGE_END` | `18784` | Bridge 端口范围结束 |
-| `PI_BROWSER_RENDERER` | `salience` | 观察渲染器（`salience` 或 `ladder`） |
-| `PI_BROWSER_SESSION_DELTA` | `1` | 重复 scan 的 session-delta（`0` 禁用） |
-| `PI_BROWSER_RELEVANCE` | `1` | 任务条件相关性（`0` 禁用） |
-| `PI_BROWSER_MEMORY` | `1` | 自动召回浏览器记忆（`0` 禁用） |
+| `BROWSER_PILOT_BRIDGE_HOST` | `127.0.0.1` | Bridge 监听地址 |
+| `BROWSER_PILOT_BRIDGE_PORT` | `18765` | Bridge 端口范围起始 |
+| `BROWSER_PILOT_BRIDGE_PORT_RANGE_END` | `18784` | Bridge 端口范围结束 |
+| `BROWSER_PILOT_RENDERER` | `salience` | 观察渲染器（`salience` 或 `ladder`） |
+| `BROWSER_PILOT_SESSION_DELTA` | `1` | 重复 scan 的 session-delta（`0` 禁用） |
+| `BROWSER_PILOT_RELEVANCE` | `1` | 任务条件相关性（`0` 禁用） |
+| `BROWSER_PILOT_MEMORY` | `1` | 自动召回浏览器记忆（`0` 禁用） |
 
 ## Star 历史
 

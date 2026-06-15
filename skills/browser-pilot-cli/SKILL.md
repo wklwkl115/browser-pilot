@@ -12,9 +12,9 @@ Drive live browser pages with the `browser-pilot` shell CLI, exposed as subcomma
 **This skill complements the CLI; it does not restate it.** The CLI is self-describing: `browser-pilot commands --json` lists every command + its `agentCli` routing, and `browser-pilot schema <cmd> --json` (or `schema <cmd> <natural-subcommand> --json`) gives exact flags/params. That is the single source of truth and it never drifts — **read it for flags instead of trusting any hard-coded flag list.** What follows is how to *drive* the CLI and *sequence* the tools: the loop, the routing, the boundaries, the gotchas.
 
 Three facts shape everything below:
-- **Perception is `browser-pilot observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(pi-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
-- **Action is the JavaScript you pass to `browser-pilot execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `pi.click(ref)` for physical trusted clicks against a fresh observed `pi-ref://`.
-- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser-pilot execute --script-file` with `await pi.click(ref)` if you have a fresh observed ref; otherwise send `browser-pilot command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
+- **Perception is `browser-pilot observe`.** ABML (AX merge, entities, relations, diff) is wired into it and observes only; verbs like `read(bp-ref://...)` appearing in result hints are vocabulary, not extra subcommands.
+- **Action is the JavaScript you pass to `browser-pilot execute`** (prefer `--script-file`). There is no click/type subcommand and none is planned — a structured action arm was tried and removed because agents reverted to JS. The one narrow stdlib escape is `browserPilot.click(ref)` for physical trusted clicks against a fresh observed `bp-ref://`.
+- **The escape for synthetic-event-blind targets is physical input.** When a trusted-event-gated control, canvas, WebGL, or cross-origin iframe silently ignores `el.click()`, use `browser-pilot execute --script-file` with `await browserPilot.click(ref)` if you have a fresh observed ref; otherwise send `browser-pilot command --command @file` with `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) or `input.keys` (`text` or key names) at measured coordinates.
 
 On long lists/tables prefer the reading products (`outline`/`gist`) and `causal` (which APIs an action hit); raw `diff` churns on dynamic pages — read `diff.summary` first and prefer `treeDiff`.
 
@@ -39,7 +39,7 @@ Memory is a Loop bookend: `observe --mode scan|text` may surface current URL/int
 
 ## Memory
 
-Local store under `.pi/browser-memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). The store stays empty until you record — recall only pays after you have paid into it. Exact flags: `schema memory --json`.
+Local store under `.browser-pilot/memory/` (`origin|task|project` scope) so you stop re-deriving action sequences. `sop` = reusable **procedure** (HOW); `fact` = stable **knowledge** about a site (endpoints, auth shape, durable selectors). The store stays empty until you record — recall only pays after you have paid into it. Exact flags: `schema memory --json`.
 
 - **Recall (observe):** `observe --mode scan|text` automatically surfaces current URL/intent-matched memory in `envelope.memory` with verification status; same-origin alone is not enough. Inline cards are bounded; collapsed cards carry `browser-memory://...` handles. Use `memory --action read --uri <browser-memory://...>` for a surfaced handle, or `memory --action recall --url <url> --query "<keywords>"` for manual cross-scope follow-up.
 - **Record (on success — fill and send, ~30s):**
@@ -60,7 +60,7 @@ Pick the subcommand by intent; get its flags from `schema <cmd> --json`.
 | Visual layout | `screenshot` |
 | Inside iframe | `frame list` (read child `frameId`) → `frame evaluate --frame-id <id> --expression <js>`. A top-level scan does NOT cover child frames structurally |
 | Click/type/scroll/mutate | `execute --script-file act.js` → read cheap `effect` in the result → `wait ...` / re-observe |
-| Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | fresh observed click ref → `execute --script-file` with `await pi.click(ref)`; otherwise trusted-event-gated/canvas → `command --command @file` with `input.pointer` / `input.keys` |
+| Action returned ok but page didn't change; OR JS-typed text the framework ignores (submit stays disabled, controlled input / `contenteditable` reverts to empty) | fresh observed click ref → `execute --script-file` with `await browserPilot.click(ref)`; otherwise trusted-event-gated/canvas → `command --command @file` with `input.pointer` / `input.keys` |
 | CDP / native command | `command --command @native-command.json` |
 | Wait nav/selector/load/idle | `wait selector --selector "#id"` / `wait navigate --url ...` / `wait network-idle` (never sleep-loop) |
 | User points to element | `pick` |
@@ -112,14 +112,14 @@ Results return a `summary` + `resource_link`(s) + `sections`. Sensitive fields a
 
 Bound expansive routes by **explicit scope first** — `--url` / captured request / raw request / HAR entry / `--paths` / `--words` / `--templates` / host candidates — then each command's real knobs (read them from `schema <cmd> --json`: e.g. fuzz `--match-status`/`--filter-*`, template `--max-requests`/`--severities`, sqli `--level`/`--risk`, OAST `--trigger-timeout-ms`/`--max-runtime-ms`). Generic per-run caps (`--max-depth`/`--max-pages`/`--timeout-ms`/`--rate-limit-per-second`/`--output-path`) are **internal** — the CLI rejects them and points you at the right knob.
 
-- Private/link-local/metadata blocked → `--allow-private-targets` only for explicit internal testing. Launcher overrides (`--sqlmap-path`/`--nuclei-path`) → `--allow-launcher-override`. `--wordlist-path` limited to CWD or `.pi/`.
+- Private/link-local/metadata blocked → `--allow-private-targets` only for explicit internal testing. Launcher overrides (`--sqlmap-path`/`--nuclei-path`) → `--allow-launcher-override`. `--wordlist-path` limited to CWD or `.browser-pilot/`.
 - `--bind-browser-session` injects browser cookies only (traffic does not route through the tab) and reflects a double-submit CSRF cookie into its header by default (`csrfReflected` reports the names) — so authenticated `http-replay` works without page `fetch`. Override with `--csrf-cookie`/`--csrf-header`, or `--reflect-csrf false` to test CSRF protection.
 - `nextActions` are suggestions, not a mandatory pipeline. Do not fabricate request templates when a captured/HAR request is required.
 
 ## Action
 
-- Always set `observe --mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. Selector miss → re-observe `scan`/`html` → `frame` → verified retry. `pi-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle.
-- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block in the result (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true`, `BACKEND_NODE_STALE`, `OOPIF_SESSION_UNSUPPORTED`, or `HANDLE_NOT_FOUND` appears after a script used `pi-ref://`, refresh with `observe --mode scan` before reusing that ref. Input: focus → native setter → dispatch `input`/`change` → read back. If a synthetic `el.click()` returns `ok` but nothing changed and you have a fresh observed ref, use `await pi.click(ref)`; otherwise escalate via `command --command @file` with `input.pointer`/`input.keys` at the rect center. `pi.click` returns dispatch facts (`dispatchOnly:true`), not semantic success.
+- Always set `observe --mode` (`scan`/`content`/`html`/`text`/`tabs`). No `auto`, no cross-mode selector fallback. Selector miss → re-observe `scan`/`html` → `frame` → verified retry. `bp-ref://` and observe baselines are short-lived; on stale/expired/`HANDLE_NOT_FOUND`, re-observe — never retry the old handle.
+- `execute --script-file <f>` = raw JS only; return `{ok, reason, value}`. After any write, read the cheap `effect` block in the result (`mutations`, `settled`, dirty roots/overflow, navigation/recorder deltas) before paying for a full re-observe. If `targetRegionDirty:true`, `BACKEND_NODE_STALE`, `OOPIF_SESSION_UNSUPPORTED`, or `HANDLE_NOT_FOUND` appears after a script used `bp-ref://`, refresh with `observe --mode scan` before reusing that ref. Input: focus → native setter → dispatch `input`/`change` → read back. If a synthetic `el.click()` returns `ok` but nothing changed and you have a fresh observed ref, use `await browserPilot.click(ref)`; otherwise escalate via `command --command @file` with `input.pointer`/`input.keys` at the rect center. `browserPilot.click` returns dispatch facts (`dispatchOnly:true`), not semantic success.
 - Don't ask for `--redact false`; follow redaction pointers. Track when present: `operationId snapshotId requestId waitId listenerId sessionId selectionVersion sourceMode`.
 
 Click (`act.js` for `--script-file`):
@@ -138,13 +138,13 @@ Click (`act.js` for `--script-file`):
 
 Trusted click from an observed ref (`act.js`):
 ```js
-return await pi.click("pi-ref://control/...");
+return await browserPilot.click("bp-ref://control/...");
 ```
-Use this only after a fresh `observe --mode scan` produced the ref and normal `el.click()` was swallowed. Verify with `effect`, `wait`, `observe`, or network/hook evidence; do not double-click just because `pi.click` does not verify intent internally. On stale/ref/session failure, re-observe and retry once with the fresh ref.
+Use this only after a fresh `observe --mode scan` produced the ref and normal `el.click()` was swallowed. Verify with `effect`, `wait`, `observe`, or network/hook evidence; do not double-click just because `browserPilot.click` does not verify intent internally. On stale/ref/session failure, re-observe and retry once with the fresh ref.
 
 ## Native command
 
-`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for explicit trusted physical input; `input.ref` is the internal diagnostic equivalent behind `pi.click(ref)`, not a new preferred CLI workflow. Summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step.
+`command --command @native-command.json` for explicit objects: `tabs management cdp persistent_cdp cookies contentSettings input.* intercept.* ws.*`. Use `input.pointer` (`gesture:"press"|"drag"|"wheel"|"hover"`, `x`, `y`) and `input.keys` (`text` or key names) for explicit trusted physical input; `input.ref` is the internal diagnostic equivalent behind `browserPilot.click(ref)`, not a new preferred CLI workflow. Summaries redact raw inserted text and report char counts. Pass explicit `tabId` + exact `sessionId`/`requestId`/`ruleId`/`url`/`steps`/matchers. `ws.replay` fail → inspect `stepIndex`/`lastSeq`/`partialSteps`/`partialTranscript`, resume from the failing step.
 
 ## Recovery
 
@@ -154,7 +154,7 @@ Use this only after a fresh `observe --mode scan` produced the ref and normal `e
 | `CLI_EXTENSION_NOT_CONNECTED` (exit 3) | daemon/bridge up, extension not connected before timeout — load/enable it, open a tab, re-`connect --wait` |
 | `CLI_BRIDGE_START_FAILED` | bridge failed to start (category `bridge`) — `doctor --json` before waiting on the extension |
 | Stale tab | If `recovery.suggestedTargetRef` is present, retry with `--target-ref <value>`; otherwise `tabs --action list` and use a live `tabHandle` |
-| `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `pi-ref://`; the action was not blocked, but the observed region changed |
+| `targetRegionDirty:true` in execute effect | re-observe `scan` before reusing the same `bp-ref://`; the action was not blocked, but the observed region changed |
 | Selector missing | re-observe `scan`/`html`; `frame`; verified retry |
 | Timeout | `wait diagnose --params '{"waitId":"<id>"}'` (selector-specific `selectorDiagnostics`); narrow/raise bound |
 | Body/request missing | start recorder before action; list exact requests |

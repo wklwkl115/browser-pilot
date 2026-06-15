@@ -1,5 +1,5 @@
 /**
- * Render a tool result to the terminal.
+ * Render a command result to the terminal.
  *
  * --json / non-TTY → print the distilled envelope text verbatim (for agents/
  * scripts). TTY → a compact human view (summary + nextActions + artifact +
@@ -204,7 +204,7 @@ export function writeJsonEnvelope(envelope: CliJsonEnvelope): void {
 }
 
 /**
- * A tool call failed if it hard-terminated OR the envelope itself signals an error.
+ * A command call failed if it hard-terminated OR the envelope itself signals an error.
  * Some tool errors (e.g. NO_TAB, browser_memory read-miss) return a normal-shaped
  * envelope with an error code / ok:false WITHOUT terminate:true — those must still
  * map to a non-zero exit code so scripts/agents can branch on `$?`.
@@ -234,7 +234,7 @@ export function renderResult(result: ToolResultLike, mode: RenderMode): number {
 	return isError ? renderHumanError(text) : renderHumanOk(text);
 }
 
-/** Render a CLI-level usage/parse error (not a tool result). */
+/** Render a CLI-level usage/parse error (not a command result). */
 export function renderUsageError(message: string, mode: RenderMode = "human", exitCode: number = EXIT.usage): number {
 	if (mode === "json") {
 		writeJsonEnvelope({

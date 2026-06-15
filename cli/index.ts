@@ -1,1 +1,1 @@
-export { main } from "./localCommands.js";
+export { main } from "../src/apps/cli/index.js";

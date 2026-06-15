@@ -5,9 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const artifactsDir = path.join(root, ".pi", "browser-artifacts", "public-package");
+const artifactsDir = path.join(root, ".browser-pilot", "artifacts", "public-package");
 const tarballDir = path.join(artifactsDir, "tarball");
 const consumerDir = path.join(artifactsDir, "consumer");
+const legacyBridgePackagePrefix = ["bridge", ["pi", "browser", "bridge"].join("_"), ""].join("/");
 
 function run(command, args, options = {}) {
 	const result = spawnSync(command, args, {
@@ -46,14 +47,31 @@ function assertCleanPackage(files) {
 		file.startsWith("agent-audits/") ||
 		file.startsWith("docs/archive/") ||
 		file.startsWith(".vscode/") ||
+		file.startsWith("dist/src/driver/") ||
+		file.startsWith("dist/src/frontend/") ||
+		file.startsWith("dist/src/resources/") ||
+		file.startsWith("dist/src/tools/") ||
+		file.startsWith("dist/src/protocol/") ||
+		file.startsWith("dist/src/abml/") ||
+		file.startsWith("dist/src/abml-core/") ||
+		file.startsWith("dist/src/distill-core/") ||
+		file.startsWith("dist/src/memory-core/") ||
+		file.startsWith("dist/src/temporal-core/") ||
+		file.startsWith("dist/bridge_src/") ||
+		file.startsWith(legacyBridgePackagePrefix) ||
+		file.startsWith("bridge_src/") ||
+		/^dist\/src\/commands\/commandAdapter\.(js|d\.ts|js\.map|d\.ts\.map)$/.test(file) ||
+		/^dist\/src\/commands\/register[A-Za-z]+Tool(s)?\.(js|d\.ts|js\.map|d\.ts\.map)$/.test(file) ||
+		/^dist\/src\/commands\/tool(Adapter|Registry|Shared)\.(js|d\.ts|js\.map|d\.ts\.map)$/.test(file) ||
+		/^dist\/src\/commands\/define[A-Za-z]+Command\.(js|d\.ts|js\.map|d\.ts\.map)$/.test(file) ||
 		/^(AI_INSTALL\.md|AGENTS\.md|TODO\.md|CURRENT\.md|ROADMAP\.md|ARCHIVE\.md|WORKSTREAMS_A_E_SUMMARY\.md|lefthook\.yml|\.aceignore)$/.test(file)
 	);
 	assert.deepEqual(forbidden, [], `package contains development-only files:\n${forbidden.join("\n")}`);
 	for (const required of [
 		"dist/index.js",
 		"dist/cli/bin.js",
-		"bridge/pi_browser_bridge/manifest.json",
-		"bridge/pi_browser_bridge/dist/service-worker.js",
+		"bridge/browser_pilot_bridge/manifest.json",
+		"bridge/browser_pilot_bridge/dist/service-worker.js",
 		"docs/browser-usage.md",
 		"README.md",
 		"LICENSE",
@@ -93,6 +111,7 @@ const schema = JSON.parse(runConsumerBin(["schema", "observe", "--json"]).stdout
 assert.equal(schema.ok, true, "schema observe --json must return ok:true");
 const status = JSON.parse(runConsumerBin(["status", "--json"]).stdout);
 assert.equal(status.ok, true, "status --json must return ok:true without a connected extension");
+assert.equal(status.ready, false, "status --json must report ready:false without a connected extension");
 
 console.log(JSON.stringify({
 	ok: true,

@@ -4,20 +4,20 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const checkOnly = process.argv.includes("--check");
-const sourcePath = path.join(root, "bridge", "native_command_schema.json");
+const sourcePath = path.join(root, "src", "bridge", "protocol", "native-command.schema.json");
 const schema = JSON.parse(readFileSync(sourcePath, "utf8"));
 const schemaText = JSON.stringify(schema, null, 2);
 
 const outputs = [
-	[path.join(root, "bridge", "pi_browser_bridge", "native_command_schema.json"), generateBridgeSchema],
-	[path.join(root, "bridge_src", "service_worker", "protocol.ts"), generateBridgeProtocolTs],
-	[path.join(root, "src", "protocol", "nativeProtocol.ts"), generateNodeProtocolTs],
-	[path.join(root, "src", "protocol", "nativeActionMetadata.ts"), generateNativeActionMetadataTs],
-	[path.join(root, "src", "protocol", "nativeErrorCodes.ts"), generateNativeErrorCodesTs],
+	[path.join(root, "bridge", "browser_pilot_bridge", "native_command_schema.json"), generateBridgeSchema],
+	[path.join(root, "src", "bridge", "extension", "service_worker", "protocol.ts"), generateBridgeProtocolTs],
+	[path.join(root, "src", "bridge", "protocol", "nativeProtocol.ts"), generateNodeProtocolTs],
+	[path.join(root, "src", "bridge", "protocol", "nativeActionMetadata.ts"), generateNativeActionMetadataTs],
+	[path.join(root, "src", "bridge", "protocol", "nativeErrorCodes.ts"), generateNativeErrorCodesTs],
 	[path.join(root, "docs", "generated", "native-protocol.generated.md"), generateNativeProtocolDocs],
 ];
 
-function generatedHeader(source = "bridge/native_command_schema.json") {
+function generatedHeader(source = "src/bridge/protocol/native-command.schema.json") {
 	return `// Generated from ${source}. Do not edit by hand.\n`;
 }
 
@@ -26,9 +26,9 @@ function generateBridgeSchema() {
 }
 
 function generateBridgeProtocolTs() {
-	return `${generatedHeader()}import type { JsonRecord, PiBridgeCommand } from "./types";
+	return `${generatedHeader()}import type { JsonRecord, BrowserPilotBridgeCommand } from "./types";
 
-type PiCommandSpec = JsonRecord & {
+type BrowserPilotCommandSpec = JsonRecord & {
   domain?: string;
   tabScoped?: boolean;
   accessMode?: 'read' | 'write';
@@ -38,20 +38,20 @@ type PiCommandSpec = JsonRecord & {
   methodRequired?: boolean;
   required?: string[];
   requiredAny?: string[][];
-  methodSpecs?: Record<string, PiCommandSpec>;
+  methodSpecs?: Record<string, BrowserPilotCommandSpec>;
   canonical?: string;
 };
-type PiProtocolSchema = JsonRecord & {
+type BrowserPilotProtocolSchema = JsonRecord & {
   aliases: Record<string, string>;
   domains: Record<string, string[]>;
-  commands: Record<string, PiCommandSpec>;
+  commands: Record<string, BrowserPilotCommandSpec>;
 };
 
-(function installPiNativeProtocol(global: typeof globalThis & { PiNativeProtocol?: unknown }) {
+(function installBrowserPilotNativeProtocol(global: typeof globalThis & { BrowserPilotNativeProtocol?: unknown }) {
   'use strict';
-  const schema = ${schemaText} as PiProtocolSchema;
+  const schema = ${schemaText} as BrowserPilotProtocolSchema;
 
-  function isObject(value: unknown): value is PiBridgeCommand {
+  function isObject(value: unknown): value is BrowserPilotBridgeCommand {
     return !!value && typeof value === 'object' && !Array.isArray(value);
   }
 
@@ -115,7 +115,7 @@ type PiProtocolSchema = JsonRecord & {
 
     const checked = Object.assign({}, command, { cmd });
     const methods = Array.isArray(spec.methods) ? spec.methods : [];
-    let methodSpec: PiCommandSpec | null = null;
+    let methodSpec: BrowserPilotCommandSpec | null = null;
     if (methods.length) {
       const rawMethod = hasValue(checked.method) ? String(checked.method) : spec.defaultMethod;
       if (spec.methodRequired && !hasValue(rawMethod)) return { ok: false, error: cmd + ' requires method', details: { cmd } };
@@ -152,11 +152,11 @@ type PiProtocolSchema = JsonRecord & {
     canonicalCommand,
     validateCommand
   };
-  global.PiNativeProtocol = protocol;
+  global.BrowserPilotNativeProtocol = protocol;
 })(typeof self !== 'undefined' ? self : globalThis);
-export const PiNativeProtocol = (globalThis as typeof globalThis & { PiNativeProtocol?: unknown }).PiNativeProtocol;
+export const BrowserPilotNativeProtocol = (globalThis as typeof globalThis & { BrowserPilotNativeProtocol?: unknown }).BrowserPilotNativeProtocol;
 // ESM module metadata
-export const __piBridgeModule_protocol = { name: "protocol", symbols: { PiNativeProtocol } };
+export const __browserPilotBridgeModule_protocol = { name: "protocol", symbols: { BrowserPilotNativeProtocol } };
 `;
 }
 
@@ -282,7 +282,7 @@ function generatedNativeActionMetadata() {
 	const source = schema.toolMetadata || {};
 	const commands = schema.commands || {};
 	const nativeActionTools = {};
-	for (const [toolName, tool] of Object.entries(source.nativeActionTools || {})) {
+	for (const [commandName, tool] of Object.entries(source.nativeActionTools || {})) {
 		const actionAliases = {};
 		// Join each action with its command's param requirements (single source of truth =
 		// schema.commands[*].required/requiredAny/notes) so `browser-pilot <tool> --help` can surface
@@ -297,7 +297,7 @@ function generatedNativeActionMetadata() {
 			if (typeof spec.notes === "string" && spec.notes) enriched.notes = spec.notes;
 			return enriched;
 		});
-		nativeActionTools[toolName] = { ...tool, actions, actionAliases };
+		nativeActionTools[commandName] = { ...tool, actions, actionAliases };
 	}
 	return {
 		nativeActionTools,
@@ -318,22 +318,22 @@ export function normalizeNativeToolAction(action: string): string {
 	return action.trim().toLowerCase().replace(/[_.-]/g, "");
 }
 
-export function commandForNativeToolAction(toolName: NativeActionToolName, action: string): string {
-	const metadata = nativeToolMetadata.nativeActionTools[toolName];
+export function commandForNativeToolAction(commandName: NativeActionToolName, action: string): string {
+	const metadata = nativeToolMetadata.nativeActionTools[commandName];
 	const command = (metadata.actionAliases as Record<string, string>)[normalizeNativeToolAction(action)];
-	if (!command) throw new Error(\`Unsupported \${toolName} action: \${action}\`);
+	if (!command) throw new Error(\`Unsupported \${commandName} action: \${action}\`);
 	return command;
 }
 
 export const nativeCommandToolMetadata = nativeToolMetadata.nativeCommandTools;
 export const nativeTransferToolMetadata = nativeToolMetadata.transferTools;
 
-export function metadataForNativeCommandTool(toolName: NativeCommandToolName) {
-	return nativeCommandToolMetadata[toolName];
+export function metadataForNativeCommandTool(commandName: NativeCommandToolName) {
+	return nativeCommandToolMetadata[commandName];
 }
 
-export function metadataForNativeTransferTool(toolName: NativeTransferToolName) {
-	return nativeTransferToolMetadata[toolName];
+export function metadataForNativeTransferTool(commandName: NativeTransferToolName) {
+	return nativeTransferToolMetadata[commandName];
 }
 `;
 }
@@ -401,13 +401,13 @@ function errorRows() {
 }
 
 function generateNativeProtocolDocs() {
-	const readmeSnippet = "Run `npm run sync:protocol` after editing `bridge/native_command_schema.json`, then run `npm run check` before publishing.";
+	const readmeSnippet = "Run `npm run sync:protocol` after editing `src/bridge/protocol/native-command.schema.json`, then run `npm run check` before publishing.";
 	const skillSnippet = "Native browser command behavior is governed by generated protocol metadata; use browser_wait/browser_network actions and browser_download/browser_upload rather than raw transfer.upload.";
 	return `# Native Protocol Contract (Generated)\n\n` +
 		`Generated by \`scripts/sync-native-protocol.mjs\`. Do not edit by hand.\n\n` +
 		`## Source\n\n` +
-		`- Single source: \`bridge/native_command_schema.json\` (${schema.name} ${schema.version}).\n` +
-		`- Generated runtime/type outputs: \`bridge_src/service_worker/protocol.ts\`, \`src/protocol/nativeProtocol.ts\`, \`src/protocol/nativeActionMetadata.ts\`, \`src/protocol/nativeErrorCodes.ts\`.\n\n` +
+		`- Single source: \`src/bridge/protocol/native-command.schema.json\` (${schema.name} ${schema.version}).\n` +
+		`- Generated runtime/type outputs: \`src/bridge/extension/service_worker/protocol.ts\`, \`src/bridge/protocol/nativeProtocol.ts\`, \`src/bridge/protocol/nativeActionMetadata.ts\`, \`src/bridge/protocol/nativeErrorCodes.ts\`.\n\n` +
 		`## Native commands\n\n` +
 		table(["Command", "Domain", "Tab scoped", "Required", "Required any", "Canonical"], commandRows()) +
 		`\n\n## Tool metadata slice\n\n` +

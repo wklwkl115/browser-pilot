@@ -35,7 +35,7 @@ npm run check          # runs all gates: lint, types, tests, contracts
   explicit and documented.
 - Update affected docs, generated references, and package checks in the same
   workstream as code changes.
-- Do not commit local artifacts, browser profiles, `.pi/`, credentials, tokens,
+- Do not commit local artifacts, browser profiles, `.browser-pilot/`, credentials, tokens,
   cookies, HAR files, or real-site private evidence.
 - For security-sensitive behavior, include the smallest redacted reproduction
   and avoid uploading browser artifacts, HAR files, cookies, tokens, or private
@@ -43,7 +43,7 @@ npm run check          # runs all gates: lint, types, tests, contracts
 
 ## Generated Files
 
-Several files are auto-generated from `bridge/native_command_schema.json`. Do
+Several files are auto-generated from `src/bridge/protocol/native-command.schema.json`. Do
 not edit them manually — instead run:
 
 ```bash

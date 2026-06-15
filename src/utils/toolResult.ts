@@ -2,7 +2,7 @@ import { compactError } from "./errors.js";
 import { jsonPreview, stableJson, truncateText } from "./json.js";
 import { redactSensitiveValue } from "./redaction.js";
 
-export type PiTextToolResult = {
+export type BrowserTextCommandResult = {
 	content: Array<{ type: "text"; text: string }>;
 	details?: Record<string, unknown>;
 };
@@ -50,7 +50,7 @@ function compactDetails(details: Record<string, unknown>): Record<string, unknow
 	return compactDetailsValue(redactSensitiveValue(details), 0, new WeakSet()) as Record<string, unknown>;
 }
 
-export function textResult(text: string, details: Record<string, unknown> = {}, maxChars = 50_000): PiTextToolResult {
+export function textResult(text: string, details: Record<string, unknown> = {}, maxChars = 50_000): BrowserTextCommandResult {
 	const preview = truncateText(text, maxChars);
 	return {
 		content: [{ type: "text", text: preview.text }],
@@ -58,7 +58,7 @@ export function textResult(text: string, details: Record<string, unknown> = {}, 
 	};
 }
 
-export function jsonResult(value: unknown, details: Record<string, unknown> = {}, maxChars = 50_000): PiTextToolResult {
+export function jsonResult(value: unknown, details: Record<string, unknown> = {}, maxChars = 50_000): BrowserTextCommandResult {
 	const preview = jsonPreview(value, maxChars);
 	return {
 		content: [{ type: "text", text: preview.text }],
@@ -66,7 +66,7 @@ export function jsonResult(value: unknown, details: Record<string, unknown> = {}
 	};
 }
 
-export function errorResult(error: unknown): PiTextToolResult {
+export function errorResult(error: unknown): BrowserTextCommandResult {
 	const normalized = compactError(error);
 	return {
 		content: [{ type: "text", text: stableJson(normalized) }],

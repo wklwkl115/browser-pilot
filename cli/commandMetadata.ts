@@ -1,7 +1,7 @@
 import type { CliCommand } from "./registry.js";
 import { buildFlagSpecs, type FlagSpec } from "./flags.js";
 import { pad } from "./help.js";
-import { nativeToolMetadata } from "../src/protocol/nativeActionMetadata.js";
+import { nativeToolMetadata } from "../src/bridge/protocol/nativeActionMetadata.js";
 import {
 	commandRouting,
 	kebabAction,
@@ -46,9 +46,9 @@ const ARTIFACT_BEHAVIOR: ArtifactBehavior = {
 };
 
 /** Per-action `--params` keys, surfaced from the generated native protocol metadata. */
-export function nativeActionParamsHelp(toolName: string): string[] {
+export function nativeActionParamsHelp(commandName: string): string[] {
 	const tools = nativeToolMetadata.nativeActionTools as unknown as Record<string, { actions?: readonly ActionParamMeta[] }>;
-	const actions = tools[toolName]?.actions;
+	const actions = tools[commandName]?.actions;
 	if (!actions?.length) return [];
 	const rows: string[] = [];
 	for (const a of actions) {

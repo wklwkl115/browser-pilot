@@ -21,16 +21,16 @@ All notable changes to this project will be documented in this file.
 - **Session delta** — repeated `browser_observe mode=scan` on the same tab produces
   compact P-frames with `delta:"session"`, reducing token cost for multi-step workflows.
 - **Task-conditioned relevance** — URL cold-start, behavioral trace, and intent signals
-  reorder scan results within salience ranks. Disabled with `PI_BROWSER_RELEVANCE=0`.
-- **Browser memory** — local `.pi/browser-memory/` store with auto-recall on
+  reorder scan results within salience ranks. Disabled with `BROWSER_PILOT_RELEVANCE=0`.
+- **Browser memory** — local `.browser-pilot/memory/` store with auto-recall on
   `browser_observe` and explicit `browser_memory record/recall/read`.
-- **Four pure-logic kernels** — capture (sense), abml-core (perceive), distill-core
-  (express), memory-core (retain). Zero browser/Node dependencies, CI-boundary-locked.
+- **Four pure-logic kernels** — capture (sense), abml-kernel (perceive), distill-core
+  (express), memory-kernel (retain). Zero browser/Node dependencies, CI-boundary-locked.
 - **Living tab sessions** — stable `tabHandle`/`targetRef` across tab replacements,
   MV3 service worker restarts, and extension reconnects.
 - **Trusted event escape** — `browser_command` with `input.pointer`/`input.keys` for
   CDP physical input when JS `el.click()` is silently blocked by trusted-event gates.
-- **`pi.click(ref)`** — single-call physical click via observed `pi-ref://` handle
+- **`browserPilot.click(ref)`** — single-call physical click via observed `bp-ref://` handle
   inside `browser_execute`, combining coordinate measurement and CDP dispatch.
 - **Interception primitives** — response auto-fulfill, script replacement,
   request mutation via bridge commands.
@@ -50,13 +50,13 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Default observation renderer switched from `ladder` to `salience` (token-efficient
-  fact allocation). Override with `PI_BROWSER_RENDERER=ladder`.
+  fact allocation). Override with `BROWSER_PILOT_RENDERER=ladder`.
 - Extension architecture migrated to ESM import graph with strict TypeScript,
   offscreen durable WebSocket transport, and Manifest V3 service worker.
 - Bridge port range `18765-18784` with automatic first-free selection; multiple
   bridge servers can share one browser extension.
 - Tool results default to `detailLevel:"summary"` with cookie/token/authorization
-  redaction. Raw evidence saved to local `.pi/browser-artifacts/`.
+  redaction. Raw evidence saved to local `.browser-pilot/artifacts/`.
 
 ## [0.2.0] - 2026-05-18
 
@@ -82,4 +82,4 @@ All notable changes to this project will be documented in this file.
 - Core tools: `browser_tabs`, `browser_observe`, `browser_execute`, `browser_wait`,
   `browser_network`, `browser_hook`, `browser_evidence`, `browser_artifact`.
 - GA-style simplified DOM scanning with actionable element detection.
-- Pi native extension integration via `pi.extensions`.
+- Browser Pilot native extension integration.

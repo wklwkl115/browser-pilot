@@ -131,7 +131,7 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 		activeTab: activeTabFrom(found?.status),
 		health: found?.status.health ?? {},
 		...(leaseStatus !== null ? { lease: leaseStatus } : {}),
-		artifactRoot: path.join(cwd, ".pi", "browser-artifacts"),
+		artifactRoot: path.join(cwd, ".browser-pilot", "artifacts"),
 		recovery: { commands: connectionRecoveryCommands(timeoutMs) },
 	};
 }

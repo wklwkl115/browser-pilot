@@ -17,7 +17,7 @@
     "cli/**/*.ts"
   ],
   "exclude": [
-    "bridge_src/**",
+    "src/bridge/extension/**",
     "tests/**",
     "node_modules/**"
   ]

@@ -17,7 +17,7 @@ export function jsonForInlineScript(value: unknown): string {
 function injectScanSignals(script: string): string {
 	const marker = "  return {\n    url: location.href,";
 	const injected = `  const piScanFingerprint = {
-    changeSeq: Number((globalThis.__piBrowserScanFingerprintSeq = (Number(globalThis.__piBrowserScanFingerprintSeq || 0) + 1))),
+    changeSeq: Number((globalThis.__browserPilotScanFingerprintSeq = (Number(globalThis.__browserPilotScanFingerprintSeq || 0) + 1))),
     url: location.href,
     title: document.title,
     readyState: document.readyState,

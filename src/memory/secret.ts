@@ -3,13 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText } from "../utils/fsAtomic.js";
 
-const MEMORY_ROOT = ".pi/browser-memory";
+const MEMORY_ROOT = ".browser-pilot/memory";
 const SECRET_FILE = ".secret";
 const SECRET_BYTES = 32;
 const secretCreateLocks = new Map<string, Promise<Buffer | undefined>>();
 
 export function memoryKernelEnabled(): boolean {
-	return process.env.PI_BROWSER_MEMORY !== "0";
+	return process.env.BROWSER_PILOT_MEMORY !== "0";
 }
 
 export function memorySecretPath(cwd?: string): string {
