@@ -81,6 +81,7 @@ export function layer(relativePath) {
 	if (relativePath.startsWith("src/adapters/")) return "adapters";
 	if (relativePath.startsWith("src/artifacts/")) return "artifacts";
 	if (relativePath.startsWith("src/browser-command-runtime/")) return "browser-command-runtime";
+	if (relativePath.startsWith("src/browser-page-runtime/")) return "browser-page-runtime";
 	if (relativePath.startsWith("src/browser-runtime/")) return "browser-runtime";
 	if (relativePath.startsWith("src/capture/")) return "capture";
 	if (relativePath.startsWith("src/content/")) return "content";

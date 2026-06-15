@@ -6,7 +6,7 @@ import { normalizeNativeErrorCode } from "../../bridge/protocol/nativeErrorCodes
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
 import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
-import { evaluatePageScriptDirect } from "../../browser-command-runtime/pageScriptEvaluation.js";
+import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { summarizeContentData } from "../summaries/index.js";
 import { artifactFallbackName, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";

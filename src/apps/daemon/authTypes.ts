@@ -1,4 +1,4 @@
-import type { ConsentDecision } from "../../bridge/server/consentTypes.js";
+import type { ConsentDecision } from "../../bridge/protocol/consentTypes.js";
 
 // Re-export so cli-side modules have a single import site for the consent seam.
 export type { ConsentDecision };

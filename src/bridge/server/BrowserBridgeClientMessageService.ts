@@ -8,7 +8,7 @@ import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.
 import { errorToPlain } from "../protocol/errors.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
-import { CONSENT_MESSAGE_TYPES } from "./consentTypes.js";
+import { CONSENT_MESSAGE_TYPES } from "../protocol/consentTypes.js";
 import type { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 
 type IncomingMessage = {

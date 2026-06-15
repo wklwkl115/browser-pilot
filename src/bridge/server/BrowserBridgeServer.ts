@@ -17,7 +17,7 @@ import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
 import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
-import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "./consentTypes.js";
+import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "../protocol/consentTypes.js";
 import type { TemporalProfileSample } from "../../kernels/temporal/types.js";
 import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../../kernels/abml/perceptionLedger.js";
 import { drainMemoryProfileFlushes } from "../../memory/profileService.js";

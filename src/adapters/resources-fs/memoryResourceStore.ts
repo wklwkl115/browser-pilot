@@ -1,9 +1,7 @@
 import { existsSync } from "node:fs";
-import path from "node:path";
 import { computeEtag, isFreshEtag } from "./resourceFreshness.js";
 import { resolveMemoryPath } from "../../memory/paths.js";
 import { readMemoryIndex } from "../../memory/indexStore.js";
-import { resolveResourceUri } from "./resourceStore.js";
 
 export const MEMORY_RESOURCE_URI_SCHEME = "browser-memory";
 
@@ -86,11 +84,4 @@ export function memoryResourceTemplates() {
 		{ uriTemplate: "browser-memory://sop/{id}", name: "Browser memory SOP", description: "Browser memory SOP entry. Supports ?mode=text|json&offset=&limit=&jsonPath=...", mimeType: "text/markdown" },
 		{ uriTemplate: "browser-memory://fact/{id}", name: "Browser memory fact", description: "Browser memory fact entry. Supports ?mode=text|json&offset=&limit=&jsonPath=...", mimeType: "text/markdown" },
 	];
-}
-
-export async function resolveBrowserResultEvidence(uri: string): Promise<{ ok: true; path: string; etag?: string; bytes?: number } | { ok: false; code: string; error: string }> {
-	const resource = resolveResourceUri(uri);
-	if (!resource) return { ok: false, code: "MEMORY_EVIDENCE_UNRESOLVABLE", error: `Resource not found or expired: ${uri}` };
-	if (!isFreshEtag(resource.artifactPath, resource.etag)) return { ok: false, code: "MEMORY_EVIDENCE_STALE", error: `Resource is stale: ${uri}` };
-	return { ok: true, path: path.normalize(resource.artifactPath), etag: resource.etag, bytes: resource.bytes };
 }

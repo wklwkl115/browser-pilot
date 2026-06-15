@@ -3,7 +3,7 @@ import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
 import { isRecord } from "../../utils/records.js";
 import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
-import { evaluatePageScriptDirect } from "../../browser-command-runtime/pageScriptEvaluation.js";
+import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";
 import { scanEntitiesForEnvelope, summarizeScanData } from "../../scan/summary.js";
 import { normalizeTabId } from "../../utils/params.js";

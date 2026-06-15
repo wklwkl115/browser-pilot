@@ -148,7 +148,7 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `BRIDGE_STOPPED` | driver | driver.pending | yes | schema | `src/bridge/server/BrowserBridgePendingRequests.ts` |
 | `BRIDGE_TIMEOUT` | driver | driver.pending | yes | schema | `src/bridge/server/BrowserBridgePendingRequests.ts`, `src/commands/webSecurity/shared/http.ts` |
 | `BROWSER_COMMAND_FAILED` | driver | driver.command | no | schema | `src/bridge/server/BrowserBridgeCommandService.ts`, `src/browser-command-runtime/waitSupervisor.ts`, `src/bridge/protocol/bridgeResultValidation.ts` |
-| `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/bridge/server/BrowserBridgePendingRequests.ts`, `src/browser-command-runtime/pageScriptEvaluation.ts`, `src/commands/definePickCommand.ts` |
+| `BROWSER_EXECUTION_ERROR` | driver | driver.execution | no | schema | `src/bridge/server/BrowserBridgePendingRequests.ts`, `src/browser-page-runtime/pageScriptEvaluation.ts`, `src/commands/definePickCommand.ts` |
 | `BROWSER_EXTENSION_RECONNECT_TIMEOUT` | driver | driver.lifecycle | yes | schema | `src/bridge/server/BrowserBridgeServer.ts`, `src/browser-command-runtime/waitSupervisor.ts` |
 | `BROWSER_NOT_FOUND` | driver | driver.selection | no | schema | `src/bridge/server/BrowserBridgeServer.ts` |
 | `BUFFER_OVERFLOW` | native | runtime.hook | no | schema |  |
@@ -194,9 +194,9 @@ Generated taxonomy keeps public error codes stable and adds compact `taxonomy` /
 | `MEMORY_ACTION_UNSUPPORTED` | tool | tool.memory | no | schema | `src/commands/defineMemoryCommand.ts` |
 | `MEMORY_ENTRY_NOT_FOUND` | tool | tool.memory | no | schema | `src/commands/memory/reader.ts` |
 | `MEMORY_EVIDENCE_REQUIRED` | tool | tool.memory | no | schema |  |
-| `MEMORY_EVIDENCE_STALE` | tool | tool.memory | no | schema | `src/adapters/resources-fs/memoryResourceStore.ts`, `src/commands/memory/evidence.ts` |
+| `MEMORY_EVIDENCE_STALE` | tool | tool.memory | no | schema | `src/resources/browserResultEvidence.ts`, `src/commands/memory/evidence.ts` |
 | `MEMORY_EVIDENCE_UNREADABLE` | tool | tool.memory | no | schema | `src/commands/memory/evidence.ts` |
-| `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/adapters/resources-fs/memoryResourceStore.ts`, `src/commands/memory/evidence.ts` |
+| `MEMORY_EVIDENCE_UNRESOLVABLE` | tool | tool.memory | no | schema | `src/resources/browserResultEvidence.ts`, `src/commands/memory/evidence.ts` |
 | `MEMORY_RESOURCE_STALE` | tool | tool.memory | no | schema | `src/commands/memory/reader.ts` |
 | `MEMORY_SCHEMA_INVALID` | tool | tool.memory | no | schema | `src/commands/memory/evidence.ts`, `src/memory/frontmatter.ts`, `src/memory/ids.ts`, `src/memory/indexStore.ts`, `src/commands/memory/origin.ts`, `src/commands/memory/reader.ts` |
 | `MEMORY_SCOPE_REQUIRED` | tool | tool.memory | no | schema | `src/commands/memory/evidence.ts` |

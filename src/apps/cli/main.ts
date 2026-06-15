@@ -12,12 +12,12 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { CliCommand } from "../../../cli/registry.js";
-import { parseArgs, coerceParams, resolveParamValueReferences, wantsJson, type GlobalFlags, type FlagSpec } from "../../../cli/flags.js";
-import { looksLikeToolError, renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode, type ToolResultLike } from "../../../cli/render.js";
-import { invokeTool, DaemonUnavailableError } from "../../../cli/client.js";
+import type { CliCommand } from "./registry.js";
+import { parseArgs, coerceParams, resolveParamValueReferences, wantsJson, type GlobalFlags, type FlagSpec } from "./flags.js";
+import { looksLikeToolError, renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode, type ToolResultLike } from "./render.js";
+import { invokeTool, DaemonUnavailableError } from "./client.js";
 import { findDaemon, isDaemonVersionCurrent, lockfilePath, stopDaemon, ensureDaemon, controlRequest } from "../daemon/daemonControl.js";
-import { resolvePairingToken, writeAgentToken } from "../../../cli/pairing.js";
+import { resolvePairingToken, writeAgentToken } from "./pairing.js";
 import {
 	PAIR_WAIT_DEFAULT_MS,
 	type LeaseAction,
@@ -28,9 +28,9 @@ import {
 	type PairingsResponse,
 } from "../daemon/authTypes.js";
 import { daemonVersion, packageVersion } from "../daemon/packageInfo.js";
-import { connectBrowser, connectionStatus, staleLockfileDiagnostic } from "../../../cli/connection.js";
-import { pad, printHelp } from "../../../cli/help.js";
-import { translateNaturalActionArgv, naturalActionForToken, legacyActionUsed } from "../../../cli/naturalRouting.js";
+import { connectBrowser, connectionStatus, staleLockfileDiagnostic } from "./connection.js";
+import { pad, printHelp } from "./help.js";
+import { translateNaturalActionArgv, naturalActionForToken, legacyActionUsed } from "./naturalRouting.js";
 import {
 	actionSpecificFlagSpecs,
 	artifactBehaviorMetadata,
@@ -45,10 +45,10 @@ import {
 	naturalSubcommandMetadata,
 	printCommandHelp,
 	schemaForFlagSpecs,
-} from "../../../cli/commandMetadata.js";
+} from "./commandMetadata.js";
 
 async function loadCliCommands(): Promise<CliCommand[]> {
-	const registry = await import("../../../cli/registry.js");
+	const registry = await import("./registry.js");
 	return registry.buildCliCommands();
 }
 

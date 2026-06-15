@@ -5,7 +5,7 @@ import {
   type ConsentRequestEnvelope,
   type PairedAgentSummary,
   type PairedAgentsEnvelope,
-} from "./consentTypes.js";
+} from "../protocol/consentTypes.js";
 
 export interface BrowserBridgeConsentCoordinatorDeps {
   /** Return the currently-selected open extension WebSocket, or undefined if none is connected. */

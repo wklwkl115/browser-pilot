@@ -19,8 +19,8 @@ import { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js"
 import { defineBrowserCommands } from "../../commands/defineBrowserCommands.js";
 import type { EnsureStarted } from "../../commands/commandShared.js";
 import { CommandManifestIndex, type CommandDefinition } from "../../commands/commandManifestIndex.js";
-import { resolveBrowserResultEvidence } from "../../adapters/resources-fs/memoryResourceStore.js";
-import { validateCommandArgs } from "../../commands/validation.js";
+import { resolveBrowserResultEvidence } from "../../resources/browserResultEvidence.js";
+import { validateCommandArgs } from "../../validation/commandArgs.js";
 import { registerHook, emitLog, timingLogHook, type MiddlewareContext } from "../../commands/middleware.js";
 import { resolveUsageLogOptions, createUsageLogHook } from "../../commands/usageLog.js";
 import { isRecord } from "../../utils/records.js";
