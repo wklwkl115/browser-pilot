@@ -547,14 +547,16 @@ async function runLeaseCommand(argv: string[]): Promise<number> {
 	const specs: FlagSpec[] = [
 		{ name: "token", flag: "--token", kind: "string", required: false, description: "Pairing token to use. Defaults to env/stored token." },
 	];
-	const parsed = parseArgs(specs, argv);
+	// Extract the first positional (status|acquire|release) before flag parsing,
+	// then parse only the remaining flags (parseArgs rejects stray positionals).
+	const positional = firstPositional(argv);
+	const sub = positional.value;
+	const parsed = parseArgs(specs, positional.rest);
 	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
 	if (parsed.value.globals.help) {
 		process.stdout.write("browser-pilot lease <status|acquire|release> [--token <tok>] [--json]\n\nManage the exclusive browser lease.\n\nSubcommands:\n  status     Show the current lease holder.\n  acquire    Acquire the lease for this agent.\n  release    Release a lease held by this agent.\n\nFlags:\n  --token <string>   Pairing token (overrides env/stored).\n  --json | --text\n");
 		return EXIT.ok;
 	}
-	// Extract the first positional (status|acquire|release) from argv — all flag tokens start with "--"
-	const sub = firstPositional(argv).value;
 	const validActions: LeaseAction[] = ["status", "acquire", "release"];
 	if (!sub || !validActions.includes(sub as LeaseAction)) {
 		return renderUsageError(`usage: browser-pilot lease <${validActions.join("|")}> [--token <tok>] [--json]`, mode);
