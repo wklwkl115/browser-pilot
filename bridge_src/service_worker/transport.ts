@@ -2,7 +2,7 @@ import { PI_BROWSER_BRIDGE_HTTP_URL, PI_BROWSER_BRIDGE_PORT, PI_BROWSER_BRIDGE_W
 import { chromeApi as chrome } from "./runtimeEnv";
 import { installCspBypassRule, isScriptable, piBridgeInfo } from "./bridge_info";
 import { setBridgeWakeProbe } from "./core_commands";
-import { handlePiBridgeWsMessage } from "./router";
+import { handlePiBridgeWsMessage, setTransportSocketGetter } from "./router";
 import { runStartupRecovery } from "./state_store";
 import { installPiBrowserTabSync } from "./tab_sync";
 import type { JsonRecord, PiBridgeWebSocketLike, PiBridgeWsEnvelope, PiChromeAlarm, PiChromeTab } from "./types";
@@ -173,6 +173,7 @@ async function sendExtReady(socket: SocketAdapter, port: number): Promise<void> 
   const tabs = (await chrome.tabs.query({}) as PiChromeTab[]).filter((tab: PiChromeTab) => isScriptable(tab.url));
   socket.send(JSON.stringify({
     type: "ext_ready",
+    consentCapable: true,
     bridge: { ...piBridgeInfo(), bridgePort: port, primaryPort },
     tabs: tabs.map((tab: PiChromeTab) => ({ id: tab.id, url: tab.url, title: tab.title, active: tab.active, windowId: tab.windowId })),
   }));
@@ -224,6 +225,7 @@ function installPiBrowserTransport(): boolean {
   installCspBypassRule();
   chrome.alarms.onAlarm.addListener((alarm: PiChromeAlarm) => { runTransportTask("transport alarm", async () => { await handlePiBrowserTransportAlarm(alarm); }); });
   setBridgeWakeProbe(probeAndConnectWS);
+  setTransportSocketGetter(getPiBrowserTransportSocket);
   runTransportTask("initial probe", async () => { await probeAndConnectWS(true); });
   chrome.runtime.onStartup.addListener(() => { runTransportTask("startup probe", async () => { await probeAndConnectWS(true); }); });
   installPiBrowserTabSync({ getSocket: getPiBrowserTransportSocket, getSockets: getPiBrowserTransportSockets, probe: probeAndConnectWS });

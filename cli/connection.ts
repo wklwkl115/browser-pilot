@@ -1,7 +1,9 @@
 import path from "node:path";
 import { controlRequest, ensureDaemon, findDaemon, isDaemonVersionCurrent, isPidAlive, lockfilePath, readLockfile, type DaemonInfo, type DaemonStatus } from "./daemonControl.js";
+import { resolvePairingToken } from "./pairing.js";
 import { daemonVersion } from "./packageInfo.js";
 import { EXIT } from "./render.js";
+import type { LeaseStatusResponse } from "./authTypes.js";
 
 export type RecoveryCommand = { command: string; argv: string[]; purpose: string };
 
@@ -73,10 +75,42 @@ function tabCountFrom(status: DaemonStatus | undefined): number {
 	return Array.isArray(status?.tabs) ? status.tabs.length : 0;
 }
 
+/**
+ * Best-effort fetch of the current lease status from the daemon.
+ * Returns a lease block or null; never throws (errors are silently swallowed
+ * so that a missing/unauth /lease endpoint never breaks `status`).
+ */
+async function fetchLeaseStatus(info: DaemonInfo): Promise<Record<string, unknown> | null> {
+	try {
+		const pairingToken = resolvePairingToken();
+		const { status, json } = await controlRequest(
+			info,
+			"POST",
+			"/lease",
+			{ action: "status" },
+			5_000,
+			pairingToken ? { pairingToken } : undefined,
+		);
+		if (status === 200 && json && json.ok === true) {
+			const typed = json as unknown as LeaseStatusResponse;
+			return {
+				held: typed.lease !== null,
+				self: typed.self,
+				lease: typed.lease ?? null,
+			};
+		}
+	} catch {
+		/* best-effort — swallow all errors */
+	}
+	return null;
+}
+
 export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, opts: { tabs?: boolean } = {}): Promise<Record<string, unknown>> {
 	const found = await findDaemon({ tabs: opts.tabs });
 	const staleLockfile = found ? null : staleLockfileDiagnostic();
 	const ready = Boolean(found && isDaemonVersionCurrent(found.info) && found.status.running === true && found.status.extensionConnected === true);
+	// Best-effort lease status — omitted (not null) when unavailable
+	const leaseStatus = found ? await fetchLeaseStatus(found.info) : null;
 	return {
 		command: "status",
 		ready,
@@ -96,6 +130,7 @@ export async function connectionStatus(cwd = process.cwd(), timeoutMs = 15_000, 
 		...(opts.tabs ? { tabs: Array.isArray(found?.status.tabs) ? found?.status.tabs : [] } : {}),
 		activeTab: activeTabFrom(found?.status),
 		health: found?.status.health ?? {},
+		...(leaseStatus !== null ? { lease: leaseStatus } : {}),
 		artifactRoot: path.join(cwd, ".pi", "browser-artifacts"),
 		recovery: { commands: connectionRecoveryCommands(timeoutMs) },
 	};

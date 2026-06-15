@@ -7,6 +7,8 @@
  * daemon scopes artifacts/memory to the caller, not to itself.
  */
 import { ensureDaemon, controlRequest } from "./daemonControl.js";
+import { resolvePairingToken } from "./pairing.js";
+import { CLI_LEASE_BUSY } from "./authTypes.js";
 import type { ToolResultLike } from "./render.js";
 
 /** Daemon/bridge unavailable — maps to EXIT.unavailable at the dispatch layer. */
@@ -62,6 +64,34 @@ function daemonInvokeErrorResult(status: number, json: Record<string, unknown> |
 	};
 }
 
+function leaseBusyErrorResult(json: Record<string, unknown> | undefined, _tool: string): ToolResultLike {
+	const heldBy = isRecord(json?.heldBy) ? (json!.heldBy as { label?: string; pairingId?: string; since?: string }) : undefined;
+	const holderLabel = typeof heldBy?.label === "string" ? heldBy.label : undefined;
+	const message = holderLabel
+		? `tool call blocked: lease held by "${holderLabel}"`
+		: "tool call blocked: another agent holds the browser lease";
+	return {
+		content: [{
+			type: "text",
+			text: JSON.stringify({
+				ok: false,
+				code: CLI_LEASE_BUSY,
+				message,
+				taxonomy: { domain: "cli", category: "lease", retryable: true, source: "cli" },
+				heldBy: heldBy ?? null,
+				recovery: {
+					hint: "Wait for the current lease holder to release, or use `browser-pilot lease release` if you are the holder.",
+					commands: [
+						{ command: "browser-pilot lease status --json", argv: ["browser-pilot", "lease", "status", "--json"], purpose: "inspect the current lease holder" },
+						{ command: "browser-pilot pairings --json", argv: ["browser-pilot", "pairings", "--json"], purpose: "list all paired agents" },
+					],
+				},
+			}),
+		}],
+		terminate: true,
+	};
+}
+
 export async function invokeTool(tool: string, params: Record<string, unknown>, cwd: string, cli?: Record<string, unknown>): Promise<ToolResultLike> {
 	let info;
 	try {
@@ -69,13 +99,25 @@ export async function invokeTool(tool: string, params: Record<string, unknown>, 
 	} catch (error) {
 		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
 	}
+	const pairingToken = resolvePairingToken();
 	let response;
 	try {
-		response = await controlRequest(info, "POST", "/invoke", { tool, params, cwd, ...(cli ? { cli } : {}) });
+		response = await controlRequest(
+			info,
+			"POST",
+			"/invoke",
+			{ tool, params, cwd, ...(cli ? { cli } : {}) },
+			120_000,
+			pairingToken ? { pairingToken } : undefined,
+		);
 	} catch (error) {
 		throw new DaemonUnavailableError(error instanceof Error ? error.message : String(error));
 	}
 	const { status, json } = response;
+	// 409 LEASE_BUSY: the daemon rejects this invocation because another agent holds the lease
+	if (status === 409 && typeof json?.code === "string" && json.code === "LEASE_BUSY") {
+		return leaseBusyErrorResult(json, tool);
+	}
 	if (status !== 200 || !json || json.ok === false) return daemonInvokeErrorResult(status, json, tool, cli);
 	return {
 		content: Array.isArray(json.content) ? (json.content as ToolResultLike["content"]) : [],

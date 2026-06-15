@@ -9,6 +9,8 @@ import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.
 import { errorToPlain } from "./errors.js";
 import { parseJsonOrThrow } from "../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
+import { CONSENT_MESSAGE_TYPES } from "./consentTypes.js";
+import type { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
 
 type IncomingMessage = {
 	type?: unknown;
@@ -20,6 +22,8 @@ type IncomingMessage = {
 	tabs?: unknown;
 	bridge?: unknown;
 	extension?: unknown;
+	pairingId?: unknown;
+	decision?: unknown;
 	[key: string]: unknown;
 };
 
@@ -31,6 +35,7 @@ type BrowserBridgeClientMessageServiceDeps = {
 	runtimeRecoveryArtifacts: BrowserRuntimeRecoveryArtifacts;
 	leases: BrowserLeaseRegistry;
 	queues: BrowserCommandQueueRegistry;
+	consent: BrowserBridgeConsentCoordinator;
 	migratePerceptionLedger?: (fromTabId: number, toTabId: number, browserSessionIds?: string[]) => void;
 	logLeaseCleanup?: (details: { reason: "disconnect"; releasedLeases: unknown[]; releasedUiLocks: unknown[]; disconnectedTabSessionIds: string[]; affectedBrowserSessionIds: string[] }) => void;
 	notifyExtensionReady?: () => void;
@@ -78,6 +83,14 @@ export class BrowserBridgeClientMessageService {
 		this.deps.clients.markSeen(ws);
 		const type = String(message.type || "");
 		if (type === "ping") return;
+		if (type === CONSENT_MESSAGE_TYPES.response) {
+			this.deps.consent.resolveConsent(String(message.pairingId || ""), message.decision as "approve" | "deny");
+			return;
+		}
+		if (type === CONSENT_MESSAGE_TYPES.revoke) {
+			this.deps.consent.fireRevoke(String(message.pairingId || ""));
+			return;
+		}
 		if (type === "ext_ready" || type === "tabs_update") {
 			this.deps.browserSessions.selectClient(this.deps.browserSessions.defaultSession(), ws);
 			this.deps.clients.updateClientInfo(ws, message.bridge || message.extension);

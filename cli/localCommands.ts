@@ -16,7 +16,17 @@ import type { CliCommand } from "./registry.js";
 import { parseArgs, coerceParams, resolveParamValueReferences, wantsJson, type GlobalFlags, type FlagSpec } from "./flags.js";
 import { looksLikeToolError, renderResult, renderUsageError, renderUnavailableError, writeJsonEnvelope, EXIT, type RenderMode, type ToolResultLike } from "./render.js";
 import { invokeTool, DaemonUnavailableError } from "./client.js";
-import { findDaemon, isDaemonVersionCurrent, lockfilePath, stopDaemon } from "./daemonControl.js";
+import { findDaemon, isDaemonVersionCurrent, lockfilePath, stopDaemon, ensureDaemon, controlRequest } from "./daemonControl.js";
+import { resolvePairingToken, writeAgentToken } from "./pairing.js";
+import {
+	PAIR_WAIT_DEFAULT_MS,
+	type LeaseAction,
+	type LeaseStatusResponse,
+	type LeaseAcquireResponse,
+	type LeaseBusyResponse,
+	type RevokeResponse,
+	type PairingsResponse,
+} from "./authTypes.js";
 import { daemonVersion, packageVersion } from "./packageInfo.js";
 import { connectBrowser, connectionStatus, staleLockfileDiagnostic } from "./connection.js";
 import { pad, printHelp } from "./help.js";
@@ -415,6 +425,319 @@ async function runDaemonControl(action: string | undefined, argv: string[] = [])
 	return renderUsageError("usage: browser-pilot daemon <start|stop|status>", mode);
 }
 
+// ---------------------------------------------------------------------------
+// pair — pair this agent with the browser extension
+// ---------------------------------------------------------------------------
+async function runPairCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const specs: FlagSpec[] = [
+		{ name: "label", flag: "--label", kind: "string", required: true, description: "Human-readable name for this agent (e.g. \"claude-code\")." },
+		{ name: "timeoutMs", flag: "--timeout-ms", kind: "number", required: false, description: "Maximum wait for user approval in milliseconds. Default: 120000." },
+	];
+	const parsed = parseArgs(specs, argv);
+	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
+	if (parsed.value.globals.help) {
+		process.stdout.write("browser-pilot pair --label <name> [--timeout-ms <ms>] [--json]\n\nPair this agent with the browser extension. The user must approve in the popup.\n\nFlags:\n  --label <string>     Agent label shown in the extension popup (required).\n  --timeout-ms <ms>    How long to wait for approval. Default 120000.\n  --json | --text\n");
+		return EXIT.ok;
+	}
+	const label = String(parsed.value.params.label ?? "");
+	if (!label) return renderUsageError("--label is required", mode);
+	const rawTimeout = parsed.value.params.timeoutMs;
+	const timeoutMs = rawTimeout === undefined ? PAIR_WAIT_DEFAULT_MS : Number(rawTimeout);
+	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return renderUsageError("--timeout-ms must be a non-negative number", mode);
+
+	let info;
+	try {
+		info = await ensureDaemon();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") {
+			writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_DAEMON_UNAVAILABLE", command: "pair", message });
+			return EXIT.unavailable;
+		}
+		process.stderr.write(`pair failed: daemon unavailable — ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	// Step 1: start pairing, get a code
+	let pairingId: string;
+	let code: string;
+	try {
+		const { status, json } = await controlRequest(info, "POST", "/pair/start", { label });
+		if (status === 409 && json?.code === "PAIR_NO_EXTENSION") {
+			const msg = "browser extension is not connected — open the browser with Pi extension enabled first";
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "PAIR_NO_EXTENSION", command: "pair", message: msg }); return EXIT.unavailable; }
+			process.stderr.write(`pair failed: ${msg}\nHint: run 'browser-pilot connect --wait --json' first.\n`);
+			return EXIT.unavailable;
+		}
+		if (status !== 200 || !json || json.ok !== true) {
+			const msg = typeof json?.error === "string" ? json.error : `POST /pair/start failed (HTTP ${status})`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_PAIR_START_FAILED", command: "pair", message: msg }); return EXIT.unavailable; }
+			process.stderr.write(`pair failed: ${msg}\n`);
+			return EXIT.unavailable;
+		}
+		pairingId = String(json.pairingId);
+		code = String(json.code);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_PAIR_START_FAILED", command: "pair", message }); return EXIT.unavailable; }
+		process.stderr.write(`pair failed: ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	// Print the code prominently so the user can match it in the browser popup
+	if (mode === "json") {
+		process.stderr.write(`\nPairing code: ${code}\n  Match this code in the browser extension popup to approve.\n\n`);
+	} else {
+		process.stdout.write(`\n  Pairing code: ${code}\n\n  Match this code in the browser extension popup to approve.\n  Waiting up to ${Math.round(timeoutMs / 1000)}s...\n\n`);
+	}
+
+	// Step 2: long-poll for approval
+	let token: string;
+	try {
+		const { status, json } = await controlRequest(info, "POST", "/pair/wait", { pairingId, timeoutMs }, timeoutMs + 5_000);
+		if (status === 403 || json?.code === "PAIR_DENIED") {
+			const msg = "pairing was denied by the user";
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "PAIR_DENIED", command: "pair", pairingId, message: msg }); return EXIT.unavailable; }
+			process.stderr.write(`pair denied: ${msg}\nHint: rerun 'browser-pilot pair --label <name>' and approve in the popup.\n`);
+			return EXIT.unavailable;
+		}
+		if (status === 408 || json?.code === "PAIR_TIMEOUT") {
+			const msg = "pairing approval timed out";
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "PAIR_TIMEOUT", command: "pair", pairingId, message: msg }); return EXIT.unavailable; }
+			process.stderr.write(`pair timeout: ${msg}\nHint: rerun 'browser-pilot pair --label <name>' and approve within ${Math.round(timeoutMs / 1000)}s.\n`);
+			return EXIT.unavailable;
+		}
+		if (status !== 200 || !json || json.ok !== true) {
+			const msg = typeof json?.error === "string" ? json.error : `POST /pair/wait failed (HTTP ${status})`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_PAIR_WAIT_FAILED", command: "pair", pairingId, message: msg }); return EXIT.unavailable; }
+			process.stderr.write(`pair failed: ${msg}\n`);
+			return EXIT.unavailable;
+		}
+		token = String(json.token);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_PAIR_WAIT_FAILED", command: "pair", pairingId, message }); return EXIT.unavailable; }
+		process.stderr.write(`pair failed: ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	// Step 3: persist token
+	try {
+		await writeAgentToken(token, pairingId, label);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		process.stderr.write(`warning: could not persist agent token: ${message}\n`);
+		// Not fatal — the user has the pairingId; they can re-pair
+	}
+
+	if (mode === "json") {
+		writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, command: "pair", pairingId, label });
+		return EXIT.ok;
+	}
+	process.stdout.write(`paired: ${pairingId}\n`);
+	return EXIT.ok;
+}
+
+// ---------------------------------------------------------------------------
+// lease — acquire / release / query the tenant browser lease
+// ---------------------------------------------------------------------------
+async function runLeaseCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const specs: FlagSpec[] = [
+		{ name: "token", flag: "--token", kind: "string", required: false, description: "Pairing token to use. Defaults to env/stored token." },
+	];
+	const parsed = parseArgs(specs, argv);
+	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
+	if (parsed.value.globals.help) {
+		process.stdout.write("browser-pilot lease <status|acquire|release> [--token <tok>] [--json]\n\nManage the exclusive browser lease.\n\nSubcommands:\n  status     Show the current lease holder.\n  acquire    Acquire the lease for this agent.\n  release    Release a lease held by this agent.\n\nFlags:\n  --token <string>   Pairing token (overrides env/stored).\n  --json | --text\n");
+		return EXIT.ok;
+	}
+	// Extract the first positional (status|acquire|release) from argv — all flag tokens start with "--"
+	const sub = firstPositional(argv).value;
+	const validActions: LeaseAction[] = ["status", "acquire", "release"];
+	if (!sub || !validActions.includes(sub as LeaseAction)) {
+		return renderUsageError(`usage: browser-pilot lease <${validActions.join("|")}> [--token <tok>] [--json]`, mode);
+	}
+	const action = sub as LeaseAction;
+	const pairingToken = resolvePairingToken(typeof parsed.value.params.token === "string" ? parsed.value.params.token : undefined);
+
+	let info;
+	try {
+		info = await ensureDaemon();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_DAEMON_UNAVAILABLE", command: "lease", message }); return EXIT.unavailable; }
+		process.stderr.write(`lease failed: daemon unavailable — ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	try {
+		const { status, json } = await controlRequest(
+			info, "POST", "/lease", { action },
+			10_000,
+			pairingToken ? { pairingToken } : undefined,
+		);
+		if (status === 409 && json?.code === "LEASE_BUSY") {
+			const busy = json as unknown as LeaseBusyResponse;
+			const holderLabel = busy.heldBy?.label ?? "unknown";
+			if (mode === "json") {
+				writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "LEASE_BUSY", command: "lease", action, heldBy: busy.heldBy, message: `lease held by "${holderLabel}"` });
+				return EXIT.toolError;
+			}
+			process.stderr.write(`lease busy: held by "${holderLabel}" (pairingId: ${busy.heldBy?.pairingId ?? "?"})\n`);
+			return EXIT.toolError;
+		}
+		if (status !== 200 || !json || json.ok !== true) {
+			const msg = typeof json?.error === "string" ? json.error : `POST /lease failed (HTTP ${status})`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_LEASE_ERROR", command: "lease", action, message: msg }); return EXIT.toolError; }
+			process.stderr.write(`lease ${action} failed: ${msg}\n`);
+			return EXIT.toolError;
+		}
+		if (action === "status") {
+			const typed = json as unknown as LeaseStatusResponse;
+			if (mode === "json") {
+				writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, command: "lease", action, held: typed.lease !== null, self: typed.self, lease: typed.lease ?? null });
+				return EXIT.ok;
+			}
+			if (!typed.lease) {
+				process.stdout.write("lease: free\n");
+			} else {
+				const selfNote = typed.self ? " (self)" : "";
+				process.stdout.write(`lease: held by "${typed.lease.label}"${selfNote}\n  pairingId: ${typed.lease.pairingId}\n  since:     ${typed.lease.since}\n  expiresAt: ${typed.lease.expiresAt}\n`);
+			}
+			return EXIT.ok;
+		}
+		// acquire or release
+		const typed = json as unknown as LeaseAcquireResponse;
+		if (mode === "json") {
+			writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, command: "lease", action, lease: typed.lease ?? null });
+			return EXIT.ok;
+		}
+		if (action === "acquire") {
+			const lease = typed.lease;
+			process.stdout.write(`lease acquired: ${lease?.leaseId ?? "ok"}\n  expiresAt: ${lease?.expiresAt ?? "?"}\n`);
+		} else {
+			process.stdout.write("lease released\n");
+		}
+		return EXIT.ok;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_LEASE_ERROR", command: "lease", action, message }); return EXIT.toolError; }
+		process.stderr.write(`lease ${action} failed: ${message}\n`);
+		return EXIT.toolError;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// revoke — revoke a pairing by ID
+// ---------------------------------------------------------------------------
+async function runRevokeCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const specs: FlagSpec[] = [
+		{ name: "pairingId", flag: "--pairing-id", kind: "string", required: true, description: "The pairingId to revoke." },
+	];
+	const parsed = parseArgs(specs, argv);
+	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
+	if (parsed.value.globals.help) {
+		process.stdout.write("browser-pilot revoke --pairing-id <id> [--json]\n\nRevoke a paired agent by pairingId.\n\nFlags:\n  --pairing-id <string>   The pairingId returned by 'pair' (required).\n  --json | --text\n");
+		return EXIT.ok;
+	}
+	const pairingId = String(parsed.value.params.pairingId ?? "");
+	if (!pairingId) return renderUsageError("--pairing-id is required", mode);
+
+	let info;
+	try {
+		info = await ensureDaemon();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_DAEMON_UNAVAILABLE", command: "revoke", message }); return EXIT.unavailable; }
+		process.stderr.write(`revoke failed: daemon unavailable — ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	try {
+		const { status, json } = await controlRequest(info, "POST", "/revoke", { pairingId });
+		if (status === 404 || json?.code === "PAIRING_NOT_FOUND") {
+			const msg = `pairingId "${pairingId}" not found`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "PAIRING_NOT_FOUND", command: "revoke", pairingId, message: msg }); return EXIT.toolError; }
+			process.stderr.write(`revoke failed: ${msg}\n`);
+			return EXIT.toolError;
+		}
+		if (status !== 200 || !json || json.ok !== true) {
+			const msg = typeof json?.error === "string" ? json.error : `POST /revoke failed (HTTP ${status})`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_REVOKE_FAILED", command: "revoke", pairingId, message: msg }); return EXIT.toolError; }
+			process.stderr.write(`revoke failed: ${msg}\n`);
+			return EXIT.toolError;
+		}
+		const typed = json as unknown as RevokeResponse;
+		if (mode === "json") {
+			writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, command: "revoke", revoked: typed.revoked });
+			return EXIT.ok;
+		}
+		process.stdout.write(`revoked: ${typed.revoked}\n`);
+		return EXIT.ok;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_REVOKE_FAILED", command: "revoke", pairingId, message }); return EXIT.toolError; }
+		process.stderr.write(`revoke failed: ${message}\n`);
+		return EXIT.toolError;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// pairings — list all paired agents
+// ---------------------------------------------------------------------------
+async function runPairingsCommand(argv: string[]): Promise<number> {
+	const mode: RenderMode = wantsJson(argv) ? "json" : "human";
+	const parsed = parseArgs([], argv);
+	if (!parsed.ok) return renderUsageError(parsed.error, renderMode(parsed.globals));
+	if (parsed.value.globals.help) {
+		process.stdout.write("browser-pilot pairings [--json]\n\nList all paired agents and their current lease status.\n\nFlags:\n  --json | --text\n");
+		return EXIT.ok;
+	}
+
+	let info;
+	try {
+		info = await ensureDaemon();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.unavailable, code: "CLI_DAEMON_UNAVAILABLE", command: "pairings", message }); return EXIT.unavailable; }
+		process.stderr.write(`pairings failed: daemon unavailable — ${message}\n`);
+		return EXIT.unavailable;
+	}
+
+	try {
+		const { status, json } = await controlRequest(info, "GET", "/pairings");
+		if (status !== 200 || !json || json.ok !== true) {
+			const msg = typeof json?.error === "string" ? json.error : `GET /pairings failed (HTTP ${status})`;
+			if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_PAIRINGS_FAILED", command: "pairings", message: msg }); return EXIT.toolError; }
+			process.stderr.write(`pairings failed: ${msg}\n`);
+			return EXIT.toolError;
+		}
+		const typed = json as unknown as PairingsResponse;
+		const agents = typed.agents ?? [];
+		if (mode === "json") {
+			writeJsonEnvelope({ ok: true, exitCode: EXIT.ok, command: "pairings", agents });
+			return EXIT.ok;
+		}
+		if (agents.length === 0) {
+			process.stdout.write("no paired agents\n");
+			return EXIT.ok;
+		}
+		for (const agent of agents) {
+			const lease = agent.leaseHeld ? " [lease]" : "";
+			process.stdout.write(`${pad(agent.label, 20)}${pad(agent.status, 10)}${pad(agent.pairingId, 38)}${lease}\n`);
+		}
+		return EXIT.ok;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (mode === "json") { writeJsonEnvelope({ ok: false, exitCode: EXIT.toolError, code: "CLI_PAIRINGS_FAILED", command: "pairings", message }); return EXIT.toolError; }
+		process.stderr.write(`pairings failed: ${message}\n`);
+		return EXIT.toolError;
+	}
+}
+
 export async function main(argv: string[]): Promise<number> {
 	const leading = splitLeadingGlobalFlags(argv);
 	const [sub, ...rest] = leading.rest;
@@ -431,6 +754,10 @@ export async function main(argv: string[]): Promise<number> {
 	if (sub === "validate") return await runValidateCommand(commandArgv);
 	if (sub === "doctor") return await runDoctorCommand(commandArgv);
 	if (sub === "selftest") return await runSelftestCommand(commandArgv);
+	if (sub === "pair") return await runPairCommand(commandArgv);
+	if (sub === "lease") return await runLeaseCommand(commandArgv);
+	if (sub === "revoke") return await runRevokeCommand(commandArgv);
+	if (sub === "pairings") return await runPairingsCommand(commandArgv);
 
 	const cmd = (await loadCliCommands()).find((c) => c.subcommand === sub);
 	if (!cmd) return renderUsageError(`unknown command "${sub}"; run 'browser-pilot --help'`, wantsJson(commandArgv) ? "json" : "human");

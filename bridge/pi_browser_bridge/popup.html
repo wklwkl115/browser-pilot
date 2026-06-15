@@ -134,13 +134,213 @@
   body[data-state="disconnected"] { --accent: #fb7185; --glow: rgba(251, 113, 133, 0.22); }
   body[data-state="offline"]      { --accent: #8593a8; --glow: rgba(133, 147, 168, 0.16); }
   body[data-state="connecting"]   { --accent: #fbbf24; --glow: rgba(251, 191, 36, 0.24); }
+  body[data-state="consent-pending"] { --accent: #a78bfa; --glow: rgba(167, 139, 250, 0.26); }
+
   body[data-state="connected"] .status    { color: #6ee7b7; }
   body[data-state="disconnected"] .status { color: #fda4af; }
   body[data-state="connecting"] .status   { color: #fcd34d; }
+  body[data-state="consent-pending"] .status { color: #c4b5fd; }
+
+  /* ── Consent-pending state: hide normal status hero, show consent section ── */
+  body[data-state="consent-pending"] .hero    { display: none; }
+  body[data-state="consent-pending"] .endpoint { display: none !important; }
+  body[data-state="consent-pending"] .meta    { display: none; }
+  body[data-state="consent-pending"] #action  { display: none; }
+
+  /* Consent section — visible only when data-state="consent-pending" */
+  #consent-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0 4px;
+  }
+  /* Always hide when not in consent-pending state, regardless of hidden attr */
+  body:not([data-state="consent-pending"]) #consent-section { display: none !important; }
+
+  .consent-title {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 2px;
+  }
+  .consent-agent-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+    word-break: break-all;
+  }
+  .consent-code-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin: 4px 0 2px;
+  }
+  .consent-code {
+    font: 700 28px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 6px;
+    color: #c4b5fd;
+    background: rgba(167, 139, 250, 0.10);
+    border: 1px solid rgba(167, 139, 250, 0.28);
+    border-radius: 10px;
+    padding: 10px 18px;
+    text-align: center;
+  }
+  .consent-hint {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.4;
+  }
+  .consent-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-top: 4px;
+  }
+  .consent-actions .btn {
+    flex: 1;
+  }
+  .btn-approve {
+    border-color: rgba(52, 211, 153, 0.45);
+    background: rgba(52, 211, 153, 0.12);
+    color: #6ee7b7;
+  }
+  .btn-approve:hover {
+    background: rgba(52, 211, 153, 0.22);
+    border-color: rgba(52, 211, 153, 0.65);
+  }
+  .btn-deny {
+    border-color: rgba(251, 113, 133, 0.40);
+    background: rgba(251, 113, 133, 0.10);
+    color: #fda4af;
+  }
+  .btn-deny:hover {
+    background: rgba(251, 113, 133, 0.20);
+    border-color: rgba(251, 113, 133, 0.60);
+  }
+
+  /* ── Agents collapsible section ── */
+  #agents-list {
+    margin-top: 12px;
+    border-top: 1px solid var(--card-border);
+    padding-top: 10px;
+  }
+  #agents-list[hidden] { display: none; }
+
+  #agents-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--muted);
+    font: 600 11px/1 inherit;
+    letter-spacing: 0.3px;
+    text-align: left;
+    margin-bottom: 0;
+  }
+  #agents-toggle:hover { color: var(--text); }
+  .agents-chevron {
+    display: inline-block;
+    width: 10px;
+    text-align: center;
+    transition: transform 0.2s ease;
+    font-style: normal;
+  }
+  #agents-toggle[data-open="true"] .agents-chevron { transform: rotate(90deg); }
+
+  #agents-body {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.25s ease;
+  }
+  #agents-list[data-open="true"] #agents-body {
+    max-height: 300px;
+  }
+
+  .agents-empty {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 8px 0 4px;
+    text-align: center;
+  }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .agent-row:last-child { border-bottom: none; }
+  .agent-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .agent-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  .agent-status {
+    font-size: 10.5px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .lease-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    color: #fcd34d;
+    white-space: nowrap;
+  }
+  .agent-lastseen {
+    font-size: 9.5px;
+    color: rgba(139, 149, 167, 0.6);
+  }
+  .btn-sm {
+    display: inline-block;
+    width: auto;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 7px;
+    flex-shrink: 0;
+  }
+  .btn-revoke {
+    border-color: rgba(251, 113, 133, 0.35);
+    background: rgba(251, 113, 133, 0.08);
+    color: #fda4af;
+  }
+  .btn-revoke:hover {
+    background: rgba(251, 113, 133, 0.18);
+    border-color: rgba(251, 113, 133, 0.55);
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .dot { animation: none !important; }
     .bg, .status, .btn { transition: none; }
+    #agents-body { transition: none; }
+    .agents-chevron { transition: none; }
   }
 </style>
 </head>
@@ -152,6 +352,8 @@
     <span class="brand">Pi Browser Bridge</span>
     <span class="ver" id="ver">—</span>
   </header>
+
+  <!-- Normal connection-status hero (hidden when consent-pending) -->
   <div class="hero">
     <span class="dot"></span>
     <span class="status" id="status">检查中…</span>
@@ -159,6 +361,31 @@
   <div class="endpoint hidden" id="endpoint"></div>
   <div class="meta" id="meta">正在读取连接状态</div>
   <button class="btn" id="action">刷新</button>
+
+  <!-- Consent-pending section (shown only in consent-pending state) -->
+  <div id="consent-section" hidden>
+    <div class="consent-title">配对请求</div>
+    <div class="consent-agent-label" id="consent-label"></div>
+    <div class="consent-code-wrap">
+      <div class="consent-code" id="consent-code"></div>
+      <div class="consent-hint">确认此代码与终端显示一致</div>
+    </div>
+    <div class="consent-actions">
+      <button class="btn btn-approve" id="consent-approve">批准</button>
+      <button class="btn btn-deny" id="consent-deny">拒绝</button>
+    </div>
+  </div>
+
+  <!-- Paired agents collapsible section -->
+  <div id="agents-list" hidden>
+    <button id="agents-toggle" data-open="false">
+      <i class="agents-chevron">›</i>
+      已配对 Agent
+    </button>
+    <div id="agents-body">
+      <div class="agents-empty">暂无</div>
+    </div>
+  </div>
 </main>
 <script src="popup.js"></script>
 </body>

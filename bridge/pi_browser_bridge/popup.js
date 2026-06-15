@@ -16,10 +16,22 @@ const el = {
   endpoint: document.getElementById('endpoint'),
   meta: document.getElementById('meta'),
   action: document.getElementById('action'),
+  // Consent-pending section
+  consentSection: document.getElementById('consent-section'),
+  consentLabel: document.getElementById('consent-label'),
+  consentCode: document.getElementById('consent-code'),
+  consentApprove: document.getElementById('consent-approve'),
+  consentDeny: document.getElementById('consent-deny'),
+  // Agents section
+  agentsToggle: document.getElementById('agents-toggle'),
+  agentsList: document.getElementById('agents-list'),
+  agentsBody: document.getElementById('agents-body'),
 };
 
 let pollTimer = null;
 let busy = false;
+// Track current consent pairing id to debounce repeated approve/deny taps
+let pendingConsentId = null;
 
 function setVersion() {
   try {
@@ -48,6 +60,56 @@ function queryStatus() {
   });
 }
 
+// Ask the service worker for the current consent state (pending request + paired agents).
+// Resolves null on error or when the SW is asleep.
+function queryConsent() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    const timer = setTimeout(() => finish(null), QUERY_TIMEOUT_MS);
+    try {
+      chrome.runtime.sendMessage({ type: 'browser-pilot-consent-poll' }, (resp) => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) return finish(null);
+        finish(resp || null);
+      });
+    } catch (_e) {
+      clearTimeout(timer);
+      finish(null);
+    }
+  });
+}
+
+// Send an approve or deny decision for the current pending consent request.
+function sendConsentDecide(pairingId, decision) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        { type: 'browser-pilot-consent-decide', pairingId: pairingId, decision: decision },
+        (resp) => {
+          void chrome.runtime.lastError;
+          resolve(resp || null);
+        }
+      );
+    } catch (_e) { resolve(null); }
+  });
+}
+
+// Revoke an already-paired agent.
+function sendConsentRevoke(pairingId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        { type: 'browser-pilot-consent-revoke', pairingId: pairingId },
+        (resp) => {
+          void chrome.runtime.lastError;
+          resolve(resp || null);
+        }
+      );
+    } catch (_e) { resolve(null); }
+  });
+}
+
 // Nudge the service worker to wake and re-probe the bridge (reuses the existing
 // bridge_wake command — no new capability). Best-effort; we re-read status after.
 function nudgeWake() {
@@ -61,6 +123,94 @@ function nudgeWake() {
 function openPortsOf(resp) {
   const ports = resp && Array.isArray(resp.openPorts) ? resp.openPorts : [];
   return ports.filter((p) => typeof p === 'number');
+}
+
+// Show or hide the consent-pending overlay. When a pending consent is present
+// the body switches to data-state="consent-pending" so the main status area
+// is replaced by the consent card via CSS.
+function renderConsent(consentResp) {
+  const pending = consentResp && consentResp.pending ? consentResp.pending : null;
+
+  if (pending) {
+    pendingConsentId = pending.pairingId;
+    el.consentLabel.textContent = pending.label || pending.pairingId;
+    el.consentCode.textContent = pending.code || '';
+    el.body.dataset.state = 'consent-pending';
+    el.consentSection.hidden = false;
+  } else {
+    pendingConsentId = null;
+    el.consentSection.hidden = true;
+    // The caller (poll tick) will call render() to restore normal state
+  }
+}
+
+// Render the paired-agents collapsible list.
+function renderAgents(consentResp) {
+  const agents = (consentResp && Array.isArray(consentResp.agents)) ? consentResp.agents : [];
+
+  if (agents.length === 0) {
+    el.agentsBody.innerHTML = '<div class="agents-empty">暂无</div>';
+  } else {
+    const rows = agents.map((agent) => {
+      const pId = String(agent.pairingId || '');
+      const label = String(agent.label || pId);
+      const status = String(agent.status || '');
+      const leaseHeld = !!agent.leaseHeld;
+      const lastSeen = agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleTimeString() : '';
+
+      // Escape text for insertion into innerHTML
+      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+      return (
+        '<div class="agent-row" data-pairing-id="' + esc(pId) + '">' +
+          '<div class="agent-info">' +
+            '<span class="agent-label">' + esc(label) + '</span>' +
+            '<span class="agent-status">' + esc(status) +
+              (leaseHeld ? ' <span class="lease-badge">持有租约</span>' : '') +
+            '</span>' +
+            (lastSeen ? '<span class="agent-lastseen">' + esc(lastSeen) + '</span>' : '') +
+          '</div>' +
+          '<button class="btn btn-sm btn-revoke" data-pairing-id="' + esc(pId) + '">撤销</button>' +
+        '</div>'
+      );
+    });
+    el.agentsBody.innerHTML = rows.join('');
+
+    // Attach revoke listeners to freshly created buttons
+    el.agentsBody.querySelectorAll('.btn-revoke').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const pid = btn.dataset.pairingId;
+        if (!pid) return;
+        btn.disabled = true;
+        await sendConsentRevoke(pid);
+        // Re-poll immediately to refresh the list
+        await doPoll();
+      });
+    });
+  }
+
+  // Show/hide the agents section wrapper based on whether we have anything useful to show
+  el.agentsList.hidden = false;
+}
+
+// Combined poll: fetch connection status + consent state, then update UI.
+async function doPoll() {
+  const [statusResp, consentResp] = await Promise.all([queryStatus(), queryConsent()]);
+
+  const pending = consentResp && consentResp.pending ? consentResp.pending : null;
+
+  if (pending) {
+    // Show consent-pending UI; preserve last known connection color underneath
+    renderConsent(consentResp);
+  } else {
+    // No pending consent — restore normal connection state
+    el.consentSection.hidden = true;
+    pendingConsentId = null;
+    render(statusResp);
+  }
+
+  // Always update the agents list regardless of pending state
+  renderAgents(consentResp);
 }
 
 function render(resp) {
@@ -100,7 +250,7 @@ function render(resp) {
 
 async function refresh() {
   if (busy) return;
-  render(await queryStatus());
+  await doPoll();
 }
 
 async function onAction() {
@@ -122,7 +272,7 @@ async function onAction() {
       }
       render(await queryStatus());
     } else {
-      render(await queryStatus());
+      await doPoll();
     }
   } finally {
     busy = false;
@@ -130,9 +280,40 @@ async function onAction() {
   }
 }
 
+async function onConsentApprove() {
+  if (!pendingConsentId) return;
+  el.consentApprove.disabled = true;
+  el.consentDeny.disabled = true;
+  const pid = pendingConsentId;
+  await sendConsentDecide(pid, 'approve');
+  await doPoll();
+  el.consentApprove.disabled = false;
+  el.consentDeny.disabled = false;
+}
+
+async function onConsentDeny() {
+  if (!pendingConsentId) return;
+  el.consentApprove.disabled = true;
+  el.consentDeny.disabled = true;
+  const pid = pendingConsentId;
+  await sendConsentDecide(pid, 'deny');
+  await doPoll();
+  el.consentApprove.disabled = false;
+  el.consentDeny.disabled = false;
+}
+
+function onAgentsToggle() {
+  const isOpen = el.agentsList.dataset.open === 'true';
+  el.agentsList.dataset.open = isOpen ? 'false' : 'true';
+  el.agentsToggle.dataset.open = isOpen ? 'false' : 'true';
+}
+
 function start() {
   setVersion();
   el.action.addEventListener('click', onAction);
+  el.consentApprove.addEventListener('click', onConsentApprove);
+  el.consentDeny.addEventListener('click', onConsentDeny);
+  el.agentsToggle.addEventListener('click', onAgentsToggle);
   void refresh();
   pollTimer = setInterval(() => { if (!busy) void refresh(); }, POLL_MS);
 }

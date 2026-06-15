@@ -27,6 +27,16 @@ import { isRecord } from "../src/utils/records.js";
 import { strippedDeprecatedParamKeys } from "../src/tools/prepareArguments.js";
 import { writeLockfile, removeLockfile, type DaemonInfo } from "./daemonControl.js";
 import { daemonVersion } from "./packageInfo.js";
+import * as authStore from "./authStore.js";
+import { TenantLeaseRegistry } from "./tenantLease.js";
+import {
+	AUTH_ERROR_CODES,
+	PAIRING_TOKEN_HEADER,
+	PAIR_PENDING_TTL_MS,
+	ENV_REQUIRE_PAIRING,
+	type PairingSummary,
+} from "./authTypes.js";
+import type { ConsentDecision } from "./authTypes.js";
 
 export const DAEMON_VERSION = daemonVersion();
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -150,6 +160,26 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 
 	const bridgeServer = new BrowserBridgeServer();
 
+	const tenantLease = new TenantLeaseRegistry();
+
+	function composeSummaries(): PairingSummary[] {
+		return authStore.listAgents().map((r) => ({
+			pairingId: r.pairingId,
+			label: r.label,
+			status: r.status,
+			lastSeenAt: r.lastSeenAt,
+			leaseHeld: tenantLease.holderPairingId() === r.pairingId,
+		}));
+	}
+
+	bridgeServer.onRevokeRequest((pairingId: string) => {
+		authStore.revoke(pairingId);
+		tenantLease.forceRelease(pairingId);
+		bridgeServer.broadcastPairedAgents(composeSummaries());
+	});
+
+	const pendingPairResults = new Map<string, Promise<{ decision: ConsentDecision; token?: string }>>();
+
 	let startPromise: Promise<void> | undefined;
 	const ensureStarted: EnsureStarted = async () => {
 		if (!startPromise) {
@@ -176,6 +206,7 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 	const close = async (): Promise<void> => {
 		if (closing) return;
 		closing = true;
+		tenantLease.stop();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await bridgeServer.stop().catch(() => {
 			/* best-effort */
@@ -230,7 +261,11 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 						status: bridgeStatusPayload(bridgeServer, toolCount, includeTabs),
 					});
 				}
-				if (wait) await bridgeServer.waitForExtensionReady(undefined, timeoutMs);
+				if (wait) {
+					await bridgeServer.waitForExtensionReady(undefined, timeoutMs);
+					// Best-effort: push the current paired-agent list to the freshly-connected extension.
+					try { bridgeServer.broadcastPairedAgents(composeSummaries()); } catch { /* best-effort */ }
+				}
 				const status = bridgeStatusPayload(bridgeServer, toolCount, includeTabs);
 				return send(200, { ok: true, startedBridge: !wasRunning && bridgeServer.running, status });
 			}
@@ -246,6 +281,19 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 				const strippedDeprecatedParams = strippedDeprecatedParamKeys(params, prepared);
 				const validation = validateToolArgs(def.parameters, prepared);
 				if (!validation.ok) return send(400, { ok: false, error: validation.error });
+				// Connection-authorization enforcement.
+				// Grace mode: when no active agents exist AND env is not set, allow legacy ungated path.
+				const requirePairing = process.env[ENV_REQUIRE_PAIRING] === "1" || authStore.hasActiveAgents();
+				if (requirePairing) {
+					const ptoken = req.headers[PAIRING_TOKEN_HEADER];
+					const rec = authStore.findByToken(typeof ptoken === "string" ? ptoken : undefined);
+					if (!rec) return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
+					if (rec.status === "revoked") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairingRevoked });
+					if (rec.status !== "active") return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
+					const held = tenantLease.ensureHeld(rec.pairingId, rec.label);
+					if (!held.ok) return send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (held as { ok: false; heldBy: unknown }).heldBy });
+					authStore.touch(rec.pairingId);
+				}
 				const ctx: MiddlewareContext = {
 					method: "invoke",
 					toolName: tool,
@@ -265,7 +313,83 @@ export async function startDaemon(options: StartDaemonOptions = {}): Promise<Dae
 					return send(200, { ok: true, content: [{ type: "text", text: message }], terminate: true });
 				}
 			}
-			return send(404, { ok: false, error: `not found: ${req.method} ${pathname}` });
+			if (req.method === "POST" && pathname === "/pair/start") {
+					const { label } = await readBody(req);
+					if (!bridgeServer.hasConsentSurface()) {
+						return send(409, { ok: false, code: AUTH_ERROR_CODES.pairNoExtension });
+					}
+					authStore.sweepExpiredPending();
+					const { pairingId, code } = authStore.mintPending(String(label ?? "agent"));
+					const expiresAt = new Date(Date.now() + PAIR_PENDING_TTL_MS).toISOString();
+					const resultP = bridgeServer
+						.sendConsentRequest({ pairingId, label: String(label ?? "agent"), code, expiresAt, timeoutMs: PAIR_PENDING_TTL_MS })
+						.then((decision: ConsentDecision) => {
+							if (decision === "approve") {
+								const r = authStore.approve(pairingId);
+								bridgeServer.broadcastPairedAgents(composeSummaries());
+								return { decision, token: r?.token };
+							}
+							authStore.deny(pairingId);
+							return { decision };
+						})
+						.catch((): { decision: ConsentDecision; token?: string } => {
+							authStore.deny(pairingId);
+							return { decision: "timeout" as ConsentDecision };
+						});
+					pendingPairResults.set(pairingId, resultP);
+					return send(200, { ok: true, pairingId, code });
+				}
+				if (req.method === "POST" && pathname === "/pair/wait") {
+					const { pairingId } = await readBody(req);
+					const p = pendingPairResults.get(String(pairingId));
+					if (!p) return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
+					const res = await p;
+					pendingPairResults.delete(String(pairingId));
+					if (res.decision === "approve" && res.token) {
+						return send(200, { ok: true, token: res.token });
+					}
+					if (res.decision === "deny") {
+						return send(403, { ok: false, code: AUTH_ERROR_CODES.pairDenied });
+					}
+					return send(408, { ok: false, code: AUTH_ERROR_CODES.pairTimeout });
+				}
+				if (req.method === "POST" && pathname === "/lease") {
+					const pairingToken = req.headers[PAIRING_TOKEN_HEADER];
+					const rec = authStore.findByToken(typeof pairingToken === "string" ? pairingToken : undefined);
+					if (!rec) return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
+					if (rec.status === "revoked") return send(403, { ok: false, code: AUTH_ERROR_CODES.pairingRevoked });
+					if (rec.status !== "active") return send(401, { ok: false, code: AUTH_ERROR_CODES.pairingInvalid });
+					const { action, ttlMs } = await readBody(req);
+					if (action === "acquire") {
+						const r = tenantLease.acquire(rec.pairingId, rec.label, typeof ttlMs === "number" ? ttlMs : undefined);
+						if (!r.ok) {
+							return send(409, { ok: false, code: AUTH_ERROR_CODES.leaseBusy, heldBy: (r as { ok: false; heldBy: unknown }).heldBy });
+						}
+						return send(200, { ok: true, lease: r.lease });
+					}
+					if (action === "release") {
+						tenantLease.release(rec.pairingId);
+						return send(200, { ok: true });
+					}
+					if (action === "status") {
+						const lease = tenantLease.status();
+						return send(200, { ok: true, lease, self: lease?.pairingId === rec.pairingId });
+					}
+					return send(400, { ok: false, error: `unknown lease action: ${String(action)}` });
+				}
+				if (req.method === "POST" && pathname === "/revoke") {
+					const { pairingId } = await readBody(req);
+					const found = authStore.revoke(String(pairingId));
+					if (!found) return send(404, { ok: false, code: AUTH_ERROR_CODES.pairingNotFound });
+					tenantLease.forceRelease(String(pairingId));
+					bridgeServer.broadcastPairedAgents(composeSummaries());
+					return send(200, { ok: true, revoked: pairingId });
+				}
+				if (req.method === "GET" && pathname === "/pairings") {
+					authStore.sweepExpiredPending();
+					return send(200, { ok: true, agents: composeSummaries() });
+				}
+				return send(404, { ok: false, error: `not found: ${req.method} ${pathname}` });
 		} catch (error) {
 			return send(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
 		}

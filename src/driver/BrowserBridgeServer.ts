@@ -19,12 +19,14 @@ import { BrowserTemporalCoordinator, type TemporalProfileSampleInput } from "./B
 import { delay, normalizePort } from "./bridgeUtils.js";
 import { BrowserBridgeCommandService } from "./BrowserBridgeCommandService.js";
 import { BrowserBridgeClientMessageService } from "./BrowserBridgeClientMessageService.js";
+import { BrowserBridgeConsentCoordinator } from "./BrowserBridgeConsentCoordinator.js";
+import type { ConsentDecision, ConsentPort, PairedAgentSummary } from "./consentTypes.js";
 import type { TemporalProfileSample } from "../temporal-core/types.js";
 import { PerceptionLedger, type PerceptionLedgerFrame, type PerceptionLedgerKey, type PerceptionTraceSnapshot } from "../abml/perceptionLedger.js";
 import { drainMemoryProfileFlushes } from "../memory/profileService.js";
 import type { BrowserActiveOperationInfo, BrowserAutomationSession, BrowserAutomationSessionInfo, BrowserBridgeClientInfo, BrowserBridgeExecutionResult, BrowserBridgeSnapshot, BrowserBridgeTargetInfo, BrowserObservationSnapshotInfo, BrowserTabInfo, BrowserTabLeaseInfo, BrowserTabSession, BrowserUiLockInfo } from "./types.js";
 
-export class BrowserBridgeServer {
+export class BrowserBridgeServer implements ConsentPort {
 	readonly host: string;
 	readonly requestedPort: number;
 	readonly portRangeEnd: number;
@@ -46,6 +48,7 @@ export class BrowserBridgeServer {
 	private readonly commandService: BrowserBridgeCommandService;
 	private readonly clientMessageService: BrowserBridgeClientMessageService;
 	private readonly extensionReadyWaiters = new Set<() => void>();
+	private readonly consentCoordinator: BrowserBridgeConsentCoordinator;
 
 	constructor(options: { host?: string; port?: number; portRangeEnd?: number } = {}) {
 		this.host = options.host || process.env.PI_BROWSER_BRIDGE_HOST || DEFAULT_BROWSER_BRIDGE_HOST;
@@ -53,6 +56,13 @@ export class BrowserBridgeServer {
 		this.portRangeEnd = Math.max(this.requestedPort, options.portRangeEnd || normalizePort(process.env.PI_BROWSER_BRIDGE_PORT_RANGE_END, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END));
 		this.clients = new BrowserBridgeClientRegistry(() => this.port);
 		this.browserSessions = new BrowserSessionRegistry();
+		this.consentCoordinator = new BrowserBridgeConsentCoordinator({
+			// Use the browser-session's selected client, which is set when ext_ready
+			// arrives in BrowserBridgeClientMessageService. BrowserBridgeClientRegistry
+			// .selectedOpenClient() tracks a separate `extensionClient` field that is
+			// never populated by the message handler, so we must go through browserSessions.
+			getExtensionSocket: () => this.browserSessions.selectedOpenClient(this.browserSessions.defaultSession()),
+		});
 		this.queues = new BrowserCommandQueueRegistry();
 		this.leases = new BrowserLeaseRegistry();
 		this.tabs = new BrowserTabSessionRouter(this.clients, this.browserSessions);
@@ -89,6 +99,7 @@ export class BrowserBridgeServer {
 			runtimeRecoveryArtifacts: this.runtimeRecoveryArtifacts,
 			leases: this.leases,
 			queues: this.queues,
+			consent: this.consentCoordinator,
 			migratePerceptionLedger: (fromTabId, toTabId, browserSessionIds) => {
 				this.perceptionLedger.migrateTabId(fromTabId, toTabId, { browserSessionIds });
 			},
@@ -355,6 +366,23 @@ export class BrowserBridgeServer {
 
 	temporalProfileSummary(): unknown {
 		return this.temporal.profileSummary();
+	}
+
+	// ConsentPort implementation — delegated to the coordinator
+	hasConsentSurface(): boolean {
+		return this.consentCoordinator.hasConsentSurface();
+	}
+
+	sendConsentRequest(input: { pairingId: string; label: string; code: string; expiresAt: string; timeoutMs: number }): Promise<ConsentDecision> {
+		return this.consentCoordinator.sendConsentRequest(input);
+	}
+
+	onRevokeRequest(handler: (pairingId: string) => void): void {
+		this.consentCoordinator.onRevokeRequest(handler);
+	}
+
+	broadcastPairedAgents(agents: PairedAgentSummary[]): void {
+		this.consentCoordinator.broadcastPairedAgents(agents);
 	}
 
 	formatError(error: unknown): string {

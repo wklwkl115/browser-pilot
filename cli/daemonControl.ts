@@ -147,6 +147,11 @@ export function isPidAlive(pid: number): boolean {
 	}
 }
 
+export interface ControlRequestOptions {
+	/** If provided, adds the x-pi-pairing-token header on the request. */
+	pairingToken?: string;
+}
+
 /** Loopback control request, token-guarded. Resolves with the parsed JSON body. */
 export function controlRequest(
 	info: Pick<DaemonInfo, "controlHost" | "controlPort" | "token">,
@@ -154,6 +159,7 @@ export function controlRequest(
 	pathname: string,
 	body?: unknown,
 	timeoutMs = 120_000,
+	opts?: ControlRequestOptions,
 ): Promise<{ status: number; json: Record<string, unknown> | undefined }> {
 	return new Promise((resolve, reject) => {
 		let settled = false;
@@ -176,6 +182,7 @@ export function controlRequest(
 				path: pathname,
 				headers: {
 					"x-pi-daemon-token": info.token,
+					...(opts?.pairingToken ? { "x-pi-pairing-token": opts.pairingToken } : {}),
 					...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}),
 				},
 			},
