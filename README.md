@@ -119,9 +119,11 @@ Two frontends connect to the same tool core:
 git clone https://github.com/wklwkl115/browser-pilot.git
 cd browser-pilot
 npm install
-npm run build
-npm run build:bridge
 ```
+
+`npm install` runs the `prepare` script, which builds both the CLI (`npm run build`)
+and the Chrome extension bundles (`npm run build:bridge`) automatically. To rebuild
+manually after editing source, run those two commands.
 
 ### Load the Browser Extension
 

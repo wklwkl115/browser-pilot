@@ -48,6 +48,7 @@
     "sync:config": "node scripts/sync-bridge-config.mjs",
     "build": "tsc -p tsconfig.build.json",
     "build:bridge": "node scripts/build-bridge.mjs",
+    "prepare": "npm run build && npm run build:bridge",
     "cli": "tsx cli/bin.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",

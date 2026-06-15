@@ -105,9 +105,10 @@ Chrome 扩展运行在浏览器中，通过本地 WebSocket 桥接到 Node.js �
 git clone https://github.com/wklwkl115/browser-pilot.git
 cd browser-pilot
 npm install
-npm run build
-npm run build:bridge
 ```
+
+`npm install` 会自动运行 `prepare` 脚本，依次构建 CLI（`npm run build`）和
+Chrome 扩展产物（`npm run build:bridge`）。修改源码后如需手动重建，运行这两条命令即可。
 
 ### 加载浏览器扩展
 
