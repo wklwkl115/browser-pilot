@@ -1,6 +1,6 @@
 import { Type, type TSchema } from "typebox";
-import type { BrowserBridgeServer } from "../bridge/server/BrowserBridgeServer.js";
 import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";
 import type { BrowserCommandSink } from "./commandDefinition.js";
@@ -9,7 +9,7 @@ export { asPositiveInt } from "../utils/params.js";
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
 export const DEFAULT_OBSERVATION_TIMEOUT_MS = 35_000;
 
-export type EnsureStarted = () => Promise<BrowserBridgeServer>;
+export type EnsureStarted = () => Promise<BrowserCommandRuntimePort>;
 export type MemoryResultResourceResolution = { ok: true; path: string; etag?: string; bytes?: number } | { ok: false; code: string; error: string };
 export type MemoryResultResourceResolver = (uri: string) => Promise<MemoryResultResourceResolution>;
 export type CommandRegistrarContext = {

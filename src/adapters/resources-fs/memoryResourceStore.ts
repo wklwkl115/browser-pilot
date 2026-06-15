@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { computeEtag, isFreshEtag } from "./resourceFreshness.js";
-import { resolveMemoryPath } from "../../commands/memory/paths.js";
-import { readMemoryIndex } from "../../commands/memory/indexStore.js";
+import { resolveMemoryPath } from "../../memory/paths.js";
+import { readMemoryIndex } from "../../memory/indexStore.js";
 import { resolveResourceUri } from "./resourceStore.js";
 
 export const MEMORY_RESOURCE_URI_SCHEME = "browser-memory";

@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import type { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
-import { errorToPlain } from "./errors.js";
+import { errorToPlain } from "../protocol/errors.js";
 
 const CLIENT_HEARTBEAT_INTERVAL_MS = 15_000;
 const CLIENT_STALE_TIMEOUT_MS = 75_000;

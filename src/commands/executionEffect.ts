@@ -1,11 +1,11 @@
-import type { BrowserBridgeServer } from "../bridge/server/BrowserBridgeServer.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/server/types.js";
+import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
 import { classifyStaleness } from "../kernels/temporal/classify.js";
 import { isRecord } from "../utils/params.js";
 import { readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type PageFingerprint, type RecorderSeq } from "./pageSignals.js";
 import type { ExecuteEffect } from "./executionJournal.js";
-import type { ExecuteStdlibTargetRef } from "./executeStdlib.js";
+import type { ExecuteStdlibTargetRef } from "../browser-command-runtime/executeStdlib.js";
 
 type ExecutionSignalSnapshot = {
 	fingerprint?: PageFingerprint;
@@ -39,7 +39,7 @@ function effectEnabled(): boolean {
 	return process.env.BROWSER_PILOT_EXECUTE_EFFECT !== "0";
 }
 
-async function readExecutionSignals(server: BrowserBridgeServer, options: EffectOptions): Promise<ExecutionSignalSnapshot> {
+async function readExecutionSignals(server: BrowserCommandRuntimePort, options: EffectOptions): Promise<ExecutionSignalSnapshot> {
 	const snapshot = server.snapshot({ browserSessionId: options.browserSessionId });
 	const signalOptions = { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs, drainDirty: options.drainDirty };
 	const [fingerprint, network, hook] = await Promise.all([
@@ -152,7 +152,7 @@ function buildEffect(before: ExecutionSignalSnapshot, after: ExecutionSignalSnap
 }
 
 export async function withExecutionEffect<T extends BrowserBridgeExecutionResult>(
-	server: BrowserBridgeServer,
+	server: BrowserCommandRuntimePort,
 	options: EffectOptions,
 	dispatch: () => Promise<T>,
 ): Promise<ExecutionEffectRun<T>> {

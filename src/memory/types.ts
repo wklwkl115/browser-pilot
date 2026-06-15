@@ -1,4 +1,4 @@
-import type { MemoryAnchors, MemoryVerificationStatus } from "../../kernels/memory/types.js";
+import type { MemoryAnchors, MemoryVerificationStatus } from "../kernels/memory/types.js";
 
 export type MemoryScopeKind = "origin" | "task" | "project";
 export type MemoryEntryKind = "sop" | "fact";

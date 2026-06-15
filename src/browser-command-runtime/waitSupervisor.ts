@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { isRecord } from "../../utils/records.js";
-import { BrowserBridgeError } from "./errors.js";
-import type { BrowserBridgeServer } from "./BrowserBridgeServer.js";
-import type { BrowserBridgeExecutionResult } from "./types.js";
-import type { BridgeCommand } from "../protocol/nativeProtocol.js";
-import { normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
-import { classifyStateLoss, classifyTimeout } from "../../kernels/temporal/classify.js";
-import { compactTemporalDecision } from "./BrowserTemporalCoordinator.js";
+import { isRecord } from "../utils/records.js";
+import { BrowserBridgeError } from "../bridge/protocol/errors.js";
+import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
+import { normalizeNativeErrorCode } from "../bridge/protocol/nativeErrorCodes.js";
+import { classifyStateLoss, classifyTimeout } from "../kernels/temporal/classify.js";
+import type { TemporalDecision, TemporalFrontierNext, TemporalReason, TemporalVerdict } from "../kernels/temporal/types.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 
 const WAIT_LEASE_MAX_MS = 25_000;
 const WAIT_LEASE_BRIDGE_GRACE_MS = 3_000;
@@ -53,6 +53,29 @@ type WaitSupervisorState = {
 	navigation?: NavigationPhaseSummary;
 	selectorTimeout?: Record<string, unknown>;
 };
+
+type CompactTemporalDecision = {
+	verdict: {
+		status: TemporalVerdict["status"];
+		confidence: TemporalVerdict["confidence"];
+		reasons: TemporalReason[];
+	};
+	frontier: {
+		next: TemporalFrontierNext;
+		handle?: string;
+	};
+};
+
+function compactTemporalDecision(decision: TemporalDecision, handle?: string): CompactTemporalDecision {
+	return {
+		verdict: {
+			status: decision.verdict.status,
+			confidence: decision.verdict.confidence,
+			reasons: decision.verdict.reasons.slice(0, 3),
+		},
+		frontier: { next: decision.frontier.next, ...(handle ? { handle } : {}) },
+	};
+}
 
 function waitTimeoutMs(value: unknown, fallback: number, allowZero = false): number {
 	const n = Number(value);
@@ -155,7 +178,7 @@ function workerBootIdFromResult(result: BrowserBridgeExecutionResult): string | 
 	return typeof bridge?.workerBootId === "string" ? bridge.workerBootId : undefined;
 }
 
-function currentWorkerBootId(server: BrowserBridgeServer): string | undefined {
+function currentWorkerBootId(server: BrowserCommandRuntimePort): string | undefined {
 	return server.snapshot().extension?.workerBootId;
 }
 
@@ -234,7 +257,7 @@ export function computeReconnectBudgetMs(remainingMs: number): number {
 	return Math.max(0, Math.min(WAIT_RECONNECT_BUDGET_MAX_MS, scaledBudget, Math.floor(remainingMs)));
 }
 
-async function waitForReconnect(server: BrowserBridgeServer, previousClientId: string | undefined, remainingMs: number): Promise<void> {
+async function waitForReconnect(server: BrowserCommandRuntimePort, previousClientId: string | undefined, remainingMs: number): Promise<void> {
 	const timeoutMs = computeReconnectBudgetMs(remainingMs);
 	if (timeoutMs <= 0) throw new BrowserBridgeError("BROWSER_EXTENSION_RECONNECT_TIMEOUT", "Browser extension reconnect budget expired", { previousClientId, remainingMs, reconnectBudgetMs: timeoutMs });
 	await server.waitForExtensionReconnect(previousClientId, timeoutMs);
@@ -314,7 +337,7 @@ function waitPlanForNavigateAndWait(command: BridgeCommand): NavigateAndWaitPlan
 	return { urlWaitCommand };
 }
 
-async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
+async function runLeasedWait(server: BrowserCommandRuntimePort, command: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }, totalTimeoutMs: number, clock: WaitRunClock = {}): Promise<BrowserBridgeExecutionResult> {
 	const waitId = String(command.waitId ?? command.wait_id ?? `browser_pilot_wait_${randomUUID()}`);
 	const startedAt = clock.startedAt ?? Date.now();
 	const state: WaitSupervisorState = {
@@ -419,7 +442,7 @@ async function runLeasedWait(server: BrowserBridgeServer, command: BridgeCommand
 	throw finalWaitError(state, "browser wait timed out");
 }
 
-export async function executeBrowserWaitWithSupervisor(server: BrowserBridgeServer, commandInput: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
+export async function executeBrowserWaitWithSupervisor(server: BrowserCommandRuntimePort, commandInput: BridgeCommand, options: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number } = {}): Promise<BrowserBridgeExecutionResult> {
 	const command = rerouteLoadStateNetworkIdle(commandInput);
 	const totalTimeoutMs = commandTimeoutMs(command, waitTimeoutMs(options.timeoutMs, DEFAULT_WAIT_TIMEOUT_MS, true));
 	if (totalTimeoutMs === 0 && (command.cmd === "wait.navigateAndWait" || SUPERVISED_WAIT_COMMANDS.has(command.cmd))) return runLeasedWait(server, command, options, 0);

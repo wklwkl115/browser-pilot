@@ -1,14 +1,14 @@
-import type { BrowserBridgeServer } from "../../../bridge/server/BrowserBridgeServer.js";
-import { isRecord } from "../../../utils/records.js";
-import { assertBridgeCommandSucceeded } from "../../../commands/bridgeResultValidation.js";
-import { registerRefDescriptor } from "../../resources-fs/resourceStore.js";
-import type { Entity } from "../../../kernels/abml/entity.js";
-import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../../../kernels/abml/ax.js";
-import type { BuiltEntity } from "../../../kernels/abml/entity.js";
-import type { SnapshotGeometryEntry } from "../../../kernels/abml/identityBootstrap.js";
-import type { PaintOrderEntry, RelationAnchor } from "../../../kernels/abml/relations.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import { isRecord } from "../../utils/records.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { registerRefDescriptor } from "../../resources/resourceRefs.js";
+import type { Entity } from "../../kernels/abml/entity.js";
+import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../../kernels/abml/ax.js";
+import type { BuiltEntity } from "../../kernels/abml/entity.js";
+import type { SnapshotGeometryEntry } from "../../kernels/abml/identityBootstrap.js";
+import type { PaintOrderEntry, RelationAnchor } from "../../kernels/abml/relations.js";
 
-export type AbmlAxRuntimeServer = Pick<BrowserBridgeServer, "sendCommand">;
+export type AbmlAxRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
 export type AxReadRuntimeOptions = {
 	browserSessionId?: string;

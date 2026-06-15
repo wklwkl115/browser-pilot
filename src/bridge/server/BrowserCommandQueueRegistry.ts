@@ -1,4 +1,4 @@
-import { BrowserBridgeError } from "./errors.js";
+import { BrowserBridgeError } from "../protocol/errors.js";
 
 const DEFAULT_MAX_QUEUE_DEPTH = 64;
 

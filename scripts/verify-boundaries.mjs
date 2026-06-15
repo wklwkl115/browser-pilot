@@ -1,20 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import { readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { collectImportEdges, normalizePath, projectRoot, walkTypescriptFiles } from "./import-graph.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = projectRoot;
 const srcRoot = join(root, "src");
-const sourceRoots = [
-	"src/apps/",
-	"src/commands/",
-	"src/adapters/",
-	"src/kernels/",
-	"src/ports/",
-	"src/bridge/server/",
-	"src/bridge/extension/",
-	"cli/",
-];
 
 const forbiddenKernelImportFragments = [
 	"/apps/",
@@ -69,79 +59,6 @@ const layerRules = [
 	},
 ];
 
-function walk(dir) {
-	const out = [];
-	if (!statExists(dir)) return out;
-	for (const entry of readdirSync(dir)) {
-		const absolute = join(dir, entry);
-		const stat = statSync(absolute);
-		if (stat.isDirectory()) out.push(...walk(absolute));
-		else if (entry.endsWith(".ts")) out.push(absolute);
-	}
-	return out;
-}
-
-function statExists(path) {
-	try {
-		statSync(path);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function normalize(path) {
-	return path.split(sep).join("/");
-}
-
-function withoutJsExtension(path) {
-	return path.replace(/\.(js|mjs|cjs)$/u, "");
-}
-
-function candidateSourcePaths(base) {
-	const normalizedBase = withoutJsExtension(base);
-	if (extname(normalizedBase)) return [normalizedBase];
-	return [
-		`${normalizedBase}.ts`,
-		`${normalizedBase}.tsx`,
-		`${normalizedBase}.mts`,
-		`${normalizedBase}.cts`,
-		join(normalizedBase, "index.ts"),
-		join(normalizedBase, "index.tsx"),
-		join(normalizedBase, "index.mts"),
-		join(normalizedBase, "index.cts"),
-	];
-}
-
-function firstExistingSource(base) {
-	for (const candidate of candidateSourcePaths(base)) {
-		if (statExists(candidate)) return candidate;
-	}
-	return candidateSourcePaths(base)[0];
-}
-
-function specifiers(source) {
-	const imports = [];
-	const patterns = [
-		/\bimport\s+(?:type\s+)?(?:[^'"]+?\s+from\s+)?["']([^"']+)["']/g,
-		/\bexport\s+(?:type\s+)?[^'"]+?\s+from\s+["']([^"']+)["']/g,
-		/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
-	];
-	for (const pattern of patterns) {
-		for (let match; (match = pattern.exec(source));) imports.push(match[1]);
-	}
-	return imports;
-}
-
-function resolvedImportPath(file, specifier) {
-	if (!specifier.startsWith(".")) return specifier;
-	const base = resolve(dirname(file), specifier);
-	const resolved = firstExistingSource(base);
-	const relativePath = normalize(relative(root, resolved));
-	if (!sourceRoots.some((sourceRoot) => relativePath.startsWith(sourceRoot))) return relativePath;
-	return relativePath;
-}
-
 function checkLayerRule(rel, resolved, specifier) {
 	for (const rule of layerRules) {
 		if (!rel.startsWith(rule.from)) continue;
@@ -171,15 +88,15 @@ function checkAppsEntryRule(rel, resolved, specifier) {
 }
 
 const errors = [];
-for (const file of walk(srcRoot).concat(walk(join(root, "cli")))) {
+for (const edge of collectImportEdges()) {
+	checkKernelRule(edge.from, edge.to, edge.specifier);
+	checkLayerRule(edge.from, edge.to, edge.specifier);
+	checkAppsEntryRule(edge.from, edge.to, edge.specifier);
+}
+
+for (const file of walkTypescriptFiles(srcRoot)) {
 	const source = readFileSync(file, "utf8");
-	const rel = normalize(relative(root, file));
-	for (const specifier of specifiers(source)) {
-		const normalized = resolvedImportPath(file, specifier);
-		checkKernelRule(rel, normalized, specifier);
-		checkLayerRule(rel, normalized, specifier);
-		checkAppsEntryRule(rel, normalized, specifier);
-	}
+	const rel = normalizePath(relative(root, file));
 	if (rel.startsWith("src/kernels/") && (/\bprocess\s*\./.test(source) || /\bprocess\s*\[\s*["']env["']\s*\]/.test(source))) {
 		errors.push(`${rel}: kernel must not read process/env`);
 	}
@@ -192,4 +109,5 @@ if (errors.length) {
 	console.error(errors.join("\n"));
 	process.exit(1);
 }
+execFileSync(process.execPath, [join(root, "scripts", "architecture-boundary-report.mjs"), "--fail-on-findings"], { stdio: "inherit" });
 console.log("kernel boundary rules ok");

@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText } from "../../utils/fsAtomic.js";
-import { memoryEntryDir, resolveMemoryPath } from "./paths.js";
-import { parseMemoryEntry, serializeMemoryEntry } from "./frontmatter.js";
-import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "./indexStore.js";
-import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "./types.js";
+import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
+import { parseMemoryEntry, serializeMemoryEntry } from "../../memory/frontmatter.js";
+import { browserMemoryUriForEntry, loadMemoryEntries, readMemoryIndex, withMemoryLock, writeDerivedMemoryIndex } from "../../memory/indexStore.js";
+import type { MemoryEntry, MemoryIndexEntry, MemoryRecordPayload, MemoryRecallCard, MemoryTombstone } from "../../memory/types.js";
 import { validateMemoryRecordPayloadShape, resolveMemoryEvidenceRefs } from "./evidence.js";
-import { normalizeMemoryEntryId } from "./ids.js";
+import { normalizeMemoryEntryId } from "../../memory/ids.js";
 import { memorySimilarity, DEDUP_SIMILARITY, SIMILAR_SIMILARITY } from "./salience.js";
-import { routeByTokens, situationTokens } from "./routing.js";
+import { routeByTokens, situationTokens } from "../../memory/routing.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import type { MemoryResultResourceResolver } from "../commandShared.js";
 import { stableJson } from "../../utils/json.js";
 import { readCachedMemoryProfile } from "../../memory/profileService.js";
@@ -69,7 +69,7 @@ export function verifyMemoryEntryAgainstProfile(entry: Pick<MemoryEntry, "anchor
 
 export async function validateMemoryRecord(options: {
 	cwd?: string;
-	server?: BrowserBridgeServer;
+	server?: BrowserCommandRuntimePort;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
 }): Promise<{ scopeKey: string; entry: Omit<MemoryEntry, "relPath" | "etag">; existingIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[] }> {
@@ -117,7 +117,7 @@ export async function validateMemoryRecord(options: {
 
 export async function recordMemoryEntry(options: {
 	cwd?: string;
-	server?: BrowserBridgeServer;
+	server?: BrowserCommandRuntimePort;
 	resolver?: MemoryResultResourceResolver;
 	payload: MemoryRecordPayload;
 }): Promise<{ entry: MemoryEntry; supersededIds: string[]; duplicateCandidates: MemoryDuplicateCandidate[]; index: Awaited<ReturnType<typeof readMemoryIndex>> }> {

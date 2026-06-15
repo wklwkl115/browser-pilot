@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { normalizeArtifactMode } from "../utils/params.js";
-import { readBrowserArtifact } from "./artifactReader.js";
+import { readBrowserArtifact } from "../artifacts/artifactReader.js";
 import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler } from "./commandRuntime.js";
 import type { CommandRegistrarContext } from "./commandShared.js";
 import { strictCommandParameters } from "./commandShared.js";

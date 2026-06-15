@@ -1,5 +1,5 @@
 import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, type ScanEntityContext } from "../kernels/abml/entity.js";
-import { registerRefDescriptor } from "../adapters/resources-fs/resourceStore.js";
+import { registerRefDescriptor } from "../resources/resourceRefs.js";
 import { isRecord } from "../utils/records.js";
 
 type Built = ReturnType<typeof buildDomEntityFromScanActionable>;

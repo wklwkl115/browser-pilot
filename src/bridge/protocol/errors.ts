@@ -1,4 +1,4 @@
-import { type NativeErrorCode, normalizeNativeErrorCode } from "../protocol/nativeErrorCodes.js";
+import { type NativeErrorCode, normalizeNativeErrorCode } from "./nativeErrorCodes.js";
 import { compactError } from "../../utils/errors.js";
 import { redactSensitiveText } from "../../utils/redaction.js";
 

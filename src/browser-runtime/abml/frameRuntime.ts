@@ -1,12 +1,12 @@
-import { registerRefDescriptor } from "../../resources-fs/resourceStore.js";
-import { assertBridgeCommandSucceeded } from "../../../commands/bridgeResultValidation.js";
-import type { BrowserBridgeServer } from "../../../bridge/server/BrowserBridgeServer.js";
-import type { Entity } from "../../../kernels/abml/entity.js";
-import { normalizeAbmlError } from "../../../kernels/abml/errors.js";
-import type { RefDescriptor } from "../../../kernels/abml/types.js";
-import { recordValue } from "../../../utils/records.js";
+import { registerRefDescriptor } from "../../resources/resourceRefs.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import type { Entity } from "../../kernels/abml/entity.js";
+import { normalizeAbmlError } from "../../kernels/abml/errors.js";
+import type { RefDescriptor } from "../../kernels/abml/types.js";
+import { recordValue } from "../../utils/records.js";
 
-export type AbmlFrameRuntimeServer = Pick<BrowserBridgeServer, "sendCommand">;
+export type AbmlFrameRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
 function stringValue(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;

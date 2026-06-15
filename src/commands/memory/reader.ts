@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { ArtifactReaderError } from "../artifactReader.js";
+import { ArtifactReaderError } from "../../artifacts/artifactReader.js";
 import { computeEtag } from "../../utils/fileFreshness.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { getJsonPath } from "../../utils/jsonPath.js";
-import { parseMemoryEntry } from "./frontmatter.js";
-import { normalizeMemoryEntryId } from "./ids.js";
-import { readMemoryIndex } from "./indexStore.js";
-import { memoryEntryDir, resolveMemoryPath } from "./paths.js";
-import type { MemoryEntry, MemoryReadMode, MemoryReadResult } from "./types.js";
+import { parseMemoryEntry } from "../../memory/frontmatter.js";
+import { normalizeMemoryEntryId } from "../../memory/ids.js";
+import { readMemoryIndex } from "../../memory/indexStore.js";
+import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
+import type { MemoryEntry, MemoryReadMode, MemoryReadResult } from "../../memory/types.js";
 
 function parseBrowserMemoryUri(uri: string): { kind: "index" | "sop" | "fact"; id?: string; etag?: string } | undefined {
 	const prefix = "browser-memory://";

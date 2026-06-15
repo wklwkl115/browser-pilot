@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { nativeCommandToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
-import { resolveArtifactPath, saveDataUrl } from "./artifacts.js";
+import { resolveArtifactPath, saveDataUrl } from "../artifacts/artifactFiles.js";
 import { defineBrowserCommand, inlineJsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandTimeoutMs } from "./commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";
 import type { CommandRegistrarContext } from "./commandShared.js";

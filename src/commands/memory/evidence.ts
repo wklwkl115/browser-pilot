@@ -1,11 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { containsSensitiveEvidence } from "../../utils/redaction.js";
 import { computeEtag } from "../../utils/fileFreshness.js";
-import { resolveArtifactPath } from "../artifacts.js";
-import type { MemoryConfidence, MemoryEvidenceRef, MemoryRecordPayload } from "./types.js";
+import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import type { MemoryConfidence, MemoryEvidenceRef, MemoryRecordPayload } from "../../memory/types.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
 
 export type MemoryResolvedEvidenceRef = MemoryEvidenceRef;
@@ -45,8 +45,8 @@ async function resolveArtifactRef(cwd: string | undefined, ref: Extract<MemoryEv
 	return { kind: "artifact", path: filePath, etag, bytes };
 }
 
-async function resolveSnapshotRef(server: BrowserBridgeServer | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
-	if (!server) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "snapshot evidence requires a live BrowserBridgeServer", details: { snapshotId: ref.snapshotId } });
+async function resolveSnapshotRef(server: BrowserCommandRuntimePort | undefined, ref: Extract<MemoryEvidenceRef, { kind: "snapshot" }>): Promise<MemoryResolvedEvidenceRef> {
+	if (!server) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNRESOLVABLE", message: "snapshot evidence requires a live browser runtime", details: { snapshotId: ref.snapshotId } });
 	const snapshot = server.getObservationSnapshot(ref.snapshotId);
 	if (!snapshot) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_UNREADABLE", message: "memory snapshot evidence was not found", details: { snapshotId: ref.snapshotId } });
 	if (snapshot.expired) throw createCodedError({ name: "MemoryEvidenceError", code: "MEMORY_EVIDENCE_STALE", message: "memory snapshot evidence is stale", details: { snapshotId: ref.snapshotId, invalidatedReason: snapshot.invalidatedReason } });
@@ -68,7 +68,7 @@ function resolveOperationRef(ref: Extract<MemoryEvidenceRef, { kind: "operation"
 
 export async function resolveMemoryEvidenceRefs(options: {
 	cwd?: string;
-	server?: BrowserBridgeServer;
+	server?: BrowserCommandRuntimePort;
 	resolver?: MemoryResultResourceResolver;
 	evidenceRefs: Array<string | MemoryEvidenceRef>;
 }): Promise<MemoryResolvedEvidenceRef[]> {

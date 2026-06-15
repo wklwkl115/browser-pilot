@@ -9,10 +9,10 @@ import type { MemoryAugmentationPlan, MemoryRecallEntry, MemoryVerificationStatu
 import { consumeMemoryProfileDiagnostics, readCachedMemoryProfile, recordMemoryProfileFrame, recordMemoryProfileStrike } from "../../memory/profileService.js";
 import { memoryKernelEnabled } from "../../memory/secret.js";
 import { containsSensitiveEvidence } from "../../utils/redaction.js";
-import { browserMemoryUriForEntry, readMemoryIndexNoRepair } from "../memory/indexStore.js";
-import { parseMemoryEntry } from "../memory/frontmatter.js";
-import { memoryEntryDir, resolveMemoryPath } from "../memory/paths.js";
-import { normalizeMemoryEntryId } from "../memory/ids.js";
+import { browserMemoryUriForEntry, readMemoryIndexNoRepair } from "../../memory/indexStore.js";
+import { parseMemoryEntry } from "../../memory/frontmatter.js";
+import { memoryEntryDir, resolveMemoryPath } from "../../memory/paths.js";
+import { normalizeMemoryEntryId } from "../../memory/ids.js";
 import { verifyMemoryEntryAgainstProfile } from "../memory/store.js";
 import { normalizeOriginKeyFromUrl } from "../memory/origin.js";
 

@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
-import { BrowserBridgeError, errorToPlain, tabNotFoundError } from "./errors.js";
+import { BrowserBridgeError, errorToPlain, tabNotFoundError } from "../protocol/errors.js";
 const BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS = ["validateBridgeCommand", "methodAccessMode", "spec.accessMode"] as const;
 void BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS;
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";

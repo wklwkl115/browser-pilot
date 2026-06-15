@@ -1,5 +1,8 @@
 import type { WebSocket } from "ws";
 import type { SessionActiveOperationInfo, SessionAutomationSession, SessionObservationSnapshotInfo, SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/index.js";
+import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../protocol/runtimeTypes.js";
+
+export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../protocol/runtimeTypes.js";
 
 export type BrowserBridgeClientInfo = {
 	id: string;
@@ -81,26 +84,6 @@ export type BrowserActiveOperationInfo = SessionActiveOperationInfo;
 
 export type BrowserObservationSnapshotInfo = SessionObservationSnapshotInfo;
 
-export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
-
-export type BrowserBridgeTargetInfo = {
-	browserSessionId?: string;
-	tabId?: number;
-	tabHandle?: string;
-	targetRef?: string;
-	requestedTabId?: number;
-	replacedFrom?: number;
-	replacedByTabId?: number;
-	replacementHops?: number;
-	browserId?: string;
-	openerTabId?: number;
-	url?: string;
-	source: BrowserBridgeTargetSource;
-	implicit: boolean;
-	selectionVersionAtDispatch: number;
-	selectionVersionAtResolve?: number;
-};
-
 export type BrowserBridgeSnapshot = {
 	browserSessionId?: string;
 	host: string;
@@ -149,16 +132,4 @@ export type PendingRequest = {
 	timer: NodeJS.Timeout;
 	resolve: (value: BrowserBridgeExecutionResult) => void;
 	reject: (error: Error) => void;
-};
-
-export type BrowserBridgeExecutionResult<TData = unknown, TNewTabs = unknown[]> = {
-	id: string;
-	acknowledged: boolean;
-	tabId?: number;
-	data?: TData;
-	newTabs?: TNewTabs;
-	target?: BrowserBridgeTargetInfo;
-	createdTarget?: BrowserBridgeTargetInfo;
-	createdTab?: BrowserTabInfo;
-	diagnostics?: Record<string, unknown>;
 };

@@ -1,4 +1,4 @@
-import type { BrowserBridgeTargetInfo } from "../bridge/server/types.js";
+import type { BrowserBridgeTargetInfo } from "../bridge/protocol/runtimeTypes.js";
 import type { TemporalConfidence, TemporalFrontierNext, TemporalReason, TemporalVerdictStatus } from "../kernels/temporal/types.js";
 import { isRecord } from "../utils/params.js";
 

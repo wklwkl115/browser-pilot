@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { Entity } from "../../kernels/abml/entity.js";
-import { BrowserBridgeError } from "../../bridge/server/errors.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/records.js";
 
@@ -111,7 +111,7 @@ function baselinePartialHint(value: unknown, entities: Entity[]): boolean {
 	return !!focus && ["primary_entities", "list_entities", "visual_regions", "referenced_entities"].some((key) => Array.isArray(focus[key]));
 }
 
-export async function resolveBaselineEntities(server: BrowserBridgeServer, baseline: unknown): Promise<BaselineResolution | undefined> {
+export async function resolveBaselineEntities(server: BrowserCommandRuntimePort, baseline: unknown): Promise<BaselineResolution | undefined> {
 	if (baseline === undefined || baseline === null) return undefined;
 	const savedPath = savedArtifactPathFromBaseline(baseline);
 	if (savedPath) {

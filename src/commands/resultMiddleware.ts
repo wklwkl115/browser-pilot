@@ -7,8 +7,8 @@ import { fitSalienceEnvelopeBudget } from "../kernels/evidence/distill/salienceE
 import type { FactGranularity } from "../kernels/evidence/distill/fact.js";
 import { normalizeDetailLevel, type DetailLevel } from "../utils/params.js";
 import { jsonResult, textResult, type BrowserTextCommandResult } from "../utils/toolResult.js";
-import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "./artifactPrivacy.js";
-import { saveTextArtifact } from "./artifacts.js";
+import { containsSensitiveEvidence, redactSensitiveValueWithPointers } from "../artifacts/artifactPrivacy.js";
+import { saveTextArtifact } from "../artifacts/artifactFiles.js";
 import { distillValue, getDistillerDefinition } from "./distillerRegistry.js";
 import { asArray, isRecord } from "./summaries/common.js";
 import { summarizeHtmlSnapshot } from "./summaries/index.js";

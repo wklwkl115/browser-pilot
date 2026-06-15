@@ -1,6 +1,6 @@
-import { BrowserBridgeError } from "../bridge/server/errors.js";
-import type { BrowserBridgeServer } from "../bridge/server/BrowserBridgeServer.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/server/types.js";
+import { BrowserBridgeError } from "../bridge/protocol/errors.js";
+import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 
 function runtimeExceptionMessage(data: Record<string, unknown>): string | undefined {
 	const exceptionDetails = data.exceptionDetails;
@@ -10,7 +10,7 @@ function runtimeExceptionMessage(data: Record<string, unknown>): string | undefi
 	return typeof exception?.description === "string" ? exception.description : typeof details.text === "string" ? details.text : "Runtime.evaluate failed";
 }
 
-export async function evaluatePageScriptDirect(server: BrowserBridgeServer, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string }): Promise<BrowserBridgeExecutionResult> {
+export async function evaluatePageScriptDirect(server: Pick<BrowserCommandRuntimePort, "sendCommand">, script: string, options: { browserSessionId?: string; tabId?: unknown; timeoutMs: number; name: string }): Promise<BrowserBridgeExecutionResult> {
 	const result = await server.sendCommand({
 		cmd: "persistent_cdp",
 		action: "send",

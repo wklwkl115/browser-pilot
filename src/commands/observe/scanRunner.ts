@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { executeBrowserWaitWithSupervisor } from "../../bridge/server/BrowserWaitSupervisor.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { summarizeEntityDiff, type EntityDiff } from "../../kernels/abml/diff.js";
 import { buildRelationSummary, addEntityRelations, buildRelationGraph } from "../../kernels/abml/relations.js";
 import { buildInferenceSummary, entitiesForInferenceEvidence } from "../../kernels/abml/inference.js";
@@ -11,16 +11,16 @@ import { buildCollectionModels } from "../../kernels/abml/collections.js";
 import { buildIdentityGraph, identityGraphSummary } from "../../kernels/abml/identityGraph.js";
 import { factsFromEntities, stableRefsFromFrames, type PerceptionLedgerFrame, type PerceptionLedgerKey } from "../../kernels/abml/perceptionLedger.js";
 import type { FactGranularity } from "../../kernels/evidence/distill/fact.js";
-import { createBrowserAbmlIntegration } from "../../adapters/browser-runtime/abml/integration.js";
+import { createBrowserAbmlIntegration } from "../../browser-command-runtime/abml/integration.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/params.js";
-import { resolveArtifactPath } from "../artifacts.js";
-import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
+import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
 import { normalizePageFingerprint, queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint } from "../pageSignals.js";
-import { evaluatePageScriptDirect } from "../pageScriptEvaluation.js";
-import { registerScanEntityRefs } from "../scanEntityRefs.js";
-import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData } from "../summaries/index.js";
+import { evaluatePageScriptDirect } from "../../browser-command-runtime/pageScriptEvaluation.js";
+import { registerScanEntityRefs } from "../../scan/entityRefs.js";
+import { buildScanEntities, scanEntitiesFromGroups, summarizeScanData } from "../../scan/summary.js";
 import { artifactFallbackName, bridgeNestedErrorResult, jsonCommandResult, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, commandTimeoutMs, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS } from "../commandShared.js";
 import { buildEntityOutline, buildPageGist, sortEntitiesBySalience } from "./entityViews.js";
@@ -34,7 +34,7 @@ import { currentObserveSnapshotMeta, withObservationMeta, type ObserveMode, type
 // Build the envelope `causal` block when a baseline is supplied. Passive (no control attribution):
 // "requests fired since the baseline observation". Emits `unavailable` when no recorder is active
 // or the baseline carries no seq high-water mark (e.g. a raw entity-list baseline).
-async function buildObserveCausal(server: BrowserBridgeServer, params: ObserveToolParams, recorderState: { active: boolean }, baselineNetworkSeq: number | undefined, tabId: number | undefined, timeoutMs: number): Promise<CausalSummary> {
+async function buildObserveCausal(server: BrowserCommandRuntimePort, params: ObserveToolParams, recorderState: { active: boolean }, baselineNetworkSeq: number | undefined, tabId: number | undefined, timeoutMs: number): Promise<CausalSummary> {
 	if (!recorderState.active) return causalUnavailable("network recorder not active — start via browser_network start");
 	if (baselineNetworkSeq === undefined) return causalUnavailable("baseline has no network seq high-water mark — capture a baseline observation after browser_network start");
 	try {
@@ -50,7 +50,7 @@ function ledgerKey(browserSessionId: string | undefined, tabId: number | undefin
 	return { browserSessionId, tabId, navigationEpoch: url };
 }
 
-function granularityCeilingFromLedger(server: BrowserBridgeServer, key: PerceptionLedgerKey | undefined): Exclude<FactGranularity, "omit"> | undefined {
+function granularityCeilingFromLedger(server: BrowserCommandRuntimePort, key: PerceptionLedgerKey | undefined): Exclude<FactGranularity, "omit"> | undefined {
 	if (!key || typeof server.getRecentPerceptionLedgerFrames !== "function") return undefined;
 	const recent = server.getRecentPerceptionLedgerFrames(key, 3);
 	const pressured = recent.filter((frame) => (frame.allocation?.budgetUsedRatio ?? 0) > 0.92).length;
@@ -140,7 +140,7 @@ function attachAbmlArtifactHints(summary: Record<string, unknown>): void {
 	}
 }
 
-export async function runScanObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: CommandResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: CommandOnUpdate) {
+export async function runScanObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, mode: Extract<ObserveMode, "scan" | "text" | "tabs">, onUpdate?: CommandOnUpdate) {
 	const observeTimings: ObserveTimingMetrics = {};
 	const tabRefreshStartedAt = Date.now();
 	const tabs = await server.refreshTabs(5_000, { browserSessionId: params.browserSessionId }).catch(() => server.getTabs());

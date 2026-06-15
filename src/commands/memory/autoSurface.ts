@@ -1,8 +1,8 @@
 import { stat } from "node:fs/promises";
 import type { DistilledEnvelope } from "../resultMiddleware.js";
-import type { MemoryIndex } from "./types.js";
-import { EMPTY_MEMORY_INDEX, readMemoryIndexNoRepair } from "./indexStore.js";
-import { resolveMemoryPath } from "./paths.js";
+import type { MemoryIndex } from "../../memory/types.js";
+import { EMPTY_MEMORY_INDEX, readMemoryIndexNoRepair } from "../../memory/indexStore.js";
+import { resolveMemoryPath } from "../../memory/paths.js";
 import { normalizeOriginKeyFromUrl } from "./origin.js";
 import { memoryKernelEnabled } from "../../memory/secret.js";
 

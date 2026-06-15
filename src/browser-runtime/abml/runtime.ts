@@ -1,34 +1,34 @@
-import type { BrowserBridgeServer } from "../../../bridge/server/BrowserBridgeServer.js";
-import { BrowserBridgeError } from "../../../bridge/server/errors.js";
-import { isRecord } from "../../../utils/records.js";
-import { assertBridgeCommandSucceeded } from "../../../commands/bridgeResultValidation.js";
-import { buildScanScript } from "../../../scan/buildScanScript.js";
-import { evaluatePageScriptDirect } from "../../../commands/pageScriptEvaluation.js";
-import { scanEntitiesForEnvelope, summarizeScanData } from "../../../commands/summaries/scan.js";
-import { registerScanEntityRefs } from "../../../commands/scanEntityRefs.js";
-import { normalizeTabId } from "../../../utils/params.js";
-import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources-fs/resourceStore.js";
-import type { Entity } from "../../../kernels/abml/entity.js";
-import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../../kernels/abml/stream.js";
-import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../../../kernels/abml/causal.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import { isRecord } from "../../utils/records.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { buildScanScript } from "../../scan/buildScanScript.js";
+import { evaluatePageScriptDirect } from "../../browser-command-runtime/pageScriptEvaluation.js";
+import { registerScanEntityRefs } from "../../scan/entityRefs.js";
+import { scanEntitiesForEnvelope, summarizeScanData } from "../../scan/summary.js";
+import { normalizeTabId } from "../../utils/params.js";
+import { resolveRefUriDetailed, registerRefDescriptor } from "../../resources/resourceRefs.js";
+import type { Entity } from "../../kernels/abml/entity.js";
+import { createCaptureRef, buildNetworkEntryEntity, buildEventEntity, type CaptureRefContext } from "../../kernels/abml/stream.js";
+import { buildCausalRequest, buildCausalEvent, buildCausalSummary, buildCausalEvents, latestSeq } from "../../kernels/abml/causal.js";
 import { mergeAxIntoDomEntities, readAxEntities, type AxReadResult } from "./axRuntime.js";
-import { bootstrapScanBackendNodeIds } from "../../../kernels/abml/identityBootstrap.js";
-import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../../kernels/abml/relations.js";
-import { normalizeAbmlError } from "../../../kernels/abml/errors.js";
-import { decideRefAccess, defaultRefPolicyForKind } from "../../../kernels/abml/refPolicy.js";
-import { deriveSemanticRefAnchors } from "../../../kernels/abml/semanticRefAnchor.js";
-import type { ActionabilityReport, CaptureRef, RefDescriptor, VerificationResult } from "../../../kernels/abml/types.js";
-import type { AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlVerbFailure, AbmlVerbResult } from "../../../kernels/abml/verbs/router.js";
-import { runAbmlRead } from "../../../kernels/abml/verbs/read.js";
-import { runAbmlPierce } from "../../../kernels/abml/verbs/pierce.js";
-import { runAbmlFrame } from "../../../kernels/abml/verbs/frame.js";
+import { bootstrapScanBackendNodeIds } from "../../kernels/abml/identityBootstrap.js";
+import { materializeRelationGraph, derivePaintOrderRelationAnchors, deriveStateRelationAnchors } from "../../kernels/abml/relations.js";
+import { normalizeAbmlError } from "../../kernels/abml/errors.js";
+import { decideRefAccess, defaultRefPolicyForKind } from "../../kernels/abml/refPolicy.js";
+import { deriveSemanticRefAnchors } from "../../kernels/abml/semanticRefAnchor.js";
+import type { ActionabilityReport, CaptureRef, RefDescriptor, VerificationResult } from "../../kernels/abml/types.js";
+import type { AbmlFrameInput, AbmlPierceInput, AbmlReadInput, AbmlRuntimeContext, AbmlVerbFailure, AbmlVerbResult } from "../../kernels/abml/verbs/router.js";
+import { runAbmlRead } from "../../kernels/abml/verbs/read.js";
+import { runAbmlPierce } from "../../kernels/abml/verbs/pierce.js";
+import { runAbmlFrame } from "../../kernels/abml/verbs/frame.js";
 import { inspectVisionRegion } from "./visionRuntime.js";
 import { readFrameEntities, frameIdFromRef, probeFrameReachability } from "./frameRuntime.js";
 import { pierceRefEntities } from "./pierceRuntime.js";
 
 // Live ABML execution engine reached through integration.ts. Pure verb decisions stay in
 // the pure kernel; browser I/O, refs, scans, and verification happen here.
-export type AbmlBrowserRuntimeServer = Pick<BrowserBridgeServer, "sendCommand" | "snapshot" | "createObservationSnapshot">;
+export type AbmlBrowserRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand" | "snapshot" | "createObservationSnapshot">;
 
 export type BrowserAbmlRuntimeOptions = {
 	browserSessionId?: string;
@@ -472,7 +472,7 @@ async function executeBrowserAbmlRead(server: AbmlBrowserRuntimeServer, input: A
 				data: { frameTree: frameRead.frameTree, frameCount: frameRead.frames.length, frameId, source: "frame.list", observationId: descriptor.observationId, tabId: target.tabId },
 			};
 		}
-		const data = input.prefetchedScan ?? (await evaluatePageScriptDirect(server as BrowserBridgeServer, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
+		const data = input.prefetchedScan ?? (await evaluatePageScriptDirect(server, buildScanScript({ textOnly: false, maxChars: Math.max(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_SCAN_CAPTURE_MAX_CHARS), includeIframes: true }), {
 			browserSessionId: target.browserSessionId,
 			tabId: target.tabId,
 			timeoutMs: options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,

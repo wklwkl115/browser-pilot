@@ -2,7 +2,7 @@ import path from "node:path";
 import { createCodedError } from "../../../utils/codedError.js";
 import { tryJson } from "../../../utils/json.js";
 import { isRecord } from "../../../utils/records.js";
-import { saveTextArtifact } from "../../artifacts.js";
+import { saveTextArtifact } from "../../../artifacts/artifactFiles.js";
 import { artifactFallbackName } from "../../commandRuntime.js";
 import { parseCommandArgs } from "./normalize.js";
 import { closeWsSession, collectWsSession, openWsSession, replayWsSequence, sendWsSession, statusWsSession, waitWsSession, type ReplayWsSequenceStep, type WsTranscriptEntry } from "./wsSession.js";

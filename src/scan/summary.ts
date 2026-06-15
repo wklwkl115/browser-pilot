@@ -1,6 +1,29 @@
-import { asArray, isRecord, summaryTable, textPreview, type Summary } from "./common.js";
-import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../../kernels/abml/entity.js";
-import { summaryRefIdForDescriptor } from "../../kernels/abml/refId.js";
+import { truncateText } from "../utils/json.js";
+import { buildControlsSourceEntity, buildDomEntityFromScanActionable, buildReferencedTargetEntity, buildRegionEntityFromListHint, buildVisionRegionFromCanvasActionable, dedupeEntities, withRegisteredRef, type Entity, type ScanEntityContext } from "../kernels/abml/entity.js";
+import { summaryRefIdForDescriptor } from "../kernels/abml/refId.js";
+
+export type Summary = Record<string, unknown>;
+type SummaryColumn<T> = { key: string; value: (item: T) => unknown };
+type SummaryTable = { columns: string[]; rows: unknown[][]; count: number; truncated?: number };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+	return Array.isArray(value) ? value : [];
+}
+
+function textPreview(text: string, maxChars: number): string {
+	return truncateText(text.replace(/\s+/g, " ").trim(), maxChars).text;
+}
+
+function summaryTable<T>(items: T[], columns: SummaryColumn<T>[], limit = 20): SummaryTable {
+	const rows = items.slice(0, limit).map((item) => columns.map((column) => column.value(item)));
+	const table: SummaryTable = { columns: columns.map((column) => column.key), rows, count: items.length };
+	if (items.length > rows.length) table.truncated = items.length - rows.length;
+	return table;
+}
 
 export type ScanSummaryOptions = {
 	detailLevel?: unknown;

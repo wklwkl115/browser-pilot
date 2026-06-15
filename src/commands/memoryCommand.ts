@@ -6,8 +6,8 @@ import type { CommandRegistrarContext } from "./commandShared.js";
 import { enumParam, strictCommandParameters } from "./commandShared.js";
 import { readBrowserMemory } from "./memory/reader.js";
 import { recordMemoryEntry, recallMemory, validateMemoryRecord } from "./memory/store.js";
-import type { MemoryReadMode, MemoryRecordPayload } from "./memory/types.js";
-import { browserMemoryUriForEntry } from "./memory/indexStore.js";
+import type { MemoryReadMode, MemoryRecordPayload } from "../memory/types.js";
+import { browserMemoryUriForEntry } from "../memory/indexStore.js";
 
 const MEMORY_ACTIONS = ["record", "recall", "read", "validate"] as const;
 const MEMORY_KINDS = ["sop", "fact"] as const;

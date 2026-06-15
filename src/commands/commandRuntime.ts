@@ -1,8 +1,8 @@
 import { Type } from "typebox";
-import type { BrowserBridgeServer } from "../bridge/server/BrowserBridgeServer.js";
-import type { BrowserActiveOperationInfo } from "../bridge/server/types.js";
+import type { SessionActiveOperationInfo as BrowserActiveOperationInfo } from "../kernels/session/index.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import type { FactGranularity } from "../kernels/evidence/distill/fact.js";
-import { BrowserBridgeError, errorToPlain } from "../bridge/server/errors.js";
+import { BrowserBridgeError, errorToPlain } from "../bridge/protocol/errors.js";
 import { normalizeNativeErrorCode } from "../bridge/protocol/nativeErrorCodes.js";
 import type { DetailLevel } from "../utils/params.js";
 import { normalizeTabId } from "../utils/params.js";
@@ -118,7 +118,7 @@ type BrowserCommandErrorConfig<TParams> = {
 };
 
 export type BrowserCommandRunArgs<TParams, TPrepared> = {
-	server: BrowserBridgeServer;
+	server: BrowserCommandRuntimePort;
 	params: TParams;
 	prepared: TPrepared;
 	ctx: CommandResultContext;
@@ -132,7 +132,7 @@ export type BrowserCommandRunArgs<TParams, TPrepared> = {
 };
 
 type RunBrowserCommandSpec<TParams extends Partial<StandardToolParams>, TPrepared extends TParams = TParams, TResult = unknown> = {
-	ensureStarted: () => Promise<BrowserBridgeServer>;
+	ensureStarted: () => Promise<BrowserCommandRuntimePort>;
 	commandName: string;
 	params: TParams;
 	ctx: CommandResultContext;
@@ -148,7 +148,7 @@ type RunBrowserCommandSpec<TParams extends Partial<StandardToolParams>, TPrepare
 };
 
 type RunWebSecurityCommandSpec<TParams extends StandardToolParams, TRunParams extends TParams, TResult> = {
-	ensureStarted: () => Promise<BrowserBridgeServer>;
+	ensureStarted: () => Promise<BrowserCommandRuntimePort>;
 	params: TParams;
 	ctx: CommandResultContext;
 	onUpdate?: CommandOnUpdate;
@@ -211,7 +211,7 @@ export function targetTabId(params: Pick<StandardToolParams, "tabId" | "targetRe
 	return params.targetRef ?? params.tabId ?? body?.targetRef ?? body?.tabHandle ?? body?.tabId;
 }
 
-export function resolveLocalTargetTabId(server: Partial<Pick<BrowserBridgeServer, "resolveTargetTabId">>, value: unknown, browserSessionId?: string): number | undefined {
+export function resolveLocalTargetTabId(server: Partial<Pick<BrowserCommandRuntimePort, "resolveTargetTabId">>, value: unknown, browserSessionId?: string): number | undefined {
 	if (value === undefined) return undefined;
 	if (typeof server.resolveTargetTabId === "function") return server.resolveTargetTabId(value, browserSessionId);
 	return normalizeTabId(value);
@@ -346,7 +346,7 @@ function attachOperationToError(error: unknown, operation: BrowserActiveOperatio
 	return error;
 }
 
-export async function startTrackedOperation(server: BrowserBridgeServer, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
+export async function startTrackedOperation(server: BrowserCommandRuntimePort, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate?: CommandOnUpdate): Promise<TrackedOperationHandle> {
 	let current = server.beginOperation(meta);
 	await emitTrackedProgress(onUpdate, current);
 	return {
@@ -363,7 +363,7 @@ export async function startTrackedOperation(server: BrowserBridgeServer, meta: O
 	};
 }
 
-export async function withTrackedOperation<T>(server: BrowserBridgeServer, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
+export async function withTrackedOperation<T>(server: BrowserCommandRuntimePort, meta: Omit<BrowserActiveOperationInfo, "operationId" | "startedAt" | "updatedAt">, onUpdate: CommandOnUpdate, run: (handle: TrackedOperationHandle) => Promise<T>): Promise<{ result: T; operation: BrowserActiveOperationInfo }> {
 	const handle = await startTrackedOperation(server, meta, onUpdate);
 	let heartbeat: NodeJS.Timeout | undefined;
 	try {

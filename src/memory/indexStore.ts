@@ -1,9 +1,9 @@
 import path from "node:path";
 import { readdir, readFile, mkdir, rm, stat, open } from "node:fs/promises";
-import { parseJsonOrThrow, stableJson } from "../../utils/json.js";
-import { computeEtag } from "../../utils/fileFreshness.js";
-import { createCodedError } from "../../utils/codedError.js";
-import { atomicWriteText } from "../../utils/fsAtomic.js";
+import { parseJsonOrThrow, stableJson } from "../utils/json.js";
+import { computeEtag } from "../utils/fileFreshness.js";
+import { createCodedError } from "../utils/codedError.js";
+import { atomicWriteText } from "../utils/fsAtomic.js";
 import { parseMemoryEntry } from "./frontmatter.js";
 import { memoryEntryDir, resolveMemoryPath } from "./paths.js";
 import type { MemoryEntry, MemoryIndex, MemoryIndexEntry, MemoryTombstone } from "./types.js";

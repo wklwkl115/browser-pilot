@@ -1,15 +1,15 @@
-import { executeBrowserWaitWithSupervisor } from "../../bridge/server/BrowserWaitSupervisor.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { nativeCommandToolMetadata } from "../../bridge/protocol/nativeActionMetadata.js";
-import { resolveArtifactPath } from "../artifacts.js";
-import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
+import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
 import { summarizeHtmlSnapshot } from "../summaries/index.js";
 import { artifactFallbackName, jsonCommandResult, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, commandTimeoutMs, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "../commandShared.js";
 import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
 import { currentObserveSnapshotMeta, withObservationMeta, type ObserveToolParams } from "./common.js";
 
-export async function runHtmlObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
+export async function runHtmlObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
 	const body = objectParam(params.params);
 	if (params.selector !== undefined) body.selector = params.selector;
 	if (params.htmlMode !== undefined) body.mode = params.htmlMode;

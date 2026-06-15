@@ -25,7 +25,7 @@
 
 ## L1 路由索引（insight index）
 
-`index.json` 里物化一个**倒排 token 索引** `routing: { token: [id...] }`——由活跃条目的 title+triggers 分词(≥3 字符、去重、每条上限 24)派生(纯函数 `src/commands/memory/routing.ts`)。它把"情境→相关记忆"做成**按 token 重叠路由**,取代原来的子串扫描:
+`index.json` 里物化一个**倒排 token 索引** `routing: { token: [id...] }`——由活跃条目的 title+triggers 分词(≥3 字符、去重、每条上限 24)派生(纯函数 `src/memory/routing.ts`)。它把"情境→相关记忆"做成**按 token 重叠路由**,取代原来的子串扫描:
 
 - **recall(query)**:query 分词后经索引路由,按重叠 token 数排序(`route×N` 计入 `matchReason`),跨 scope 召回;原 exact-scope(+100)与子串信号保留。
 - **auto-surface 的 task/project**:用页面(url+title)的 token 与条目路由 token 重叠(≥1)判定,**token 边界正确**(不再有 "cat" 命中 "category" 之类子串误判)。

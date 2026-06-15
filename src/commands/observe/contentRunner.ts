@@ -1,18 +1,18 @@
 import { buildContentScript } from "../../content/buildContentScript.js";
-import { BrowserBridgeError } from "../../bridge/server/errors.js";
-import { executeBrowserWaitWithSupervisor } from "../../bridge/server/BrowserWaitSupervisor.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { normalizeNativeErrorCode } from "../../bridge/protocol/nativeErrorCodes.js";
 import { isRecord } from "../../utils/params.js";
-import { resolveArtifactPath } from "../artifacts.js";
-import { assertBridgeCommandSucceeded } from "../bridgeResultValidation.js";
-import { evaluatePageScriptDirect } from "../pageScriptEvaluation.js";
+import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { evaluatePageScriptDirect } from "../../browser-command-runtime/pageScriptEvaluation.js";
 import { summarizeContentData } from "../summaries/index.js";
 import { artifactFallbackName, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { modeInferredDetails, modeInferredSummary } from "./renderCache.js";
 import { currentObserveSnapshotMeta, normalizeContentTimeoutMs, withObservationMeta, type ObserveToolParams } from "./common.js";
 
-export async function runContentObservation(server: BrowserBridgeServer, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
+export async function runContentObservation(server: BrowserCommandRuntimePort, params: ObserveToolParams, ctx: CommandResultContext, onUpdate?: CommandOnUpdate) {
 	const timeoutMs = normalizeContentTimeoutMs(params.timeoutMs);
 	const maxChars = commandMaxChars(params, "browser_observe");
 	const browserSessionId = typeof params.browserSessionId === "string" ? params.browserSessionId : undefined;

@@ -1,11 +1,11 @@
 import { Type } from "typebox";
-import { executeBrowserWaitWithSupervisor } from "../bridge/server/BrowserWaitSupervisor.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/server/types.js";
+import { executeBrowserWaitWithSupervisor } from "../browser-command-runtime/waitSupervisor.js";
+import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
 import type { DetailLevel } from "../utils/params.js";
 import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
 import { nativeToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
-import { readFrameEntities } from "../adapters/browser-runtime/abml/frameRuntime.js";
+import { readFrameEntities } from "../browser-command-runtime/abml/frameEntities.js";
 import type { ToolResultBudgetName } from "./budgets.js";
 import { applyDefaultTimeout, artifactFallbackName, bridgeNestedErrorResult, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandParamsSchema, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";

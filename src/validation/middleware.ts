@@ -1,4 +1,4 @@
-import { BrowserBridgeError } from '../bridge/server/errors.js';
+import { BrowserBridgeError } from '../bridge/protocol/errors.js';
 import type { ValidationSchema } from './typeboxCompat.js';
 
 /**

@@ -1,4 +1,4 @@
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { createCodedError } from "../../utils/codedError.js";
 import { resolveLocalTargetTabId, targetTabId } from "../commandRuntime.js";
 
@@ -55,7 +55,7 @@ export function withObservationMeta(summary: Record<string, unknown>, mode: Obse
 	return { mode, sourceMode, ...summary };
 }
 
-export function currentObserveSnapshotMeta(server: BrowserBridgeServer, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number) {
+export function currentObserveSnapshotMeta(server: BrowserCommandRuntimePort, params: ObserveToolParams, sourceMode: "scan" | "content" | "html", savedPath: string | undefined, url: string | undefined, networkSeq?: number, hookSeq?: number) {
 	const bridge = server.snapshot({ browserSessionId: params.browserSessionId });
 	const rawTargetRef = targetTabId(params);
 	return server.createObservationSnapshot({

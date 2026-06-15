@@ -1,4 +1,4 @@
-import { resolveRefUriDetailed } from "../adapters/resources-fs/resourceStore.js";
+import { resolveRefUriDetailed } from "../resources/resourceRefs.js";
 import type { RefDescriptor } from "../kernels/abml/types.js";
 import { BROWSER_PILOT_STDLIB_NAMES, scriptReferencesClick, stdlibPrelude } from "./executeStdlibPrelude.js";
 import { isBrowserPilotRef } from "../kernels/refs/index.js";

@@ -5,7 +5,7 @@
 // enforced by the check:abml-kernel-boundary contract. See docs/abml-kernel-manifest.md.
 //
 // Consumers import this barrel or the individual kernel modules directly. Browser I/O belongs in
-// src/adapters/browser-runtime/abml and must not be imported from this kernel.
+// src/browser-runtime/abml and must not be imported from this kernel.
 export * from "./types.js";
 export * from "./refId.js";
 export * from "./refPolicy.js";

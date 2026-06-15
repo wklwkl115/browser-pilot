@@ -15,7 +15,7 @@
  *   contextLines/contextChars/maxChars/columnOffset/columnLimit/maxMatches — artifact window controls
  */
 import { resolveRefUriDetailed, resolveResourceUri, isResourceFresh } from "./resourceStore.js";
-import { readBrowserArtifact, ArtifactReaderError } from "../../commands/artifactReader.js";
+import { readBrowserArtifact, ArtifactReaderError } from "../../artifacts/artifactReader.js";
 import { isBrowserPilotRef } from "../../kernels/refs/index.js";
 
 export type BrowserResourceContent = {

@@ -3,7 +3,7 @@ import { buildInferenceSummary } from "../../kernels/abml/inference.js";
 import type { PerceptionTraceSnapshot } from "../../kernels/abml/perceptionLedger.js";
 import { computeRelevanceMap, type RelevanceInput, type RelevanceResult, type RelevanceTerm } from "../../kernels/evidence/distill/relevance.js";
 import { extractScalarTerm, extractUrlTerms } from "../../kernels/evidence/distill/relevanceTaps.js";
-import type { BrowserBridgeServer } from "../../bridge/server/BrowserBridgeServer.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../../utils/params.js";
 import type { ObserveToolParams } from "./common.js";
 
@@ -71,7 +71,7 @@ export type ObserveRelevance = {
 	artifact: Record<string, unknown>;
 };
 
-export function buildObserveRelevance(server: BrowserBridgeServer, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>, memoryTerms: RelevanceTerm[] = []): ObserveRelevance | undefined {
+export function buildObserveRelevance(server: BrowserCommandRuntimePort, params: ObserveToolParams, browserSessionId: string | undefined, url: string | undefined, entities: Entity[], inference?: ReturnType<typeof buildInferenceSummary>, memoryTerms: RelevanceTerm[] = []): ObserveRelevance | undefined {
 	if (!relevanceEnabled(params)) return undefined;
 	const trace = typeof server.perceptionTraceSnapshot === "function" ? server.perceptionTraceSnapshot(browserSessionId) : undefined;
 	const terms = [

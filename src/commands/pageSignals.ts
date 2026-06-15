@@ -1,4 +1,4 @@
-import type { BrowserBridgeServer } from "../bridge/server/BrowserBridgeServer.js";
+import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../utils/params.js";
 
 export type PageFingerprint = {
@@ -64,7 +64,7 @@ export function normalizePageFingerprint(value: unknown): PageFingerprint | unde
 	};
 }
 
-export async function readPageFingerprint(server: BrowserBridgeServer, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
+export async function readPageFingerprint(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<PageFingerprint | undefined> {
 	if (!options.tabId) return undefined;
 	try {
 		const result = await server.sendCommand({ cmd: "content.fingerprint", tabId: options.tabId, timeoutMs: options.timeoutMs, ...(options.drainDirty === true ? { drainDirty: true } : {}) }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: Math.min(options.timeoutMs, 2_000), internal: true });
@@ -74,7 +74,7 @@ export async function readPageFingerprint(server: BrowserBridgeServer, options: 
 	}
 }
 
-export async function readNetworkRecorderSeq(server: BrowserBridgeServer, options: PageSignalOptions): Promise<RecorderSeq> {
+export async function readNetworkRecorderSeq(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<RecorderSeq> {
 	if (!options.tabId) return { active: false };
 	try {
 		const res = await server.sendCommand({ cmd: "network.status" }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
@@ -86,14 +86,14 @@ export async function readNetworkRecorderSeq(server: BrowserBridgeServer, option
 	}
 }
 
-export async function queryNetworkDelta(server: BrowserBridgeServer, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
+export async function queryNetworkDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
 	if (!options.tabId) return [];
 	const res = await server.sendCommand({ cmd: "network.list", sinceSeq: options.sinceSeq, limit: 500 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	const data = isRecord(res.data) ? res.data : {};
 	return Array.isArray(data.items) ? data.items.filter(isRecord) : [];
 }
 
-export async function readHookRecorderSeq(server: BrowserBridgeServer, options: PageSignalOptions): Promise<RecorderSeq> {
+export async function readHookRecorderSeq(server: BrowserCommandRuntimePort, options: PageSignalOptions): Promise<RecorderSeq> {
 	if (!options.tabId) return { active: false };
 	try {
 		const res = await server.sendCommand({ cmd: "hook.status" }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
@@ -105,7 +105,7 @@ export async function readHookRecorderSeq(server: BrowserBridgeServer, options: 
 	}
 }
 
-export async function queryHookDelta(server: BrowserBridgeServer, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
+export async function queryHookDelta(server: BrowserCommandRuntimePort, options: PageSignalOptions & { sinceSeq: number }): Promise<Array<Record<string, unknown>>> {
 	if (!options.tabId) return [];
 	const res = await server.sendCommand({ cmd: "hook.collect", since_seq: options.sinceSeq, limit: 200 }, { browserSessionId: options.browserSessionId, tabId: options.tabId, timeoutMs: options.timeoutMs });
 	const data = isRecord(res.data) ? res.data : {};

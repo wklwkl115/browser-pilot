@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 import { type NativeErrorCode } from "../bridge/protocol/nativeErrorCodes.js";
-import { BrowserBridgeError } from "../bridge/server/errors.js";
+import { BrowserBridgeError } from "../bridge/protocol/errors.js";
 import { defaultLeaseIdRedactor } from "../kernels/session/leaseDiagnostics.js";
-import type { BrowserTabLeaseInfo } from "../bridge/server/types.js";
+import type { SessionTabLeaseInfo as BrowserTabLeaseInfo } from "../kernels/session/index.js";
 import { jsonResult } from "../utils/toolResult.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams, commandTimeoutMs } from "./commandRuntime.js";
 import { compactBridgeForTabsList, compactTabForList, publicCreateTabResult, publicSnapshot } from "./tabsProjection.js";

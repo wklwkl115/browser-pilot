@@ -2,7 +2,7 @@ import path from "node:path";
 import { artifactFallbackName } from "../../commandRuntime.js";
 import { summarizeJsAstAnalysisData } from "../../summaries/webSecurity/jsAst.js";
 import { analyzeJavaScriptArtifactInput, type JsAstArtifactAnalysis, type JsAstArtifactInput } from "./jsAstArtifact.js";
-import { saveTextArtifact } from "../../artifacts.js";
+import { saveTextArtifact } from "../../../artifacts/artifactFiles.js";
 
 export type JsAstShellContext = { cwd?: string } | undefined;
 

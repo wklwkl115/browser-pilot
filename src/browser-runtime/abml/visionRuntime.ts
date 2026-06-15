@@ -1,16 +1,16 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { registerBrowserResultResource } from "../../resources-fs/resourceStore.js";
-import { jsonForInlineScript, renderCaptureTemplate } from "../../../capture/inject.js";
-import { VIEWPORT_TEMPLATE } from "../../../capture/generated/visionBundle.js";
-import type { BrowserBridgeServer } from "../../../bridge/server/BrowserBridgeServer.js";
-import { assertBridgeCommandSucceeded } from "../../../commands/bridgeResultValidation.js";
-import { saveDataUrl } from "../../../commands/artifacts.js";
-import type { Entity } from "../../../kernels/abml/entity.js";
-import { normalizeAbmlError } from "../../../kernels/abml/errors.js";
-import type { RefDescriptor } from "../../../kernels/abml/types.js";
+import { registerBrowserResultResource } from "../../resources/resourceRefs.js";
+import { jsonForInlineScript, renderCaptureTemplate } from "../../capture/inject.js";
+import { VIEWPORT_TEMPLATE } from "../../capture/generated/visionBundle.js";
+import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
+import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { saveDataUrl } from "../../artifacts/artifactFiles.js";
+import type { Entity } from "../../kernels/abml/entity.js";
+import { normalizeAbmlError } from "../../kernels/abml/errors.js";
+import type { RefDescriptor } from "../../kernels/abml/types.js";
 
-export type AbmlVisionRuntimeServer = Pick<BrowserBridgeServer, "sendCommand">;
+export type AbmlVisionRuntimeServer = Pick<BrowserCommandRuntimePort, "sendCommand">;
 
 export type VisionInspectResult =
 	| { ok: true; artifactPath: string; resourceUri: string; entity: Entity; data: Record<string, unknown> }

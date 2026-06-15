@@ -7,11 +7,11 @@ collection completeness, and mechanism-arm structure projection.
 
 **The one rule:** everything here is **pure** — zero browser, zero Node, zero npm dependencies.
 Pure functions and types only. The browser-facing **runtime** lives in
-[`../../adapters/browser-runtime/abml/`](../../adapters/browser-runtime/abml) and depends on this
+[`../../browser-runtime/abml/`](../../browser-runtime/abml) and depends on this
 kernel; the kernel never depends on the runtime.
 
 ```
-   src/adapters/browser-runtime/abml/  (browser I/O)  ──imports──▶  src/kernels/abml/  (this)
+   src/browser-runtime/abml/  (browser I/O)  ──imports──▶  src/kernels/abml/  (this)
 ```
 
 This is the whole reason the kernel was split out: it can be read, reasoned about, and unit-tested
@@ -60,24 +60,21 @@ kernel's entire public surface at a glance.
 | `verbs/router.ts` | Verb input/result/runtime types + actionability/verification failure helpers. |
 | `verbs/{read,frame,pierce}.ts` | Per-verb **decision** logic (no browser call). |
 
-The matching browser I/O for each verb lives in `../../adapters/browser-runtime/abml/*Runtime.ts`
-(e.g. `ax.ts`'s merge is fed by `../../adapters/browser-runtime/abml/axRuntime.ts`, which reads the
+The matching browser I/O for each verb lives in `../../browser-runtime/abml/*Runtime.ts`
+(e.g. `ax.ts`'s merge is fed by `../../browser-runtime/abml/axRuntime.ts`, which reads the
 live AX tree).
 
 ## The boundary is CI-enforced
 
-`npm run check:abml-kernel-boundary` (also part of `npm run check`) asserts that every file here
-imports **only** another core module or one of the whitelisted transitively-pure cross-cutting
-modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
-`protocol/nativeErrorCodes`. A `driver/commands/scan/resources/node`/npm import, a reach into
-`adapters/browser-runtime`, or a new unclassified file makes CI red. The formal manifest is
-[`docs/abml-kernel-manifest.md`](../../docs/abml-kernel-manifest.md).
+`npm run lint` includes architecture boundary checks. Files here must import only another core
+module or an approved transitively-pure cross-cutting helper. A command, adapter, bridge, browser
+runtime, Node-only, or npm dependency import is a boundary violation.
 
 ## Extending the kernel
 
 - **New verb decision** → add `verbs/<verb>.ts` (pure: input → decision/verification result),
   wire it in `verbs/router.ts`, and put the browser I/O in
-  `../../adapters/browser-runtime/abml/<verb>Runtime.ts`. Keep the decision and the I/O on opposite
+  `../../browser-runtime/abml/<verb>Runtime.ts`. Keep the decision and the I/O on opposite
   sides of the line.
 - **Improve perception** (new ARIA state/relationship/structure) → it almost always belongs in
   `ax.ts` (the merge), `entity.ts` (the model), `grouping.ts`, `templating.ts`, `treeDiff.ts`, `semanticRefAnchor.ts`, `snapshotProjection.ts`, or `collections.ts`. Stay generic —
@@ -87,22 +84,16 @@ modules — `utils/records`, `utils/json`, `utils/redaction`, `utils/errors`,
   whitelist in the boundary test (after re-verifying its dependency closure stays pure).
   Otherwise the consumer belongs in the runtime layer, not here.
 
-After any change: `tsc -p tsconfig.json` + `npm run test:unit` (the kernel's unit tests are under
-`tests/unit/abml/`) + `npm run check:abml-kernel-boundary`.
+After any change: `npm run typecheck`, `npm run lint`, and the relevant contract/package checks for
+the touched surface.
 
 ## Consumers
 
 Consumers import the kernel modules directly from `src/kernels/abml` or the barrel:
 `import { ... } from ".../kernels/abml/index.js"`. Browser I/O code stays outside the kernel in the
-browser-runtime adapter.
+browser-runtime layer.
 
 ## Related docs
 
-The full ABML doc set + roles is mapped in
-[`docs/abml-kernel-manifest.md` → ABML documentation map](../../docs/abml-kernel-manifest.md#abml-documentation-map).
-The ones you will reach for most:
-
-- [`docs/abml-kernel-manifest.md`](../../docs/abml-kernel-manifest.md) — formal layer manifest + boundary spec + the workspace-package promotion recipe (and the doc map).
-- [`docs/abml-p1-spec.md`](../../docs/abml-p1-spec.md) — the AX-authoritative state spec.
-- [`AGENTS.md`](../../AGENTS.md#abml-project-development-rules) — current project-level ABML development rules.
-- [`docs/archive/abml-perception-state-evolution-plan.md`](../../docs/archive/abml-perception-state-evolution-plan.md) — historical perception north-star + R1/R2/R3 semantic-depth roadmap.
+- [`docs/architecture-charter.md`](../../docs/architecture-charter.md) — project architecture rules, dependency direction, and migration goals.
+- [`docs/generated/browser-tool-reference.generated.md`](../../docs/generated/browser-tool-reference.generated.md) — generated public command and error reference.

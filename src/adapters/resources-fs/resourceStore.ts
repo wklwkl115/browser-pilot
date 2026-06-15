@@ -17,6 +17,7 @@ import type { RefDescriptor, RefKind } from "../../kernels/abml/types.js";
 import { defaultRefPolicyForKind } from "../../kernels/abml/refPolicy.js";
 import { makeBrowserPilotRefUri, stableRefIdForDescriptor } from "../../kernels/abml/refId.js";
 import { parseRef } from "../../kernels/refs/index.js";
+import type { BrowserResultResource, RegisteredRefRecord, RegisterBrowserResultResourceParams, RegisterRefDescriptorParams, ResolveRefResult, ResolvedRefRecord, ResourceRefStorePort } from "../../ports/ResourceRefStorePort.js";
 import { computeContentHash, computeEtag, isFreshEtag } from "./resourceFreshness.js";
 
 export const RESOURCE_URI_SCHEME = "browser-result";
@@ -33,65 +34,6 @@ const PRUNE_EXPIRED_EVERY_REGISTRATIONS = 128;
 export function isResourceFresh(resource: BrowserResultResource): boolean {
 	return isFreshEtag(resource.artifactPath, resource.etag);
 }
-
-export type ResourceKind =
-	| "raw-result"
-	| "summary-section"
-	| "http-request"
-	| "network-entry"
-	| "scan"
-	| "evidence"
-	| "artifact-slice";
-
-export type BrowserResultResource = {
-	id: string;
-	uri: string;
-	refId: string;
-	kind: ResourceKind;
-	artifactPath: string;
-	section?: string;
-	jsonPath?: string;
-	mime?: string;
-	bytes?: number;
-	hash?: string;
-	etag?: string;
-	immutable: boolean;
-	createdAt: number;
-	expiresAt: number;
-	browserSessionId?: string;
-	redaction: "default" | "disabled";
-	name: string;
-	description?: string;
-};
-
-export type RegisteredRefRecord = {
-	refId: string;
-	descriptor: RefDescriptor;
-	artifactPath?: string;
-	resourceKind?: ResourceKind;
-	section?: string;
-	jsonPath?: string;
-	mime?: string;
-	bytes?: number;
-	hash?: string;
-	etag?: string;
-	name?: string;
-	description?: string;
-	redaction: "default" | "disabled";
-	immutable: boolean;
-	createdAt: number;
-	expiresAt?: number;
-	browserSessionId?: string;
-};
-
-export type ResolvedRefRecord = RegisteredRefRecord & {
-	resourceUri?: string;
-	fresh?: boolean;
-};
-
-export type ResolveRefResult =
-	| { ok: true; ref: ResolvedRefRecord }
-	| { ok: false; code: "HANDLE_NOT_FOUND" | "HANDLE_EXPIRED" | "REF_STALE"; error: string };
 
 const resourceStore = new Map<string, BrowserResultResource>();
 const refStore = new Map<string, RegisteredRefRecord>();
@@ -249,19 +191,7 @@ function normalizeResolvedRef(record: RegisteredRefRecord): ResolveRefResult {
 }
 
 /** Register a new resource and return its URI. Never exposes local path. */
-export function registerBrowserResultResource(params: {
-	kind: ResourceKind;
-	artifactPath: string;
-	name: string;
-	description?: string;
-	section?: string;
-	jsonPath?: string;
-	mime?: string;
-	bytes?: number;
-	immutable?: boolean;
-	browserSessionId?: string;
-	redaction?: "default" | "disabled";
-}): string {
+export function registerBrowserResultResource(params: RegisterBrowserResultResourceParams): string {
 	pruneExpiredAmortized();
 	const id = randomUUID();
 	const uri = makeUri(id);
@@ -293,21 +223,7 @@ export function registerBrowserResultResource(params: {
 	return uri;
 }
 
-export function registerRefDescriptor(params: {
-	descriptor: Omit<RefDescriptor, "refId"> & { refId?: string };
-	artifactPath?: string;
-	resourceKind?: ResourceKind;
-	section?: string;
-	mime?: string;
-	bytes?: number;
-	hash?: string;
-	etag?: string;
-	name?: string;
-	description?: string;
-	redaction?: "default" | "disabled";
-	immutable?: boolean;
-	browserSessionId?: string;
-}): string {
+export function registerRefDescriptor(params: RegisterRefDescriptorParams): string {
 	pruneExpiredAmortized();
 	const refId = params.descriptor.refId || stableRefIdForDescriptor(params.descriptor) || makeBrowserPilotRefUri(params.descriptor.kind, randomUUID());
 	const parsed = parseBrowserPilotRefUri(refId);
@@ -392,6 +308,18 @@ export function clearResourceStore(): void {
 	refStore.clear();
 	registrationsSincePrune = 0;
 }
+
+export const resourceRefStore: ResourceRefStorePort = {
+	isResourceFresh,
+	registerBrowserResultResource,
+	registerRefDescriptor,
+	resolveResourceUri,
+	resolveRefUri,
+	resolveRefUriDetailed,
+	listResources,
+	pruneExpired,
+	clearResourceStore,
+};
 
 function pruneExpiredAmortized(): void {
 	registrationsSincePrune += 1;

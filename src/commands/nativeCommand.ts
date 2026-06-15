@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../bridge/server/errors.js";
+import { BrowserBridgeError } from "../bridge/protocol/errors.js";
 import { nextActionsForExecutionEffect } from "../kernels/evidence/distill/recovery.js";
 import { rejectUnsafeExecuteCommand } from "./transferValidation.js";
 import { buildExecutionJournal, compactExecutionEffect, type ExecuteEffect } from "./executionJournal.js";
