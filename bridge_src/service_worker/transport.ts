@@ -130,7 +130,11 @@ function cleanupTransportSocket(socket: PiBridgeWebSocketLike | null, _reason = 
 
 function scheduleProbe(resetDelay = false): void {
   void resetDelay;
-  chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1 });
+  // Repeating alarm (not one-shot): the wake cadence self-heals even if a probe
+  // throws before it can reschedule. 1 minute is the Chrome floor for released
+  // extensions; this is only the cold-start backstop — a warm offscreen reconnects
+  // far faster via its own sub-10s backoff.
+  chrome.alarms.create("browser-pilot-ws-probe", { delayInMinutes: 1, periodInMinutes: 1 });
 }
 
 function bumpProbeBackoff(): void {

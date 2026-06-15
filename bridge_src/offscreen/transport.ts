@@ -20,10 +20,15 @@ let probeTimer: ReturnType<typeof setTimeout> | null = null;
 let keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
 let wsReconnectDelayMs = 1000;
 const WS_RECONNECT_INITIAL_MS = 1000;
-const WS_RECONNECT_MAX_MS = 30000;
+// Cap reconnect backoff at 8s (was 30s): probes are cheap localhost fetches, so a
+// warm-but-disconnected offscreen reconnects within ~8s of the bridge coming up
+// instead of stalling for up to 30s.
+const WS_RECONNECT_MAX_MS = 8000;
 const PORT_PROBE_TIMEOUT_MS = 500;
 const KEEPALIVE_PORT_NAME = "pi-keepalive";
-const KEEPALIVE_PORT_RECONNECT_MS = 10000;
+// Reconnect the SW-keepalive port quickly (was 10s) to minimize the window where
+// the service worker can sleep between Chrome's ~5-minute forced port resets.
+const KEEPALIVE_PORT_RECONNECT_MS = 2000;
 let keepalivePort: ReturnType<NonNullable<ChromeRuntimeLite["connect"]>> | null = null;
 let keepalivePortTimer: ReturnType<typeof setTimeout> | null = null;
 

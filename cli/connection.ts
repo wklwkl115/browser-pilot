@@ -9,7 +9,7 @@ function recoveryCommand(command: string, argv: string[], purpose: string): Reco
 	return { command, argv, purpose };
 }
 
-export function connectionRecoveryCommands(timeoutMs = 15_000): RecoveryCommand[] {
+export function connectionRecoveryCommands(timeoutMs = 30_000): RecoveryCommand[] {
 	return [
 		recoveryCommand("browser-pilot status --json", ["browser-pilot", "status", "--json"], "inspect current connection state without starting anything"),
 		recoveryCommand("browser-pilot connect --wait --timeout-ms " + timeoutMs + " --json", ["browser-pilot", "connect", "--wait", "--timeout-ms", String(timeoutMs), "--json"], "start/reuse the daemon and wait for the browser extension"),

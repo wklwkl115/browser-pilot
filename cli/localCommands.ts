@@ -256,11 +256,11 @@ function parseConnectArgs(argv: string[], mode: RenderMode): { ok: true; wait: b
 	const parsed = parseArgs(specs, argv);
 	if (!parsed.ok) return { ok: false, code: renderUsageError(parsed.error, renderMode(parsed.globals)) };
 	if (parsed.value.globals.help) {
-		process.stdout.write("browser-pilot connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until extensionConnected is true.\n  --timeout-ms <number>          Bound readiness wait. Default 15000.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n");
+		process.stdout.write("browser-pilot connect --wait --timeout-ms <ms> --json\n\nFlags:\n  --wait                         Wait until extensionConnected is true.\n  --timeout-ms <number>          Bound readiness wait. Default 30000. For a fully\n                                 cold extension (browser just started), pass a\n                                 value above 60000 so the 1-minute wake alarm lands.\n  --tabs                         Include full tabs[]. Default is compact tabCount/activeTab.\n  --json | --text | --help\n");
 		return { ok: false, code: EXIT.ok };
 	}
 	const rawTimeout = parsed.value.params.timeoutMs;
-	const timeoutMs = rawTimeout === undefined ? 15_000 : Number(rawTimeout);
+	const timeoutMs = rawTimeout === undefined ? 30_000 : Number(rawTimeout);
 	if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return { ok: false, code: renderUsageError("--timeout-ms must be a non-negative number", mode) };
 	return { ok: true, wait: parsed.value.params.wait === true, timeoutMs: Math.floor(timeoutMs), tabs: parsed.value.params.tabs === true };
 }
