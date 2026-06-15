@@ -32,6 +32,12 @@ let pollTimer = null;
 let busy = false;
 // Track current consent pairing id to debounce repeated approve/deny taps
 let pendingConsentId = null;
+// Sticky connection indicator: count consecutive non-connected status polls so a
+// single transient miss (SW waking, runtime.sendMessage channel race) does not
+// flicker the UI between 已连接 and 未连接. Only downgrade after this many in a row.
+let connMisses = 0;
+let firstPoll = true;
+const MAX_CONN_MISSES = 2;
 
 function setVersion() {
   try {
@@ -194,8 +200,13 @@ function renderAgents(consentResp) {
 }
 
 // Combined poll: fetch connection status + consent state, then update UI.
+// The two queries are issued sequentially (NOT Promise.all): they target
+// different listeners (offscreen for status, service worker for consent), and
+// broadcasting both at once via runtime.sendMessage can drop the status response
+// in the multi-listener channel race, causing a false 未连接 blip.
 async function doPoll() {
-  const [statusResp, consentResp] = await Promise.all([queryStatus(), queryConsent()]);
+  const statusResp = await queryStatus();
+  const consentResp = await queryConsent();
 
   const pending = consentResp && consentResp.pending ? consentResp.pending : null;
 
@@ -206,9 +217,19 @@ async function doPoll() {
     // No pending consent — restore normal connection state
     el.consentSection.hidden = true;
     pendingConsentId = null;
-    render(statusResp);
+    const connected = openPortsOf(statusResp).length > 0;
+    if (connected) {
+      connMisses = 0;
+      render(statusResp);
+    } else {
+      connMisses += 1;
+      // Tolerate a single transient miss: keep the last (connected) display unless
+      // this is the very first poll or we've missed MAX_CONN_MISSES times in a row.
+      if (firstPoll || connMisses >= MAX_CONN_MISSES) render(statusResp);
+    }
   }
 
+  firstPoll = false;
   // Always update the agents list regardless of pending state
   renderAgents(consentResp);
 }
