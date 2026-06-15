@@ -212,5 +212,5 @@ browser_artifact { mode: "search", query: "keyword", glob: "**/*.json" }
 ## Reference
 
 - Full Pi-native skill: [skills/browser-pilot/SKILL.md](../skills/browser-pilot/SKILL.md)
-- Tool contracts: [generated/browser-tool-contract.generated.md](generated/browser-tool-contract.generated.md)
+- Tool reference: [generated/browser-tool-reference.generated.md](generated/browser-tool-reference.generated.md)
 - Tool boundaries: [tool-boundaries.md](tool-boundaries.md)

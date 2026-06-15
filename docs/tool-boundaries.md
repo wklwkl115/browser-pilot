@@ -2,7 +2,7 @@
 
 This file defines the Semantic singleton boundary for each callable `browser_*` tool. Keep it aligned with `src/tools/register*.ts`, README, and the global `browser-pilot` skill.
 
-Primary inputs are the tool parameters shown in `docs/generated/browser-tool-contract.generated.md`; this boundary file focuses on tool choice, evidence type, and follow-up flow.
+Primary inputs are the tool parameters shown in `docs/generated/browser-tool-reference.generated.md`; this boundary file focuses on tool choice, evidence type, and follow-up flow.
 
 ## Primary workflow
 

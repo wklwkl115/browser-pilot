@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#工具列表)
-[![Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#开发)
+[![Package](https://img.shields.io/badge/package-consumer%20verified-green.svg)](#开发)
 
 [English](README.md)
 
@@ -36,7 +36,7 @@ Browser Pilot 给 agent 它们真正需要的东西：
 - **完整网络可见性** —— 录制/重放/变异 HTTP 流量、导出 HAR、捕获请求体。精确看到页面收发了什么。
 - **内置安全测试** —— 7 个 Web 安全工具（爬取、模糊测试、SQLi、模板检查、Cookie/session 分析、HTTP 重放、OAST）共享浏览器会话，无需额外代理。
 - **Token 高效输出** —— 基于显著性的渲染、session delta 压缩和任务条件相关性保持输出紧凑。同一页面的重复扫描只发送变化部分。
-- **860+ 契约测试** —— 协议、工具、边界、运行时 fixture、生命周期和治理门禁。工具接口被 CI 锁定。
+- **面向使用者的包验证** —— 公开 npm tarball 会安装到干净的临时项目，并通过已发布 CLI 做基础 smoke。
 
 ## 工作原理
 
@@ -145,7 +145,7 @@ browser_wait    { action: "selector", params: { selector: "#result" } }
 15 个核心工具（tabs, observe, execute, command, wait, pick, screenshot, network, hook,
 evidence, frame, artifact, memory, download, upload）和 7 个安全工具（crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, callback-oast）。详见
-[工具契约参考](docs/generated/browser-tool-contract.generated.md)。
+[工具参考](docs/generated/browser-tool-reference.generated.md)。
 
 ## 典型工作流
 
@@ -225,25 +225,15 @@ npx browser-pilot sqli --url "https://example.com/search?q=test" --json
 npm run build:bridge      # 构建 Chrome 扩展
 npm run build             # 编译 Node.js 源码到 dist/
 npm run lint              # ESLint
-npm run check             # 运行全部契约/单元/边界测试
-npm run quality:local     # 完整本地门禁：build + lint + check + npm pack --dry-run --ignore-scripts --json
-npm run release:portable  # 干净公开文件树 + npm tarball 空项目安装 smoke
+npm run typecheck         # TypeScript 项目检查
+npm run verify:package    # 打包、安装并 smoke-test 公开包
+npm run check             # 类型检查、lint、构建、扩展构建和包验证
+npm run quality:local     # 完整公开检查的别名
 ```
 
-按域缩小范围快速迭代：
-
-```bash
-npm run check:all:src         # 源码类型检查 + registry drift
-npm run check:all:bridge      # Bridge + 单元测试
-npm run check:all:package     # Package + docs 检查
-npm run check:all:contracts   # 契约测试
-```
-
-浏览器 smoke 测试（需扩展已连接）：
-
-```bash
-npm run smoke:browser:isolated    # 隔离 Chrome profile
-```
+`verify:package` 会创建 npm tarball，安装到干净的临时 consumer 项目，并运行
+随包发布的 `browser-pilot` CLI help/schema/status 命令。产物写入
+`.pi/browser-artifacts/public-package/`。
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md) 了解完整的贡献流程。
 
@@ -258,7 +248,7 @@ npm run smoke:browser:isolated    # 隔离 Chrome profile
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | 工具选择边界 |
 | [docs/browser-memory.md](docs/browser-memory.md) | 本地浏览器记忆系统 |
 | [docs/browser-usage.md](docs/browser-usage.md) | 安装、扩展加载、故障排除 |
-| [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | 生成的工具契约参考 |
+| [docs/generated/browser-tool-reference.generated.md](docs/generated/browser-tool-reference.generated.md) | 生成的工具参考 |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | 生成的 native 协议参考 |
 
 ## 配置

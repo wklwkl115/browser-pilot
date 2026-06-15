@@ -1,1 +1,0 @@
-import x,{alpha as a,beta}from'./dep.js';const arr=['zero','one','two','three'];function outer(n){return arr[n]+x+a+beta}export{outer};export default function main(v){return atob(v)+unescape('%41')+eval('1+1')+new Function('return 3')()}

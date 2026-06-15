@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Tools](https://img.shields.io/badge/tools-22%20browser__*-blueviolet.svg)](#tools)
-[![Tests](https://img.shields.io/badge/tests-860%2B%20contracts-green.svg)](#development)
+[![Package](https://img.shields.io/badge/package-consumer%20verified-green.svg)](#development)
 
 [中文文档](README.zh-CN.md)
 
@@ -46,8 +46,8 @@ Browser Pilot gives agents what they actually need:
 - **Token-efficient output** — salience-based rendering, session delta compression, and
   task-conditioned relevance keep tool outputs compact. Repeated scans of the same page
   send only what changed.
-- **860+ contract tests** — protocol, tools, boundaries, runtime fixtures, lifecycle, and
-  governance gates. The tool surface is locked by CI.
+- **Consumer-first package check** — the public tarball is installed in a clean fixture
+  and smoke-tested through the shipped CLI.
 
 ## How It Works
 
@@ -162,7 +162,7 @@ public browser tools — they route to internal AST/Wasm/WebSocket shells).
 
 ## Tools
 
-<!-- BEGIN GENERATED: readme-tool-index (npm run docs:sync) -->
+<!-- BEGIN TOOL INDEX -->
 | Tool | Group | Source |
 | --- | --- | --- |
 | `browser_artifact` | core | `src/tools/registerArtifactTool.ts` |
@@ -187,12 +187,12 @@ public browser tools — they route to internal AST/Wasm/WebSocket shells).
 | `browser_template` | security | `src/tools/webSecurity/register/registerTemplate.ts` |
 | `browser_upload` | core | `src/tools/registerTransferTools.ts` |
 | `browser_wait` | core | `src/tools/registerNativeActionTools.ts` |
-<!-- END GENERATED: readme-tool-index -->
+<!-- END TOOL INDEX -->
 
 15 core tools (tabs, observe, execute, command, wait, pick, screenshot, network, hook,
 evidence, frame, artifact, memory, download, upload) and 7 security tools (crawl, fuzz,
 sqli, template, cookie-analyze, http-replay, callback-oast). See the
-[tool contract reference](docs/generated/browser-tool-contract.generated.md) for full
+[tool reference](docs/generated/browser-tool-reference.generated.md) for full
 schemas and parameters.
 
 ## Typical Workflow
@@ -276,38 +276,15 @@ See [docs/playbooks/](docs/playbooks/) for step-by-step security testing guides.
 npm run build:bridge      # Build the Chrome extension
 npm run build             # Compile Node.js source to dist/
 npm run lint              # ESLint
-npm run check             # Run all contract/unit/boundary tests
-npm run quality:local     # Full local gate: build + lint + check + npm pack --dry-run --ignore-scripts --json
-npm run release:portable  # Clean public-file tree + npm tarball consumer-install smoke
+npm run typecheck         # TypeScript project check
+npm run verify:package    # Pack, install, and smoke-test the public package
+npm run check             # Typecheck, lint, build, bridge build, and verify the package
+npm run quality:local     # Alias for the full public check
 ```
 
-Narrow gates for faster iteration:
-
-```bash
-npm run check:all:src         # Source type checks + registry drift
-npm run check:all:bridge      # Bridge + unit tests
-npm run check:all:package     # Package + docs checks
-npm run check:all:contracts   # Contract tests
-```
-
-Browser smoke tests (require extension connected):
-
-```bash
-npm run smoke:browser:isolated                 # Isolated Chrome profile (start here)
-npm run smoke:browser:scan-summary             # Observation/scan summary shape
-npm run smoke:browser:debugger-evidence        # CDP debugger evidence capture
-npm run smoke:browser:correlation-chain        # Cross-tool correlation chaining
-npm run smoke:browser:intercept-response       # Response interception
-npm run smoke:browser:intercept-replace-script # Script replacement interception
-npm run smoke:browser:intercept-uninstall-fail-closed  # Intercept uninstall fail-closed
-npm run smoke:browser:intercept-request-mutate # Request mutation before send
-npm run smoke:browser:intercept-tab-close-cleanup      # Tab-close cleanup diagnostics
-npm run smoke:browser:intercept-lease-conflict # Cross-session write conflict
-npm run smoke:browser:websocket-session        # WebSocket open/replay/failure
-npm run smoke:browser:memory                   # Task-scope memory record/recall
-```
-
-Smoke results and port diagnostics are written to `.pi/browser-artifacts/smoke-browser-results.json`. When a smoke run reports a port conflict, the reason is one of `agent_occupies` (another process owns the port), `orphan_socket` (leftover socket with no owner), or `unknown_owner` — stop the occupying process and retry.
+`verify:package` creates an npm tarball, installs it into a clean throwaway
+consumer project, and runs the shipped `browser-pilot` CLI help/schema/status
+commands. Its artifacts are written under `.pi/browser-artifacts/public-package/`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 
@@ -323,7 +300,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow.
 | [docs/tool-boundaries.md](docs/tool-boundaries.md) | Tool selection boundaries |
 | [docs/browser-memory.md](docs/browser-memory.md) | Local browser memory system |
 | [docs/browser-usage.md](docs/browser-usage.md) | Installation, extension loading, troubleshooting |
-| [docs/generated/browser-tool-contract.generated.md](docs/generated/browser-tool-contract.generated.md) | Generated tool contract reference |
+| [docs/generated/browser-tool-reference.generated.md](docs/generated/browser-tool-reference.generated.md) | Generated tool reference |
 | [docs/generated/native-protocol.generated.md](docs/generated/native-protocol.generated.md) | Generated native protocol reference |
 
 ## Notes

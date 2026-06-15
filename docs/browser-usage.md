@@ -42,29 +42,14 @@ When changing bridge ports, set `PI_BROWSER_BRIDGE_PORT`, run
 ```bash
 npm run check
 npm run quality:local
-npm run release:portable
+npm run verify:package
 ```
 
-Browser smoke tests require a connected extension:
-
-```bash
-npm run smoke:browser
-npm run smoke:browser:isolated
-npm run smoke:browser:scan-summary
-npm run smoke:browser:debugger-evidence
-npm run smoke:browser:correlation-chain
-npm run smoke:browser:intercept-response
-npm run smoke:browser:intercept-replace-script
-npm run smoke:browser:intercept-uninstall-fail-closed
-npm run smoke:browser:intercept-request-mutate
-npm run smoke:browser:intercept-tab-close-cleanup
-npm run smoke:browser:intercept-lease-conflict
-npm run smoke:browser:websocket-session
-npm run smoke:browser:memory
-```
-
-Package verification uses `npm pack --dry-run --ignore-scripts --json` inside
-`npm run check:package` so checking the package surface does not rebuild dist.
+`npm run check` typechecks, lints, builds Node output, builds the extension, and
+then runs `verify:package`. Package verification creates an npm tarball, installs
+it into a clean throwaway consumer project, and runs the shipped
+`browser-pilot` CLI help/schema/status commands. Artifacts are written under
+`.pi/browser-artifacts/public-package/`.
 
 ## Pi Commands
 
@@ -95,9 +80,8 @@ When running as a Pi extension, these slash commands are available:
    permission is granted.
 7. Upload file access error: enable Allow access to file URLs in extension
    details.
-8. Port range exhausted: smoke tests report the reason in
-   `.pi/browser-artifacts/smoke-browser-results.json` as `agent_occupies`,
-   `orphan_socket`, or `unknown_owner`; stop the occupying process and retry.
+8. Port range exhausted: stop the process using the configured bridge port range
+   and retry.
 
 ## Security
 

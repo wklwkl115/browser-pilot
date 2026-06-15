@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for helping improve Browser Pilot. Before changing code, contracts,
-generated files, docs, skills, or release workflows, read the relevant README
-and docs for the area you are touching, then run the matching local checks.
+Thanks for helping improve Browser Pilot. Before changing code, generated files,
+docs, skills, or release workflows, read the relevant README and docs for the
+area you are touching, then run the matching local checks.
 
 ## Local Setup
 
@@ -13,21 +13,12 @@ npm run build:bridge
 npm run check
 ```
 
-Use the narrowest relevant gate while iterating:
-
-```bash
-npm run check:all:src
-npm run check:all:bridge
-npm run check:all:package
-npm run check:all:contracts
-```
-
 ## Change Rules
 
-- Keep public tool contracts stable unless the migration is explicit and
-  documented.
-- Update affected docs, generated contracts, skills, and package/release checks
-  in the same workstream as code changes.
+- Keep public CLI and `browser_*` tool behavior stable unless the migration is
+  explicit and documented.
+- Update affected docs, generated references, skills, and package checks in the
+  same workstream as code changes.
 - Do not commit local artifacts, browser profiles, `.pi/`, credentials, tokens,
   cookies, HAR files, or real-site private evidence.
 - For security-sensitive behavior, include the smallest redacted reproduction
@@ -37,12 +28,10 @@ npm run check:all:contracts
 ## Generated Files
 
 Run the relevant sync command after changing schema, registration metadata, or
-managed docs:
+generated files:
 
 ```bash
 npm run sync:protocol
-npm run docs:sync
-npm run sync:impact-map
 ```
 
 Finish non-trivial work with `npm run check`.

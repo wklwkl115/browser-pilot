@@ -10,27 +10,11 @@ on:
       - main
       - master
   workflow_dispatch:
-    inputs:
-      run_browser_smoke:
-        description: Run isolated browser smoke
-        required: false
-        default: false
-        type: boolean
-      run_release_smoke:
-        description: Run release acceptance smoke
-        required: false
-        default: false
-        type: boolean
-      run_rollback_smoke:
-        description: Run rollback smoke during release acceptance
-        required: false
-        default: false
-        type: boolean
 
 jobs:
-  lint-static:
+  build-and-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,121 +22,13 @@ jobs:
       - name: Setup Node + install + build
         uses: ./.github/actions/setup-node-build
 
-      - name: Run static lint/source gates
-        run: |
-          npm run lint
-          npm run check:all:src
-          npm run check:page-scripts
+      - name: Verify public package
+        run: npm run check
 
-      - name: Upload check DAG artifacts
+      - name: Upload package verification artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lint-static-check-dag-artifacts
-          path: |
-            .pi/browser-artifacts/check-dag-summary.json
-            .pi/browser-artifacts/check-dag/**
-          if-no-files-found: ignore
-
-  contracts-and-unit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node + install + build
-        uses: ./.github/actions/setup-node-build
-
-      - name: Run grouped bridge/unit/contracts gates
-        run: |
-          npm run check:all:bridge
-          npm run check:all:contracts
-
-      - name: Upload check DAG artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: contracts-and-unit-check-dag-artifacts
-          path: |
-            .pi/browser-artifacts/check-dag-summary.json
-            .pi/browser-artifacts/check-dag/**
-          if-no-files-found: ignore
-
-  package-acceptance:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node + install + build
-        uses: ./.github/actions/setup-node-build
-
-      - name: Verify grouped package/docs gates and local acceptance
-        run: |
-          npm run check:all:package
-          npm run release:local
-          npm run release:portable
-
-      - name: Upload check DAG artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-acceptance-check-dag-artifacts
-          path: |
-            .pi/browser-artifacts/check-dag-summary.json
-            .pi/browser-artifacts/check-dag/**
-          if-no-files-found: ignore
-
-  browser-smoke:
-    if: github.event_name == 'workflow_dispatch' && inputs.run_browser_smoke == true
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node + install + build
-        uses: ./.github/actions/setup-node-build
-
-      - name: Run isolated browser smoke
-        env:
-          PI_BROWSER_CI_BROWSER_SMOKE: '1'
-        run: npm run smoke:browser:isolated
-
-      - name: Upload browser smoke artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: browser-smoke-artifacts
-          path: .pi/browser-artifacts/**
-          if-no-files-found: ignore
-
-  release-smoke:
-    if: github.event_name == 'workflow_dispatch' && inputs.run_release_smoke == true
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node + install + build
-        uses: ./.github/actions/setup-node-build
-
-      - name: Run release acceptance smoke
-        env:
-          PI_BROWSER_CI_BROWSER_SMOKE: '1'
-          PI_BROWSER_CI_RELEASE_SMOKE: '1'
-          PI_BROWSER_CI_ROLLBACK_SMOKE: ${{ inputs.run_rollback_smoke && '1' || '0' }}
-        run: npm run release:local:smoke
-
-      - name: Upload release smoke artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-smoke-artifacts
-          path: .pi/browser-artifacts/**
+          name: public-package-artifacts
+          path: .pi/browser-artifacts/public-package/**
           if-no-files-found: ignore

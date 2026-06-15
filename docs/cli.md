@@ -301,15 +301,15 @@ local debugging.
 
 ## Verification
 
-`npm run smoke:cli` drives a representative full path (daemon → `/invoke` → bridge → extension →
-page eval → back) against a live browser.
+`npm run verify:package` creates the public npm tarball, installs it into a clean throwaway
+consumer project, and runs the shipped CLI discovery/schema/status commands. The same package
+verification is included in `npm run check`.
 
-`npm run smoke:cli:full` is the heavier full CLI runtime audit. It launches an isolated Edge/Chrome
-profile with a temporary patched extension and a temporary `PI_BROWSER_DAEMON_STATE_DIR`, then runs
-real `browser-pilot` CLI subprocesses across all 22 commands, local discovery/help/schema/validate,
-natural `wait`/`network`/`frame`/`hook` routes, file inputs, `command --command @file`, WebSecurity
-HTTP helpers, memory, transfer, artifacts, and selftest. Results are written to
-`.pi/browser-artifacts/smoke-cli-full-results.json`.
+For local CLI discovery without a browser connection, use:
 
-`npm run check:cli-parity` asserts every registered tool has a subcommand and that the 22-command
-surface stays aligned with Pi-native registration.
+```bash
+browser-pilot --help
+browser-pilot commands --json
+browser-pilot schema observe --json
+browser-pilot status --json
+```

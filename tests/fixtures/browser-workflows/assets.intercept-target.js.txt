@@ -1,1 +1,0 @@
-window.__INTERCEPT_SCRIPT_RESULT__ = 'original-script';
