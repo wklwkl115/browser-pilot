@@ -50,7 +50,6 @@
       "check:summaries",
       "check:artifact",
       "check:errors",
-      "check:browser-workflow-results",
       "check:browser-commands",
       "check:distiller-coverage",
       "check:output-schema-conformance",
@@ -2035,23 +2034,6 @@
         }
       ]
     },
-    "check:browser-workflow-results": {
-      "script": "check:browser-workflow-results",
-      "scope": "paths",
-      "inputs": [
-        "evals/browser-workflows/",
-        "package-lock.json",
-        "package.json",
-        "tests/contracts/tools/check-browser-workflow-results.mjs"
-      ],
-      "unresolvedInputs": [],
-      "commandSteps": [
-        {
-          "nodeId": "check:browser-workflow-results",
-          "commandLine": "node tests/contracts/tools/check-browser-workflow-results.mjs"
-        }
-      ]
-    },
     "check:browser-commands": {
       "script": "check:browser-commands",
       "scope": "paths",
@@ -2521,35 +2503,35 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 205,
+          "line": 199,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 512,
+          "line": 506,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 523,
+          "line": 517,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 538,
+          "line": 532,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "scripts/check-graph.mjs",
-          "line": 655,
+          "line": 649,
           "reason": "dynamic file read"
         },
         {
@@ -2570,28 +2552,28 @@
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 226,
+          "line": 215,
           "reason": "subprocess execution"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 289,
+          "line": 278,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 305,
+          "line": 294,
           "reason": "dynamic file read"
         },
         {
           "script": "check:check-graph",
           "nodeId": "check:check-graph",
           "file": "tests/contracts/drift/check-check-graph.mjs",
-          "line": 319,
+          "line": 308,
           "reason": "dynamic directory walk"
         }
       ],
@@ -2619,35 +2601,35 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 205,
+          "line": 199,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 512,
+          "line": 506,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 523,
+          "line": 517,
           "reason": "dynamic directory walk"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 538,
+          "line": 532,
           "reason": "dynamic file read"
         },
         {
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/check-graph.mjs",
-          "line": 655,
+          "line": 649,
           "reason": "dynamic file read"
         },
         {
@@ -2668,7 +2650,7 @@
           "script": "check:impact-map",
           "nodeId": "check:impact-map",
           "file": "scripts/sync-impact-map.mjs",
-          "line": 399,
+          "line": 383,
           "reason": "dynamic file read"
         }
       ],
@@ -2688,8 +2670,6 @@
         "bridge_src/service_worker/network_model.ts",
         "bridge_src/service_worker/types.ts",
         "capture-src/entries/scanTemplate.ts",
-        "evals/browser-workflows/fixtures/abml-ax-canvas-aria.html",
-        "evals/browser-workflows/fixtures/abml-relations.html",
         "package.json",
         "request.json",
         "src/abml-core/actionabilityModel.ts",
@@ -2880,6 +2860,8 @@
         "tests/contracts/tools/check-abml-templating.mjs",
         "tests/contracts/tools/check-abml-tree-diff.mjs",
         "tests/contracts/tools/check-abml-verb-runtime.mjs",
+        "tests/fixtures/browser-workflows/abml-ax-canvas-aria.html",
+        "tests/fixtures/browser-workflows/abml-relations.html",
         "tests/smoke/smoke-abml-relations.mjs",
         "tests/smoke/smoke-browser-ax-merge.mjs",
         "tombstones"

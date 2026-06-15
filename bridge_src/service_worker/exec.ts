@@ -306,7 +306,7 @@ async function handleWsExec(data: JsonRecord & { id?: string | number; tabId?: n
       try {
         const cdp = piBrowserPersistentCdp();
         if (!cdp?.send) throw new Error('persistent CDP helper is not loaded');
-        // Lift background-tab timer throttling for the eval: make the page emulate a focused/visible
+        // Lift background-tab timer throttling for the focused execution: make the page emulate a focused/visible
         // state so setTimeout/intervals/fetch run normally. This does NOT steal the user's real focus
         // (it is per-tab CDP emulation). Best-effort — proceed even if unsupported (older Chrome).
         try { await cdp.send(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: true }, { name: 'default', persistent: false, timeoutMs: 2000 }); } catch (_focusErr) { /* best-effort throttle lift */ }

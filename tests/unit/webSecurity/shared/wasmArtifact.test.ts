@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { analyzeWasmArtifact, WasmArtifactError } from "../../../../src/tools/webSecurity/shared/wasmArtifact.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const fixture = (name: string) => path.join(root, "evals", "browser-workflows", "fixtures", name);
+const fixture = (name: string) => path.join(root, "tests", "fixtures", "browser-workflows", name);
 
 test("wasmArtifact extracts bounded module metadata from minimal wasm fixture", async () => {
 	const result = await analyzeWasmArtifact({ path: fixture("wasm-minimal.wasm") });

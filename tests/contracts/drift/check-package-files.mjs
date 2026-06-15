@@ -66,12 +66,10 @@ for (const requiredFilesEntry of ["LICENSE", "SECURITY.md", "CONTRIBUTING.md", "
 for (const publicDocEntry of ["docs/browser-memory.md", "docs/browser-usage.md", "docs/cli.md", "docs/guide-cli.md", "docs/guide-pi-native.md", "docs/generated/browser-tool-contract.generated.md", "docs/generated/native-protocol.generated.md", "docs/playbooks/", "docs/reference/", "docs/tool-boundaries.md"]) {
 	assert(pkg.files?.includes(publicDocEntry), `package files must include public doc entry ${publicDocEntry}`);
 }
-for (const publicEvalEntry of ["evals/browser-workflows/README.md", "evals/browser-workflows/[0-9][0-9]-*.md", "evals/browser-workflows/fixtures/", "evals/browser-workflows/results/"]) {
-	assert(pkg.files?.includes(publicEvalEntry), `package files must include public eval entry ${publicEvalEntry}`);
-}
 for (const internalEntry of ["AGENTS.md", "TODO.md", "CURRENT.md", "ARCHIVE.md", "ROADMAP.md", "WORKSTREAMS_A_E_SUMMARY.md", "docs/", "skills/", "evals/"]) {
 	assert(!pkg.files?.includes(internalEntry), `package files must not include broad/internal entry ${internalEntry}`);
 }
+assert(!Object.keys(pkg.scripts || {}).some((name) => name.startsWith("eval:") || name === "check:eval-workflows" || name === "check:browser-workflow-results"), "public package scripts must not expose development eval entrypoints");
 assert(read("LICENSE").includes("Apache License") && read("LICENSE").includes("Version 2.0"), "repository must include Apache-2.0 license text");
 assert.equal(pkg.scripts?.["sync:capture"], "node scripts/sync-capture.mjs", "package must expose capture bundle synchronization");
 assert.equal(pkg.scripts?.["sync:protocol"], EXPECTED_PACKAGE_FACTS.syncProtocolScript.value, `package must expose canonical protocol sync script (${EXPECTED_PACKAGE_FACTS.syncProtocolScript.rationale})`);
@@ -106,7 +104,7 @@ assert(releaseScript.includes("failureDiagnostics") && releaseScript.includes("p
 const portableReleaseScript = read("tests/release/release-portable-acceptance.mjs");
 assert(portableReleaseScript.includes("git") && portableReleaseScript.includes("ls-files") && portableReleaseScript.includes("--exclude-standard"), "portable release acceptance must build from the public Git file set, not ignored local files");
 assert(portableReleaseScript.includes('runNpm(["run", "docs:sync"]') && portableReleaseScript.includes("check:all:package") && portableReleaseScript.includes("check:all:contracts") && portableReleaseScript.includes('runConsumerBin(["--help"])') && portableReleaseScript.includes('runConsumerBin(["commands", "--json"])') && portableReleaseScript.includes('runConsumerBin(["schema", "observe", "--json"])') && portableReleaseScript.includes('runConsumerBin(["status", "--json"])'), "portable release acceptance must sync generated public-tree docs, run package/contracts gates, and no-browser consumer CLI smoke");
-assert(portableReleaseScript.includes("forbiddenPublicPathRe") && portableReleaseScript.includes("docs\\/archive") && portableReleaseScript.includes("agent-audits"), "portable release acceptance must reject internal-only public tree paths");
+assert(portableReleaseScript.includes("forbiddenPublicPathRe") && portableReleaseScript.includes("docs\\/archive") && portableReleaseScript.includes("agent-audits") && portableReleaseScript.includes("evals"), "portable release acceptance must reject internal-only public tree paths");
 assert(workflow.includes("npm run release:portable"), "CI package acceptance must run the portable clean-tree/consumer install gate");
 const docIndexScript = read("scripts/sync-doc-indexes.mjs");
 assert(docIndexScript.includes("governance docs absent") && docIndexScript.includes("presentIndexInputs.length === 0"), "doc index sync must be inert in sanitized public trees that omit internal governance docs");
@@ -190,13 +188,11 @@ assert(packed.has("tests/release/release-portable-acceptance.mjs"), "npm package
 assert(packed.has("tests/contracts/drift/check-package-files.mjs"), "npm package must include package contract");
 assert(packed.has("tests/contracts/drift/abml-core-manifest.js") && packed.has("tests/contracts/drift/expected-package-facts.js") && packed.has("tests/contracts/drift/check-doc-paths.mjs"), "npm package must include shared contract manifests and doc-path gate");
 assert(packed.has("skills/browser-pilot/SKILL.md") && packed.has("skills/browser-pilot-cli/SKILL.md"), "npm package must include public browser-pilot skills");
-assert(packed.has("evals/browser-workflows/README.md") && packed.has("evals/browser-workflows/01-readable-content-artifact.md") && packed.has("evals/browser-workflows/fixtures/article.html"), "npm package must include browser workflow eval specs and fixtures");
-assert(packed.has("evals/browser-workflows/21-cross-tool-correlation-chain.md") && packed.has("evals/browser-workflows/results/21-cross-tool-correlation-chain.result.json"), "npm package must include cross-tool correlation workflow eval spec and sample result");
 assert(![...packed].some((file) => file.startsWith(".pi/") || file.includes("/node_modules/")), "npm package must not include runtime artifacts or node_modules");
 assert(![...packed].some((file) => /^(AGENTS|TODO|CURRENT|ARCHIVE|ROADMAP|WORKSTREAMS_A_E_SUMMARY)\.md$/.test(file)), "npm package must not include local governance planning documents");
 assert(![...packed].some((file) => file.startsWith("docs/archive/") || file.startsWith("agent-audits/") || file.startsWith(".plan/") || file.startsWith(".claude/")), "npm package must not include local archive, audit, plan, or assistant-state directories");
 assert(![...packed].some((file) => file.startsWith("skills/browser-pilot-audit-fix/") || file.startsWith("skills/browser-pilot-blind-eval/") || file.startsWith("skills/pi-kernel-audit/")), "npm package must not include internal maintainer/audit skills");
-assert(![...packed].some((file) => /^evals\/browser-workflows\/blind-/.test(file)), "npm package must not include internal blind-eval operator prompts or findings");
+assert(![...packed].some((file) => file.startsWith("evals/")), "npm package must not include development evals");
 assert(![...packed].some((file) => file.startsWith("bridge/tmwd_cdp_bridge/")), "npm package must not include legacy tmwd bridge sources");
 const packedDist = [...packed].filter((file) => file.startsWith("bridge/pi_browser_bridge/dist/"));
 assert(packedDist.length > 5, "npm package must include generated dist runtime, not only dist/.gitignore");

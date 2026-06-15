@@ -58,7 +58,7 @@ try {
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
 	const bridgePort = await freePort();
 	const fixturePort = await freePort();
-	const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "debugger-evidence.html"), "utf8");
+	const fixtureHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "debugger-evidence.html"), "utf8");
 	const fixtureUrl = `http://127.0.0.1:${fixturePort}/debugger-evidence.html`;
 	fixture = createHttpServer((req, res) => {
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(fixtureHtml) });

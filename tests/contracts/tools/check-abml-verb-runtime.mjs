@@ -4,7 +4,7 @@
  * ABML is perception-only. The runtime keeps read (P3 scan/entity model), pierce/frame (P6
  * shadow/OOPIF reachability), and the P7 visual floor. The click/type/scroll ACTUATOR verbs were
  * removed: orphaned after the B2 public action arm revert (no production caller ever dispatched
- * them — integration.ts only exposes read), and two blind evals confirmed agents actuate via
+ * them — integration.ts only exposes read), and real-agent checks confirmed agents actuate via
  * browser_execute, never needing an internal actuator. This contract now LOCKS that removal so a
  * Phase-4-style "continuation runtime" cannot silently re-add a page actuator behind the
  * perception layer.

@@ -284,22 +284,6 @@ const SCOPE_OVERRIDES = {
 		],
 	},
 
-	// ── Eval artifact checks (no src imports) ─────────────────────────────────────
-
-	// check:eval-workflows is intentionally left global: its spawnSync subprocess plus a
-	// top-level WORKSTREAMS_A_E_SUMMARY.md existence assert make its footprint unsafe to bound.
-
-	"check:browser-workflow-results": {
-		// Reads evals/browser-workflows/results/*.result.json + manifest.json + result-schema.json.
-		// No src imports; validates only eval result artifact structure.
-		scope: "paths",
-		inputs: [
-			"evals/browser-workflows/",
-			"tests/contracts/tools/check-browser-workflow-results.mjs",
-			"package.json",
-			"package-lock.json",
-		],
-	},
 };
 
 function entryFromStep(step) {

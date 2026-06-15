@@ -64,11 +64,6 @@ const allowedMentions = new Set([
 	"docs/changelog-history.md",
 	closureDoc,
 	"docs/archive/jshookmcp-native-absorption.full.md",
-	"evals/browser-workflows/eval-plan.md",
-	"evals/browser-workflows/12-jshook-source-map-artifact.md",
-	"evals/browser-workflows/13-jshook-storage-evidence.md",
-	"evals/browser-workflows/14-jshook-replay-not-intercept.md",
-	"evals/browser-workflows/15-jshook-canvas-observation.md",
 	"tests/contracts/tools/check-jshookmcp-closure.mjs",
 ]);
 

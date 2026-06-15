@@ -23,7 +23,7 @@ export const CHECK_GROUPS = Object.freeze({
 	unit: ["test:unit:abml", "test:unit:cli:commands", "test:unit:cli:daemon", "test:unit:distill", "test:unit:temporal", "test:unit:driver", "test:unit:memory", "test:unit:tools", "test:unit:web-security", "test:unit:misc"],
 	package: ["check:deps", "check:browser-pilot-bridge"],
 	docs: ["check:tool-docs", "check:code-map", "check:distill-core-boundary", "check:recovery-boundary", "check:abml-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:docs-sync"],
-	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:browser-workflow-results", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
+	contracts: ["check:capture", "check:scan", "check:content-pick", "check:transfer", "check:web-security", "check:page-scripts", "check:fake-ws", "check:lifecycle", "check:runtime-fixtures", "check:smoke-diagnostics", "check:paths", "check:token", "check:summaries", "check:artifact", "check:errors", "check:browser-commands", "check:distiller-coverage", "check:output-schema-conformance", "check:tool-parameter-contract", "check:tool-parameter-framework-validation", "check:summary-boundary", "check:compaction-ledger", "check:governance", "check:input-surface", "check:file-ceilings", "check:check-graph", "check:impact-map", "check:abml-contracts", "check:cli-parity", "check:param-surface", "check:cli-json-envelopes", "check:memory-autosurface", "check:memory-plane", "check:memory-lifecycle", "check:token-economy", "bench:distill", "check:session-delta-long-conversation", "check:task-conditioned-salience"],
 });
 
 export const DEFAULT_GROUP_SEQUENCE = Object.freeze(["src", "bridge", "unit", "package", "docs", "contracts"]);
@@ -74,7 +74,6 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"check:doc-paths": "internal governance contract; targets gitignored dev docs and degenerates to a vacuous pass in the public tree; run via check:internal",
 	"check:doc-structure": "internal governance contract; depends on gitignored CURRENT/ROADMAP/TODO/ARCHIVE/agent-audits/ dev docs; run via check:internal",
 	"check:env-flags": "covered by check:governance umbrella",
-	"check:eval-workflows": "internal governance contract; depends on gitignored WORKSTREAMS/blind-agent-prompt dev docs; run via check:internal",
 	"check:jshookmcp-closure": "completed migration guard; retained as standalone script but removed from default check graph",
 	"check:kernel-test-map": "covered by check:governance umbrella",
 	"check:package": "internal governance contract; depends on gitignored ARCHIVE/planning dev docs and internal skills; run via check:internal",
@@ -91,10 +90,6 @@ export const GRAPH_SCRIPT_EXCLUSIONS = Object.freeze({
 	"docs:generate": "child tool-doc generator; guarded by check:docs-sync and check:tool-docs",
 	"docs:sync": "doc generator umbrella; guarded by check:docs-sync",
 	"docs:sync-indexes": "child doc index generator; guarded by check:docs-sync",
-	"eval:blind:launch": "operator-driven blind eval stage",
-	"eval:blind:teardown": "operator-driven blind eval cleanup",
-	"eval:browser-workflows": "eval runner, not a default local check obligation",
-	"eval:redundancy-allocator": "eval runner, not a default local check obligation",
 	"new:check": "developer scaffolder; graph gate verifies generated wiring",
 	"query:markers": "developer query tool; not a proof obligation node",
 	"release:local": "release acceptance gate, not part of default local check graph",
@@ -158,7 +153,6 @@ export const FINGERPRINT_ROOTS = Object.freeze([
 	"capture-src",
 	"tests",
 	"scripts",
-	"evals",
 	"skills",
 	"docs",
 	"package.json",

@@ -14,7 +14,7 @@ const DOCS = [
 	"docs/reference/concept-ownership.md",
 ];
 
-const PATH_PREFIX_RE = /^(src|cli|bridge_src|capture-src|tests|scripts|docs|evals|skills|bridge)\//;
+const PATH_PREFIX_RE = /^(src|cli|bridge_src|capture-src|tests|scripts|docs|skills|bridge)\//;
 const SCRIPT_PREFIX_RE = /^(?:check|sync|docs|test|bench|eval|smoke|build|verify|release|quality|new|scope):/;
 
 function stripGeneratedBlocks(text) {

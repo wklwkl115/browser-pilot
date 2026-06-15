@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { runWasmWatBridge } from "../../../../src/tools/webSecurity/shared/wasmBridge.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const fixture = (name: string) => path.join(root, "evals", "browser-workflows", "fixtures", name);
+const fixture = (name: string) => path.join(root, "tests", "fixtures", "browser-workflows", name);
 
 test("wasmBridge reports structured launcher-not-found diagnostics for explicit bad path", async () => {
 	await assert.rejects(() => runWasmWatBridge({ path: fixture("wasm-minimal.wasm"), toolPath: "__pi_missing_wasm2wat__", allowLauncherOverride: true }), (error: Error & { code?: string; details?: Record<string, unknown> }) => {

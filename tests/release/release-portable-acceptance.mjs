@@ -12,7 +12,7 @@ const publicTreeDir = path.join(artifactsDir, "public-tree");
 const tarballDir = path.join(artifactsDir, "tarball");
 const consumerDir = path.join(artifactsDir, "consumer");
 const summaryPath = path.join(artifactsDir, "portable-acceptance-summary.json");
-const forbiddenPublicPathRe = /^(?:AGENTS|TODO|CURRENT|ARCHIVE|ROADMAP|WORKSTREAMS_A_E_SUMMARY)\.md$|^(?:docs\/archive|agent-audits|\.plan|\.claude|skills\/browser-pilot-audit-fix|skills\/browser-pilot-blind-eval|skills\/pi-kernel-audit)(?:\/|$)|^evals\/browser-workflows\/blind-/;
+const forbiddenPublicPathRe = /^(?:AGENTS|TODO|CURRENT|ARCHIVE|ROADMAP|WORKSTREAMS_A_E_SUMMARY)\.md$|^(?:docs\/archive|agent-audits|\.plan|\.claude|evals|skills\/browser-pilot-audit-fix|skills\/browser-pilot-blind-eval|skills\/pi-kernel-audit)(?:\/|$)/;
 
 function run(command, argv, options = {}) {
 	const result = spawnSync(command, argv, {

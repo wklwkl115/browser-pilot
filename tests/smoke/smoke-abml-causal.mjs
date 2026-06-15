@@ -77,7 +77,7 @@ try {
   if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source missing manifest.json: ${extensionSource}`);
   const bridgePort = await freePort();
   const fixturePort = await freePort();
-  const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "abml-inference-postaction.html"), "utf8");
+  const fixtureHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "abml-inference-postaction.html"), "utf8");
   const fixtureUrl = `http://127.0.0.1:${fixturePort}/abml-inference-postaction.html`;
   // Answer any path (incl. /api/ping) so the page-fired fetch is a real recorded request.
   fixture = createHttpServer((req, res) => {

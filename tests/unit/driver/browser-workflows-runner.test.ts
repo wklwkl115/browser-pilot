@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { maybeTemporalProfileSample } from "../../../evals/browser-workflows/runner.mjs";
+import { maybeTemporalProfileSample } from "../../support/temporalProfileSample.mjs";
 
 test("browser workflow runner extracts browser_execute temporal verdict from rendered execution effect", () => {
 	const toolResult = {

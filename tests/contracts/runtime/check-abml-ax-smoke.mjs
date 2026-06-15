@@ -12,6 +12,6 @@ assert(pkg.scripts?.["smoke:browser:ax-merge"]?.includes("smoke-browser-ax-merge
 assert(smoke.includes("abml-ax-canvas-aria.html") && smoke.includes("readAxEntities") && smoke.includes("mergeAxIntoDomEntities") && smoke.includes("smoke-browser-ax-merge-results.json"), "AX smoke must use the local canvas+ARIA fixture, read AX entities through the AX runtime adapter, merge DOM/AX entities, and write a dedicated artifact");
 const axRuntime = read("src/abml/verbs/axRuntime.ts");
 assert(axRuntime.includes("Accessibility.getFullAXTree") && axRuntime.includes("DOM.getBoxModel"), "AX runtime adapter must issue Accessibility.getFullAXTree and DOM.getBoxModel");
-assert(read("evals/browser-workflows/fixtures/abml-ax-canvas-aria.html").includes("<canvas") && read("evals/browser-workflows/fixtures/abml-ax-canvas-aria.html").includes("aria-label"), "AX fixture must exercise canvas + ARIA coverage");
+assert(read("tests/fixtures/browser-workflows/abml-ax-canvas-aria.html").includes("<canvas") && read("tests/fixtures/browser-workflows/abml-ax-canvas-aria.html").includes("aria-label"), "AX fixture must exercise canvas + ARIA coverage");
 
 console.log("abml ax smoke contract ok");

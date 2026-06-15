@@ -61,7 +61,7 @@ assert(CHECK_GROUPS.docs.includes("check:code-map"), "docs group must include ch
 // Internal governance contracts depend on gitignored dev docs (agent-audits/, docs/archive/,
 // CURRENT.md, ...); they are retained as standalone scripts under GRAPH_SCRIPT_EXCLUSIONS and
 // run via check:internal, not in the public default check graph.
-for (const internal of ["check:audit-inbox", "check:doc-paths", "check:doc-structure", "check:boundaries", "check:registry-drift", "check:package", "check:eval-workflows"]) {
+for (const internal of ["check:audit-inbox", "check:doc-paths", "check:doc-structure", "check:boundaries", "check:registry-drift", "check:package"]) {
 	assert(!Object.values(CHECK_GROUPS).flat().includes(internal), `${internal} must not be in the public check graph (internal governance contract)`);
 	assert(GRAPH_SCRIPT_EXCLUSIONS[internal], `${internal} must be registered in GRAPH_SCRIPT_EXCLUSIONS when removed from the public graph`);
 }
@@ -74,7 +74,7 @@ assert(dag.includes("CHECK_GROUPS") && dag.includes("CHECK_DAG_SUMMARY_PATH") &&
 const covered = graphCoveredPackageScripts(DEFAULT_GROUP_SEQUENCE);
 covered.add("lint");
 covered.add("lint:eslint");
-const relevant = Object.keys(scripts).filter((name) => /^(check(?::|$)|test:|bench:|smoke:|eval:|release:)/.test(name));
+const relevant = Object.keys(scripts).filter((name) => /^(check(?::|$)|test:|bench:|smoke:|release:)/.test(name));
 const missing = relevant.filter((name) => !covered.has(name) && !GRAPH_SCRIPT_EXCLUSIONS[name]);
 assert.deepEqual(missing.sort(), [], `check graph missing script coverage or exclusion:\n  - ${missing.join("\n  - ")}`);
 for (const [name, reason] of Object.entries(GRAPH_SCRIPT_EXCLUSIONS)) {
@@ -190,13 +190,6 @@ assert.equal(impactMap.nodes?.["check:compaction-ledger"]?.scope, "paths", "chec
 assert(impactMap.nodes?.["check:compaction-ledger"]?.inputs?.includes("src/"), "check:compaction-ledger scope must include all of src/ (scatter-walk covers entire tree)");
 assert(impactMap.nodes?.["check:compaction-ledger"]?.inputs?.includes("docs/compaction-ledger.json"), "check:compaction-ledger scope must include the committed compaction ledger");
 
-// check:browser-workflow-results reads only evals/browser-workflows/ result JSON; no src/ imports.
-// check:eval-workflows is intentionally LEFT GLOBAL — its spawnSync subprocess plus a top-level
-// WORKSTREAMS_A_E_SUMMARY.md existence assert make its true footprint unsafe to bound.
-assert.equal(impactMap.nodes?.["check:browser-workflow-results"]?.scope, "paths", "check:browser-workflow-results must be paths-scoped after SCOPE_OVERRIDES override");
-assert(impactMap.nodes?.["check:browser-workflow-results"]?.inputs?.includes("evals/browser-workflows/"), "check:browser-workflow-results scope must include evals/browser-workflows/");
-assert(!impactMap.nodes?.["check:browser-workflow-results"]?.inputs?.includes("src/"), "check:browser-workflow-results scope must NOT include src/ (no src imports in the check)");
-
 // Selection probes
 // 1. abml-core change → selects check:abml-core-boundary, NOT check:memory-core-boundary
 assert(srcUnitCheck.has("check:abml-core-boundary"), "src/abml-core/ change must trigger check:abml-core-boundary");
@@ -206,16 +199,12 @@ const memoryKernelCheck = selectSmartScripts(["src/memory-core/recall.ts"], { ro
 assert(memoryKernelCheck.has("check:memory-core-boundary"), "src/memory-core/ change must trigger check:memory-core-boundary");
 assert(!memoryKernelCheck.has("check:abml-core-boundary"), "src/memory-core/ change must NOT trigger check:abml-core-boundary (different kernel)");
 // 3. A docs-only inert change must not select any boundary check
-for (const boundaryNode of ["check:distill-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:abml-core-boundary", "check:recovery-boundary", "check:summary-boundary", "check:compaction-ledger", "check:browser-workflow-results"]) {
+for (const boundaryNode of ["check:distill-core-boundary", "check:memory-core-boundary", "check:temporal-core-boundary", "check:abml-core-boundary", "check:recovery-boundary", "check:summary-boundary", "check:compaction-ledger"]) {
 	assert(!docOnlyUnitCheck.has(boundaryNode), `docs-only inert change must not trigger ${boundaryNode}`);
 }
 // 4. A src/ change still selects recovery-boundary and compaction-ledger (both walk all of src/)
 assert(srcUnitCheck.has("check:recovery-boundary"), "src/ change must still trigger check:recovery-boundary");
 assert(srcUnitCheck.has("check:compaction-ledger"), "src/ change must still trigger check:compaction-ledger");
-// 5. An evals change selects browser-workflow-results but NOT unit shards
-const evalsCheck = selectSmartScripts(["evals/browser-workflows/manifest.json"], { root, impactMap });
-assert(evalsCheck.has("check:browser-workflow-results"), "evals/ change must trigger check:browser-workflow-results");
-assert(!evalsCheck.has("test:unit:abml"), "evals/ change must NOT trigger test:unit:abml (no src/ in eval check scope)");
 
 assert(existsSync(CHECK_IMPACT_MAP_PATH), "committed impact-map artifact must exist");
 const markerOutput = execFileSync(process.execPath, ["scripts/query-markers.mjs", "--needle", "templateGroupDescriptorForEntity"], { cwd: root, encoding: "utf8" });

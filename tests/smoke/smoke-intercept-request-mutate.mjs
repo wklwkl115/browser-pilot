@@ -41,7 +41,7 @@ try {
 	if (!existsSync(path.join(extensionSource, "manifest.json"))) throw new Error(`Pi Browser extension source is missing manifest.json: ${extensionSource}`);
 	const bridgePort = await freePort();
 	const fixturePort = await freePort();
-	const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "intercept-request-mutate.html"), "utf8");
+	const fixtureHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "intercept-request-mutate.html"), "utf8");
 	const fixtureUrl = `http://127.0.0.1:${fixturePort}/intercept-request-mutate.html`;
 	fixture = createHttpServer((req, res) => {
 		if (req.url?.startsWith("/api/intercept-request-mutate")) {

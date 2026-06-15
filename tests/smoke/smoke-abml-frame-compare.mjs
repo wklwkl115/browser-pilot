@@ -20,8 +20,8 @@ let fixture; let chrome; let bridge; let tabId; let result = { ok: false, result
 try {
   await mkdir(outDir, { recursive: true }); await mkdir(tempRoot, { recursive: true });
   const bridgePort = await freePort(); const fixturePort = await freePort();
-  const parentHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "abml-frame-same-origin.html"), "utf8");
-  const childHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "abml-frame-child.html"), "utf8");
+  const parentHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "abml-frame-same-origin.html"), "utf8");
+  const childHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "abml-frame-child.html"), "utf8");
   const fixtureUrl = `http://127.0.0.1:${fixturePort}/abml-frame-same-origin.html`;
   fixture = createHttpServer((req, res) => {
     if (req.url?.includes("abml-frame-child.html")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(childHtml) }); res.end(childHtml); return; }

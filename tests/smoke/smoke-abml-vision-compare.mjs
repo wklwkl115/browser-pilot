@@ -22,7 +22,7 @@ let fixture; let chrome; let bridge; let tabId; let result = { ok: false, result
 try {
   await mkdir(outDir, { recursive: true }); await mkdir(tempRoot, { recursive: true });
   const bridgePort = await freePort(); const fixturePort = await freePort();
-  const fixtureHtml = await readFile(path.join(root, "evals", "browser-workflows", "fixtures", "abml-vision-floor.html"), "utf8");
+  const fixtureHtml = await readFile(path.join(root, "tests", "fixtures", "browser-workflows", "abml-vision-floor.html"), "utf8");
   const fixtureUrl = `http://127.0.0.1:${fixturePort}/abml-vision-floor.html`;
   fixture = createHttpServer((_req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(fixtureHtml) }); res.end(fixtureHtml); });
   await new Promise((resolve, reject) => { fixture.once("error", reject); fixture.listen(fixturePort, "127.0.0.1", resolve); });

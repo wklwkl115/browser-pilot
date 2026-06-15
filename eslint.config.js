@@ -24,7 +24,6 @@ export default tseslint.config(
 			"coverage/**",
 			"**/*.min.js",
 			"docs/**",
-			"evals/**",
 			"tests/**",
 			"scripts/**",
 			"**/*.generated.*",

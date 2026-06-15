@@ -7,7 +7,7 @@ import { analyzeJavaScriptSource } from "../../../../src/tools/webSecurity/share
 import { analyzeJavaScriptArtifactInput, JS_AST_MAX_INPUT_BYTES, JsAstArtifactError } from "../../../../src/tools/webSecurity/shared/jsAstArtifact.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const readFixture = (name: string) => readFileSync(path.join(root, "evals", "browser-workflows", "fixtures", name), "utf8");
+const readFixture = (name: string) => readFileSync(path.join(root, "tests", "fixtures", "browser-workflows", name), "utf8");
 
 test("jsAst extracts bounded module facts and suspicious usage from minified fixture", () => {
 	const source = readFixture("js-ast-minified.js");
@@ -88,7 +88,7 @@ test("jsAst reduces deterministic object-dispatch calls", () => {
 });
 
 test("jsAst artifact input supports explicit local file paths", async () => {
-	const fixturePath = path.join(root, "evals", "browser-workflows", "fixtures", "js-ast-minified.js");
+	const fixturePath = path.join(root, "tests", "fixtures", "browser-workflows", "js-ast-minified.js");
 	const result = await analyzeJavaScriptArtifactInput({ path: fixturePath });
 	assert.equal(result.input.mode, "path");
 	assert.equal(result.input.path, fixturePath);

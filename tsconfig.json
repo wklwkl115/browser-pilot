@@ -19,7 +19,6 @@
   "exclude": [
     "bridge_src/**",
     "tests/**",
-    "evals/**",
     "node_modules/**"
   ]
 }
