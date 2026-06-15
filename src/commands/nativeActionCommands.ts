@@ -1,9 +1,9 @@
 import { Type } from "typebox";
 import { executeBrowserWaitWithSupervisor } from "../browser-command-runtime/waitSupervisor.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { DetailLevel } from "../utils/params.js";
-import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
-import { nativeToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
+import type { BridgeCommand } from "../types/nativeProtocol.js";
+import { nativeToolMetadata } from "./nativeActionMetadata.js";
 import { frameCommandForAction, hookCommandForAction, networkCommandForAction, waitCommandForAction } from "./actionCommands.js";
 import { readFrameEntities } from "../browser-command-runtime/abml/frameEntities.js";
 import type { ToolResultBudgetName } from "./budgets.js";
@@ -12,7 +12,7 @@ import { DEFAULT_OBSERVATION_TIMEOUT_MS, DEFAULT_TOOL_TIMEOUT_MS, NativeCommandP
 import type { CommandRegistrarContext } from "./commandShared.js";
 
 // Registers the four native bridge-backed tools (wait/network/hook/frame); command names and
-// metadata come from src/bridge/protocol/nativeActionMetadata.ts, generated from the native schema.
+// metadata come from src/commands/nativeActionMetadata.ts, generated from the native schema.
 type ActionToolConfig = {
 	name: string;
 	label: string;

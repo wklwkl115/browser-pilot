@@ -1,26 +1,5 @@
-import { type NativeErrorCode, normalizeNativeErrorCode } from "./nativeErrorCodes.js";
-import { compactError } from "../../utils/errors.js";
-import { redactSensitiveText } from "../../utils/redaction.js";
-
-export class BrowserBridgeError extends Error {
-	readonly code: NativeErrorCode;
-	readonly details: Record<string, unknown>;
-
-	constructor(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}) {
-		super(message);
-		this.name = "BrowserBridgeError";
-		this.code = normalizeNativeErrorCode(code);
-		this.details = details;
-	}
-
-	toJSON() {
-		return compactError(this);
-	}
-}
-
-export function errorToPlain(error: unknown): Record<string, unknown> {
-	return compactError(error);
-}
+import { BrowserBridgeError } from "../utils/errors.js";
+import { redactSensitiveText } from "../utils/redaction.js";
 
 /**
  * Build the canonical TAB_NOT_FOUND error with an actionable recovery hint.

@@ -5,7 +5,7 @@ import { BrowserTabSessionRouter } from "./BrowserTabSessionRouter.js";
 import { BrowserBridgePendingRequests } from "./BrowserBridgePendingRequests.js";
 import type { SessionLeaseRegistry, SessionRegistry } from "../../kernels/session/index.js";
 import type { BrowserCommandQueueRegistry } from "./BrowserCommandQueueRegistry.js";
-import { errorToPlain } from "../protocol/errors.js";
+import { errorToPlain } from "../../utils/errors.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { recordValue } from "./bridgeUtils.js";
 import { CONSENT_MESSAGE_TYPES } from "../protocol/consentTypes.js";

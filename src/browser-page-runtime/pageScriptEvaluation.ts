@@ -1,5 +1,5 @@
-import { BrowserBridgeError } from "../bridge/protocol/errors.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import { BrowserBridgeError } from "../utils/errors.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 
 function runtimeExceptionMessage(data: Record<string, unknown>): string | undefined {

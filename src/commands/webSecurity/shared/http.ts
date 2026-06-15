@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import tls from "node:tls";
-import type { NativeErrorCode } from "../../../bridge/protocol/nativeErrorCodes.js";
+import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import type { ResponseFingerprint } from "../../../kernels/security/replayDiff.js";
 export { responseDistance, responsesDiffer } from "../../../kernels/security/replayDiff.js";
 export type { ResponseFingerprint } from "../../../kernels/security/replayDiff.js";

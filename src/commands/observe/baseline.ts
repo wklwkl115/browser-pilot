@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Entity } from "../../kernels/abml/entity.js";
-import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/records.js";

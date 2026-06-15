@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { BrowserBridgeError, noBrowserExtensionError } from "../protocol/errors.js";
+import { noBrowserExtensionError } from "../errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import { CLOSED_STATES, isOpen } from "./bridgeUtils.js";
 import { compareExtensionBuild, readExpectedExtensionBuild, type ExpectedExtensionBuild } from "./extensionBuild.js";
 import type { BrowserBridgeClientInfo } from "./types.js";

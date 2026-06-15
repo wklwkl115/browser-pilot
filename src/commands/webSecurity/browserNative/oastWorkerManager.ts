@@ -4,7 +4,7 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { NativeErrorCode } from "../../../bridge/protocol/nativeErrorCodes.js";
+import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
 import { tryJson } from "../../../utils/json.js";
 import { isRecord } from "../shared/normalize.js";
@@ -532,4 +532,3 @@ export async function stopSession(state: CallbackSessionState) {
 			?? { ...state, listenerActive: false, ready: false, recovered: true, stoppedAt: new Date().toISOString(), stopReason: state.stopReason || "stop-timeout" } as CallbackSessionState;
 	}
 }
-

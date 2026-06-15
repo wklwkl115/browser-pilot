@@ -1,5 +1,5 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import type { NativeErrorCode } from "../../../bridge/protocol/nativeErrorCodes.js";
+import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
 import { redactWebSecurityDiagnosticValue } from "./diagnostics.js";
 import { isRecord } from "./normalize.js";

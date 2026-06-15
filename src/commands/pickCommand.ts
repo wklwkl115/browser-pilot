@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../bridge/protocol/errors.js";
+import { BrowserBridgeError } from "../utils/errors.js";
 import { buildPickCleanupScript, buildPickScript } from "../pick/buildPickScript.js";
 import { summarizePickData } from "./summaries/index.js";
 import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";

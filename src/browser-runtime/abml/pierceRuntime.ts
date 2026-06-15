@@ -1,5 +1,5 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";
 import type { RefDescriptor } from "../../kernels/abml/types.js";

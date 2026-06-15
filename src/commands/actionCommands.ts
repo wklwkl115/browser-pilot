@@ -1,4 +1,4 @@
-import { commandForNativeToolAction } from "../bridge/protocol/nativeActionMetadata.js";
+import { commandForNativeToolAction } from "./nativeActionMetadata.js";
 
 export function waitCommandForAction(action: string): string {
 	return commandForNativeToolAction("browser_wait", action);

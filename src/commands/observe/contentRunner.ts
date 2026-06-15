@@ -1,11 +1,11 @@
 import { buildContentScript } from "../../content/buildContentScript.js";
-import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { normalizeNativeErrorCode } from "../../bridge/protocol/nativeErrorCodes.js";
+import { normalizeNativeErrorCode } from "../../types/nativeErrorCodes.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { summarizeContentData } from "../summaries/index.js";
 import { artifactFallbackName, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";

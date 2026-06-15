@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { nativeTransferToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
-import type { NativeErrorCode } from "../bridge/protocol/nativeErrorCodes.js";
+import { nativeTransferToolMetadata } from "./nativeActionMetadata.js";
+import type { NativeErrorCode } from "../types/nativeErrorCodes.js";
 import { createCodedError } from "../utils/codedError.js";
 
 export function codedTransferError(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}): Error {

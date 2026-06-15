@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { NativeErrorCode } from "../../../bridge/protocol/nativeErrorCodes.js";
+import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
 
 export const DEFAULT_MAX_BODY_BYTES = 256_000;

@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { nativeTransferToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
+import { nativeTransferToolMetadata } from "./nativeActionMetadata.js";
 import { summarizeTransferData } from "./summaries/index.js";
 import { buildTransferDownloadCommand, buildTransferUploadCommand, checkedUploadFiles, codedTransferError, requireDownloadTarget, requireUploadConfirmation } from "./transferValidation.js";
 import { artifactFallbackName, defineBrowserCommand, jsonCommandResult, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs } from "./commandRuntime.js";

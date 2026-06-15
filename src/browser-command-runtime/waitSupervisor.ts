@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { isRecord } from "../utils/records.js";
-import { BrowserBridgeError } from "../bridge/protocol/errors.js";
-import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
-import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
-import { normalizeNativeErrorCode } from "../bridge/protocol/nativeErrorCodes.js";
+import { BrowserBridgeError } from "../utils/errors.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
+import type { BridgeCommand } from "../types/nativeProtocol.js";
+import { normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { classifyStateLoss, classifyTimeout } from "../kernels/temporal/classify.js";
 import type { TemporalDecision, TemporalFrontierNext, TemporalReason, TemporalVerdict } from "../kernels/temporal/types.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";

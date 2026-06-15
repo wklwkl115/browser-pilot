@@ -1,6 +1,6 @@
-import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
-import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
+import { canonicalBridgeCommand, getNativeCommandProtocolSchema, type BridgeCommand } from "../types/nativeProtocol.js";
 import { classifyStaleness } from "../kernels/temporal/classify.js";
 import { isRecord } from "../utils/params.js";
 import { readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint, type PageFingerprint, type RecorderSeq } from "./pageSignals.js";

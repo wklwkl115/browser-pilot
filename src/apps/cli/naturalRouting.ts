@@ -1,6 +1,6 @@
 import type { CliCommand } from "./registry.js";
 import type { GlobalFlags } from "./flags.js";
-import { nativeToolMetadata } from "../../bridge/protocol/nativeActionMetadata.js";
+import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
 
 export type ActionParamMeta = { action: string; aliases?: readonly string[]; required?: readonly string[]; requiredAny?: readonly (readonly string[])[]; notes?: string };
 export type NativeActionToolMeta = { actionDescription?: string; actions?: readonly ActionParamMeta[] };

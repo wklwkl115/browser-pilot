@@ -1,5 +1,5 @@
 import { Type, type TSchema } from "typebox";
-import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
+import type { BridgeCommand } from "../types/nativeProtocol.js";
 import type { BrowserCommandRuntimePort } from "../ports/BrowserCommandRuntimePort.js";
 import { tryJson } from "../utils/json.js";
 import { isRecord } from "../utils/records.js";

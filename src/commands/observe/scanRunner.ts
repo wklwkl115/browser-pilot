@@ -16,7 +16,7 @@ import { buildScanScript } from "../../scan/buildScanScript.js";
 import { parseJsonOrThrow } from "../../utils/json.js";
 import { isRecord } from "../../utils/params.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { normalizePageFingerprint, queryHookDelta, queryNetworkDelta, readHookRecorderSeq, readNetworkRecorderSeq, readPageFingerprint } from "../pageSignals.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";

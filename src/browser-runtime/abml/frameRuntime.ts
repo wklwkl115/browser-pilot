@@ -1,5 +1,5 @@
 import { registerRefDescriptor } from "../../resources/resourceRefs.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { normalizeAbmlError } from "../../kernels/abml/errors.js";

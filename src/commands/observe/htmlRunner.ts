@@ -1,8 +1,8 @@
 import { executeBrowserWaitWithSupervisor } from "../../browser-command-runtime/waitSupervisor.js";
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { nativeCommandToolMetadata } from "../../bridge/protocol/nativeActionMetadata.js";
+import { nativeCommandToolMetadata } from "../nativeActionMetadata.js";
 import { resolveArtifactPath } from "../../artifacts/artifactFiles.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { summarizeHtmlSnapshot } from "../summaries/index.js";
 import { artifactFallbackName, jsonCommandResult, resolveLocalTargetTabId, targetTabId, textCommandResult, commandMaxChars, commandTimeoutMs, withTrackedOperation, type CommandOnUpdate, type CommandResultContext } from "../commandRuntime.js";
 import { DEFAULT_TOOL_TIMEOUT_MS, objectParam } from "../commandShared.js";

@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { nativeCommandToolMetadata } from "../bridge/protocol/nativeActionMetadata.js";
+import { nativeCommandToolMetadata } from "./nativeActionMetadata.js";
 import { summarizeEvidenceData } from "./summaries/index.js";
 import { applyDefaultTimeout, artifactFallbackName, defineBrowserCommand, jsonCommandResult, resolveLocalTargetTabId, runCommandHandler, sharedTabScopedToolParams, targetTabId, commandMaxChars, commandTimeoutMs, withTrackedOperation } from "./commandRuntime.js";
 import { DEFAULT_OBSERVATION_TIMEOUT_MS, NativeCommandParamsSchema, NativeStringList, objectParam, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";

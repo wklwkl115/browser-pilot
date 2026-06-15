@@ -1,7 +1,8 @@
 import { WebSocket } from "ws";
-import { BrowserBridgeError, noBrowserExtensionError, tabNotFoundError } from "../protocol/errors.js";
-import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../protocol/nativeProtocol.js";
-import type { BridgeCommand } from "../protocol/nativeProtocol.js";
+import { noBrowserExtensionError, tabNotFoundError } from "../errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
+import { getNativeCommandProtocolSchema, validateBridgeCommand } from "../../types/nativeProtocol.js";
+import type { BridgeCommand } from "../../types/nativeProtocol.js";
 import { bridgeResultFailure, recordValue, toTabId } from "./bridgeUtils.js";
 import type {
 	BrowserAutomationSession,

@@ -1,6 +1,7 @@
 import { WebSocket } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_HOST, DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
-import { BrowserBridgeError, errorToPlain, tabNotFoundError } from "../protocol/errors.js";
+import { tabNotFoundError } from "../errors.js";
+import { BrowserBridgeError, errorToPlain } from "../../utils/errors.js";
 const BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS = ["validateBridgeCommand", "methodAccessMode", "spec.accessMode"] as const;
 void BROWSER_BRIDGE_SERVER_CONTRACT_SENTINELS;
 import { BrowserBridgeClientRegistry } from "./BrowserBridgeClientRegistry.js";
@@ -276,7 +277,7 @@ export class BrowserBridgeServer implements ConsentPort {
 		return await this.commandService.executeJavaScript(script, options);
 	}
 
-	async sendCommand(command: import("../protocol/nativeProtocol.js").BridgeCommand, options = {}): Promise<BrowserBridgeExecutionResult> {
+	async sendCommand(command: import("../../types/nativeProtocol.js").BridgeCommand, options = {}): Promise<BrowserBridgeExecutionResult> {
 		return await this.commandService.sendCommand(command, options);
 	}
 

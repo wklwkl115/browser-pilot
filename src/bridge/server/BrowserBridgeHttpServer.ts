@@ -1,7 +1,7 @@
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { DEFAULT_BROWSER_BRIDGE_PORT_RANGE_END } from "./browserBridgeConfig.js";
-import { BrowserBridgeError } from "../protocol/errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import { isAllowedBridgeOrigin, normalizeErrorMessage } from "./bridgeUtils.js";
 
 function listen(server: http.Server, port: number, host: string): Promise<void> {

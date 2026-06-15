@@ -1,6 +1,6 @@
 import { Type } from "typebox";
-import type { BrowserBridgeExecutionResult } from "../bridge/protocol/runtimeTypes.js";
-import { BrowserBridgeError } from "../bridge/protocol/errors.js";
+import type { BrowserBridgeExecutionResult } from "../ports/BrowserRuntimeTypes.js";
+import { BrowserBridgeError } from "../utils/errors.js";
 import { nextActionsForExecutionEffect } from "../kernels/evidence/distill/recovery.js";
 import { buildScanScript } from "../scan/buildScanScript.js";
 import { createBrowserAbmlIntegration } from "../browser-command-runtime/abml/integration.js";

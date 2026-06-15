@@ -1,6 +1,6 @@
 import { mergeRecoveries, recoveryForNormalized, isAbmlRecoveryCode, isWebSocketRecoveryCode } from "../kernels/evidence/distill/recovery.js";
 import type { ErrorRecovery } from "../kernels/evidence/distill/recovery.js";
-import { nativeErrorCodes } from "../bridge/protocol/nativeErrorCodes.js";
+import { nativeErrorCodes, type NativeErrorCode, normalizeNativeErrorCode } from "../types/nativeErrorCodes.js";
 import { isRecord } from "./records.js";
 import { redactSensitiveText, redactSensitiveValue } from "./redaction.js";
 
@@ -45,6 +45,26 @@ export type NormalizedError = {
 	recovery?: ErrorRecovery;
 	name?: string;
 };
+
+export class BrowserBridgeError extends Error {
+	readonly code: NativeErrorCode;
+	readonly details: Record<string, unknown>;
+
+	constructor(code: NativeErrorCode, message: string, details: Record<string, unknown> = {}) {
+		super(message);
+		this.name = "BrowserBridgeError";
+		this.code = normalizeNativeErrorCode(code);
+		this.details = details;
+	}
+
+	toJSON() {
+		return compactError(this);
+	}
+}
+
+export function errorToPlain(error: unknown): Record<string, unknown> {
+	return compactError(error);
+}
 
 function stripStackFields(value: unknown, seen = new WeakSet<object>()): unknown {
 	if (value === null || value === undefined || typeof value !== "object") return value;

@@ -1,7 +1,7 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
-import { BrowserBridgeError } from "../../bridge/protocol/errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import { isRecord } from "../../utils/records.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { buildScanScript } from "../../scan/buildScanScript.js";
 import { evaluatePageScriptDirect } from "../../browser-page-runtime/pageScriptEvaluation.js";
 import { registerScanEntityRefs } from "../../scan/entityRefs.js";

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { BrowserBridgeError } from "../protocol/errors.js";
+import { BrowserBridgeError } from "../../utils/errors.js";
 import { DEFAULT_TIMEOUT_MS, normalizeErrorMessage } from "./bridgeUtils.js";
 import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, PendingRequest } from "./types.js";
 

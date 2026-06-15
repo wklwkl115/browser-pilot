@@ -20,6 +20,12 @@ const focusRules = [
 		toLayer: "browser-runtime",
 	},
 	{
+		key: "commands-to-bridge-other",
+		description: "commands importing bridge runtime helpers instead of neutral utilities, ports, or browser runtime contracts",
+		fromLayer: "commands",
+		toLayer: "bridge/other",
+	},
+	{
 		key: "cli-to-bridge-server",
 		description: "root CLI importing bridge/server directly instead of src/apps composition owners",
 		fromLayer: "cli",
@@ -50,10 +56,28 @@ const focusRules = [
 		toLayer: "adapters",
 	},
 	{
+		key: "browser-command-runtime-to-bridge-other",
+		description: "browser command runtime importing bridge runtime helpers instead of neutral utilities or ports",
+		fromLayer: "browser-command-runtime",
+		toLayer: "bridge/other",
+	},
+	{
+		key: "browser-page-runtime-to-bridge-other",
+		description: "browser page runtime importing bridge runtime helpers instead of neutral utilities or ports",
+		fromLayer: "browser-page-runtime",
+		toLayer: "bridge/other",
+	},
+	{
 		key: "browser-runtime-to-adapters",
 		description: "browser runtime importing adapters instead of resource/runtime facades",
 		fromLayer: "browser-runtime",
 		toLayer: "adapters",
+	},
+	{
+		key: "browser-runtime-to-bridge-other",
+		description: "browser runtime importing bridge runtime helpers instead of neutral utilities or ports",
+		fromLayer: "browser-runtime",
+		toLayer: "bridge/other",
 	},
 	{
 		key: "browser-runtime-to-browser-command-runtime",
@@ -77,6 +101,36 @@ const focusRules = [
 		key: "validation-to-bridge-protocol",
 		description: "neutral validation helpers importing bridge protocol errors instead of returning validation-owned errors/results",
 		fromLayer: "validation",
+		toLayer: "bridge/protocol",
+	},
+	{
+		key: "ports-to-bridge-protocol",
+		description: "ports exposing bridge protocol contracts instead of port-owned runtime abstractions",
+		fromLayer: "ports",
+		toLayer: "bridge/protocol",
+	},
+	{
+		key: "bridge-protocol-to-utils",
+		description: "bridge protocol importing runtime utility helpers instead of staying schema/contract-owned with thin re-export exits",
+		fromLayer: "bridge/protocol",
+		toLayer: "utils",
+	},
+	{
+		key: "bridge-protocol-to-bridge-other",
+		description: "bridge protocol retaining runtime-owned bridge facades instead of protocol schema/contract sources",
+		fromLayer: "bridge/protocol",
+		toLayer: "bridge/other",
+	},
+	{
+		key: "bridge-protocol-to-types",
+		description: "bridge protocol re-exporting shared runtime type catalogs instead of owning schema/contract sources only",
+		fromLayer: "bridge/protocol",
+		toLayer: "types",
+	},
+	{
+		key: "utils-to-bridge-protocol",
+		description: "neutral utils importing bridge protocol contracts instead of shared generated catalogs or caller-owned wrappers",
+		fromLayer: "utils",
 		toLayer: "bridge/protocol",
 	},
 ];

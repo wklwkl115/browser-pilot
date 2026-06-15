@@ -1,7 +1,7 @@
 import type { CliCommand } from "./registry.js";
 import { buildFlagSpecs, type FlagSpec } from "./flags.js";
 import { pad } from "./help.js";
-import { nativeToolMetadata } from "../../bridge/protocol/nativeActionMetadata.js";
+import { nativeToolMetadata } from "../../commands/nativeActionMetadata.js";
 import {
 	commandRouting,
 	kebabAction,

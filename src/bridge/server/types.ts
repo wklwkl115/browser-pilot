@@ -1,8 +1,8 @@
 import type { WebSocket } from "ws";
 import type { SessionActiveOperationInfo, SessionAutomationSession, SessionObservationSnapshotInfo, SessionReleasedTabLeaseInfo, SessionReleasedUiLockInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../../kernels/session/index.js";
-import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../protocol/runtimeTypes.js";
+import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../../ports/BrowserRuntimeTypes.js";
 
-export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../protocol/runtimeTypes.js";
+export type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserBridgeTargetSource } from "../../ports/BrowserRuntimeTypes.js";
 
 export type BrowserBridgeClientInfo = {
 	id: string;

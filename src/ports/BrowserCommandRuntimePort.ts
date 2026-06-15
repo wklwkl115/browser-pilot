@@ -1,5 +1,4 @@
-import type { BridgeCommand } from "../bridge/protocol/nativeProtocol.js";
-import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo } from "../bridge/protocol/runtimeTypes.js";
+import type { BrowserBridgeExecutionResult, BrowserBridgeTargetInfo, BrowserRuntimeCommand } from "./BrowserRuntimeTypes.js";
 import type { PerceptionLedgerFrame, PerceptionLedgerKey, PerceptionTraceSnapshot } from "../kernels/abml/perceptionLedger.js";
 import type { SessionActiveOperationInfo, SessionObservationSnapshotInfo, SessionTabLeaseInfo, SessionUiLockInfo } from "../kernels/session/index.js";
 import type { TemporalProfileSample } from "../kernels/temporal/types.js";
@@ -50,7 +49,7 @@ export interface BrowserCommandRuntimePort {
 	getTabs(options?: { includeDisconnected?: boolean }): BrowserTabLike[];
 	refreshTabs(timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserTabLike[]>;
 	resolveTargetTabId(value: unknown, browserSessionId?: string): number;
-	sendCommand(command: BridgeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean }): Promise<BrowserBridgeExecutionResult>;
+	sendCommand(command: BrowserRuntimeCommand, options?: { browserSessionId?: string; tabId?: number | string; targetRef?: string; timeoutMs?: number; accessMode?: "read" | "write"; internal?: boolean }): Promise<BrowserBridgeExecutionResult>;
 	executeJavaScript(script: string, options?: { browserSessionId?: string; tabId?: number | string; timeoutMs?: number }): Promise<BrowserBridgeExecutionResult>;
 	switchTab(tabId: number | string, timeoutMs?: number, options?: { browserSessionId?: string }): Promise<BrowserBridgeExecutionResult>;
 	createTab(url: string, active?: boolean, timeoutMs?: number, options?: { browserSessionId?: string; incognito?: boolean }): Promise<BrowserBridgeExecutionResult>;

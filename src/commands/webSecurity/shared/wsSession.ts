@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Buffer } from "node:buffer";
 import { WebSocket, type ClientOptions, type RawData } from "ws";
-import type { NativeErrorCode } from "../../../bridge/protocol/nativeErrorCodes.js";
+import type { NativeErrorCode } from "../../../types/nativeErrorCodes.js";
 import { createCodedError } from "../../../utils/codedError.js";
 import { tryJson } from "../../../utils/json.js";
 import { isSafeRegexPattern, unsafeRegexReason } from "../../../utils/safeRegex.js";

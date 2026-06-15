@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { BrowserBridgeError } from "../bridge/protocol/errors.js";
+import { BrowserBridgeError } from "../utils/errors.js";
 import { runContentObservation, runHtmlObservation, runScanObservation, observeErrorResult, type ObserveMode, type ObserveToolParams } from "./observeRunners.js";
 import { defineBrowserCommand, runCommandHandler, sharedTabScopedToolParams } from "./commandRuntime.js";
 import { NativeCommandParamsSchema, TAB_SCOPED_TOOL_GUIDELINE, strictCommandParameters } from "./commandShared.js";

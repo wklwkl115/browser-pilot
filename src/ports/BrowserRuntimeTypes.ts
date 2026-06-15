@@ -1,3 +1,10 @@
+export type BrowserRuntimeCommand = {
+	cmd: string;
+	method?: string;
+	tabId?: number | string;
+	[key: string]: unknown;
+};
+
 export type BrowserBridgeTargetSource = "explicit" | "default" | "latest" | "none";
 
 export type BrowserBridgeTargetInfo = {

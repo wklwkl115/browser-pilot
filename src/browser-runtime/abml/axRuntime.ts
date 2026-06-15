@@ -1,6 +1,6 @@
 import type { BrowserCommandRuntimePort } from "../../ports/BrowserCommandRuntimePort.js";
 import { isRecord } from "../../utils/records.js";
-import { assertBridgeCommandSucceeded } from "../../bridge/protocol/bridgeResultValidation.js";
+import { assertBridgeCommandSucceeded } from "../../utils/bridgeResultValidation.js";
 import { registerRefDescriptor } from "../../resources/resourceRefs.js";
 import type { Entity } from "../../kernels/abml/entity.js";
 import { axBackendNodeId, axName, axNodeId, axRole, buildAxEntityFromNode, boxModelToGeometry, extractAxPropertyRelationAnchors, isInterestingAxNode, mergeDomAndAxEntities, type AxContext } from "../../kernels/abml/ax.js";
